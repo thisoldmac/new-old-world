@@ -4,6 +4,7 @@ project(NowGuest C)
 add_application(now-guest
     CREATOR "NOWo"
     src/main.c
+    src/capture_win.c
     src/capture.c
     src/capture_store.c
     src/ot_carbon.c
