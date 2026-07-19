@@ -6,6 +6,7 @@ add_application(now-guest
     src/main.c
     src/capture_win.c
     src/commands.c
+    src/console_win.c
     src/capture.c
     src/capture_store.c
     src/ot_carbon.c

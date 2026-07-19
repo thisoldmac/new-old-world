@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "capture_win.h"
+#include "console_win.h"
 #include "prefs.h"
 #include "settings_dialog.h"
 #include "wire.h"
@@ -15,7 +16,8 @@ enum {
     kFileQuitItem = 3,
     kWindowsMenuID = 130,
     kWindowsNewScreenshotsItem = 1,
-    kWindowsConnectionItem = 2
+    kWindowsConsoleItem = 2,
+    kWindowsConnectionItem = 3
 };
 
 static Boolean g_running = true;
@@ -30,6 +32,9 @@ static const unsigned char k_windows_menu_title[] = {
 static const unsigned char k_new_screenshots_menu_item[] = {
     24, 'N', 'e', 'w', ' ', 'S', 'c', 'r', 'e', 'e', 'n', 's', 'h', 'o',
     't', 's', ' ', 'W', 'i', 'n', 'd', 'o', 'w', '/', 'N'
+};
+static const unsigned char k_console_menu_item[] = {
+    9, 'C', 'o', 'n', 's', 'o', 'l', 'e', '/', 'L'
 };
 static const unsigned char k_connection_menu_item[] = {
     13, 'C', 'o', 'n', 'n', 'e', 'c', 't', 'i', 'o', 'n', 0xC9, '/', 'K'
@@ -55,6 +60,7 @@ static void create_menu_bar(void)
     InsertMenu(file_menu, 0);
     /* Modules live in the Windows menu; there is no main app window. */
     AppendMenu(windows_menu, k_new_screenshots_menu_item);
+    AppendMenu(windows_menu, k_console_menu_item);
     AppendMenu(windows_menu, k_connection_menu_item);
     InsertMenu(windows_menu, 0);
     DrawMenuBar();
@@ -135,6 +141,8 @@ static void handle_menu_choice(long choice)
     } else if (HiWord(choice) == kWindowsMenuID) {
         if (LoWord(choice) == kWindowsNewScreenshotsItem) {
             capwin_create(NULL, 8);
+        } else if (LoWord(choice) == kWindowsConsoleItem) {
+            console_win_open();
         } else if (LoWord(choice) == kWindowsConnectionItem) {
             now_settings_dialog_run();
         }
@@ -152,6 +160,18 @@ static void handle_mouse_down(const EventRecord *event)
         long choice = MenuSelect(event->where);
         handle_menu_choice(choice);
         HiliteMenu(0);
+        return;
+    }
+    if (console_win_is(window)) {
+        if (part == inDrag) {
+            DragWindow(window, event->where, &g_screen_bounds);
+        } else if (part == inGoAway) {
+            if (TrackGoAway(window, event->where)) {
+                console_win_close();
+            }
+        } else if (part == inContent && window != FrontWindow()) {
+            SelectWindow(window);
+        }
         return;
     }
     win = capwin_find(window);
@@ -208,6 +228,8 @@ static void handle_key_down(const EventRecord *event)
         long choice = MenuKey(key);
         handle_menu_choice(choice);
         HiliteMenu(0);
+    } else if (console_win_is(FrontWindow())) {
+        console_win_key(key);
     } else if (key == '\r' || key == '\n') {
         NowCaptureWindow *win = capwin_front();
 
@@ -263,6 +285,12 @@ int main(void)
             handle_key_down(&event);
             break;
         case updateEvt:
+            if (console_win_is((WindowRef)event.message)) {
+                BeginUpdate(console_win_ref());
+                console_win_draw();
+                EndUpdate(console_win_ref());
+                break;
+            }
             win = capwin_find((WindowRef)event.message);
             if (win != NULL) {
                 BeginUpdate(win->window);
