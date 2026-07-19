@@ -8,6 +8,26 @@ not import TimBotTu runtime packages or expose a general remote-control
 surface. The stack stays concise, human-facing, and polished — one app on each
 side, nothing else.
 
+The product envelope is **PowerPC only** (decided 2026-07-19): the guest is a
+Carbon app and takes full advantage of the 8.6+ toolbox (CarbonLib, Open
+Transport, Appearance). A 68K build/port/sibling may exist someday; it is
+explicitly out of scope and must not constrain this codebase.
+
+## Wire contract
+
+[contract/asyncapi.yaml](../contract/asyncapi.yaml) is the contract: an 8-byte
+binary frame header multiplexing a JSON control channel and a raw bulk channel
+over one TCP connection, defined as AsyncAPI 3.0 with JSON Schema payloads.
+The frame header and connection rules are normative prose at the top of that
+file; the revision (`x-contract-revision`) is a single integer, and unequal
+revisions refuse cleanly with a reason the UI shows.
+
+The **guest dials the host**. Classic Mac OS listeners are the historically
+fragile half of OS 9 networking (leaked disconnect indications, accept races,
+silent holders); dialing out keeps every listener on the modern side, where
+they are boring. The host address is user-entered on the guest for now;
+discovery can come later without touching the contract.
+
 ```text
 Mac OS 9 guest app  <---- one future protocol ---->  macOS host app
   capture target                                      module registry

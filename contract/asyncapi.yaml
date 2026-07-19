@@ -1,0 +1,200 @@
+# New Old World wire contract.
+#
+# One TCP connection, one contract, multiplexed by an 8-byte binary frame
+# header. Control payloads are JSON (this document's schemas); bulk payloads
+# are raw bytes correlated by transfer id. AsyncAPI describes the messages;
+# the frame layer below is normative prose because no schema standard
+# expresses binary framing.
+#
+# Frame header (8 bytes, big-endian):
+#
+#   offset  size  field     meaning
+#   0       u8    channel   0 = control, 1 = bulk
+#   1       u8    flags     bit0 END: last frame of this transfer
+#   2       u16   transfer  bulk correlation id; 0 on control frames
+#   4       u32   length    payload bytes that follow (max 32768)
+#
+# Rules:
+# - The guest dials the host and sends `hello` first; the host answers
+#   `hello` (accept) or `refuse` and closes. Nothing else may precede hello.
+# - `contract` is a single integer revision. Unequal revisions => refuse.
+#   Breaking changes bump it; additive optional fields do not.
+# - Control messages that expect an answer carry `id`; answers echo it.
+# - Bulk transfers are announced on control (`capture.begin`), stream on the
+#   bulk channel in chunks (default 8192 bytes, negotiable in hello), and
+#   finish with the END flag plus a closing control message.
+# - Idle keepalive: `ping` after 30s of silence, answered by `pong`;
+#   two unanswered pings = dead connection, close and surface it honestly.
+
+asyncapi: 3.0.0
+
+info:
+  title: New Old World wire contract
+  version: 0.1.0
+  x-contract-revision: 1
+
+defaultContentType: application/json
+
+channels:
+  control:
+    address: "0"
+    description: JSON control messages, framed on channel 0.
+    messages:
+      hello: { $ref: "#/components/messages/hello" }
+      refuse: { $ref: "#/components/messages/refuse" }
+      ping: { $ref: "#/components/messages/ping" }
+      pong: { $ref: "#/components/messages/pong" }
+      error: { $ref: "#/components/messages/error" }
+      captureRequest: { $ref: "#/components/messages/captureRequest" }
+      captureBegin: { $ref: "#/components/messages/captureBegin" }
+      captureEnd: { $ref: "#/components/messages/captureEnd" }
+  bulk:
+    address: "1"
+    description: >
+      Raw payload bytes on channel 1, correlated by the frame header's
+      transfer id. v1 carries capture pixel data only: rows top-to-bottom,
+      rowBytes apart. Depth 8 uses the standard system palette; depth 16 is
+      RGB555 big-endian; depth 32 is xRGB8888 big-endian.
+
+operations:
+  guestOffersCapture:
+    action: send
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/captureBegin"
+      - $ref: "#/channels/control/messages/captureEnd"
+    description: Guest announces and completes a capture transfer.
+  hostRequestsCapture:
+    action: receive
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/captureRequest"
+    description: Host asks the guest to capture.
+
+components:
+  messages:
+    hello:
+      name: hello
+      payload: { $ref: "#/components/schemas/Hello" }
+    refuse:
+      name: refuse
+      payload: { $ref: "#/components/schemas/Refuse" }
+    ping:
+      name: ping
+      payload: { $ref: "#/components/schemas/Ping" }
+    pong:
+      name: pong
+      payload: { $ref: "#/components/schemas/Pong" }
+    error:
+      name: error
+      payload: { $ref: "#/components/schemas/Error" }
+    captureRequest:
+      name: capture.request
+      payload: { $ref: "#/components/schemas/CaptureRequest" }
+    captureBegin:
+      name: capture.begin
+      payload: { $ref: "#/components/schemas/CaptureBegin" }
+    captureEnd:
+      name: capture.end
+      payload: { $ref: "#/components/schemas/CaptureEnd" }
+
+  schemas:
+    Hello:
+      type: object
+      required: [type, contract, side, version]
+      additionalProperties: false
+      properties:
+        type: { const: hello }
+        contract:
+          type: integer
+          description: Contract revision; unequal revisions are refused.
+        side: { enum: [guest, host] }
+        version:
+          type: string
+          description: Sending app's own version, for display only.
+        name:
+          type: string
+          description: Human-facing machine name, e.g. "Power Mac G3".
+        os:
+          type: string
+          description: Guest OS version string, e.g. "9.1".
+        chunk:
+          type: integer
+          minimum: 512
+          maximum: 32768
+          description: >
+            Sender's preferred bulk chunk size in bytes; the connection uses
+            the smaller of the two sides' preferences. Default 8192.
+    Refuse:
+      type: object
+      required: [type, contract, reason]
+      additionalProperties: false
+      properties:
+        type: { const: refuse }
+        contract: { type: integer }
+        reason:
+          type: string
+          description: Human-readable; shown in the UI, never swallowed.
+    Ping:
+      type: object
+      required: [type, id]
+      additionalProperties: false
+      properties:
+        type: { const: ping }
+        id: { type: integer }
+    Pong:
+      type: object
+      required: [type, id]
+      additionalProperties: false
+      properties:
+        type: { const: pong }
+        id: { type: integer }
+    Error:
+      type: object
+      required: [type, code, message]
+      additionalProperties: false
+      properties:
+        type: { const: error }
+        id:
+          type: integer
+          description: Echoes the failed request's id when there is one.
+        code:
+          type: string
+          description: Stable machine-readable slug, e.g. "capture-no-memory".
+        message: { type: string }
+    CaptureRequest:
+      type: object
+      required: [type, id, depth]
+      additionalProperties: false
+      properties:
+        type: { const: capture.request }
+        id: { type: integer }
+        depth: { enum: [1, 8, 16, 32] }
+    CaptureBegin:
+      type: object
+      required: [type, id, transfer, width, height, depth, rowBytes, bytes]
+      additionalProperties: false
+      properties:
+        type: { const: capture.begin }
+        id:
+          type: integer
+          description: The capture.request id, or a guest-chosen id for
+            captures initiated on the guest.
+        transfer: { type: integer, minimum: 1, maximum: 65535 }
+        width: { type: integer, minimum: 1 }
+        height: { type: integer, minimum: 1 }
+        depth: { enum: [1, 8, 16, 32] }
+        rowBytes: { type: integer, minimum: 1 }
+        bytes:
+          type: integer
+          minimum: 1
+          description: Total bulk bytes to expect (rowBytes * height).
+    CaptureEnd:
+      type: object
+      required: [type, id, transfer, ok]
+      additionalProperties: false
+      properties:
+        type: { const: capture.end }
+        id: { type: integer }
+        transfer: { type: integer }
+        ok: { type: boolean }
