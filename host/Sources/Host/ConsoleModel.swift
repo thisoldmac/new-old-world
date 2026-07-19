@@ -25,6 +25,29 @@ final class ConsoleModel: ObservableObject {
     /// Declared commands (contract x-commands) plus console built-ins.
     static let commands = ["gestalt"]
 
+    /// Per-command docs, mirroring the contract's x-commands descriptions.
+    /// help and --help render from here — documentation never hits the wire.
+    struct CommandInfo {
+        let summary: String
+        let help: [String]
+    }
+
+    static let catalog: [String: CommandInfo] = [
+        "gestalt": .init(
+            summary: "report the Mac: system, model, RAM, CarbonLib",
+            help: ["gestalt — report the connected Mac's identity",
+                   "  Usage: gestalt",
+                   "  Reports the running system version, the Gestalt",
+                   "  machine type, physical RAM, and the installed",
+                   "  CarbonLib version."]),
+        "help": .init(
+            summary: "show this list (\"help <cmd>\" for details)",
+            help: ["help — list commands, or \"help <cmd>\" for one"]),
+        "clear": .init(
+            summary: "clear the console scrollback",
+            help: ["clear — clear the console scrollback"])
+    ]
+
     @Published private(set) var lines: [Line] = []
     @Published var input = ""
 
@@ -50,15 +73,45 @@ final class ConsoleModel: ObservableObject {
         }
         append(.input(guest: guestName), command)
 
-        switch command {
-        case "help":
-            append(.notice, "Commands: "
-                + (Self.commands + ["help", "clear"]).sorted()
-                    .joined(separator: ", "))
-        case "clear":
+        let tokens = command.split(separator: " ").map(String.init)
+        let name = tokens[0]
+        let rest = Array(tokens.dropFirst())
+        let wantsHelp = rest.contains("-h") || rest.contains("--help")
+
+        if name == "help" {
+            if let target = rest.first(where: { !$0.hasPrefix("-") }) {
+                showHelp(for: target)
+            } else {
+                showHelpList()
+            }
+            return
+        }
+        if wantsHelp {
+            showHelp(for: name)
+            return
+        }
+        if name == "clear" {
             lines = []
-        default:
-            run(command)
+            return
+        }
+        run(name)
+    }
+
+    private func showHelpList() {
+        append(.notice, "Commands on the connected Mac:")
+        for key in (Self.commands + ["help", "clear"]).sorted() {
+            let summary = Self.catalog[key]?.summary ?? ""
+            append(.notice,
+                   "  \(key.padding(toLength: 8, withPad: " ", startingAt: 0)) \(summary)")
+        }
+        append(.notice, "Add --help or -h to any command for details.")
+    }
+
+    private func showHelp(for name: String) {
+        if let info = Self.catalog[name] {
+            for line in info.help { append(.notice, line) }
+        } else {
+            append(.failure, "No help for \"\(name)\"")
         }
     }
 

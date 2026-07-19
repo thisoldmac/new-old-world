@@ -358,6 +358,20 @@ final class ConsoleModelTests: XCTestCase {
         console.submit()
         XCTAssertTrue(console.lines.contains {
             $0.text.contains("not a declared command") })
+
+        // help + --help render locally from the catalog, no wire round-trip.
+        console.input = "help"
+        console.submit()
+        XCTAssertTrue(console.lines.contains {
+            $0.text.contains("gestalt") && $0.text.contains("CarbonLib") })
+        console.input = "gestalt --help"
+        console.submit()
+        XCTAssertTrue(console.lines.contains {
+            $0.text.contains("Usage: gestalt") })
+        console.input = "gestalt -h"
+        console.submit()
+        XCTAssertEqual(console.lines.filter {
+            $0.text.contains("Usage: gestalt") }.count, 2)
         listener.stop()
     }
 }
