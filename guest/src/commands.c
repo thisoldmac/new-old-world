@@ -63,6 +63,44 @@ static const char *fpu_name(long type)
     }
 }
 
+/* The user-facing model name — sourced from the machine itself, no table.
+   1. gestaltUserVisibleMachineName ('mnam') returns a StringPtr with Apple's
+      marketing name ("PowerBook 1400cs/117"). Not in Retro68's headers, so
+      the selector is spelled inline.
+   2. Failing that, the classic machine-name 'STR ' resource, id -16395, that
+      the System bakes in.
+   3. NOW is metal-forward: on hardware one of the above answers. On the
+      emulator neither may, so degrade to the raw machine-type id. */
+static void machine_model(char *out, long cap)
+{
+    long response = 0;
+    StringHandle sh;
+    long v;
+    long n;
+
+    if (Gestalt('mnam', &response) == noErr && response != 0) {
+        StringPtr name = (StringPtr)response;
+        if (name[0] > 0) {
+            n = name[0] < cap - 1 ? name[0] : cap - 1;
+            memcpy(out, name + 1, (size_t)n);
+            out[n] = '\0';
+            return;
+        }
+    }
+    sh = GetString(-16395);
+    if (sh != NULL && *sh != NULL && (*sh)[0] > 0) {
+        n = (*sh)[0] < cap - 1 ? (*sh)[0] : cap - 1;
+        memcpy(out, *sh + 1, (size_t)n);
+        out[n] = '\0';
+        return;
+    }
+    if (Gestalt(gestaltMachineType, &v) == noErr) {
+        snprintf(out, cap, "Unknown (id %ld)", v);
+    } else {
+        snprintf(out, cap, "Unknown");
+    }
+}
+
 /* --- gather ------------------------------------------------------------- */
 
 static void add_row(GestaltRow *rows, int *n, int max, const char *group,
@@ -87,10 +125,12 @@ int now_gestalt_gather(GestaltRow *rows, int max)
     char sys[20] = "unknown";
     char cpu[24];
     char carbon[16] = "?";
+    char model[56];
     char buf[56];
     Boolean has_ot;
     long phys_mb = 0, log_mb = 0;
 
+    machine_model(model, sizeof model);
     if (Gestalt(gestaltSystemVersion, &v) == noErr) {
         char sv[12];
         bcd_version(v, sv, sizeof sv);
@@ -116,6 +156,7 @@ int now_gestalt_gather(GestaltRow *rows, int max)
     has_ot = (Gestalt(gestaltOpenTpt, &v) == noErr);
 
     /* snapshot: the curated, human-readable slice (default view) */
+    add_row(rows, &n, max, "snapshot", "Model", model);
     add_row(rows, &n, max, "snapshot", "System", sys);
     add_row(rows, &n, max, "snapshot", "CPU", cpu);
     snprintf(buf, sizeof buf, "%ld MB", phys_mb);
