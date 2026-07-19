@@ -59,6 +59,17 @@ final class ContractMessageTests: XCTestCase {
         }
     }
 
+    func testByeRoundTripAndWireCodes() throws {
+        let bye = Bye(code: .shuttingDown, reason: "host quitting")
+        let data = try ControlMessageCodec.encode(.bye(bye))
+        XCTAssertTrue(String(data: data, encoding: .utf8)!
+            .contains("\"shutting-down\""))
+        XCTAssertEqual(try ControlMessageCodec.decode(data), .bye(bye))
+        let bare = Data("{\"type\":\"bye\",\"code\":\"normal\"}".utf8)
+        XCTAssertEqual(try ControlMessageCodec.decode(bare),
+                       .bye(Bye(code: .normal, reason: nil)))
+    }
+
     func testUnknownTypeThrows() {
         let json = Data("{\"type\":\"teleport\"}".utf8)
         XCTAssertThrowsError(try ControlMessageCodec.decode(json)) { error in

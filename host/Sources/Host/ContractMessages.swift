@@ -13,6 +13,7 @@ enum ControlMessage: Equatable, Sendable {
     case refuse(Refuse)
     case ping(id: Int)
     case pong(id: Int)
+    case bye(Bye)
     case error(ErrorMessage)
     case captureRequest(CaptureRequest)
     case captureBegin(CaptureBegin)
@@ -31,6 +32,17 @@ struct Hello: Codable, Equatable, Sendable {
 struct Refuse: Codable, Equatable, Sendable {
     var contract: Int
     var reason: String
+}
+
+struct Bye: Codable, Equatable, Sendable {
+    enum Code: String, Codable, Sendable {
+        case normal
+        case shuttingDown = "shutting-down"
+        case protocolError = "protocol-error"
+    }
+
+    var code: Code
+    var reason: String?
 }
 
 struct ErrorMessage: Codable, Equatable, Sendable {
@@ -92,6 +104,8 @@ enum ControlMessageCodec {
             return .ping(id: try decoder.decode(IdOnly.self, from: data).id)
         case "pong":
             return .pong(id: try decoder.decode(IdOnly.self, from: data).id)
+        case "bye":
+            return .bye(try decoder.decode(Bye.self, from: data))
         case "error":
             return .error(try decoder.decode(ErrorMessage.self, from: data))
         case "capture.request":
@@ -122,6 +136,7 @@ enum ControlMessageCodec {
         case .refuse(let refuse): return try tagged("refuse", refuse)
         case .ping(let id): return try tagged("ping", ["id": id])
         case .pong(let id): return try tagged("pong", ["id": id])
+        case .bye(let bye): return try tagged("bye", bye)
         case .error(let error): return try tagged("error", error)
         case .captureRequest(let m): return try tagged("capture.request", m)
         case .captureBegin(let m): return try tagged("capture.begin", m)

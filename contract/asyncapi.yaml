@@ -6,6 +6,13 @@
 # the frame layer below is normative prose because no schema standard
 # expresses binary framing.
 #
+# The semantics deliberately mirror RFC 6455 (WebSocket): control/bulk maps
+# to text/binary, ping/pong and bye map to the WS control frames, and the
+# contract revision plays the subprotocol role. The guest wire is NOT literal
+# WebSocket (no HTTP upgrade, no client masking, fixed 8-byte header — the
+# classic side stays minimal); the mirroring exists so a host-side ws://
+# bridge for modern clients is a projection, not a translation.
+#
 # Frame header (8 bytes, big-endian):
 #
 #   offset  size  field     meaning
@@ -14,17 +21,42 @@
 #   2       u16   transfer  bulk correlation id; 0 on control frames
 #   4       u32   length    payload bytes that follow (max 32768)
 #
-# Rules:
+# Transport:
+# - Frames run over any reliable ordered byte stream. Today that is plain
+#   TCP; a future secure transport (pinned-key TLS) wraps the stream below
+#   the frame layer and changes nothing in this document.
+# - Secure transport, when it exists, is selected per-port like ws://wss://.
+#   There is NO in-band upgrade (no STARTTLS-style negotiation), ever.
+# - Each frame is written as ONE contiguous send (header + payload together).
+#   Back-to-back small writes are dropped by real classic-Mac NICs (the
+#   PB1400c Farallon driver drops the second frame of a TX burst).
+#
+# Connection rules:
 # - The guest dials the host and sends `hello` first; the host answers
 #   `hello` (accept) or `refuse` and closes. Nothing else may precede hello.
+#   The handshake is per-connection: a reconnect re-hellos.
 # - `contract` is a single integer revision. Unequal revisions => refuse.
 #   Breaking changes bump it; additive optional fields do not.
+# - The host serves ONE guest at a time (v1): a second dial is refused with
+#   reason "busy: <connected guest name>". Host internals stay
+#   session-shaped so multi-guest later is a UI decision, not a rework.
 # - Control messages that expect an answer carry `id`; answers echo it.
 # - Bulk transfers are announced on control (`capture.begin`), stream on the
 #   bulk channel in chunks (default 8192 bytes, negotiable in hello), and
 #   finish with the END flag plus a closing control message.
-# - Idle keepalive: `ping` after 30s of silence, answered by `pong`;
-#   two unanswered pings = dead connection, close and surface it honestly.
+# - Keepalive is GUEST-driven: the guest sends `ping` after 30s of wire
+#   silence; the host answers `pong` and initiates no pings of its own
+#   (pinging a wedged classic endpoint just piles bytes into a dead hole).
+#   Death declaration: guest after 2 unanswered pings (~65s); host passively
+#   after ~75s without any traffic. Both sides surface it honestly.
+# - Graceful exit sends `bye {code, reason?}` before closing (guest then
+#   drains and uses OTSndOrderlyDisconnect — unannounced closes leak
+#   T_DISCONNECT indications on OS 9). bye is best-effort; crashes and lid
+#   closes never send it, so it complements the keepalive, never replaces
+#   it. Codes (WS-close-code discipline, small and stable): "normal",
+#   "shutting-down", "protocol-error".
+# - The guest auto-reconnects with capped backoff (2s doubling to 30s)
+#   while its app is running.
 
 asyncapi: 3.0.0
 
@@ -44,6 +76,7 @@ channels:
       refuse: { $ref: "#/components/messages/refuse" }
       ping: { $ref: "#/components/messages/ping" }
       pong: { $ref: "#/components/messages/pong" }
+      bye: { $ref: "#/components/messages/bye" }
       error: { $ref: "#/components/messages/error" }
       captureRequest: { $ref: "#/components/messages/captureRequest" }
       captureBegin: { $ref: "#/components/messages/captureBegin" }
@@ -85,6 +118,9 @@ components:
     pong:
       name: pong
       payload: { $ref: "#/components/schemas/Pong" }
+    bye:
+      name: bye
+      payload: { $ref: "#/components/schemas/Bye" }
     error:
       name: error
       payload: { $ref: "#/components/schemas/Error" }
@@ -149,6 +185,21 @@ components:
       properties:
         type: { const: pong }
         id: { type: integer }
+    Bye:
+      type: object
+      required: [type, code]
+      additionalProperties: false
+      properties:
+        type: { const: bye }
+        code:
+          enum: [normal, shutting-down, protocol-error]
+          description: >
+            Why the sender is closing, WS-close-code style. Distinguishes a
+            calm "guest quit" from a failure in the peer's UI and lets the
+            peer free state without waiting out the keepalive window.
+        reason:
+          type: string
+          description: Optional human-readable detail; shown, never parsed.
     Error:
       type: object
       required: [type, code, message]
