@@ -280,8 +280,9 @@ final class GuestCommandTests: XCTestCase {
                 XCTAssertEqual(request.name, "gestalt")
                 try? guest.send(.commandResult(CommandResult(
                     id: request.id, ok: true,
-                    output: ["system": "9.1", "ramMB": "64",
-                             "carbonLib": "1.6", "machineType": "406"],
+                    output: ["snapshot": [["System", "Mac OS 9.1"],
+                                          ["CarbonLib", "1.6"]],
+                             "cpu": [["Processor", "PowerPC 603e"]]],
                     error: nil)))
             }
         }
@@ -300,7 +301,7 @@ final class GuestCommandTests: XCTestCase {
             try await Task.sleep(nanoseconds: 20_000_000)
         }
         XCTAssertEqual(received?.ok, true)
-        XCTAssertEqual(received?.output?["carbonLib"], "1.6")
+        XCTAssertEqual(received?.output?["cpu"]?.first?.last, "PowerPC 603e")
         listener.stop()
     }
 
@@ -331,7 +332,9 @@ final class ConsoleModelTests: XCTestCase {
             if case .commandRequest(let req) = message {
                 try? guest.send(.commandResult(CommandResult(
                     id: req.id, ok: true,
-                    output: ["system": "9.1", "carbonLib": "1.6"],
+                    output: ["snapshot": [["System", "Mac OS 9.1"],
+                                          ["CarbonLib", "1.6"]],
+                             "cpu": [["Processor", "PowerPC 603e"]]],
                     error: nil)))
             }
         }
@@ -372,6 +375,16 @@ final class ConsoleModelTests: XCTestCase {
         console.submit()
         XCTAssertEqual(console.lines.filter {
             $0.text.contains("Usage: gestalt") }.count, 2)
+
+        // A domain flag shows only that group.
+        console.input = "gestalt --cpu"
+        console.submit()
+        let cpuDeadline = Date().addingTimeInterval(5)
+        while console.lines.allSatisfy({ !$0.text.contains("603e") }),
+              Date() < cpuDeadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertTrue(console.lines.contains { $0.text.contains("PowerPC 603e") })
         listener.stop()
     }
 }

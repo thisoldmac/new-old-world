@@ -307,21 +307,27 @@ components:
   x-commands:
     gestalt:
       description: >
-        The guest's own account of itself, via the Gestalt Manager.
+        The guest's own account of itself, via the Gestalt Manager. Always
+        returns every group; the console shows a slice (default = snapshot,
+        or one of the domain groups, or --full for all). --save and --help
+        are console affordances and never reach the wire.
       args: {}
       output:
         type: object
-        required: [system, machineType, ramMB, carbonLib]
+        description: >
+          Grouped, ordered rows. Each group maps to an array of [label, value]
+          string pairs, preserving order (unlike a plain object).
         properties:
-          system:
-            type: string
-            description: Mac OS version, e.g. "9.1".
-          machineType:
-            type: integer
-            description: gestaltMachineType raw id.
-          ramMB:
-            type: integer
-            description: Physical RAM in megabytes.
-          carbonLib:
-            type: string
-            description: CarbonLib version, e.g. "1.6".
+          snapshot: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+          cpu: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+          memory: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+          os: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+          network: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+          hw: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+      x-rowArray:
+        type: array
+        items:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items: { type: string }

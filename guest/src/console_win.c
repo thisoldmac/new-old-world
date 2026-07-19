@@ -55,56 +55,6 @@ static int json_find_string(const char *json, const char *key,
     return 1;
 }
 
-/* Render every "key":"value" pair inside the result's output object, one
-   aligned line each — generic, so new commands need no console changes. */
-static void render_output(const char *result)
-{
-    const char *p = strstr(result, "\"output\":{");
-    char line[kMaxCols];
-    char key[48];
-    char value[80];
-
-    if (p == NULL) {
-        append_line("(no output)");
-        return;
-    }
-    p += strlen("\"output\":{");
-    for (;;) {
-        long n = 0;
-        while (*p != '\0' && *p != '"' && *p != '}') {
-            ++p;
-        }
-        if (*p != '"') {
-            break;
-        }
-        ++p;
-        while (*p != '\0' && *p != '"' && n + 1 < (long)sizeof key) {
-            key[n++] = *p++;
-        }
-        key[n] = '\0';
-        if (*p == '"') {
-            ++p;
-        }
-        while (*p != '\0' && *p != '"' && *p != '}') {
-            ++p;                       /* skip ':' and whitespace */
-        }
-        if (*p != '"') {
-            break;
-        }
-        ++p;
-        n = 0;
-        while (*p != '\0' && *p != '"' && n + 1 < (long)sizeof value) {
-            value[n++] = *p++;
-        }
-        value[n] = '\0';
-        if (*p == '"') {
-            ++p;
-        }
-        snprintf(line, sizeof line, "  %-12.12s %.60s", key, value);
-        append_line(line);
-    }
-}
-
 /* --- command line: name + unix-style flags ------------------------------ */
 
 static const char *next_token(const char *p, char *out, long cap)
@@ -127,10 +77,11 @@ static void help_for(const char *name)
 
     if (strcmp(name, "gestalt") == 0) {
         append_line("gestalt - report this Mac's identity");
-        append_line("  Usage: gestalt");
-        append_line("  Reports the running system version, the Gestalt");
-        append_line("  machine type, physical RAM, and the installed");
-        append_line("  CarbonLib version.");
+        append_line("  Usage: gestalt [group] [--save]");
+        append_line("  With no group, prints a short snapshot. Groups:");
+        append_line("    --cpu --memory --os --network --hardware");
+        append_line("    --full        every group");
+        append_line("    --save        also write the output to the desktop");
     } else if (strcmp(name, "help") == 0) {
         append_line("help - list commands; \"help <cmd>\" for one command");
     } else if (strcmp(name, "clear") == 0) {
@@ -144,10 +95,123 @@ static void help_for(const char *name)
 static void help_list(void)
 {
     append_line("Commands on this Mac:");
-    append_line("  gestalt   report system, model, RAM, CarbonLib");
+    append_line("  gestalt   report this Mac (add a group or --full)");
     append_line("  help      show this list (\"help <cmd>\" for details)");
     append_line("  clear     clear the console scrollback");
     append_line("Add --help or -h to any command for details.");
+}
+
+/* --- gestalt rendering + save ------------------------------------------- */
+
+/* Collects the lines a gestalt view produces, so they can be both shown and
+   (optionally) saved. Maps a --flag to a group name, or NULL for snapshot. */
+static const char *flag_to_group(const char *flag)
+{
+    if (strcmp(flag, "--cpu") == 0) { return "cpu"; }
+    if (strcmp(flag, "--memory") == 0) { return "memory"; }
+    if (strcmp(flag, "--os") == 0) { return "os"; }
+    if (strcmp(flag, "--network") == 0) { return "network"; }
+    if (strcmp(flag, "--hardware") == 0) { return "hw"; }
+    return NULL;
+}
+
+/* Formats one group's rows into out via a callback-free append; returns the
+   number of lines written through `emit`. */
+static void gestalt_group_lines(const GestaltRow *rows, int count,
+                                const char *group,
+                                void (*emit)(const char *))
+{
+    int i;
+    char line[kMaxCols];
+
+    for (i = 0; i < count; ++i) {
+        if (strcmp(rows[i].group, group) != 0) {
+            continue;
+        }
+        snprintf(line, sizeof line, "  %-14.14s %.60s",
+                 rows[i].label, rows[i].value);
+        emit(line);
+    }
+}
+
+/* Writes text lines to "NOW gestalt.txt" on the desktop. Returns 0 on ok. */
+static OSErr gestalt_save(const GestaltRow *rows, int count, Boolean full,
+                          const char *single_group)
+{
+    FSSpec spec;
+    short vref, ref;
+    long dirid;
+    OSErr err;
+    int i, g;
+    char line[kMaxCols + 2];
+    long len;
+
+    err = FindFolder(kOnSystemDisk, kDesktopFolderType, kCreateFolder,
+                     &vref, &dirid);
+    if (err != noErr) {
+        return err;
+    }
+    err = FSMakeFSSpec(vref, dirid,
+                       (ConstStr255Param)"\pNOW gestalt.txt", &spec);
+    if (err != noErr && err != fnfErr) {
+        return err;
+    }
+    FSpCreate(&spec, 'ttxt', 'TEXT', smSystemScript);
+    err = FSpOpenDF(&spec, fsRdWrPerm, &ref);
+    if (err != noErr) {
+        return err;
+    }
+    SetEOF(ref, 0);
+    for (i = 0; i < count; ++i) {
+        Boolean want;
+        if (single_group != NULL) {
+            want = (strcmp(rows[i].group, single_group) == 0);
+        } else if (full) {
+            want = (strcmp(rows[i].group, "snapshot") != 0);
+        } else {
+            want = (strcmp(rows[i].group, "snapshot") == 0);
+        }
+        if (!want) {
+            continue;
+        }
+        snprintf(line, sizeof line, "%-16s%s\r", rows[i].label, rows[i].value);
+        len = (long)strlen(line);
+        FSWrite(ref, &len, line);
+    }
+    (void)g;
+    FSClose(ref);
+    return noErr;
+}
+
+static void run_gestalt_view(const char *group, Boolean full, Boolean save)
+{
+    GestaltRow rows[kGestaltMaxRows];
+    int count = now_gestalt_gather(rows, kGestaltMaxRows);
+    char line[kMaxCols];
+    OSErr err;
+    int g;
+
+    if (full) {
+        for (g = 0; kGestaltFullGroups[g] != NULL; ++g) {
+            snprintf(line, sizeof line, "[%s]", kGestaltFullGroups[g]);
+            append_line(line);
+            gestalt_group_lines(rows, count, kGestaltFullGroups[g],
+                                append_line);
+        }
+    } else if (group != NULL) {
+        gestalt_group_lines(rows, count, group, append_line);
+    } else {
+        gestalt_group_lines(rows, count, "snapshot", append_line);
+    }
+    if (save) {
+        err = gestalt_save(rows, count, full, group);
+        if (err == noErr) {
+            append_line("Saved to the desktop: \"NOW gestalt.txt\"");
+        } else {
+            snprintf(line, sizeof line, "Save failed (error %d)", err);
+            append_line(line);
+        }
+    }
 }
 
 static void run_command(const char *input)
@@ -159,7 +223,10 @@ static void run_command(const char *input)
     char result[512];
     char message[96];
     const char *p;
+    const char *group = NULL;
     Boolean want_help = false;
+    Boolean full = false;
+    Boolean save = false;
 
     snprintf(line, sizeof line, "> %s", input);
     append_line(line);
@@ -176,7 +243,13 @@ static void run_command(const char *input)
         }
         if (strcmp(tok, "-h") == 0 || strcmp(tok, "--help") == 0) {
             want_help = true;
-        } else if (target[0] == '\0') {
+        } else if (strcmp(tok, "--full") == 0) {
+            full = true;
+        } else if (strcmp(tok, "--save") == 0) {
+            save = true;
+        } else if (flag_to_group(tok) != NULL) {
+            group = flag_to_group(tok);
+        } else if (target[0] == '\0' && tok[0] != '-') {
             strncpy(target, tok, sizeof target - 1);
             target[sizeof target - 1] = '\0';
         }
@@ -198,10 +271,12 @@ static void run_command(const char *input)
         help_list();
         return;
     }
+    if (strcmp(name, "gestalt") == 0) {
+        run_gestalt_view(group, full, save);
+        return;
+    }
     now_command_run(name, 0, result, sizeof result);
-    if (strstr(result, "\"ok\":true") != NULL) {
-        render_output(result);
-    } else if (json_find_string(result, "message", message, sizeof message)) {
+    if (json_find_string(result, "message", message, sizeof message)) {
         snprintf(line, sizeof line, "%s", message);
         append_line(line);
     } else {

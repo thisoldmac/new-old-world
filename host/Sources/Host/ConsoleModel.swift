@@ -94,7 +94,85 @@ final class ConsoleModel: ObservableObject {
             lines = []
             return
         }
+        if name == "gestalt" {
+            runGestalt(rest)
+            return
+        }
         run(name)
+    }
+
+    private static let fullGroups = ["cpu", "memory", "os", "network", "hw"]
+
+    private static func flagToGroup(_ flag: String) -> String? {
+        switch flag {
+        case "--cpu": return "cpu"
+        case "--memory": return "memory"
+        case "--os": return "os"
+        case "--network": return "network"
+        case "--hardware": return "hw"
+        default: return nil
+        }
+    }
+
+    private func runGestalt(_ rest: [String]) {
+        let full = rest.contains("--full")
+        let save = rest.contains("--save")
+        let group = rest.compactMap(Self.flagToGroup).first
+        // The command always returns every group; the console shows a slice.
+        listener.runCommand("gestalt") { [weak self] result in
+            self?.renderGestalt(result, group: group, full: full, save: save)
+        }
+    }
+
+    private func renderGestalt(_ result: CommandResult, group: String?,
+                               full: Bool, save: Bool) {
+        guard result.ok, let output = result.output else {
+            let error = result.error
+            append(.failure, "gestalt: \(error?.message ?? "failed") "
+                + "[\(error?.code ?? "error")]")
+            return
+        }
+        var rendered: [String] = []
+        func emit(_ rows: [[String]]) {
+            let width = rows.map { $0.first?.count ?? 0 }.max() ?? 0
+            for row in rows where row.count >= 2 {
+                let label = row[0].padding(toLength: width, withPad: " ",
+                                           startingAt: 0)
+                rendered.append("  \(label)  \(row[1])")
+            }
+        }
+        if full {
+            for name in Self.fullGroups {
+                guard let rows = output[name] else { continue }
+                rendered.append("[\(name)]")
+                emit(rows)
+            }
+        } else if let group {
+            if let rows = output[group] {
+                emit(rows)
+            } else {
+                rendered.append("no such group: \(group)")
+            }
+        } else if let rows = output["snapshot"] {
+            emit(rows)
+        }
+        for line in rendered { append(.output, line) }
+        if save {
+            saveToDisk(rendered)
+        }
+    }
+
+    private func saveToDisk(_ lines: [String]) {
+        let url = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Desktop/NOW gestalt.txt")
+        let body = lines.map { $0.trimmingCharacters(in: .whitespaces) }
+            .joined(separator: "\n") + "\n"
+        do {
+            try body.write(to: url, atomically: true, encoding: .utf8)
+            append(.notice, "Saved to \(url.path)")
+        } catch {
+            append(.failure, "Save failed: \(error.localizedDescription)")
+        }
     }
 
     private func showHelpList() {
@@ -127,21 +205,12 @@ final class ConsoleModel: ObservableObject {
     }
 
     private func render(_ command: String, _ result: CommandResult) {
-        if result.ok {
-            guard let output = result.output, !output.isEmpty else {
-                append(.output, "(no output)")
-                return
-            }
-            let width = output.keys.map(\.count).max() ?? 0
-            for key in output.keys.sorted() {
-                let padded = key.padding(toLength: width, withPad: " ",
-                                         startingAt: 0)
-                append(.output, "\(padded)  \(output[key] ?? "")")
-            }
+        // Generic path for future non-gestalt commands. gestalt renders via
+        // renderGestalt; the only thing reaching here today is an error.
+        if let error = result.error {
+            append(.failure, "\(command): \(error.message) [\(error.code)]")
         } else {
-            let error = result.error
-            append(.failure, "\(command): \(error?.message ?? "failed") "
-                + "[\(error?.code ?? "error")]")
+            append(.output, "(ok)")
         }
     }
 

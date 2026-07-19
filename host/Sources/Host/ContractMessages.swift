@@ -67,9 +67,9 @@ struct CommandResult: Codable, Equatable, Sendable {
 
     var id: Int
     var ok: Bool
-    /// Flat string map is enough for every declared command today; a nested
-    /// output would grow this type alongside the contract.
-    var output: [String: String]?
+    /// Grouped, ordered rows: group name -> [[label, value], ...]. gestalt
+    /// returns snapshot/cpu/memory/os/network/hw; the console shows a slice.
+    var output: [String: [[String]]]?
     var error: CommandError?
 }
 

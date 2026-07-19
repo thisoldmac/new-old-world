@@ -128,11 +128,11 @@ static int json_type_is(const char *json, const char *type)
    real classic NICs (PB1400c Farallon TX burst drop). */
 static int send_control(const char *json)
 {
-    unsigned char buffer[512 + kNowFrameHeaderBytes];
+    unsigned char buffer[4096 + kNowFrameHeaderBytes];
     unsigned long length = (unsigned long)strlen(json);
     OTResult sent;
 
-    if (g.ep == kOTInvalidEndpointRef || length > 512) {
+    if (g.ep == kOTInvalidEndpointRef || length > 4096) {
         return 0;
     }
     buffer[0] = kNowChannelControl;
@@ -420,7 +420,7 @@ static int handle_frame(const char *reply)
     }
     if (json_type_is(reply, "command.request")) {
         char name[48];
-        char result[512];
+        char result[3072];
         long id = json_find_int(reply, "id", 0);
 
         if (!json_find_string(reply, "name", name, sizeof name)) {
