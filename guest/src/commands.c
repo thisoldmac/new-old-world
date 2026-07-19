@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "machine_names.h"
+
 const char *const kGestaltFullGroups[] = {
     "cpu", "memory", "os", "network", "hw", NULL
 };
@@ -94,7 +96,16 @@ static void machine_model(char *out, long cap)
         out[n] = '\0';
         return;
     }
+    /* The classic fleet (a real PowerBook 1400 among them) answers neither
+       native mechanism, so fall back to the machineType name table. */
     if (Gestalt(gestaltMachineType, &v) == noErr) {
+        int i;
+        for (i = 0; i < kNowMachineNameCount; ++i) {
+            if (kNowMachineNames[i].id == v) {
+                snprintf(out, cap, "%s", kNowMachineNames[i].name);
+                return;
+            }
+        }
         snprintf(out, cap, "Unknown (id %ld)", v);
     } else {
         snprintf(out, cap, "Unknown");
