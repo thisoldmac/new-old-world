@@ -23,7 +23,7 @@ final class ConsoleModel: ObservableObject {
     }
 
     /// Declared commands (contract x-commands) plus console built-ins.
-    static let commands = ["gestalt"]
+    static let commands = ["gestalt", "screenshot"]
 
     /// Per-command docs, mirroring the contract's x-commands descriptions.
     /// help and --help render from here — documentation never hits the wire.
@@ -40,6 +40,14 @@ final class ConsoleModel: ObservableObject {
                    "  Reports the running system version, the Gestalt",
                    "  machine type, physical RAM, and the installed",
                    "  CarbonLib version."]),
+        "screenshot": .init(
+            summary: "capture the guest's screen to its desktop",
+            help: ["screenshot — capture the connected Mac's screen",
+                   "  Usage: screenshot [--depth {1,2,4,8,16,32}] [--no-save]",
+                   "  The guest captures and saves a packed PICT to its own",
+                   "  desktop (pixels do not cross the wire yet) and returns",
+                   "  size / compression / timing measurements.",
+                   "  --no-save measures without writing a file."]),
         "help": .init(
             summary: "show this list (\"help <cmd>\" for details)",
             help: ["help — list commands, or \"help <cmd>\" for one"]),
@@ -98,7 +106,45 @@ final class ConsoleModel: ObservableObject {
             runGestalt(rest)
             return
         }
+        if name == "screenshot" {
+            runScreenshot(rest)
+            return
+        }
         run(name)
+    }
+
+    private func runScreenshot(_ rest: [String]) {
+        var args: [String: String] = [:]
+        if let i = rest.firstIndex(of: "--depth"), i + 1 < rest.count {
+            args["depth"] = rest[i + 1]
+        }
+        if rest.contains("--no-save") {
+            args["save"] = "false"
+        }
+        listener.runCommand("screenshot",
+                            args: args.isEmpty ? nil : args) { [weak self] result in
+            self?.renderRows(result, command: "screenshot")
+        }
+    }
+
+    /// Generic grouped-rows renderer for commands whose output is
+    /// group -> [[label, value]] (everything except gestalt's sliced view).
+    private func renderRows(_ result: CommandResult, command: String) {
+        guard result.ok, let output = result.output else {
+            let error = result.error
+            append(.failure, "\(command): \(error?.message ?? "failed") "
+                + "[\(error?.code ?? "error")]")
+            return
+        }
+        for group in output.keys.sorted() {
+            guard let rows = output[group] else { continue }
+            let width = rows.map { $0.first?.count ?? 0 }.max() ?? 0
+            for row in rows where row.count >= 2 {
+                let label = row[0].padding(toLength: width, withPad: " ",
+                                           startingAt: 0)
+                append(.output, "  \(label)  \(row[1])")
+            }
+        }
     }
 
     private static let fullGroups = ["cpu", "memory", "os", "network", "hw"]

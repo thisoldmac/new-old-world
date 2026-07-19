@@ -12,16 +12,23 @@ typedef struct {
     short format;
     unsigned short port;
     char host[64];
-} PrefsRecordV1;
+} PrefsRecordV1;                      /* v2 appended window data; both read
+                                         only for host/port now */
 
 typedef struct {
     OSType magic;
-    short format;
+    short format;                     /* 3 */
     unsigned short port;
     char host[64];
-    short window_count;
-    NowWindowState windows[kNowMaxSavedWindows];
-} PrefsRecordV2;
+    short shot_depth;
+    short shot_pack;
+    short chunk_kb;
+    short pace_ms;
+    short panel_open;
+    short console_open;
+    Rect panel_rect;
+    Rect console_rect;
+} PrefsRecordV3;
 
 static OSErr prefs_spec(FSSpec *spec)
 {
@@ -38,20 +45,36 @@ static OSErr prefs_spec(FSSpec *spec)
                         (ConstStr255Param)"\pNew Old World Prefs", spec);
 }
 
+static void set_defaults(NowPrefs *prefs)
+{
+    memset(prefs, 0, sizeof *prefs);
+    strcpy(prefs->host, "10.0.2.2");
+    prefs->port = kNowDefaultHostPort;
+    prefs->shot_depth = 8;
+    prefs->shot_pack = true;
+    prefs->chunk_kb = 8;
+    prefs->pace_ms = 0;
+    prefs->panel_open = true;
+    prefs->console_open = false;
+    SetRect(&prefs->panel_rect, 0, 0, 0, 0);
+    SetRect(&prefs->console_rect, 0, 0, 0, 0);
+}
+
+static Boolean valid_depth(short depth)
+{
+    return depth == 1 || depth == 2 || depth == 4 || depth == 8
+        || depth == 16 || depth == 32;
+}
+
 void now_prefs_load(NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV2);
-    PrefsRecordV2 record;
+    long count = sizeof(PrefsRecordV3);
+    PrefsRecordV3 record;
     OSErr err;
-    int i;
 
-    memset(prefs, 0, sizeof *prefs);
-    strcpy(prefs->host, "10.0.2.2");
-    prefs->port = kNowDefaultHostPort;
-    prefs->window_count = -1;
-
+    set_defaults(prefs);
     err = prefs_spec(&spec);
     if (err != noErr && err != fnfErr) {
         return;
@@ -66,45 +89,50 @@ void now_prefs_load(NowPrefs *prefs)
         || record.magic != kPrefsMagic || record.port == 0) {
         return;
     }
-    if (record.format == 1 && count >= (long)sizeof(PrefsRecordV1)) {
-        record.host[sizeof record.host - 1] = '\0';
-        strcpy(prefs->host, record.host);
-        prefs->port = record.port;
-        return;                       /* window_count stays -1: first run */
-    }
-    if (record.format != 2 || count < (long)sizeof(PrefsRecordV2)) {
-        return;
-    }
     record.host[sizeof record.host - 1] = '\0';
     strcpy(prefs->host, record.host);
     prefs->port = record.port;
-    if (record.window_count >= 0
-        && record.window_count <= kNowMaxSavedWindows) {
-        prefs->window_count = record.window_count;
-        for (i = 0; i < record.window_count; ++i) {
-            prefs->windows[i] = record.windows[i];
-        }
+    if (record.format < 3
+        || count < (long)sizeof(PrefsRecordV3)) {
+        return;                       /* v1/v2: connection only, rest default */
     }
+    if (valid_depth(record.shot_depth)) {
+        prefs->shot_depth = record.shot_depth;
+    }
+    prefs->shot_pack = record.shot_pack != 0;
+    if (record.chunk_kb >= 1 && record.chunk_kb <= 32) {
+        prefs->chunk_kb = record.chunk_kb;
+    }
+    if (record.pace_ms >= 0 && record.pace_ms <= 100) {
+        prefs->pace_ms = record.pace_ms;
+    }
+    prefs->panel_open = record.panel_open != 0;
+    prefs->console_open = record.console_open != 0;
+    prefs->panel_rect = record.panel_rect;
+    prefs->console_rect = record.console_rect;
 }
 
 OSErr now_prefs_save(const NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV2);
-    PrefsRecordV2 record;
+    long count = sizeof(PrefsRecordV3);
+    PrefsRecordV3 record;
     OSErr err;
-    int i;
 
     memset(&record, 0, sizeof record);
     record.magic = kPrefsMagic;
-    record.format = 2;
+    record.format = 3;
     record.port = prefs->port;
     strncpy(record.host, prefs->host, sizeof record.host - 1);
-    record.window_count = prefs->window_count < 0 ? 0 : prefs->window_count;
-    for (i = 0; i < record.window_count && i < kNowMaxSavedWindows; ++i) {
-        record.windows[i] = prefs->windows[i];
-    }
+    record.shot_depth = prefs->shot_depth;
+    record.shot_pack = prefs->shot_pack ? 1 : 0;
+    record.chunk_kb = prefs->chunk_kb;
+    record.pace_ms = prefs->pace_ms;
+    record.panel_open = prefs->panel_open ? 1 : 0;
+    record.console_open = prefs->console_open ? 1 : 0;
+    record.panel_rect = prefs->panel_rect;
+    record.console_rect = prefs->console_rect;
 
     err = prefs_spec(&spec);
     if (err != noErr && err != fnfErr) {

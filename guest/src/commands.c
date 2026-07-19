@@ -3,9 +3,13 @@
 #include <Carbon.h>
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "machine_names.h"
+#include "capture.h"
+#include "prefs.h"
+#include "screenshot.h"
 
 const char *const kGestaltFullGroups[] = {
     "cpu", "memory", "os", "network", "hw", NULL
@@ -317,10 +321,87 @@ static void run_gestalt(long id, char *out, long cap)
     }
 }
 
-void now_command_run(const char *name, long id, char *out, long cap)
+static int json_arg_string(const char *json, const char *key,
+                           char *out_s, long out_cap)
+{
+    char pattern[48];
+    const char *p;
+    long n = 0;
+
+    if (json == NULL) {
+        return 0;
+    }
+    snprintf(pattern, sizeof pattern, "\"%s\":\"", key);
+    p = strstr(json, pattern);
+    if (p == NULL) {
+        return 0;
+    }
+    p += strlen(pattern);
+    while (*p != '\0' && *p != '"' && n + 1 < out_cap) {
+        out_s[n++] = *p++;
+    }
+    out_s[n] = '\0';
+    return 1;
+}
+
+static void run_screenshot(const char *request_json, long id,
+                           char *out, long cap)
+{
+    NowPrefs prefs;
+    ShotStats stats;
+    char err[96];
+    char value[16];
+    short depth;
+    Boolean save = true;
+    long pos;
+
+    now_prefs_load(&prefs);
+    depth = prefs.shot_depth;
+    if (json_arg_string(request_json, "depth", value, sizeof value)) {
+        long d = strtol(value, NULL, 10);
+        if (capture_depth_is_supported((short)d)) {
+            depth = (short)d;
+        }
+    }
+    if (json_arg_string(request_json, "save", value, sizeof value)
+        && strcmp(value, "false") == 0) {
+        save = false;
+    }
+
+    if (now_screenshot(depth, save, &stats, err, sizeof err) != 0) {
+        snprintf(out, cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+                 "\"error\":{\"code\":\"screenshot-failed\","
+                 "\"message\":\"%s\"}}", id, err);
+        return;
+    }
+    pos = snprintf(out, cap,
+                   "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                   "\"output\":{\"screenshot\":["
+                   "[\"Size\",\"%dx%d\"],"
+                   "[\"Depth\",\"%d-bit\"],"
+                   "[\"Raw\",\"%ld KB\"],"
+                   "[\"PICT\",\"%ld KB\"],"
+                   "[\"Capture\",\"%ld ms\"],"
+                   "[\"Encode\",\"%ld ms\"],"
+                   "[\"Saved\",\"%s\"]"
+                   "]}}",
+                   id, stats.width, stats.height, stats.depth,
+                   stats.raw_bytes / 1024, stats.pict_bytes / 1024,
+                   stats.capture_ms, stats.encode_ms,
+                   save ? stats.saved_name : "(not saved)");
+    (void)pos;
+}
+
+void now_command_run(const char *name, const char *request_json, long id,
+                     char *out, long cap)
 {
     if (strcmp(name, "gestalt") == 0) {
         run_gestalt(id, out, cap);
+        return;
+    }
+    if (strcmp(name, "screenshot") == 0) {
+        run_screenshot(request_json, id, out, cap);
         return;
     }
     snprintf(out, cap,

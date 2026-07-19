@@ -331,3 +331,25 @@ components:
           minItems: 2
           maxItems: 2
           items: { type: string }
+    screenshot:
+      description: >
+        Capture the guest's screen. Slice one: the guest captures, encodes a
+        packed PICT, and (unless save=false) writes it to its own desktop —
+        pixels do not cross the wire yet; the result is the measurement rows.
+        The bulk-channel transfer variant is the next contract step.
+      args:
+        type: object
+        properties:
+          depth:
+            type: string
+            enum: ["1", "2", "4", "8", "16", "32"]
+            description: Capture depth; defaults to the guest panel setting.
+          save:
+            type: string
+            enum: ["true", "false"]
+            description: false = measure only, write nothing.
+      output:
+        type: object
+        properties:
+          screenshot:
+            $ref: "#/components/x-commands/gestalt/x-rowArray"

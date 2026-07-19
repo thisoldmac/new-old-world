@@ -9,22 +9,22 @@ typedef struct {
     short depth;
     short row_bytes;
     long pixel_bytes;
-    unsigned long sequence;
 } CaptureImage;
 
 enum {
     kCaptureOK = 0,
     kCaptureInvalidDepth = -1,
-    kCaptureEmptyWindow = -2,
+    kCaptureNoScreen = -2,
     kCaptureNoMemory = -3,
     kCapturePixelsUnavailable = -4
 };
 
 Boolean capture_depth_is_supported(short depth);
-int capture_window(WindowRef window, short depth, unsigned long sequence,
-                   CaptureImage *image);
-void capture_image_draw(const CaptureImage *image, const Rect *destination);
+
+/* Captures the entire main screen into a fresh GWorld at `depth` (QuickDraw
+   converts during the blit). Caller owns the image; dispose when done. */
+int capture_screen(short depth, CaptureImage *image);
+
 void capture_image_dispose(CaptureImage *image);
 
 #endif
-

@@ -4,36 +4,36 @@
 
 Boolean capture_depth_is_supported(short depth)
 {
-    return depth == 1 || depth == 8 || depth == 16 || depth == 32;
+    return depth == 1 || depth == 2 || depth == 4 || depth == 8
+        || depth == 16 || depth == 32;
 }
 
-int capture_window(WindowRef window, short depth, unsigned long sequence,
-                   CaptureImage *image)
+int capture_screen(short depth, CaptureImage *image)
 {
-    Rect source_bounds;
-    Rect capture_bounds;
+    GDHandle device;
+    PixMapHandle screen_pix;
+    Rect screen_bounds;
     GWorldPtr world = NULL;
     PixMapHandle pixels;
     CGrafPtr saved_port;
     GDHandle saved_device;
-    const BitMap *source;
     OSErr err;
 
     memset(image, 0, sizeof *image);
     if (!capture_depth_is_supported(depth)) {
         return kCaptureInvalidDepth;
     }
-
-    GetWindowPortBounds(window, &source_bounds);
-    if (source_bounds.right <= source_bounds.left
-        || source_bounds.bottom <= source_bounds.top) {
-        return kCaptureEmptyWindow;
+    device = GetMainDevice();
+    if (device == NULL) {
+        return kCaptureNoScreen;
     }
-    SetRect(&capture_bounds, 0, 0,
-            (short)(source_bounds.right - source_bounds.left),
-            (short)(source_bounds.bottom - source_bounds.top));
+    screen_pix = (**device).gdPMap;
+    if (screen_pix == NULL) {
+        return kCaptureNoScreen;
+    }
+    screen_bounds = (**screen_pix).bounds;
 
-    err = NewGWorld(&world, depth, &capture_bounds, NULL, NULL, useTempMem);
+    err = NewGWorld(&world, depth, &screen_bounds, NULL, NULL, useTempMem);
     if (err != noErr || world == NULL) {
         return kCaptureNoMemory;
     }
@@ -43,41 +43,23 @@ int capture_window(WindowRef window, short depth, unsigned long sequence,
         return kCapturePixelsUnavailable;
     }
 
-    source = GetPortBitMapForCopyBits(GetWindowPort(window));
     GetGWorld(&saved_port, &saved_device);
     SetGWorld(world, NULL);
-    CopyBits(source, GetPortBitMapForCopyBits(world),
-             &source_bounds, &capture_bounds, srcCopy, NULL);
+    LockPixels(screen_pix);
+    CopyBits((BitMapPtr)*screen_pix,
+             GetPortBitMapForCopyBits(world),
+             &screen_bounds, &screen_bounds, srcCopy, NULL);
+    UnlockPixels(screen_pix);
     SetGWorld(saved_port, saved_device);
 
     image->world = world;
-    image->bounds = capture_bounds;
+    image->bounds = screen_bounds;
     image->depth = depth;
-    image->row_bytes = (short)((*pixels)->rowBytes & 0x3FFF);
+    image->row_bytes = (short)((**pixels).rowBytes & 0x3FFF);
     image->pixel_bytes = (long)image->row_bytes
-        * (capture_bounds.bottom - capture_bounds.top);
-    image->sequence = sequence;
+        * (screen_bounds.bottom - screen_bounds.top);
     UnlockPixels(pixels);
     return kCaptureOK;
-}
-
-void capture_image_draw(const CaptureImage *image, const Rect *destination)
-{
-    PixMapHandle pixels;
-    CGrafPtr port;
-
-    if (image == NULL || image->world == NULL) {
-        return;
-    }
-    pixels = GetGWorldPixMap(image->world);
-    if (pixels == NULL || !LockPixels(pixels)) {
-        return;
-    }
-    GetPort(&port);
-    CopyBits(GetPortBitMapForCopyBits(image->world),
-             GetPortBitMapForCopyBits(port),
-             &image->bounds, destination, srcCopy, NULL);
-    UnlockPixels(pixels);
 }
 
 void capture_image_dispose(CaptureImage *image)

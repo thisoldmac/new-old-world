@@ -109,3 +109,38 @@ resource 'DITL' (300) {
     }
 };
 
+
+resource 'MENU' (130) {
+    130, textMenuProc, allEnabled, enabled, "Depth",
+    {
+        "1-bit", noIcon, noKey, noMark, plain;
+        "2-bit", noIcon, noKey, noMark, plain;
+        "4-bit", noIcon, noKey, noMark, plain;
+        "8-bit", noIcon, noKey, noMark, plain;
+        "16-bit", noIcon, noKey, noMark, plain;
+        "32-bit", noIcon, noKey, noMark, plain
+    }
+};
+
+resource 'MENU' (131) {
+    131, textMenuProc, allEnabled, enabled, "Chunk",
+    {
+        "1 K", noIcon, noKey, noMark, plain;
+        "2 K", noIcon, noKey, noMark, plain;
+        "4 K", noIcon, noKey, noMark, plain;
+        "8 K", noIcon, noKey, noMark, plain;
+        "16 K", noIcon, noKey, noMark, plain;
+        "32 K", noIcon, noKey, noMark, plain
+    }
+};
+
+resource 'MENU' (132) {
+    132, textMenuProc, allEnabled, enabled, "Pacing",
+    {
+        "None", noIcon, noKey, noMark, plain;
+        "2 ms", noIcon, noKey, noMark, plain;
+        "5 ms", noIcon, noKey, noMark, plain;
+        "10 ms", noIcon, noKey, noMark, plain;
+        "20 ms", noIcon, noKey, noMark, plain
+    }
+};

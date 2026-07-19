@@ -4,11 +4,11 @@ project(NowGuest C)
 add_application(now-guest
     CREATOR "NOWo"
     src/main.c
-    src/capture_win.c
     src/commands.c
     src/console_win.c
     src/capture.c
-    src/capture_store.c
+    src/screenshot.c
+    src/shots_panel.c
     src/ot_carbon.c
     src/wire.c
     src/prefs.c

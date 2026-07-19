@@ -426,7 +426,7 @@ static int handle_frame(const char *reply)
         if (!json_find_string(reply, "name", name, sizeof name)) {
             strcpy(name, "?");
         }
-        now_command_run(name, id, result, sizeof result);
+        now_command_run(name, reply, id, result, sizeof result);
         if (!send_control(result)) {
             fail("Connection lost");
             return 0;

@@ -1,9 +1,13 @@
 #include "console_win.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
+#include "capture.h"
 #include "commands.h"
+#include "prefs.h"
+#include "screenshot.h"
 
 enum {
     kMaxLines = 200,
@@ -75,7 +79,13 @@ static void help_for(const char *name)
 {
     char line[kMaxCols];
 
-    if (strcmp(name, "gestalt") == 0) {
+    if (strcmp(name, "screenshot") == 0) {
+        append_line("screenshot - capture the screen to the desktop");
+        append_line("  Usage: screenshot [--depth {1,2,4,8,16,32}] [--no-save]");
+        append_line("  Captures the whole screen as a packed PICT. Depth");
+        append_line("  defaults to the Screenshots panel setting; --no-save");
+        append_line("  measures capture+encode without writing a file.");
+    } else if (strcmp(name, "gestalt") == 0) {
         append_line("gestalt - report this Mac's identity");
         append_line("  Usage: gestalt [group] [--save]");
         append_line("  With no group, prints a short snapshot. Groups:");
@@ -95,9 +105,10 @@ static void help_for(const char *name)
 static void help_list(void)
 {
     append_line("Commands on this Mac:");
-    append_line("  gestalt   report this Mac (add a group or --full)");
-    append_line("  help      show this list (\"help <cmd>\" for details)");
-    append_line("  clear     clear the console scrollback");
+    append_line("  gestalt     report this Mac (add a group or --full)");
+    append_line("  screenshot  capture the screen (--depth N, --no-save)");
+    append_line("  help        show this list (\"help <cmd>\" for details)");
+    append_line("  clear       clear the console scrollback");
     append_line("Add --help or -h to any command for details.");
 }
 
@@ -214,6 +225,37 @@ static void run_gestalt_view(const char *group, Boolean full, Boolean save)
     }
 }
 
+static void run_screenshot_local(short depth_flag, Boolean no_save)
+{
+    NowPrefs prefs;
+    ShotStats stats;
+    char err[96];
+    char line[kMaxCols];
+    short depth;
+
+    now_prefs_load(&prefs);
+    depth = depth_flag > 0 ? depth_flag : prefs.shot_depth;
+    if (now_screenshot(depth, !no_save, &stats, err, sizeof err) != 0) {
+        snprintf(line, sizeof line, "screenshot: %.80s", err);
+        append_line(line);
+        return;
+    }
+    snprintf(line, sizeof line,
+             "  %dx%d %d-bit  raw %ld KB  PICT %ld KB",
+             stats.width, stats.height, stats.depth,
+             stats.raw_bytes / 1024, stats.pict_bytes / 1024);
+    append_line(line);
+    snprintf(line, sizeof line, "  capture %ld ms  encode %ld ms",
+             stats.capture_ms, stats.encode_ms);
+    append_line(line);
+    if (no_save) {
+        append_line("  (not saved)");
+    } else {
+        snprintf(line, sizeof line, "  Saved: %.28s", stats.saved_name);
+        append_line(line);
+    }
+}
+
 static void run_command(const char *input)
 {
     char line[kMaxCols];
@@ -227,6 +269,9 @@ static void run_command(const char *input)
     Boolean want_help = false;
     Boolean full = false;
     Boolean save = false;
+    Boolean no_save = false;
+    short depth_flag = 0;
+    Boolean expect_depth = false;
 
     snprintf(line, sizeof line, "> %s", input);
     append_line(line);
@@ -241,12 +286,24 @@ static void run_command(const char *input)
         if (tok[0] == '\0') {
             break;
         }
+        if (expect_depth) {
+            long d = strtol(tok, NULL, 10);
+            if (capture_depth_is_supported((short)d)) {
+                depth_flag = (short)d;
+            }
+            expect_depth = false;
+            continue;
+        }
         if (strcmp(tok, "-h") == 0 || strcmp(tok, "--help") == 0) {
             want_help = true;
         } else if (strcmp(tok, "--full") == 0) {
             full = true;
         } else if (strcmp(tok, "--save") == 0) {
             save = true;
+        } else if (strcmp(tok, "--no-save") == 0) {
+            no_save = true;
+        } else if (strcmp(tok, "--depth") == 0) {
+            expect_depth = true;
         } else if (flag_to_group(tok) != NULL) {
             group = flag_to_group(tok);
         } else if (target[0] == '\0' && tok[0] != '-') {
@@ -275,7 +332,11 @@ static void run_command(const char *input)
         run_gestalt_view(group, full, save);
         return;
     }
-    now_command_run(name, 0, result, sizeof result);
+    if (strcmp(name, "screenshot") == 0) {
+        run_screenshot_local(depth_flag, no_save);
+        return;
+    }
+    now_command_run(name, NULL, 0, result, sizeof result);
     if (json_find_string(result, "message", message, sizeof message)) {
         snprintf(line, sizeof line, "%s", message);
         append_line(line);

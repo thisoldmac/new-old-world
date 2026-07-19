@@ -2,8 +2,8 @@
 
 #include <string.h>
 
-#include "capture_win.h"
 #include "console_win.h"
+#include "shots_panel.h"
 #include "prefs.h"
 #include "settings_dialog.h"
 #include "wire.h"
@@ -14,8 +14,8 @@ enum {
     kFileMenuID = 129,
     kFileCloseItem = 1,
     kFileQuitItem = 3,
-    kWindowsMenuID = 130,
-    kWindowsNewScreenshotsItem = 1,
+    kWindowsMenuID = 140,
+    kWindowsScreenshotsItem = 1,
     kWindowsConsoleItem = 2,
     kWindowsConnectionItem = 3
 };
@@ -29,9 +29,8 @@ static const unsigned char k_file_menu_title[] = {
 static const unsigned char k_windows_menu_title[] = {
     7, 'W', 'i', 'n', 'd', 'o', 'w', 's'
 };
-static const unsigned char k_new_screenshots_menu_item[] = {
-    24, 'N', 'e', 'w', ' ', 'S', 'c', 'r', 'e', 'e', 'n', 's', 'h', 'o',
-    't', 's', ' ', 'W', 'i', 'n', 'd', 'o', 'w', '/', 'N'
+static const unsigned char k_screenshots_menu_item[] = {
+    13, 'S', 'c', 'r', 'e', 'e', 'n', 's', 'h', 'o', 't', 's', '/', 'S'
 };
 static const unsigned char k_console_menu_item[] = {
     9, 'C', 'o', 'n', 's', 'o', 'l', 'e', '/', 'L'
@@ -59,7 +58,7 @@ static void create_menu_bar(void)
     AppendMenu(file_menu, k_quit_menu_item);
     InsertMenu(file_menu, 0);
     /* Modules live in the Windows menu; there is no main app window. */
-    AppendMenu(windows_menu, k_new_screenshots_menu_item);
+    AppendMenu(windows_menu, k_screenshots_menu_item);
     AppendMenu(windows_menu, k_console_menu_item);
     AppendMenu(windows_menu, k_connection_menu_item);
     InsertMenu(windows_menu, 0);
@@ -79,54 +78,42 @@ static void compute_screen_bounds(void)
 
 static void close_front_window(void)
 {
-    NowCaptureWindow *win = capwin_front();
+    WindowRef front = FrontWindow();
 
-    if (win != NULL) {
-        capwin_destroy(win);
+    if (shots_panel_is(front)) {
+        shots_panel_close(true);
+    } else if (console_win_is(front)) {
+        console_win_close();
     }
 }
 
-/* The session (open windows + their bounds and depths) rides in the prefs
-   file next to the connection settings, so a relaunch restores exactly what
-   was on screen — including nothing. */
+/* The session (which windows are open, and where the panel sits) rides in
+   the prefs file, so a relaunch restores what was on screen. */
 static void save_session(void)
 {
     NowPrefs prefs;
-    NowCaptureWindow *win;
     Rect bounds;
-    short n = 0;
 
     now_prefs_load(&prefs);
-    for (win = capwin_first(); win != NULL && n < kNowMaxSavedWindows;
-         win = win->next) {
-        GetWindowBounds(win->window, kWindowContentRgn, &bounds);
-        prefs.windows[n].left = bounds.left;
-        prefs.windows[n].top = bounds.top;
-        prefs.windows[n].right = bounds.right;
-        prefs.windows[n].bottom = bounds.bottom;
-        prefs.windows[n].depth = win->depth;
-        ++n;
+    prefs.panel_open = shots_panel_ref() != NULL;
+    if (shots_panel_ref() != NULL) {
+        GetWindowBounds(shots_panel_ref(), kWindowContentRgn, &bounds);
+        prefs.panel_rect = bounds;
     }
-    prefs.window_count = n;
+    prefs.console_open = console_win_ref() != NULL;
     now_prefs_save(&prefs);
 }
 
 static void restore_session(void)
 {
     NowPrefs prefs;
-    Rect bounds;
-    short i;
 
     now_prefs_load(&prefs);
-    if (prefs.window_count < 0) {
-        capwin_create(NULL, 8);       /* first run: one default window */
-        return;
+    if (prefs.panel_open) {
+        shots_panel_open();
     }
-    /* Restore back-to-front so list order (front first) round-trips. */
-    for (i = (short)(prefs.window_count - 1); i >= 0; --i) {
-        SetRect(&bounds, prefs.windows[i].left, prefs.windows[i].top,
-                prefs.windows[i].right, prefs.windows[i].bottom);
-        capwin_create(&bounds, prefs.windows[i].depth);
+    if (prefs.console_open) {
+        console_win_open();
     }
 }
 
@@ -139,8 +126,8 @@ static void handle_menu_choice(long choice)
             g_running = false;
         }
     } else if (HiWord(choice) == kWindowsMenuID) {
-        if (LoWord(choice) == kWindowsNewScreenshotsItem) {
-            capwin_create(NULL, 8);
+        if (LoWord(choice) == kWindowsScreenshotsItem) {
+            shots_panel_open();
         } else if (LoWord(choice) == kWindowsConsoleItem) {
             console_win_open();
         } else if (LoWord(choice) == kWindowsConnectionItem) {
@@ -152,7 +139,6 @@ static void handle_menu_choice(long choice)
 static void handle_mouse_down(const EventRecord *event)
 {
     WindowRef window;
-    NowCaptureWindow *win;
     Point local;
     short part = FindWindow(event->where, &window);
 
@@ -174,49 +160,24 @@ static void handle_mouse_down(const EventRecord *event)
         }
         return;
     }
-    win = capwin_find(window);
-    if (win == NULL) {
-        return;
-    }
-    if (part == inDrag) {
-        DragWindow(window, event->where, &g_screen_bounds);
-    } else if (part == inGrow) {
-        Rect limits;
-        long size;
-
-        SetRect(&limits, kWindowMinWidth, kWindowMinHeight,
-                (short)(g_screen_bounds.right - g_screen_bounds.left),
-                (short)(g_screen_bounds.bottom - g_screen_bounds.top));
-        size = GrowWindow(window, event->where, &limits);
-        if (size != 0) {
-            Rect inval;
-
-            SizeWindow(window, LoWord(size), HiWord(size), true);
-            GetWindowPortBounds(window, &inval);
-            InvalWindowRect(window, &inval);
-        }
-    } else if (part == inZoomIn || part == inZoomOut) {
-        if (TrackBox(window, event->where, part)) {
-            Rect inval;
-
+    if (shots_panel_is(window)) {
+        if (part == inDrag) {
+            DragWindow(window, event->where, &g_screen_bounds);
+        } else if (part == inGoAway) {
+            if (TrackGoAway(window, event->where)) {
+                shots_panel_close(true);
+            }
+        } else if (part == inContent) {
+            if (window != FrontWindow()) {
+                SelectWindow(window);
+                return;
+            }
+            local = event->where;
             SetPortWindowPort(window);
-            ZoomWindow(window, part, false);
-            GetWindowPortBounds(window, &inval);
-            InvalWindowRect(window, &inval);
+            GlobalToLocal(&local);
+            shots_panel_click(local);
         }
-    } else if (part == inGoAway) {
-        if (TrackGoAway(window, event->where)) {
-            capwin_destroy(win);
-        }
-    } else if (part == inContent) {
-        if (window != FrontWindow()) {
-            SelectWindow(window);
-            return;
-        }
-        local = event->where;
-        SetPortWindowPort(window);
-        GlobalToLocal(&local);
-        capwin_content_click(win, local);
+        return;
     }
 }
 
@@ -230,12 +191,6 @@ static void handle_key_down(const EventRecord *event)
         HiliteMenu(0);
     } else if (console_win_is(FrontWindow())) {
         console_win_key(key);
-    } else if (key == '\r' || key == '\n') {
-        NowCaptureWindow *win = capwin_front();
-
-        if (win != NULL) {
-            capwin_capture(win);
-        }
     }
 }
 
@@ -254,7 +209,6 @@ int main(void)
 {
     EventRecord event;
     AEEventHandlerUPP quit_handler;
-    NowCaptureWindow *win;
 
     InitCursor();
     FlushEvents(everyEvent, 0);
@@ -289,13 +243,10 @@ int main(void)
                 BeginUpdate(console_win_ref());
                 console_win_draw();
                 EndUpdate(console_win_ref());
-                break;
-            }
-            win = capwin_find((WindowRef)event.message);
-            if (win != NULL) {
-                BeginUpdate(win->window);
-                capwin_draw(win);
-                EndUpdate(win->window);
+            } else if (shots_panel_is((WindowRef)event.message)) {
+                BeginUpdate(shots_panel_ref());
+                shots_panel_draw();
+                EndUpdate(shots_panel_ref());
             }
             break;
         case kHighLevelEvent:
@@ -310,6 +261,7 @@ int main(void)
     conn_shutdown();
     AERemoveEventHandler(kCoreEventClass, kAEQuitApplication,
                          quit_handler, false);
-    capwin_destroy_all();
+    shots_panel_close(false);
+    console_win_close();
     return 0;
 }

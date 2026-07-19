@@ -7,9 +7,11 @@
    own console gathers the same data directly. */
 
 /* Runs `name` and writes a complete command.result JSON (echoing `id`) into
-   out. Unknown names produce ok=false / "unknown-command" — a result, never
-   a protocol error; that is what keeps the command set additive. */
-void now_command_run(const char *name, long id, char *out, long cap);
+   out. `request_json` is the raw command.request (for args; may be NULL).
+   Unknown names produce ok=false / "unknown-command" — a result, never a
+   protocol error; that is what keeps the command set additive. */
+void now_command_run(const char *name, const char *request_json, long id,
+                     char *out, long cap);
 
 /* --- gestalt, as structured rows (the data layer both paths share) ------ */
 
