@@ -5,6 +5,7 @@
 #include "capture_win.h"
 #include "prefs.h"
 #include "settings_dialog.h"
+#include "wire.h"
 
 enum {
     kWindowMinWidth = 360,
@@ -238,6 +239,7 @@ int main(void)
     compute_screen_bounds();
     create_menu_bar();
     restore_session();
+    conn_init();
 
     /* On CFM PowerPC a UPP is the tvector itself; the cast avoids
        NewAEEventHandlerUPP, a weakly-linked import that would resolve to
@@ -247,7 +249,8 @@ int main(void)
                           quit_handler, 0, false);
 
     while (g_running) {
-        if (!WaitNextEvent(everyEvent, &event, 12, NULL)) {
+        conn_service();
+        if (!WaitNextEvent(everyEvent, &event, 6, NULL)) {
             continue;
         }
         switch (event.what) {
@@ -276,6 +279,7 @@ int main(void)
     }
 
     save_session();
+    conn_shutdown();
     AERemoveEventHandler(kCoreEventClass, kAEQuitApplication,
                          quit_handler, false);
     capwin_destroy_all();

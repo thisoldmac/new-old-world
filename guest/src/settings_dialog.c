@@ -11,7 +11,7 @@ enum {
     kSettingsDialogID = 300,
     kItemSave = 1,
     kItemCancel = 2,
-    kItemTest = 3,
+    kItemConnect = 3,
     kItemHostField = 4,
     kItemPortField = 5,
     kItemStatus = 6
@@ -44,29 +44,67 @@ static void set_field(DialogRef dialog, short item, const char *value)
     SetDialogItemText(handle, text);
 }
 
-static void run_test(DialogRef dialog)
+/* Reflect the live connection status into the dialog's status field, but only
+   when it actually changes — SetDialogItemText redraws, and doing it every
+   filter tick would flicker. */
+static void refresh_status(DialogRef dialog, char *last, long cap)
+{
+    char now[128];
+
+    conn_status(now, sizeof now);
+    if (strcmp(now, last) != 0) {
+        strncpy(last, now, cap - 1);
+        last[cap - 1] = '\0';
+        set_field(dialog, kItemStatus, now);
+    }
+}
+
+/* The connection is serviced from the main event loop, but that loop is
+   suspended while ModalDialog runs. This filter keeps it pumping (and the
+   status live) so a connection attempt started from the dialog completes
+   while the dialog is open. */
+static char g_last_status[128];
+static DialogRef g_filter_dialog;
+
+static pascal Boolean settings_filter(DialogRef dialog, EventRecord *event,
+                                      short *item)
+{
+    ModalFilterUPP std_proc = NULL;
+
+    if (dialog == g_filter_dialog) {
+        conn_service();
+        refresh_status(dialog, g_last_status, sizeof g_last_status);
+    }
+    /* Chain the standard filter so Return maps to Save and Escape/Cmd-. to
+       Cancel; without this our filter would swallow the keyboard. */
+    if (GetStdFilterProc(&std_proc) == noErr && std_proc != NULL) {
+        return InvokeModalFilterUPP(dialog, event, item, std_proc);
+    }
+    return false;
+}
+
+static void apply_and_connect(DialogRef dialog)
 {
     char host[64];
     char port_text[16];
-    char status[160];
     long port;
 
     get_field(dialog, kItemHostField, host, sizeof host);
     get_field(dialog, kItemPortField, port_text, sizeof port_text);
     port = strtol(port_text, NULL, 10);
-    if (port <= 0 || port > 65535) {
-        set_field(dialog, kItemStatus, "Port must be 1-65535");
+    if (port <= 0 || port > 65535 || host[0] == '\0') {
+        set_field(dialog, kItemStatus, "Enter a host and a port (1-65535)");
+        g_last_status[0] = '\0';
         return;
     }
-    set_field(dialog, kItemStatus, "Testing...");
-    DrawDialog(dialog);
-    now_wire_test(host, (unsigned short)port, status, sizeof status);
-    set_field(dialog, kItemStatus, status);
+    conn_set_target(host, (unsigned short)port);
+    g_last_status[0] = '\0';         /* force the next refresh to paint */
 }
 
 void now_settings_dialog_run(void)
 {
     DialogRef dialog;
+    ModalFilterUPP filter;
     short hit;
     NowPrefs prefs;
     char port_text[16];
@@ -82,15 +120,19 @@ void now_settings_dialog_run(void)
     set_field(dialog, kItemHostField, prefs.host);
     snprintf(port_text, sizeof port_text, "%u", prefs.port);
     set_field(dialog, kItemPortField, port_text);
-    set_field(dialog, kItemStatus, "");
+    g_last_status[0] = '\0';
+    refresh_status(dialog, g_last_status, sizeof g_last_status);
     SelectDialogItemText(dialog, kItemHostField, 0, 32767);
     ShowWindow(GetDialogWindow(dialog));
 
+    g_filter_dialog = dialog;
+    filter = NewModalFilterUPP(settings_filter);
+
     while (!done) {
-        ModalDialog(NULL, &hit);
+        ModalDialog(filter, &hit);
         switch (hit) {
-        case kItemTest:
-            run_test(dialog);
+        case kItemConnect:
+            apply_and_connect(dialog);
             break;
         case kItemSave: {
             char host[64];
@@ -103,10 +145,12 @@ void now_settings_dialog_run(void)
                 strcpy(prefs.host, host);
                 prefs.port = (unsigned short)port;
                 now_prefs_save(&prefs);
+                conn_set_target(host, (unsigned short)port);
                 done = true;
             } else {
                 set_field(dialog, kItemStatus,
-                          "Enter a host address and a port (1-65535)");
+                          "Enter a host and a port (1-65535)");
+                g_last_status[0] = '\0';
             }
             break;
         }
@@ -117,5 +161,7 @@ void now_settings_dialog_run(void)
             break;
         }
     }
+    DisposeModalFilterUPP(filter);
+    g_filter_dialog = NULL;
     DisposeDialog(dialog);
 }

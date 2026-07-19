@@ -99,8 +99,8 @@ resource 'DITL' (300) {
     {
         /* 1 Save   */ {146, 330, 166, 400}, Button { enabled, "Save" };
         /* 2 Cancel */ {146, 244, 166, 314}, Button { enabled, "Cancel" };
-        /* 3 Test   */ {146, 20, 166, 130},
-            Button { enabled, "Test Connection" };
+        /* 3 Connect */ {146, 20, 166, 130},
+            Button { enabled, "Connect" };
         /* 4 host   */ {24, 110, 40, 300}, EditText { enabled, "" };
         /* 5 port   */ {54, 110, 70, 180}, EditText { enabled, "" };
         /* 6 status */ {88, 20, 132, 400}, StaticText { disabled, "" };

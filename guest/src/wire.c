@@ -6,16 +6,80 @@
 
 #include "contract.h"
 #include "ot_carbon.h"
+#include "prefs.h"
 #include "product_identity.h"
 
 enum {
-    kConnectDeadlineTicks = 60 * 10,  /* 10s to connect */
-    kReplyDeadlineTicks = 60 * 5      /* 5s for the host's hello */
+    kConnectTimeoutTicks = 60 * 10,   /* 10s to establish the socket */
+    kHelloTimeoutTicks = 60 * 8,      /* 8s for the host's hello */
+    kPingIntervalTicks = 60 * 30,     /* ping after 30s of silence */
+    kDeadTicks = 60 * 65,             /* no traffic for 65s => dead */
+    kBackoffMinTicks = 60 * 2,        /* 2s, doubling... */
+    kBackoffMaxTicks = 60 * 30,       /* ...to 30s */
+    kRxBufferSize = 2048
 };
 
-/* --- tiny JSON helpers -------------------------------------------------- */
-/* The control payloads are flat objects with simple string/number values
-   and no escapes we ever emit; a scanner is enough and stays auditable. */
+typedef struct {
+    ConnPhase phase;
+    char host[64];
+    unsigned short port;
+    Boolean want_connection;          /* false => stay disconnected */
+
+    EndpointRef ep;
+    UInt32 address;
+
+    unsigned char rx[kRxBufferSize];
+    long rx_len;
+
+    unsigned long phase_deadline;     /* connect/hello timeout */
+    unsigned long last_rx_tick;       /* any inbound bytes */
+    unsigned long next_ping_tick;
+    long pings_sent;                  /* since last pong */
+    long ping_id;
+    unsigned long ping_sent_tick;
+    long last_rtt_ms;
+
+    unsigned long backoff_ticks;
+    unsigned long backoff_until;
+
+    char peer_name[64];
+    char peer_version[32];
+    char status[128];
+} ConnState;
+
+static ConnState g;
+
+static void send_hello(void);
+
+/* --- helpers ------------------------------------------------------------ */
+
+static int parse_ipv4(const char *text, UInt32 *out)
+{
+    unsigned long parts[4];
+    int i;
+    const char *p = text;
+    char *end;
+
+    for (i = 0; i < 4; ++i) {
+        parts[i] = strtoul(p, &end, 10);
+        if (end == p || parts[i] > 255) {
+            return 0;
+        }
+        p = end;
+        if (i < 3) {
+            if (*p != '.') {
+                return 0;
+            }
+            ++p;
+        }
+    }
+    if (*p != '\0') {
+        return 0;
+    }
+    *out = (UInt32)((parts[0] << 24) | (parts[1] << 16)
+                    | (parts[2] << 8) | parts[3]);
+    return 1;
+}
 
 static int json_find_string(const char *json, const char *key,
                             char *out, long cap)
@@ -45,269 +109,470 @@ static int json_type_is(const char *json, const char *type)
     return strstr(json, pattern) != NULL;
 }
 
-/* --- dotted-quad parsing ------------------------------------------------ */
-
-static int parse_ipv4(const char *text, UInt32 *out)
-{
-    unsigned long parts[4];
-    int i = 0;
-    const char *p = text;
-    char *end;
-
-    for (i = 0; i < 4; ++i) {
-        parts[i] = strtoul(p, &end, 10);
-        if (end == p || parts[i] > 255) {
-            return 0;
-        }
-        p = end;
-        if (i < 3) {
-            if (*p != '.') {
-                return 0;
-            }
-            ++p;
-        }
-    }
-    if (*p != '\0') {
-        return 0;
-    }
-    *out = (UInt32)((parts[0] << 24) | (parts[1] << 16)
-                    | (parts[2] << 8) | parts[3]);
-    return 1;
-}
-
-/* --- frame I/O with deadlines ------------------------------------------ */
-
-static void put_frame_header(unsigned char *dst, unsigned char channel,
-                             unsigned char flags, unsigned short transfer,
-                             unsigned long length)
-{
-    dst[0] = channel;
-    dst[1] = flags;
-    dst[2] = (unsigned char)(transfer >> 8);
-    dst[3] = (unsigned char)(transfer & 0xFF);
-    dst[4] = (unsigned char)((length >> 24) & 0xFF);
-    dst[5] = (unsigned char)((length >> 16) & 0xFF);
-    dst[6] = (unsigned char)((length >> 8) & 0xFF);
-    dst[7] = (unsigned char)(length & 0xFF);
-}
-
 /* One contiguous send per frame: back-to-back small writes are dropped by
    real classic NICs (PB1400c Farallon TX burst drop). */
-static int send_control(EndpointRef ep, const char *json)
+static int send_control(const char *json)
 {
     unsigned char buffer[512 + kNowFrameHeaderBytes];
     unsigned long length = (unsigned long)strlen(json);
     OTResult sent;
 
-    if (length > 512) {
+    if (g.ep == kOTInvalidEndpointRef || length > 512) {
         return 0;
     }
-    put_frame_header(buffer, kNowChannelControl, 0, 0, length);
+    buffer[0] = kNowChannelControl;
+    buffer[1] = 0;
+    buffer[2] = 0;
+    buffer[3] = 0;
+    buffer[4] = (unsigned char)((length >> 24) & 0xFF);
+    buffer[5] = (unsigned char)((length >> 16) & 0xFF);
+    buffer[6] = (unsigned char)((length >> 8) & 0xFF);
+    buffer[7] = (unsigned char)(length & 0xFF);
     memcpy(buffer + kNowFrameHeaderBytes, json, length);
-    sent = gNowOT.snd(ep, buffer, kNowFrameHeaderBytes + length, 0);
+    sent = gNowOT.snd(g.ep, buffer, kNowFrameHeaderBytes + length, 0);
     return sent == (OTResult)(kNowFrameHeaderBytes + length);
 }
 
-/* Accumulates exactly one control frame, polling with a deadline. Returns 1
-   on success, 0 on timeout/error. */
-static int receive_control(EndpointRef ep, char *payload_out, long cap,
-                           unsigned long deadline_ticks)
+static void close_endpoint(void)
 {
-    unsigned char header[kNowFrameHeaderBytes];
-    long have = 0;
-    unsigned long payload_len = 0;
-    unsigned long deadline = TickCount() + deadline_ticks;
-    OTFlags flags = 0;
-    OTResult got;
-
-    while (have < kNowFrameHeaderBytes) {
-        got = gNowOT.rcv(ep, header + have,
-                         (OTByteCount)(kNowFrameHeaderBytes - have), &flags);
-        if (got > 0) {
-            have += got;
-        } else if (got != kOTNoDataErr) {
-            return 0;
-        }
-        if (TickCount() > deadline) {
-            return 0;
-        }
+    if (g.ep != kOTInvalidEndpointRef) {
+        gNowOT.unbind(g.ep);
+        gNowOT.closeProvider(g.ep);
+        g.ep = kOTInvalidEndpointRef;
     }
-    payload_len = ((unsigned long)header[4] << 24)
-        | ((unsigned long)header[5] << 16)
-        | ((unsigned long)header[6] << 8)
-        | (unsigned long)header[7];
-    if (header[0] != kNowChannelControl || payload_len + 1 > (unsigned long)cap) {
-        return 0;
-    }
-    have = 0;
-    while ((unsigned long)have < payload_len) {
-        got = gNowOT.rcv(ep, payload_out + have,
-                         (OTByteCount)(payload_len - (unsigned long)have),
-                         &flags);
-        if (got > 0) {
-            have += got;
-        } else if (got != kOTNoDataErr) {
-            return 0;
-        }
-        if (TickCount() > deadline) {
-            return 0;
-        }
-    }
-    payload_out[payload_len] = '\0';
-    return 1;
+    g.rx_len = 0;
 }
 
-/* --- the test ----------------------------------------------------------- */
-
-int now_wire_test(const char *host_ip, unsigned short port,
-                  char *status_out, long status_cap)
+/* Move to backoff after a failure; status keeps the reason already set. */
+static void enter_backoff(void)
 {
-    UInt32 address = 0;
-    EndpointRef ep = kOTInvalidEndpointRef;
+    close_endpoint();
+    if (!g.want_connection) {
+        g.phase = kConnIdle;
+        return;
+    }
+    if (g.backoff_ticks == 0) {
+        g.backoff_ticks = kBackoffMinTicks;
+    } else {
+        g.backoff_ticks *= 2;
+        if (g.backoff_ticks > kBackoffMaxTicks) {
+            g.backoff_ticks = kBackoffMaxTicks;
+        }
+    }
+    g.backoff_until = TickCount() + g.backoff_ticks;
+    g.phase = kConnBackoff;
+}
+
+static void fail(const char *reason)
+{
+    if (reason != NULL) {
+        snprintf(g.status, sizeof g.status, "%s", reason);
+    }
+    enter_backoff();
+}
+
+/* --- connect ------------------------------------------------------------ */
+
+static void start_connect(void)
+{
     OSStatus err, open_err = -1;
     InetAddress inet;
     TCall call;
-    char json[512];
-    char reply[512];
-    char peer_name[64];
-    char peer_version[32];
-    unsigned long started, deadline;
-    unsigned long rtt_ms;
-    int result = kNowTestProtocolError;
 
-    status_out[0] = '\0';
-    if (!parse_ipv4(host_ip, &address)) {
-        snprintf(status_out, status_cap,
-                 "Host must be a numeric address like 10.0.2.2");
-        return kNowTestBadAddress;
+    close_endpoint();
+    g.rx_len = 0;
+    g.pings_sent = 0;
+
+    if (!parse_ipv4(g.host, &g.address)) {
+        fail("Host must be a numeric address like 10.0.2.2");
+        return;
     }
     err = now_ot_resolve();
     if (err != noErr) {
-        snprintf(status_out, status_cap,
-                 "Networking needs CarbonLib 1.6 (error %ld)", (long)err);
-        return kNowTestNoCarbonLib;
+        snprintf(g.status, sizeof g.status,
+                 "Networking needs CarbonLib 1.6");
+        g.phase = kConnNeedsCarbonLib;
+        return;
     }
-    err = now_ot_ensure_inited();
-    if (err != noErr) {
-        snprintf(status_out, status_cap,
-                 "Open Transport failed to start (error %ld)", (long)err);
-        return kNowTestOTInitFailed;
+    if (now_ot_ensure_inited() != noErr) {
+        fail("Open Transport could not start");
+        return;
     }
-
-    ep = gNowOT.openEndpoint(OTCreateConfiguration(kTCPName), 0, NULL,
-                             &open_err, gNowOTContext);
-    if (ep == kOTInvalidEndpointRef) {
-        snprintf(status_out, status_cap,
-                 "Could not open a TCP endpoint (error %ld)", (long)open_err);
-        return kNowTestOTInitFailed;
+    g.ep = gNowOT.openEndpoint(OTCreateConfiguration(kTCPName), 0, NULL,
+                               &open_err, gNowOTContext);
+    if (g.ep == kOTInvalidEndpointRef) {
+        fail("Could not open a TCP endpoint");
+        return;
     }
-    gNowOT.setNonBlocking(ep);
-    err = gNowOT.bind(ep, NULL, NULL);
-    if (err != noErr) {
-        snprintf(status_out, status_cap, "Bind failed (error %ld)", (long)err);
-        gNowOT.closeProvider(ep);
-        return kNowTestConnectFailed;
+    gNowOT.setNonBlocking(g.ep);
+    if (gNowOT.bind(g.ep, NULL, NULL) != noErr) {
+        fail("Bind failed");
+        return;
     }
 
     memset(&inet, 0, sizeof inet);
     inet.fAddressType = AF_INET;
-    inet.fPort = port;
-    inet.fHost = address;
+    inet.fPort = g.port;
+    inet.fHost = g.address;
     memset(&call, 0, sizeof call);
     call.addr.buf = (UInt8 *)&inet;
     call.addr.len = sizeof inet;
 
-    started = TickCount();
-    err = gNowOT.connect(ep, &call, NULL);
-    if (err != noErr && err != kOTNoDataErr) {
-        snprintf(status_out, status_cap,
-                 "Could not connect (error %ld)", (long)err);
-        goto fail_unbind;
+    err = gNowOT.connect(g.ep, &call, NULL);
+    g.phase_deadline = TickCount() + kConnectTimeoutTicks;
+    snprintf(g.status, sizeof g.status, "Connecting to %s:%u...",
+             g.host, g.port);
+    if (err == noErr) {
+        /* Loopback can complete synchronously; OTRcvConnect would then be
+           out-of-state (-3155), so go straight to the handshake. */
+        g.phase = kConnHandshaking;
+        g.phase_deadline = TickCount() + kHelloTimeoutTicks;
+        send_hello();
+    } else if (err == kOTNoDataErr) {
+        g.phase = kConnConnecting;
+    } else {
+        fail("Could not connect");
     }
-    deadline = TickCount() + kConnectDeadlineTicks;
-    /* Sync/non-blocking endpoints report connect completion through
-       OTRcvConnect itself (kOTNoDataErr until done) — not as a T_CONNECT
-       look event, which never fires in this mode. When OTConnect already
-       returned noErr the connection is up and OTRcvConnect would be
-       out-of-state (-3155), so the poll runs only for kOTNoDataErr. */
-    if (err == kOTNoDataErr) {
-        for (;;) {
-            err = gNowOT.rcvConnect(ep, NULL);
-            if (err == noErr) {
-                break;
-            }
-            if (err == kOTLookErr) {
-                OTResult look = gNowOT.look(ep);
-                if (look == T_DISCONNECT) {
-                    gNowOT.rcvDisconnect(ep, NULL);
-                    snprintf(status_out, status_cap,
-                             "Connection refused by %s:%u", host_ip, port);
-                    goto fail_unbind;
-                }
-            } else if (err != kOTNoDataErr) {
-                snprintf(status_out, status_cap,
-                         "Connect failed (error %ld)", (long)err);
-                goto fail_unbind;
-            }
-            if (TickCount() > deadline) {
-                snprintf(status_out, status_cap,
-                         "No answer from %s:%u (10s)", host_ip, port);
-                goto fail_unbind;
-            }
+}
+
+static void service_connecting(void)
+{
+    OSStatus err = gNowOT.rcvConnect(g.ep, NULL);
+
+    if (err == noErr) {
+        g.phase = kConnHandshaking;
+        g.phase_deadline = TickCount() + kHelloTimeoutTicks;
+        send_hello();
+        return;
+    }
+    if (err == kOTLookErr) {
+        OTResult look = gNowOT.look(g.ep);
+        if (look == T_DISCONNECT) {
+            gNowOT.rcvDisconnect(g.ep, NULL);
+            fail("Connection refused");
+            return;
         }
+    } else if (err != kOTNoDataErr) {
+        fail("Connect failed");
+        return;
     }
+    if (TickCount() > g.phase_deadline) {
+        fail("No answer (10s)");
+    }
+}
+
+static void send_hello(void)
+{
+    char json[256];
 
     snprintf(json, sizeof json,
              "{\"type\":\"hello\",\"contract\":%d,\"side\":\"guest\","
-             "\"version\":\"%s\",\"name\":\"%s\",\"os\":\"9\","
-             "\"chunk\":%d}",
+             "\"version\":\"%s\",\"name\":\"%s\",\"os\":\"9\",\"chunk\":%d}",
              kNowContractRevision, PRODUCT_VERSION, PRODUCT_DISPLAY_NAME,
              kNowDefaultChunk);
-    if (!send_control(ep, json)) {
-        snprintf(status_out, status_cap, "Sending hello failed");
-        goto fail_disconnect;
+    if (!send_control(json)) {
+        fail("Sending hello failed");
     }
-    if (!receive_control(ep, reply, sizeof reply, kReplyDeadlineTicks)) {
-        snprintf(status_out, status_cap,
-                 "Connected, but no hello reply (5s)");
-        result = kNowTestNoReply;
-        goto fail_disconnect;
-    }
-    rtt_ms = (TickCount() - started) * 1000 / 60;
+}
 
-    if (json_type_is(reply, "hello")) {
-        if (!json_find_string(reply, "name", peer_name, sizeof peer_name)) {
-            strcpy(peer_name, "host");
+/* --- receive ------------------------------------------------------------ */
+
+/* Pulls available bytes into the rx buffer. Returns 0 on a fatal transport
+   condition (disconnect), 1 otherwise. */
+static int pump_rx(void)
+{
+    OTFlags flags = 0;
+    OTResult got;
+
+    for (;;) {
+        if (g.rx_len >= kRxBufferSize) {
+            return 0;                 /* overrun: control frames are tiny */
         }
-        if (!json_find_string(reply, "version", peer_version,
-                              sizeof peer_version)) {
-            strcpy(peer_version, "?");
-        }
-        snprintf(status_out, status_cap, "Connected: %s (v%s) - %lu ms",
-                 peer_name, peer_version, rtt_ms);
-        result = kNowTestOK;
-    } else if (json_type_is(reply, "refuse")) {
-        if (json_find_string(reply, "reason", peer_name, sizeof peer_name)) {
-            snprintf(status_out, status_cap, "Refused: %s", peer_name);
+        got = gNowOT.rcv(g.ep, g.rx + g.rx_len,
+                         (OTByteCount)(kRxBufferSize - g.rx_len), &flags);
+        if (got > 0) {
+            g.rx_len += got;
+            g.last_rx_tick = TickCount();
+        } else if (got == kOTNoDataErr) {
+            return 1;
+        } else if (got == kOTLookErr) {
+            OTResult look = gNowOT.look(g.ep);
+            if (look == T_DISCONNECT) {
+                gNowOT.rcvDisconnect(g.ep, NULL);
+                return 0;
+            }
+            if (look == T_ORDREL) {
+                gNowOT.rcvOrderlyDisconnect(g.ep);
+                return 0;
+            }
+            return 1;
         } else {
-            snprintf(status_out, status_cap, "Refused by host");
+            return 0;
         }
-        result = kNowTestRefused;
+    }
+}
+
+/* Extracts one complete control frame into payload_out; returns 1 if one was
+   dequeued, 0 if the buffer holds no full frame yet, -1 on a malformed
+   frame (fatal). */
+static int next_frame(char *payload_out, long cap)
+{
+    unsigned long length;
+    long total;
+    unsigned char channel;
+
+    if (g.rx_len < kNowFrameHeaderBytes) {
+        return 0;
+    }
+    channel = g.rx[0];
+    length = ((unsigned long)g.rx[4] << 24) | ((unsigned long)g.rx[5] << 16)
+        | ((unsigned long)g.rx[6] << 8) | (unsigned long)g.rx[7];
+    if (length + 1 > (unsigned long)cap || length > kNowMaxPayload) {
+        return -1;
+    }
+    total = kNowFrameHeaderBytes + (long)length;
+    if (g.rx_len < total) {
+        return 0;
+    }
+    if (channel != kNowChannelControl) {
+        /* No bulk transfers arrive in this slice; drop the frame's bytes. */
+        memmove(g.rx, g.rx + total, g.rx_len - total);
+        g.rx_len -= total;
+        payload_out[0] = '\0';
+        return 1;
+    }
+    memcpy(payload_out, g.rx + kNowFrameHeaderBytes, length);
+    payload_out[length] = '\0';
+    memmove(g.rx, g.rx + total, g.rx_len - total);
+    g.rx_len -= total;
+    return 1;
+}
+
+static void on_hello(const char *reply)
+{
+    if (!json_find_string(reply, "name", g.peer_name, sizeof g.peer_name)) {
+        strcpy(g.peer_name, "host");
+    }
+    if (!json_find_string(reply, "version", g.peer_version,
+                          sizeof g.peer_version)) {
+        strcpy(g.peer_version, "?");
+    }
+    g.phase = kConnConnected;
+    g.backoff_ticks = 0;              /* success resets backoff */
+    g.pings_sent = 0;
+    g.next_ping_tick = TickCount() + kPingIntervalTicks;
+    if (g.last_rtt_ms >= 0) {
+        snprintf(g.status, sizeof g.status, "Connected: %s (v%s) - %ld ms",
+                 g.peer_name, g.peer_version, g.last_rtt_ms);
     } else {
-        snprintf(status_out, status_cap, "Unexpected reply from host");
-        result = kNowTestProtocolError;
+        snprintf(g.status, sizeof g.status, "Connected: %s (v%s)",
+                 g.peer_name, g.peer_version);
     }
+}
 
-    if (result == kNowTestOK) {
-        send_control(ep, "{\"type\":\"bye\",\"code\":\"normal\"}");
+/* Returns 0 if the connection should be torn down (bye/protocol error). */
+static int handle_frame(const char *reply)
+{
+    if (reply[0] == '\0') {
+        return 1;                    /* dropped non-control frame */
     }
+    if (g.phase == kConnHandshaking) {
+        if (json_type_is(reply, "hello")) {
+            on_hello(reply);
+            return 1;
+        }
+        if (json_type_is(reply, "refuse")) {
+            char reason[96];
+            if (json_find_string(reply, "reason", reason, sizeof reason)) {
+                snprintf(g.status, sizeof g.status, "Refused: %s", reason);
+            } else {
+                snprintf(g.status, sizeof g.status, "Refused by host");
+            }
+            return 0;
+        }
+        snprintf(g.status, sizeof g.status, "Unexpected reply from host");
+        return 0;
+    }
+    /* connected */
+    if (json_type_is(reply, "pong")) {
+        g.pings_sent = 0;
+        g.last_rtt_ms = (long)((TickCount() - g.ping_sent_tick) * 1000 / 60);
+        snprintf(g.status, sizeof g.status, "Connected: %s (v%s) - %ld ms",
+                 g.peer_name, g.peer_version, g.last_rtt_ms);
+        return 1;
+    }
+    if (json_type_is(reply, "bye")) {
+        char reason[96];
+        if (json_find_string(reply, "reason", reason, sizeof reason)) {
+            snprintf(g.status, sizeof g.status, "Host disconnected: %s",
+                     reason);
+        } else {
+            snprintf(g.status, sizeof g.status, "Host disconnected");
+        }
+        return 0;
+    }
+    return 1;                        /* ignore anything else for now */
+}
 
-fail_disconnect:
-    /* Orderly release; unannounced closes leak T_DISCONNECT indications on
-       OS 9 (the listener-wedge campaign). Best-effort with no waiting. */
-    gNowOT.sndOrderlyDisconnect(ep);
-fail_unbind:
-    gNowOT.unbind(ep);
-    gNowOT.closeProvider(ep);
-    return result;
+static void service_connected_io(void)
+{
+    char payload[512];
+    int rc;
+
+    if (!pump_rx()) {
+        fail("Connection lost");
+        return;
+    }
+    for (;;) {
+        rc = next_frame(payload, sizeof payload);
+        if (rc == 0) {
+            break;
+        }
+        if (rc < 0) {
+            fail("Protocol error");
+            return;
+        }
+        if (!handle_frame(payload)) {
+            /* Peer said goodbye or we rejected it: orderly release, backoff. */
+            gNowOT.sndOrderlyDisconnect(g.ep);
+            enter_backoff();
+            return;
+        }
+    }
+}
+
+static void service_heartbeat(void)
+{
+    unsigned long now = TickCount();
+    char ping[48];
+
+    if (now - g.last_rx_tick > kDeadTicks) {
+        fail("Reconnecting (no answer)");
+        return;
+    }
+    if (now >= g.next_ping_tick) {
+        ++g.ping_id;
+        snprintf(ping, sizeof ping, "{\"type\":\"ping\",\"id\":%ld}",
+                 g.ping_id);
+        g.ping_sent_tick = now;
+        if (!send_control(ping)) {
+            fail("Connection lost");
+            return;
+        }
+        ++g.pings_sent;
+        g.next_ping_tick = now + kPingIntervalTicks;
+    }
+}
+
+/* --- public API --------------------------------------------------------- */
+
+void conn_init(void)
+{
+    NowPrefs prefs;
+
+    memset(&g, 0, sizeof g);
+    g.ep = kOTInvalidEndpointRef;
+    g.last_rtt_ms = -1;
+    now_prefs_load(&prefs);
+    strncpy(g.host, prefs.host, sizeof g.host - 1);
+    g.port = prefs.port;
+    g.want_connection = true;
+    strcpy(g.status, "Not connected");
+    start_connect();
+}
+
+void conn_shutdown(void)
+{
+    if (g.ep != kOTInvalidEndpointRef) {
+        if (g.phase == kConnConnected) {
+            send_control("{\"type\":\"bye\",\"code\":\"normal\"}");
+        }
+        gNowOT.sndOrderlyDisconnect(g.ep);
+        close_endpoint();
+    }
+    g.want_connection = false;
+    g.phase = kConnIdle;
+}
+
+void conn_service(void)
+{
+    switch (g.phase) {
+    case kConnConnecting:
+        service_connecting();
+        break;
+    case kConnHandshaking:
+        service_connected_io();
+        if (g.phase == kConnHandshaking && TickCount() > g.phase_deadline) {
+            fail("No hello reply (8s)");
+        }
+        break;
+    case kConnConnected:
+        service_connected_io();
+        if (g.phase == kConnConnected) {
+            service_heartbeat();
+        }
+        break;
+    case kConnBackoff:
+        if (TickCount() >= g.backoff_until) {
+            start_connect();
+        } else {
+            unsigned long remain =
+                (g.backoff_until - TickCount() + 59) / 60;
+            snprintf(g.status, sizeof g.status,
+                     "Reconnecting in %lus...", remain);
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+void conn_set_target(const char *host, unsigned short port)
+{
+    strncpy(g.host, host, sizeof g.host - 1);
+    g.host[sizeof g.host - 1] = '\0';
+    g.port = port;
+    g.want_connection = true;
+    g.backoff_ticks = 0;
+    g.last_rtt_ms = -1;
+    start_connect();
+}
+
+void conn_disconnect(void)
+{
+    if (g.ep != kOTInvalidEndpointRef && g.phase == kConnConnected) {
+        send_control("{\"type\":\"bye\",\"code\":\"normal\"}");
+        gNowOT.sndOrderlyDisconnect(g.ep);
+    }
+    close_endpoint();
+    g.want_connection = false;
+    g.phase = kConnIdle;
+    strcpy(g.status, "Not connected");
+}
+
+void conn_connect_now(void)
+{
+    g.want_connection = true;
+    g.backoff_ticks = 0;
+    start_connect();
+}
+
+ConnPhase conn_phase(void)
+{
+    return g.phase;
+}
+
+Boolean conn_is_connected(void)
+{
+    return g.phase == kConnConnected;
+}
+
+void conn_status(char *out, long cap)
+{
+    snprintf(out, cap, "%s", g.status);
+}
+
+long conn_last_rtt_ms(void)
+{
+    return g.last_rtt_ms;
 }
