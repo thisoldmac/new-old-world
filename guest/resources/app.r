@@ -3,13 +3,13 @@
 #include "Dialogs.r"
 #include "Finder.r"
 
-type 'ScPt' as 'STR ';
-resource 'ScPt' (0, purgeable) {
-    "Screenshots Prototype"
+type 'NOWo' as 'STR ';
+resource 'NOWo' (0, purgeable) {
+    "New Old World"
 };
 
 resource 'BNDL' (128) {
-    'ScPt', 0,
+    'NOWo', 0,
     {
         'ICN#', { 0, 128 },
         'FREF', { 0, 128 }

@@ -21,7 +21,7 @@ case "$output_root/" in
 esac
 
 scratch="$output_root/swift-build"
-bundle="$output_root/Screenshots Prototype.app"
+bundle="$output_root/New Old World.app"
 binary="$scratch/debug/Host"
 
 swift build --package-path "$repo_root/host" --scratch-path "$scratch"
@@ -29,8 +29,8 @@ mkdir -p "$bundle/Contents/MacOS"
 cp "$binary" "$bundle/Contents/MacOS/Host"
 
 sed \
-    -e 's/@DISPLAY_NAME@/Screenshots Prototype/g' \
-    -e 's/@BUNDLE_ID@/dev.prototype.screenshots/g' \
+    -e 's/@DISPLAY_NAME@/New Old World/g' \
+    -e 's/@BUNDLE_ID@/dev.newoldworld.now/g' \
     "$script_dir/HostInfo.plist.in" > "$bundle/Contents/Info.plist"
 codesign --force --sign - "$bundle"
 

@@ -1,10 +1,10 @@
-# Screenshots prototype
+# New Old World ("NOW")
 
-This is a clean, independently versioned prototype for joining a classic Mac
-and a modern Mac around one human-facing task: taking and managing screenshots.
-The final product name is intentionally unsettled. Display names, creator codes,
-bundle identifiers, and preference keys live in the two `ProductIdentity`
-files so naming work does not leak across the codebase.
+New Old World is a clean, independently versioned prototype for joining a
+classic Mac and a modern Mac around one human-facing task: taking and managing
+screenshots. Display names, creator codes, bundle identifiers, and preference
+keys live in the two `ProductIdentity` files so naming changes do not leak
+across the codebase.
 
 ## First slice
 
@@ -26,17 +26,17 @@ guest image history, and transport are deliberately deferred.
 Guest, with Retro68:
 
 ```sh
-cmake -S guest -B /private/tmp/screenshots-guest-ppc -G Ninja \
+cmake -S guest -B /private/tmp/now-guest-ppc -G Ninja \
   -DCMAKE_TOOLCHAIN_FILE=/path/to/Retro68/toolchain/powerpc-apple-macos/cmake/retrocarbon.toolchain.cmake
-cmake --build /private/tmp/screenshots-guest-ppc
+cmake --build /private/tmp/now-guest-ppc
 ```
 
 Host tests and app bundle:
 
 ```sh
-swift test --package-path host --scratch-path /private/tmp/screenshots-host-tests
-./scripts/build-host-app /private/tmp/screenshots-host-product
-open /private/tmp/screenshots-host-product/Screenshots\ Prototype.app
+swift test --package-path host --scratch-path /private/tmp/now-host-tests
+./scripts/build-host-app /private/tmp/now-host-product
+open /private/tmp/now-host-product/New\ Old\ World.app
 ```
 
 See [docs/architecture.md](docs/architecture.md) for the seams this slice keeps

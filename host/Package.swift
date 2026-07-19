@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "ScreenshotsPrototype",
+    name: "NewOldWorld",
     platforms: [.macOS(.v13)],
     products: [
         .executable(name: "Host", targets: ["Host"]),

@@ -43,7 +43,9 @@ capture records. No mock transport or fake screenshot data is shipped.
 
 ## Naming seam
 
-The placeholder is not a product decision. Rename these two files first:
+The product is "New Old World" — "NOW" for short (decided 2026-07-19). Display
+names, creator codes, bundle identifiers, and preference keys stay confined to
+two files so any future naming change cannot leak across the codebase:
 
 - `guest/src/product_identity.h`
 - `host/Sources/Host/ProductIdentity.swift`
