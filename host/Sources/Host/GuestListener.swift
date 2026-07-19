@@ -45,7 +45,14 @@ final class GuestListener: ObservableObject {
         var framesReceived: Int
     }
 
-    @Published private(set) var state: State = .idle
+    @Published private(set) var state: State = .idle {
+        didSet {
+            if ProcessInfo.processInfo.environment["NOW_HOST_DEBUG"] != nil {
+                FileHandle.standardError.write(
+                    Data("[now-host] state -> \(state)\n".utf8))
+            }
+        }
+    }
     @Published private(set) var lastDisconnect: String?
     @Published private(set) var log: [LogEntry] = []
     @Published private(set) var health: SessionHealth?
