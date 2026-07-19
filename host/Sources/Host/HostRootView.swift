@@ -33,6 +33,11 @@ struct HostRootView: View {
         switch state.selectedModuleID {
         case "screenshots":
             ScreenshotsModuleView(model: state.screenshots)
+        case "settings":
+            SettingsModuleView(settings: state.settings,
+                               listener: state.listener,
+                               onStart: { state.startListening() },
+                               onStop: { state.stopListening() })
         default:
             VStack(spacing: 10) {
                 Image(systemName: "questionmark.app")

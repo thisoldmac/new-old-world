@@ -27,6 +27,12 @@ struct ModuleRegistry: Sendable {
             symbol: "camera.viewfinder",
             summary: "Capture, browse, and save images from a classic Mac"
         ),
+        ModuleDescriptor(
+            id: "settings",
+            title: "Connection",
+            symbol: "network",
+            summary: "Listening port and guest connection status"
+        ),
     ])
 }
 
