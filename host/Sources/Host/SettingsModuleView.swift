@@ -40,10 +40,26 @@ struct SettingsModuleView: View {
             }
 
             statusLine
-            if let last = listener.lastDisconnect {
-                Text(last)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+
+            if let health = listener.health {
+                healthBlock(health)
+            }
+
+            if !listener.log.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Log")
+                        .font(.headline)
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(listener.log.reversed()) { entry in
+                                Text("\(entry.at, format: .dateTime.hour().minute().second())  \(entry.text)")
+                                    .font(.system(.caption, design: .monospaced))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 180)
+                }
             }
             Spacer()
         }
@@ -67,6 +83,47 @@ struct SettingsModuleView: View {
         } else {
             portText = String(settings.listenPort)
         }
+    }
+
+    private func healthBlock(_ health: GuestListener.SessionHealth) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Health")
+                .font(.headline)
+            Grid(alignment: .leading, horizontalSpacing: 16,
+                 verticalSpacing: 3) {
+                GridRow {
+                    Text("Guest").foregroundStyle(.secondary)
+                    Text(guestDescription(health))
+                }
+                GridRow {
+                    Text("Connected").foregroundStyle(.secondary)
+                    Text(health.connectedAt,
+                         format: .dateTime.hour().minute().second())
+                }
+                GridRow {
+                    Text("Last traffic").foregroundStyle(.secondary)
+                    Text(health.lastTraffic, style: .relative)
+                        + Text(" ago")
+                }
+                GridRow {
+                    Text("Frames / pings").foregroundStyle(.secondary)
+                    Text("\(health.framesReceived) / \(health.pingsAnswered)")
+                }
+            }
+            .font(.callout)
+        }
+    }
+
+    private func guestDescription(_ health: GuestListener.SessionHealth)
+        -> String {
+        var text = health.guestName
+        if let version = health.guestVersion {
+            text += "  ·  v\(version)"
+        }
+        if let os = health.guestOS {
+            text += "  ·  OS \(os)"
+        }
+        return text
     }
 
     @ViewBuilder

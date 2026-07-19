@@ -104,10 +104,9 @@ NowCaptureWindow *capwin_create(const Rect *content, short depth)
     }
     ++g_window_serial;
     if (g_window_serial == 1) {
-        snprintf(name, sizeof name, "%s", PRODUCT_WINDOW_TITLE);
+        snprintf(name, sizeof name, "Screenshots");
     } else {
-        snprintf(name, sizeof name, "%s %lu", PRODUCT_WINDOW_TITLE,
-                 g_window_serial);
+        snprintf(name, sizeof name, "Screenshots %lu", g_window_serial);
     }
     CopyCStringToPascal(name, title);
     SetWTitle(win->window, title);

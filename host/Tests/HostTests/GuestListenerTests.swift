@@ -215,3 +215,49 @@ final class GuestListenerTests: XCTestCase {
                        "Connection lost (no traffic)")
     }
 }
+
+@MainActor
+final class GuestListenerDiagnosticsTests: XCTestCase {
+    func testLogAndHealthAcrossASessionLifecycle() async throws {
+        let listener = GuestListener(
+            identity: .init(version: "0.1-test", name: "Test Host"),
+            timing: .init(idleTimeout: 60))
+        listener.start(port: 0)
+        let deadline = Date().addingTimeInterval(8)
+        while Date() < deadline {
+            if case .listening = listener.state { break }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        let guest = FakeGuest(port: listener.boundPort!)
+        guest.start()
+        try guest.send(.hello(Hello(contract: Contract.revision, side: "guest",
+                                    version: "0.9", name: "Quadra 950",
+                                    os: "8.1", chunk: nil)))
+        while listener.health == nil, Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        guard let health = listener.health else {
+            return XCTFail("no health after hello")
+        }
+        XCTAssertEqual(health.guestName, "Quadra 950")
+        XCTAssertEqual(health.guestVersion, "0.9")
+        XCTAssertEqual(health.guestOS, "8.1")
+        XCTAssertTrue(listener.log.contains {
+            $0.text.contains("Connected: Quadra 950") })
+
+        try guest.send(.ping(id: 1))
+        while (listener.health?.pingsAnswered ?? 0) == 0, Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertEqual(listener.health?.pingsAnswered, 1)
+
+        try guest.send(.bye(Bye(code: .normal, reason: nil)))
+        while listener.health != nil, Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertNil(listener.health)
+        XCTAssertTrue(listener.log.contains {
+            $0.text.contains("Quadra 950 disconnected") })
+        listener.stop()
+    }
+}

@@ -23,8 +23,32 @@ final class GuestListener: ObservableObject {
         var name: String
     }
 
+    /// One line of connection history, newest kept at the front by the view.
+    struct LogEntry: Identifiable, Equatable {
+        let id = UUID()
+        let at: Date
+        let text: String
+
+        static func == (lhs: LogEntry, rhs: LogEntry) -> Bool {
+            lhs.at == rhs.at && lhs.text == rhs.text
+        }
+    }
+
+    /// Live diagnostics for the currently connected guest.
+    struct SessionHealth: Equatable {
+        var guestName: String
+        var guestVersion: String?
+        var guestOS: String?
+        var connectedAt: Date
+        var lastTraffic: Date
+        var pingsAnswered: Int
+        var framesReceived: Int
+    }
+
     @Published private(set) var state: State = .idle
     @Published private(set) var lastDisconnect: String?
+    @Published private(set) var log: [LogEntry] = []
+    @Published private(set) var health: SessionHealth?
 
     private let identity: HostIdentity
     private let timing: Timing
@@ -34,6 +58,15 @@ final class GuestListener: ObservableObject {
     init(identity: HostIdentity, timing: Timing = Timing()) {
         self.identity = identity
         self.timing = timing
+    }
+
+    private static let logLimit = 100
+
+    func note(_ text: String) {
+        log.append(LogEntry(at: Date(), text: text))
+        if log.count > Self.logLimit {
+            log.removeFirst(log.count - Self.logLimit)
+        }
     }
 
     func start(port: UInt16) {
@@ -52,6 +85,7 @@ final class GuestListener: ObservableObject {
             listener.start(queue: .main)
         } catch {
             state = .failed("Could not listen: \(error.localizedDescription)")
+            note("Could not listen: \(error.localizedDescription)")
         }
     }
 
@@ -70,10 +104,12 @@ final class GuestListener: ObservableObject {
     private func listenerStateChanged(_ nwState: NWListener.State) {
         switch nwState {
         case .ready:
+            note("Listening on port \(boundPort ?? 0)")
             if case .connected = state { return }
             state = .listening(port: boundPort ?? 0)
         case .failed(let error):
             state = .failed(error.localizedDescription)
+            note("Listener failed: \(error.localizedDescription)")
         default:
             break
         }
@@ -92,11 +128,14 @@ final class GuestListener: ObservableObject {
                 self.session = activated
                 self.state = .connected(guestName: activated.guestName)
             },
+            onLog: { [weak self] text in self?.note(text) },
+            onHealth: { [weak self] health in self?.health = health },
             onClosed: { [weak self] closedSession, reason in
                 guard let self else { return }
                 self.pending.removeAll { $0 === closedSession }
                 guard self.session === closedSession else { return }
                 self.session = nil
+                self.health = nil
                 self.lastDisconnect = reason
                 if self.listener != nil {
                     self.state = .listening(port: self.boundPort ?? 0)
@@ -119,7 +158,10 @@ final class Session {
     private let timing: GuestListener.Timing
     private let isBusy: () -> String?
     private let onActive: (Session) -> Void
+    private let onLog: (String) -> Void
+    private let onHealth: (GuestListener.SessionHealth?) -> Void
     private let onClosed: (Session, String) -> Void
+    private var health: GuestListener.SessionHealth?
 
     private let decoder = FrameDecoder()
     private var helloed = false
@@ -132,12 +174,16 @@ final class Session {
          timing: GuestListener.Timing,
          isBusy: @escaping () -> String?,
          onActive: @escaping (Session) -> Void,
+         onLog: @escaping (String) -> Void,
+         onHealth: @escaping (GuestListener.SessionHealth?) -> Void,
          onClosed: @escaping (Session, String) -> Void) {
         self.connection = connection
         self.identity = identity
         self.timing = timing
         self.isBusy = isBusy
         self.onActive = onActive
+        self.onLog = onLog
+        self.onHealth = onHealth
         self.onClosed = onClosed
     }
 
@@ -179,6 +225,15 @@ final class Session {
         }
     }
 
+    private func touchHealth(framesDelta: Int = 0, pingsDelta: Int = 0) {
+        guard var h = health else { return }
+        h.lastTraffic = Date()
+        h.framesReceived += framesDelta
+        h.pingsAnswered += pingsDelta
+        health = h
+        onHealth(h)
+    }
+
     private func consume(_ data: Data) {
         let frames: [Frame]
         do {
@@ -187,6 +242,7 @@ final class Session {
             protocolError("malformed frame: \(error)")
             return
         }
+        touchHealth(framesDelta: frames.count)
         for frame in frames {
             switch frame.header.channel {
             case .control:
@@ -219,6 +275,7 @@ final class Session {
         switch message {
         case .ping(let id):
             send(.pong(id: id))
+            touchHealth(pingsDelta: 1)
         case .bye(let bye):
             let name = guestName
             finish(reason: byeDescription(bye, guest: name))
@@ -246,10 +303,23 @@ final class Session {
         send(.hello(Hello(contract: Contract.revision, side: "host",
                           version: identity.version, name: identity.name,
                           os: nil, chunk: chunk)))
+        let now = Date()
+        health = GuestListener.SessionHealth(
+            guestName: guestName, guestVersion: hello.version,
+            guestOS: hello.os, connectedAt: now, lastTraffic: now,
+            pingsAnswered: 0, framesReceived: 1)
+        onHealth(health)
+        var line = "Connected: \(guestName)"
+        if !hello.version.isEmpty {
+            line += " (guest \(hello.version)"
+            line += hello.os.map { ", OS \($0))" } ?? ")"
+        }
+        onLog(line)
         onActive(self)
     }
 
     private func refuse(_ reason: String) {
+        onLog("Refused a connection: \(reason)")
         finish(reason: "Refused: \(reason)",
                sending: .refuse(Refuse(contract: Contract.revision,
                                        reason: reason)))
@@ -285,6 +355,9 @@ final class Session {
     private func finish(reason: String, sending farewell: ControlMessage? = nil) {
         guard !closed else { return }
         closed = true
+        if helloed {
+            onLog(reason)
+        }
         idleTask?.cancel()
         if let farewell,
            let payload = try? ControlMessageCodec.encode(farewell),

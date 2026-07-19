@@ -10,10 +10,11 @@ enum {
     kWindowMinWidth = 360,
     kWindowMinHeight = 240,
     kFileMenuID = 129,
-    kFileNewWindowItem = 1,
-    kFileConnectionItem = 3,
-    kFileCloseItem = 5,
-    kFileQuitItem = 6
+    kFileCloseItem = 1,
+    kFileQuitItem = 3,
+    kWindowsMenuID = 130,
+    kWindowsNewScreenshotsItem = 1,
+    kWindowsConnectionItem = 2
 };
 
 static Boolean g_running = true;
@@ -22,8 +23,12 @@ static Rect g_screen_bounds;
 static const unsigned char k_file_menu_title[] = {
     4, 'F', 'i', 'l', 'e'
 };
-static const unsigned char k_new_window_menu_item[] = {
-    12, 'N', 'e', 'w', ' ', 'W', 'i', 'n', 'd', 'o', 'w', '/', 'N'
+static const unsigned char k_windows_menu_title[] = {
+    7, 'W', 'i', 'n', 'd', 'o', 'w', 's'
+};
+static const unsigned char k_new_screenshots_menu_item[] = {
+    24, 'N', 'e', 'w', ' ', 'S', 'c', 'r', 'e', 'e', 'n', 's', 'h', 'o',
+    't', 's', ' ', 'W', 'i', 'n', 'd', 'o', 'w', '/', 'N'
 };
 static const unsigned char k_connection_menu_item[] = {
     13, 'C', 'o', 'n', 'n', 'e', 'c', 't', 'i', 'o', 'n', 0xC9, '/', 'K'
@@ -41,14 +46,16 @@ static const unsigned char k_quit_menu_item[] = {
 static void create_menu_bar(void)
 {
     MenuRef file_menu = NewMenu(kFileMenuID, k_file_menu_title);
+    MenuRef windows_menu = NewMenu(kWindowsMenuID, k_windows_menu_title);
 
-    AppendMenu(file_menu, k_new_window_menu_item);
-    AppendMenu(file_menu, k_separator_menu_item);
-    AppendMenu(file_menu, k_connection_menu_item);
-    AppendMenu(file_menu, k_separator_menu_item);
     AppendMenu(file_menu, k_close_menu_item);
+    AppendMenu(file_menu, k_separator_menu_item);
     AppendMenu(file_menu, k_quit_menu_item);
     InsertMenu(file_menu, 0);
+    /* Modules live in the Windows menu; there is no main app window. */
+    AppendMenu(windows_menu, k_new_screenshots_menu_item);
+    AppendMenu(windows_menu, k_connection_menu_item);
+    InsertMenu(windows_menu, 0);
     DrawMenuBar();
 }
 
@@ -118,24 +125,18 @@ static void restore_session(void)
 
 static void handle_menu_choice(long choice)
 {
-    if (HiWord(choice) != kFileMenuID) {
-        return;
-    }
-    switch (LoWord(choice)) {
-    case kFileNewWindowItem:
-        capwin_create(NULL, 8);
-        break;
-    case kFileConnectionItem:
-        now_settings_dialog_run();
-        break;
-    case kFileCloseItem:
-        close_front_window();
-        break;
-    case kFileQuitItem:
-        g_running = false;
-        break;
-    default:
-        break;
+    if (HiWord(choice) == kFileMenuID) {
+        if (LoWord(choice) == kFileCloseItem) {
+            close_front_window();
+        } else if (LoWord(choice) == kFileQuitItem) {
+            g_running = false;
+        }
+    } else if (HiWord(choice) == kWindowsMenuID) {
+        if (LoWord(choice) == kWindowsNewScreenshotsItem) {
+            capwin_create(NULL, 8);
+        } else if (LoWord(choice) == kWindowsConnectionItem) {
+            now_settings_dialog_run();
+        }
     }
 }
 
