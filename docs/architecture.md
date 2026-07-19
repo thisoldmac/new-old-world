@@ -3,8 +3,10 @@
 ## Product boundary
 
 The repository owns two applications and, eventually, exactly one connection
-between them. It does not import TimBotTu runtime packages or expose a general
-remote-control surface.
+between them: a single versioned contract over one multiplexed wire. It does
+not import TimBotTu runtime packages or expose a general remote-control
+surface. The stack stays concise, human-facing, and polished — one app on each
+side, nothing else.
 
 ```text
 Mac OS 9 guest app  <---- one future protocol ---->  macOS host app
