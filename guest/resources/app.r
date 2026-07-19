@@ -84,3 +84,28 @@ resource 'DITL' (200) {
     }
 };
 
+resource 'DLOG' (300) {
+    {120, 140, 302, 560},
+    movableDBoxProc,
+    invisible,
+    noGoAway,
+    0,
+    300,
+    "Connection",
+    centerMainScreen
+};
+
+resource 'DITL' (300) {
+    {
+        /* 1 Save   */ {146, 330, 166, 400}, Button { enabled, "Save" };
+        /* 2 Cancel */ {146, 244, 166, 314}, Button { enabled, "Cancel" };
+        /* 3 Test   */ {146, 20, 166, 130},
+            Button { enabled, "Test Connection" };
+        /* 4 host   */ {24, 110, 40, 300}, EditText { enabled, "" };
+        /* 5 port   */ {54, 110, 70, 180}, EditText { enabled, "" };
+        /* 6 status */ {88, 20, 132, 400}, StaticText { disabled, "" };
+        /* 7 */ {24, 20, 40, 100}, StaticText { disabled, "Host:" };
+        /* 8 */ {54, 20, 70, 100}, StaticText { disabled, "Port:" };
+    }
+};
+

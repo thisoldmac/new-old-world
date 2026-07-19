@@ -5,6 +5,7 @@
 
 #include "capture.h"
 #include "capture_store.h"
+#include "settings_dialog.h"
 #include "product_identity.h"
 
 enum {
@@ -14,7 +15,8 @@ enum {
     kWindowMinHeight = 240,
     kControlHeight = 24,
     kFileMenuID = 129,
-    kFileQuitItem = 1
+    kFileConnectionItem = 1,
+    kFileQuitItem = 3
 };
 
 static WindowRef g_window;
@@ -32,6 +34,12 @@ static const short k_depths[] = { 1, 8, 16, 32 };
 static const unsigned char k_empty_pascal[] = { 0 };
 static const unsigned char k_file_menu_title[] = {
     4, 'F', 'i', 'l', 'e'
+};
+static const unsigned char k_connection_menu_item[] = {
+    13, 'C', 'o', 'n', 'n', 'e', 'c', 't', 'i', 'o', 'n', 0xC9, '/', 'K'
+};
+static const unsigned char k_separator_menu_item[] = {
+    2, '-', ' '
 };
 static const unsigned char k_quit_menu_item[] = {
     6, 'Q', 'u', 'i', 't', '/', 'Q'
@@ -207,6 +215,8 @@ static void create_menu_bar(void)
 {
     MenuRef file_menu = NewMenu(kFileMenuID, k_file_menu_title);
 
+    AppendMenu(file_menu, k_connection_menu_item);
+    AppendMenu(file_menu, k_separator_menu_item);
     AppendMenu(file_menu, k_quit_menu_item);
     InsertMenu(file_menu, 0);
     DrawMenuBar();
@@ -272,6 +282,19 @@ static void handle_control_click(Point point)
     }
 }
 
+static void handle_menu_choice(long choice)
+{
+    if (HiWord(choice) != kFileMenuID) {
+        return;
+    }
+    if (LoWord(choice) == kFileConnectionItem) {
+        now_settings_dialog_run();
+        request_redraw();
+    } else if (LoWord(choice) == kFileQuitItem) {
+        g_running = false;
+    }
+}
+
 static void handle_mouse_down(const EventRecord *event)
 {
     WindowRef window;
@@ -280,9 +303,7 @@ static void handle_mouse_down(const EventRecord *event)
 
     if (part == inMenuBar) {
         long choice = MenuSelect(event->where);
-        if (HiWord(choice) == kFileMenuID && LoWord(choice) == kFileQuitItem) {
-            g_running = false;
-        }
+        handle_menu_choice(choice);
         HiliteMenu(0);
     } else if (part == inDrag && window == g_window) {
         DragWindow(window, event->where, &g_screen_bounds);
@@ -324,9 +345,7 @@ static void handle_key_down(const EventRecord *event)
 
     if ((event->modifiers & cmdKey) != 0) {
         long choice = MenuKey(key);
-        if (HiWord(choice) == kFileMenuID && LoWord(choice) == kFileQuitItem) {
-            g_running = false;
-        }
+        handle_menu_choice(choice);
         HiliteMenu(0);
     } else if (key == '\r' || key == '\n') {
         capture_self();

@@ -5,5 +5,6 @@
 #define PRODUCT_DISPLAY_NAME "New Old World"
 #define PRODUCT_WINDOW_TITLE "New Old World"
 #define PRODUCT_CREATOR_CODE 'NOWo'
+#define PRODUCT_VERSION "0.1.0"
 
 #endif

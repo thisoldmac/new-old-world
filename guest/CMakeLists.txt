@@ -6,6 +6,10 @@ add_application(now-guest
     src/main.c
     src/capture.c
     src/capture_store.c
+    src/ot_carbon.c
+    src/wire.c
+    src/prefs.c
+    src/settings_dialog.c
     resources/app.r
 )
 
