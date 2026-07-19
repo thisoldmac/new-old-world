@@ -46,7 +46,10 @@ resource 'SIZE' (-1) {
     acceptSuspendResumeEvents,
     reserved,
     canBackground,
-    needsActivateOnFGSwitch,
+    /* Must be doesActivateOnFGSwitch: with needsActivateOnFGSwitch set,
+       CarbonLib refuses to start the process on OS 9 ("could not start
+       up"). Carbon apps handle their own activation. */
+    doesActivateOnFGSwitch,
     backgroundAndForeground,
     dontGetFrontClicks,
     ignoreChildDiedEvents,

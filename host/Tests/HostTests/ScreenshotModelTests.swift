@@ -22,10 +22,10 @@ final class ScreenshotModelTests: XCTestCase {
         let model = ScreenshotModuleModel()
         let older = ScreenshotRecord(id: UUID(), capturedAt: .distantPast,
                                      width: 640, height: 480,
-                                     depth: .indexed, savedURL: nil)
+                                     depth: .indexed)
         let newer = ScreenshotRecord(id: UUID(), capturedAt: .now,
                                      width: 800, height: 600,
-                                     depth: .millions, savedURL: nil)
+                                     depth: .millions)
 
         model.receive(older)
         model.receive(newer)

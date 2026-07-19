@@ -10,6 +10,8 @@
 enum {
     kWindowWidth = 700,
     kWindowHeight = 510,
+    kWindowMinWidth = 360,
+    kWindowMinHeight = 240,
     kControlHeight = 24,
     kFileMenuID = 129,
     kFileQuitItem = 1
@@ -46,14 +48,11 @@ static void request_redraw(void)
 static void set_depth_button_title(void)
 {
     char title[32];
-    CFStringRef text;
+    Str255 text;
 
     snprintf(title, sizeof title, "Depth: %d-bit", g_depth);
-    text = CFStringCreateWithCString(NULL, title, kCFStringEncodingMacRoman);
-    if (text != NULL) {
-        SetControlTitleWithCFString(g_depth_button, text);
-        CFRelease(text);
-    }
+    CopyCStringToPascal(title, text);
+    SetControlTitle(g_depth_button, text);
 }
 
 static void update_history_controls(void)
@@ -118,8 +117,7 @@ static void draw_status(const CaptureImage *image)
     Str255 text;
 
     MoveTo(20, 91);
-    TextFont(kThemeSystemFont);
-    TextSize(12);
+    UseThemeFont(kThemeSystemFont, smSystemScript);
     if (image == NULL) {
         CopyCStringToPascal("Capture this window to begin.", text);
     } else {
@@ -182,22 +180,26 @@ static void draw_content(void)
     }
 }
 
+static ControlRef make_push_button(const Rect *bounds, const char *title)
+{
+    Str255 text;
+
+    CopyCStringToPascal(title, text);
+    return NewControl(g_window, bounds, text, true, 0, 0, 1, pushButProc, 0);
+}
+
 static void create_controls(void)
 {
     Rect bounds;
 
     SetRect(&bounds, 20, 20, 138, 20 + kControlHeight);
-    CreatePushButtonControl(g_window, &bounds, CFSTR("Capture This Window"),
-                            &g_capture_button);
+    g_capture_button = make_push_button(&bounds, "Capture This Window");
     SetRect(&bounds, 150, 20, 270, 20 + kControlHeight);
-    CreatePushButtonControl(g_window, &bounds, CFSTR("Depth: 8-bit"),
-                            &g_depth_button);
+    g_depth_button = make_push_button(&bounds, "Depth: 8-bit");
     SetRect(&bounds, 20, 56, 104, 56 + kControlHeight);
-    CreatePushButtonControl(g_window, &bounds, CFSTR("Previous"),
-                            &g_previous_button);
+    g_previous_button = make_push_button(&bounds, "Previous");
     SetRect(&bounds, 116, 56, 200, 56 + kControlHeight);
-    CreatePushButtonControl(g_window, &bounds, CFSTR("Next"),
-                            &g_next_button);
+    g_next_button = make_push_button(&bounds, "Next");
     update_history_controls();
 }
 
@@ -213,13 +215,15 @@ static void create_menu_bar(void)
 static void create_main_window(void)
 {
     Rect bounds;
-    CFStringRef title;
-    GDHandle device = GetMainDevice();
+    Str255 title;
+    RgnHandle desktop = GetGrayRgn();
 
-    if (device == NULL
-        || GetAvailableWindowPositioningBounds(device, &g_screen_bounds)
-            != noErr) {
-        SetRect(&g_screen_bounds, 0, 0, 800, 600);
+    /* The gray region already excludes the menu bar; its bounds are the
+       classic-portable answer to "where may windows go". */
+    if (desktop != NULL) {
+        GetRegionBounds(desktop, &g_screen_bounds);
+    } else {
+        SetRect(&g_screen_bounds, 0, 20, 800, 600);
     }
 
     bounds.left = (short)(g_screen_bounds.left
@@ -234,12 +238,8 @@ static void create_main_window(void)
     CreateNewWindow(kDocumentWindowClass,
                     kWindowStandardDocumentAttributes,
                     &bounds, &g_window);
-    title = CFStringCreateWithCString(NULL, PRODUCT_WINDOW_TITLE,
-                                     kCFStringEncodingMacRoman);
-    if (title != NULL) {
-        SetWindowTitleWithCFString(g_window, title);
-        CFRelease(title);
-    }
+    CopyCStringToPascal(PRODUCT_WINDOW_TITLE, title);
+    SetWTitle(g_window, title);
     SetThemeWindowBackground(g_window, kThemeBrushDocumentWindowBackground,
                              true);
     create_controls();
@@ -286,6 +286,23 @@ static void handle_mouse_down(const EventRecord *event)
         HiliteMenu(0);
     } else if (part == inDrag && window == g_window) {
         DragWindow(window, event->where, &g_screen_bounds);
+    } else if (part == inGrow && window == g_window) {
+        Rect limits;
+        long size;
+
+        SetRect(&limits, kWindowMinWidth, kWindowMinHeight,
+                (short)(g_screen_bounds.right - g_screen_bounds.left),
+                (short)(g_screen_bounds.bottom - g_screen_bounds.top));
+        size = GrowWindow(window, event->where, &limits);
+        if (size != 0) {
+            SizeWindow(window, LoWord(size), HiWord(size), true);
+            request_redraw();
+        }
+    } else if ((part == inZoomIn || part == inZoomOut) && window == g_window
+               && TrackBox(window, event->where, part)) {
+        SetPortWindowPort(window);
+        ZoomWindow(window, part, false);
+        request_redraw();
     } else if (part == inGoAway && window == g_window
                && TrackGoAway(window, event->where)) {
         g_running = false;
@@ -338,7 +355,10 @@ int main(void)
     create_menu_bar();
     create_main_window();
 
-    quit_handler = NewAEEventHandlerUPP(handle_quit_apple_event);
+    /* On CFM PowerPC a UPP is the tvector itself; the cast avoids
+       NewAEEventHandlerUPP, a weakly-linked import that would resolve to
+       NULL (and crash) on CarbonLib versions that lack it. */
+    quit_handler = (AEEventHandlerUPP)handle_quit_apple_event;
     AEInstallEventHandler(kCoreEventClass, kAEQuitApplication,
                           quit_handler, 0, false);
 
@@ -351,7 +371,8 @@ int main(void)
             handle_mouse_down(&event);
             break;
         case keyDown:
-        case autoKey:
+            /* autoKey is deliberately ignored: a held Return must not
+               machine-gun the capture history. */
             handle_key_down(&event);
             break;
         case updateEvt:
@@ -371,7 +392,6 @@ int main(void)
 
     AERemoveEventHandler(kCoreEventClass, kAEQuitApplication,
                          quit_handler, false);
-    DisposeAEEventHandlerUPP(quit_handler);
     capture_store_dispose(&g_store);
     DisposeWindow(g_window);
     return 0;

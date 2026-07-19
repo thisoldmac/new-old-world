@@ -1,5 +1,5 @@
-#ifndef SCREENSHOTS_CAPTURE_STORE_H
-#define SCREENSHOTS_CAPTURE_STORE_H
+#ifndef NOW_CAPTURE_STORE_H
+#define NOW_CAPTURE_STORE_H
 
 #include "capture.h"
 

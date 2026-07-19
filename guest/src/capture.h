@@ -1,5 +1,5 @@
-#ifndef SCREENSHOTS_CAPTURE_H
-#define SCREENSHOTS_CAPTURE_H
+#ifndef NOW_CAPTURE_H
+#define NOW_CAPTURE_H
 
 #include <Carbon.h>
 

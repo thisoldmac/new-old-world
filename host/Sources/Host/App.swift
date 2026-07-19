@@ -24,7 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         item.button?.title = "▣ \(ProductIdentity.displayName)"
 
         let menu = NSMenu()
-        let open = NSMenuItem(title: "Open Screenshots",
+        let open = NSMenuItem(title: "Open \(ProductIdentity.displayName)",
                               action: #selector(openMainWindow),
                               keyEquivalent: "o")
         open.target = self

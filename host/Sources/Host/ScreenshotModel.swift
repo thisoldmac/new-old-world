@@ -27,7 +27,6 @@ struct ScreenshotRecord: Identifiable, Equatable, Sendable {
     let width: Int
     let height: Int
     let depth: CaptureDepth
-    let savedURL: URL?
 }
 
 @MainActor

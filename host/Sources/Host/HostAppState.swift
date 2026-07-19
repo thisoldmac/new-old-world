@@ -10,7 +10,9 @@ final class HostAppState: ObservableObject {
     private let defaults: UserDefaults
     private static let selectionKey = "selectedModuleID"
 
-    init(registry: ModuleRegistry, defaults: UserDefaults = .standard) {
+    init(registry: ModuleRegistry,
+         defaults: UserDefaults = UserDefaults(
+             suiteName: ProductIdentity.preferencesSuite) ?? .standard) {
         self.defaults = defaults
         let stored = defaults.string(forKey: Self.selectionKey)
         selectedModuleID = stored.flatMap(registry.module(id:))?.id
