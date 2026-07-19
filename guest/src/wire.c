@@ -225,22 +225,35 @@ int now_wire_test(const char *host_ip, unsigned short port,
         goto fail_unbind;
     }
     deadline = TickCount() + kConnectDeadlineTicks;
-    for (;;) {
-        OTResult look = gNowOT.look(ep);
-        if (look == T_CONNECT) {
-            gNowOT.rcvConnect(ep, NULL);
-            break;
-        }
-        if (look == T_DISCONNECT) {
-            gNowOT.rcvDisconnect(ep, NULL);
-            snprintf(status_out, status_cap,
-                     "Connection refused by %s:%u", host_ip, port);
-            goto fail_unbind;
-        }
-        if (TickCount() > deadline) {
-            snprintf(status_out, status_cap,
-                     "No answer from %s:%u (10s)", host_ip, port);
-            goto fail_unbind;
+    /* Sync/non-blocking endpoints report connect completion through
+       OTRcvConnect itself (kOTNoDataErr until done) — not as a T_CONNECT
+       look event, which never fires in this mode. When OTConnect already
+       returned noErr the connection is up and OTRcvConnect would be
+       out-of-state (-3155), so the poll runs only for kOTNoDataErr. */
+    if (err == kOTNoDataErr) {
+        for (;;) {
+            err = gNowOT.rcvConnect(ep, NULL);
+            if (err == noErr) {
+                break;
+            }
+            if (err == kOTLookErr) {
+                OTResult look = gNowOT.look(ep);
+                if (look == T_DISCONNECT) {
+                    gNowOT.rcvDisconnect(ep, NULL);
+                    snprintf(status_out, status_cap,
+                             "Connection refused by %s:%u", host_ip, port);
+                    goto fail_unbind;
+                }
+            } else if (err != kOTNoDataErr) {
+                snprintf(status_out, status_cap,
+                         "Connect failed (error %ld)", (long)err);
+                goto fail_unbind;
+            }
+            if (TickCount() > deadline) {
+                snprintf(status_out, status_cap,
+                         "No answer from %s:%u (10s)", host_ip, port);
+                goto fail_unbind;
+            }
         }
     }
 
