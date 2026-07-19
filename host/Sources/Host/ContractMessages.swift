@@ -15,6 +15,8 @@ enum ControlMessage: Equatable, Sendable {
     case pong(id: Int)
     case bye(Bye)
     case error(ErrorMessage)
+    case commandRequest(CommandRequest)
+    case commandResult(CommandResult)
     case captureRequest(CaptureRequest)
     case captureBegin(CaptureBegin)
     case captureEnd(CaptureEnd)
@@ -49,6 +51,26 @@ struct ErrorMessage: Codable, Equatable, Sendable {
     var id: Int?
     var code: String
     var message: String
+}
+
+struct CommandRequest: Codable, Equatable, Sendable {
+    var id: Int
+    var name: String
+    var args: [String: String]?
+}
+
+struct CommandResult: Codable, Equatable, Sendable {
+    struct CommandError: Codable, Equatable, Sendable {
+        var code: String
+        var message: String
+    }
+
+    var id: Int
+    var ok: Bool
+    /// Flat string map is enough for every declared command today; a nested
+    /// output would grow this type alongside the contract.
+    var output: [String: String]?
+    var error: CommandError?
 }
 
 struct CaptureRequest: Codable, Equatable, Sendable {
@@ -108,6 +130,12 @@ enum ControlMessageCodec {
             return .bye(try decoder.decode(Bye.self, from: data))
         case "error":
             return .error(try decoder.decode(ErrorMessage.self, from: data))
+        case "command.request":
+            return .commandRequest(
+                try decoder.decode(CommandRequest.self, from: data))
+        case "command.result":
+            return .commandResult(
+                try decoder.decode(CommandResult.self, from: data))
         case "capture.request":
             return .captureRequest(
                 try decoder.decode(CaptureRequest.self, from: data))
@@ -138,6 +166,8 @@ enum ControlMessageCodec {
         case .pong(let id): return try tagged("pong", ["id": id])
         case .bye(let bye): return try tagged("bye", bye)
         case .error(let error): return try tagged("error", error)
+        case .commandRequest(let m): return try tagged("command.request", m)
+        case .commandResult(let m): return try tagged("command.result", m)
         case .captureRequest(let m): return try tagged("capture.request", m)
         case .captureBegin(let m): return try tagged("capture.begin", m)
         case .captureEnd(let m): return try tagged("capture.end", m)

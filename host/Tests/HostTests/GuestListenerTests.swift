@@ -261,3 +261,103 @@ final class GuestListenerDiagnosticsTests: XCTestCase {
         listener.stop()
     }
 }
+
+@MainActor
+final class GuestCommandTests: XCTestCase {
+    func testRunCommandRoundTripsThroughAConnectedGuest() async throws {
+        let listener = GuestListener(
+            identity: .init(version: "0.1-test", name: "Test Host"),
+            timing: .init(idleTimeout: 60))
+        listener.start(port: 0)
+        let deadline = Date().addingTimeInterval(8)
+        while Date() < deadline {
+            if case .listening = listener.state { break }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        let guest = FakeGuest(port: listener.boundPort!)
+        guest.onMessage = { message in
+            if case .commandRequest(let request) = message {
+                XCTAssertEqual(request.name, "gestalt")
+                try? guest.send(.commandResult(CommandResult(
+                    id: request.id, ok: true,
+                    output: ["system": "9.1", "ramMB": "64",
+                             "carbonLib": "1.6", "machineType": "406"],
+                    error: nil)))
+            }
+        }
+        guest.start()
+        try guest.send(.hello(Hello(contract: Contract.revision, side: "guest",
+                                    version: "0.1.0", name: "PowerBook 1400",
+                                    os: "9.1", chunk: nil)))
+        while Date() < deadline {
+            if case .connected = listener.state { break }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+
+        var received: CommandResult?
+        listener.runCommand("gestalt") { received = $0 }
+        while received == nil, Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertEqual(received?.ok, true)
+        XCTAssertEqual(received?.output?["carbonLib"], "1.6")
+        listener.stop()
+    }
+
+    func testRunCommandWithoutGuestFailsHonestly() async throws {
+        let listener = GuestListener(
+            identity: .init(version: "0.1-test", name: "Test Host"))
+        var received: CommandResult?
+        listener.runCommand("gestalt") { received = $0 }
+        XCTAssertEqual(received?.ok, false)
+        XCTAssertEqual(received?.error?.code, "not-connected")
+    }
+}
+
+@MainActor
+final class ConsoleModelTests: XCTestCase {
+    func testTypingGestaltRendersGuestOutput() async throws {
+        let listener = GuestListener(
+            identity: .init(version: "0.1-test", name: "Test Host"),
+            timing: .init(idleTimeout: 60))
+        listener.start(port: 0)
+        let deadline = Date().addingTimeInterval(8)
+        while Date() < deadline {
+            if case .listening = listener.state { break }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        let guest = FakeGuest(port: listener.boundPort!)
+        guest.onMessage = { message in
+            if case .commandRequest(let req) = message {
+                try? guest.send(.commandResult(CommandResult(
+                    id: req.id, ok: true,
+                    output: ["system": "9.1", "carbonLib": "1.6"],
+                    error: nil)))
+            }
+        }
+        guest.start()
+        try guest.send(.hello(Hello(contract: Contract.revision, side: "guest",
+                                    version: "0.1.0", name: "PowerBook 1400",
+                                    os: "9.1", chunk: nil)))
+        while Date() < deadline {
+            if case .connected = listener.state { break }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+
+        let console = ConsoleModel(listener: listener)
+        console.input = "gestalt"
+        console.submit()
+        while console.lines.allSatisfy({ !$0.text.contains("carbonLib") }),
+              Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertTrue(console.lines.contains { $0.text.contains("1.6") },
+                      "console should render the guest's gestalt output")
+        // Unknown command is a local, honest failure — no wire traffic.
+        console.input = "teleport"
+        console.submit()
+        XCTAssertTrue(console.lines.contains {
+            $0.text.contains("not a declared command") })
+        listener.stop()
+    }
+}

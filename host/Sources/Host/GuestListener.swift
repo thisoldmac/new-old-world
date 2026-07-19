@@ -57,6 +57,9 @@ final class GuestListener: ObservableObject {
     @Published private(set) var log: [LogEntry] = []
     @Published private(set) var health: SessionHealth?
 
+    private var nextCommandId = 1
+    private var pendingCommands: [Int: (CommandResult) -> Void] = [:]
+
     private let identity: HostIdentity
     private let timing: Timing
     private var listener: NWListener?
@@ -108,6 +111,40 @@ final class GuestListener: ObservableObject {
     /// passed for an ephemeral port — used by tests).
     var boundPort: UInt16? { listener?.port?.rawValue }
 
+    /// Runs one declared command on the connected guest. Completion fires on
+    /// the main actor with the guest's result, or a synthesized failure when
+    /// no guest is connected / the session dies first.
+    func runCommand(_ name: String, args: [String: String]? = nil,
+                    completion: @escaping (CommandResult) -> Void) {
+        guard let session, case .connected = state else {
+            completion(CommandResult(
+                id: 0, ok: false, output: nil,
+                error: .init(code: "not-connected",
+                             message: "No Mac is connected")))
+            return
+        }
+        let id = nextCommandId
+        nextCommandId += 1
+        pendingCommands[id] = completion
+        session.sendCommand(CommandRequest(id: id, name: name, args: args))
+    }
+
+    private func resolveCommand(_ result: CommandResult) {
+        if let completion = pendingCommands.removeValue(forKey: result.id) {
+            completion(result)
+        }
+    }
+
+    private func failPendingCommands(_ reason: String) {
+        let pending = pendingCommands
+        pendingCommands = [:]
+        for (id, completion) in pending {
+            completion(CommandResult(
+                id: id, ok: false, output: nil,
+                error: .init(code: "disconnected", message: reason)))
+        }
+    }
+
     private func listenerStateChanged(_ nwState: NWListener.State) {
         switch nwState {
         case .ready:
@@ -137,12 +174,16 @@ final class GuestListener: ObservableObject {
             },
             onLog: { [weak self] text in self?.note(text) },
             onHealth: { [weak self] health in self?.health = health },
+            onCommandResult: { [weak self] result in
+                self?.resolveCommand(result)
+            },
             onClosed: { [weak self] closedSession, reason in
                 guard let self else { return }
                 self.pending.removeAll { $0 === closedSession }
                 guard self.session === closedSession else { return }
                 self.session = nil
                 self.health = nil
+                self.failPendingCommands(reason)
                 self.lastDisconnect = reason
                 if self.listener != nil {
                     self.state = .listening(port: self.boundPort ?? 0)
@@ -167,6 +208,7 @@ final class Session {
     private let onActive: (Session) -> Void
     private let onLog: (String) -> Void
     private let onHealth: (GuestListener.SessionHealth?) -> Void
+    private let onCommandResult: (CommandResult) -> Void
     private let onClosed: (Session, String) -> Void
     private var health: GuestListener.SessionHealth?
 
@@ -183,6 +225,7 @@ final class Session {
          onActive: @escaping (Session) -> Void,
          onLog: @escaping (String) -> Void,
          onHealth: @escaping (GuestListener.SessionHealth?) -> Void,
+         onCommandResult: @escaping (CommandResult) -> Void,
          onClosed: @escaping (Session, String) -> Void) {
         self.connection = connection
         self.identity = identity
@@ -191,6 +234,7 @@ final class Session {
         self.onActive = onActive
         self.onLog = onLog
         self.onHealth = onHealth
+        self.onCommandResult = onCommandResult
         self.onClosed = onClosed
     }
 
@@ -283,6 +327,8 @@ final class Session {
         case .ping(let id):
             send(.pong(id: id))
             touchHealth(pingsDelta: 1)
+        case .commandResult(let result):
+            onCommandResult(result)
         case .bye(let bye):
             let name = guestName
             finish(reason: byeDescription(bye, guest: name))
@@ -335,6 +381,10 @@ final class Session {
     private func protocolError(_ detail: String) {
         finish(reason: "Protocol error: \(detail)",
                sending: .bye(Bye(code: .protocolError, reason: detail)))
+    }
+
+    func sendCommand(_ request: CommandRequest) {
+        send(.commandRequest(request))
     }
 
     private func send(_ message: ControlMessage) {

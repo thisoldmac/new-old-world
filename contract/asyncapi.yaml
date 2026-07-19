@@ -57,6 +57,14 @@
 #   "shutting-down", "protocol-error".
 # - The guest auto-reconnects with capped backoff (2s doubling to 30s)
 #   while its app is running.
+# - Commands: the host console is a shell into the guest — every command a
+#   human types there becomes one command.request and exactly one
+#   command.result. The command set is CLOSED and DECLARED: every command's
+#   name, args, and output schema live in this file (x-commands). Adding a
+#   command is additive (no revision bump — an older peer answers
+#   unknown-command cleanly); changing a command's shape is breaking and
+#   bumps the revision. The wire is never a TTY: no raw keystrokes, no
+#   byte-streams — shell face, typed spine.
 
 asyncapi: 3.0.0
 
@@ -78,6 +86,8 @@ channels:
       pong: { $ref: "#/components/messages/pong" }
       bye: { $ref: "#/components/messages/bye" }
       error: { $ref: "#/components/messages/error" }
+      commandRequest: { $ref: "#/components/messages/commandRequest" }
+      commandResult: { $ref: "#/components/messages/commandResult" }
       captureRequest: { $ref: "#/components/messages/captureRequest" }
       captureBegin: { $ref: "#/components/messages/captureBegin" }
       captureEnd: { $ref: "#/components/messages/captureEnd" }
@@ -124,6 +134,12 @@ components:
     error:
       name: error
       payload: { $ref: "#/components/schemas/Error" }
+    commandRequest:
+      name: command.request
+      payload: { $ref: "#/components/schemas/CommandRequest" }
+    commandResult:
+      name: command.result
+      payload: { $ref: "#/components/schemas/CommandResult" }
     captureRequest:
       name: capture.request
       payload: { $ref: "#/components/schemas/CaptureRequest" }
@@ -213,6 +229,41 @@ components:
           type: string
           description: Stable machine-readable slug, e.g. "capture-no-memory".
         message: { type: string }
+    CommandRequest:
+      type: object
+      required: [type, id, name]
+      additionalProperties: false
+      properties:
+        type: { const: command.request }
+        id: { type: integer }
+        name:
+          type: string
+          description: >
+            A command from the x-commands registry below. An unknown name is
+            answered with ok=false, error code "unknown-command" — never a
+            protocol error; that is what keeps commands additive.
+        args:
+          type: object
+          description: Per-command arguments; schema in x-commands.
+    CommandResult:
+      type: object
+      required: [type, id, ok]
+      additionalProperties: false
+      properties:
+        type: { const: command.result }
+        id: { type: integer, description: Echoes the request id. }
+        ok: { type: boolean }
+        output:
+          type: object
+          description: Present when ok; schema per command in x-commands.
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Stable slug, e.g. "unknown-command".
+            message: { type: string }
     CaptureRequest:
       type: object
       required: [type, id, depth]
@@ -249,3 +300,28 @@ components:
         id: { type: integer }
         transfer: { type: integer }
         ok: { type: boolean }
+
+  # The console command registry: the CLOSED set of commands a guest serves.
+  # Every entry declares its args and output; the consoles on both sides and
+  # the guest's dispatch table are all views of this list.
+  x-commands:
+    gestalt:
+      description: >
+        The guest's own account of itself, via the Gestalt Manager.
+      args: {}
+      output:
+        type: object
+        required: [system, machineType, ramMB, carbonLib]
+        properties:
+          system:
+            type: string
+            description: Mac OS version, e.g. "9.1".
+          machineType:
+            type: integer
+            description: gestaltMachineType raw id.
+          ramMB:
+            type: integer
+            description: Physical RAM in megabytes.
+          carbonLib:
+            type: string
+            description: CarbonLib version, e.g. "1.6".

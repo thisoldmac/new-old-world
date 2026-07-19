@@ -33,6 +33,8 @@ struct HostRootView: View {
         switch state.selectedModuleID {
         case "screenshots":
             ScreenshotsModuleView(model: state.screenshots)
+        case "console":
+            ConsoleModuleView(model: state.console, listener: state.listener)
         case "settings":
             SettingsModuleView(settings: state.settings,
                                listener: state.listener,

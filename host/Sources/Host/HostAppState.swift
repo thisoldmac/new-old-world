@@ -9,6 +9,7 @@ final class HostAppState: ObservableObject {
     let screenshots = ScreenshotModuleModel()
     let settings: SettingsModel
     let listener: GuestListener
+    private(set) lazy var console = ConsoleModel(listener: listener)
 
     private let defaults: UserDefaults
     private static let selectionKey = "selectedModuleID"

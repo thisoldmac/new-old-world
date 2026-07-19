@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "commands.h"
 #include "contract.h"
 #include "ot_carbon.h"
 #include "prefs.h"
@@ -45,6 +46,7 @@ typedef struct {
     char peer_name[64];
     char peer_version[32];
     char status[128];
+    char last_fail[128];
 } ConnState;
 
 static ConnState g;
@@ -99,6 +101,19 @@ static int json_find_string(const char *json, const char *key,
     }
     out[n] = '\0';
     return 1;
+}
+
+static long json_find_int(const char *json, const char *key, long fallback)
+{
+    char pattern[48];
+    const char *p;
+
+    snprintf(pattern, sizeof pattern, "\"%s\":", key);
+    p = strstr(json, pattern);
+    if (p == NULL) {
+        return fallback;
+    }
+    return strtol(p + strlen(pattern), NULL, 10);
 }
 
 static int json_type_is(const char *json, const char *type)
@@ -167,6 +182,7 @@ static void fail(const char *reason)
 {
     if (reason != NULL) {
         snprintf(g.status, sizeof g.status, "%s", reason);
+        snprintf(g.last_fail, sizeof g.last_fail, "%.95s", reason);
     }
     enter_backoff();
 }
@@ -359,6 +375,7 @@ static void on_hello(const char *reply)
     }
     g.phase = kConnConnected;
     g.backoff_ticks = 0;              /* success resets backoff */
+    g.last_fail[0] = '\0';
     g.pings_sent = 0;
     g.next_ping_tick = TickCount() + kPingIntervalTicks;
     if (g.last_rtt_ms >= 0) {
@@ -401,6 +418,21 @@ static int handle_frame(const char *reply)
                  g.peer_name, g.peer_version, g.last_rtt_ms);
         return 1;
     }
+    if (json_type_is(reply, "command.request")) {
+        char name[48];
+        char result[512];
+        long id = json_find_int(reply, "id", 0);
+
+        if (!json_find_string(reply, "name", name, sizeof name)) {
+            strcpy(name, "?");
+        }
+        now_command_run(name, id, result, sizeof result);
+        if (!send_control(result)) {
+            fail("Connection lost");
+            return 0;
+        }
+        return 1;
+    }
     if (json_type_is(reply, "bye")) {
         char reason[96];
         if (json_find_string(reply, "reason", reason, sizeof reason)) {
@@ -433,7 +465,9 @@ static void service_connected_io(void)
             return;
         }
         if (!handle_frame(payload)) {
-            /* Peer said goodbye or we rejected it: orderly release, backoff. */
+            /* Peer said goodbye or we rejected it: orderly release, backoff.
+               handle_frame set g.status to the specific reason — keep it. */
+            snprintf(g.last_fail, sizeof g.last_fail, "%s", g.status);
             gNowOT.sndOrderlyDisconnect(g.ep);
             enter_backoff();
             return;
@@ -518,8 +552,13 @@ void conn_service(void)
         } else {
             unsigned long remain =
                 (g.backoff_until - TickCount() + 59) / 60;
-            snprintf(g.status, sizeof g.status,
-                     "Reconnecting in %lus...", remain);
+            if (g.last_fail[0] != '\0') {
+                snprintf(g.status, sizeof g.status,
+                         "%.100s - retry in %lus", g.last_fail, remain);
+            } else {
+                snprintf(g.status, sizeof g.status,
+                         "Reconnecting in %lus...", remain);
+            }
         }
         break;
     default:
