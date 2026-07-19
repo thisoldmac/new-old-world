@@ -1,0 +1,37 @@
+#!/bin/sh
+set -eu
+
+if [ "$#" -ne 1 ]; then
+    echo "usage: $0 /absolute/output/directory" >&2
+    exit 64
+fi
+
+case "$1" in
+    /*) output_root=$1 ;;
+    *) echo "output directory must be absolute" >&2; exit 64 ;;
+esac
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_root=$(dirname "$script_dir")
+case "$output_root/" in
+    "$repo_root"/*)
+        echo "output directory must live outside the source repository" >&2
+        exit 64
+        ;;
+esac
+
+scratch="$output_root/swift-build"
+bundle="$output_root/Screenshots Prototype.app"
+binary="$scratch/debug/Host"
+
+swift build --package-path "$repo_root/host" --scratch-path "$scratch"
+mkdir -p "$bundle/Contents/MacOS"
+cp "$binary" "$bundle/Contents/MacOS/Host"
+
+sed \
+    -e 's/@DISPLAY_NAME@/Screenshots Prototype/g' \
+    -e 's/@BUNDLE_ID@/dev.prototype.screenshots/g' \
+    "$script_dir/HostInfo.plist.in" > "$bundle/Contents/Info.plist"
+codesign --force --sign - "$bundle"
+
+echo "$bundle"
