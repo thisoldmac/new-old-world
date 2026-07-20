@@ -8,6 +8,7 @@ add_application(now-guest
     src/console_win.c
     src/capture.c
     src/screenshot.c
+    src/vprobe.c
     src/pixels.c
     src/shots_panel.c
     src/ot_carbon.c
@@ -25,3 +26,7 @@ target_compile_options(now-guest PRIVATE
     -Werror
 )
 
+
+# The probe times tight read loops; at -O0 loop overhead pollutes the
+# bandwidth numbers.
+set_source_files_properties(src/vprobe.c PROPERTIES COMPILE_OPTIONS "-O2")

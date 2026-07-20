@@ -23,7 +23,7 @@ final class ConsoleModel: ObservableObject {
     }
 
     /// Declared commands (contract x-commands) plus console built-ins.
-    static let commands = ["gestalt", "screenshot"]
+    static let commands = ["gestalt", "screenshot", "vprobe"]
 
     /// Per-command docs, mirroring the contract's x-commands descriptions.
     /// help and --help render from here — documentation never hits the wire.
@@ -48,6 +48,14 @@ final class ConsoleModel: ObservableObject {
                    "  desktop (pixels do not cross the wire yet) and returns",
                    "  size / compression / timing measurements.",
                    "  --no-save measures without writing a file."]),
+        "vprobe": .init(
+            summary: "measure the guest's VRAM read cost by method",
+            help: ["vprobe — measure VRAM read cost on the guest",
+                   "  Usage: vprobe",
+                   "  Times raw framebuffer reads (8/16/32/64-bit) against",
+                   "  the CopyBits baseline, checks reread caching,",
+                   "  partial-read scaling, and pixel fidelity. Takes ~3 s;",
+                   "  keep the guest's screen still during the run."]),
         "help": .init(
             summary: "show this list (\"help <cmd>\" for details)",
             help: ["help — list commands, or \"help <cmd>\" for one"]),
@@ -251,12 +259,24 @@ final class ConsoleModel: ObservableObject {
     }
 
     private func render(_ command: String, _ result: CommandResult) {
-        // Generic path for future non-gestalt commands. gestalt renders via
-        // renderGestalt; the only thing reaching here today is an error.
+        // Generic path for non-gestalt commands: any grouped [label, value]
+        // rows render aligned, so a new guest command needs no host code.
         if let error = result.error {
             append(.failure, "\(command): \(error.message) [\(error.code)]")
-        } else {
+            return
+        }
+        guard let output = result.output, !output.isEmpty else {
             append(.output, "(ok)")
+            return
+        }
+        let width = output.values.joined()
+            .compactMap(\.first?.count).max() ?? 0
+        for key in output.keys.sorted() {
+            for row in output[key] ?? [] where row.count >= 2 {
+                let label = row[0].padding(toLength: max(width, row[0].count),
+                                           withPad: " ", startingAt: 0)
+                append(.output, "  \(label)  \(row[1])")
+            }
         }
     }
 
