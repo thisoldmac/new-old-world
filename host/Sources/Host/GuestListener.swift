@@ -47,6 +47,34 @@ final class GuestListener: ObservableObject {
         var framesReceived: Int
     }
 
+    /// How fast we are allowed to hand bulk bytes to TCP.
+    ///
+    /// The PB1400c drops an inbound frame that arrives back-to-back with
+    /// another — its own ACK included. Handing TCP a whole 32 KB frame
+    /// leaves the socket buffer permanently non-empty, so TCP fires the
+    /// next segment the instant an ACK lands (measured: 0.13 ms after)
+    /// and it dies. 48% of segments were being retransmitted, each
+    /// costing a 311 ms RTO, which is the whole of the ~4 KB/s inbound
+    /// ceiling (finding pb1400c-inbound-first-send-dropped).
+    ///
+    /// So we meter the writes. This is deliberately NOT the frame size:
+    /// protocol framing stays at 32 KB and the guest still reassembles a
+    /// byte stream, so nothing on the wire format changes.
+    struct Pacing: Sendable, Equatable {
+        /// Bytes handed to TCP per write. Sized to sit just under the
+        /// 1460-byte MSS so each write is one segment.
+        var bytes: Int
+        /// Quiet time between writes, so the card is idle when the next
+        /// frame lands.
+        var gap: TimeInterval
+
+        /// 1448 B per 3 ms tops out near 480 KB/s — twice what this wire
+        /// manages in its healthy direction, so the meter never binds.
+        static let classicMac = Pacing(bytes: 1448, gap: 0.003)
+        /// Hand each frame over whole, as before.
+        static let none = Pacing(bytes: 0, gap: 0)
+    }
+
     @Published private(set) var state: State = .idle {
         didSet {
             if ProcessInfo.processInfo.environment["NOW_HOST_DEBUG"] != nil {
@@ -64,12 +92,15 @@ final class GuestListener: ObservableObject {
 
     private let identity: HostIdentity
     private let timing: Timing
+    private let pacing: Pacing
     private var listener: NWListener?
     private var session: Session?
 
-    init(identity: HostIdentity, timing: Timing = Timing()) {
+    init(identity: HostIdentity, timing: Timing = Timing(),
+         pacing: Pacing = .classicMac) {
         self.identity = identity
         self.timing = timing
+        self.pacing = pacing
     }
 
     private static let logLimit = 100
@@ -622,6 +653,7 @@ final class GuestListener: ObservableObject {
     private func accept(_ connection: NWConnection) {
         let newSession = Session(
             connection: connection, identity: identity, timing: timing,
+            pacing: pacing,
             isBusy: { [weak self] in
                 guard let session = self?.session else { return nil }
                 return session.guestName
@@ -733,6 +765,7 @@ final class Session {
     let connection: NWConnection
     private let identity: GuestListener.HostIdentity
     private let timing: GuestListener.Timing
+    private let pacing: GuestListener.Pacing
     private let isBusy: () -> String?
     private let onActive: (Session) -> Void
     private let onLog: (String) -> Void
@@ -791,6 +824,7 @@ final class Session {
     init(connection: NWConnection,
          identity: GuestListener.HostIdentity,
          timing: GuestListener.Timing,
+         pacing: GuestListener.Pacing,
          isBusy: @escaping () -> String?,
          onActive: @escaping (Session) -> Void,
          onLog: @escaping (String) -> Void,
@@ -816,6 +850,7 @@ final class Session {
         self.connection = connection
         self.identity = identity
         self.timing = timing
+        self.pacing = pacing
         self.isBusy = isBusy
         self.onActive = onActive
         self.onLog = onLog
@@ -1117,21 +1152,66 @@ final class Session {
         outbound = out
         let progress = out.sent
         let total = out.bytes.count
-        connection.send(content: frame, completion: .contentProcessed {
-            [weak self] error in
+        sendMetered(frame) { [weak self] error in
+            guard let self else { return }
+            if let error {
+                // Swallowing this reported a full progress bar for
+                // bytes that never left: the transfer looked
+                // complete while a third of the file had arrived.
+                self.outbound = nil
+                self.onOutboundFailed("the connection refused the "
+                                      + "data: \(error)")
+                return
+            }
+            self.onOutboundProgress(progress, total)
+            self.sendNextOutboundChunk()
+        }
+    }
+
+    /// Hands one frame to TCP in metered pieces (see Pacing).
+    ///
+    /// The gap is the point: it has to be real quiet time on the wire,
+    /// not just a smaller write. Handing the socket the whole frame lets
+    /// TCP send back-to-back the moment the window allows, which is what
+    /// this peer's card drops. Writing a piece and pausing leaves the
+    /// send buffer empty, so TCP has nothing to fire when the next ACK
+    /// arrives and the following piece goes out on its own.
+    ///
+    /// Ordering is safe: NWConnection delivers queued sends in order, so
+    /// the pieces reassemble into the same byte stream the guest would
+    /// have seen anyway — it never learns the frame was split.
+    private func sendMetered(_ frame: Data,
+                             completion: @escaping (NWError?) -> Void) {
+        guard pacing.bytes > 0, frame.count > pacing.bytes else {
+            connection.send(content: frame, completion: .contentProcessed {
+                error in
+                Task { @MainActor in completion(error) }
+            })
+            return
+        }
+        sendPiece(frame, from: frame.startIndex, completion: completion)
+    }
+
+    private func sendPiece(_ frame: Data, from offset: Data.Index,
+                           completion: @escaping (NWError?) -> Void) {
+        let end = min(offset + pacing.bytes, frame.endIndex)
+        let last = end >= frame.endIndex
+        connection.send(content: frame[offset..<end],
+                        completion: .contentProcessed { [weak self] error in
             Task { @MainActor in
-                guard let self else { return }
-                if let error {
-                    // Swallowing this reported a full progress bar for
-                    // bytes that never left: the transfer looked
-                    // complete while a third of the file had arrived.
-                    self.outbound = nil
-                    self.onOutboundFailed("the connection refused the "
-                                          + "data: \(error)")
+                guard let self, !self.closed else { return }
+                if let error { completion(error); return }
+                if last { completion(nil); return }
+                // Cancellation lands between pieces as well as between
+                // frames: a stopped transfer should not keep metering
+                // out the rest of a 32 KB frame it has abandoned.
+                if self.outbound?.cancelled == true {
+                    completion(nil)
                     return
                 }
-                self.onOutboundProgress(progress, total)
-                self.sendNextOutboundChunk()
+                try? await Task.sleep(
+                    nanoseconds: UInt64(self.pacing.gap * 1_000_000_000))
+                self.sendPiece(frame, from: end, completion: completion)
             }
         })
     }

@@ -16,11 +16,32 @@ final class MetalPutTests: XCTestCase {
     private var listener: GuestListener!
 
     override func setUp() async throws {
-        try XCTSkipUnless(ProcessInfo.processInfo.environment["NOW_METAL"]
+        let env = ProcessInfo.processInfo.environment
+        try XCTSkipUnless(env["NOW_METAL"]
                           != nil, "set NOW_METAL=1 to run against the Mac")
+        // A second guest (now-guest-2) can be pointed at its own port, so
+        // measurement no longer has to take 5250 from the running host
+        // app. NOW_METAL_PORT=5251 targets it.
+        let port = env["NOW_METAL_PORT"].flatMap { UInt16($0) } ?? 5250
+        // NOW_PACE=off to measure unpaced, or "<bytes>:<ms>" to sweep.
+        // The whole point of the paced writer is a wire effect, so it has
+        // to be switchable at the wire, not just in a unit test.
+        let pacing: GuestListener.Pacing
+        switch env["NOW_PACE"] {
+        case "off":
+            pacing = .none
+        case .some(let spec) where spec.contains(":"):
+            let parts = spec.split(separator: ":")
+            pacing = .init(bytes: Int(parts[0]) ?? 1448,
+                           gap: (Double(parts[1]) ?? 3) / 1000.0)
+        default:
+            pacing = .classicMac
+        }
+        print("=== harness on port \(port), pacing "
+              + "\(pacing.bytes) B / \(pacing.gap * 1000) ms ===")
         listener = GuestListener(identity: .init(
-            version: "0.1-metal", name: "Metal Harness"))
-        listener.start(port: 5250)
+            version: "0.1-metal", name: "Metal Harness"), pacing: pacing)
+        listener.start(port: port)
     }
 
     override func tearDown() async throws {
@@ -171,6 +192,49 @@ final class MetalPutTests: XCTestCase {
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
         return done ? rows.sorted().joined(separator: " ") : "no answer"
+    }
+
+    /// Metering splits every frame across many TCP writes. The guest
+    /// only ever checks that the BYTE COUNT it received matches what was
+    /// announced, so a split that reordered or corrupted content would
+    /// still be reported as a success — and an 80x speedup is exactly
+    /// the kind of result that deserves to be disbelieved until the
+    /// bytes come back. Pull the file and compare it.
+    func testAPutFileComesBackByteIdentical() async throws {
+        _ = try await waitForGuest()
+        // Deterministic and non-repeating over a frame, so a duplicated
+        // or dropped piece shows up as a mismatch rather than aliasing.
+        var bytes = [UInt8]()
+        bytes.reserveCapacity(200_000)
+        for i in 0..<200_000 {
+            let mixed: Int = (i &* 31) &+ (i / 251) &+ 7
+            bytes.append(UInt8(mixed & 0xFF))
+        }
+        let payload = Data(bytes)
+        let sent = await put("mp roundtrip.bin", Data(payload))
+        print("=== put: \(sent)")
+
+        var got: Data?
+        var failure: String?
+        listener.getFile(path: "mp roundtrip.bin") { result in
+            switch result {
+            case .success(let file): got = file.bytes
+            case .failure(let f): failure = f.message
+            }
+        }
+        let deadline = Date().addingTimeInterval(120)
+        while got == nil, failure == nil, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+        }
+        if let failure { return XCTFail("pull failed: \(failure)") }
+        let back = try XCTUnwrap(got, "no bytes came back")
+        XCTAssertEqual(back.count, payload.count, "length differs")
+        if back != payload {
+            let at = zip(back, payload).enumerated()
+                .first { $0.element.0 != $0.element.1 }?.offset ?? -1
+            XCTFail("content differs, first at byte \(at)")
+        }
+        print("=== round trip verified: \(back.count) bytes identical ===")
     }
 
     func testOneBigFileWithTheGuestsOwnNumbers() async throws {

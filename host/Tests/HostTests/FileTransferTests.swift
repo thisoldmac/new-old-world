@@ -205,6 +205,64 @@ final class FileWireTests: XCTestCase {
         }
     }
 
+    func testAMeteredFrameArrivesAsExactlyTheSameBytes() async throws {
+        // Pacing splits each 32 KB protocol frame across many TCP
+        // writes. The guest reassembles a byte stream and must not be
+        // able to tell — least of all at a frame boundary, where a
+        // split that lost or duplicated bytes would desync its decoder
+        // rather than merely corrupt a file.
+        listener.stop()
+        listener = GuestListener(
+            identity: .init(version: "0.1-test", name: "Test Host"),
+            timing: .init(idleTimeout: 60),
+            // A deliberately ugly size that divides neither the frame
+            // payload nor the file, so pieces straddle both boundaries.
+            pacing: .init(bytes: 97, gap: 0))
+        listener.start(port: 0)
+        try await waitUntil("listening") {
+            if case .listening = self.listener.state { return true }
+            return false
+        }
+        let guest = try await connectedGuest()
+
+        // Spans three 32 KB frames, and ends mid-frame.
+        let payload = Data((0..<70_000).map { UInt8($0 % 251) })
+        var settled: Result<Void, GuestListener.FileFailure>?
+        listener.putFile(name: "Metered", into: "", container: "data",
+                         bytes: payload) { settled = $0 }
+
+        var offerId: Int?
+        try await waitUntil("file.offer") {
+            for message in guest.received {
+                if case .fileOffer(let offer) = message {
+                    offerId = offer.id
+                    return offer.bytes == payload.count
+                }
+            }
+            return false
+        }
+        let id = try XCTUnwrap(offerId)
+        try guest.send(.fileAccept(FileAccept(id: id)))
+
+        try await waitUntil("all bytes", timeout: 20) {
+            guest.bulkReceived.count == payload.count
+        }
+        XCTAssertEqual(guest.bulkReceived, payload,
+                       "metering must not alter the byte stream")
+        try await waitUntil("file.end") {
+            guest.received.contains {
+                if case .fileEnd(let end) = $0 { return end.ok }
+                return false
+            }
+        }
+        try guest.send(.fileDone(FileDone(id: id, ok: true, code: nil,
+                                          reason: nil)))
+        try await waitUntil("settled") { settled != nil }
+        guard case .success = try XCTUnwrap(settled) else {
+            return XCTFail("expected success")
+        }
+    }
+
     func testProgressFollowsTheGuestNotOurOwnSendCounter() async throws {
         // The defect this replaces: progress came from the local send
         // completing, which only means macOS accepted the bytes. Over a
