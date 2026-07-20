@@ -13,6 +13,9 @@ enum FileConverter {
         var data: Data
         /// What happened, for the browser's badge and the transfer log.
         var note: String?
+        /// The file's own date, so a dragged-out file does not arrive
+        /// stamped with the moment it happened to cross.
+        var modified: Date?
     }
 
     /// Classic type codes that are text regardless of extension.
@@ -150,14 +153,56 @@ enum OutboundFile {
                     fileType: type, creator: creator, note: nil)
     }
 
-    /// MacBinary II/III: a zero at 0 and 74, a plausible name length,
-    /// and the version bytes. Cheap, and wrong only for files that went
-    /// out of their way to look like one.
+    /// Recognises MacBinary I as well as II and III. Requiring the II
+    /// version byte rejected every MacBinary I file — which is most of
+    /// what an archive site serves — and those then travelled as plain
+    /// data, arriving on the classic side as a .bin document with no
+    /// resource fork at all.
+    ///
+    /// The reliable test is not the version byte but the header's own
+    /// arithmetic: the fork lengths, padded to 128, must account for the
+    /// file. II and III also carry a CRC, which is checked when present.
     static func looksLikeMacBinary(_ data: Data) -> Bool {
         guard data.count >= 128 else { return false }
         let b = [UInt8](data.prefix(128))
-        return b[0] == 0 && b[74] == 0 && b[1] >= 1 && b[1] <= 63
-            && (b[122] == 129 || b[122] == 130)
+        // Reserved bytes are zero in every version.
+        guard b[0] == 0, b[74] == 0, b[82] == 0,
+              b[1] >= 1, b[1] <= 63 else { return false }
+
+        func be32(_ i: Int) -> Int {
+            (Int(b[i]) << 24) | (Int(b[i + 1]) << 16)
+                | (Int(b[i + 2]) << 8) | Int(b[i + 3])
+        }
+        let dataLen = be32(83)
+        let rsrcLen = be32(87)
+        guard dataLen >= 0, rsrcLen >= 0,
+              dataLen < 0x7FFF_FFFF, rsrcLen < 0x7FFF_FFFF else {
+            return false
+        }
+        func padded(_ n: Int) -> Int { (n + 127) / 128 * 128 }
+        let expected = 128 + padded(dataLen) + padded(rsrcLen)
+        // Some encoders append a little; none truncate.
+        guard data.count >= expected, data.count - expected < 256 else {
+            return false
+        }
+        if b[122] == 129 || b[122] == 130 {
+            let stored = (UInt16(b[124]) << 8) | UInt16(b[125])
+            return stored == crc16(b.prefix(124))
+        }
+        return true                    // MacBinary I: no CRC to check
+    }
+
+    /// CRC-16/XMODEM, as MacBinary II specifies.
+    private static func crc16<C: Collection>(_ bytes: C) -> UInt16
+        where C.Element == UInt8 {
+        var crc: UInt16 = 0
+        for byte in bytes {
+            crc ^= UInt16(byte) << 8
+            for _ in 0..<8 {
+                crc = crc & 0x8000 != 0 ? (crc << 1) ^ 0x1021 : crc << 1
+            }
+        }
+        return crc
     }
 
     /// Enough of a type map that a transferred file opens by

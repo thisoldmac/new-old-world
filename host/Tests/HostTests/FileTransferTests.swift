@@ -775,17 +775,80 @@ final class OutboundFileTests: XCTestCase {
         XCTAssertEqual(plan.bytes, raw, "bytes must be untouched")
     }
 
+    /// Builds a MacBinary file the way a real encoder would, so the
+    /// header's arithmetic and CRC hold.
+    private func macBinary(name: String, dataFork: Int, rsrcFork: Int,
+                           version: UInt8) -> Data {
+        var h = [UInt8](repeating: 0, count: 128)
+        let nb = Array(name.utf8.prefix(63))
+        h[1] = UInt8(nb.count)
+        for (i, byte) in nb.enumerated() { h[2 + i] = byte }
+        h[65] = 0x41; h[66] = 0x50; h[67] = 0x50; h[68] = 0x4C   // APPL
+        func put(_ value: Int, at i: Int) {
+            h[i] = UInt8((value >> 24) & 0xFF)
+            h[i + 1] = UInt8((value >> 16) & 0xFF)
+            h[i + 2] = UInt8((value >> 8) & 0xFF)
+            h[i + 3] = UInt8(value & 0xFF)
+        }
+        put(dataFork, at: 83)
+        put(rsrcFork, at: 87)
+        if version != 0 {
+            h[122] = version
+            h[123] = version
+            var crc: UInt16 = 0
+            for byte in h[0..<124] {
+                crc ^= UInt16(byte) << 8
+                for _ in 0..<8 {
+                    crc = crc & 0x8000 != 0 ? (crc << 1) ^ 0x1021 : crc << 1
+                }
+            }
+            h[124] = UInt8(crc >> 8)
+            h[125] = UInt8(crc & 0xFF)
+        }
+        func pad(_ n: Int) -> Int { (n + 127) / 128 * 128 }
+        return Data(h) + Data(repeating: 7, count: pad(dataFork))
+            + Data(repeating: 9, count: pad(rsrcFork))
+    }
+
     func testMacBinaryTravelsWholeAndShedsItsExtension() {
-        var header = [UInt8](repeating: 0, count: 128)
-        header[1] = 5            // name length
-        header[122] = 129        // MacBinary II
-        let data = Data(header) + Data(repeating: 7, count: 128)
+        let data = macBinary(name: "SimpleText", dataFork: 0,
+                             rsrcFork: 2048, version: 129)
         let plan = OutboundFile.plan(
             url: URL(fileURLWithPath: "/tmp/SimpleText.bin"),
             data: data, convertText: true)
         XCTAssertEqual(plan.container, "macbinary")
         XCTAssertEqual(plan.name, "SimpleText")
         XCTAssertEqual(plan.bytes, data)
+    }
+
+    /// The case that failed on metal: archive sites serve MacBinary I,
+    /// which has no version byte and no CRC. Requiring them sent real
+    /// classic software across as plain data, arriving with no resource
+    /// fork — a file the Mac could not open.
+    func testMacBinaryOneIsRecognisedWithoutAVersionByte() {
+        let data = macBinary(name: "Some App", dataFork: 300,
+                             rsrcFork: 5000, version: 0)
+        XCTAssertTrue(OutboundFile.looksLikeMacBinary(data))
+        let plan = OutboundFile.plan(
+            url: URL(fileURLWithPath: "/tmp/Some App.bin"),
+            data: data, convertText: true)
+        XCTAssertEqual(plan.container, "macbinary")
+    }
+
+    func testAHeaderThatDoesNotAccountForTheFileIsNotMacBinary() {
+        // Right shape, wrong arithmetic: forks claim far more than the
+        // file holds.
+        var data = macBinary(name: "Liar", dataFork: 10, rsrcFork: 10,
+                             version: 0)
+        data = data.prefix(200)
+        XCTAssertFalse(OutboundFile.looksLikeMacBinary(data))
+    }
+
+    func testACorruptedVersionTwoHeaderIsRejectedByItsCRC() {
+        var data = macBinary(name: "Broken", dataFork: 0, rsrcFork: 128,
+                             version: 129)
+        data[70] = 0xFF                 // creator changed, CRC now stale
+        XCTAssertFalse(OutboundFile.looksLikeMacBinary(data))
     }
 
     func testAFileMerelyNamedBinIsNotTreatedAsMacBinary() {

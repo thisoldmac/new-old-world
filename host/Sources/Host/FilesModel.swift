@@ -475,9 +475,12 @@ final class FilesModuleModel: ObservableObject {
             self.transfer = nil
             switch result {
             case .success(let file):
-                completion(.success(FileConverter.convert(
+                var converted = FileConverter.convert(
                     name: file.name, container: file.container,
-                    fileType: file.fileType, bytes: file.bytes)))
+                    fileType: file.fileType, bytes: file.bytes)
+                converted.modified = file.modified
+                    .flatMap(ClassicDate.date(from:))
+                completion(.success(converted))
             case .failure(let failure):
                 self.lastError = failure.message
                 completion(.failure(FilesError.wire(failure.message)))

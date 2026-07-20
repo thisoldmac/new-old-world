@@ -29,6 +29,9 @@ struct FileBrowserTable: NSViewRepresentable {
         table.dataSource = context.coordinator
         table.delegate = context.coordinator
         table.registerForDraggedTypes([.fileURL])
+        let menu = NSMenu()
+        menu.delegate = context.coordinator
+        table.menu = menu
         table.sortDescriptors = [
             NSSortDescriptor(key: "name", ascending: true),
         ]
@@ -57,13 +60,29 @@ struct FileBrowserTable: NSViewRepresentable {
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         context.coordinator.parent = self
+        // Reload ONLY when the contents actually changed. SwiftUI
+        // re-runs this for any state change — a ticking clock was enough
+        // — and reloadData drops the selection every time, which is why
+        // a selection would survive a moment and then vanish.
+        guard context.coordinator.rows != rows else { return }
+        let table = scroll.documentView as? NSTableView
+        let selectedIDs = Set(context.coordinator.selectedRows.map(\.id))
         context.coordinator.rows = rows
-        (scroll.documentView as? NSTableView)?.reloadData()
+        table?.reloadData()
+        // Keep the same FILES selected across a refresh, not the same
+        // row numbers: a listing can reorder under you.
+        let restored = IndexSet(rows.indices.filter {
+            selectedIDs.contains(rows[$0].id)
+        })
+        if !restored.isEmpty {
+            table?.selectRowIndexes(restored, byExtendingSelection: false)
+        }
     }
 
     @MainActor
     final class Coordinator: NSObject, NSTableViewDataSource,
-                             NSTableViewDelegate, NSFilePromiseProviderDelegate {
+                             NSTableViewDelegate, NSMenuDelegate,
+                             NSFilePromiseProviderDelegate {
         var parent: FileBrowserTable
         var rows: [FileRow] = []
         weak var table: NSTableView?
@@ -159,6 +178,65 @@ struct FileBrowserTable: NSViewRepresentable {
                 parent.sort = [KeyPathComparator(\FileRow.name,
                                                  order: order)]
             }
+        }
+
+        var selectedRows: [FileRow] {
+            guard let table else { return [] }
+            return table.selectedRowIndexes.compactMap { item(at: $0) }
+        }
+
+        func tableViewSelectionDidChange(_ notification: Notification) {
+            // The module's actions follow the selection; without this
+            // they had nothing to act on and stayed hidden.
+            parent.model.selection = selectedRows.first?.id
+        }
+
+        /// Right-click acts on the row under the cursor, like the Finder,
+        /// rather than on whatever happened to be selected before.
+        @objc func menuNeedsUpdate(_ menu: NSMenu) {
+            menu.removeAllItems()
+            guard let table, let row = item(at: table.clickedRow) else {
+                return
+            }
+            if row.isFolder {
+                menu.addItem(withTitle: "Open", action: #selector(openRow),
+                             keyEquivalent: "").target = self
+            } else {
+                menu.addItem(withTitle: "Download",
+                             action: #selector(downloadRow),
+                             keyEquivalent: "").target = self
+                menu.addItem(withTitle: "Download as MacBinary",
+                             action: #selector(downloadRowAsMacBinary),
+                             keyEquivalent: "").target = self
+            }
+            menu.addItem(.separator())
+            menu.addItem(withTitle: "Copy Path", action: #selector(copyPath),
+                         keyEquivalent: "").target = self
+        }
+
+        private var clickedRow: FileRow? {
+            guard let table else { return nil }
+            return item(at: table.clickedRow)
+        }
+
+        @objc private func openRow() {
+            if let row = clickedRow { parent.onOpen(row) }
+        }
+
+        @objc private func downloadRow() {
+            if let row = clickedRow { parent.model.download(row) }
+        }
+
+        @objc private func downloadRowAsMacBinary() {
+            if let row = clickedRow {
+                parent.model.download(row, container: "macbinary")
+            }
+        }
+
+        @objc private func copyPath() {
+            guard let row = clickedRow else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(row.path, forType: .string)
         }
 
         @objc func doubleClicked(_ sender: Any) {
