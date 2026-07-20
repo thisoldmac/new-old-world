@@ -575,13 +575,22 @@ final class GuestListener: ObservableObject {
             completion(.failure(.init(code: "disconnected",
                                       message: reason)))
         }
-        for (_, dog) in watchdogs {
-            dog.task?.cancel()
-        }
+        // Every armed request carries its own way of failing, so this
+        // does not have to know the kinds — it knew three of the four
+        // and a put could outlive its answer forever.
+        let dogs = watchdogs
         watchdogs = [:]
+        for (_, dog) in dogs {
+            dog.task?.cancel()
+            dog.expire(reason)
+        }
         if let file = pendingFile {
             pendingFile = nil
             file(.failure(.init(code: "disconnected", message: reason)))
+        }
+        if pendingPut != nil {
+            settlePut(.failure(.init(code: "disconnected",
+                                     message: reason)))
         }
         deliverCapture(.failure(.init(message: reason)))
     }
@@ -666,6 +675,10 @@ final class GuestListener: ObservableObject {
                 self.captureProgress = .init(received: sent, expected: total)
                 if let id = self.putId { self.touchWatchdog(id) }
             },
+            onOutboundFailed: { [weak self] message in
+                self?.settlePut(.failure(.init(code: "io-error",
+                                               message: message)))
+            },
             onClosed: { [weak self] closedSession, reason in
                 guard let self else { return }
                 self.pending.removeAll { $0 === closedSession }
@@ -713,6 +726,7 @@ final class Session {
         (Result<GuestListener.FileDelivery, GuestListener.FileFailure>) -> Void
     private let onFileDone: (FileDone) -> Void
     private let onOutboundProgress: (Int, Int) -> Void
+    private let onOutboundFailed: (String) -> Void
     private var streamId: Int?
     private let onClosed: (Session, String) -> Void
 
@@ -769,6 +783,7 @@ final class Session {
              -> Void,
          onFileDone: @escaping (FileDone) -> Void,
          onOutboundProgress: @escaping (Int, Int) -> Void,
+         onOutboundFailed: @escaping (String) -> Void,
          onClosed: @escaping (Session, String) -> Void) {
         self.connection = connection
         self.identity = identity
@@ -789,6 +804,7 @@ final class Session {
         self.onFileDelivery = onFileDelivery
         self.onFileDone = onFileDone
         self.onOutboundProgress = onOutboundProgress
+        self.onOutboundFailed = onOutboundFailed
         self.onClosed = onClosed
     }
 
@@ -1071,9 +1087,18 @@ final class Session {
         let progress = out.sent
         let total = out.bytes.count
         connection.send(content: frame, completion: .contentProcessed {
-            [weak self] _ in
+            [weak self] error in
             Task { @MainActor in
                 guard let self else { return }
+                if let error {
+                    // Swallowing this reported a full progress bar for
+                    // bytes that never left: the transfer looked
+                    // complete while a third of the file had arrived.
+                    self.outbound = nil
+                    self.onOutboundFailed("the connection refused the "
+                                          + "data: \(error)")
+                    return
+                }
                 self.onOutboundProgress(progress, total)
                 self.sendNextOutboundChunk()
             }

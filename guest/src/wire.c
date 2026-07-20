@@ -266,11 +266,14 @@ static void negotiate_rcv_buffer(EndpointRef ep)
     ret.opt.len = 0;
     ret.opt.maxlen = sizeof reply;
     ret.flags = 0;
-    if (gNowOT.optionManagement(ep, &req, &ret) == noErr
-        && ret.opt.len >= sizeof reply) {
-        g_rcv_window = reply.value;
+    memset(&reply, 0, sizeof reply);
+    if (gNowOT.optionManagement(ep, &req, &ret) != noErr) {
+        g_rcv_window = -1;            /* the call itself failed */
+    } else if (reply.opt.status == T_SUCCESS
+               || reply.opt.status == T_PARTSUCCESS) {
+        g_rcv_window = (long)reply.value;
     } else {
-        g_rcv_window = 0;             /* refused: stack default stands */
+        g_rcv_window = -(long)reply.opt.status;   /* refused; say why */
     }
 }
 
@@ -307,11 +310,11 @@ static void start_connect(void)
         return;
     }
     gNowOT.setNonBlocking(g.ep);
-    negotiate_rcv_buffer(g.ep);
     if (gNowOT.bind(g.ep, NULL, NULL) != noErr) {
         fail("Bind failed");
         return;
     }
+    negotiate_rcv_buffer(g.ep);
 
     memset(&inet, 0, sizeof inet);
     inet.fAddressType = AF_INET;

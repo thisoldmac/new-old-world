@@ -154,6 +154,38 @@ final class MetalPutTests: XCTestCase {
         print("=== done ===\n")
     }
 
+    /// Reads the guest's own counters after a transfer.
+    private func putstat() async -> String {
+        var rows: [String] = []
+        var done = false
+        listener.runCommand("putstat") { result in
+            for (_, group) in result.output ?? [:] {
+                for row in group where row.count >= 2 {
+                    rows.append("\(row[0])=\(row[1])")
+                }
+            }
+            done = true
+        }
+        let deadline = Date().addingTimeInterval(30)
+        while !done, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        return done ? rows.sorted().joined(separator: " ") : "no answer"
+    }
+
+    func testOneBigFileWithTheGuestsOwnNumbers() async throws {
+        _ = try await waitForGuest()
+        print("\n=== before: \(await putstat()) ===")
+        var big = [UInt8]()
+        big.reserveCapacity(2_700_000)
+        for i in 0..<2_700_000 {
+            big.append(UInt8((i &* 31 &+ 7) & 0xFF))
+        }
+        let result = await put("mp big.bin", Data(big), timeout: 300)
+        print("=== 2.7 MB: \(result)")
+        print("=== after: \(await putstat()) ===\n")
+    }
+
     func testSendsFilesOfVariedSizesAndTypes() async throws {
         let guest = try await waitForGuest()
         print("\n=== connected to \(guest) ===")
