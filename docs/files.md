@@ -147,9 +147,8 @@ The browser is the module's centerpiece and gets the polish budget:
    table + Download (+ as-MacBinary), text conversion, share-folder
    setting, `ls` command.
 2. **Put + drag-in** — settled 2026-07-20, detailed below.
-3. **Drag-out + guest-initiated:** file promises, the guest's
-   `put` (NavGetFile → offer), the guest's `get` (needs the host to
-   serve a share — see below), conversion badges everywhere.
+3. **Drag-out + guest-initiated** — drag-out done; the rest is
+   detailed under "Slice 3" below.
 
 ## Slice 2 design (settled 2026-07-20)
 
@@ -206,3 +205,103 @@ directory creation.
 introduces the host's share folder: one setting per machine meaning
 "what the other Mac can see", the same thing the guest's share root
 already means.
+
+## Slice 3 design (settled 2026-07-20)
+
+### The protocol becomes symmetric
+
+Three requirements — Send to *host*, Browse *host*, and a share the
+human picks — all point the same way: the host must serve a share, and
+the guest must be able to browse and push to it. So the file family
+stops being "host asks, guest serves" and becomes direction-agnostic:
+`file.list`, `file.get`, `file.offer` and their answers mean the same
+thing whichever side sends them, and **whoever receives a request serves
+its own share**.
+
+That collapses three features into one change, and it gives the host's
+share folder exactly the meaning the guest's share root already has:
+*what the other machine can reach on its own initiative*. The rule from
+slice 2 is unchanged and now applies both ways — a share bounds
+unattended reach, never what a human deliberately sends.
+
+### Guest surface
+
+**File Sharing panel** gains:
+
+- **Send to *name*…** — NavGetFile, then an offer into the host's share.
+  The button names the machine, like every other surface (see the
+  naming rule above).
+- **Browse *name*…** — opens the browser window described below.
+- **Share entire boot volume** — a toggle. While set, the share is the
+  boot volume root and Choose Folder is disabled; the panel still shows
+  which volume that is. The chosen folder is *remembered*, not
+  discarded, so unchecking restores it rather than making the human
+  pick again.
+- **Downloads land** on the Desktop by default, and the folder is
+  configurable.
+
+### The browser window: native, not approximately native
+
+The point of building our own instead of mounting a volume (see below)
+is that it can behave correctly. That means using the controls Mac OS
+provides rather than drawing a list by hand:
+
+- **Data Browser** (`kDataBrowserListView`) is the control. It gives
+  column headers with click-to-sort, real selection semantics
+  (shift-range, cmd-toggle), keyboard navigation, scrolling, and
+  Appearance-correct drawing. The List Manager alternative means
+  reimplementing all of that slightly wrong. Data Browser has sharp
+  edges under CarbonLib; they are worth paying for, because a browser
+  that *looks* right and *behaves* foreign is the failure mode this
+  slice exists to avoid.
+- **Icon Services** for the icons: every listing entry carries type and
+  creator, so `GetIconRefFromTypeInfo` + `PlotIconRef` shows the real
+  system icon — the actual application icon, the actual document icon.
+  This is most of the difference between a list of filenames and a
+  Finder window.
+- **Behaviours**, which are cheap once the control is right:
+  double-click to descend; **Cmd-click the title for the path
+  hierarchy** (the classic Finder gesture); Cmd-Up for the enclosing
+  folder; type-select; Return to open; a status line reading
+  "23 items, 1.2 GB available", which the listing and the host's own
+  free space already supply.
+- **Then**: drag and drop with the Finder, via the Drag Manager's
+  promised-HFS flavour — the direct ancestor of the file promises the
+  host side already uses. Dragging out of the browser makes the Finder
+  ask for the file on drop. Sequenced after the browser proper, not
+  skipped.
+
+### Why not mount the host as a volume
+
+Considered and declined, recorded so it is not re-litigated from
+scratch:
+
+- **AFP** is the native mechanism — OS 9 mounts AppleShare volumes with
+  forks and type/creator intact. But macOS no longer serves AFP, so it
+  needs netatalk: a third-party daemon rather than our app, and it
+  bypasses this layer entirely (no line-ending conversion, no badges,
+  no progress, no shared cancel).
+- **WebDAV** is a maybe — OS 9 shipped a client for iDisk and the host
+  could embed a server. How much of that client is general rather than
+  iDisk-specific is untested; Goliath existed because the built-in
+  support was thin. Same conversion loss, plus AppleDouble sidecars.
+- **A File System Manager plug-in** — making our own wire appear as a
+  mounted volume — is the "proper" answer and the worst fit. It is an
+  extension rather than an app, so it leaves the one-app-per-side design
+  and goes below the line; and File Manager calls are synchronous while
+  this wire is asynchronous and sometimes seconds slow, so the Finder
+  would block on directory reads with no way to show progress or ask
+  "replace?" from inside a filesystem call.
+
+Native mounting stays available to a human who wants it — netatalk
+alongside, deliberately, the way Rumpus is used for deploys. The
+conversion point cuts both ways: a mounted volume never gets line-ending
+or type/creator handling, which is most of what makes a file usable
+across these two machines.
+
+### Known blocker
+
+The guest stages an entire file in RAM before sending, so **Send to
+*name*** is capped by the app partition (6 MB) until the send path
+streams from disk the way the receive path already streams to it. Small
+files work today; the fix is being pursued with the large-transfer work.
