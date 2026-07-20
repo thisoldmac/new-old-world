@@ -29,9 +29,21 @@ on either side.
 - **Recording** — every stream is encoded live to a temp QuickTime movie
   (hardware H.264, real variable-frame-rate timestamps); stopping offers
   Save As / Discard instantly.
+- **Files** — browse the folder the classic Mac shares (chosen on that
+  machine; nothing outside it is reachable) and download from it, with
+  the container rule doing the right thing without being asked: plain
+  files arrive plain, resource-only files arrive as MacBinary, and
+  classic text arrives as UTF-8 with Unix line endings. Metal-verified
+  byte-for-byte, including a 2 MB transfer and cancel mid-flight.
+- **Menu-bar capture** — one command grabs the connected machine's
+  screen straight to the clipboard, no window needed.
 
 Measured on the real PB1400c: ~4.9 fps at 8-bit with predictive +
-interlace over 802.11b. The measurement story behind the design lives in
+interlace over 802.11b, and file transfers byte-exact at ~227 KB/s.
+
+Each side calls the other by the name it sent during the handshake:
+"guest" and "host" are words for the protocol, not for the person using
+it, and "the Mac" identifies nothing when both machines are Macs. The measurement story behind the design lives in
 [docs/vram-readout.md](docs/vram-readout.md) and the TimBotTu corpus.
 
 ## Layout
