@@ -148,6 +148,115 @@ final class FileWireTests: XCTestCase {
                      "progress must clear when the file lands")
     }
 
+    func testPutOffersWaitsForAcceptThenStreamsAndSettlesOnDone()
+        async throws {
+        let guest = try await connectedGuest()
+        var settled: Result<Void, GuestListener.FileFailure>?
+        let payload = Data("hello from the modern side\n".utf8)
+
+        listener.putFile(name: "Notes", into: "Code", container: "data",
+                         bytes: payload, fileType: "TEXT",
+                         creator: "ttxt") { settled = $0 }
+
+        var offerId: Int?
+        try await waitUntil("file.offer") {
+            for message in guest.received {
+                if case .fileOffer(let offer) = message {
+                    offerId = offer.id
+                    return offer.name == "Notes" && offer.path == "Code"
+                        && offer.bytes == payload.count
+                }
+            }
+            return false
+        }
+        let id = try XCTUnwrap(offerId)
+
+        // The bytes must NOT move before the guest accepts: a refusal
+        // has to cost only the message.
+        XCTAssertFalse(guest.received.contains {
+            if case .fileBegin = $0 { return true }
+            return false
+        }, "begin arrived before accept")
+
+        try guest.send(.fileAccept(FileAccept(id: id)))
+        try await waitUntil("file.begin") {
+            guest.received.contains {
+                if case .fileBegin(let begin) = $0 {
+                    return begin.id == id && begin.bytes == payload.count
+                }
+                return false
+            }
+        }
+        try await waitUntil("bulk + end") {
+            guest.bulkReceived == payload
+                && guest.received.contains {
+                    if case .fileEnd(let end) = $0 { return end.ok }
+                    return false
+                }
+        }
+
+        // Not finished until the guest says the file is written.
+        XCTAssertNil(settled)
+        try guest.send(.fileDone(FileDone(id: id, ok: true, code: nil,
+                                          reason: nil)))
+        try await waitUntil("settled") { settled != nil }
+        guard case .success = try XCTUnwrap(settled) else {
+            return XCTFail("expected success")
+        }
+    }
+
+    func testPutRefusedByNameCollisionSettlesWithExists() async throws {
+        let guest = try await connectedGuest()
+        var failure: GuestListener.FileFailure?
+        listener.putFile(name: "Notes", into: "", container: "data",
+                         bytes: Data([1, 2, 3])) { result in
+            if case .failure(let f) = result { failure = f }
+        }
+        var offerId: Int?
+        try await waitUntil("file.offer") {
+            for message in guest.received {
+                if case .fileOffer(let offer) = message {
+                    offerId = offer.id
+                    return true
+                }
+            }
+            return false
+        }
+        try guest.send(.fileRefuse(FileRefuse(
+            id: try XCTUnwrap(offerId), code: "exists",
+            reason: "a file of that name is already there")))
+        try await waitUntil("refusal") { failure != nil }
+        XCTAssertEqual(failure?.code, "exists")
+    }
+
+    func testPutThatTheGuestCouldNotWriteFailsWithItsReason() async throws {
+        let guest = try await connectedGuest()
+        var failure: GuestListener.FileFailure?
+        listener.putFile(name: "Big", into: "", container: "data",
+                         bytes: Data([1, 2, 3])) { result in
+            if case .failure(let f) = result { failure = f }
+        }
+        var offerId: Int?
+        try await waitUntil("file.offer") {
+            for message in guest.received {
+                if case .fileOffer(let offer) = message {
+                    offerId = offer.id
+                    return true
+                }
+            }
+            return false
+        }
+        let id = try XCTUnwrap(offerId)
+        try guest.send(.fileAccept(FileAccept(id: id)))
+        try await waitUntil("bulk sent") { guest.bulkReceived.count == 3 }
+        try guest.send(.fileDone(FileDone(
+            id: id, ok: false, code: "io-error",
+            reason: "the disk is full")))
+        try await waitUntil("failure") { failure != nil }
+        XCTAssertEqual(failure?.code, "io-error")
+        XCTAssertEqual(failure?.message, "the disk is full")
+    }
+
     func testTruncatedPullIsRejected() async throws {
         let guest = try await connectedGuest()
         var failure: GuestListener.FileFailure?

@@ -653,3 +653,324 @@ int now_files_choose_root(char *why, long why_cap)
     }
     return 1;
 }
+
+/* --- receiving ---------------------------------------------------------- */
+
+/* Resolves a destination FOLDER, creating missing parents inside the
+   share. Only ever creates under the share root, because the path is
+   relative to it and traversal is inexpressible. */
+static int resolve_folder_creating(const char *rel, FSSpec *spec,
+                                   long *dir_id)
+{
+    NowPrefs prefs;
+    char segment[64];
+    const char *p = rel;
+    short vref;
+    long dir;
+    OSErr err;
+
+    if (!rel_path_ok(rel)) {
+        return kFilesBadPath;
+    }
+    now_prefs_load(&prefs);
+    if (!share_volume(&vref, &prefs)) {
+        return kFilesIOError;
+    }
+    dir = prefs.share_dir > 0 ? prefs.share_dir : fsRtDirID;
+
+    while (rel != NULL && *p != '\0') {
+        Str255 pname;
+        long n = 0;
+        CInfoPBRec pb;
+        Str255 look;
+
+        while (*p != '\0' && *p != ':' && n < 31) {
+            segment[n++] = *p++;
+        }
+        segment[n] = '\0';
+        if (*p == ':') {
+            ++p;
+        }
+        if (n == 0) {
+            return kFilesBadPath;
+        }
+        CopyCStringToPascal(segment, pname);
+
+        memset(&pb, 0, sizeof pb);
+        memcpy(look, pname, pname[0] + 1);
+        pb.dirInfo.ioNamePtr = look;
+        pb.dirInfo.ioVRefNum = vref;
+        pb.dirInfo.ioDrDirID = dir;
+        pb.dirInfo.ioFDirIndex = 0;
+        if (PBGetCatInfoSync(&pb) == noErr) {
+            if ((pb.dirInfo.ioFlAttrib & ioDirMask) == 0) {
+                return kFilesBadPath;  /* a file sits where a folder goes */
+            }
+            dir = pb.dirInfo.ioDrDirID;
+        } else {
+            long created = 0;
+
+            err = DirCreate(vref, dir, pname, &created);
+            if (err != noErr) {
+                return kFilesIOError;
+            }
+            dir = created;
+        }
+    }
+    *dir_id = dir;
+    spec->vRefNum = vref;
+    spec->parID = dir;
+    spec->name[0] = 0;
+    return kFilesOK;
+}
+
+static void close_forks(FileReceive *rx)
+{
+    if (rx->data_ref >= 0) {
+        FSClose(rx->data_ref);
+        rx->data_ref = -1;
+    }
+    if (rx->rsrc_ref >= 0) {
+        FSClose(rx->rsrc_ref);
+        rx->rsrc_ref = -1;
+    }
+}
+
+int now_files_receive_begin(const char *rel_path, const char *name,
+                            FileContainer container, long bytes,
+                            OSType file_type, OSType creator,
+                            unsigned long modified, Boolean overwrite,
+                            FileReceive *rx)
+{
+    FSSpec folder;
+    FSSpec existing;
+    long dir_id;
+    Str255 pname;
+    Str255 temp_name;
+    char temp[40];
+    int rc;
+    OSErr err;
+
+    memset(rx, 0, sizeof *rx);
+    rx->data_ref = -1;
+    rx->rsrc_ref = -1;
+    if (name == NULL || name[0] == '\0' || strlen(name) > 31
+        || strchr(name, ':') != NULL) {
+        return kFilesBadPath;
+    }
+    rc = resolve_folder_creating(rel_path, &folder, &dir_id);
+    if (rc != kFilesOK) {
+        return rc;
+    }
+
+    CopyCStringToPascal(name, pname);
+    err = FSMakeFSSpec(folder.vRefNum, dir_id, pname, &existing);
+    if (err == noErr && !overwrite) {
+        return kFilesExists;
+    }
+    if (err != noErr && err != fnfErr) {
+        return kFilesIOError;
+    }
+    rx->final = existing;
+    if (err == fnfErr) {
+        /* FSMakeFSSpec still filled in the target for a missing file. */
+        rx->final.vRefNum = folder.vRefNum;
+        rx->final.parID = dir_id;
+        memcpy(rx->final.name, pname, pname[0] + 1);
+    }
+
+    /* A temp name in the same folder: the real name appears only when
+       every byte has landed. Ticks make it unique enough. */
+    snprintf(temp, sizeof temp, "NOW incoming %lu",
+             (unsigned long)TickCount());
+    CopyCStringToPascal(temp, temp_name);
+    if (FSMakeFSSpec(folder.vRefNum, dir_id, temp_name,
+                     &rx->temp) == noErr) {
+        FSpDelete(&rx->temp);
+    }
+    rx->temp.vRefNum = folder.vRefNum;
+    rx->temp.parID = dir_id;
+    memcpy(rx->temp.name, temp_name, temp_name[0] + 1);
+
+    err = FSpCreate(&rx->temp, creator != 0 ? creator : 'ttxt',
+                    file_type != 0 ? file_type : 'BINA', smSystemScript);
+    if (err != noErr) {
+        return kFilesIOError;
+    }
+    if (FSpOpenDF(&rx->temp, fsWrPerm, &rx->data_ref) != noErr) {
+        FSpDelete(&rx->temp);
+        return kFilesIOError;
+    }
+
+    rx->active = true;
+    rx->container = container;
+    rx->expected = bytes;
+    rx->file_type = file_type;
+    rx->creator = creator;
+    rx->modified = modified;
+    return kFilesOK;
+}
+
+/* Writes into whichever fork the MacBinary layout says these bytes
+   belong to, skipping the 128-byte padding between sections. */
+static int write_macbinary(FileReceive *rx, const unsigned char *p, long len)
+{
+    while (len > 0) {
+        long take;
+        long count;
+
+        if (rx->header_have < 128) {
+            take = 128 - rx->header_have;
+            if (take > len) {
+                take = len;
+            }
+            memcpy(rx->header + rx->header_have, p, (size_t)take);
+            rx->header_have += take;
+            p += take;
+            len -= take;
+            if (rx->header_have == 128) {
+                rx->mb_data_len =
+                    ((long)rx->header[83] << 24) | ((long)rx->header[84] << 16)
+                    | ((long)rx->header[85] << 8) | rx->header[86];
+                rx->mb_rsrc_len =
+                    ((long)rx->header[87] << 24) | ((long)rx->header[88] << 16)
+                    | ((long)rx->header[89] << 8) | rx->header[90];
+                memcpy(&rx->file_type, rx->header + 65, 4);
+                memcpy(&rx->creator, rx->header + 69, 4);
+                memcpy(&rx->modified, rx->header + 95, 4);
+            }
+            continue;
+        }
+
+        if (rx->mb_data_done < rx->mb_data_len) {
+            take = rx->mb_data_len - rx->mb_data_done;
+            if (take > len) {
+                take = len;
+            }
+            count = take;
+            if (FSWrite(rx->data_ref, &count, p) != noErr) {
+                return kFilesIOError;
+            }
+            rx->mb_data_done += take;
+            p += take;
+            len -= take;
+            continue;
+        }
+
+        /* Padding between the forks carries no data. */
+        {
+            long pad = ((rx->mb_data_len + 127) & ~127L) - rx->mb_data_len;
+
+            if (rx->mb_data_done < rx->mb_data_len + pad) {
+                take = rx->mb_data_len + pad - rx->mb_data_done;
+                if (take > len) {
+                    take = len;
+                }
+                rx->mb_data_done += take;
+                p += take;
+                len -= take;
+                continue;
+            }
+        }
+
+        if (rx->rsrc_ref < 0) {
+            if (FSpOpenRF(&rx->temp, fsWrPerm, &rx->rsrc_ref) != noErr) {
+                return kFilesIOError;
+            }
+        }
+        if (rx->mb_rsrc_done < rx->mb_rsrc_len) {
+            take = rx->mb_rsrc_len - rx->mb_rsrc_done;
+            if (take > len) {
+                take = len;
+            }
+            count = take;
+            if (FSWrite(rx->rsrc_ref, &count, p) != noErr) {
+                return kFilesIOError;
+            }
+            rx->mb_rsrc_done += take;
+            p += take;
+            len -= take;
+            continue;
+        }
+        break;                        /* trailing padding: nothing to do */
+    }
+    return kFilesOK;
+}
+
+int now_files_receive_chunk(FileReceive *rx, const void *bytes, long len)
+{
+    long count = len;
+
+    if (!rx->active || len < 0) {
+        return kFilesIOError;
+    }
+    rx->received += len;
+    if (rx->container == kContainerMacBinary) {
+        return write_macbinary(rx, (const unsigned char *)bytes, len);
+    }
+    if (FSWrite(rx->data_ref, &count, bytes) != noErr) {
+        return kFilesIOError;
+    }
+    return kFilesOK;
+}
+
+int now_files_receive_finish(FileReceive *rx)
+{
+    CInfoPBRec pb;
+    Str255 name;
+    OSErr err;
+
+    if (!rx->active) {
+        return kFilesIOError;
+    }
+    close_forks(rx);
+    rx->active = false;
+
+    if (rx->received != rx->expected) {
+        FSpDelete(&rx->temp);
+        return kFilesIOError;
+    }
+
+    /* Stamp type/creator (MacBinary carries its own) and the modified
+       date, then take the real name. */
+    memset(&pb, 0, sizeof pb);
+    memcpy(name, rx->temp.name, rx->temp.name[0] + 1);
+    pb.hFileInfo.ioNamePtr = name;
+    pb.hFileInfo.ioVRefNum = rx->temp.vRefNum;
+    pb.hFileInfo.ioDirID = rx->temp.parID;
+    pb.hFileInfo.ioFDirIndex = 0;
+    if (PBGetCatInfoSync(&pb) == noErr) {
+        if (rx->file_type != 0) {
+            pb.hFileInfo.ioFlFndrInfo.fdType = rx->file_type;
+        }
+        if (rx->creator != 0) {
+            pb.hFileInfo.ioFlFndrInfo.fdCreator = rx->creator;
+        }
+        if (rx->modified != 0) {
+            pb.hFileInfo.ioFlMdDat = rx->modified;
+        }
+        pb.hFileInfo.ioDirID = rx->temp.parID;
+        PBSetCatInfoSync(&pb);
+    }
+
+    /* Replacing: the old file goes only once the new one is whole. */
+    if (FSpDelete(&rx->final) != noErr) {
+        /* fnfErr is the normal case — nothing was there. */
+    }
+    err = FSpRename(&rx->temp, rx->final.name);
+    if (err != noErr) {
+        FSpDelete(&rx->temp);
+        return kFilesIOError;
+    }
+    return kFilesOK;
+}
+
+void now_files_receive_abort(FileReceive *rx)
+{
+    if (rx == NULL || !rx->active) {
+        return;
+    }
+    close_forks(rx);
+    FSpDelete(&rx->temp);
+    rx->active = false;
+}

@@ -98,7 +98,10 @@ channels:
       fileList: { $ref: "#/components/messages/fileList" }
       fileListing: { $ref: "#/components/messages/fileListing" }
       fileGet: { $ref: "#/components/messages/fileGet" }
+      fileOffer: { $ref: "#/components/messages/fileOffer" }
+      fileAccept: { $ref: "#/components/messages/fileAccept" }
       fileRefuse: { $ref: "#/components/messages/fileRefuse" }
+      fileDone: { $ref: "#/components/messages/fileDone" }
       fileBegin: { $ref: "#/components/messages/fileBegin" }
       fileEnd: { $ref: "#/components/messages/fileEnd" }
       fileCancel: { $ref: "#/components/messages/fileCancel" }
@@ -193,6 +196,22 @@ operations:
       needs no accept - the requester is the receiver; failures answer
       with file.refuse. One transfer at a time still holds across
       captures, streams, and files.
+  hostPutsFiles:
+    action: receive
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/fileOffer"
+    description: >
+      Host offers a file for the guest's share. A share bounds what the
+      other machine may reach on its own initiative — list, pull, write
+      into — and never what a human deliberately sends, so the SOURCE of
+      a push is any file the sender picks; only the DESTINATION must lie
+      inside the share. The guest answers file.accept or file.refuse
+      without prompting anyone (it is not necessarily attended), then
+      the host sends file.begin, the bulk stream, and file.end. The
+      guest confirms with file.done only once the bytes are written and
+      the file is stamped: a put is not finished until the File Manager
+      says so.
   guestServesFiles:
     action: send
     channel: { $ref: "#/channels/control" }
@@ -284,6 +303,15 @@ components:
     fileGet:
       name: file.get
       payload: { $ref: "#/components/schemas/FileGet" }
+    fileOffer:
+      name: file.offer
+      payload: { $ref: "#/components/schemas/FileOffer" }
+    fileAccept:
+      name: file.accept
+      payload: { $ref: "#/components/schemas/FileAccept" }
+    fileDone:
+      name: file.done
+      payload: { $ref: "#/components/schemas/FileDone" }
     fileRefuse:
       name: file.refuse
       payload: { $ref: "#/components/schemas/FileRefuse" }
@@ -563,6 +591,53 @@ components:
           description: >
             auto (default) applies the container rule; macbinary forces
             the whole artifact.
+    FileOffer:
+      type: object
+      required: [type, id, name, path, container, bytes]
+      additionalProperties: false
+      properties:
+        type: { const: file.offer }
+        id: { type: integer }
+        name:
+          type: string
+          description: >
+            Leaf name as it should land, already sanitized for HFS by
+            the sender (<= 31 characters, no colons, MacRoman-encodable).
+        path:
+          type: string
+          description: >
+            Destination FOLDER, relative to the share root; "" is the
+            root itself. Missing parents are created inside the share.
+        container: { enum: [data, macbinary] }
+        bytes:
+          type: integer
+          description: Exact size of the bulk stream to follow.
+        fileType: { type: string }
+        creator: { type: string }
+        modified: { type: integer }
+        overwrite:
+          type: boolean
+          description: >
+            Absent or false means an existing file refuses `exists`;
+            the sender may retry with true once a human has agreed.
+    FileAccept:
+      type: object
+      required: [type, id]
+      additionalProperties: false
+      properties:
+        type: { const: file.accept }
+        id: { type: integer }
+    FileDone:
+      type: object
+      required: [type, id, ok]
+      additionalProperties: false
+      properties:
+        type: { const: file.done }
+        id: { type: integer }
+        ok: { type: boolean }
+        code:
+          enum: [exists, bad-path, io-error, too-big, cancelled]
+        reason: { type: string }
     FileRefuse:
       type: object
       required: [type, id, code]

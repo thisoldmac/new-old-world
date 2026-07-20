@@ -19,7 +19,8 @@ enum {
     kFilesNotFound = -2,
     kFilesNotAFolder = -3,
     kFilesIOError = -4,
-    kFilesTooBig = -5                 /* could not stage the file in RAM */
+    kFilesTooBig = -5,                /* could not stage the file in RAM */
+    kFilesExists = -6                 /* would overwrite; caller must ask */
 };
 
 typedef struct {
@@ -68,6 +69,54 @@ void now_files_stage_dispose(FileStage *stage);
    or type plus fork sizes. A folder never reports a byte count - that
    would mean walking it, which a listing must not do. */
 void now_files_describe(const FileEntry *entry, char *out, long cap);
+
+/* --- receiving ----------------------------------------------------------
+   Incoming files stream to disk as chunks arrive rather than being
+   staged in RAM: the app partition is smaller than the files people
+   will send, and a transfer that can be written incrementally can also
+   be cancelled by deleting what exists so far. MacBinary is therefore
+   decoded incrementally too — header, then data fork, then padding,
+   then resource fork — because there is no buffer to parse from.
+
+   Bytes land under a temp name in the destination folder and are
+   renamed on completion, so a truncated file never appears under the
+   real one. That matters most here: a half-written application is
+   something a human might double-click. */
+
+typedef struct {
+    Boolean active;
+    FSSpec temp;                      /* what we are writing */
+    FSSpec final;                     /* what it becomes on success */
+    short data_ref, rsrc_ref;         /* open forks, -1 when closed */
+    FileContainer container;
+    long expected, received;
+    /* MacBinary decode state */
+    unsigned char header[128];
+    long header_have;
+    long mb_data_len, mb_rsrc_len;
+    long mb_data_done, mb_rsrc_done;
+    OSType file_type, creator;
+    unsigned long modified;
+} FileReceive;
+
+/* Opens `name` in the folder `rel_path` for writing. Creates missing
+   parent folders inside the share. Returns kFiles* — kFilesExists when
+   the file is there and overwrite is false. */
+int now_files_receive_begin(const char *rel_path, const char *name,
+                            FileContainer container, long bytes,
+                            OSType file_type, OSType creator,
+                            unsigned long modified, Boolean overwrite,
+                            FileReceive *rx);
+
+/* Writes the next chunk. Returns kFiles* ; the caller stops on error. */
+int now_files_receive_chunk(FileReceive *rx, const void *bytes, long len);
+
+/* Closes the forks, stamps the file, and renames it into place.
+   Returns kFiles*. */
+int now_files_receive_finish(FileReceive *rx);
+
+/* Abandons a transfer: closes anything open and deletes the temp. */
+void now_files_receive_abort(FileReceive *rx);
 
 /* The share root as a display string ("Macintosh HD:Lab:"), for UI. */
 void now_files_root_name(char *out, long cap);

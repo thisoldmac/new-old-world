@@ -60,6 +60,8 @@ static ConnState g;
 static void send_hello(void);
 static void xfer_cleanup(void);
 static void offer_cleanup(void);
+static void take_bulk_in(const unsigned char *bytes, long len);
+static void put_drop(void);
 static void stream_drop(void);
 static void note_shot(const char *line);
 
@@ -181,6 +183,7 @@ static void enter_backoff(void)
     xfer_cleanup();                   /* a dropped link cancels any transfer */
     offer_cleanup();
     stream_drop();                    /* no stopped message on a dead wire */
+    put_drop();                       /* no half-written file left behind */
     ctlq_clear();
     close_endpoint();
     if (!g.want_connection) {
@@ -388,7 +391,9 @@ static int next_frame(char *payload_out, long cap)
         return 0;
     }
     if (channel != kNowChannelControl) {
-        /* No bulk transfers arrive in this slice; drop the frame's bytes. */
+        /* The guest's only inbound bulk is a file being put into the
+           share; anything else has nowhere to go and is dropped. */
+        take_bulk_in(g.rx + kNowFrameHeaderBytes, (long)length);
         memmove(g.rx, g.rx + total, g.rx_len - total);
         g.rx_len -= total;
         payload_out[0] = '\0';
@@ -1136,6 +1141,168 @@ static void file_refuse_rc(long id, int rc)
         file_refuse(id, "io-error", "the File Manager refused");
         break;
     }
+}
+
+/* --- receiving a put ----------------------------------------------------
+   The host offers, the guest answers without prompting anyone, and the
+   bytes then stream to disk as they arrive. Nothing is buffered: the
+   app partition is smaller than the files people will send. */
+
+static struct {
+    Boolean active;                   /* accepted; bytes may arrive */
+    long id;
+    FileReceive rx;
+} g_put;
+
+static void put_drop(void)
+{
+    if (g_put.active) {
+        now_files_receive_abort(&g_put.rx);
+        g_put.active = false;
+    }
+}
+
+static void put_done(Boolean ok, const char *code, const char *reason)
+{
+    char json[256];
+
+    if (ok) {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"file.done\",\"id\":%ld,\"ok\":true}",
+                 g_put.id);
+    } else {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"file.done\",\"id\":%ld,\"ok\":false,"
+                 "\"code\":\"%s\",\"reason\":\"%.100s\"}",
+                 g_put.id, code, reason);
+    }
+    send_control(json);
+    g_put.active = false;
+}
+
+static void put_abort(const char *code, const char *reason)
+{
+    if (!g_put.active) {
+        return;
+    }
+    now_files_receive_abort(&g_put.rx);
+    put_done(false, code, reason);
+}
+
+/* Called for every inbound bulk frame. */
+static void take_bulk_in(const unsigned char *bytes, long len)
+{
+    int rc;
+
+    if (!g_put.active) {
+        return;                       /* nothing is expecting these */
+    }
+    rc = now_files_receive_chunk(&g_put.rx, bytes, len);
+    if (rc != kFilesOK) {
+        put_abort("io-error", "could not write the file");
+    }
+}
+
+static void serve_file_offer(const char *request)
+{
+    char name[64];
+    char path[224];
+    char container_arg[16];
+    char json[256];
+    char note[128];
+    long id = now_json_find_int(request, "id", 0);
+    long bytes = now_json_find_int(request, "bytes", 0);
+    long modified = now_json_find_int(request, "modified", 0);
+    char type_arg[8], creator_arg[8];
+    OSType file_type = 0, creator = 0;
+    FileContainer container = kContainerData;
+    Boolean overwrite;
+    int rc;
+
+    if (g_stream.active || g_xfer.active || g_offer.active
+        || g_put.active) {
+        file_refuse(id, "busy", "a transfer is already in flight");
+        return;
+    }
+    name[0] = '\0';
+    path[0] = '\0';
+    now_json_find_string(request, "name", name, sizeof name);
+    now_json_find_string(request, "path", path, sizeof path);
+    if (now_json_find_string(request, "container", container_arg,
+                             sizeof container_arg)
+        && strcmp(container_arg, "macbinary") == 0) {
+        container = kContainerMacBinary;
+    }
+    if (now_json_find_string(request, "fileType", type_arg, sizeof type_arg)
+        && strlen(type_arg) == 4) {
+        memcpy(&file_type, type_arg, 4);
+    }
+    if (now_json_find_string(request, "creator", creator_arg,
+                             sizeof creator_arg)
+        && strlen(creator_arg) == 4) {
+        memcpy(&creator, creator_arg, 4);
+    }
+    overwrite = now_json_value(request, "overwrite") != NULL
+        && *now_json_value(request, "overwrite") == 't';
+
+    memset(&g_put, 0, sizeof g_put);
+    g_put.id = id;
+    rc = now_files_receive_begin(path, name, container, bytes, file_type,
+                                 creator, (unsigned long)modified,
+                                 overwrite, &g_put.rx);
+    if (rc != kFilesOK) {
+        switch (rc) {
+        case kFilesExists:
+            file_refuse(id, "exists", "a file of that name is already there");
+            break;
+        case kFilesBadPath:
+            file_refuse(id, "bad-path", "that name or folder is not usable");
+            break;
+        default:
+            file_refuse(id, "io-error", "could not create the file");
+            break;
+        }
+        return;
+    }
+    g_put.active = true;
+    snprintf(json, sizeof json,
+             "{\"type\":\"file.accept\",\"id\":%ld}", id);
+    if (!send_control(json)) {
+        now_files_receive_abort(&g_put.rx);
+        g_put.active = false;
+        return;
+    }
+    snprintf(note, sizeof note, "Receiving %.31s...", name);
+    note_shot(note);
+}
+
+/* The sender's file.end closes the transfer; the guest confirms only
+   after the bytes are written and the file is stamped and named. */
+static void finish_put(const char *reply)
+{
+    char note[128];
+    int rc;
+
+    if (!g_put.active) {
+        return;
+    }
+    if (now_json_find_int(reply, "ok", 0) == 0
+        && now_json_value(reply, "ok") != NULL
+        && *now_json_value(reply, "ok") == 'f') {
+        put_abort("cancelled", "the sender stopped");
+        note_shot("Incoming file cancelled");
+        return;
+    }
+    rc = now_files_receive_finish(&g_put.rx);
+    if (rc != kFilesOK) {
+        put_done(false, "io-error", "could not finish writing the file");
+        note_shot("Incoming file failed");
+        return;
+    }
+    put_done(true, NULL, NULL);
+    snprintf(note, sizeof note, "Received %.31s",
+             g_put.rx.final.name + 1);
+    note_shot(note);
 }
 
 static void serve_file_list(const char *request)
@@ -2002,7 +2169,23 @@ static int handle_frame(const char *reply)
         return 1;
     }
     if (now_json_type_is(reply, "file.cancel")) {
-        xfer_abort();
+        if (g_put.active) {
+            put_abort("cancelled", "the sender stopped");
+            note_shot("Incoming file cancelled");
+        } else {
+            xfer_abort();
+        }
+        return 1;
+    }
+    if (now_json_type_is(reply, "file.offer")) {
+        serve_file_offer(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "file.begin")) {
+        return 1;                     /* announced; bytes follow on bulk */
+    }
+    if (now_json_type_is(reply, "file.end")) {
+        finish_put(reply);
         return 1;
     }
     if (now_json_type_is(reply, "stream.start")) {

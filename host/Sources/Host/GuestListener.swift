@@ -210,6 +210,45 @@ final class GuestListener: ObservableObject {
         session.sendFileGet(id: id, path: path, container: container)
     }
 
+    /// Sends a file into the guest's share. `path` is the destination
+    /// folder relative to the share root ("" is the root); the source is
+    /// any file the human picked, since a share bounds what the other
+    /// machine may reach unbidden, not what we deliberately send.
+    /// Completion fires when the guest confirms the file is written.
+    func putFile(name: String, into path: String, container: String,
+                 bytes: Data, fileType: String? = nil,
+                 creator: String? = nil, modified: Int? = nil,
+                 overwrite: Bool = false,
+                 completion: @escaping (Result<Void, FileFailure>) -> Void) {
+        guard let session, case .connected = state else {
+            completion(.failure(.init(code: "disconnected",
+                                      message: "No Mac is connected")))
+            return
+        }
+        let id = nextCommandId
+        nextCommandId += 1
+        pendingPut = completion
+        armWatchdog(id: id, seconds: 20) { [weak self] reason in
+            guard let self, self.pendingPut != nil else { return }
+            self.settlePut(.failure(.init(code: "timeout", message: reason)))
+        }
+        session.sendFileOffer(
+            FileOffer(id: id, name: name, path: path, container: container,
+                      bytes: bytes.count, fileType: fileType,
+                      creator: creator, modified: modified,
+                      overwrite: overwrite),
+            bytes: bytes)
+    }
+
+    private var pendingPut: ((Result<Void, FileFailure>) -> Void)?
+
+    fileprivate func settlePut(_ result: Result<Void, FileFailure>) {
+        let completion = pendingPut
+        pendingPut = nil
+        captureProgress = nil
+        completion?(result)
+    }
+
     /// Abandons the file transfer; settles locally for the same reason
     /// cancelCapture does.
     func cancelFile() {
@@ -310,8 +349,13 @@ final class GuestListener: ObservableObject {
         let failure = FileFailure(code: refuse.code,
                                   message: refuse.reason ?? refuse.code)
         clearWatchdog(refuse.id)
+        clearWatchdog(refuse.id)
         if let completion = pendingListings.removeValue(forKey: refuse.id) {
             completion(.failure(failure))
+            return
+        }
+        if pendingPut != nil {
+            settlePut(.failure(failure))
             return
         }
         let completion = pendingFile
@@ -573,6 +617,17 @@ final class GuestListener: ObservableObject {
             onFileDelivery: { [weak self] result in
                 self?.deliverFile(result)
             },
+            onFileDone: { [weak self] done in
+                guard let self else { return }
+                self.clearWatchdog(done.id)
+                if done.ok {
+                    self.settlePut(.success(()))
+                } else {
+                    self.settlePut(.failure(.init(
+                        code: done.code ?? "io-error",
+                        message: done.reason ?? "the file was not written")))
+                }
+            },
             onClosed: { [weak self] closedSession, reason in
                 guard let self else { return }
                 self.pending.removeAll { $0 === closedSession }
@@ -618,6 +673,7 @@ final class Session {
     private let onFileRefuse: (FileRefuse) -> Void
     private let onFileDelivery:
         (Result<GuestListener.FileDelivery, GuestListener.FileFailure>) -> Void
+    private let onFileDone: (FileDone) -> Void
     private var streamId: Int?
     private let onClosed: (Session, String) -> Void
 
@@ -672,6 +728,7 @@ final class Session {
          onFileDelivery: @escaping (Result<GuestListener.FileDelivery,
                                            GuestListener.FileFailure>)
              -> Void,
+         onFileDone: @escaping (FileDone) -> Void,
          onClosed: @escaping (Session, String) -> Void) {
         self.connection = connection
         self.identity = identity
@@ -690,6 +747,7 @@ final class Session {
         self.onFileListing = onFileListing
         self.onFileRefuse = onFileRefuse
         self.onFileDelivery = onFileDelivery
+        self.onFileDone = onFileDone
         self.onClosed = onClosed
     }
 
@@ -802,6 +860,10 @@ final class Session {
             onCommandResult(result)
         case .fileListing(let listing):
             onFileListing(listing)
+        case .fileAccept(let accept):
+            sendAcceptedFile(accept)
+        case .fileDone(let done):
+            onFileDone(done)
         case .fileRefuse(let refuse):
             fileBegin = nil
             fileBuffer = []
@@ -887,6 +949,50 @@ final class Session {
         guard let begin = fileBegin else { return }
         discardingTransfer = begin.transfer
         send(.fileCancel(FileCancel(transfer: begin.transfer)))
+    }
+
+    /// Holds an offered file until the guest accepts it. The bytes wait
+    /// here rather than riding with the offer: a refusal (busy, a name
+    /// collision) must cost nothing but the message.
+    private var pendingOffer: (offer: FileOffer, bytes: Data)?
+    private var transferSeq: UInt16 = 0
+
+    func sendFileOffer(_ offer: FileOffer, bytes: Data) {
+        pendingOffer = (offer, bytes)
+        send(.fileOffer(offer))
+    }
+
+    private func nextTransfer() -> UInt16 {
+        transferSeq &+= 1
+        if transferSeq == 0 { transferSeq = 1 }
+        return transferSeq
+    }
+
+    /// Streams an accepted file: begin, the bulk frames, then end.
+    private func sendAcceptedFile(_ accept: FileAccept) {
+        guard let (offer, bytes) = pendingOffer,
+              offer.id == accept.id else { return }
+        pendingOffer = nil
+        let transfer = nextTransfer()
+        send(.fileBegin(FileBegin(
+            id: offer.id, transfer: Int(transfer), name: offer.name,
+            container: offer.container, bytes: bytes.count,
+            dataBytes: nil, rsrcBytes: nil, fileType: offer.fileType,
+            creator: offer.creator, modified: offer.modified)))
+        var sent = 0
+        repeat {
+            let end = min(sent + FrameHeader.maxPayloadLength, bytes.count)
+            let last = end == bytes.count
+            if let frame = try? FrameCodec.encode(
+                channel: .bulk, flags: last ? [.end] : [],
+                transfer: transfer,
+                payload: Data(bytes[sent..<end])) {
+                connection.send(content: frame, completion: .idempotent)
+            }
+            sent = end
+        } while sent < bytes.count
+        send(.fileEnd(FileEnd(id: offer.id, transfer: Int(transfer),
+                              ok: true, sendMs: nil)))
     }
 
     func requestStreamStop(id: Int) {

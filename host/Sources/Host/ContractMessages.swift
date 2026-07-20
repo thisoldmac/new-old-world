@@ -20,6 +20,9 @@ enum ControlMessage: Equatable, Sendable {
     case fileList(FileList)
     case fileListing(FileListing)
     case fileGet(FileGet)
+    case fileOffer(FileOffer)
+    case fileAccept(FileAccept)
+    case fileDone(FileDone)
     case fileRefuse(FileRefuse)
     case fileBegin(FileBegin)
     case fileEnd(FileEnd)
@@ -132,6 +135,32 @@ struct FileGet: Codable, Equatable, Sendable {
     var id: Int
     var path: String
     var container: String?
+}
+
+/// A push into the guest's share. The share bounds what the guest may
+/// reach unbidden, never what a human deliberately sends — so the
+/// source is any file, and only `path` must lie inside the share.
+struct FileOffer: Codable, Equatable, Sendable {
+    var id: Int
+    var name: String
+    var path: String
+    var container: String
+    var bytes: Int
+    var fileType: String?
+    var creator: String?
+    var modified: Int?
+    var overwrite: Bool?
+}
+
+struct FileAccept: Codable, Equatable, Sendable {
+    var id: Int
+}
+
+struct FileDone: Codable, Equatable, Sendable {
+    var id: Int
+    var ok: Bool
+    var code: String?
+    var reason: String?
 }
 
 struct FileRefuse: Codable, Equatable, Sendable {
@@ -301,6 +330,13 @@ enum ControlMessageCodec {
                 try decoder.decode(FileListing.self, from: data))
         case "file.get":
             return .fileGet(try decoder.decode(FileGet.self, from: data))
+        case "file.offer":
+            return .fileOffer(try decoder.decode(FileOffer.self, from: data))
+        case "file.accept":
+            return .fileAccept(
+                try decoder.decode(FileAccept.self, from: data))
+        case "file.done":
+            return .fileDone(try decoder.decode(FileDone.self, from: data))
         case "file.refuse":
             return .fileRefuse(
                 try decoder.decode(FileRefuse.self, from: data))
@@ -370,6 +406,9 @@ enum ControlMessageCodec {
         case .fileList(let m): return try tagged("file.list", m)
         case .fileListing(let m): return try tagged("file.listing", m)
         case .fileGet(let m): return try tagged("file.get", m)
+        case .fileOffer(let m): return try tagged("file.offer", m)
+        case .fileAccept(let m): return try tagged("file.accept", m)
+        case .fileDone(let m): return try tagged("file.done", m)
         case .fileRefuse(let m): return try tagged("file.refuse", m)
         case .fileBegin(let m): return try tagged("file.begin", m)
         case .fileEnd(let m): return try tagged("file.end", m)

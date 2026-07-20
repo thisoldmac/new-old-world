@@ -10,6 +10,8 @@ final class FakeGuest {
     let connection: NWConnection
     private let decoder = FrameDecoder()
     private(set) var received: [ControlMessage] = []
+    /// Bulk payload the host has sent us — the guest side of a put.
+    private(set) var bulkReceived = Data()
     var onMessage: ((ControlMessage) -> Void)?
     private(set) var wasClosed = false
     var onClose: (() -> Void)?
@@ -55,6 +57,10 @@ final class FakeGuest {
                 if let data, !data.isEmpty,
                    let frames = try? self.decoder.feed(data) {
                     for frame in frames {
+                        if frame.header.channel == .bulk {
+                            self.bulkReceived.append(frame.payload)
+                            continue
+                        }
                         if let message = try? ControlMessageCodec.decode(
                             frame.payload) {
                             self.received.append(message)
