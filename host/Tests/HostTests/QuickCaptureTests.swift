@@ -158,21 +158,22 @@ final class QuickCaptureTests: XCTestCase {
     func testFlashShowsThenRestoresTheRestingTitle() {
         let expectation = expectation(description: "restored")
         var titles: [String] = []
-        let flash = StatusItemFlash(restingTitle: "▣ New Old World",
-                                    duration: 0.05) {
+        let flash = StatusItemFlash(duration: 0.05) {
+            "● New Old World"
+        } apply: {
             titles.append($0)
             if titles.count == 2 { expectation.fulfill() }
         }
-        flash.flash("▣ Copied")
+        flash.flash("✓ Copied")
         wait(for: [expectation], timeout: 2)
-        XCTAssertEqual(titles, ["▣ Copied", "▣ New Old World"])
+        XCTAssertEqual(titles, ["✓ Copied", "● New Old World"])
     }
 
     /// A second flash must not be cut short by the first one's timer.
     func testASecondFlashOutlivesTheFirstsRestore() {
         let expectation = expectation(description: "settled once")
         var titles: [String] = []
-        let flash = StatusItemFlash(restingTitle: "rest", duration: 0.15) {
+        let flash = StatusItemFlash(duration: 0.15) { "rest" } apply: {
             titles.append($0)
             if $0 == "rest" { expectation.fulfill() }
         }
@@ -181,5 +182,32 @@ final class QuickCaptureTests: XCTestCase {
         wait(for: [expectation], timeout: 2)
         XCTAssertEqual(titles, ["first", "second", "rest"],
                        "only the latest flash should restore")
+    }
+
+    /// The resting title carries the live connection glyph, so it must be
+    /// read at restore time — a title captured when the flash began would
+    /// put a stale connection state back in the menu bar.
+    func testFlashRestoresTheCurrentTitleNotTheOneItStartedWith() {
+        let expectation = expectation(description: "restored")
+        var resting = "◌ New Old World"
+        var titles: [String] = []
+        let flash = StatusItemFlash(duration: 0.05) { resting } apply: {
+            titles.append($0)
+            if titles.count == 2 { expectation.fulfill() }
+        }
+        flash.flash("✓ Copied")
+        // The guest connects while the flash is still on screen.
+        resting = "● New Old World"
+        wait(for: [expectation], timeout: 2)
+        XCTAssertEqual(titles.last, "● New Old World")
+    }
+
+    func testIsFlashingGuardsTheTitleWhileAFlashIsUp() {
+        let flash = StatusItemFlash(duration: 5) { "rest" } apply: { _ in }
+        XCTAssertFalse(flash.isFlashing)
+        flash.flash("✓ Copied")
+        XCTAssertTrue(flash.isFlashing)
+        flash.settle()
+        XCTAssertFalse(flash.isFlashing)
     }
 }

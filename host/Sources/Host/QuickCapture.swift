@@ -27,11 +27,12 @@ enum QuickCaptureOutcome: Equatable {
     }
 
     /// The status-item flash has room for a couple of words, not a
-    /// sentence — it replaces the item's own title for a moment.
+    /// sentence — it replaces the item's own title for a moment. Its own
+    /// glyph, so a flash never reads as a connection state.
     var flash: String {
         switch self {
-        case .copied: return "▣ Copied"
-        case .failed: return "▣ Failed"
+        case .copied: return "✓ Copied"
+        case .failed: return "✕ Failed"
         }
     }
 }

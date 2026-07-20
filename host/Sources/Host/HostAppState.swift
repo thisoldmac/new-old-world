@@ -34,6 +34,9 @@ final class HostAppState: ObservableObject {
     /// Set by the app delegate to flash the status item. Kept as a hook so
     /// HostAppState stays free of AppKit chrome and tests stay silent.
     var quickCaptureFeedback: ((QuickCaptureOutcome) -> Void)?
+
+    /// Drives the menu bar's connection glyph and status line.
+    private(set) lazy var guestStatus = GuestStatusMonitor(listener: listener)
     let settings: SettingsModel
     let listener: GuestListener
     private(set) lazy var console = ConsoleModel(listener: listener)
