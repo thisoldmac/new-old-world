@@ -442,6 +442,7 @@ static void run_ls(const char *request_json, long id, char *out, long cap)
     FileEntry entries[kConsolePage];
     char path[224];
     char root[160];
+    char esc_root[340], esc_path[340];
     char value[96];
     Boolean more = false;
     short next = 1;
@@ -461,16 +462,23 @@ static void run_ls(const char *request_json, long id, char *out, long cap)
         return;
     }
     now_files_root_name(root, sizeof root);
+    now_json_escape(root, esc_root, sizeof esc_root);
+    now_json_escape(path[0] != '\0' ? path : "(root)", esc_path,
+                    sizeof esc_path);
     pos = snprintf(out, cap,
                    "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
                    "\"output\":{\"ls\":["
-                   "[\"Share\",\"%.100s\"],"
-                   "[\"Folder\",\"%.100s\"]",
-                   id, root, path[0] != '\0' ? path : "(root)");
-    for (i = 0; i < n && pos < cap - 160; ++i) {
+                   "[\"Share\",\"%s\"],"
+                   "[\"Folder\",\"%s\"]",
+                   id, esc_root, esc_path);
+    for (i = 0; i < n && pos < cap - 240; ++i) {
+        char esc_name[200], esc_value[200];
+
         now_files_describe(&entries[i], value, sizeof value);
+        now_json_escape(entries[i].name, esc_name, sizeof esc_name);
+        now_json_escape(value, esc_value, sizeof esc_value);
         pos += snprintf(out + pos, (size_t)(cap - pos),
-                        ",[\"%.31s\",\"%.60s\"]", entries[i].name, value);
+                        ",[\"%s\",\"%s\"]", esc_name, esc_value);
     }
     if (more || i < n) {
         pos += snprintf(out + pos, (size_t)(cap - pos),

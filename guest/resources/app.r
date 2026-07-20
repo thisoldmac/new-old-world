@@ -114,21 +114,31 @@ resource 'DITL' (300) {
 };
 
 
-resource 'ALRT' (201) {
-    {80, 80, 210, 500},
-    201,
-    { OK, visible, silent, OK, visible, silent,
-      OK, visible, silent, OK, visible, silent },
-    alertPositionMainScreen
+/* A settings pane the human opened on purpose: movable modal, not an
+   alert. Alerts are for things going wrong. */
+resource 'DLOG' (301) {
+    {120, 140, 268, 580},
+    movableDBoxProc,
+    invisible,
+    noGoAway,
+    0,
+    301,
+    "File Sharing",
+    centerMainScreen
 };
 
-resource 'DITL' (201) {
+resource 'DITL' (301) {
     {
-        /* 1 Choose */ {96, 300, 116, 400},
+        /* 1 Done   */ {112, 350, 132, 420}, Button { enabled, "Done" };
+        /* 2 Choose */ {112, 230, 132, 336},
             Button { enabled, "Choose..." };
-        /* 2 Done   */ {96, 190, 116, 280}, Button { enabled, "Done" };
-        /* 3 */ {12, 20, 44, 400}, StaticText { disabled, "^0" };
-        /* 4 */ {52, 20, 84, 400}, StaticText { disabled, "^1" };
+        /* 3 label  */ {16, 20, 34, 420},
+            StaticText { disabled,
+                "The host can browse this folder and everything in it:" };
+        /* 4 root   */ {40, 20, 74, 420}, StaticText { disabled, "" };
+        /* 5 note   */ {80, 20, 100, 420},
+            StaticText { disabled,
+                "Nothing outside it is reachable over the wire." };
     }
 };
 

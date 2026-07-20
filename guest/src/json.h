@@ -24,4 +24,13 @@ long now_json_find_int(const char *json, const char *key, long fallback);
 /* Returns 1 if the message's "type" string equals type. */
 int now_json_type_is(const char *json, const char *type);
 
+/* Escapes a MacRoman string into a JSON string body (no surrounding
+   quotes). Quotes, backslashes and control characters become escapes,
+   and high MacRoman bytes become \uXXXX for their real Unicode value -
+   a classic volume root holds "Icon\r" and accented names, and raw
+   bytes there are both invalid JSON and invalid UTF-8, which is exactly
+   how a listing silently fails to parse on the modern side. Writes at
+   most cap-1 characters plus a terminator. */
+void now_json_escape(const char *src, char *out, long cap);
+
 #endif /* NOW_JSON_H */

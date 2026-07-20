@@ -77,6 +77,42 @@ int main(void)
     assert(now_json_type_is(NULL, "hello") == 0);
     assert(now_json_type_is("{\"type\":\"x\"}", NULL) == 0);
 
+    /* Escaping: a classic volume root holds "Icon\r" and accented
+       names, and raw bytes there are both invalid JSON and invalid
+       UTF-8 - the failure mode is a listing the modern side silently
+       cannot decode. */
+    {
+        char out[256];
+
+        now_json_escape("Read Me", out, sizeof out);
+        assert(strcmp(out, "Read Me") == 0);
+
+        now_json_escape("Icon\r", out, sizeof out);
+        assert(strcmp(out, "Icon\\u000D") == 0);
+
+        now_json_escape("say \"hi\"", out, sizeof out);
+        assert(strcmp(out, "say \\\"hi\\\"") == 0);
+
+        now_json_escape("back\\slash", out, sizeof out);
+        assert(strcmp(out, "back\\\\slash") == 0);
+
+        /* MacRoman 0x8E is e-acute; Latin-1 would be wrong here. */
+        now_json_escape("caf\x8e", out, sizeof out);
+        assert(strcmp(out, "caf\\u00E9") == 0);
+
+        /* 0xF0 is the Apple logo, in the private use area. */
+        now_json_escape("\xf0", out, sizeof out);
+        assert(strcmp(out, "\\uF8FF") == 0);
+
+        /* Bounded: a truncated escape must never be emitted. */
+        now_json_escape("caf\x8e", out, 8);
+        assert(strlen(out) <= 7);
+        assert(strcmp(out, "caf") == 0);
+
+        now_json_escape(NULL, out, sizeof out);
+        assert(out[0] == '\0');
+    }
+
     printf("json_native_test: all assertions passed\n");
     return 0;
 }

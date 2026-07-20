@@ -23,7 +23,7 @@ final class ConsoleModel: ObservableObject {
     }
 
     /// Declared commands (contract x-commands) plus console built-ins.
-    static let commands = ["gestalt", "screenshot", "vprobe"]
+    static let commands = ["gestalt", "screenshot", "vprobe", "ls"]
 
     /// Per-command docs, mirroring the contract's x-commands descriptions.
     /// help and --help render from here — documentation never hits the wire.
@@ -56,6 +56,15 @@ final class ConsoleModel: ObservableObject {
                    "  the CopyBits baseline, checks reread caching,",
                    "  partial-read scaling, and pixel fidelity. Takes ~3 s;",
                    "  keep the guest's screen still during the run."]),
+        "ls": .init(
+            summary: "list a folder in the guest's shared files",
+            help: ["ls — list a folder the classic Mac shares",
+                   "  Usage: ls [path]",
+                   "  Paths are relative to the guest's share root, with",
+                   "  colons between folders: \"Lab:Code\". No path lists",
+                   "  the root. The root is chosen on the guest in",
+                   "  File > File Sharing...; nothing outside it is",
+                   "  reachable. The Files module browses the same share."]),
         "help": .init(
             summary: "show this list (\"help <cmd>\" for details)",
             help: ["help — list commands, or \"help <cmd>\" for one"]),
@@ -116,6 +125,10 @@ final class ConsoleModel: ObservableObject {
         }
         if name == "screenshot" {
             runScreenshot(rest)
+            return
+        }
+        if name == "ls" {
+            runLs(rest)
             return
         }
         run(name)
@@ -244,6 +257,16 @@ final class ConsoleModel: ObservableObject {
             for line in info.help { append(.notice, line) }
         } else {
             append(.failure, "No help for \"\(name)\"")
+        }
+    }
+
+    /// ls carries a positional path: "ls Lab:Code".
+    private func runLs(_ rest: [String]) {
+        let path = rest.first ?? ""
+        listener.runCommand("ls", args: path.isEmpty ? nil
+                                                     : ["path": path]) {
+            [weak self] result in
+            self?.renderRows(result, command: "ls")
         }
     }
 

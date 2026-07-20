@@ -5,7 +5,7 @@
 
 #include "prefs.h"
 
-enum { kSharingAlertID = 201 };
+enum { kSharingDialogID = 301 };
 
 /* --- path handling ------------------------------------------------------ */
 
@@ -485,25 +485,61 @@ int now_files_choose_root(void)
     return changed;
 }
 
-/* --- the sharing dialog ------------------------------------------------- */
+/* --- the sharing dialog -------------------------------------------------
+   Movable modal: the human opened it deliberately, so it is a dialog they
+   can drag, not an alert that interrupts them. */
 
-void now_files_sharing_dialog(void)
+enum {
+    kSharingDoneItem = 1,
+    kSharingChooseItem = 2,
+    kSharingRootItem = 4
+};
+
+static void sharing_set_root_text(DialogRef dialog)
 {
     char root[160];
-    Str255 message;
-    Str255 folder;
-    short hit;
+    Str255 text;
+    ControlHandle handle;
+    Rect box;
+    short kind;
 
     now_files_root_name(root, sizeof root);
-    CopyCStringToPascal("The host can browse this folder and everything "
-                        "inside it:", message);
     if (strlen(root) > 250) {
         root[250] = '\0';
     }
-    CopyCStringToPascal(root, folder);
-    ParamText(message, folder, NULL, NULL);
-    hit = CautionAlert(kSharingAlertID, NULL);
-    if (hit == 1) {                   /* Choose... */
-        now_files_choose_root();
+    CopyCStringToPascal(root, text);
+    GetDialogItem(dialog, kSharingRootItem, &kind, (Handle *)&handle, &box);
+    SetDialogItemText((Handle)handle, text);
+}
+
+void now_files_sharing_dialog(void)
+{
+    DialogRef dialog;
+    short hit;
+    Boolean done = false;
+
+    dialog = GetNewDialog(kSharingDialogID, NULL, (WindowRef)-1);
+    if (dialog == NULL) {
+        return;
     }
+    SetDialogDefaultItem(dialog, kSharingDoneItem);
+    sharing_set_root_text(dialog);
+    ShowWindow(GetDialogWindow(dialog));
+
+    while (!done) {
+        ModalDialog(NULL, &hit);
+        switch (hit) {
+        case kSharingChooseItem:
+            if (now_files_choose_root()) {
+                sharing_set_root_text(dialog);
+            }
+            break;
+        case kSharingDoneItem:
+            done = true;
+            break;
+        default:
+            break;
+        }
+    }
+    DisposeDialog(dialog);
 }

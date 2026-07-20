@@ -1106,6 +1106,7 @@ static void serve_file_list(const char *request)
     FileEntry entries[kPage];
     char path[224];
     char json[3072];
+    char esc[200];
     long id = now_json_find_int(request, "id", 0);
     long cursor = now_json_find_int(request, "cursor", 1);
     Boolean more = false;
@@ -1123,25 +1124,30 @@ static void serve_file_list(const char *request)
         file_refuse_rc(id, n);
         return;
     }
+    now_json_escape(path, esc, sizeof esc);
     pos = snprintf(json, sizeof json,
                    "{\"type\":\"file.listing\",\"id\":%ld,"
-                   "\"path\":\"%.200s\",\"entries\":[", id, path);
+                   "\"path\":\"%s\",\"entries\":[", id, esc);
     for (i = 0; i < n; ++i) {
         char type[8], creator[8];
+        char esc_type[40], esc_creator[40];
 
         memcpy(type, &entries[i].file_type, 4);
         type[4] = '\0';
         memcpy(creator, &entries[i].creator, 4);
         creator[4] = '\0';
+        now_json_escape(entries[i].name, esc, sizeof esc);
         pos += snprintf(json + pos, sizeof json - (size_t)pos,
-                        "%s{\"name\":\"%.31s\",\"kind\":\"%s\"",
-                        i > 0 ? "," : "", entries[i].name,
+                        "%s{\"name\":\"%s\",\"kind\":\"%s\"",
+                        i > 0 ? "," : "", esc,
                         entries[i].folder ? "folder" : "file");
         if (!entries[i].folder) {
+            now_json_escape(type, esc_type, sizeof esc_type);
+            now_json_escape(creator, esc_creator, sizeof esc_creator);
             pos += snprintf(json + pos, sizeof json - (size_t)pos,
-                            ",\"fileType\":\"%.4s\",\"creator\":\"%.4s\","
+                            ",\"fileType\":\"%s\",\"creator\":\"%s\","
                             "\"dataBytes\":%ld,\"rsrcBytes\":%ld",
-                            type, creator, entries[i].data_bytes,
+                            esc_type, esc_creator, entries[i].data_bytes,
                             entries[i].rsrc_bytes);
         }
         pos += snprintf(json + pos, sizeof json - (size_t)pos,
@@ -1198,16 +1204,21 @@ static void serve_file_get(const char *request)
         type[4] = '\0';
         memcpy(creator, &stage.creator, 4);
         creator[4] = '\0';
+        char esc_name[200], esc_type[40], esc_creator[40];
+
+        now_json_escape(stage.name, esc_name, sizeof esc_name);
+        now_json_escape(type, esc_type, sizeof esc_type);
+        now_json_escape(creator, esc_creator, sizeof esc_creator);
         snprintf(json, sizeof json,
                  "{\"type\":\"file.begin\",\"id\":%ld,\"transfer\":%u,"
-                 "\"name\":\"%.31s\",\"container\":\"%s\","
+                 "\"name\":\"%s\",\"container\":\"%s\","
                  "\"bytes\":%ld,\"dataBytes\":%ld,\"rsrcBytes\":%ld,"
-                 "\"fileType\":\"%.4s\",\"creator\":\"%.4s\","
+                 "\"fileType\":\"%s\",\"creator\":\"%s\","
                  "\"modified\":%lu}",
-                 id, xfer, stage.name,
+                 id, xfer, esc_name,
                  stage.container == kContainerMacBinary ? "macbinary" : "data",
                  stage.total_bytes, stage.data_bytes, stage.rsrc_bytes,
-                 type, creator, stage.modified);
+                 esc_type, esc_creator, stage.modified);
     }
     if (!send_control(json)) {
         now_files_stage_dispose(&stage);
