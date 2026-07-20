@@ -238,51 +238,14 @@ static void fail(const char *reason)
 
    Best-effort by design: an older stack that refuses the option still
    works, just slowly, and that is better than refusing to connect. */
-static long g_rcv_window;             /* what the stack granted, 0 = default */
-
-static void negotiate_rcv_buffer(EndpointRef ep)
-{
-    UInt8 request[kOTFourByteOptionSize];
-    UInt8 reply[kOTFourByteOptionSize];
-    TOption *opt = (TOption *)request;
-    TOption *got = (TOption *)reply;
-    TOptMgmt req, ret;
-
-    if (gNowOT.optionManagement == NULL) {
-        g_rcv_window = -2;            /* not resolvable on this stack */
-        return;
-    }
-    /* TOption already carries its four-byte value in value[0]; the first
-       version of this declared a second field beside it and set that,
-       so the request had an inconsistent length and an uninitialised
-       value. Use the size the API defines. */
-    memset(request, 0, sizeof request);
-    memset(reply, 0, sizeof reply);
-    opt->len = kOTFourByteOptionSize;
-    opt->level = XTI_GENERIC;
-    opt->name = XTI_RCVBUF;
-    opt->status = 0;
-    opt->value[0] = 64UL * 1024UL;
-
-    req.opt.buf = request;
-    req.opt.len = kOTFourByteOptionSize;
-    req.opt.maxlen = kOTFourByteOptionSize;
-    req.flags = T_NEGOTIATE;
-    ret.opt.buf = reply;
-    ret.opt.len = 0;
-    ret.opt.maxlen = kOTFourByteOptionSize;
-    ret.flags = 0;
-
-    if (gNowOT.optionManagement(ep, &req, &ret) != noErr) {
-        g_rcv_window = -1;
-        return;
-    }
-    if (got->status == T_SUCCESS || got->status == T_PARTSUCCESS) {
-        g_rcv_window = (long)got->value[0];
-    } else {
-        g_rcv_window = -(long)got->status;
-    }
-}
+/* Left at the stack's default. Negotiating it with OTOptionManagement
+   wedged the guest: synchronous, the call waits for a completion that
+   needs a notifier this app does not install, and the connect never
+   returns; non-blocking, it returns without taking effect. Raising the
+   window needs a notifier — or the option set in the endpoint's
+   configuration at open time — and neither belongs in a fix made at
+   speed. The rate stays slow and honest until then. */
+static long g_rcv_window = -3;        /* -3: not attempted */
 
 static void start_connect(void)
 {
@@ -316,7 +279,6 @@ static void start_connect(void)
         fail("Could not open a TCP endpoint");
         return;
     }
-    negotiate_rcv_buffer(g.ep);       /* while still synchronous */
     gNowOT.setNonBlocking(g.ep);
     if (gNowOT.bind(g.ep, NULL, NULL) != noErr) {
         fail("Bind failed");
