@@ -245,7 +245,14 @@ static void fail(const char *reason)
    window needs a notifier — or the option set in the endpoint's
    configuration at open time — and neither belongs in a fix made at
    speed. The rate stays slow and honest until then. */
-static long g_rcv_window = -3;        /* -3: not attempted */
+/* Bytes readable at the last pass, and the high-water mark since the
+   connection came up. -3 means never sampled (no OTCountDataBytes). */
+static long g_rcv_window = -3;
+static long g_rcv_peak = -3;
+/* Passes of the event loop that reached conn_service since the last
+   file receive began. A collapsed transfer with this climbing normally
+   means the loop is healthy and the bytes are simply not arriving. */
+static long g_service_passes = 0;
 
 static void start_connect(void)
 {
@@ -366,6 +373,21 @@ static int pump_rx(void)
     OTFlags flags = 0;
     OTResult got;
 
+    /* Sampled BEFORE draining, so it is the backlog the guest was left
+       holding since the previous pass — the number that separates "this
+       machine cannot keep up" from "nothing is arriving". Both look the
+       same from the far end of the wire, which is how three throughput
+       theories died here. */
+    if (gNowOT.countDataBytes != NULL && g.ep != kOTInvalidEndpointRef) {
+        OTByteCount waiting = 0;
+
+        if (gNowOT.countDataBytes(g.ep, &waiting) == noErr) {
+            g_rcv_window = (long)waiting;
+            if ((long)waiting > g_rcv_peak) {
+                g_rcv_peak = (long)waiting;
+            }
+        }
+    }
     for (;;) {
         if (g.rx_len >= kRxBufferSize) {
             /* Full is not broken. A bulk stream fills this buffer every
@@ -2489,6 +2511,7 @@ void now_wire_pump(void)
 
 void conn_service(void)
 {
+    ++g_service_passes;
     switch (g.phase) {
     case kConnConnecting:
         service_connecting();
@@ -2583,6 +2606,16 @@ void conn_connect_now(void)
 long conn_rcv_window(void)
 {
     return g_rcv_window;
+}
+
+long conn_rcv_peak(void)
+{
+    return g_rcv_peak;
+}
+
+long conn_service_passes(void)
+{
+    return g_service_passes;
 }
 
 void conn_peer_label(char *out, long cap)

@@ -986,6 +986,7 @@ final class Session {
         case .fileDone(let done):
             onFileDone(done)
         case .fileProgress(let progress):
+            noteOutboundAck(progress)
             onFileProgress(progress)
         case .fileRefuse(let refuse):
             fileBegin = nil
@@ -1101,9 +1102,49 @@ final class Session {
         var bytes: Data
         var sent: Int
         var cancelled: Bool
+        /// Bytes the guest has said it holds. The window is measured
+        /// against this, never against `sent`.
+        var acked: Int = 0
+        /// Set once the guest has reported at all. Until then there is
+        /// nothing to clock against and the window stays open, which is
+        /// what an older guest that never reports keeps forever.
+        var acking: Bool = false
+        /// True while a frame is being withheld for want of window.
+        var parked: Bool = false
     }
 
     private var outbound: Outbound?
+
+    /// How far ahead of the receiver the sender may run.
+    ///
+    /// The pacing gap only works while the kernel's send buffer is
+    /// EMPTY: a paced write leaves TCP nothing to fire on the next ACK,
+    /// which is the entire mechanism. Offering bytes faster than the
+    /// link carries them builds a backlog in that buffer, and from the
+    /// moment it is non-empty TCP sends back-to-back on every ACK no
+    /// matter how politely the app is writing. The gap is still in the
+    /// code and no longer on the wire — which is why a transfer runs at
+    /// 340 KB/s until the buffer fills and then collapses to ~5 KB/s and
+    /// never recovers (see docs/large-transfers.md).
+    ///
+    /// Clocking on the receiver's own count keeps the backlog bounded,
+    /// so the gap stays real for the whole transfer. Six 32 KB progress
+    /// steps is enough to keep the wire busy across a skipped report —
+    /// `received` is cumulative, so one later report reopens the window
+    /// whatever was dropped in between.
+    static let outboundWindowBytes = 192 * 1024
+
+    /// Folds a guest progress report into the window and restarts the
+    /// sender if it was parked.
+    private func noteOutboundAck(_ progress: FileProgress) {
+        guard var out = outbound, out.id == progress.id else { return }
+        out.acking = true
+        out.acked = max(out.acked, progress.received)
+        let wasParked = out.parked
+        out.parked = false
+        outbound = out
+        if wasParked { sendNextOutboundChunk() }
+    }
 
     /// Streams an accepted file: begin, the bulk frames, then end.
     private func sendAcceptedFile(_ accept: FileAccept) {
@@ -1134,6 +1175,16 @@ final class Session {
             outbound = nil
             send(.fileEnd(FileEnd(id: out.id, transfer: Int(out.transfer),
                                   ok: true, sendMs: nil)))
+            return
+        }
+        // Wait for the receiver to catch up rather than piling bytes into
+        // a send buffer it cannot drain. Parking here is what a progress
+        // report un-parks; if progress stops altogether the transfer is
+        // genuinely dead and the put watchdog says so.
+        if out.acking,
+           out.sent - out.acked >= Self.outboundWindowBytes {
+            out.parked = true
+            outbound = out
             return
         }
         let end = min(out.sent + FrameHeader.maxPayloadLength,
@@ -1189,7 +1240,15 @@ final class Session {
             })
             return
         }
-        sendPiece(frame, from: frame.startIndex, completion: completion)
+        bulkFramePartiallySent = true
+        sendPiece(frame, from: frame.startIndex) { [weak self] error in
+            guard let self else { completion(error); return }
+            // The frame is whole on the wire again, so anything held back
+            // can go out — before the next frame starts and closes the
+            // window again.
+            self.bulkFramePartiallySent = false
+            self.drainControlQueue { completion(error) }
+        }
     }
 
     private func sendPiece(_ frame: Data, from offset: Data.Index,
@@ -1466,13 +1525,62 @@ final class Session {
             paceMs: tuning.paceMs, pack: tuning.pack)))
     }
 
+    /// Control frames waiting for the bulk frame in flight to finish.
+    /// See `send(_:)` for why they cannot simply go out.
+    private var controlQueue: [Data] = []
+    /// True from the first piece of a bulk frame to its last. Metering
+    /// splits a frame across many sends with gaps between them, and a
+    /// control frame written into one of those gaps lands INSIDE the
+    /// frame on the wire.
+    private var bulkFramePartiallySent = false
+
+    /// Queues a control frame, holding it back while a bulk frame is
+    /// half-written.
+    ///
+    /// The guest's decoder gives bulk absolute priority: while
+    /// `bulk_remaining > 0` every byte it reads is file data, unexamined
+    /// (`next_frame`, wire.c). A control frame that arrives mid-frame is
+    /// therefore written into the file, and the stream is desynced by
+    /// its whole length — the next 8 bytes the guest reads as a header
+    /// are file content. That is either an instant protocol error or,
+    /// worse, a plausible length that silently swallows the rest.
+    ///
+    /// The guest already refuses to do this to us
+    /// (`bulk_frame_partially_sent`, wire.c); this is the missing mirror.
+    /// Waiting costs one frame — ~70 ms at the metered rate — which is
+    /// what keeps a cancel or a status request responsive during bulk
+    /// without a second connection.
     private func send(_ message: ControlMessage) {
         guard let payload = try? ControlMessageCodec.encode(message),
               let frame = try? FrameCodec.encode(channel: .control,
                                                  payload: payload) else {
             return
         }
-        connection.send(content: frame, completion: .idempotent)
+        guard bulkFramePartiallySent else {
+            connection.send(content: frame, completion: .idempotent)
+            return
+        }
+        controlQueue.append(frame)
+    }
+
+    /// Writes everything held back, at a frame boundary where it is safe.
+    /// Each still gets the pacing gap: this peer's card drops a frame
+    /// that lands on the heels of another, and a control frame followed
+    /// immediately by the next bulk piece is exactly that shape.
+    private func drainControlQueue(_ completion: @escaping () -> Void) {
+        guard !controlQueue.isEmpty else { completion(); return }
+        let frame = controlQueue.removeFirst()
+        connection.send(content: frame, completion: .contentProcessed {
+            [weak self] _ in
+            Task { @MainActor in
+                guard let self, !self.closed else { return }
+                if self.pacing.gap > 0 {
+                    try? await Task.sleep(nanoseconds:
+                        UInt64(self.pacing.gap * 1_000_000_000))
+                }
+                self.drainControlQueue(completion)
+            }
+        })
     }
 
     private func resetIdleClock() {

@@ -66,6 +66,8 @@ void conn_peer_label(char *out, long cap);
    default. Small windows throttle inbound files to one segment per
    delayed ACK, so this is worth being able to see. */
 long conn_rcv_window(void);
+long conn_rcv_peak(void);
+long conn_service_passes(void);
 
 /* Round-trip time of the last ping/pong in ms, or -1 if none yet. */
 long conn_last_rtt_ms(void);

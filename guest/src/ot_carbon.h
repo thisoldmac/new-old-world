@@ -34,6 +34,10 @@ typedef struct {
     OSStatus (*unbind)(EndpointRef ref);
     OSStatus (*optionManagement)(EndpointRef ref, TOptMgmt *req,
                                  TOptMgmt *ret);
+    /* How many bytes are readable right now. Diagnostic only: it is the
+       one way to tell a guest that cannot keep up from a guest that is
+       being starved, and those two look identical from the far end. */
+    OSStatus (*countDataBytes)(EndpointRef ref, OTByteCount *count);
 } NowOTTable;
 
 /* Resolves the table once (idempotent). Returns noErr, or an error when the

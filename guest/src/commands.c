@@ -541,10 +541,13 @@ static void run_putstat(long id, char *out, long cap)
              "[\"Writes\",\"%ld\"],"
              "[\"In FSWrite\",\"%lu ms\"],"
              "[\"In receive\",\"%lu ms\"],"
-             "[\"Rcv window\",\"%ld\"]"
+             "[\"Rcv backlog\",\"%ld\"],"
+             "[\"Rcv peak\",\"%ld\"],"
+             "[\"Loop passes\",\"%ld\"]"
              "]}}",
              id, st.bytes, st.chunks, st.writes,
-             st.us_write / 1000, st.us_total / 1000, conn_rcv_window());
+             st.us_write / 1000, st.us_total / 1000, conn_rcv_window(),
+             conn_rcv_peak(), conn_service_passes());
 }
 
 void now_command_run(const char *name, const char *request_json, long id,
