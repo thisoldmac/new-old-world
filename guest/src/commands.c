@@ -352,6 +352,7 @@ static void run_screenshot(const char *request_json, long id,
     char err[96];
     char value[16];
     short depth;
+    short bands = 1;
     Boolean save = true;
     long pos;
 
@@ -363,12 +364,18 @@ static void run_screenshot(const char *request_json, long id,
             depth = (short)d;
         }
     }
+    if (json_arg_string(request_json, "bands", value, sizeof value)) {
+        long b = strtol(value, NULL, 10);
+        if (b >= 1 && b <= kCaptureMaxBands) {
+            bands = (short)b;
+        }
+    }
     if (json_arg_string(request_json, "save", value, sizeof value)
         && strcmp(value, "false") == 0) {
         save = false;
     }
 
-    if (now_screenshot(depth, save, &stats, err, sizeof err) != 0) {
+    if (now_screenshot(depth, bands, save, &stats, err, sizeof err) != 0) {
         snprintf(out, cap,
                  "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
                  "\"error\":{\"code\":\"screenshot-failed\","
@@ -383,13 +390,24 @@ static void run_screenshot(const char *request_json, long id,
                    "[\"Raw\",\"%ld KB\"],"
                    "[\"PICT\",\"%ld KB\"],"
                    "[\"Capture\",\"%ld ms\"],"
-                   "[\"Encode\",\"%ld ms\"],"
-                   "[\"Saved\",\"%s\"]"
-                   "]}}",
+                   "[\"Encode\",\"%ld ms\"],",
                    id, stats.width, stats.height, stats.depth,
                    stats.raw_bytes / 1024, stats.pict_bytes / 1024,
-                   stats.capture_ms, stats.encode_ms,
-                   save ? stats.saved_name : "(not saved)");
+                   stats.capture_ms, stats.encode_ms);
+    if (stats.bands > 1) {
+        pos += snprintf(out + pos, cap - pos,
+                        "[\"Bands\",\"%d\"],"
+                        "[\"Band min\",\"%ld.%ld ms\"],"
+                        "[\"Band max\",\"%ld.%ld ms\"],",
+                        stats.bands,
+                        stats.band_min_us / 1000,
+                        (stats.band_min_us % 1000) / 100,
+                        stats.band_max_us / 1000,
+                        (stats.band_max_us % 1000) / 100);
+    }
+    pos += snprintf(out + pos, cap - pos,
+                    "[\"Saved\",\"%s\"]]}}",
+                    save ? stats.saved_name : "(not saved)");
     (void)pos;
 }
 

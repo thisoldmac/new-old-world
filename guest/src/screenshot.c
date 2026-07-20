@@ -97,21 +97,42 @@ static OSErr save_pict(PicHandle pic, char *name_out, long name_cap)
     return err;
 }
 
-int now_screenshot(short depth, Boolean save, ShotStats *stats,
+int now_screenshot(short depth, short bands, Boolean save, ShotStats *stats,
                    char *err, long err_cap)
 {
+    BandedCapture cap;
     CaptureImage image;
     PicHandle pic;
     UnsignedWide t0, t1, t2;
     int rc;
+    int b;
     OSErr oserr;
 
     memset(stats, 0, sizeof *stats);
     err[0] = '\0';
 
     Microseconds(&t0);
-    rc = capture_screen(depth, &image);
+    rc = banded_capture_begin(depth, bands, &cap);
+    while (rc == kCaptureOK && cap.next_band < cap.bands) {
+        rc = banded_capture_step(&cap);
+        if (rc == kCaptureMoreBands) {
+            rc = kCaptureOK;
+        }
+    }
     Microseconds(&t1);
+    if (rc == kCaptureOK) {
+        image = cap.image;
+        stats->bands = cap.bands;
+        for (b = 0; b < cap.bands; ++b) {
+            long us = (long)cap.band_us[b];
+            if (b == 0 || us < stats->band_min_us) {
+                stats->band_min_us = us;
+            }
+            if (us > stats->band_max_us) {
+                stats->band_max_us = us;
+            }
+        }
+    }
     if (rc != kCaptureOK) {
         switch (rc) {
         case kCaptureInvalidDepth:
