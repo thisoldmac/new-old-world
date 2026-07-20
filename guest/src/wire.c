@@ -58,6 +58,7 @@ static ConnState g;
 static void send_hello(void);
 static void xfer_cleanup(void);
 static void offer_cleanup(void);
+static void stream_drop(void);
 static void note_shot(const char *line);
 
 /* --- helpers ------------------------------------------------------------ */
@@ -193,6 +194,7 @@ static void enter_backoff(void)
 {
     xfer_cleanup();                   /* a dropped link cancels any transfer */
     offer_cleanup();
+    stream_drop();                    /* no stopped message on a dead wire */
     close_endpoint();
     if (!g.want_connection) {
         g.phase = kConnIdle;
@@ -430,6 +432,23 @@ enum {
     kXferSliceTicks = 3,              /* ~50 ms of sending per service call */
     kXferDeadlineTicks = 60 * 120     /* give up on a stuck transfer */
 };
+
+/* Live-stream bracket (stream.start .. stream.stopped). service_stream
+   turns the guest into a frame pump: finish a frame, capture fresh, send —
+   never queue. One frame in flight bounds both latency and memory, and a
+   stale screen self-corrects. Its own small state so the capture step can
+   later become incremental (banded CopyBits) without touching the rest. */
+static struct {
+    Boolean active;
+    long id;
+    short depth;
+    Boolean pack;
+    long chunk;
+    short pace_ms;
+    long min_interval_ticks;
+    unsigned long next_frame_tick;
+    long frames;
+} g_stream;
 
 static struct {
     Boolean active;
@@ -680,6 +699,13 @@ static void serve_capture(const char *request)
     unsigned short xfer;
     long chunk;
 
+    if (g_stream.active) {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"capture.end\",\"id\":%ld,\"transfer\":%u,"
+                 "\"ok\":false}", id, next_xfer());
+        send_control(json);
+        return;                       /* the stream owns the lane */
+    }
     if (g_xfer.active) {
         xfer_finish(false);           /* one transfer at a time */
     }
@@ -715,7 +741,6 @@ enum { kOfferTimeoutTicks = 60 * 15 };
 
 static struct {
     Boolean active;
-    Boolean pushed;                   /* guest-initiated: report to panel */
     PixelBlob blob;
     ShotMeta meta;
     long id;
@@ -738,6 +763,10 @@ int now_wire_offer_shot(char *err, long cap)
 
     if (g.phase != kConnConnected) {
         snprintf(err, (size_t)cap, "Not connected to a host");
+        return -1;
+    }
+    if (g_stream.active) {
+        snprintf(err, (size_t)cap, "Streaming to the host");
         return -1;
     }
     if (g_xfer.active || g_offer.active) {
@@ -820,6 +849,107 @@ static void service_offer(void)
     }
 }
 
+/* --- live stream ------------------------------------------------------- */
+
+static void stream_drop(void)
+{
+    g_stream.active = false;
+}
+
+static void stream_send_stopped(long id, const char *reason)
+{
+    char json[192];
+
+    if (reason != NULL) {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"stream.stopped\",\"id\":%ld,"
+                 "\"reason\":\"%s\"}", id, reason);
+    } else {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"stream.stopped\",\"id\":%ld}", id);
+    }
+    send_control(json);
+}
+
+static void stream_end(const char *reason)
+{
+    if (!g_stream.active) {
+        return;
+    }
+    g_stream.active = false;
+    stream_send_stopped(g_stream.id, reason);
+    note_shot("Streaming stopped");
+}
+
+static void stream_start(const char *reply)
+{
+    NowPrefs prefs;
+    long depth_arg;
+    long id = json_find_int(reply, "id", 0);
+
+    if (g_stream.active || g_xfer.active || g_offer.active) {
+        stream_send_stopped(id, "busy: a transfer is in flight");
+        return;
+    }
+    now_prefs_load(&prefs);
+    depth_arg = json_find_int(reply, "depth", 0);
+
+    memset(&g_stream, 0, sizeof g_stream);
+    g_stream.id = id;
+    g_stream.depth = capture_depth_is_supported((short)depth_arg)
+        ? (short)depth_arg : prefs.shot_depth;
+    g_stream.pack = prefs.shot_pack;
+    g_stream.chunk = (long)prefs.chunk_kb * 1024;
+    if (g_stream.chunk < 1024 || g_stream.chunk > kNowMaxPayload) {
+        g_stream.chunk = 8192;
+    }
+    g_stream.pace_ms = prefs.pace_ms;
+    g_stream.min_interval_ticks =
+        json_find_int(reply, "minIntervalMs", 0) * 60 / 1000;
+    g_stream.next_frame_tick = 0;
+    g_stream.active = true;
+    note_shot("Streaming to host...");
+}
+
+static void stream_stop(const char *reply)
+{
+    if (!g_stream.active
+        || json_find_int(reply, "id", -1) != g_stream.id) {
+        return;
+    }
+    if (g_xfer.active) {
+        xfer_finish(false);           /* abort the in-flight frame */
+    }
+    stream_end(NULL);
+}
+
+/* Pumps the next frame when the lane is free and the throttle allows. */
+static void service_stream(void)
+{
+    PixelBlob blob;
+    ShotMeta meta;
+
+    if (!g_stream.active || g_xfer.active) {
+        return;
+    }
+    if (TickCount() < g_stream.next_frame_tick) {
+        return;
+    }
+    g_stream.next_frame_tick = TickCount() + g_stream.min_interval_ticks;
+
+    memset(&blob, 0, sizeof blob);
+    if (!gather_shot(g_stream.depth, g_stream.pack, &blob, &meta)) {
+        stream_end("capture failed");
+        return;
+    }
+    if (!arm_transfer(g_stream.id, next_xfer(), &meta, &blob,
+                      g_stream.chunk, g_stream.pace_ms, false)) {
+        stream_end("transfer failed");
+        return;
+    }
+    ++g_stream.frames;
+}
+
 /* Returns 0 if the connection should be torn down (bye/protocol error). */
 static int handle_frame(const char *reply)
 {
@@ -857,6 +987,14 @@ static int handle_frame(const char *reply)
     }
     if (json_type_is(reply, "capture.cancel")) {
         xfer_abort();
+        return 1;
+    }
+    if (json_type_is(reply, "stream.start")) {
+        stream_start(reply);
+        return 1;
+    }
+    if (json_type_is(reply, "stream.stop")) {
+        stream_stop(reply);
         return 1;
     }
     if (json_type_is(reply, "capture.accept")) {
@@ -993,6 +1131,9 @@ void conn_service(void)
         service_connected_io();
         if (g.phase == kConnConnected) {
             service_offer();
+        }
+        if (g.phase == kConnConnected) {
+            service_stream();
         }
         if (g.phase == kConnConnected) {
             service_transfer();

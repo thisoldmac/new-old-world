@@ -9,7 +9,17 @@ struct ScreenshotsModuleView: View {
         VStack(alignment: .leading, spacing: 18) {
             header
             Divider()
-            if let shot = model.latest {
+            if model.isStreaming, let frame = model.liveFrame {
+                preview(frame)
+                streamStatsRow
+            } else if model.isStreaming {
+                VStack(spacing: 10) {
+                    ProgressView()
+                    Text("Waiting for the first frame…")
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let shot = model.latest {
                 preview(shot)
                 statsRow(shot)
                 actionRow(shot)
@@ -44,6 +54,13 @@ struct ScreenshotsModuleView: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(!model.canCapture)
 
+                Button(model.isStreaming ? "Stop Streaming"
+                                         : "Start Streaming") {
+                    model.isStreaming ? model.stopStream()
+                                      : model.startStream()
+                }
+                .disabled(!model.canStream)
+
                 if model.isCapturing {
                     Button("Cancel") { model.cancel() }
                 }
@@ -55,7 +72,7 @@ struct ScreenshotsModuleView: View {
                 }
                 .pickerStyle(.menu)
                 .frame(width: 150)
-                .disabled(model.isCapturing)
+                .disabled(model.isCapturing || model.isStreaming)
 
                 if let error = model.lastError {
                     Label(error, systemImage: "exclamationmark.triangle")
@@ -193,6 +210,28 @@ struct ScreenshotsModuleView: View {
             .aspectRatio(contentMode: .fit)
             .frame(maxWidth: .infinity, maxHeight: 420)
             .border(Color.secondary.opacity(0.4))
+    }
+
+    private var streamStatsRow: some View {
+        Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 3) {
+            if let stats = model.streamStats {
+                GridRow {
+                    Text("Stream").foregroundStyle(.secondary)
+                    Text(String(format: "%.1f fps · %.0f KB/s · frame %d",
+                                stats.fps, stats.kbPerSecond, stats.frames))
+                }
+                if let frame = model.liveFrame {
+                    GridRow {
+                        Text("Frame").foregroundStyle(.secondary)
+                        Text("\(frame.width) × \(frame.height) · "
+                             + "\(frame.format.depth)-bit · "
+                             + "\(frame.wireBytes / 1024) KB · "
+                             + "\(stats.lastFrameMs) ms")
+                    }
+                }
+            }
+        }
+        .font(.callout)
     }
 
     private func statsRow(_ shot: ScreenshotRecord) -> some View {

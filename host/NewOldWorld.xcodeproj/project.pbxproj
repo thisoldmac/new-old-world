@@ -11,7 +11,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		A1000020 /* Host */ = {
+		A1000020 /* Sources/Host */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Sources/Host;
 			sourceTree = "<group>";
@@ -32,7 +32,7 @@
 		A1000040 = {
 			isa = PBXGroup;
 			children = (
-				A1000020 /* Host */,
+				A1000020 /* Sources/Host */,
 				A1000050 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -61,7 +61,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				A1000020 /* Host */,
+				A1000020 /* Sources/Host */,
 			);
 			name = "New Old World";
 			productName = "New Old World";
@@ -163,6 +163,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = B93A9CG7F9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -184,6 +185,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = B93A9CG7F9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";

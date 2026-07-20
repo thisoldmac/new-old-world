@@ -90,6 +90,9 @@ channels:
       commandResult: { $ref: "#/components/messages/commandResult" }
       captureRequest: { $ref: "#/components/messages/captureRequest" }
       captureCancel: { $ref: "#/components/messages/captureCancel" }
+      streamStart: { $ref: "#/components/messages/streamStart" }
+      streamStop: { $ref: "#/components/messages/streamStop" }
+      streamStopped: { $ref: "#/components/messages/streamStopped" }
       captureOffer: { $ref: "#/components/messages/captureOffer" }
       captureAccept: { $ref: "#/components/messages/captureAccept" }
       captureRefuse: { $ref: "#/components/messages/captureRefuse" }
@@ -120,6 +123,31 @@ operations:
       capture), and sends capture.begin only after the host answers
       capture.accept. Either way the frames and capture.end are identical;
       one transfer at a time still holds across both origins.
+  hostControlsStream:
+    action: receive
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/streamStart"
+      - $ref: "#/channels/control/messages/streamStop"
+    description: >
+      Host brackets a live stream. Between stream.start and the guest's
+      stream.stopped, the guest sends frames as ordinary capture
+      transfers whose capture.begin id is the stream id — that id is the
+      routing: no disk, no announcement, straight to the live view. The
+      guest self-paces (finish a frame, capture fresh — never queue), so
+      the wire's pace is the frame rate; minIntervalMs only throttles
+      below that. The stream owns the transfer lane: capture.request and
+      capture.offer are refused while it runs.
+  guestEndsStream:
+    action: send
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/streamStopped"
+    description: >
+      stream.stopped is always the stream's last word — it acks the
+      host's stream.stop (any in-flight frame is aborted first, ending
+      ok:false) and equally lets the guest end the stream on its own,
+      with the reason saying why.
   hostAnswersOffer:
     action: receive
     channel: { $ref: "#/channels/control" }
@@ -172,6 +200,15 @@ components:
     captureRequest:
       name: capture.request
       payload: { $ref: "#/components/schemas/CaptureRequest" }
+    streamStart:
+      name: stream.start
+      payload: { $ref: "#/components/schemas/StreamStart" }
+    streamStop:
+      name: stream.stop
+      payload: { $ref: "#/components/schemas/StreamStop" }
+    streamStopped:
+      name: stream.stopped
+      payload: { $ref: "#/components/schemas/StreamStopped" }
     captureOffer:
       name: capture.offer
       payload: { $ref: "#/components/schemas/CaptureOffer" }
@@ -313,6 +350,40 @@ components:
         type: { const: capture.request }
         id: { type: integer }
         depth: { enum: [1, 2, 4, 8, 16, 32] }
+    StreamStart:
+      type: object
+      required: [type, id, depth]
+      additionalProperties: false
+      properties:
+        type: { const: stream.start }
+        id:
+          type: integer
+          description: Stream id; every frame's capture.begin carries it.
+        depth: { enum: [1, 2, 4, 8, 16, 32] }
+        minIntervalMs:
+          type: integer
+          description: >
+            Minimum ms between frame starts; 0 or absent = wire-paced.
+    StreamStop:
+      type: object
+      required: [type, id]
+      additionalProperties: false
+      properties:
+        type: { const: stream.stop }
+        id: { type: integer }
+    StreamStopped:
+      type: object
+      required: [type, id]
+      additionalProperties: false
+      properties:
+        type: { const: stream.stopped }
+        id: { type: integer }
+        reason:
+          type: string
+          description: >
+            Why the guest ended it, when the guest ended it ("busy: a
+            transfer is in flight", "capture failed"); absent when
+            acking the host's stream.stop.
     CaptureOffer:
       type: object
       required: [type, id, width, height, depth, rowBytes, bytes]

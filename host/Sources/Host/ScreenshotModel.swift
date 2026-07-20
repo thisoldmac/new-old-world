@@ -26,6 +26,15 @@ enum GuestConnectionState: Equatable, Sendable {
     }
 }
 
+/// Rolling numbers for the live stream — the tuning surface: watch fps
+/// respond as depth, chunk, pacing, and compression change.
+struct StreamStats: Equatable {
+    var frames: Int
+    var fps: Double
+    var kbPerSecond: Double
+    var lastFrameMs: Int
+}
+
 /// One received screen capture, with the numbers behind it.
 struct ScreenshotRecord: Identifiable, Equatable {
     let id = UUID()
@@ -60,6 +69,12 @@ final class ScreenshotModuleModel: ObservableObject {
     /// Bytes in over bytes promised, while a transfer is in flight.
     @Published private(set) var progress: GuestListener.CaptureProgress?
 
+    /// Live-stream state: the latest frame replaces the preview while the
+    /// bracket is open; frames never touch history, disk, or clipboard.
+    @Published private(set) var isStreaming = false
+    @Published private(set) var liveFrame: ScreenshotRecord?
+    @Published private(set) var streamStats: StreamStats?
+
     /// The landing pad: guest-initiated screenshots always save here;
     /// host-initiated ones only when autoSave says so (they already have a
     /// home — the panel).
@@ -75,7 +90,10 @@ final class ScreenshotModuleModel: ObservableObject {
         didSet { defaults.set(saveDirectory.path, forKey: Keys.saveDirectory) }
     }
 
-    var canCapture: Bool { connection.canCapture && !isCapturing }
+    var canCapture: Bool {
+        connection.canCapture && !isCapturing && !isStreaming
+    }
+    var canStream: Bool { connection.canCapture && !isCapturing }
     var latest: ScreenshotRecord? { history.first }
 
     private enum Keys {
@@ -94,7 +112,11 @@ final class ScreenshotModuleModel: ObservableObject {
     private let defaults: UserDefaults
     private var progressWatch: AnyCancellable?
     private var pushWatch: AnyCancellable?
+    private var streamWatch: AnyCancellable?
+    private var streamStateWatch: AnyCancellable?
+    private var frameClock: [Date] = []
     private static let historyLimit = 20
+    private static let fpsWindow = 10
 
     init(listener: GuestListener, defaults: UserDefaults = .standard) {
         self.listener = listener
@@ -112,6 +134,63 @@ final class ScreenshotModuleModel: ObservableObject {
         pushWatch = listener.pushedCaptures
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in self?.receivePushed($0) }
+        streamWatch = listener.streamFrames
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.receiveStreamFrame($0) }
+        streamStateWatch = listener.$activeStreamId
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] id in self?.streamStateChanged(id) }
+    }
+
+    func startStream() {
+        guard canStream else { return }
+        lastError = nil
+        listener.startStream(depth: selectedDepth.rawValue)
+    }
+
+    func stopStream() {
+        listener.stopStream()
+    }
+
+    private func streamStateChanged(_ id: Int?) {
+        let streaming = id != nil
+        guard streaming != isStreaming else { return }
+        isStreaming = streaming
+        if streaming {
+            frameClock = []
+            streamStats = nil
+            liveFrame = nil
+        } else if let reason = listener.streamEndReason {
+            lastError = "Stream ended: \(reason)"
+        }
+    }
+
+    private func receiveStreamFrame(_ delivery: GuestListener.CaptureDelivery) {
+        let record = ScreenshotRecord(
+            capturedAt: Date(), image: delivery.image,
+            format: delivery.format, transferMs: delivery.transferMs,
+            wireBytes: delivery.wireBytes)
+        liveFrame = record
+        frameClock.append(record.capturedAt)
+        if frameClock.count > Self.fpsWindow {
+            frameClock.removeFirst(frameClock.count - Self.fpsWindow)
+        }
+        var stats = streamStats
+            ?? StreamStats(frames: 0, fps: 0, kbPerSecond: 0, lastFrameMs: 0)
+        stats.frames += 1
+        stats.lastFrameMs = delivery.transferMs
+        if frameClock.count >= 2,
+           let first = frameClock.first, let last = frameClock.last {
+            let span = last.timeIntervalSince(first)
+            if span > 0 {
+                stats.fps = Double(frameClock.count - 1) / span
+            }
+        }
+        if delivery.transferMs > 0 {
+            stats.kbPerSecond = Double(delivery.wireBytes) / 1024.0
+                / (Double(delivery.transferMs) / 1000.0)
+        }
+        streamStats = stats
     }
 
     /// A guest-initiated screenshot: same record as a requested one, but it

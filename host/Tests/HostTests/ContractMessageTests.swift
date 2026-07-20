@@ -59,6 +59,23 @@ final class ContractMessageTests: XCTestCase {
         XCTAssertNil(offer.encoding)
     }
 
+    func testStreamBracketRoundTrip() throws {
+        let start = StreamStart(id: 11, depth: 8, minIntervalMs: 500)
+        XCTAssertEqual(
+            try ControlMessageCodec.decode(
+                ControlMessageCodec.encode(.streamStart(start))),
+            .streamStart(start))
+        XCTAssertEqual(
+            try ControlMessageCodec.decode(
+                ControlMessageCodec.encode(.streamStop(StreamStop(id: 11)))),
+            .streamStop(StreamStop(id: 11)))
+        let stopped = StreamStopped(id: 11, reason: "capture failed")
+        XCTAssertEqual(
+            try ControlMessageCodec.decode(
+                ControlMessageCodec.encode(.streamStopped(stopped))),
+            .streamStopped(stopped))
+    }
+
     func testPingPongCarryId() throws {
         let ping = try ControlMessageCodec.encode(.ping(id: 42))
         XCTAssertEqual(try ControlMessageCodec.decode(ping), .ping(id: 42))

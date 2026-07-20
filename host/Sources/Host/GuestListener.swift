@@ -172,6 +172,42 @@ final class GuestListener: ObservableObject {
     /// settles its own completion instead.
     let pushedCaptures = PassthroughSubject<CaptureDelivery, Never>()
 
+    /// Live-stream frames. Same decode as any capture; the stream id is
+    /// what routed them here instead of pushedCaptures.
+    let streamFrames = PassthroughSubject<CaptureDelivery, Never>()
+
+    /// Non-nil while a stream bracket is open.
+    @Published private(set) var activeStreamId: Int?
+
+    /// The reason the guest gave when IT ended the stream ("capture
+    /// failed"); nil after a host-requested stop.
+    @Published private(set) var streamEndReason: String?
+
+    /// Opens a stream bracket. Frames then arrive on streamFrames until
+    /// stopStream() or the guest's own stream.stopped.
+    func startStream(depth: Int, minIntervalMs: Int? = nil) {
+        guard let session, case .connected = state,
+              activeStreamId == nil else { return }
+        let id = nextCommandId
+        nextCommandId += 1
+        activeStreamId = id
+        streamEndReason = nil
+        session.beginStream(id: id, depth: depth,
+                            minIntervalMs: minIntervalMs)
+    }
+
+    func stopStream() {
+        guard let id = activeStreamId else { return }
+        session?.requestStreamStop(id: id)
+    }
+
+    fileprivate func streamEnded(_ stopped: StreamStopped) {
+        guard stopped.id == activeStreamId else { return }
+        activeStreamId = nil
+        streamEndReason = stopped.reason
+        captureProgress = nil
+    }
+
     /// Abandons the transfer in flight. The guest answers with a failed
     /// capture.end, which is what actually settles the pending completion.
     func cancelCapture() {
@@ -258,6 +294,12 @@ final class GuestListener: ObservableObject {
                 self?.captureProgress = nil
                 self?.pushedCaptures.send(delivery)
             },
+            onStreamFrame: { [weak self] delivery in
+                self?.streamFrames.send(delivery)
+            },
+            onStreamStopped: { [weak self] stopped in
+                self?.streamEnded(stopped)
+            },
             onClosed: { [weak self] closedSession, reason in
                 guard let self else { return }
                 self.pending.removeAll { $0 === closedSession }
@@ -296,6 +338,9 @@ final class Session {
         -> Void
     private let onCaptureProgress: (GuestListener.CaptureProgress?) -> Void
     private let onPushedCapture: (GuestListener.CaptureDelivery) -> Void
+    private let onStreamFrame: (GuestListener.CaptureDelivery) -> Void
+    private let onStreamStopped: (StreamStopped) -> Void
+    private var streamId: Int?
     private let onClosed: (Session, String) -> Void
 
     /// In-flight bulk transfer (one at a time by contract).
@@ -327,6 +372,8 @@ final class Session {
                                       GuestListener.CaptureFailure>) -> Void,
          onCaptureProgress: @escaping (GuestListener.CaptureProgress?) -> Void,
          onPushedCapture: @escaping (GuestListener.CaptureDelivery) -> Void,
+         onStreamFrame: @escaping (GuestListener.CaptureDelivery) -> Void,
+         onStreamStopped: @escaping (StreamStopped) -> Void,
          onClosed: @escaping (Session, String) -> Void) {
         self.connection = connection
         self.identity = identity
@@ -339,6 +386,8 @@ final class Session {
         self.onCapture = onCapture
         self.onCaptureProgress = onCaptureProgress
         self.onPushedCapture = onPushedCapture
+        self.onStreamFrame = onStreamFrame
+        self.onStreamStopped = onStreamStopped
         self.onClosed = onClosed
     }
 
@@ -408,7 +457,7 @@ final class Session {
                     return
                 }
                 captureBuffer.append(contentsOf: frame.payload)
-                if let begin = captureBegin {
+                if let begin = captureBegin, begin.id != streamId {
                     onCaptureProgress(.init(received: captureBuffer.count,
                                             expected: begin.bytes))
                 }
@@ -439,6 +488,9 @@ final class Session {
             touchHealth(pingsDelta: 1)
         case .commandResult(let result):
             onCommandResult(result)
+        case .streamStopped(let stopped):
+            if stopped.id == streamId { streamId = nil }
+            onStreamStopped(stopped)
         case .captureOffer(let offer):
             answerOffer(offer)
         case .captureBegin(let begin):
@@ -446,7 +498,9 @@ final class Session {
             captureStart = Date()
             captureBuffer = []
             captureBuffer.reserveCapacity(begin.bytes)
-            onCaptureProgress(.init(received: 0, expected: begin.bytes))
+            if begin.id != streamId {
+                onCaptureProgress(.init(received: 0, expected: begin.bytes))
+            }
         case .captureEnd(let end):
             finishCapture(end)
         case .bye(let bye):
@@ -464,7 +518,7 @@ final class Session {
     /// "is the lane free" — the offer's contents don't need vetting: the
     /// bulk plane only carries pixels.
     private func answerOffer(_ offer: CaptureOffer) {
-        guard captureBegin == nil, solicitedId == nil else {
+        guard captureBegin == nil, solicitedId == nil, streamId == nil else {
             send(.captureRefuse(CaptureRefuse(
                 id: offer.id, reason: "busy: a transfer is in flight")))
             return
@@ -475,8 +529,19 @@ final class Session {
         send(.captureAccept(CaptureAccept(id: offer.id)))
     }
 
+    func beginStream(id: Int, depth: Int, minIntervalMs: Int?) {
+        streamId = id
+        send(.streamStart(StreamStart(id: id, depth: depth,
+                                      minIntervalMs: minIntervalMs)))
+    }
+
+    func requestStreamStop(id: Int) {
+        send(.streamStop(StreamStop(id: id)))
+    }
+
     private func finishCapture(_ end: CaptureEnd) {
-        let pushed = solicitedId == nil
+        let streaming = streamId != nil && captureBegin?.id == streamId
+        let pushed = !streaming && solicitedId == nil
         guard let begin = captureBegin else {
             if !pushed {
                 solicitedId = nil
@@ -488,6 +553,10 @@ final class Session {
         captureBegin = nil
         acceptedOfferId = nil
         guard end.ok else {
+            if streaming {
+                cancelled = false
+                return               /* an aborted frame; the bracket rules */
+            }
             if pushed {
                 onLog("\(guestName)'s screenshot push failed")
             } else {
@@ -514,14 +583,18 @@ final class Session {
             let delivery = GuestListener.CaptureDelivery(
                 image: image, format: format,
                 transferMs: ms, wireBytes: blob.count)
-            if pushed {
+            if streaming {
+                onStreamFrame(delivery)
+            } else if pushed {
                 onPushedCapture(delivery)
             } else {
                 solicitedId = nil
                 onCapture(.success(delivery))
             }
         } catch {
-            if pushed {
+            if streaming {
+                onLog("dropped an undecodable stream frame: \(error)")
+            } else if pushed {
                 onLog("could not decode \(guestName)'s screenshot: \(error)")
             } else {
                 solicitedId = nil

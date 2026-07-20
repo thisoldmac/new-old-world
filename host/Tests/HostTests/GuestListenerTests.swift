@@ -306,6 +306,98 @@ final class GuestPushCaptureTests: XCTestCase {
                      "progress must clear once the push lands")
     }
 
+    func testStreamBracketRoutesFramesAndCloses() async throws {
+        let guest = try await connectedGuest()
+        var frames: [GuestListener.CaptureDelivery] = []
+        var pushed = 0
+        let watchFrames = listener.streamFrames.sink { frames.append($0) }
+        let watchPushed = listener.pushedCaptures.sink { _ in pushed += 1 }
+        defer { watchFrames.cancel(); watchPushed.cancel() }
+
+        listener.startStream(depth: 8)
+        var streamId: Int?
+        try await waitUntil("stream.start") {
+            for message in guest.received {
+                if case .streamStart(let start) = message {
+                    streamId = start.id
+                    return true
+                }
+            }
+            return false
+        }
+        let id = try XCTUnwrap(streamId)
+        XCTAssertEqual(listener.activeStreamId, id)
+
+        // Two frames, each a complete begin/bulk/end with the stream's id.
+        let bulk = pushBlob().bulk
+        for transfer in 1...2 {
+            try guest.send(.captureBegin(CaptureBegin(
+                id: id, transfer: transfer, width: 4, height: 2, depth: 8,
+                rowBytes: 4, bytes: bulk.count, paletteBytes: 768,
+                encoding: "raw", captureMs: 1, encodeMs: 1)))
+            guest.sendRaw(try FrameCodec.encode(
+                channel: .bulk, flags: [.end],
+                transfer: UInt16(transfer), payload: bulk))
+            try guest.send(.captureEnd(CaptureEnd(
+                id: id, transfer: transfer, ok: true, sendMs: 2)))
+        }
+        try await waitUntil("two frames") { frames.count == 2 }
+        XCTAssertEqual(pushed, 0, "stream frames must not route as pushes")
+        XCTAssertNil(listener.captureProgress,
+                     "stream frames must not drive the one-shot progress")
+
+        listener.stopStream()
+        try await waitUntil("stream.stop") {
+            guest.received.contains(.streamStop(StreamStop(id: id)))
+        }
+        try guest.send(.streamStopped(StreamStopped(id: id, reason: nil)))
+        try await waitUntil("bracket closed") {
+            self.listener.activeStreamId == nil
+        }
+        XCTAssertNil(listener.streamEndReason)
+    }
+
+    func testGuestAbortReportsItsReason() async throws {
+        let guest = try await connectedGuest()
+        listener.startStream(depth: 1)
+        var streamId: Int?
+        try await waitUntil("stream.start") {
+            for message in guest.received {
+                if case .streamStart(let start) = message {
+                    streamId = start.id
+                    return true
+                }
+            }
+            return false
+        }
+        try guest.send(.streamStopped(StreamStopped(
+            id: try XCTUnwrap(streamId), reason: "capture failed")))
+        try await waitUntil("bracket closed") {
+            self.listener.activeStreamId == nil
+        }
+        XCTAssertEqual(listener.streamEndReason, "capture failed")
+    }
+
+    func testOfferDuringAStreamIsRefusedBusy() async throws {
+        let guest = try await connectedGuest()
+        listener.startStream(depth: 8)
+        try await waitUntil("stream.start") {
+            guest.received.contains {
+                if case .streamStart = $0 { return true }
+                return false
+            }
+        }
+        try guest.send(.captureOffer(pushBlob().offer))
+        try await waitUntil("refuse") {
+            guest.received.contains {
+                if case .captureRefuse(let refuse) = $0 {
+                    return refuse.reason?.contains("busy") == true
+                }
+                return false
+            }
+        }
+    }
+
     func testOfferDuringASolicitedCaptureIsRefusedBusy() async throws {
         let guest = try await connectedGuest()
         listener.requestCapture(depth: 8) { _ in }

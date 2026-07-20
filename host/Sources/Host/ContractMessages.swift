@@ -17,6 +17,9 @@ enum ControlMessage: Equatable, Sendable {
     case error(ErrorMessage)
     case commandRequest(CommandRequest)
     case commandResult(CommandResult)
+    case streamStart(StreamStart)
+    case streamStop(StreamStop)
+    case streamStopped(StreamStopped)
     case captureOffer(CaptureOffer)
     case captureAccept(CaptureAccept)
     case captureRefuse(CaptureRefuse)
@@ -80,6 +83,25 @@ struct CommandResult: Codable, Equatable, Sendable {
 struct CaptureRequest: Codable, Equatable, Sendable {
     var id: Int
     var depth: Int
+}
+
+/// Live-stream bracket: between stream.start and the guest's
+/// stream.stopped, frames arrive as ordinary capture transfers whose
+/// begin id is the stream id. stream.stopped is always the last word —
+/// it acks the host's stop and reports guest-side aborts.
+struct StreamStart: Codable, Equatable, Sendable {
+    var id: Int
+    var depth: Int
+    var minIntervalMs: Int?
+}
+
+struct StreamStop: Codable, Equatable, Sendable {
+    var id: Int
+}
+
+struct StreamStopped: Codable, Equatable, Sendable {
+    var id: Int
+    var reason: String?
 }
 
 /// Guest-initiated push: the guest has already captured and encoded, so the
@@ -176,6 +198,14 @@ enum ControlMessageCodec {
         case "capture.request":
             return .captureRequest(
                 try decoder.decode(CaptureRequest.self, from: data))
+        case "stream.start":
+            return .streamStart(
+                try decoder.decode(StreamStart.self, from: data))
+        case "stream.stop":
+            return .streamStop(try decoder.decode(StreamStop.self, from: data))
+        case "stream.stopped":
+            return .streamStopped(
+                try decoder.decode(StreamStopped.self, from: data))
         case "capture.offer":
             return .captureOffer(
                 try decoder.decode(CaptureOffer.self, from: data))
@@ -218,6 +248,9 @@ enum ControlMessageCodec {
         case .commandRequest(let m): return try tagged("command.request", m)
         case .commandResult(let m): return try tagged("command.result", m)
         case .captureRequest(let m): return try tagged("capture.request", m)
+        case .streamStart(let m): return try tagged("stream.start", m)
+        case .streamStop(let m): return try tagged("stream.stop", m)
+        case .streamStopped(let m): return try tagged("stream.stopped", m)
         case .captureOffer(let m): return try tagged("capture.offer", m)
         case .captureAccept(let m): return try tagged("capture.accept", m)
         case .captureRefuse(let m): return try tagged("capture.refuse", m)
