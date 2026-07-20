@@ -305,3 +305,35 @@ The guest stages an entire file in RAM before sending, so **Send to
 *name*** is capped by the app partition (6 MB) until the send path
 streams from disk the way the receive path already streams to it. Small
 files work today; the fix is being pursued with the large-transfer work.
+
+### Phases
+
+Each phase is independently testable on the machine and each leaves the
+product usable.
+
+**Phase 1 — the host serves, the guest sends.** Host: a share-folder
+setting, then serving `file.list` and `file.get`, and accepting
+`file.offer` with the reverse of the conversions already done in the
+other direction (MacRoman names to UTF-8, classic epoch to Foundation
+dates, MacBinary decoded on arrival). Guest: *Send to name…* in the File
+Sharing panel, the boot-volume toggle, a downloads folder defaulting to
+the Desktop, and `put <path>` in the console. No new windows on either
+side. Done when a file picked on the classic Mac lands in the host's
+share with its name, type and date intact. Capped at small files until
+the staging fix lands — say so in the UI rather than failing
+mysteriously.
+
+**Phase 2 — the browser.** Data Browser list with Icon Services icons,
+sortable columns, both selection styles, double-click / Cmd-Up /
+Cmd-click path menu / type-select, the status line, and Get downloading
+to the configured folder. **De-risk first:** Data Browser under
+CarbonLib 1.6 on 9.1 is the unknown in this whole slice, so prove it
+with a throwaway window of three hardcoded rows before building on it.
+Done when the host's share can be browsed, sorted, and pulled from.
+
+**Phase 3 — drag and drop, and the sharp edges.** Drag out of the
+browser to the Finder via the Drag Manager's promised-HFS flavour, drag
+in from the Finder, then what only matters once people use it:
+multi-select operations, progress inside the browser, and errors that do
+not interrupt. Genuinely optional — everything works without it, which
+makes it the right place to stop if the arc needs to end.
