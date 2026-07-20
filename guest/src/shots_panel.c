@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "prefs.h"
+#include "pump.h"
 #include "screenshot.h"
 #include "wire.h"
 
@@ -327,7 +328,10 @@ void shots_panel_click(Point local)
         save_controls_to_prefs();
         return;
     }
-    if (TrackControl(control, local, NULL) == 0) {
+    /* An action proc keeps the wire pumping while the button is held.
+       The popups above must keep (ControlActionUPP)-1L — that is the
+       CDEF's own action, and replacing it breaks the menu. */
+    if (TrackControl(control, local, now_pump_action()) == 0) {
         return;
     }
     if (control == g_pack_check || control == g_predictive_check

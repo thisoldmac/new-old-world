@@ -1996,6 +1996,18 @@ void conn_shutdown(void)
     g.phase = kConnIdle;
 }
 
+void now_wire_pump(void)
+{
+    static Boolean pumping = false;
+
+    if (pumping) {
+        return;
+    }
+    pumping = true;
+    conn_service();
+    pumping = false;
+}
+
 void conn_service(void)
 {
     switch (g.phase) {

@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "prefs.h"
+#include "pump.h"
 
 enum { kSharingDialogID = 301 };
 
@@ -533,7 +534,8 @@ int now_files_choose_root(char *why, long why_cap)
     }
     CopyCStringToPascal("Choose the folder NOW shares with the host",
                         options.message);
-    if (NavChooseFolder(NULL, &reply, &options, NULL, NULL, NULL) != noErr
+    if (NavChooseFolder(NULL, &reply, &options, now_pump_nav_event(),
+                        NULL, NULL) != noErr
         || !reply.validRecord) {
         return 0;                     /* cancelled */
     }
@@ -618,7 +620,7 @@ void now_files_sharing_dialog(void)
     ShowWindow(GetDialogWindow(dialog));
 
     while (!done) {
-        ModalDialog(NULL, &hit);
+        ModalDialog(now_pump_modal_filter(), &hit);
         switch (hit) {
         case kSharingChooseItem: {
             char why[128];

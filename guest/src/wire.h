@@ -27,6 +27,10 @@ void conn_shutdown(void);
 /* Pump the state machine. Call every event-loop pass (idle included). */
 void conn_service(void);
 
+/* conn_service() for nested Toolbox loops (see pump.h). Guarded against
+   reentry, so a pumped callback cannot re-enter servicing mid-service. */
+void now_wire_pump(void);
+
 /* Point the connection at a new host/port and (re)connect immediately.
    host is a dotted quad; v1 has no DNS. */
 void conn_set_target(const char *host, unsigned short port);

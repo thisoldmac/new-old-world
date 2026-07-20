@@ -4,6 +4,7 @@
 
 #include "console_win.h"
 #include "fileshare.h"
+#include "pump.h"
 #include "shots_panel.h"
 #include "prefs.h"
 #include "settings_dialog.h"
@@ -287,6 +288,7 @@ int main(void)
 
     save_session();
     conn_shutdown();
+    now_pump_shutdown();
     AERemoveEventHandler(kCoreEventClass, kAEQuitApplication,
                          quit_handler, false);
     shots_panel_close(false);

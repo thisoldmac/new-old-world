@@ -77,6 +77,35 @@ Every streaming design decision follows from measurements:
 - **Recording is host-side**: every stream encodes live to a temp
   QuickTime movie with real VFR timestamps; stop offers the file.
 
+## Nested loops and wire liveness
+
+The connection is serviced from one place — `conn_service()`, called
+each pass of `main.c`'s event loop. Every Toolbox call that runs its
+**own** event loop suspends that one, and with it the entire wire: no
+pings answered, no requests served, no transfers pumped. A modal dialog
+froze the guest's wire exactly this way (see
+[nested-loops.md](nested-loops.md)).
+
+Two rules, both enforced by review:
+
+1. **Any nested loop must pump.** `pump.h` provides the shared idle
+   hooks — a modal filter, a Nav Services event proc, a `TrackControl`
+   action proc — each calling `now_wire_pump()`. A bare
+   `ModalDialog(NULL, …)` is a defect. `MenuSelect`, `DragWindow`,
+   `GrowWindow`, `TrackGoAway` and `TrackBox` accept no callback and
+   cannot be pumped; they stall the wire for the duration of a
+   mouse-down, which is why a held-open menu visibly pauses a stream.
+2. **Pumped code must never open a dialog.** A modal opened from a
+   network callback nests inside the modal already running, and the
+   guest becomes unrecoverable. Wire code sets status strings; keep it
+   that way.
+
+The guest can only promise liveness it controls. Classic Mac OS is
+cooperatively multitasked, so a *foreground* application that busy-waits
+instead of yielding starves every background process, this one included.
+That is why the host carries its own deadline on every request rather
+than trusting the guest to answer.
+
 ## Guest ownership
 
 - `wire.c` — connection state machine, control TX queue, transfer

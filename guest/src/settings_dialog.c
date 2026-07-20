@@ -99,7 +99,7 @@ static pascal Boolean settings_filter(DialogRef dialog, EventRecord *event,
     ModalFilterUPP std_proc = NULL;
 
     if (dialog == g_filter_dialog) {
-        conn_service();
+        now_wire_pump();
         refresh_status(dialog, g_last_status, sizeof g_last_status);
     }
     /* Chain the standard filter so Return maps to Save and Escape/Cmd-. to
