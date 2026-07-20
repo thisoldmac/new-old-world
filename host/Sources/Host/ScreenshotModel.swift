@@ -75,6 +75,11 @@ final class ScreenshotModuleModel: ObservableObject {
     @Published private(set) var liveFrame: ScreenshotRecord?
     @Published private(set) var streamStats: StreamStats?
 
+    /// The finished movie of the last stream, encoded live as it played
+    /// and offered once the bracket closes. Discarded when a new stream
+    /// starts, or explicitly.
+    @Published private(set) var recording: StreamRecorder.Recording?
+
     /// The landing pad: guest-initiated screenshots always save here;
     /// host-initiated ones only when autoSave says so (they already have a
     /// home — the panel).
@@ -115,6 +120,7 @@ final class ScreenshotModuleModel: ObservableObject {
     private var streamWatch: AnyCancellable?
     private var streamStateWatch: AnyCancellable?
     private var frameClock: [Date] = []
+    private var recorder: StreamRecorder?
     private static let historyLimit = 20
     private static let fpsWindow = 10
 
@@ -165,8 +171,52 @@ final class ScreenshotModuleModel: ObservableObject {
             frameClock = []
             streamStats = nil
             liveFrame = nil
-        } else if let reason = listener.streamEndReason {
-            lastError = "Stream ended: \(reason)"
+            discardRecording()
+            recorder = StreamRecorder()
+        } else {
+            if let reason = listener.streamEndReason {
+                lastError = "Stream ended: \(reason)"
+            }
+            let finishing = recorder
+            recorder = nil
+            finishing?.finish { [weak self] recording in
+                self?.recording = recording
+            }
+        }
+    }
+
+    /// Moves the finished movie to `directory` under a stamped name.
+    /// Returns nil on success, else a human-readable reason.
+    @discardableResult
+    func saveRecording(to directory: URL) -> String? {
+        guard let recording else { return "No recording to save" }
+        let stamp = Self.stampFormatter.string(from: Date())
+        var url = directory.appendingPathComponent("NOW Stream \(stamp).mov")
+        var bump = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = directory.appendingPathComponent(
+                "NOW Stream \(stamp) \(bump).mov")
+            bump += 1
+        }
+        do {
+            try FileManager.default.moveItem(at: recording.url, to: url)
+            self.recording = nil
+            return nil
+        } catch {
+            return "Could not save the recording: "
+                + error.localizedDescription
+        }
+    }
+
+    /// The file was moved by the caller (save panel); just stop offering.
+    func discardRecordingReference() {
+        recording = nil
+    }
+
+    func discardRecording() {
+        if let recording {
+            try? FileManager.default.removeItem(at: recording.url)
+            self.recording = nil
         }
     }
 
@@ -176,6 +226,7 @@ final class ScreenshotModuleModel: ObservableObject {
             format: delivery.format, transferMs: delivery.transferMs,
             wireBytes: delivery.wireBytes)
         liveFrame = record
+        recorder?.append(delivery.image, at: record.capturedAt)
         frameClock.append(record.capturedAt)
         if frameClock.count > Self.fpsWindow {
             frameClock.removeFirst(frameClock.count - Self.fpsWindow)

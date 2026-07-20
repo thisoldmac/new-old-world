@@ -89,6 +89,9 @@ struct ScreenshotsModuleView: View {
             if model.isCapturing || model.progress != nil {
                 transferProgress
             }
+            if let recording = model.recording {
+                recordingRow(recording)
+            }
             saveRow
         }
     }
@@ -121,6 +124,40 @@ struct ScreenshotsModuleView: View {
     /// The landing pad is not the toggle's: screenshots the guest sends
     /// always save to the folder, so the folder is always live. The toggle
     /// only governs captures taken from this panel.
+    /// The finished movie of the stream that just ended, already encoded:
+    /// saving is a file move, declining deletes the temp.
+    private func recordingRow(_ recording: StreamRecorder.Recording)
+        -> some View {
+        HStack(spacing: 12) {
+            Label(String(format: "Recording — %.0f s · %d frames · %.1f MB",
+                         recording.duration, recording.frames,
+                         Double(recording.bytes) / 1_048_576),
+                  systemImage: "record.circle")
+                .foregroundStyle(.secondary)
+            Button("Save As…") { saveRecording(recording) }
+            Button("Discard") { model.discardRecording() }
+        }
+        .font(.callout)
+    }
+
+    private func saveRecording(_ recording: StreamRecorder.Recording) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.quickTimeMovie]
+        panel.directoryURL = model.saveDirectory
+        panel.nameFieldStringValue = "NOW Stream.mov"
+        if panel.runModal() == .OK, let url = panel.url {
+            do {
+                if FileManager.default.fileExists(atPath: url.path) {
+                    try FileManager.default.removeItem(at: url)
+                }
+                try FileManager.default.moveItem(at: recording.url, to: url)
+                model.discardRecordingReference()
+            } catch {
+                // The temp survives; the row stays for another try.
+            }
+        }
+    }
+
     private var saveRow: some View {
         HStack(spacing: 16) {
             Toggle("Save captures", isOn: $model.autoSave)
