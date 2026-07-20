@@ -201,7 +201,12 @@ int capture_screen(short depth, CaptureImage *image)
     if (rc != kCaptureOK) {
         return rc;
     }
-    rc = banded_capture_step(&cap);
+    /* Steps are bounded to kCaptureStepRows, so one span takes several -
+       treating kCaptureMoreBands as failure here was the "capture ended
+       without a begin" regression. */
+    do {
+        rc = banded_capture_step(&cap);
+    } while (rc == kCaptureMoreBands);
     if (rc != kCaptureOK) {
         return rc;
     }

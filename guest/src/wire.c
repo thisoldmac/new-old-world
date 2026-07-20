@@ -756,6 +756,7 @@ static int gather_shot(short depth, Boolean pack, PixelBlob *blob,
     CaptureImage image;
     unsigned long t_start = TickCount();
 
+    memset(meta, 0, sizeof *meta);    /* kind = kFrameStandalone */
     if (capture_screen(depth, &image) != kCaptureOK) {
         return 0;
     }
