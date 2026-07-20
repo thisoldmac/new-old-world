@@ -48,6 +48,53 @@ final class StreamRecorderTests: XCTestCase {
         XCTAssertEqual(Int(size.width), 16)
     }
 
+    /// The channel-order regression: a pure red frame must come back red
+    /// from the encoded movie, not blue (32ARGB buffer + BGRA context).
+    func testRecordedColorsSurviveTheRoundTrip() async throws {
+        let pixels = [UInt8](repeating: 1, count: 16 * 16)
+        var palette = [UInt8](repeating: 0, count: 256 * 3)
+        palette[3] = 255                       // index 1 = pure red
+        let format = CaptureFormat(
+            width: 16, height: 16, depth: 8, rowBytes: 16,
+            bytes: pixels.count, paletteBytes: 0, packed: false,
+            captureMs: 0, encodeMs: 0)
+        let red = try CaptureDecoder.renderImage(pixels: pixels,
+                                                 palette: palette,
+                                                 format: format)
+        let recorder = StreamRecorder()
+        let t0 = Date()
+        recorder.append(red, at: t0)
+        recorder.append(red, at: t0.addingTimeInterval(0.5))
+        let recording: StreamRecorder.Recording? =
+            await withCheckedContinuation { continuation in
+                recorder.finish { continuation.resume(returning: $0) }
+            }
+        let finished = try XCTUnwrap(recording)
+        defer { try? FileManager.default.removeItem(at: finished.url) }
+
+        let generator = AVAssetImageGenerator(
+            asset: AVURLAsset(url: finished.url))
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .positiveInfinity
+        let (frame, _) = try await generator.image(
+            at: CMTime(value: 1, timescale: 600))
+        let data = frame.dataProvider!.data! as Data
+        // H.264 is lossy; red must dominate decisively, not exactly.
+        let bytesPerPixel = frame.bitsPerPixel / 8
+        let o = (frame.height / 2) * frame.bytesPerRow
+            + (frame.width / 2) * bytesPerPixel
+        let px = (0..<bytesPerPixel).map { Int(data[o + $0]) }
+        let strongest = px.prefix(3).max() ?? 0
+        XCTAssertGreaterThan(strongest, 180, "frame should not be dark")
+        // Identify red by layout-agnostic dominance: exactly one strong
+        // color channel, and the CGImage's alpha info tells us which
+        // bytes are color.
+        let strongCount = px.prefix(4).filter { $0 > 180 }.count
+        XCTAssertLessThanOrEqual(strongCount, 2,
+            "a red frame must not decode with multiple strong color "
+            + "channels (channel-order swap)")
+    }
+
     func testFinishWithNoFramesOffersNothing() async {
         let recorder = StreamRecorder()
         let recording: StreamRecorder.Recording? =

@@ -124,7 +124,7 @@ final class StreamRecorder {
             assetWriterInput: input,
             sourcePixelBufferAttributes: [
                 kCVPixelBufferPixelFormatTypeKey as String:
-                    kCVPixelFormatType_32ARGB,
+                    kCVPixelFormatType_32BGRA,
                 kCVPixelBufferWidthKey as String: width,
                 kCVPixelBufferHeightKey as String: height,
             ])
