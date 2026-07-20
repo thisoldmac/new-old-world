@@ -132,10 +132,13 @@ static void help_for(const char *name)
 
     if (strcmp(name, "screenshot") == 0) {
         append_line("screenshot - capture the screen to the desktop");
-        append_line("  Usage: screenshot [--depth {1,2,4,8,16,32}] [--no-save]");
+        append_line("  Usage: screenshot [--depth {1,2,4,8,16,32}]");
+        append_line("         [--bands N] [--no-save]");
         append_line("  Captures the whole screen as a packed PICT. Depth");
         append_line("  defaults to the Screenshots panel setting; --no-save");
         append_line("  measures capture+encode without writing a file.");
+        append_line("  --bands N (2..32) captures in N banded CopyBits");
+        append_line("  calls and reports the per-band cost spread.");
     } else if (strcmp(name, "gestalt") == 0) {
         append_line("gestalt - report this Mac's identity");
         append_line("  Usage: gestalt [group] [--save]");
@@ -157,7 +160,8 @@ static void help_list(void)
 {
     append_line("Commands on this Mac:");
     append_line("  gestalt     report this Mac (add a group or --full)");
-    append_line("  screenshot  capture the screen (--depth N, --no-save)");
+    append_line("  screenshot  capture the screen (--depth N, --bands N,");
+    append_line("              --no-save)");
     append_line("  help        show this list (\"help <cmd>\" for details)");
     append_line("  clear       clear the console scrollback");
     append_line("Add --help or -h to any command for details.");
@@ -276,17 +280,21 @@ static void run_gestalt_view(const char *group, Boolean full, Boolean save)
     }
 }
 
-static void run_screenshot_local(short depth_flag, Boolean no_save)
+static void run_screenshot_local(short depth_flag, short bands_flag,
+                                 Boolean no_save)
 {
     NowPrefs prefs;
     ShotStats stats;
     char err[96];
     char line[kMaxCols];
     short depth;
+    short bands;
 
     now_prefs_load(&prefs);
     depth = depth_flag > 0 ? depth_flag : prefs.shot_depth;
-    if (now_screenshot(depth, !no_save, &stats, err, sizeof err) != 0) {
+    bands = bands_flag > 0 ? bands_flag : 1;
+    if (now_screenshot(depth, bands, !no_save, &stats,
+                       err, sizeof err) != 0) {
         snprintf(line, sizeof line, "screenshot: %.80s", err);
         append_line(line);
         return;
@@ -299,6 +307,14 @@ static void run_screenshot_local(short depth_flag, Boolean no_save)
     snprintf(line, sizeof line, "  capture %ld ms  encode %ld ms",
              stats.capture_ms, stats.encode_ms);
     append_line(line);
+    if (stats.bands > 1) {
+        snprintf(line, sizeof line,
+                 "  %d bands: min %ld.%ld ms  max %ld.%ld ms",
+                 stats.bands,
+                 stats.band_min_us / 1000, (stats.band_min_us % 1000) / 100,
+                 stats.band_max_us / 1000, (stats.band_max_us % 1000) / 100);
+        append_line(line);
+    }
     if (no_save) {
         append_line("  (not saved)");
     } else {
@@ -322,7 +338,9 @@ static void run_command(const char *input)
     Boolean save = false;
     Boolean no_save = false;
     short depth_flag = 0;
+    short bands_flag = 0;
     Boolean expect_depth = false;
+    Boolean expect_bands = false;
 
     snprintf(line, sizeof line, "> %s", input);
     append_line(line);
@@ -345,6 +363,14 @@ static void run_command(const char *input)
             expect_depth = false;
             continue;
         }
+        if (expect_bands) {
+            long b = strtol(tok, NULL, 10);
+            if (b >= 1 && b <= kCaptureMaxBands) {
+                bands_flag = (short)b;
+            }
+            expect_bands = false;
+            continue;
+        }
         if (strcmp(tok, "-h") == 0 || strcmp(tok, "--help") == 0) {
             want_help = true;
         } else if (strcmp(tok, "--full") == 0) {
@@ -355,6 +381,8 @@ static void run_command(const char *input)
             no_save = true;
         } else if (strcmp(tok, "--depth") == 0) {
             expect_depth = true;
+        } else if (strcmp(tok, "--bands") == 0) {
+            expect_bands = true;
         } else if (flag_to_group(tok) != NULL) {
             group = flag_to_group(tok);
         } else if (target[0] == '\0' && tok[0] != '-') {
@@ -384,7 +412,7 @@ static void run_command(const char *input)
         return;
     }
     if (strcmp(name, "screenshot") == 0) {
-        run_screenshot_local(depth_flag, no_save);
+        run_screenshot_local(depth_flag, bands_flag, no_save);
         return;
     }
     now_command_run(name, NULL, 0, result, sizeof result);

@@ -92,7 +92,7 @@ static void take_screenshot(void)
     invalidate_stats();
     shots_panel_draw();
 
-    if (now_screenshot(prefs.shot_depth, true, &stats,
+    if (now_screenshot(prefs.shot_depth, 1, true, &stats,
                        err, sizeof err) != 0) {
         snprintf(g_stat1, sizeof g_stat1, "Failed: %.80s", err);
         g_stat2[0] = '\0';
