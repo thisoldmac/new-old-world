@@ -146,9 +146,11 @@ operations:
       stream.stopped, the guest sends frames as ordinary capture
       transfers whose capture.begin id is the stream id — that id is the
       routing: no disk, no announcement, straight to the live view. The
-      guest self-paces (finish a frame, capture fresh — never queue), so
-      the wire's pace is the frame rate; minIntervalMs only throttles
-      below that. The stream owns the transfer lane: capture.request and
+      guest self-paces (finish a frame, capture fresh — never queue). The
+      wire paces frames that carry pixels; frames that do not (an
+      unchanged screen sends a ~150-byte control pair and no bulk data)
+      are paced by the guest's own floor, which minIntervalMs raises.
+      The stream owns the transfer lane: capture.request and
       capture.offer are refused while it runs.
   guestRequestsStream:
     action: send
@@ -458,7 +460,11 @@ components:
         minIntervalMs:
           type: integer
           description: >
-            Minimum ms between frame starts; 0 or absent = wire-paced.
+            Minimum ms between frame starts — the host's ceiling on frame
+            rate. 0 or absent leaves the pace to the guest, which applies
+            its own floor (~15 fps, backing off to ~4 while frames stay
+            empty). Absent is not unbounded: an empty frame carries no
+            pixels, so the wire alone does not pace one.
         chunkKb: { type: integer, minimum: 1, maximum: 32 }
         paceMs: { type: integer, minimum: 0, maximum: 100 }
         pack: { type: boolean }

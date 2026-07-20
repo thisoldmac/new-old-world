@@ -460,6 +460,7 @@ static struct {
     long min_interval_ticks;
     unsigned long next_frame_tick;
     long frames;
+    long empty_run;                   /* consecutive nothing-changed frames */
     /* The capture pipeline: frame N+1 is captured in event-loop-pumped
        bands while frame N is still going out (banding is metal-measured
        free: 139-143 ms total for 1..16 bands, ~17 ms per band at 8). The
@@ -1316,6 +1317,34 @@ static void stream_end(const char *reason)
     note_shot("Streaming stopped");
 }
 
+/* The frame pump's floor, in ticks between frames.
+
+   minIntervalMs keeps its contract meaning - a MINIMUM interval, the host's
+   ceiling on frame rate - but "absent" no longer means "as fast as the wire
+   allows". That was only ever a pace because every frame carried bulk
+   pixels: an empty frame is a ~150-byte control pair that touches no
+   transfer lane at all, so on a static screen with predictive capture on,
+   nothing throttled the loop and the guest flooded the wire with thousands
+   of control frames a second. Capture on this hardware tops out near 7 fps,
+   so a default of ~15 fps is headroom, not a limit. */
+enum {
+    kStreamDefaultIntervalTicks = 4,  /* ~15 fps when the host says nothing */
+    kStreamIdleIntervalTicks = 15     /* ~4 fps once the screen goes still */
+};
+
+static long stream_interval_ticks(long min_interval_ms)
+{
+    long ticks;
+
+    if (min_interval_ms <= 0) {
+        return kStreamDefaultIntervalTicks;
+    }
+    /* Round up: any interval the host asks for is a floor, and truncating
+       10 ms to 0 ticks would hand back the unbounded loop. */
+    ticks = (min_interval_ms * 60 + 999) / 1000;
+    return ticks > 0 ? ticks : 1;
+}
+
 static void stream_start(const char *reply)
 {
     NowPrefs prefs;
@@ -1340,7 +1369,7 @@ static void stream_start(const char *reply)
     g_stream.interlace =
         json_find_flag(reply, "interlace", prefs.interlace) != 0;
     g_stream.min_interval_ticks =
-        now_json_find_int(reply, "minIntervalMs", 0) * 60 / 1000;
+        stream_interval_ticks(now_json_find_int(reply, "minIntervalMs", 0));
     g_stream.next_frame_tick = 0;
     g_stream.est_cap_ticks = 10;      /* ~165 ms until measured */
     g_stream.est_send_ticks = 0;      /* first capture starts at once */
@@ -1455,8 +1484,31 @@ static void stream_schedule_capture(void)
     g_stream.cap_start_tick = TickCount() + (unsigned long)lead;
 }
 
+/* Abandons the frame in hand and makes the next capture a whole-screen
+   keyframe. The escape hatch for the one case the exporter cannot serve:
+   a key is the only correct frame, but what was captured is a field. */
+static void stream_drop_frame(CaptureImage *image, unsigned long began)
+{
+    capture_image_dispose(image);
+    g_stream.ready = false;
+    g_stream.force_key = true;        /* next capture reads everything */
+    g_stream.n_dirty_hist = 0;
+    g_stream.sweep_pos = 0;
+    g_stream.est_cap_ticks = (long)(TickCount() - began);
+}
+
 /* Finishes a completed banded capture: diff, then export + encode the
-   right kind of frame, so it is ready the instant the lane frees. */
+   right kind of frame, so it is ready the instant the lane frees.
+
+   Two shapes meet here and must not be confused. The CANVAS is what the
+   host paints - full screen height, and what the delta base (prev) always
+   holds. The IMAGE is what this capture read: the same height at row_scale
+   1, but HALF of it when interlace decimated 2:1 into a half-height
+   GWorld. A delta carries rowStep so the host maps field rows back onto
+   the canvas; a keyframe carries no such mapping - it replaces the host's
+   canvas wholesale. So: a field capture may only ever leave here as a
+   delta. Exporting one as a key is what made the host resize its canvas to
+   half height and stay there. */
 static void stream_finish_capture(unsigned long began)
 {
     CaptureImage image = g_stream.cap.image;
@@ -1464,7 +1516,9 @@ static void stream_finish_capture(unsigned long began)
     short n_cap_spans = g_stream.cap.n_spans;
     unsigned char palette[768];
     long palette_bytes;
-    long height, raw_bytes;
+    long height, canvas_height, canvas_bytes;
+    short scale = g_stream.cap_scale > 1 ? g_stream.cap_scale : 1;
+    Boolean field = scale > 1;
     int rc;
 
     memcpy(cap_spans, g_stream.cap.spans, sizeof cap_spans);
@@ -1481,35 +1535,51 @@ static void stream_finish_capture(unsigned long began)
     g_stream.ready_meta.capture_ms =
         (long)((TickCount() - began) * 1000 / 60);
     height = g_stream.ready_meta.height;
-    raw_bytes = (long)image.row_bytes * height;
+    /* A field holds every other canvas row, so the canvas it diffs against
+       is the one prev already describes - not this image's height. Sizing
+       the base off the image instead was the second half of the half-screen
+       bug: a field capture looked like a shape change, which threw the
+       canvas-sized base away and re-made it half height. */
+    canvas_height = field ? g_stream.prev_height : height;
+    canvas_bytes = (long)image.row_bytes * canvas_height;
+    if (field && (g_stream.prev == NULL || canvas_height <= 0)) {
+        stream_drop_frame(&image, began);   /* no canvas to patch into */
+        return;
+    }
 
     /* A palette change invalidates every delta; so does a base buffer of
        the wrong shape (depth cannot change mid-stream, but composite
        garbage is the worst failure mode - be safe). */
     palette_bytes = now_pixels_palette(&image, palette, sizeof palette);
     if (g_stream.prev != NULL
-        && (g_stream.prev_bytes != raw_bytes
+        && (g_stream.prev_bytes != canvas_bytes
             || g_stream.prev_row_bytes != image.row_bytes
-            || g_stream.prev_height != (short)height
+            || g_stream.prev_height != (short)canvas_height
             || palette_bytes != g_stream.prev_palette_bytes
             || memcmp(palette, g_stream.prev_palette,
                       (size_t)palette_bytes) != 0)) {
         g_stream.force_key = true;
-        if (g_stream.prev_bytes != raw_bytes) {
+        if (g_stream.prev_bytes != canvas_bytes) {
             DisposePtr(g_stream.prev);
             g_stream.prev = NULL;
         }
     }
+    /* Whatever invalidated the base, only a whole-screen capture can
+       rebuild it. */
+    if (field && g_stream.force_key) {
+        stream_drop_frame(&image, began);
+        return;
+    }
     if (g_stream.prev == NULL) {
-        g_stream.prev = NewPtr(raw_bytes);
+        g_stream.prev = NewPtr(canvas_bytes);
         if (g_stream.prev == NULL) {
             capture_image_dispose(&image);
             stream_end("capture failed");
             return;
         }
-        g_stream.prev_bytes = raw_bytes;
+        g_stream.prev_bytes = canvas_bytes;
         g_stream.prev_row_bytes = image.row_bytes;
-        g_stream.prev_height = (short)height;
+        g_stream.prev_height = (short)canvas_height;
         g_stream.force_key = true;
     }
 
@@ -1517,7 +1587,6 @@ static void stream_finish_capture(unsigned long began)
     if (!g_stream.force_key) {
         long dirty_rows = 0;
         Boolean overflow = false;
-        short scale = g_stream.cap_scale > 1 ? g_stream.cap_scale : 1;
         short n = now_pixels_diff(&image, g_stream.prev,
                                   g_stream.cap_full ? NULL : cap_spans,
                                   g_stream.cap_full ? 0 : n_cap_spans,
@@ -1543,7 +1612,7 @@ static void stream_finish_capture(unsigned long began)
             g_stream.ready_meta.kind = kFrameDelta;
         } else if (n == 0) {
             g_stream.ready_meta.kind = kFrameEmpty;
-        } else if (g_stream.cap_full && scale == 1
+        } else if (g_stream.cap_full && !field
                    && dirty_rows * 10 > height * 7) {
             g_stream.force_key = true;   /* mostly new screen: send whole */
         } else {
@@ -1585,6 +1654,16 @@ static void stream_finish_capture(unsigned long began)
         if (g_stream.interlace) {
             g_stream.phase = (short)(g_stream.phase ^ 1);
         }
+    }
+    /* The invariant, stated once and enforced here: only a whole-screen,
+       full-scale capture may leave as a keyframe. force_key is set at plan
+       time for a real key (and stream_begin_capture then reads everything),
+       but the diff can also raise it AFTER the capture is in hand - and by
+       then the capture may be a field. Drop that frame rather than export a
+       half-height image as a key; the next capture is whole. */
+    if (g_stream.force_key && (field || !g_stream.cap_full)) {
+        stream_drop_frame(&image, began);
+        return;
     }
     if (g_stream.force_key) {
         g_stream.ready_meta.kind = kFrameKey;
@@ -1799,8 +1878,23 @@ static void service_stream(void)
     /* Arm a ready frame the moment the lane is free. */
     if (g_stream.ready && !g_xfer.active
         && TickCount() >= g_stream.next_frame_tick) {
-        g_stream.next_frame_tick =
-            TickCount() + g_stream.min_interval_ticks;
+        long interval = g_stream.min_interval_ticks;
+
+        /* A still screen does not need fifteen updates a second. Back off
+           after the second empty frame in a row; any real change snaps the
+           pace back on the very next frame. The wait gates the capture too
+           (a held frame stops the pump), so this bounds how stale the
+           screen can get: a change is seen within one idle interval. */
+        if (g_stream.ready_meta.kind == kFrameEmpty) {
+            ++g_stream.empty_run;
+            if (g_stream.empty_run > 1
+                && interval < kStreamIdleIntervalTicks) {
+                interval = kStreamIdleIntervalTicks;
+            }
+        } else {
+            g_stream.empty_run = 0;
+        }
+        g_stream.next_frame_tick = TickCount() + (unsigned long)interval;
         g_stream.ready = false;
         if (g_stream.ready_meta.kind == kFrameEmpty) {
             stream_send_empty_frame();

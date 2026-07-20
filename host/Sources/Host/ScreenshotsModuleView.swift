@@ -131,6 +131,12 @@ struct ScreenshotsModuleView: View {
                 }
             }
             .frame(width: 130)
+            Picker("Max fps", selection: $model.maxFps) {
+                ForEach(ScreenshotModuleModel.fpsChoices, id: \.self) { fps in
+                    Text("\(fps) fps").tag(fps)
+                }
+            }
+            .frame(width: 130)
             Toggle("Compress", isOn: $model.compress)
             Toggle("Predictive", isOn: $model.predictive)
             Toggle("Interlace", isOn: $model.interlace)

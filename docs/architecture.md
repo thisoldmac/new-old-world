@@ -73,7 +73,18 @@ Every streaming design decision follows from measurements:
   diffs against its own parity, wire rects carry `rowStep`. Composes
   with predictive.
 - **Keyframes are the correctness anchor**: always whole, always full
-  scale, outside both policies.
+  scale, outside both policies. A key replaces the host's canvas and
+  carries no row mapping, so a decimated or partial capture can never be
+  exported as one — and the need for a key can arise *after* a capture
+  is in hand (palette change, failed diff), when what is in hand may be
+  a field. That frame is dropped and the next capture reads everything.
+  The guest enforces this before export; the host rejects a half-height
+  key rather than resizing its canvas to match.
+- **Frames are paced even when they are free.** An empty frame skips the
+  bulk lane, so the wire does not pace it. The guest keeps a floor of
+  its own (~15 fps, backing off to ~4 while nothing changes) that
+  `minIntervalMs` raises; without it a static screen under predictive
+  capture floods the control plane.
 - **Recording is host-side**: every stream encodes live to a temp
   QuickTime movie with real VFR timestamps; stop offers the file.
 

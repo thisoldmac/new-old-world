@@ -92,6 +92,17 @@ final class ScreenshotModuleModel: ObservableObject {
     @Published var interlace: Bool {
         didSet { defaults.set(interlace, forKey: Keys.interlace) }
     }
+    /// The stream's frame-rate ceiling, sent as `minIntervalMs`. Capture on
+    /// this hardware tops out near 7 fps, so this is a guard rail rather
+    /// than a target: it exists because frames that carry no pixels (a
+    /// static screen under predictive capture) cost the guest nothing to
+    /// produce, and an unpaced loop over them floods the wire.
+    @Published var maxFps: Int {
+        didSet { defaults.set(maxFps, forKey: Keys.maxFps) }
+    }
+
+    /// What `stream.start` carries: the minimum interval between frames.
+    var minIntervalMs: Int { maxFps > 0 ? 1000 / maxFps : 0 }
 
     /// Whether the tuning row is disclosed; plumbing most sessions never
     /// touch stays folded away.
@@ -148,6 +159,7 @@ final class ScreenshotModuleModel: ObservableObject {
         static let compress = "screenshots.compress"
         static let predictive = "screenshots.predictive"
         static let interlace = "screenshots.interlace"
+        static let maxFps = "screenshots.maxFps"
         static let autoSave = "screenshots.autoSave"
         static let autoCopy = "screenshots.autoCopy"
         static let saveDirectory = "screenshots.saveDirectory"
@@ -169,6 +181,8 @@ final class ScreenshotModuleModel: ObservableObject {
     private var recorder: StreamRecorder?
     private static let historyLimit = 20
     private static let fpsWindow = 10
+    static let fpsChoices = [4, 7, 10, 15, 30]
+    static let defaultMaxFps = 15
 
     init(listener: GuestListener, defaults: UserDefaults = .standard) {
         self.listener = listener
@@ -182,6 +196,9 @@ final class ScreenshotModuleModel: ObservableObject {
         self.compress = defaults.object(forKey: Keys.compress) as? Bool ?? true
         self.predictive = defaults.bool(forKey: Keys.predictive)
         self.interlace = defaults.bool(forKey: Keys.interlace)
+        let fps = defaults.integer(forKey: Keys.maxFps)
+        self.maxFps = ScreenshotModuleModel.fpsChoices.contains(fps)
+            ? fps : ScreenshotModuleModel.defaultMaxFps
         self.showSettings = defaults.bool(forKey: Keys.showSettings)
         let stored = defaults.string(forKey: Keys.saveDirectory)
         self.saveDirectory = stored.map { URL(fileURLWithPath: $0) }
@@ -205,7 +222,8 @@ final class ScreenshotModuleModel: ObservableObject {
     func startStream() {
         guard canStream else { return }
         lastError = nil
-        listener.startStream(depth: selectedDepth.rawValue, tuning: tuning)
+        listener.startStream(depth: selectedDepth.rawValue,
+                             minIntervalMs: minIntervalMs, tuning: tuning)
     }
 
     func stopStream() {

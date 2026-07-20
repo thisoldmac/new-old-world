@@ -421,6 +421,119 @@ final class GuestPushCaptureTests: XCTestCase {
         XCTAssertEqual(frames[2].wireBytes, 0)
     }
 
+    /// Opens a bracket and hands back its id plus a frame sender, so the
+    /// interlace tests can spell out only what makes them different.
+    private func streamingGuest(_ guest: FakeGuest, width: Int, height: Int)
+        async throws
+        -> (id: Int, send: (Int, [UInt8], String, [[Int]]?, Int, Int) throws
+                -> Void) {
+        listener.startStream(depth: 8)
+        var streamId: Int?
+        try await waitUntil("stream.start") {
+            for message in guest.received {
+                if case .streamStart(let start) = message {
+                    streamId = start.id
+                    return true
+                }
+            }
+            return false
+        }
+        let id = try XCTUnwrap(streamId)
+        // rows defaults to `height`: a frame only says otherwise when the
+        // point of the test is that it disagrees with the canvas.
+        func send(_ transfer: Int, _ bytes: [UInt8], _ frame: String,
+                  _ rects: [[Int]]?, _ paletteBytes: Int,
+                  _ rows: Int) throws {
+            try guest.send(.captureBegin(CaptureBegin(
+                id: id, transfer: transfer, width: width, height: rows,
+                depth: 8, rowBytes: width, bytes: bytes.count,
+                paletteBytes: paletteBytes, encoding: "raw", frame: frame,
+                rects: rects, captureMs: 1, encodeMs: 1)))
+            if !bytes.isEmpty {
+                guest.sendRaw(try FrameCodec.encode(
+                    channel: .bulk, flags: [.end],
+                    transfer: UInt16(transfer), payload: Data(bytes)))
+            }
+            try guest.send(.captureEnd(CaptureEnd(
+                id: id, transfer: transfer, ok: true, sendMs: 1)))
+        }
+        return (id, send)
+    }
+
+    /// palette index 1 = red, everything else black.
+    private var redPalette: [UInt8] {
+        var palette = [UInt8](repeating: 0, count: 256 * 3)
+        palette[3] = 255
+        return palette
+    }
+
+    private func pixel(_ image: CGImage, _ x: Int, _ y: Int) -> [UInt8] {
+        let data = image.dataProvider!.data! as Data
+        let o = (y * image.bytesPerRow) + x * 4
+        return [data[o], data[o + 1], data[o + 2]]
+    }
+
+    /// An interlaced field is a DELTA carrying rowStep — it patches every
+    /// other canvas row and must leave the canvas its full height.
+    func testInterlacedFieldDeltaKeepsTheCanvasFullHeight() async throws {
+        let guest = try await connectedGuest()
+        var frames: [GuestListener.CaptureDelivery] = []
+        let watch = listener.streamFrames.sink { frames.append($0) }
+        defer { watch.cancel() }
+        let (_, send) = try await streamingGuest(guest, width: 4, height: 4)
+
+        // Key: 4x4, every pixel red.
+        try send(1, redPalette + [UInt8](repeating: 1, count: 16), "key",
+                 nil, 768, 4)
+        try await waitUntil("keyframe") { frames.count == 1 }
+
+        // Field delta, parity 0: rows 0 and 2 go black. rowStep is the 5th
+        // element; the frame's own height is the FIELD's, half the canvas.
+        try send(2, [UInt8](repeating: 0, count: 8), "delta",
+                 [[0, 2, 0, 4, 2]], 0, 2)
+        try await waitUntil("field delta") { frames.count == 2 }
+
+        XCTAssertEqual(frames[1].image.height, 4,
+                       "a field delta must not resize the canvas")
+        XCTAssertEqual(pixel(frames[1].image, 0, 0), [0, 0, 0])
+        XCTAssertEqual(pixel(frames[1].image, 0, 1), [255, 0, 0])
+        XCTAssertEqual(pixel(frames[1].image, 0, 2), [0, 0, 0])
+        XCTAssertEqual(pixel(frames[1].image, 0, 3), [255, 0, 0])
+    }
+
+    /// The guest-side bug this guards against: a decimated capture exported
+    /// through the KEY path. It arrives as a well-formed key of half the
+    /// height, and replacing the canvas with it strands the stream at half
+    /// a screen. Reject it and keep the canvas we have.
+    func testHalfHeightKeyFrameIsRejectedRatherThanResizingTheCanvas()
+        async throws {
+        let guest = try await connectedGuest()
+        var frames: [GuestListener.CaptureDelivery] = []
+        let watch = listener.streamFrames.sink { frames.append($0) }
+        defer { watch.cancel() }
+        let (_, send) = try await streamingGuest(guest, width: 4, height: 4)
+
+        try send(1, redPalette + [UInt8](repeating: 1, count: 16), "key",
+                 nil, 768, 4)
+        try await waitUntil("keyframe") { frames.count == 1 }
+        XCTAssertEqual(frames[0].image.height, 4)
+
+        // A "key" holding only 2 of the 4 canvas rows: same width, same
+        // stride, half the height.
+        try send(2, redPalette + [UInt8](repeating: 1, count: 8), "key",
+                 nil, 768, 2)
+        // Nothing to wait on — a rejected frame is delivered nowhere — so
+        // follow it with a frame that IS delivered and check what landed.
+        try send(3, [], "empty", nil, 0, 4)
+        try await waitUntil("empty after the bad key") { frames.count >= 2 }
+
+        XCTAssertEqual(frames.count, 2,
+                       "the half-height key must not be delivered")
+        XCTAssertEqual(frames[1].image.height, 4,
+                       "the canvas must survive a half-height key")
+        XCTAssertEqual(pixel(frames[1].image, 0, 3), [255, 0, 0])
+    }
+
     func testRefreshAsksTheGuestForAKeyframe() async throws {
         let guest = try await connectedGuest()
         listener.startStream(depth: 8)

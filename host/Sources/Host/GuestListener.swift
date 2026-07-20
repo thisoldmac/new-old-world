@@ -926,6 +926,21 @@ final class Session {
                     message: "empty frame with no keyframe base")
             }
         default:
+            // A keyframe replaces the canvas, so a malformed one silently
+            // redefines the whole screen. The one malformation seen in the
+            // field: a guest exporting an interlaced FIELD — half the rows,
+            // same width and stride — through the key path. It resized the
+            // canvas to half height and every later delta patched into the
+            // shrunken canvas, so the stream stayed half a screen forever.
+            // Reject it; the guest's next key frame reconciles us.
+            if let base = canvasFormat, !canvas.isEmpty,
+               format.width == base.width, format.rowBytes == base.rowBytes,
+               format.depth == base.depth, base.height > 1,
+               format.height * 2 == base.height {
+                throw GuestListener.CaptureFailure(
+                    message: "half-height key frame (an interlaced field "
+                        + "sent as a key); keeping the canvas")
+            }
             let (palette, pixels) = try CaptureDecoder.decodeRows(
                 blob, format: format)
             canvas = pixels
