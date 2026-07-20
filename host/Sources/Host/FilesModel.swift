@@ -432,6 +432,51 @@ final class FilesModuleModel: ObservableObject {
         clearQueue()
     }
 
+    /// Pulls a file for a drag to the Finder. The Finder asks for the
+    /// bytes only when the drop lands, so this is the moment the file
+    /// actually crosses — and the one transfer lane still applies, so a
+    /// promise asked for mid-transfer is refused rather than queued
+    /// behind something the Finder is not waiting for.
+    func fetchForPromise(_ row: FileRow, container: String? = nil,
+                         completion: @escaping (Result<FileConverter.Converted,
+                                                       Error>) -> Void) {
+        guard transfer == nil else {
+            completion(.failure(FilesError.busy))
+            return
+        }
+        transfer = TransferState(name: row.name, direction: .incoming,
+                                 received: 0, expected: row.sizeBytes,
+                                 index: nil, total: nil)
+        listener.getFile(path: row.path,
+                         container: container) { [weak self] result in
+            guard let self else { return }
+            self.transfer = nil
+            switch result {
+            case .success(let file):
+                completion(.success(FileConverter.convert(
+                    name: file.name, container: file.container,
+                    fileType: file.fileType, bytes: file.bytes)))
+            case .failure(let failure):
+                self.lastError = failure.message
+                completion(.failure(FilesError.wire(failure.message)))
+            }
+        }
+    }
+
+    enum FilesError: LocalizedError {
+        case busy
+        case wire(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .busy:
+                return "Another transfer is already running."
+            case .wire(let message):
+                return message
+            }
+        }
+    }
+
     @discardableResult
     func write(_ file: GuestListener.FileDelivery) -> URL? {
         let converted = FileConverter.convert(

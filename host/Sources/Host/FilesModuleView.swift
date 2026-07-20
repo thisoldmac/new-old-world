@@ -109,6 +109,24 @@ struct FilesModuleView: View {
             }
 
             Spacer()
+            if let row = selectedRow, !row.isFolder {
+                Menu {
+                    Button("Download") { model.download(row) }
+                    Button("Download as MacBinary") {
+                        model.download(row, container: "macbinary")
+                    }
+                    Divider()
+                    Button("Copy Path") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(row.path,
+                                                       forType: .string)
+                    }
+                } label: {
+                    Label(row.name, systemImage: "square.and.arrow.down")
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+            }
             Button {
                 chooseFileToSend()
             } label: {
@@ -132,89 +150,21 @@ struct FilesModuleView: View {
     }
 
     private var table: some View {
-        Table(model.rows.sorted(using: sortOrder),
-              selection: $model.selection, sortOrder: $sortOrder) {
-            TableColumn("Name", value: \.name) { row in
-                HStack(spacing: 6) {
-                    Image(systemName: row.symbolName)
-                        .foregroundStyle(row.isFolder ? Color.accentColor
-                                                      : .secondary)
-                        .frame(width: 16)
-                    Text(row.name)
-                        .modifier(FolderDropTarget(
-                            row: row, model: model,
-                            isTargeted: dropTarget == row.id))
-                    if let note = row.conversionNote {
-                        Text(note)
-                            .font(.caption2)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(Color.secondary.opacity(0.15),
-                                        in: Capsule())
-                            .foregroundStyle(.secondary)
-                    }
+        FileBrowserTable(model: model,
+                         rows: model.rows.sorted(using: sortOrder),
+                         onOpen: { row in
+                             if row.isFolder {
+                                 model.open(row)
+                             } else {
+                                 model.download(row)
+                             }
+                         })
+            .overlay {
+                if model.rows.isEmpty && !model.isLoading {
+                    emptyState
                 }
             }
-            TableColumn("Kind", value: \.kind) { row in
-                Text(row.kind).foregroundStyle(.secondary)
-            }
-            .width(min: 90, ideal: 120)
-            TableColumn("Size", value: \.sizeBytes) { row in
-                Text(row.isFolder ? "—" : byteText(row.sizeBytes))
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            }
-            .width(min: 70, ideal: 90)
-            TableColumn("Modified") { row in
-                Text(row.modified.map(dateText) ?? "—")
-                    .foregroundStyle(.secondary)
-            }
-            .width(min: 120, ideal: 150)
-        }
-        .contextMenu(forSelectionType: FileRow.ID.self) { ids in
-            if let row = model.rows.first(where: { ids.contains($0.id) }),
-               !row.isFolder {
-                Button("Download") { model.download(row) }
-                Button("Download as MacBinary") {
-                    model.download(row, container: "macbinary")
-                }
-                Divider()
-                Button("Copy Path") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(row.path, forType: .string)
-                }
-            }
-        } primaryAction: { ids in
-            guard let row = model.rows.first(where: { ids.contains($0.id) })
-            else { return }
-            if row.isFolder {
-                model.open(row)
-            } else {
-                model.download(row)
-            }
-        }
-        .overlay {
-            if model.rows.isEmpty && !model.isLoading {
-                emptyState
-            }
-        }
-        // Dropping on the table means "into the folder I am looking at";
-        // dropping on a folder row means that folder (see the row above).
-        .dropDestination(for: URL.self) { urls, _ in
-            model.enqueue(urls)
-            return true
-        } isTargeted: { targeted in
-            dropTarget = targeted ? "" : nil
-        }
-        .overlay {
-            if dropTarget == "" {
-                RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(Color.accentColor, lineWidth: 2)
-                    .allowsHitTesting(false)
-            }
-        }
-        .frame(maxHeight: .infinity)
+            .frame(maxHeight: .infinity)
     }
 
     private var emptyState: some View {
@@ -267,6 +217,10 @@ struct FilesModuleView: View {
                 .controlSize(.small)
             }
         }
+    }
+
+    private var selectedRow: FileRow? {
+        model.rows.first { $0.id == model.selection }
     }
 
     private func transferLabel(_ t: FilesModuleModel.TransferState)
