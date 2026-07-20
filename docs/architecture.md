@@ -2,75 +2,107 @@
 
 ## Product boundary
 
-The repository owns two applications and, eventually, exactly one connection
-between them: a single versioned contract over one multiplexed wire. It does
-not import TimBotTu runtime packages or expose a general remote-control
-surface. The stack stays concise, human-facing, and polished — one app on each
-side, nothing else.
+Two applications and exactly one connection between them: a single
+versioned contract over one multiplexed wire. No TimBotTu runtime
+imports, no general remote-control surface. One app on each side,
+polished and human-facing.
 
-The product envelope is **PowerPC only** (decided 2026-07-19): the guest is a
-Carbon app and takes full advantage of the 8.6+ toolbox (CarbonLib, Open
-Transport, Appearance). A 68K build/port/sibling may exist someday; it is
-explicitly out of scope and must not constrain this codebase.
+The envelope is **PowerPC only** (decided 2026-07-19): the guest is a
+Carbon app using the 8.6+ toolbox (CarbonLib 1.6+, Open Transport via
+runtime CFM resolution, Appearance). A 68K sibling may exist someday; it
+must not constrain this codebase.
 
-## Wire contract
+## Wire
 
-[contract/asyncapi.yaml](../contract/asyncapi.yaml) is the contract: an 8-byte
-binary frame header multiplexing a JSON control channel and a raw bulk channel
-over one TCP connection, defined as AsyncAPI 3.0 with JSON Schema payloads.
-The frame header and connection rules are normative prose at the top of that
-file; the revision (`x-contract-revision`) is a single integer, and unequal
-revisions refuse cleanly with a reason the UI shows.
+[contract/asyncapi.yaml](../contract/asyncapi.yaml) is the contract:
+an 8-byte binary frame header (channel / flags / transfer / length)
+multiplexing a JSON control channel and a raw bulk channel over one TCP
+connection, written as AsyncAPI 3.0 with normative prose for the frame
+layout and connection rules. WS-shaped semantics without literal
+WebSocket: hello gate with revision refusal, guest-driven ping/pong,
+`bye` with close codes, one guest at a time.
 
-The **guest dials the host**. Classic Mac OS listeners are the historically
-fragile half of OS 9 networking (leaked disconnect indications, accept races,
-silent holders); dialing out keeps every listener on the modern side, where
-they are boring. The host address is user-entered on the guest for now;
-discovery can come later without touching the contract.
+The **guest dials the host** — classic Mac OS listeners are the fragile
+half of OS 9 networking, so every listener stays on the modern side.
 
-```text
-Mac OS 9 guest app  <---- one future protocol ---->  macOS host app
-  capture target                                      module registry
-  capture engine                                      screenshots module
-  bounded history                                     menu bar + window
-```
+### Transfer rules (each learned the hard way)
 
-The first executable slice ends before the protocol. The guest is useful on its
-own; the host presents an honest disconnected state. This lets the capture
-model and human interface settle before network choices harden into a public
-contract.
+- **One contiguous send per frame.** Real classic NICs drop the second
+  of two back-to-back small writes (Farallon TX burst).
+- **Control messages queue and retry.** A streaming guest runs the send
+  buffer at the brim; a single unretried `OTSnd` of `capture.end` or a
+  heartbeat ping dies there of `kOTFlowErr` and wedges every layer at
+  once. Control frames drain from the event loop, never interleaving
+  into a partially-sent bulk frame; bulk stays best-effort — pixels are
+  re-capturable, protocol words are not.
+- **Abandon transfers, never frames.** An abort drains the in-flight
+  bulk frame to its boundary before `capture.end ok:false`; cutting a
+  frame mid-send desyncs the peer's decoder.
+- **One transfer at a time.** Requests and offers are refused busy, not
+  preempted. The stream bracket owns the lane while open.
+- **Stops are always answered.** `stream.stop` gets `stream.stopped`
+  even for a stream the guest no longer has; the host also self-heals
+  (session close clears the bracket, stop times out after 5 s).
+- **Tuning rides the messages.** `capture.request` and `stream.start`
+  carry optional knobs (chunk, pacing, compress, predictive, interlace);
+  absent fields fall back to the guest's panel. The initiator decides;
+  there is no remote configuration to sync.
+
+## Capture and streaming
+
+Full-screen capture cost is VRAM read bandwidth — transaction-bound at
+~434 ns per bus beat on the PB1400c, floor ~90 ms, CopyBits within ~15%
+of it (see [vram-readout.md](vram-readout.md) and the TimBotTu corpus).
+Every streaming design decision follows from measurements:
+
+- **Banded, pipelined capture** — banding is free (~0.2 ms per extra
+  CopyBits), so frame N+1 is captured a band at a time from the event
+  loop while frame N sends; capture is scheduled to complete as the send
+  completes. Frame period approaches max(capture+encode, wire).
+- **Delta frames** — after each capture the guest diffs against the
+  previous frame (memory-bound, pixel-granular for free) and sends
+  `key` / `delta` (≤16 dirty rects, byte-granular column spans) /
+  `empty` (~150 bytes) frames. Deltas reference the previous frame
+  implicitly; TCP ordering makes that safe. `stream.refresh` forces a
+  keyframe.
+- **Predictive capture** (toggle) — read only last frame's dirty rows
+  plus a margin, plus a rotating sweep slice; partial VRAM reads are
+  exactly linear, so capture cost scales with screen activity.
+- **Interlacing** (toggle) — one decimated CopyBits into a half-height
+  GWorld captures a field per frame (2:1 point sampling); each field
+  diffs against its own parity, wire rects carry `rowStep`. Composes
+  with predictive.
+- **Keyframes are the correctness anchor**: always whole, always full
+  scale, outside both policies.
+- **Recording is host-side**: every stream encodes live to a temp
+  QuickTime movie with real VFR timestamps; stop offers the file.
 
 ## Guest ownership
 
-- `capture` converts one explicitly supplied window into an offscreen GWorld.
-  It knows nothing about buttons, history, files, or networking.
-- `capture_store` owns bounded session history and disposes GWorlds.
-- `main` owns the Toolbox event loop and draws the current capture.
-
-The target is a `WindowRef` rather than an implicit screen. Today `main` passes
-its own window. A future app/window picker can supply another authorized target
-without changing history or rendering.
+- `wire.c` — connection state machine, control TX queue, transfer
+  (`g_xfer`), offer, stream bracket and frame pump. Serviced
+  non-blocking from the event loop; nothing here ever waits.
+- `capture.c` — span/decimation GWorld capture, pumped in bounded steps.
+- `pixels.c` — wire pixel export (palette + per-row PackBits), diff.
+- `json.c` — the one tolerant JSON scanner (natively unit-tested).
+- `commands.c` — one command table serving both consoles.
+- `console_win.c` / `shots_panel.c` / `settings_dialog.c` — the human
+  surfaces; `prefs.c` versioned preferences.
+- `main.c` — Toolbox event loop; drops its WaitNextEvent sleep to 0
+  while any pump is live.
 
 ## Host ownership
 
-- `ModuleRegistry` is the composition root. Modules are data descriptors rather
-  than singletons with hidden lifecycle.
-- `HostAppState` owns selection and persistence.
-- `ScreenshotsModuleView` owns screenshot-specific controls and empty/history
-  presentation.
-- `AppDelegate` owns AppKit lifecycle, status item, and the persistent window.
-
-The host model already names supported capture depths, connection state, and
-capture records. No mock transport or fake screenshot data is shipped.
+- `GuestListener` + `Session` — listener lifecycle, hello gate, capture
+  routing (solicited / pushed / stream by id), stream canvas
+  compositing, idle timeout.
+- `CaptureDecoder` — wire pixels to CGImage; delta rect patching.
+- `StreamRecorder` — live VFR H.264 encoding.
+- `ScreenshotModuleModel` / `ConsoleModel` / `SettingsModel` — module
+  state; `ModuleRegistry` the composition root; `HostAppState` wiring.
 
 ## Naming seam
 
-The product is "New Old World" — "NOW" for short (decided 2026-07-19). Display
-names, creator codes, bundle identifiers, and preference keys stay confined to
-two files so any future naming change cannot leak across the codebase:
-
-- `guest/src/product_identity.h`
-- `host/Sources/Host/ProductIdentity.swift`
-
-Build target and directory names are intentionally generic (`guest`, `Host`).
-
+Display names, creator codes, bundle identifiers, and preference keys
+stay confined to `guest/src/product_identity.h` and
+`host/Sources/Host/ProductIdentity.swift`.
