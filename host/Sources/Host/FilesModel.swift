@@ -96,10 +96,18 @@ final class FilesModuleModel: ObservableObject {
         var remaining: Int
     }
 
-    /// Files waiting to go. The wire carries one transfer at a time, so
-    /// a multi-file drop is a queue rather than a refusal — dropping
-    /// five files is the obvious gesture and must not need five drops.
-    @Published private(set) var queue: [URL] = []
+    /// One file waiting to go, with where it lands. A dropped FOLDER
+    /// becomes many of these, each carrying the subpath it should keep,
+    /// which is why the destination travels with the item rather than
+    /// being read from wherever the browser happens to be by then.
+    struct QueueItem: Equatable {
+        var url: URL
+        var folder: String
+    }
+
+    /// The wire carries one transfer at a time, so a multi-file drop is
+    /// a queue rather than a refusal.
+    @Published private(set) var queue: [QueueItem] = []
     private var queueTotal = 0
     private var queueDone = 0
 
@@ -255,18 +263,79 @@ final class FilesModuleModel: ObservableObject {
     /// browsed. The share bounds what the other machine may reach on its
     /// own; it never bounds what a human deliberately sends, so the
     /// source is any file at all.
-    /// Enqueues a drop. Order is the order they were dropped; the queue
-    /// drains one at a time because the wire has one lane.
+    /// How many files one drop may expand into. A dropped folder can
+    /// hold thousands; at this wire's speed that is hours, so it is
+    /// refused with a count rather than started and abandoned.
+    static let dropFileLimit = 500
+
+    /// Enqueues a drop. A dropped folder is walked, and each file keeps
+    /// its position beneath it. `into` is the destination folder for the
+    /// drop itself (a folder row, or the folder being browsed).
     func enqueue(_ urls: [URL], into folder: String? = nil) {
         guard canBrowse, !urls.isEmpty else { return }
-        if let folder, folder != path {
-            // A drop onto a folder row targets that folder.
-            breadcrumb = folder.isEmpty ? []
-                : folder.components(separatedBy: ":")
+        let base = folder ?? path
+        var items: [QueueItem] = []
+        var skipped = 0
+        for url in urls {
+            expand(url, into: base, items: &items, skipped: &skipped)
         }
-        queue.append(contentsOf: urls)
+        guard !items.isEmpty else {
+            if skipped > 0 {
+                lastError = "Nothing to send — \(skipped) item"
+                    + (skipped == 1 ? "" : "s") + " skipped."
+            }
+            return
+        }
+        if items.count > Self.dropFileLimit {
+            lastError = "That is \(items.count) files; "
+                + "\(Self.dropFileLimit) at a time is the limit."
+            return
+        }
+        queue.append(contentsOf: items)
         queueTotal = queueDone + queue.count
+        if skipped > 0 {
+            lastError = "\(skipped) item"
+                + (skipped == 1 ? " was" : "s were") + " skipped."
+        }
         startNextIfIdle()
+    }
+
+    /// Walks a dropped URL into files. Folders keep their shape on the
+    /// other side; empty ones do not survive, since nothing carries a
+    /// folder on its own. Hidden files are left behind — a classic Mac
+    /// has no use for .DS_Store.
+    private func expand(_ url: URL, into folder: String,
+                        items: inout [QueueItem], skipped: inout Int) {
+        let name = url.lastPathComponent
+        if name.hasPrefix(".") {
+            skipped += 1
+            return
+        }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path,
+                                             isDirectory: &isDirectory)
+        else {
+            skipped += 1
+            return
+        }
+        guard isDirectory.boolValue else {
+            items.append(QueueItem(url: url, folder: folder))
+            return
+        }
+        let child = folder.isEmpty
+            ? OutboundFile.hfsName(name)
+            : folder + ":" + OutboundFile.hfsName(name)
+        let contents = (try? FileManager.default.contentsOfDirectory(
+            at: url, includingPropertiesForKeys: nil)) ?? []
+        if contents.isEmpty {
+            skipped += 1          // an empty folder has nothing to carry
+            return
+        }
+        for entry in contents.sorted(by: {
+            $0.lastPathComponent < $1.lastPathComponent
+        }) {
+            expand(entry, into: child, items: &items, skipped: &skipped)
+        }
     }
 
     private func startNextIfIdle() {
@@ -278,7 +347,8 @@ final class FilesModuleModel: ObservableObject {
             }
             return
         }
-        send(queue.removeFirst())
+        let item = queue.removeFirst()
+        send(item.url, into: item.folder)
     }
 
     /// Abandons everything not yet sent; the one in flight is cancelled
@@ -289,7 +359,8 @@ final class FilesModuleModel: ObservableObject {
         queueDone = 0
     }
 
-    func send(_ url: URL, overwrite: Bool = false) {
+    func send(_ url: URL, into folder: String? = nil,
+              overwrite: Bool = false) {
         guard canBrowse, transfer == nil else { return }
         guard let data = try? Data(contentsOf: url) else {
             lastError = "Could not read \(url.lastPathComponent)"
@@ -304,7 +375,7 @@ final class FilesModuleModel: ObservableObject {
             expected: plan.bytes.count,
             index: queueTotal > 1 ? queueDone : nil,
             total: queueTotal > 1 ? queueTotal : nil)
-        let folder = path
+        let folder = folder ?? path
         listener.putFile(name: plan.name, into: folder,
                          container: plan.container, bytes: plan.bytes,
                          fileType: plan.fileType, creator: plan.creator,
@@ -346,7 +417,7 @@ final class FilesModuleModel: ObservableObject {
     func confirmOverwrite() {
         guard let prompt = overwritePrompt else { return }
         overwritePrompt = nil
-        send(prompt.url, overwrite: true)
+        send(prompt.url, into: prompt.folder, overwrite: true)
     }
 
     /// Leaves that file alone and carries on with the rest.

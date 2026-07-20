@@ -425,7 +425,7 @@ final class TransferQueueTests: XCTestCase {
                 return false
             }
         }
-        XCTAssertEqual(model.queue.map(\.lastPathComponent),
+        XCTAssertEqual(model.queue.map { $0.url.lastPathComponent },
                        ["b.txt", "c.txt"], "the rest wait their turn")
         XCTAssertEqual(model.transfer?.index, 1)
         XCTAssertEqual(model.transfer?.total, 3)
@@ -483,11 +483,82 @@ final class TransferQueueTests: XCTestCase {
                       "the human should be told how many did not go")
     }
 
-    func testDroppingOnAFolderRowRetargetsTheDestination() async throws {
-        _ = try await silentGuest()
-        XCTAssertEqual(model.path, "")
+    func testDroppingOnAFolderRowTargetsThatFolder() async throws {
+        let guest = try await silentGuest()
         model.enqueue(try tempFiles(["a.txt"]), into: "Code:TBT")
-        XCTAssertEqual(model.path, "Code:TBT")
+        try await waitUntil("offer") {
+            guest.received.contains {
+                if case .fileOffer(let offer) = $0 {
+                    return offer.path == "Code:TBT"
+                }
+                return false
+            }
+        }
+        // Dropping somewhere does not move the browser there.
+        XCTAssertEqual(model.path, "")
+    }
+
+    /// Builds a small tree: Proj/{read me.txt, src/{main.c, deep/x.txt},
+    /// empty/, .hidden}
+    private func tempTree() throws -> URL {
+        let fm = FileManager.default
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("Proj")
+        try fm.createDirectory(at: root.appendingPathComponent("src/deep"),
+                               withIntermediateDirectories: true)
+        try fm.createDirectory(at: root.appendingPathComponent("empty"),
+                               withIntermediateDirectories: true)
+        try Data("x".utf8).write(
+            to: root.appendingPathComponent("read me.txt"))
+        try Data("x".utf8).write(
+            to: root.appendingPathComponent("src/main.c"))
+        try Data("x".utf8).write(
+            to: root.appendingPathComponent("src/deep/x.txt"))
+        try Data("x".utf8).write(
+            to: root.appendingPathComponent(".hidden"))
+        return root
+    }
+
+    func testADroppedFolderKeepsItsShape() async throws {
+        _ = try await silentGuest()
+        model.enqueue([try tempTree()])
+        // One is in flight; the rest are queued. Check the whole plan.
+        var folders = model.queue.map(\.folder)
+        if let inFlight = model.transfer { _ = inFlight }
+        folders.insert("Proj", at: 0)     // read me.txt goes first
+        XCTAssertEqual(Set(folders),
+                       Set(["Proj", "Proj:src", "Proj:src:deep"]),
+                       "subfolders keep their position under the drop")
+        XCTAssertFalse(model.queue.contains {
+            $0.url.lastPathComponent == ".hidden"
+        }, "hidden files are not worth sending to a classic Mac")
+        XCTAssertFalse(model.queue.contains { $0.folder.contains("empty") },
+                       "an empty folder carries nothing")
+    }
+
+    func testADroppedFolderLandsUnderTheTargetFolder() async throws {
+        _ = try await silentGuest()
+        model.enqueue([try tempTree()], into: "Code")
+        var folders = model.queue.map(\.folder)
+        folders.append("Code:Proj")       // the one already in flight
+        XCTAssertTrue(folders.allSatisfy { $0.hasPrefix("Code:Proj") })
+    }
+
+    func testAnEnormousDropIsRefusedWithACount() async throws {
+        _ = try await silentGuest()
+        let fm = FileManager.default
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("Many")
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        for i in 0...FilesModuleModel.dropFileLimit {
+            try Data("x".utf8).write(
+                to: root.appendingPathComponent("f\(i).txt"))
+        }
+        model.enqueue([root])
+        XCTAssertTrue(model.queue.isEmpty)
+        XCTAssertTrue(model.lastError?.contains("limit") == true)
     }
 }
 
