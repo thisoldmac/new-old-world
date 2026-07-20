@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 @testable import Host
 
@@ -33,6 +34,46 @@ final class ScreenshotModelTests: XCTestCase {
         // bar past full.
         XCTAssertEqual(GuestListener.CaptureProgress(
             received: 300, expected: 200).fraction, 1)
+    }
+
+    func testDeliverySettingsPersistAcrossModels() throws {
+        let suite = "screenshots.test.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { UserDefaults.standard.removeSuite(named: suite) }
+        let listener = GuestListener(
+            identity: .init(version: "0.1-test", name: "Test Host"))
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+
+        let first = ScreenshotModuleModel(listener: listener,
+                                          defaults: defaults)
+        XCTAssertFalse(first.autoSave)
+        XCTAssertFalse(first.autoCopy)
+        first.autoSave = true
+        first.autoCopy = true
+        first.saveDirectory = dir
+
+        let second = ScreenshotModuleModel(listener: listener,
+                                           defaults: defaults)
+        XCTAssertTrue(second.autoSave)
+        XCTAssertTrue(second.autoCopy)
+        XCTAssertEqual(second.saveDirectory.path, dir.path)
+    }
+
+    func testCopyPutsAnImageOnThePasteboard() throws {
+        let model = makeModel()
+        let blob: [UInt8] = [0, 1, 2, 3, 4, 5, 6, 7]
+        let format = CaptureFormat(
+            width: 4, height: 2, depth: 8, rowBytes: 4, bytes: blob.count,
+            paletteBytes: 0, packed: false, captureMs: 0, encodeMs: 0)
+        let record = ScreenshotRecord(
+            capturedAt: Date(),
+            image: try CaptureDecoder.makeImage(blob: blob, format: format),
+            format: format, transferMs: 1, wireBytes: blob.count)
+
+        NSPasteboard.general.clearContents()
+        model.copyToPasteboard(record)
+        XCTAssertTrue(NSPasteboard.general.canReadObject(
+            forClasses: [NSImage.self], options: nil))
     }
 
     func testCancelIsIgnoredWhenNothingIsInFlight() {

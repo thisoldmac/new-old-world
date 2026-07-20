@@ -97,13 +97,61 @@ struct ScreenshotsModuleView: View {
     }
 
     private var saveRow: some View {
-        HStack(spacing: 10) {
-            Toggle("Save captures to", isOn: $model.autoSave)
-            Button(model.saveDirectory.lastPathComponent) { chooseDirectory() }
-                .disabled(!model.autoSave)
-                .help(model.saveDirectory.path)
+        HStack(spacing: 16) {
+            HStack(spacing: 8) {
+                Toggle("Save captures to", isOn: $model.autoSave)
+                folderPicker
+                    .disabled(!model.autoSave)
+            }
+            Toggle("Copy to clipboard", isOn: $model.autoCopy)
         }
         .font(.callout)
+    }
+
+    /// The system's folder-choosing idiom (as in Safari's download
+    /// location): a pop-up of the likely folders, with Other… falling
+    /// through to the real open panel.
+    private var folderPicker: some View {
+        Menu {
+            ForEach(folderChoices, id: \.path) { url in
+                Button { model.saveDirectory = url } label: {
+                    Label {
+                        Text(url.lastPathComponent)
+                    } icon: {
+                        Image(nsImage: NSWorkspace.shared
+                            .icon(forFile: url.path))
+                    }
+                }
+            }
+            Divider()
+            Button("Other…") { chooseDirectory() }
+        } label: {
+            HStack(spacing: 5) {
+                Image(nsImage: NSWorkspace.shared
+                    .icon(forFile: model.saveDirectory.path))
+                    .resizable()
+                    .frame(width: 16, height: 16)
+                Text(model.saveDirectory.lastPathComponent)
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help(model.saveDirectory.path)
+    }
+
+    /// The standard destinations, plus wherever the user already chose so
+    /// the current folder is always in the list.
+    private var folderChoices: [URL] {
+        let standard: [FileManager.SearchPathDirectory] =
+            [.desktopDirectory, .picturesDirectory, .downloadsDirectory,
+             .documentDirectory]
+        var urls = standard.compactMap {
+            FileManager.default.urls(for: $0, in: .userDomainMask).first
+        }
+        if !urls.contains(where: { $0.path == model.saveDirectory.path }) {
+            urls.insert(model.saveDirectory, at: 0)
+        }
+        return urls
     }
 
     private func chooseDirectory() {
@@ -113,6 +161,7 @@ struct ScreenshotsModuleView: View {
         panel.canCreateDirectories = true
         panel.directoryURL = model.saveDirectory
         panel.prompt = "Choose"
+        panel.message = "Choose where New Old World saves captures."
         if panel.runModal() == .OK, let url = panel.url {
             model.saveDirectory = url
         }
@@ -180,7 +229,7 @@ struct ScreenshotsModuleView: View {
             Button("Save to \(model.saveDirectory.lastPathComponent)") {
                 model.write(shot, to: model.saveDirectory)
             }
-            Button("Copy") { copy(shot) }
+            Button("Copy to Clipboard") { model.copyToPasteboard(shot) }
             Text(shot.capturedAt, format: .dateTime.hour().minute().second())
                 .foregroundStyle(.secondary)
                 .font(.callout)
@@ -215,11 +264,4 @@ struct ScreenshotsModuleView: View {
         }
     }
 
-    private func copy(_ shot: ScreenshotRecord) {
-        let rep = NSBitmapImageRep(cgImage: shot.image)
-        let image = NSImage(size: rep.size)
-        image.addRepresentation(rep)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.writeObjects([image])
-    }
 }

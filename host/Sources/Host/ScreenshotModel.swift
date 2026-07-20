@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import Foundation
 import CoreGraphics
@@ -64,6 +65,11 @@ final class ScreenshotModuleModel: ObservableObject {
     @Published var autoSave: Bool {
         didSet { defaults.set(autoSave, forKey: Keys.autoSave) }
     }
+    /// Put each capture on the pasteboard as it lands, so a screenshot can
+    /// go straight into a message without a round trip through the disk.
+    @Published var autoCopy: Bool {
+        didSet { defaults.set(autoCopy, forKey: Keys.autoCopy) }
+    }
     @Published var saveDirectory: URL {
         didSet { defaults.set(saveDirectory.path, forKey: Keys.saveDirectory) }
     }
@@ -73,6 +79,7 @@ final class ScreenshotModuleModel: ObservableObject {
 
     private enum Keys {
         static let autoSave = "screenshots.autoSave"
+        static let autoCopy = "screenshots.autoCopy"
         static let saveDirectory = "screenshots.saveDirectory"
     }
 
@@ -85,6 +92,7 @@ final class ScreenshotModuleModel: ObservableObject {
         self.listener = listener
         self.defaults = defaults
         self.autoSave = defaults.bool(forKey: Keys.autoSave)
+        self.autoCopy = defaults.bool(forKey: Keys.autoCopy)
         let stored = defaults.string(forKey: Keys.saveDirectory)
         self.saveDirectory = stored.map { URL(fileURLWithPath: $0) }
             ?? FileManager.default.urls(for: .picturesDirectory,
@@ -110,6 +118,9 @@ final class ScreenshotModuleModel: ObservableObject {
                     format: delivery.format, transferMs: delivery.transferMs,
                     wireBytes: delivery.wireBytes)
                 self.receive(record)
+                if self.autoCopy {
+                    self.copyToPasteboard(record)
+                }
                 if self.autoSave {
                     self.lastError = self.write(record,
                                                 to: self.saveDirectory)
@@ -148,6 +159,15 @@ final class ScreenshotModuleModel: ObservableObject {
             return "Could not save to \(directory.lastPathComponent): "
                 + error.localizedDescription
         }
+    }
+
+    /// Replaces the pasteboard with the capture as a TIFF-backed image.
+    func copyToPasteboard(_ record: ScreenshotRecord) {
+        let rep = NSBitmapImageRep(cgImage: record.image)
+        let image = NSImage(size: rep.size)
+        image.addRepresentation(rep)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.writeObjects([image])
     }
 
     private static let stampFormatter: DateFormatter = {
