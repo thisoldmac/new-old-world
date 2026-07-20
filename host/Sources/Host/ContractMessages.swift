@@ -17,6 +17,7 @@ enum ControlMessage: Equatable, Sendable {
     case error(ErrorMessage)
     case commandRequest(CommandRequest)
     case commandResult(CommandResult)
+    case streamRequest(StreamRequest)
     case streamStart(StreamStart)
     case streamStop(StreamStop)
     case streamStopped(StreamStopped)
@@ -89,6 +90,10 @@ struct CaptureRequest: Codable, Equatable, Sendable {
 /// stream.stopped, frames arrive as ordinary capture transfers whose
 /// begin id is the stream id. stream.stopped is always the last word —
 /// it acks the host's stop and reports guest-side aborts.
+struct StreamRequest: Codable, Equatable, Sendable {
+    var depth: Int
+}
+
 struct StreamStart: Codable, Equatable, Sendable {
     var id: Int
     var depth: Int
@@ -198,6 +203,9 @@ enum ControlMessageCodec {
         case "capture.request":
             return .captureRequest(
                 try decoder.decode(CaptureRequest.self, from: data))
+        case "stream.request":
+            return .streamRequest(
+                try decoder.decode(StreamRequest.self, from: data))
         case "stream.start":
             return .streamStart(
                 try decoder.decode(StreamStart.self, from: data))
@@ -248,6 +256,7 @@ enum ControlMessageCodec {
         case .commandRequest(let m): return try tagged("command.request", m)
         case .commandResult(let m): return try tagged("command.result", m)
         case .captureRequest(let m): return try tagged("capture.request", m)
+        case .streamRequest(let m): return try tagged("stream.request", m)
         case .streamStart(let m): return try tagged("stream.start", m)
         case .streamStop(let m): return try tagged("stream.stop", m)
         case .streamStopped(let m): return try tagged("stream.stopped", m)

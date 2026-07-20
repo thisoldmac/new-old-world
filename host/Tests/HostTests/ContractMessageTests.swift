@@ -59,6 +59,14 @@ final class ContractMessageTests: XCTestCase {
         XCTAssertNil(offer.encoding)
     }
 
+    func testStreamRequestRoundTrip() throws {
+        let request = StreamRequest(depth: 8)
+        XCTAssertEqual(
+            try ControlMessageCodec.decode(
+                ControlMessageCodec.encode(.streamRequest(request))),
+            .streamRequest(request))
+    }
+
     func testStreamBracketRoundTrip() throws {
         let start = StreamStart(id: 11, depth: 8, minIntervalMs: 500)
         XCTAssertEqual(

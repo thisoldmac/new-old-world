@@ -9,7 +9,7 @@
 
 enum {
     kPanelWidth = 336,
-    kPanelHeight = 252,
+    kPanelHeight = 280,
     kDepthMenuID = 130,
     kChunkMenuID = 131,
     kPaceMenuID = 132
@@ -22,6 +22,8 @@ static ControlRef g_pace_popup;
 static ControlRef g_pack_check;
 static ControlRef g_shoot_button;
 static ControlRef g_send_button;
+static ControlRef g_stream_button;
+static Boolean g_stream_shown_active;
 static char g_stat1[96];
 static char g_stat2[96];
 static char g_stat3[96];
@@ -112,6 +114,34 @@ static void take_screenshot(void)
     invalidate_stats();
 }
 
+/* Keeps the stream button's title honest against the wire's state; cheap
+   enough to run every draw. */
+static void refresh_stream_button(void)
+{
+    Str255 text;
+    Boolean active = now_wire_stream_active();
+
+    if (g_stream_button == NULL || active == g_stream_shown_active) {
+        return;
+    }
+    g_stream_shown_active = active;
+    CopyCStringToPascal(active ? "Stop Streaming" : "Stream to Host", text);
+    SetControlTitle(g_stream_button, text);
+}
+
+static void stream_to_host(void)
+{
+    char err[96];
+
+    if (now_wire_stream_active()) {
+        now_wire_stream_stop();
+    } else if (now_wire_stream_request(err, sizeof err) != 0) {
+        snprintf(g_stat3, sizeof g_stat3, "%.90s", err);
+        invalidate_stats();
+    }
+    refresh_stream_button();
+}
+
 /* Offers the screen to the host. Progress lands back through
    shots_panel_note as the wire works the transfer. */
 static void send_to_host(void)
@@ -194,6 +224,11 @@ void shots_panel_open(void)
     CopyCStringToPascal("Send to Host", text);
     g_send_button = NewControl(g_window, &bounds, text, true, 0, 0, 1,
                                pushButProc, 0);
+    SetRect(&bounds, 16, 168, 172, 192);
+    CopyCStringToPascal("Stream to Host", text);
+    g_stream_button = NewControl(g_window, &bounds, text, true, 0, 0, 1,
+                                 pushButProc, 0);
+    g_stream_shown_active = false;
 
     load_controls_from_prefs();
     g_stat1[0] = '\0';
@@ -242,6 +277,7 @@ void shots_panel_draw(void)
         return;
     }
     SetPortWindowPort(g_window);
+    refresh_stream_button();
     GetWindowPortBounds(g_window, &bounds);
     EraseRect(&bounds);
     DrawControls(g_window);
@@ -287,5 +323,7 @@ void shots_panel_click(Point local)
         take_screenshot();
     } else if (control == g_send_button) {
         send_to_host();
+    } else if (control == g_stream_button) {
+        stream_to_host();
     }
 }

@@ -378,6 +378,62 @@ final class GuestPushCaptureTests: XCTestCase {
         XCTAssertEqual(listener.streamEndReason, "capture failed")
     }
 
+    func testGuestStreamRequestOpensTheBracket() async throws {
+        let guest = try await connectedGuest()
+        try guest.send(.streamRequest(StreamRequest(depth: 1)))
+        try await waitUntil("stream.start") {
+            guest.received.contains {
+                if case .streamStart(let start) = $0 {
+                    return start.depth == 1
+                }
+                return false
+            }
+        }
+        XCTAssertNotNil(listener.activeStreamId)
+    }
+
+    func testStreamRequestWhileStreamingIsDeclined() async throws {
+        let guest = try await connectedGuest()
+        listener.startStream(depth: 8)
+        try await waitUntil("stream.start") {
+            guest.received.contains {
+                if case .streamStart = $0 { return true }
+                return false
+            }
+        }
+        try guest.send(.streamRequest(StreamRequest(depth: 1)))
+        try await waitUntil("stream-busy error") {
+            guest.received.contains {
+                if case .error(let error) = $0 {
+                    return error.code == "stream-busy"
+                }
+                return false
+            }
+        }
+        // Only the original bracket ever opened.
+        let starts = guest.received.filter {
+            if case .streamStart = $0 { return true }
+            return false
+        }
+        XCTAssertEqual(starts.count, 1)
+    }
+
+    func testGuestDisconnectClosesTheBracket() async throws {
+        let guest = try await connectedGuest()
+        listener.startStream(depth: 8)
+        try await waitUntil("stream.start") {
+            guest.received.contains {
+                if case .streamStart = $0 { return true }
+                return false
+            }
+        }
+        try guest.send(.bye(Bye(code: .normal, reason: nil)))
+        try await waitUntil("bracket closed") {
+            self.listener.activeStreamId == nil
+        }
+        XCTAssertEqual(listener.streamEndReason, "connection lost")
+    }
+
     func testOfferDuringAStreamIsRefusedBusy() async throws {
         let guest = try await connectedGuest()
         listener.startStream(depth: 8)

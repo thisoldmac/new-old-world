@@ -61,4 +61,15 @@ int now_wire_offer_shot(char *err, long cap);
 typedef void (*ConnShotNote)(const char *line);
 void conn_set_shot_note(ConnShotNote fn);
 
+/* Asks the host to open a live-stream bracket at the panel's depth. The
+   bracket stays host-owned: the host answers stream.start (streaming
+   begins) or declines; either lands via the shot-note hook. */
+int now_wire_stream_request(char *err, long cap);
+
+/* True while a stream bracket is open (either origin). */
+Boolean now_wire_stream_active(void);
+
+/* Ends the guest's current stream cleanly (stream.stopped, no reason). */
+void now_wire_stream_stop(void);
+
 #endif

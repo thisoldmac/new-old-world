@@ -90,6 +90,7 @@ channels:
       commandResult: { $ref: "#/components/messages/commandResult" }
       captureRequest: { $ref: "#/components/messages/captureRequest" }
       captureCancel: { $ref: "#/components/messages/captureCancel" }
+      streamRequest: { $ref: "#/components/messages/streamRequest" }
       streamStart: { $ref: "#/components/messages/streamStart" }
       streamStop: { $ref: "#/components/messages/streamStop" }
       streamStopped: { $ref: "#/components/messages/streamStopped" }
@@ -138,6 +139,17 @@ operations:
       the wire's pace is the frame rate; minIntervalMs only throttles
       below that. The stream owns the transfer lane: capture.request and
       capture.offer are refused while it runs.
+  guestRequestsStream:
+    action: send
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/streamRequest"
+    description: >
+      Guest asks the host to open a stream bracket. The bracket stays
+      host-owned — both origins share one path — so the host answers
+      with a normal stream.start, or an error (code "stream-busy") if
+      the lane is taken. A guest whose ask goes unanswered gives up
+      after a timeout and tells its human.
   guestEndsStream:
     action: send
     channel: { $ref: "#/channels/control" }
@@ -200,6 +212,9 @@ components:
     captureRequest:
       name: capture.request
       payload: { $ref: "#/components/schemas/CaptureRequest" }
+    streamRequest:
+      name: stream.request
+      payload: { $ref: "#/components/schemas/StreamRequest" }
     streamStart:
       name: stream.start
       payload: { $ref: "#/components/schemas/StreamStart" }
@@ -349,6 +364,13 @@ components:
       properties:
         type: { const: capture.request }
         id: { type: integer }
+        depth: { enum: [1, 2, 4, 8, 16, 32] }
+    StreamRequest:
+      type: object
+      required: [type, depth]
+      additionalProperties: false
+      properties:
+        type: { const: stream.request }
         depth: { enum: [1, 2, 4, 8, 16, 32] }
     StreamStart:
       type: object

@@ -199,14 +199,47 @@ final class GuestListener: ObservableObject {
     func stopStream() {
         guard let id = activeStreamId else { return }
         session?.requestStreamStop(id: id)
+        // Self-heal: a guest that never answers (dead app, dead wire the
+        // socket hasn't noticed) must not wedge the bracket open forever.
+        stopFallback?.cancel()
+        stopFallback = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard !Task.isCancelled, let self,
+                  self.activeStreamId == id else { return }
+            self.activeStreamId = nil
+            self.streamEndReason = "no answer to stop"
+        }
     }
 
     fileprivate func streamEnded(_ stopped: StreamStopped) {
         guard stopped.id == activeStreamId else { return }
+        stopFallback?.cancel()
+        stopFallback = nil
         activeStreamId = nil
         streamEndReason = stopped.reason
         captureProgress = nil
     }
+
+    /// The guest asked for a stream: same bracket, host-owned. Accept
+    /// unless the lane is taken.
+    fileprivate func guestRequestedStream(_ request: StreamRequest) {
+        guard activeStreamId == nil else {
+            session?.sendError(code: "stream-busy",
+                               message: "a stream or transfer is active")
+            return
+        }
+        startStream(depth: request.depth)
+    }
+
+    fileprivate func streamSessionClosed() {
+        guard activeStreamId != nil else { return }
+        stopFallback?.cancel()
+        stopFallback = nil
+        activeStreamId = nil
+        streamEndReason = "connection lost"
+    }
+
+    private var stopFallback: Task<Void, Never>?
 
     /// Abandons the transfer in flight. The guest answers with a failed
     /// capture.end, which is what actually settles the pending completion.
@@ -300,10 +333,14 @@ final class GuestListener: ObservableObject {
             onStreamStopped: { [weak self] stopped in
                 self?.streamEnded(stopped)
             },
+            onStreamRequest: { [weak self] request in
+                self?.guestRequestedStream(request)
+            },
             onClosed: { [weak self] closedSession, reason in
                 guard let self else { return }
                 self.pending.removeAll { $0 === closedSession }
                 guard self.session === closedSession else { return }
+                self.streamSessionClosed()
                 self.session = nil
                 self.health = nil
                 self.failPendingCommands(reason)
@@ -340,6 +377,7 @@ final class Session {
     private let onPushedCapture: (GuestListener.CaptureDelivery) -> Void
     private let onStreamFrame: (GuestListener.CaptureDelivery) -> Void
     private let onStreamStopped: (StreamStopped) -> Void
+    private let onStreamRequest: (StreamRequest) -> Void
     private var streamId: Int?
     private let onClosed: (Session, String) -> Void
 
@@ -374,6 +412,7 @@ final class Session {
          onPushedCapture: @escaping (GuestListener.CaptureDelivery) -> Void,
          onStreamFrame: @escaping (GuestListener.CaptureDelivery) -> Void,
          onStreamStopped: @escaping (StreamStopped) -> Void,
+         onStreamRequest: @escaping (StreamRequest) -> Void,
          onClosed: @escaping (Session, String) -> Void) {
         self.connection = connection
         self.identity = identity
@@ -388,6 +427,7 @@ final class Session {
         self.onPushedCapture = onPushedCapture
         self.onStreamFrame = onStreamFrame
         self.onStreamStopped = onStreamStopped
+        self.onStreamRequest = onStreamRequest
         self.onClosed = onClosed
     }
 
@@ -488,6 +528,8 @@ final class Session {
             touchHealth(pingsDelta: 1)
         case .commandResult(let result):
             onCommandResult(result)
+        case .streamRequest(let request):
+            onStreamRequest(request)
         case .streamStopped(let stopped):
             if stopped.id == streamId { streamId = nil }
             onStreamStopped(stopped)
@@ -537,6 +579,10 @@ final class Session {
 
     func requestStreamStop(id: Int) {
         send(.streamStop(StreamStop(id: id)))
+    }
+
+    func sendError(code: String, message: String) {
+        send(.error(ErrorMessage(id: nil, code: code, message: message)))
     }
 
     private func finishCapture(_ end: CaptureEnd) {

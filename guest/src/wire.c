@@ -155,28 +155,76 @@ static int json_type_is(const char *json, const char *type)
     return strcmp(value, type) == 0;
 }
 
+/* --- control TX queue ---------------------------------------------------
+   Control messages must be reliable even when the pipe is stuffed with
+   bulk pixels. A streaming guest runs the send buffer at the brim, and a
+   single unretried OTSnd of capture.end / stream.stopped / a heartbeat
+   ping dies there of kOTFlowErr — which is exactly how the first live
+   stream wedged: the guest gave up, told no one (the telling failed too),
+   and the host waited forever. So control frames queue here and drain
+   from the event loop, never interleaving into a partially-sent bulk
+   frame. Bulk stays best-effort and unqueued; pixels are re-capturable,
+   protocol words are not. */
+
+enum { kCtlQueueSlots = 8 };
+
+static struct {
+    Ptr frames[kCtlQueueSlots];       /* whole wire frames: header+payload */
+    long lens[kCtlQueueSlots];
+    long sent;                        /* bytes of frames[head] on the wire */
+    int head, count;
+} g_ctlq;
+
+static int service_ctl_tx(void);
+static int bulk_frame_partially_sent(void);
+
+static void ctlq_clear(void)
+{
+    while (g_ctlq.count > 0) {
+        DisposePtr(g_ctlq.frames[g_ctlq.head]);
+        g_ctlq.head = (g_ctlq.head + 1) % kCtlQueueSlots;
+        --g_ctlq.count;
+    }
+    g_ctlq.sent = 0;
+    g_ctlq.head = 0;
+}
+
 /* One contiguous send per frame: back-to-back small writes are dropped by
-   real classic NICs (PB1400c Farallon TX burst drop). */
+   real classic NICs (PB1400c Farallon TX burst drop). Returns 1 once the
+   frame is QUEUED - transmission happens from service_ctl_tx. 0 means the
+   message cannot be delivered on this connection (no endpoint, oversize,
+   or a backlog so deep the pipe is effectively dead). */
 static int send_control(const char *json)
 {
-    unsigned char buffer[4096 + kNowFrameHeaderBytes];
     unsigned long length = (unsigned long)strlen(json);
-    OTResult sent;
+    Ptr frame;
+    int slot;
 
     if (g.ep == kOTInvalidEndpointRef || length > 4096) {
         return 0;
     }
-    buffer[0] = kNowChannelControl;
-    buffer[1] = 0;
-    buffer[2] = 0;
-    buffer[3] = 0;
-    buffer[4] = (unsigned char)((length >> 24) & 0xFF);
-    buffer[5] = (unsigned char)((length >> 16) & 0xFF);
-    buffer[6] = (unsigned char)((length >> 8) & 0xFF);
-    buffer[7] = (unsigned char)(length & 0xFF);
-    memcpy(buffer + kNowFrameHeaderBytes, json, length);
-    sent = gNowOT.snd(g.ep, buffer, kNowFrameHeaderBytes + length, 0);
-    return sent == (OTResult)(kNowFrameHeaderBytes + length);
+    if (g_ctlq.count >= kCtlQueueSlots) {
+        return 0;
+    }
+    frame = NewPtr((long)(kNowFrameHeaderBytes + length));
+    if (frame == NULL) {
+        return 0;
+    }
+    frame[0] = (char)kNowChannelControl;
+    frame[1] = 0;
+    frame[2] = 0;
+    frame[3] = 0;
+    frame[4] = (char)((length >> 24) & 0xFF);
+    frame[5] = (char)((length >> 16) & 0xFF);
+    frame[6] = (char)((length >> 8) & 0xFF);
+    frame[7] = (char)(length & 0xFF);
+    memcpy(frame + kNowFrameHeaderBytes, json, length);
+    slot = (g_ctlq.head + g_ctlq.count) % kCtlQueueSlots;
+    g_ctlq.frames[slot] = frame;
+    g_ctlq.lens[slot] = (long)(kNowFrameHeaderBytes + length);
+    ++g_ctlq.count;
+    service_ctl_tx();                 /* opportunistic immediate drain */
+    return 1;
 }
 
 static void close_endpoint(void)
@@ -195,6 +243,7 @@ static void enter_backoff(void)
     xfer_cleanup();                   /* a dropped link cancels any transfer */
     offer_cleanup();
     stream_drop();                    /* no stopped message on a dead wire */
+    ctlq_clear();
     close_endpoint();
     if (!g.want_connection) {
         g.phase = kConnIdle;
@@ -450,6 +499,13 @@ static struct {
     long frames;
 } g_stream;
 
+enum { kStreamReqTimeoutTicks = 60 * 10 };
+
+static struct {
+    Boolean pending;                  /* asked the host to open a bracket */
+    unsigned long deadline;
+} g_streamreq;
+
 static struct {
     Boolean active;
     Boolean pushed;                   /* guest-initiated: report to panel */
@@ -465,6 +521,43 @@ static struct {
     unsigned long started;
     short pace_ms;
 } g_xfer;
+
+static int bulk_frame_partially_sent(void)
+{
+    return g_xfer.active && g_xfer.frame_sent > 0
+        && g_xfer.frame_sent < g_xfer.frame_len;
+}
+
+/* Drains queued control frames. 1 = ok (possibly still pending on flow
+   control), 0 = the endpoint is dead. */
+static int service_ctl_tx(void)
+{
+    while (g_ctlq.count > 0) {
+        Ptr frame = g_ctlq.frames[g_ctlq.head];
+        long len = g_ctlq.lens[g_ctlq.head];
+        OTResult sent;
+
+        if (bulk_frame_partially_sent()) {
+            return 1;                 /* finish that frame's bytes first */
+        }
+        sent = gNowOT.snd(g.ep, frame + g_ctlq.sent,
+                          (OTByteCount)(len - g_ctlq.sent), 0);
+        if (sent > 0) {
+            g_ctlq.sent += sent;
+            if (g_ctlq.sent >= len) {
+                DisposePtr(frame);
+                g_ctlq.head = (g_ctlq.head + 1) % kCtlQueueSlots;
+                --g_ctlq.count;
+                g_ctlq.sent = 0;
+            }
+        } else if (sent == kOTFlowErr || sent == kOTNoDataErr) {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+    return 1;
+}
 
 static void xfer_cleanup(void)
 {
@@ -544,6 +637,9 @@ static void service_transfer(void)
             return;                   /* paced: resume later */
         }
         if (g_xfer.frame_sent >= g_xfer.frame_len) {
+            if (g_ctlq.count > 0) {
+                return;               /* control goes first between frames */
+            }
             g_xfer.offset += g_xfer.frame_len - kNowFrameHeaderBytes;
             if (g_xfer.offset >= g_xfer.total) {
                 xfer_finish(true);
@@ -854,6 +950,7 @@ static void service_offer(void)
 static void stream_drop(void)
 {
     g_stream.active = false;
+    g_streamreq.pending = false;
 }
 
 static void stream_send_stopped(long id, const char *reason)
@@ -908,13 +1005,72 @@ static void stream_start(const char *reply)
         json_find_int(reply, "minIntervalMs", 0) * 60 / 1000;
     g_stream.next_frame_tick = 0;
     g_stream.active = true;
+    g_streamreq.pending = false;
     note_shot("Streaming to host...");
 }
 
 static void stream_stop(const char *reply)
 {
-    if (!g_stream.active
-        || json_find_int(reply, "id", -1) != g_stream.id) {
+    long id = json_find_int(reply, "id", -1);
+
+    if (!g_stream.active || id != g_stream.id) {
+        /* Answer anyway: if the guest lost the stream (reconnect, abort
+           whose stream.stopped died with the old socket), an unanswered
+           stop would wedge the host's bracket open forever. */
+        stream_send_stopped(id, NULL);
+        return;
+    }
+    if (g_xfer.active) {
+        xfer_finish(false);           /* abort the in-flight frame */
+    }
+    stream_end(NULL);
+}
+
+/* Guest-initiated streaming: the guest can only ASK - the bracket stays
+   host-owned (stream.start is the host's word), so both origins share one
+   code path and one policy. The host answers stream.start or an error. */
+
+int now_wire_stream_request(char *err, long cap)
+{
+    NowPrefs prefs;
+    char json[96];
+
+    if (g.phase != kConnConnected) {
+        snprintf(err, (size_t)cap, "Not connected to a host");
+        return -1;
+    }
+    if (g_stream.active) {
+        snprintf(err, (size_t)cap, "Already streaming");
+        return -1;
+    }
+    if (g_xfer.active || g_offer.active || g_streamreq.pending) {
+        snprintf(err, (size_t)cap, "A transfer is already in flight");
+        return -1;
+    }
+    now_prefs_load(&prefs);
+    snprintf(json, sizeof json,
+             "{\"type\":\"stream.request\",\"depth\":%d}",
+             (int)prefs.shot_depth);
+    if (!send_control(json)) {
+        snprintf(err, (size_t)cap, "Connection lost");
+        return -1;
+    }
+    g_streamreq.pending = true;
+    g_streamreq.deadline = TickCount() + kStreamReqTimeoutTicks;
+    note_shot("Asked host to stream...");
+    return 0;
+}
+
+Boolean now_wire_stream_active(void)
+{
+    return g_stream.active;
+}
+
+/* The panel's Stop: guest ends its own bracket - stream.stopped without a
+   reason reads as a clean stop on the host. */
+void now_wire_stream_stop(void)
+{
+    if (!g_stream.active) {
         return;
     }
     if (g_xfer.active) {
@@ -926,6 +1082,10 @@ static void stream_stop(const char *reply)
 /* Pumps the next frame when the lane is free and the throttle allows. */
 static void service_stream(void)
 {
+    if (g_streamreq.pending && TickCount() > g_streamreq.deadline) {
+        g_streamreq.pending = false;
+        note_shot("Host did not start streaming");
+    }
     PixelBlob blob;
     ShotMeta meta;
 
@@ -1020,6 +1180,13 @@ static int handle_frame(const char *reply)
         }
         return 1;
     }
+    if (json_type_is(reply, "error")) {
+        if (g_streamreq.pending) {
+            g_streamreq.pending = false;
+            note_shot("Host declined the stream");
+        }
+        return 1;
+    }
     if (json_type_is(reply, "bye")) {
         char reason[96];
         if (json_find_string(reply, "reason", reason, sizeof reason)) {
@@ -1106,9 +1273,17 @@ void conn_shutdown(void)
 {
     if (g.ep != kOTInvalidEndpointRef) {
         if (g.phase == kConnConnected) {
+            unsigned long flush_deadline = TickCount() + 60;
+
             send_control("{\"type\":\"bye\",\"code\":\"normal\"}");
+            while (g_ctlq.count > 0 && TickCount() < flush_deadline) {
+                if (!service_ctl_tx()) {
+                    break;
+                }
+            }
         }
         gNowOT.sndOrderlyDisconnect(g.ep);
+        ctlq_clear();
         close_endpoint();
     }
     g.want_connection = false;
@@ -1122,12 +1297,20 @@ void conn_service(void)
         service_connecting();
         break;
     case kConnHandshaking:
+        if (!service_ctl_tx()) {
+            fail("Connection lost");
+            break;
+        }
         service_connected_io();
         if (g.phase == kConnHandshaking && TickCount() > g.phase_deadline) {
             fail("No hello reply (8s)");
         }
         break;
     case kConnConnected:
+        if (!service_ctl_tx()) {
+            fail("Connection lost");
+            break;
+        }
         service_connected_io();
         if (g.phase == kConnConnected) {
             service_offer();
@@ -1176,9 +1359,17 @@ void conn_set_target(const char *host, unsigned short port)
 void conn_disconnect(void)
 {
     if (g.ep != kOTInvalidEndpointRef && g.phase == kConnConnected) {
+        unsigned long flush_deadline = TickCount() + 60;
+
         send_control("{\"type\":\"bye\",\"code\":\"normal\"}");
+        while (g_ctlq.count > 0 && TickCount() < flush_deadline) {
+            if (!service_ctl_tx()) {
+                break;
+            }
+        }
         gNowOT.sndOrderlyDisconnect(g.ep);
     }
+    ctlq_clear();
     close_endpoint();
     g.want_connection = false;
     g.phase = kConnIdle;
