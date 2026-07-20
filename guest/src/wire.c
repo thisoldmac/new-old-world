@@ -21,7 +21,11 @@ enum {
     kDeadTicks = 60 * 65,             /* no traffic for 65s => dead */
     kBackoffMinTicks = 60 * 2,        /* 2s, doubling... */
     kBackoffMaxTicks = 60 * 30,       /* ...to 30s */
-    kRxBufferSize = 2048
+    /* Big enough for the largest legal control frame (the contract caps
+       control JSON at 4096). Bulk is never buffered whole — see
+       next_frame — because one bulk frame is larger than anything this
+       machine should hold in RAM merely to frame it. */
+    kRxBufferSize = 4608
 };
 
 typedef struct {
@@ -35,6 +39,8 @@ typedef struct {
 
     unsigned char rx[kRxBufferSize];
     long rx_len;
+    long bulk_remaining;              /* payload left in the bulk frame
+                                         being consumed; 0 when none */
 
     unsigned long phase_deadline;     /* connect/hello timeout */
     unsigned long last_rx_tick;       /* any inbound bytes */
@@ -175,6 +181,7 @@ static void close_endpoint(void)
         g.ep = kOTInvalidEndpointRef;
     }
     g.rx_len = 0;
+    g.bulk_remaining = 0;
 }
 
 /* Move to backoff after a failure; status keeps the reason already set. */
@@ -230,6 +237,7 @@ static void start_connect(void)
 
     close_endpoint();
     g.rx_len = 0;
+    g.bulk_remaining = 0;
     g.pings_sent = 0;
 
     if (!parse_ipv4(g.host, &g.address)) {
@@ -377,27 +385,53 @@ static int next_frame(char *payload_out, long cap)
     long total;
     unsigned char channel;
 
+    /* A bulk frame already under way: hand over whatever has arrived and
+       wait for the rest. Bulk is NEVER buffered whole. One frame is
+       larger than this buffer, and demanding the whole thing deadlocks:
+       the buffer fills, the guest stops reading, TCP closes the window,
+       and the sender waits forever on a transfer that has no way to
+       finish. */
+    if (g.bulk_remaining > 0) {
+        long take = g.rx_len;
+
+        if (take <= 0) {
+            return 0;
+        }
+        if (take > g.bulk_remaining) {
+            take = g.bulk_remaining;
+        }
+        take_bulk_in(g.rx, take);
+        memmove(g.rx, g.rx + take, g.rx_len - take);
+        g.rx_len -= take;
+        g.bulk_remaining -= take;
+        payload_out[0] = '\0';
+        return 1;
+    }
+
     if (g.rx_len < kNowFrameHeaderBytes) {
         return 0;
     }
     channel = g.rx[0];
     length = ((unsigned long)g.rx[4] << 24) | ((unsigned long)g.rx[5] << 16)
         | ((unsigned long)g.rx[6] << 8) | (unsigned long)g.rx[7];
-    if (length + 1 > (unsigned long)cap || length > kNowMaxPayload) {
+    if (length > kNowMaxPayload) {
+        return -1;
+    }
+    if (channel != kNowChannelControl) {
+        /* Take the header now; the payload streams in above. */
+        memmove(g.rx, g.rx + kNowFrameHeaderBytes,
+                g.rx_len - kNowFrameHeaderBytes);
+        g.rx_len -= kNowFrameHeaderBytes;
+        g.bulk_remaining = (long)length;
+        payload_out[0] = '\0';
+        return 1;
+    }
+    if (length + 1 > (unsigned long)cap) {
         return -1;
     }
     total = kNowFrameHeaderBytes + (long)length;
     if (g.rx_len < total) {
         return 0;
-    }
-    if (channel != kNowChannelControl) {
-        /* The guest's only inbound bulk is a file being put into the
-           share; anything else has nowhere to go and is dropped. */
-        take_bulk_in(g.rx + kNowFrameHeaderBytes, (long)length);
-        memmove(g.rx, g.rx + total, g.rx_len - total);
-        g.rx_len -= total;
-        payload_out[0] = '\0';
-        return 1;
     }
     memcpy(payload_out, g.rx + kNowFrameHeaderBytes, length);
     payload_out[length] = '\0';
@@ -2265,7 +2299,7 @@ static int handle_frame(const char *reply)
 
 static void service_connected_io(void)
 {
-    char payload[512];
+    char payload[1200];
     int rc;
 
     if (!pump_rx()) {

@@ -228,8 +228,11 @@ final class GuestListener: ObservableObject {
         let id = nextCommandId
         nextCommandId += 1
         pendingPut = completion
-        armWatchdog(id: id, seconds: 20) { [weak self] reason in
+        putId = id
+        armWatchdog(id: id, seconds: 20,
+                    tracksTraffic: false) { [weak self] reason in
             guard let self, self.pendingPut != nil else { return }
+            self.session?.cancelOutbound()
             self.settlePut(.failure(.init(code: "timeout", message: reason)))
         }
         session.sendFileOffer(
@@ -241,10 +244,13 @@ final class GuestListener: ObservableObject {
     }
 
     private var pendingPut: ((Result<Void, FileFailure>) -> Void)?
+    private var putId: Int?
 
     fileprivate func settlePut(_ result: Result<Void, FileFailure>) {
         let completion = pendingPut
+        if let id = putId { clearWatchdog(id) }
         pendingPut = nil
+        putId = nil
         captureProgress = nil
         completion?(result)
     }
@@ -252,7 +258,15 @@ final class GuestListener: ObservableObject {
     /// Abandons the file transfer; settles locally for the same reason
     /// cancelCapture does.
     func cancelFile() {
-        session?.cancelOutbound()
+        // An outbound transfer settles HERE rather than waiting for the
+        // wire: if it is stalled, the send that would notice the
+        // cancellation is exactly the one that is not completing.
+        if pendingPut != nil {
+            session?.cancelOutbound()
+            settlePut(.failure(.init(code: "cancelled",
+                                     message: "Cancelled")))
+            return
+        }
         guard pendingFile != nil else { return }
         session?.cancelFile()
         deliverFile(.failure(.init(code: "cancelled",
@@ -265,15 +279,29 @@ final class GuestListener: ObservableObject {
     private struct Watchdog {
         var lastActivity: Date
         var seconds: TimeInterval
+        /// False for pushes: see armWatchdog.
+        var tracksTraffic: Bool = true
+        /// How this request fails. Held here so expiry lives in ONE
+        /// place: a test seam that re-derived it per request kind
+        /// silently stopped covering the newest kind.
+        var expire: (String) -> Void
         var task: Task<Void, Never>?
     }
     private var watchdogs: [Int: Watchdog] = [:]
 
+    /// `tracksTraffic` decides what counts as this request being alive.
+    /// For anything awaiting an answer, inbound bytes are evidence. For
+    /// a push they are not: the peer can answer pings perfectly while
+    /// the transfer it is receiving has stalled, and a watchdog reset by
+    /// heartbeats would never fire. Those are touched by their own
+    /// progress instead.
     private func armWatchdog(id: Int, seconds: TimeInterval,
+                             tracksTraffic: Bool = true,
                              expire: @escaping (String) -> Void) {
         clearWatchdog(id)
         watchdogs[id] = Watchdog(lastActivity: Date(), seconds: seconds,
-                                 task: nil)
+                                 tracksTraffic: tracksTraffic,
+                                 expire: expire, task: nil)
         watchdogs[id]?.task = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self, let dog = self.watchdogs[id] else { return }
@@ -290,9 +318,15 @@ final class GuestListener: ObservableObject {
         }
     }
 
+    /// Marks one request as still making progress, for the watchdogs
+    /// that do not take the peer's chatter as evidence.
+    private func touchWatchdog(_ id: Int) {
+        watchdogs[id]?.lastActivity = Date()
+    }
+
     private func touchWatchdogs() {
         let now = Date()
-        for id in watchdogs.keys {
+        for id in watchdogs.keys where watchdogs[id]?.tracksTraffic == true {
             watchdogs[id]?.lastActivity = now
         }
     }
@@ -300,23 +334,12 @@ final class GuestListener: ObservableObject {
     /// Test seam: expire every armed watchdog immediately, so a test can
     /// exercise the timeout path without sleeping through it.
     func expireWatchdogsForTesting() {
-        for id in watchdogs.keys {
-            watchdogs[id]?.lastActivity = Date(timeIntervalSince1970: 0)
-            watchdogs[id]?.task?.cancel()
-            watchdogs[id]?.task = nil
-        }
         let expiring = watchdogs
         watchdogs = [:]
-        for (id, _) in expiring {
-            if let completion = pendingListings.removeValue(forKey: id) {
-                completion(.failure(.init(code: "timeout",
-                                          message: silenceReason())))
-            } else if id == fileWatchdogId {
-                deliverFile(.failure(.init(code: "timeout",
-                                           message: silenceReason())))
-            } else if id == captureWatchdogId {
-                deliverCapture(.failure(.init(message: silenceReason())))
-            }
+        let reason = silenceReason()
+        for (_, dog) in expiring {
+            dog.task?.cancel()
+            dog.expire(reason)
         }
     }
 
@@ -630,8 +653,9 @@ final class GuestListener: ObservableObject {
                 }
             },
             onOutboundProgress: { [weak self] sent, total in
-                self?.captureProgress = .init(received: sent,
-                                              expected: total)
+                guard let self else { return }
+                self.captureProgress = .init(received: sent, expected: total)
+                if let id = self.putId { self.touchWatchdog(id) }
             },
             onClosed: { [weak self] closedSession, reason in
                 guard let self else { return }

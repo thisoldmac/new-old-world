@@ -205,6 +205,63 @@ final class FileWireTests: XCTestCase {
         }
     }
 
+    func testCancellingAStalledPutSettlesWithoutTheWire() async throws {
+        // The guest accepts and then says nothing — the case that hung on
+        // metal. Cancel must settle locally, because the send that would
+        // notice it is the one not completing.
+        let guest = try await connectedGuest()
+        var settled: Result<Void, GuestListener.FileFailure>?
+        listener.putFile(name: "Big", into: "", container: "data",
+                         bytes: Data(repeating: 9, count: 200_000)) {
+            settled = $0
+        }
+        var offerId: Int?
+        try await waitUntil("file.offer") {
+            for message in guest.received {
+                if case .fileOffer(let offer) = message {
+                    offerId = offer.id
+                    return true
+                }
+            }
+            return false
+        }
+        try guest.send(.fileAccept(FileAccept(id: try XCTUnwrap(offerId))))
+        try await waitUntil("bytes moving") { guest.bulkReceived.count > 0 }
+
+        listener.cancelFile()
+        try await waitUntil("settled") { settled != nil }
+        guard case .failure(let failure) = try XCTUnwrap(settled) else {
+            return XCTFail("expected a cancellation")
+        }
+        XCTAssertEqual(failure.code, "cancelled")
+        XCTAssertNil(listener.captureProgress)
+    }
+
+    func testAPushIsNotKeptAliveByTheGuestsHeartbeat() async throws {
+        // A guest can answer pings perfectly while the transfer it is
+        // receiving has stalled; those pings must not reset the push's
+        // watchdog.
+        let guest = try await connectedGuest()
+        var settled: Result<Void, GuestListener.FileFailure>?
+        listener.putFile(name: "Big", into: "", container: "data",
+                         bytes: Data(repeating: 9, count: 64)) { settled = $0 }
+        try await waitUntil("file.offer") {
+            guest.received.contains {
+                if case .fileOffer = $0 { return true }
+                return false
+            }
+        }
+        // Chatter, but no answer to the offer.
+        try guest.send(.ping(id: 1))
+        try guest.send(.ping(id: 2))
+        listener.expireWatchdogsForTesting()
+        try await waitUntil("timed out") { settled != nil }
+        guard case .failure(let failure) = try XCTUnwrap(settled) else {
+            return XCTFail("expected a timeout")
+        }
+        XCTAssertEqual(failure.code, "timeout")
+    }
+
     func testPutRefusedByNameCollisionSettlesWithExists() async throws {
         let guest = try await connectedGuest()
         var failure: GuestListener.FileFailure?
