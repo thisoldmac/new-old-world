@@ -221,6 +221,61 @@ final class GuestListener: ObservableObject {
         session.sendFileList(id: id, path: path, cursor: cursor)
     }
 
+    /// Moves or renames an item inside the share. One operation, because
+    /// on this file system they are one operation.
+    func moveFile(from: String, to: String, overwrite: Bool = false,
+                  completion: @escaping (Result<FileResult,
+                                                FileFailure>) -> Void) {
+        sendChange(completion) { session, id in
+            session.sendFileMove(FileMove(id: id, path: from, toPath: to,
+                                          overwrite: overwrite ? true : nil))
+        }
+    }
+
+    /// Moves an item to the Trash, and hands back the token that undoes it.
+    func trashFile(path: String,
+                   completion: @escaping (Result<FileResult,
+                                                 FileFailure>) -> Void) {
+        sendChange(completion) { session, id in
+            session.sendFileTrash(FileTrash(id: id, path: path))
+        }
+    }
+
+    func restoreFile(token: Int,
+                     completion: @escaping (Result<FileResult,
+                                                   FileFailure>) -> Void) {
+        sendChange(completion) { session, id in
+            session.sendFileRestore(FileRestore(id: id, token: token))
+        }
+    }
+
+    func makeFolder(path: String,
+                    completion: @escaping (Result<FileResult,
+                                                  FileFailure>) -> Void) {
+        sendChange(completion) { session, id in
+            session.sendFileMkdir(FileMkdir(id: id, path: path))
+        }
+    }
+
+    /// The shared shape of the four: control-plane, one answer, watchdog.
+    private func sendChange(
+        _ completion: @escaping (Result<FileResult, FileFailure>) -> Void,
+        _ emit: (Session, Int) -> Void) {
+        guard let session, case .connected = state else {
+            completion(.failure(.init(code: "disconnected",
+                                      message: "No Mac is connected")))
+            return
+        }
+        let id = nextCommandId
+        nextCommandId += 1
+        pendingChanges[id] = completion
+        armWatchdog(id: id, seconds: 20) { [weak self] reason in
+            self?.pendingChanges.removeValue(forKey: id)?(
+                .failure(.init(code: "timeout", message: reason)))
+        }
+        emit(session, id)
+    }
+
     /// Pulls a file. `container` nil = the guest's fork rule decides.
     func getFile(path: String, container: String? = nil,
                  completion: @escaping (Result<FileDelivery,
@@ -409,6 +464,21 @@ final class GuestListener: ObservableObject {
         [Int: (Result<FileListing, FileFailure>) -> Void] = [:]
     private var pendingFile:
         ((Result<FileDelivery, FileFailure>) -> Void)?
+    private var pendingChanges:
+        [Int: (Result<FileResult, FileFailure>) -> Void] = [:]
+
+    fileprivate func resolveChange(_ result: FileResult) {
+        clearWatchdog(result.id)
+        guard let completion = pendingChanges.removeValue(forKey: result.id)
+        else { return }
+        if result.ok {
+            completion(.success(result))
+        } else {
+            completion(.failure(.init(
+                code: result.code ?? "io-error",
+                message: result.reason ?? result.code ?? "It did not work")))
+        }
+    }
 
     fileprivate func resolveListing(_ listing: FileListing) {
         clearWatchdog(listing.id)
@@ -421,6 +491,10 @@ final class GuestListener: ObservableObject {
         clearWatchdog(refuse.id)
         clearWatchdog(refuse.id)
         if let completion = pendingListings.removeValue(forKey: refuse.id) {
+            completion(.failure(failure))
+            return
+        }
+        if let completion = pendingChanges.removeValue(forKey: refuse.id) {
             completion(.failure(failure))
             return
         }
@@ -616,6 +690,12 @@ final class GuestListener: ObservableObject {
             completion(.failure(.init(code: "disconnected",
                                       message: reason)))
         }
+        let changes = pendingChanges
+        pendingChanges = [:]
+        for (_, completion) in changes {
+            completion(.failure(.init(code: "disconnected",
+                                      message: reason)))
+        }
         // Every armed request carries its own way of failing, so this
         // does not have to know the kinds — it knew three of the four
         // and a put could outlive its answer forever.
@@ -690,6 +770,9 @@ final class GuestListener: ObservableObject {
             },
             onFileListing: { [weak self] listing in
                 self?.resolveListing(listing)
+            },
+            onFileResult: { [weak self] result in
+                self?.resolveChange(result)
             },
             onFileRefuse: { [weak self] refuse in
                 self?.failFile(refuse)
@@ -780,6 +863,7 @@ final class Session {
     private let onStreamStopped: (StreamStopped) -> Void
     private let onStreamRequest: (StreamRequest) -> Void
     private let onFileListing: (FileListing) -> Void
+    private let onFileResult: (FileResult) -> Void
     private let onFileRefuse: (FileRefuse) -> Void
     private let onFileDelivery:
         (Result<GuestListener.FileDelivery, GuestListener.FileFailure>) -> Void
@@ -838,6 +922,7 @@ final class Session {
          onStreamStopped: @escaping (StreamStopped) -> Void,
          onStreamRequest: @escaping (StreamRequest) -> Void,
          onFileListing: @escaping (FileListing) -> Void,
+         onFileResult: @escaping (FileResult) -> Void,
          onFileRefuse: @escaping (FileRefuse) -> Void,
          onFileDelivery: @escaping (Result<GuestListener.FileDelivery,
                                            GuestListener.FileFailure>)
@@ -863,6 +948,7 @@ final class Session {
         self.onStreamStopped = onStreamStopped
         self.onStreamRequest = onStreamRequest
         self.onFileListing = onFileListing
+        self.onFileResult = onFileResult
         self.onFileRefuse = onFileRefuse
         self.onFileDelivery = onFileDelivery
         self.onFileDone = onFileDone
@@ -981,6 +1067,8 @@ final class Session {
             onCommandResult(result)
         case .fileListing(let listing):
             onFileListing(listing)
+        case .fileResult(let result):
+            onFileResult(result)
         case .fileAccept(let accept):
             sendAcceptedFile(accept)
         case .fileDone(let done):
@@ -1060,6 +1148,11 @@ final class Session {
     func sendFileList(id: Int, path: String, cursor: Int?) {
         send(.fileList(FileList(id: id, path: path, cursor: cursor)))
     }
+
+    func sendFileMove(_ m: FileMove) { send(.fileMove(m)) }
+    func sendFileTrash(_ m: FileTrash) { send(.fileTrash(m)) }
+    func sendFileRestore(_ m: FileRestore) { send(.fileRestore(m)) }
+    func sendFileMkdir(_ m: FileMkdir) { send(.fileMkdir(m)) }
 
     func sendFileGet(id: Int, path: String, container: String?) {
         fileBegin = nil

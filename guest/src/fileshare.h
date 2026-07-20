@@ -136,6 +136,29 @@ int now_files_receive_finish(FileReceive *rx);
 /* Abandons a transfer: closes anything open and deletes the temp. */
 void now_files_receive_abort(FileReceive *rx);
 
+/* --- changing the share ------------------------------------------------
+   Every change here is reversible, which is what lets the other side
+   offer undo. Deleting moves an item to the volume's Trash rather than
+   erasing it; the caller gets a token that puts it back, because the
+   Trash is outside the share and has no path this protocol can name. */
+
+/* Moves and/or renames. `to_rel` is the full destination path including
+   the new name. Parents are NOT created — moving into a folder that is
+   not there is a mistake, not an instruction. */
+int now_files_move(const char *rel, const char *to_rel, Boolean overwrite);
+
+/* Moves an item to the Trash. On success *token is a handle that
+   now_files_restore takes; it is valid only while this app runs. */
+int now_files_trash(const char *rel, long *token);
+
+/* Puts a trashed item back where it came from. kFilesNotFound when the
+   token is unknown — a restarted guest has forgotten, and the far side
+   should say so rather than pretend. */
+int now_files_restore(long token, char *out_path, long cap);
+
+/* Creates a folder. kFilesExists if something is already there. */
+int now_files_mkdir(const char *rel);
+
 /* The share root as a display string ("Macintosh HD:Lab:"), for UI. */
 void now_files_root_name(char *out, long cap);
 

@@ -25,6 +25,11 @@ enum ControlMessage: Equatable, Sendable {
     case fileDone(FileDone)
     case fileProgress(FileProgress)
     case fileRefuse(FileRefuse)
+    case fileMove(FileMove)
+    case fileTrash(FileTrash)
+    case fileRestore(FileRestore)
+    case fileMkdir(FileMkdir)
+    case fileResult(FileResult)
     case fileBegin(FileBegin)
     case fileEnd(FileEnd)
     case fileCancel(FileCancel)
@@ -171,6 +176,46 @@ struct FileDone: Codable, Equatable, Sendable {
 struct FileProgress: Codable, Equatable, Sendable {
     var id: Int
     var received: Int
+}
+
+/// Changing the share. A rename and a move are the same operation —
+/// `toPath` carries the whole destination including the new name — and
+/// missing parents are not invented, because a typo in a folder name
+/// should fail rather than quietly create one.
+struct FileMove: Codable, Equatable, Sendable {
+    var id: Int
+    var path: String
+    var toPath: String
+    var overwrite: Bool?
+}
+
+/// Delete means the Trash, not unlink: it is what a human expects on
+/// this machine, and it is the only honest basis for an undo.
+struct FileTrash: Codable, Equatable, Sendable {
+    var id: Int
+    var path: String
+}
+
+/// Puts a trashed item back. The token is opaque and lives only as long
+/// as the guest process — the Trash sits outside the share and has no
+/// path this protocol can name, so a path could not express it.
+struct FileRestore: Codable, Equatable, Sendable {
+    var id: Int
+    var token: Int
+}
+
+struct FileMkdir: Codable, Equatable, Sendable {
+    var id: Int
+    var path: String
+}
+
+struct FileResult: Codable, Equatable, Sendable {
+    var id: Int
+    var ok: Bool
+    var path: String?
+    var token: Int?
+    var code: String?
+    var reason: String?
 }
 
 struct FileRefuse: Codable, Equatable, Sendable {
@@ -350,6 +395,18 @@ enum ControlMessageCodec {
         case "file.progress":
             return .fileProgress(
                 try decoder.decode(FileProgress.self, from: data))
+        case "file.move":
+            return .fileMove(try decoder.decode(FileMove.self, from: data))
+        case "file.trash":
+            return .fileTrash(try decoder.decode(FileTrash.self, from: data))
+        case "file.restore":
+            return .fileRestore(
+                try decoder.decode(FileRestore.self, from: data))
+        case "file.mkdir":
+            return .fileMkdir(try decoder.decode(FileMkdir.self, from: data))
+        case "file.result":
+            return .fileResult(
+                try decoder.decode(FileResult.self, from: data))
         case "file.refuse":
             return .fileRefuse(
                 try decoder.decode(FileRefuse.self, from: data))
@@ -424,6 +481,11 @@ enum ControlMessageCodec {
         case .fileDone(let m): return try tagged("file.done", m)
         case .fileProgress(let m): return try tagged("file.progress", m)
         case .fileRefuse(let m): return try tagged("file.refuse", m)
+        case .fileMove(let m): return try tagged("file.move", m)
+        case .fileTrash(let m): return try tagged("file.trash", m)
+        case .fileRestore(let m): return try tagged("file.restore", m)
+        case .fileMkdir(let m): return try tagged("file.mkdir", m)
+        case .fileResult(let m): return try tagged("file.result", m)
         case .fileBegin(let m): return try tagged("file.begin", m)
         case .fileEnd(let m): return try tagged("file.end", m)
         case .fileCancel(let m): return try tagged("file.cancel", m)

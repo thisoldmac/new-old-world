@@ -58,6 +58,16 @@ long now_json_find_int(const char *json, const char *key, long fallback)
     return strtol(p, NULL, 10);
 }
 
+int now_json_find_bool(const char *json, const char *key, int fallback)
+{
+    const char *p = now_json_value(json, key);
+
+    if (p == NULL) {
+        return fallback;
+    }
+    return strncmp(p, "true", 4) == 0;
+}
+
 int now_json_type_is(const char *json, const char *type)
 {
     char value[48];

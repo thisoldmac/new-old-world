@@ -659,8 +659,8 @@ int now_files_choose_root(char *why, long why_cap)
 /* Resolves a destination FOLDER, creating missing parents inside the
    share. Only ever creates under the share root, because the path is
    relative to it and traversal is inexpressible. */
-static int resolve_folder_creating(const char *rel, FSSpec *spec,
-                                   long *dir_id)
+static int resolve_folder_ex(const char *rel, FSSpec *spec, long *dir_id,
+                             Boolean create)
 {
     NowPrefs prefs;
     char segment[64];
@@ -707,6 +707,8 @@ static int resolve_folder_creating(const char *rel, FSSpec *spec,
                 return kFilesBadPath;  /* a file sits where a folder goes */
             }
             dir = pb.dirInfo.ioDrDirID;
+        } else if (!create) {
+            return kFilesNotFound;
         } else {
             long created = 0;
 
@@ -722,6 +724,18 @@ static int resolve_folder_creating(const char *rel, FSSpec *spec,
     spec->parID = dir;
     spec->name[0] = 0;
     return kFilesOK;
+}
+
+static int resolve_folder_creating(const char *rel, FSSpec *spec, long *dir_id)
+{
+    return resolve_folder_ex(rel, spec, dir_id, true);
+}
+
+/* Same, but a missing folder stays missing: destinations are named by
+   the caller, and inventing one hides their mistake. */
+static int resolve_folder(const char *rel, FSSpec *spec, long *dir_id)
+{
+    return resolve_folder_ex(rel, spec, dir_id, false);
 }
 
 /* One page of the wire's worth, so a 32 KB frame becomes one write. */
@@ -1140,4 +1154,249 @@ void now_files_receive_abort(FileReceive *rx)
     }
     FSpDelete(&rx->temp);
     rx->active = false;
+}
+
+
+/* --- changing the share ------------------------------------------------- */
+
+/* What a trashed item needs to go home again. Session-lived: the far
+   side is told plainly when a token is no longer known, which is better
+   than a restore that silently puts a file somewhere else. */
+enum { kTrashSlots = 64 };
+
+typedef struct {
+    Boolean used;
+    FSSpec trashed;                   /* where it is now */
+    short home_vref;
+    long home_dir;                    /* where it came from */
+    Str63 home_name;
+    char home_rel[256];               /* as the far side named it */
+} TrashRecord;
+
+static TrashRecord g_trash[kTrashSlots];
+static long g_trash_seq;
+
+/* FSpCatMove wants an FSSpec naming the destination folder, which we do
+   not have here — every path we resolve ends at a dirID. PBCatMove takes
+   the dirID directly, so it is the honest primitive for this layer. */
+static OSErr cat_move(const FSSpec *spec, long to_dir)
+{
+    CMovePBRec pb;
+    Str63 name;
+
+    memcpy(name, spec->name, spec->name[0] + 1);
+    memset(&pb, 0, sizeof pb);
+    pb.ioNamePtr = name;
+    pb.ioVRefNum = spec->vRefNum;
+    pb.ioDirID = spec->parID;
+    pb.ioNewName = NULL;
+    pb.ioNewDirID = to_dir;
+    return PBCatMoveSync(&pb);
+}
+
+/* Splits a relative path into its parent folder and leaf name. */
+static int split_rel(const char *rel, char *parent, long parent_cap,
+                     char *leaf, long leaf_cap)
+{
+    const char *colon = NULL;
+    const char *p;
+    long n;
+
+    if (rel == NULL || rel[0] == '\0') {
+        return kFilesBadPath;
+    }
+    for (p = rel; *p != '\0'; ++p) {
+        if (*p == ':') {
+            colon = p;
+        }
+    }
+    if (colon == NULL) {
+        parent[0] = '\0';
+        n = (long)strlen(rel);
+        if (n + 1 > leaf_cap) {
+            return kFilesBadPath;
+        }
+        strcpy(leaf, rel);
+        return kFilesOK;
+    }
+    n = colon - rel;
+    if (n + 1 > parent_cap || (long)strlen(colon + 1) + 1 > leaf_cap) {
+        return kFilesBadPath;
+    }
+    memcpy(parent, rel, (size_t)n);
+    parent[n] = '\0';
+    strcpy(leaf, colon + 1);
+    return leaf[0] == '\0' ? kFilesBadPath : kFilesOK;
+}
+
+int now_files_move(const char *rel, const char *to_rel, Boolean overwrite)
+{
+    FSSpec from, to;
+    char to_parent[224], to_leaf[64];
+    Str255 to_pname;
+    long to_dir;
+    int rc;
+    OSErr err;
+
+    if (rel == NULL || rel[0] == '\0') {
+        return kFilesBadPath;         /* the share root is not movable */
+    }
+    rc = resolve(rel, &from);
+    if (rc != kFilesOK) {
+        return rc;
+    }
+    rc = split_rel(to_rel, to_parent, sizeof to_parent,
+                   to_leaf, sizeof to_leaf);
+    if (rc != kFilesOK || strlen(to_leaf) > 31) {
+        return kFilesBadPath;
+    }
+    rc = resolve_folder(to_parent, &to, &to_dir);
+    if (rc != kFilesOK) {
+        return rc;
+    }
+    CopyCStringToPascal(to_leaf, to_pname);
+
+    /* Something already there is the caller's decision, not ours. */
+    {
+        FSSpec existing;
+
+        if (FSMakeFSSpec(to.vRefNum, to_dir, to_pname, &existing) == noErr) {
+            if (!overwrite) {
+                return kFilesExists;
+            }
+            if (FSpDelete(&existing) != noErr) {
+                return kFilesIOError;
+            }
+        }
+    }
+
+    /* CatMove moves between folders and Rename changes the name; a move
+       that also renames needs both, and the order matters: rename first
+       would collide with the source folder, so move first. */
+    if (from.parID != to_dir) {
+        err = cat_move(&from, to_dir);
+        if (err != noErr) {
+            return err == fnfErr ? kFilesNotFound : kFilesIOError;
+        }
+        from.parID = to_dir;
+    }
+    if (!EqualString(from.name, to_pname, false, false)) {
+        err = FSpRename(&from, to_pname);
+        if (err != noErr) {
+            return kFilesIOError;
+        }
+    }
+    return kFilesOK;
+}
+
+int now_files_trash(const char *rel, long *token)
+{
+    FSSpec spec;
+    short trash_vref;
+    long trash_dir;
+    int rc;
+    int slot;
+    OSErr err;
+
+    *token = 0;
+    if (rel == NULL || rel[0] == '\0' || strlen(rel) >= 256) {
+        return kFilesBadPath;         /* the share root is not deletable */
+    }
+    rc = resolve(rel, &spec);
+    if (rc != kFilesOK) {
+        return rc;
+    }
+    /* The volume's own Trash, so the Finder shows it where a human
+       expects and emptying it is their decision. */
+    if (FindFolder(spec.vRefNum, kTrashFolderType, kCreateFolder,
+                   &trash_vref, &trash_dir) != noErr) {
+        return kFilesIOError;
+    }
+    for (slot = 0; slot < kTrashSlots; ++slot) {
+        if (!g_trash[slot].used) {
+            break;
+        }
+    }
+    if (slot == kTrashSlots) {
+        return kFilesIOError;         /* remembering is part of the job */
+    }
+
+    strcpy(g_trash[slot].home_rel, rel);
+    g_trash[slot].home_vref = spec.vRefNum;
+    g_trash[slot].home_dir = spec.parID;
+    memcpy(g_trash[slot].home_name, spec.name, spec.name[0] + 1);
+
+    err = cat_move(&spec, trash_dir);
+    if (err != noErr) {
+        return err == fnfErr ? kFilesNotFound : kFilesIOError;
+    }
+    g_trash[slot].trashed.vRefNum = trash_vref;
+    g_trash[slot].trashed.parID = trash_dir;
+    memcpy(g_trash[slot].trashed.name, spec.name, spec.name[0] + 1);
+    g_trash[slot].used = true;
+    *token = ++g_trash_seq * kTrashSlots + slot;
+    return kFilesOK;
+}
+
+int now_files_restore(long token, char *out_path, long cap)
+{
+    int slot = (int)(token % kTrashSlots);
+    TrashRecord *rec;
+    OSErr err;
+
+    if (token <= 0 || slot < 0 || slot >= kTrashSlots) {
+        return kFilesNotFound;
+    }
+    rec = &g_trash[slot];
+    if (!rec->used) {
+        return kFilesNotFound;
+    }
+    err = cat_move(&rec->trashed, rec->home_dir);
+    if (err != noErr) {
+        /* Emptied, or moved by hand: say not-found rather than guess. */
+        rec->used = false;
+        return err == fnfErr ? kFilesNotFound : kFilesIOError;
+    }
+    if (!EqualString(rec->trashed.name, rec->home_name, false, false)) {
+        FSSpec moved;
+
+        moved.vRefNum = rec->home_vref;
+        moved.parID = rec->home_dir;
+        memcpy(moved.name, rec->trashed.name, rec->trashed.name[0] + 1);
+        FSpRename(&moved, rec->home_name);
+    }
+    if ((long)strlen(rec->home_rel) < cap) {
+        strcpy(out_path, rec->home_rel);
+    } else {
+        out_path[0] = '\0';
+    }
+    rec->used = false;
+    return kFilesOK;
+}
+
+int now_files_mkdir(const char *rel)
+{
+    FSSpec parent;
+    char parent_rel[224], leaf[64];
+    Str255 pname;
+    FSSpec existing;
+    long dir, created;
+    int rc;
+
+    rc = split_rel(rel, parent_rel, sizeof parent_rel, leaf, sizeof leaf);
+    if (rc != kFilesOK || strlen(leaf) > 31) {
+        return kFilesBadPath;
+    }
+    rc = resolve_folder(parent_rel, &parent, &dir);
+    if (rc != kFilesOK) {
+        return rc;
+    }
+    CopyCStringToPascal(leaf, pname);
+    if (FSMakeFSSpec(parent.vRefNum, dir, pname, &existing) == noErr) {
+        return kFilesExists;
+    }
+    if (DirCreate(parent.vRefNum, dir, pname, &created) != noErr) {
+        return kFilesIOError;
+    }
+    return kFilesOK;
 }

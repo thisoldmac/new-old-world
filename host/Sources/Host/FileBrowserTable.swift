@@ -36,6 +36,9 @@ struct FileBrowserTable: NSViewRepresentable {
             NSSortDescriptor(key: "name", ascending: true),
         ]
         table.setDraggingSourceOperationMask(.copy, forLocal: false)
+        // Inside the browser a drag rearranges the share rather than
+        // copying out of it, so the two directions differ.
+        table.setDraggingSourceOperationMask(.move, forLocal: true)
 
         for (id, title, width) in [
             ("name", "Name", CGFloat(260)), ("kind", "Kind", 120),
@@ -127,6 +130,18 @@ struct FileBrowserTable: NSViewRepresentable {
                 icon.contentTintColor = item.isFolder
                     ? .controlAccentColor : .secondaryLabelColor
                 text.stringValue = item.name
+                if parent.model.renaming == item.id {
+                    // A rename is an edit of the name in place, which is
+                    // how it works everywhere else on this machine.
+                    text.isEditable = true
+                    text.isSelectable = true
+                    text.isBordered = true
+                    text.drawsBackground = true
+                    text.target = self
+                    text.action = #selector(commitRename(_:))
+                    text.identifier = NSUserInterfaceItemIdentifier(item.id)
+                    DispatchQueue.main.async { text.becomeFirstResponder() }
+                }
                 stack.addArrangedSubview(icon)
                 stack.addArrangedSubview(text)
                 if let note = item.conversionNote {
@@ -210,8 +225,48 @@ struct FileBrowserTable: NSViewRepresentable {
                              keyEquivalent: "").target = self
             }
             menu.addItem(.separator())
+            menu.addItem(withTitle: "Rename", action: #selector(renameRow),
+                         keyEquivalent: "").target = self
+            let selected = selectedRows
+            let trashTitle = selected.count > 1
+                && selected.contains(where: { $0.id == row.id })
+                ? "Move \(selected.count) Items to Trash"
+                : "Move to Trash"
+            menu.addItem(withTitle: trashTitle, action: #selector(trashRows),
+                         keyEquivalent: "").target = self
+            menu.addItem(.separator())
+            menu.addItem(withTitle: "New Folder",
+                         action: #selector(newFolder),
+                         keyEquivalent: "").target = self
             menu.addItem(withTitle: "Copy Path", action: #selector(copyPath),
                          keyEquivalent: "").target = self
+        }
+
+        @objc private func renameRow() {
+            if let row = clickedRow { parent.model.renaming = row.id }
+        }
+
+        /// Right-click acts on the clicked row, unless it is part of the
+        /// current selection — then it acts on all of it, like the Finder.
+        @objc private func trashRows() {
+            guard let row = clickedRow else { return }
+            let selected = selectedRows
+            parent.model.requestTrash(
+                selected.contains(where: { $0.id == row.id })
+                    ? selected : [row])
+        }
+
+        @objc private func newFolder() {
+            parent.model.newFolderName = "untitled folder"
+        }
+
+        @objc private func commitRename(_ sender: NSTextField) {
+            let id = sender.identifier?.rawValue
+            parent.model.renaming = nil
+            guard let id, let row = rows.first(where: { $0.id == id }) else {
+                return
+            }
+            parent.model.requestRename(row, to: sender.stringValue)
         }
 
         private var clickedRow: FileRow? {
@@ -307,7 +362,17 @@ struct FileBrowserTable: NSViewRepresentable {
                        proposedRow row: Int,
                        proposedDropOperation operation: NSTableView.DropOperation)
             -> NSDragOperation {
-            guard info.draggingSource == nil else { return [] }
+            if info.draggingSource != nil {
+                // A drag that started here is a move within the share,
+                // and it only means something over a folder — dropping
+                // between rows would be a reorder, which HFS has no
+                // notion of.
+                guard operation == .on, let target = item(at: row),
+                      target.isFolder,
+                      !dragging.contains(where: { $0.id == target.id })
+                else { return [] }
+                return .move
+            }
             // Dropping ON a folder means into it; anywhere else means
             // the folder being browsed.
             if operation == .on, item(at: row)?.isFolder == true {
@@ -317,9 +382,34 @@ struct FileBrowserTable: NSViewRepresentable {
             return .copy
         }
 
+        /// The rows a local drag is carrying. The pasteboard holds file
+        /// promises for the outside world, which say nothing about where
+        /// these rows came from, so the source side remembers.
+        private var dragging: [FileRow] = []
+
+        func tableView(_ tableView: NSTableView,
+                       draggingSession session: NSDraggingSession,
+                       willBeginAt point: NSPoint,
+                       forRowIndexes rowIndexes: IndexSet) {
+            dragging = rowIndexes.compactMap { item(at: $0) }
+        }
+
+        func tableView(_ tableView: NSTableView,
+                       draggingSession session: NSDraggingSession,
+                       endedAt point: NSPoint,
+                       operation: NSDragOperation) {
+            dragging = []
+        }
+
         func tableView(_ tableView: NSTableView, acceptDrop info: NSDraggingInfo,
                        row: Int,
                        dropOperation: NSTableView.DropOperation) -> Bool {
+            if info.draggingSource != nil {
+                guard dropOperation == .on, let target = item(at: row),
+                      target.isFolder, !dragging.isEmpty else { return false }
+                parent.model.requestMove(dragging, toFolder: target.path)
+                return true
+            }
             let urls = (info.draggingPasteboard.readObjects(
                 forClasses: [NSURL.self],
                 options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []

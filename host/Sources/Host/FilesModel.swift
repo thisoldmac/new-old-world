@@ -119,6 +119,28 @@ final class FilesModuleModel: ObservableObject {
 
     @Published var overwritePrompt: OverwritePrompt?
 
+    /// Changing the share: what is being asked about, what has been done
+    /// this session, and whether a change is in flight. See FileChanges.
+    @Published var pendingChange: PendingChange?
+    @Published var history: [FileChange] = []
+    @Published var isChanging = false
+
+    /// Renaming happens in the row itself; this is which row is open for
+    /// editing, so the browser and the module agree on one at a time.
+    @Published var renaming: FileRow.ID?
+
+    /// A folder being named before it exists, so it is a sheet rather
+    /// than a row that is not there yet.
+    @Published var newFolderName: String?
+
+    func reportChangeFailure(_ message: String) {
+        lastError = message
+    }
+
+    func reportChangeOK() {
+        lastError = nil
+    }
+
     /// Inbound text conversion is destructive in a way downloading is
     /// not — a file that only looked like text comes out changed — so it
     /// can be switched off.
@@ -166,7 +188,7 @@ final class FilesModuleModel: ObservableObject {
         static let convertText = "files.convertText"
     }
 
-    private let listener: GuestListener
+    internal let listener: GuestListener
     private let defaults: UserDefaults
     private var progressWatch: AnyCancellable?
     private var pageCursor: Int?

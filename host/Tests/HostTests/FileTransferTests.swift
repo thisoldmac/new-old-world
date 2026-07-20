@@ -88,6 +88,109 @@ final class FileWireTests: XCTestCase {
         XCTAssertEqual(pages[0].cursor, 3)
     }
 
+    func testMoveCarriesTheWholeDestination() async throws {
+        let guest = try await connectedGuest()
+        var answer: FileResult?
+
+        listener.moveFile(from: "Lab:Notes", to: "Lab:Old Notes") { result in
+            if case .success(let r) = result { answer = r }
+        }
+        var moveId: Int?
+        try await waitUntil("file.move") {
+            for message in guest.received {
+                if case .fileMove(let move) = message {
+                    moveId = move.id
+                    // A rename is a move: one message, whole destination.
+                    return move.path == "Lab:Notes"
+                        && move.toPath == "Lab:Old Notes"
+                }
+            }
+            return false
+        }
+        try guest.send(.fileResult(FileResult(
+            id: try XCTUnwrap(moveId), ok: true, path: "Lab:Old Notes")))
+        try await waitUntil("result") { answer != nil }
+        XCTAssertEqual(answer?.path, "Lab:Old Notes")
+    }
+
+    func testTrashHandsBackTheTokenThatUndoesIt() async throws {
+        let guest = try await connectedGuest()
+        var answer: FileResult?
+
+        listener.trashFile(path: "Lab:Notes") { result in
+            if case .success(let r) = result { answer = r }
+        }
+        var trashId: Int?
+        try await waitUntil("file.trash") {
+            for message in guest.received {
+                if case .fileTrash(let trash) = message {
+                    trashId = trash.id
+                    return true
+                }
+            }
+            return false
+        }
+        try guest.send(.fileResult(FileResult(
+            id: try XCTUnwrap(trashId), ok: true, path: "Lab:Notes",
+            token: 7)))
+        try await waitUntil("result") { answer != nil }
+        XCTAssertEqual(answer?.token, 7)
+    }
+
+    /// A token outlives nothing: when the guest no longer knows it, the
+    /// failure has to reach the caller so the history can drop the entry
+    /// instead of offering an undo that will never work.
+    func testForgottenTokenFailsRatherThanHangs() async throws {
+        let guest = try await connectedGuest()
+        var failure: GuestListener.FileFailure?
+
+        listener.restoreFile(token: 7) { result in
+            if case .failure(let f) = result { failure = f }
+        }
+        var restoreId: Int?
+        try await waitUntil("file.restore") {
+            for message in guest.received {
+                if case .fileRestore(let restore) = message {
+                    restoreId = restore.id
+                    return restore.token == 7
+                }
+            }
+            return false
+        }
+        try guest.send(.fileResult(FileResult(
+            id: try XCTUnwrap(restoreId), ok: false, path: nil, token: nil,
+            code: "unknown-token",
+            reason: "that item is no longer in the Trash")))
+        try await waitUntil("failure") { failure != nil }
+        XCTAssertEqual(failure?.code, "unknown-token")
+    }
+
+    /// An older guest answers an unknown message with file.refuse rather
+    /// than file.result. That still has to settle the request.
+    func testRefusalAlsoSettlesAChange() async throws {
+        let guest = try await connectedGuest()
+        var failure: GuestListener.FileFailure?
+
+        listener.makeFolder(path: "Lab:New") { result in
+            if case .failure(let f) = result { failure = f }
+        }
+        var mkdirId: Int?
+        try await waitUntil("file.mkdir") {
+            for message in guest.received {
+                if case .fileMkdir(let mkdir) = message {
+                    mkdirId = mkdir.id
+                    return true
+                }
+            }
+            return false
+        }
+        try guest.send(.fileRefuse(FileRefuse(
+            id: try XCTUnwrap(mkdirId), code: "exists",
+            reason: "something is already there")))
+        try await waitUntil("failure") { failure != nil }
+        XCTAssertEqual(failure?.code, "exists")
+    }
+
     func testRefusalFailsTheListing() async throws {
         let guest = try await connectedGuest()
         var failure: GuestListener.FileFailure?

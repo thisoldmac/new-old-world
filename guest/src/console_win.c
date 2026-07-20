@@ -136,6 +136,25 @@ static void help_for(const char *name)
         append_line("  lists the root itself. The root is chosen in");
         append_line("  File > File Sharing... and defaults to the");
         append_line("  startup volume; nothing outside it is reachable.");
+    } else if (strcmp(name, "mv") == 0) {
+        append_line("mv - move or rename something in the shared files");
+        append_line("  Usage: mv <path> <new path>");
+        append_line("  Both paths are relative to the share root. The");
+        append_line("  second is the whole destination including the new");
+        append_line("  name, so a rename is \"mv Notes Notes Old\". The");
+        append_line("  destination folder must already exist, and an");
+        append_line("  existing item is never replaced.");
+    } else if (strcmp(name, "trash") == 0) {
+        append_line("trash - move something to the Trash");
+        append_line("  Usage: trash <path>");
+        append_line("  The item goes to this volume's Trash, so it can be");
+        append_line("  dragged back out until the Trash is emptied. It is");
+        append_line("  not erased.");
+    } else if (strcmp(name, "mkdir") == 0) {
+        append_line("mkdir - make a folder in the shared files");
+        append_line("  Usage: mkdir <path>");
+        append_line("  The enclosing folder must already exist. Names are");
+        append_line("  at most 31 characters and cannot contain a colon.");
     } else if (strcmp(name, "gestalt") == 0) {
         append_line("gestalt - report this Mac's identity");
         append_line("  Usage: gestalt [group] [--save]");
@@ -160,6 +179,9 @@ static void help_list(void)
     append_line("  screenshot  capture the screen (--depth N, --bands N,");
     append_line("              --no-save)");
     append_line("  ls          list a shared folder (ls [path])");
+    append_line("  mv          move or rename (mv <path> <new path>)");
+    append_line("  trash       move to the Trash (trash <path>)");
+    append_line("  mkdir       make a folder (mkdir <path>)");
     append_line("  vprobe      measure VRAM read cost by method");
     append_line("  help        show this list (\"help <cmd>\" for details)");
     append_line("  clear       clear the console scrollback");
@@ -328,6 +350,7 @@ static void run_command(const char *input)
     char name[48];
     char tok[48];
     char target[48];
+    char target2[48];
     char result[512];
     char message[96];
     const char *p;
@@ -349,6 +372,7 @@ static void run_command(const char *input)
         return;
     }
     target[0] = '\0';
+    target2[0] = '\0';
     for (;;) {
         p = next_token(p, tok, sizeof tok);
         if (tok[0] == '\0') {
@@ -387,6 +411,10 @@ static void run_command(const char *input)
         } else if (target[0] == '\0' && tok[0] != '-') {
             strncpy(target, tok, sizeof target - 1);
             target[sizeof target - 1] = '\0';
+        } else if (target2[0] == '\0' && tok[0] != '-') {
+            /* mv is the one verb that names two things. */
+            strncpy(target2, tok, sizeof target2 - 1);
+            target2[sizeof target2 - 1] = '\0';
         }
     }
 
@@ -430,6 +458,38 @@ static void run_command(const char *input)
                      rows[vi].label, rows[vi].value);
             append_line(line);
         }
+        return;
+    }
+    if (strcmp(name, "mv") == 0 || strcmp(name, "trash") == 0
+        || strcmp(name, "mkdir") == 0) {
+        int rc;
+
+        if (target[0] == '\0'
+            || (strcmp(name, "mv") == 0 && target2[0] == '\0')) {
+            snprintf(line, sizeof line, "%s: see \"help %s\"", name, name);
+            append_line(line);
+            return;
+        }
+        if (strcmp(name, "mv") == 0) {
+            rc = now_files_move(target, target2, false);
+        } else if (strcmp(name, "trash") == 0) {
+            long token = 0;
+            rc = now_files_trash(target, &token);
+        } else {
+            rc = now_files_mkdir(target);
+        }
+        if (rc != kFilesOK) {
+            snprintf(line, sizeof line, "%s: %s", name,
+                     rc == kFilesBadPath
+                         ? "bad path (no \"::\", segments <= 31 chars)"
+                     : rc == kFilesNotFound ? "no such item in the share"
+                     : rc == kFilesExists ? "something is already there"
+                     : "the File Manager refused");
+            append_line(line);
+            return;
+        }
+        snprintf(line, sizeof line, "%s: done", name);
+        append_line(line);
         return;
     }
     if (strcmp(name, "ls") == 0) {

@@ -63,6 +63,27 @@ struct FilesModuleView: View {
                  + (prompt.remaining > 0
                     ? " \(prompt.remaining) more waiting." : ""))
         }
+        // Changing the share is asked about before it happens. This is a
+        // question, not a failure, so it is a sheet on the window rather
+        // than an alert.
+        .sheet(item: $model.pendingChange) { pending in
+            ChangeConfirmation(
+                pending: pending,
+                confirm: { model.commitPendingChange() },
+                cancel: { model.cancelPendingChange() })
+        }
+        .sheet(isPresented: Binding(
+            get: { model.newFolderName != nil },
+            set: { if !$0 { model.newFolderName = nil } })) {
+            NewFolderSheet(
+                name: Binding(get: { model.newFolderName ?? "" },
+                              set: { model.newFolderName = $0 }),
+                create: { name in
+                    model.newFolderName = nil
+                    model.createFolder(named: name)
+                },
+                cancel: { model.newFolderName = nil })
+        }
     }
 
     private var header: some View {
@@ -133,6 +154,40 @@ struct FilesModuleView: View {
                 .menuStyle(.borderlessButton)
                 .fixedSize()
             }
+            Button {
+                model.newFolderName = "untitled folder"
+            } label: {
+                Label("New Folder", systemImage: "folder.badge.plus")
+            }
+            .labelStyle(.iconOnly)
+            .disabled(!model.canBrowse || model.isChanging)
+            .help("New folder here")
+
+            if let title = model.undoTitle {
+                // The button undoes the last change; the menu is what
+                // this window has done, most recent first, so "what did
+                // I just do" has an answer that is not memory.
+                Menu {
+                    Button(title) { model.undoLastChange() }
+                    Divider()
+                    Section("This session") {
+                        ForEach(model.history.reversed()) { change in
+                            Text(change.summary)
+                        }
+                    }
+                    Divider()
+                    Button("Clear History") { model.clearHistory() }
+                } label: {
+                    Image(systemName: "arrow.uturn.backward")
+                } primaryAction: {
+                    model.undoLastChange()
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .disabled(model.isChanging)
+                .help(title)
+            }
+
             Button {
                 chooseFileToSend()
             } label: {
@@ -360,5 +415,76 @@ private struct FolderDropTarget: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+
+/// The question asked before anything in the share changes. Two buttons,
+/// the safe one default: a confirmation that is easy to dismiss without
+/// reading is not a confirmation.
+private struct ChangeConfirmation: View {
+    let pending: FilesModuleModel.PendingChange
+    let confirm: () -> Void
+    let cancel: () -> Void
+
+    private var isDestructive: Bool {
+        if case .trash = pending.kind { return true }
+        return false
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 14) {
+                Image(systemName: isDestructive ? "trash" : "arrow.right.doc.on.clipboard")
+                    .font(.system(size: 28))
+                    .foregroundStyle(isDestructive ? Color.red : Color.accentColor)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(pending.title).font(.headline)
+                    Text(pending.detail)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            HStack {
+                Spacer()
+                Button("Cancel", action: cancel)
+                    .keyboardShortcut(.cancelAction)
+                Button(pending.confirmLabel, action: confirm)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(22)
+        .frame(width: 400)
+    }
+}
+
+private struct NewFolderSheet: View {
+    @Binding var name: String
+    let create: (String) -> Void
+    let cancel: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Name of the new folder").font(.headline)
+            TextField("untitled folder", text: $name)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit { create(name) }
+            Text("Up to \(FileChangeNames.maxNameLength) characters, and no "
+                 + "colons.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                Button("Cancel", action: cancel)
+                    .keyboardShortcut(.cancelAction)
+                Button("Create") { create(name) }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(name.trimmingCharacters(in: .whitespaces)
+                                  .isEmpty)
+            }
+        }
+        .padding(22)
+        .frame(width: 360)
     }
 }

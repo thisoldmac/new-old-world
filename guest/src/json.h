@@ -21,6 +21,10 @@ int now_json_find_string(const char *json, const char *key,
    A present but non-numeric value parses as 0 (strtol semantics). */
 long now_json_find_int(const char *json, const char *key, long fallback);
 
+/* Returns the boolean value of "key", or fallback if the key is absent.
+   Only a literal true reads as true; anything else is false. */
+int now_json_find_bool(const char *json, const char *key, int fallback);
+
 /* Returns 1 if the message's "type" string equals type. */
 int now_json_type_is(const char *json, const char *type);
 

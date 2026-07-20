@@ -337,3 +337,75 @@ in from the Finder, then what only matters once people use it:
 multi-select operations, progress inside the browser, and errors that do
 not interrupt. Genuinely optional — everything works without it, which
 makes it the right place to stop if the arc needs to end.
+
+## Changing the share from the host
+
+Browsing was read-only, which made the browser a viewer rather than a
+place to work. Move, rename, delete and new-folder close that, and the
+whole design follows from three decisions.
+
+**Delete means the Trash, not unlink.** `FSpDelete` is one call and no
+way back; `PBCatMove` into the volume's Trash folder is what the Finder
+does, what a person expects to be able to reverse, and the only honest
+basis for an undo. Emptying it stays a human's decision on that machine.
+
+**Undoing a delete needs a token, not a path.** The Trash sits outside
+the share, so a share-relative path cannot name where the item went. The
+guest keeps a small table of trashed items — where each came from — and
+returns an opaque token. The token is meaningful only while that guest
+process runs. That is a real limitation, and it is stated rather than
+papered over: a restarted guest answers `unknown-token`, the host drops
+the entry from its history and says so. Move-undo, which is expressed
+entirely in share-relative paths, keeps working across a restart.
+
+**The host owns the history, the guest owns the mechanism.** The guest
+performs one change and answers; it holds no notion of a session, an
+order, or an undo stack. The host stacks the reversals, which is what
+lets a multi-select move fail on item three and leave the first two
+undoable individually.
+
+### Shape on the wire
+
+Four requests, one answer type. `file.move` carries the entire
+destination path including the new name — a rename and a move are the
+same File Manager operation, and splitting them into two messages would
+have invented a distinction the file system does not have. Missing
+parent folders are **not** created: a typo in a folder name should fail
+rather than quietly build the wrong tree. `file.trash` returns the
+token. `file.restore` takes one. `file.mkdir` makes one folder. All four
+answer `file.result`, and an older guest that does not know them answers
+`file.refuse`, which settles the request just the same.
+
+| Request | Answers with | Undone by |
+| --- | --- | --- |
+| `file.move` | `file.result` | `file.move` back |
+| `file.trash` | `file.result` + token | `file.restore` |
+| `file.mkdir` | `file.result` | `file.trash` |
+| `file.restore` | `file.result` | — |
+
+### In the app
+
+Renaming is an edit of the name in the row. Moving is a drag onto a
+folder row, which is why local drags are `.move` while drags out to the
+Finder stay `.copy`. Deleting and moving are confirmed in a sheet that
+says in words what is about to happen and to how many items — a
+confirmation nobody reads is not a confirmation, so the safe button is
+the default and the wording names the items. Renaming is confirmed too;
+it is cheap to undo but easy to trigger by accident from a stray
+double-click.
+
+The Undo control is a split button: pressing it reverses the last
+change, and its menu lists what this window has done this session. The
+history is capped at 50 entries and cleared when the app quits — it is a
+record of this window's work, not a journal of the volume.
+
+Console parity: `mv <path> <new path>`, `trash <path>`, `mkdir <path>`,
+each documented in `help`.
+
+### Not done here
+
+Copy (as opposed to move) within the share, and moving into a folder by
+any route other than a drag — no "Move to…" picker yet. Undo is
+last-first; reverting one change out of the middle of the stack would
+need the guest to say whether the later ones still hold, which it
+currently has no way to know.

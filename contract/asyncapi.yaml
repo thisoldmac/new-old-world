@@ -105,6 +105,11 @@ channels:
       fileBegin: { $ref: "#/components/messages/fileBegin" }
       fileEnd: { $ref: "#/components/messages/fileEnd" }
       fileCancel: { $ref: "#/components/messages/fileCancel" }
+      fileMove: { $ref: "#/components/messages/fileMove" }
+      fileTrash: { $ref: "#/components/messages/fileTrash" }
+      fileRestore: { $ref: "#/components/messages/fileRestore" }
+      fileMkdir: { $ref: "#/components/messages/fileMkdir" }
+      fileResult: { $ref: "#/components/messages/fileResult" }
       captureOffer: { $ref: "#/components/messages/captureOffer" }
       captureAccept: { $ref: "#/components/messages/captureAccept" }
       captureRefuse: { $ref: "#/components/messages/captureRefuse" }
@@ -215,6 +220,26 @@ operations:
       actually taken, with file.progress — the sender's own "handed to
       the socket" count is not evidence the far side received anything,
       and on a slow link it runs minutes ahead of the truth.
+  hostChangesFiles:
+    action: receive
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/fileMove"
+      - $ref: "#/channels/control/messages/fileTrash"
+      - $ref: "#/channels/control/messages/fileRestore"
+      - $ref: "#/channels/control/messages/fileMkdir"
+    description: >
+      Changing what is in the share, rather than what flows across it.
+      Every one of these is reversible, which is the point: deleting
+      moves an item to the Trash rather than erasing it, so the inverse
+      is a move back, and the answer carries what the inverse needs.
+      A move or a rename inverts through ordinary share-relative paths;
+      a trashed item does NOT, because the Trash is outside the share
+      and therefore has no path this contract can express — so
+      file.trash answers with an opaque token that file.restore takes.
+      The token is meaningful only to the guest that issued it and only
+      while it runs; a guest that has restarted refuses it, which is
+      honest rather than surprising.
   guestServesFiles:
     action: send
     channel: { $ref: "#/channels/control" }
@@ -328,6 +353,21 @@ components:
     fileEnd:
       name: file.end
       payload: { $ref: "#/components/schemas/FileEnd" }
+    fileMove:
+      name: file.move
+      payload: { $ref: "#/components/schemas/FileMove" }
+    fileTrash:
+      name: file.trash
+      payload: { $ref: "#/components/schemas/FileTrash" }
+    fileRestore:
+      name: file.restore
+      payload: { $ref: "#/components/schemas/FileRestore" }
+    fileMkdir:
+      name: file.mkdir
+      payload: { $ref: "#/components/schemas/FileMkdir" }
+    fileResult:
+      name: file.result
+      payload: { $ref: "#/components/schemas/FileResult" }
     fileCancel:
       name: file.cancel
       payload: { $ref: "#/components/schemas/FileCancel" }
@@ -701,6 +741,71 @@ components:
         transfer: { type: integer }
         ok: { type: boolean }
         sendMs: { type: integer }
+    FileMove:
+      type: object
+      required: [type, id, path, toPath]
+      additionalProperties: false
+      properties:
+        type: { const: file.move }
+        id: { type: integer }
+        path:
+          type: string
+          description: The item now, relative to the share root.
+        toPath:
+          type: string
+          description: >
+            Where it should be, relative to the share root, including
+            its name — so a rename and a move are the same operation.
+            Missing parent folders are NOT created: moving into a
+            folder that is not there is a mistake, not an instruction.
+        overwrite: { type: boolean }
+    FileTrash:
+      type: object
+      required: [type, id, path]
+      additionalProperties: false
+      properties:
+        type: { const: file.trash }
+        id: { type: integer }
+        path: { type: string }
+    FileRestore:
+      type: object
+      required: [type, id, token]
+      additionalProperties: false
+      properties:
+        type: { const: file.restore }
+        id: { type: integer }
+        token:
+          type: integer
+          description: >
+            From a file.result answering file.trash. Valid only on the
+            guest that issued it, and only while it runs.
+    FileMkdir:
+      type: object
+      required: [type, id, path]
+      additionalProperties: false
+      properties:
+        type: { const: file.mkdir }
+        id: { type: integer }
+        path:
+          type: string
+          description: The folder to create, relative to the share root.
+    FileResult:
+      type: object
+      required: [type, id, ok]
+      additionalProperties: false
+      properties:
+        type: { const: file.result }
+        id: { type: integer }
+        ok: { type: boolean }
+        path:
+          type: string
+          description: Where the item ended up, when that is expressible.
+        token:
+          type: integer
+          description: Restores a trashed item; see file.restore.
+        code:
+          enum: [exists, bad-path, not-found, io-error, busy, unknown-token]
+        reason: { type: string }
     FileCancel:
       type: object
       required: [type, transfer]

@@ -1199,6 +1199,145 @@ static void file_refuse_rc(long id, int rc)
     }
 }
 
+/* --- changing the share -------------------------------------------------
+   Every one of these answers with file.result, success or not, because
+   the far side is holding an undo stack and a silent failure would
+   leave it believing something it can reverse. */
+
+static const char *files_code(int rc)
+{
+    switch (rc) {
+    case kFilesBadPath:   return "bad-path";
+    case kFilesNotFound:  return "not-found";
+    case kFilesNotAFolder:return "bad-path";
+    case kFilesExists:    return "exists";
+    default:              return "io-error";
+    }
+}
+
+static const char *files_reason(int rc)
+{
+    switch (rc) {
+    case kFilesBadPath:   return "that path leaves the shared folder";
+    case kFilesNotFound:  return "no such item in the shared folder";
+    case kFilesNotAFolder:return "not a folder";
+    case kFilesExists:    return "something is already there";
+    default:              return "the File Manager refused";
+    }
+}
+
+static void file_result_fail(long id, int rc)
+{
+    char json[256];
+
+    snprintf(json, sizeof json,
+             "{\"type\":\"file.result\",\"id\":%ld,\"ok\":false,"
+             "\"code\":\"%s\",\"reason\":\"%s\"}",
+             id, files_code(rc), files_reason(rc));
+    send_control(json);
+}
+
+static void file_result_ok(long id, const char *path, long token)
+{
+    char json[512];
+    char esc[300];
+    long pos;
+
+    now_json_escape(path != NULL ? path : "", esc, sizeof esc);
+    pos = snprintf(json, sizeof json,
+                   "{\"type\":\"file.result\",\"id\":%ld,\"ok\":true,"
+                   "\"path\":\"%s\"", id, esc);
+    if (token != 0) {
+        pos += snprintf(json + pos, sizeof json - (size_t)pos,
+                        ",\"token\":%ld", token);
+    }
+    snprintf(json + pos, sizeof json - (size_t)pos, "}");
+    send_control(json);
+}
+
+static void serve_file_move(const char *request)
+{
+    char from[224], to[224];
+    long id = now_json_find_int(request, "id", 0);
+    Boolean overwrite = now_json_find_bool(request, "overwrite", false);
+    int rc;
+
+    from[0] = to[0] = '\0';
+    now_json_find_string(request, "path", from, sizeof from);
+    now_json_find_string(request, "toPath", to, sizeof to);
+    rc = now_files_move(from, to, overwrite);
+    if (rc != kFilesOK) {
+        file_result_fail(id, rc);
+        return;
+    }
+    file_result_ok(id, to, 0);
+    note_shot("Item moved");
+}
+
+static void serve_file_trash(const char *request)
+{
+    char path[224];
+    long id = now_json_find_int(request, "id", 0);
+    long token = 0;
+    int rc;
+
+    path[0] = '\0';
+    now_json_find_string(request, "path", path, sizeof path);
+    rc = now_files_trash(path, &token);
+    if (rc != kFilesOK) {
+        file_result_fail(id, rc);
+        return;
+    }
+    file_result_ok(id, path, token);
+    note_shot("Item moved to the Trash");
+}
+
+static void serve_file_restore(const char *request)
+{
+    char path[224];
+    long id = now_json_find_int(request, "id", 0);
+    long token = now_json_find_int(request, "token", 0);
+    int rc;
+
+    path[0] = '\0';
+    rc = now_files_restore(token, path, sizeof path);
+    if (rc != kFilesOK) {
+        /* An unknown token is its own answer: the item may have been
+           emptied from the Trash, or this app restarted since. */
+        if (rc == kFilesNotFound) {
+            char json[256];
+
+            snprintf(json, sizeof json,
+                     "{\"type\":\"file.result\",\"id\":%ld,\"ok\":false,"
+                     "\"code\":\"unknown-token\",\"reason\":"
+                     "\"that item is no longer in the Trash\"}", id);
+            send_control(json);
+            return;
+        }
+        file_result_fail(id, rc);
+        return;
+    }
+    file_result_ok(id, path, 0);
+    note_shot("Item put back");
+}
+
+static void serve_file_mkdir(const char *request)
+{
+    char path[224];
+    long id = now_json_find_int(request, "id", 0);
+    int rc;
+
+    path[0] = '\0';
+    now_json_find_string(request, "path", path, sizeof path);
+    rc = now_files_mkdir(path);
+    if (rc != kFilesOK) {
+        file_result_fail(id, rc);
+        return;
+    }
+    file_result_ok(id, path, 0);
+    note_shot("Folder created");
+}
+
 /* --- receiving a put ----------------------------------------------------
    The host offers, the guest answers without prompting anyone, and the
    bytes then stream to disk as they arrive. Nothing is buffered: the
@@ -2279,6 +2418,22 @@ static int handle_frame(const char *reply)
         } else {
             xfer_abort();
         }
+        return 1;
+    }
+    if (now_json_type_is(reply, "file.move")) {
+        serve_file_move(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "file.trash")) {
+        serve_file_trash(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "file.restore")) {
+        serve_file_restore(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "file.mkdir")) {
+        serve_file_mkdir(reply);
         return 1;
     }
     if (now_json_type_is(reply, "file.offer")) {
