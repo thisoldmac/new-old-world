@@ -8,6 +8,7 @@
 
 #include "machine_names.h"
 #include "capture.h"
+#include "json.h"
 #include "prefs.h"
 #include "screenshot.h"
 
@@ -321,45 +322,6 @@ static void run_gestalt(long id, char *out, long cap)
     }
 }
 
-/* JSON permits whitespace around the colon; a pretty-printing peer must
-   not have its args silently ignored (mirrors wire.c's json_value). */
-static int json_arg_string(const char *json, const char *key,
-                           char *out_s, long out_cap)
-{
-    char pattern[48];
-    const char *p;
-    long n = 0;
-
-    if (json == NULL) {
-        return 0;
-    }
-    snprintf(pattern, sizeof pattern, "\"%s\"", key);
-    p = strstr(json, pattern);
-    if (p == NULL) {
-        return 0;
-    }
-    p += strlen(pattern);
-    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') {
-        ++p;
-    }
-    if (*p != ':') {
-        return 0;
-    }
-    ++p;
-    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') {
-        ++p;
-    }
-    if (*p != '"') {
-        return 0;
-    }
-    ++p;
-    while (*p != '\0' && *p != '"' && n + 1 < out_cap) {
-        out_s[n++] = *p++;
-    }
-    out_s[n] = '\0';
-    return 1;
-}
-
 static void run_screenshot(const char *request_json, long id,
                            char *out, long cap)
 {
@@ -374,19 +336,19 @@ static void run_screenshot(const char *request_json, long id,
 
     now_prefs_load(&prefs);
     depth = prefs.shot_depth;
-    if (json_arg_string(request_json, "depth", value, sizeof value)) {
+    if (now_json_find_string(request_json, "depth", value, sizeof value)) {
         long d = strtol(value, NULL, 10);
         if (capture_depth_is_supported((short)d)) {
             depth = (short)d;
         }
     }
-    if (json_arg_string(request_json, "bands", value, sizeof value)) {
+    if (now_json_find_string(request_json, "bands", value, sizeof value)) {
         long b = strtol(value, NULL, 10);
         if (b >= 1 && b <= kCaptureMaxBands) {
             bands = (short)b;
         }
     }
-    if (json_arg_string(request_json, "save", value, sizeof value)
+    if (now_json_find_string(request_json, "save", value, sizeof value)
         && strcmp(value, "false") == 0) {
         save = false;
     }
