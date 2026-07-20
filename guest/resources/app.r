@@ -114,6 +114,24 @@ resource 'DITL' (300) {
 };
 
 
+resource 'ALRT' (201) {
+    {80, 80, 210, 500},
+    201,
+    { OK, visible, silent, OK, visible, silent,
+      OK, visible, silent, OK, visible, silent },
+    alertPositionMainScreen
+};
+
+resource 'DITL' (201) {
+    {
+        /* 1 Choose */ {96, 300, 116, 400},
+            Button { enabled, "Choose..." };
+        /* 2 Done   */ {96, 190, 116, 280}, Button { enabled, "Done" };
+        /* 3 */ {12, 20, 44, 400}, StaticText { disabled, "^0" };
+        /* 4 */ {52, 20, 84, 400}, StaticText { disabled, "^1" };
+    }
+};
+
 resource 'MENU' (130) {
     130, textMenuProc, allEnabled, enabled, "Depth",
     {

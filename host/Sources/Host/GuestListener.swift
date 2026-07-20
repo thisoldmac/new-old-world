@@ -150,6 +150,93 @@ final class GuestListener: ObservableObject {
         var interlace: Bool?
     }
 
+    // MARK: - Files
+
+    struct FileFailure: Error {
+        var code: String
+        var message: String
+    }
+
+    /// One pulled file, still in guest form: `container` says whether the
+    /// bytes are a plain data fork or MacBinary. Conversion is the
+    /// caller's job (see FileConverter).
+    struct FileDelivery {
+        var name: String
+        var container: String
+        var fileType: String?
+        var creator: String?
+        var modified: Int?
+        var bytes: Data
+        var transferMs: Int
+    }
+
+    /// Lists one page of a folder in the guest's share. Paths are
+    /// relative to the guest's share root; "" is the root.
+    func listFiles(path: String, cursor: Int? = nil,
+                   completion: @escaping (Result<FileListing,
+                                                 FileFailure>) -> Void) {
+        guard let session, case .connected = state else {
+            completion(.failure(.init(code: "disconnected",
+                                      message: "No Mac is connected")))
+            return
+        }
+        let id = nextCommandId
+        nextCommandId += 1
+        pendingListings[id] = completion
+        session.sendFileList(id: id, path: path, cursor: cursor)
+    }
+
+    /// Pulls a file. `container` nil = the guest's fork rule decides.
+    func getFile(path: String, container: String? = nil,
+                 completion: @escaping (Result<FileDelivery,
+                                               FileFailure>) -> Void) {
+        guard let session, case .connected = state else {
+            completion(.failure(.init(code: "disconnected",
+                                      message: "No Mac is connected")))
+            return
+        }
+        let id = nextCommandId
+        nextCommandId += 1
+        pendingFile = completion
+        session.sendFileGet(id: id, path: path, container: container)
+    }
+
+    /// Abandons the file transfer in flight; the guest drains to the
+    /// frame boundary and ends it, same as a capture cancel.
+    func cancelFile() {
+        session?.cancelFile()
+    }
+
+    private var pendingListings:
+        [Int: (Result<FileListing, FileFailure>) -> Void] = [:]
+    private var pendingFile:
+        ((Result<FileDelivery, FileFailure>) -> Void)?
+
+    fileprivate func resolveListing(_ listing: FileListing) {
+        pendingListings.removeValue(forKey: listing.id)?(.success(listing))
+    }
+
+    fileprivate func failFile(_ refuse: FileRefuse) {
+        let failure = FileFailure(code: refuse.code,
+                                  message: refuse.reason ?? refuse.code)
+        if let completion = pendingListings.removeValue(forKey: refuse.id) {
+            completion(.failure(failure))
+            return
+        }
+        let completion = pendingFile
+        pendingFile = nil
+        captureProgress = nil
+        completion?(.failure(failure))
+    }
+
+    fileprivate func deliverFile(
+        _ result: Result<FileDelivery, FileFailure>) {
+        let completion = pendingFile
+        pendingFile = nil
+        captureProgress = nil
+        completion?(result)
+    }
+
     /// Asks the guest for a screen capture. Completion fires with the decoded
     /// image plus the measurements, or a human-readable failure.
     func requestCapture(depth: Int?, tuning: CaptureTuning = .init(),
@@ -353,6 +440,15 @@ final class GuestListener: ObservableObject {
             onStreamRequest: { [weak self] request in
                 self?.guestRequestedStream(request)
             },
+            onFileListing: { [weak self] listing in
+                self?.resolveListing(listing)
+            },
+            onFileRefuse: { [weak self] refuse in
+                self?.failFile(refuse)
+            },
+            onFileDelivery: { [weak self] result in
+                self?.deliverFile(result)
+            },
             onClosed: { [weak self] closedSession, reason in
                 guard let self else { return }
                 self.pending.removeAll { $0 === closedSession }
@@ -395,6 +491,10 @@ final class Session {
     private let onStreamFrame: (GuestListener.CaptureDelivery) -> Void
     private let onStreamStopped: (StreamStopped) -> Void
     private let onStreamRequest: (StreamRequest) -> Void
+    private let onFileListing: (FileListing) -> Void
+    private let onFileRefuse: (FileRefuse) -> Void
+    private let onFileDelivery:
+        (Result<GuestListener.FileDelivery, GuestListener.FileFailure>) -> Void
     private var streamId: Int?
     private let onClosed: (Session, String) -> Void
 
@@ -412,6 +512,10 @@ final class Session {
     /// that begins without it is a guest-initiated push.
     private var solicitedId: Int?
     private var acceptedOfferId: Int?
+    /// In-flight file pull: the begin that announced it, and its bytes.
+    private var fileBegin: FileBegin?
+    private var fileBuffer: [UInt8] = []
+    private var fileStart = Date()
     private var health: GuestListener.SessionHealth?
 
     private let decoder = FrameDecoder()
@@ -435,6 +539,11 @@ final class Session {
          onStreamFrame: @escaping (GuestListener.CaptureDelivery) -> Void,
          onStreamStopped: @escaping (StreamStopped) -> Void,
          onStreamRequest: @escaping (StreamRequest) -> Void,
+         onFileListing: @escaping (FileListing) -> Void,
+         onFileRefuse: @escaping (FileRefuse) -> Void,
+         onFileDelivery: @escaping (Result<GuestListener.FileDelivery,
+                                           GuestListener.FileFailure>)
+             -> Void,
          onClosed: @escaping (Session, String) -> Void) {
         self.connection = connection
         self.identity = identity
@@ -450,6 +559,9 @@ final class Session {
         self.onStreamFrame = onStreamFrame
         self.onStreamStopped = onStreamStopped
         self.onStreamRequest = onStreamRequest
+        self.onFileListing = onFileListing
+        self.onFileRefuse = onFileRefuse
+        self.onFileDelivery = onFileDelivery
         self.onClosed = onClosed
     }
 
@@ -514,8 +626,14 @@ final class Session {
             case .control:
                 handleControl(frame.payload)
             case .bulk:
+                if let begin = fileBegin {
+                    fileBuffer.append(contentsOf: frame.payload)
+                    onCaptureProgress(.init(received: fileBuffer.count,
+                                            expected: begin.bytes))
+                    break
+                }
                 guard captureBegin != nil else {
-                    protocolError("bulk frame with no capture in flight")
+                    protocolError("bulk frame with no transfer in flight")
                     return
                 }
                 captureBuffer.append(contentsOf: frame.payload)
@@ -550,6 +668,20 @@ final class Session {
             touchHealth(pingsDelta: 1)
         case .commandResult(let result):
             onCommandResult(result)
+        case .fileListing(let listing):
+            onFileListing(listing)
+        case .fileRefuse(let refuse):
+            fileBegin = nil
+            fileBuffer = []
+            onFileRefuse(refuse)
+        case .fileBegin(let begin):
+            fileBegin = begin
+            fileBuffer = []
+            fileBuffer.reserveCapacity(begin.bytes)
+            fileStart = Date()
+            onCaptureProgress(.init(received: 0, expected: begin.bytes))
+        case .fileEnd(let end):
+            finishFile(end)
         case .streamRequest(let request):
             onStreamRequest(request)
         case .streamStopped(let stopped):
@@ -608,6 +740,22 @@ final class Session {
             interlace: tuning.interlace)))
     }
 
+    func sendFileList(id: Int, path: String, cursor: Int?) {
+        send(.fileList(FileList(id: id, path: path, cursor: cursor)))
+    }
+
+    func sendFileGet(id: Int, path: String, container: String?) {
+        fileBegin = nil
+        fileBuffer = []
+        fileStart = Date()
+        send(.fileGet(FileGet(id: id, path: path, container: container)))
+    }
+
+    func cancelFile() {
+        guard let begin = fileBegin else { return }
+        send(.fileCancel(FileCancel(transfer: begin.transfer)))
+    }
+
     func requestStreamStop(id: Int) {
         send(.streamStop(StreamStop(id: id)))
     }
@@ -657,6 +805,31 @@ final class Session {
         return try CaptureDecoder.renderImage(pixels: canvas,
                                               palette: canvasPalette,
                                               format: base)
+    }
+
+    private func finishFile(_ end: FileEnd) {
+        guard let begin = fileBegin else { return }
+        fileBegin = nil
+        let bytes = fileBuffer
+        fileBuffer = []
+        guard end.ok else {
+            onFileDelivery(.failure(.init(
+                code: "io-error",
+                message: "the guest could not send \(begin.name)")))
+            return
+        }
+        guard bytes.count == begin.bytes else {
+            onFileDelivery(.failure(.init(
+                code: "io-error",
+                message: "\(begin.name) arrived truncated "
+                    + "(\(bytes.count) of \(begin.bytes) bytes)")))
+            return
+        }
+        onFileDelivery(.success(.init(
+            name: begin.name, container: begin.container,
+            fileType: begin.fileType, creator: begin.creator,
+            modified: begin.modified, bytes: Data(bytes),
+            transferMs: Int(Date().timeIntervalSince(fileStart) * 1000))))
     }
 
     private func finishCapture(_ end: CaptureEnd) {

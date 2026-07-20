@@ -9,6 +9,7 @@
 #include "json.h"
 #include "prefs.h"
 #include "screenshot.h"
+#include "fileshare.h"
 #include "vprobe.h"
 
 enum {
@@ -126,6 +127,14 @@ static void help_for(const char *name)
         append_line("  the CopyBits baseline, checks reread caching, partial-");
         append_line("  read scaling, and pixel fidelity. Takes ~3 seconds;");
         append_line("  the screen should be still during the run.");
+    } else if (strcmp(name, "ls") == 0) {
+        append_line("ls - list a folder in the shared files");
+        append_line("  Usage: ls [path]");
+        append_line("  Paths are relative to the share root, with");
+        append_line("  colons between folders: \"Lab:Code\". No path");
+        append_line("  lists the root itself. The root is chosen in");
+        append_line("  File > File Sharing... and defaults to the");
+        append_line("  startup volume; nothing outside it is reachable.");
     } else if (strcmp(name, "gestalt") == 0) {
         append_line("gestalt - report this Mac's identity");
         append_line("  Usage: gestalt [group] [--save]");
@@ -149,6 +158,7 @@ static void help_list(void)
     append_line("  gestalt     report this Mac (add a group or --full)");
     append_line("  screenshot  capture the screen (--depth N, --bands N,");
     append_line("              --no-save)");
+    append_line("  ls          list a shared folder (ls [path])");
     append_line("  vprobe      measure VRAM read cost by method");
     append_line("  help        show this list (\"help <cmd>\" for details)");
     append_line("  clear       clear the console scrollback");
@@ -418,6 +428,42 @@ static void run_command(const char *input)
             snprintf(line, sizeof line, "  %-16s %s",
                      rows[vi].label, rows[vi].value);
             append_line(line);
+        }
+        return;
+    }
+    if (strcmp(name, "ls") == 0) {
+        enum { kPage = 48 };
+        FileEntry entries[kPage];
+        char root[160];
+        char value[96];
+        Boolean more = false;
+        short next = 1;
+        int fn, fi;
+
+        fn = now_files_list(target, 1, entries, kPage, &more, &next);
+        if (fn < 0) {
+            snprintf(line, sizeof line, "ls: %s",
+                     fn == kFilesBadPath
+                         ? "bad path (no \"::\", segments <= 31 chars)"
+                     : fn == kFilesNotFound ? "no such folder in the share"
+                     : fn == kFilesNotAFolder ? "that is a file, not a folder"
+                     : "the File Manager refused");
+            append_line(line);
+            return;
+        }
+        now_files_root_name(root, sizeof root);
+        snprintf(line, sizeof line, "  %.80s%.40s", root, target);
+        append_line(line);
+        for (fi = 0; fi < fn; ++fi) {
+            now_files_describe(&entries[fi], value, sizeof value);
+            snprintf(line, sizeof line, "  %-32.31s%.60s",
+                     entries[fi].name, value);
+            append_line(line);
+        }
+        if (fn == 0) {
+            append_line("  (empty)");
+        } else if (more) {
+            append_line("  ... more entries follow");
         }
         return;
     }

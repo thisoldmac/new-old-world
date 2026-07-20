@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "capture.h"
+#include "fileshare.h"
 #include "commands.h"
 #include "json.h"
 #include "pixels.h"
@@ -506,11 +507,19 @@ static struct {
     unsigned long deadline;
 } g_streamreq;
 
+typedef enum {
+    kXferCapture = 0,                 /* ends with capture.end */
+    kXferFile                         /* ends with file.end */
+} XferKind;
+
 static struct {
     Boolean active;
     Boolean pushed;                   /* guest-initiated: report to panel */
     Boolean aborting;                 /* drain to the frame boundary, then
                                          end ok:false - never mid-frame */
+    XferKind kind;
+    Handle data;                      /* the bytes on the wire; blob owns
+                                         them for captures, we do for files */
     PixelBlob blob;
     long total, offset;
     long chunk;
@@ -567,10 +576,15 @@ static void xfer_cleanup(void)
         DisposePtr(g_xfer.frame);
         g_xfer.frame = NULL;
     }
-    if (g_xfer.blob.data != NULL) {
-        HUnlock(g_xfer.blob.data);
+    if (g_xfer.data != NULL) {
+        HUnlock(g_xfer.data);
     }
-    now_pixels_dispose(&g_xfer.blob);
+    if (g_xfer.blob.data != NULL) {
+        now_pixels_dispose(&g_xfer.blob);
+    } else if (g_xfer.data != NULL) {
+        DisposeHandle(g_xfer.data);
+    }
+    g_xfer.data = NULL;
     g_xfer.active = false;
 }
 
@@ -579,8 +593,9 @@ static void xfer_finish(Boolean ok)
     char json[256];
 
     snprintf(json, sizeof json,
-             "{\"type\":\"capture.end\",\"id\":%ld,\"transfer\":%u,"
+             "{\"type\":\"%s.end\",\"id\":%ld,\"transfer\":%u,"
              "\"ok\":%s,\"sendMs\":%ld}",
+             g_xfer.kind == kXferFile ? "file" : "capture",
              g_xfer.id, g_xfer.xfer, ok ? "true" : "false",
              (long)((TickCount() - g_xfer.started) * 1000 / 60));
     send_control(json);
@@ -617,7 +632,7 @@ static void xfer_build_frame(void)
     g_xfer.frame[6] = (char)((n >> 8) & 0xFF);
     g_xfer.frame[7] = (char)(n & 0xFF);
     memcpy(g_xfer.frame + kNowFrameHeaderBytes,
-           *g_xfer.blob.data + g_xfer.offset, (size_t)n);
+           *g_xfer.data + g_xfer.offset, (size_t)n);
     g_xfer.frame_len = kNowFrameHeaderBytes + n;
     g_xfer.frame_sent = 0;
 }
@@ -814,48 +829,25 @@ static long begin_frame_fields(const ShotMeta *meta, char *out, long cap)
     return pos;
 }
 
-static int arm_transfer(long id, unsigned short xfer, const ShotMeta *meta,
-                        PixelBlob *blob, long chunk, short pace_ms,
-                        Boolean pushed)
+/* Arms the sender over an arbitrary handle. The caller has already
+   announced the transfer (capture.begin / file.begin); on success the
+   transfer owns the handle. */
+static int arm_blob_transfer(long id, unsigned short xfer, Handle data,
+                             long total, long chunk, short pace_ms,
+                             XferKind kind)
 {
-    char frame_fields[640];
-    char json[1024];
+    Ptr frame = NewPtr(chunk + kNowFrameHeaderBytes);
 
+    if (frame == NULL) {
+        return 0;
+    }
     memset(&g_xfer, 0, sizeof g_xfer);
-    g_xfer.blob = *blob;
-    memset(blob, 0, sizeof *blob);
-
-    g_xfer.frame = NewPtr(chunk + kNowFrameHeaderBytes);
-    if (g_xfer.frame == NULL) {
-        now_pixels_dispose(&g_xfer.blob);
-        snprintf(json, sizeof json,
-                 "{\"type\":\"capture.end\",\"id\":%ld,\"transfer\":%u,"
-                 "\"ok\":false}", id, xfer);
-        send_control(json);
-        return 0;
-    }
-
-    begin_frame_fields(meta, frame_fields, sizeof frame_fields);
-    snprintf(json, sizeof json,
-             "{\"type\":\"capture.begin\",\"id\":%ld,\"transfer\":%u,"
-             "\"width\":%d,\"height\":%d,\"depth\":%d,"
-             "\"rowBytes\":%d,\"bytes\":%ld,\"paletteBytes\":%ld,"
-             "\"encoding\":\"%s\",\"captureMs\":%ld,\"encodeMs\":%ld"
-             "%s}",
-             id, xfer, (int)meta->width, (int)meta->height,
-             (int)meta->depth, (int)meta->row_bytes, g_xfer.blob.total_bytes,
-             g_xfer.blob.palette_bytes,
-             g_xfer.blob.packed ? "packbits" : "raw",
-             meta->capture_ms, g_xfer.blob.encode_ms, frame_fields);
-    if (!send_control(json)) {
-        xfer_cleanup();
-        return 0;
-    }
-
-    HLock(g_xfer.blob.data);
+    g_xfer.kind = kind;
+    g_xfer.data = data;
+    g_xfer.frame = frame;
+    HLock(data);
     g_xfer.active = true;
-    g_xfer.pushed = pushed;
-    g_xfer.total = g_xfer.blob.total_bytes;
+    g_xfer.total = total;
     g_xfer.offset = 0;
     g_xfer.chunk = chunk;
     g_xfer.xfer = xfer;
@@ -866,6 +858,41 @@ static int arm_transfer(long id, unsigned short xfer, const ShotMeta *meta,
     g_xfer.started = TickCount();
     g_xfer.next_tick = 0;
     g_xfer.deadline = TickCount() + kXferDeadlineTicks;
+    return 1;
+}
+
+static int arm_transfer(long id, unsigned short xfer, const ShotMeta *meta,
+                        PixelBlob *blob, long chunk, short pace_ms,
+                        Boolean pushed)
+{
+    char frame_fields[640];
+    char json[1024];
+    PixelBlob owned = *blob;
+
+    memset(blob, 0, sizeof *blob);
+    begin_frame_fields(meta, frame_fields, sizeof frame_fields);
+    snprintf(json, sizeof json,
+             "{\"type\":\"capture.begin\",\"id\":%ld,\"transfer\":%u,"
+             "\"width\":%d,\"height\":%d,\"depth\":%d,"
+             "\"rowBytes\":%d,\"bytes\":%ld,\"paletteBytes\":%ld,"
+             "\"encoding\":\"%s\",\"captureMs\":%ld,\"encodeMs\":%ld"
+             "%s}",
+             id, xfer, (int)meta->width, (int)meta->height,
+             (int)meta->depth, (int)meta->row_bytes, owned.total_bytes,
+             owned.palette_bytes, owned.packed ? "packbits" : "raw",
+             meta->capture_ms, owned.encode_ms, frame_fields);
+    if (!send_control(json)
+        || !arm_blob_transfer(id, xfer, owned.data, owned.total_bytes,
+                              chunk, pace_ms, kXferCapture)) {
+        now_pixels_dispose(&owned);
+        snprintf(json, sizeof json,
+                 "{\"type\":\"capture.end\",\"id\":%ld,\"transfer\":%u,"
+                 "\"ok\":false}", id, xfer);
+        send_control(json);
+        return 0;
+    }
+    g_xfer.blob = owned;              /* the blob owns the handle */
+    g_xfer.pushed = pushed;
     return 1;
 }
 
@@ -1035,6 +1062,164 @@ static void service_offer(void)
         offer_cleanup();
         note_shot("Host did not answer the offer");
     }
+}
+
+/* --- files -------------------------------------------------------------
+   Listing is control-plane only, so browsing works even mid-stream. A
+   pull is the standard begin -> bulk -> end shape on the shared lane,
+   under the same one-at-a-time rule as captures. */
+
+static void file_refuse(long id, const char *code, const char *reason)
+{
+    char json[256];
+
+    snprintf(json, sizeof json,
+             "{\"type\":\"file.refuse\",\"id\":%ld,\"code\":\"%s\","
+             "\"reason\":\"%.120s\"}", id, code, reason);
+    send_control(json);
+}
+
+static void file_refuse_rc(long id, int rc)
+{
+    switch (rc) {
+    case kFilesBadPath:
+        file_refuse(id, "bad-path", "path leaves the share");
+        break;
+    case kFilesNotFound:
+        file_refuse(id, "not-found", "no such item in the share");
+        break;
+    case kFilesNotAFolder:
+        file_refuse(id, "bad-path", "not a folder");
+        break;
+    case kFilesTooBig:
+        file_refuse(id, "too-big", "not enough memory to stage the file");
+        break;
+    default:
+        file_refuse(id, "io-error", "the File Manager refused");
+        break;
+    }
+}
+
+static void serve_file_list(const char *request)
+{
+    enum { kPage = 16 };              /* control frames cap at 4 KB */
+    FileEntry entries[kPage];
+    char path[224];
+    char json[3072];
+    long id = now_json_find_int(request, "id", 0);
+    long cursor = now_json_find_int(request, "cursor", 1);
+    Boolean more = false;
+    short next = 1;
+    int n, i;
+    long pos;
+
+    path[0] = '\0';
+    now_json_find_string(request, "path", path, sizeof path);
+    if (cursor < 1) {
+        cursor = 1;
+    }
+    n = now_files_list(path, (short)cursor, entries, kPage, &more, &next);
+    if (n < 0) {
+        file_refuse_rc(id, n);
+        return;
+    }
+    pos = snprintf(json, sizeof json,
+                   "{\"type\":\"file.listing\",\"id\":%ld,"
+                   "\"path\":\"%.200s\",\"entries\":[", id, path);
+    for (i = 0; i < n; ++i) {
+        char type[8], creator[8];
+
+        memcpy(type, &entries[i].file_type, 4);
+        type[4] = '\0';
+        memcpy(creator, &entries[i].creator, 4);
+        creator[4] = '\0';
+        pos += snprintf(json + pos, sizeof json - (size_t)pos,
+                        "%s{\"name\":\"%.31s\",\"kind\":\"%s\"",
+                        i > 0 ? "," : "", entries[i].name,
+                        entries[i].folder ? "folder" : "file");
+        if (!entries[i].folder) {
+            pos += snprintf(json + pos, sizeof json - (size_t)pos,
+                            ",\"fileType\":\"%.4s\",\"creator\":\"%.4s\","
+                            "\"dataBytes\":%ld,\"rsrcBytes\":%ld",
+                            type, creator, entries[i].data_bytes,
+                            entries[i].rsrc_bytes);
+        }
+        pos += snprintf(json + pos, sizeof json - (size_t)pos,
+                        ",\"modified\":%lu}", entries[i].modified);
+    }
+    snprintf(json + pos, sizeof json - (size_t)pos,
+             "],\"more\":%s,\"cursor\":%d}",
+             more ? "true" : "false", (int)next);
+    send_control(json);
+}
+
+static void serve_file_get(const char *request)
+{
+    NowPrefs prefs;
+    FileStage stage;
+    char path[224];
+    char container_arg[16];
+    char json[512];
+    long id = now_json_find_int(request, "id", 0);
+    FileContainer want = kContainerAuto;
+    long chunk;
+    short pace_ms;
+    Boolean pack_unused;
+    unsigned short xfer;
+    int rc;
+
+    if (g_stream.active || g_xfer.active || g_offer.active) {
+        file_refuse(id, "busy", "a transfer is already in flight");
+        return;
+    }
+    path[0] = '\0';
+    now_json_find_string(request, "path", path, sizeof path);
+    if (now_json_find_string(request, "container", container_arg,
+                             sizeof container_arg)) {
+        if (strcmp(container_arg, "macbinary") == 0) {
+            want = kContainerMacBinary;
+        } else if (strcmp(container_arg, "data") == 0) {
+            want = kContainerData;
+        }
+    }
+    rc = now_files_stage(path, want, &stage);
+    if (rc != kFilesOK) {
+        file_refuse_rc(id, rc);
+        return;
+    }
+
+    now_prefs_load(&prefs);
+    tuning_from_json(request, &prefs, &chunk, &pace_ms, &pack_unused);
+    xfer = next_xfer();
+    {
+        char type[8], creator[8];
+
+        memcpy(type, &stage.file_type, 4);
+        type[4] = '\0';
+        memcpy(creator, &stage.creator, 4);
+        creator[4] = '\0';
+        snprintf(json, sizeof json,
+                 "{\"type\":\"file.begin\",\"id\":%ld,\"transfer\":%u,"
+                 "\"name\":\"%.31s\",\"container\":\"%s\","
+                 "\"bytes\":%ld,\"dataBytes\":%ld,\"rsrcBytes\":%ld,"
+                 "\"fileType\":\"%.4s\",\"creator\":\"%.4s\","
+                 "\"modified\":%lu}",
+                 id, xfer, stage.name,
+                 stage.container == kContainerMacBinary ? "macbinary" : "data",
+                 stage.total_bytes, stage.data_bytes, stage.rsrc_bytes,
+                 type, creator, stage.modified);
+    }
+    if (!send_control(json)) {
+        now_files_stage_dispose(&stage);
+        return;
+    }
+    if (!arm_blob_transfer(id, xfer, stage.blob, stage.total_bytes,
+                           chunk, pace_ms, kXferFile)) {
+        now_files_stage_dispose(&stage);
+        file_refuse(id, "io-error", "could not start the transfer");
+        return;
+    }
+    stage.blob = NULL;                /* the transfer owns it now */
 }
 
 /* --- live stream ------------------------------------------------------- */
@@ -1637,6 +1822,18 @@ static int handle_frame(const char *reply)
         return 1;
     }
     if (now_json_type_is(reply, "capture.cancel")) {
+        xfer_abort();
+        return 1;
+    }
+    if (now_json_type_is(reply, "file.list")) {
+        serve_file_list(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "file.get")) {
+        serve_file_get(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "file.cancel")) {
         xfer_abort();
         return 1;
     }

@@ -7,6 +7,7 @@ add_application(now-guest
     src/commands.c
     src/console_win.c
     src/capture.c
+    src/fileshare.c
     src/screenshot.c
     src/vprobe.c
     src/pixels.c

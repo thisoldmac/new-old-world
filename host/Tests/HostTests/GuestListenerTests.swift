@@ -6,7 +6,7 @@ import Combine
 /// A scripted guest: dials the listener over loopback, sends frames, and
 /// collects decoded control replies.
 @MainActor
-private final class FakeGuest {
+final class FakeGuest {
     let connection: NWConnection
     private let decoder = FrameDecoder()
     private(set) var received: [ControlMessage] = []

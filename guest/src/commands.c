@@ -10,6 +10,7 @@
 #include "capture.h"
 #include "json.h"
 #include "prefs.h"
+#include "fileshare.h"
 #include "screenshot.h"
 #include "vprobe.h"
 
@@ -417,6 +418,67 @@ static void run_vprobe(long id, char *out, long cap)
     (void)pos;
 }
 
+static const char *files_error_text(int rc)
+{
+    switch (rc) {
+    case kFilesBadPath:
+        return "bad path (no \"::\", segments <= 31 chars)";
+    case kFilesNotFound:
+        return "no such folder in the share";
+    case kFilesNotAFolder:
+        return "that is a file, not a folder";
+    case kFilesTooBig:
+        return "not enough memory";
+    default:
+        return "the File Manager refused";
+    }
+}
+
+/* ls: one page of the share. The console shows a generous page; the
+   Files module pages through file.list instead. */
+static void run_ls(const char *request_json, long id, char *out, long cap)
+{
+    enum { kConsolePage = 48 };
+    FileEntry entries[kConsolePage];
+    char path[224];
+    char root[160];
+    char value[96];
+    Boolean more = false;
+    short next = 1;
+    int n, i;
+    long pos;
+
+    path[0] = '\0';
+    if (request_json != NULL) {
+        now_json_find_string(request_json, "path", path, sizeof path);
+    }
+    n = now_files_list(path, 1, entries, kConsolePage, &more, &next);
+    if (n < 0) {
+        snprintf(out, cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+                 "\"error\":{\"code\":\"file-error\","
+                 "\"message\":\"%s\"}}", id, files_error_text(n));
+        return;
+    }
+    now_files_root_name(root, sizeof root);
+    pos = snprintf(out, cap,
+                   "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                   "\"output\":{\"ls\":["
+                   "[\"Share\",\"%.100s\"],"
+                   "[\"Folder\",\"%.100s\"]",
+                   id, root, path[0] != '\0' ? path : "(root)");
+    for (i = 0; i < n && pos < cap - 160; ++i) {
+        now_files_describe(&entries[i], value, sizeof value);
+        pos += snprintf(out + pos, (size_t)(cap - pos),
+                        ",[\"%.31s\",\"%.60s\"]", entries[i].name, value);
+    }
+    if (more || i < n) {
+        pos += snprintf(out + pos, (size_t)(cap - pos),
+                        ",[\"...\",\"more entries follow\"]");
+    }
+    snprintf(out + pos, (size_t)(cap - pos), "]}}");
+}
+
 void now_command_run(const char *name, const char *request_json, long id,
                      char *out, long cap)
 {
@@ -430,6 +492,10 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "vprobe") == 0) {
         run_vprobe(id, out, cap);
+        return;
+    }
+    if (strcmp(name, "ls") == 0) {
+        run_ls(request_json, id, out, cap);
         return;
     }
     snprintf(out, cap,

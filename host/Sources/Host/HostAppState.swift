@@ -14,6 +14,8 @@ final class HostAppState: ObservableObject {
         return model
     }()
     private let notifier = CaptureNotifier()
+    private(set) lazy var files =
+        FilesModuleModel(listener: listener, defaults: defaults)
     let settings: SettingsModel
     let listener: GuestListener
     private(set) lazy var console = ConsoleModel(listener: listener)
@@ -36,6 +38,7 @@ final class HostAppState: ObservableObject {
             ?? ""
         stateMirror = listener.$state.sink { [weak self] state in
             self?.screenshots.connection = Self.guestState(from: state)
+            self?.files.connection = Self.guestState(from: state)
             self?.captureSmokeIfRequested(state)
         }
         if settings.listenAtLaunch {

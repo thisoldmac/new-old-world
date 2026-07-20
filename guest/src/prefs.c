@@ -41,6 +41,11 @@ typedef struct {
     short interlace;
 } PrefsRecordV5;
 
+typedef struct {
+    PrefsRecordV5 v5;                 /* format = 6 */
+    char share_root[128];
+} PrefsRecordV6;
+
 static OSErr prefs_spec(FSSpec *spec)
 {
     short vref;
@@ -81,8 +86,8 @@ void now_prefs_load(NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV5);
-    PrefsRecordV5 v5;
+    long count = sizeof(PrefsRecordV6);
+    PrefsRecordV6 v6;
     PrefsRecordV3 record;
     OSErr err;
 
@@ -94,10 +99,10 @@ void now_prefs_load(NowPrefs *prefs)
     if (FSpOpenDF(&spec, fsRdPerm, &ref) != noErr) {
         return;
     }
-    memset(&v5, 0, sizeof v5);
-    err = FSRead(ref, &count, &v5);
+    memset(&v6, 0, sizeof v6);
+    err = FSRead(ref, &count, &v6);
     FSClose(ref);
-    record = v5.v4.v3;
+    record = v6.v5.v4.v3;
     if ((err != noErr && err != eofErr)
         || record.magic != kPrefsMagic || record.port == 0) {
         return;
@@ -124,12 +129,16 @@ void now_prefs_load(NowPrefs *prefs)
     prefs->panel_rect = record.panel_rect;
     prefs->console_rect = record.console_rect;
     if (record.format >= 4 && count >= (long)sizeof(PrefsRecordV4)
-        && v5.v4.retry_secs >= 0 && v5.v4.retry_secs <= 300) {
-        prefs->retry_secs = v5.v4.retry_secs;
+        && v6.v5.v4.retry_secs >= 0 && v6.v5.v4.retry_secs <= 300) {
+        prefs->retry_secs = v6.v5.v4.retry_secs;
     }
     if (record.format >= 5 && count >= (long)sizeof(PrefsRecordV5)) {
-        prefs->predictive = v5.predictive != 0;
-        prefs->interlace = v5.interlace != 0;
+        prefs->predictive = v6.v5.predictive != 0;
+        prefs->interlace = v6.v5.interlace != 0;
+    }
+    if (record.format >= 6 && count >= (long)sizeof(PrefsRecordV6)) {
+        v6.share_root[sizeof v6.share_root - 1] = '\0';
+        strcpy(prefs->share_root, v6.share_root);
     }
 }
 
@@ -137,14 +146,14 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV5);
-    PrefsRecordV5 v5;
+    long count = sizeof(PrefsRecordV6);
+    PrefsRecordV6 v6;
     PrefsRecordV3 record;
     OSErr err;
 
     memset(&record, 0, sizeof record);
     record.magic = kPrefsMagic;
-    record.format = 5;
+    record.format = 6;
     record.port = prefs->port;
     strncpy(record.host, prefs->host, sizeof record.host - 1);
     record.shot_depth = prefs->shot_depth;
@@ -168,12 +177,13 @@ OSErr now_prefs_save(const NowPrefs *prefs)
     if (err != noErr) {
         return err;
     }
-    memset(&v5, 0, sizeof v5);
-    v5.v4.v3 = record;
-    v5.v4.retry_secs = prefs->retry_secs;
-    v5.predictive = prefs->predictive ? 1 : 0;
-    v5.interlace = prefs->interlace ? 1 : 0;
-    err = FSWrite(ref, &count, &v5);
+    memset(&v6, 0, sizeof v6);
+    v6.v5.v4.v3 = record;
+    v6.v5.v4.retry_secs = prefs->retry_secs;
+    v6.v5.predictive = prefs->predictive ? 1 : 0;
+    v6.v5.interlace = prefs->interlace ? 1 : 0;
+    strncpy(v6.share_root, prefs->share_root, sizeof v6.share_root - 1);
+    err = FSWrite(ref, &count, &v6);
     if (err == noErr) {
         SetEOF(ref, sizeof record);
     }

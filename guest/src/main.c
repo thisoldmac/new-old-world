@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "console_win.h"
+#include "fileshare.h"
 #include "shots_panel.h"
 #include "prefs.h"
 #include "settings_dialog.h"
@@ -13,7 +14,8 @@ enum {
     kWindowMinHeight = 240,
     kFileMenuID = 129,
     kFileCloseItem = 1,
-    kFileQuitItem = 3,
+    kFileSharingItem = 3,
+    kFileQuitItem = 5,
     kWindowsMenuID = 140,
     kWindowsScreenshotsItem = 1,
     kWindowsConsoleItem = 2,
@@ -47,6 +49,10 @@ static const unsigned char k_close_menu_item[] = {
 static const unsigned char k_quit_menu_item[] = {
     6, 'Q', 'u', 'i', 't', '/', 'Q'
 };
+static const unsigned char k_sharing_menu_item[] = {
+    16, 'F', 'i', 'l', 'e', ' ', 'S', 'h', 'a', 'r', 'i', 'n', 'g',
+    '.', '.', '.', ' '
+};
 
 static void create_menu_bar(void)
 {
@@ -54,6 +60,8 @@ static void create_menu_bar(void)
     MenuRef windows_menu = NewMenu(kWindowsMenuID, k_windows_menu_title);
 
     AppendMenu(file_menu, k_close_menu_item);
+    AppendMenu(file_menu, k_separator_menu_item);
+    AppendMenu(file_menu, k_sharing_menu_item);
     AppendMenu(file_menu, k_separator_menu_item);
     AppendMenu(file_menu, k_quit_menu_item);
     InsertMenu(file_menu, 0);
@@ -122,6 +130,8 @@ static void handle_menu_choice(long choice)
     if (HiWord(choice) == kFileMenuID) {
         if (LoWord(choice) == kFileCloseItem) {
             close_front_window();
+        } else if (LoWord(choice) == kFileSharingItem) {
+            now_files_sharing_dialog();
         } else if (LoWord(choice) == kFileQuitItem) {
             g_running = false;
         }

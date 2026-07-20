@@ -95,6 +95,13 @@ channels:
       streamStop: { $ref: "#/components/messages/streamStop" }
       streamRefresh: { $ref: "#/components/messages/streamRefresh" }
       streamStopped: { $ref: "#/components/messages/streamStopped" }
+      fileList: { $ref: "#/components/messages/fileList" }
+      fileListing: { $ref: "#/components/messages/fileListing" }
+      fileGet: { $ref: "#/components/messages/fileGet" }
+      fileRefuse: { $ref: "#/components/messages/fileRefuse" }
+      fileBegin: { $ref: "#/components/messages/fileBegin" }
+      fileEnd: { $ref: "#/components/messages/fileEnd" }
+      fileCancel: { $ref: "#/components/messages/fileCancel" }
       captureOffer: { $ref: "#/components/messages/captureOffer" }
       captureAccept: { $ref: "#/components/messages/captureAccept" }
       captureRefuse: { $ref: "#/components/messages/captureRefuse" }
@@ -104,9 +111,11 @@ channels:
     address: "1"
     description: >
       Raw payload bytes on channel 1, correlated by the frame header's
-      transfer id. v1 carries capture pixel data only: rows top-to-bottom,
-      rowBytes apart. Depth 8 uses the standard system palette; depth 16 is
-      RGB555 big-endian; depth 32 is xRGB8888 big-endian.
+      transfer id. Two payload kinds ride it: capture pixel data (rows
+      top-to-bottom, rowBytes apart; depth 8 uses the guest's palette;
+      16 is RGB555 big-endian; 32 is xRGB8888 big-endian) and file
+      content (file.begin describes the container). The control message
+      that began the transfer says which.
 
 operations:
   guestOffersCapture:
@@ -162,6 +171,36 @@ operations:
       host's stream.stop (any in-flight frame is aborted first, ending
       ok:false) and equally lets the guest end the stream on its own,
       with the reason saying why.
+  hostBrowsesFiles:
+    action: receive
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/fileList"
+      - $ref: "#/channels/control/messages/fileGet"
+      - $ref: "#/channels/control/messages/fileCancel"
+    description: >
+      Host browses and pulls from the guest's share. Paths are RELATIVE
+      to the guest's configured share root ("" is the root; segments
+      joined with ":"): a path outside the share is inexpressible, and
+      any empty segment ("::" traversal) refuses bad-path. file.get
+      needs no accept - the requester is the receiver; failures answer
+      with file.refuse. One transfer at a time still holds across
+      captures, streams, and files.
+  guestServesFiles:
+    action: send
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/fileListing"
+      - $ref: "#/channels/control/messages/fileRefuse"
+      - $ref: "#/channels/control/messages/fileBegin"
+      - $ref: "#/channels/control/messages/fileEnd"
+    description: >
+      Listings paginate (control frames cap at 4 KB); a transfer is the
+      standard begin -> bulk -> end shape. The container rule: data-only
+      files travel as the raw data fork; resource-only files as
+      MacBinary; both-forks defaults to the data fork with MacBinary on
+      request. Text conversion is the HOST's job - the guest ships raw
+      bytes and metadata.
   hostAnswersOffer:
     action: receive
     channel: { $ref: "#/channels/control" }
@@ -229,6 +268,27 @@ components:
     streamStopped:
       name: stream.stopped
       payload: { $ref: "#/components/schemas/StreamStopped" }
+    fileList:
+      name: file.list
+      payload: { $ref: "#/components/schemas/FileList" }
+    fileListing:
+      name: file.listing
+      payload: { $ref: "#/components/schemas/FileListing" }
+    fileGet:
+      name: file.get
+      payload: { $ref: "#/components/schemas/FileGet" }
+    fileRefuse:
+      name: file.refuse
+      payload: { $ref: "#/components/schemas/FileRefuse" }
+    fileBegin:
+      name: file.begin
+      payload: { $ref: "#/components/schemas/FileBegin" }
+    fileEnd:
+      name: file.end
+      payload: { $ref: "#/components/schemas/FileEnd" }
+    fileCancel:
+      name: file.cancel
+      payload: { $ref: "#/components/schemas/FileCancel" }
     captureOffer:
       name: capture.offer
       payload: { $ref: "#/components/schemas/CaptureOffer" }
@@ -439,6 +499,102 @@ components:
             Why the guest ended it, when the guest ended it ("busy: a
             transfer is in flight", "capture failed"); absent when
             acking the host's stream.stop.
+    FileList:
+      type: object
+      required: [type, id, path]
+      additionalProperties: false
+      properties:
+        type: { const: file.list }
+        id: { type: integer }
+        path:
+          type: string
+          description: Relative to the share root; "" is the root.
+        cursor:
+          type: integer
+          description: Continue a paginated listing from this index.
+    FileListing:
+      type: object
+      required: [type, id, path, entries, more]
+      additionalProperties: false
+      properties:
+        type: { const: file.listing }
+        id: { type: integer }
+        path: { type: string }
+        entries:
+          type: array
+          maxItems: 16
+          items:
+            type: object
+            required: [name, kind]
+            additionalProperties: false
+            properties:
+              name: { type: string }
+              kind: { enum: [folder, file] }
+              fileType: { type: string }
+              creator: { type: string }
+              dataBytes: { type: integer }
+              rsrcBytes: { type: integer }
+              modified:
+                type: integer
+                description: Classic Mac seconds since 1904.
+        more: { type: boolean }
+        cursor: { type: integer }
+    FileGet:
+      type: object
+      required: [type, id, path]
+      additionalProperties: false
+      properties:
+        type: { const: file.get }
+        id: { type: integer }
+        path: { type: string }
+        container:
+          enum: [auto, data, macbinary]
+          description: >
+            auto (default) applies the container rule; macbinary forces
+            the whole artifact.
+    FileRefuse:
+      type: object
+      required: [type, id, code]
+      additionalProperties: false
+      properties:
+        type: { const: file.refuse }
+        id: { type: integer }
+        code:
+          enum: [busy, exists, bad-path, not-found, io-error, too-big]
+        reason: { type: string }
+    FileBegin:
+      type: object
+      required: [type, id, transfer, name, container, bytes]
+      additionalProperties: false
+      properties:
+        type: { const: file.begin }
+        id: { type: integer }
+        transfer: { type: integer }
+        name: { type: string }
+        container: { enum: [data, macbinary] }
+        bytes: { type: integer }
+        dataBytes: { type: integer }
+        rsrcBytes: { type: integer }
+        fileType: { type: string }
+        creator: { type: string }
+        modified: { type: integer }
+    FileEnd:
+      type: object
+      required: [type, id, transfer, ok]
+      additionalProperties: false
+      properties:
+        type: { const: file.end }
+        id: { type: integer }
+        transfer: { type: integer }
+        ok: { type: boolean }
+        sendMs: { type: integer }
+    FileCancel:
+      type: object
+      required: [type, transfer]
+      additionalProperties: false
+      properties:
+        type: { const: file.cancel }
+        transfer: { type: integer }
     CaptureOffer:
       type: object
       required: [type, id, width, height, depth, rowBytes, bytes]
@@ -599,6 +755,17 @@ components:
           minItems: 2
           maxItems: 2
           items: { type: string }
+    ls:
+      description: >
+        List a folder in the guest's share. No path = the share root.
+        Output rows: one per entry (name, then kind/type and sizes),
+        capped for the console; the Files module uses file.list.
+      args:
+        path: { type: string }
+      output:
+        type: object
+        properties:
+          ls: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
     vprobe:
       description: >
         Measure the guest's VRAM read cost by access method: raw

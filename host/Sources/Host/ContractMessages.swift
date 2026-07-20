@@ -17,6 +17,13 @@ enum ControlMessage: Equatable, Sendable {
     case error(ErrorMessage)
     case commandRequest(CommandRequest)
     case commandResult(CommandResult)
+    case fileList(FileList)
+    case fileListing(FileListing)
+    case fileGet(FileGet)
+    case fileRefuse(FileRefuse)
+    case fileBegin(FileBegin)
+    case fileEnd(FileEnd)
+    case fileCancel(FileCancel)
     case streamRequest(StreamRequest)
     case streamStart(StreamStart)
     case streamStop(StreamStop)
@@ -88,6 +95,73 @@ struct CaptureRequest: Codable, Equatable, Sendable {
     var chunkKb: Int?
     var paceMs: Int?
     var pack: Bool?
+}
+
+/// The guest's file share. Paths are relative to the guest's chosen
+/// share root ("" is the root, segments joined with ":"), so nothing
+/// outside the share is expressible.
+struct FileList: Codable, Equatable, Sendable {
+    var id: Int
+    var path: String
+    var cursor: Int?
+}
+
+struct FileEntry: Codable, Equatable, Sendable, Identifiable {
+    var name: String
+    var kind: String
+    var fileType: String?
+    var creator: String?
+    var dataBytes: Int?
+    var rsrcBytes: Int?
+    /// Classic Mac epoch: seconds since 1904-01-01.
+    var modified: Int?
+
+    var id: String { name }
+    var isFolder: Bool { kind == "folder" }
+}
+
+struct FileListing: Codable, Equatable, Sendable {
+    var id: Int
+    var path: String
+    var entries: [FileEntry]
+    var more: Bool
+    var cursor: Int?
+}
+
+struct FileGet: Codable, Equatable, Sendable {
+    var id: Int
+    var path: String
+    var container: String?
+}
+
+struct FileRefuse: Codable, Equatable, Sendable {
+    var id: Int
+    var code: String
+    var reason: String?
+}
+
+struct FileBegin: Codable, Equatable, Sendable {
+    var id: Int
+    var transfer: Int
+    var name: String
+    var container: String
+    var bytes: Int
+    var dataBytes: Int?
+    var rsrcBytes: Int?
+    var fileType: String?
+    var creator: String?
+    var modified: Int?
+}
+
+struct FileEnd: Codable, Equatable, Sendable {
+    var id: Int
+    var transfer: Int
+    var ok: Bool
+    var sendMs: Int?
+}
+
+struct FileCancel: Codable, Equatable, Sendable {
+    var transfer: Int
 }
 
 /// Live-stream bracket: between stream.start and the guest's
@@ -220,6 +294,23 @@ enum ControlMessageCodec {
         case "capture.request":
             return .captureRequest(
                 try decoder.decode(CaptureRequest.self, from: data))
+        case "file.list":
+            return .fileList(try decoder.decode(FileList.self, from: data))
+        case "file.listing":
+            return .fileListing(
+                try decoder.decode(FileListing.self, from: data))
+        case "file.get":
+            return .fileGet(try decoder.decode(FileGet.self, from: data))
+        case "file.refuse":
+            return .fileRefuse(
+                try decoder.decode(FileRefuse.self, from: data))
+        case "file.begin":
+            return .fileBegin(try decoder.decode(FileBegin.self, from: data))
+        case "file.end":
+            return .fileEnd(try decoder.decode(FileEnd.self, from: data))
+        case "file.cancel":
+            return .fileCancel(
+                try decoder.decode(FileCancel.self, from: data))
         case "stream.request":
             return .streamRequest(
                 try decoder.decode(StreamRequest.self, from: data))
@@ -276,6 +367,13 @@ enum ControlMessageCodec {
         case .commandRequest(let m): return try tagged("command.request", m)
         case .commandResult(let m): return try tagged("command.result", m)
         case .captureRequest(let m): return try tagged("capture.request", m)
+        case .fileList(let m): return try tagged("file.list", m)
+        case .fileListing(let m): return try tagged("file.listing", m)
+        case .fileGet(let m): return try tagged("file.get", m)
+        case .fileRefuse(let m): return try tagged("file.refuse", m)
+        case .fileBegin(let m): return try tagged("file.begin", m)
+        case .fileEnd(let m): return try tagged("file.end", m)
+        case .fileCancel(let m): return try tagged("file.cancel", m)
         case .streamRequest(let m): return try tagged("stream.request", m)
         case .streamStart(let m): return try tagged("stream.start", m)
         case .streamStop(let m): return try tagged("stream.stop", m)

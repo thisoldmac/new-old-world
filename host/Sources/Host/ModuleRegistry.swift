@@ -28,6 +28,12 @@ struct ModuleRegistry: Sendable {
             summary: "Capture, browse, and save images from a classic Mac"
         ),
         ModuleDescriptor(
+            id: "files",
+            title: "Files",
+            symbol: "folder",
+            summary: "Browse and download from the classic Mac's share"
+        ),
+        ModuleDescriptor(
             id: "console",
             title: "Console",
             symbol: "terminal",
