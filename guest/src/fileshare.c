@@ -388,66 +388,68 @@ void now_files_root_name(char *out, long cap)
     }
 }
 
-/* Builds the full colon path of a folder FSSpec by climbing to the
-   volume root. */
+/* Builds the full colon path of a folder FSSpec ("Macintosh HD:Lab:")
+   by climbing to the volume root. The classic idiom: PBGetCatInfo with
+   ioFDirIndex -1 names the directory ioDrDirID itself and reports its
+   parent, so prepending each name until the root walks the whole chain.
+   Calling it with fsRtDirID names the VOLUME, which is why the loop
+   ends there rather than at fsRtParID. */
 static int full_path_of_folder(const FSSpec *spec, char *out, long cap)
 {
     char tmp[512];
     long len;
     long dir_id;
-    CInfoPBRec pb;
-    Str255 name;
 
-    /* Start with the folder's own name. */
-    memcpy(name, spec->name, spec->name[0] + 1);
-    memcpy(tmp, spec->name + 1, spec->name[0]);
-    len = spec->name[0];
-    tmp[len] = '\0';
-
-    memset(&pb, 0, sizeof pb);
-    pb.dirInfo.ioNamePtr = name;
-    pb.dirInfo.ioVRefNum = spec->vRefNum;
-    pb.dirInfo.ioDrDirID = spec->parID;
-    pb.dirInfo.ioFDirIndex = 0;
-    if (PBGetCatInfoSync(&pb) != noErr) {
+    if (spec->name[0] == 0 || spec->name[0] > 63) {
         return 0;
     }
-    dir_id = pb.dirInfo.ioDrParID;
+    memcpy(tmp, spec->name + 1, spec->name[0]);
+    len = spec->name[0];
+    tmp[len++] = ':';
+    tmp[len] = '\0';
 
-    while (spec->parID != fsRtParID) {
-        char parent[64];
-        long plen;
+    /* A volume was chosen: the spec already names it. */
+    if (spec->parID == fsRtParID) {
+        if (len + 1 > cap) {
+            return 0;
+        }
+        memcpy(out, tmp, (size_t)len + 1);
+        return 1;
+    }
+
+    dir_id = spec->parID;
+    for (;;) {
+        CInfoPBRec pb;
+        Str255 name;
+        long nlen;
 
         memset(&pb, 0, sizeof pb);
         name[0] = 0;
         pb.dirInfo.ioNamePtr = name;
         pb.dirInfo.ioVRefNum = spec->vRefNum;
         pb.dirInfo.ioDrDirID = dir_id;
-        pb.dirInfo.ioFDirIndex = -1;   /* name of dir_id itself */
+        pb.dirInfo.ioFDirIndex = -1;   /* name dir_id itself */
         if (PBGetCatInfoSync(&pb) != noErr) {
             return 0;
         }
-        memcpy(parent, name + 1, name[0]);
-        parent[name[0]] = '\0';
-        plen = name[0];
-        if (plen + 1 + len + 1 > (long)sizeof tmp) {
+        nlen = name[0];
+        if (nlen == 0 || len + nlen + 2 > (long)sizeof tmp) {
             return 0;
         }
-        memmove(tmp + plen + 1, tmp, (size_t)len + 1);
-        memcpy(tmp, parent, (size_t)plen);
-        tmp[plen] = ':';
-        len += plen + 1;
-        if (pb.dirInfo.ioDrDirID == fsRtDirID) {
-            break;
+        memmove(tmp + nlen + 1, tmp, (size_t)len + 1);
+        memcpy(tmp, name + 1, (size_t)nlen);
+        tmp[nlen] = ':';
+        len += nlen + 1;
+
+        if (dir_id == fsRtDirID) {
+            break;                     /* that was the volume name */
         }
         dir_id = pb.dirInfo.ioDrParID;
     }
-    if (len + 2 > cap) {
+    if (len + 1 > cap) {
         return 0;
     }
-    memcpy(out, tmp, (size_t)len);
-    out[len] = ':';
-    out[len + 1] = '\0';
+    memcpy(out, tmp, (size_t)len + 1);
     return 1;
 }
 
@@ -455,7 +457,9 @@ int now_files_choose_root(void)
 {
     NavDialogOptions options;
     NavReplyRecord reply;
-    AEDesc desc;
+    AEKeyword keyword;
+    DescType returned_type;
+    Size actual;
     FSSpec spec;
     char full[512];
     NowPrefs prefs;
@@ -470,16 +474,14 @@ int now_files_choose_root(void)
         || !reply.validRecord) {
         return 0;
     }
-    if (AEGetNthDesc(&reply.selection, 1, typeFSS, NULL, &desc) == noErr) {
-        if (AEGetDescData(&desc, &spec, sizeof spec) == noErr
-            && full_path_of_folder(&spec, full, sizeof full)
-            && strlen(full) < sizeof prefs.share_root) {
-            now_prefs_load(&prefs);
-            strcpy(prefs.share_root, full);
-            now_prefs_save(&prefs);
-            changed = 1;
-        }
-        AEDisposeDesc(&desc);
+    changed = -1;                     /* chose something, saved nothing */
+    if (AEGetNthPtr(&reply.selection, 1, typeFSS, &keyword, &returned_type,
+                    &spec, sizeof spec, &actual) == noErr
+        && full_path_of_folder(&spec, full, sizeof full)
+        && strlen(full) < sizeof prefs.share_root) {
+        now_prefs_load(&prefs);
+        strcpy(prefs.share_root, full);
+        changed = now_prefs_save(&prefs) == noErr ? 1 : -1;
     }
     NavDisposeReply(&reply);
     return changed;
@@ -494,6 +496,20 @@ enum {
     kSharingChooseItem = 2,
     kSharingRootItem = 4
 };
+
+enum { kSharingNoteItem = 5 };
+
+static void sharing_set_note(DialogRef dialog, const char *text)
+{
+    Str255 pstr;
+    ControlHandle handle;
+    Rect box;
+    short kind;
+
+    CopyCStringToPascal(text, pstr);
+    GetDialogItem(dialog, kSharingNoteItem, &kind, (Handle *)&handle, &box);
+    SetDialogItemText((Handle)handle, pstr);
+}
 
 static void sharing_set_root_text(DialogRef dialog)
 {
@@ -529,11 +545,18 @@ void now_files_sharing_dialog(void)
     while (!done) {
         ModalDialog(NULL, &hit);
         switch (hit) {
-        case kSharingChooseItem:
-            if (now_files_choose_root()) {
+        case kSharingChooseItem: {
+            int rc = now_files_choose_root();
+
+            if (rc > 0) {
                 sharing_set_root_text(dialog);
+            } else if (rc < 0) {
+                sharing_set_note(dialog,
+                                 "That folder could not be saved as the "
+                                 "share.");
             }
             break;
+        }
         case kSharingDoneItem:
             done = true;
             break;

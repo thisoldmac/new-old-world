@@ -185,7 +185,7 @@ OSErr now_prefs_save(const NowPrefs *prefs)
     strncpy(v6.share_root, prefs->share_root, sizeof v6.share_root - 1);
     err = FSWrite(ref, &count, &v6);
     if (err == noErr) {
-        SetEOF(ref, sizeof record);
+        SetEOF(ref, count);           /* what we wrote, not an older record */
     }
     FSClose(ref);
     return err;

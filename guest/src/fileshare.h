@@ -72,8 +72,8 @@ void now_files_describe(const FileEntry *entry, char *out, long cap);
 /* The share root as a display string ("Macintosh HD:Lab:"), for UI. */
 void now_files_root_name(char *out, long cap);
 
-/* NavChooseFolder; persists the chosen root in prefs. Returns 1 if the
-   root changed. */
+/* NavChooseFolder; persists the chosen root in prefs. 1 = changed,
+   0 = cancelled, -1 = a folder was chosen but could not be saved. */
 int now_files_choose_root(void);
 
 /* File > File Sharing...: shows the current root and offers to change
