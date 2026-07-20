@@ -252,6 +252,7 @@ final class GuestListener: ObservableObject {
     /// Abandons the file transfer; settles locally for the same reason
     /// cancelCapture does.
     func cancelFile() {
+        session?.cancelOutbound()
         guard pendingFile != nil else { return }
         session?.cancelFile()
         deliverFile(.failure(.init(code: "cancelled",
@@ -628,6 +629,10 @@ final class GuestListener: ObservableObject {
                         message: done.reason ?? "the file was not written")))
                 }
             },
+            onOutboundProgress: { [weak self] sent, total in
+                self?.captureProgress = .init(received: sent,
+                                              expected: total)
+            },
             onClosed: { [weak self] closedSession, reason in
                 guard let self else { return }
                 self.pending.removeAll { $0 === closedSession }
@@ -674,6 +679,7 @@ final class Session {
     private let onFileDelivery:
         (Result<GuestListener.FileDelivery, GuestListener.FileFailure>) -> Void
     private let onFileDone: (FileDone) -> Void
+    private let onOutboundProgress: (Int, Int) -> Void
     private var streamId: Int?
     private let onClosed: (Session, String) -> Void
 
@@ -729,6 +735,7 @@ final class Session {
                                            GuestListener.FileFailure>)
              -> Void,
          onFileDone: @escaping (FileDone) -> Void,
+         onOutboundProgress: @escaping (Int, Int) -> Void,
          onClosed: @escaping (Session, String) -> Void) {
         self.connection = connection
         self.identity = identity
@@ -748,6 +755,7 @@ final class Session {
         self.onFileRefuse = onFileRefuse
         self.onFileDelivery = onFileDelivery
         self.onFileDone = onFileDone
+        self.onOutboundProgress = onOutboundProgress
         self.onClosed = onClosed
     }
 
@@ -968,6 +976,20 @@ final class Session {
         return transferSeq
     }
 
+    /// An outbound file in flight. Chunks go one at a time, each sent
+    /// when the previous one has actually left — queueing a whole file
+    /// into the socket at once would give the wire no backpressure,
+    /// nothing to report progress from, and nothing to cancel.
+    private struct Outbound {
+        var id: Int
+        var transfer: UInt16
+        var bytes: Data
+        var sent: Int
+        var cancelled: Bool
+    }
+
+    private var outbound: Outbound?
+
     /// Streams an accepted file: begin, the bulk frames, then end.
     private func sendAcceptedFile(_ accept: FileAccept) {
         guard let (offer, bytes) = pendingOffer,
@@ -979,20 +1001,56 @@ final class Session {
             container: offer.container, bytes: bytes.count,
             dataBytes: nil, rsrcBytes: nil, fileType: offer.fileType,
             creator: offer.creator, modified: offer.modified)))
-        var sent = 0
-        repeat {
-            let end = min(sent + FrameHeader.maxPayloadLength, bytes.count)
-            let last = end == bytes.count
-            if let frame = try? FrameCodec.encode(
-                channel: .bulk, flags: last ? [.end] : [],
-                transfer: transfer,
-                payload: Data(bytes[sent..<end])) {
-                connection.send(content: frame, completion: .idempotent)
+        outbound = Outbound(id: offer.id, transfer: transfer, bytes: bytes,
+                            sent: 0, cancelled: false)
+        onOutboundProgress(0, bytes.count)
+        sendNextOutboundChunk()
+    }
+
+    private func sendNextOutboundChunk() {
+        guard var out = outbound else { return }
+        if out.cancelled {
+            outbound = nil
+            send(.fileEnd(FileEnd(id: out.id, transfer: Int(out.transfer),
+                                  ok: false, sendMs: nil)))
+            return
+        }
+        guard out.sent < out.bytes.count else {
+            outbound = nil
+            send(.fileEnd(FileEnd(id: out.id, transfer: Int(out.transfer),
+                                  ok: true, sendMs: nil)))
+            return
+        }
+        let end = min(out.sent + FrameHeader.maxPayloadLength,
+                      out.bytes.count)
+        let last = end == out.bytes.count
+        guard let frame = try? FrameCodec.encode(
+            channel: .bulk, flags: last ? [.end] : [],
+            transfer: out.transfer,
+            payload: Data(out.bytes[out.sent..<end])) else {
+            outbound = nil
+            send(.fileEnd(FileEnd(id: out.id, transfer: Int(out.transfer),
+                                  ok: false, sendMs: nil)))
+            return
+        }
+        out.sent = end
+        outbound = out
+        let progress = out.sent
+        let total = out.bytes.count
+        connection.send(content: frame, completion: .contentProcessed {
+            [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.onOutboundProgress(progress, total)
+                self.sendNextOutboundChunk()
             }
-            sent = end
-        } while sent < bytes.count
-        send(.fileEnd(FileEnd(id: offer.id, transfer: Int(transfer),
-                              ok: true, sendMs: nil)))
+        })
+    }
+
+    /// Stops an outbound file at the next chunk boundary — never
+    /// mid-frame, which would desync the peer's decoder.
+    func cancelOutbound() {
+        outbound?.cancelled = true
     }
 
     func requestStreamStop(id: Int) {

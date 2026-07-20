@@ -288,6 +288,77 @@ final class FileWireTests: XCTestCase {
     }
 }
 
+final class OutboundFileTests: XCTestCase {
+    func testHFSNamesFitThirtyOneCharactersKeepingTheExtension() {
+        let long = String(repeating: "a", count: 40) + ".txt"
+        let out = OutboundFile.hfsName(long)
+        XCTAssertLessThanOrEqual(out.utf8.count, 31)
+        XCTAssertTrue(out.hasSuffix(".txt"), "extension must survive")
+    }
+
+    func testColonsAndLeadingDotsAreReplaced() {
+        // ":" is HFS's path separator; a leading dot hides the file.
+        XCTAssertEqual(OutboundFile.hfsName("a:b.txt"), "a-b.txt")
+        XCTAssertEqual(OutboundFile.hfsName(".hidden"), "_hidden")
+    }
+
+    func testUnmappableCharactersBecomeUnderscores() {
+        // Emoji have no MacRoman representation.
+        let out = OutboundFile.hfsName("hello👋.txt")
+        XCTAssertEqual(out, "hello_.txt")
+        XCTAssertNotNil(out.data(using: .macOSRoman))
+    }
+
+    func testTextIsConvertedAndTyped() {
+        let url = URL(fileURLWithPath: "/tmp/notes.txt")
+        let plan = OutboundFile.plan(url: url,
+                                     data: Data("a\nb\n".utf8),
+                                     convertText: true)
+        XCTAssertEqual(plan.container, "data")
+        XCTAssertEqual(plan.fileType, "TEXT")
+        XCTAssertEqual(plan.creator, "ttxt")
+        XCTAssertEqual(plan.bytes, Data([0x61, 0x0D, 0x62, 0x0D]))
+        XCTAssertNotNil(plan.note)
+    }
+
+    func testTextConversionCanBeSwitchedOff() {
+        let url = URL(fileURLWithPath: "/tmp/notes.txt")
+        let raw = Data("a\nb\n".utf8)
+        let plan = OutboundFile.plan(url: url, data: raw,
+                                     convertText: false)
+        XCTAssertEqual(plan.bytes, raw, "bytes must be untouched")
+    }
+
+    func testMacBinaryTravelsWholeAndShedsItsExtension() {
+        var header = [UInt8](repeating: 0, count: 128)
+        header[1] = 5            // name length
+        header[122] = 129        // MacBinary II
+        let data = Data(header) + Data(repeating: 7, count: 128)
+        let plan = OutboundFile.plan(
+            url: URL(fileURLWithPath: "/tmp/SimpleText.bin"),
+            data: data, convertText: true)
+        XCTAssertEqual(plan.container, "macbinary")
+        XCTAssertEqual(plan.name, "SimpleText")
+        XCTAssertEqual(plan.bytes, data)
+    }
+
+    func testAFileMerelyNamedBinIsNotTreatedAsMacBinary() {
+        let plan = OutboundFile.plan(
+            url: URL(fileURLWithPath: "/tmp/firmware.bin"),
+            data: Data(repeating: 0xFF, count: 400), convertText: true)
+        XCTAssertEqual(plan.container, "data")
+        XCTAssertEqual(plan.name, "firmware.bin")
+    }
+
+    func testUnknownExtensionsClaimNoType() {
+        let plan = OutboundFile.plan(
+            url: URL(fileURLWithPath: "/tmp/thing.wibble"),
+            data: Data([1, 2, 3]), convertText: true)
+        XCTAssertNil(plan.fileType)
+        XCTAssertNil(plan.creator)
+    }
+}
+
 final class FileConverterTests: XCTestCase {
     func testClassicTextBecomesUTF8WithUnixEndings() {
         // "café" in MacRoman: é is 0x8E.

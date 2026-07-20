@@ -25,6 +25,21 @@ struct FilesModuleView: View {
                alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear { if model.rows.isEmpty { model.refresh() } }
+        .confirmationDialog(
+            "Replace “\(model.overwritePrompt?.name ?? "")”?",
+            isPresented: Binding(
+                get: { model.overwritePrompt != nil },
+                set: { if !$0 { model.cancelOverwrite() } }),
+            presenting: model.overwritePrompt) { prompt in
+            Button("Replace", role: .destructive) {
+                model.confirmOverwrite()
+            }
+            Button("Cancel", role: .cancel) { model.cancelOverwrite() }
+        } message: { prompt in
+            Text("A file of that name is already in "
+                 + (prompt.folder.isEmpty ? "the shared folder"
+                                          : prompt.folder) + ".")
+        }
     }
 
     private var header: some View {
@@ -77,6 +92,14 @@ struct FilesModuleView: View {
             }
 
             Spacer()
+            Button {
+                chooseFileToSend()
+            } label: {
+                Label("Add File…", systemImage: "plus")
+            }
+            .disabled(!model.canBrowse || model.transfer != nil)
+            .help("Send a file from this Mac into this folder")
+
             if model.isLoading {
                 ProgressView().controlSize(.small)
             }
@@ -191,8 +214,11 @@ struct FilesModuleView: View {
     private func transferRow(_ transfer: FilesModuleModel.TransferState)
         -> some View {
         HStack(spacing: 12) {
+            Image(systemName: transfer.direction == .incoming
+                  ? "arrow.down.circle" : "arrow.up.circle")
+                .foregroundStyle(.secondary)
             ProgressView(value: transfer.fraction)
-                .frame(maxWidth: 260)
+                .frame(maxWidth: 240)
             Text("\(transfer.name) — \(byteText(transfer.received)) of "
                  + byteText(transfer.expected))
                 .font(.caption)
@@ -208,6 +234,8 @@ struct FilesModuleView: View {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.red)
             }
+            Toggle("Convert text files", isOn: $model.convertText)
+                .help("Line endings and encoding, both directions")
             Spacer()
             Text("Downloads to")
                 .foregroundStyle(.secondary)
@@ -247,6 +275,19 @@ struct FilesModuleView: View {
             urls.insert(model.downloadDirectory, at: 0)
         }
         return urls
+    }
+
+    private func chooseFileToSend() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Send"
+        panel.message = "Choose a file to send to "
+            + model.connection.peerLabel + "."
+        if panel.runModal() == .OK, let url = panel.url {
+            model.send(url)
+        }
     }
 
     private func chooseDirectory() {

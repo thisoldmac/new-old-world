@@ -90,6 +90,95 @@ enum FileConverter {
     }
 }
 
+/// Turning a modern file into one the classic Mac can hold: a name HFS
+/// accepts, and bytes in the form that machine expects.
+enum OutboundFile {
+    struct Plan {
+        var name: String
+        var container: String       // "data" | "macbinary"
+        var bytes: Data
+        var fileType: String?
+        var creator: String?
+        /// What was done, for the badge and the transfer log.
+        var note: String?
+    }
+
+    /// HFS allows 31 characters, forbids colons (its path separator),
+    /// and stores names in MacRoman. Truncation keeps the extension,
+    /// because that is what both sides use to recognise the file.
+    static func hfsName(_ name: String) -> String {
+        var base = name.replacingOccurrences(of: ":", with: "-")
+        if base.hasPrefix(".") { base = "_" + base.dropFirst() }
+        base = String(base.unicodeScalars.map { scalar -> Character in
+            String(scalar).data(using: .macOSRoman) != nil
+                ? Character(scalar) : "_"
+        })
+        if base.utf8.count <= 31 { return base.isEmpty ? "Untitled" : base }
+
+        let ext = (base as NSString).pathExtension
+        let stem = (base as NSString).deletingPathExtension
+        if ext.isEmpty || ext.count > 10 {
+            return String(base.prefix(31))
+        }
+        let room = 31 - ext.count - 1
+        guard room > 0 else { return String(base.prefix(31)) }
+        return String(stem.prefix(room)) + "." + ext
+    }
+
+    /// Chooses the container and converts the bytes. A .bin file is
+    /// already MacBinary — it travels as-is and the guest rebuilds both
+    /// forks from it, so the name sheds the extension it only ever wore
+    /// to survive the trip out.
+    static func plan(url: URL, data: Data, convertText: Bool) -> Plan {
+        let original = url.lastPathComponent
+        if original.lowercased().hasSuffix(".bin"),
+           looksLikeMacBinary(data) {
+            let inner = (original as NSString).deletingPathExtension
+            return Plan(name: hfsName(inner), container: "macbinary",
+                        bytes: data, fileType: nil, creator: nil,
+                        note: "MacBinary (both forks)")
+        }
+        if convertText, FileConverter.isText(fileType: nil, name: original),
+           let text = String(data: data, encoding: .utf8) {
+            return Plan(name: hfsName(original), container: "data",
+                        bytes: FileConverter.toClassicText(text),
+                        fileType: "TEXT", creator: "ttxt",
+                        note: "UTF-8 → MacRoman, LF → CR")
+        }
+        let (type, creator) = classicType(for: original)
+        return Plan(name: hfsName(original), container: "data", bytes: data,
+                    fileType: type, creator: creator, note: nil)
+    }
+
+    /// MacBinary II/III: a zero at 0 and 74, a plausible name length,
+    /// and the version bytes. Cheap, and wrong only for files that went
+    /// out of their way to look like one.
+    static func looksLikeMacBinary(_ data: Data) -> Bool {
+        guard data.count >= 128 else { return false }
+        let b = [UInt8](data.prefix(128))
+        return b[0] == 0 && b[74] == 0 && b[1] >= 1 && b[1] <= 63
+            && (b[122] == 129 || b[122] == 130)
+    }
+
+    /// Enough of a type map that a transferred file opens by
+    /// double-click on the other side; unknown extensions stay generic
+    /// rather than claiming something false.
+    static func classicType(for name: String) -> (String?, String?) {
+        switch (name as NSString).pathExtension.lowercased() {
+        case "txt", "text", "md", "log": return ("TEXT", "ttxt")
+        case "gif": return ("GIFf", "ogle")
+        case "jpg", "jpeg": return ("JPEG", "ogle")
+        case "png": return ("PNGf", "ogle")
+        case "pict", "pct": return ("PICT", "ttxt")
+        case "mov", "qt": return ("MooV", "TVOD")
+        case "sit": return ("SIT!", "SIT!")
+        case "zip": return ("ZIP ", "SITx")
+        case "hqx": return ("TEXT", "SITx")
+        default: return (nil, nil)
+        }
+    }
+}
+
 /// Classic Mac epoch (1904-01-01) to Foundation's.
 enum ClassicDate {
     private static let offset: TimeInterval = 2_082_844_800

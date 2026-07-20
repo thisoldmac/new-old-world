@@ -84,10 +84,32 @@ final class FilesModuleModel: ObservableObject {
         }
     }
 
+    /// A file the guest already has under this name. Sending it again
+    /// is the one destructive thing this module does, so it waits for a
+    /// human rather than resolving itself.
+    struct OverwritePrompt: Equatable, Identifiable {
+        var id: String { name }
+        var name: String
+        var url: URL
+        var folder: String
+    }
+
+    @Published var overwritePrompt: OverwritePrompt?
+
+    /// Inbound text conversion is destructive in a way downloading is
+    /// not — a file that only looked like text comes out changed — so it
+    /// can be switched off.
+    @Published var convertText: Bool {
+        didSet { defaults.set(convertText, forKey: Keys.convertText) }
+    }
+
     struct TransferState: Equatable {
         var name: String
+        var direction: Direction
         var received: Int
         var expected: Int
+
+        enum Direction { case incoming, outgoing }
         var fraction: Double {
             expected > 0 ? min(1, Double(received) / Double(expected)) : 0
         }
@@ -98,6 +120,7 @@ final class FilesModuleModel: ObservableObject {
 
     private enum Keys {
         static let downloads = "files.downloadDirectory"
+        static let convertText = "files.convertText"
     }
 
     private let listener: GuestListener
@@ -108,6 +131,8 @@ final class FilesModuleModel: ObservableObject {
     init(listener: GuestListener, defaults: UserDefaults = .standard) {
         self.listener = listener
         self.defaults = defaults
+        self.convertText =
+            defaults.object(forKey: Keys.convertText) as? Bool ?? true
         let stored = defaults.string(forKey: Keys.downloads)
         self.downloadDirectory = stored.map { URL(fileURLWithPath: $0) }
             ?? FileManager.default.urls(for: .downloadsDirectory,
@@ -116,8 +141,8 @@ final class FilesModuleModel: ObservableObject {
         progressWatch = listener.$captureProgress
             .receive(on: DispatchQueue.main)
             .sink { [weak self] progress in
-                guard let self, var state = self.transfer else { return }
-                guard let progress else { return }
+                guard let self, var state = self.transfer,
+                      let progress else { return }
                 state.received = progress.received
                 state.expected = progress.expected
                 self.transfer = state
@@ -187,8 +212,8 @@ final class FilesModuleModel: ObservableObject {
     func download(_ row: FileRow, container: String? = nil) {
         guard !row.isFolder, transfer == nil else { return }
         lastError = nil
-        transfer = TransferState(name: row.name, received: 0,
-                                 expected: row.sizeBytes)
+        transfer = TransferState(name: row.name, direction: .incoming,
+                                 received: 0, expected: row.sizeBytes)
         listener.getFile(path: row.path,
                          container: container) { [weak self] result in
             guard let self else { return }
@@ -204,6 +229,54 @@ final class FilesModuleModel: ObservableObject {
 
     func cancelTransfer() {
         listener.cancelFile()
+    }
+
+    // MARK: - Sending
+
+    /// Sends a file from anywhere on this Mac into the folder being
+    /// browsed. The share bounds what the other machine may reach on its
+    /// own; it never bounds what a human deliberately sends, so the
+    /// source is any file at all.
+    func send(_ url: URL, overwrite: Bool = false) {
+        guard canBrowse, transfer == nil else { return }
+        guard let data = try? Data(contentsOf: url) else {
+            lastError = "Could not read \(url.lastPathComponent)"
+            return
+        }
+        let plan = OutboundFile.plan(url: url, data: data,
+                                     convertText: convertText)
+        lastError = nil
+        transfer = TransferState(name: plan.name, direction: .outgoing,
+                                 received: 0, expected: plan.bytes.count)
+        let folder = path
+        listener.putFile(name: plan.name, into: folder,
+                         container: plan.container, bytes: plan.bytes,
+                         fileType: plan.fileType, creator: plan.creator,
+                         modified: nil,
+                         overwrite: overwrite) { [weak self] result in
+            guard let self else { return }
+            self.transfer = nil
+            switch result {
+            case .success:
+                self.refresh()
+            case .failure(let failure) where failure.code == "exists":
+                // Not an error: the human has a decision to make.
+                self.overwritePrompt = OverwritePrompt(
+                    name: plan.name, url: url, folder: folder)
+            case .failure(let failure):
+                self.lastError = failure.message
+            }
+        }
+    }
+
+    func confirmOverwrite() {
+        guard let prompt = overwritePrompt else { return }
+        overwritePrompt = nil
+        send(prompt.url, overwrite: true)
+    }
+
+    func cancelOverwrite() {
+        overwritePrompt = nil
     }
 
     @discardableResult
