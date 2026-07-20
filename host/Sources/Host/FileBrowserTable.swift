@@ -76,13 +76,19 @@ struct FileBrowserTable: NSViewRepresentable {
 
         func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
 
+        /// AppKit passes row -1 for "on the table, not on a row", and a
+        /// bare `row < rows.count` is true for -1. Every index from
+        /// AppKit goes through here.
+        private func item(at index: Int) -> FileRow? {
+            index >= 0 && index < rows.count ? rows[index] : nil
+        }
+
         func tableView(_ tableView: NSTableView,
                        viewFor tableColumn: NSTableColumn?,
                        row: Int) -> NSView? {
-            guard row < rows.count, let column = tableColumn else {
+            guard let item = item(at: row), let column = tableColumn else {
                 return nil
             }
-            let item = rows[row]
             let text = NSTextField(labelWithString: "")
             text.lineBreakMode = .byTruncatingMiddle
             text.font = .systemFont(ofSize: 12)
@@ -127,19 +133,20 @@ struct FileBrowserTable: NSViewRepresentable {
         }
 
         @objc func doubleClicked(_ sender: Any) {
-            guard let table, table.clickedRow >= 0,
-                  table.clickedRow < rows.count else { return }
-            parent.onOpen(rows[table.clickedRow])
+            guard let table, let item = item(at: table.clickedRow) else {
+                return
+            }
+            parent.onOpen(item)
         }
 
         // MARK: - Dragging out (file promises)
 
         func tableView(_ tableView: NSTableView,
                        pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
-            guard row < rows.count else { return nil }
-            let item = rows[row]
             // Folders would need a recursive pull; files only for now.
-            guard !item.isFolder else { return nil }
+            guard let item = item(at: row), !item.isFolder else {
+                return nil
+            }
             let type = UTType(filenameExtension:
                 (item.name as NSString).pathExtension) ?? .data
             let provider = NSFilePromiseProvider(fileType: type.identifier,
@@ -196,7 +203,7 @@ struct FileBrowserTable: NSViewRepresentable {
             guard info.draggingSource == nil else { return [] }
             // Dropping ON a folder means into it; anywhere else means
             // the folder being browsed.
-            if operation == .on, row < rows.count, rows[row].isFolder {
+            if operation == .on, item(at: row)?.isFolder == true {
                 return .copy
             }
             tableView.setDropRow(-1, dropOperation: .on)
@@ -210,9 +217,10 @@ struct FileBrowserTable: NSViewRepresentable {
                 forClasses: [NSURL.self],
                 options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
             guard !urls.isEmpty else { return false }
-            let folder = dropOperation == .on && row < rows.count
-                && rows[row].isFolder ? rows[row].path : nil
-            parent.model.enqueue(urls, into: folder)
+            let target = dropOperation == .on ? item(at: row) : nil
+            parent.model.enqueue(urls,
+                                 into: target?.isFolder == true
+                                     ? target?.path : nil)
             return true
         }
     }
