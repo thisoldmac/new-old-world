@@ -420,15 +420,17 @@ void now_files_root_name(char *out, long cap)
 {
     NowPrefs prefs;
     short vref;
+    long dir;
 
+    /* Always describe what a request would ACTUALLY resolve against —
+       the same volume and directory resolve() uses — so the label can
+       never disagree with the share. A saved label string was worse
+       than none: it kept showing a folder that preferences no longer
+       pointed at. */
     now_prefs_load(&prefs);
-    if (prefs.share_dir > 0 && share_volume(&vref, &prefs)
-        && full_path_of_dir(vref, prefs.share_dir, out, cap)) {
-        return;
-    }
-    if (prefs.share_root[0] != '\0') {
-        strncpy(out, prefs.share_root, (size_t)cap - 1);
-        out[cap - 1] = '\0';
+    dir = prefs.share_dir > 0 ? prefs.share_dir : fsRtDirID;
+    if (share_volume(&vref, &prefs)
+        && full_path_of_dir(vref, dir, out, cap)) {
         return;
     }
     if (prefs.share_vol[0] != '\0') {
@@ -455,13 +457,6 @@ void now_files_root_name(char *out, long cap)
     out[cap - 1] = '\0';
 }
 
-/* Builds the printable path of a directory ("Macintosh HD:Lab:") from
-   its ID. It climbs by ID rather than from an FSSpec's name because Nav
-   hands back the "directory spec" form — an EMPTY name with parID set to
-   the directory's own ID — so there is no leaf name to start from. The
-   classic idiom does the rest: PBGetCatInfo with ioFDirIndex -1 names
-   the directory ioDrDirID itself and reports its parent, and calling it
-   with fsRtDirID names the volume, which is where the climb ends. */
 static int full_path_of_dir(short vref, long dir_id, char *out, long cap)
 {
     char tmp[512];
