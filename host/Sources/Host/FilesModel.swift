@@ -39,6 +39,12 @@ struct FileRow: Identifiable, Equatable {
         entry.modified.flatMap(ClassicDate.date(from:))
     }
 
+    /// Sorting needs a total order; undated items sort oldest rather
+    /// than scattering.
+    var sortableDate: Date {
+        modified ?? Date(timeIntervalSince1970: 0)
+    }
+
     /// What a download would do — shown as a badge so automatic never
     /// means opaque.
     var conversionNote: String? {

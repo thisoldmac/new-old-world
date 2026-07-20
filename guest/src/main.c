@@ -92,9 +92,18 @@ static Boolean another_instance_is_running(void)
     ProcessSerialNumber self;
     ProcessSerialNumber psn;
     ProcessInfoRec info;
+    Str31 name;
+    Str31 self_name;
     Boolean same = false;
 
     if (GetCurrentProcess(&self) != noErr) {
+        return false;
+    }
+    memset(&info, 0, sizeof info);
+    info.processInfoLength = sizeof info;
+    info.processName = self_name;
+    self_name[0] = 0;
+    if (GetProcessInformation(&self, &info) != noErr) {
         return false;
     }
     psn.highLongOfPSN = 0;
@@ -102,10 +111,21 @@ static Boolean another_instance_is_running(void)
     while (GetNextProcess(&psn) == noErr) {
         memset(&info, 0, sizeof info);
         info.processInfoLength = sizeof info;
+        info.processName = name;
+        name[0] = 0;
         if (GetProcessInformation(&psn, &info) != noErr) {
             continue;
         }
         if (info.processSignature != PRODUCT_CREATOR_CODE) {
+            continue;
+        }
+        /* Match by NAME, not merely by creator. The stale instance a
+           redeploy leaves behind runs from a trashed file that still
+           carries the same name, so this still catches it — while a
+           deliberately duplicated copy (a second guest, on another
+           port, for another host) is a different name and is allowed
+           to run alongside. */
+        if (!EqualString(name, self_name, false, false)) {
             continue;
         }
         if (SameProcess(&psn, &self, &same) == noErr && same) {
