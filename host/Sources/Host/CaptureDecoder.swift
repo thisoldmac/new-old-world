@@ -99,10 +99,49 @@ enum CaptureDecoder {
         return (palette, pixels)
     }
 
-    /// Expands the guest's pixels to 32-bit RGBA and wraps them in a CGImage.
-    static func makeImage(blob: [UInt8],
-                          format: CaptureFormat) throws -> CGImage {
-        let (palette, pixels) = try decodeRows(blob, format: format)
+    /// Decodes one delta rect's rows from `blob` starting at `cursor`
+    /// (same per-row encoding as full rows, over the rect's column slice)
+    /// and patches them into `canvas`.
+    static func applyRect(_ rect: [Int], blob: [UInt8], cursor: inout Int,
+                          format: CaptureFormat,
+                          canvas: inout [UInt8]) throws {
+        guard rect.count == 4 else { throw CaptureDecodeError.badRowLength }
+        let (row0, nRows, colOff, colBytes) =
+            (rect[0], rect[1], rect[2], rect[3])
+        guard row0 >= 0, nRows > 0, colOff >= 0, colBytes > 0,
+              colOff + colBytes <= format.rowBytes,
+              (row0 + nRows) * format.rowBytes <= canvas.count else {
+            throw CaptureDecodeError.badRowLength
+        }
+        for row in row0..<(row0 + nRows) {
+            let slice: [UInt8]
+            if format.packed {
+                guard cursor + 2 <= blob.count else {
+                    throw CaptureDecodeError.truncated
+                }
+                let len = Int(blob[cursor]) << 8 | Int(blob[cursor + 1])
+                cursor += 2
+                guard len > 0, cursor + len <= blob.count else {
+                    throw CaptureDecodeError.badRowLength
+                }
+                slice = try unpackBits(blob[cursor..<(cursor + len)],
+                                       expected: colBytes)
+                cursor += len
+            } else {
+                guard cursor + colBytes <= blob.count else {
+                    throw CaptureDecodeError.truncated
+                }
+                slice = Array(blob[cursor..<(cursor + colBytes)])
+                cursor += colBytes
+            }
+            let dst = row * format.rowBytes + colOff
+            canvas.replaceSubrange(dst..<(dst + colBytes), with: slice)
+        }
+    }
+
+    /// Expands raw pixels + palette to 32-bit RGBA in a CGImage.
+    static func renderImage(pixels: [UInt8], palette: [UInt8],
+                            format: CaptureFormat) throws -> CGImage {
         let width = format.width
         let height = format.height
         var rgba = [UInt8](repeating: 255, count: width * height * 4)
@@ -172,6 +211,14 @@ enum CaptureDecoder {
             throw CaptureDecodeError.truncated
         }
         return image
+    }
+
+    /// Decode + render in one step — the one-shot capture path.
+    static func makeImage(blob: [UInt8],
+                          format: CaptureFormat) throws -> CGImage {
+        let (palette, pixels) = try decodeRows(blob, format: format)
+        return try renderImage(pixels: pixels, palette: palette,
+                               format: format)
     }
 
     static func pngData(_ image: CGImage) -> Data? {

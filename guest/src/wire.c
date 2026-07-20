@@ -419,9 +419,19 @@ enum {
     kXferDeadlineTicks = 60 * 120     /* give up on a stuck transfer */
 };
 
+typedef enum {
+    kFrameStandalone = 0,             /* one-shot capture: no frame field */
+    kFrameKey,
+    kFrameDelta,
+    kFrameEmpty
+} FrameKind;
+
 typedef struct {
     short width, height, depth, row_bytes;
     long capture_ms;
+    FrameKind kind;
+    PixelRect rects[kPixelMaxRects];
+    short n_rects;
 } ShotMeta;
 
 /* Live-stream bracket (stream.start .. stream.stopped). service_stream
@@ -451,6 +461,15 @@ static struct {
     ShotMeta ready_meta;
     Boolean ready;
     Boolean stopping;                 /* stop acked once the drain ends */
+    /* Delta base: the previous frame's raw rows plus its palette. A
+       keyframe is forced at start, on host refresh, on palette change,
+       and when a majority of rows are dirty anyway. */
+    Ptr prev;
+    long prev_bytes;
+    short prev_row_bytes, prev_height;
+    unsigned char prev_palette[768];
+    long prev_palette_bytes;
+    Boolean force_key;
     unsigned long cap_start_tick;
     long est_send_ticks;
     long est_cap_ticks;               /* capture + encode, measured */
@@ -699,11 +718,38 @@ static int gather_shot(short depth, Boolean pack, PixelBlob *blob,
 /* Announces capture.begin and arms the incremental sender. Takes ownership
    of the blob either way; on failure the host gets capture.end ok:false so
    it never waits on a transfer that will not come. */
+/* Appends the frame/rects fields for stream frames; standalone captures
+   keep the original message shape. */
+static long begin_frame_fields(const ShotMeta *meta, char *out, long cap)
+{
+    long pos = 0;
+    short i;
+
+    if (meta->kind == kFrameStandalone) {
+        out[0] = '\0';
+        return 0;
+    }
+    if (meta->kind == kFrameKey) {
+        return snprintf(out, (size_t)cap, ",\"frame\":\"key\"");
+    }
+    pos = snprintf(out, (size_t)cap, ",\"frame\":\"delta\",\"rects\":[");
+    for (i = 0; i < meta->n_rects; ++i) {
+        pos += snprintf(out + pos, (size_t)(cap - pos),
+                        "%s[%d,%d,%d,%d]", i > 0 ? "," : "",
+                        (int)meta->rects[i].row, (int)meta->rects[i].n_rows,
+                        (int)meta->rects[i].col_off,
+                        (int)meta->rects[i].col_bytes);
+    }
+    pos += snprintf(out + pos, (size_t)(cap - pos), "]");
+    return pos;
+}
+
 static int arm_transfer(long id, unsigned short xfer, const ShotMeta *meta,
                         PixelBlob *blob, long chunk, short pace_ms,
                         Boolean pushed)
 {
-    char json[512];
+    char frame_fields[640];
+    char json[1024];
 
     memset(&g_xfer, 0, sizeof g_xfer);
     g_xfer.blob = *blob;
@@ -719,16 +765,18 @@ static int arm_transfer(long id, unsigned short xfer, const ShotMeta *meta,
         return 0;
     }
 
+    begin_frame_fields(meta, frame_fields, sizeof frame_fields);
     snprintf(json, sizeof json,
              "{\"type\":\"capture.begin\",\"id\":%ld,\"transfer\":%u,"
              "\"width\":%d,\"height\":%d,\"depth\":%d,"
              "\"rowBytes\":%d,\"bytes\":%ld,\"paletteBytes\":%ld,"
-             "\"encoding\":\"%s\",\"captureMs\":%ld,\"encodeMs\":%ld}",
+             "\"encoding\":\"%s\",\"captureMs\":%ld,\"encodeMs\":%ld"
+             "%s}",
              id, xfer, (int)meta->width, (int)meta->height,
              (int)meta->depth, (int)meta->row_bytes, g_xfer.blob.total_bytes,
              g_xfer.blob.palette_bytes,
              g_xfer.blob.packed ? "packbits" : "raw",
-             meta->capture_ms, g_xfer.blob.encode_ms);
+             meta->capture_ms, g_xfer.blob.encode_ms, frame_fields);
     if (!send_control(json)) {
         xfer_cleanup();
         return 0;
@@ -932,6 +980,10 @@ static void stream_pipeline_clear(void)
         now_pixels_dispose(&g_stream.ready_blob);
         g_stream.ready = false;
     }
+    if (g_stream.prev != NULL) {
+        DisposePtr(g_stream.prev);
+        g_stream.prev = NULL;
+    }
 }
 
 static void stream_drop(void)
@@ -997,6 +1049,7 @@ static void stream_start(const char *reply)
     g_stream.next_frame_tick = 0;
     g_stream.est_cap_ticks = 10;      /* ~165 ms until measured */
     g_stream.est_send_ticks = 0;      /* first capture starts at once */
+    g_stream.force_key = true;        /* frame one is always whole */
     g_stream.active = true;
     g_streamreq.pending = false;
     note_shot("Streaming to host...");
@@ -1093,15 +1146,20 @@ static void stream_schedule_capture(void)
     g_stream.cap_start_tick = TickCount() + (unsigned long)lead;
 }
 
-/* Finishes a completed banded capture: export + encode now, so the frame
-   is ready the instant the lane frees. */
+/* Finishes a completed banded capture: diff, then export + encode the
+   right kind of frame, so it is ready the instant the lane frees. */
 static void stream_finish_capture(unsigned long began)
 {
     CaptureImage image = g_stream.cap.image;
+    unsigned char palette[768];
+    long palette_bytes;
+    long height, raw_bytes;
+    int rc;
 
     memset(&g_stream.cap, 0, sizeof g_stream.cap);
     g_stream.cap_active = false;
 
+    memset(&g_stream.ready_meta, 0, sizeof g_stream.ready_meta);
     g_stream.ready_meta.width =
         (short)(image.bounds.right - image.bounds.left);
     g_stream.ready_meta.height =
@@ -1110,16 +1168,106 @@ static void stream_finish_capture(unsigned long began)
     g_stream.ready_meta.row_bytes = image.row_bytes;
     g_stream.ready_meta.capture_ms =
         (long)((TickCount() - began) * 1000 / 60);
+    height = g_stream.ready_meta.height;
+    raw_bytes = (long)image.row_bytes * height;
+
+    /* A palette change invalidates every delta; so does a base buffer of
+       the wrong shape (depth cannot change mid-stream, but composite
+       garbage is the worst failure mode - be safe). */
+    palette_bytes = now_pixels_palette(&image, palette, sizeof palette);
+    if (g_stream.prev != NULL
+        && (g_stream.prev_bytes != raw_bytes
+            || g_stream.prev_row_bytes != image.row_bytes
+            || g_stream.prev_height != (short)height
+            || palette_bytes != g_stream.prev_palette_bytes
+            || memcmp(palette, g_stream.prev_palette,
+                      (size_t)palette_bytes) != 0)) {
+        g_stream.force_key = true;
+        if (g_stream.prev_bytes != raw_bytes) {
+            DisposePtr(g_stream.prev);
+            g_stream.prev = NULL;
+        }
+    }
+    if (g_stream.prev == NULL) {
+        g_stream.prev = NewPtr(raw_bytes);
+        if (g_stream.prev == NULL) {
+            capture_image_dispose(&image);
+            stream_end("capture failed");
+            return;
+        }
+        g_stream.prev_bytes = raw_bytes;
+        g_stream.prev_row_bytes = image.row_bytes;
+        g_stream.prev_height = (short)height;
+        g_stream.force_key = true;
+    }
+
     memset(&g_stream.ready_blob, 0, sizeof g_stream.ready_blob);
-    if (now_pixels_export(&image, g_stream.pack,
-                          &g_stream.ready_blob) != 0) {
-        capture_image_dispose(&image);
-        stream_end("capture failed");
-        return;
+    if (!g_stream.force_key) {
+        long dirty_rows = 0;
+        short n = now_pixels_diff(&image, g_stream.prev,
+                                  g_stream.ready_meta.rects,
+                                  kPixelMaxRects, &dirty_rows);
+
+        if (n < 0) {
+            g_stream.force_key = true;
+        } else if (n == 0) {
+            g_stream.ready_meta.kind = kFrameEmpty;
+        } else if (dirty_rows * 10 > height * 7) {
+            g_stream.force_key = true;   /* mostly new screen: send whole */
+        } else {
+            g_stream.ready_meta.kind = kFrameDelta;
+            g_stream.ready_meta.n_rects = n;
+            rc = now_pixels_export_rects(&image, g_stream.pack,
+                                         g_stream.ready_meta.rects, n,
+                                         &g_stream.ready_blob);
+            if (rc != 0) {
+                capture_image_dispose(&image);
+                stream_end("capture failed");
+                return;
+            }
+        }
+    }
+    if (g_stream.force_key) {
+        g_stream.ready_meta.kind = kFrameKey;
+        g_stream.ready_meta.n_rects = 0;
+        rc = now_pixels_export(&image, g_stream.pack, &g_stream.ready_blob);
+        if (rc != 0 || now_pixels_copy_raw(&image, g_stream.prev) != 0) {
+            capture_image_dispose(&image);
+            stream_end("capture failed");
+            return;
+        }
+        memcpy(g_stream.prev_palette, palette, (size_t)palette_bytes);
+        g_stream.prev_palette_bytes = palette_bytes;
+        g_stream.force_key = false;
     }
     capture_image_dispose(&image);
     g_stream.ready = true;
     g_stream.est_cap_ticks = (long)(TickCount() - began);
+}
+
+/* An empty frame skips the bulk plane entirely: begin and end go out as
+   a control pair (~150 bytes), keeping fps honest on a static screen. */
+static void stream_send_empty_frame(void)
+{
+    char json[256];
+    unsigned short xfer = next_xfer();
+
+    snprintf(json, sizeof json,
+             "{\"type\":\"capture.begin\",\"id\":%ld,\"transfer\":%u,"
+             "\"width\":%d,\"height\":%d,\"depth\":%d,"
+             "\"rowBytes\":%d,\"bytes\":0,\"paletteBytes\":0,"
+             "\"encoding\":\"raw\",\"captureMs\":%ld,"
+             "\"frame\":\"empty\"}",
+             g_stream.id, xfer, (int)g_stream.ready_meta.width,
+             (int)g_stream.ready_meta.height,
+             (int)g_stream.ready_meta.depth,
+             (int)g_stream.ready_meta.row_bytes,
+             g_stream.ready_meta.capture_ms);
+    send_control(json);
+    snprintf(json, sizeof json,
+             "{\"type\":\"capture.end\",\"id\":%ld,\"transfer\":%u,"
+             "\"ok\":true,\"sendMs\":0}", g_stream.id, xfer);
+    send_control(json);
 }
 
 /* The pipelined frame pump: while frame N sends, frame N+1 is captured a
@@ -1149,9 +1297,12 @@ static void service_stream(void)
         g_stream.next_frame_tick =
             TickCount() + g_stream.min_interval_ticks;
         g_stream.ready = false;
-        if (!arm_transfer(g_stream.id, next_xfer(), &g_stream.ready_meta,
-                          &g_stream.ready_blob, g_stream.chunk,
-                          g_stream.pace_ms, false)) {
+        if (g_stream.ready_meta.kind == kFrameEmpty) {
+            stream_send_empty_frame();
+        } else if (!arm_transfer(g_stream.id, next_xfer(),
+                                 &g_stream.ready_meta,
+                                 &g_stream.ready_blob, g_stream.chunk,
+                                 g_stream.pace_ms, false)) {
             stream_end("transfer failed");
             return;
         }
@@ -1238,6 +1389,13 @@ static int handle_frame(const char *reply)
     }
     if (now_json_type_is(reply, "stream.stop")) {
         stream_stop(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "stream.refresh")) {
+        if (g_stream.active
+            && now_json_find_int(reply, "id", -1) == g_stream.id) {
+            g_stream.force_key = true;
+        }
         return 1;
     }
     if (now_json_type_is(reply, "capture.accept")) {

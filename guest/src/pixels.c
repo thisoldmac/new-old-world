@@ -110,3 +110,192 @@ void now_pixels_dispose(PixelBlob *blob)
         blob->data = NULL;
     }
 }
+
+/* --- delta frames ------------------------------------------------------- */
+
+short now_pixels_diff(CaptureImage *image, Ptr prev,
+                      PixelRect *rects, short max_rects, long *dirty_rows)
+{
+    PixMapHandle pixels;
+    long height = image->bounds.bottom - image->bounds.top;
+    long row_bytes = image->row_bytes;
+    Ptr base;
+    long row;
+    short count = 0;
+    long dirty = 0;
+    enum { kMergeGap = 4 };           /* runs closer than this merge */
+
+    *dirty_rows = 0;
+    pixels = GetGWorldPixMap(image->world);
+    if (pixels == NULL || !LockPixels(pixels)) {
+        return -1;
+    }
+    base = GetPixBaseAddr(pixels);
+
+    for (row = 0; row < height; ++row) {
+        Ptr cur = base + row * row_bytes;
+        Ptr old = prev + row * row_bytes;
+        long lo, hi;
+
+        if (memcmp(cur, old, (size_t)row_bytes) == 0) {
+            continue;
+        }
+        for (lo = 0; cur[lo] == old[lo]; ++lo) {
+        }
+        for (hi = row_bytes - 1; cur[hi] == old[hi]; --hi) {
+        }
+        memcpy(old, cur, (size_t)row_bytes);
+        ++dirty;
+
+        if (count > 0
+            && row - (rects[count - 1].row + rects[count - 1].n_rows)
+               < kMergeGap) {
+            PixelRect *r = &rects[count - 1];
+            long r_hi = (long)r->col_off + r->col_bytes;
+
+            r->n_rows = (short)(row - r->row + 1);
+            if (lo < r->col_off) {
+                r->col_off = (short)lo;
+            }
+            if (hi + 1 > r_hi) {
+                r_hi = hi + 1;
+            }
+            r->col_bytes = (short)(r_hi - r->col_off);
+        } else if (count < max_rects) {
+            rects[count].row = (short)row;
+            rects[count].n_rows = 1;
+            rects[count].col_off = (short)lo;
+            rects[count].col_bytes = (short)(hi - lo + 1);
+            ++count;
+        } else {
+            /* Out of rects: widen the last one to swallow everything from
+               its start down to here. Coarse, but always correct. */
+            PixelRect *r = &rects[count - 1];
+
+            r->n_rows = (short)(row - r->row + 1);
+            r->col_off = 0;
+            r->col_bytes = (short)row_bytes;
+        }
+    }
+    UnlockPixels(pixels);
+    *dirty_rows = dirty;
+    return count;
+}
+
+int now_pixels_copy_raw(CaptureImage *image, Ptr dst)
+{
+    PixMapHandle pixels;
+    long height = image->bounds.bottom - image->bounds.top;
+
+    pixels = GetGWorldPixMap(image->world);
+    if (pixels == NULL || !LockPixels(pixels)) {
+        return -1;
+    }
+    memcpy(dst, GetPixBaseAddr(pixels),
+           (size_t)(image->row_bytes * height));
+    UnlockPixels(pixels);
+    return 0;
+}
+
+long now_pixels_palette(CaptureImage *image, unsigned char *out, long cap)
+{
+    PixMapHandle pixels;
+    CTabHandle ctab;
+    long bytes = 0;
+    long i;
+
+    if (image->depth > 8) {
+        return 0;
+    }
+    pixels = GetGWorldPixMap(image->world);
+    if (pixels == NULL) {
+        return 0;
+    }
+    ctab = (**pixels).pmTable;
+    if (ctab == NULL || *ctab == NULL) {
+        return 0;
+    }
+    for (i = 0; i <= (**ctab).ctSize && bytes + 3 <= cap; ++i) {
+        ColorSpec *spec = &(**ctab).ctTable[i];
+
+        out[bytes++] = (unsigned char)(spec->rgb.red >> 8);
+        out[bytes++] = (unsigned char)(spec->rgb.green >> 8);
+        out[bytes++] = (unsigned char)(spec->rgb.blue >> 8);
+    }
+    return bytes;
+}
+
+int now_pixels_export_rects(CaptureImage *image, Boolean pack,
+                            const PixelRect *rects, short n_rects,
+                            PixelBlob *blob)
+{
+    PixMapHandle pixels;
+    long row_bytes = image->row_bytes;
+    long capacity = 0;
+    Handle out;
+    Ptr base;
+    Ptr src_base;
+    long pos = 0;
+    short i;
+    long row;
+    UnsignedWide t0, t1;
+
+    memset(blob, 0, sizeof *blob);
+    if (image->depth < 8) {
+        pack = false;
+    }
+    for (i = 0; i < n_rects; ++i) {
+        long per_row = pack ? packed_ceiling(rects[i].col_bytes)
+                            : rects[i].col_bytes;
+
+        capacity += (long)rects[i].n_rows * per_row;
+    }
+
+    pixels = GetGWorldPixMap(image->world);
+    if (pixels == NULL || !LockPixels(pixels)) {
+        return -1;
+    }
+    Microseconds(&t0);
+    out = NewHandle(capacity);
+    if (out == NULL) {
+        UnlockPixels(pixels);
+        return -2;
+    }
+    HLock(out);
+    base = *out;
+    src_base = GetPixBaseAddr(pixels);
+
+    for (i = 0; i < n_rects; ++i) {
+        for (row = rects[i].row;
+             row < rects[i].row + rects[i].n_rows; ++row) {
+            Ptr src = src_base + row * row_bytes + rects[i].col_off;
+
+            if (pack) {
+                Ptr sp = src;
+                Ptr dp = base + pos + 2;
+                long packed;
+
+                PackBits(&sp, &dp, rects[i].col_bytes);
+                packed = dp - (base + pos + 2);
+                base[pos] = (char)((packed >> 8) & 0xFF);
+                base[pos + 1] = (char)(packed & 0xFF);
+                pos += 2 + packed;
+            } else {
+                memcpy(base + pos, src, (size_t)rects[i].col_bytes);
+                pos += rects[i].col_bytes;
+            }
+        }
+    }
+    Microseconds(&t1);
+
+    HUnlock(out);
+    SetHandleSize(out, pos);
+    UnlockPixels(pixels);
+
+    blob->data = out;
+    blob->palette_bytes = 0;
+    blob->total_bytes = pos;
+    blob->packed = pack;
+    blob->encode_ms = micros_ms(t0, t1);
+    return 0;
+}

@@ -20,6 +20,7 @@ enum ControlMessage: Equatable, Sendable {
     case streamRequest(StreamRequest)
     case streamStart(StreamStart)
     case streamStop(StreamStop)
+    case streamRefresh(StreamRefresh)
     case streamStopped(StreamStopped)
     case captureOffer(CaptureOffer)
     case captureAccept(CaptureAccept)
@@ -104,6 +105,10 @@ struct StreamStop: Codable, Equatable, Sendable {
     var id: Int
 }
 
+struct StreamRefresh: Codable, Equatable, Sendable {
+    var id: Int
+}
+
 struct StreamStopped: Codable, Equatable, Sendable {
     var id: Int
     var reason: String?
@@ -147,6 +152,10 @@ struct CaptureBegin: Codable, Equatable, Sendable {
     var bytes: Int
     var paletteBytes: Int?
     var encoding: String?
+    /// Stream frames only: "key", "delta", or "empty" (absent = one-shot).
+    var frame: String?
+    /// Delta frames: [row, nRows, colByteOffset, colBytes] per dirty rect.
+    var rects: [[Int]]?
     var captureMs: Int?
     var encodeMs: Int?
 }
@@ -211,6 +220,9 @@ enum ControlMessageCodec {
                 try decoder.decode(StreamStart.self, from: data))
         case "stream.stop":
             return .streamStop(try decoder.decode(StreamStop.self, from: data))
+        case "stream.refresh":
+            return .streamRefresh(
+                try decoder.decode(StreamRefresh.self, from: data))
         case "stream.stopped":
             return .streamStopped(
                 try decoder.decode(StreamStopped.self, from: data))
@@ -259,6 +271,7 @@ enum ControlMessageCodec {
         case .streamRequest(let m): return try tagged("stream.request", m)
         case .streamStart(let m): return try tagged("stream.start", m)
         case .streamStop(let m): return try tagged("stream.stop", m)
+        case .streamRefresh(let m): return try tagged("stream.refresh", m)
         case .streamStopped(let m): return try tagged("stream.stopped", m)
         case .captureOffer(let m): return try tagged("capture.offer", m)
         case .captureAccept(let m): return try tagged("capture.accept", m)

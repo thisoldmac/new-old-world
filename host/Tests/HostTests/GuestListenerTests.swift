@@ -357,6 +357,91 @@ final class GuestPushCaptureTests: XCTestCase {
         XCTAssertNil(listener.streamEndReason)
     }
 
+    func testStreamCompositesKeyDeltaAndEmptyFrames() async throws {
+        let guest = try await connectedGuest()
+        var frames: [GuestListener.CaptureDelivery] = []
+        let watch = listener.streamFrames.sink { frames.append($0) }
+        defer { watch.cancel() }
+
+        listener.startStream(depth: 8)
+        var streamId: Int?
+        try await waitUntil("stream.start") {
+            for message in guest.received {
+                if case .streamStart(let start) = message {
+                    streamId = start.id
+                    return true
+                }
+            }
+            return false
+        }
+        let id = try XCTUnwrap(streamId)
+
+        // Keyframe: 4x2 raw, palette entry 1 = red, all pixels index 1.
+        var palette = [UInt8](repeating: 0, count: 256 * 3)
+        palette[3] = 255
+        let keyPixels = [UInt8](repeating: 1, count: 8)
+        let keyBlob = palette + keyPixels
+        func sendFrame(_ transfer: Int, bytes: [UInt8], frame: String,
+                       rects: [[Int]]? = nil, paletteBytes: Int = 0) throws {
+            try guest.send(.captureBegin(CaptureBegin(
+                id: id, transfer: transfer, width: 4, height: 2, depth: 8,
+                rowBytes: 4, bytes: bytes.count, paletteBytes: paletteBytes,
+                encoding: "raw", frame: frame, rects: rects,
+                captureMs: 1, encodeMs: 1)))
+            if !bytes.isEmpty {
+                guest.sendRaw(try FrameCodec.encode(
+                    channel: .bulk, flags: [.end],
+                    transfer: UInt16(transfer), payload: Data(bytes)))
+            }
+            try guest.send(.captureEnd(CaptureEnd(
+                id: id, transfer: transfer, ok: true, sendMs: 1)))
+        }
+        try sendFrame(1, bytes: keyBlob, frame: "key", paletteBytes: 768)
+        try await waitUntil("keyframe") { frames.count == 1 }
+
+        // Delta: patch pixel (1,0) to palette index 0 (black).
+        try sendFrame(2, bytes: [0], frame: "delta",
+                      rects: [[0, 1, 1, 1]])
+        try await waitUntil("delta") { frames.count == 2 }
+
+        // Empty: canvas untouched, still renders.
+        try sendFrame(3, bytes: [], frame: "empty")
+        try await waitUntil("empty") { frames.count == 3 }
+
+        func pixel(_ image: CGImage, _ x: Int, _ y: Int) -> [UInt8] {
+            let data = image.dataProvider!.data! as Data
+            let o = (y * image.bytesPerRow) + x * 4
+            return [data[o], data[o + 1], data[o + 2]]
+        }
+        // Key: all red. Delta: (1,0) black, (0,0) still red. Empty: same.
+        XCTAssertEqual(pixel(frames[0].image, 1, 0), [255, 0, 0])
+        XCTAssertEqual(pixel(frames[1].image, 1, 0), [0, 0, 0])
+        XCTAssertEqual(pixel(frames[1].image, 0, 0), [255, 0, 0])
+        XCTAssertEqual(pixel(frames[2].image, 1, 0), [0, 0, 0])
+        XCTAssertEqual(frames[2].wireBytes, 0)
+    }
+
+    func testRefreshAsksTheGuestForAKeyframe() async throws {
+        let guest = try await connectedGuest()
+        listener.startStream(depth: 8)
+        var streamId: Int?
+        try await waitUntil("stream.start") {
+            for message in guest.received {
+                if case .streamStart(let start) = message {
+                    streamId = start.id
+                    return true
+                }
+            }
+            return false
+        }
+        listener.refreshStream()
+        let id = try XCTUnwrap(streamId)
+        try await waitUntil("stream.refresh") {
+            guest.received.contains(
+                .streamRefresh(StreamRefresh(id: id)))
+        }
+    }
+
     func testGuestAbortReportsItsReason() async throws {
         let guest = try await connectedGuest()
         listener.startStream(depth: 1)

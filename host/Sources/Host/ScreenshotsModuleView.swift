@@ -61,6 +61,11 @@ struct ScreenshotsModuleView: View {
                 }
                 .disabled(!model.canStream)
 
+                if model.isStreaming {
+                    Button("Refresh") { model.refreshStream() }
+                        .help("Ask the guest for a whole frame")
+                }
+
                 if model.isCapturing {
                     Button("Cancel") { model.cancel() }
                 }

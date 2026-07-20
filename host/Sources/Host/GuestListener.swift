@@ -196,6 +196,12 @@ final class GuestListener: ObservableObject {
                             minIntervalMs: minIntervalMs)
     }
 
+    /// Asks the guest to send its next stream frame whole.
+    func refreshStream() {
+        guard let id = activeStreamId else { return }
+        session?.requestKeyframe(id: id)
+    }
+
     func stopStream() {
         guard let id = activeStreamId else { return }
         session?.requestStreamStop(id: id)
@@ -386,6 +392,11 @@ final class Session {
     private var captureBuffer: [UInt8] = []
     private var captureStart = Date()
     private var cancelled = false
+    /// The stream's composite: raw pixels + palette that delta frames
+    /// patch into. Reset on every keyframe; dropped with the stream.
+    private var canvas: [UInt8] = []
+    private var canvasPalette: [UInt8] = []
+    private var canvasFormat: CaptureFormat?
     /// Non-nil while a host-requested capture is outstanding; a transfer
     /// that begins without it is a guest-initiated push.
     private var solicitedId: Int?
@@ -531,7 +542,12 @@ final class Session {
         case .streamRequest(let request):
             onStreamRequest(request)
         case .streamStopped(let stopped):
-            if stopped.id == streamId { streamId = nil }
+            if stopped.id == streamId {
+                streamId = nil
+                canvas = []
+                canvasPalette = []
+                canvasFormat = nil
+            }
             onStreamStopped(stopped)
         case .captureOffer(let offer):
             answerOffer(offer)
@@ -585,6 +601,49 @@ final class Session {
         send(.error(ErrorMessage(id: nil, code: code, message: message)))
     }
 
+    func requestKeyframe(id: Int) {
+        send(.streamRefresh(StreamRefresh(id: id)))
+    }
+
+    /// Applies a stream frame to the composite and renders it. Key frames
+    /// replace the canvas; deltas patch rects into it; empty frames rerender
+    /// it untouched.
+    private func compositeStreamFrame(_ begin: CaptureBegin, blob: [UInt8],
+                                      format: CaptureFormat) throws
+        -> CGImage {
+        switch begin.frame ?? "key" {
+        case "delta":
+            guard canvasFormat != nil, !canvas.isEmpty else {
+                throw GuestListener.CaptureFailure(
+                    message: "delta frame with no keyframe base")
+            }
+            var cursor = 0
+            for rect in begin.rects ?? [] {
+                try CaptureDecoder.applyRect(rect, blob: blob,
+                                             cursor: &cursor,
+                                             format: format,
+                                             canvas: &canvas)
+            }
+        case "empty":
+            guard canvasFormat != nil, !canvas.isEmpty else {
+                throw GuestListener.CaptureFailure(
+                    message: "empty frame with no keyframe base")
+            }
+        default:
+            let (palette, pixels) = try CaptureDecoder.decodeRows(
+                blob, format: format)
+            canvas = pixels
+            canvasPalette = palette
+            canvasFormat = format
+        }
+        guard let base = canvasFormat else {
+            throw GuestListener.CaptureFailure(message: "no stream canvas")
+        }
+        return try CaptureDecoder.renderImage(pixels: canvas,
+                                              palette: canvasPalette,
+                                              format: base)
+    }
+
     private func finishCapture(_ end: CaptureEnd) {
         let streaming = streamId != nil && captureBegin?.id == streamId
         let pushed = !streaming && solicitedId == nil
@@ -623,8 +682,14 @@ final class Session {
         let blob = captureBuffer
         captureBuffer = []
         do {
-            let image = try CaptureDecoder.makeImage(blob: blob,
+            let image: CGImage
+            if streaming {
+                image = try compositeStreamFrame(begin, blob: blob,
+                                                 format: format)
+            } else {
+                image = try CaptureDecoder.makeImage(blob: blob,
                                                      format: format)
+            }
             let ms = Int(Date().timeIntervalSince(captureStart) * 1000)
             let delivery = GuestListener.CaptureDelivery(
                 image: image, format: format,

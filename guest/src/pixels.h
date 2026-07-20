@@ -26,4 +26,37 @@ int now_pixels_export(CaptureImage *image, Boolean pack, PixelBlob *blob);
 
 void now_pixels_dispose(PixelBlob *blob);
 
+/* --- delta frames -------------------------------------------------------
+   A dirty rect is a run of rows trimmed to its changed column span,
+   expressed in BYTES into the row so the wire stays depth-agnostic. */
+
+typedef struct {
+    short row, n_rows;
+    short col_off, col_bytes;
+} PixelRect;
+
+enum { kPixelMaxRects = 16 };
+
+/* Diffs the image's rows against `prev` (raw rows of the same geometry),
+   fills up to max_rects merged dirty rects, and copies the changed rows
+   into prev so it becomes this frame. Returns the rect count (0 = the
+   frames are identical) and the total dirty row count via dirty_rows.
+   Detection is pixel-granular for free: the scan reads every byte either
+   way; the rects just record where the differences began and ended. */
+short now_pixels_diff(CaptureImage *image, Ptr prev,
+                      PixelRect *rects, short max_rects, long *dirty_rows);
+
+/* Copies the image's raw rows into dst (row_bytes * height bytes). */
+int now_pixels_copy_raw(CaptureImage *image, Ptr dst);
+
+/* Writes the image's palette as RGB triples; returns the byte count
+   (0 for direct-colour depths). cap must hold 768 bytes. */
+long now_pixels_palette(CaptureImage *image, unsigned char *out, long cap);
+
+/* Exports only the rect rows: per row the col_bytes slice, PackBits'd
+   with the usual u16 prefix when pack (and depth >= 8). No palette. */
+int now_pixels_export_rects(CaptureImage *image, Boolean pack,
+                            const PixelRect *rects, short n_rects,
+                            PixelBlob *blob);
+
 #endif

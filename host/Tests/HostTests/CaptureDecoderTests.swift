@@ -84,6 +84,40 @@ final class CaptureDecoderTests: XCTestCase {
         XCTAssertEqual(out, pixels)
     }
 
+    func testDeltaRectPatchesTheCanvas() throws {
+        // 4x4 raw canvas of zeros; patch a 2x2 rect at row 1, col 1.
+        let format = CaptureFormat(
+            width: 4, height: 4, depth: 8, rowBytes: 4, bytes: 4,
+            paletteBytes: 0, packed: false, captureMs: 0, encodeMs: 0)
+        var canvas = [UInt8](repeating: 0, count: 16)
+        let blob: [UInt8] = [7, 8, 9, 10]   // two rows of two bytes
+        var cursor = 0
+        try CaptureDecoder.applyRect([1, 2, 1, 2], blob: blob,
+                                     cursor: &cursor, format: format,
+                                     canvas: &canvas)
+        XCTAssertEqual(cursor, 4)
+        XCTAssertEqual(canvas, [0, 0, 0, 0,
+                                0, 7, 8, 0,
+                                0, 9, 10, 0,
+                                0, 0, 0, 0])
+    }
+
+    func testDeltaRectOutOfBoundsIsRejected() {
+        let format = CaptureFormat(
+            width: 4, height: 4, depth: 8, rowBytes: 4, bytes: 4,
+            paletteBytes: 0, packed: false, captureMs: 0, encodeMs: 0)
+        var canvas = [UInt8](repeating: 0, count: 16)
+        var cursor = 0
+        // col span past the row edge
+        XCTAssertThrowsError(try CaptureDecoder.applyRect(
+            [0, 1, 3, 2], blob: [1, 2], cursor: &cursor,
+            format: format, canvas: &canvas))
+        // rows past the canvas
+        XCTAssertThrowsError(try CaptureDecoder.applyRect(
+            [3, 2, 0, 2], blob: [1, 2, 3, 4], cursor: &cursor,
+            format: format, canvas: &canvas))
+    }
+
     func testTruncatedTransferIsRejected() {
         let format = CaptureFormat(
             width: 4, height: 2, depth: 8, rowBytes: 4, bytes: 8,

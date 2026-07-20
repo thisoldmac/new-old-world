@@ -93,6 +93,7 @@ channels:
       streamRequest: { $ref: "#/components/messages/streamRequest" }
       streamStart: { $ref: "#/components/messages/streamStart" }
       streamStop: { $ref: "#/components/messages/streamStop" }
+      streamRefresh: { $ref: "#/components/messages/streamRefresh" }
       streamStopped: { $ref: "#/components/messages/streamStopped" }
       captureOffer: { $ref: "#/components/messages/captureOffer" }
       captureAccept: { $ref: "#/components/messages/captureAccept" }
@@ -130,6 +131,7 @@ operations:
     messages:
       - $ref: "#/channels/control/messages/streamStart"
       - $ref: "#/channels/control/messages/streamStop"
+      - $ref: "#/channels/control/messages/streamRefresh"
     description: >
       Host brackets a live stream. Between stream.start and the guest's
       stream.stopped, the guest sends frames as ordinary capture
@@ -221,6 +223,9 @@ components:
     streamStop:
       name: stream.stop
       payload: { $ref: "#/components/schemas/StreamStop" }
+    streamRefresh:
+      name: stream.refresh
+      payload: { $ref: "#/components/schemas/StreamRefresh" }
     streamStopped:
       name: stream.stopped
       payload: { $ref: "#/components/schemas/StreamStopped" }
@@ -393,6 +398,18 @@ components:
       properties:
         type: { const: stream.stop }
         id: { type: integer }
+    StreamRefresh:
+      type: object
+      required: [type, id]
+      additionalProperties: false
+      properties:
+        type: { const: stream.refresh }
+        id: { type: integer }
+      description: >
+        Host asks for a keyframe: the guest's next frame is sent whole.
+        Belt-and-suspenders against compositing drift; deltas reference
+        the previous frame implicitly and TCP ordering makes that safe,
+        so this should never be load-bearing.
     StreamStopped:
       type: object
       required: [type, id]
@@ -496,6 +513,29 @@ components:
           type: integer
           minimum: 1
           description: Total bulk bytes to expect (rowBytes * height).
+        frame:
+          enum: [key, delta, empty]
+          description: >
+            Stream frames only (absent on one-shot captures). "key" is a
+            whole screen; "delta" carries only the rects, referencing the
+            previous frame implicitly (TCP ordering makes that safe);
+            "empty" means nothing changed - bytes is 0 and no bulk
+            follows, so a static screen still ticks at full rate for
+            ~150 bytes a frame.
+        rects:
+          type: array
+          maxItems: 16
+          items:
+            type: array
+            minItems: 4
+            maxItems: 4
+            description: >
+              [row, nRows, colByteOffset, colBytes] - dirty rows trimmed
+              to their changed column span, in BYTES into the row so the
+              wire stays depth-agnostic. The bulk payload is the rects'
+              rows in order, each row's slice encoded exactly like a
+              full row (u16-prefixed PackBits, or raw).
+            items: { type: integer }
     CaptureEnd:
       type: object
       required: [type, id, transfer, ok]

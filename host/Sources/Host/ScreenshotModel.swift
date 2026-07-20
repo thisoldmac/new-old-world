@@ -152,6 +152,11 @@ final class ScreenshotModuleModel: ObservableObject {
         listener.stopStream()
     }
 
+    /// Manual keyframe: the next frame arrives whole.
+    func refreshStream() {
+        listener.refreshStream()
+    }
+
     private func streamStateChanged(_ id: Int?) {
         let streaming = id != nil
         guard streaming != isStreaming else { return }

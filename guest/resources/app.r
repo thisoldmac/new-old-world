@@ -61,8 +61,8 @@ resource 'SIZE' (-1) {
     reserved,
     reserved,
     reserved,
-    4 * 1024 * 1024,
-    2 * 1024 * 1024
+    6 * 1024 * 1024,
+    3 * 1024 * 1024
 };
 
 resource 'ALRT' (200) {
