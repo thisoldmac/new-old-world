@@ -227,7 +227,8 @@ int main(void)
 
     while (g_running) {
         conn_service();
-        if (!WaitNextEvent(everyEvent, &event, 6, NULL)) {
+        if (!WaitNextEvent(everyEvent, &event,
+                           conn_wants_fast_pump() ? 0 : 6, NULL)) {
             continue;
         }
         switch (event.what) {

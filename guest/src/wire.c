@@ -482,6 +482,11 @@ enum {
     kXferDeadlineTicks = 60 * 120     /* give up on a stuck transfer */
 };
 
+typedef struct {
+    short width, height, depth, row_bytes;
+    long capture_ms;
+} ShotMeta;
+
 /* Live-stream bracket (stream.start .. stream.stopped). service_stream
    turns the guest into a frame pump: finish a frame, capture fresh, send —
    never queue. One frame in flight bounds both latency and memory, and a
@@ -497,6 +502,20 @@ static struct {
     long min_interval_ticks;
     unsigned long next_frame_tick;
     long frames;
+    /* The capture pipeline: frame N+1 is captured in event-loop-pumped
+       bands while frame N is still going out (banding is metal-measured
+       free: 139-143 ms total for 1..16 bands, ~17 ms per band at 8). The
+       capture is scheduled to COMPLETE as the send completes - minimizing
+       both frame age and the shear span - using the previous frame's
+       measured send and capture+encode times. */
+    BandedCapture cap;
+    Boolean cap_active;
+    PixelBlob ready_blob;             /* encoded, waiting for the lane */
+    ShotMeta ready_meta;
+    Boolean ready;
+    unsigned long cap_start_tick;
+    long est_send_ticks;
+    long est_cap_ticks;               /* capture + encode, measured */
 } g_stream;
 
 enum { kStreamReqTimeoutTicks = 60 * 10 };
@@ -582,6 +601,9 @@ static void xfer_finish(Boolean ok)
              g_xfer.id, g_xfer.xfer, ok ? "true" : "false",
              (long)((TickCount() - g_xfer.started) * 1000 / 60));
     send_control(json);
+    if (g_stream.active && g_xfer.id == g_stream.id) {
+        g_stream.est_send_ticks = (long)(TickCount() - g_xfer.started);
+    }
     if (g_xfer.pushed) {
         if (ok) {
             snprintf(json, sizeof json, "Sent to host (%ld ms)",
@@ -686,11 +708,6 @@ static void note_shot(const char *line)
         g_shot_note(line);
     }
 }
-
-typedef struct {
-    short width, height, depth, row_bytes;
-    long capture_ms;
-} ShotMeta;
 
 static unsigned short next_xfer(void)
 {
@@ -947,8 +964,21 @@ static void service_offer(void)
 
 /* --- live stream ------------------------------------------------------- */
 
+static void stream_pipeline_clear(void)
+{
+    if (g_stream.cap_active) {
+        banded_capture_abort(&g_stream.cap);
+        g_stream.cap_active = false;
+    }
+    if (g_stream.ready) {
+        now_pixels_dispose(&g_stream.ready_blob);
+        g_stream.ready = false;
+    }
+}
+
 static void stream_drop(void)
 {
+    stream_pipeline_clear();
     g_stream.active = false;
     g_streamreq.pending = false;
 }
@@ -973,6 +1003,7 @@ static void stream_end(const char *reason)
     if (!g_stream.active) {
         return;
     }
+    stream_pipeline_clear();
     g_stream.active = false;
     stream_send_stopped(g_stream.id, reason);
     note_shot("Streaming stopped");
@@ -1004,6 +1035,8 @@ static void stream_start(const char *reply)
     g_stream.min_interval_ticks =
         json_find_int(reply, "minIntervalMs", 0) * 60 / 1000;
     g_stream.next_frame_tick = 0;
+    g_stream.est_cap_ticks = 10;      /* ~165 ms until measured */
+    g_stream.est_send_ticks = 0;      /* first capture starts at once */
     g_stream.active = true;
     g_streamreq.pending = false;
     note_shot("Streaming to host...");
@@ -1079,35 +1112,105 @@ void now_wire_stream_stop(void)
     stream_end(NULL);
 }
 
-/* Pumps the next frame when the lane is free and the throttle allows. */
+enum { kStreamBands = 8 };            /* ~17 ms per event-loop bite */
+
+/* When a send starts, aim the next capture to finish as the send does. */
+static void stream_schedule_capture(void)
+{
+    long lead = g_stream.est_send_ticks - g_stream.est_cap_ticks;
+
+    if (lead < 0) {
+        lead = 0;
+    }
+    g_stream.cap_start_tick = TickCount() + (unsigned long)lead;
+}
+
+/* Finishes a completed banded capture: export + encode now, so the frame
+   is ready the instant the lane frees. */
+static void stream_finish_capture(unsigned long began)
+{
+    CaptureImage image = g_stream.cap.image;
+
+    memset(&g_stream.cap, 0, sizeof g_stream.cap);
+    g_stream.cap_active = false;
+
+    g_stream.ready_meta.width =
+        (short)(image.bounds.right - image.bounds.left);
+    g_stream.ready_meta.height =
+        (short)(image.bounds.bottom - image.bounds.top);
+    g_stream.ready_meta.depth = image.depth;
+    g_stream.ready_meta.row_bytes = image.row_bytes;
+    g_stream.ready_meta.capture_ms =
+        (long)((TickCount() - began) * 1000 / 60);
+    memset(&g_stream.ready_blob, 0, sizeof g_stream.ready_blob);
+    if (now_pixels_export(&image, g_stream.pack,
+                          &g_stream.ready_blob) != 0) {
+        capture_image_dispose(&image);
+        stream_end("capture failed");
+        return;
+    }
+    capture_image_dispose(&image);
+    g_stream.ready = true;
+    g_stream.est_cap_ticks = (long)(TickCount() - began);
+}
+
+/* The pipelined frame pump: while frame N sends, frame N+1 is captured a
+   band at a time; when both halves are done the frame arms immediately. */
 static void service_stream(void)
 {
+    static unsigned long cap_began;
+
     if (g_streamreq.pending && TickCount() > g_streamreq.deadline) {
         g_streamreq.pending = false;
         note_shot("Host did not start streaming");
     }
-    PixelBlob blob;
-    ShotMeta meta;
+    if (!g_stream.active) {
+        return;
+    }
 
-    if (!g_stream.active || g_xfer.active) {
+    /* Arm a ready frame the moment the lane is free. */
+    if (g_stream.ready && !g_xfer.active
+        && TickCount() >= g_stream.next_frame_tick) {
+        g_stream.next_frame_tick =
+            TickCount() + g_stream.min_interval_ticks;
+        g_stream.ready = false;
+        if (!arm_transfer(g_stream.id, next_xfer(), &g_stream.ready_meta,
+                          &g_stream.ready_blob, g_stream.chunk,
+                          g_stream.pace_ms, false)) {
+            stream_end("transfer failed");
+            return;
+        }
+        ++g_stream.frames;
+        stream_schedule_capture();
         return;
     }
-    if (TickCount() < g_stream.next_frame_tick) {
-        return;
-    }
-    g_stream.next_frame_tick = TickCount() + g_stream.min_interval_ticks;
 
-    memset(&blob, 0, sizeof blob);
-    if (!gather_shot(g_stream.depth, g_stream.pack, &blob, &meta)) {
-        stream_end("capture failed");
+    /* Pump the in-progress capture one band per pass. */
+    if (g_stream.cap_active) {
+        int rc = banded_capture_step(&g_stream.cap);
+
+        if (rc == kCaptureOK) {
+            stream_finish_capture(cap_began);
+        } else if (rc != kCaptureMoreBands) {
+            g_stream.cap_active = false;
+            stream_end("capture failed");
+        }
         return;
     }
-    if (!arm_transfer(g_stream.id, next_xfer(), &meta, &blob,
-                      g_stream.chunk, g_stream.pace_ms, false)) {
-        stream_end("transfer failed");
-        return;
+
+    /* Begin the next capture once its scheduled moment arrives (or at
+       once when nothing is in flight - the first frame, or an estimate
+       that ran short). */
+    if (!g_stream.ready
+        && (!g_xfer.active || TickCount() >= g_stream.cap_start_tick)) {
+        if (banded_capture_begin(g_stream.depth, kStreamBands,
+                                 &g_stream.cap) != kCaptureOK) {
+            stream_end("capture failed");
+            return;
+        }
+        g_stream.cap_active = true;
+        cap_began = TickCount();
     }
-    ++g_stream.frames;
 }
 
 /* Returns 0 if the connection should be torn down (bye/protocol error). */
@@ -1386,6 +1489,12 @@ void conn_connect_now(void)
 ConnPhase conn_phase(void)
 {
     return g.phase;
+}
+
+Boolean conn_wants_fast_pump(void)
+{
+    return g_xfer.active || g_stream.active || g_offer.active
+        || g_ctlq.count > 0;
 }
 
 Boolean conn_is_connected(void)

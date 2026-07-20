@@ -41,6 +41,11 @@ void conn_connect_now(void);
 ConnPhase conn_phase(void);
 Boolean conn_is_connected(void);
 
+/* True while a transfer, stream, offer, or queued control frame needs the
+   event loop to spin fast. The main loop drops its WaitNextEvent sleep to
+   0 then - a ~100 ms idle sleep would starve the band/send pumps. */
+Boolean conn_wants_fast_pump(void);
+
 /* Human-facing one-line status, e.g. "Connected: Maxbook Pro (v0.1.0) - 12 ms"
    or "Reconnecting in 4s (no answer)". */
 void conn_status(char *out, long cap);
