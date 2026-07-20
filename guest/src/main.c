@@ -4,6 +4,7 @@
 
 #include "console_win.h"
 #include "fileshare.h"
+#include "share_panel.h"
 #include "pump.h"
 #include "shots_panel.h"
 #include "prefs.h"
@@ -89,6 +90,10 @@ static void close_front_window(void)
 {
     WindowRef front = FrontWindow();
 
+    if (share_panel_is(front)) {
+        share_panel_close();
+        return;
+    }
     if (shots_panel_is(front)) {
         shots_panel_close(true);
     } else if (console_win_is(front)) {
@@ -132,7 +137,7 @@ static void handle_menu_choice(long choice)
         if (LoWord(choice) == kFileCloseItem) {
             close_front_window();
         } else if (LoWord(choice) == kFileSharingItem) {
-            now_files_sharing_dialog();
+            share_panel_open();
         } else if (LoWord(choice) == kFileQuitItem) {
             g_running = false;
         }
@@ -184,6 +189,25 @@ static void handle_mouse_down(const EventRecord *event)
             }
         } else if (part == inContent && window != FrontWindow()) {
             SelectWindow(window);
+        }
+        return;
+    }
+    if (share_panel_is(window)) {
+        if (part == inDrag) {
+            DragWindow(window, event->where, &g_screen_bounds);
+        } else if (part == inGoAway) {
+            if (TrackGoAway(window, event->where)) {
+                share_panel_close();
+            }
+        } else if (part == inContent) {
+            if (window != FrontWindow()) {
+                SelectWindow(window);
+                return;
+            }
+            local = event->where;
+            SetPortWindowPort(window);
+            GlobalToLocal(&local);
+            share_panel_click(local);
         }
         return;
     }
@@ -276,6 +300,10 @@ int main(void)
                 BeginUpdate(shots_panel_ref());
                 shots_panel_draw();
                 EndUpdate(shots_panel_ref());
+            } else if (share_panel_is((WindowRef)event.message)) {
+                BeginUpdate(share_panel_ref());
+                share_panel_draw();
+                EndUpdate(share_panel_ref());
             }
             break;
         case kHighLevelEvent:

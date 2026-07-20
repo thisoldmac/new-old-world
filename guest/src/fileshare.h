@@ -77,8 +77,5 @@ void now_files_root_name(char *out, long cap);
    is written into `why`, which the dialog shows rather than guessing). */
 int now_files_choose_root(char *why, long why_cap);
 
-/* File > File Sharing...: shows the current root and offers to change
-   it. The host sees only what is inside. */
-void now_files_sharing_dialog(void);
 
 #endif /* NOW_FILESHARE_H */

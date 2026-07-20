@@ -13,6 +13,7 @@ add_application(now-guest
     src/vprobe.c
     src/pixels.c
     src/shots_panel.c
+    src/share_panel.c
     src/ot_carbon.c
     src/json.c
     src/wire.c

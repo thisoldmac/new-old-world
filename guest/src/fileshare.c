@@ -36,57 +36,69 @@ static int rel_path_ok(const char *rel)
     return 1;
 }
 
-/* The share root as a full colon path ("Macintosh HD:Lab:"). Empty prefs
-   = the boot volume root, resolved by name. */
-static int root_path(char *out, long cap)
+/* Finds the vRefNum of the configured share volume (empty = boot
+   volume, which always mounts first). */
+static int share_volume(short *vref, const NowPrefs *prefs)
 {
-    NowPrefs prefs;
+    HParamBlockRec pb;
+    Str255 vname;
+    short index;
 
-    now_prefs_load(&prefs);
-    if (prefs.share_root[0] != '\0') {
-        strncpy(out, prefs.share_root, (size_t)cap - 1);
-        out[cap - 1] = '\0';
-    } else {
-        HParamBlockRec pb;
-        Str255 vname;
-
+    for (index = 1; index < 64; ++index) {
         memset(&pb, 0, sizeof pb);
         vname[0] = 0;
         pb.volumeParam.ioNamePtr = vname;
-        pb.volumeParam.ioVolIndex = 1;    /* boot volume mounts first */
+        pb.volumeParam.ioVolIndex = index;
         if (PBHGetVInfoSync(&pb) != noErr) {
-            return 0;
+            break;
         }
-        memcpy(out, vname + 1, vname[0]);
-        out[vname[0]] = ':';
-        out[vname[0] + 1] = '\0';
+        if (prefs->share_vol[0] == '\0') {
+            *vref = pb.volumeParam.ioVRefNum;
+            return 1;                 /* boot volume */
+        }
+        vname[vname[0] + 1] = '\0';
+        if (strcmp((char *)vname + 1, prefs->share_vol) == 0) {
+            *vref = pb.volumeParam.ioVRefNum;
+            return 1;
+        }
     }
-    if (out[strlen(out) - 1] != ':') {
-        strncat(out, ":", (size_t)cap - strlen(out) - 1);
-    }
-    return 1;
+    return 0;
 }
 
-/* Resolves a relative path to the FSSpec OF the item plus the dirID that
-   contains it. For "" the item is the root folder itself. */
+/* Resolves a relative path to the FSSpec of the item. The share is a
+   volume plus a directory ID, so resolution is one FSMakeFSSpec against
+   that directory with a PARTIAL path (a leading colon keeps it
+   relative) - no path string is parsed or assembled, which is why a
+   folder whose full path cannot be printed is still perfectly shareable. */
 static int resolve(const char *rel, FSSpec *spec)
 {
-    char full[512];
-    Str255 pfull;
+    NowPrefs prefs;
+    Str255 partial;
+    char buf[300];
+    short vref;
+    long dir;
     OSErr err;
 
     if (!rel_path_ok(rel)) {
         return kFilesBadPath;
     }
-    if (!root_path(full, sizeof full - 64)) {
+    now_prefs_load(&prefs);
+    if (!share_volume(&vref, &prefs)) {
         return kFilesIOError;
     }
-    strncat(full, rel, sizeof full - strlen(full) - 1);
-    if (strlen(full) > 254) {
-        return kFilesBadPath;
+    dir = prefs.share_dir > 0 ? prefs.share_dir : fsRtDirID;
+
+    if (rel == NULL || rel[0] == '\0') {
+        partial[0] = 0;               /* the share directory itself */
+    } else {
+        if (strlen(rel) > 250) {
+            return kFilesBadPath;
+        }
+        buf[0] = ':';
+        strcpy(buf + 1, rel);
+        CopyCStringToPascal(buf, partial);
     }
-    CopyCStringToPascal(full, pfull);
-    err = FSMakeFSSpec(0, 0, pfull, spec);
+    err = FSMakeFSSpec(vref, dir, partial, spec);
     if (err == fnfErr) {
         return kFilesNotFound;
     }
@@ -119,6 +131,22 @@ static int folder_dir_id(const FSSpec *spec, long *dir_id)
     return kFilesOK;
 }
 
+/* The directory ID a listing should walk. For the share root itself
+   FSMakeFSSpec hands back the directory's own spec, whose parID is the
+   PARENT - so ask the File Manager for the id rather than assuming. */
+static int list_dir_id(const char *rel_path, const FSSpec *spec,
+                       long *dir_id)
+{
+    NowPrefs prefs;
+
+    if (rel_path == NULL || rel_path[0] == '\0') {
+        now_prefs_load(&prefs);
+        *dir_id = prefs.share_dir > 0 ? prefs.share_dir : fsRtDirID;
+        return kFilesOK;
+    }
+    return folder_dir_id(spec, dir_id);
+}
+
 int now_files_list(const char *rel_path, short start,
                    FileEntry *out, int max,
                    Boolean *more, short *next_start)
@@ -135,7 +163,7 @@ int now_files_list(const char *rel_path, short start,
     if (rc != kFilesOK) {
         return rc;
     }
-    rc = folder_dir_id(&spec, &dir_id);
+    rc = list_dir_id(rel_path, &spec, &dir_id);
     if (rc != kFilesOK) {
         return rc;
     }
@@ -383,10 +411,36 @@ void now_files_describe(const FileEntry *e, char *out, long cap)
 
 void now_files_root_name(char *out, long cap)
 {
-    if (!root_path(out, cap)) {
-        strncpy(out, "(no volume)", (size_t)cap - 1);
+    NowPrefs prefs;
+
+    now_prefs_load(&prefs);
+    if (prefs.share_root[0] != '\0') {
+        strncpy(out, prefs.share_root, (size_t)cap - 1);
         out[cap - 1] = '\0';
+        return;
     }
+    if (prefs.share_vol[0] != '\0') {
+        snprintf(out, (size_t)cap, "%s:", prefs.share_vol);
+        return;
+    }
+    {
+        HParamBlockRec pb;
+        Str255 vname;
+
+        memset(&pb, 0, sizeof pb);
+        vname[0] = 0;
+        pb.volumeParam.ioNamePtr = vname;
+        pb.volumeParam.ioVolIndex = 1;
+        if (PBHGetVInfoSync(&pb) == noErr && vname[0] > 0
+            && vname[0] + 2 <= cap) {
+            memcpy(out, vname + 1, vname[0]);
+            out[vname[0]] = ':';
+            out[vname[0] + 1] = '\0';
+            return;
+        }
+    }
+    strncpy(out, "(no volume)", (size_t)cap - 1);
+    out[cap - 1] = '\0';
 }
 
 /* Builds the full colon path of a folder FSSpec ("Macintosh HD:Lab:")
@@ -545,16 +599,59 @@ int now_files_choose_root(char *why, long why_cap)
     }
     NavDisposeReply(&reply);
 
-    if (!full_path_of_folder(&spec, full, sizeof full)) {
-        snprintf(why, (size_t)why_cap, "could not build that folder's path");
-        return -1;
+    /* Identity first: a directory ID plus its volume name is stable and
+       needs no path parsing. */
+    {
+        CInfoPBRec pb;
+        Str255 name;
+        HParamBlockRec vpb;
+        Str255 vname;
+
+        memset(&pb, 0, sizeof pb);
+        memcpy(name, spec.name, spec.name[0] + 1);
+        pb.dirInfo.ioNamePtr = name;
+        pb.dirInfo.ioVRefNum = spec.vRefNum;
+        pb.dirInfo.ioDrDirID = spec.parID;
+        pb.dirInfo.ioFDirIndex = 0;
+        if (PBGetCatInfoSync(&pb) != noErr) {
+            snprintf(why, (size_t)why_cap, "could not read that folder");
+            return -1;
+        }
+        if ((pb.dirInfo.ioFlAttrib & ioDirMask) == 0) {
+            snprintf(why, (size_t)why_cap, "that is a file, not a folder");
+            return -1;
+        }
+        memset(&vpb, 0, sizeof vpb);
+        vname[0] = 0;
+        vpb.volumeParam.ioNamePtr = vname;
+        vpb.volumeParam.ioVRefNum = spec.vRefNum;
+        vpb.volumeParam.ioVolIndex = 0;
+        if (PBHGetVInfoSync(&vpb) != noErr || vname[0] == 0) {
+            snprintf(why, (size_t)why_cap, "could not name that volume");
+            return -1;
+        }
+        now_prefs_load(&prefs);
+        if (vname[0] > (short)sizeof prefs.share_vol - 1) {
+            vname[0] = (unsigned char)(sizeof prefs.share_vol - 1);
+        }
+        memcpy(prefs.share_vol, vname + 1, vname[0]);
+        prefs.share_vol[vname[0]] = '\0';
+        prefs.share_dir = pb.dirInfo.ioDrDirID;
+
+        /* The printable path is a label; if the climb cannot build it,
+           show volume and folder rather than refusing the share. */
+        if (!full_path_of_folder(&spec, full, sizeof full)
+            || strlen(full) >= sizeof prefs.share_root) {
+            char leaf[64];            /* spec.name is Pascal, not C */
+
+            memcpy(leaf, spec.name + 1, spec.name[0]);
+            leaf[spec.name[0]] = '\0';
+            snprintf(prefs.share_root, sizeof prefs.share_root,
+                     "%s:\xc9:%s:", prefs.share_vol, leaf);
+        } else {
+            strcpy(prefs.share_root, full);
+        }
     }
-    if (strlen(full) >= sizeof prefs.share_root) {
-        snprintf(why, (size_t)why_cap, "that path is too long to save");
-        return -1;
-    }
-    now_prefs_load(&prefs);
-    strcpy(prefs.share_root, full);
     err = now_prefs_save(&prefs);
     if (err != noErr) {
         snprintf(why, (size_t)why_cap, "could not write preferences (%d)",
@@ -562,89 +659,4 @@ int now_files_choose_root(char *why, long why_cap)
         return -1;
     }
     return 1;
-}
-
-/* --- the sharing dialog -------------------------------------------------
-   Movable modal: the human opened it deliberately, so it is a dialog they
-   can drag, not an alert that interrupts them. */
-
-enum {
-    kSharingDoneItem = 1,
-    kSharingChooseItem = 2,
-    kSharingRootItem = 4
-};
-
-enum { kSharingNoteItem = 5 };
-
-static void sharing_set_note(DialogRef dialog, const char *text)
-{
-    Str255 pstr;
-    ControlHandle handle;
-    Rect box;
-    short kind;
-
-    CopyCStringToPascal(text, pstr);
-    GetDialogItem(dialog, kSharingNoteItem, &kind, (Handle *)&handle, &box);
-    SetDialogItemText((Handle)handle, pstr);
-}
-
-static void sharing_set_root_text(DialogRef dialog)
-{
-    char root[160];
-    Str255 text;
-    ControlHandle handle;
-    Rect box;
-    short kind;
-
-    now_files_root_name(root, sizeof root);
-    if (strlen(root) > 250) {
-        root[250] = '\0';
-    }
-    CopyCStringToPascal(root, text);
-    GetDialogItem(dialog, kSharingRootItem, &kind, (Handle *)&handle, &box);
-    SetDialogItemText((Handle)handle, text);
-}
-
-void now_files_sharing_dialog(void)
-{
-    DialogRef dialog;
-    short hit;
-    Boolean done = false;
-
-    dialog = GetNewDialog(kSharingDialogID, NULL, (WindowRef)-1);
-    if (dialog == NULL) {
-        return;
-    }
-    SetDialogDefaultItem(dialog, kSharingDoneItem);
-    sharing_set_root_text(dialog);
-    ShowWindow(GetDialogWindow(dialog));
-
-    while (!done) {
-        ModalDialog(now_pump_modal_filter(), &hit);
-        switch (hit) {
-        case kSharingChooseItem: {
-            char why[128];
-            int rc = now_files_choose_root(why, sizeof why);
-
-            if (rc > 0) {
-                sharing_set_root_text(dialog);
-                sharing_set_note(dialog,
-                                 "Nothing outside it is reachable over "
-                                 "the wire.");
-            } else if (rc < 0) {
-                char note[160];
-
-                snprintf(note, sizeof note, "Not shared: %.120s", why);
-                sharing_set_note(dialog, note);
-            }
-            break;
-        }
-        case kSharingDoneItem:
-            done = true;
-            break;
-        default:
-            break;
-        }
-    }
-    DisposeDialog(dialog);
 }
