@@ -145,8 +145,63 @@ The browser is the module's centerpiece and gets the polish budget:
    prefs v6 root + File Sharing dialog, host module with the polished
    table + Download (+ as-MacBinary), text conversion, share-folder
    setting, `ls` command.
-2. **Put + drag-in:** `file.offer/accept/refuse/done` host→guest, guest
-   bulk RX, writes under root, MacBinary decode, name sanitization,
-   host→guest text conversion, overwrite confirmation flow.
-3. **Drag-out + send:** file promises, guest Send File to Host… +
-   `send` command (guest→host offer), conversion badges everywhere.
+2. **Put + drag-in** — settled 2026-07-20, detailed below.
+3. **Drag-out + guest-initiated:** file promises, the guest's
+   `put` (NavGetFile → offer), the guest's `get` (needs the host to
+   serve a share — see below), conversion badges everywhere.
+
+## Slice 2 design (settled 2026-07-20)
+
+**What a share means.** A share bounds what the OTHER machine can reach
+on its own initiative — list, pull, write into. It never bounds what
+you deliberately send: a push takes any file the human picks, from
+anywhere on disk. So slice 2 needs no new folder setting; the source is
+wherever the drag came from and the destination is the drop target,
+which is inside the guest's share because that is all the browser can
+show. A menu-driven send with no drop target defaults to the share
+root rather than inventing an inbox.
+
+**Receiving is not the mirror of sending.** The send path stages a
+whole file in a temp-mem handle, which the 6 MB app partition caps.
+Receiving streams straight to disk as chunks arrive: no ceiling, and
+cancel is just deleting what exists so far. MacBinary therefore decodes
+INCREMENTALLY — a state machine over header (128 bytes) → data fork →
+padding → resource fork — because there is no buffer to parse from.
+(The send side's ceiling stays a known limit, not this slice's work.)
+
+**Bytes land under a temp name** in the destination folder and are
+renamed on `file.end ok:true`. A truncated file never appears under the
+real name, which matters most on the guest, where a half-written
+application is something a human might double-click.
+
+**The guest stays passive.** The host offers with a destination path;
+the guest accepts if the path is inside its share and writable, and
+otherwise refuses with a typed code. No confirmation prompt on the
+guest — it is not necessarily attended. Arrivals show as a line in the
+File Sharing panel; the file appearing in the Finder is the rest of the
+feedback.
+
+**Multi-file drops queue** host-side and go one at a time, because the
+wire carries one transfer at a time. The queue is visible, and
+cancelling one does not abandon the rest.
+
+**Folder drops are in scope**, built up to rather than rushed: a drop
+becomes files with relative subpaths (`Code:Proj:src:main.c`), and the
+guest creates missing parents inside its share or refuses. Empty
+folders do not survive — nothing carries them — and an explicit
+`file.mkdir` is deferred until something needs it.
+
+**Text conversion inbound** (UTF-8 → MacRoman, LF/CRLF → CR, stamped
+`TEXT`/`ttxt`) is automatic by extension and can be switched off in the
+Files module's settings. Converting a file that should not be is
+destructive in a way the download direction is not, so it gets an off
+switch rather than only a badge.
+
+**Build order**, each rung testable on metal: bulk RX with a single
+file → sanitization, collisions, conversion → the queue → subpaths and
+directory creation.
+
+**Slice 3's `get` is the immediate follow-on**, and it is what
+introduces the host's share folder: one setting per machine meaning
+"what the other Mac can see", the same thing the guest's share root
+already means.
