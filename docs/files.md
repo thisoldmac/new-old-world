@@ -24,6 +24,23 @@ for the arc.
 - **Automatic never means opaque.** The browser badges what a transfer
   will do ("converts line endings", "MacBinary") before it happens.
 
+## Whose point of view? (naming rule)
+
+`get` and `put` are fine verbs; the trap is that they only mean
+something relative to a frame, and this stack has three surfaces with
+two different ones. The rule, decided 2026-07-20:
+
+| Surface | Frame | Reads as |
+|---|---|---|
+| **Guest console** and the host's **remote shell** | **Guest-first** — the console is a shell *into* the guest, where `ls` lists the guest's disk and `screenshot` captures its screen | `put <path>` = the guest puts a file to the host. `get <name>` = the guest gets a file from the host. |
+| **Host UI / future host CLI** | **Host-native** | "Download" (host obtains a file from the Mac), "Upload" / "Send to Mac". |
+| **Wire messages** | **Requester-centric**, like HTTP | `file.get` is the host asking to obtain a file; `file.put` (slice 2) is the host asking to place one. |
+
+The host's console is guest-first even though the human is sitting at
+the host, because it is a shell into the other machine: what runs there
+runs *on the guest*. Anything that is a host affordance rather than a
+guest command — buttons, menu items, a host CLI — speaks host-native.
+
 ## Path model
 
 - Relative colon-free segments joined with `:` — `""` is the root,
