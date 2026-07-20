@@ -55,6 +55,7 @@ typedef struct {
 static ConnState g;
 
 static void send_hello(void);
+static void xfer_cleanup(void);
 
 /* --- helpers ------------------------------------------------------------ */
 
@@ -187,6 +188,7 @@ static void close_endpoint(void)
 /* Move to backoff after a failure; status keeps the reason already set. */
 static void enter_backoff(void)
 {
+    xfer_cleanup();                   /* a dropped link cancels any transfer */
     close_endpoint();
     if (!g.want_connection) {
         g.phase = kConnIdle;
@@ -413,53 +415,155 @@ static void on_hello(const char *reply)
     }
 }
 
-/* Sends one bulk frame (channel 1) carrying `len` bytes of transfer `xfer`.
-   END marks the final chunk. One contiguous send per frame. */
-static int send_bulk(unsigned short xfer, const void *data, long len,
-                     Boolean end)
-{
-    unsigned char header[kNowFrameHeaderBytes];
-    OTResult sent;
+/* --- bulk transfer -----------------------------------------------------
+   Streaming is INCREMENTAL, pumped from the event loop rather than a
+   blocking loop, for three reasons learned the hard way: a non-blocking
+   OT endpoint refuses bytes once its send buffer fills (kOTFlowErr) and
+   must be retried; the guest has to stay responsive while ~100 KB goes
+   out; and a transfer you can observe is a transfer you can cancel. */
 
-    if (g.ep == kOTInvalidEndpointRef) {
-        return 0;
+enum {
+    kXferSliceTicks = 3,              /* ~50 ms of sending per service call */
+    kXferDeadlineTicks = 60 * 120     /* give up on a stuck transfer */
+};
+
+static struct {
+    Boolean active;
+    PixelBlob blob;
+    long total, offset;
+    long chunk;
+    unsigned short xfer;
+    long id;
+    Ptr frame;                        /* one framed chunk: header + payload */
+    long frame_len, frame_sent;
+    unsigned long next_tick;          /* pacing gate */
+    unsigned long deadline;
+    unsigned long started;
+    short pace_ms;
+} g_xfer;
+
+static void xfer_cleanup(void)
+{
+    if (g_xfer.frame != NULL) {
+        DisposePtr(g_xfer.frame);
+        g_xfer.frame = NULL;
     }
-    header[0] = kNowChannelBulk;
-    header[1] = end ? kNowFlagEnd : 0;
-    header[2] = (unsigned char)(xfer >> 8);
-    header[3] = (unsigned char)(xfer & 0xFF);
-    header[4] = (unsigned char)((len >> 24) & 0xFF);
-    header[5] = (unsigned char)((len >> 16) & 0xFF);
-    header[6] = (unsigned char)((len >> 8) & 0xFF);
-    header[7] = (unsigned char)(len & 0xFF);
-    sent = gNowOT.snd(g.ep, header, kNowFrameHeaderBytes, 0);
-    if (sent != (OTResult)kNowFrameHeaderBytes) {
-        return 0;
+    if (g_xfer.blob.data != NULL) {
+        HUnlock(g_xfer.blob.data);
     }
-    sent = gNowOT.snd(g.ep, (void *)data, (OTByteCount)len, 0);
-    return sent == (OTResult)len;
+    now_pixels_dispose(&g_xfer.blob);
+    g_xfer.active = false;
 }
 
-/* Captures, exports wire pixels, announces with capture.begin, streams the
-   bytes as bulk chunks at the panel's chunk size and pacing, then closes with
-   capture.end carrying the measurements. */
+static void xfer_finish(Boolean ok)
+{
+    char json[256];
+
+    snprintf(json, sizeof json,
+             "{\"type\":\"capture.end\",\"id\":%ld,\"transfer\":%u,"
+             "\"ok\":%s,\"sendMs\":%ld}",
+             g_xfer.id, g_xfer.xfer, ok ? "true" : "false",
+             (long)((TickCount() - g_xfer.started) * 1000 / 60));
+    send_control(json);
+    xfer_cleanup();
+}
+
+static void xfer_build_frame(void)
+{
+    long n = g_xfer.total - g_xfer.offset;
+    Boolean last;
+
+    if (n > g_xfer.chunk) {
+        n = g_xfer.chunk;
+    }
+    last = (g_xfer.offset + n >= g_xfer.total);
+    g_xfer.frame[0] = (char)kNowChannelBulk;
+    g_xfer.frame[1] = (char)(last ? kNowFlagEnd : 0);
+    g_xfer.frame[2] = (char)((g_xfer.xfer >> 8) & 0xFF);
+    g_xfer.frame[3] = (char)(g_xfer.xfer & 0xFF);
+    g_xfer.frame[4] = (char)((n >> 24) & 0xFF);
+    g_xfer.frame[5] = (char)((n >> 16) & 0xFF);
+    g_xfer.frame[6] = (char)((n >> 8) & 0xFF);
+    g_xfer.frame[7] = (char)(n & 0xFF);
+    memcpy(g_xfer.frame + kNowFrameHeaderBytes,
+           *g_xfer.blob.data + g_xfer.offset, (size_t)n);
+    g_xfer.frame_len = kNowFrameHeaderBytes + n;
+    g_xfer.frame_sent = 0;
+}
+
+/* Pumps the active transfer for a short slice. Partial sends and flow
+   control simply resume on the next call. */
+static void service_transfer(void)
+{
+    unsigned long slice_end = TickCount() + kXferSliceTicks;
+
+    if (!g_xfer.active) {
+        return;
+    }
+    if (TickCount() > g_xfer.deadline) {
+        xfer_finish(false);
+        return;
+    }
+    while (g_xfer.active && TickCount() <= slice_end) {
+        OTResult sent;
+
+        if (TickCount() < g_xfer.next_tick) {
+            return;                   /* paced: resume later */
+        }
+        if (g_xfer.frame_sent >= g_xfer.frame_len) {
+            g_xfer.offset += g_xfer.frame_len - kNowFrameHeaderBytes;
+            if (g_xfer.offset >= g_xfer.total) {
+                xfer_finish(true);
+                return;
+            }
+            xfer_build_frame();
+            if (g_xfer.pace_ms > 0) {
+                g_xfer.next_tick = TickCount()
+                    + (unsigned long)g_xfer.pace_ms * 60 / 1000 + 1;
+            }
+        }
+        sent = gNowOT.snd(g.ep, g_xfer.frame + g_xfer.frame_sent,
+                          (OTByteCount)(g_xfer.frame_len - g_xfer.frame_sent),
+                          0);
+        if (sent > 0) {
+            g_xfer.frame_sent += sent;
+        } else if (sent == kOTFlowErr || sent == kOTNoDataErr) {
+            return;                   /* buffer full: retry next pass */
+        } else {
+            xfer_finish(false);
+            return;
+        }
+    }
+}
+
+static void xfer_abort(void)
+{
+    if (g_xfer.active) {
+        xfer_finish(false);
+    }
+}
+
+/* Captures, exports wire pixels, announces with capture.begin, and arms the
+   incremental sender. Returns immediately — the bytes go out from
+   service_transfer so the app keeps running. */
 static void serve_capture(const char *request)
 {
     NowPrefs prefs;
     CaptureImage image;
-    PixelBlob blob;
     char json[512];
     long id = json_find_int(request, "id", 0);
     long depth_arg = json_find_int(request, "depth", 0);
     short depth;
     unsigned short xfer;
-    long chunk, offset;
-    unsigned long t_start, t_sent;
+    long chunk;
+    unsigned long t_start;
+    long capture_ms;
+    short width, height, row_bytes;
     int rc;
 
-    short width = 0, height = 0, row_bytes = 0;
-    long capture_ms = 0;
-
+    if (g_xfer.active) {
+        xfer_finish(false);           /* one transfer at a time */
+    }
     now_prefs_load(&prefs);
     depth = capture_depth_is_supported((short)depth_arg)
         ? (short)depth_arg : prefs.shot_depth;
@@ -467,7 +571,11 @@ static void serve_capture(const char *request)
     if (chunk < 1024 || chunk > kNowMaxPayload) {
         chunk = 8192;
     }
-    xfer = (unsigned short)(++g.transfer_seq ? g.transfer_seq : 1);
+    ++g.transfer_seq;
+    if (g.transfer_seq == 0) {
+        g.transfer_seq = 1;
+    }
+    xfer = g.transfer_seq;
 
     t_start = TickCount();
     rc = capture_screen(depth, &image);
@@ -482,7 +590,9 @@ static void serve_capture(const char *request)
     width = (short)(image.bounds.right - image.bounds.left);
     height = (short)(image.bounds.bottom - image.bounds.top);
     row_bytes = image.row_bytes;
-    if (now_pixels_export(&image, prefs.shot_pack, &blob) != 0) {
+
+    memset(&g_xfer, 0, sizeof g_xfer);
+    if (now_pixels_export(&image, prefs.shot_pack, &g_xfer.blob) != 0) {
         capture_image_dispose(&image);
         snprintf(json, sizeof json,
                  "{\"type\":\"capture.end\",\"id\":%ld,\"transfer\":%u,"
@@ -492,49 +602,44 @@ static void serve_capture(const char *request)
     }
     capture_image_dispose(&image);
 
+    g_xfer.frame = NewPtr(chunk + kNowFrameHeaderBytes);
+    if (g_xfer.frame == NULL) {
+        now_pixels_dispose(&g_xfer.blob);
+        snprintf(json, sizeof json,
+                 "{\"type\":\"capture.end\",\"id\":%ld,\"transfer\":%u,"
+                 "\"ok\":false}", id, xfer);
+        send_control(json);
+        return;
+    }
+
     snprintf(json, sizeof json,
              "{\"type\":\"capture.begin\",\"id\":%ld,\"transfer\":%u,"
              "\"width\":%d,\"height\":%d,\"depth\":%d,"
              "\"rowBytes\":%d,\"bytes\":%ld,\"paletteBytes\":%ld,"
              "\"encoding\":\"%s\",\"captureMs\":%ld,\"encodeMs\":%ld}",
              id, xfer, (int)width, (int)height,
-             (int)depth, (int)row_bytes, blob.total_bytes,
-             blob.palette_bytes, blob.packed ? "packbits" : "raw",
-             capture_ms, blob.encode_ms);
+             (int)depth, (int)row_bytes, g_xfer.blob.total_bytes,
+             g_xfer.blob.palette_bytes,
+             g_xfer.blob.packed ? "packbits" : "raw",
+             capture_ms, g_xfer.blob.encode_ms);
     if (!send_control(json)) {
-        now_pixels_dispose(&blob);
+        xfer_cleanup();
         return;
     }
 
-    HLock(blob.data);
-    t_sent = TickCount();
-    for (offset = 0; offset < blob.total_bytes; offset += chunk) {
-        long n = blob.total_bytes - offset;
-        Boolean last;
-
-        if (n > chunk) {
-            n = chunk;
-        }
-        last = (offset + n >= blob.total_bytes);
-        if (!send_bulk(xfer, *blob.data + offset, n, last)) {
-            break;
-        }
-        if (prefs.pace_ms > 0 && !last) {
-            unsigned long until = TickCount()
-                + (unsigned long)prefs.pace_ms * 60 / 1000 + 1;
-            while (TickCount() < until) {
-                /* paced send: fragile NICs drop back-to-back frames */
-            }
-        }
-    }
-    HUnlock(blob.data);
-
-    snprintf(json, sizeof json,
-             "{\"type\":\"capture.end\",\"id\":%ld,\"transfer\":%u,"
-             "\"ok\":true,\"sendMs\":%ld}",
-             id, xfer, (long)((TickCount() - t_sent) * 1000 / 60));
-    send_control(json);
-    now_pixels_dispose(&blob);
+    HLock(g_xfer.blob.data);
+    g_xfer.active = true;
+    g_xfer.total = g_xfer.blob.total_bytes;
+    g_xfer.offset = 0;
+    g_xfer.chunk = chunk;
+    g_xfer.xfer = xfer;
+    g_xfer.id = id;
+    g_xfer.pace_ms = prefs.pace_ms;
+    g_xfer.frame_len = kNowFrameHeaderBytes;   /* primes the first build */
+    g_xfer.frame_sent = kNowFrameHeaderBytes;
+    g_xfer.started = TickCount();
+    g_xfer.next_tick = 0;
+    g_xfer.deadline = TickCount() + kXferDeadlineTicks;
 }
 
 /* Returns 0 if the connection should be torn down (bye/protocol error). */
@@ -570,6 +675,10 @@ static int handle_frame(const char *reply)
     }
     if (json_type_is(reply, "capture.request")) {
         serve_capture(reply);
+        return 1;
+    }
+    if (json_type_is(reply, "capture.cancel")) {
+        xfer_abort();
         return 1;
     }
     if (json_type_is(reply, "command.request")) {
@@ -696,6 +805,9 @@ void conn_service(void)
         break;
     case kConnConnected:
         service_connected_io();
+        if (g.phase == kConnConnected) {
+            service_transfer();
+        }
         if (g.phase == kConnConnected) {
             service_heartbeat();
         }

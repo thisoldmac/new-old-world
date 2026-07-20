@@ -24,6 +24,63 @@ final class ScreenshotModelTests: XCTestCase {
         XCTAssertTrue(model.canCapture)
     }
 
+    func testProgressFractionIsBoundedAndSafeAtZero() {
+        XCTAssertEqual(GuestListener.CaptureProgress(
+            received: 0, expected: 0).fraction, 0)
+        XCTAssertEqual(GuestListener.CaptureProgress(
+            received: 50, expected: 200).fraction, 0.25)
+        // A guest that overshoots its own announced size must not push the
+        // bar past full.
+        XCTAssertEqual(GuestListener.CaptureProgress(
+            received: 300, expected: 200).fraction, 1)
+    }
+
+    func testCancelIsIgnoredWhenNothingIsInFlight() {
+        let model = makeModel()
+        model.connection = .connected(name: "PowerBook 1400")
+        model.cancel()
+        XCTAssertNil(model.lastError)
+    }
+
+    func testWriteLandsAPNGAndNeverClobbers() throws {
+        let model = makeModel()
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir,
+                                                withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let blob: [UInt8] = [0, 1, 2, 3, 4, 5, 6, 7]
+        let format = CaptureFormat(
+            width: 4, height: 2, depth: 8, rowBytes: 4, bytes: blob.count,
+            paletteBytes: 0, packed: false, captureMs: 0, encodeMs: 0)
+        let image = try CaptureDecoder.makeImage(blob: blob, format: format)
+        let stamped = Date()
+        let record = ScreenshotRecord(
+            capturedAt: stamped, image: image, format: format,
+            transferMs: 1, wireBytes: blob.count)
+
+        XCTAssertNil(model.write(record, to: dir))
+        // Same timestamp twice: the second must land beside the first.
+        XCTAssertNil(model.write(record, to: dir))
+        let files = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+        XCTAssertEqual(files.filter { $0.hasSuffix(".png") }.count, 2)
+    }
+
+    func testWriteReportsAnUnwritableDirectory() throws {
+        let model = makeModel()
+        let blob: [UInt8] = [0, 1, 2, 3, 4, 5, 6, 7]
+        let format = CaptureFormat(
+            width: 4, height: 2, depth: 8, rowBytes: 4, bytes: blob.count,
+            paletteBytes: 0, packed: false, captureMs: 0, encodeMs: 0)
+        let record = ScreenshotRecord(
+            capturedAt: Date(),
+            image: try CaptureDecoder.makeImage(blob: blob, format: format),
+            format: format, transferMs: 1, wireBytes: blob.count)
+        let missing = URL(fileURLWithPath: "/does/not/exist/now-test")
+        XCTAssertNotNil(model.write(record, to: missing))
+    }
+
     func testCapturingWithoutAGuestFailsHonestly() {
         let model = makeModel()
         model.connection = .connected(name: "PowerBook 1400")

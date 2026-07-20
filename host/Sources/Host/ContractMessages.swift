@@ -18,6 +18,7 @@ enum ControlMessage: Equatable, Sendable {
     case commandRequest(CommandRequest)
     case commandResult(CommandResult)
     case captureRequest(CaptureRequest)
+    case captureCancel(CaptureCancel)
     case captureBegin(CaptureBegin)
     case captureEnd(CaptureEnd)
 }
@@ -76,6 +77,10 @@ struct CommandResult: Codable, Equatable, Sendable {
 struct CaptureRequest: Codable, Equatable, Sendable {
     var id: Int
     var depth: Int
+}
+
+struct CaptureCancel: Codable, Equatable, Sendable {
+    var transfer: Int
 }
 
 struct CaptureBegin: Codable, Equatable, Sendable {
@@ -144,6 +149,9 @@ enum ControlMessageCodec {
         case "capture.request":
             return .captureRequest(
                 try decoder.decode(CaptureRequest.self, from: data))
+        case "capture.cancel":
+            return .captureCancel(
+                try decoder.decode(CaptureCancel.self, from: data))
         case "capture.begin":
             return .captureBegin(
                 try decoder.decode(CaptureBegin.self, from: data))
@@ -174,6 +182,7 @@ enum ControlMessageCodec {
         case .commandRequest(let m): return try tagged("command.request", m)
         case .commandResult(let m): return try tagged("command.result", m)
         case .captureRequest(let m): return try tagged("capture.request", m)
+        case .captureCancel(let m): return try tagged("capture.cancel", m)
         case .captureBegin(let m): return try tagged("capture.begin", m)
         case .captureEnd(let m): return try tagged("capture.end", m)
         }

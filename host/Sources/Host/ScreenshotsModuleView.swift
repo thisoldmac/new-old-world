@@ -44,6 +44,10 @@ struct ScreenshotsModuleView: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(!model.canCapture)
 
+                if model.isCapturing {
+                    Button("Cancel") { model.cancel() }
+                }
+
                 Picker("Depth", selection: $model.selectedDepth) {
                     ForEach(CaptureDepth.allCases) { depth in
                         Text(depth.title).tag(depth)
@@ -59,6 +63,58 @@ struct ScreenshotsModuleView: View {
                         .font(.callout)
                 }
             }
+
+            if model.isCapturing {
+                transferProgress
+            }
+            saveRow
+        }
+    }
+
+    /// A capture over 802.11b takes long enough that silence reads as a
+    /// hang — so show the bytes arriving. Before capture.begin lands there
+    /// is no total to divide by, hence the indeterminate first phase.
+    @ViewBuilder
+    private var transferProgress: some View {
+        if let progress = model.progress, progress.expected > 0 {
+            VStack(alignment: .leading, spacing: 4) {
+                ProgressView(value: progress.fraction)
+                Text("\(progress.received / 1024) KB of "
+                     + "\(progress.expected / 1024) KB")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: 420)
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                ProgressView().progressViewStyle(.linear)
+                Text("Waiting for the guest to capture…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: 420)
+        }
+    }
+
+    private var saveRow: some View {
+        HStack(spacing: 10) {
+            Toggle("Save captures to", isOn: $model.autoSave)
+            Button(model.saveDirectory.lastPathComponent) { chooseDirectory() }
+                .disabled(!model.autoSave)
+                .help(model.saveDirectory.path)
+        }
+        .font(.callout)
+    }
+
+    private func chooseDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.directoryURL = model.saveDirectory
+        panel.prompt = "Choose"
+        if panel.runModal() == .OK, let url = panel.url {
+            model.saveDirectory = url
         }
     }
 
@@ -121,6 +177,9 @@ struct ScreenshotsModuleView: View {
     private func actionRow(_ shot: ScreenshotRecord) -> some View {
         HStack(spacing: 12) {
             Button("Save as PNG…") { save(shot) }
+            Button("Save to \(model.saveDirectory.lastPathComponent)") {
+                model.write(shot, to: model.saveDirectory)
+            }
             Button("Copy") { copy(shot) }
             Text(shot.capturedAt, format: .dateTime.hour().minute().second())
                 .foregroundStyle(.secondary)

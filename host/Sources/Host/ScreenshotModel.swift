@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import CoreGraphics
 
@@ -55,15 +56,43 @@ final class ScreenshotModuleModel: ObservableObject {
     @Published private(set) var history: [ScreenshotRecord] = []
     @Published private(set) var isCapturing = false
     @Published private(set) var lastError: String?
+    /// Bytes in over bytes promised, while a transfer is in flight.
+    @Published private(set) var progress: GuestListener.CaptureProgress?
+
+    /// Where auto-saved captures land, and whether they land at all. Both
+    /// persist so the folder survives a relaunch.
+    @Published var autoSave: Bool {
+        didSet { defaults.set(autoSave, forKey: Keys.autoSave) }
+    }
+    @Published var saveDirectory: URL {
+        didSet { defaults.set(saveDirectory.path, forKey: Keys.saveDirectory) }
+    }
 
     var canCapture: Bool { connection.canCapture && !isCapturing }
     var latest: ScreenshotRecord? { history.first }
 
+    private enum Keys {
+        static let autoSave = "screenshots.autoSave"
+        static let saveDirectory = "screenshots.saveDirectory"
+    }
+
     private let listener: GuestListener
+    private let defaults: UserDefaults
+    private var progressWatch: AnyCancellable?
     private static let historyLimit = 20
 
-    init(listener: GuestListener) {
+    init(listener: GuestListener, defaults: UserDefaults = .standard) {
         self.listener = listener
+        self.defaults = defaults
+        self.autoSave = defaults.bool(forKey: Keys.autoSave)
+        let stored = defaults.string(forKey: Keys.saveDirectory)
+        self.saveDirectory = stored.map { URL(fileURLWithPath: $0) }
+            ?? FileManager.default.urls(for: .picturesDirectory,
+                                        in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory())
+        progressWatch = listener.$captureProgress
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.progress = $0 }
     }
 
     func capture() {
@@ -73,17 +102,59 @@ final class ScreenshotModuleModel: ObservableObject {
         listener.requestCapture(depth: selectedDepth.rawValue) { [weak self] in
             guard let self else { return }
             self.isCapturing = false
+            self.progress = nil
             switch $0 {
             case .success(let delivery):
-                self.receive(ScreenshotRecord(
+                let record = ScreenshotRecord(
                     capturedAt: Date(), image: delivery.image,
                     format: delivery.format, transferMs: delivery.transferMs,
-                    wireBytes: delivery.wireBytes))
+                    wireBytes: delivery.wireBytes)
+                self.receive(record)
+                if self.autoSave {
+                    self.lastError = self.write(record,
+                                                to: self.saveDirectory)
+                }
             case .failure(let failure):
                 self.lastError = failure.message
             }
         }
     }
+
+    /// Asks the guest to stop. The failed capture.end that follows is what
+    /// clears `isCapturing`, so the button state always tracks the wire.
+    func cancel() {
+        guard isCapturing else { return }
+        listener.cancelCapture()
+    }
+
+    /// Writes a PNG into `directory` under a non-colliding name. Returns a
+    /// human-readable reason on failure, nil on success.
+    @discardableResult
+    func write(_ record: ScreenshotRecord, to directory: URL) -> String? {
+        guard let png = CaptureDecoder.pngData(record.image) else {
+            return "Could not encode the capture as PNG"
+        }
+        let stamp = Self.stampFormatter.string(from: record.capturedAt)
+        var url = directory.appendingPathComponent("NOW \(stamp).png")
+        var bump = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = directory.appendingPathComponent("NOW \(stamp) \(bump).png")
+            bump += 1
+        }
+        do {
+            try png.write(to: url)
+            return nil
+        } catch {
+            return "Could not save to \(directory.lastPathComponent): "
+                + error.localizedDescription
+        }
+    }
+
+    private static let stampFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
+        return f
+    }()
 
     func receive(_ record: ScreenshotRecord) {
         history.insert(record, at: 0)

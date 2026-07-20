@@ -89,6 +89,7 @@ channels:
       commandRequest: { $ref: "#/components/messages/commandRequest" }
       commandResult: { $ref: "#/components/messages/commandResult" }
       captureRequest: { $ref: "#/components/messages/captureRequest" }
+      captureCancel: { $ref: "#/components/messages/captureCancel" }
       captureBegin: { $ref: "#/components/messages/captureBegin" }
       captureEnd: { $ref: "#/components/messages/captureEnd" }
   bulk:
@@ -112,7 +113,12 @@ operations:
     channel: { $ref: "#/channels/control" }
     messages:
       - $ref: "#/channels/control/messages/captureRequest"
-    description: Host asks the guest to capture.
+      - $ref: "#/channels/control/messages/captureCancel"
+    description: >
+      Host asks the guest to capture, and may abandon a transfer already in
+      flight. Cancel is advisory: the guest stops sending bulk frames and
+      closes the transfer with capture.end ok:false, so the host learns the
+      outcome the same way it would from any other failure.
 
 components:
   messages:
@@ -143,6 +149,9 @@ components:
     captureRequest:
       name: capture.request
       payload: { $ref: "#/components/schemas/CaptureRequest" }
+    captureCancel:
+      name: capture.cancel
+      payload: { $ref: "#/components/schemas/CaptureCancel" }
     captureBegin:
       name: capture.begin
       payload: { $ref: "#/components/schemas/CaptureBegin" }
@@ -271,7 +280,18 @@ components:
       properties:
         type: { const: capture.request }
         id: { type: integer }
-        depth: { enum: [1, 8, 16, 32] }
+        depth: { enum: [1, 2, 4, 8, 16, 32] }
+    CaptureCancel:
+      type: object
+      required: [type, transfer]
+      additionalProperties: false
+      properties:
+        type: { const: capture.cancel }
+        transfer:
+          type: integer
+          description: >
+            The transfer to abandon, from capture.begin. A guest that is no
+            longer sending that transfer ignores the message.
     CaptureBegin:
       type: object
       required: [type, id, transfer, width, height, depth, rowBytes, bytes]

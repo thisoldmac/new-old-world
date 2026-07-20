@@ -154,6 +154,24 @@ final class GuestListener: ObservableObject {
         session.sendCaptureRequest(id: id, depth: depth)
     }
 
+    /// How far along an in-flight transfer is, for the panel's progress bar.
+    struct CaptureProgress: Equatable, Sendable {
+        var received: Int
+        var expected: Int
+
+        var fraction: Double {
+            expected > 0 ? min(1, Double(received) / Double(expected)) : 0
+        }
+    }
+
+    @Published private(set) var captureProgress: CaptureProgress?
+
+    /// Abandons the transfer in flight. The guest answers with a failed
+    /// capture.end, which is what actually settles the pending completion.
+    func cancelCapture() {
+        session?.cancelCapture()
+    }
+
     struct CaptureDelivery {
         var image: CGImage
         var format: CaptureFormat
@@ -168,7 +186,12 @@ final class GuestListener: ObservableObject {
         _ result: Result<CaptureDelivery, CaptureFailure>) {
         let completion = pendingCapture
         pendingCapture = nil
+        captureProgress = nil
         completion?(result)
+    }
+
+    fileprivate func noteCaptureProgress(_ progress: CaptureProgress?) {
+        captureProgress = progress
     }
 
     private func resolveCommand(_ result: CommandResult) {
@@ -222,6 +245,9 @@ final class GuestListener: ObservableObject {
             onCapture: { [weak self] result in
                 self?.deliverCapture(result)
             },
+            onCaptureProgress: { [weak self] progress in
+                self?.noteCaptureProgress(progress)
+            },
             onClosed: { [weak self] closedSession, reason in
                 guard let self else { return }
                 self.pending.removeAll { $0 === closedSession }
@@ -258,12 +284,14 @@ final class Session {
     private let onCapture:
         (Result<GuestListener.CaptureDelivery, GuestListener.CaptureFailure>)
         -> Void
+    private let onCaptureProgress: (GuestListener.CaptureProgress?) -> Void
     private let onClosed: (Session, String) -> Void
 
     /// In-flight bulk transfer (one at a time by contract).
     private var captureBegin: CaptureBegin?
     private var captureBuffer: [UInt8] = []
     private var captureStart = Date()
+    private var cancelled = false
     private var health: GuestListener.SessionHealth?
 
     private let decoder = FrameDecoder()
@@ -282,6 +310,7 @@ final class Session {
          onCommandResult: @escaping (CommandResult) -> Void,
          onCapture: @escaping (Result<GuestListener.CaptureDelivery,
                                       GuestListener.CaptureFailure>) -> Void,
+         onCaptureProgress: @escaping (GuestListener.CaptureProgress?) -> Void,
          onClosed: @escaping (Session, String) -> Void) {
         self.connection = connection
         self.identity = identity
@@ -292,6 +321,7 @@ final class Session {
         self.onHealth = onHealth
         self.onCommandResult = onCommandResult
         self.onCapture = onCapture
+        self.onCaptureProgress = onCaptureProgress
         self.onClosed = onClosed
     }
 
@@ -361,6 +391,10 @@ final class Session {
                     return
                 }
                 captureBuffer.append(contentsOf: frame.payload)
+                if let begin = captureBegin {
+                    onCaptureProgress(.init(received: captureBuffer.count,
+                                            expected: begin.bytes))
+                }
             }
             if closed { return }
         }
@@ -392,6 +426,7 @@ final class Session {
             captureBegin = begin
             captureBuffer = []
             captureBuffer.reserveCapacity(begin.bytes)
+            onCaptureProgress(.init(received: 0, expected: begin.bytes))
         case .captureEnd(let end):
             finishCapture(end)
         case .bye(let bye):
@@ -412,8 +447,10 @@ final class Session {
         }
         captureBegin = nil
         guard end.ok else {
-            onCapture(.failure(.init(
-                message: "the guest could not capture the screen")))
+            onCapture(.failure(.init(message: cancelled
+                ? "Capture cancelled"
+                : "the guest could not capture the screen")))
+            cancelled = false
             return
         }
         let format = CaptureFormat(
@@ -483,9 +520,19 @@ final class Session {
         send(.commandRequest(request))
     }
 
+    /// Tells the guest to stop sending. The transfer is settled by the
+    /// capture.end that follows, not here — so a guest that already finished
+    /// still delivers its image rather than losing it to a late cancel.
+    func cancelCapture() {
+        guard let begin = captureBegin else { return }
+        cancelled = true
+        send(.captureCancel(CaptureCancel(transfer: begin.transfer)))
+    }
+
     func sendCaptureRequest(id: Int, depth: Int?) {
         captureBegin = nil
         captureBuffer = []
+        cancelled = false
         captureStart = Date()
         send(.captureRequest(CaptureRequest(id: id, depth: depth ?? 0)))
     }
