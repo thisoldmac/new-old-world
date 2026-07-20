@@ -242,38 +242,45 @@ static long g_rcv_window;             /* what the stack granted, 0 = default */
 
 static void negotiate_rcv_buffer(EndpointRef ep)
 {
-    struct {
-        TOption opt;
-        UInt32 value;
-    } request, reply;
+    UInt8 request[kOTFourByteOptionSize];
+    UInt8 reply[kOTFourByteOptionSize];
+    TOption *opt = (TOption *)request;
+    TOption *got = (TOption *)reply;
     TOptMgmt req, ret;
 
     if (gNowOT.optionManagement == NULL) {
+        g_rcv_window = -2;            /* not resolvable on this stack */
         return;
     }
-    memset(&request, 0, sizeof request);
-    request.opt.len = sizeof request;
-    request.opt.level = XTI_GENERIC;
-    request.opt.name = XTI_RCVBUF;
-    request.opt.status = 0;
-    request.value = 64L * 1024L;
+    /* TOption already carries its four-byte value in value[0]; the first
+       version of this declared a second field beside it and set that,
+       so the request had an inconsistent length and an uninitialised
+       value. Use the size the API defines. */
+    memset(request, 0, sizeof request);
+    memset(reply, 0, sizeof reply);
+    opt->len = kOTFourByteOptionSize;
+    opt->level = XTI_GENERIC;
+    opt->name = XTI_RCVBUF;
+    opt->status = 0;
+    opt->value[0] = 64UL * 1024UL;
 
-    req.opt.buf = (UInt8 *)&request;
-    req.opt.len = sizeof request;
-    req.opt.maxlen = sizeof request;
+    req.opt.buf = request;
+    req.opt.len = kOTFourByteOptionSize;
+    req.opt.maxlen = kOTFourByteOptionSize;
     req.flags = T_NEGOTIATE;
-    ret.opt.buf = (UInt8 *)&reply;
+    ret.opt.buf = reply;
     ret.opt.len = 0;
-    ret.opt.maxlen = sizeof reply;
+    ret.opt.maxlen = kOTFourByteOptionSize;
     ret.flags = 0;
-    memset(&reply, 0, sizeof reply);
+
     if (gNowOT.optionManagement(ep, &req, &ret) != noErr) {
-        g_rcv_window = -1;            /* the call itself failed */
-    } else if (reply.opt.status == T_SUCCESS
-               || reply.opt.status == T_PARTSUCCESS) {
-        g_rcv_window = (long)reply.value;
+        g_rcv_window = -1;
+        return;
+    }
+    if (got->status == T_SUCCESS || got->status == T_PARTSUCCESS) {
+        g_rcv_window = (long)got->value[0];
     } else {
-        g_rcv_window = -(long)reply.opt.status;   /* refused; say why */
+        g_rcv_window = -(long)got->status;
     }
 }
 
@@ -309,12 +316,12 @@ static void start_connect(void)
         fail("Could not open a TCP endpoint");
         return;
     }
+    negotiate_rcv_buffer(g.ep);       /* while still synchronous */
     gNowOT.setNonBlocking(g.ep);
     if (gNowOT.bind(g.ep, NULL, NULL) != noErr) {
         fail("Bind failed");
         return;
     }
-    negotiate_rcv_buffer(g.ep);
 
     memset(&inet, 0, sizeof inet);
     inet.fAddressType = AF_INET;
