@@ -3,6 +3,29 @@ import Network
 import CoreGraphics
 import Combine
 
+extension NWParameters {
+    /// TCP with Nagle off, for talking to a classic Mac.
+    ///
+    /// The classic side advertises a receive window barely one segment
+    /// wide, so our sends are sub-MSS with data already unacknowledged —
+    /// exactly what Nagle withholds, waiting on an ACK the guest's
+    /// delayed-ACK timer will not send for ~200 ms. Two politeness
+    /// algorithms each waiting for the other, which is the shape of
+    /// inbound files crawling at ~4 KB/s while the same wire carries
+    /// 227 KB/s outbound.
+    ///
+    /// The sibling stack taught this already: finding
+    /// `mactcp-8k-window-knee` (Q950, 2026-07-07) prescribes TCP_NODELAY
+    /// host-side for the same interaction against MacTCP's ~8 K window.
+    /// It costs nothing here — this protocol is request/response plus
+    /// bulk frames, never a stream of tiny writes for Nagle to coalesce.
+    static let nowWire: NWParameters = {
+        let tcp = NWProtocolTCP.Options()
+        tcp.noDelay = true
+        return NWParameters(tls: nil, tcp: tcp)
+    }()
+}
+
 /// The host side of the wire: listens, gates on hello, serves exactly one
 /// guest at a time, answers pings, and declares death passively after
 /// `timing.idleTimeout` without traffic (the host never pings — see
@@ -89,7 +112,7 @@ final class GuestListener: ObservableObject {
         do {
             let nwPort = NWEndpoint.Port(rawValue: port)
                 ?? NWEndpoint.Port(rawValue: 0)!
-            let listener = try NWListener(using: .tcp, on: nwPort)
+            let listener = try NWListener(using: .nowWire, on: nwPort)
             self.listener = listener
             listener.newConnectionHandler = { [weak self] connection in
                 Task { @MainActor in self?.accept(connection) }
