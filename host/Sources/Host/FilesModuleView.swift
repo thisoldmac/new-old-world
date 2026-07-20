@@ -6,6 +6,11 @@ struct FilesModuleView: View {
     @State private var sortOrder = [KeyPathComparator(\FileRow.name)]
     /// Row id being hovered by a drag; "" means the table itself.
     @State private var dropTarget: String?
+    /// Ticks while a transfer waits, so the elapsed time visibly moves
+    /// and a slow tail does not read as a freeze.
+    @State private var elapsed = Date()
+    private let clock = Timer.publish(every: 1, on: .main, in: .common)
+        .autoconnect()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -37,6 +42,7 @@ struct FilesModuleView: View {
                alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear { if model.rows.isEmpty { model.refresh() } }
+        .onReceive(clock) { elapsed = $0 }
         .confirmationDialog(
             "Replace “\(model.overwritePrompt?.name ?? "")”?",
             isPresented: Binding(
@@ -202,11 +208,22 @@ struct FilesModuleView: View {
             Image(systemName: transfer.direction == .incoming
                   ? "arrow.down.circle" : "arrow.up.circle")
                 .foregroundStyle(.secondary)
-            ProgressView(value: transfer.fraction)
-                .frame(maxWidth: 240)
+            if transfer.isAwaitingReceipt {
+                ProgressView()
+                    .progressViewStyle(.linear)
+                    .frame(maxWidth: 240)
+            } else {
+                ProgressView(value: transfer.fraction)
+                    .frame(maxWidth: 240)
+            }
             Text(transferLabel(transfer))
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .help(transfer.isAwaitingReceipt
+                      ? "Everything has been sent, but the classic Mac "
+                        + "reads far slower than we write. It confirms "
+                        + "once the file is written and named."
+                      : "Bytes handed to the network so far.")
             Button("Cancel") { model.cancelTransfer() }
                 .controlSize(.small)
             if !model.queue.isEmpty {
@@ -227,6 +244,12 @@ struct FilesModuleView: View {
         -> String {
         let counted = t.index.map { i in
             "(\(i) of \(t.total ?? i)) " } ?? ""
+        if t.isAwaitingReceipt {
+            let secs = Int(elapsed.timeIntervalSince(t.startedAt))
+            return counted + t.name + " — sent, "
+                + model.connection.peerLabel + " is still receiving ("
+                + String(format: "%d:%02d", secs / 60, secs % 60) + ")"
+        }
         return counted + t.name + " — " + byteText(t.received) + " of "
             + byteText(t.expected)
     }

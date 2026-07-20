@@ -128,8 +128,19 @@ final class FilesModuleModel: ObservableObject {
         /// Position in a multi-file drop, 1-based; nil when alone.
         var index: Int?
         var total: Int?
+        var startedAt = Date()
 
         enum Direction { case incoming, outgoing }
+
+        /// Handing the last chunk to the OS is not the same as the other
+        /// machine having it: the bar counts bytes accepted for sending,
+        /// and the classic Mac reads them far slower than we write them.
+        /// Everything after that point is real work with nothing local
+        /// left to measure, so the UI stops pretending to have a
+        /// percentage and says what is actually going on.
+        var isAwaitingReceipt: Bool {
+            direction == .outgoing && expected > 0 && received >= expected
+        }
         var fraction: Double {
             expected > 0 ? min(1, Double(received) / Double(expected)) : 0
         }
