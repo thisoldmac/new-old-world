@@ -6,8 +6,14 @@ final class HostAppState: ObservableObject {
     @Published var selectedModuleID: String {
         didSet { defaults.set(selectedModuleID, forKey: Self.selectionKey) }
     }
-    private(set) lazy var screenshots =
-        ScreenshotModuleModel(listener: listener)
+    private(set) lazy var screenshots: ScreenshotModuleModel = {
+        let model = ScreenshotModuleModel(listener: listener)
+        model.announce = { [notifier] guest, format, fileURL in
+            notifier.announce(guest: guest, format: format, fileURL: fileURL)
+        }
+        return model
+    }()
+    private let notifier = CaptureNotifier()
     let settings: SettingsModel
     let listener: GuestListener
     private(set) lazy var console = ConsoleModel(listener: listener)

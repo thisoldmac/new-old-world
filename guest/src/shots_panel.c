@@ -5,6 +5,7 @@
 
 #include "prefs.h"
 #include "screenshot.h"
+#include "wire.h"
 
 enum {
     kPanelWidth = 336,
@@ -20,6 +21,7 @@ static ControlRef g_chunk_popup;
 static ControlRef g_pace_popup;
 static ControlRef g_pack_check;
 static ControlRef g_shoot_button;
+static ControlRef g_send_button;
 static char g_stat1[96];
 static char g_stat2[96];
 static char g_stat3[96];
@@ -110,6 +112,29 @@ static void take_screenshot(void)
     invalidate_stats();
 }
 
+/* Offers the screen to the host. Progress lands back through
+   shots_panel_note as the wire works the transfer. */
+static void send_to_host(void)
+{
+    char err[96];
+
+    g_stat1[0] = '\0';
+    g_stat2[0] = '\0';
+    if (now_wire_offer_shot(err, sizeof err) != 0) {
+        snprintf(g_stat3, sizeof g_stat3, "%.90s", err);
+        invalidate_stats();
+    }
+}
+
+void shots_panel_note(const char *line)
+{
+    if (g_window == NULL) {
+        return;
+    }
+    snprintf(g_stat3, sizeof g_stat3, "%.90s", line);
+    invalidate_stats();
+}
+
 static ControlRef make_popup(const Rect *bounds, const char *title,
                              short menu_id)
 {
@@ -165,6 +190,10 @@ void shots_panel_open(void)
     CopyCStringToPascal("Take Screenshot", text);
     g_shoot_button = NewControl(g_window, &bounds, text, true, 0, 0, 1,
                                 pushButProc, 0);
+    SetRect(&bounds, 184, 138, 320, 162);
+    CopyCStringToPascal("Send to Host", text);
+    g_send_button = NewControl(g_window, &bounds, text, true, 0, 0, 1,
+                               pushButProc, 0);
 
     load_controls_from_prefs();
     g_stat1[0] = '\0';
@@ -256,5 +285,7 @@ void shots_panel_click(Point local)
         save_controls_to_prefs();
     } else if (control == g_shoot_button) {
         take_screenshot();
+    } else if (control == g_send_button) {
+        send_to_host();
     }
 }

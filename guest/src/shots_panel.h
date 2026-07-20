@@ -15,4 +15,7 @@ WindowRef shots_panel_ref(void);
 void shots_panel_draw(void);
 void shots_panel_click(Point local);
 
+/* Status line from the wire about a push transfer; safe when closed. */
+void shots_panel_note(const char *line);
+
 #endif

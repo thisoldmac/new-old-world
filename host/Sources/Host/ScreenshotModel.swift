@@ -60,8 +60,9 @@ final class ScreenshotModuleModel: ObservableObject {
     /// Bytes in over bytes promised, while a transfer is in flight.
     @Published private(set) var progress: GuestListener.CaptureProgress?
 
-    /// Where auto-saved captures land, and whether they land at all. Both
-    /// persist so the folder survives a relaunch.
+    /// The landing pad: guest-initiated screenshots always save here;
+    /// host-initiated ones only when autoSave says so (they already have a
+    /// home — the panel).
     @Published var autoSave: Bool {
         didSet { defaults.set(autoSave, forKey: Keys.autoSave) }
     }
@@ -83,9 +84,16 @@ final class ScreenshotModuleModel: ObservableObject {
         static let saveDirectory = "screenshots.saveDirectory"
     }
 
+    /// Called when a guest-initiated screenshot lands; the app wires the
+    /// system-notification toaster here. Kept as a closure so tests and
+    /// headless runs stay silent.
+    var announce: ((_ guest: String, _ format: CaptureFormat,
+                    _ fileURL: URL?) -> Void)?
+
     private let listener: GuestListener
     private let defaults: UserDefaults
     private var progressWatch: AnyCancellable?
+    private var pushWatch: AnyCancellable?
     private static let historyLimit = 20
 
     init(listener: GuestListener, defaults: UserDefaults = .standard) {
@@ -101,6 +109,34 @@ final class ScreenshotModuleModel: ObservableObject {
         progressWatch = listener.$captureProgress
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in self?.progress = $0 }
+        pushWatch = listener.pushedCaptures
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.receivePushed($0) }
+    }
+
+    /// A guest-initiated screenshot: same record as a requested one, but it
+    /// always writes to the landing pad — unlike a panel capture it has no
+    /// other home — and it announces itself.
+    func receivePushed(_ delivery: GuestListener.CaptureDelivery) {
+        let record = ScreenshotRecord(
+            capturedAt: Date(), image: delivery.image,
+            format: delivery.format, transferMs: delivery.transferMs,
+            wireBytes: delivery.wireBytes)
+        receive(record)
+        if autoCopy {
+            copyToPasteboard(record)
+        }
+        var savedTo: URL?
+        if let failure = write(record, to: saveDirectory, savedTo: &savedTo) {
+            lastError = failure
+        }
+        let guest: String
+        if case .connected(let name) = connection {
+            guest = name
+        } else {
+            guest = "the guest"
+        }
+        announce?(guest, record.format, savedTo)
     }
 
     func capture() {
@@ -142,6 +178,13 @@ final class ScreenshotModuleModel: ObservableObject {
     /// human-readable reason on failure, nil on success.
     @discardableResult
     func write(_ record: ScreenshotRecord, to directory: URL) -> String? {
+        var ignored: URL?
+        return write(record, to: directory, savedTo: &ignored)
+    }
+
+    func write(_ record: ScreenshotRecord, to directory: URL,
+               savedTo: inout URL?) -> String? {
+        savedTo = nil
         guard let png = CaptureDecoder.pngData(record.image) else {
             return "Could not encode the capture as PNG"
         }
@@ -154,6 +197,7 @@ final class ScreenshotModuleModel: ObservableObject {
         }
         do {
             try png.write(to: url)
+            savedTo = url
             return nil
         } catch {
             return "Could not save to \(directory.lastPathComponent): "

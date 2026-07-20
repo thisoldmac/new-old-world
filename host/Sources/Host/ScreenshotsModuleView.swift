@@ -64,7 +64,7 @@ struct ScreenshotsModuleView: View {
                 }
             }
 
-            if model.isCapturing {
+            if model.isCapturing || model.progress != nil {
                 transferProgress
             }
             saveRow
@@ -96,14 +96,19 @@ struct ScreenshotsModuleView: View {
         }
     }
 
+    /// The landing pad is not the toggle's: screenshots the guest sends
+    /// always land in the folder, so the folder is always live. The toggle
+    /// only governs captures taken from this panel.
     private var saveRow: some View {
-        HStack(spacing: 16) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Toggle("Save captures to", isOn: $model.autoSave)
+                Text("Screenshots land in")
                 folderPicker
-                    .disabled(!model.autoSave)
             }
-            Toggle("Copy to clipboard", isOn: $model.autoCopy)
+            HStack(spacing: 16) {
+                Toggle("Auto-save captures taken here", isOn: $model.autoSave)
+                Toggle("Copy to clipboard", isOn: $model.autoCopy)
+            }
         }
         .font(.callout)
     }

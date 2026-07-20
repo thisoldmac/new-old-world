@@ -48,4 +48,17 @@ void conn_status(char *out, long cap);
 /* Round-trip time of the last ping/pong in ms, or -1 if none yet. */
 long conn_last_rtt_ms(void);
 
+/* --- guest-initiated screenshot push ----------------------------------- */
+
+/* Captures at the panel's depth and offers it to the host (capture.offer).
+   Returns 0 once the offer is on the wire; -1 with a reason in err if the
+   guest cannot offer right now. The outcome — accepted and sent, refused,
+   or timed out — arrives later through the shot-note hook. */
+int now_wire_offer_shot(char *err, long cap);
+
+/* One-line progress reports for push transfers ("Sent to host (312 ms)").
+   The Screenshots panel registers itself here; a NULL fn unhooks. */
+typedef void (*ConnShotNote)(const char *line);
+void conn_set_shot_note(ConnShotNote fn);
+
 #endif

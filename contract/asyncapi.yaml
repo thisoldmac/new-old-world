@@ -90,6 +90,9 @@ channels:
       commandResult: { $ref: "#/components/messages/commandResult" }
       captureRequest: { $ref: "#/components/messages/captureRequest" }
       captureCancel: { $ref: "#/components/messages/captureCancel" }
+      captureOffer: { $ref: "#/components/messages/captureOffer" }
+      captureAccept: { $ref: "#/components/messages/captureAccept" }
+      captureRefuse: { $ref: "#/components/messages/captureRefuse" }
       captureBegin: { $ref: "#/components/messages/captureBegin" }
       captureEnd: { $ref: "#/components/messages/captureEnd" }
   bulk:
@@ -105,9 +108,29 @@ operations:
     action: send
     channel: { $ref: "#/channels/control" }
     messages:
+      - $ref: "#/channels/control/messages/captureOffer"
       - $ref: "#/channels/control/messages/captureBegin"
       - $ref: "#/channels/control/messages/captureEnd"
-    description: Guest announces and completes a capture transfer.
+    description: >
+      Guest announces and completes a capture transfer. A transfer starts
+      one of two ways: answering the host's capture.request (capture.begin
+      follows directly, correlated by the request id), or guest-initiated
+      push — the guest captures first, announces with capture.offer
+      (carrying true byte counts, so a refusal costs nothing but the
+      capture), and sends capture.begin only after the host answers
+      capture.accept. Either way the frames and capture.end are identical;
+      one transfer at a time still holds across both origins.
+  hostAnswersOffer:
+    action: receive
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/captureAccept"
+      - $ref: "#/channels/control/messages/captureRefuse"
+    description: >
+      Host grants or declines a guest-initiated capture offer. Accepting is
+      policy, not ceremony — a host normally accepts unless a transfer is
+      already in flight. A guest whose offer goes unanswered abandons it
+      after a timeout and reports that to its human.
   hostRequestsCapture:
     action: receive
     channel: { $ref: "#/channels/control" }
@@ -149,6 +172,15 @@ components:
     captureRequest:
       name: capture.request
       payload: { $ref: "#/components/schemas/CaptureRequest" }
+    captureOffer:
+      name: capture.offer
+      payload: { $ref: "#/components/schemas/CaptureOffer" }
+    captureAccept:
+      name: capture.accept
+      payload: { $ref: "#/components/schemas/CaptureAccept" }
+    captureRefuse:
+      name: capture.refuse
+      payload: { $ref: "#/components/schemas/CaptureRefuse" }
     captureCancel:
       name: capture.cancel
       payload: { $ref: "#/components/schemas/CaptureCancel" }
@@ -281,6 +313,47 @@ components:
         type: { const: capture.request }
         id: { type: integer }
         depth: { enum: [1, 2, 4, 8, 16, 32] }
+    CaptureOffer:
+      type: object
+      required: [type, id, width, height, depth, rowBytes, bytes]
+      additionalProperties: false
+      properties:
+        type: { const: capture.offer }
+        id:
+          type: integer
+          description: >
+            Guest-chosen id; the capture.accept / capture.refuse answer and
+            the eventual capture.begin all carry it. A separate id space
+            from capture.request — origins never share correlation.
+        width: { type: integer }
+        height: { type: integer }
+        depth: { enum: [1, 2, 4, 8, 16, 32] }
+        rowBytes: { type: integer }
+        bytes:
+          type: integer
+          description: Exact bulk-stream size — the capture is already
+            encoded when the offer is sent.
+        paletteBytes: { type: integer }
+        encoding: { enum: [raw, packbits] }
+        captureMs: { type: integer }
+        encodeMs: { type: integer }
+    CaptureAccept:
+      type: object
+      required: [type, id]
+      additionalProperties: false
+      properties:
+        type: { const: capture.accept }
+        id: { type: integer }
+    CaptureRefuse:
+      type: object
+      required: [type, id]
+      additionalProperties: false
+      properties:
+        type: { const: capture.refuse }
+        id: { type: integer }
+        reason:
+          type: string
+          description: Human-readable; it lands in the guest's panel.
     CaptureCancel:
       type: object
       required: [type, transfer]

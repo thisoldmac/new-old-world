@@ -1,5 +1,6 @@
 import XCTest
 import Network
+import Combine
 @testable import Host
 
 /// A scripted guest: dials the listener over loopback, sends frames, and
@@ -213,6 +214,121 @@ final class GuestListenerTests: XCTestCase {
         }
         XCTAssertEqual(listener.lastDisconnect,
                        "Connection lost (no traffic)")
+    }
+}
+
+@MainActor
+final class GuestPushCaptureTests: XCTestCase {
+    private var listener: GuestListener!
+
+    override func setUp() async throws {
+        listener = GuestListener(
+            identity: .init(version: "0.1-test", name: "Test Host"),
+            timing: .init(idleTimeout: 60))
+        listener.start(port: 0)
+        try await waitUntil("listening") {
+            if case .listening = self.listener.state { return true }
+            return false
+        }
+    }
+
+    override func tearDown() async throws {
+        listener.stop()
+        listener = nil
+    }
+
+    private struct WaitTimeout: Error { let what: String }
+
+    private func waitUntil(_ what: String, timeout: TimeInterval = 5,
+                           _ condition: @escaping () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() {
+            guard Date() < deadline else {
+                XCTFail("timed out waiting for \(what)")
+                throw WaitTimeout(what: what)
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+    }
+
+    private func connectedGuest() async throws -> FakeGuest {
+        let guest = FakeGuest(port: listener.boundPort ?? 0)
+        guest.start()
+        try guest.send(.hello(Hello(
+            contract: Contract.revision, side: "guest", version: "0.1.0",
+            name: "PowerBook 1400", os: "9.1", chunk: 8192)))
+        try await waitUntil("connected") {
+            if case .connected = self.listener.state { return true }
+            return false
+        }
+        return guest
+    }
+
+    /// 4x2 8-bit raw with a 768-byte palette - small enough to hand-build,
+    /// real enough to exercise decode.
+    private func pushBlob() -> (offer: CaptureOffer, bulk: Data) {
+        var palette = [UInt8](repeating: 0, count: 256 * 3)
+        palette[3] = 255
+        let pixels: [UInt8] = [1, 1, 1, 1, 1, 1, 1, 1]
+        let blob = palette + pixels
+        let offer = CaptureOffer(
+            id: 9, width: 4, height: 2, depth: 8, rowBytes: 4,
+            bytes: blob.count, paletteBytes: palette.count, encoding: "raw",
+            captureMs: 1, encodeMs: 1)
+        return (offer, Data(blob))
+    }
+
+    func testOfferAcceptBulkLandsInPushedCaptures() async throws {
+        let guest = try await connectedGuest()
+        var delivered: GuestListener.CaptureDelivery?
+        let watch = listener.pushedCaptures.sink { delivered = $0 }
+        defer { watch.cancel() }
+
+        let (offer, bulk) = pushBlob()
+        try guest.send(.captureOffer(offer))
+        try await waitUntil("accept") {
+            guest.received.contains(.captureAccept(CaptureAccept(id: 9)))
+        }
+
+        try guest.send(.captureBegin(CaptureBegin(
+            id: 9, transfer: 1, width: 4, height: 2, depth: 8, rowBytes: 4,
+            bytes: bulk.count, paletteBytes: 768, encoding: "raw",
+            captureMs: 1, encodeMs: 1)))
+        guest.sendRaw(try FrameCodec.encode(
+            channel: .bulk, flags: [.end], transfer: 1, payload: bulk))
+        try guest.send(.captureEnd(CaptureEnd(
+            id: 9, transfer: 1, ok: true, sendMs: 5)))
+
+        try await waitUntil("delivery") { delivered != nil }
+        XCTAssertEqual(delivered?.format.width, 4)
+        XCTAssertEqual(delivered?.wireBytes, bulk.count)
+        XCTAssertNil(listener.captureProgress,
+                     "progress must clear once the push lands")
+    }
+
+    func testOfferDuringASolicitedCaptureIsRefusedBusy() async throws {
+        let guest = try await connectedGuest()
+        listener.requestCapture(depth: 8) { _ in }
+        try await waitUntil("capture.request") {
+            guest.received.contains {
+                if case .captureRequest = $0 { return true }
+                return false
+            }
+        }
+
+        try guest.send(.captureOffer(pushBlob().offer))
+        try await waitUntil("refuse") {
+            guest.received.contains {
+                if case .captureRefuse(let refuse) = $0 {
+                    return refuse.id == 9
+                        && refuse.reason?.contains("busy") == true
+                }
+                return false
+            }
+        }
+        // The solicited lane is untouched: no accept was sent.
+        XCTAssertFalse(guest.received.contains(
+            .captureAccept(CaptureAccept(id: 9))))
     }
 }
 

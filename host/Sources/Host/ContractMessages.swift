@@ -17,6 +17,9 @@ enum ControlMessage: Equatable, Sendable {
     case error(ErrorMessage)
     case commandRequest(CommandRequest)
     case commandResult(CommandResult)
+    case captureOffer(CaptureOffer)
+    case captureAccept(CaptureAccept)
+    case captureRefuse(CaptureRefuse)
     case captureRequest(CaptureRequest)
     case captureCancel(CaptureCancel)
     case captureBegin(CaptureBegin)
@@ -77,6 +80,30 @@ struct CommandResult: Codable, Equatable, Sendable {
 struct CaptureRequest: Codable, Equatable, Sendable {
     var id: Int
     var depth: Int
+}
+
+/// Guest-initiated push: the guest has already captured and encoded, so the
+/// byte counts are exact; the host answers accept or refuse.
+struct CaptureOffer: Codable, Equatable, Sendable {
+    var id: Int
+    var width: Int
+    var height: Int
+    var depth: Int
+    var rowBytes: Int
+    var bytes: Int
+    var paletteBytes: Int?
+    var encoding: String?
+    var captureMs: Int?
+    var encodeMs: Int?
+}
+
+struct CaptureAccept: Codable, Equatable, Sendable {
+    var id: Int
+}
+
+struct CaptureRefuse: Codable, Equatable, Sendable {
+    var id: Int
+    var reason: String?
 }
 
 struct CaptureCancel: Codable, Equatable, Sendable {
@@ -149,6 +176,15 @@ enum ControlMessageCodec {
         case "capture.request":
             return .captureRequest(
                 try decoder.decode(CaptureRequest.self, from: data))
+        case "capture.offer":
+            return .captureOffer(
+                try decoder.decode(CaptureOffer.self, from: data))
+        case "capture.accept":
+            return .captureAccept(
+                try decoder.decode(CaptureAccept.self, from: data))
+        case "capture.refuse":
+            return .captureRefuse(
+                try decoder.decode(CaptureRefuse.self, from: data))
         case "capture.cancel":
             return .captureCancel(
                 try decoder.decode(CaptureCancel.self, from: data))
@@ -182,6 +218,9 @@ enum ControlMessageCodec {
         case .commandRequest(let m): return try tagged("command.request", m)
         case .commandResult(let m): return try tagged("command.result", m)
         case .captureRequest(let m): return try tagged("capture.request", m)
+        case .captureOffer(let m): return try tagged("capture.offer", m)
+        case .captureAccept(let m): return try tagged("capture.accept", m)
+        case .captureRefuse(let m): return try tagged("capture.refuse", m)
         case .captureCancel(let m): return try tagged("capture.cancel", m)
         case .captureBegin(let m): return try tagged("capture.begin", m)
         case .captureEnd(let m): return try tagged("capture.end", m)

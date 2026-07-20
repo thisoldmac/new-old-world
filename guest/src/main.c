@@ -216,6 +216,7 @@ int main(void)
     create_menu_bar();
     restore_session();
     conn_init();
+    conn_set_shot_note(shots_panel_note);
 
     /* On CFM PowerPC a UPP is the tvector itself; the cast avoids
        NewAEEventHandlerUPP, a weakly-linked import that would resolve to

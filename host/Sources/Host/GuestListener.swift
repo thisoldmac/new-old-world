@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import CoreGraphics
+import Combine
 
 /// The host side of the wire: listens, gates on hello, serves exactly one
 /// guest at a time, answers pings, and declares death passively after
@@ -166,6 +167,11 @@ final class GuestListener: ObservableObject {
 
     @Published private(set) var captureProgress: CaptureProgress?
 
+    /// Guest-initiated captures land here — decoded, ready for whichever
+    /// module cares. The request path never uses this; a solicited capture
+    /// settles its own completion instead.
+    let pushedCaptures = PassthroughSubject<CaptureDelivery, Never>()
+
     /// Abandons the transfer in flight. The guest answers with a failed
     /// capture.end, which is what actually settles the pending completion.
     func cancelCapture() {
@@ -248,6 +254,10 @@ final class GuestListener: ObservableObject {
             onCaptureProgress: { [weak self] progress in
                 self?.noteCaptureProgress(progress)
             },
+            onPushedCapture: { [weak self] delivery in
+                self?.captureProgress = nil
+                self?.pushedCaptures.send(delivery)
+            },
             onClosed: { [weak self] closedSession, reason in
                 guard let self else { return }
                 self.pending.removeAll { $0 === closedSession }
@@ -285,6 +295,7 @@ final class Session {
         (Result<GuestListener.CaptureDelivery, GuestListener.CaptureFailure>)
         -> Void
     private let onCaptureProgress: (GuestListener.CaptureProgress?) -> Void
+    private let onPushedCapture: (GuestListener.CaptureDelivery) -> Void
     private let onClosed: (Session, String) -> Void
 
     /// In-flight bulk transfer (one at a time by contract).
@@ -292,6 +303,10 @@ final class Session {
     private var captureBuffer: [UInt8] = []
     private var captureStart = Date()
     private var cancelled = false
+    /// Non-nil while a host-requested capture is outstanding; a transfer
+    /// that begins without it is a guest-initiated push.
+    private var solicitedId: Int?
+    private var acceptedOfferId: Int?
     private var health: GuestListener.SessionHealth?
 
     private let decoder = FrameDecoder()
@@ -311,6 +326,7 @@ final class Session {
          onCapture: @escaping (Result<GuestListener.CaptureDelivery,
                                       GuestListener.CaptureFailure>) -> Void,
          onCaptureProgress: @escaping (GuestListener.CaptureProgress?) -> Void,
+         onPushedCapture: @escaping (GuestListener.CaptureDelivery) -> Void,
          onClosed: @escaping (Session, String) -> Void) {
         self.connection = connection
         self.identity = identity
@@ -322,6 +338,7 @@ final class Session {
         self.onCommandResult = onCommandResult
         self.onCapture = onCapture
         self.onCaptureProgress = onCaptureProgress
+        self.onPushedCapture = onPushedCapture
         self.onClosed = onClosed
     }
 
@@ -422,8 +439,11 @@ final class Session {
             touchHealth(pingsDelta: 1)
         case .commandResult(let result):
             onCommandResult(result)
+        case .captureOffer(let offer):
+            answerOffer(offer)
         case .captureBegin(let begin):
             captureBegin = begin
+            captureStart = Date()
             captureBuffer = []
             captureBuffer.reserveCapacity(begin.bytes)
             onCaptureProgress(.init(received: 0, expected: begin.bytes))
@@ -440,16 +460,42 @@ final class Session {
         }
     }
 
+    /// One transfer at a time is the contract's rule, so accepting is just
+    /// "is the lane free" — the offer's contents don't need vetting: the
+    /// bulk plane only carries pixels.
+    private func answerOffer(_ offer: CaptureOffer) {
+        guard captureBegin == nil, solicitedId == nil else {
+            send(.captureRefuse(CaptureRefuse(
+                id: offer.id, reason: "busy: a transfer is in flight")))
+            return
+        }
+        acceptedOfferId = offer.id
+        onLog("\(guestName) offers a \(offer.width)x\(offer.height) "
+              + "\(offer.depth)-bit screenshot (\(offer.bytes / 1024) KB)")
+        send(.captureAccept(CaptureAccept(id: offer.id)))
+    }
+
     private func finishCapture(_ end: CaptureEnd) {
+        let pushed = solicitedId == nil
         guard let begin = captureBegin else {
-            onCapture(.failure(.init(message: "capture ended without a begin")))
+            if !pushed {
+                solicitedId = nil
+                onCapture(.failure(.init(
+                    message: "capture ended without a begin")))
+            }
             return
         }
         captureBegin = nil
+        acceptedOfferId = nil
         guard end.ok else {
-            onCapture(.failure(.init(message: cancelled
-                ? "Capture cancelled"
-                : "the guest could not capture the screen")))
+            if pushed {
+                onLog("\(guestName)'s screenshot push failed")
+            } else {
+                solicitedId = nil
+                onCapture(.failure(.init(message: cancelled
+                    ? "Capture cancelled"
+                    : "the guest could not capture the screen")))
+            }
             cancelled = false
             return
         }
@@ -465,11 +511,23 @@ final class Session {
             let image = try CaptureDecoder.makeImage(blob: blob,
                                                      format: format)
             let ms = Int(Date().timeIntervalSince(captureStart) * 1000)
-            onCapture(.success(.init(image: image, format: format,
-                                     transferMs: ms, wireBytes: blob.count)))
+            let delivery = GuestListener.CaptureDelivery(
+                image: image, format: format,
+                transferMs: ms, wireBytes: blob.count)
+            if pushed {
+                onPushedCapture(delivery)
+            } else {
+                solicitedId = nil
+                onCapture(.success(delivery))
+            }
         } catch {
-            onCapture(.failure(.init(
-                message: "could not decode the capture: \(error)")))
+            if pushed {
+                onLog("could not decode \(guestName)'s screenshot: \(error)")
+            } else {
+                solicitedId = nil
+                onCapture(.failure(.init(
+                    message: "could not decode the capture: \(error)")))
+            }
         }
     }
 
@@ -533,6 +591,7 @@ final class Session {
         captureBegin = nil
         captureBuffer = []
         cancelled = false
+        solicitedId = id
         captureStart = Date()
         send(.captureRequest(CaptureRequest(id: id, depth: depth ?? 0)))
     }

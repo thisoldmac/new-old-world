@@ -46,6 +46,7 @@ typedef struct {
     unsigned long backoff_until;
 
     unsigned short transfer_seq;
+    long offer_seq;
     char peer_name[64];
     char peer_version[32];
     char status[128];
@@ -56,6 +57,8 @@ static ConnState g;
 
 static void send_hello(void);
 static void xfer_cleanup(void);
+static void offer_cleanup(void);
+static void note_shot(const char *line);
 
 /* --- helpers ------------------------------------------------------------ */
 
@@ -189,6 +192,7 @@ static void close_endpoint(void)
 static void enter_backoff(void)
 {
     xfer_cleanup();                   /* a dropped link cancels any transfer */
+    offer_cleanup();
     close_endpoint();
     if (!g.want_connection) {
         g.phase = kConnIdle;
@@ -429,6 +433,7 @@ enum {
 
 static struct {
     Boolean active;
+    Boolean pushed;                   /* guest-initiated: report to panel */
     PixelBlob blob;
     long total, offset;
     long chunk;
@@ -465,6 +470,15 @@ static void xfer_finish(Boolean ok)
              g_xfer.id, g_xfer.xfer, ok ? "true" : "false",
              (long)((TickCount() - g_xfer.started) * 1000 / 60));
     send_control(json);
+    if (g_xfer.pushed) {
+        if (ok) {
+            snprintf(json, sizeof json, "Sent to host (%ld ms)",
+                     (long)((TickCount() - g_xfer.started) * 1000 / 60));
+            note_shot(json);
+        } else {
+            note_shot("Send to host failed");
+        }
+    }
     xfer_cleanup();
 }
 
@@ -543,23 +557,128 @@ static void xfer_abort(void)
     }
 }
 
+/* Panel hook: one status line about push transfers ("Sent to host"). */
+static ConnShotNote g_shot_note;
+
+void conn_set_shot_note(ConnShotNote fn)
+{
+    g_shot_note = fn;
+}
+
+static void note_shot(const char *line)
+{
+    if (g_shot_note != NULL) {
+        g_shot_note(line);
+    }
+}
+
+typedef struct {
+    short width, height, depth, row_bytes;
+    long capture_ms;
+} ShotMeta;
+
+static unsigned short next_xfer(void)
+{
+    ++g.transfer_seq;
+    if (g.transfer_seq == 0) {
+        g.transfer_seq = 1;
+    }
+    return g.transfer_seq;
+}
+
+/* Captures the screen and exports the wire pixels. On success the blob is
+   the caller's to dispose. */
+static int gather_shot(short depth, Boolean pack, PixelBlob *blob,
+                       ShotMeta *meta)
+{
+    CaptureImage image;
+    unsigned long t_start = TickCount();
+
+    if (capture_screen(depth, &image) != kCaptureOK) {
+        return 0;
+    }
+    meta->capture_ms = (long)((TickCount() - t_start) * 1000 / 60);
+    meta->width = (short)(image.bounds.right - image.bounds.left);
+    meta->height = (short)(image.bounds.bottom - image.bounds.top);
+    meta->depth = depth;
+    meta->row_bytes = image.row_bytes;
+    if (now_pixels_export(&image, pack, blob) != 0) {
+        capture_image_dispose(&image);
+        return 0;
+    }
+    capture_image_dispose(&image);
+    return 1;
+}
+
+/* Announces capture.begin and arms the incremental sender. Takes ownership
+   of the blob either way; on failure the host gets capture.end ok:false so
+   it never waits on a transfer that will not come. */
+static int arm_transfer(long id, unsigned short xfer, const ShotMeta *meta,
+                        PixelBlob *blob, long chunk, short pace_ms,
+                        Boolean pushed)
+{
+    char json[512];
+
+    memset(&g_xfer, 0, sizeof g_xfer);
+    g_xfer.blob = *blob;
+    memset(blob, 0, sizeof *blob);
+
+    g_xfer.frame = NewPtr(chunk + kNowFrameHeaderBytes);
+    if (g_xfer.frame == NULL) {
+        now_pixels_dispose(&g_xfer.blob);
+        snprintf(json, sizeof json,
+                 "{\"type\":\"capture.end\",\"id\":%ld,\"transfer\":%u,"
+                 "\"ok\":false}", id, xfer);
+        send_control(json);
+        return 0;
+    }
+
+    snprintf(json, sizeof json,
+             "{\"type\":\"capture.begin\",\"id\":%ld,\"transfer\":%u,"
+             "\"width\":%d,\"height\":%d,\"depth\":%d,"
+             "\"rowBytes\":%d,\"bytes\":%ld,\"paletteBytes\":%ld,"
+             "\"encoding\":\"%s\",\"captureMs\":%ld,\"encodeMs\":%ld}",
+             id, xfer, (int)meta->width, (int)meta->height,
+             (int)meta->depth, (int)meta->row_bytes, g_xfer.blob.total_bytes,
+             g_xfer.blob.palette_bytes,
+             g_xfer.blob.packed ? "packbits" : "raw",
+             meta->capture_ms, g_xfer.blob.encode_ms);
+    if (!send_control(json)) {
+        xfer_cleanup();
+        return 0;
+    }
+
+    HLock(g_xfer.blob.data);
+    g_xfer.active = true;
+    g_xfer.pushed = pushed;
+    g_xfer.total = g_xfer.blob.total_bytes;
+    g_xfer.offset = 0;
+    g_xfer.chunk = chunk;
+    g_xfer.xfer = xfer;
+    g_xfer.id = id;
+    g_xfer.pace_ms = pace_ms;
+    g_xfer.frame_len = kNowFrameHeaderBytes;   /* primes the first build */
+    g_xfer.frame_sent = kNowFrameHeaderBytes;
+    g_xfer.started = TickCount();
+    g_xfer.next_tick = 0;
+    g_xfer.deadline = TickCount() + kXferDeadlineTicks;
+    return 1;
+}
+
 /* Captures, exports wire pixels, announces with capture.begin, and arms the
-   incremental sender. Returns immediately — the bytes go out from
+   incremental sender. Returns immediately - the bytes go out from
    service_transfer so the app keeps running. */
 static void serve_capture(const char *request)
 {
     NowPrefs prefs;
-    CaptureImage image;
-    char json[512];
+    PixelBlob blob;
+    ShotMeta meta;
+    char json[256];
     long id = json_find_int(request, "id", 0);
     long depth_arg = json_find_int(request, "depth", 0);
     short depth;
     unsigned short xfer;
     long chunk;
-    unsigned long t_start;
-    long capture_ms;
-    short width, height, row_bytes;
-    int rc;
 
     if (g_xfer.active) {
         xfer_finish(false);           /* one transfer at a time */
@@ -571,75 +690,134 @@ static void serve_capture(const char *request)
     if (chunk < 1024 || chunk > kNowMaxPayload) {
         chunk = 8192;
     }
-    ++g.transfer_seq;
-    if (g.transfer_seq == 0) {
-        g.transfer_seq = 1;
-    }
-    xfer = g.transfer_seq;
+    xfer = next_xfer();
 
-    t_start = TickCount();
-    rc = capture_screen(depth, &image);
-    capture_ms = (long)((TickCount() - t_start) * 1000 / 60);
-    if (rc != kCaptureOK) {
+    memset(&blob, 0, sizeof blob);
+    if (!gather_shot(depth, prefs.shot_pack, &blob, &meta)) {
         snprintf(json, sizeof json,
                  "{\"type\":\"capture.end\",\"id\":%ld,\"transfer\":%u,"
                  "\"ok\":false}", id, xfer);
         send_control(json);
         return;
     }
-    width = (short)(image.bounds.right - image.bounds.left);
-    height = (short)(image.bounds.bottom - image.bounds.top);
-    row_bytes = image.row_bytes;
+    arm_transfer(id, xfer, &meta, &blob, chunk, prefs.pace_ms, false);
+}
 
-    memset(&g_xfer, 0, sizeof g_xfer);
-    if (now_pixels_export(&image, prefs.shot_pack, &g_xfer.blob) != 0) {
-        capture_image_dispose(&image);
-        snprintf(json, sizeof json,
-                 "{\"type\":\"capture.end\",\"id\":%ld,\"transfer\":%u,"
-                 "\"ok\":false}", id, xfer);
-        send_control(json);
-        return;
+/* --- guest-initiated push ----------------------------------------------
+   Send to Host is offer/accept: the guest captures FIRST (so the offer
+   carries true byte counts and a refusal costs nothing but the capture),
+   announces with capture.offer, and only starts the bulk stream when the
+   host answers capture.accept. The host can refuse - busy, no landing
+   pad - and the refusal reason lands in the panel, at the machine the
+   human is actually sitting at. */
+
+enum { kOfferTimeoutTicks = 60 * 15 };
+
+static struct {
+    Boolean active;
+    Boolean pushed;                   /* guest-initiated: report to panel */
+    PixelBlob blob;
+    ShotMeta meta;
+    long id;
+    long chunk;
+    short pace_ms;
+    unsigned long deadline;
+} g_offer;
+
+static void offer_cleanup(void)
+{
+    now_pixels_dispose(&g_offer.blob);
+    g_offer.active = false;
+}
+
+int now_wire_offer_shot(char *err, long cap)
+{
+    NowPrefs prefs;
+    char json[512];
+    char line[96];
+
+    if (g.phase != kConnConnected) {
+        snprintf(err, (size_t)cap, "Not connected to a host");
+        return -1;
     }
-    capture_image_dispose(&image);
-
-    g_xfer.frame = NewPtr(chunk + kNowFrameHeaderBytes);
-    if (g_xfer.frame == NULL) {
-        now_pixels_dispose(&g_xfer.blob);
-        snprintf(json, sizeof json,
-                 "{\"type\":\"capture.end\",\"id\":%ld,\"transfer\":%u,"
-                 "\"ok\":false}", id, xfer);
-        send_control(json);
-        return;
+    if (g_xfer.active || g_offer.active) {
+        snprintf(err, (size_t)cap, "A transfer is already in flight");
+        return -1;
     }
-
+    now_prefs_load(&prefs);
+    g_offer.chunk = (long)prefs.chunk_kb * 1024;
+    if (g_offer.chunk < 1024 || g_offer.chunk > kNowMaxPayload) {
+        g_offer.chunk = 8192;
+    }
+    g_offer.pace_ms = prefs.pace_ms;
+    memset(&g_offer.blob, 0, sizeof g_offer.blob);
+    if (!gather_shot(prefs.shot_depth, prefs.shot_pack, &g_offer.blob,
+                     &g_offer.meta)) {
+        snprintf(err, (size_t)cap, "Screen capture failed");
+        return -1;
+    }
+    ++g.offer_seq;
+    g_offer.id = g.offer_seq;
     snprintf(json, sizeof json,
-             "{\"type\":\"capture.begin\",\"id\":%ld,\"transfer\":%u,"
+             "{\"type\":\"capture.offer\",\"id\":%ld,"
              "\"width\":%d,\"height\":%d,\"depth\":%d,"
              "\"rowBytes\":%d,\"bytes\":%ld,\"paletteBytes\":%ld,"
              "\"encoding\":\"%s\",\"captureMs\":%ld,\"encodeMs\":%ld}",
-             id, xfer, (int)width, (int)height,
-             (int)depth, (int)row_bytes, g_xfer.blob.total_bytes,
-             g_xfer.blob.palette_bytes,
-             g_xfer.blob.packed ? "packbits" : "raw",
-             capture_ms, g_xfer.blob.encode_ms);
+             g_offer.id, (int)g_offer.meta.width, (int)g_offer.meta.height,
+             (int)g_offer.meta.depth, (int)g_offer.meta.row_bytes,
+             g_offer.blob.total_bytes, g_offer.blob.palette_bytes,
+             g_offer.blob.packed ? "packbits" : "raw",
+             g_offer.meta.capture_ms, g_offer.blob.encode_ms);
     if (!send_control(json)) {
-        xfer_cleanup();
+        offer_cleanup();
+        snprintf(err, (size_t)cap, "Connection lost");
+        return -1;
+    }
+    g_offer.active = true;
+    g_offer.deadline = TickCount() + kOfferTimeoutTicks;
+    snprintf(line, sizeof line, "Offered %ld KB to host...",
+             g_offer.blob.total_bytes / 1024);
+    note_shot(line);
+    return 0;
+}
+
+static void offer_accepted(const char *reply)
+{
+    if (!g_offer.active || json_find_int(reply, "id", -1) != g_offer.id) {
+        return;                       /* stale or unsolicited accept */
+    }
+    g_offer.active = false;
+    if (arm_transfer(g_offer.id, next_xfer(), &g_offer.meta, &g_offer.blob,
+                     g_offer.chunk, g_offer.pace_ms, true)) {
+        note_shot("Sending to host...");
+    } else {
+        note_shot("Send to host failed");
+    }
+}
+
+static void offer_refused(const char *reply)
+{
+    char reason[64];
+    char line[96];
+
+    if (!g_offer.active || json_find_int(reply, "id", -1) != g_offer.id) {
         return;
     }
+    offer_cleanup();
+    if (json_find_string(reply, "reason", reason, sizeof reason)) {
+        snprintf(line, sizeof line, "Host declined: %.60s", reason);
+    } else {
+        snprintf(line, sizeof line, "Host declined the screenshot");
+    }
+    note_shot(line);
+}
 
-    HLock(g_xfer.blob.data);
-    g_xfer.active = true;
-    g_xfer.total = g_xfer.blob.total_bytes;
-    g_xfer.offset = 0;
-    g_xfer.chunk = chunk;
-    g_xfer.xfer = xfer;
-    g_xfer.id = id;
-    g_xfer.pace_ms = prefs.pace_ms;
-    g_xfer.frame_len = kNowFrameHeaderBytes;   /* primes the first build */
-    g_xfer.frame_sent = kNowFrameHeaderBytes;
-    g_xfer.started = TickCount();
-    g_xfer.next_tick = 0;
-    g_xfer.deadline = TickCount() + kXferDeadlineTicks;
+static void service_offer(void)
+{
+    if (g_offer.active && TickCount() > g_offer.deadline) {
+        offer_cleanup();
+        note_shot("Host did not answer the offer");
+    }
 }
 
 /* Returns 0 if the connection should be torn down (bye/protocol error). */
@@ -679,6 +857,14 @@ static int handle_frame(const char *reply)
     }
     if (json_type_is(reply, "capture.cancel")) {
         xfer_abort();
+        return 1;
+    }
+    if (json_type_is(reply, "capture.accept")) {
+        offer_accepted(reply);
+        return 1;
+    }
+    if (json_type_is(reply, "capture.refuse")) {
+        offer_refused(reply);
         return 1;
     }
     if (json_type_is(reply, "command.request")) {
@@ -805,6 +991,9 @@ void conn_service(void)
         break;
     case kConnConnected:
         service_connected_io();
+        if (g.phase == kConnConnected) {
+            service_offer();
+        }
         if (g.phase == kConnConnected) {
             service_transfer();
         }

@@ -23,6 +23,42 @@ final class ContractMessageTests: XCTestCase {
         XCTAssertNil(hello.chunk)
     }
 
+    func testCaptureOfferAnswersRoundTrip() throws {
+        let offer = CaptureOffer(
+            id: 7, width: 800, height: 600, depth: 8, rowBytes: 800,
+            bytes: 99000, paletteBytes: 768, encoding: "packbits",
+            captureMs: 130, encodeMs: 22)
+        XCTAssertEqual(
+            try ControlMessageCodec.decode(
+                ControlMessageCodec.encode(.captureOffer(offer))),
+            .captureOffer(offer))
+        XCTAssertEqual(
+            try ControlMessageCodec.decode(
+                ControlMessageCodec.encode(
+                    .captureAccept(CaptureAccept(id: 7)))),
+            .captureAccept(CaptureAccept(id: 7)))
+        let refuse = CaptureRefuse(id: 7,
+                                   reason: "busy: a transfer is in flight")
+        XCTAssertEqual(
+            try ControlMessageCodec.decode(
+                ControlMessageCodec.encode(.captureRefuse(refuse))),
+            .captureRefuse(refuse))
+    }
+
+    func testDecodesGuestOfferJSONWithoutOptionals() throws {
+        // The guest's snprintf always emits every field, but the contract
+        // only requires the geometry - hold the decoder to the contract.
+        let json = "{\"type\":\"capture.offer\",\"id\":3,"
+            + "\"width\":640,\"height\":480,\"depth\":1,"
+            + "\"rowBytes\":80,\"bytes\":38400}"
+        guard case .captureOffer(let offer) =
+            try ControlMessageCodec.decode(Data(json.utf8)) else {
+            return XCTFail("expected capture.offer")
+        }
+        XCTAssertEqual(offer.id, 3)
+        XCTAssertNil(offer.encoding)
+    }
+
     func testPingPongCarryId() throws {
         let ping = try ControlMessageCodec.encode(.ping(id: 42))
         XCTAssertEqual(try ControlMessageCodec.decode(ping), .ping(id: 42))
