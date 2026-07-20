@@ -1354,6 +1354,9 @@ static void serve_file_offer(const char *request)
         case kFilesBadPath:
             file_refuse(id, "bad-path", "that name or folder is not usable");
             break;
+        case kFilesTooBig:
+            file_refuse(id, "too-big", "not enough room on that disk");
+            break;
         default:
             file_refuse(id, "io-error", "could not create the file");
             break;

@@ -793,6 +793,23 @@ final class FileConverterTests: XCTestCase {
         XCTAssertEqual(classic.last, UInt8(ascii: "b"))
     }
 
+    func testDatesRoundTripThroughTheClassicEpoch() throws {
+        let now = Date(timeIntervalSince1970: 1_784_000_000)
+        let mac = try XCTUnwrap(ClassicDate.macSeconds(from: now))
+        let back = try XCTUnwrap(ClassicDate.date(from: mac))
+        XCTAssertEqual(back.timeIntervalSince1970,
+                       now.timeIntervalSince1970, accuracy: 1)
+    }
+
+    func testDatesOutsideTheClassicEpochAreRefusedNotWrapped() {
+        // 1900: before the Mac epoch, so there is no honest answer.
+        XCTAssertNil(ClassicDate.macSeconds(
+            from: Date(timeIntervalSince1970: -2_208_988_800)))
+        // Far future: past what the classic field can hold.
+        XCTAssertNil(ClassicDate.macSeconds(
+            from: Date(timeIntervalSince1970: 9_000_000_000)))
+    }
+
     func testClassicEpochConverts() throws {
         // 1904-01-01 + 3_400_000_000s lands in 2011.
         let date = try XCTUnwrap(ClassicDate.date(from: 3_400_000_000))

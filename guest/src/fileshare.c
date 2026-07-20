@@ -788,6 +788,66 @@ static void close_forks(FileReceive *rx)
     }
 }
 
+/* Temps are named this way so an interrupted transfer can be recognised
+   and cleaned up later. */
+static const char k_temp_prefix[] = "NOW incoming ";
+
+/* Deletes leftover temps in the destination folder. A transfer that dies
+   with the app or the wire cannot clean up after itself, so the next one
+   through does it — the alternative is a folder that slowly fills with
+   the debris of every failed attempt. */
+static void sweep_orphan_temps(short vref, long dir_id)
+{
+    short index;
+
+    for (index = 1; index < 1000; ++index) {
+        CInfoPBRec pb;
+        Str255 name;
+        FSSpec spec;
+
+        memset(&pb, 0, sizeof pb);
+        name[0] = 0;
+        pb.hFileInfo.ioNamePtr = name;
+        pb.hFileInfo.ioVRefNum = vref;
+        pb.hFileInfo.ioDirID = dir_id;
+        pb.hFileInfo.ioFDirIndex = index;
+        if (PBGetCatInfoSync(&pb) != noErr) {
+            return;
+        }
+        if ((pb.hFileInfo.ioFlAttrib & ioDirMask) != 0) {
+            continue;
+        }
+        if (name[0] < (short)sizeof k_temp_prefix - 1
+            || memcmp(name + 1, k_temp_prefix,
+                      sizeof k_temp_prefix - 1) != 0) {
+            continue;
+        }
+        spec.vRefNum = vref;
+        spec.parID = dir_id;
+        memcpy(spec.name, name, name[0] + 1);
+        if (FSpDelete(&spec) == noErr) {
+            --index;                  /* the catalog shifted under us */
+        }
+    }
+}
+
+/* Free space on the share's volume, or -1 if it cannot be read. */
+static long volume_free_bytes(short vref)
+{
+    HParamBlockRec pb;
+    Str255 vname;
+
+    memset(&pb, 0, sizeof pb);
+    vname[0] = 0;
+    pb.volumeParam.ioNamePtr = vname;
+    pb.volumeParam.ioVRefNum = vref;
+    pb.volumeParam.ioVolIndex = 0;
+    if (PBHGetVInfoSync(&pb) != noErr) {
+        return -1;
+    }
+    return (long)pb.volumeParam.ioVFrBlk * pb.volumeParam.ioVAlBlkSiz;
+}
+
 int now_files_receive_begin(const char *rel_path, const char *name,
                             FileContainer container, long bytes,
                             OSType file_type, OSType creator,
@@ -815,6 +875,18 @@ int now_files_receive_begin(const char *rel_path, const char *name,
         return rc;
     }
 
+    /* Refuse before a doomed transfer rather than after it: at this
+       wire's speed, discovering a full disk at the end of a megabyte is
+       minutes wasted. */
+    {
+        long free_bytes = volume_free_bytes(folder.vRefNum);
+
+        if (free_bytes >= 0 && bytes > 0 && free_bytes < bytes) {
+            return kFilesTooBig;
+        }
+    }
+    sweep_orphan_temps(folder.vRefNum, dir_id);
+
     CopyCStringToPascal(name, pname);
     err = FSMakeFSSpec(folder.vRefNum, dir_id, pname, &existing);
     if (err == noErr && !overwrite) {
@@ -833,7 +905,7 @@ int now_files_receive_begin(const char *rel_path, const char *name,
 
     /* A temp name in the same folder: the real name appears only when
        every byte has landed. Ticks make it unique enough. */
-    snprintf(temp, sizeof temp, "NOW incoming %lu",
+    snprintf(temp, sizeof temp, "%s%lu", k_temp_prefix,
              (unsigned long)TickCount());
     CopyCStringToPascal(temp, temp_name);
     if (FSMakeFSSpec(folder.vRefNum, dir_id, temp_name,

@@ -187,4 +187,13 @@ enum ClassicDate {
         guard macSeconds > 0 else { return nil }
         return Date(timeIntervalSince1970: TimeInterval(macSeconds) - offset)
     }
+
+    /// Foundation's epoch to the classic one, for files travelling the
+    /// other way. Dates before 1904 (and any clock nonsense) come back
+    /// nil rather than wrapping into a plausible-looking wrong date.
+    static func macSeconds(from date: Date) -> Int? {
+        let seconds = date.timeIntervalSince1970 + offset
+        guard seconds > 0, seconds < 4_294_967_295 else { return nil }
+        return Int(seconds)
+    }
 }

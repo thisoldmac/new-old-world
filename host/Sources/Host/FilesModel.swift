@@ -379,6 +379,11 @@ final class FilesModuleModel: ObservableObject {
         }
         let plan = OutboundFile.plan(url: url, data: data,
                                      convertText: convertText)
+        // Keep the file's own date. Landing everything stamped "now"
+        // makes a transferred folder useless for telling what changed.
+        let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate
+            .flatMap(ClassicDate.macSeconds(from:))
         lastError = nil
         queueDone += 1
         transfer = TransferState(
@@ -390,7 +395,7 @@ final class FilesModuleModel: ObservableObject {
         listener.putFile(name: plan.name, into: folder,
                          container: plan.container, bytes: plan.bytes,
                          fileType: plan.fileType, creator: plan.creator,
-                         modified: nil,
+                         modified: modified,
                          overwrite: overwrite) { [weak self] result in
             guard let self else { return }
             self.transfer = nil
