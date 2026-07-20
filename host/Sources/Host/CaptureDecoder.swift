@@ -105,15 +105,21 @@ enum CaptureDecoder {
     static func applyRect(_ rect: [Int], blob: [UInt8], cursor: inout Int,
                           format: CaptureFormat,
                           canvas: inout [UInt8]) throws {
-        guard rect.count == 4 else { throw CaptureDecodeError.badRowLength }
-        let (row0, nRows, colOff, colBytes) =
-            (rect[0], rect[1], rect[2], rect[3])
-        guard row0 >= 0, nRows > 0, colOff >= 0, colBytes > 0,
-              colOff + colBytes <= format.rowBytes,
-              (row0 + nRows) * format.rowBytes <= canvas.count else {
+        guard rect.count == 4 || rect.count == 5 else {
             throw CaptureDecodeError.badRowLength
         }
-        for row in row0..<(row0 + nRows) {
+        let (row0, nRows, colOff, colBytes) =
+            (rect[0], rect[1], rect[2], rect[3])
+        // rowStep 2 = an interlaced field: patch every other canvas row.
+        let step = rect.count == 5 ? rect[4] : 1
+        guard row0 >= 0, nRows > 0, colOff >= 0, colBytes > 0, step >= 1,
+              colOff + colBytes <= format.rowBytes,
+              (row0 + (nRows - 1) * step + 1) * format.rowBytes
+                  <= canvas.count else {
+            throw CaptureDecodeError.badRowLength
+        }
+        for i in 0..<nRows {
+            let row = row0 + i * step
             let slice: [UInt8]
             if format.packed {
                 guard cursor + 2 <= blob.count else {

@@ -139,7 +139,7 @@ int now_vprobe_run(VProbeRow *rows, int max_rows, char *err, long err_cap)
     unsigned long us, first_us, reread_us;
     UnsignedWide t0, t1;
 
-    if (max_rows < 14) {
+    if (max_rows < 15) {
         snprintf(err, (size_t)err_cap, "row buffer too small");
         return -1;
     }
@@ -190,6 +190,40 @@ int now_vprobe_run(VProbeRow *rows, int max_rows, char *err, long err_cap)
             snprintf(rows[n].label, sizeof rows[n].label, "CopyBits");
             snprintf(rows[n].value, sizeof rows[n].value, "failed");
             ++n;
+        }
+    }
+
+    /* Decimated CopyBits (2:1 vertical): does the stretch blitter read
+       only the rows it samples? If this lands near half the CopyBits
+       baseline, interlaced fields halve the VRAM read; if it lands near
+       the full baseline, QuickDraw fetches rows it then discards and
+       interlace only saves wire. The interlace feature is correct either
+       way - this row just says what it costs. */
+    {
+        BandedCapture cap;
+        CaptureSpan field;
+
+        field.row = 0;
+        field.n_rows = (short)(height / 2);
+        if (field.n_rows > 0
+            && banded_capture_begin_spans(depth, &field, 1, 2, 0,
+                                          &cap) == kCaptureOK) {
+            int rc = banded_capture_step(&cap);
+
+            while (rc == kCaptureMoreBands) {
+                rc = banded_capture_step(&cap);
+            }
+            if (rc == kCaptureOK) {
+                unsigned long total = 0;
+                short i;
+
+                for (i = 0; i < cap.steps && i < kCaptureMaxBands; ++i) {
+                    total += cap.band_us[i];
+                }
+                bw_row(&rows[n], "CopyBits 2:1 field", bytes / 2, total);
+                ++n;
+            }
+            capture_image_dispose(&cap.image);
         }
     }
 

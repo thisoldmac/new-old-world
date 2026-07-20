@@ -439,8 +439,9 @@ typedef struct {
     short width, height, depth, row_bytes;
     long capture_ms;
     FrameKind kind;
-    PixelRect rects[kPixelMaxRects];
+    PixelRect rects[kPixelMaxRects];  /* image/field coordinates */
     short n_rects;
+    short row_scale, row_phase;       /* field -> canvas row mapping */
 } ShotMeta;
 
 /* Live-stream bracket (stream.start .. stream.stopped). service_stream
@@ -479,6 +480,20 @@ static struct {
     unsigned char prev_palette[768];
     long prev_palette_bytes;
     Boolean force_key;
+    /* Optional capture policies (panel toggles, read at stream start).
+       Predictive: read only rows likely to have changed - last frame's
+       dirty rows plus margin, plus a rotating sweep slice so an unwatched
+       change is caught within kSweepFrames frames. Interlace: capture and
+       send alternate fields via CopyBits' 2:1 decimation, halving both
+       the VRAM read and the wire per frame. */
+    Boolean predictive;
+    Boolean interlace;
+    short phase;                      /* next field's parity */
+    long sweep_pos;                   /* canvas row where the sweep is */
+    CaptureSpan dirty_hist[kPixelMaxRects];  /* canvas rows, last frame */
+    short n_dirty_hist;
+    short cap_scale, cap_phase;       /* of the capture in progress */
+    Boolean cap_full;                 /* captured everything (keyframes) */
     unsigned long cap_start_tick;
     long est_send_ticks;
     long est_cap_ticks;               /* capture + encode, measured */
@@ -743,11 +758,23 @@ static long begin_frame_fields(const ShotMeta *meta, char *out, long cap)
     }
     pos = snprintf(out, (size_t)cap, ",\"frame\":\"delta\",\"rects\":[");
     for (i = 0; i < meta->n_rects; ++i) {
-        pos += snprintf(out + pos, (size_t)(cap - pos),
-                        "%s[%d,%d,%d,%d]", i > 0 ? "," : "",
-                        (int)meta->rects[i].row, (int)meta->rects[i].n_rows,
-                        (int)meta->rects[i].col_off,
-                        (int)meta->rects[i].col_bytes);
+        short scale = meta->row_scale > 1 ? meta->row_scale : 1;
+        long canvas_row = (long)meta->rects[i].row * scale
+            + meta->row_phase;
+
+        if (scale > 1) {
+            pos += snprintf(out + pos, (size_t)(cap - pos),
+                            "%s[%ld,%d,%d,%d,%d]", i > 0 ? "," : "",
+                            canvas_row, (int)meta->rects[i].n_rows,
+                            (int)meta->rects[i].col_off,
+                            (int)meta->rects[i].col_bytes, (int)scale);
+        } else {
+            pos += snprintf(out + pos, (size_t)(cap - pos),
+                            "%s[%ld,%d,%d,%d]", i > 0 ? "," : "",
+                            canvas_row, (int)meta->rects[i].n_rows,
+                            (int)meta->rects[i].col_off,
+                            (int)meta->rects[i].col_bytes);
+        }
     }
     pos += snprintf(out + pos, (size_t)(cap - pos), "]");
     return pos;
@@ -1053,6 +1080,8 @@ static void stream_start(const char *reply)
         g_stream.chunk = 8192;
     }
     g_stream.pace_ms = prefs.pace_ms;
+    g_stream.predictive = prefs.predictive != 0;
+    g_stream.interlace = prefs.interlace != 0;
     g_stream.min_interval_ticks =
         now_json_find_int(reply, "minIntervalMs", 0) * 60 / 1000;
     g_stream.next_frame_tick = 0;
@@ -1160,11 +1189,14 @@ static void stream_schedule_capture(void)
 static void stream_finish_capture(unsigned long began)
 {
     CaptureImage image = g_stream.cap.image;
+    CaptureSpan cap_spans[kCaptureMaxBands];
+    short n_cap_spans = g_stream.cap.n_spans;
     unsigned char palette[768];
     long palette_bytes;
     long height, raw_bytes;
     int rc;
 
+    memcpy(cap_spans, g_stream.cap.spans, sizeof cap_spans);
     memset(&g_stream.cap, 0, sizeof g_stream.cap);
     g_stream.cap_active = false;
 
@@ -1213,21 +1245,62 @@ static void stream_finish_capture(unsigned long began)
     memset(&g_stream.ready_blob, 0, sizeof g_stream.ready_blob);
     if (!g_stream.force_key) {
         long dirty_rows = 0;
+        Boolean overflow = false;
+        short scale = g_stream.cap_scale > 1 ? g_stream.cap_scale : 1;
         short n = now_pixels_diff(&image, g_stream.prev,
+                                  g_stream.cap_full ? NULL : cap_spans,
+                                  g_stream.cap_full ? 0 : n_cap_spans,
+                                  scale, g_stream.cap_phase,
                                   g_stream.ready_meta.rects,
-                                  kPixelMaxRects, &dirty_rows);
+                                  kPixelMaxRects, &dirty_rows, &overflow);
 
         if (n < 0) {
             g_stream.force_key = true;
+        } else if (overflow) {
+            /* Too fragmented to describe: send every captured span whole.
+               Correct (all captured), merely coarse. */
+            short i;
+
+            n = n_cap_spans;
+            for (i = 0; i < n; ++i) {
+                g_stream.ready_meta.rects[i].row = cap_spans[i].row;
+                g_stream.ready_meta.rects[i].n_rows =
+                    cap_spans[i].n_rows;
+                g_stream.ready_meta.rects[i].col_off = 0;
+                g_stream.ready_meta.rects[i].col_bytes = image.row_bytes;
+            }
+            g_stream.ready_meta.kind = kFrameDelta;
         } else if (n == 0) {
             g_stream.ready_meta.kind = kFrameEmpty;
-        } else if (dirty_rows * 10 > height * 7) {
+        } else if (g_stream.cap_full && scale == 1
+                   && dirty_rows * 10 > height * 7) {
             g_stream.force_key = true;   /* mostly new screen: send whole */
         } else {
             g_stream.ready_meta.kind = kFrameDelta;
             g_stream.ready_meta.n_rects = n;
+        }
+        if (g_stream.ready_meta.kind == kFrameDelta && !g_stream.force_key) {
+            short i;
+
+            if (overflow) {
+                g_stream.ready_meta.n_rects = n;
+            }
+            g_stream.ready_meta.row_scale = scale;
+            g_stream.ready_meta.row_phase = g_stream.cap_phase;
+            /* Remember where the dirt was, in canvas rows, for the next
+               frame's prediction. */
+            g_stream.n_dirty_hist = g_stream.ready_meta.n_rects;
+            for (i = 0; i < g_stream.n_dirty_hist; ++i) {
+                g_stream.dirty_hist[i].row = (short)
+                    ((long)g_stream.ready_meta.rects[i].row * scale
+                     + g_stream.cap_phase);
+                g_stream.dirty_hist[i].n_rows = (short)
+                    ((long)(g_stream.ready_meta.rects[i].n_rows - 1) * scale
+                     + 1);
+            }
             rc = now_pixels_export_rects(&image, g_stream.pack,
-                                         g_stream.ready_meta.rects, n,
+                                         g_stream.ready_meta.rects,
+                                         g_stream.ready_meta.n_rects,
                                          &g_stream.ready_blob);
             if (rc != 0) {
                 capture_image_dispose(&image);
@@ -1235,10 +1308,20 @@ static void stream_finish_capture(unsigned long began)
                 return;
             }
         }
+        if (g_stream.ready_meta.kind == kFrameEmpty) {
+            g_stream.n_dirty_hist = 0;
+        }
+        if (g_stream.interlace) {
+            g_stream.phase = (short)(g_stream.phase ^ 1);
+        }
     }
     if (g_stream.force_key) {
         g_stream.ready_meta.kind = kFrameKey;
         g_stream.ready_meta.n_rects = 0;
+        g_stream.ready_meta.row_scale = 1;
+        g_stream.ready_meta.row_phase = 0;
+        g_stream.n_dirty_hist = 0;
+        g_stream.sweep_pos = 0;
         rc = now_pixels_export(&image, g_stream.pack, &g_stream.ready_blob);
         if (rc != 0 || now_pixels_copy_raw(&image, g_stream.prev) != 0) {
             capture_image_dispose(&image);
@@ -1277,6 +1360,141 @@ static void stream_send_empty_frame(void)
              "{\"type\":\"capture.end\",\"id\":%ld,\"transfer\":%u,"
              "\"ok\":true,\"sendMs\":0}", g_stream.id, xfer);
     send_control(json);
+}
+
+enum {
+    kPredictMarginRows = 8,           /* canvas rows around old dirt */
+    kSweepFrames = 8,                 /* whole screen swept every N */
+    kSpanMergeGap = 5                 /* keep spans mergeable-safe apart */
+};
+
+/* Adds a canvas row range to a span list (canvas coords), merging spans
+   closer than kSpanMergeGap so the diff's run-merging never straddles an
+   uncaptured gap. */
+static short span_add(CaptureSpan *spans, short count, long top,
+                      long bottom, long limit)
+{
+    short i;
+
+    if (top < 0) {
+        top = 0;
+    }
+    if (bottom > limit) {
+        bottom = limit;
+    }
+    if (top >= bottom) {
+        return count;
+    }
+    for (i = 0; i < count; ++i) {
+        long s_top = spans[i].row;
+        long s_bot = spans[i].row + spans[i].n_rows;
+
+        if (top <= s_bot + kSpanMergeGap && bottom + kSpanMergeGap >= s_top) {
+            if (top < s_top) {
+                s_top = top;
+            }
+            if (bottom > s_bot) {
+                s_bot = bottom;
+            }
+            spans[i].row = (short)s_top;
+            spans[i].n_rows = (short)(s_bot - s_top);
+            return count;
+        }
+    }
+    if (count < kCaptureMaxBands) {
+        spans[count].row = (short)top;
+        spans[count].n_rows = (short)(bottom - top);
+        ++count;
+    } else {
+        /* Out of spans: widen the first to cover everything. Coarse but
+           correct - it only ever costs read time. */
+        long s_bot = spans[0].row + spans[0].n_rows;
+
+        if (top < spans[0].row) {
+            spans[0].row = (short)top;
+        }
+        if (bottom > s_bot) {
+            s_bot = bottom;
+        }
+        spans[0].n_rows = (short)(s_bot - spans[0].row);
+    }
+    return count;
+}
+
+/* Chooses what the next capture reads and starts it. Keyframes read the
+   whole screen at full scale; otherwise the interlace toggle picks the
+   field and the predictive toggle narrows the rows. */
+static int stream_begin_capture(void)
+{
+    CaptureSpan canvas[kCaptureMaxBands];
+    CaptureSpan dst[kCaptureMaxBands];
+    short n = 0;
+    short scale = 1, phase = 0;
+    long height = g_stream.prev_height > 0 ? g_stream.prev_height : 0x7FFF;
+    short i;
+
+    g_stream.cap_full = false;
+    if (g_stream.force_key || g_stream.prev == NULL) {
+        g_stream.cap_full = true;
+        g_stream.cap_scale = 1;
+        g_stream.cap_phase = 0;
+        return banded_capture_begin(g_stream.depth, kStreamBands,
+                                    &g_stream.cap) == kCaptureOK;
+    }
+    if (g_stream.interlace) {
+        scale = 2;
+        phase = g_stream.phase;
+    }
+    if (!g_stream.predictive) {
+        n = span_add(canvas, 0, 0, height, height);
+    } else {
+        long slice = height / kSweepFrames + 1;
+
+        for (i = 0; i < g_stream.n_dirty_hist; ++i) {
+            n = span_add(canvas, n,
+                         (long)g_stream.dirty_hist[i].row
+                             - kPredictMarginRows,
+                         (long)g_stream.dirty_hist[i].row
+                             + g_stream.dirty_hist[i].n_rows
+                             + kPredictMarginRows, height);
+        }
+        n = span_add(canvas, n, g_stream.sweep_pos,
+                     g_stream.sweep_pos + slice, height);
+        g_stream.sweep_pos += slice;
+        if (g_stream.sweep_pos >= height) {
+            g_stream.sweep_pos = 0;
+        }
+        if (n == 0) {
+            n = span_add(canvas, 0, 0, height, height);
+        }
+    }
+    /* Canvas rows -> destination (field) rows. */
+    for (i = 0; i < n; ++i) {
+        long top = canvas[i].row;
+        long bottom = top + canvas[i].n_rows;
+        long d_top = (top - phase + scale - 1) / scale;
+        long d_bot = (bottom - phase + scale - 1) / scale;
+        long d_limit = (height - phase + scale - 1) / scale;
+
+        if (d_top < 0) {
+            d_top = 0;
+        }
+        if (d_bot > d_limit) {
+            d_bot = d_limit;
+        }
+        if (d_top >= d_limit) {
+            d_top = d_limit - 1;
+        }
+        if (d_bot <= d_top) {
+            d_bot = d_top + 1;
+        }
+        dst[i].row = (short)d_top;
+        dst[i].n_rows = (short)(d_bot - d_top);
+    }
+    g_stream.cap_scale = scale;
+    g_stream.cap_phase = phase;
+    return banded_capture_begin_spans(g_stream.depth, dst, n, scale, phase,
+                                      &g_stream.cap) == kCaptureOK;
 }
 
 /* The pipelined frame pump: while frame N sends, frame N+1 is captured a
@@ -1343,8 +1561,7 @@ static void service_stream(void)
        that ran short). */
     if (!g_stream.ready
         && (!g_xfer.active || TickCount() >= g_stream.cap_start_tick)) {
-        if (banded_capture_begin(g_stream.depth, kStreamBands,
-                                 &g_stream.cap) != kCaptureOK) {
+        if (!stream_begin_capture()) {
             stream_end("capture failed");
             return;
         }

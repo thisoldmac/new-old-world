@@ -8,18 +8,24 @@ Boolean capture_depth_is_supported(short depth)
         || depth == 16 || depth == 32;
 }
 
-int banded_capture_begin(short depth, short bands, BandedCapture *cap)
+int banded_capture_begin_spans(short depth, const CaptureSpan *spans,
+                               short n_spans, short row_scale,
+                               short row_phase, BandedCapture *cap)
 {
     GDHandle device;
     PixMapHandle screen_pix;
     Rect screen_bounds;
+    Rect world_bounds;
     GWorldPtr world = NULL;
     PixMapHandle pixels;
     OSErr err;
-    long height;
+    long height, dest_height;
+    short i;
 
     memset(cap, 0, sizeof *cap);
-    if (!capture_depth_is_supported(depth)) {
+    if (!capture_depth_is_supported(depth) || n_spans < 1
+        || n_spans > kCaptureMaxBands
+        || (row_scale != 1 && row_scale != 2)) {
         return kCaptureInvalidDepth;
     }
     device = GetMainDevice();
@@ -32,17 +38,18 @@ int banded_capture_begin(short depth, short bands, BandedCapture *cap)
     }
     screen_bounds = (**screen_pix).bounds;
     height = screen_bounds.bottom - screen_bounds.top;
-    if (bands < 1) {
-        bands = 1;
-    }
-    if (bands > kCaptureMaxBands) {
-        bands = kCaptureMaxBands;
-    }
-    if ((long)bands > height) {
-        bands = (short)height;
+    dest_height = (height - row_phase + row_scale - 1) / row_scale;
+
+    for (i = 0; i < n_spans; ++i) {
+        if (spans[i].row < 0 || spans[i].n_rows < 1
+            || spans[i].row + spans[i].n_rows > dest_height) {
+            return kCaptureInvalidDepth;
+        }
     }
 
-    err = NewGWorld(&world, depth, &screen_bounds, NULL, NULL, useTempMem);
+    world_bounds = screen_bounds;
+    world_bounds.bottom = (short)(world_bounds.top + dest_height);
+    err = NewGWorld(&world, depth, &world_bounds, NULL, NULL, useTempMem);
     if (err != noErr || world == NULL) {
         return kCaptureNoMemory;
     }
@@ -53,15 +60,56 @@ int banded_capture_begin(short depth, short bands, BandedCapture *cap)
     }
 
     cap->image.world = world;
-    cap->image.bounds = screen_bounds;
+    cap->image.bounds = world_bounds;
     cap->image.depth = depth;
     cap->image.row_bytes = (short)((**pixels).rowBytes & 0x3FFF);
-    cap->image.pixel_bytes = (long)cap->image.row_bytes * height;
+    cap->image.pixel_bytes = (long)cap->image.row_bytes * dest_height;
     cap->screen_bounds = screen_bounds;
-    cap->bands = bands;
-    cap->next_band = 0;
+    cap->row_scale = row_scale;
+    cap->row_phase = row_phase;
+    memcpy(cap->spans, spans, (size_t)n_spans * sizeof *spans);
+    cap->n_spans = n_spans;
+    cap->cur_span = 0;
+    cap->row_in_span = 0;
+    cap->steps = 0;
     return kCaptureOK;
 }
+
+int banded_capture_begin(short depth, short bands, BandedCapture *cap)
+{
+    GDHandle device;
+    CaptureSpan spans[kCaptureMaxBands];
+    long height;
+    short i;
+
+    device = GetMainDevice();
+    if (device == NULL || (**device).gdPMap == NULL) {
+        return kCaptureNoScreen;
+    }
+    height = (**(**device).gdPMap).bounds.bottom
+        - (**(**device).gdPMap).bounds.top;
+    if (bands < 1) {
+        bands = 1;
+    }
+    if (bands > kCaptureMaxBands) {
+        bands = kCaptureMaxBands;
+    }
+    if ((long)bands > height) {
+        bands = (short)height;
+    }
+    for (i = 0; i < bands; ++i) {
+        long top = (height * (long)i) / bands;
+        long bottom = (height * ((long)i + 1)) / bands;
+
+        spans[i].row = (short)top;
+        spans[i].n_rows = (short)(bottom - top);
+    }
+    return banded_capture_begin_spans(depth, spans, bands, 1, 0, cap);
+}
+
+/* At most this many destination rows per step, so a huge span still pumps
+   in event-loop-sized bites. */
+enum { kCaptureStepRows = 80 };
 
 int banded_capture_step(BandedCapture *cap)
 {
@@ -70,14 +118,15 @@ int banded_capture_step(BandedCapture *cap)
     PixMapHandle pixels;
     CGrafPtr saved_port;
     GDHandle saved_device;
-    Rect band;
-    long height, top, bottom;
+    Rect src, dst;
+    const CaptureSpan *span;
+    long take, top;
     UnsignedWide t0, t1;
 
     if (cap->image.world == NULL) {
         return kCapturePixelsUnavailable;
     }
-    if (cap->next_band >= cap->bands) {
+    if (cap->cur_span >= cap->n_spans) {
         return kCaptureOK;
     }
     device = GetMainDevice();
@@ -92,32 +141,46 @@ int banded_capture_step(BandedCapture *cap)
         return kCapturePixelsUnavailable;
     }
 
-    height = cap->screen_bounds.bottom - cap->screen_bounds.top;
-    top = cap->screen_bounds.top
-        + (height * (long)cap->next_band) / cap->bands;
-    bottom = cap->screen_bounds.top
-        + (height * ((long)cap->next_band + 1)) / cap->bands;
-    band = cap->screen_bounds;
-    band.top = (short)top;
-    band.bottom = (short)bottom;
+    span = &cap->spans[cap->cur_span];
+    top = span->row + cap->row_in_span;
+    take = span->n_rows - cap->row_in_span;
+    if (take > kCaptureStepRows) {
+        take = kCaptureStepRows;
+    }
+    dst = cap->screen_bounds;
+    dst.top = (short)(cap->screen_bounds.top + top);
+    dst.bottom = (short)(dst.top + take);
+    src = cap->screen_bounds;
+    src.top = (short)(cap->screen_bounds.top
+                      + top * cap->row_scale + cap->row_phase);
+    src.bottom = (short)(src.top + (take - 1) * cap->row_scale + 1);
 
     /* The timing brackets everything a step costs the event loop, not just
-       the blit: the port swap and locks are part of the per-band price. */
+       the blit: the port swap and locks are part of the per-band price.
+       With row_scale 2 the CopyBits decimates: dst is half src's height,
+       and QuickDraw's point sampling picks exactly our parity's rows. */
     Microseconds(&t0);
     GetGWorld(&saved_port, &saved_device);
     SetGWorld(cap->image.world, NULL);
     LockPixels(screen_pix);
     CopyBits((BitMapPtr)*screen_pix,
              GetPortBitMapForCopyBits(cap->image.world),
-             &band, &band, srcCopy, NULL);
+             &src, &dst, srcCopy, NULL);
     UnlockPixels(screen_pix);
     SetGWorld(saved_port, saved_device);
     Microseconds(&t1);
-    cap->band_us[cap->next_band] = t1.lo - t0.lo;
+    if (cap->steps < kCaptureMaxBands) {
+        cap->band_us[cap->steps] = t1.lo - t0.lo;
+    }
+    ++cap->steps;
 
     UnlockPixels(pixels);
-    ++cap->next_band;
-    return cap->next_band < cap->bands ? kCaptureMoreBands : kCaptureOK;
+    cap->row_in_span = (short)(cap->row_in_span + take);
+    if (cap->row_in_span >= span->n_rows) {
+        ++cap->cur_span;
+        cap->row_in_span = 0;
+    }
+    return cap->cur_span < cap->n_spans ? kCaptureMoreBands : kCaptureOK;
 }
 
 void banded_capture_abort(BandedCapture *cap)

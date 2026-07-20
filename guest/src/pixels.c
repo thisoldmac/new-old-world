@@ -114,67 +114,83 @@ void now_pixels_dispose(PixelBlob *blob)
 /* --- delta frames ------------------------------------------------------- */
 
 short now_pixels_diff(CaptureImage *image, Ptr prev,
-                      PixelRect *rects, short max_rects, long *dirty_rows)
+                      const CaptureSpan *spans, short n_spans,
+                      short row_scale, short row_phase,
+                      PixelRect *rects, short max_rects,
+                      long *dirty_rows, Boolean *overflow)
 {
     PixMapHandle pixels;
     long height = image->bounds.bottom - image->bounds.top;
     long row_bytes = image->row_bytes;
+    CaptureSpan whole;
     Ptr base;
-    long row;
+    short si;
     short count = 0;
     long dirty = 0;
     enum { kMergeGap = 4 };           /* runs closer than this merge */
 
     *dirty_rows = 0;
+    *overflow = false;
+    if (spans == NULL) {
+        whole.row = 0;
+        whole.n_rows = (short)height;
+        spans = &whole;
+        n_spans = 1;
+    }
     pixels = GetGWorldPixMap(image->world);
     if (pixels == NULL || !LockPixels(pixels)) {
         return -1;
     }
     base = GetPixBaseAddr(pixels);
 
-    for (row = 0; row < height; ++row) {
-        Ptr cur = base + row * row_bytes;
-        Ptr old = prev + row * row_bytes;
-        long lo, hi;
+    for (si = 0; si < n_spans; ++si) {
+        long row;
 
-        if (memcmp(cur, old, (size_t)row_bytes) == 0) {
-            continue;
-        }
-        for (lo = 0; cur[lo] == old[lo]; ++lo) {
-        }
-        for (hi = row_bytes - 1; cur[hi] == old[hi]; --hi) {
-        }
-        memcpy(old, cur, (size_t)row_bytes);
-        ++dirty;
+        for (row = spans[si].row;
+             row < spans[si].row + spans[si].n_rows; ++row) {
+            Ptr cur = base + row * row_bytes;
+            Ptr old = prev
+                + (row * row_scale + row_phase) * row_bytes;
+            long lo, hi;
 
-        if (count > 0
-            && row - (rects[count - 1].row + rects[count - 1].n_rows)
-               < kMergeGap) {
-            PixelRect *r = &rects[count - 1];
-            long r_hi = (long)r->col_off + r->col_bytes;
-
-            r->n_rows = (short)(row - r->row + 1);
-            if (lo < r->col_off) {
-                r->col_off = (short)lo;
+            if (memcmp(cur, old, (size_t)row_bytes) == 0) {
+                continue;
             }
-            if (hi + 1 > r_hi) {
-                r_hi = hi + 1;
+            for (lo = 0; cur[lo] == old[lo]; ++lo) {
             }
-            r->col_bytes = (short)(r_hi - r->col_off);
-        } else if (count < max_rects) {
-            rects[count].row = (short)row;
-            rects[count].n_rows = 1;
-            rects[count].col_off = (short)lo;
-            rects[count].col_bytes = (short)(hi - lo + 1);
-            ++count;
-        } else {
-            /* Out of rects: widen the last one to swallow everything from
-               its start down to here. Coarse, but always correct. */
-            PixelRect *r = &rects[count - 1];
+            for (hi = row_bytes - 1; cur[hi] == old[hi]; --hi) {
+            }
+            memcpy(old, cur, (size_t)row_bytes);
+            ++dirty;
 
-            r->n_rows = (short)(row - r->row + 1);
-            r->col_off = 0;
-            r->col_bytes = (short)row_bytes;
+            if (count > 0
+                && row - (rects[count - 1].row + rects[count - 1].n_rows)
+                   < kMergeGap
+                && row - (rects[count - 1].row + rects[count - 1].n_rows)
+                   >= 0) {
+                PixelRect *r = &rects[count - 1];
+                long r_hi = (long)r->col_off + r->col_bytes;
+
+                r->n_rows = (short)(row - r->row + 1);
+                if (lo < r->col_off) {
+                    r->col_off = (short)lo;
+                }
+                if (hi + 1 > r_hi) {
+                    r_hi = hi + 1;
+                }
+                r->col_bytes = (short)(r_hi - r->col_off);
+            } else if (count < max_rects) {
+                rects[count].row = (short)row;
+                rects[count].n_rows = 1;
+                rects[count].col_off = (short)lo;
+                rects[count].col_bytes = (short)(hi - lo + 1);
+                ++count;
+            } else {
+                /* Widening here could swallow uncaptured gap rows, whose
+                   GWorld content is garbage. Flag it; the caller sends
+                   the captured spans whole instead. */
+                *overflow = true;
+            }
         }
     }
     UnlockPixels(pixels);

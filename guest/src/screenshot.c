@@ -130,7 +130,7 @@ int now_screenshot(short depth, short bands, Boolean save, ShotStats *stats,
 
     Microseconds(&t0);
     rc = banded_capture_begin(depth, bands, &cap);
-    while (rc == kCaptureOK && cap.next_band < cap.bands) {
+    while (rc == kCaptureOK && cap.cur_span < cap.n_spans) {
         rc = banded_capture_step(&cap);
         if (rc == kCaptureMoreBands) {
             rc = kCaptureOK;
@@ -139,8 +139,8 @@ int now_screenshot(short depth, short bands, Boolean save, ShotStats *stats,
     Microseconds(&t1);
     if (rc == kCaptureOK) {
         image = cap.image;
-        stats->bands = cap.bands;
-        for (b = 0; b < cap.bands; ++b) {
+        stats->bands = cap.steps;
+        for (b = 0; b < cap.steps && b < kCaptureMaxBands; ++b) {
             long us = (long)cap.band_us[b];
             if (b == 0 || us < stats->band_min_us) {
                 stats->band_min_us = us;

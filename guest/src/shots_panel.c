@@ -9,7 +9,7 @@
 
 enum {
     kPanelWidth = 336,
-    kPanelHeight = 280,
+    kPanelHeight = 304,
     kDepthMenuID = 130,
     kChunkMenuID = 131,
     kPaceMenuID = 132
@@ -20,6 +20,8 @@ static ControlRef g_depth_popup;
 static ControlRef g_chunk_popup;
 static ControlRef g_pace_popup;
 static ControlRef g_pack_check;
+static ControlRef g_predictive_check;
+static ControlRef g_interlace_check;
 static ControlRef g_shoot_button;
 static ControlRef g_send_button;
 static ControlRef g_stream_button;
@@ -56,6 +58,8 @@ static void load_controls_from_prefs(void)
     SetControlValue(g_pace_popup,
                     item_for(k_paces, 5, prefs.pace_ms, 1));
     SetControlValue(g_pack_check, prefs.shot_pack ? 1 : 0);
+    SetControlValue(g_predictive_check, prefs.predictive ? 1 : 0);
+    SetControlValue(g_interlace_check, prefs.interlace ? 1 : 0);
 }
 
 static void save_controls_to_prefs(void)
@@ -67,6 +71,8 @@ static void save_controls_to_prefs(void)
     prefs.chunk_kb = k_chunks[GetControlValue(g_chunk_popup) - 1];
     prefs.pace_ms = k_paces[GetControlValue(g_pace_popup) - 1];
     prefs.shot_pack = GetControlValue(g_pack_check) != 0;
+    prefs.predictive = GetControlValue(g_predictive_check) != 0;
+    prefs.interlace = GetControlValue(g_interlace_check) != 0;
     now_prefs_save(&prefs);
 }
 
@@ -216,15 +222,23 @@ void shots_panel_open(void)
     CopyCStringToPascal("Compress on wire (PackBits)", text);
     g_pack_check = NewControl(g_window, &bounds, text, true, 0, 0, 1,
                               checkBoxProc, 0);
-    SetRect(&bounds, 16, 138, 172, 162);
+    SetRect(&bounds, 16, 128, 172, 146);
+    CopyCStringToPascal("Predictive capture", text);
+    g_predictive_check = NewControl(g_window, &bounds, text, true, 0, 0, 1,
+                                    checkBoxProc, 0);
+    SetRect(&bounds, 178, 128, 320, 146);
+    CopyCStringToPascal("Interlace", text);
+    g_interlace_check = NewControl(g_window, &bounds, text, true, 0, 0, 1,
+                                   checkBoxProc, 0);
+    SetRect(&bounds, 16, 162, 172, 186);
     CopyCStringToPascal("Take Screenshot", text);
     g_shoot_button = NewControl(g_window, &bounds, text, true, 0, 0, 1,
                                 pushButProc, 0);
-    SetRect(&bounds, 184, 138, 320, 162);
+    SetRect(&bounds, 184, 162, 320, 186);
     CopyCStringToPascal("Send to Host", text);
     g_send_button = NewControl(g_window, &bounds, text, true, 0, 0, 1,
                                pushButProc, 0);
-    SetRect(&bounds, 16, 168, 172, 192);
+    SetRect(&bounds, 16, 192, 172, 216);
     CopyCStringToPascal("Stream to Host", text);
     g_stream_button = NewControl(g_window, &bounds, text, true, 0, 0, 1,
                                  pushButProc, 0);
@@ -316,8 +330,9 @@ void shots_panel_click(Point local)
     if (TrackControl(control, local, NULL) == 0) {
         return;
     }
-    if (control == g_pack_check) {
-        SetControlValue(g_pack_check, !GetControlValue(g_pack_check));
+    if (control == g_pack_check || control == g_predictive_check
+        || control == g_interlace_check) {
+        SetControlValue(control, !GetControlValue(control));
         save_controls_to_prefs();
     } else if (control == g_shoot_button) {
         take_screenshot();

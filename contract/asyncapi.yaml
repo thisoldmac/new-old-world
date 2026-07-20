@@ -528,13 +528,17 @@ components:
           items:
             type: array
             minItems: 4
-            maxItems: 4
+            maxItems: 5
             description: >
-              [row, nRows, colByteOffset, colBytes] - dirty rows trimmed
-              to their changed column span, in BYTES into the row so the
-              wire stays depth-agnostic. The bulk payload is the rects'
-              rows in order, each row's slice encoded exactly like a
-              full row (u16-prefixed PackBits, or raw).
+              [row, nRows, colByteOffset, colBytes, rowStep?] - dirty
+              rows trimmed to their changed column span, in BYTES into
+              the row so the wire stays depth-agnostic. The bulk payload
+              is the rects' rows in order, each row's slice encoded
+              exactly like a full row (u16-prefixed PackBits, or raw).
+              rowStep (default 1) strides the destination rows: an
+              interlaced field sends rowStep 2, patching rows row,
+              row + 2, ... while the other parity waits for the next
+              field.
             items: { type: integer }
     CaptureEnd:
       type: object

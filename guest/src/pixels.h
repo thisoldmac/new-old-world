@@ -37,14 +37,22 @@ typedef struct {
 
 enum { kPixelMaxRects = 16 };
 
-/* Diffs the image's rows against `prev` (raw rows of the same geometry),
-   fills up to max_rects merged dirty rects, and copies the changed rows
-   into prev so it becomes this frame. Returns the rect count (0 = the
-   frames are identical) and the total dirty row count via dirty_rows.
+/* Diffs the image's rows against `prev` (raw rows of the FULL canvas),
+   fills up to max_rects merged dirty rects (in image/field coordinates),
+   and copies the changed rows into prev so it tracks what the host has.
+   `spans` limits the compare to those image rows (NULL = all); a
+   decimated field maps image row j to canvas row j * row_scale +
+   row_phase, which is the prev row it compares against. Returns the rect
+   count (0 = identical) plus the dirty row count; if the runs would not
+   fit max_rects, *overflow is set and the caller should fall back to
+   sending the captured spans whole — never widen into uncaptured rows.
    Detection is pixel-granular for free: the scan reads every byte either
    way; the rects just record where the differences began and ended. */
 short now_pixels_diff(CaptureImage *image, Ptr prev,
-                      PixelRect *rects, short max_rects, long *dirty_rows);
+                      const CaptureSpan *spans, short n_spans,
+                      short row_scale, short row_phase,
+                      PixelRect *rects, short max_rects,
+                      long *dirty_rows, Boolean *overflow);
 
 /* Copies the image's raw rows into dst (row_bytes * height bytes). */
 int now_pixels_copy_raw(CaptureImage *image, Ptr dst);

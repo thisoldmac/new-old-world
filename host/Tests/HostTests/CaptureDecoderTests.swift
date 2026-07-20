@@ -102,6 +102,35 @@ final class CaptureDecoderTests: XCTestCase {
                                 0, 0, 0, 0])
     }
 
+    func testStridedRectPatchesAlternateRows() throws {
+        // 4x4 canvas; an interlaced field patches rows 0 and 2 only.
+        let format = CaptureFormat(
+            width: 4, height: 4, depth: 8, rowBytes: 4, bytes: 8,
+            paletteBytes: 0, packed: false, captureMs: 0, encodeMs: 0)
+        var canvas = [UInt8](repeating: 9, count: 16)
+        var cursor = 0
+        try CaptureDecoder.applyRect([0, 2, 0, 4, 2],
+                                     blob: [1, 1, 1, 1, 2, 2, 2, 2],
+                                     cursor: &cursor, format: format,
+                                     canvas: &canvas)
+        XCTAssertEqual(canvas, [1, 1, 1, 1,
+                                9, 9, 9, 9,
+                                2, 2, 2, 2,
+                                9, 9, 9, 9])
+    }
+
+    func testStridedRectBeyondCanvasIsRejected() {
+        let format = CaptureFormat(
+            width: 4, height: 4, depth: 8, rowBytes: 4, bytes: 8,
+            paletteBytes: 0, packed: false, captureMs: 0, encodeMs: 0)
+        var canvas = [UInt8](repeating: 0, count: 16)
+        var cursor = 0
+        // rows 1, 3, 5 - the last is off the canvas.
+        XCTAssertThrowsError(try CaptureDecoder.applyRect(
+            [1, 3, 0, 4, 2], blob: [UInt8](repeating: 0, count: 12),
+            cursor: &cursor, format: format, canvas: &canvas))
+    }
+
     func testDeltaRectOutOfBoundsIsRejected() {
         let format = CaptureFormat(
             width: 4, height: 4, depth: 8, rowBytes: 4, bytes: 4,

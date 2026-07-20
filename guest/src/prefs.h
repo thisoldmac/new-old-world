@@ -13,6 +13,10 @@ typedef struct {
     short chunk_kb;           /* bulk chunk size in KB, 1..32, default 8 */
     short pace_ms;            /* inter-chunk pacing, default 0 (Orinoco) */
 
+    /* stream capture policies (experimental; applied at stream start) */
+    Boolean predictive;       /* read only predicted-dirty rows + sweep */
+    Boolean interlace;        /* alternate decimated fields */
+
     /* reconnect cadence: 0 = adaptive backoff (2s doubling to 30s),
        else a fixed retry every N seconds */
     short retry_secs;
@@ -26,7 +30,7 @@ typedef struct {
 
 /* Loads saved settings, or the defaults (10.0.2.2:5250 — the QEMU host
    address — 8-bit, pack on, 8K chunks, no pacing, panel open). Reads the
-   v1/v2 record formats (host/port only) as well as v3 and v4. */
+   v1/v2 record formats (host/port only) as well as v3, v4 and v5. */
 void now_prefs_load(NowPrefs *prefs);
 OSErr now_prefs_save(const NowPrefs *prefs);
 
