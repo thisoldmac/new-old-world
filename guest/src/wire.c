@@ -1229,12 +1229,20 @@ static const char *files_reason(int rc)
 
 static void file_result_fail(long id, int rc)
 {
-    char json[256];
+    char json[320];
+    char detail[64];
 
+    /* An io-error carries the File Manager's own number: without it the
+       far side can only report that something went wrong. */
+    detail[0] = '\0';
+    if (rc != kFilesBadPath && rc != kFilesNotFound && rc != kFilesExists) {
+        snprintf(detail, sizeof detail, " (File Manager error %d)",
+                 (int)now_files_last_error());
+    }
     snprintf(json, sizeof json,
              "{\"type\":\"file.result\",\"id\":%ld,\"ok\":false,"
-             "\"code\":\"%s\",\"reason\":\"%s\"}",
-             id, files_code(rc), files_reason(rc));
+             "\"code\":\"%s\",\"reason\":\"%s%s\"}",
+             id, files_code(rc), files_reason(rc), detail);
     send_control(json);
 }
 

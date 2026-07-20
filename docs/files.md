@@ -391,6 +391,20 @@ settles the request just the same.
 | `file.mkdir` | `file.result` | `file.trash` |
 | `file.restore` | `file.result` | — |
 
+### Rename first, then move
+
+`PBCatMove` carries the item's **current** name into the destination, so
+a move into a folder that already holds that name fails `dupFNErr` (-48)
+before any later rename can help. Every move here therefore renames the
+item *in place* to a name free in both folders, and only then moves it.
+This is not theoretical: the first live run against a real volume failed
+exactly this way on the second delete of the same name, and the corpus
+had already recorded the same shape from the Q950 move verb.
+
+An `io-error` answer carries the File Manager's own number in its
+reason. "The File Manager refused" names no cause and cannot be debugged
+from the other side of a wire; -48 said immediately what was wrong.
+
 ### In the app
 
 Renaming is an edit of the name in the row. Moving is a drag onto a
@@ -414,6 +428,22 @@ Console parity: `mv <path> <new path>`, `trash <path>`,
 `untrash <trash name> <path>`, `mkdir <path>`, each documented in
 `help`. `trash` prints the name the item landed under, which is what
 `untrash` wants.
+
+### Verified on a real volume
+
+`NOW_LIVE=1 swift test --filter LiveChangeTests` drives a connected
+machine through the whole arc — make, rename, move, refuse a collision,
+refuse a missing parent, trash, restore, trash the same name twice,
+restore both, refuse an item the Trash no longer holds — and leaves the
+volume as it found it. It passed on the mac99 emulator guest
+(2026-07-20), including the suffixing path: the second delete landed as
+"Renamed 2" and the third as "Renamed 3".
+
+What that run actually settles, none of which a unit test could:
+`FindFolder(shareVol, kTrashFolderType, kCreateFolder, …)` gives a Trash
+that `PBCatMove` accepts; an item moved there comes back out to a named
+path; and a name already taken in the Trash is worked around rather than
+failed. Metal retest still pending.
 
 ### Not done here
 

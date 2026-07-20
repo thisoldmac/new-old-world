@@ -1159,6 +1159,16 @@ void now_files_receive_abort(FileReceive *rx)
 
 /* --- changing the share ------------------------------------------------- */
 
+/* "the File Manager refused" names no cause and helps nobody debug a
+   volume they cannot see. The last OSErr is kept so the answer can carry
+   the number the File Manager actually returned. */
+static OSErr g_last_err;
+
+OSErr now_files_last_error(void)
+{
+    return g_last_err;
+}
+
 /* FSpCatMove wants an FSSpec naming the destination folder, which we do
    not have here — every path we resolve ends at a dirID. PBCatMove takes
    the dirID directly, so it is the honest primitive for this layer. */
@@ -1174,8 +1184,13 @@ static OSErr cat_move(const FSSpec *spec, long to_dir)
     pb.ioDirID = spec->parID;
     pb.ioNewName = NULL;
     pb.ioNewDirID = to_dir;
-    return PBCatMoveSync(&pb);
+    g_last_err = PBCatMoveSync(&pb);
+    return g_last_err;
 }
+
+/* Defined below, next to the naming rules it depends on. */
+static int move_named(FSSpec *spec, long to_dir, const unsigned char *desired,
+                      Str255 out_final);
 
 /* Splits a relative path into its parent folder and leaf name. */
 static int split_rel(const char *rel, char *parent, long parent_cap,
@@ -1219,7 +1234,6 @@ int now_files_move(const char *rel, const char *to_rel, Boolean overwrite)
     Str255 to_pname;
     long to_dir;
     int rc;
-    OSErr err;
 
     if (rel == NULL || rel[0] == '\0') {
         return kFilesBadPath;         /* the share root is not movable */
@@ -1253,23 +1267,17 @@ int now_files_move(const char *rel, const char *to_rel, Boolean overwrite)
         }
     }
 
-    /* CatMove moves between folders and Rename changes the name; a move
-       that also renames needs both, and the order matters: rename first
-       would collide with the source folder, so move first. */
-    if (from.parID != to_dir) {
-        err = cat_move(&from, to_dir);
-        if (err != noErr) {
-            return err == fnfErr ? kFilesNotFound : kFilesIOError;
+    {
+        Str255 landed;
+
+        rc = move_named(&from, to_dir, to_pname, landed);
+        if (rc != kFilesOK) {
+            return rc;
         }
-        from.parID = to_dir;
+        /* The caller named the destination; anything else is a failure. */
+        return EqualString(landed, to_pname, false, false)
+            ? kFilesOK : kFilesIOError;
     }
-    if (!EqualString(from.name, to_pname, false, false)) {
-        err = FSpRename(&from, to_pname);
-        if (err != noErr) {
-            return kFilesIOError;
-        }
-    }
-    return kFilesOK;
 }
 
 /* The volume's Trash for the share, resolved fresh every time. Nothing
@@ -1285,21 +1293,20 @@ static int trash_folder(short *vref, long *dir)
     if (!share_volume(&share_vref, &prefs)) {
         return kFilesIOError;
     }
-    if (FindFolder(share_vref, kTrashFolderType, kCreateFolder,
-                   &found_vref, dir) != noErr) {
+    g_last_err = FindFolder(share_vref, kTrashFolderType, kCreateFolder,
+                            &found_vref, dir);
+    if (g_last_err != noErr) {
         return kFilesIOError;
     }
     *vref = found_vref;
     return kFilesOK;
 }
 
-/* A name free in the Trash, starting from the item's own. The Finder
-   does the same thing for the same reason: two files deleted from
-   different folders can share a name, and the second must not fail. */
-/* `wanted` is whatever length of Str the caller has (an FSSpec carries
-   Str63), so it is taken by pointer rather than as a Str255. */
-static void free_trash_name(short vref, long dir,
-                            const unsigned char *wanted, Str255 out)
+/* A name free in BOTH folders, starting from the one we want. Two files
+   deleted from different folders can share a name, and the Finder solves
+   it the same way. */
+static void free_name(short vref, long dir_a, long dir_b,
+                      const unsigned char *wanted, Str255 out)
 {
     FSSpec probe;
     int suffix;
@@ -1308,8 +1315,9 @@ static void free_trash_name(short vref, long dir,
     for (suffix = 2; suffix < 100; ++suffix) {
         char base[64], candidate[80];
 
-        if (FSMakeFSSpec(vref, dir, out, &probe) != noErr) {
-            return;                   /* nothing there: this name is free */
+        if (FSMakeFSSpec(vref, dir_a, out, &probe) != noErr
+            && FSMakeFSSpec(vref, dir_b, out, &probe) != noErr) {
+            return;
         }
         memcpy(base, wanted + 1, wanted[0]);
         base[wanted[0]] = '\0';
@@ -1318,14 +1326,55 @@ static void free_trash_name(short vref, long dir,
     }
 }
 
+/* Moves an item to another folder, landing on `desired` where it can.
+   RENAME FIRST, then move: PBCatMove carries the item's CURRENT name, so
+   a move into a folder that already holds that name fails dupFNErr
+   before any later rename could have helped. Renaming into a name free
+   in both folders removes the collision before the move happens.
+   `out_final` is the name it actually ended up with, which is not always
+   the one asked for — that is the caller's to report, not to hide. */
+static int move_named(FSSpec *spec, long to_dir, const unsigned char *desired,
+                      Str255 out_final)
+{
+    Str255 staging;
+    OSErr err;
+
+    free_name(spec->vRefNum, spec->parID, to_dir, desired, staging);
+    if (!EqualString(spec->name, staging, false, false)) {
+        err = FSpRename(spec, staging);
+        if (err != noErr) {
+            g_last_err = err;
+            return kFilesIOError;
+        }
+        memcpy(spec->name, staging, staging[0] + 1);
+    }
+    err = cat_move(spec, to_dir);
+    if (err != noErr) {
+        return err == fnfErr ? kFilesNotFound : kFilesIOError;
+    }
+    spec->parID = to_dir;
+
+    /* Once it is over there, the name we wanted may have become free. */
+    memcpy(out_final, staging, staging[0] + 1);
+    if (!EqualString(staging, desired, false, false)) {
+        FSSpec probe;
+
+        if (FSMakeFSSpec(spec->vRefNum, to_dir, desired, &probe) != noErr
+            && FSpRename(spec, desired) == noErr) {
+            memcpy(out_final, desired, desired[0] + 1);
+        }
+    }
+    return kFilesOK;
+}
+
 int now_files_trash(const char *rel, char *trashed_as, long cap)
 {
     FSSpec spec;
     short trash_vref;
     long trash_dir;
     Str255 landed;
+    Str255 wanted;
     int rc;
-    OSErr err;
 
     if (trashed_as != NULL && cap > 0) {
         trashed_as[0] = '\0';
@@ -1341,23 +1390,10 @@ int now_files_trash(const char *rel, char *trashed_as, long cap)
     if (rc != kFilesOK) {
         return rc;
     }
-    free_trash_name(trash_vref, trash_dir, spec.name, landed);
-
-    err = cat_move(&spec, trash_dir);
-    if (err != noErr) {
-        return err == fnfErr ? kFilesNotFound : kFilesIOError;
-    }
-    if (!EqualString(spec.name, landed, false, false)) {
-        FSSpec moved;
-
-        moved.vRefNum = trash_vref;
-        moved.parID = trash_dir;
-        memcpy(moved.name, spec.name, spec.name[0] + 1);
-        if (FSpRename(&moved, landed) != noErr) {
-            /* It is in the Trash under its own name; say that, so the
-               far side records what is actually true. */
-            memcpy(landed, spec.name, spec.name[0] + 1);
-        }
+    memcpy(wanted, spec.name, spec.name[0] + 1);
+    rc = move_named(&spec, trash_dir, wanted, landed);
+    if (rc != kFilesOK) {
+        return rc;
     }
     if (trashed_as != NULL && landed[0] < cap) {
         memcpy(trashed_as, landed + 1, landed[0]);
@@ -1372,9 +1408,8 @@ int now_files_restore(const char *trashed_as, const char *to_rel)
     short trash_vref;
     long trash_dir, to_dir;
     char to_parent[224], to_leaf[64];
-    Str255 pname, to_pname;
+    Str255 pname, to_pname, landed;
     int rc;
-    OSErr err;
 
     if (trashed_as == NULL || trashed_as[0] == '\0'
         || strlen(trashed_as) > 31) {
@@ -1410,21 +1445,14 @@ int now_files_restore(const char *trashed_as, const char *to_rel)
             return kFilesExists;
         }
     }
-    err = cat_move(&spec, to_dir);
-    if (err != noErr) {
-        return err == fnfErr ? kFilesNotFound : kFilesIOError;
+    rc = move_named(&spec, to_dir, to_pname, landed);
+    if (rc != kFilesOK) {
+        return rc;
     }
-    if (!EqualString(spec.name, to_pname, false, false)) {
-        FSSpec moved;
-
-        moved.vRefNum = parent.vRefNum;
-        moved.parID = to_dir;
-        memcpy(moved.name, spec.name, spec.name[0] + 1);
-        if (FSpRename(&moved, to_pname) != noErr) {
-            return kFilesIOError;
-        }
-    }
-    return kFilesOK;
+    /* Restoring is a promise about WHERE, name included. Landing under
+       anything else is a failure, not a partial success. */
+    return EqualString(landed, to_pname, false, false)
+        ? kFilesOK : kFilesIOError;
 }
 
 int now_files_mkdir(const char *rel)
@@ -1448,7 +1476,8 @@ int now_files_mkdir(const char *rel)
     if (FSMakeFSSpec(parent.vRefNum, dir, pname, &existing) == noErr) {
         return kFilesExists;
     }
-    if (DirCreate(parent.vRefNum, dir, pname, &created) != noErr) {
+    g_last_err = DirCreate(parent.vRefNum, dir, pname, &created);
+    if (g_last_err != noErr) {
         return kFilesIOError;
     }
     return kFilesOK;

@@ -136,6 +136,10 @@ int now_files_receive_finish(FileReceive *rx);
 /* Abandons a transfer: closes anything open and deletes the temp. */
 void now_files_receive_abort(FileReceive *rx);
 
+/* The OSErr behind the most recent kFilesIOError. "The File Manager
+   refused" names no cause; the number does. */
+OSErr now_files_last_error(void);
+
 /* --- changing the share ------------------------------------------------
    Every change here is reversible, which is what lets the other side
    offer undo. Deleting moves an item to the volume's Trash rather than
