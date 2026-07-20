@@ -57,6 +57,25 @@ enum GuestStatus: Equatable {
         }
     }
 
+    /// The same connection in the width a sidebar caption has — one short
+    /// line under "Connection". Connected, that is the name the other
+    /// machine sent, the way `peerLabel` answers it elsewhere; otherwise a
+    /// plain description of what this side is doing, since there is no name
+    /// to use yet.
+    var sidebarLine: String {
+        switch self {
+        case .notListening:
+            return "Not listening"
+        case .waiting(let port):
+            return "Listening on \(String(port))"
+        case .connected(let name, let quiet):
+            guard quiet > Self.quietAfter else { return name }
+            return "\(name) — quiet"
+        case .failed(let reason):
+            return reason
+        }
+    }
+
     static func evaluate(state: GuestListener.State,
                          health: GuestListener.SessionHealth?,
                          now: Date = Date()) -> GuestStatus {

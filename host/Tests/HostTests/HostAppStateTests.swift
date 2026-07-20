@@ -14,6 +14,21 @@ final class HostAppStateTests: XCTestCase {
         XCTAssertEqual(state.selectedModuleID, "screenshots")
     }
 
+    /// The footer is drawn apart from the list but selected the same way, so
+    /// a relaunch has to restore it like any other module.
+    func testPersistedFooterSelectionSurvivesRelaunch() {
+        let suite = "HostAppStateTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("settings", forKey: "selectedModuleID")
+
+        let state = HostAppState(registry: .standard, defaults: defaults)
+
+        XCTAssertEqual(state.selectedModuleID, "settings")
+        XCTAssertEqual(ModuleRegistry.standard
+            .module(id: state.selectedModuleID)?.placement, .footer)
+    }
+
     func testSelectionPersists() {
         let suite = "HostAppStateTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

@@ -74,6 +74,42 @@ final class GuestStatusTests: XCTestCase {
         XCTAssertEqual(status.menuLine, "Connected: PowerBook 1400")
     }
 
+    // MARK: - Sidebar footer
+
+    /// Connected, the footer caption is the machine's name and nothing else
+    /// — there is no room for a word the green dot beside it already says.
+    func testSidebarLineIsJustTheNameWhenConnected() {
+        let now = Date()
+        let status = GuestStatus.evaluate(
+            state: .connected(guestName: "PowerBook 1400"),
+            health: health(lastTraffic: now.addingTimeInterval(-2)), now: now)
+        XCTAssertEqual(status.sidebarLine, "PowerBook 1400")
+    }
+
+    func testSidebarLineMarksQuietWithoutSpellingOutTheSeconds() {
+        let now = Date()
+        let status = GuestStatus.evaluate(
+            state: .connected(guestName: "Quadra 950"),
+            health: health(lastTraffic: now.addingTimeInterval(-34),
+                           name: "Quadra 950"), now: now)
+        XCTAssertEqual(status.sidebarLine, "Quadra 950 — quiet")
+    }
+
+    /// With nobody connected there is no name to use, so the line describes
+    /// this side instead — and never invents a word for the other machine.
+    func testSidebarLineDescribesThisSideWhenNobodyIsConnected() {
+        XCTAssertEqual(GuestStatus.notListening.sidebarLine, "Not listening")
+        XCTAssertEqual(GuestStatus.waiting(port: 5252).sidebarLine,
+                       "Listening on 5252")
+        XCTAssertEqual(GuestStatus.failed("Port 5252 in use").sidebarLine,
+                       "Port 5252 in use")
+        for status in [GuestStatus.notListening, .waiting(port: 5252)] {
+            let line = status.sidebarLine.lowercased()
+            XCTAssertFalse(line.contains("guest"))
+            XCTAssertFalse(line.contains("host"))
+        }
+    }
+
     // MARK: - Monitor
 
     func testMonitorStartsDisconnectedAndTracksTheListener() async throws {

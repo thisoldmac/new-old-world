@@ -1,10 +1,21 @@
 import Foundation
 
+/// Where a module sits in the sidebar. Everything is still one ordered list
+/// — this only says which end of it a module belongs to.
+enum ModulePlacement: Equatable, Sendable {
+    /// A feature, listed in order.
+    case list
+    /// Pinned below a divider at the foot of the sidebar. Not a feature but
+    /// the state of the link the features run over.
+    case footer
+}
+
 struct ModuleDescriptor: Identifiable, Equatable, Sendable {
     let id: String
     let title: String
     let symbol: String
     let summary: String
+    var placement: ModulePlacement = .list
 }
 
 struct ModuleRegistry: Sendable {
@@ -18,6 +29,17 @@ struct ModuleRegistry: Sendable {
 
     func module(id: String) -> ModuleDescriptor? {
         modules.first { $0.id == id }
+    }
+
+    /// The two halves of the sidebar, derived rather than stored, so id
+    /// uniqueness, `module(id:)`, and the persisted selection keep reading
+    /// from the one array no matter where a module is drawn.
+    var listModules: [ModuleDescriptor] {
+        modules.filter { $0.placement == .list }
+    }
+
+    var footerModules: [ModuleDescriptor] {
+        modules.filter { $0.placement == .footer }
     }
 
     static let standard = ModuleRegistry(modules: [
@@ -43,7 +65,8 @@ struct ModuleRegistry: Sendable {
             id: "settings",
             title: "Connection",
             symbol: "network",
-            summary: "Listening port and connection status"
+            summary: "Listening port and connection status",
+            placement: .footer
         ),
     ])
 }
