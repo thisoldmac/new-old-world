@@ -29,6 +29,16 @@ half of OS 9 networking, so every listener stays on the modern side.
 
 - **One contiguous send per frame.** Real classic NICs drop the second
   of two back-to-back small writes (Farallon TX burst).
+- **Meter bulk writes; the gap is the point.** The same card drops
+  frames *inbound* too, including ones that land on the heels of its own
+  ACK. Handing TCP a whole 32 KB frame keeps the socket buffer non-empty,
+  so TCP fires the next segment 0.13 ms after every ACK and it dies: 48%
+  of segments retransmitted, each costing a 311 ms RTO, pinning inbound
+  at 4 KB/s while outbound ran at 227. The host now writes 1448 B every
+  3 ms (`GuestListener.Pacing`) — 256 KB went 63.9 s → 0.8 s. Note it is
+  the **quiet time**, not the write size: 1448 B with no gap still runs
+  at 5 KB/s. Protocol framing is untouched at 32 KB, because the guest
+  reassembles a byte stream and must never be able to tell.
 - **Control messages queue and retry.** A streaming guest runs the send
   buffer at the brim; a single unretried `OTSnd` of `capture.end` or a
   heartbeat ping dies there of `kOTFlowErr` and wedges every layer at
