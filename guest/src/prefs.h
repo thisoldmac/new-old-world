@@ -20,6 +20,16 @@ typedef struct {
     long share_dir;           /* directory ID; 0 = the volume root */
     char share_root[128];     /* display label only, never resolved */
 
+    /* Share the whole boot volume instead of the chosen folder. The
+       chosen folder stays remembered, so turning this off restores it
+       rather than making the human find it again. */
+    Boolean share_boot;
+
+    /* Where files pulled from the host land. Same volume+dirID identity
+       as the share; empty/0 = the Desktop folder. */
+    char dl_vol[32];
+    long dl_dir;
+
     /* stream capture policies (experimental; applied at stream start) */
     Boolean predictive;       /* read only predicted-dirty rows + sweep */
     Boolean interlace;        /* alternate decimated fields */
@@ -37,7 +47,7 @@ typedef struct {
 
 /* Loads saved settings, or the defaults (10.0.2.2:5250 — the QEMU host
    address — 8-bit, pack on, 8K chunks, no pacing, panel open). Reads the
-   v1/v2 record formats (host/port only) as well as v3 through v7. */
+   v1/v2 record formats (host/port only) as well as v3 through v8. */
 void now_prefs_load(NowPrefs *prefs);
 OSErr now_prefs_save(const NowPrefs *prefs);
 

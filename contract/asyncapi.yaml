@@ -189,12 +189,21 @@ operations:
       - $ref: "#/channels/control/messages/fileGet"
       - $ref: "#/channels/control/messages/fileCancel"
     description: >
-      Host browses and pulls from the guest's share. These verbs are
-      requester-centric like HTTP's — file.get is the host obtaining a
-      file. Note that the CONSOLE surface is deliberately the other
-      frame: it is a shell into the guest, so a console `put` means the
-      guest puts a file to the host (see docs/files.md). Host UI
-      affordances speak host-native ("Download"). Paths are RELATIVE
+      THE FILE FAMILY IS SYMMETRIC. Every message here means the same
+      thing whichever side sends it, and whoever RECEIVES a request
+      serves its OWN share: the host browsing the guest and the guest
+      browsing the host are the same exchange with the roles swapped.
+      Each machine shares exactly one folder, and a share bounds what
+      the other machine may reach on its own initiative — never what a
+      human deliberately sends, so the source of a push is any file the
+      sender picks and only the destination must lie inside a share.
+
+      These verbs are requester-centric like HTTP's — file.get is the
+      sender obtaining a file. Note that the CONSOLE surface is
+      deliberately the other frame: it is a shell into the guest, so a
+      console `put` means the guest puts a file to the host (see
+      docs/files.md). Host UI affordances speak host-native
+      ("Download"). Paths are RELATIVE
       to the guest's configured share root ("" is the root; segments
       joined with ":"): a path outside the share is inexpressible, and
       any empty segment ("::" traversal) refuses bad-path. file.get

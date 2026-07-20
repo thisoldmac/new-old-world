@@ -319,42 +319,69 @@ struct FilesModuleView: View {
             Toggle("Convert text files", isOn: $model.convertText)
                 .help("Line endings and encoding, both directions")
             Spacer()
+            Text("Sharing")
+                .foregroundStyle(.secondary)
+            folderMenu(current: model.shareDirectory) {
+                model.shareDirectory = $0
+            }
+            .help("What \(model.connection.peerLabel) can browse and "
+                  + "write into: "
+                  + model.shareDirectory.path)
+            Divider().frame(height: 16)
             Text("Downloads to")
                 .foregroundStyle(.secondary)
-            Menu {
-                ForEach(folderChoices, id: \.path) { url in
-                    Button(url.lastPathComponent) {
-                        model.downloadDirectory = url
-                    }
-                }
-                Divider()
-                Button("Other…") { chooseDirectory() }
-            } label: {
-                HStack(spacing: 5) {
-                    Image(nsImage: NSWorkspace.shared
-                        .icon(forFile: model.downloadDirectory.path))
-                        .resizable()
-                        .frame(width: 16, height: 16)
-                    Text(model.downloadDirectory.lastPathComponent)
-                }
+            folderMenu(current: model.downloadDirectory) {
+                model.downloadDirectory = $0
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
             .help(model.downloadDirectory.path)
         }
         .font(.callout)
     }
 
-    private var folderChoices: [URL] {
+    /// A folder picker that looks like the Finder's: the usual places,
+    /// the current one if it is somewhere else, and a way out to any
+    /// folder at all.
+    private func folderMenu(current: URL,
+                            choose: @escaping (URL) -> Void) -> some View {
+        Menu {
+            ForEach(folderChoices(including: current), id: \.path) { url in
+                Button(url.lastPathComponent) { choose(url) }
+            }
+            Divider()
+            Button("Other…") {
+                if let url = askForDirectory(startingAt: current) {
+                    choose(url)
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(nsImage: NSWorkspace.shared.icon(forFile: current.path))
+                    .resizable()
+                    .frame(width: 16, height: 16)
+                Text(current.lastPathComponent)
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    private func askForDirectory(startingAt url: URL) -> URL? {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.directoryURL = url
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
+    private func folderChoices(including current: URL) -> [URL] {
         let standard: [FileManager.SearchPathDirectory] =
             [.downloadsDirectory, .desktopDirectory, .documentDirectory]
         var urls = standard.compactMap {
             FileManager.default.urls(for: $0, in: .userDomainMask).first
         }
-        if !urls.contains(where: {
-            $0.path == model.downloadDirectory.path
-        }) {
-            urls.insert(model.downloadDirectory, at: 0)
+        if !urls.contains(where: { $0.path == current.path }) {
+            urls.insert(current, at: 0)
         }
         return urls
     }
@@ -369,19 +396,6 @@ struct FilesModuleView: View {
             + model.connection.peerLabel + "."
         if panel.runModal() == .OK, let url = panel.url {
             model.send(url)
-        }
-    }
-
-    private func chooseDirectory() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        panel.directoryURL = model.downloadDirectory
-        panel.prompt = "Choose"
-        panel.message = "Choose where incoming files land."
-        if panel.runModal() == .OK, let url = panel.url {
-            model.downloadDirectory = url
         }
     }
 

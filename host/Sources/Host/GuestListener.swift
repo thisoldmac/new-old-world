@@ -181,6 +181,76 @@ final class GuestListener: ObservableObject {
         var interlace: Bool?
     }
 
+    // MARK: - Serving our own share
+
+    /// What this Mac shares. Symmetric with the guest's share root: the
+    /// other machine may browse it, pull from it, and write into it,
+    /// without anyone here doing anything.
+    let share = HostShare()
+
+    /// Text conversion for files we serve, mirroring the Files module's
+    /// setting for the ones we fetch.
+    var convertServedText = true
+
+    /// Files the guest has sent us, newest first — the module shows them
+    /// so an arrival is visible rather than silent.
+    @Published private(set) var received: [URL] = []
+
+    /// Answers a listing request from the guest.
+    fileprivate func serveList(_ request: FileList) {
+        do {
+            let page = try share.list(path: request.path,
+                                      cursor: request.cursor ?? 1,
+                                      limit: 16)
+            session?.send(.fileListing(FileListing(
+                id: request.id, path: request.path, entries: page.entries,
+                more: page.more, cursor: page.next)))
+        } catch {
+            session?.refuseFile(id: request.id, error: error)
+        }
+    }
+
+    /// Answers a pull request: the same begin / bulk / end shape the
+    /// guest uses, metered the same way.
+    fileprivate func serveGet(_ request: FileGet) {
+        do {
+            let plan = try share.read(
+                path: request.path,
+                convertText: convertServedText
+                    && request.container != "data")
+            let modified = (try? share.resolve(request.path))
+                .flatMap { try? $0.resourceValues(
+                    forKeys: [.contentModificationDateKey]) }?
+                .contentModificationDate
+                .flatMap(ClassicDate.macSeconds(from:))
+            session?.serveFile(id: request.id, plan: plan,
+                               container: request.container,
+                               modified: modified)
+        } catch {
+            session?.refuseFile(id: request.id, error: error)
+        }
+    }
+
+    /// A file the guest wants to put into our share. Accepted without
+    /// prompting: this side is not necessarily attended either, and the
+    /// share is what the human already agreed the other machine may
+    /// write into.
+    fileprivate func acceptOffer(_ offer: FileOffer) {
+        do {
+            let url = try share.destination(
+                name: offer.name, path: offer.path,
+                overwrite: offer.overwrite ?? false)
+            session?.beginReceiving(offer: offer, to: url)
+        } catch {
+            session?.refuseFile(id: offer.id, error: error)
+        }
+    }
+
+    fileprivate func noteReceived(_ url: URL) {
+        received.insert(url, at: 0)
+        if received.count > 20 { received.removeLast() }
+    }
+
     // MARK: - Files
 
     struct FileFailure: Error {
@@ -806,6 +876,18 @@ final class GuestListener: ObservableObject {
                                              expected: self.putExpected)
                 self.touchWatchdog(progress.id)
             },
+            onServeList: { [weak self] request in
+                self?.serveList(request)
+            },
+            onServeGet: { [weak self] request in
+                self?.serveGet(request)
+            },
+            onAcceptOffer: { [weak self] offer in
+                self?.acceptOffer(offer)
+            },
+            onReceived: { [weak self] url in
+                self?.noteReceived(url)
+            },
             onOutboundProgress: { [weak self] sent, total in
                 guard let self else { return }
                 // Bytes accepted by the local socket, which is not the
@@ -870,6 +952,10 @@ final class Session {
         (Result<GuestListener.FileDelivery, GuestListener.FileFailure>) -> Void
     private let onFileDone: (FileDone) -> Void
     private let onFileProgress: (FileProgress) -> Void
+    private let onServeList: (FileList) -> Void
+    private let onServeGet: (FileGet) -> Void
+    private let onAcceptOffer: (FileOffer) -> Void
+    private let onReceived: (URL) -> Void
     private let onOutboundProgress: (Int, Int) -> Void
     private let onOutboundFailed: (String) -> Void
     private var streamId: Int?
@@ -930,6 +1016,10 @@ final class Session {
              -> Void,
          onFileDone: @escaping (FileDone) -> Void,
          onFileProgress: @escaping (FileProgress) -> Void,
+         onServeList: @escaping (FileList) -> Void,
+         onServeGet: @escaping (FileGet) -> Void,
+         onAcceptOffer: @escaping (FileOffer) -> Void,
+         onReceived: @escaping (URL) -> Void,
          onOutboundProgress: @escaping (Int, Int) -> Void,
          onOutboundFailed: @escaping (String) -> Void,
          onClosed: @escaping (Session, String) -> Void) {
@@ -954,6 +1044,10 @@ final class Session {
         self.onFileDelivery = onFileDelivery
         self.onFileDone = onFileDone
         self.onFileProgress = onFileProgress
+        self.onServeList = onServeList
+        self.onServeGet = onServeGet
+        self.onAcceptOffer = onAcceptOffer
+        self.onReceived = onReceived
         self.onOutboundProgress = onOutboundProgress
         self.onOutboundFailed = onOutboundFailed
         self.onClosed = onClosed
@@ -1024,6 +1118,10 @@ final class Session {
                    Int(frame.header.transfer) == discarding {
                     break
                 }
+                if inbound != nil {
+                    inbound?.bytes.append(frame.payload)
+                    break
+                }
                 if let begin = fileBegin {
                     fileBuffer.append(contentsOf: frame.payload)
                     onCaptureProgress(.init(received: fileBuffer.count,
@@ -1070,6 +1168,12 @@ final class Session {
             onFileListing(listing)
         case .fileResult(let result):
             onFileResult(result)
+        case .fileList(let request):
+            onServeList(request)
+        case .fileGet(let request):
+            onServeGet(request)
+        case .fileOffer(let offer):
+            onAcceptOffer(offer)
         case .fileAccept(let accept):
             sendAcceptedFile(accept)
         case .fileDone(let done):
@@ -1081,13 +1185,20 @@ final class Session {
             fileBuffer = []
             onFileRefuse(refuse)
         case .fileBegin(let begin):
+            if inbound?.id == begin.id {
+                break                 // a push we already accepted
+            }
             fileBegin = begin
             fileBuffer = []
             fileBuffer.reserveCapacity(begin.bytes)
             fileStart = Date()
             onCaptureProgress(.init(received: 0, expected: begin.bytes))
         case .fileEnd(let end):
-            finishFile(end)
+            if inbound?.id == end.id {
+                finishInbound(end)
+            } else {
+                finishFile(end)
+            }
         case .streamRequest(let request):
             onStreamRequest(request)
         case .streamStopped(let stopped):
@@ -1198,6 +1309,92 @@ final class Session {
     }
 
     private var outbound: Outbound?
+
+    /// Turns any serving failure into the one refusal the contract has.
+    func refuseFile(id: Int, error: Error) {
+        let known = error as? HostShare.ShareError
+        send(.fileRefuse(FileRefuse(
+            id: id, code: known?.code ?? "io-error",
+            reason: known?.message ?? "\(error)")))
+    }
+
+    /// Serves a file we hold: begin, metered bulk, end — the same path
+    /// an outbound put takes, because it is the same journey.
+    func serveFile(id: Int, plan: OutboundFile.Plan, container: String?,
+                   modified: Int?) {
+        let transfer = nextTransfer()
+        send(.fileBegin(FileBegin(
+            id: id, transfer: Int(transfer), name: plan.name,
+            container: container == "macbinary" ? "macbinary"
+                                                : plan.container,
+            bytes: plan.bytes.count, dataBytes: nil, rsrcBytes: nil,
+            fileType: plan.fileType, creator: plan.creator,
+            modified: modified)))
+        outbound = Outbound(id: id, transfer: transfer, bytes: plan.bytes,
+                            sent: 0, cancelled: false)
+        onOutboundProgress(0, plan.bytes.count)
+        sendNextOutboundChunk()
+    }
+
+    /// An inbound push: accept, then collect the bulk that follows and
+    /// write it when the sender says it is done.
+    func beginReceiving(offer: FileOffer, to url: URL) {
+        inbound = Inbound(id: offer.id, url: url, name: offer.name,
+                          container: offer.container,
+                          expected: offer.bytes,
+                          modified: offer.modified, bytes: Data())
+        send(.fileAccept(FileAccept(id: offer.id)))
+    }
+
+    private struct Inbound {
+        var id: Int
+        var url: URL
+        var name: String
+        var container: String
+        var expected: Int
+        var modified: Int?
+        var bytes: Data
+    }
+
+    private var inbound: Inbound?
+
+    /// Writes a completed push and tells the sender it landed. The
+    /// answer waits for the disk, as the guest's does: a put is not
+    /// finished until the file exists.
+    private func finishInbound(_ end: FileEnd) {
+        guard let file = inbound, file.id == end.id else { return }
+        inbound = nil
+        guard end.ok, file.bytes.count == file.expected else {
+            send(.fileDone(FileDone(
+                id: end.id, ok: false, code: "io-error",
+                reason: end.ok ? "the file arrived truncated"
+                               : "the sender stopped")))
+            return
+        }
+        let converted = FileConverter.convert(
+            name: file.name, container: file.container,
+            fileType: nil, bytes: file.bytes)
+        var url = file.url
+        if converted.name != file.name {
+            url = url.deletingLastPathComponent()
+                .appendingPathComponent(converted.name)
+        }
+        do {
+            try converted.data.write(to: url)
+            if let seconds = file.modified,
+               let date = ClassicDate.date(from: seconds) {
+                try? FileManager.default.setAttributes(
+                    [.modificationDate: date], ofItemAtPath: url.path)
+            }
+            onReceived(url)
+            send(.fileDone(FileDone(id: end.id, ok: true, code: nil,
+                                    reason: nil)))
+        } catch {
+            send(.fileDone(FileDone(id: end.id, ok: false,
+                                    code: "io-error",
+                                    reason: "\(error)")))
+        }
+    }
 
     /// Streams an accepted file: begin, the bulk frames, then end.
     private func sendAcceptedFile(_ accept: FileAccept) {
@@ -1560,7 +1757,7 @@ final class Session {
             paceMs: tuning.paceMs, pack: tuning.pack)))
     }
 
-    private func send(_ message: ControlMessage) {
+    fileprivate func send(_ message: ControlMessage) {
         guard let payload = try? ControlMessageCodec.encode(message),
               let frame = try? FrameCodec.encode(channel: .control,
                                                  payload: payload) else {

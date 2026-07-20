@@ -10,6 +10,7 @@
 #include "prefs.h"
 #include "screenshot.h"
 #include "fileshare.h"
+#include "wire.h"
 #include "build_stamp.h"
 #include "vprobe.h"
 
@@ -136,6 +137,13 @@ static void help_for(const char *name)
         append_line("  lists the root itself. The root is chosen in");
         append_line("  File > File Sharing... and defaults to the");
         append_line("  startup volume; nothing outside it is reachable.");
+    } else if (strcmp(name, "put") == 0) {
+        append_line("put - send a file to the host");
+        append_line("  Usage: put <full path>");
+        append_line("  \"Macintosh HD:Notes:Read Me\". The path is a full");
+        append_line("  HFS path, not a share-relative one: sending is not");
+        append_line("  browsing, so the file need not be in the share. The");
+        append_line("  host saves it in whatever folder it shares.");
     } else if (strcmp(name, "mv") == 0) {
         append_line("mv - move or rename something in the shared files");
         append_line("  Usage: mv <path> <new path>");
@@ -186,6 +194,7 @@ static void help_list(void)
     append_line("  screenshot  capture the screen (--depth N, --bands N,");
     append_line("              --no-save)");
     append_line("  ls          list a shared folder (ls [path])");
+    append_line("  put         send a file to the host (put <full path>)");
     append_line("  mv          move or rename (mv <path> <new path>)");
     append_line("  trash       move to the Trash (trash <path>)");
     append_line("  untrash     put back (untrash <trash name> <path>)");
@@ -543,6 +552,30 @@ static void run_command(const char *input)
         } else if (more) {
             append_line("  ... more entries follow");
         }
+        return;
+    }
+    if (strcmp(name, "put") == 0) {
+        FSSpec spec;
+        Str255 hfs;
+        char why[128];
+
+        /* A full HFS path, because sending is not browsing: this need
+           not be anywhere near the share. */
+        if (strchr(target, ':') == NULL) {
+            append_line("put: needs a full path (\"Macintosh HD:Notes\")");
+            return;
+        }
+        CopyCStringToPascal(target, hfs);
+        if (FSMakeFSSpec(0, 0, hfs, &spec) != noErr) {
+            append_line("put: no such file");
+            return;
+        }
+        if (now_wire_send_file(&spec, why, sizeof why) < 0) {
+            snprintf(line, sizeof line, "put: %.80s", why);
+            append_line(line);
+            return;
+        }
+        append_line("  offered; the File Sharing panel reports the rest");
         return;
     }
     now_command_run(name, NULL, 0, result, sizeof result);

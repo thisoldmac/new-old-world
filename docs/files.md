@@ -311,7 +311,9 @@ files work today; the fix is being pursued with the large-transfer work.
 Each phase is independently testable on the machine and each leaves the
 product usable.
 
-**Phase 1 — the host serves, the guest sends.** Host: a share-folder
+**Phase 1 — the host serves, the guest sends.** *Built 2026-07-20;
+green on the host's 173 tests including seven that serve a real guest
+over loopback. Not yet run against the PowerBook.* Host: a share-folder
 setting, then serving `file.list` and `file.get`, and accepting
 `file.offer` with the reverse of the conversions already done in the
 other direction (MacRoman names to UTF-8, classic epoch to Foundation
@@ -322,6 +324,15 @@ side. Done when a file picked on the classic Mac lands in the host's
 share with its name, type and date intact. Capped at small files until
 the staging fix lands — say so in the UI rather than failing
 mysteriously.
+
+Two escapes the host's serving side had, both caught by its own tests
+before the guest ever saw them, both from the same root: a path that
+means one thing on the wire and another on this file system. A segment
+containing `/` spelled a path outside the share through the separator
+the other machine does not use, and a symlink inside the share named
+anything on this disk while looking local. Resolution now rejects the
+first and compares what a path actually reaches — not what it says —
+for the second.
 
 **Phase 2 — the browser.** Data Browser list with Icon Services icons,
 sortable columns, both selection styles, double-click / Cmd-Up /

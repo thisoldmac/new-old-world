@@ -65,6 +65,20 @@ static int share_volume(short *vref, const NowPrefs *prefs)
     return 0;
 }
 
+/* The share point: the volume and directory every relative path
+   resolves against. The boot-volume toggle is applied HERE rather than
+   at each call site, so the label, a listing, and a write can never
+   disagree about what is being shared. The chosen folder stays in
+   preferences while the toggle is on — turning it off puts the share
+   back where it was instead of making the human find it again. */
+static void share_point(NowPrefs *prefs)
+{
+    if (prefs->share_boot) {
+        prefs->share_vol[0] = '\0';  /* empty volume = boot volume */
+        prefs->share_dir = 0;         /* dir 0 = its root */
+    }
+}
+
 /* Resolves a relative path to the FSSpec of the item. The share is a
    volume plus a directory ID, so resolution is one FSMakeFSSpec against
    that directory with a PARTIAL path (a leading colon keeps it
@@ -83,6 +97,7 @@ static int resolve(const char *rel, FSSpec *spec)
         return kFilesBadPath;
     }
     now_prefs_load(&prefs);
+    share_point(&prefs);
     if (!share_volume(&vref, &prefs)) {
         return kFilesIOError;
     }
@@ -266,19 +281,31 @@ int now_files_stage(const char *rel_path, FileContainer container,
                     FileStage *stage)
 {
     FSSpec spec;
+    int rc = resolve(rel_path, &spec);
+
+    if (rc != kFilesOK) {
+        memset(stage, 0, sizeof *stage);
+        return rc;
+    }
+    return now_files_stage_spec(&spec, container, stage);
+}
+
+/* The same staging, for a file named directly rather than through the
+   share. Sending is not browsing: the human picked this file in a
+   standard dialog, so it needs no relation to the share root. */
+int now_files_stage_spec(const FSSpec *from, FileContainer container,
+                         FileStage *stage)
+{
+    FSSpec spec;
     CInfoPBRec pb;
     Str255 name;
-    int rc;
     long data_len, rsrc_len, total;
     Boolean as_macbinary;
     Handle blob;
     OSErr err;
 
     memset(stage, 0, sizeof *stage);
-    rc = resolve(rel_path, &spec);
-    if (rc != kFilesOK) {
-        return rc;
-    }
+    spec = *from;
     memset(&pb, 0, sizeof pb);
     memcpy(name, spec.name, spec.name[0] + 1);
     pb.hFileInfo.ioNamePtr = name;
@@ -428,6 +455,7 @@ void now_files_root_name(char *out, long cap)
        than none: it kept showing a folder that preferences no longer
        pointed at. */
     now_prefs_load(&prefs);
+    share_point(&prefs);
     dir = prefs.share_dir > 0 ? prefs.share_dir : fsRtDirID;
     if (share_volume(&vref, &prefs)
         && full_path_of_dir(vref, dir, out, cap)) {
@@ -568,6 +596,35 @@ static int spec_from_nav(const NavReplyRecord *reply, FSSpec *spec,
     return 1;
 }
 
+/* Picks a file to send. Standard Nav dialog, no share involved: what
+   the human can see, they can send. 1 = chosen, 0 = cancelled,
+   -1 = Nav failed (why says how). */
+int now_files_pick_file(FSSpec *out, char *why, long why_cap)
+{
+    NavDialogOptions options;
+    NavReplyRecord reply;
+    NavTypeListHandle types = NULL;
+
+    why[0] = '\0';
+    if (NavGetDefaultDialogOptions(&options) != noErr) {
+        snprintf(why, (size_t)why_cap, "Navigation Services is unavailable");
+        return -1;
+    }
+    CopyCStringToPascal("Choose a file to send", options.message);
+    options.dialogOptionFlags &= ~kNavAllowMultipleFiles;
+    if (NavGetFile(NULL, &reply, &options, now_pump_nav_event(), NULL,
+                   NULL, types, NULL) != noErr
+        || !reply.validRecord) {
+        return 0;                     /* cancelled */
+    }
+    if (!spec_from_nav(&reply, out, why, why_cap)) {
+        NavDisposeReply(&reply);
+        return -1;
+    }
+    NavDisposeReply(&reply);
+    return 1;
+}
+
 int now_files_choose_root(char *why, long why_cap)
 {
     NavDialogOptions options;
@@ -673,6 +730,7 @@ static int resolve_folder_ex(const char *rel, FSSpec *spec, long *dir_id,
         return kFilesBadPath;
     }
     now_prefs_load(&prefs);
+    share_point(&prefs);
     if (!share_volume(&vref, &prefs)) {
         return kFilesIOError;
     }
