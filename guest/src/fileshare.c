@@ -409,11 +409,23 @@ void now_files_describe(const FileEntry *e, char *out, long cap)
 
 /* --- root --------------------------------------------------------------- */
 
+static int full_path_of_dir(short vref, long dir_id, char *out, long cap);
+
+
+/* Derived, not stored: the label is recomputed from the share's volume
+   and directory ID every time it is shown, so it follows a renamed or
+   moved folder and cannot go stale the way a saved string does. The
+   saved string is only a fallback for when the climb fails. */
 void now_files_root_name(char *out, long cap)
 {
     NowPrefs prefs;
+    short vref;
 
     now_prefs_load(&prefs);
+    if (prefs.share_dir > 0 && share_volume(&vref, &prefs)
+        && full_path_of_dir(vref, prefs.share_dir, out, cap)) {
+        return;
+    }
     if (prefs.share_root[0] != '\0') {
         strncpy(out, prefs.share_root, (size_t)cap - 1);
         out[cap - 1] = '\0';
@@ -443,36 +455,20 @@ void now_files_root_name(char *out, long cap)
     out[cap - 1] = '\0';
 }
 
-/* Builds the full colon path of a folder FSSpec ("Macintosh HD:Lab:")
-   by climbing to the volume root. The classic idiom: PBGetCatInfo with
-   ioFDirIndex -1 names the directory ioDrDirID itself and reports its
-   parent, so prepending each name until the root walks the whole chain.
-   Calling it with fsRtDirID names the VOLUME, which is why the loop
-   ends there rather than at fsRtParID. */
-static int full_path_of_folder(const FSSpec *spec, char *out, long cap)
+/* Builds the printable path of a directory ("Macintosh HD:Lab:") from
+   its ID. It climbs by ID rather than from an FSSpec's name because Nav
+   hands back the "directory spec" form — an EMPTY name with parID set to
+   the directory's own ID — so there is no leaf name to start from. The
+   classic idiom does the rest: PBGetCatInfo with ioFDirIndex -1 names
+   the directory ioDrDirID itself and reports its parent, and calling it
+   with fsRtDirID names the volume, which is where the climb ends. */
+static int full_path_of_dir(short vref, long dir_id, char *out, long cap)
 {
     char tmp[512];
-    long len;
-    long dir_id;
+    long len = 0;
+    long dir = dir_id;
 
-    if (spec->name[0] == 0 || spec->name[0] > 63) {
-        return 0;
-    }
-    memcpy(tmp, spec->name + 1, spec->name[0]);
-    len = spec->name[0];
-    tmp[len++] = ':';
-    tmp[len] = '\0';
-
-    /* A volume was chosen: the spec already names it. */
-    if (spec->parID == fsRtParID) {
-        if (len + 1 > cap) {
-            return 0;
-        }
-        memcpy(out, tmp, (size_t)len + 1);
-        return 1;
-    }
-
-    dir_id = spec->parID;
+    tmp[0] = '\0';
     for (;;) {
         CInfoPBRec pb;
         Str255 name;
@@ -481,9 +477,9 @@ static int full_path_of_folder(const FSSpec *spec, char *out, long cap)
         memset(&pb, 0, sizeof pb);
         name[0] = 0;
         pb.dirInfo.ioNamePtr = name;
-        pb.dirInfo.ioVRefNum = spec->vRefNum;
-        pb.dirInfo.ioDrDirID = dir_id;
-        pb.dirInfo.ioFDirIndex = -1;   /* name dir_id itself */
+        pb.dirInfo.ioVRefNum = vref;
+        pb.dirInfo.ioDrDirID = dir;
+        pb.dirInfo.ioFDirIndex = -1;   /* name dir itself */
         if (PBGetCatInfoSync(&pb) != noErr) {
             return 0;
         }
@@ -496,10 +492,10 @@ static int full_path_of_folder(const FSSpec *spec, char *out, long cap)
         tmp[nlen] = ':';
         len += nlen + 1;
 
-        if (dir_id == fsRtDirID) {
+        if (dir == fsRtDirID) {
             break;                     /* that was the volume name */
         }
-        dir_id = pb.dirInfo.ioDrParID;
+        dir = pb.dirInfo.ioDrParID;
     }
     if (len + 1 > cap) {
         return 0;
@@ -638,16 +634,13 @@ int now_files_choose_root(char *why, long why_cap)
         prefs.share_vol[vname[0]] = '\0';
         prefs.share_dir = pb.dirInfo.ioDrDirID;
 
-        /* The printable path is a label; if the climb cannot build it,
-           show volume and folder rather than refusing the share. */
-        if (!full_path_of_folder(&spec, full, sizeof full)
+        /* The printable path is only a label; if the climb cannot build
+           it, name the volume rather than refusing the share. */
+        if (!full_path_of_dir(spec.vRefNum, prefs.share_dir,
+                              full, sizeof full)
             || strlen(full) >= sizeof prefs.share_root) {
-            char leaf[64];            /* spec.name is Pascal, not C */
-
-            memcpy(leaf, spec.name + 1, spec.name[0]);
-            leaf[spec.name[0]] = '\0';
             snprintf(prefs.share_root, sizeof prefs.share_root,
-                     "%s:\xc9:%s:", prefs.share_vol, leaf);
+                     "%s:\xc9:", prefs.share_vol);
         } else {
             strcpy(prefs.share_root, full);
         }
