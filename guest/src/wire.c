@@ -513,6 +513,7 @@ static struct {
     PixelBlob ready_blob;             /* encoded, waiting for the lane */
     ShotMeta ready_meta;
     Boolean ready;
+    Boolean stopping;                 /* stop acked once the drain ends */
     unsigned long cap_start_tick;
     long est_send_ticks;
     long est_cap_ticks;               /* capture + encode, measured */
@@ -528,6 +529,8 @@ static struct {
 static struct {
     Boolean active;
     Boolean pushed;                   /* guest-initiated: report to panel */
+    Boolean aborting;                 /* drain to the frame boundary, then
+                                         end ok:false - never mid-frame */
     PixelBlob blob;
     long total, offset;
     long chunk;
@@ -601,7 +604,7 @@ static void xfer_finish(Boolean ok)
              g_xfer.id, g_xfer.xfer, ok ? "true" : "false",
              (long)((TickCount() - g_xfer.started) * 1000 / 60));
     send_control(json);
-    if (g_stream.active && g_xfer.id == g_stream.id) {
+    if (ok && g_stream.active && g_xfer.id == g_stream.id) {
         g_stream.est_send_ticks = (long)(TickCount() - g_xfer.started);
     }
     if (g_xfer.pushed) {
@@ -655,10 +658,14 @@ static void service_transfer(void)
     while (g_xfer.active && TickCount() <= slice_end) {
         OTResult sent;
 
-        if (TickCount() < g_xfer.next_tick) {
+        if (!g_xfer.aborting && TickCount() < g_xfer.next_tick) {
             return;                   /* paced: resume later */
         }
         if (g_xfer.frame_sent >= g_xfer.frame_len) {
+            if (g_xfer.aborting) {
+                xfer_finish(false);   /* boundary reached: end cleanly */
+                return;
+            }
             if (g_ctlq.count > 0) {
                 return;               /* control goes first between frames */
             }
@@ -687,11 +694,21 @@ static void service_transfer(void)
     }
 }
 
+/* Aborting mid-frame would corrupt the wire: the peer's decoder still
+   expects the rest of the frame's bytes and would eat the next control
+   message as bulk payload (the 4-bit stop bug - desync, protocol error,
+   reconnect). So an abort drains to the frame boundary first; the
+   remainder is at most one chunk, ~120 ms at wire speed. */
 static void xfer_abort(void)
 {
-    if (g_xfer.active) {
-        xfer_finish(false);
+    if (!g_xfer.active) {
+        return;
     }
+    if (bulk_frame_partially_sent()) {
+        g_xfer.aborting = true;
+        return;
+    }
+    xfer_finish(false);
 }
 
 /* Panel hook: one status line about push transfers ("Sent to host"). */
@@ -820,7 +837,11 @@ static void serve_capture(const char *request)
         return;                       /* the stream owns the lane */
     }
     if (g_xfer.active) {
-        xfer_finish(false);           /* one transfer at a time */
+        snprintf(json, sizeof json,
+                 "{\"type\":\"capture.end\",\"id\":%ld,\"transfer\":%u,"
+                 "\"ok\":false}", id, next_xfer());
+        send_control(json);
+        return;                       /* one transfer at a time */
     }
     now_prefs_load(&prefs);
     depth = capture_depth_is_supported((short)depth_arg)
@@ -980,6 +1001,7 @@ static void stream_drop(void)
 {
     stream_pipeline_clear();
     g_stream.active = false;
+    g_stream.stopping = false;
     g_streamreq.pending = false;
 }
 
@@ -1005,6 +1027,7 @@ static void stream_end(const char *reason)
     }
     stream_pipeline_clear();
     g_stream.active = false;
+    g_stream.stopping = false;
     stream_send_stopped(g_stream.id, reason);
     note_shot("Streaming stopped");
 }
@@ -1054,7 +1077,11 @@ static void stream_stop(const char *reply)
         return;
     }
     if (g_xfer.active) {
-        xfer_finish(false);           /* abort the in-flight frame */
+        xfer_abort();
+        if (g_xfer.active) {
+            g_stream.stopping = true; /* stream.stopped follows the drain */
+            return;
+        }
     }
     stream_end(NULL);
 }
@@ -1107,7 +1134,11 @@ void now_wire_stream_stop(void)
         return;
     }
     if (g_xfer.active) {
-        xfer_finish(false);           /* abort the in-flight frame */
+        xfer_abort();
+        if (g_xfer.active) {
+            g_stream.stopping = true; /* stream.stopped follows the drain */
+            return;
+        }
     }
     stream_end(NULL);
 }
@@ -1167,6 +1198,13 @@ static void service_stream(void)
     if (!g_stream.active) {
         return;
     }
+    if (g_stream.stopping) {
+        if (!g_xfer.active) {
+            g_stream.stopping = false;
+            stream_end(NULL);
+        }
+        return;                       /* no new frames while stopping */
+    }
 
     /* Arm a ready frame the moment the lane is free. */
     if (g_stream.ready && !g_xfer.active
@@ -1185,10 +1223,15 @@ static void service_stream(void)
         return;
     }
 
-    /* Pump the in-progress capture one band per pass. */
+    /* Pump the in-progress capture, a small slice per pass: at ~17 ms a
+       band, per-pass loop overhead was costing ~1 fps at 1-bit. */
     if (g_stream.cap_active) {
-        int rc = banded_capture_step(&g_stream.cap);
+        unsigned long slice_end = TickCount() + 2;
+        int rc;
 
+        do {
+            rc = banded_capture_step(&g_stream.cap);
+        } while (rc == kCaptureMoreBands && TickCount() < slice_end);
         if (rc == kCaptureOK) {
             stream_finish_capture(cap_began);
         } else if (rc != kCaptureMoreBands) {
