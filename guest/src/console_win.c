@@ -90,6 +90,7 @@ static void append_line(const char *text)
 
 /* --- minimal JSON scan (reads commands.c's own result) ------------------ */
 
+/* Tolerates whitespace around the colon (mirrors wire.c's json_value). */
 static int json_find_string(const char *json, const char *key,
                             char *out, long cap)
 {
@@ -97,12 +98,26 @@ static int json_find_string(const char *json, const char *key,
     const char *p;
     long n = 0;
 
-    snprintf(pattern, sizeof pattern, "\"%s\":\"", key);
+    snprintf(pattern, sizeof pattern, "\"%s\"", key);
     p = strstr(json, pattern);
     if (p == NULL) {
         return 0;
     }
     p += strlen(pattern);
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') {
+        ++p;
+    }
+    if (*p != ':') {
+        return 0;
+    }
+    ++p;
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') {
+        ++p;
+    }
+    if (*p != '"') {
+        return 0;
+    }
+    ++p;
     while (*p != '\0' && *p != '"' && n + 1 < cap) {
         out[n++] = *p++;
     }

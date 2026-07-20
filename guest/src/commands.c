@@ -321,6 +321,8 @@ static void run_gestalt(long id, char *out, long cap)
     }
 }
 
+/* JSON permits whitespace around the colon; a pretty-printing peer must
+   not have its args silently ignored (mirrors wire.c's json_value). */
 static int json_arg_string(const char *json, const char *key,
                            char *out_s, long out_cap)
 {
@@ -331,12 +333,26 @@ static int json_arg_string(const char *json, const char *key,
     if (json == NULL) {
         return 0;
     }
-    snprintf(pattern, sizeof pattern, "\"%s\":\"", key);
+    snprintf(pattern, sizeof pattern, "\"%s\"", key);
     p = strstr(json, pattern);
     if (p == NULL) {
         return 0;
     }
     p += strlen(pattern);
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') {
+        ++p;
+    }
+    if (*p != ':') {
+        return 0;
+    }
+    ++p;
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') {
+        ++p;
+    }
+    if (*p != '"') {
+        return 0;
+    }
+    ++p;
     while (*p != '\0' && *p != '"' && n + 1 < out_cap) {
         out_s[n++] = *p++;
     }
