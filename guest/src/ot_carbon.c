@@ -39,6 +39,14 @@ OSStatus now_ot_resolve(void)
         { "OTRcvDisconnect", (void **)&gNowOT.rcvDisconnect },
         { "OTUnbind", (void **)&gNowOT.unbind },
         { "OTOptionManagement", (void **)&gNowOT.optionManagement },
+    };
+    /* Resolved separately because a miss here must NOT be fatal. Every
+       symbol above is load-bearing, so the loop treats absence as a
+       failed resolve — which takes the whole wire down. A diagnostic
+       counter has no business doing that: put it in the list above and a
+       guest whose CarbonLib does not export it simply never dials in,
+       looking for all the world like a hang. */
+    SymbolSpec optional_specs[] = {
         { "OTCountDataBytes", (void **)&gNowOT.countDataBytes },
     };
 
@@ -57,6 +65,15 @@ OSStatus now_ot_resolve(void)
         err = FindSymbol(conn, pname, (Ptr *)specs[i].slot, &cls);
         if (err != noErr || *specs[i].slot == NULL) {
             return err != noErr ? err : cfragNoSymbolErr;
+        }
+    }
+    for (i = 0; i < (int)(sizeof optional_specs / sizeof optional_specs[0]);
+         ++i) {
+        pname[0] = (unsigned char)strlen(optional_specs[i].name);
+        memcpy(pname + 1, optional_specs[i].name, pname[0]);
+        if (FindSymbol(conn, pname, (Ptr *)optional_specs[i].slot, &cls)
+            != noErr) {
+            *optional_specs[i].slot = NULL;   /* callers null-check */
         }
     }
     g_resolved = true;

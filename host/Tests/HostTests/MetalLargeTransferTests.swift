@@ -172,6 +172,19 @@ final class MetalLargeTransferTests: XCTestCase {
         return got ?? "NO LISTING"
     }
 
+    /// Read-only: does a guest dial in, which build is it, and does it
+    /// answer? Moves no bytes, so it is safe to run against a machine
+    /// whose state is in doubt — including one just recovered from a
+    /// wedge, where the first question is whether it came back at all.
+    func testJustTellMeTheGuestIsAliveAndWhichBuild() async throws {
+        let guest = try await waitForGuest(60)
+        print("\n=== connected to \(guest) ===")
+        print("=== about:   \(await command("about"))")
+        print("=== putstat: \(await command("putstat"))")
+        print("=== root:    \(await listRoot())")
+        print("=== alive ===\n")
+    }
+
     /// Watches the guest's own counters WHILE a transfer collapses,
     /// which is the only way to tell the two candidate mechanisms apart.
     ///
