@@ -16,6 +16,24 @@ final class HostAppState: ObservableObject {
     private let notifier = CaptureNotifier()
     private(set) lazy var files =
         FilesModuleModel(listener: listener, defaults: defaults)
+
+    /// The menu-bar "Screenshot Guest" command. Reports through the system
+    /// notifier and, because that path is silent under an ad-hoc signature,
+    /// also through whatever visible fallback the app installs below.
+    private(set) lazy var quickCapture: QuickCaptureCommand = {
+        let command = QuickCaptureCommand(screenshots: screenshots,
+                                          files: files)
+        command.report = { [weak self] outcome in
+            guard let self else { return }
+            self.notifier.announce(outcome: outcome)
+            self.quickCaptureFeedback?(outcome)
+        }
+        return command
+    }()
+
+    /// Set by the app delegate to flash the status item. Kept as a hook so
+    /// HostAppState stays free of AppKit chrome and tests stay silent.
+    var quickCaptureFeedback: ((QuickCaptureOutcome) -> Void)?
     let settings: SettingsModel
     let listener: GuestListener
     private(set) lazy var console = ConsoleModel(listener: listener)

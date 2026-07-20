@@ -319,7 +319,25 @@ final class ScreenshotModuleModel: ObservableObject {
     }
 
     func capture() {
-        guard canCapture else { return }
+        capture(forcingClipboard: false, completion: nil)
+    }
+
+    /// The menu command's path. Copying is the whole point of "Screenshot
+    /// Guest" — there is no panel to land in — so the clipboard happens
+    /// whether or not auto-copy is on. Auto-save is still merely honoured:
+    /// someone who asked for every capture to be archived meant every
+    /// capture, and someone who didn't should not start collecting files
+    /// because they used a different button.
+    func captureToClipboard(completion: @escaping (QuickCaptureOutcome) -> Void) {
+        capture(forcingClipboard: true, completion: completion)
+    }
+
+    private func capture(forcingClipboard: Bool,
+                         completion: ((QuickCaptureOutcome) -> Void)?) {
+        guard canCapture else {
+            completion?(.failed("The connection is busy"))
+            return
+        }
         isCapturing = true
         lastError = nil
         listener.requestCapture(depth: selectedDepth.rawValue,
@@ -334,15 +352,20 @@ final class ScreenshotModuleModel: ObservableObject {
                     format: delivery.format, transferMs: delivery.transferMs,
                     wireBytes: delivery.wireBytes)
                 self.receive(record)
-                if self.autoCopy {
+                if forcingClipboard || self.autoCopy {
                     self.copyToPasteboard(record)
                 }
+                var savedTo: URL?
                 if self.autoSave {
-                    self.lastError = self.write(record,
-                                                to: self.saveDirectory)
+                    self.lastError = self.write(record, to: self.saveDirectory,
+                                                savedTo: &savedTo)
                 }
+                completion?(.copied(width: record.width, height: record.height,
+                                    depth: record.format.depth,
+                                    savedAs: savedTo?.lastPathComponent))
             case .failure(let failure):
                 self.lastError = failure.message
+                completion?(.failed(failure.message))
             }
         }
     }

@@ -35,6 +35,21 @@ final class CaptureNotifier: NSObject, UNUserNotificationCenterDelegate {
                                          content: content, trigger: nil))
     }
 
+    /// Announce a host-initiated menu capture. No attachment and no
+    /// click-to-open: the image is already on the clipboard, which is where
+    /// the person asked for it — the banner only has to confirm.
+    func announce(outcome: QuickCaptureOutcome) {
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        requestAuthorizationIfNeeded(center)
+
+        let content = UNMutableNotificationContent()
+        content.title = outcome.title
+        content.body = outcome.body
+        center.add(UNNotificationRequest(identifier: UUID().uuidString,
+                                         content: content, trigger: nil))
+    }
+
     private func requestAuthorizationIfNeeded(_ center: UNUserNotificationCenter) {
         guard !authorizationAsked else { return }
         authorizationAsked = true
