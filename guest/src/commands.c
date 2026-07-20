@@ -11,6 +11,7 @@
 #include "json.h"
 #include "prefs.h"
 #include "screenshot.h"
+#include "vprobe.h"
 
 const char *const kGestaltFullGroups[] = {
     "cpu", "memory", "os", "network", "hw", NULL
@@ -389,6 +390,33 @@ static void run_screenshot(const char *request_json, long id,
     (void)pos;
 }
 
+static void run_vprobe(long id, char *out, long cap)
+{
+    VProbeRow rows[20];
+    char err[96];
+    int n = now_vprobe_run(rows, 20, err, sizeof err);
+    long pos;
+    int i;
+
+    if (n < 0) {
+        snprintf(out, cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+                 "\"error\":{\"code\":\"vprobe-failed\","
+                 "\"message\":\"%s\"}}", id, err);
+        return;
+    }
+    pos = snprintf(out, cap,
+                   "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                   "\"output\":{\"vprobe\":[", id);
+    for (i = 0; i < n; ++i) {
+        pos += snprintf(out + pos, cap - pos, "[\"%s\",\"%s\"]%s",
+                        rows[i].label, rows[i].value,
+                        i + 1 < n ? "," : "");
+    }
+    pos += snprintf(out + pos, cap - pos, "]}}");
+    (void)pos;
+}
+
 void now_command_run(const char *name, const char *request_json, long id,
                      char *out, long cap)
 {
@@ -398,6 +426,10 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "screenshot") == 0) {
         run_screenshot(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "vprobe") == 0) {
+        run_vprobe(id, out, cap);
         return;
     }
     snprintf(out, cap,

@@ -579,6 +579,18 @@ components:
           minItems: 2
           maxItems: 2
           items: { type: string }
+    vprobe:
+      description: >
+        Measure the guest's VRAM read cost by access method: raw
+        framebuffer reads at 8/16/32/64-bit widths against the CopyBits
+        baseline, reread caching, partial-read linearity, and pixel
+        fidelity. A measurement surface for streaming work; the ~3 s run
+        wants a still screen.
+      args: {}
+      output:
+        type: object
+        properties:
+          vprobe: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
     screenshot:
       description: >
         Capture the guest's screen. Slice one: the guest captures, encodes a

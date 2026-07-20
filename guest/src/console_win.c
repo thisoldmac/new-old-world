@@ -9,6 +9,7 @@
 #include "json.h"
 #include "prefs.h"
 #include "screenshot.h"
+#include "vprobe.h"
 
 enum {
     kMaxLines = 200,
@@ -118,6 +119,13 @@ static void help_for(const char *name)
         append_line("  measures capture+encode without writing a file.");
         append_line("  --bands N (2..32) captures in N banded CopyBits");
         append_line("  calls and reports the per-band cost spread.");
+    } else if (strcmp(name, "vprobe") == 0) {
+        append_line("vprobe - measure VRAM read cost by method");
+        append_line("  Usage: vprobe");
+        append_line("  Times raw framebuffer reads (8/16/32/64-bit) against");
+        append_line("  the CopyBits baseline, checks reread caching, partial-");
+        append_line("  read scaling, and pixel fidelity. Takes ~3 seconds;");
+        append_line("  the screen should be still during the run.");
     } else if (strcmp(name, "gestalt") == 0) {
         append_line("gestalt - report this Mac's identity");
         append_line("  Usage: gestalt [group] [--save]");
@@ -141,6 +149,7 @@ static void help_list(void)
     append_line("  gestalt     report this Mac (add a group or --full)");
     append_line("  screenshot  capture the screen (--depth N, --bands N,");
     append_line("              --no-save)");
+    append_line("  vprobe      measure VRAM read cost by method");
     append_line("  help        show this list (\"help <cmd>\" for details)");
     append_line("  clear       clear the console scrollback");
     append_line("Add --help or -h to any command for details.");
@@ -392,6 +401,24 @@ static void run_command(const char *input)
     }
     if (strcmp(name, "screenshot") == 0) {
         run_screenshot_local(depth_flag, bands_flag, no_save);
+        return;
+    }
+    if (strcmp(name, "vprobe") == 0) {
+        VProbeRow rows[20];
+        char verr[96];
+        int vn = now_vprobe_run(rows, 20, verr, sizeof verr);
+        int vi;
+
+        if (vn < 0) {
+            snprintf(line, sizeof line, "vprobe: %.80s", verr);
+            append_line(line);
+            return;
+        }
+        for (vi = 0; vi < vn; ++vi) {
+            snprintf(line, sizeof line, "  %-16s %s",
+                     rows[vi].label, rows[vi].value);
+            append_line(line);
+        }
         return;
     }
     now_command_run(name, NULL, 0, result, sizeof result);
