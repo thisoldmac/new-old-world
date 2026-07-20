@@ -453,38 +453,113 @@ static int full_path_of_folder(const FSSpec *spec, char *out, long cap)
     return 1;
 }
 
-int now_files_choose_root(void)
+/* Pulls an FSSpec out of a Nav reply. Nav hands back different desc
+   types depending on the system and CarbonLib version - an FSSpec, an
+   alias, or (with HFS+ APIs present) an FSRef - so try each rather than
+   assuming the one that happened to work on the machine in front of us. */
+static int spec_from_nav(const NavReplyRecord *reply, FSSpec *spec,
+                         char *why, long why_cap)
+{
+    AEDesc desc;
+    AEDesc coerced;
+    OSErr err;
+
+    err = AEGetNthDesc(&reply->selection, 1, typeWildCard, NULL, &desc);
+    if (err != noErr) {
+        snprintf(why, (size_t)why_cap, "Nav returned no selection (%d)",
+                 (int)err);
+        return 0;
+    }
+
+    if (desc.descriptorType == typeFSS) {
+        err = AEGetDescData(&desc, spec, sizeof *spec);
+        AEDisposeDesc(&desc);
+        if (err != noErr) {
+            snprintf(why, (size_t)why_cap, "could not read the FSSpec (%d)",
+                     (int)err);
+            return 0;
+        }
+        return 1;
+    }
+
+    if (desc.descriptorType == typeFSRef) {
+        FSRef ref;
+
+        err = AEGetDescData(&desc, &ref, sizeof ref);
+        AEDisposeDesc(&desc);
+        if (err == noErr) {
+            err = FSGetCatalogInfo(&ref, kFSCatInfoNone, NULL, NULL,
+                                   spec, NULL);
+        }
+        if (err != noErr) {
+            snprintf(why, (size_t)why_cap, "could not read the FSRef (%d)",
+                     (int)err);
+            return 0;
+        }
+        return 1;
+    }
+
+    /* Aliases (and anything else) coerce to an FSSpec. */
+    err = AECoerceDesc(&desc, typeFSS, &coerced);
+    AEDisposeDesc(&desc);
+    if (err != noErr) {
+        snprintf(why, (size_t)why_cap, "unexpected Nav reply type (%d)",
+                 (int)err);
+        return 0;
+    }
+    err = AEGetDescData(&coerced, spec, sizeof *spec);
+    AEDisposeDesc(&coerced);
+    if (err != noErr) {
+        snprintf(why, (size_t)why_cap, "could not read the folder (%d)",
+                 (int)err);
+        return 0;
+    }
+    return 1;
+}
+
+int now_files_choose_root(char *why, long why_cap)
 {
     NavDialogOptions options;
     NavReplyRecord reply;
-    AEKeyword keyword;
-    DescType returned_type;
-    Size actual;
     FSSpec spec;
     char full[512];
     NowPrefs prefs;
-    int changed = 0;
+    OSErr err;
 
+    why[0] = '\0';
     if (NavGetDefaultDialogOptions(&options) != noErr) {
-        return 0;
+        snprintf(why, (size_t)why_cap, "Navigation Services is unavailable");
+        return -1;
     }
     CopyCStringToPascal("Choose the folder NOW shares with the host",
                         options.message);
     if (NavChooseFolder(NULL, &reply, &options, NULL, NULL, NULL) != noErr
         || !reply.validRecord) {
-        return 0;
+        return 0;                     /* cancelled */
     }
-    changed = -1;                     /* chose something, saved nothing */
-    if (AEGetNthPtr(&reply.selection, 1, typeFSS, &keyword, &returned_type,
-                    &spec, sizeof spec, &actual) == noErr
-        && full_path_of_folder(&spec, full, sizeof full)
-        && strlen(full) < sizeof prefs.share_root) {
-        now_prefs_load(&prefs);
-        strcpy(prefs.share_root, full);
-        changed = now_prefs_save(&prefs) == noErr ? 1 : -1;
+    if (!spec_from_nav(&reply, &spec, why, why_cap)) {
+        NavDisposeReply(&reply);
+        return -1;
     }
     NavDisposeReply(&reply);
-    return changed;
+
+    if (!full_path_of_folder(&spec, full, sizeof full)) {
+        snprintf(why, (size_t)why_cap, "could not build that folder's path");
+        return -1;
+    }
+    if (strlen(full) >= sizeof prefs.share_root) {
+        snprintf(why, (size_t)why_cap, "that path is too long to save");
+        return -1;
+    }
+    now_prefs_load(&prefs);
+    strcpy(prefs.share_root, full);
+    err = now_prefs_save(&prefs);
+    if (err != noErr) {
+        snprintf(why, (size_t)why_cap, "could not write preferences (%d)",
+                 (int)err);
+        return -1;
+    }
+    return 1;
 }
 
 /* --- the sharing dialog -------------------------------------------------
@@ -546,14 +621,19 @@ void now_files_sharing_dialog(void)
         ModalDialog(NULL, &hit);
         switch (hit) {
         case kSharingChooseItem: {
-            int rc = now_files_choose_root();
+            char why[128];
+            int rc = now_files_choose_root(why, sizeof why);
 
             if (rc > 0) {
                 sharing_set_root_text(dialog);
-            } else if (rc < 0) {
                 sharing_set_note(dialog,
-                                 "That folder could not be saved as the "
-                                 "share.");
+                                 "Nothing outside it is reachable over "
+                                 "the wire.");
+            } else if (rc < 0) {
+                char note[160];
+
+                snprintf(note, sizeof note, "Not shared: %.120s", why);
+                sharing_set_note(dialog, note);
             }
             break;
         }

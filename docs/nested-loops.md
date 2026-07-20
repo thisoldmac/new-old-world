@@ -26,13 +26,19 @@ permanent one:
 Only `stopStream` has a fallback timer.
 
 **C — session teardown leaks pending work.** When the 75-second idle
-timeout finally closes a stalled session, `failPendingCommands` fires
-console commands' completions, but `pendingCapture`, `pendingFile`, and
-`pendingListings` are dropped on the floor without ever being called.
-The Screenshots panel's `isCapturing` therefore stays true forever —
-the button reads "Capturing…" and `canCapture` stays false even after
-the guest reconnects. **This is the part that outlives the dialog**, and
-the reason it looks like a wire bug rather than a UI stall.
+timeout finally closes a stalled session, the close path fails console
+commands and the pending capture, but `pendingFile` and
+`pendingListings` are dropped without ever being called — a Files
+download or listing started against a stalled guest never settles at
+all, and its UI stays busy even after the guest reconnects.
+
+> Corrected 2026-07-20 during implementation: an earlier draft of this
+> document claimed the pending *capture* leaked too. It does not — the
+> close path calls `deliverCapture(.failure(…))`. A capture against a
+> modal guest hangs for the full 75-second idle timeout and then fails,
+> which is bad but bounded; files and listings are the unbounded case.
+> The fix is the same either way, and the 75-second wait with a dead
+> Cancel button is the symptom that was actually reported.
 
 **D — Cancel is unsendable before the transfer starts.**
 `Session.cancelCapture()` guards on `captureBegin != nil`. A guest stuck
@@ -123,7 +129,8 @@ the cases we do not.
    didn't answer; it may be showing a dialog" — which is both true and
    actionable.
 7. **Fail pending work on teardown.** `failPendingCommands` becomes
-   `failAllPending`, covering captures, files, and listings. No
+   `failAllPending`, covering captures, files, and listings in one
+   place. No
    completion may be dropped: a leaked completion is a permanently stuck
    UI.
 8. **Cancel means abandon.** Cancel should settle the pending request

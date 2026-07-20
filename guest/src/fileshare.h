@@ -73,8 +73,9 @@ void now_files_describe(const FileEntry *entry, char *out, long cap);
 void now_files_root_name(char *out, long cap);
 
 /* NavChooseFolder; persists the chosen root in prefs. 1 = changed,
-   0 = cancelled, -1 = a folder was chosen but could not be saved. */
-int now_files_choose_root(void);
+   0 = cancelled, -1 = a folder was chosen but could not be saved (why
+   is written into `why`, which the dialog shows rather than guessing). */
+int now_files_choose_root(char *why, long why_cap);
 
 /* File > File Sharing...: shows the current root and offers to change
    it. The host sees only what is inside. */

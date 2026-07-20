@@ -183,6 +183,10 @@ final class GuestListener: ObservableObject {
         let id = nextCommandId
         nextCommandId += 1
         pendingListings[id] = completion
+        armWatchdog(id: id, seconds: 15) { [weak self] reason in
+            self?.pendingListings.removeValue(forKey: id)?(
+                .failure(.init(code: "timeout", message: reason)))
+        }
         session.sendFileList(id: id, path: path, cursor: cursor)
         // A guest that answers neither listing nor refusal (a malformed
         // reply its decoder dropped, a wedge) must not leave the browser
@@ -210,6 +214,11 @@ final class GuestListener: ObservableObject {
         let id = nextCommandId
         nextCommandId += 1
         pendingFile = completion
+        fileWatchdogId = id
+        armWatchdog(id: id, seconds: 20) { [weak self] reason in
+            self?.deliverFile(.failure(.init(code: "timeout",
+                                             message: reason)))
+        }
         session.sendFileGet(id: id, path: path, container: container)
     }
 
@@ -219,18 +228,74 @@ final class GuestListener: ObservableObject {
         session?.cancelFile()
     }
 
+    /// Requests die of silence, not of duration: any evidence of life
+    /// (an answer, a transfer's begin, a chunk of bulk) resets the clock,
+    /// so a slow transfer survives and a wedged guest does not.
+    private struct Watchdog {
+        var lastActivity: Date
+        var seconds: TimeInterval
+        var task: Task<Void, Never>?
+    }
+    private var watchdogs: [Int: Watchdog] = [:]
+
+    private func armWatchdog(id: Int, seconds: TimeInterval,
+                             expire: @escaping (String) -> Void) {
+        clearWatchdog(id)
+        watchdogs[id] = Watchdog(lastActivity: Date(), seconds: seconds,
+                                 task: nil)
+        watchdogs[id]?.task = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self, let dog = self.watchdogs[id] else { return }
+                let remaining = dog.lastActivity
+                    .addingTimeInterval(dog.seconds).timeIntervalSinceNow
+                if remaining <= 0 {
+                    self.watchdogs[id] = nil
+                    expire(self.silenceReason())
+                    return
+                }
+                try? await Task.sleep(
+                    nanoseconds: UInt64(remaining * 1_000_000_000))
+            }
+        }
+    }
+
+    private func touchWatchdogs() {
+        let now = Date()
+        for id in watchdogs.keys {
+            watchdogs[id]?.lastActivity = now
+        }
+    }
+
+    private func clearWatchdog(_ id: Int) {
+        watchdogs.removeValue(forKey: id)?.task?.cancel()
+    }
+
+    /// Distinguishes "busy" from "gone" using heartbeat freshness — the
+    /// two cases a human would act on differently.
+    private func silenceReason() -> String {
+        let quiet = health.map {
+            Date().timeIntervalSince($0.lastTraffic)
+        } ?? .greatestFiniteMagnitude
+        return quiet > 20
+            ? "The classic Mac stopped answering — it may be showing a "
+              + "dialog or otherwise busy."
+            : "The classic Mac did not answer in time."
+    }
+
     private var pendingListings:
         [Int: (Result<FileListing, FileFailure>) -> Void] = [:]
     private var pendingFile:
         ((Result<FileDelivery, FileFailure>) -> Void)?
 
     fileprivate func resolveListing(_ listing: FileListing) {
+        clearWatchdog(listing.id)
         pendingListings.removeValue(forKey: listing.id)?(.success(listing))
     }
 
     fileprivate func failFile(_ refuse: FileRefuse) {
         let failure = FileFailure(code: refuse.code,
                                   message: refuse.reason ?? refuse.code)
+        clearWatchdog(refuse.id)
         if let completion = pendingListings.removeValue(forKey: refuse.id) {
             completion(.failure(failure))
             return
@@ -245,6 +310,8 @@ final class GuestListener: ObservableObject {
         _ result: Result<FileDelivery, FileFailure>) {
         let completion = pendingFile
         pendingFile = nil
+        if let id = fileWatchdogId { clearWatchdog(id) }
+        fileWatchdogId = nil
         captureProgress = nil
         completion?(result)
     }
@@ -261,6 +328,10 @@ final class GuestListener: ObservableObject {
         let id = nextCommandId
         nextCommandId += 1
         pendingCapture = completion
+        captureWatchdogId = id
+        armWatchdog(id: id, seconds: 20) { [weak self] reason in
+            self?.deliverCapture(.failure(.init(message: reason)))
+        }
         session.sendCaptureRequest(id: id, depth: depth, tuning: tuning)
     }
 
@@ -372,17 +443,22 @@ final class GuestListener: ObservableObject {
 
     private var pendingCapture:
         ((Result<CaptureDelivery, CaptureFailure>) -> Void)?
+    private var captureWatchdogId: Int?
+    private var fileWatchdogId: Int?
 
     fileprivate func deliverCapture(
         _ result: Result<CaptureDelivery, CaptureFailure>) {
         let completion = pendingCapture
         pendingCapture = nil
+        if let id = captureWatchdogId { clearWatchdog(id) }
+        captureWatchdogId = nil
         captureProgress = nil
         completion?(result)
     }
 
     fileprivate func noteCaptureProgress(_ progress: CaptureProgress?) {
         captureProgress = progress
+        touchWatchdogs()              /* bytes are evidence of life */
     }
 
     private func resolveCommand(_ result: CommandResult) {
@@ -391,14 +467,32 @@ final class GuestListener: ObservableObject {
         }
     }
 
-    private func failPendingCommands(_ reason: String) {
-        let pending = pendingCommands
+    /// Settles everything outstanding. The invariant: a stored completion
+    /// is resolved or failed, never dropped — a dropped completion is a
+    /// UI that stays busy forever.
+    private func failAllPending(_ reason: String) {
+        let commands = pendingCommands
         pendingCommands = [:]
-        for (id, completion) in pending {
+        for (id, completion) in commands {
             completion(CommandResult(
                 id: id, ok: false, output: nil,
                 error: .init(code: "disconnected", message: reason)))
         }
+        let listings = pendingListings
+        pendingListings = [:]
+        for (_, completion) in listings {
+            completion(.failure(.init(code: "disconnected",
+                                      message: reason)))
+        }
+        for (_, dog) in watchdogs {
+            dog.task?.cancel()
+        }
+        watchdogs = [:]
+        if let file = pendingFile {
+            pendingFile = nil
+            file(.failure(.init(code: "disconnected", message: reason)))
+        }
+        deliverCapture(.failure(.init(message: reason)))
     }
 
     private func listenerStateChanged(_ nwState: NWListener.State) {
@@ -468,8 +562,7 @@ final class GuestListener: ObservableObject {
                 self.streamSessionClosed()
                 self.session = nil
                 self.health = nil
-                self.failPendingCommands(reason)
-                self.deliverCapture(.failure(.init(message: reason)))
+                self.failAllPending(reason)
                 self.lastDisconnect = reason
                 if self.listener != nil {
                     self.state = .listening(port: self.boundPort ?? 0)
