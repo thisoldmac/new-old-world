@@ -13,6 +13,12 @@
 void now_command_run(const char *name, const char *request_json, long id,
                      char *out, long cap);
 
+/* --- machine identity --------------------------------------------------- */
+
+/* Writes this machine's name — what the other side calls it on screen —
+   into out (NUL-terminated, at most cap - 1 characters). Never empty. */
+void now_machine_name(char *out, long cap);
+
 /* --- gestalt, as structured rows (the data layer both paths share) ------ */
 
 #define kGestaltMaxRows 48

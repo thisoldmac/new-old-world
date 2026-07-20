@@ -309,12 +309,19 @@ static void service_connecting(void)
 
 static void send_hello(void)
 {
-    char json[256];
+    char json[512];
+    char name[64];
+    char esc[256];
 
+    /* This machine's name, not the product's: the other side puts it on
+       screen ("Connected: Quadra 950"), and the product name is the one
+       answer every machine running NOW would give. */
+    now_machine_name(name, sizeof name);
+    now_json_escape(name, esc, sizeof esc);
     snprintf(json, sizeof json,
              "{\"type\":\"hello\",\"contract\":%d,\"side\":\"guest\","
              "\"version\":\"%s\",\"name\":\"%s\",\"os\":\"9\",\"chunk\":%d}",
-             kNowContractRevision, PRODUCT_VERSION, PRODUCT_DISPLAY_NAME,
+             kNowContractRevision, PRODUCT_VERSION, esc,
              kNowDefaultChunk);
     if (!send_control(json)) {
         fail("Sending hello failed");

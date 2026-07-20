@@ -119,6 +119,43 @@ static void machine_model(char *out, long cap)
     }
 }
 
+/* What to call this machine on the other side's screen.
+
+   The name its owner gave it wins: the File Sharing (Sharing Setup, before
+   9) computer name, which the System keeps in 'STR ' -16413 — the same
+   string the Chooser and the network show. A machine that was never given
+   one degrades to the model, which at least tells a Quadra from a
+   PowerBook. The product name is never an answer: every machine running
+   NOW would give the same one, which is how both ends came to be called
+   "New Old World".
+
+   Two traps, both of which read as working code:
+   -16096 is the adjacent resource and a tempting typo, but it is the
+   *owner* name — the person, not the machine. And the lookup is scoped to
+   the System file with UseResFile(0), because an unscoped GetString starts
+   at the current resource file: our own fork answers first if it ever
+   carries that id. */
+enum { kComputerNameID = -16413 };
+
+void now_machine_name(char *out, long cap)
+{
+    short saved = CurResFile();
+    StringHandle sh;
+    long n;
+
+    UseResFile(0);
+    sh = GetString(kComputerNameID);
+    UseResFile(saved);
+
+    if (sh != NULL && *sh != NULL && (*sh)[0] > 0) {
+        n = (*sh)[0] < cap - 1 ? (*sh)[0] : cap - 1;
+        memcpy(out, *sh + 1, (size_t)n);
+        out[n] = '\0';
+        return;
+    }
+    machine_model(out, cap);
+}
+
 /* --- gather ------------------------------------------------------------- */
 
 static void add_row(GestaltRow *rows, int *n, int max, const char *group,
