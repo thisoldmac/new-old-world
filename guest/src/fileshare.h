@@ -63,6 +63,8 @@ int now_files_list(const char *rel_path, short start,
    the whole artifact). */
 int now_files_stage(const char *rel_path, FileContainer container,
                     FileStage *stage);
+int now_files_stage_spec(const FSSpec *from, FileContainer container,
+                         FileStage *stage);
 void now_files_stage_dispose(FileStage *stage);
 
 /* One-line description of an entry as both consoles show it: "folder",
@@ -143,6 +145,10 @@ void now_files_root_name(char *out, long cap);
    0 = cancelled, -1 = a folder was chosen but could not be saved (why
    is written into `why`, which the dialog shows rather than guessing). */
 int now_files_choose_root(char *why, long why_cap);
+
+/* NavGetFile, for sending a file the human picks. 1 = chosen (spec
+   written), 0 = cancelled, -1 = failed (why explains). */
+int now_files_pick_file(FSSpec *out, char *why, long why_cap);
 
 
 #endif /* NOW_FILESHARE_H */

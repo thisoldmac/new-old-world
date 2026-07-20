@@ -78,6 +78,10 @@ long conn_last_rtt_ms(void);
    or timed out — arrives later through the shot-note hook. */
 int now_wire_offer_shot(char *err, long cap);
 
+/* Offers a file to the host: offer, then the bytes if it says yes.
+   0 = under way (the panel narrates the rest), -1 = err says why. */
+int now_wire_send_file(const FSSpec *spec, char *err, long cap);
+
 /* One-line progress reports for push transfers ("Sent to host (312 ms)").
    The Screenshots panel registers itself here; a NULL fn unhooks. */
 typedef void (*ConnShotNote)(const char *line);

@@ -1409,6 +1409,187 @@ static void finish_put(const char *reply)
     note_shot(note);
 }
 
+/* --- sending a file to the host -----------------------------------------
+   The mirror image of receiving one, and deliberately the same shape:
+   we offer, the host answers, and only then do bytes move. The guest
+   sends what a human picked in a standard dialog, so the file need not
+   be anywhere near the share — sending is not browsing. */
+
+enum { kSendTimeoutTicks = 60 * 20 };
+
+static struct {
+    Boolean active;                   /* offered; waiting for an answer */
+    long id;
+    FileStage stage;
+    long chunk;
+    short pace_ms;
+    unsigned long deadline;
+} g_send;
+
+static void send_cleanup(void)
+{
+    now_files_stage_dispose(&g_send.stage);
+    g_send.active = false;
+}
+
+int now_wire_send_file(const FSSpec *spec, char *err, long cap)
+{
+    NowPrefs prefs;
+    FileStage stage;
+    char json[512];
+    char peer[40];
+    char line[96];
+    int rc;
+
+    if (g.phase != kConnConnected) {
+        snprintf(err, (size_t)cap, "Not connected");
+        return -1;
+    }
+    if (g_stream.active || g_xfer.active || g_offer.active
+        || g_send.active || g_put.active) {
+        snprintf(err, (size_t)cap, "A transfer is already in flight");
+        return -1;
+    }
+    rc = now_files_stage_spec(spec, kContainerAuto, &stage);
+    if (rc == kFilesTooBig) {
+        snprintf(err, (size_t)cap, "Not enough memory to send that file");
+        return -1;
+    }
+    if (rc == kFilesNotAFolder) {
+        snprintf(err, (size_t)cap, "Folders cannot be sent yet");
+        return -1;
+    }
+    if (rc != kFilesOK) {
+        snprintf(err, (size_t)cap, "Could not read that file");
+        return -1;
+    }
+
+    now_prefs_load(&prefs);
+    g_send.chunk = (long)prefs.chunk_kb * 1024;
+    if (g_send.chunk < 1024 || g_send.chunk > kNowMaxPayload) {
+        g_send.chunk = 8192;
+    }
+    g_send.pace_ms = prefs.pace_ms;
+    g_send.stage = stage;
+    ++g.offer_seq;
+    g_send.id = g.offer_seq;
+    {
+        char type[8], creator[8];
+        char esc_name[200], esc_type[40], esc_creator[40];
+
+        memcpy(type, &stage.file_type, 4);
+        type[4] = '\0';
+        memcpy(creator, &stage.creator, 4);
+        creator[4] = '\0';
+        now_json_escape(stage.name, esc_name, sizeof esc_name);
+        now_json_escape(type, esc_type, sizeof esc_type);
+        now_json_escape(creator, esc_creator, sizeof esc_creator);
+        snprintf(json, sizeof json,
+                 "{\"type\":\"file.offer\",\"id\":%ld,\"name\":\"%s\","
+                 "\"container\":\"%s\",\"bytes\":%ld,"
+                 "\"fileType\":\"%s\",\"creator\":\"%s\","
+                 "\"modified\":%lu}",
+                 g_send.id, esc_name,
+                 stage.container == kContainerMacBinary ? "macbinary" : "data",
+                 stage.total_bytes, esc_type, esc_creator, stage.modified);
+    }
+    if (!send_control(json)) {
+        send_cleanup();
+        snprintf(err, (size_t)cap, "Connection lost");
+        return -1;
+    }
+    g_send.active = true;
+    g_send.deadline = TickCount() + kSendTimeoutTicks;
+    conn_peer_label(peer, sizeof peer);
+    snprintf(line, sizeof line, "Offering %.31s to %.20s...",
+             stage.name, peer);
+    note_shot(line);
+    return 0;
+}
+
+/* The host said yes: announce the transfer, then hand the staged bytes
+   to the same machine a pull uses. */
+static void send_accepted(const char *reply)
+{
+    char json[512];
+    unsigned short xfer;
+
+    if (!g_send.active || now_json_find_int(reply, "id", -1) != g_send.id) {
+        return;
+    }
+    g_send.active = false;
+    xfer = next_xfer();
+    snprintf(json, sizeof json,
+             "{\"type\":\"file.begin\",\"id\":%ld,\"transfer\":%u,"
+             "\"bytes\":%ld}",
+             g_send.id, xfer, g_send.stage.total_bytes);
+    if (!send_control(json)) {
+        send_cleanup();
+        return;
+    }
+    if (!arm_blob_transfer(g_send.id, xfer, g_send.stage.blob,
+                           g_send.stage.total_bytes, g_send.chunk,
+                           g_send.pace_ms, kXferFile)) {
+        send_cleanup();
+        note_shot("Could not start the transfer");
+        return;
+    }
+    g_send.stage.blob = NULL;         /* the transfer owns it now */
+    send_cleanup();
+}
+
+static void send_refused(const char *reply)
+{
+    char reason[64];
+    char line[96];
+    char peer[40];
+
+    if (!g_send.active || now_json_find_int(reply, "id", -1) != g_send.id) {
+        return;
+    }
+    send_cleanup();
+    conn_peer_label(peer, sizeof peer);
+    if (now_json_find_string(reply, "reason", reason, sizeof reason)) {
+        snprintf(line, sizeof line, "%.30s declined: %.50s", peer, reason);
+    } else {
+        snprintf(line, sizeof line, "%s declined the file", peer);
+    }
+    note_shot(line);
+}
+
+/* The host's receipt. A send is not finished until the file exists at
+   the other end, so this — not the last byte — is what we report. */
+static void send_done(const char *reply)
+{
+    char reason[80];
+    char line[112];
+    char peer[40];
+
+    conn_peer_label(peer, sizeof peer);
+    if (now_json_find_int(reply, "ok", 0)) {
+        snprintf(line, sizeof line, "Sent to %s", peer);
+    } else if (now_json_find_string(reply, "reason", reason, sizeof reason)) {
+        snprintf(line, sizeof line, "%.30s could not save it: %.60s",
+                 peer, reason);
+    } else {
+        snprintf(line, sizeof line, "%s could not save it", peer);
+    }
+    note_shot(line);
+}
+
+static void service_send(void)
+{
+    if (g_send.active && TickCount() > g_send.deadline) {
+        char peer[40];
+        char line[96];
+
+        send_cleanup();
+        conn_peer_label(peer, sizeof peer);
+        snprintf(line, sizeof line, "%s did not answer", peer);
+        note_shot(line);
+    }
+}
+
 static void serve_file_list(const char *request)
 {
     enum { kPage = 16 };              /* control frames cap at 4 KB */
@@ -2285,6 +2466,18 @@ static int handle_frame(const char *reply)
         serve_file_offer(reply);
         return 1;
     }
+    if (now_json_type_is(reply, "file.accept")) {
+        send_accepted(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "file.refuse")) {
+        send_refused(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "file.done")) {
+        send_done(reply);
+        return 1;
+    }
     if (now_json_type_is(reply, "file.begin")) {
         return 1;                     /* announced; bytes follow on bulk */
     }
@@ -2511,6 +2704,7 @@ void conn_service(void)
         service_connected_io();
         if (g.phase == kConnConnected) {
             service_offer();
+    service_send();
         }
         if (g.phase == kConnConnected) {
             service_stream();

@@ -122,8 +122,21 @@ final class FilesModuleModel: ObservableObject {
     /// Inbound text conversion is destructive in a way downloading is
     /// not — a file that only looked like text comes out changed — so it
     /// can be switched off.
+    /// What this Mac shares back. The guest reaches it on its own
+    /// initiative, so it lives beside — not inside — the folder we
+    /// download into: one is what they may take, the other is where
+    /// what we take lands.
+    @Published var shareDirectory: URL {
+        didSet {
+            listener.share.root = shareDirectory
+        }
+    }
+
     @Published var convertText: Bool {
-        didSet { defaults.set(convertText, forKey: Keys.convertText) }
+        didSet {
+            defaults.set(convertText, forKey: Keys.convertText)
+            listener.convertServedText = convertText
+        }
     }
 
     struct TransferState: Equatable {
@@ -176,11 +189,13 @@ final class FilesModuleModel: ObservableObject {
         self.defaults = defaults
         self.convertText =
             defaults.object(forKey: Keys.convertText) as? Bool ?? true
+        self.shareDirectory = listener.share.root
         let stored = defaults.string(forKey: Keys.downloads)
         self.downloadDirectory = stored.map { URL(fileURLWithPath: $0) }
             ?? FileManager.default.urls(for: .downloadsDirectory,
                                         in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory())
+        listener.convertServedText = convertText
         progressWatch = listener.$captureProgress
             .receive(on: DispatchQueue.main)
             .sink { [weak self] progress in
