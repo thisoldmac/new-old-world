@@ -222,10 +222,13 @@ final class GuestListener: ObservableObject {
         session.sendFileGet(id: id, path: path, container: container)
     }
 
-    /// Abandons the file transfer in flight; the guest drains to the
-    /// frame boundary and ends it, same as a capture cancel.
+    /// Abandons the file transfer; settles locally for the same reason
+    /// cancelCapture does.
     func cancelFile() {
+        guard pendingFile != nil else { return }
         session?.cancelFile()
+        deliverFile(.failure(.init(code: "cancelled",
+                                   message: "Download cancelled")))
     }
 
     /// Requests die of silence, not of duration: any evidence of life
@@ -263,6 +266,29 @@ final class GuestListener: ObservableObject {
         let now = Date()
         for id in watchdogs.keys {
             watchdogs[id]?.lastActivity = now
+        }
+    }
+
+    /// Test seam: expire every armed watchdog immediately, so a test can
+    /// exercise the timeout path without sleeping through it.
+    func expireWatchdogsForTesting() {
+        for id in watchdogs.keys {
+            watchdogs[id]?.lastActivity = Date(timeIntervalSince1970: 0)
+            watchdogs[id]?.task?.cancel()
+            watchdogs[id]?.task = nil
+        }
+        let expiring = watchdogs
+        watchdogs = [:]
+        for (id, _) in expiring {
+            if let completion = pendingListings.removeValue(forKey: id) {
+                completion(.failure(.init(code: "timeout",
+                                          message: silenceReason())))
+            } else if id == fileWatchdogId {
+                deliverFile(.failure(.init(code: "timeout",
+                                           message: silenceReason())))
+            } else if id == captureWatchdogId {
+                deliverCapture(.failure(.init(message: silenceReason())))
+            }
         }
     }
 
@@ -428,10 +454,14 @@ final class GuestListener: ObservableObject {
 
     private var stopFallback: Task<Void, Never>?
 
-    /// Abandons the transfer in flight. The guest answers with a failed
-    /// capture.end, which is what actually settles the pending completion.
+    /// Abandons the capture. Cancel means "stop waiting", so it settles
+    /// the request locally whether or not a transfer ever started — a
+    /// guest stuck before capture.begin has nothing to cancel on the
+    /// wire, and that must not leave the button dead.
     func cancelCapture() {
+        guard pendingCapture != nil else { return }
         session?.cancelCapture()
+        deliverCapture(.failure(.init(message: "Capture cancelled")))
     }
 
     struct CaptureDelivery {
@@ -621,6 +651,11 @@ final class Session {
     private var fileBegin: FileBegin?
     private var fileBuffer: [UInt8] = []
     private var fileStart = Date()
+    /// A transfer the host has abandoned. The guest drains to its frame
+    /// boundary before stopping, so bytes keep arriving for a transfer
+    /// nothing is waiting on; swallow them rather than calling it a
+    /// protocol error and closing a healthy session.
+    private var discardingTransfer: Int?
     private var health: GuestListener.SessionHealth?
 
     private let decoder = FrameDecoder()
@@ -731,6 +766,10 @@ final class Session {
             case .control:
                 handleControl(frame.payload)
             case .bulk:
+                if let discarding = discardingTransfer,
+                   Int(frame.header.transfer) == discarding {
+                    break
+                }
                 if let begin = fileBegin {
                     fileBuffer.append(contentsOf: frame.payload)
                     onCaptureProgress(.init(received: fileBuffer.count,
@@ -858,6 +897,7 @@ final class Session {
 
     func cancelFile() {
         guard let begin = fileBegin else { return }
+        discardingTransfer = begin.transfer
         send(.fileCancel(FileCancel(transfer: begin.transfer)))
     }
 
@@ -913,6 +953,12 @@ final class Session {
     }
 
     private func finishFile(_ end: FileEnd) {
+        if discardingTransfer == end.transfer {
+            discardingTransfer = nil
+            fileBegin = nil
+            fileBuffer = []
+            return                    /* the host already gave up on it */
+        }
         guard let begin = fileBegin else { return }
         fileBegin = nil
         let bytes = fileBuffer
@@ -938,6 +984,13 @@ final class Session {
     }
 
     private func finishCapture(_ end: CaptureEnd) {
+        if discardingTransfer == end.transfer {
+            discardingTransfer = nil
+            captureBegin = nil
+            captureBuffer = []
+            cancelled = false
+            return                    /* the host already gave up on it */
+        }
         let streaming = streamId != nil && captureBegin?.id == streamId
         let pushed = !streaming && solicitedId == nil
         guard let begin = captureBegin else {
@@ -1061,6 +1114,7 @@ final class Session {
     func cancelCapture() {
         guard let begin = captureBegin else { return }
         cancelled = true
+        discardingTransfer = begin.transfer
         send(.captureCancel(CaptureCancel(transfer: begin.transfer)))
     }
 
