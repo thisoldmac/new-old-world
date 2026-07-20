@@ -524,6 +524,27 @@ static void run_ls(const char *request_json, long id, char *out, long cap)
     snprintf(out + pos, (size_t)(cap - pos), "]}}");
 }
 
+/* putstat: where the last received file's time actually went. Measured
+   where the work happens, since inferring it from the far end of a wire
+   confuses "slow to arrive" with "slow to write". */
+static void run_putstat(long id, char *out, long cap)
+{
+    FileReceiveStats st;
+
+    now_files_receive_stats(&st);
+    snprintf(out, cap,
+             "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+             "\"output\":{\"putstat\":["
+             "[\"Bytes\",\"%ld\"],"
+             "[\"Chunks\",\"%ld\"],"
+             "[\"Writes\",\"%ld\"],"
+             "[\"In FSWrite\",\"%lu ms\"],"
+             "[\"In receive\",\"%lu ms\"]"
+             "]}}",
+             id, st.bytes, st.chunks, st.writes,
+             st.us_write / 1000, st.us_total / 1000);
+}
+
 void now_command_run(const char *name, const char *request_json, long id,
                      char *out, long cap)
 {
@@ -537,6 +558,10 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "vprobe") == 0) {
         run_vprobe(id, out, cap);
+        return;
+    }
+    if (strcmp(name, "putstat") == 0) {
+        run_putstat(id, out, cap);
         return;
     }
     if (strcmp(name, "ls") == 0) {

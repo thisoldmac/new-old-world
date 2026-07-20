@@ -23,7 +23,8 @@ final class ConsoleModel: ObservableObject {
     }
 
     /// Declared commands (contract x-commands) plus console built-ins.
-    static let commands = ["gestalt", "screenshot", "vprobe", "ls"]
+    static let commands = ["gestalt", "screenshot", "vprobe", "ls",
+                           "putstat"]
 
     /// Per-command docs, mirroring the contract's x-commands descriptions.
     /// help and --help render from here — documentation never hits the wire.
@@ -65,6 +66,14 @@ final class ConsoleModel: ObservableObject {
                    "  the root. The root is chosen on that Mac in",
                    "  File > File Sharing...; nothing outside it is",
                    "  reachable. The Files module browses the same share."]),
+        "putstat": .init(
+            summary: "where the last received file spent its time",
+            help: ["putstat — timings from the last file received",
+                   "  Usage: putstat",
+                   "  Reports bytes, chunk and write counts, and the",
+                   "  milliseconds spent inside FSWrite versus the whole",
+                   "  receive path. Measured on that Mac, so it tells",
+                   "  the disk apart from the wire."]),
         "help": .init(
             summary: "show this list (\"help <cmd>\" for details)",
             help: ["help — list commands, or \"help <cmd>\" for one"]),

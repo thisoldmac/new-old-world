@@ -724,6 +724,58 @@ static int resolve_folder_creating(const char *rel, FSSpec *spec,
     return kFilesOK;
 }
 
+/* One page of the wire's worth, so a 32 KB frame becomes one write. */
+enum { kWriteBatch = 32 * 1024 };
+
+static FileReceiveStats g_rx_stats;
+
+void now_files_receive_stats(FileReceiveStats *out)
+{
+    *out = g_rx_stats;
+}
+
+/* Pushes the batch to whichever fork is open. */
+static int flush_batch(FileReceive *rx, short ref)
+{
+    long count = rx->buf_len;
+    UnsignedWide t0, t1;
+    OSErr err;
+
+    if (count <= 0 || ref < 0) {
+        rx->buf_len = 0;
+        return kFilesOK;
+    }
+    Microseconds(&t0);
+    err = FSWrite(ref, &count, rx->buf);
+    Microseconds(&t1);
+    g_rx_stats.us_write += t1.lo - t0.lo;
+    ++g_rx_stats.writes;
+    rx->buf_len = 0;
+    return err == noErr ? kFilesOK : kFilesIOError;
+}
+
+static int batch_write(FileReceive *rx, short ref,
+                       const unsigned char *p, long len)
+{
+    while (len > 0) {
+        long room = kWriteBatch - rx->buf_len;
+        long take = len < room ? len : room;
+
+        memcpy(rx->buf + rx->buf_len, p, (size_t)take);
+        rx->buf_len += take;
+        p += take;
+        len -= take;
+        if (rx->buf_len == kWriteBatch) {
+            int rc = flush_batch(rx, ref);
+
+            if (rc != kFilesOK) {
+                return rc;
+            }
+        }
+    }
+    return kFilesOK;
+}
+
 static void close_forks(FileReceive *rx)
 {
     if (rx->data_ref >= 0) {
@@ -801,6 +853,21 @@ int now_files_receive_begin(const char *rel_path, const char *name,
         FSpDelete(&rx->temp);
         return kFilesIOError;
     }
+    /* Claim the space once. Otherwise every write extends the file and
+       pays for allocation and catalog updates — which is the whole
+       difference between 4 KB/s and the wire's speed. */
+    if (bytes > 0) {
+        SetEOF(rx->data_ref, bytes);
+        SetFPos(rx->data_ref, fsFromStart, 0);
+    }
+    rx->buf = NewPtr(kWriteBatch);
+    if (rx->buf == NULL) {
+        FSClose(rx->data_ref);
+        rx->data_ref = -1;
+        FSpDelete(&rx->temp);
+        return kFilesTooBig;
+    }
+    memset(&g_rx_stats, 0, sizeof g_rx_stats);
 
     rx->active = true;
     rx->container = container;
@@ -817,7 +884,6 @@ static int write_macbinary(FileReceive *rx, const unsigned char *p, long len)
 {
     while (len > 0) {
         long take;
-        long count;
 
         if (rx->header_have < 128) {
             take = 128 - rx->header_have;
@@ -847,8 +913,7 @@ static int write_macbinary(FileReceive *rx, const unsigned char *p, long len)
             if (take > len) {
                 take = len;
             }
-            count = take;
-            if (FSWrite(rx->data_ref, &count, p) != noErr) {
+            if (batch_write(rx, rx->data_ref, p, take) != kFilesOK) {
                 return kFilesIOError;
             }
             rx->mb_data_done += take;
@@ -874,6 +939,11 @@ static int write_macbinary(FileReceive *rx, const unsigned char *p, long len)
         }
 
         if (rx->rsrc_ref < 0) {
+            /* Data fork is finished: flush what is buffered for it
+               before the resource fork starts using the same batch. */
+            if (flush_batch(rx, rx->data_ref) != kFilesOK) {
+                return kFilesIOError;
+            }
             if (FSpOpenRF(&rx->temp, fsWrPerm, &rx->rsrc_ref) != noErr) {
                 return kFilesIOError;
             }
@@ -883,8 +953,7 @@ static int write_macbinary(FileReceive *rx, const unsigned char *p, long len)
             if (take > len) {
                 take = len;
             }
-            count = take;
-            if (FSWrite(rx->rsrc_ref, &count, p) != noErr) {
+            if (batch_write(rx, rx->rsrc_ref, p, take) != kFilesOK) {
                 return kFilesIOError;
             }
             rx->mb_rsrc_done += take;
@@ -899,19 +968,25 @@ static int write_macbinary(FileReceive *rx, const unsigned char *p, long len)
 
 int now_files_receive_chunk(FileReceive *rx, const void *bytes, long len)
 {
-    long count = len;
+    UnsignedWide t0, t1;
+    int rc;
 
     if (!rx->active || len < 0) {
         return kFilesIOError;
     }
+    Microseconds(&t0);
     rx->received += len;
+    ++g_rx_stats.chunks;
+    g_rx_stats.bytes += len;
     if (rx->container == kContainerMacBinary) {
-        return write_macbinary(rx, (const unsigned char *)bytes, len);
+        rc = write_macbinary(rx, (const unsigned char *)bytes, len);
+    } else {
+        rc = batch_write(rx, rx->data_ref, (const unsigned char *)bytes,
+                         len);
     }
-    if (FSWrite(rx->data_ref, &count, bytes) != noErr) {
-        return kFilesIOError;
-    }
-    return kFilesOK;
+    Microseconds(&t1);
+    g_rx_stats.us_total += t1.lo - t0.lo;
+    return rc;
 }
 
 int now_files_receive_finish(FileReceive *rx)
@@ -923,7 +998,23 @@ int now_files_receive_finish(FileReceive *rx)
     if (!rx->active) {
         return kFilesIOError;
     }
+    if (flush_batch(rx, rx->rsrc_ref >= 0 ? rx->rsrc_ref : rx->data_ref)
+        != kFilesOK) {
+        close_forks(rx);
+        rx->active = false;
+        FSpDelete(&rx->temp);
+        return kFilesIOError;
+    }
+    /* The claim was for the announced size; a MacBinary file's data
+       fork is shorter than the stream that carried it. */
+    if (rx->container == kContainerMacBinary && rx->data_ref >= 0) {
+        SetEOF(rx->data_ref, rx->mb_data_len);
+    }
     close_forks(rx);
+    if (rx->buf != NULL) {
+        DisposePtr(rx->buf);
+        rx->buf = NULL;
+    }
     rx->active = false;
 
     if (rx->received != rx->expected) {
@@ -971,6 +1062,10 @@ void now_files_receive_abort(FileReceive *rx)
         return;
     }
     close_forks(rx);
+    if (rx->buf != NULL) {
+        DisposePtr(rx->buf);
+        rx->buf = NULL;
+    }
     FSpDelete(&rx->temp);
     rx->active = false;
 }

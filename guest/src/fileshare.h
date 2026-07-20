@@ -83,6 +83,19 @@ void now_files_describe(const FileEntry *entry, char *out, long cap);
    real one. That matters most here: a half-written application is
    something a human might double-click. */
 
+/* Counters for the receive path, readable with the `putstat` command.
+   Timing where the work actually happens beats inferring it from the
+   far end of a wire. */
+typedef struct {
+    long chunks;                      /* calls into receive_chunk */
+    long writes;                      /* FSWrite calls made */
+    long bytes;
+    unsigned long us_write;           /* time inside FSWrite */
+    unsigned long us_total;
+} FileReceiveStats;
+
+void now_files_receive_stats(FileReceiveStats *out);
+
 typedef struct {
     Boolean active;
     FSSpec temp;                      /* what we are writing */
@@ -97,6 +110,11 @@ typedef struct {
     long mb_data_done, mb_rsrc_done;
     OSType file_type, creator;
     unsigned long modified;
+    /* Writes are batched: a trap per 4 KB chunk is a trap per chunk too
+       many, and each write that EXTENDS a file pays for allocation and
+       catalog updates. */
+    Ptr buf;
+    long buf_len;
 } FileReceive;
 
 /* Opens `name` in the folder `rel_path` for writing. Creates missing

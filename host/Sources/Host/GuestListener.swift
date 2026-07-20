@@ -229,7 +229,12 @@ final class GuestListener: ObservableObject {
         nextCommandId += 1
         pendingPut = completion
         putId = id
-        armWatchdog(id: id, seconds: 20,
+        // Scaled to the work: a megabyte legitimately takes minutes on
+        // hardware this old, and a fixed timeout would call a healthy
+        // transfer dead. Progress feeds this watchdog, so the clock only
+        // runs while nothing is moving.
+        let grace = 20.0 + Double(bytes.count) / 2048.0
+        armWatchdog(id: id, seconds: grace,
                     tracksTraffic: false) { [weak self] reason in
             guard let self, self.pendingPut != nil else { return }
             self.session?.cancelOutbound()
@@ -643,6 +648,10 @@ final class GuestListener: ObservableObject {
             },
             onFileDone: { [weak self] done in
                 guard let self else { return }
+                // Correlate: a late done from a transfer that already
+                // timed out must not settle the NEXT one, which is how a
+                // failed 128 KB put made a 512 KB put look successful.
+                guard self.putId == done.id else { return }
                 self.clearWatchdog(done.id)
                 if done.ok {
                     self.settlePut(.success(()))
