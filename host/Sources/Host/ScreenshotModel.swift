@@ -82,6 +82,12 @@ final class ScreenshotModuleModel: ObservableObject {
         didSet { defaults.set(interlace, forKey: Keys.interlace) }
     }
 
+    /// Whether the tuning row is disclosed; plumbing most sessions never
+    /// touch stays folded away.
+    @Published var showSettings: Bool {
+        didSet { defaults.set(showSettings, forKey: Keys.showSettings) }
+    }
+
     var tuning: GuestListener.CaptureTuning {
         .init(chunkKb: chunkKB, paceMs: paceMs, pack: compress,
               predictive: predictive, interlace: interlace)
@@ -125,6 +131,7 @@ final class ScreenshotModuleModel: ObservableObject {
     var latest: ScreenshotRecord? { history.first }
 
     private enum Keys {
+        static let showSettings = "screenshots.showSettings"
         static let chunkKB = "screenshots.chunkKB"
         static let paceMs = "screenshots.paceMs"
         static let compress = "screenshots.compress"
@@ -164,6 +171,7 @@ final class ScreenshotModuleModel: ObservableObject {
         self.compress = defaults.object(forKey: Keys.compress) as? Bool ?? true
         self.predictive = defaults.bool(forKey: Keys.predictive)
         self.interlace = defaults.bool(forKey: Keys.interlace)
+        self.showSettings = defaults.bool(forKey: Keys.showSettings)
         let stored = defaults.string(forKey: Keys.saveDirectory)
         self.saveDirectory = stored.map { URL(fileURLWithPath: $0) }
             ?? FileManager.default.urls(for: .picturesDirectory,

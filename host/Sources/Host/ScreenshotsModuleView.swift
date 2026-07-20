@@ -76,7 +76,10 @@ struct ScreenshotsModuleView: View {
                 }
             }
 
-            tuningRow
+            settingsDisclosure
+            if model.showSettings {
+                tuningRow
+            }
 
             if model.isCapturing || model.progress != nil {
                 transferProgress
@@ -86,6 +89,24 @@ struct ScreenshotsModuleView: View {
             }
             saveRow
         }
+    }
+
+    private var settingsDisclosure: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                model.showSettings.toggle()
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: model.showSettings
+                      ? "chevron.down" : "chevron.right")
+                    .font(.caption.weight(.semibold))
+                Text("Settings")
+            }
+            .foregroundStyle(.secondary)
+            .font(.callout)
+        }
+        .buttonStyle(.plain)
     }
 
     /// The same knobs the guest's panel has; sent with every request and
