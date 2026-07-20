@@ -4,6 +4,7 @@
 
 #include "console_win.h"
 #include "fileshare.h"
+#include "product_identity.h"
 #include "share_panel.h"
 #include "pump.h"
 #include "shots_panel.h"
@@ -73,6 +74,47 @@ static void create_menu_bar(void)
     AppendMenu(windows_menu, k_connection_menu_item);
     InsertMenu(windows_menu, 0);
     DrawMenuBar();
+}
+
+/* Mac OS normally refuses to launch an app twice — but it matches by
+   FILE, and deploying over the wire replaces the file (Rumpus moves the
+   old one to the Trash and writes a new one). The running instance then
+   keeps executing from the trashed file while the fresh file launches
+   as a SECOND process, and the two fight over the one connection the
+   host allows: the stale one holds the wire and the new one is refused
+   busy, with nothing on screen explaining why.
+
+   So match by creator instead of by file. If another NOW is already
+   running, bring it to the front and let this launch end quietly — the
+   human sees the app they already had, which is the honest outcome. */
+static Boolean another_instance_is_running(void)
+{
+    ProcessSerialNumber self;
+    ProcessSerialNumber psn;
+    ProcessInfoRec info;
+    Boolean same = false;
+
+    if (GetCurrentProcess(&self) != noErr) {
+        return false;
+    }
+    psn.highLongOfPSN = 0;
+    psn.lowLongOfPSN = kNoProcess;
+    while (GetNextProcess(&psn) == noErr) {
+        memset(&info, 0, sizeof info);
+        info.processInfoLength = sizeof info;
+        if (GetProcessInformation(&psn, &info) != noErr) {
+            continue;
+        }
+        if (info.processSignature != PRODUCT_CREATOR_CODE) {
+            continue;
+        }
+        if (SameProcess(&psn, &self, &same) == noErr && same) {
+            continue;
+        }
+        SetFrontProcess(&psn);
+        return true;
+    }
+    return false;
 }
 
 static void compute_screen_bounds(void)
@@ -263,6 +305,9 @@ int main(void)
 
     InitCursor();
     FlushEvents(everyEvent, 0);
+    if (another_instance_is_running()) {
+        return 0;
+    }
     compute_screen_bounds();
     create_menu_bar();
     restore_session();
