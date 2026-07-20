@@ -14,6 +14,7 @@ struct FileBrowserTable: NSViewRepresentable {
     @ObservedObject var model: FilesModuleModel
     var rows: [FileRow]
     var onOpen: (FileRow) -> Void
+    @Binding var sort: [KeyPathComparator<FileRow>]
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -28,6 +29,9 @@ struct FileBrowserTable: NSViewRepresentable {
         table.dataSource = context.coordinator
         table.delegate = context.coordinator
         table.registerForDraggedTypes([.fileURL])
+        table.sortDescriptors = [
+            NSSortDescriptor(key: "name", ascending: true),
+        ]
         table.setDraggingSourceOperationMask(.copy, forLocal: false)
 
         for (id, title, width) in [
@@ -130,6 +134,31 @@ struct FileBrowserTable: NSViewRepresentable {
                 text.textColor = .secondaryLabelColor
             }
             return text
+        }
+
+        /// Header clicks. The comparators live in SwiftUI state so the
+        /// sort survives a reload; without this the columns looked
+        /// sortable and did nothing.
+        func tableView(_ tableView: NSTableView,
+                       sortDescriptorsDidChange old: [NSSortDescriptor]) {
+            guard let descriptor = tableView.sortDescriptors.first,
+                  let key = descriptor.key else { return }
+            let ascending = descriptor.ascending
+            let order: SortOrder = ascending ? .forward : .reverse
+            switch key {
+            case "kind":
+                parent.sort = [KeyPathComparator(\FileRow.kind,
+                                                 order: order)]
+            case "size":
+                parent.sort = [KeyPathComparator(\FileRow.sizeBytes,
+                                                 order: order)]
+            case "modified":
+                parent.sort = [KeyPathComparator(\FileRow.sortableDate,
+                                                 order: order)]
+            default:
+                parent.sort = [KeyPathComparator(\FileRow.name,
+                                                 order: order)]
+            }
         }
 
         @objc func doubleClicked(_ sender: Any) {

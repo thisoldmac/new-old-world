@@ -164,7 +164,8 @@ struct FilesModuleView: View {
                              } else {
                                  model.download(row)
                              }
-                         })
+                         },
+                         sort: $sortOrder)
             .overlay {
                 if model.rows.isEmpty && !model.isLoading {
                     emptyState
