@@ -3,12 +3,18 @@ import XCTest
 
 @MainActor
 final class ScreenshotModelTests: XCTestCase {
+    private func makeModel() -> ScreenshotModuleModel {
+        ScreenshotModuleModel(listener: GuestListener(
+            identity: .init(version: "0.1-test", name: "Test Host")))
+    }
+
     func testSupportedDepthsMatchGuestContract() {
-        XCTAssertEqual(CaptureDepth.allCases.map(\.rawValue), [1, 8, 16, 32])
+        XCTAssertEqual(CaptureDepth.allCases.map(\.rawValue),
+                       [1, 2, 4, 8, 16, 32])
     }
 
     func testCaptureRequiresARealConnection() {
-        let model = ScreenshotModuleModel()
+        let model = makeModel()
         XCTAssertFalse(model.canCapture)
 
         model.connection = .connecting
@@ -18,19 +24,12 @@ final class ScreenshotModelTests: XCTestCase {
         XCTAssertTrue(model.canCapture)
     }
 
-    func testNewestCaptureAppearsFirst() {
-        let model = ScreenshotModuleModel()
-        let older = ScreenshotRecord(id: UUID(), capturedAt: .distantPast,
-                                     width: 640, height: 480,
-                                     depth: .indexed)
-        let newer = ScreenshotRecord(id: UUID(), capturedAt: .now,
-                                     width: 800, height: 600,
-                                     depth: .millions)
-
-        model.receive(older)
-        model.receive(newer)
-
-        XCTAssertEqual(model.history.map(\.id), [newer.id, older.id])
+    func testCapturingWithoutAGuestFailsHonestly() {
+        let model = makeModel()
+        model.connection = .connected(name: "PowerBook 1400")
+        model.capture()
+        // The listener holds no session, so it refuses immediately.
+        XCTAssertEqual(model.lastError, "No Mac is connected")
+        XCTAssertTrue(model.history.isEmpty)
     }
 }
-

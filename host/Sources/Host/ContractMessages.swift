@@ -86,12 +86,17 @@ struct CaptureBegin: Codable, Equatable, Sendable {
     var depth: Int
     var rowBytes: Int
     var bytes: Int
+    var paletteBytes: Int?
+    var encoding: String?
+    var captureMs: Int?
+    var encodeMs: Int?
 }
 
 struct CaptureEnd: Codable, Equatable, Sendable {
     var id: Int
     var transfer: Int
     var ok: Bool
+    var sendMs: Int?
 }
 
 enum ControlMessageError: Error, Equatable {

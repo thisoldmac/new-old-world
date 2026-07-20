@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import CoreGraphics
 
 /// The host side of the wire: listens, gates on hello, serves exactly one
 /// guest at a time, answers pings, and declares death passively after
@@ -73,6 +74,9 @@ final class GuestListener: ObservableObject {
     private static let logLimit = 100
 
     func note(_ text: String) {
+        if ProcessInfo.processInfo.environment["NOW_HOST_DEBUG"] != nil {
+            FileHandle.standardError.write(Data("[now-host] \(text)\n".utf8))
+        }
         log.append(LogEntry(at: Date(), text: text))
         if log.count > Self.logLimit {
             log.removeFirst(log.count - Self.logLimit)
@@ -129,6 +133,44 @@ final class GuestListener: ObservableObject {
         session.sendCommand(CommandRequest(id: id, name: name, args: args))
     }
 
+    /// A capture that could not be produced or decoded; `message` is written
+    /// for a human, since it lands in the Screenshots panel.
+    struct CaptureFailure: Error {
+        var message: String
+    }
+
+    /// Asks the guest for a screen capture. Completion fires with the decoded
+    /// image plus the measurements, or a human-readable failure.
+    func requestCapture(depth: Int?,
+                        completion: @escaping (Result<CaptureDelivery,
+                                                      CaptureFailure>) -> Void) {
+        guard let session, case .connected = state else {
+            completion(.failure(.init(message: "No Mac is connected")))
+            return
+        }
+        let id = nextCommandId
+        nextCommandId += 1
+        pendingCapture = completion
+        session.sendCaptureRequest(id: id, depth: depth)
+    }
+
+    struct CaptureDelivery {
+        var image: CGImage
+        var format: CaptureFormat
+        var transferMs: Int
+        var wireBytes: Int
+    }
+
+    private var pendingCapture:
+        ((Result<CaptureDelivery, CaptureFailure>) -> Void)?
+
+    fileprivate func deliverCapture(
+        _ result: Result<CaptureDelivery, CaptureFailure>) {
+        let completion = pendingCapture
+        pendingCapture = nil
+        completion?(result)
+    }
+
     private func resolveCommand(_ result: CommandResult) {
         if let completion = pendingCommands.removeValue(forKey: result.id) {
             completion(result)
@@ -177,6 +219,9 @@ final class GuestListener: ObservableObject {
             onCommandResult: { [weak self] result in
                 self?.resolveCommand(result)
             },
+            onCapture: { [weak self] result in
+                self?.deliverCapture(result)
+            },
             onClosed: { [weak self] closedSession, reason in
                 guard let self else { return }
                 self.pending.removeAll { $0 === closedSession }
@@ -184,6 +229,7 @@ final class GuestListener: ObservableObject {
                 self.session = nil
                 self.health = nil
                 self.failPendingCommands(reason)
+                self.deliverCapture(.failure(.init(message: reason)))
                 self.lastDisconnect = reason
                 if self.listener != nil {
                     self.state = .listening(port: self.boundPort ?? 0)
@@ -209,7 +255,15 @@ final class Session {
     private let onLog: (String) -> Void
     private let onHealth: (GuestListener.SessionHealth?) -> Void
     private let onCommandResult: (CommandResult) -> Void
+    private let onCapture:
+        (Result<GuestListener.CaptureDelivery, GuestListener.CaptureFailure>)
+        -> Void
     private let onClosed: (Session, String) -> Void
+
+    /// In-flight bulk transfer (one at a time by contract).
+    private var captureBegin: CaptureBegin?
+    private var captureBuffer: [UInt8] = []
+    private var captureStart = Date()
     private var health: GuestListener.SessionHealth?
 
     private let decoder = FrameDecoder()
@@ -226,6 +280,8 @@ final class Session {
          onLog: @escaping (String) -> Void,
          onHealth: @escaping (GuestListener.SessionHealth?) -> Void,
          onCommandResult: @escaping (CommandResult) -> Void,
+         onCapture: @escaping (Result<GuestListener.CaptureDelivery,
+                                      GuestListener.CaptureFailure>) -> Void,
          onClosed: @escaping (Session, String) -> Void) {
         self.connection = connection
         self.identity = identity
@@ -235,6 +291,7 @@ final class Session {
         self.onLog = onLog
         self.onHealth = onHealth
         self.onCommandResult = onCommandResult
+        self.onCapture = onCapture
         self.onClosed = onClosed
     }
 
@@ -299,9 +356,11 @@ final class Session {
             case .control:
                 handleControl(frame.payload)
             case .bulk:
-                // No transfers exist in this slice; bulk before capture
-                // support is a protocol error, not silently ignored.
-                protocolError("unexpected bulk frame")
+                guard captureBegin != nil else {
+                    protocolError("bulk frame with no capture in flight")
+                    return
+                }
+                captureBuffer.append(contentsOf: frame.payload)
             }
             if closed { return }
         }
@@ -329,6 +388,12 @@ final class Session {
             touchHealth(pingsDelta: 1)
         case .commandResult(let result):
             onCommandResult(result)
+        case .captureBegin(let begin):
+            captureBegin = begin
+            captureBuffer = []
+            captureBuffer.reserveCapacity(begin.bytes)
+        case .captureEnd(let end):
+            finishCapture(end)
         case .bye(let bye):
             let name = guestName
             finish(reason: byeDescription(bye, guest: name))
@@ -337,6 +402,37 @@ final class Session {
         default:
             // capture flow arrives with the screenshots slice
             break
+        }
+    }
+
+    private func finishCapture(_ end: CaptureEnd) {
+        guard let begin = captureBegin else {
+            onCapture(.failure(.init(message: "capture ended without a begin")))
+            return
+        }
+        captureBegin = nil
+        guard end.ok else {
+            onCapture(.failure(.init(
+                message: "the guest could not capture the screen")))
+            return
+        }
+        let format = CaptureFormat(
+            width: begin.width, height: begin.height, depth: begin.depth,
+            rowBytes: begin.rowBytes, bytes: begin.bytes,
+            paletteBytes: begin.paletteBytes ?? 0,
+            packed: (begin.encoding ?? "raw") == "packbits",
+            captureMs: begin.captureMs ?? 0, encodeMs: begin.encodeMs ?? 0)
+        let blob = captureBuffer
+        captureBuffer = []
+        do {
+            let image = try CaptureDecoder.makeImage(blob: blob,
+                                                     format: format)
+            let ms = Int(Date().timeIntervalSince(captureStart) * 1000)
+            onCapture(.success(.init(image: image, format: format,
+                                     transferMs: ms, wireBytes: blob.count)))
+        } catch {
+            onCapture(.failure(.init(
+                message: "could not decode the capture: \(error)")))
         }
     }
 
@@ -385,6 +481,13 @@ final class Session {
 
     func sendCommand(_ request: CommandRequest) {
         send(.commandRequest(request))
+    }
+
+    func sendCaptureRequest(id: Int, depth: Int?) {
+        captureBegin = nil
+        captureBuffer = []
+        captureStart = Date()
+        send(.captureRequest(CaptureRequest(id: id, depth: depth ?? 0)))
     }
 
     private func send(_ message: ControlMessage) {

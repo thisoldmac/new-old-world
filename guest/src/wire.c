@@ -4,7 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "capture.h"
 #include "commands.h"
+#include "pixels.h"
 #include "contract.h"
 #include "ot_carbon.h"
 #include "prefs.h"
@@ -43,6 +45,7 @@ typedef struct {
     unsigned long backoff_ticks;
     unsigned long backoff_until;
 
+    unsigned short transfer_seq;
     char peer_name[64];
     char peer_version[32];
     char status[128];
@@ -83,19 +86,43 @@ static int parse_ipv4(const char *text, UInt32 *out)
     return 1;
 }
 
-static int json_find_string(const char *json, const char *key,
-                            char *out, long cap)
+/* Finds "key" and returns the first character of its value, skipping the
+   colon and any whitespace. JSON permits spaces there; a peer using a
+   pretty-printing encoder must not be silently ignored. */
+static const char *json_value(const char *json, const char *key)
 {
     char pattern[48];
     const char *p;
-    long n = 0;
 
-    snprintf(pattern, sizeof pattern, "\"%s\":\"", key);
+    snprintf(pattern, sizeof pattern, "\"%s\"", key);
     p = strstr(json, pattern);
     if (p == NULL) {
-        return 0;
+        return NULL;
     }
     p += strlen(pattern);
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') {
+        ++p;
+    }
+    if (*p != ':') {
+        return NULL;
+    }
+    ++p;
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') {
+        ++p;
+    }
+    return p;
+}
+
+static int json_find_string(const char *json, const char *key,
+                            char *out, long cap)
+{
+    const char *p = json_value(json, key);
+    long n = 0;
+
+    if (p == NULL || *p != '"') {
+        return 0;
+    }
+    ++p;
     while (*p != '\0' && *p != '"' && n + 1 < cap) {
         out[n++] = *p++;
     }
@@ -105,23 +132,22 @@ static int json_find_string(const char *json, const char *key,
 
 static long json_find_int(const char *json, const char *key, long fallback)
 {
-    char pattern[48];
-    const char *p;
+    const char *p = json_value(json, key);
 
-    snprintf(pattern, sizeof pattern, "\"%s\":", key);
-    p = strstr(json, pattern);
     if (p == NULL) {
         return fallback;
     }
-    return strtol(p + strlen(pattern), NULL, 10);
+    return strtol(p, NULL, 10);
 }
 
 static int json_type_is(const char *json, const char *type)
 {
-    char pattern[48];
+    char value[48];
 
-    snprintf(pattern, sizeof pattern, "\"type\":\"%s\"", type);
-    return strstr(json, pattern) != NULL;
+    if (!json_find_string(json, "type", value, sizeof value)) {
+        return 0;
+    }
+    return strcmp(value, type) == 0;
 }
 
 /* One contiguous send per frame: back-to-back small writes are dropped by
@@ -387,6 +413,130 @@ static void on_hello(const char *reply)
     }
 }
 
+/* Sends one bulk frame (channel 1) carrying `len` bytes of transfer `xfer`.
+   END marks the final chunk. One contiguous send per frame. */
+static int send_bulk(unsigned short xfer, const void *data, long len,
+                     Boolean end)
+{
+    unsigned char header[kNowFrameHeaderBytes];
+    OTResult sent;
+
+    if (g.ep == kOTInvalidEndpointRef) {
+        return 0;
+    }
+    header[0] = kNowChannelBulk;
+    header[1] = end ? kNowFlagEnd : 0;
+    header[2] = (unsigned char)(xfer >> 8);
+    header[3] = (unsigned char)(xfer & 0xFF);
+    header[4] = (unsigned char)((len >> 24) & 0xFF);
+    header[5] = (unsigned char)((len >> 16) & 0xFF);
+    header[6] = (unsigned char)((len >> 8) & 0xFF);
+    header[7] = (unsigned char)(len & 0xFF);
+    sent = gNowOT.snd(g.ep, header, kNowFrameHeaderBytes, 0);
+    if (sent != (OTResult)kNowFrameHeaderBytes) {
+        return 0;
+    }
+    sent = gNowOT.snd(g.ep, (void *)data, (OTByteCount)len, 0);
+    return sent == (OTResult)len;
+}
+
+/* Captures, exports wire pixels, announces with capture.begin, streams the
+   bytes as bulk chunks at the panel's chunk size and pacing, then closes with
+   capture.end carrying the measurements. */
+static void serve_capture(const char *request)
+{
+    NowPrefs prefs;
+    CaptureImage image;
+    PixelBlob blob;
+    char json[512];
+    long id = json_find_int(request, "id", 0);
+    long depth_arg = json_find_int(request, "depth", 0);
+    short depth;
+    unsigned short xfer;
+    long chunk, offset;
+    unsigned long t_start, t_sent;
+    int rc;
+
+    short width = 0, height = 0, row_bytes = 0;
+    long capture_ms = 0;
+
+    now_prefs_load(&prefs);
+    depth = capture_depth_is_supported((short)depth_arg)
+        ? (short)depth_arg : prefs.shot_depth;
+    chunk = (long)prefs.chunk_kb * 1024;
+    if (chunk < 1024 || chunk > kNowMaxPayload) {
+        chunk = 8192;
+    }
+    xfer = (unsigned short)(++g.transfer_seq ? g.transfer_seq : 1);
+
+    t_start = TickCount();
+    rc = capture_screen(depth, &image);
+    capture_ms = (long)((TickCount() - t_start) * 1000 / 60);
+    if (rc != kCaptureOK) {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"capture.end\",\"id\":%ld,\"transfer\":%u,"
+                 "\"ok\":false}", id, xfer);
+        send_control(json);
+        return;
+    }
+    width = (short)(image.bounds.right - image.bounds.left);
+    height = (short)(image.bounds.bottom - image.bounds.top);
+    row_bytes = image.row_bytes;
+    if (now_pixels_export(&image, prefs.shot_pack, &blob) != 0) {
+        capture_image_dispose(&image);
+        snprintf(json, sizeof json,
+                 "{\"type\":\"capture.end\",\"id\":%ld,\"transfer\":%u,"
+                 "\"ok\":false}", id, xfer);
+        send_control(json);
+        return;
+    }
+    capture_image_dispose(&image);
+
+    snprintf(json, sizeof json,
+             "{\"type\":\"capture.begin\",\"id\":%ld,\"transfer\":%u,"
+             "\"width\":%d,\"height\":%d,\"depth\":%d,"
+             "\"rowBytes\":%d,\"bytes\":%ld,\"paletteBytes\":%ld,"
+             "\"encoding\":\"%s\",\"captureMs\":%ld,\"encodeMs\":%ld}",
+             id, xfer, (int)width, (int)height,
+             (int)depth, (int)row_bytes, blob.total_bytes,
+             blob.palette_bytes, blob.packed ? "packbits" : "raw",
+             capture_ms, blob.encode_ms);
+    if (!send_control(json)) {
+        now_pixels_dispose(&blob);
+        return;
+    }
+
+    HLock(blob.data);
+    t_sent = TickCount();
+    for (offset = 0; offset < blob.total_bytes; offset += chunk) {
+        long n = blob.total_bytes - offset;
+        Boolean last;
+
+        if (n > chunk) {
+            n = chunk;
+        }
+        last = (offset + n >= blob.total_bytes);
+        if (!send_bulk(xfer, *blob.data + offset, n, last)) {
+            break;
+        }
+        if (prefs.pace_ms > 0 && !last) {
+            unsigned long until = TickCount()
+                + (unsigned long)prefs.pace_ms * 60 / 1000 + 1;
+            while (TickCount() < until) {
+                /* paced send: fragile NICs drop back-to-back frames */
+            }
+        }
+    }
+    HUnlock(blob.data);
+
+    snprintf(json, sizeof json,
+             "{\"type\":\"capture.end\",\"id\":%ld,\"transfer\":%u,"
+             "\"ok\":true,\"sendMs\":%ld}",
+             id, xfer, (long)((TickCount() - t_sent) * 1000 / 60));
+    send_control(json);
+    now_pixels_dispose(&blob);
+}
+
 /* Returns 0 if the connection should be torn down (bye/protocol error). */
 static int handle_frame(const char *reply)
 {
@@ -416,6 +566,10 @@ static int handle_frame(const char *reply)
         g.last_rtt_ms = (long)((TickCount() - g.ping_sent_tick) * 1000 / 60);
         snprintf(g.status, sizeof g.status, "Connected: %s (v%s) - %ld ms",
                  g.peer_name, g.peer_version, g.last_rtt_ms);
+        return 1;
+    }
+    if (json_type_is(reply, "capture.request")) {
+        serve_capture(reply);
         return 1;
     }
     if (json_type_is(reply, "command.request")) {

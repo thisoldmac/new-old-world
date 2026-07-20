@@ -278,6 +278,25 @@ components:
       additionalProperties: false
       properties:
         type: { const: capture.begin }
+        paletteBytes:
+          type: integer
+          description: >
+            Leading bytes of the bulk stream holding the palette as RGB
+            triples (indexed depths <= 8); 0 for direct colour. Sending the
+            guest's own CLUT means the host needs no hardcoded table.
+        encoding:
+          enum: [raw, packbits]
+          description: >
+            raw = rows verbatim. packbits = each row PackBits-compressed and
+            prefixed with a big-endian u16 packed length. NOT PICT: modern
+            macOS cannot decode QuickDraw pictures, so the wire uses a format
+            both sides own (PICT remains the guest's on-disk format).
+        captureMs:
+          type: integer
+          description: Guest-side screen blit time, for tuning.
+        encodeMs:
+          type: integer
+          description: Guest-side encode time, for tuning.
         id:
           type: integer
           description: The capture.request id, or a guest-chosen id for
@@ -300,6 +319,9 @@ components:
         id: { type: integer }
         transfer: { type: integer }
         ok: { type: boolean }
+        sendMs:
+          type: integer
+          description: Guest-side time spent streaming the bulk chunks.
 
   # The console command registry: the CLOSED set of commands a guest serves.
   # Every entry declares its args and output; the consoles on both sides and

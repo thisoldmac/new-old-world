@@ -25,6 +25,57 @@ static char g_input[kMaxCols];
 static short g_input_len = 0;
 static short g_font = 0;
 
+/* Command history: newest last. g_hist_pos == g_hist_count means "editing a
+   fresh line"; arrow keys walk back into the saved commands. */
+enum { kHistMax = 32 };
+static char g_hist[kHistMax][kMaxCols];
+static short g_hist_count = 0;
+static short g_hist_pos = 0;
+
+static void history_add(const char *cmd)
+{
+    if (cmd[0] == '\0') {
+        return;
+    }
+    if (g_hist_count > 0
+        && strcmp(g_hist[g_hist_count - 1], cmd) == 0) {
+        g_hist_pos = g_hist_count;     /* don't store repeats */
+        return;
+    }
+    if (g_hist_count == kHistMax) {
+        memmove(g_hist[0], g_hist[1], (kHistMax - 1) * (size_t)kMaxCols);
+        --g_hist_count;
+    }
+    strncpy(g_hist[g_hist_count], cmd, kMaxCols - 1);
+    g_hist[g_hist_count][kMaxCols - 1] = '\0';
+    ++g_hist_count;
+    g_hist_pos = g_hist_count;
+}
+
+static void history_recall(short delta)
+{
+    short pos = (short)(g_hist_pos + delta);
+
+    if (g_hist_count == 0) {
+        return;
+    }
+    if (pos < 0) {
+        pos = 0;
+    }
+    if (pos > g_hist_count) {
+        pos = g_hist_count;
+    }
+    g_hist_pos = pos;
+    if (pos == g_hist_count) {
+        g_input[0] = '\0';            /* past the newest: empty line */
+        g_input_len = 0;
+        return;
+    }
+    strncpy(g_input, g_hist[pos], kMaxCols - 1);
+    g_input[kMaxCols - 1] = '\0';
+    g_input_len = (short)strlen(g_input);
+}
+
 static void append_line(const char *text)
 {
     if (g_count == kMaxLines) {
@@ -479,6 +530,7 @@ void console_win_key(char ch)
             --end;
         }
         g_input[end] = '\0';
+        history_add(g_input + start);
         run_command(g_input + start);
         g_input_len = 0;
         g_input[0] = '\0';
@@ -489,7 +541,11 @@ void console_win_key(char ch)
         InvalWindowRect(g_window, &bounds);
         return;
     }
-    if (ch == '\b' || ch == 0x7F) {
+    if (ch == 0x1E) {                  /* up arrow: older */
+        history_recall(-1);
+    } else if (ch == 0x1F) {           /* down arrow: newer */
+        history_recall(1);
+    } else if (ch == '\b' || ch == 0x7F) {
         if (g_input_len > 0) {
             g_input[--g_input_len] = '\0';
         } else {

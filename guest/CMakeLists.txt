@@ -8,6 +8,7 @@ add_application(now-guest
     src/console_win.c
     src/capture.c
     src/screenshot.c
+    src/pixels.c
     src/shots_panel.c
     src/ot_carbon.c
     src/wire.c
