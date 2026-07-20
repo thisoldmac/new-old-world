@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "fileshare.h"
+#include "pump.h"
 
 enum {
     kPanelWidth = 400,
@@ -122,7 +123,7 @@ void share_panel_click(Point local)
     if (FindControl(local, g_window, &control) == 0 || control == NULL) {
         return;
     }
-    if (TrackControl(control, local, NULL) == 0) {
+    if (TrackControl(control, local, now_pump_action()) == 0) {
         return;
     }
     if (control == g_choose_button) {

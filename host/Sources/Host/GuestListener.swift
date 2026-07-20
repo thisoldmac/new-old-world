@@ -188,18 +188,6 @@ final class GuestListener: ObservableObject {
                 .failure(.init(code: "timeout", message: reason)))
         }
         session.sendFileList(id: id, path: path, cursor: cursor)
-        // A guest that answers neither listing nor refusal (a malformed
-        // reply its decoder dropped, a wedge) must not leave the browser
-        // spinning; fail the request visibly instead.
-        Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 15_000_000_000)
-            guard let self,
-                  let pending = self.pendingListings
-                      .removeValue(forKey: id) else { return }
-            pending(.failure(.init(
-                code: "timeout",
-                message: "The Mac did not answer the listing")))
-        }
     }
 
     /// Pulls a file. `container` nil = the guest's fork rule decides.
