@@ -345,6 +345,152 @@ final class FileWireTests: XCTestCase {
     }
 }
 
+@MainActor
+final class TransferQueueTests: XCTestCase {
+    private var listener: GuestListener!
+    private var model: FilesModuleModel!
+
+    override func setUp() async throws {
+        listener = GuestListener(
+            identity: .init(version: "0.1-test", name: "Test Host"),
+            timing: .init(idleTimeout: 60))
+        listener.start(port: 0)
+        try await waitUntil("listening") {
+            if case .listening = self.listener.state { return true }
+            return false
+        }
+        model = FilesModuleModel(
+            listener: listener,
+            defaults: UserDefaults(
+                suiteName: "files.test.\(UUID().uuidString)")!)
+    }
+
+    override func tearDown() async throws {
+        listener.stop()
+        listener = nil
+        model = nil
+    }
+
+    private struct WaitTimeout: Error { let what: String }
+
+    private func waitUntil(_ what: String, timeout: TimeInterval = 5,
+                           _ condition: @escaping () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() {
+            guard Date() < deadline else {
+                XCTFail("timed out waiting for \(what)")
+                throw WaitTimeout(what: what)
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+    }
+
+    /// A guest that connects and then says nothing, so the first
+    /// transfer stays in flight and the rest of a drop has to wait.
+    private func silentGuest() async throws -> FakeGuest {
+        let guest = FakeGuest(port: listener.boundPort ?? 0)
+        guest.start()
+        try guest.send(.hello(Hello(
+            contract: Contract.revision, side: "guest", version: "0.1.0",
+            name: "PowerBook 1400", os: "9.1", chunk: 8192)))
+        try await waitUntil("connected") {
+            if case .connected = self.listener.state { return true }
+            return false
+        }
+        model.connection = .connected(name: "PowerBook 1400")
+        return guest
+    }
+
+    private func tempFiles(_ names: [String]) throws -> [URL] {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(
+            at: dir, withIntermediateDirectories: true)
+        return try names.map { name in
+            let url = dir.appendingPathComponent(name)
+            try Data("x".utf8).write(to: url)
+            return url
+        }
+    }
+
+    func testADropOfSeveralFilesSendsOneAndQueuesTheRest() async throws {
+        let guest = try await silentGuest()
+        model.enqueue(try tempFiles(["a.txt", "b.txt", "c.txt"]))
+
+        try await waitUntil("first offer") {
+            guest.received.contains {
+                if case .fileOffer(let offer) = $0 {
+                    return offer.name == "a.txt"
+                }
+                return false
+            }
+        }
+        XCTAssertEqual(model.queue.map(\.lastPathComponent),
+                       ["b.txt", "c.txt"], "the rest wait their turn")
+        XCTAssertEqual(model.transfer?.index, 1)
+        XCTAssertEqual(model.transfer?.total, 3)
+
+        // Only one offer may be outstanding: the wire has one lane.
+        let offers = guest.received.filter {
+            if case .fileOffer = $0 { return true }
+            return false
+        }
+        XCTAssertEqual(offers.count, 1)
+    }
+
+    func testTheQueueAdvancesWhenAFileLands() async throws {
+        let guest = try await silentGuest()
+        model.enqueue(try tempFiles(["a.txt", "b.txt"]))
+        var firstId: Int?
+        try await waitUntil("first offer") {
+            for m in guest.received {
+                if case .fileOffer(let offer) = m, offer.name == "a.txt" {
+                    firstId = offer.id
+                    return true
+                }
+            }
+            return false
+        }
+        let id = try XCTUnwrap(firstId)
+        try guest.send(.fileAccept(FileAccept(id: id)))
+        try guest.send(.fileDone(FileDone(id: id, ok: true, code: nil,
+                                          reason: nil)))
+        try await waitUntil("second offer") {
+            guest.received.contains {
+                if case .fileOffer(let offer) = $0 {
+                    return offer.name == "b.txt"
+                }
+                return false
+            }
+        }
+        XCTAssertTrue(model.queue.isEmpty)
+    }
+
+    func testADeadWireStopsTheQueueInsteadOfFailingEveryFile()
+        async throws {
+        let guest = try await silentGuest()
+        model.enqueue(try tempFiles(["a.txt", "b.txt", "c.txt", "d.txt"]))
+        try await waitUntil("first offer") {
+            guest.received.contains {
+                if case .fileOffer = $0 { return true }
+                return false
+            }
+        }
+        listener.stop()                    // the wire goes away
+        try await waitUntil("queue stopped") { self.model.queue.isEmpty }
+        XCTAssertNil(model.transfer)
+        XCTAssertTrue(model.lastError?.contains("not sent") == true,
+                      "the human should be told how many did not go")
+    }
+
+    func testDroppingOnAFolderRowRetargetsTheDestination() async throws {
+        _ = try await silentGuest()
+        XCTAssertEqual(model.path, "")
+        model.enqueue(try tempFiles(["a.txt"]), into: "Code:TBT")
+        XCTAssertEqual(model.path, "Code:TBT")
+    }
+}
+
 final class OutboundFileTests: XCTestCase {
     func testHFSNamesFitThirtyOneCharactersKeepingTheExtension() {
         let long = String(repeating: "a", count: 40) + ".txt"

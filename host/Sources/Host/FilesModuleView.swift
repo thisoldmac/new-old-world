@@ -4,6 +4,8 @@ import SwiftUI
 struct FilesModuleView: View {
     @ObservedObject var model: FilesModuleModel
     @State private var sortOrder = [KeyPathComparator(\FileRow.name)]
+    /// Row id being hovered by a drag; "" means the table itself.
+    @State private var dropTarget: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -17,6 +19,16 @@ struct FilesModuleView: View {
             }
             if let transfer = model.transfer {
                 transferRow(transfer)
+            } else if !model.queue.isEmpty {
+                HStack(spacing: 10) {
+                    ProgressView().controlSize(.small)
+                    Text("\(model.queue.count) file"
+                         + (model.queue.count == 1 ? "" : "s") + " waiting")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("Stop") { model.clearQueue() }
+                        .controlSize(.small)
+                }
             }
             footer
         }
@@ -34,11 +46,16 @@ struct FilesModuleView: View {
             Button("Replace", role: .destructive) {
                 model.confirmOverwrite()
             }
+            if (model.overwritePrompt?.remaining ?? 0) > 0 {
+                Button("Skip") { model.skipOverwrite() }
+            }
             Button("Cancel", role: .cancel) { model.cancelOverwrite() }
         } message: { prompt in
             Text("A file of that name is already in "
                  + (prompt.folder.isEmpty ? "the shared folder"
-                                          : prompt.folder) + ".")
+                                          : prompt.folder) + "."
+                 + (prompt.remaining > 0
+                    ? " \(prompt.remaining) more waiting." : ""))
         }
     }
 
@@ -124,6 +141,9 @@ struct FilesModuleView: View {
                                                       : .secondary)
                         .frame(width: 16)
                     Text(row.name)
+                        .modifier(FolderDropTarget(
+                            row: row, model: model,
+                            isTargeted: dropTarget == row.id))
                     if let note = row.conversionNote {
                         Text(note)
                             .font(.caption2)
@@ -179,6 +199,21 @@ struct FilesModuleView: View {
                 emptyState
             }
         }
+        // Dropping on the table means "into the folder I am looking at";
+        // dropping on a folder row means that folder (see the row above).
+        .dropDestination(for: URL.self) { urls, _ in
+            model.enqueue(urls)
+            return true
+        } isTargeted: { targeted in
+            dropTarget = targeted ? "" : nil
+        }
+        .overlay {
+            if dropTarget == "" {
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(Color.accentColor, lineWidth: 2)
+                    .allowsHitTesting(false)
+            }
+        }
         .frame(maxHeight: .infinity)
     }
 
@@ -219,13 +254,27 @@ struct FilesModuleView: View {
                 .foregroundStyle(.secondary)
             ProgressView(value: transfer.fraction)
                 .frame(maxWidth: 240)
-            Text("\(transfer.name) — \(byteText(transfer.received)) of "
-                 + byteText(transfer.expected))
+            Text(transferLabel(transfer))
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Button("Cancel") { model.cancelTransfer() }
                 .controlSize(.small)
+            if !model.queue.isEmpty {
+                Button("Stop All") {
+                    model.clearQueue()
+                    model.cancelTransfer()
+                }
+                .controlSize(.small)
+            }
         }
+    }
+
+    private func transferLabel(_ t: FilesModuleModel.TransferState)
+        -> String {
+        let counted = t.index.map { i in
+            "(\(i) of \(t.total ?? i)) " } ?? ""
+        return counted + t.name + " — " + byteText(t.received) + " of "
+            + byteText(t.expected)
     }
 
     private var footer: some View {
@@ -310,5 +359,28 @@ struct FilesModuleView: View {
 
     private func dateText(_ date: Date) -> String {
         date.formatted(date: .abbreviated, time: .shortened)
+    }
+}
+
+
+/// A folder row that accepts a Finder drop straight into it, so a drop
+/// does not require navigating first.
+private struct FolderDropTarget: ViewModifier {
+    let row: FileRow
+    let model: FilesModuleModel
+    let isTargeted: Bool
+
+    func body(content: Content) -> some View {
+        if row.isFolder {
+            content
+                .dropDestination(for: URL.self) { urls, _ in
+                    model.enqueue(urls, into: row.path)
+                    return true
+                }
+                .background(isTargeted ? Color.accentColor.opacity(0.2)
+                                       : Color.clear)
+        } else {
+            content
+        }
     }
 }

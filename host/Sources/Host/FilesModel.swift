@@ -86,13 +86,22 @@ final class FilesModuleModel: ObservableObject {
 
     /// A file the guest already has under this name. Sending it again
     /// is the one destructive thing this module does, so it waits for a
-    /// human rather than resolving itself.
+    /// human rather than resolving itself. Mid-queue it offers to skip,
+    /// because answering one collision should not abandon the rest.
     struct OverwritePrompt: Equatable, Identifiable {
         var id: String { name }
         var name: String
         var url: URL
         var folder: String
+        var remaining: Int
     }
+
+    /// Files waiting to go. The wire carries one transfer at a time, so
+    /// a multi-file drop is a queue rather than a refusal — dropping
+    /// five files is the obvious gesture and must not need five drops.
+    @Published private(set) var queue: [URL] = []
+    private var queueTotal = 0
+    private var queueDone = 0
 
     @Published var overwritePrompt: OverwritePrompt?
 
@@ -108,6 +117,9 @@ final class FilesModuleModel: ObservableObject {
         var direction: Direction
         var received: Int
         var expected: Int
+        /// Position in a multi-file drop, 1-based; nil when alone.
+        var index: Int?
+        var total: Int?
 
         enum Direction { case incoming, outgoing }
         var fraction: Double {
@@ -117,6 +129,12 @@ final class FilesModuleModel: ObservableObject {
 
     var path: String { breadcrumb.joined(separator: ":") }
     var canBrowse: Bool { connection.canCapture }
+
+    /// Failures that say the wire is gone rather than that one file was
+    /// unacceptable.
+    private static let fatalToAQueue: Set<String> = [
+        "disconnected", "timeout", "cancelled",
+    ]
 
     private enum Keys {
         static let downloads = "files.downloadDirectory"
@@ -237,6 +255,40 @@ final class FilesModuleModel: ObservableObject {
     /// browsed. The share bounds what the other machine may reach on its
     /// own; it never bounds what a human deliberately sends, so the
     /// source is any file at all.
+    /// Enqueues a drop. Order is the order they were dropped; the queue
+    /// drains one at a time because the wire has one lane.
+    func enqueue(_ urls: [URL], into folder: String? = nil) {
+        guard canBrowse, !urls.isEmpty else { return }
+        if let folder, folder != path {
+            // A drop onto a folder row targets that folder.
+            breadcrumb = folder.isEmpty ? []
+                : folder.components(separatedBy: ":")
+        }
+        queue.append(contentsOf: urls)
+        queueTotal = queueDone + queue.count
+        startNextIfIdle()
+    }
+
+    private func startNextIfIdle() {
+        guard transfer == nil, overwritePrompt == nil,
+              !queue.isEmpty else {
+            if queue.isEmpty && transfer == nil {
+                queueTotal = 0
+                queueDone = 0
+            }
+            return
+        }
+        send(queue.removeFirst())
+    }
+
+    /// Abandons everything not yet sent; the one in flight is cancelled
+    /// separately, so stopping a queue never loses a finished file.
+    func clearQueue() {
+        queue = []
+        queueTotal = 0
+        queueDone = 0
+    }
+
     func send(_ url: URL, overwrite: Bool = false) {
         guard canBrowse, transfer == nil else { return }
         guard let data = try? Data(contentsOf: url) else {
@@ -246,8 +298,12 @@ final class FilesModuleModel: ObservableObject {
         let plan = OutboundFile.plan(url: url, data: data,
                                      convertText: convertText)
         lastError = nil
-        transfer = TransferState(name: plan.name, direction: .outgoing,
-                                 received: 0, expected: plan.bytes.count)
+        queueDone += 1
+        transfer = TransferState(
+            name: plan.name, direction: .outgoing, received: 0,
+            expected: plan.bytes.count,
+            index: queueTotal > 1 ? queueDone : nil,
+            total: queueTotal > 1 ? queueTotal : nil)
         let folder = path
         listener.putFile(name: plan.name, into: folder,
                          container: plan.container, bytes: plan.bytes,
@@ -259,12 +315,30 @@ final class FilesModuleModel: ObservableObject {
             switch result {
             case .success:
                 self.refresh()
+                self.startNextIfIdle()
             case .failure(let failure) where failure.code == "exists":
-                // Not an error: the human has a decision to make.
+                // Not an error: the human has a decision to make, and
+                // the queue waits rather than racing past it.
+                self.queueDone -= 1
                 self.overwritePrompt = OverwritePrompt(
-                    name: plan.name, url: url, folder: folder)
+                    name: plan.name, url: url, folder: folder,
+                    remaining: self.queue.count)
             case .failure(let failure):
                 self.lastError = failure.message
+                // A connection that has gone away will fail every file
+                // behind this one too. Stop, rather than turning one
+                // problem into twenty error messages.
+                if Self.fatalToAQueue.contains(failure.code) {
+                    if !self.queue.isEmpty {
+                        self.lastError = failure.message
+                            + " — \(self.queue.count) file"
+                            + (self.queue.count == 1 ? "" : "s")
+                            + " not sent."
+                    }
+                    self.clearQueue()
+                } else {
+                    self.startNextIfIdle()
+                }
             }
         }
     }
@@ -275,8 +349,16 @@ final class FilesModuleModel: ObservableObject {
         send(prompt.url, overwrite: true)
     }
 
+    /// Leaves that file alone and carries on with the rest.
+    func skipOverwrite() {
+        overwritePrompt = nil
+        startNextIfIdle()
+    }
+
+    /// Answering "stop" abandons what is queued behind it too.
     func cancelOverwrite() {
         overwritePrompt = nil
+        clearQueue()
     }
 
     @discardableResult
