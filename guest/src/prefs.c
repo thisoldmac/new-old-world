@@ -52,8 +52,18 @@ typedef struct {
     long share_dir;
 } PrefsRecordV7;
 
+/* Preferences are per COPY of the app, not per creator. Running two
+   guests at once is a real workflow — one for each host, on different
+   ports — and a shared file would have them overwrite each other's port
+   and share root. The canonical copy keeps the original file name so
+   nothing already saved is orphaned; any other copy gets its own,
+   named after itself. */
 static OSErr prefs_spec(FSSpec *spec)
 {
+    ProcessSerialNumber self;
+    ProcessInfoRec info;
+    Str31 app_name;
+    Str255 file_name;
     short vref;
     long dirid;
     OSErr err;
@@ -63,8 +73,32 @@ static OSErr prefs_spec(FSSpec *spec)
     if (err != noErr) {
         return err;
     }
-    return FSMakeFSSpec(vref, dirid,
-                        (ConstStr255Param)"\pNew Old World Prefs", spec);
+    BlockMoveData("\pNew Old World Prefs", file_name, 21);
+
+    memset(&info, 0, sizeof info);
+    info.processInfoLength = sizeof info;
+    info.processName = app_name;
+    app_name[0] = 0;
+    if (GetCurrentProcess(&self) == noErr
+        && GetProcessInformation(&self, &info) == noErr
+        && app_name[0] > 0
+        && !EqualString(app_name, (ConstStr255Param)"\pnow-guest",
+                        false, false)) {
+        long room = 31 - file_name[0] - 3;
+
+        if (app_name[0] < room) {
+            room = app_name[0];
+        }
+        if (room > 0) {
+            file_name[file_name[0] + 1] = ' ';
+            file_name[file_name[0] + 2] = '(';
+            BlockMoveData(app_name + 1, file_name + file_name[0] + 3,
+                          room);
+            file_name[file_name[0] + 3 + room] = ')';
+            file_name[0] = (unsigned char)(file_name[0] + room + 3);
+        }
+    }
+    return FSMakeFSSpec(vref, dirid, file_name, spec);
 }
 
 static void set_defaults(NowPrefs *prefs)
