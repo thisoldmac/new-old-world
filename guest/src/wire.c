@@ -6,6 +6,7 @@
 
 #include "capture.h"
 #include "commands.h"
+#include "json.h"
 #include "pixels.h"
 #include "contract.h"
 #include "ot_carbon.h"
@@ -89,70 +90,6 @@ static int parse_ipv4(const char *text, UInt32 *out)
     *out = (UInt32)((parts[0] << 24) | (parts[1] << 16)
                     | (parts[2] << 8) | parts[3]);
     return 1;
-}
-
-/* Finds "key" and returns the first character of its value, skipping the
-   colon and any whitespace. JSON permits spaces there; a peer using a
-   pretty-printing encoder must not be silently ignored. */
-static const char *json_value(const char *json, const char *key)
-{
-    char pattern[48];
-    const char *p;
-
-    snprintf(pattern, sizeof pattern, "\"%s\"", key);
-    p = strstr(json, pattern);
-    if (p == NULL) {
-        return NULL;
-    }
-    p += strlen(pattern);
-    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') {
-        ++p;
-    }
-    if (*p != ':') {
-        return NULL;
-    }
-    ++p;
-    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') {
-        ++p;
-    }
-    return p;
-}
-
-static int json_find_string(const char *json, const char *key,
-                            char *out, long cap)
-{
-    const char *p = json_value(json, key);
-    long n = 0;
-
-    if (p == NULL || *p != '"') {
-        return 0;
-    }
-    ++p;
-    while (*p != '\0' && *p != '"' && n + 1 < cap) {
-        out[n++] = *p++;
-    }
-    out[n] = '\0';
-    return 1;
-}
-
-static long json_find_int(const char *json, const char *key, long fallback)
-{
-    const char *p = json_value(json, key);
-
-    if (p == NULL) {
-        return fallback;
-    }
-    return strtol(p, NULL, 10);
-}
-
-static int json_type_is(const char *json, const char *type)
-{
-    char value[48];
-
-    if (!json_find_string(json, "type", value, sizeof value)) {
-        return 0;
-    }
-    return strcmp(value, type) == 0;
 }
 
 /* --- control TX queue ---------------------------------------------------
@@ -449,10 +386,10 @@ static int next_frame(char *payload_out, long cap)
 
 static void on_hello(const char *reply)
 {
-    if (!json_find_string(reply, "name", g.peer_name, sizeof g.peer_name)) {
+    if (!now_json_find_string(reply, "name", g.peer_name, sizeof g.peer_name)) {
         strcpy(g.peer_name, "host");
     }
-    if (!json_find_string(reply, "version", g.peer_version,
+    if (!now_json_find_string(reply, "version", g.peer_version,
                           sizeof g.peer_version)) {
         strcpy(g.peer_version, "?");
     }
@@ -789,8 +726,8 @@ static void serve_capture(const char *request)
     PixelBlob blob;
     ShotMeta meta;
     char json[256];
-    long id = json_find_int(request, "id", 0);
-    long depth_arg = json_find_int(request, "depth", 0);
+    long id = now_json_find_int(request, "id", 0);
+    long depth_arg = now_json_find_int(request, "depth", 0);
     short depth;
     unsigned short xfer;
     long chunk;
@@ -908,7 +845,7 @@ int now_wire_offer_shot(char *err, long cap)
 
 static void offer_accepted(const char *reply)
 {
-    if (!g_offer.active || json_find_int(reply, "id", -1) != g_offer.id) {
+    if (!g_offer.active || now_json_find_int(reply, "id", -1) != g_offer.id) {
         return;                       /* stale or unsolicited accept */
     }
     g_offer.active = false;
@@ -925,11 +862,11 @@ static void offer_refused(const char *reply)
     char reason[64];
     char line[96];
 
-    if (!g_offer.active || json_find_int(reply, "id", -1) != g_offer.id) {
+    if (!g_offer.active || now_json_find_int(reply, "id", -1) != g_offer.id) {
         return;
     }
     offer_cleanup();
-    if (json_find_string(reply, "reason", reason, sizeof reason)) {
+    if (now_json_find_string(reply, "reason", reason, sizeof reason)) {
         snprintf(line, sizeof line, "Host declined: %.60s", reason);
     } else {
         snprintf(line, sizeof line, "Host declined the screenshot");
@@ -982,14 +919,14 @@ static void stream_start(const char *reply)
 {
     NowPrefs prefs;
     long depth_arg;
-    long id = json_find_int(reply, "id", 0);
+    long id = now_json_find_int(reply, "id", 0);
 
     if (g_stream.active || g_xfer.active || g_offer.active) {
         stream_send_stopped(id, "busy: a transfer is in flight");
         return;
     }
     now_prefs_load(&prefs);
-    depth_arg = json_find_int(reply, "depth", 0);
+    depth_arg = now_json_find_int(reply, "depth", 0);
 
     memset(&g_stream, 0, sizeof g_stream);
     g_stream.id = id;
@@ -1002,7 +939,7 @@ static void stream_start(const char *reply)
     }
     g_stream.pace_ms = prefs.pace_ms;
     g_stream.min_interval_ticks =
-        json_find_int(reply, "minIntervalMs", 0) * 60 / 1000;
+        now_json_find_int(reply, "minIntervalMs", 0) * 60 / 1000;
     g_stream.next_frame_tick = 0;
     g_stream.active = true;
     g_streamreq.pending = false;
@@ -1011,7 +948,7 @@ static void stream_start(const char *reply)
 
 static void stream_stop(const char *reply)
 {
-    long id = json_find_int(reply, "id", -1);
+    long id = now_json_find_int(reply, "id", -1);
 
     if (!g_stream.active || id != g_stream.id) {
         /* Answer anyway: if the guest lost the stream (reconnect, abort
@@ -1117,13 +1054,13 @@ static int handle_frame(const char *reply)
         return 1;                    /* dropped non-control frame */
     }
     if (g.phase == kConnHandshaking) {
-        if (json_type_is(reply, "hello")) {
+        if (now_json_type_is(reply, "hello")) {
             on_hello(reply);
             return 1;
         }
-        if (json_type_is(reply, "refuse")) {
+        if (now_json_type_is(reply, "refuse")) {
             char reason[96];
-            if (json_find_string(reply, "reason", reason, sizeof reason)) {
+            if (now_json_find_string(reply, "reason", reason, sizeof reason)) {
                 snprintf(g.status, sizeof g.status, "Refused: %s", reason);
             } else {
                 snprintf(g.status, sizeof g.status, "Refused by host");
@@ -1134,43 +1071,43 @@ static int handle_frame(const char *reply)
         return 0;
     }
     /* connected */
-    if (json_type_is(reply, "pong")) {
+    if (now_json_type_is(reply, "pong")) {
         g.pings_sent = 0;
         g.last_rtt_ms = (long)((TickCount() - g.ping_sent_tick) * 1000 / 60);
         snprintf(g.status, sizeof g.status, "Connected: %s (v%s) - %ld ms",
                  g.peer_name, g.peer_version, g.last_rtt_ms);
         return 1;
     }
-    if (json_type_is(reply, "capture.request")) {
+    if (now_json_type_is(reply, "capture.request")) {
         serve_capture(reply);
         return 1;
     }
-    if (json_type_is(reply, "capture.cancel")) {
+    if (now_json_type_is(reply, "capture.cancel")) {
         xfer_abort();
         return 1;
     }
-    if (json_type_is(reply, "stream.start")) {
+    if (now_json_type_is(reply, "stream.start")) {
         stream_start(reply);
         return 1;
     }
-    if (json_type_is(reply, "stream.stop")) {
+    if (now_json_type_is(reply, "stream.stop")) {
         stream_stop(reply);
         return 1;
     }
-    if (json_type_is(reply, "capture.accept")) {
+    if (now_json_type_is(reply, "capture.accept")) {
         offer_accepted(reply);
         return 1;
     }
-    if (json_type_is(reply, "capture.refuse")) {
+    if (now_json_type_is(reply, "capture.refuse")) {
         offer_refused(reply);
         return 1;
     }
-    if (json_type_is(reply, "command.request")) {
+    if (now_json_type_is(reply, "command.request")) {
         char name[48];
         char result[3072];
-        long id = json_find_int(reply, "id", 0);
+        long id = now_json_find_int(reply, "id", 0);
 
-        if (!json_find_string(reply, "name", name, sizeof name)) {
+        if (!now_json_find_string(reply, "name", name, sizeof name)) {
             strcpy(name, "?");
         }
         now_command_run(name, reply, id, result, sizeof result);
@@ -1180,16 +1117,16 @@ static int handle_frame(const char *reply)
         }
         return 1;
     }
-    if (json_type_is(reply, "error")) {
+    if (now_json_type_is(reply, "error")) {
         if (g_streamreq.pending) {
             g_streamreq.pending = false;
             note_shot("Host declined the stream");
         }
         return 1;
     }
-    if (json_type_is(reply, "bye")) {
+    if (now_json_type_is(reply, "bye")) {
         char reason[96];
-        if (json_find_string(reply, "reason", reason, sizeof reason)) {
+        if (now_json_find_string(reply, "reason", reason, sizeof reason)) {
             snprintf(g.status, sizeof g.status, "Host disconnected: %s",
                      reason);
         } else {

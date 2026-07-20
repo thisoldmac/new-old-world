@@ -6,6 +6,7 @@
 
 #include "capture.h"
 #include "commands.h"
+#include "json.h"
 #include "prefs.h"
 #include "screenshot.h"
 
@@ -86,43 +87,6 @@ static void append_line(const char *text)
     strncpy(g_lines[g_count], text, kMaxCols - 1);
     g_lines[g_count][kMaxCols - 1] = '\0';
     ++g_count;
-}
-
-/* --- minimal JSON scan (reads commands.c's own result) ------------------ */
-
-/* Tolerates whitespace around the colon (mirrors wire.c's json_value). */
-static int json_find_string(const char *json, const char *key,
-                            char *out, long cap)
-{
-    char pattern[48];
-    const char *p;
-    long n = 0;
-
-    snprintf(pattern, sizeof pattern, "\"%s\"", key);
-    p = strstr(json, pattern);
-    if (p == NULL) {
-        return 0;
-    }
-    p += strlen(pattern);
-    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') {
-        ++p;
-    }
-    if (*p != ':') {
-        return 0;
-    }
-    ++p;
-    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') {
-        ++p;
-    }
-    if (*p != '"') {
-        return 0;
-    }
-    ++p;
-    while (*p != '\0' && *p != '"' && n + 1 < cap) {
-        out[n++] = *p++;
-    }
-    out[n] = '\0';
-    return 1;
 }
 
 /* --- command line: name + unix-style flags ------------------------------ */
@@ -431,7 +395,7 @@ static void run_command(const char *input)
         return;
     }
     now_command_run(name, NULL, 0, result, sizeof result);
-    if (json_find_string(result, "message", message, sizeof message)) {
+    if (now_json_find_string(result, "message", message, sizeof message)) {
         snprintf(line, sizeof line, "%s", message);
         append_line(line);
     } else {

@@ -11,6 +11,7 @@ add_application(now-guest
     src/pixels.c
     src/shots_panel.c
     src/ot_carbon.c
+    src/json.c
     src/wire.c
     src/prefs.c
     src/settings_dialog.c
