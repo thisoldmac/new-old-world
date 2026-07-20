@@ -90,12 +90,18 @@ final class StreamRecorder {
         }
     }
 
-    /// Abandons the temp file without finalizing.
+    /// Abandons the temp file without finalizing. Idempotent, and a later
+    /// finish() sees a recorder with nothing in it rather than a writer
+    /// that was already cancelled (finishWriting after cancelWriting is a
+    /// crash, not an error).
     func discard() {
         if let writer, writer.status == .writing {
-            input?.markAsFinished()
             writer.cancelWriting()
         }
+        writer = nil
+        input = nil
+        adaptor = nil
+        frames = 0
         try? FileManager.default.removeItem(at: url)
     }
 
