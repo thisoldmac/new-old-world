@@ -191,11 +191,12 @@ final class ScreenshotModuleModel: ObservableObject {
     func saveRecording(to directory: URL) -> String? {
         guard let recording else { return "No recording to save" }
         let stamp = Self.stampFormatter.string(from: Date())
-        var url = directory.appendingPathComponent("NOW Stream \(stamp).mov")
+        var url = directory.appendingPathComponent(
+            "Screen Recording \(stamp).mov")
         var bump = 2
         while FileManager.default.fileExists(atPath: url.path) {
             url = directory.appendingPathComponent(
-                "NOW Stream \(stamp) \(bump).mov")
+                "Screen Recording \(stamp) (\(bump)).mov")
             bump += 1
         }
         do {
@@ -324,10 +325,11 @@ final class ScreenshotModuleModel: ObservableObject {
             return "Could not encode the capture as PNG"
         }
         let stamp = Self.stampFormatter.string(from: record.capturedAt)
-        var url = directory.appendingPathComponent("NOW \(stamp).png")
+        var url = directory.appendingPathComponent("Screenshot \(stamp).png")
         var bump = 2
         while FileManager.default.fileExists(atPath: url.path) {
-            url = directory.appendingPathComponent("NOW \(stamp) \(bump).png")
+            url = directory.appendingPathComponent(
+                "Screenshot \(stamp) (\(bump)).png")
             bump += 1
         }
         do {
@@ -347,6 +349,14 @@ final class ScreenshotModuleModel: ObservableObject {
         image.addRepresentation(rep)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.writeObjects([image])
+    }
+
+    /// Save-panel defaults, in the contemporary style.
+    var suggestedScreenshotName: String {
+        "Screenshot \(Self.stampFormatter.string(from: Date())).png"
+    }
+    var suggestedRecordingName: String {
+        "Screen Recording \(Self.stampFormatter.string(from: Date())).mov"
     }
 
     private static let stampFormatter: DateFormatter = {

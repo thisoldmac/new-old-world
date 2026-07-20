@@ -14,7 +14,8 @@ enum {
     kItemConnect = 3,
     kItemHostField = 4,
     kItemPortField = 5,
-    kItemStatus = 6
+    kItemStatus = 6,
+    kItemRetryField = 9
 };
 
 static void get_field(DialogRef dialog, short item, char *out, long cap)
@@ -146,6 +147,8 @@ void now_settings_dialog_run(void)
     set_field(dialog, kItemHostField, prefs.host);
     snprintf(port_text, sizeof port_text, "%u", prefs.port);
     set_field(dialog, kItemPortField, port_text);
+    snprintf(port_text, sizeof port_text, "%d", (int)prefs.retry_secs);
+    set_field(dialog, kItemRetryField, port_text);
     g_last_status[0] = '\0';
     g_button_primed = false;
     refresh_status(dialog, g_last_status, sizeof g_last_status);
@@ -177,6 +180,15 @@ void now_settings_dialog_run(void)
             get_field(dialog, kItemPortField, port_text, sizeof port_text);
             port = strtol(port_text, NULL, 10);
             if (port > 0 && port <= 65535 && host[0] != '\0') {
+                char retry_text[16];
+                long retry;
+
+                get_field(dialog, kItemRetryField, retry_text,
+                          sizeof retry_text);
+                retry = strtol(retry_text, NULL, 10);
+                if (retry >= 0 && retry <= 300) {
+                    prefs.retry_secs = (short)retry;
+                }
                 strcpy(prefs.host, host);
                 prefs.port = (unsigned short)port;
                 now_prefs_save(&prefs);

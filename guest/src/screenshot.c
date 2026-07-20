@@ -42,9 +42,10 @@ static PicHandle encode_pict(CaptureImage *image)
     return pic;
 }
 
-/* Finds a free "NOW Shot N" name on the desktop and writes the PICT file
-   (512-byte header + picture data), type PICT / creator ttxt so SimpleText
-   opens it with a double-click. */
+/* Names the file the contemporary way — "Screenshot 2026-07-19 22.53.01"
+   (30 chars; HFS caps names at 31, which is why there is no " at ") — and
+   writes the PICT (512-byte header + picture data), type PICT / creator
+   ttxt so SimpleText opens it with a double-click. */
 static OSErr save_pict(PicHandle pic, char *name_out, long name_cap)
 {
     short vref, ref;
@@ -52,7 +53,7 @@ static OSErr save_pict(PicHandle pic, char *name_out, long name_cap)
     FSSpec spec;
     OSErr err;
     int n;
-    char name[32];
+    char name[40];
     Str255 pname;
     long len;
     char header[512];
@@ -62,8 +63,24 @@ static OSErr save_pict(PicHandle pic, char *name_out, long name_cap)
     if (err != noErr) {
         return err;
     }
-    for (n = 1; n < 100; ++n) {
-        snprintf(name, sizeof name, "NOW Shot %d", n);
+    for (n = 0; n < 2; ++n) {
+        if (n == 0) {
+            DateTimeRec when;
+
+            GetTime(&when);
+            snprintf(name, sizeof name,
+                     "Screenshot %04u-%02u-%02u %02u.%02u.%02u",
+                     (unsigned)when.year % 10000u,
+                     (unsigned)when.month % 100u,
+                     (unsigned)when.day % 100u,
+                     (unsigned)when.hour % 100u,
+                     (unsigned)when.minute % 100u,
+                     (unsigned)when.second % 100u);
+        } else {
+            /* Same-second collision: ticks are unique enough. */
+            snprintf(name, sizeof name, "Screenshot %lu",
+                     (unsigned long)TickCount());
+        }
         CopyCStringToPascal(name, pname);
         err = FSMakeFSSpec(vref, dirid, pname, &spec);
         if (err == fnfErr) {

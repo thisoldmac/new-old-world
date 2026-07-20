@@ -144,7 +144,7 @@ struct ScreenshotsModuleView: View {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.quickTimeMovie]
         panel.directoryURL = model.saveDirectory
-        panel.nameFieldStringValue = "NOW Stream.mov"
+        panel.nameFieldStringValue = model.suggestedRecordingName
         if panel.runModal() == .OK, let url = panel.url {
             do {
                 if FileManager.default.fileExists(atPath: url.path) {
@@ -343,7 +343,7 @@ struct ScreenshotsModuleView: View {
         guard let png = CaptureDecoder.pngData(shot.image) else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png]
-        panel.nameFieldStringValue = "NOW Screenshot.png"
+        panel.nameFieldStringValue = model.suggestedScreenshotName
         if panel.runModal() == .OK, let url = panel.url {
             try? png.write(to: url)
         }

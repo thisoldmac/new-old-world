@@ -186,12 +186,21 @@ static void enter_backoff(void)
         g.phase = kConnIdle;
         return;
     }
-    if (g.backoff_ticks == 0) {
-        g.backoff_ticks = kBackoffMinTicks;
-    } else {
-        g.backoff_ticks *= 2;
-        if (g.backoff_ticks > kBackoffMaxTicks) {
-            g.backoff_ticks = kBackoffMaxTicks;
+    {
+        NowPrefs prefs;
+
+        now_prefs_load(&prefs);
+        if (prefs.retry_secs > 0) {
+            /* Fixed cadence from the Connection dialog: predictable
+               reconnects beat adaptive politeness on a private LAN. */
+            g.backoff_ticks = (unsigned long)prefs.retry_secs * 60;
+        } else if (g.backoff_ticks == 0) {
+            g.backoff_ticks = kBackoffMinTicks;
+        } else {
+            g.backoff_ticks *= 2;
+            if (g.backoff_ticks > kBackoffMaxTicks) {
+                g.backoff_ticks = kBackoffMaxTicks;
+            }
         }
     }
     g.backoff_until = TickCount() + g.backoff_ticks;

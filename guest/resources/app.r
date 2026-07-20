@@ -85,7 +85,7 @@ resource 'DITL' (200) {
 };
 
 resource 'DLOG' (300) {
-    {120, 140, 302, 560},
+    {120, 140, 332, 560},
     movableDBoxProc,
     invisible,
     noGoAway,
@@ -97,15 +97,19 @@ resource 'DLOG' (300) {
 
 resource 'DITL' (300) {
     {
-        /* 1 Save   */ {146, 330, 166, 400}, Button { enabled, "Save" };
-        /* 2 Cancel */ {146, 244, 166, 314}, Button { enabled, "Cancel" };
-        /* 3 Connect */ {146, 20, 166, 130},
+        /* 1 Save   */ {176, 330, 196, 400}, Button { enabled, "Save" };
+        /* 2 Cancel */ {176, 244, 196, 314}, Button { enabled, "Cancel" };
+        /* 3 Connect */ {176, 20, 196, 130},
             Button { enabled, "Connect" };
         /* 4 host   */ {24, 110, 40, 300}, EditText { enabled, "" };
         /* 5 port   */ {54, 110, 70, 180}, EditText { enabled, "" };
-        /* 6 status */ {88, 20, 132, 400}, StaticText { disabled, "" };
+        /* 6 status */ {118, 20, 162, 400}, StaticText { disabled, "" };
         /* 7 */ {24, 20, 40, 100}, StaticText { disabled, "Host:" };
         /* 8 */ {54, 20, 70, 100}, StaticText { disabled, "Port:" };
+        /* 9 retry */ {84, 110, 100, 160}, EditText { enabled, "" };
+        /* 10 */ {84, 20, 100, 100}, StaticText { disabled, "Retry:" };
+        /* 11 */ {84, 170, 100, 400},
+            StaticText { disabled, "seconds (0 = automatic backoff)" };
     }
 };
 

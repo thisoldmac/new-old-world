@@ -519,6 +519,18 @@ void console_win_draw(void)
     draw_input();
 }
 
+void console_win_invalidate(void)
+{
+    Rect bounds;
+
+    if (g_window == NULL) {
+        return;
+    }
+    SetPortWindowPort(g_window);
+    GetWindowPortBounds(g_window, &bounds);
+    InvalWindowRect(g_window, &bounds);
+}
+
 void console_win_key(char ch)
 {
     Rect bounds;

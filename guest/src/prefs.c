@@ -30,6 +30,11 @@ typedef struct {
     Rect console_rect;
 } PrefsRecordV3;
 
+typedef struct {
+    PrefsRecordV3 v3;                 /* format = 4 */
+    short retry_secs;
+} PrefsRecordV4;
+
 static OSErr prefs_spec(FSSpec *spec)
 {
     short vref;
@@ -70,7 +75,8 @@ void now_prefs_load(NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV3);
+    long count = sizeof(PrefsRecordV4);
+    PrefsRecordV4 v4;
     PrefsRecordV3 record;
     OSErr err;
 
@@ -82,9 +88,10 @@ void now_prefs_load(NowPrefs *prefs)
     if (FSpOpenDF(&spec, fsRdPerm, &ref) != noErr) {
         return;
     }
-    memset(&record, 0, sizeof record);
-    err = FSRead(ref, &count, &record);
+    memset(&v4, 0, sizeof v4);
+    err = FSRead(ref, &count, &v4);
     FSClose(ref);
+    record = v4.v3;
     if ((err != noErr && err != eofErr)
         || record.magic != kPrefsMagic || record.port == 0) {
         return;
@@ -110,19 +117,24 @@ void now_prefs_load(NowPrefs *prefs)
     prefs->console_open = record.console_open != 0;
     prefs->panel_rect = record.panel_rect;
     prefs->console_rect = record.console_rect;
+    if (record.format >= 4 && count >= (long)sizeof(PrefsRecordV4)
+        && v4.retry_secs >= 0 && v4.retry_secs <= 300) {
+        prefs->retry_secs = v4.retry_secs;
+    }
 }
 
 OSErr now_prefs_save(const NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV3);
+    long count = sizeof(PrefsRecordV4);
+    PrefsRecordV4 v4;
     PrefsRecordV3 record;
     OSErr err;
 
     memset(&record, 0, sizeof record);
     record.magic = kPrefsMagic;
-    record.format = 3;
+    record.format = 4;
     record.port = prefs->port;
     strncpy(record.host, prefs->host, sizeof record.host - 1);
     record.shot_depth = prefs->shot_depth;
@@ -146,7 +158,10 @@ OSErr now_prefs_save(const NowPrefs *prefs)
     if (err != noErr) {
         return err;
     }
-    err = FSWrite(ref, &count, &record);
+    memset(&v4, 0, sizeof v4);
+    v4.v3 = record;
+    v4.retry_secs = prefs->retry_secs;
+    err = FSWrite(ref, &count, &v4);
     if (err == noErr) {
         SetEOF(ref, sizeof record);
     }

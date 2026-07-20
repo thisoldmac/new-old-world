@@ -155,6 +155,22 @@ static void handle_mouse_down(const EventRecord *event)
             if (TrackGoAway(window, event->where)) {
                 console_win_close();
             }
+        } else if (part == inGrow) {
+            Rect limits;
+            long size;
+
+            SetRect(&limits, 280, 160, 2048, 2048);
+            size = GrowWindow(window, event->where, &limits);
+            if (size != 0) {
+                SizeWindow(window, LoWord(size), HiWord(size), true);
+                console_win_invalidate();
+            }
+        } else if (part == inZoomIn || part == inZoomOut) {
+            if (TrackBox(window, event->where, part)) {
+                SetPortWindowPort(window);
+                ZoomWindow(window, part, false);
+                console_win_invalidate();
+            }
         } else if (part == inContent && window != FrontWindow()) {
             SelectWindow(window);
         }
