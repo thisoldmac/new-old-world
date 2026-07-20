@@ -39,6 +39,15 @@ swift test --package-path host --scratch-path /private/tmp/now-host-tests
 open /private/tmp/now-host-product/New\ Old\ World.app
 ```
 
+The script's ad-hoc signature is fine for development, but system
+notifications require a real one — `host/NewOldWorld.xcodeproj` builds the
+same sources as an app target (synchronized folder group, so it never needs
+file-list upkeep). Open it in Xcode, pick a signing team, and build:
+
+```sh
+open host/NewOldWorld.xcodeproj
+```
+
 See [docs/architecture.md](docs/architecture.md) for the seams this slice keeps
 open without implementing speculative infrastructure.
 

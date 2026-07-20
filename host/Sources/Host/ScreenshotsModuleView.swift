@@ -38,7 +38,7 @@ struct ScreenshotsModuleView: View {
             }
 
             HStack(spacing: 12) {
-                Button(model.isCapturing ? "Capturing…" : "Capture Guest") {
+                Button(model.isCapturing ? "Capturing…" : "Capture") {
                     model.capture()
                 }
                 .buttonStyle(.borderedProminent)
@@ -97,17 +97,16 @@ struct ScreenshotsModuleView: View {
     }
 
     /// The landing pad is not the toggle's: screenshots the guest sends
-    /// always land in the folder, so the folder is always live. The toggle
+    /// always save to the folder, so the folder is always live. The toggle
     /// only governs captures taken from this panel.
     private var saveRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        HStack(spacing: 16) {
+            Toggle("Save captures", isOn: $model.autoSave)
+            Toggle("Copy to clipboard", isOn: $model.autoCopy)
+            Spacer()
             HStack(spacing: 8) {
-                Text("Screenshots land in")
+                Text("Save screenshots to")
                 folderPicker
-            }
-            HStack(spacing: 16) {
-                Toggle("Auto-save captures taken here", isOn: $model.autoSave)
-                Toggle("Copy to clipboard", isOn: $model.autoCopy)
             }
         }
         .font(.callout)
@@ -249,7 +248,7 @@ struct ScreenshotsModuleView: View {
             Text("No Screenshots Yet")
                 .font(.title2.weight(.semibold))
             Text(model.connection.canCapture
-                 ? "Press Capture Guest to pull the classic Mac's screen "
+                 ? "Press Capture to pull the classic Mac's screen "
                    + "across the wire."
                  : "Connect a Mac first — the guest dials this host.")
                 .foregroundStyle(.secondary)
