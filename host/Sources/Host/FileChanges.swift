@@ -12,9 +12,11 @@ import Foundation
 ///   file has nowhere to come back from.
 /// * **The history lives here, the mechanism lives there.** The other
 ///   machine performs the change and hands back what it needs to reverse
-///   it; this side remembers the order things happened in. The history is
-///   session-local by design: it is a list of what *this* window did, and
-///   it does not pretend to survive either side restarting.
+///   it; this side remembers the order things happened in. Every reversal
+///   is expressed in names on both ends — including undoing a delete,
+///   where the item is named by where it landed in the Trash — so a
+///   change stays undoable across a restart of either side. The history
+///   itself is session-local: it is a list of what *this* window did.
 extension FilesModuleModel {
 
     /// A change described but not yet made. The wording is the point —
@@ -76,10 +78,10 @@ extension FilesModuleModel {
         enum Undo: Equatable {
             /// Reversed by moving it back.
             case moved(from: String, to: String)
-            /// Reversed by the token the other side issued. A token is
-            /// only meaningful while that process runs, which is why an
-            /// undo can fail honestly rather than guess at a path.
-            case trashed(path: String, token: Int)
+            /// Reversed by moving it back out of the Trash. Both halves
+            /// are names — what it is called in there, and where it
+            /// belongs — so this outlives a restart of either side.
+            case trashed(path: String, trashedAs: String)
             /// Reversed by trashing what we made.
             case created(path: String)
         }
@@ -206,7 +208,9 @@ extension FilesModuleModel {
                 switch result {
                 case .success(let answer):
                     self.record(.init(undo: .trashed(
-                        path: path, token: answer.token ?? 0)))
+                        path: path,
+                        trashedAs: answer.trashedAs
+                            ?? FileChangeNames.leaf(path))))
                     self.trash(Array(paths.dropFirst()))
                 case .failure(let error):
                     self.finishChanging(error: error.message)
@@ -253,10 +257,11 @@ extension FilesModuleModel {
                         if !self.history.isEmpty { self.history.removeLast() }
                         self.finishChanging()
                     case .failure(let error):
-                        // An undo that cannot happen is not a reason to
-                        // keep offering it: drop it, and say why.
-                        if error.code == "unknown-token",
-                           !self.history.isEmpty {
+                        // An undo that can never happen is not worth
+                        // keeping on the stack: an item that has left the
+                        // Trash is not coming back. Anything else might
+                        // work on a second try, so it stays.
+                        if error.code == "not-found", !self.history.isEmpty {
                             self.history.removeLast()
                         }
                         self.finishChanging(error: error.message)
@@ -266,8 +271,9 @@ extension FilesModuleModel {
         switch change.undo {
         case .moved(let from, let to):
             listener.moveFile(from: to, to: from, completion: done)
-        case .trashed(_, let token):
-            listener.restoreFile(token: token, completion: done)
+        case .trashed(let path, let trashedAs):
+            listener.restoreFile(trashedAs: trashedAs, to: path,
+                                 completion: done)
         case .created(let path):
             listener.trashFile(path: path, completion: done)
         }

@@ -1159,23 +1159,6 @@ void now_files_receive_abort(FileReceive *rx)
 
 /* --- changing the share ------------------------------------------------- */
 
-/* What a trashed item needs to go home again. Session-lived: the far
-   side is told plainly when a token is no longer known, which is better
-   than a restore that silently puts a file somewhere else. */
-enum { kTrashSlots = 64 };
-
-typedef struct {
-    Boolean used;
-    FSSpec trashed;                   /* where it is now */
-    short home_vref;
-    long home_dir;                    /* where it came from */
-    Str63 home_name;
-    char home_rel[256];               /* as the far side named it */
-} TrashRecord;
-
-static TrashRecord g_trash[kTrashSlots];
-static long g_trash_seq;
-
 /* FSpCatMove wants an FSSpec naming the destination folder, which we do
    not have here — every path we resolve ends at a dirID. PBCatMove takes
    the dirID directly, so it is the honest primitive for this layer. */
@@ -1289,88 +1272,158 @@ int now_files_move(const char *rel, const char *to_rel, Boolean overwrite)
     return kFilesOK;
 }
 
-int now_files_trash(const char *rel, long *token)
+/* The volume's Trash for the share, resolved fresh every time. Nothing
+   is remembered between calls: the Trash is a real folder, so a name in
+   it is as durable a way to say "that item" as a path anywhere else. */
+static int trash_folder(short *vref, long *dir)
+{
+    NowPrefs prefs;
+    short share_vref;
+    short found_vref;
+
+    now_prefs_load(&prefs);
+    if (!share_volume(&share_vref, &prefs)) {
+        return kFilesIOError;
+    }
+    if (FindFolder(share_vref, kTrashFolderType, kCreateFolder,
+                   &found_vref, dir) != noErr) {
+        return kFilesIOError;
+    }
+    *vref = found_vref;
+    return kFilesOK;
+}
+
+/* A name free in the Trash, starting from the item's own. The Finder
+   does the same thing for the same reason: two files deleted from
+   different folders can share a name, and the second must not fail. */
+/* `wanted` is whatever length of Str the caller has (an FSSpec carries
+   Str63), so it is taken by pointer rather than as a Str255. */
+static void free_trash_name(short vref, long dir,
+                            const unsigned char *wanted, Str255 out)
+{
+    FSSpec probe;
+    int suffix;
+
+    memcpy(out, wanted, wanted[0] + 1);
+    for (suffix = 2; suffix < 100; ++suffix) {
+        char base[64], candidate[80];
+
+        if (FSMakeFSSpec(vref, dir, out, &probe) != noErr) {
+            return;                   /* nothing there: this name is free */
+        }
+        memcpy(base, wanted + 1, wanted[0]);
+        base[wanted[0]] = '\0';
+        snprintf(candidate, sizeof candidate, "%.27s %d", base, suffix);
+        CopyCStringToPascal(candidate, out);
+    }
+}
+
+int now_files_trash(const char *rel, char *trashed_as, long cap)
 {
     FSSpec spec;
     short trash_vref;
     long trash_dir;
+    Str255 landed;
     int rc;
-    int slot;
     OSErr err;
 
-    *token = 0;
-    if (rel == NULL || rel[0] == '\0' || strlen(rel) >= 256) {
+    if (trashed_as != NULL && cap > 0) {
+        trashed_as[0] = '\0';
+    }
+    if (rel == NULL || rel[0] == '\0') {
         return kFilesBadPath;         /* the share root is not deletable */
     }
     rc = resolve(rel, &spec);
     if (rc != kFilesOK) {
         return rc;
     }
-    /* The volume's own Trash, so the Finder shows it where a human
-       expects and emptying it is their decision. */
-    if (FindFolder(spec.vRefNum, kTrashFolderType, kCreateFolder,
-                   &trash_vref, &trash_dir) != noErr) {
-        return kFilesIOError;
+    rc = trash_folder(&trash_vref, &trash_dir);
+    if (rc != kFilesOK) {
+        return rc;
     }
-    for (slot = 0; slot < kTrashSlots; ++slot) {
-        if (!g_trash[slot].used) {
-            break;
-        }
-    }
-    if (slot == kTrashSlots) {
-        return kFilesIOError;         /* remembering is part of the job */
-    }
-
-    strcpy(g_trash[slot].home_rel, rel);
-    g_trash[slot].home_vref = spec.vRefNum;
-    g_trash[slot].home_dir = spec.parID;
-    memcpy(g_trash[slot].home_name, spec.name, spec.name[0] + 1);
+    free_trash_name(trash_vref, trash_dir, spec.name, landed);
 
     err = cat_move(&spec, trash_dir);
     if (err != noErr) {
         return err == fnfErr ? kFilesNotFound : kFilesIOError;
     }
-    g_trash[slot].trashed.vRefNum = trash_vref;
-    g_trash[slot].trashed.parID = trash_dir;
-    memcpy(g_trash[slot].trashed.name, spec.name, spec.name[0] + 1);
-    g_trash[slot].used = true;
-    *token = ++g_trash_seq * kTrashSlots + slot;
+    if (!EqualString(spec.name, landed, false, false)) {
+        FSSpec moved;
+
+        moved.vRefNum = trash_vref;
+        moved.parID = trash_dir;
+        memcpy(moved.name, spec.name, spec.name[0] + 1);
+        if (FSpRename(&moved, landed) != noErr) {
+            /* It is in the Trash under its own name; say that, so the
+               far side records what is actually true. */
+            memcpy(landed, spec.name, spec.name[0] + 1);
+        }
+    }
+    if (trashed_as != NULL && landed[0] < cap) {
+        memcpy(trashed_as, landed + 1, landed[0]);
+        trashed_as[landed[0]] = '\0';
+    }
     return kFilesOK;
 }
 
-int now_files_restore(long token, char *out_path, long cap)
+int now_files_restore(const char *trashed_as, const char *to_rel)
 {
-    int slot = (int)(token % kTrashSlots);
-    TrashRecord *rec;
+    FSSpec spec, parent;
+    short trash_vref;
+    long trash_dir, to_dir;
+    char to_parent[224], to_leaf[64];
+    Str255 pname, to_pname;
+    int rc;
     OSErr err;
 
-    if (token <= 0 || slot < 0 || slot >= kTrashSlots) {
+    if (trashed_as == NULL || trashed_as[0] == '\0'
+        || strlen(trashed_as) > 31) {
+        return kFilesBadPath;
+    }
+    rc = split_rel(to_rel, to_parent, sizeof to_parent,
+                   to_leaf, sizeof to_leaf);
+    if (rc != kFilesOK || strlen(to_leaf) > 31) {
+        return kFilesBadPath;
+    }
+    rc = trash_folder(&trash_vref, &trash_dir);
+    if (rc != kFilesOK) {
+        return rc;
+    }
+    CopyCStringToPascal(trashed_as, pname);
+    if (FSMakeFSSpec(trash_vref, trash_dir, pname, &spec) != noErr) {
+        /* Emptied, or dragged out by hand. Either way it is not ours to
+           put back, and saying so beats guessing. */
         return kFilesNotFound;
     }
-    rec = &g_trash[slot];
-    if (!rec->used) {
-        return kFilesNotFound;
+    /* The folder it came from may itself be gone. Restoring into a
+       folder we invent would put the item somewhere it never was. */
+    rc = resolve_folder(to_parent, &parent, &to_dir);
+    if (rc != kFilesOK) {
+        return rc;
     }
-    err = cat_move(&rec->trashed, rec->home_dir);
+    CopyCStringToPascal(to_leaf, to_pname);
+    {
+        FSSpec existing;
+
+        if (FSMakeFSSpec(parent.vRefNum, to_dir, to_pname, &existing)
+            == noErr) {
+            return kFilesExists;
+        }
+    }
+    err = cat_move(&spec, to_dir);
     if (err != noErr) {
-        /* Emptied, or moved by hand: say not-found rather than guess. */
-        rec->used = false;
         return err == fnfErr ? kFilesNotFound : kFilesIOError;
     }
-    if (!EqualString(rec->trashed.name, rec->home_name, false, false)) {
+    if (!EqualString(spec.name, to_pname, false, false)) {
         FSSpec moved;
 
-        moved.vRefNum = rec->home_vref;
-        moved.parID = rec->home_dir;
-        memcpy(moved.name, rec->trashed.name, rec->trashed.name[0] + 1);
-        FSpRename(&moved, rec->home_name);
+        moved.vRefNum = parent.vRefNum;
+        moved.parID = to_dir;
+        memcpy(moved.name, spec.name, spec.name[0] + 1);
+        if (FSpRename(&moved, to_pname) != noErr) {
+            return kFilesIOError;
+        }
     }
-    if ((long)strlen(rec->home_rel) < cap) {
-        strcpy(out_path, rec->home_rel);
-    } else {
-        out_path[0] = '\0';
-    }
-    rec->used = false;
     return kFilesOK;
 }
 

@@ -241,11 +241,12 @@ final class GuestListener: ObservableObject {
         }
     }
 
-    func restoreFile(token: Int,
+    func restoreFile(trashedAs: String, to path: String,
                      completion: @escaping (Result<FileResult,
                                                    FileFailure>) -> Void) {
         sendChange(completion) { session, id in
-            session.sendFileRestore(FileRestore(id: id, token: token))
+            session.sendFileRestore(FileRestore(id: id, trashedAs: trashedAs,
+                                                toPath: path))
         }
     }
 

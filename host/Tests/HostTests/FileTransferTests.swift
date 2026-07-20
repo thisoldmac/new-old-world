@@ -113,7 +113,7 @@ final class FileWireTests: XCTestCase {
         XCTAssertEqual(answer?.path, "Lab:Old Notes")
     }
 
-    func testTrashHandsBackTheTokenThatUndoesIt() async throws {
+    func testTrashHandsBackTheNameItLandedUnder() async throws {
         let guest = try await connectedGuest()
         var answer: FileResult?
 
@@ -132,19 +132,20 @@ final class FileWireTests: XCTestCase {
         }
         try guest.send(.fileResult(FileResult(
             id: try XCTUnwrap(trashId), ok: true, path: "Lab:Notes",
-            token: 7)))
+            trashedAs: "Notes 2")))
         try await waitUntil("result") { answer != nil }
-        XCTAssertEqual(answer?.token, 7)
+        XCTAssertEqual(answer?.trashedAs, "Notes 2")
     }
 
-    /// A token outlives nothing: when the guest no longer knows it, the
-    /// failure has to reach the caller so the history can drop the entry
-    /// instead of offering an undo that will never work.
-    func testForgottenTokenFailsRatherThanHangs() async throws {
+    /// Restore names both ends, so nothing is remembered on either side
+    /// and an undo outlives a restart. When the Trash no longer holds the
+    /// item the failure still has to reach the caller, so the history can
+    /// drop an entry that will never work again.
+    func testRestoreNamesBothEndsAndFailsHonestly() async throws {
         let guest = try await connectedGuest()
         var failure: GuestListener.FileFailure?
 
-        listener.restoreFile(token: 7) { result in
+        listener.restoreFile(trashedAs: "Notes 2", to: "Lab:Notes") { result in
             if case .failure(let f) = result { failure = f }
         }
         var restoreId: Int?
@@ -152,17 +153,19 @@ final class FileWireTests: XCTestCase {
             for message in guest.received {
                 if case .fileRestore(let restore) = message {
                     restoreId = restore.id
-                    return restore.token == 7
+                    return restore.trashedAs == "Notes 2"
+                        && restore.toPath == "Lab:Notes"
                 }
             }
             return false
         }
         try guest.send(.fileResult(FileResult(
-            id: try XCTUnwrap(restoreId), ok: false, path: nil, token: nil,
-            code: "unknown-token",
-            reason: "that item is no longer in the Trash")))
+            id: try XCTUnwrap(restoreId), ok: false, path: nil,
+            trashedAs: nil, code: "not-found",
+            reason: "no such item — it may have been moved "
+                + "or the Trash emptied")))
         try await waitUntil("failure") { failure != nil }
-        XCTAssertEqual(failure?.code, "unknown-token")
+        XCTAssertEqual(failure?.code, "not-found")
     }
 
     /// An older guest answers an unknown message with file.refuse rather

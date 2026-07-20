@@ -147,14 +147,16 @@ void now_files_receive_abort(FileReceive *rx);
    not there is a mistake, not an instruction. */
 int now_files_move(const char *rel, const char *to_rel, Boolean overwrite);
 
-/* Moves an item to the Trash. On success *token is a handle that
-   now_files_restore takes; it is valid only while this app runs. */
-int now_files_trash(const char *rel, long *token);
+/* Moves an item to the Trash. On success `trashed_as` is the name it
+   landed under there — the Trash may already hold that name, so it is
+   not always the name it had. That name, plus the path it came from, is
+   everything a restore needs; nothing is remembered here. */
+int now_files_trash(const char *rel, char *trashed_as, long cap);
 
-/* Puts a trashed item back where it came from. kFilesNotFound when the
-   token is unknown — a restarted guest has forgotten, and the far side
-   should say so rather than pretend. */
-int now_files_restore(long token, char *out_path, long cap);
+/* Moves an item back out of the Trash to `to_rel`. Both halves are
+   names, so this works across a restart of this app. kFilesNotFound
+   when the Trash no longer holds it (emptied, or dragged out by hand). */
+int now_files_restore(const char *trashed_as, const char *to_rel);
 
 /* Creates a folder. kFilesExists if something is already there. */
 int now_files_mkdir(const char *rel);

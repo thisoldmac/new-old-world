@@ -149,7 +149,14 @@ static void help_for(const char *name)
         append_line("  Usage: trash <path>");
         append_line("  The item goes to this volume's Trash, so it can be");
         append_line("  dragged back out until the Trash is emptied. It is");
-        append_line("  not erased.");
+        append_line("  not erased. Reports the name it landed under, which");
+        append_line("  differs if the Trash already held that name.");
+    } else if (strcmp(name, "untrash") == 0) {
+        append_line("untrash - put something back from the Trash");
+        append_line("  Usage: untrash <trash name> <path>");
+        append_line("  The first is what trash reported the item is");
+        append_line("  called in the Trash; the second is where in the");
+        append_line("  share to put it back, including its name.");
     } else if (strcmp(name, "mkdir") == 0) {
         append_line("mkdir - make a folder in the shared files");
         append_line("  Usage: mkdir <path>");
@@ -181,6 +188,7 @@ static void help_list(void)
     append_line("  ls          list a shared folder (ls [path])");
     append_line("  mv          move or rename (mv <path> <new path>)");
     append_line("  trash       move to the Trash (trash <path>)");
+    append_line("  untrash     put back (untrash <trash name> <path>)");
     append_line("  mkdir       make a folder (mkdir <path>)");
     append_line("  vprobe      measure VRAM read cost by method");
     append_line("  help        show this list (\"help <cmd>\" for details)");
@@ -461,11 +469,14 @@ static void run_command(const char *input)
         return;
     }
     if (strcmp(name, "mv") == 0 || strcmp(name, "trash") == 0
-        || strcmp(name, "mkdir") == 0) {
+        || strcmp(name, "untrash") == 0 || strcmp(name, "mkdir") == 0) {
+        char landed[64];
         int rc;
 
+        landed[0] = '\0';
         if (target[0] == '\0'
-            || (strcmp(name, "mv") == 0 && target2[0] == '\0')) {
+            || ((strcmp(name, "mv") == 0 || strcmp(name, "untrash") == 0)
+                && target2[0] == '\0')) {
             snprintf(line, sizeof line, "%s: see \"help %s\"", name, name);
             append_line(line);
             return;
@@ -473,8 +484,9 @@ static void run_command(const char *input)
         if (strcmp(name, "mv") == 0) {
             rc = now_files_move(target, target2, false);
         } else if (strcmp(name, "trash") == 0) {
-            long token = 0;
-            rc = now_files_trash(target, &token);
+            rc = now_files_trash(target, landed, sizeof landed);
+        } else if (strcmp(name, "untrash") == 0) {
+            rc = now_files_restore(target, target2);
         } else {
             rc = now_files_mkdir(target);
         }
@@ -488,7 +500,12 @@ static void run_command(const char *input)
             append_line(line);
             return;
         }
-        snprintf(line, sizeof line, "%s: done", name);
+        if (landed[0] != '\0') {
+            snprintf(line, sizeof line,
+                     "trash: in the Trash as \"%.40s\"", landed);
+        } else {
+            snprintf(line, sizeof line, "%s: done", name);
+        }
         append_line(line);
         return;
     }

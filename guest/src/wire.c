@@ -1219,7 +1219,8 @@ static const char *files_reason(int rc)
 {
     switch (rc) {
     case kFilesBadPath:   return "that path leaves the shared folder";
-    case kFilesNotFound:  return "no such item in the shared folder";
+    case kFilesNotFound:  return "no such item — it may have been moved "
+                                 "or the Trash emptied";
     case kFilesNotAFolder:return "not a folder";
     case kFilesExists:    return "something is already there";
     default:              return "the File Manager refused";
@@ -1237,7 +1238,7 @@ static void file_result_fail(long id, int rc)
     send_control(json);
 }
 
-static void file_result_ok(long id, const char *path, long token)
+static void file_result_ok(long id, const char *path, const char *trashed_as)
 {
     char json[512];
     char esc[300];
@@ -1247,9 +1248,12 @@ static void file_result_ok(long id, const char *path, long token)
     pos = snprintf(json, sizeof json,
                    "{\"type\":\"file.result\",\"id\":%ld,\"ok\":true,"
                    "\"path\":\"%s\"", id, esc);
-    if (token != 0) {
+    if (trashed_as != NULL && trashed_as[0] != '\0') {
+        char esc_name[160];
+
+        now_json_escape(trashed_as, esc_name, sizeof esc_name);
         pos += snprintf(json + pos, sizeof json - (size_t)pos,
-                        ",\"token\":%ld", token);
+                        ",\"trashedAs\":\"%s\"", esc_name);
     }
     snprintf(json + pos, sizeof json - (size_t)pos, "}");
     send_control(json);
@@ -1270,54 +1274,46 @@ static void serve_file_move(const char *request)
         file_result_fail(id, rc);
         return;
     }
-    file_result_ok(id, to, 0);
+    file_result_ok(id, to, NULL);
     note_shot("Item moved");
 }
 
 static void serve_file_trash(const char *request)
 {
     char path[224];
+    char landed[64];
     long id = now_json_find_int(request, "id", 0);
-    long token = 0;
     int rc;
 
     path[0] = '\0';
     now_json_find_string(request, "path", path, sizeof path);
-    rc = now_files_trash(path, &token);
+    rc = now_files_trash(path, landed, sizeof landed);
     if (rc != kFilesOK) {
         file_result_fail(id, rc);
         return;
     }
-    file_result_ok(id, path, token);
+    file_result_ok(id, path, landed);
     note_shot("Item moved to the Trash");
 }
 
 static void serve_file_restore(const char *request)
 {
     char path[224];
+    char trashed_as[64];
     long id = now_json_find_int(request, "id", 0);
-    long token = now_json_find_int(request, "token", 0);
     int rc;
 
-    path[0] = '\0';
-    rc = now_files_restore(token, path, sizeof path);
+    path[0] = trashed_as[0] = '\0';
+    now_json_find_string(request, "trashedAs", trashed_as, sizeof trashed_as);
+    now_json_find_string(request, "toPath", path, sizeof path);
+    rc = now_files_restore(trashed_as, path);
     if (rc != kFilesOK) {
-        /* An unknown token is its own answer: the item may have been
-           emptied from the Trash, or this app restarted since. */
-        if (rc == kFilesNotFound) {
-            char json[256];
-
-            snprintf(json, sizeof json,
-                     "{\"type\":\"file.result\",\"id\":%ld,\"ok\":false,"
-                     "\"code\":\"unknown-token\",\"reason\":"
-                     "\"that item is no longer in the Trash\"}", id);
-            send_control(json);
-            return;
-        }
+        /* not-found here means the Trash no longer holds it — emptied,
+           or dragged out by hand. That is a real answer, not our error. */
         file_result_fail(id, rc);
         return;
     }
-    file_result_ok(id, path, 0);
+    file_result_ok(id, path, NULL);
     note_shot("Item put back");
 }
 
@@ -1334,7 +1330,7 @@ static void serve_file_mkdir(const char *request)
         file_result_fail(id, rc);
         return;
     }
-    file_result_ok(id, path, 0);
+    file_result_ok(id, path, NULL);
     note_shot("Folder created");
 }
 

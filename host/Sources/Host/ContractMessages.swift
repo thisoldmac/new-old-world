@@ -196,12 +196,14 @@ struct FileTrash: Codable, Equatable, Sendable {
     var path: String
 }
 
-/// Puts a trashed item back. The token is opaque and lives only as long
-/// as the guest process — the Trash sits outside the share and has no
-/// path this protocol can name, so a path could not express it.
+/// Puts a trashed item back. Both halves are names — what it is called
+/// in the Trash, and where in the share it belongs — so an undo survives
+/// a restart of either side. The Trash is a real folder; a name in it is
+/// as durable a way to say "that item" as a path anywhere else.
 struct FileRestore: Codable, Equatable, Sendable {
     var id: Int
-    var token: Int
+    var trashedAs: String
+    var toPath: String
 }
 
 struct FileMkdir: Codable, Equatable, Sendable {
@@ -213,7 +215,10 @@ struct FileResult: Codable, Equatable, Sendable {
     var id: Int
     var ok: Bool
     var path: String?
-    var token: Int?
+    /// Answering file.trash: the name it landed under in the Trash,
+    /// which is not always the name it had — the Trash may already hold
+    /// one, and the second delete must not fail.
+    var trashedAs: String?
     var code: String?
     var reason: String?
 }

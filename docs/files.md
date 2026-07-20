@@ -349,20 +349,27 @@ way back; `PBCatMove` into the volume's Trash folder is what the Finder
 does, what a person expects to be able to reverse, and the only honest
 basis for an undo. Emptying it stays a human's decision on that machine.
 
-**Undoing a delete needs a token, not a path.** The Trash sits outside
-the share, so a share-relative path cannot name where the item went. The
-guest keeps a small table of trashed items — where each came from — and
-returns an opaque token. The token is meaningful only while that guest
-process runs. That is a real limitation, and it is stated rather than
-papered over: a restarted guest answers `unknown-token`, the host drops
-the entry from its history and says so. Move-undo, which is expressed
-entirely in share-relative paths, keeps working across a restart.
+**Undoing a delete is a move-undo.** The first cut gave the guest a
+session-lived table of trashed items and handed back an opaque token,
+which meant delete-undo silently became the one operation that died with
+the guest process. It did not need to. The Trash is a real folder, so a
+name inside it says "that item" as durably as a path says it anywhere
+else: `file.trash` reports the name the item landed under, and
+`file.restore` takes that name plus the path it came from. Both halves
+are names, nothing is remembered on either side, and every undo — move,
+delete, new folder — outlives a restart of either machine.
+
+The reported name matters because it is not always the name the item
+had. Two files deleted from different folders can share a name, so the
+guest picks a free one in the Trash the way the Finder does. Recording
+the name we *asked* for rather than the one it *got* would eventually
+put something else back.
 
 **The host owns the history, the guest owns the mechanism.** The guest
 performs one change and answers; it holds no notion of a session, an
-order, or an undo stack. The host stacks the reversals, which is what
-lets a multi-select move fail on item three and leave the first two
-undoable individually.
+order, or an undo stack — and now no notion of a trashed item either.
+The host stacks the reversals, which is what lets a multi-select move
+fail on item three and leave the first two undoable individually.
 
 ### Shape on the wire
 
@@ -371,15 +378,16 @@ destination path including the new name — a rename and a move are the
 same File Manager operation, and splitting them into two messages would
 have invented a distinction the file system does not have. Missing
 parent folders are **not** created: a typo in a folder name should fail
-rather than quietly build the wrong tree. `file.trash` returns the
-token. `file.restore` takes one. `file.mkdir` makes one folder. All four
-answer `file.result`, and an older guest that does not know them answers
-`file.refuse`, which settles the request just the same.
+rather than quietly build the wrong tree. `file.trash` reports the name the
+item landed under in the Trash; `file.restore` takes that plus where it
+belongs. `file.mkdir` makes one folder. All four answer `file.result`,
+and an older guest that does not know them answers `file.refuse`, which
+settles the request just the same.
 
 | Request | Answers with | Undone by |
 | --- | --- | --- |
 | `file.move` | `file.result` | `file.move` back |
-| `file.trash` | `file.result` + token | `file.restore` |
+| `file.trash` | `file.result` + trashed name | `file.restore` |
 | `file.mkdir` | `file.result` | `file.trash` |
 | `file.restore` | `file.result` | — |
 
@@ -397,10 +405,15 @@ double-click.
 The Undo control is a split button: pressing it reverses the last
 change, and its menu lists what this window has done this session. The
 history is capped at 50 entries and cleared when the app quits — it is a
-record of this window's work, not a journal of the volume.
+record of this window's work, not a journal of the volume. An undo that
+comes back `not-found` (the Trash was emptied, or the item dragged out
+by hand) drops off the stack, since it will never work again; any other
+failure stays, because it might.
 
-Console parity: `mv <path> <new path>`, `trash <path>`, `mkdir <path>`,
-each documented in `help`.
+Console parity: `mv <path> <new path>`, `trash <path>`,
+`untrash <trash name> <path>`, `mkdir <path>`, each documented in
+`help`. `trash` prints the name the item landed under, which is what
+`untrash` wants.
 
 ### Not done here
 
@@ -408,4 +421,7 @@ Copy (as opposed to move) within the share, and moving into a folder by
 any route other than a drag — no "Move to…" picker yet. Undo is
 last-first; reverting one change out of the middle of the stack would
 need the guest to say whether the later ones still hold, which it
-currently has no way to know.
+currently has no way to know. The history is not persisted across a host
+restart — the mechanism would now survive it, but a stale list of
+changes from days ago is a different feature than an undo stack, and it
+should be chosen deliberately rather than fall out of this.

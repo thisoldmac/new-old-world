@@ -77,13 +77,18 @@ final class FileChangeHistoryTests: XCTestCase {
         XCTAssertEqual(change.summary, "Moved \"Notes\"")
     }
 
-    func testTrashRemembersItsToken() {
+    /// The Trash may already hold that name, so what it landed under is
+    /// not always what it was called. Recording the wrong one would put
+    /// something else back.
+    func testTrashRemembersTheNameItLandedUnder() {
         let change = FilesModuleModel.FileChange(
-            undo: .trashed(path: "Lab:Notes", token: 42))
+            undo: .trashed(path: "Lab:Notes", trashedAs: "Notes 2"))
         XCTAssertEqual(change.undoLabel, "Undo Delete")
-        guard case .trashed(_, let token) = change.undo else {
+        XCTAssertEqual(change.summary, "Trashed \"Notes\"")
+        guard case .trashed(let path, let landed) = change.undo else {
             return XCTFail("wrong kind")
         }
-        XCTAssertEqual(token, 42)
+        XCTAssertEqual(path, "Lab:Notes")
+        XCTAssertEqual(landed, "Notes 2")
     }
 }

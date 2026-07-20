@@ -233,13 +233,14 @@ operations:
       Every one of these is reversible, which is the point: deleting
       moves an item to the Trash rather than erasing it, so the inverse
       is a move back, and the answer carries what the inverse needs.
-      A move or a rename inverts through ordinary share-relative paths;
-      a trashed item does NOT, because the Trash is outside the share
-      and therefore has no path this contract can express — so
-      file.trash answers with an opaque token that file.restore takes.
-      The token is meaningful only to the guest that issued it and only
-      while it runs; a guest that has restarted refuses it, which is
-      honest rather than surprising.
+      Every inverse is a move, expressed in names on both ends. A
+      trashed item is named by where it landed — file.trash answers with
+      the name it now has inside the Trash, which is not always the name
+      it had, since the Trash may already hold one. That name plus the
+      path it came from is everything file.restore needs, so nothing is
+      remembered on either side and an undo survives a restart of either.
+      The Trash is a real folder; a name in it is as durable a way to say
+      "that item" as a path anywhere else.
   guestServesFiles:
     action: send
     channel: { $ref: "#/channels/control" }
@@ -769,16 +770,22 @@ components:
         path: { type: string }
     FileRestore:
       type: object
-      required: [type, id, token]
+      required: [type, id, trashedAs, toPath]
       additionalProperties: false
       properties:
         type: { const: file.restore }
         id: { type: integer }
-        token:
-          type: integer
+        trashedAs:
+          type: string
           description: >
-            From a file.result answering file.trash. Valid only on the
-            guest that issued it, and only while it runs.
+            The item's name inside the Trash, as file.trash reported it.
+        toPath:
+          type: string
+          description: >
+            Where to put it back, relative to the share root and
+            including its name. The enclosing folder must still exist:
+            restoring into a folder we invented would put the item
+            somewhere it never was.
     FileMkdir:
       type: object
       required: [type, id, path]
@@ -800,11 +807,13 @@ components:
         path:
           type: string
           description: Where the item ended up, when that is expressible.
-        token:
-          type: integer
-          description: Restores a trashed item; see file.restore.
+        trashedAs:
+          type: string
+          description: >
+            Answering file.trash: the name the item landed under inside
+            the Trash. Pass it back to file.restore.
         code:
-          enum: [exists, bad-path, not-found, io-error, busy, unknown-token]
+          enum: [exists, bad-path, not-found, io-error, busy]
         reason: { type: string }
     FileCancel:
       type: object
