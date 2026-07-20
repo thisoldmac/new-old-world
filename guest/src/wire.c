@@ -350,7 +350,11 @@ static int pump_rx(void)
 
     for (;;) {
         if (g.rx_len >= kRxBufferSize) {
-            return 0;                 /* overrun: control frames are tiny */
+            /* Full is not broken. A bulk stream fills this buffer every
+               pass by design; the caller drains it and reads again.
+               Returning failure here tore the connection down the moment
+               a file started arriving. */
+            return 1;
         }
         got = gNowOT.rcv(g.ep, g.rx + g.rx_len,
                          (OTByteCount)(kRxBufferSize - g.rx_len), &flags);
@@ -2297,30 +2301,48 @@ static int handle_frame(const char *reply)
     return 1;                        /* ignore anything else for now */
 }
 
+/* Read and drain in turns until nothing more is waiting, bounded by a
+   slice so the app stays responsive. One read per event-loop pass was
+   enough while everything inbound was a small control message; a file
+   arriving needs far more than a bufferful per turn. */
+enum { kIoSliceTicks = 3 };           /* ~50 ms */
+
 static void service_connected_io(void)
 {
     char payload[1200];
+    unsigned long slice_end = TickCount() + kIoSliceTicks;
     int rc;
 
-    if (!pump_rx()) {
-        fail("Connection lost");
-        return;
-    }
     for (;;) {
-        rc = next_frame(payload, sizeof payload);
-        if (rc == 0) {
-            break;
-        }
-        if (rc < 0) {
-            fail("Protocol error");
+        long before = g.rx_len;
+        long read_this_pass;
+
+        if (!pump_rx()) {
+            fail("Connection lost");
             return;
         }
-        if (!handle_frame(payload)) {
-            /* Peer said goodbye or we rejected it: orderly release, backoff.
-               handle_frame set g.status to the specific reason — keep it. */
-            snprintf(g.last_fail, sizeof g.last_fail, "%s", g.status);
-            gNowOT.sndOrderlyDisconnect(g.ep);
-            enter_backoff();
+        read_this_pass = g.rx_len - before;
+
+        for (;;) {
+            rc = next_frame(payload, sizeof payload);
+            if (rc == 0) {
+                break;
+            }
+            if (rc < 0) {
+                fail("Protocol error");
+                return;
+            }
+            if (!handle_frame(payload)) {
+                /* Peer said goodbye or we rejected it: orderly release,
+                   backoff. handle_frame set g.status to the specific
+                   reason — keep it. */
+                snprintf(g.last_fail, sizeof g.last_fail, "%s", g.status);
+                gNowOT.sndOrderlyDisconnect(g.ep);
+                enter_backoff();
+                return;
+            }
+        }
+        if (read_this_pass == 0 || TickCount() > slice_end) {
             return;
         }
     }
@@ -2509,7 +2531,7 @@ ConnPhase conn_phase(void)
 Boolean conn_wants_fast_pump(void)
 {
     return g_xfer.active || g_stream.active || g_offer.active
-        || g_ctlq.count > 0;
+        || g_put.active || g_ctlq.count > 0;
 }
 
 Boolean conn_is_connected(void)
