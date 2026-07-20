@@ -24,6 +24,17 @@ enum GuestConnectionState: Equatable, Sendable {
         if case .connected = self { return true }
         return false
     }
+
+    /// What to call the machine on the other end, for anything a human
+    /// reads. It is the name that machine sent in its hello; before a
+    /// connection there is no name to use, so it degrades to a plain
+    /// description. Never "the guest" — guest and host are words for
+    /// the code, not for the person using it. And never "the Mac":
+    /// both of them are Macs.
+    var peerLabel: String {
+        if case .connected(let name) = self, !name.isEmpty { return name }
+        return "the classic Mac"
+    }
 }
 
 /// Rolling numbers for the live stream — the tuning surface: watch fps

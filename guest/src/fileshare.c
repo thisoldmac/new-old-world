@@ -582,7 +582,7 @@ int now_files_choose_root(char *why, long why_cap)
         snprintf(why, (size_t)why_cap, "Navigation Services is unavailable");
         return -1;
     }
-    CopyCStringToPascal("Choose the folder NOW shares with the host",
+    CopyCStringToPascal("Choose the folder to share",
                         options.message);
     if (NavChooseFolder(NULL, &reply, &options, now_pump_nav_event(),
                         NULL, NULL) != noErr

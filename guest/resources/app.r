@@ -104,7 +104,7 @@ resource 'DITL' (300) {
         /* 4 host   */ {24, 110, 40, 300}, EditText { enabled, "" };
         /* 5 port   */ {54, 110, 70, 180}, EditText { enabled, "" };
         /* 6 status */ {118, 20, 162, 400}, StaticText { disabled, "" };
-        /* 7 */ {24, 20, 40, 100}, StaticText { disabled, "Host:" };
+        /* 7 */ {24, 20, 40, 100}, StaticText { disabled, "Address:" };
         /* 8 */ {54, 20, 70, 100}, StaticText { disabled, "Port:" };
         /* 9 retry */ {84, 110, 100, 160}, EditText { enabled, "" };
         /* 10 */ {84, 20, 100, 100}, StaticText { disabled, "Retry:" };

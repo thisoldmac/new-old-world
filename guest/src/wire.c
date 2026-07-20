@@ -230,7 +230,7 @@ static void start_connect(void)
     g.pings_sent = 0;
 
     if (!parse_ipv4(g.host, &g.address)) {
-        fail("Host must be a numeric address like 10.0.2.2");
+        fail("Enter a numeric address like 10.0.2.2");
         return;
     }
     err = now_ot_resolve();
@@ -397,7 +397,7 @@ static int next_frame(char *payload_out, long cap)
 static void on_hello(const char *reply)
 {
     if (!now_json_find_string(reply, "name", g.peer_name, sizeof g.peer_name)) {
-        strcpy(g.peer_name, "host");
+        g.peer_name[0] = '\0';
     }
     if (!now_json_find_string(reply, "version", g.peer_version,
                           sizeof g.peer_version)) {
@@ -604,11 +604,23 @@ static void xfer_finish(Boolean ok)
     }
     if (g_xfer.pushed) {
         if (ok) {
-            snprintf(json, sizeof json, "Sent to host (%ld ms)",
-                     (long)((TickCount() - g_xfer.started) * 1000 / 60));
+            {
+                char peer[40];
+
+                conn_peer_label(peer, sizeof peer);
+                snprintf(json, sizeof json, "Sent to %s (%ld ms)", peer,
+                         (long)((TickCount() - g_xfer.started) * 1000 / 60));
+            }
             note_shot(json);
         } else {
-            note_shot("Send to host failed");
+            {
+                char peer[40];
+                char failed[96];
+
+                conn_peer_label(peer, sizeof peer);
+                snprintf(failed, sizeof failed, "Could not send to %s", peer);
+                note_shot(failed);
+            }
         }
     }
     xfer_cleanup();
@@ -975,13 +987,14 @@ int now_wire_offer_shot(char *err, long cap)
     NowPrefs prefs;
     char json[512];
     char line[96];
+    char peer[40];
 
     if (g.phase != kConnConnected) {
-        snprintf(err, (size_t)cap, "Not connected to a host");
+        snprintf(err, (size_t)cap, "Not connected");
         return -1;
     }
     if (g_stream.active) {
-        snprintf(err, (size_t)cap, "Streaming to the host");
+        snprintf(err, (size_t)cap, "Already streaming");
         return -1;
     }
     if (g_xfer.active || g_offer.active) {
@@ -1019,8 +1032,9 @@ int now_wire_offer_shot(char *err, long cap)
     }
     g_offer.active = true;
     g_offer.deadline = TickCount() + kOfferTimeoutTicks;
-    snprintf(line, sizeof line, "Offered %ld KB to host...",
-             g_offer.blob.total_bytes / 1024);
+    conn_peer_label(peer, sizeof peer);
+    snprintf(line, sizeof line, "Offered %ld KB to %s...",
+             g_offer.blob.total_bytes / 1024, peer);
     note_shot(line);
     return 0;
 }
@@ -1033,9 +1047,16 @@ static void offer_accepted(const char *reply)
     g_offer.active = false;
     if (arm_transfer(g_offer.id, next_xfer(), &g_offer.meta, &g_offer.blob,
                      g_offer.chunk, g_offer.pace_ms, true)) {
-        note_shot("Sending to host...");
+        {
+            char peer[40];
+            char line[96];
+
+            conn_peer_label(peer, sizeof peer);
+            snprintf(line, sizeof line, "Sending to %s...", peer);
+            note_shot(line);
+        }
     } else {
-        note_shot("Send to host failed");
+        note_shot("Send failed");
     }
 }
 
@@ -1043,15 +1064,17 @@ static void offer_refused(const char *reply)
 {
     char reason[64];
     char line[96];
+    char peer[40];
 
     if (!g_offer.active || now_json_find_int(reply, "id", -1) != g_offer.id) {
         return;
     }
     offer_cleanup();
+    conn_peer_label(peer, sizeof peer);
     if (now_json_find_string(reply, "reason", reason, sizeof reason)) {
-        snprintf(line, sizeof line, "Host declined: %.60s", reason);
+        snprintf(line, sizeof line, "%.39s declined: %.44s", peer, reason);
     } else {
-        snprintf(line, sizeof line, "Host declined the screenshot");
+        snprintf(line, sizeof line, "%s declined the screenshot", peer);
     }
     note_shot(line);
 }
@@ -1060,7 +1083,14 @@ static void service_offer(void)
 {
     if (g_offer.active && TickCount() > g_offer.deadline) {
         offer_cleanup();
-        note_shot("Host did not answer the offer");
+        {
+            char peer[40];
+            char line[96];
+
+            conn_peer_label(peer, sizeof peer);
+            snprintf(line, sizeof line, "%s did not answer", peer);
+            note_shot(line);
+        }
     }
 }
 
@@ -1317,7 +1347,14 @@ static void stream_start(const char *reply)
     g_stream.force_key = true;        /* frame one is always whole */
     g_stream.active = true;
     g_streamreq.pending = false;
-    note_shot("Streaming to host...");
+    {
+        char peer[24];
+        char line[64];
+
+        conn_peer_label(peer, sizeof peer);
+        snprintf(line, sizeof line, "Streaming to %.20s...", peer);
+        note_shot(line);
+    }
 }
 
 static void stream_stop(const char *reply)
@@ -1351,7 +1388,7 @@ int now_wire_stream_request(char *err, long cap)
     char json[96];
 
     if (g.phase != kConnConnected) {
-        snprintf(err, (size_t)cap, "Not connected to a host");
+        snprintf(err, (size_t)cap, "Not connected");
         return -1;
     }
     if (g_stream.active) {
@@ -1372,7 +1409,14 @@ int now_wire_stream_request(char *err, long cap)
     }
     g_streamreq.pending = true;
     g_streamreq.deadline = TickCount() + kStreamReqTimeoutTicks;
-    note_shot("Asked host to stream...");
+    {
+        char peer[40];
+        char asked[96];
+
+        conn_peer_label(peer, sizeof peer);
+        snprintf(asked, sizeof asked, "Asked %s to stream...", peer);
+        note_shot(asked);
+    }
     return 0;
 }
 
@@ -1732,7 +1776,14 @@ static void service_stream(void)
 
     if (g_streamreq.pending && TickCount() > g_streamreq.deadline) {
         g_streamreq.pending = false;
-        note_shot("Host did not start streaming");
+        {
+            char peer[40];
+            char line[96];
+
+            conn_peer_label(peer, sizeof peer);
+            snprintf(line, sizeof line, "%s did not start streaming", peer);
+            note_shot(line);
+        }
     }
     if (!g_stream.active) {
         return;
@@ -1813,11 +1864,16 @@ static int handle_frame(const char *reply)
             if (now_json_find_string(reply, "reason", reason, sizeof reason)) {
                 snprintf(g.status, sizeof g.status, "Refused: %s", reason);
             } else {
-                snprintf(g.status, sizeof g.status, "Refused by host");
+                {
+                char peer[40];
+
+                conn_peer_label(peer, sizeof peer);
+                snprintf(g.status, sizeof g.status, "Refused by %s", peer);
+            }
             }
             return 0;
         }
-        snprintf(g.status, sizeof g.status, "Unexpected reply from host");
+        snprintf(g.status, sizeof g.status, "Unexpected reply");
         return 0;
     }
     /* connected */
@@ -1889,17 +1945,34 @@ static int handle_frame(const char *reply)
     if (now_json_type_is(reply, "error")) {
         if (g_streamreq.pending) {
             g_streamreq.pending = false;
-            note_shot("Host declined the stream");
+            {
+                char peer[40];
+                char line[96];
+
+                conn_peer_label(peer, sizeof peer);
+                snprintf(line, sizeof line, "%s declined the stream", peer);
+                note_shot(line);
+            }
         }
         return 1;
     }
     if (now_json_type_is(reply, "bye")) {
         char reason[96];
         if (now_json_find_string(reply, "reason", reason, sizeof reason)) {
-            snprintf(g.status, sizeof g.status, "Host disconnected: %s",
-                     reason);
+            {
+                char peer[40];
+
+                conn_peer_label(peer, sizeof peer);
+                snprintf(g.status, sizeof g.status, "%.39s disconnected: %.60s",
+                         peer, reason);
+            }
         } else {
-            snprintf(g.status, sizeof g.status, "Host disconnected");
+            {
+                char peer[40];
+
+                conn_peer_label(peer, sizeof peer);
+                snprintf(g.status, sizeof g.status, "%s disconnected", peer);
+            }
         }
         return 0;
     }
@@ -2099,6 +2172,15 @@ void conn_connect_now(void)
     g.want_connection = true;
     g.backoff_ticks = 0;
     start_connect();
+}
+
+void conn_peer_label(char *out, long cap)
+{
+    if (g.peer_name[0] != '\0') {
+        snprintf(out, (size_t)cap, "%s", g.peer_name);
+    } else {
+        snprintf(out, (size_t)cap, "the other Mac");
+    }
 }
 
 ConnPhase conn_phase(void)

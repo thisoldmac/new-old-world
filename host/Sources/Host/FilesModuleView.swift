@@ -32,7 +32,7 @@ struct FilesModuleView: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text("Files")
                     .font(.largeTitle.weight(.semibold))
-                Text("Browse the folder the classic Mac shares.")
+                Text("Browse the folder \(model.connection.peerLabel) shares.")
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -179,7 +179,7 @@ struct FilesModuleView: View {
                 .foregroundStyle(.secondary)
             Text("No Mac Connected")
                 .font(.title2.weight(.semibold))
-            Text("The classic Mac dials this host; its shared folder "
+            Text("The other Mac dials this one; its shared folder "
                  + "appears here once it does.")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -256,7 +256,7 @@ struct FilesModuleView: View {
         panel.canCreateDirectories = true
         panel.directoryURL = model.downloadDirectory
         panel.prompt = "Choose"
-        panel.message = "Choose where files from the classic Mac land."
+        panel.message = "Choose where incoming files land."
         if panel.runModal() == .OK, let url = panel.url {
             model.downloadDirectory = url
         }

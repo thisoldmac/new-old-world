@@ -43,7 +43,7 @@ struct ModuleRegistry: Sendable {
             id: "settings",
             title: "Connection",
             symbol: "network",
-            summary: "Listening port and guest connection status"
+            summary: "Listening port and connection status"
         ),
     ])
 }

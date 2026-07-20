@@ -120,7 +120,7 @@ static void apply_and_connect(DialogRef dialog)
     get_field(dialog, kItemPortField, port_text, sizeof port_text);
     port = strtol(port_text, NULL, 10);
     if (port <= 0 || port > 65535 || host[0] == '\0') {
-        set_field(dialog, kItemStatus, "Enter a host and a port (1-65535)");
+        set_field(dialog, kItemStatus, "Enter an address and a port (1-65535)");
         g_last_status[0] = '\0';
         return;
     }
@@ -196,7 +196,7 @@ void now_settings_dialog_run(void)
                 done = true;
             } else {
                 set_field(dialog, kItemStatus,
-                          "Enter a host and a port (1-65535)");
+                          "Enter an address and a port (1-65535)");
                 g_last_status[0] = '\0';
             }
             break;

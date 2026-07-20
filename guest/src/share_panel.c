@@ -5,6 +5,7 @@
 
 #include "fileshare.h"
 #include "pump.h"
+#include "wire.h"
 #include "build_stamp.h"
 
 enum {
@@ -92,10 +93,18 @@ void share_panel_draw(void)
     DrawControls(g_window);
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
 
-    MoveTo(16, 26);
-    CopyCStringToPascal("The host can browse this folder and everything "
-                        "inside it:", text);
-    DrawString(text);
+    {
+        char peer[24];
+        char line[96];
+
+        conn_peer_label(peer, sizeof peer);
+        snprintf(line, sizeof line,
+                 "%.20s can browse this folder and everything inside it:",
+                 peer);
+        MoveTo(16, 26);
+        CopyCStringToPascal(line, text);
+        DrawString(text);
+    }
 
     now_files_root_name(root, sizeof root);
     MoveTo(16, 50);

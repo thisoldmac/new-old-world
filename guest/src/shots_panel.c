@@ -121,19 +121,44 @@ static void take_screenshot(void)
     invalidate_stats();
 }
 
-/* Keeps the stream button's title honest against the wire's state; cheap
-   enough to run every draw. */
-static void refresh_stream_button(void)
+/* Buttons name the machine they act on, so they read the same way the
+   status line does. The peer's name arrives with its hello, so the
+   titles are refreshed rather than fixed at creation. Cheap enough to
+   check every draw; only rewritten when something actually changed. */
+static char g_shown_peer[24];
+
+static void refresh_buttons(void)
 {
     Str255 text;
+    char peer[24];
+    char title[64];
     Boolean active = now_wire_stream_active();
+    Boolean peer_changed;
 
-    if (g_stream_button == NULL || active == g_stream_shown_active) {
+    if (g_stream_button == NULL) {
         return;
     }
+    conn_peer_label(peer, sizeof peer);
+    peer_changed = strcmp(peer, g_shown_peer) != 0;
+    if (!peer_changed && active == g_stream_shown_active) {
+        return;
+    }
+    strcpy(g_shown_peer, peer);
     g_stream_shown_active = active;
-    CopyCStringToPascal(active ? "Stop Streaming" : "Stream to Host", text);
+
+    if (active) {
+        CopyCStringToPascal("Stop Streaming", text);
+    } else {
+        snprintf(title, sizeof title, "Stream to %.20s", peer);
+        CopyCStringToPascal(title, text);
+    }
     SetControlTitle(g_stream_button, text);
+
+    if (g_send_button != NULL) {
+        snprintf(title, sizeof title, "Send to %.20s", peer);
+        CopyCStringToPascal(title, text);
+        SetControlTitle(g_send_button, text);
+    }
 }
 
 static void stream_to_host(void)
@@ -146,7 +171,7 @@ static void stream_to_host(void)
         snprintf(g_stat3, sizeof g_stat3, "%.90s", err);
         invalidate_stats();
     }
-    refresh_stream_button();
+    refresh_buttons();
 }
 
 /* Offers the screen to the host. Progress lands back through
@@ -236,14 +261,15 @@ void shots_panel_open(void)
     g_shoot_button = NewControl(g_window, &bounds, text, true, 0, 0, 1,
                                 pushButProc, 0);
     SetRect(&bounds, 184, 162, 320, 186);
-    CopyCStringToPascal("Send to Host", text);
+    CopyCStringToPascal("Send", text);
     g_send_button = NewControl(g_window, &bounds, text, true, 0, 0, 1,
                                pushButProc, 0);
     SetRect(&bounds, 16, 192, 172, 216);
-    CopyCStringToPascal("Stream to Host", text);
+    CopyCStringToPascal("Stream", text);
     g_stream_button = NewControl(g_window, &bounds, text, true, 0, 0, 1,
                                  pushButProc, 0);
     g_stream_shown_active = false;
+    g_shown_peer[0] = '\0';
 
     load_controls_from_prefs();
     g_stat1[0] = '\0';
@@ -292,7 +318,7 @@ void shots_panel_draw(void)
         return;
     }
     SetPortWindowPort(g_window);
-    refresh_stream_button();
+    refresh_buttons();
     GetWindowPortBounds(g_window, &bounds);
     EraseRect(&bounds);
     DrawControls(g_window);

@@ -39,7 +39,7 @@ struct ScreenshotsModuleView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Screenshots")
                         .font(.largeTitle.weight(.semibold))
-                    Text("Capture the connected Mac's screen over the wire.")
+                    Text("Capture \(model.connection.peerLabel)'s screen over the wire.")
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -62,7 +62,7 @@ struct ScreenshotsModuleView: View {
 
                 if model.isStreaming {
                     Button("Refresh") { model.refreshStream() }
-                        .help("Ask the guest for a whole frame")
+                        .help("Ask for a whole frame")
                 }
 
                 if model.isCapturing {
@@ -157,7 +157,7 @@ struct ScreenshotsModuleView: View {
         } else {
             VStack(alignment: .leading, spacing: 4) {
                 ProgressView().progressViewStyle(.linear)
-                Text("Waiting for the guest to capture…")
+                Text("Waiting for the capture…")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -375,9 +375,9 @@ struct ScreenshotsModuleView: View {
             Text("No Screenshots Yet")
                 .font(.title2.weight(.semibold))
             Text(model.connection.canCapture
-                 ? "Press Capture to pull the classic Mac's screen "
+                 ? "Press Capture to pull \(model.connection.peerLabel)'s screen "
                    + "across the wire."
-                 : "Connect a Mac first — the guest dials this host.")
+                 : "Connect a Mac first — it dials this one.")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 460)

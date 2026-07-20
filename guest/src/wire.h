@@ -54,6 +54,14 @@ Boolean conn_wants_fast_pump(void);
    or "Reconnecting in 4s (no answer)". */
 void conn_status(char *out, long cap);
 
+/* What to call the machine on the other end, for anything a human
+   reads. It is the name that machine sent in its hello; before a
+   connection there is no name to use, so it degrades to a plain
+   description rather than protocol vocabulary. Never "the host" —
+   guest and host are words for the code, not for the person using it.
+   Truncates to cap, so button titles can ask for a short one. */
+void conn_peer_label(char *out, long cap);
+
 /* Round-trip time of the last ping/pong in ms, or -1 if none yet. */
 long conn_last_rtt_ms(void);
 

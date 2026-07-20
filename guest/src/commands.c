@@ -509,6 +509,6 @@ void now_command_run(const char *name, const char *request_json, long id,
     snprintf(out, cap,
              "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
              "\"error\":{\"code\":\"unknown-command\","
-             "\"message\":\"%s is not a command this guest knows\"}}",
+             "\"message\":\"%s is not a command this Mac knows\"}}",
              id, name);
 }
