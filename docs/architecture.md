@@ -47,6 +47,14 @@ half of OS 9 networking, so every listener stays on the modern side.
   carry optional knobs (chunk, pacing, compress, predictive, interlace);
   absent fields fall back to the guest's panel. The initiator decides;
   there is no remote configuration to sync.
+- **Only the receiver knows what arrived.** A sender's own completion
+  says its socket accepted the bytes, which on this link runs minutes
+  ahead of delivery: the put bar reached 100% with a third of a 2.7 MB
+  file written, and the same false signal fed the inactivity watchdog,
+  so a stalled guest read as healthy. Progress therefore travels back
+  from the receiver (`file.progress`), and a watchdog is fed by nothing
+  else. Advisory by design — dropped rather than queued when the control
+  queue is busy, so its absence means an old peer, not a stalled one.
 
 ## Capture and streaming
 

@@ -211,7 +211,10 @@ operations:
       the host sends file.begin, the bulk stream, and file.end. The
       guest confirms with file.done only once the bytes are written and
       the file is stamped: a put is not finished until the File Manager
-      says so.
+      says so. While the bytes stream the guest reports what it has
+      actually taken, with file.progress — the sender's own "handed to
+      the socket" count is not evidence the far side received anything,
+      and on a slow link it runs minutes ahead of the truth.
   guestServesFiles:
     action: send
     channel: { $ref: "#/channels/control" }
@@ -220,6 +223,7 @@ operations:
       - $ref: "#/channels/control/messages/fileRefuse"
       - $ref: "#/channels/control/messages/fileBegin"
       - $ref: "#/channels/control/messages/fileEnd"
+      - $ref: "#/channels/control/messages/fileProgress"
     description: >
       Listings paginate (control frames cap at 4 KB); a transfer is the
       standard begin -> bulk -> end shape. The container rule: data-only
@@ -312,6 +316,9 @@ components:
     fileDone:
       name: file.done
       payload: { $ref: "#/components/schemas/FileDone" }
+    fileProgress:
+      name: file.progress
+      payload: { $ref: "#/components/schemas/FileProgress" }
     fileRefuse:
       name: file.refuse
       payload: { $ref: "#/components/schemas/FileRefuse" }
@@ -638,6 +645,26 @@ components:
         code:
           enum: [exists, bad-path, io-error, too-big, cancelled]
         reason: { type: string }
+    FileProgress:
+      type: object
+      required: [type, id, received]
+      additionalProperties: false
+      description: >
+        Sent by the guest while it receives a put, carrying the byte
+        count it has actually taken off the wire. Advisory: it is
+        dropped rather than queued when the control queue is busy, so a
+        receiver must treat it as a floor that may skip, never as a
+        sequence. Absence means an older guest, not a stalled one.
+      properties:
+        type: { const: file.progress }
+        id:
+          type: integer
+          description: The file.offer id this progress belongs to.
+        received:
+          type: integer
+          description: >
+            Bytes received so far, counted where they are written, not
+            where they were sent.
     FileRefuse:
       type: object
       required: [type, id, code]

@@ -1207,8 +1207,40 @@ static void file_refuse_rc(long id, int rc)
 static struct {
     Boolean active;                   /* accepted; bytes may arrive */
     long id;
+    long reported;                    /* bytes announced with file.progress */
     FileReceive rx;
 } g_put;
+
+/* How often the guest says where it has got to. The write batch is the
+   natural cadence — one report per flush — and on a 2.7 MB file that is
+   about 85 control frames across several minutes, which is nothing next
+   to the bulk stream they describe. */
+enum { kPutProgressStep = 32 * 1024 };
+
+/* Tells the host what has actually landed. The sender cannot know this:
+   its own completion fires when the local socket accepts a chunk, which
+   on this link runs minutes ahead of the machine receiving it — the bar
+   reached 100% with a third of the file delivered, and the put watchdog
+   was being fed by that same lie, so a stalled guest looked healthy.
+
+   Advisory on purpose. The control queue is eight slots deep and shared
+   with the messages that carry meaning (pongs, file.done); progress is
+   the one thing here that may be dropped, so it yields rather than
+   crowding them out, and a skipped report costs the host nothing but a
+   coarser bar. */
+static void put_report_progress(Boolean force)
+{
+    char json[128];
+
+    if (!force && g_ctlq.count >= kCtlQueueSlots / 2) {
+        return;                       /* real traffic first */
+    }
+    g_put.reported = g_put.rx.received;
+    snprintf(json, sizeof json,
+             "{\"type\":\"file.progress\",\"id\":%ld,\"received\":%ld}",
+             g_put.id, g_put.rx.received);
+    send_control(json);               /* best effort: a drop is not a fault */
+}
 
 static void put_drop(void)
 {
@@ -1256,6 +1288,14 @@ static void take_bulk_in(const unsigned char *bytes, long len)
     rc = now_files_receive_chunk(&g_put.rx, bytes, len);
     if (rc != kFilesOK) {
         put_abort("io-error", "could not write the file");
+        return;
+    }
+    /* The first chunk reports immediately: that is what tells the host
+       this guest reports at all, so it can stop trusting its own send
+       counter early rather than after the first 32 KB. */
+    if (g_put.reported == 0
+        || g_put.rx.received - g_put.reported >= kPutProgressStep) {
+        put_report_progress(false);
     }
 }
 
@@ -1349,6 +1389,11 @@ static void finish_put(const char *reply)
         note_shot("Incoming file cancelled");
         return;
     }
+    /* One last report before the confirmation, so the far side sees the
+       count reach the total rather than stopping at whatever the 32 KB
+       cadence last happened to land on. Forced past the yield rule: it
+       is a single frame and it is the one that closes the bar. */
+    put_report_progress(true);
     rc = now_files_receive_finish(&g_put.rx);
     if (rc != kFilesOK) {
         put_done(false, "io-error", "could not finish writing the file");

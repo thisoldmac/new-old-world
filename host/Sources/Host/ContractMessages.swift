@@ -23,6 +23,7 @@ enum ControlMessage: Equatable, Sendable {
     case fileOffer(FileOffer)
     case fileAccept(FileAccept)
     case fileDone(FileDone)
+    case fileProgress(FileProgress)
     case fileRefuse(FileRefuse)
     case fileBegin(FileBegin)
     case fileEnd(FileEnd)
@@ -161,6 +162,15 @@ struct FileDone: Codable, Equatable, Sendable {
     var ok: Bool
     var code: String?
     var reason: String?
+}
+
+/// What the guest has actually taken off the wire during a put. Advisory:
+/// the guest drops these rather than delaying the messages that carry
+/// meaning, so treat it as a floor that may skip, and its absence as an
+/// older guest rather than a stalled one.
+struct FileProgress: Codable, Equatable, Sendable {
+    var id: Int
+    var received: Int
 }
 
 struct FileRefuse: Codable, Equatable, Sendable {
@@ -337,6 +347,9 @@ enum ControlMessageCodec {
                 try decoder.decode(FileAccept.self, from: data))
         case "file.done":
             return .fileDone(try decoder.decode(FileDone.self, from: data))
+        case "file.progress":
+            return .fileProgress(
+                try decoder.decode(FileProgress.self, from: data))
         case "file.refuse":
             return .fileRefuse(
                 try decoder.decode(FileRefuse.self, from: data))
@@ -409,6 +422,7 @@ enum ControlMessageCodec {
         case .fileOffer(let m): return try tagged("file.offer", m)
         case .fileAccept(let m): return try tagged("file.accept", m)
         case .fileDone(let m): return try tagged("file.done", m)
+        case .fileProgress(let m): return try tagged("file.progress", m)
         case .fileRefuse(let m): return try tagged("file.refuse", m)
         case .fileBegin(let m): return try tagged("file.begin", m)
         case .fileEnd(let m): return try tagged("file.end", m)

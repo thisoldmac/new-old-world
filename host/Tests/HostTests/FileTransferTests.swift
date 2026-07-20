@@ -205,6 +205,120 @@ final class FileWireTests: XCTestCase {
         }
     }
 
+    func testProgressFollowsTheGuestNotOurOwnSendCounter() async throws {
+        // The defect this replaces: progress came from the local send
+        // completing, which only means macOS accepted the bytes. Over a
+        // link this slow that reached 100% with a third of the file
+        // actually delivered, and the watchdog was fed by the same
+        // claim, so a stalled guest looked healthy.
+        let guest = try await connectedGuest()
+        let payload = Data(repeating: 7, count: 200_000)
+        listener.putFile(name: "Big", into: "", container: "data",
+                         bytes: payload) { _ in }
+
+        var offerId: Int?
+        try await waitUntil("file.offer") {
+            for message in guest.received {
+                if case .fileOffer(let offer) = message {
+                    offerId = offer.id
+                    return true
+                }
+            }
+            return false
+        }
+        let id = try XCTUnwrap(offerId)
+        try guest.send(.fileAccept(FileAccept(id: id)))
+
+        // Locally the whole file goes out almost at once, so the send
+        // counter races to the end.
+        try await waitUntil("sent") { guest.bulkReceived == payload }
+        try await waitUntil("send counter ran ahead") {
+            self.listener.captureProgress?.received == payload.count
+        }
+
+        // The guest then says what it has really taken, and that is what
+        // must be shown — even though it moves the bar backwards.
+        try guest.send(.fileProgress(FileProgress(id: id, received: 32_768)))
+        try await waitUntil("guest truth wins") {
+            self.listener.captureProgress?.received == 32_768
+        }
+        XCTAssertEqual(listener.captureProgress?.expected, payload.count)
+
+        // And it keeps winning: a later send completion must not push the
+        // bar back up past what the guest has confirmed.
+        try guest.send(.fileProgress(FileProgress(id: id, received: 65_536)))
+        try await waitUntil("still following the guest") {
+            self.listener.captureProgress?.received == 65_536
+        }
+    }
+
+    func testAGuestThatNeverReportsProgressKeepsTheSendCounter()
+        async throws {
+        // An older guest sends no file.progress at all. It must not lose
+        // its progress bar or, worse, have the watchdog starve and call a
+        // healthy transfer dead: absence means an old guest, not a
+        // stalled one.
+        let guest = try await connectedGuest()
+        let payload = Data(repeating: 3, count: 100_000)
+        var settled: Result<Void, GuestListener.FileFailure>?
+        listener.putFile(name: "Old", into: "", container: "data",
+                         bytes: payload) { settled = $0 }
+
+        var offerId: Int?
+        try await waitUntil("file.offer") {
+            for message in guest.received {
+                if case .fileOffer(let offer) = message {
+                    offerId = offer.id
+                    return true
+                }
+            }
+            return false
+        }
+        let id = try XCTUnwrap(offerId)
+        try guest.send(.fileAccept(FileAccept(id: id)))
+
+        try await waitUntil("progress still moves") {
+            self.listener.captureProgress?.received == payload.count
+        }
+        try guest.send(.fileDone(FileDone(id: id, ok: true, code: nil,
+                                          reason: nil)))
+        try await waitUntil("settled") { settled != nil }
+        guard case .success = try XCTUnwrap(settled) else {
+            return XCTFail("expected success")
+        }
+    }
+
+    func testProgressForAnotherPutIsIgnored() async throws {
+        // Same correlation rule the done path already learned: a late
+        // report from a transfer that has finished must not redraw the
+        // bar for the one after it.
+        let guest = try await connectedGuest()
+        let payload = Data(repeating: 1, count: 50_000)
+        listener.putFile(name: "Now", into: "", container: "data",
+                         bytes: payload) { _ in }
+
+        var offerId: Int?
+        try await waitUntil("file.offer") {
+            for message in guest.received {
+                if case .fileOffer(let offer) = message {
+                    offerId = offer.id
+                    return true
+                }
+            }
+            return false
+        }
+        let id = try XCTUnwrap(offerId)
+        try guest.send(.fileAccept(FileAccept(id: id)))
+        try await waitUntil("sent") { guest.bulkReceived == payload }
+
+        try guest.send(.fileProgress(FileProgress(id: id + 99,
+                                                  received: 1)))
+        try guest.send(.fileProgress(FileProgress(id: id, received: 4_096)))
+        try await waitUntil("only its own put counts") {
+            self.listener.captureProgress?.received == 4_096
+        }
+    }
+
     func testCancellingAStalledPutSettlesWithoutTheWire() async throws {
         // The guest accepts and then says nothing — the case that hung on
         // metal. Cancel must settle locally, because the send that would

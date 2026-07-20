@@ -71,6 +71,7 @@ non-control frames).
 | `file.begin {id, transfer, container, bytes, ...metadata}` | sender | Announces the bulk stream (same shape family as capture.begin). |
 | `file.end {id, transfer, ok, sendMs?}` | sender | Transfer complete. |
 | `file.done {id, ok, code?, reason?}` | receiver of a put | The guest confirms the file is written and stamped (type/creator/dates) — a put isn't done until the File Manager says so. |
+| `file.progress {id, received}` | receiver of a put | What the guest has actually taken off the wire, sent as each 32 KB write batch flushes. Advisory: dropped rather than queued when the control queue is busy, so it is a floor that may skip. |
 | `file.cancel {transfer}` | either | Mirror of capture.cancel, same drain rule. |
 
 `file.get` needs no accept — the requester is the receiver. The bulk

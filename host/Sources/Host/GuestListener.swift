@@ -229,6 +229,8 @@ final class GuestListener: ObservableObject {
         nextCommandId += 1
         pendingPut = completion
         putId = id
+        putGuestReports = false
+        putExpected = bytes.count
         // Scaled to the work: a megabyte legitimately takes minutes on
         // hardware this old, and a fixed timeout would call a healthy
         // transfer dead. Progress feeds this watchdog, so the clock only
@@ -250,12 +252,20 @@ final class GuestListener: ObservableObject {
 
     private var pendingPut: ((Result<Void, FileFailure>) -> Void)?
     private var putId: Int?
+    /// Set once the guest has reported its own received count for the
+    /// put in flight. Until then the send counter is all there is.
+    private var putGuestReports = false
+    /// The offered size, so a guest report (which carries only what it
+    /// has taken) can be turned into a fraction.
+    private var putExpected = 0
 
     fileprivate func settlePut(_ result: Result<Void, FileFailure>) {
         let completion = pendingPut
         if let id = putId { clearWatchdog(id) }
         pendingPut = nil
         putId = nil
+        putGuestReports = false
+        putExpected = 0
         captureProgress = nil
         completion?(result)
     }
@@ -670,8 +680,24 @@ final class GuestListener: ObservableObject {
                         message: done.reason ?? "the file was not written")))
                 }
             },
+            onFileProgress: { [weak self] progress in
+                guard let self, self.putId == progress.id else { return }
+                // The far side has spoken: stop believing our own send
+                // counter for the rest of this put, for the bar and for
+                // the watchdog alike.
+                self.putGuestReports = true
+                self.captureProgress = .init(received: progress.received,
+                                             expected: self.putExpected)
+                self.touchWatchdog(progress.id)
+            },
             onOutboundProgress: { [weak self] sent, total in
                 guard let self else { return }
+                // Bytes accepted by the local socket, which is not the
+                // same claim as bytes received — on this link it runs
+                // minutes ahead. Used only until the guest reports for
+                // itself; an older guest that never does keeps this as
+                // its only signal, which is what it had before.
+                guard !self.putGuestReports else { return }
                 self.captureProgress = .init(received: sent, expected: total)
                 if let id = self.putId { self.touchWatchdog(id) }
             },
@@ -725,6 +751,7 @@ final class Session {
     private let onFileDelivery:
         (Result<GuestListener.FileDelivery, GuestListener.FileFailure>) -> Void
     private let onFileDone: (FileDone) -> Void
+    private let onFileProgress: (FileProgress) -> Void
     private let onOutboundProgress: (Int, Int) -> Void
     private let onOutboundFailed: (String) -> Void
     private var streamId: Int?
@@ -782,6 +809,7 @@ final class Session {
                                            GuestListener.FileFailure>)
              -> Void,
          onFileDone: @escaping (FileDone) -> Void,
+         onFileProgress: @escaping (FileProgress) -> Void,
          onOutboundProgress: @escaping (Int, Int) -> Void,
          onOutboundFailed: @escaping (String) -> Void,
          onClosed: @escaping (Session, String) -> Void) {
@@ -803,6 +831,7 @@ final class Session {
         self.onFileRefuse = onFileRefuse
         self.onFileDelivery = onFileDelivery
         self.onFileDone = onFileDone
+        self.onFileProgress = onFileProgress
         self.onOutboundProgress = onOutboundProgress
         self.onOutboundFailed = onOutboundFailed
         self.onClosed = onClosed
@@ -921,6 +950,8 @@ final class Session {
             sendAcceptedFile(accept)
         case .fileDone(let done):
             onFileDone(done)
+        case .fileProgress(let progress):
+            onFileProgress(progress)
         case .fileRefuse(let refuse):
             fileBegin = nil
             fileBuffer = []
