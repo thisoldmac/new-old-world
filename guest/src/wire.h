@@ -62,6 +62,11 @@ void conn_status(char *out, long cap);
    Truncates to cap, so button titles can ask for a short one. */
 void conn_peer_label(char *out, long cap);
 
+/* The TCP receive window Open Transport granted, or 0 if it kept its
+   default. Small windows throttle inbound files to one segment per
+   delayed ACK, so this is worth being able to see. */
+long conn_rcv_window(void);
+
 /* Round-trip time of the last ping/pong in ms, or -1 if none yet. */
 long conn_last_rtt_ms(void);
 

@@ -229,6 +229,51 @@ static void fail(const char *reason)
 
 /* --- connect ------------------------------------------------------------ */
 
+/* Open Transport's default receive window is small enough that a sender
+   can only keep about one segment in flight: measured on the PB1400c,
+   inbound files arrived at ~1.4 KB every ~350 ms — one segment per
+   delayed ACK — for a flat 4 KB/s no matter the file size, while the
+   same wire carried 227 KB/s outbound. Asking for a window several
+   segments wide is what lets the sender fill the pipe.
+
+   Best-effort by design: an older stack that refuses the option still
+   works, just slowly, and that is better than refusing to connect. */
+static long g_rcv_window;             /* what the stack granted, 0 = default */
+
+static void negotiate_rcv_buffer(EndpointRef ep)
+{
+    struct {
+        TOption opt;
+        UInt32 value;
+    } request, reply;
+    TOptMgmt req, ret;
+
+    if (gNowOT.optionManagement == NULL) {
+        return;
+    }
+    memset(&request, 0, sizeof request);
+    request.opt.len = sizeof request;
+    request.opt.level = XTI_GENERIC;
+    request.opt.name = XTI_RCVBUF;
+    request.opt.status = 0;
+    request.value = 64L * 1024L;
+
+    req.opt.buf = (UInt8 *)&request;
+    req.opt.len = sizeof request;
+    req.opt.maxlen = sizeof request;
+    req.flags = T_NEGOTIATE;
+    ret.opt.buf = (UInt8 *)&reply;
+    ret.opt.len = 0;
+    ret.opt.maxlen = sizeof reply;
+    ret.flags = 0;
+    if (gNowOT.optionManagement(ep, &req, &ret) == noErr
+        && ret.opt.len >= sizeof reply) {
+        g_rcv_window = reply.value;
+    } else {
+        g_rcv_window = 0;             /* refused: stack default stands */
+    }
+}
+
 static void start_connect(void)
 {
     OSStatus err, open_err = -1;
@@ -262,6 +307,7 @@ static void start_connect(void)
         return;
     }
     gNowOT.setNonBlocking(g.ep);
+    negotiate_rcv_buffer(g.ep);
     if (gNowOT.bind(g.ep, NULL, NULL) != noErr) {
         fail("Bind failed");
         return;
@@ -2512,6 +2558,11 @@ void conn_connect_now(void)
     g.want_connection = true;
     g.backoff_ticks = 0;
     start_connect();
+}
+
+long conn_rcv_window(void)
+{
+    return g_rcv_window;
 }
 
 void conn_peer_label(char *out, long cap)

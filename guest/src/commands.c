@@ -11,6 +11,7 @@
 #include "json.h"
 #include "prefs.h"
 #include "fileshare.h"
+#include "wire.h"
 #include "screenshot.h"
 #include "vprobe.h"
 
@@ -539,10 +540,11 @@ static void run_putstat(long id, char *out, long cap)
              "[\"Chunks\",\"%ld\"],"
              "[\"Writes\",\"%ld\"],"
              "[\"In FSWrite\",\"%lu ms\"],"
-             "[\"In receive\",\"%lu ms\"]"
+             "[\"In receive\",\"%lu ms\"],"
+             "[\"Rcv window\",\"%ld\"]"
              "]}}",
              id, st.bytes, st.chunks, st.writes,
-             st.us_write / 1000, st.us_total / 1000);
+             st.us_write / 1000, st.us_total / 1000, conn_rcv_window());
 }
 
 void now_command_run(const char *name, const char *request_json, long id,

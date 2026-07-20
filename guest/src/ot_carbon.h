@@ -32,6 +32,8 @@ typedef struct {
     OSStatus (*rcvOrderlyDisconnect)(EndpointRef ref);
     OSStatus (*rcvDisconnect)(EndpointRef ref, TDiscon *discon);
     OSStatus (*unbind)(EndpointRef ref);
+    OSStatus (*optionManagement)(EndpointRef ref, TOptMgmt *req,
+                                 TOptMgmt *ret);
 } NowOTTable;
 
 /* Resolves the table once (idempotent). Returns noErr, or an error when the

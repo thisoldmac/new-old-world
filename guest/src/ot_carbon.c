@@ -38,6 +38,7 @@ OSStatus now_ot_resolve(void)
         { "OTRcvOrderlyDisconnect", (void **)&gNowOT.rcvOrderlyDisconnect },
         { "OTRcvDisconnect", (void **)&gNowOT.rcvDisconnect },
         { "OTUnbind", (void **)&gNowOT.unbind },
+        { "OTOptionManagement", (void **)&gNowOT.optionManagement },
     };
 
     if (g_resolved) {
