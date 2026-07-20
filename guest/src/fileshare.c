@@ -434,7 +434,12 @@ void now_files_root_name(char *out, long cap)
         return;
     }
     if (prefs.share_vol[0] != '\0') {
-        snprintf(out, (size_t)cap, "%s:", prefs.share_vol);
+        if (prefs.share_dir > 0) {
+            snprintf(out, (size_t)cap, "%s: (folder %ld)",
+                     prefs.share_vol, prefs.share_dir);
+        } else {
+            snprintf(out, (size_t)cap, "%s:", prefs.share_vol);
+        }
         return;
     }
     {

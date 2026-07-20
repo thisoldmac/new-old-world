@@ -10,6 +10,7 @@
 #include "prefs.h"
 #include "screenshot.h"
 #include "fileshare.h"
+#include "build_stamp.h"
 #include "vprobe.h"
 
 enum {
@@ -501,7 +502,14 @@ void console_win_open(void)
         GetFNum(monaco, &g_font);
     }
     if (g_count == 0) {
-        append_line("NOW console - runs commands on this Mac.");
+        {
+            char banner[96];
+
+            snprintf(banner, sizeof banner,
+                     "NOW console - runs commands on this Mac.  [%s]",
+                     now_build_stamp());
+            append_line(banner);
+        }
         append_line("Type \"help\" for the list.");
     }
     g_input_len = 0;

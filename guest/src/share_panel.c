@@ -5,6 +5,7 @@
 
 #include "fileshare.h"
 #include "pump.h"
+#include "build_stamp.h"
 
 enum {
     kPanelWidth = 400,
@@ -106,6 +107,10 @@ void share_panel_draw(void)
     DrawString(text);
 
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    MoveTo(16, 96);
+    CopyCStringToPascal(now_build_stamp(), text);
+    DrawString(text);
+
     MoveTo(16, 74);
     if (g_note[0] != '\0') {
         CopyCStringToPascal(g_note, text);
