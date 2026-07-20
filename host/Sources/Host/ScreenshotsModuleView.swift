@@ -26,7 +26,6 @@ struct ScreenshotsModuleView: View {
             } else {
                 emptyState
             }
-            Spacer(minLength: 0)
         }
         .padding(28)
         .frame(maxWidth: .infinity, maxHeight: .infinity,
@@ -70,21 +69,14 @@ struct ScreenshotsModuleView: View {
                     Button("Cancel") { model.cancel() }
                 }
 
-                Picker("Depth", selection: $model.selectedDepth) {
-                    ForEach(CaptureDepth.allCases) { depth in
-                        Text(depth.title).tag(depth)
-                    }
-                }
-                .pickerStyle(.menu)
-                .frame(width: 150)
-                .disabled(model.isCapturing || model.isStreaming)
-
                 if let error = model.lastError {
                     Label(error, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.red)
                         .font(.callout)
                 }
             }
+
+            tuningRow
 
             if model.isCapturing || model.progress != nil {
                 transferProgress
@@ -94,6 +86,37 @@ struct ScreenshotsModuleView: View {
             }
             saveRow
         }
+    }
+
+    /// The same knobs the guest's panel has; sent with every request and
+    /// stream, so the side that initiates decides.
+    private var tuningRow: some View {
+        HStack(spacing: 14) {
+            Picker("Depth", selection: $model.selectedDepth) {
+                ForEach(CaptureDepth.allCases) { depth in
+                    Text(depth.title).tag(depth)
+                }
+            }
+            .frame(width: 130)
+            Picker("Chunk", selection: $model.chunkKB) {
+                ForEach([1, 2, 4, 8, 16, 32], id: \.self) { kb in
+                    Text("\(kb) K").tag(kb)
+                }
+            }
+            .frame(width: 120)
+            Picker("Pacing", selection: $model.paceMs) {
+                ForEach([0, 2, 5, 10, 20], id: \.self) { ms in
+                    Text(ms == 0 ? "None" : "\(ms) ms").tag(ms)
+                }
+            }
+            .frame(width: 130)
+            Toggle("Compress", isOn: $model.compress)
+            Toggle("Predictive", isOn: $model.predictive)
+            Toggle("Interlace", isOn: $model.interlace)
+        }
+        .pickerStyle(.menu)
+        .font(.callout)
+        .disabled(model.isCapturing || model.isStreaming)
     }
 
     /// A capture over 802.11b takes long enough that silence reads as a
@@ -245,12 +268,14 @@ struct ScreenshotsModuleView: View {
         }
     }
 
+    /// Fills whatever space the window gives it; nearest-neighbor keeps
+    /// the classic pixels crisp at any scale.
     private func preview(_ shot: ScreenshotRecord) -> some View {
         Image(decorative: shot.image, scale: 1.0)
             .resizable()
             .interpolation(.none)
             .aspectRatio(contentMode: .fit)
-            .frame(maxWidth: .infinity, maxHeight: 420)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .border(Color.secondary.opacity(0.4))
     }
 

@@ -706,6 +706,39 @@ static void note_shot(const char *line)
     }
 }
 
+/* JSON true/false with a fallback for an absent key. */
+static int json_find_flag(const char *json, const char *key, int fallback)
+{
+    const char *v = now_json_value(json, key);
+
+    if (v == NULL) {
+        return fallback;
+    }
+    return *v == 't';
+}
+
+/* The initiator's knobs override the panel's; absent fields keep prefs. */
+static void tuning_from_json(const char *json, const NowPrefs *prefs,
+                             long *chunk, short *pace_ms, Boolean *pack)
+{
+    long v;
+
+    v = now_json_find_int(json, "chunkKb", prefs->chunk_kb);
+    if (v < 1 || v > 32) {
+        v = prefs->chunk_kb;
+    }
+    *chunk = v * 1024;
+    if (*chunk < 1024 || *chunk > kNowMaxPayload) {
+        *chunk = 8192;
+    }
+    v = now_json_find_int(json, "paceMs", prefs->pace_ms);
+    if (v < 0 || v > 100) {
+        v = prefs->pace_ms;
+    }
+    *pace_ms = (short)v;
+    *pack = json_find_flag(json, "pack", prefs->shot_pack) != 0;
+}
+
 static unsigned short next_xfer(void)
 {
     ++g.transfer_seq;
@@ -849,6 +882,8 @@ static void serve_capture(const char *request)
     short depth;
     unsigned short xfer;
     long chunk;
+    short pace_ms;
+    Boolean pack;
 
     if (g_stream.active) {
         snprintf(json, sizeof json,
@@ -867,21 +902,18 @@ static void serve_capture(const char *request)
     now_prefs_load(&prefs);
     depth = capture_depth_is_supported((short)depth_arg)
         ? (short)depth_arg : prefs.shot_depth;
-    chunk = (long)prefs.chunk_kb * 1024;
-    if (chunk < 1024 || chunk > kNowMaxPayload) {
-        chunk = 8192;
-    }
+    tuning_from_json(request, &prefs, &chunk, &pace_ms, &pack);
     xfer = next_xfer();
 
     memset(&blob, 0, sizeof blob);
-    if (!gather_shot(depth, prefs.shot_pack, &blob, &meta)) {
+    if (!gather_shot(depth, pack, &blob, &meta)) {
         snprintf(json, sizeof json,
                  "{\"type\":\"capture.end\",\"id\":%ld,\"transfer\":%u,"
                  "\"ok\":false}", id, xfer);
         send_control(json);
         return;
     }
-    arm_transfer(id, xfer, &meta, &blob, chunk, prefs.pace_ms, false);
+    arm_transfer(id, xfer, &meta, &blob, chunk, pace_ms, false);
 }
 
 /* --- guest-initiated push ----------------------------------------------
@@ -1074,14 +1106,12 @@ static void stream_start(const char *reply)
     g_stream.id = id;
     g_stream.depth = capture_depth_is_supported((short)depth_arg)
         ? (short)depth_arg : prefs.shot_depth;
-    g_stream.pack = prefs.shot_pack;
-    g_stream.chunk = (long)prefs.chunk_kb * 1024;
-    if (g_stream.chunk < 1024 || g_stream.chunk > kNowMaxPayload) {
-        g_stream.chunk = 8192;
-    }
-    g_stream.pace_ms = prefs.pace_ms;
-    g_stream.predictive = prefs.predictive != 0;
-    g_stream.interlace = prefs.interlace != 0;
+    tuning_from_json(reply, &prefs, &g_stream.chunk, &g_stream.pace_ms,
+                     &g_stream.pack);
+    g_stream.predictive =
+        json_find_flag(reply, "predictive", prefs.predictive) != 0;
+    g_stream.interlace =
+        json_find_flag(reply, "interlace", prefs.interlace) != 0;
     g_stream.min_interval_ticks =
         now_json_find_int(reply, "minIntervalMs", 0) * 60 / 1000;
     g_stream.next_frame_tick = 0;

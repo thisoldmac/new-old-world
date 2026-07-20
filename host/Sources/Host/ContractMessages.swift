@@ -85,6 +85,9 @@ struct CommandResult: Codable, Equatable, Sendable {
 struct CaptureRequest: Codable, Equatable, Sendable {
     var id: Int
     var depth: Int
+    var chunkKb: Int?
+    var paceMs: Int?
+    var pack: Bool?
 }
 
 /// Live-stream bracket: between stream.start and the guest's
@@ -99,6 +102,11 @@ struct StreamStart: Codable, Equatable, Sendable {
     var id: Int
     var depth: Int
     var minIntervalMs: Int?
+    var chunkKb: Int?
+    var paceMs: Int?
+    var pack: Bool?
+    var predictive: Bool?
+    var interlace: Bool?
 }
 
 struct StreamStop: Codable, Equatable, Sendable {

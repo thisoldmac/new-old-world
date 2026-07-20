@@ -140,9 +140,19 @@ final class GuestListener: ObservableObject {
         var message: String
     }
 
+    /// The initiator's knobs, riding stream.start / capture.request; nil
+    /// fields fall back to the guest's own panel settings.
+    struct CaptureTuning: Equatable, Sendable {
+        var chunkKb: Int?
+        var paceMs: Int?
+        var pack: Bool?
+        var predictive: Bool?
+        var interlace: Bool?
+    }
+
     /// Asks the guest for a screen capture. Completion fires with the decoded
     /// image plus the measurements, or a human-readable failure.
-    func requestCapture(depth: Int?,
+    func requestCapture(depth: Int?, tuning: CaptureTuning = .init(),
                         completion: @escaping (Result<CaptureDelivery,
                                                       CaptureFailure>) -> Void) {
         guard let session, case .connected = state else {
@@ -152,7 +162,7 @@ final class GuestListener: ObservableObject {
         let id = nextCommandId
         nextCommandId += 1
         pendingCapture = completion
-        session.sendCaptureRequest(id: id, depth: depth)
+        session.sendCaptureRequest(id: id, depth: depth, tuning: tuning)
     }
 
     /// How far along an in-flight transfer is, for the panel's progress bar.
@@ -185,7 +195,8 @@ final class GuestListener: ObservableObject {
 
     /// Opens a stream bracket. Frames then arrive on streamFrames until
     /// stopStream() or the guest's own stream.stopped.
-    func startStream(depth: Int, minIntervalMs: Int? = nil) {
+    func startStream(depth: Int, minIntervalMs: Int? = nil,
+                     tuning: CaptureTuning = .init()) {
         guard let session, case .connected = state,
               activeStreamId == nil else { return }
         let id = nextCommandId
@@ -193,7 +204,7 @@ final class GuestListener: ObservableObject {
         activeStreamId = id
         streamEndReason = nil
         session.beginStream(id: id, depth: depth,
-                            minIntervalMs: minIntervalMs)
+                            minIntervalMs: minIntervalMs, tuning: tuning)
     }
 
     /// Asks the guest to send its next stream frame whole.
@@ -587,10 +598,14 @@ final class Session {
         send(.captureAccept(CaptureAccept(id: offer.id)))
     }
 
-    func beginStream(id: Int, depth: Int, minIntervalMs: Int?) {
+    func beginStream(id: Int, depth: Int, minIntervalMs: Int?,
+                     tuning: GuestListener.CaptureTuning) {
         streamId = id
-        send(.streamStart(StreamStart(id: id, depth: depth,
-                                      minIntervalMs: minIntervalMs)))
+        send(.streamStart(StreamStart(
+            id: id, depth: depth, minIntervalMs: minIntervalMs,
+            chunkKb: tuning.chunkKb, paceMs: tuning.paceMs,
+            pack: tuning.pack, predictive: tuning.predictive,
+            interlace: tuning.interlace)))
     }
 
     func requestStreamStop(id: Int) {
@@ -771,13 +786,16 @@ final class Session {
         send(.captureCancel(CaptureCancel(transfer: begin.transfer)))
     }
 
-    func sendCaptureRequest(id: Int, depth: Int?) {
+    func sendCaptureRequest(id: Int, depth: Int?,
+                            tuning: GuestListener.CaptureTuning) {
         captureBegin = nil
         captureBuffer = []
         cancelled = false
         solicitedId = id
         captureStart = Date()
-        send(.captureRequest(CaptureRequest(id: id, depth: depth ?? 0)))
+        send(.captureRequest(CaptureRequest(
+            id: id, depth: depth ?? 0, chunkKb: tuning.chunkKb,
+            paceMs: tuning.paceMs, pack: tuning.pack)))
     }
 
     private func send(_ message: ControlMessage) {

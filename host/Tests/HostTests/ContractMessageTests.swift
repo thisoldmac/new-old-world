@@ -67,6 +67,24 @@ final class ContractMessageTests: XCTestCase {
             .streamRequest(request))
     }
 
+    func testStreamStartCarriesTheInitiatorsKnobs() throws {
+        let start = StreamStart(id: 3, depth: 8, minIntervalMs: nil,
+                                chunkKb: 32, paceMs: 0, pack: true,
+                                predictive: true, interlace: true)
+        XCTAssertEqual(
+            try ControlMessageCodec.decode(
+                ControlMessageCodec.encode(.streamStart(start))),
+            .streamStart(start))
+        // A bare start (no tuning) stays legal - the guest falls back to
+        // its own panel.
+        let json = #"{"type":"stream.start","id":4,"depth":1}"#
+        guard case .streamStart(let bare) =
+            try ControlMessageCodec.decode(Data(json.utf8)) else {
+            return XCTFail("expected stream.start")
+        }
+        XCTAssertNil(bare.pack)
+    }
+
     func testStreamBracketRoundTrip() throws {
         let start = StreamStart(id: 11, depth: 8, minIntervalMs: 500)
         XCTAssertEqual(

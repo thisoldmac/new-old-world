@@ -63,6 +63,29 @@ struct ScreenshotRecord: Identifiable, Equatable {
 final class ScreenshotModuleModel: ObservableObject {
     @Published var connection: GuestConnectionState = .disconnected
     @Published var selectedDepth: CaptureDepth = .indexed
+    /// The host's tuning knobs, sent with every request and stream so the
+    /// initiator's settings win; the guest's panel remains the fallback
+    /// for guest-initiated work. All persisted.
+    @Published var chunkKB: Int {
+        didSet { defaults.set(chunkKB, forKey: Keys.chunkKB) }
+    }
+    @Published var paceMs: Int {
+        didSet { defaults.set(paceMs, forKey: Keys.paceMs) }
+    }
+    @Published var compress: Bool {
+        didSet { defaults.set(compress, forKey: Keys.compress) }
+    }
+    @Published var predictive: Bool {
+        didSet { defaults.set(predictive, forKey: Keys.predictive) }
+    }
+    @Published var interlace: Bool {
+        didSet { defaults.set(interlace, forKey: Keys.interlace) }
+    }
+
+    var tuning: GuestListener.CaptureTuning {
+        .init(chunkKb: chunkKB, paceMs: paceMs, pack: compress,
+              predictive: predictive, interlace: interlace)
+    }
     @Published private(set) var history: [ScreenshotRecord] = []
     @Published private(set) var isCapturing = false
     @Published private(set) var lastError: String?
@@ -102,6 +125,11 @@ final class ScreenshotModuleModel: ObservableObject {
     var latest: ScreenshotRecord? { history.first }
 
     private enum Keys {
+        static let chunkKB = "screenshots.chunkKB"
+        static let paceMs = "screenshots.paceMs"
+        static let compress = "screenshots.compress"
+        static let predictive = "screenshots.predictive"
+        static let interlace = "screenshots.interlace"
         static let autoSave = "screenshots.autoSave"
         static let autoCopy = "screenshots.autoCopy"
         static let saveDirectory = "screenshots.saveDirectory"
@@ -129,6 +157,13 @@ final class ScreenshotModuleModel: ObservableObject {
         self.defaults = defaults
         self.autoSave = defaults.bool(forKey: Keys.autoSave)
         self.autoCopy = defaults.bool(forKey: Keys.autoCopy)
+        let chunk = defaults.integer(forKey: Keys.chunkKB)
+        self.chunkKB = (1...32).contains(chunk) ? chunk : 32
+        let pace = defaults.integer(forKey: Keys.paceMs)
+        self.paceMs = (0...100).contains(pace) ? pace : 0
+        self.compress = defaults.object(forKey: Keys.compress) as? Bool ?? true
+        self.predictive = defaults.bool(forKey: Keys.predictive)
+        self.interlace = defaults.bool(forKey: Keys.interlace)
         let stored = defaults.string(forKey: Keys.saveDirectory)
         self.saveDirectory = stored.map { URL(fileURLWithPath: $0) }
             ?? FileManager.default.urls(for: .picturesDirectory,
@@ -151,7 +186,7 @@ final class ScreenshotModuleModel: ObservableObject {
     func startStream() {
         guard canStream else { return }
         lastError = nil
-        listener.startStream(depth: selectedDepth.rawValue)
+        listener.startStream(depth: selectedDepth.rawValue, tuning: tuning)
     }
 
     func stopStream() {
@@ -279,7 +314,8 @@ final class ScreenshotModuleModel: ObservableObject {
         guard canCapture else { return }
         isCapturing = true
         lastError = nil
-        listener.requestCapture(depth: selectedDepth.rawValue) { [weak self] in
+        listener.requestCapture(depth: selectedDepth.rawValue,
+                                tuning: tuning) { [weak self] in
             guard let self else { return }
             self.isCapturing = false
             self.progress = nil

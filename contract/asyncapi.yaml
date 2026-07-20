@@ -370,6 +370,9 @@ components:
         type: { const: capture.request }
         id: { type: integer }
         depth: { enum: [1, 2, 4, 8, 16, 32] }
+        chunkKb: { type: integer, minimum: 1, maximum: 32 }
+        paceMs: { type: integer, minimum: 0, maximum: 100 }
+        pack: { type: boolean }
     StreamRequest:
       type: object
       required: [type, depth]
@@ -391,6 +394,19 @@ components:
           type: integer
           description: >
             Minimum ms between frame starts; 0 or absent = wire-paced.
+        chunkKb: { type: integer, minimum: 1, maximum: 32 }
+        paceMs: { type: integer, minimum: 0, maximum: 100 }
+        pack: { type: boolean }
+        predictive:
+          type: boolean
+          description: Read only predicted-dirty rows plus a sweep.
+        interlace:
+          type: boolean
+          description: Capture and send alternate decimated fields.
+      description: >
+        Tuning fields are the initiator's knobs: absent ones fall back
+        to the guest's own panel settings, so a bare stream.start
+        behaves exactly as before.
     StreamStop:
       type: object
       required: [type, id]
