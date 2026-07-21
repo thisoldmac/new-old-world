@@ -58,6 +58,8 @@ static const char *const kDataBrowser[] = {
     "UpdateDataBrowserItems",
     "SetDataBrowserItemDataText",
     "SetDataBrowserItemDataIcon",
+    "NewDataBrowserItemDataUPP",
+    "NewDataBrowserItemNotificationUPP",
     "GetDataBrowserItemDataText",
     "SetDataBrowserSelectionFlags",
     "GetDataBrowserSelectionAnchor",
@@ -240,6 +242,8 @@ static const SpikeRow kRows[] = {
     { "Zebra.jpg", "JPEG image", 81920 }
 };
 
+static void step(const char *what);
+
 static ControlRef g_browser;
 static char g_events[4][80];
 static int g_event_count;
@@ -369,6 +373,7 @@ static void build_browser(void)
     int i;
 
     SetRect(&bounds, 12, kListTop, kWinWidth - 12, kWinHeight - 12);
+    step("about to CreateDataBrowserControl");
     err = CreateDataBrowserControl(g_window, &bounds, kDataBrowserListView,
                                    &g_browser);
     if (err != noErr) {
@@ -379,19 +384,31 @@ static void build_browser(void)
     memset(&callbacks, 0, sizeof callbacks);
     callbacks.version = kDataBrowserLatestCallbacks;
     InitDataBrowserCallbacks(&callbacks);
-    /* On CFM PowerPC a UPP is the routine pointer itself, so the cast
-       avoids NewDataBrowserItemDataUPP - a weakly linked import that
-       resolves to NULL on some CarbonLib builds and then crashes. Same
-       reasoning as the AE handler in the guest. */
-    callbacks.u.v1.itemDataCallback = (DataBrowserItemDataUPP)item_data;
+    /* These MUST be real UPPs. This runtime is TARGET_RT_MAC_CFM, where
+       MixedMode.h makes STACK_UPP_TYPE a UniversalProcPtr - a routine
+       descriptor, not a bare pointer. Casting a C function to one and
+       handing it to the Toolbox is how the first cut of this spike
+       died: it jumps into what it expects to be a descriptor, finds
+       function prologue, and executes it. Type 3, immediately.
+       (A cast IS right on Mach-O, where STACK_UPP_TYPE is identity.
+       Runtime, not architecture, decides.) */
+    step("about to build the UPPs");
+    callbacks.u.v1.itemDataCallback = NewDataBrowserItemDataUPP(item_data);
     callbacks.u.v1.itemNotificationCallback =
-        (DataBrowserItemNotificationUPP)item_notify;
+        NewDataBrowserItemNotificationUPP(item_notify);
+    if (callbacks.u.v1.itemDataCallback == NULL
+        || callbacks.u.v1.itemNotificationCallback == NULL) {
+        report("NewDataBrowser*UPP returned NULL - cannot install callbacks");
+        return;
+    }
+    step("about to SetDataBrowserCallbacks");
     err = SetDataBrowserCallbacks(g_browser, &callbacks);
     if (err != noErr) {
         report("SetDataBrowserCallbacks FAILED (%d)", (int)err);
         return;
     }
 
+    step("about to add the Name column");
     err = add_column(kColName, "Name", 200, true, 0);
     if (err != noErr) {
         report("AddDataBrowserListViewColumn FAILED (%d)", (int)err);
@@ -408,12 +425,14 @@ static void build_browser(void)
     for (i = 0; i < 3; ++i) {
         ids[i] = (DataBrowserItemID)(i + 1);
     }
+    step("about to AddDataBrowserItems");
     err = AddDataBrowserItems(g_browser, kDataBrowserNoItem, 3, ids,
                               kDataBrowserItemNoProperty);
     if (err != noErr) {
         report("AddDataBrowserItems FAILED (%d)", (int)err);
         return;
     }
+    step("control built");
     report("Control built. Click a row, double-click, click a header.");
 }
 
@@ -447,6 +466,39 @@ static void write_report(void)
         len = 1;
         FSWrite(ref, &len, "\r");     /* classic line endings, on purpose */
     }
+    FSClose(ref);
+}
+
+/* A crash cannot report itself, so each risky step is written to disk
+   BEFORE it is taken and the file is closed again immediately. After a
+   Type 3 the last line on the desktop names what was being attempted.
+   Slow and worth it: one run of a crashing program then answers the
+   question instead of costing a deploy cycle to narrow. */
+static void step(const char *what)
+{
+    FSSpec spec;
+    short vref;
+    long dir;
+    short ref;
+    Str255 name;
+    long len;
+
+    if (FindFolder(kOnSystemDisk, kDesktopFolderType, kDontCreateFolder,
+                   &vref, &dir) != noErr) {
+        return;
+    }
+    CopyCStringToPascal("Data Browser Spike Steps", name);
+    if (FSMakeFSSpec(vref, dir, name, &spec) == fnfErr) {
+        FSpCreate(&spec, 'ttxt', 'TEXT', smSystemScript);
+    }
+    if (FSpOpenDF(&spec, fsWrPerm, &ref) != noErr) {
+        return;
+    }
+    SetFPos(ref, fsFromLEOF, 0);
+    len = (long)strlen(what);
+    FSWrite(ref, &len, what);
+    len = 1;
+    FSWrite(ref, &len, "\r");
     FSClose(ref);
 }
 
@@ -504,8 +556,25 @@ int main(void)
     ShowWindow(g_window);
     SelectWindow(g_window);
 
+    /* One run per file: a log that accumulates across launches makes
+       the reader work out which section is today's. */
+    {
+        FSSpec old_log;
+        short vref;
+        long dir;
+        Str255 name;
+
+        CopyCStringToPascal("Data Browser Spike Steps", name);
+        if (FindFolder(kOnSystemDisk, kDesktopFolderType, kDontCreateFolder,
+                       &vref, &dir) == noErr
+            && FSMakeFSSpec(vref, dir, name, &old_log) == noErr) {
+            FSpDelete(&old_log);
+        }
+    }
+    step("launched");
     run_probe();
     write_report();
+    step("probe done");
     build_browser();
 
     while (running) {
