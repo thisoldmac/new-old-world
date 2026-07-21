@@ -656,6 +656,96 @@ int now_files_choose_root(char *why, long why_cap)
 
 /* --- receiving ---------------------------------------------------------- */
 
+/* CRC-32, IEEE / zlib polynomial 0xEDB88320, reflected and table-driven.
+   The table is 1 KB of constants rather than something built at startup:
+   a kilobyte of read-only data costs less than the code and the launch
+   time to generate it, and it can never be half-initialised. */
+static const unsigned long k_crc32_table[256] = {
+    0x00000000UL, 0x77073096UL, 0xEE0E612CUL, 0x990951BAUL,
+    0x076DC419UL, 0x706AF48FUL, 0xE963A535UL, 0x9E6495A3UL,
+    0x0EDB8832UL, 0x79DCB8A4UL, 0xE0D5E91EUL, 0x97D2D988UL,
+    0x09B64C2BUL, 0x7EB17CBDUL, 0xE7B82D07UL, 0x90BF1D91UL,
+    0x1DB71064UL, 0x6AB020F2UL, 0xF3B97148UL, 0x84BE41DEUL,
+    0x1ADAD47DUL, 0x6DDDE4EBUL, 0xF4D4B551UL, 0x83D385C7UL,
+    0x136C9856UL, 0x646BA8C0UL, 0xFD62F97AUL, 0x8A65C9ECUL,
+    0x14015C4FUL, 0x63066CD9UL, 0xFA0F3D63UL, 0x8D080DF5UL,
+    0x3B6E20C8UL, 0x4C69105EUL, 0xD56041E4UL, 0xA2677172UL,
+    0x3C03E4D1UL, 0x4B04D447UL, 0xD20D85FDUL, 0xA50AB56BUL,
+    0x35B5A8FAUL, 0x42B2986CUL, 0xDBBBC9D6UL, 0xACBCF940UL,
+    0x32D86CE3UL, 0x45DF5C75UL, 0xDCD60DCFUL, 0xABD13D59UL,
+    0x26D930ACUL, 0x51DE003AUL, 0xC8D75180UL, 0xBFD06116UL,
+    0x21B4F4B5UL, 0x56B3C423UL, 0xCFBA9599UL, 0xB8BDA50FUL,
+    0x2802B89EUL, 0x5F058808UL, 0xC60CD9B2UL, 0xB10BE924UL,
+    0x2F6F7C87UL, 0x58684C11UL, 0xC1611DABUL, 0xB6662D3DUL,
+    0x76DC4190UL, 0x01DB7106UL, 0x98D220BCUL, 0xEFD5102AUL,
+    0x71B18589UL, 0x06B6B51FUL, 0x9FBFE4A5UL, 0xE8B8D433UL,
+    0x7807C9A2UL, 0x0F00F934UL, 0x9609A88EUL, 0xE10E9818UL,
+    0x7F6A0DBBUL, 0x086D3D2DUL, 0x91646C97UL, 0xE6635C01UL,
+    0x6B6B51F4UL, 0x1C6C6162UL, 0x856530D8UL, 0xF262004EUL,
+    0x6C0695EDUL, 0x1B01A57BUL, 0x8208F4C1UL, 0xF50FC457UL,
+    0x65B0D9C6UL, 0x12B7E950UL, 0x8BBEB8EAUL, 0xFCB9887CUL,
+    0x62DD1DDFUL, 0x15DA2D49UL, 0x8CD37CF3UL, 0xFBD44C65UL,
+    0x4DB26158UL, 0x3AB551CEUL, 0xA3BC0074UL, 0xD4BB30E2UL,
+    0x4ADFA541UL, 0x3DD895D7UL, 0xA4D1C46DUL, 0xD3D6F4FBUL,
+    0x4369E96AUL, 0x346ED9FCUL, 0xAD678846UL, 0xDA60B8D0UL,
+    0x44042D73UL, 0x33031DE5UL, 0xAA0A4C5FUL, 0xDD0D7CC9UL,
+    0x5005713CUL, 0x270241AAUL, 0xBE0B1010UL, 0xC90C2086UL,
+    0x5768B525UL, 0x206F85B3UL, 0xB966D409UL, 0xCE61E49FUL,
+    0x5EDEF90EUL, 0x29D9C998UL, 0xB0D09822UL, 0xC7D7A8B4UL,
+    0x59B33D17UL, 0x2EB40D81UL, 0xB7BD5C3BUL, 0xC0BA6CADUL,
+    0xEDB88320UL, 0x9ABFB3B6UL, 0x03B6E20CUL, 0x74B1D29AUL,
+    0xEAD54739UL, 0x9DD277AFUL, 0x04DB2615UL, 0x73DC1683UL,
+    0xE3630B12UL, 0x94643B84UL, 0x0D6D6A3EUL, 0x7A6A5AA8UL,
+    0xE40ECF0BUL, 0x9309FF9DUL, 0x0A00AE27UL, 0x7D079EB1UL,
+    0xF00F9344UL, 0x8708A3D2UL, 0x1E01F268UL, 0x6906C2FEUL,
+    0xF762575DUL, 0x806567CBUL, 0x196C3671UL, 0x6E6B06E7UL,
+    0xFED41B76UL, 0x89D32BE0UL, 0x10DA7A5AUL, 0x67DD4ACCUL,
+    0xF9B9DF6FUL, 0x8EBEEFF9UL, 0x17B7BE43UL, 0x60B08ED5UL,
+    0xD6D6A3E8UL, 0xA1D1937EUL, 0x38D8C2C4UL, 0x4FDFF252UL,
+    0xD1BB67F1UL, 0xA6BC5767UL, 0x3FB506DDUL, 0x48B2364BUL,
+    0xD80D2BDAUL, 0xAF0A1B4CUL, 0x36034AF6UL, 0x41047A60UL,
+    0xDF60EFC3UL, 0xA867DF55UL, 0x316E8EEFUL, 0x4669BE79UL,
+    0xCB61B38CUL, 0xBC66831AUL, 0x256FD2A0UL, 0x5268E236UL,
+    0xCC0C7795UL, 0xBB0B4703UL, 0x220216B9UL, 0x5505262FUL,
+    0xC5BA3BBEUL, 0xB2BD0B28UL, 0x2BB45A92UL, 0x5CB36A04UL,
+    0xC2D7FFA7UL, 0xB5D0CF31UL, 0x2CD99E8BUL, 0x5BDEAE1DUL,
+    0x9B64C2B0UL, 0xEC63F226UL, 0x756AA39CUL, 0x026D930AUL,
+    0x9C0906A9UL, 0xEB0E363FUL, 0x72076785UL, 0x05005713UL,
+    0x95BF4A82UL, 0xE2B87A14UL, 0x7BB12BAEUL, 0x0CB61B38UL,
+    0x92D28E9BUL, 0xE5D5BE0DUL, 0x7CDCEFB7UL, 0x0BDBDF21UL,
+    0x86D3D2D4UL, 0xF1D4E242UL, 0x68DDB3F8UL, 0x1FDA836EUL,
+    0x81BE16CDUL, 0xF6B9265BUL, 0x6FB077E1UL, 0x18B74777UL,
+    0x88085AE6UL, 0xFF0F6A70UL, 0x66063BCAUL, 0x11010B5CUL,
+    0x8F659EFFUL, 0xF862AE69UL, 0x616BFFD3UL, 0x166CCF45UL,
+    0xA00AE278UL, 0xD70DD2EEUL, 0x4E048354UL, 0x3903B3C2UL,
+    0xA7672661UL, 0xD06016F7UL, 0x4969474DUL, 0x3E6E77DBUL,
+    0xAED16A4AUL, 0xD9D65ADCUL, 0x40DF0B66UL, 0x37D83BF0UL,
+    0xA9BCAE53UL, 0xDEBB9EC5UL, 0x47B2CF7FUL, 0x30B5FFE9UL,
+    0xBDBDF21CUL, 0xCABAC28AUL, 0x53B39330UL, 0x24B4A3A6UL,
+    0xBAD03605UL, 0xCDD70693UL, 0x54DE5729UL, 0x23D967BFUL,
+    0xB3667A2EUL, 0xC4614AB8UL, 0x5D681B02UL, 0x2A6F2B94UL,
+    0xB40BBE37UL, 0xC30C8EA1UL, 0x5A05DF1BUL, 0x2D02EF8DUL
+};
+
+unsigned long now_crc32(unsigned long crc, const void *bytes, long len)
+{
+    const unsigned char *p = (const unsigned char *)bytes;
+    unsigned long c;
+
+    if (p == NULL || len <= 0) {
+        return crc;
+    }
+    /* zlib's convention: the value handed in and handed back is the
+       FINISHED crc, so the inversion is undone on the way in and redone
+       on the way out. That is what lets a caller stop and start. */
+    c = (crc ^ 0xFFFFFFFFUL) & 0xFFFFFFFFUL;
+    while (len-- > 0) {
+        c = k_crc32_table[(c ^ *p++) & 0xFF] ^ (c >> 8);
+    }
+    return (c ^ 0xFFFFFFFFUL) & 0xFFFFFFFFUL;
+}
+
+
 /* Resolves a destination FOLDER, creating missing parents inside the
    share. Only ever creates under the share root, because the path is
    relative to it and traversal is inexpressible. */
@@ -792,14 +882,58 @@ static void close_forks(FileReceive *rx)
    and cleaned up later. */
 static const char k_temp_prefix[] = "NOW incoming ";
 
+/* How long a partial is worth keeping. Long enough that "I will finish
+   that download tomorrow" works, short enough that genuine debris does
+   not accumulate forever. */
+enum { kTempKeepSeconds = 7L * 24L * 60L * 60L };
+
+/* FNV-1a over the token. The temp's NAME is the whole record that a
+   partial belongs to a token — there is no sidecar file to write, to
+   keep in step, or to lose. 8 hex digits keeps the name at 21
+   characters, inside HFS's 31. */
+static unsigned long fnv1a32(const char *s)
+{
+    unsigned long h = 2166136261UL;
+
+    for (; s != NULL && *s != '\0'; ++s) {
+        h = (h ^ (unsigned char)*s) & 0xFFFFFFFFUL;
+        /* *16777619 written as shifts: the multiply is what the hash is
+           defined as, and 32-bit wraparound is part of it. */
+        h = (h + (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))
+            & 0xFFFFFFFFUL;
+    }
+    return h;
+}
+
+/* "NOW incoming " + 8 lowercase hex of the token's hash. */
+static void temp_name_for_token(const char *token, char *out, long cap)
+{
+    snprintf(out, (size_t)cap, "%s%08lx", k_temp_prefix, fnv1a32(token));
+}
+
 /* Deletes leftover temps in the destination folder. A transfer that dies
    with the app or the wire cannot clean up after itself, so the next one
    through does it — the alternative is a folder that slowly fills with
-   the debris of every failed attempt. */
-static void sweep_orphan_temps(short vref, long dir_id)
+   the debris of every failed attempt.
+
+   But a partial IS the resume data, so age is what separates debris from
+   an interrupted transfer someone still means to finish: only temps
+   untouched for a week go. `keep` (the temp this transfer is about to
+   write, Pascal string, may be NULL) is never swept — it is the one file
+   here that is certainly not an orphan. */
+static void sweep_orphan_temps(short vref, long dir_id,
+                               const unsigned char *keep)
 {
+    unsigned long now_secs = 0;
+    unsigned long cutoff;
     short index;
 
+    /* A cutoff of 0 means the clock is unusable (unset PRAM battery is
+       not exotic on these machines); then nothing is old enough to
+       sweep, because guessing wrong here destroys a human's transfer. */
+    GetDateTime(&now_secs);
+    cutoff = now_secs > (unsigned long)kTempKeepSeconds
+        ? now_secs - (unsigned long)kTempKeepSeconds : 0;
     for (index = 1; index < 1000; ++index) {
         CInfoPBRec pb;
         Str255 name;
@@ -820,6 +954,16 @@ static void sweep_orphan_temps(short vref, long dir_id)
         if (name[0] < (short)sizeof k_temp_prefix - 1
             || memcmp(name + 1, k_temp_prefix,
                       sizeof k_temp_prefix - 1) != 0) {
+            continue;
+        }
+        if (keep != NULL && name[0] == keep[0]
+            && memcmp(name + 1, keep + 1, name[0]) == 0) {
+            continue;                 /* this transfer's own partial */
+        }
+        /* Both are classic seconds since 1904. A future-dated stamp
+           reads as young, which errs towards keeping a file someone
+           might still want. */
+        if (cutoff == 0 || pb.hFileInfo.ioFlMdDat > cutoff) {
             continue;
         }
         spec.vRefNum = vref;
@@ -848,10 +992,103 @@ static long volume_free_bytes(short vref)
     return (long)pb.volumeParam.ioVFrBlk * pb.volumeParam.ioVAlBlkSiz;
 }
 
+/* True when this transfer is one a partial can be kept for. A token is
+   the sender's promise that the bytes identify the file; the data
+   container is ours, because a partial's resume point is its data-fork
+   EOF, and only for a raw data stream is that the same number as the
+   offset into the stream. A MacBinary stream interleaves header,
+   padding and two forks, so its fork length says nothing about how much
+   of the STREAM arrived — so MacBinary always restarts. */
+static Boolean resumable_transfer(const char *resume_token,
+                                  FileContainer container)
+{
+    return resume_token != NULL && resume_token[0] != '\0'
+        && container == kContainerData;
+}
+
+long now_files_partial_bytes(const char *rel_path, const char *resume_token,
+                             long total_bytes)
+{
+    FSSpec folder;
+    FSSpec temp;
+    CInfoPBRec pb;
+    Str255 temp_name;
+    Str255 look;
+    char name[40];
+    long dir_id;
+
+    if (resume_token == NULL || resume_token[0] == '\0') {
+        return 0;                     /* no token: always start at zero */
+    }
+    if (resolve_folder_creating(rel_path, &folder, &dir_id) != kFilesOK) {
+        return 0;
+    }
+    temp_name_for_token(resume_token, name, sizeof name);
+    CopyCStringToPascal(name, temp_name);
+    if (FSMakeFSSpec(folder.vRefNum, dir_id, temp_name, &temp) != noErr) {
+        return 0;                     /* nothing held under that token */
+    }
+    memset(&pb, 0, sizeof pb);
+    memcpy(look, temp.name, temp.name[0] + 1);
+    pb.hFileInfo.ioNamePtr = look;
+    pb.hFileInfo.ioVRefNum = temp.vRefNum;
+    pb.hFileInfo.ioDirID = temp.parID;
+    pb.hFileInfo.ioFDirIndex = 0;
+    if (PBGetCatInfoSync(&pb) != noErr
+        || (pb.hFileInfo.ioFlAttrib & ioDirMask) != 0) {
+        return 0;
+    }
+    /* The collision guard. Two tokens can hash alike; a partial longer
+       than the file being offered is proof this one is not ours. It is
+       only a guard, not a proof of identity — a colliding partial that
+       happens to be short enough still gets through here, and it is the
+       CRC on file.end that catches it and throws the result away. */
+    if (pb.hFileInfo.ioFlLgLen <= 0 || pb.hFileInfo.ioFlLgLen > total_bytes) {
+        return 0;
+    }
+    return pb.hFileInfo.ioFlLgLen;
+}
+
+/* Re-reads the bytes already on disk to seed the running CRC. Resume
+   makes the guest responsible for a file it only half wrote, and the
+   checksum cannot be carried across a crash — so it is recomputed, which
+   also proves the partial is readable before the sender is told to
+   spend minutes appending to it. Reuses the write batch rather than
+   asking for a second large buffer. */
+static int reseed_crc_from_disk(FileReceive *rx, long upto)
+{
+    UnsignedWide t0, t1;
+    long done = 0;
+
+    if (SetFPos(rx->data_ref, fsFromStart, 0) != noErr) {
+        return kFilesIOError;
+    }
+    Microseconds(&t0);
+    while (done < upto) {
+        long want = upto - done;
+        long count;
+
+        if (want > kWriteBatch) {
+            want = kWriteBatch;
+        }
+        count = want;
+        if (FSRead(rx->data_ref, &count, rx->buf) != noErr
+            || count != want) {
+            return kFilesIOError;
+        }
+        rx->crc = now_crc32(rx->crc, rx->buf, count);
+        done += count;
+    }
+    Microseconds(&t1);
+    g_rx_stats.us_reseed = t1.lo - t0.lo;
+    return kFilesOK;
+}
+
 int now_files_receive_begin(const char *rel_path, const char *name,
                             FileContainer container, long bytes,
                             OSType file_type, OSType creator,
                             unsigned long modified, Boolean overwrite,
+                            const char *resume_token, long resume_offset,
                             FileReceive *rx)
 {
     FSSpec folder;
@@ -860,6 +1097,7 @@ int now_files_receive_begin(const char *rel_path, const char *name,
     Str255 pname;
     Str255 temp_name;
     char temp[40];
+    Boolean resumable;
     int rc;
     OSErr err;
 
@@ -870,6 +1108,11 @@ int now_files_receive_begin(const char *rel_path, const char *name,
         || strchr(name, ':') != NULL) {
         return kFilesBadPath;
     }
+    resumable = resumable_transfer(resume_token, container);
+    if (resume_offset < 0 || resume_offset > bytes
+        || (resume_offset > 0 && !resumable)) {
+        return kFilesBadPath;         /* an offset we cannot honour */
+    }
     rc = resolve_folder_creating(rel_path, &folder, &dir_id);
     if (rc != kFilesOK) {
         return rc;
@@ -877,15 +1120,30 @@ int now_files_receive_begin(const char *rel_path, const char *name,
 
     /* Refuse before a doomed transfer rather than after it: at this
        wire's speed, discovering a full disk at the end of a megabyte is
-       minutes wasted. */
+       minutes wasted. Only the REMAINING bytes need room — the partial
+       already occupies what it holds. */
     {
         long free_bytes = volume_free_bytes(folder.vRefNum);
+        long need = bytes - resume_offset;
 
-        if (free_bytes >= 0 && bytes > 0 && free_bytes < bytes) {
+        if (free_bytes >= 0 && need > 0 && free_bytes < need) {
             return kFilesTooBig;
         }
     }
-    sweep_orphan_temps(folder.vRefNum, dir_id);
+
+    /* Name the temp before sweeping, so the sweep can be told to spare
+       it: this transfer's own partial is the one file in the folder that
+       is certainly not an orphan. */
+    if (resumable) {
+        temp_name_for_token(resume_token, temp, sizeof temp);
+    } else {
+        /* No token: the old clock-named temp, unique enough, and still
+           deleted the moment the transfer fails. */
+        snprintf(temp, sizeof temp, "%s%lu", k_temp_prefix,
+                 (unsigned long)TickCount());
+    }
+    CopyCStringToPascal(temp, temp_name);
+    sweep_orphan_temps(folder.vRefNum, dir_id, temp_name);
 
     CopyCStringToPascal(name, pname);
     err = FSMakeFSSpec(folder.vRefNum, dir_id, pname, &existing);
@@ -904,42 +1162,79 @@ int now_files_receive_begin(const char *rel_path, const char *name,
     }
 
     /* A temp name in the same folder: the real name appears only when
-       every byte has landed. Ticks make it unique enough. */
-    snprintf(temp, sizeof temp, "%s%lu", k_temp_prefix,
-             (unsigned long)TickCount());
-    CopyCStringToPascal(temp, temp_name);
+       every byte has landed. */
     if (FSMakeFSSpec(folder.vRefNum, dir_id, temp_name,
-                     &rx->temp) == noErr) {
-        FSpDelete(&rx->temp);
+                     &rx->temp) == noErr && resume_offset == 0) {
+        FSpDelete(&rx->temp);         /* starting over: the old partial goes */
     }
     rx->temp.vRefNum = folder.vRefNum;
     rx->temp.parID = dir_id;
     memcpy(rx->temp.name, temp_name, temp_name[0] + 1);
 
-    err = FSpCreate(&rx->temp, creator != 0 ? creator : 'ttxt',
-                    file_type != 0 ? file_type : 'BINA', smSystemScript);
-    if (err != noErr) {
-        return kFilesIOError;
+    if (resume_offset == 0) {
+        err = FSpCreate(&rx->temp, creator != 0 ? creator : 'ttxt',
+                        file_type != 0 ? file_type : 'BINA', smSystemScript);
+        if (err != noErr) {
+            return kFilesIOError;
+        }
     }
-    if (FSpOpenDF(&rx->temp, fsWrPerm, &rx->data_ref) != noErr) {
-        FSpDelete(&rx->temp);
+    /* A resume has to READ the partial back to recompute its CRC, which
+       write-only permission does not allow. */
+    if (FSpOpenDF(&rx->temp,
+                  resume_offset > 0 ? fsRdWrPerm : fsWrPerm,
+                  &rx->data_ref) != noErr) {
+        if (resume_offset == 0) {
+            FSpDelete(&rx->temp);
+        }
         return kFilesIOError;
-    }
-    /* Claim the space once. Otherwise every write extends the file and
-       pays for allocation and catalog updates — which is the whole
-       difference between 4 KB/s and the wire's speed. */
-    if (bytes > 0) {
-        SetEOF(rx->data_ref, bytes);
-        SetFPos(rx->data_ref, fsFromStart, 0);
     }
     rx->buf = NewPtr(kWriteBatch);
     if (rx->buf == NULL) {
         FSClose(rx->data_ref);
         rx->data_ref = -1;
-        FSpDelete(&rx->temp);
+        if (resume_offset == 0) {
+            FSpDelete(&rx->temp);
+        }
         return kFilesTooBig;
     }
     memset(&g_rx_stats, 0, sizeof g_rx_stats);
+
+    if (resume_offset > 0) {
+        long held = 0;
+
+        /* The partial must still hold everything the sender is about to
+           append to. Anything else and the seam would be a guess. */
+        if (GetEOF(rx->data_ref, &held) != noErr || held < resume_offset) {
+            FSClose(rx->data_ref);
+            rx->data_ref = -1;
+            DisposePtr(rx->buf);
+            rx->buf = NULL;
+            return kFilesIOError;
+        }
+        if (reseed_crc_from_disk(rx, resume_offset) != kFilesOK) {
+            FSClose(rx->data_ref);
+            rx->data_ref = -1;
+            DisposePtr(rx->buf);
+            rx->buf = NULL;
+            return kFilesIOError;
+        }
+        rx->received = resume_offset;
+        g_rx_stats.resumed_from = resume_offset;
+    }
+    /* Claim the space once. Otherwise every write extends the file and
+       pays for allocation and catalog updates — which is the whole
+       difference between 4 KB/s and the wire's speed. On a resume this
+       re-claims the tail the previous attempt's truncation gave back. */
+    if (bytes > 0) {
+        SetEOF(rx->data_ref, bytes);
+    }
+    if (SetFPos(rx->data_ref, fsFromStart, resume_offset) != noErr) {
+        FSClose(rx->data_ref);
+        rx->data_ref = -1;
+        DisposePtr(rx->buf);
+        rx->buf = NULL;
+        return kFilesIOError;
+    }
 
     rx->active = true;
     rx->container = container;
@@ -947,6 +1242,7 @@ int now_files_receive_begin(const char *rel_path, const char *name,
     rx->file_type = file_type;
     rx->creator = creator;
     rx->modified = modified;
+    rx->keep_partial = resumable;
     return kFilesOK;
 }
 
@@ -1050,6 +1346,14 @@ int now_files_receive_chunk(FileReceive *rx, const void *bytes, long len)
     rx->received += len;
     ++g_rx_stats.chunks;
     g_rx_stats.bytes += len;
+    /* Over the bytes as they arrive rather than the file as it is
+       written: one pass, no extra reads, and it covers every container
+       the same way — the sender checksums what it puts on the wire, so
+       a MacBinary envelope is checked as the artifact it is. Skipping a
+       container here would be worse than not checking at all: the
+       comparison would still run, against a CRC of nothing. */
+    rx->crc = now_crc32(rx->crc, bytes, len);
+    g_rx_stats.crc = rx->crc;
     if (rx->container == kContainerMacBinary) {
         rc = write_macbinary(rx, (const unsigned char *)bytes, len);
     } else {
@@ -1128,16 +1432,59 @@ int now_files_receive_finish(FileReceive *rx)
     return kFilesOK;
 }
 
-void now_files_receive_abort(FileReceive *rx)
+/* Leaves the partial behind as an honest record of what arrived: the
+   buffered tail is pushed out and the file is cut back to exactly the
+   bytes written, because the space claimed up front is not data and a
+   resume that trusted the claimed EOF would append onto garbage.
+
+   Returns 0 when the partial could not be made honest, in which case
+   the caller deletes it rather than keeping something it cannot
+   describe. */
+static int settle_partial(FileReceive *rx)
 {
-    if (rx == NULL || !rx->active) {
-        return;
+    if (rx->data_ref < 0) {
+        return 0;
+    }
+    if (flush_batch(rx, rx->data_ref) != kFilesOK) {
+        return 0;
+    }
+    if (SetEOF(rx->data_ref, rx->received) != noErr) {
+        return 0;
+    }
+    return 1;
+}
+
+static void receive_release(FileReceive *rx, Boolean keep)
+{
+    if (keep && !settle_partial(rx)) {
+        keep = false;
     }
     close_forks(rx);
     if (rx->buf != NULL) {
         DisposePtr(rx->buf);
         rx->buf = NULL;
     }
-    FSpDelete(&rx->temp);
+    if (!keep) {
+        FSpDelete(&rx->temp);
+    }
     rx->active = false;
+}
+
+void now_files_receive_abort(FileReceive *rx)
+{
+    if (rx == NULL || !rx->active) {
+        return;
+    }
+    /* A resumable partial survives the failure — that is the whole
+       point of naming it after the token. Anything else is debris and
+       goes now. */
+    receive_release(rx, rx->keep_partial && rx->received > 0);
+}
+
+void now_files_receive_discard(FileReceive *rx)
+{
+    if (rx == NULL || !rx->active) {
+        return;
+    }
+    receive_release(rx, false);
 }
