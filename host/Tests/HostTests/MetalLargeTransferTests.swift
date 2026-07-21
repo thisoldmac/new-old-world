@@ -301,6 +301,66 @@ final class MetalLargeTransferTests: XCTestCase {
                        outcome)
     }
 
+    /// Interrupt a transfer, send the same file again, and require that
+    /// the second attempt continued rather than restarted.
+    ///
+    /// The assertion that matters is not "it finished" — a restart also
+    /// finishes. It is that the guest reported holding bytes, the sender
+    /// began past zero, and the finished file still passed its whole-file
+    /// CRC. A resume that silently restarted would look identical
+    /// without that, and a resume that stitched the wrong bytes would
+    /// look identical without the checksum.
+    func testAnInterruptedPutContinuesInsteadOfStartingOver() async throws {
+        _ = try await waitForGuest()
+        let bytes = pattern(4 * 1024 * 1024)
+        let name = "zz chip resume.bin"
+
+        // First attempt, killed partway.
+        var firstDone = false
+        listener.putFile(name: name, into: "", container: "data",
+                         bytes: bytes, overwrite: true) { _ in
+            firstDone = true
+        }
+        try? await Task.sleep(nanoseconds: 4_000_000_000)
+        let interruptedAt = listener.captureProgress?.received ?? 0
+        listener.cancelFile()
+        print("\n=== interrupted at \(interruptedAt) of \(bytes.count)")
+        XCTAssertGreaterThan(interruptedAt, 0, "nothing transferred at all")
+        XCTAssertLessThan(interruptedAt, bytes.count,
+                          "finished before it could be interrupted")
+        _ = firstDone
+        try? await Task.sleep(nanoseconds: 3_000_000_000)
+        print("=== after interrupt: \(await command("putstat"))")
+
+        // Second attempt, same bytes, so the same resume token.
+        let started = Date()
+        var outcome: String?
+        listener.putFile(name: name, into: "", container: "data",
+                         bytes: bytes, overwrite: true) { result in
+            switch result {
+            case .success: outcome = "ok"
+            case .failure(let f): outcome = "FAILED [\(f.code)] \(f.message)"
+            }
+        }
+        let deadline = Date().addingTimeInterval(300)
+        while outcome == nil, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+        }
+        let secs = Date().timeIntervalSince(started)
+        print(String(format: "=== second attempt: %@ in %.1fs",
+                     outcome ?? "HUNG", secs))
+        let stat = await command("putstat")
+        print("=== after resume: \(stat)")
+
+        XCTAssertEqual(outcome, "ok",
+                       "the resumed put did not complete: \(outcome ?? "hung")")
+        // "Resumed from" is the guest's own word for where it picked up.
+        // Zero means it started over, which is a silent failure of the
+        // feature rather than of the transfer.
+        XCTAssertFalse(stat.contains("Resumed from=0"),
+                       "guest restarted from zero instead of resuming: \(stat)")
+    }
+
     /// The ladder. Each rung reports its profile, then whether the guest
     /// is still answering, then what is left on its disk.
     func testTheSizeLadderToFindWhereItBreaks() async throws {
