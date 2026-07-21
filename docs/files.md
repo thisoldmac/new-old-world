@@ -370,13 +370,40 @@ anything on this disk while looking local. Resolution now rejects the
 first and compares what a path actually reaches — not what it says —
 for the second.
 
-**Phase 2 — the browser.** Data Browser list with Icon Services icons,
+**Phase 2 — the browser.** *Rung 1 done 2026-07-20, metal-verified: the
+guest browses the host's share in a real Data Browser list. Files are
+listed but not yet pullable. Remaining: Get, then HostShare learning
+move / trash / restore / mkdir — no new verbs for any of it, they are
+already in the contract.* Data Browser list with Icon Services icons,
 sortable columns, both selection styles, double-click / Cmd-Up /
 Cmd-click path menu / type-select, the status line, and Get downloading
 to the configured folder. **De-risk first:** Data Browser under
 CarbonLib 1.6 on 9.1 is the unknown in this whole slice, so prove it
 with a throwaway window of three hardcoded rows before building on it.
 Done when the host's share can be browsed, sorted, and pulled from.
+
+### What rung 1 cost
+
+Two bugs, both latent for weeks, both found only because a new message
+was the first big one to travel.
+
+**A receiver's buffer has to be the contract's limit.** The guest held
+1200 bytes of inbound control while the contract allows 4096, and a
+frame that did not fit returned the same code as a malformed one — so
+the reader called it a protocol error and hung up. Everything arriving
+until then was a pong or a request. The listing was the first message
+big enough to notice, and the symptom (the connection dropping when you
+open a window) pointed nowhere near the cause. The limit now lives in
+one place that both the sender and the receiver read, and a message too
+big to hold is skipped rather than fatal — losing one message costs one
+message.
+
+**This file system hands out decomposed names.** "café" is "cafe" plus a
+combining accent, and MacRoman has the accented letter but not the mark,
+so every accented name became "cafe_" on the way over. Silently, and in
+the download path since slice 1. It was found by accident: a debug print
+in a size test showed a name nobody had asked about. The assertion that
+would have caught it deliberately now exists.
 
 **Phase 3 — drag and drop, and the sharp edges.** Drag out of the
 browser to the Finder via the Drag Manager's promised-HFS flavour, drag
