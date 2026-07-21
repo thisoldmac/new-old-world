@@ -39,6 +39,8 @@ typedef struct {
 
     unsigned char rx[kRxBufferSize];
     long rx_len;
+    long discard_remaining;           /* bytes of a message too big to
+                                         hold, being thrown away */
     long bulk_remaining;              /* payload left in the bulk frame
                                          being consumed; 0 when none */
 
@@ -159,7 +161,7 @@ static int send_control(const char *json)
     Ptr frame;
     int slot;
 
-    if (g.ep == kOTInvalidEndpointRef || length > 4096) {
+    if (g.ep == kOTInvalidEndpointRef || length > (unsigned long)kNowMaxControl) {
         return 0;
     }
     if (g_ctlq.count >= kCtlQueueSlots) {
@@ -426,6 +428,22 @@ static int next_frame(char *payload_out, long cap)
        the buffer fills, the guest stops reading, TCP closes the window,
        and the sender waits forever on a transfer that has no way to
        finish. */
+    if (g.discard_remaining > 0) {
+        long take = g.rx_len;
+
+        if (take <= 0) {
+            return 0;
+        }
+        if (take > g.discard_remaining) {
+            take = g.discard_remaining;
+        }
+        memmove(g.rx, g.rx + take, g.rx_len - take);
+        g.rx_len -= take;
+        g.discard_remaining -= take;
+        payload_out[0] = '\0';
+        return 0;
+    }
+
     if (g.bulk_remaining > 0) {
         long take = g.rx_len;
 
@@ -462,7 +480,19 @@ static int next_frame(char *payload_out, long cap)
         return 1;
     }
     if (length + 1 > (unsigned long)cap) {
-        return -1;
+        /* Bigger than we can hold. Skipping it costs one message;
+           dropping the connection costs everything in flight and looks
+           like a network fault instead of a message we could not read.
+           The peer is told nothing: it asked something reasonable and
+           our buffer is our problem. */
+        memmove(g.rx, g.rx + kNowFrameHeaderBytes,
+                g.rx_len - kNowFrameHeaderBytes);
+        g.rx_len -= kNowFrameHeaderBytes;
+        g.discard_remaining = (long)length;
+        snprintf(g.status, sizeof g.status,
+                 "Ignored a %lu-byte message (too big to read)", length);
+        payload_out[0] = '\0';
+        return 0;
     }
     total = kNowFrameHeaderBytes + (long)length;
     if (g.rx_len < total) {
@@ -3085,7 +3115,12 @@ enum { kIoSliceTicks = 3 };           /* ~50 ms */
 
 static void service_connected_io(void)
 {
-    char payload[1200];
+    /* The contract caps a control frame at 4 KB, so the receiver has to
+       be able to HOLD 4 KB. This was 1200 for as long as everything
+       arriving was a pong or a request; the first listing off the wire
+       overflowed it and took the connection down. A buffer smaller than
+       the contract allows is a bug waiting for a big enough message. */
+    char payload[kNowMaxControl + 4];
     unsigned long slice_end = TickCount() + kIoSliceTicks;
     int rc;
 

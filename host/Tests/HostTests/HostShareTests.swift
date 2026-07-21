@@ -90,6 +90,64 @@ final class HostShareTests: XCTestCase {
         XCTAssertEqual(page.entries.map(\.name), ["visible.txt"])
     }
 
+    /// A page has to fit in a control frame. Sixteen long names plus
+    /// their types and dates do not, and the receiver's answer to a
+    /// message it cannot hold used to be dropping the connection.
+    func testAPageFitsInAControlFrame() throws {
+        // 31 characters is the most the other machine can hold, so this
+        // is the worst real page: as many maximum-length names as fit.
+        for i in 0..<40 {
+            try write(String(format: "%02d", i)
+                      + "-a-name-that-is-31-chars-lng", "x")
+        }
+        let page = try share.list(path: "", cursor: 1, limit: 16)
+        XCTAssertFalse(page.entries.isEmpty)
+        XCTAssertTrue(page.more, "40 files cannot be one page")
+
+        let listing = FileListing(id: 1, path: "", entries: page.entries,
+                                  more: page.more, cursor: page.next,
+                                  root: root.path)
+        let encoded = try ControlMessageCodec.encode(.fileListing(listing))
+        XCTAssertLessThanOrEqual(encoded.count, 4096,
+                                 "a listing must fit the control cap")
+
+        // And the pages together still cover everything, in order.
+        var seen: [String] = page.entries.map(\.name)
+        var cursor = page.next
+        var more = page.more
+        while more {
+            let next = try share.list(path: "", cursor: cursor, limit: 16)
+            seen += next.entries.map(\.name)
+            cursor = next.next
+            more = next.more
+            XCTAssertFalse(next.entries.isEmpty, "paging must make progress")
+        }
+        XCTAssertEqual(seen.count, 40)
+        XCTAssertEqual(Set(seen).count, 40, "no entry served twice")
+    }
+
+    /// Names that leave ASCII are escaped to \\uXXXX and cost six bytes
+    /// a character, so a page that fits when counted in entries can
+    /// still not fit when counted in bytes. This is the case that made
+    /// the byte bound necessary rather than theoretical.
+    func testAPageOfHeavyNamesIsCutShortByBytes() throws {
+        for i in 0..<20 {
+            // 31 characters, the most the other machine can hold, all
+            // of them outside ASCII.
+            try write(String(format: "%02d-", i)
+                      + String(repeating: "\u{e9}", count: 28), "x")
+        }
+        let page = try share.list(path: "", cursor: 1, limit: 16)
+        XCTAssertLessThan(page.entries.count, 16,
+                          "heavy names must cut the page short of the count")
+        XCTAssertFalse(page.entries.isEmpty, "and never to nothing")
+
+        let encoded = try ControlMessageCodec.encode(.fileListing(
+            FileListing(id: 1, path: "", entries: page.entries,
+                        more: page.more, cursor: page.next, root: root.path)))
+        XCTAssertLessThanOrEqual(encoded.count, 4096)
+    }
+
     func testListingAFileIsRefused() throws {
         try write("Notes.txt")
         XCTAssertThrowsError(try share.list(path: "Notes.txt", cursor: 1,

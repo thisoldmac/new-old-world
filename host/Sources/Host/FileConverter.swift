@@ -110,7 +110,13 @@ enum OutboundFile {
     /// and stores names in MacRoman. Truncation keeps the extension,
     /// because that is what both sides use to recognise the file.
     static func hfsName(_ name: String) -> String {
-        var base = name.replacingOccurrences(of: ":", with: "-")
+        /* This file system stores names DECOMPOSED: "café" is "cafe"
+           plus a combining accent. MacRoman has the accented letter but
+           not the combining mark, so mapping character by character
+           turns every accented name into "cafe_" — a different name,
+           silently. Composing first is what makes the round trip hold. */
+        var base = name.precomposedStringWithCanonicalMapping
+            .replacingOccurrences(of: ":", with: "-")
         if base.hasPrefix(".") { base = "_" + base.dropFirst() }
         base = String(base.unicodeScalars.map { scalar -> Character in
             String(scalar).data(using: .macOSRoman) != nil

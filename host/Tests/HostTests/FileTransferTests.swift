@@ -841,6 +841,27 @@ final class TransferQueueTests: XCTestCase {
 }
 
 final class OutboundFileTests: XCTestCase {
+
+    /// This file system hands out decomposed names, and MacRoman has
+    /// the accented letter but not the combining mark. Without
+    /// composing first, every accented name arrives mangled.
+    func testAccentedNamesSurviveDecomposition() {
+        // As the file system yields it: e + combining acute.
+        let decomposed = "cafe\u{301}.txt"
+        let name = OutboundFile.hfsName(decomposed)
+        XCTAssertEqual(name, "café.txt")
+        XCTAssertNotNil(name.data(using: .macOSRoman),
+                        "and it must still be storable over there")
+        XCTAssertEqual(name.data(using: .macOSRoman)?.count, 8,
+                       "one byte for the accented letter, not two")
+    }
+
+    /// The Apple logo is the character most likely to be lost, and it
+    /// only exists in MacRoman.
+    func testTheAppleLogoSurvives() {
+        XCTAssertEqual(OutboundFile.hfsName("\u{F8FF} Notes"), "\u{F8FF} Notes")
+    }
+
     func testHFSNamesFitThirtyOneCharactersKeepingTheExtension() {
         let long = String(repeating: "a", count: 40) + ".txt"
         let out = OutboundFile.hfsName(long)

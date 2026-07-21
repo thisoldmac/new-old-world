@@ -130,7 +130,41 @@ final class HostShare {
                 modified: values?.contentModificationDate
                     .flatMap(ClassicDate.macSeconds(from:)))
         }
-        return (Array(entries), end < contents.count, end + 1)
+        /* A page is bounded by BYTES as well as by count. The wire caps
+           a control frame at 4 KB, and sixteen long names plus their
+           types and dates can exceed that — at which point the reader
+           either drops the message or, as happened here, the whole
+           connection. Counting entries is not the same as counting what
+           they weigh. */
+        var page: [FileEntry] = []
+        var bytes = Self.listingOverhead
+        for entry in entries {
+            let size = Self.encodedSize(of: entry)
+            if !page.isEmpty && bytes + size > Self.maxListingBytes {
+                break
+            }
+            page.append(entry)
+            bytes += size
+        }
+        let served = start + page.count
+        return (page, served < contents.count, served + 1)
+    }
+
+    /// The contract's control-frame cap, less room for the envelope the
+    /// entries sit in (type, path, cursor, root, and the share label).
+    private static let maxListingBytes = 4096
+    private static let listingOverhead = 512
+
+    /// What one entry costs on the wire, near enough to bound a page by.
+    /// Deliberately an over-estimate: being one entry conservative costs
+    /// a round trip, being one entry optimistic costs the message.
+    private static func encodedSize(of entry: FileEntry) -> Int {
+        // Names are escaped to \uXXXX when they leave ASCII, so a
+        // character can cost six bytes.
+        let name = entry.name.unicodeScalars.reduce(0) {
+            $0 + ($1.isASCII ? 1 : 6)
+        }
+        return name + 120
     }
 
     /// Reads a file for the other machine, converted the way a download

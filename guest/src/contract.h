@@ -16,4 +16,10 @@
 #define kNowFlagEnd          0x01
 #define kNowMaxPayload       32768L
 
+/* Control frames cap at 4 KB (contract/asyncapi.yaml). Stated here so
+   the SENDER's limit and the RECEIVER's buffer are the same number:
+   they were not, and a listing bigger than the receiver could hold read
+   as a protocol error and took the connection down. */
+#define kNowMaxControl       4096L
+
 #endif
