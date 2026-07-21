@@ -510,8 +510,15 @@ int main(void)
     conn_shutdown();
     now_log_close();
     now_pump_shutdown();
-    AERemoveEventHandler(kCoreEventClass, kAEQuitApplication,
-                         quit_handler, false);
+    /* Only remove what was installed, and dispose the descriptor. The
+       handler was installed conditionally (the constructor can fail)
+       but removed unconditionally, and its UPP was never released. */
+    if (quit_handler != NULL) {
+        AERemoveEventHandler(kCoreEventClass, kAEQuitApplication,
+                             quit_handler, false);
+        DisposeAEEventHandlerUPP(quit_handler);
+        quit_handler = NULL;
+    }
     shots_panel_close(false);
     console_win_close();
     return 0;

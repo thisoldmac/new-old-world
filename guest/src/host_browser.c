@@ -215,12 +215,31 @@ static OSStatus add_column(DataBrowserPropertyID id, const char *title,
     return err;
 }
 
+/* The two callback UPPs outlive build_control(), so they cannot be
+   locals: they are routine descriptors the control keeps calling, and
+   they have to be disposed when the control goes. DisposeWindow takes
+   the CONTROL with it but knows nothing about these, so as locals they
+   leaked two descriptors per open/close cycle - in a 6 MB partition,
+   against a window a person opens and closes all afternoon. */
+static DataBrowserItemDataUPP g_data_upp;
+static DataBrowserItemNotificationUPP g_notify_upp;
+
+static void dispose_callbacks(void)
+{
+    if (g_data_upp != NULL) {
+        DisposeDataBrowserItemDataUPP(g_data_upp);
+        g_data_upp = NULL;
+    }
+    if (g_notify_upp != NULL) {
+        DisposeDataBrowserItemNotificationUPP(g_notify_upp);
+        g_notify_upp = NULL;
+    }
+}
+
 static Boolean build_control(void)
 {
     Rect bounds;
     DataBrowserCallbacks callbacks;
-    DataBrowserItemDataUPP data_upp;
-    DataBrowserItemNotificationUPP notify_upp;
 
     SetRect(&bounds, -1, kBarHeight, kWinWidth + 1,
             kWinHeight - kFootHeight);
@@ -237,13 +256,17 @@ static Boolean build_control(void)
     memset(&callbacks, 0, sizeof callbacks);
     callbacks.version = kDataBrowserLatestCallbacks;
     InitDataBrowserCallbacks(&callbacks);
-    data_upp = NewDataBrowserItemDataUPP(item_data);
-    notify_upp = NewDataBrowserItemNotificationUPP(item_notify);
-    if (data_upp == NULL || notify_upp == NULL) {
+    g_data_upp = NewDataBrowserItemDataUPP(item_data);
+    g_notify_upp = NewDataBrowserItemNotificationUPP(item_notify);
+    /* Either one failing means no list; releasing BOTH matters, because
+       the old code returned with the first still allocated whenever the
+       second was the one that failed. */
+    if (g_data_upp == NULL || g_notify_upp == NULL) {
+        dispose_callbacks();
         return false;
     }
-    callbacks.u.v1.itemDataCallback = data_upp;
-    callbacks.u.v1.itemNotificationCallback = notify_upp;
+    callbacks.u.v1.itemDataCallback = g_data_upp;
+    callbacks.u.v1.itemNotificationCallback = g_notify_upp;
     if (SetDataBrowserCallbacks(g_browser, &callbacks) != noErr) {
         return false;
     }
@@ -389,6 +412,9 @@ void host_browser_close(void)
     g_window = NULL;
     g_browser = NULL;
     g_row_count = 0;
+    /* After the control is gone, never before: until DisposeWindow
+       returns, the Data Browser may still call back through these. */
+    dispose_callbacks();
 }
 
 Boolean host_browser_is(WindowRef window)
