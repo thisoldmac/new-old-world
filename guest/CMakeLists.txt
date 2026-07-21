@@ -15,6 +15,9 @@ add_application(now-guest
     src/vprobe.c
     src/pixels.c
     src/screenshots_module.c
+    src/census_module.c
+    src/census_probes.c
+    src/census_report.c
     src/files_module.c
     src/files_browser_view.c
     src/files_share_view.c

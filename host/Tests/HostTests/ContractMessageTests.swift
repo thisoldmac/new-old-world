@@ -163,4 +163,21 @@ final class ContractMessageTests: XCTestCase {
         XCTAssertThrowsError(
             try ControlMessageCodec.decode(Data("{\"id\":1}".utf8)))
     }
+
+    func testCensusExchangeRoundTrip() throws {
+        let request = CensusRequest(id: 3, probe: "gestalt", cursor: 16)
+        XCTAssertEqual(
+            try ControlMessageCodec.decode(
+                ControlMessageCodec.encode(.censusRequest(request))),
+            .censusRequest(request))
+
+        let report = CensusReport(
+            id: 3, probe: "gestalt", outcome: "partial",
+            rows: [["SystemVersion", "$00000921", "version 9.2.1"]],
+            more: true, cursor: 16, total: 203, note: "one page of many")
+        XCTAssertEqual(
+            try ControlMessageCodec.decode(
+                ControlMessageCodec.encode(.censusReport(report))),
+            .censusReport(report))
+    }
 }

@@ -41,7 +41,7 @@ enum {
 typedef struct WorkshopLayout {
     Rect sidebar;       /* the whole rail, window-background gray */
     Rect rail_list;     /* one framed white panel holding every row */
-    Rect nav_rows[3];   /* Screenshots, Files, Console */
+    Rect nav_rows[4];   /* Screenshots, Files, Console, Hardware */
     Rect conn_divider;  /* one-pixel rule above the pinned row */
     Rect conn_row;      /* Connection, pinned at the panel's bottom */
     Rect header;        /* module header placard */

@@ -14,10 +14,11 @@ typedef enum {
     kWorkshopScreenshots = 1,
     kWorkshopFiles,
     kWorkshopConsole,
+    kWorkshopHardware,
     kWorkshopConnection
 } WorkshopModuleID;
 
-enum { kWorkshopModuleCount = 4 };
+enum { kWorkshopModuleCount = 5 };
 
 typedef struct WorkshopModuleOps {
     OSErr (*create)(WindowRef owner, const Rect *body);

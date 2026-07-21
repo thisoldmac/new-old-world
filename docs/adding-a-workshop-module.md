@@ -57,7 +57,8 @@ appear or does not switch.
    `kWorkshopModuleCount`. The enum order **is** the View menu order and
    the sidebar order; the menu item number is the module ID.
 2. **`workshop_layout.h` / `.c`** — `nav_rows[]` is sized for the
-   non-pinned modules (3 today). Grow the array and the loop in
+   non-pinned modules (4 today: Screenshots, Files, Console, Hardware).
+   Grow the array and the loop in
    `workshop_layout_compute`. `Connection` is special: it is pinned to
    the bottom as `conn_row` and is not in `nav_rows`.
 3. **`workshop_sidebar.c`** — add a `k_rows` entry (title, subtitle,

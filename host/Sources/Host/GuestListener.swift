@@ -101,6 +101,8 @@ final class GuestListener: ObservableObject {
 
     private var nextCommandId = 1
     private var pendingCommands: [Int: (CommandResult) -> Void] = [:]
+    private var nextCensusId = 1
+    private var pendingCensus: [Int: (CensusReport) -> Void] = [:]
 
     private let identity: HostIdentity
     private let timing: Timing
@@ -184,6 +186,25 @@ final class GuestListener: ObservableObject {
         nextCommandId += 1
         pendingCommands[id] = completion
         session.sendCommand(CommandRequest(id: id, name: name, args: args))
+    }
+
+    /// Ask the connected guest for one page of a census probe. The dossier
+    /// view will page by passing the report's `cursor` back; the helper is
+    /// here now so tests and the later view share one path.
+    func requestCensus(probe: String, cursor: Int? = nil,
+                       completion: @escaping (CensusReport) -> Void) {
+        guard let session, case .connected = state else {
+            completion(CensusReport(
+                id: 0, probe: probe, outcome: "failed", rows: [],
+                more: false, cursor: nil, total: nil,
+                note: "No Mac is connected"))
+            return
+        }
+        let id = nextCensusId
+        nextCensusId += 1
+        pendingCensus[id] = completion
+        session.send(.censusRequest(
+            CensusRequest(id: id, probe: probe, cursor: cursor)))
     }
 
     /// A capture that could not be produced or decoded; `message` is written
@@ -854,6 +875,12 @@ final class GuestListener: ObservableObject {
         }
     }
 
+    private func resolveCensus(_ report: CensusReport) {
+        if let completion = pendingCensus.removeValue(forKey: report.id) {
+            completion(report)
+        }
+    }
+
     /// Settles everything outstanding. The invariant: a stored completion
     /// is resolved or failed, never dropped — a dropped completion is a
     /// UI that stays busy forever.
@@ -864,6 +891,13 @@ final class GuestListener: ObservableObject {
             completion(CommandResult(
                 id: id, ok: false, output: nil,
                 error: .init(code: "disconnected", message: reason)))
+        }
+        let census = pendingCensus
+        pendingCensus = [:]
+        for (id, completion) in census {
+            completion(CensusReport(
+                id: id, probe: "", outcome: "failed", rows: [],
+                more: false, cursor: nil, total: nil, note: reason))
         }
         let listings = pendingListings
         pendingListings = [:]
@@ -931,6 +965,9 @@ final class GuestListener: ObservableObject {
             onHealth: { [weak self] health in self?.health = health },
             onCommandResult: { [weak self] result in
                 self?.resolveCommand(result)
+            },
+            onCensusReport: { [weak self] report in
+                self?.resolveCensus(report)
             },
             onCapture: { [weak self] result in
                 self?.deliverCapture(result)
@@ -1052,6 +1089,7 @@ final class Session {
     private let onLog: (String, String, HostLog.LogLevel) -> Void
     private let onHealth: (GuestListener.SessionHealth?) -> Void
     private let onCommandResult: (CommandResult) -> Void
+    private let onCensusReport: (CensusReport) -> Void
     private let onCapture:
         (Result<GuestListener.CaptureDelivery, GuestListener.CaptureFailure>)
         -> Void
@@ -1117,6 +1155,7 @@ final class Session {
          onLog: @escaping (String, String, HostLog.LogLevel) -> Void,
          onHealth: @escaping (GuestListener.SessionHealth?) -> Void,
          onCommandResult: @escaping (CommandResult) -> Void,
+         onCensusReport: @escaping (CensusReport) -> Void,
          onCapture: @escaping (Result<GuestListener.CaptureDelivery,
                                       GuestListener.CaptureFailure>) -> Void,
          onCaptureProgress: @escaping (GuestListener.CaptureProgress?) -> Void,
@@ -1149,6 +1188,7 @@ final class Session {
         self.onLog = onLog
         self.onHealth = onHealth
         self.onCommandResult = onCommandResult
+        self.onCensusReport = onCensusReport
         self.onCapture = onCapture
         self.onCaptureProgress = onCaptureProgress
         self.onPushedCapture = onPushedCapture
@@ -1296,6 +1336,10 @@ final class Session {
             touchHealth(pingsDelta: 1)
         case .commandResult(let result):
             onCommandResult(result)
+        case .censusReport(let report):
+            onCensusReport(report)
+        case .censusRequest(let request):
+            serveCensusRefusal(request)
         case .fileListing(let listing):
             onFileListing(listing)
         case .fileResult(let result):
@@ -1624,6 +1668,17 @@ final class Session {
     }
 
     /// Streams an accepted file: begin, the bulk frames, then end.
+    /// The host's share of the symmetric census family: a well-formed
+    /// refusal for every probe, until a later slice grows an IOKit-backed
+    /// census of this Mac. The asymmetry is in the implementation, never
+    /// the contract.
+    private func serveCensusRefusal(_ request: CensusRequest) {
+        send(.censusReport(CensusReport(
+            id: request.id, probe: request.probe, outcome: "refused",
+            rows: [], more: false, cursor: nil, total: nil,
+            note: "the host does not serve a census yet")))
+    }
+
     private func sendAcceptedFile(_ accept: FileAccept) {
         guard let (offer, bytes, checksum) = pendingOffer,
               offer.id == accept.id else { return }

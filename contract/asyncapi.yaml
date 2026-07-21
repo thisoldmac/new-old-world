@@ -88,6 +88,8 @@ channels:
       error: { $ref: "#/components/messages/error" }
       commandRequest: { $ref: "#/components/messages/commandRequest" }
       commandResult: { $ref: "#/components/messages/commandResult" }
+      censusRequest: { $ref: "#/components/messages/censusRequest" }
+      censusReport: { $ref: "#/components/messages/censusReport" }
       captureRequest: { $ref: "#/components/messages/captureRequest" }
       captureCancel: { $ref: "#/components/messages/captureCancel" }
       streamRequest: { $ref: "#/components/messages/streamRequest" }
@@ -310,6 +312,26 @@ operations:
       flight. Cancel is advisory: the guest stops sending bulk frames and
       closes the transfer with capture.end ok:false, so the host learns the
       outcome the same way it would from any other failure.
+  censusExchange:
+    action: send
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/censusRequest"
+      - $ref: "#/channels/control/messages/censusReport"
+    description: >
+      The hardware census: either side asks, and whoever RECEIVES a
+      census.request answers for its own machine — the family is
+      symmetric by definition. Reports paginate exactly like file
+      listings (control frames cap at 4 KB): each request carries a
+      cursor, each report answers one bounded page and says whether
+      more follow. Pagination is also the pacing mechanism — a probe
+      does at most one page of work per request (the SCSI scan touches
+      one target per page), so a census never stalls the wire. The
+      outcome vocabulary and probe registry live in x-census below.
+      A side that does not yet serve a probe answers outcome "refused"
+      with a note — a well-formed refusal, never a protocol error —
+      which is how the host answers every probe until it grows its own
+      census; the asymmetry is declared here, not accidental.
 
 components:
   messages:
@@ -337,6 +359,12 @@ components:
     commandResult:
       name: command.result
       payload: { $ref: "#/components/schemas/CommandResult" }
+    censusRequest:
+      name: census.request
+      payload: { $ref: "#/components/schemas/CensusRequest" }
+    censusReport:
+      name: census.report
+      payload: { $ref: "#/components/schemas/CensusReport" }
     captureRequest:
       name: capture.request
       payload: { $ref: "#/components/schemas/CaptureRequest" }
@@ -536,6 +564,62 @@ components:
               type: string
               description: Stable slug, e.g. "unknown-command".
             message: { type: string }
+    CensusRequest:
+      type: object
+      required: [type, id, probe]
+      additionalProperties: false
+      properties:
+        type: { const: census.request }
+        id: { type: integer }
+        probe:
+          type: string
+          description: >
+            A probe from the x-census registry. An unknown probe is
+            answered with outcome "refused" and a note — never a
+            protocol error; that is what keeps the registry additive.
+        cursor:
+          type: integer
+          description: Continue a paginated report from this index; 0 or
+            absent starts the probe over.
+    CensusReport:
+      type: object
+      required: [type, id, probe, outcome, rows, more]
+      additionalProperties: false
+      properties:
+        type: { const: census.report }
+        id: { type: integer, description: Echoes the request id. }
+        probe: { type: string }
+        outcome:
+          enum: [present, absent, partial, refused, failed, not-attempted]
+          description: >
+            Semantics in x-census. The distinction is load-bearing;
+            "absent" (the machine said no) is never conflated with
+            "refused" (the responder declined to look).
+        rows:
+          type: array
+          maxItems: 16
+          description: >
+            One page of [name, raw, meaning] string triples. The raw
+            value always survives beside the decoded meaning; a value
+            the responder cannot decode keeps its raw form and says so
+            in the meaning column rather than being dropped.
+          items:
+            type: array
+            minItems: 3
+            maxItems: 3
+            items: { type: string }
+        more: { type: boolean }
+        cursor:
+          type: integer
+          description: Pass back to continue; meaningful only when more.
+        total:
+          type: integer
+          description: Total rows the probe will yield, when known.
+        note:
+          type: string
+          description: >
+            One human sentence about the outcome — why partial, why
+            refused, what "absent" means on this machine.
     CaptureRequest:
       type: object
       required: [type, id, depth]
@@ -1157,3 +1241,70 @@ components:
         properties:
           screenshot:
             $ref: "#/components/x-commands/gestalt/x-rowArray"
+
+  # The census probe registry: the CLOSED, DECLARED set of probes a side may
+  # be asked about, and the outcome vocabulary every report speaks. Adding a
+  # probe is additive (an older peer answers outcome "refused",
+  # note "unknown probe"); changing a probe's row columns is breaking and
+  # bumps the revision. Probes are passive by rule — read-only walks of
+  # tables the OS maintains. The one exception is declared on the probe.
+  x-census:
+    x-outcomes:
+      present: The probe ran and returned data.
+      absent: >
+        The probe ran cleanly and the MACHINE said no — no expansion
+        slots, no SCSI bus. Absence is a finding about the machine,
+        rendered as content, never as an error.
+      partial: >
+        The probe ran but reached a smaller surface than its full form
+        (the PowerPC path reads the 20-byte SysParm copy where 68K
+        reads 256 bytes of XPRAM). The note says what was out of reach.
+      refused: >
+        The RESPONDER declined to look: probe not served yet, safety
+        gate, unknown probe name. "We did not look" and "it is not
+        there" are never conflated.
+      failed: >
+        The probe started and could not finish. Possibly transient;
+        re-asking is reasonable.
+      not-attempted: The cursor never reached it, or it was skipped.
+    x-probes:
+      gestalt:
+        columns: [Selector, Raw, Meaning]
+        description: >
+          Table walk of the documented Gestalt selectors — the full
+          walk, not an identity subset. Raw is the untouched result
+          value; attr-bit selectors decode known bits and name unknown
+          set bits as unrecognized rather than dropping them (the
+          unresolved bin is the corpus-growth path). Gestalt cannot
+          enumerate undocumented selectors, so the walk is exactly the
+          snapshotted table and says so.
+      video:
+        columns: [Field, Raw, Meaning]
+        description: GDevice walk; one record of fields per display.
+      volumes:
+        columns: [Volume, Raw, Meaning]
+        description: Mounted volumes via indexed PBHGetVInfo.
+      drives:
+        columns: [Drive, Raw, Meaning]
+        description: The drive queue — zero bus I/O.
+      drivers:
+        columns: [Driver, Raw, Meaning]
+        description: The Device Manager unit table, with an in-ROM check.
+      adb:
+        columns: [Device, Raw, Meaning]
+        description: The ADB device table (CountADBs / GetIndADB).
+      pram:
+        columns: [Offset, Raw, Meaning]
+        description: >
+          Parameter RAM. Decoded spans first, raw hex rows after; on
+          PowerPC the 20-byte SysParm copy is all there is, reported as
+          outcome "partial".
+      scsi:
+        columns: [Target, Raw, Meaning]
+        description: >
+          THE DECLARED EXCEPTION to passive-by-rule - an INQUIRY bus
+          scan, active bus I/O. Gated on gestaltHardwareAttr saying a
+          bus exists (answering "absent" otherwise), and paced at ONE
+          target per page so a wedged target stalls at most one frame
+          turnaround. A responder may refuse it outright; attended
+          first runs on real hardware are the expected discipline.

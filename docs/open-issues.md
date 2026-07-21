@@ -97,6 +97,25 @@ working on the PowerBook.
   the Finder with an alias to the downloads folder. Standard, and
   untested on metal; it is `kAENoReply` so it should not block, but that
   is reasoning rather than evidence.
+- **The Hardware census module (slice 1).** New Workshop page: a passive
+  census of this Mac, three Carbon-clean probes (gestalt full
+  selector-table walk, video GDevice walk, volumes PBHGetVInfo), served
+  over the new symmetric `census.request`/`census.report` family and
+  shown in a split pane (probe list left, rows right). Builds clean
+  (whole guest links; the ics# 133 chip icon compiles) and the host
+  suite is green (242 tests), including a guest→host refusal round trip,
+  the census.report fixture, and a mutation-checked serializer. **Not
+  watched on the PowerBook.** Specific unknowns for the first metal pass:
+  (1) two Data Browsers in one window — one is proven by the Files page,
+  two side by side is not; (2) the full ~203-selector Gestalt walk
+  paging 16 at a time; (3) the chip icon actually plotting from `ics#`
+  133 rather than losing to a System family at that id. See
+  docs/adding-a-workshop-module.md.
+- **The host's own census.** The `census` family is symmetric in the
+  contract; the host answers every probe `refused` ("does not serve a
+  census yet") until a later slice gives it an IOKit/sysctl census of
+  the modern Mac. Declared asymmetry, tested — not dead code, a stub
+  half with its other half scheduled.
 
 ## The host's receiving half is sender-only
 

@@ -176,4 +176,39 @@ final class GuestWireFixtureTests: XCTestCase {
         }
         XCTAssertEqual(progress.received, 32768)
     }
+
+    /// census.report, assembled row-by-row in guest/src/census_report.c
+    /// (header, a loop over rows, then the trailing fields). The loop puts
+    /// it out of the conformance check's reach, so the exact shape it emits
+    /// is pinned here: a present page with rows and no continuation, and a
+    /// partial page carrying cursor/total/note.
+    func testCensusReportAsTheGuestWritesIt() throws {
+        let present = """
+        {"type":"census.report","id":4,"probe":"video",\
+        "outcome":"present","rows":[["Display 1","main","main screen"],\
+        ["Bounds","0,0,600,800","800 x 600 pixels"]],"more":false}
+        """
+        guard case .censusReport(let page) = try decode(present) else {
+            return XCTFail("not a report")
+        }
+        XCTAssertEqual(page.probe, "video")
+        XCTAssertEqual(page.outcome, "present")
+        XCTAssertEqual(page.rows.count, 2)
+        XCTAssertEqual(page.rows[0], ["Display 1", "main", "main screen"],
+                       "name, raw, meaning - in that order")
+        XCTAssertFalse(page.more)
+        XCTAssertNil(page.cursor, "no cursor when there is no continuation")
+
+        let partial = """
+        {"type":"census.report","id":5,"probe":"gestalt",\
+        "outcome":"present","rows":[["SystemVersion","$00000921",\
+        "version 9.2.1"]],"more":true,"cursor":16,"total":203}
+        """
+        guard case .censusReport(let more) = try decode(partial) else {
+            return XCTFail("not a report")
+        }
+        XCTAssertTrue(more.more)
+        XCTAssertEqual(more.cursor, 16, "pass back to continue the walk")
+        XCTAssertEqual(more.total, 203)
+    }
 }

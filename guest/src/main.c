@@ -62,8 +62,11 @@ static const unsigned char k_view_files_item[] = {
 static const unsigned char k_view_console_item[] = {
     9, 'C', 'o', 'n', 's', 'o', 'l', 'e', '/', '3'
 };
+static const unsigned char k_view_hardware_item[] = {
+    10, 'H', 'a', 'r', 'd', 'w', 'a', 'r', 'e', '/', '4'
+};
 static const unsigned char k_view_connection_item[] = {
-    12, 'C', 'o', 'n', 'n', 'e', 'c', 't', 'i', 'o', 'n', '/', '4'
+    12, 'C', 'o', 'n', 'n', 'e', 'c', 't', 'i', 'o', 'n', '/', '5'
 };
 static const unsigned char k_workshop_menu_item[] = {
     8, 'W', 'o', 'r', 'k', 's', 'h', 'o', 'p'
@@ -81,11 +84,12 @@ static void create_menu_bar(void)
     AppendMenu(file_menu, k_separator_menu_item);
     AppendMenu(file_menu, k_quit_menu_item);
     InsertMenu(file_menu, 0);
-    /* View selects a Workshop module (Cmd-1..4); Windows reopens the
+    /* View selects a Workshop module (Cmd-1..5); Windows reopens the
        one window. Every module lives in the Workshop now. */
     AppendMenu(view_menu, k_view_screenshots_item);
     AppendMenu(view_menu, k_view_files_item);
     AppendMenu(view_menu, k_view_console_item);
+    AppendMenu(view_menu, k_view_hardware_item);
     AppendMenu(view_menu, k_view_connection_item);
     InsertMenu(view_menu, 0);
     AppendMenu(windows_menu, k_workshop_menu_item);

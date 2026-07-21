@@ -129,6 +129,35 @@ final class GuestListenerTests: XCTestCase {
                        .connected(guestName: "PowerBook 1400"))
     }
 
+    /// The symmetric census family: the guest may ask the host for a
+    /// census too, and the host answers a well-formed refusal (not a
+    /// protocol error) until it grows its own. Proves the whole path -
+    /// decode census.request, serve, encode census.report - end to end.
+    func testGuestCensusRequestIsAnsweredWithARefusal() async throws {
+        let guest = FakeGuest(port: listener.boundPort!)
+        guest.start()
+        try guest.send(guestHello())
+        try await waitUntil("host hello") { !guest.received.isEmpty }
+
+        try guest.send(.censusRequest(
+            CensusRequest(id: 42, probe: "gestalt", cursor: nil)))
+        try await waitUntil("census report") {
+            guest.received.contains {
+                if case .censusReport = $0 { return true }
+                return false
+            }
+        }
+        let report = guest.received.compactMap { msg -> CensusReport? in
+            if case .censusReport(let r) = msg { return r }
+            return nil
+        }.first
+        XCTAssertEqual(report?.id, 42, "echoes the request id")
+        XCTAssertEqual(report?.outcome, "refused",
+                       "a refusal, never a protocol error")
+        XCTAssertEqual(report?.rows.count, 0)
+        XCTAssertNotNil(report?.note, "says why it refused")
+    }
+
     func testRevisionMismatchIsRefusedWithReason() async throws {
         let guest = FakeGuest(port: listener.boundPort!)
         guest.start()

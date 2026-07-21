@@ -17,6 +17,8 @@ enum ControlMessage: Equatable, Sendable {
     case error(ErrorMessage)
     case commandRequest(CommandRequest)
     case commandResult(CommandResult)
+    case censusRequest(CensusRequest)
+    case censusReport(CensusReport)
     case fileList(FileList)
     case fileListing(FileListing)
     case fileGet(FileGet)
@@ -96,6 +98,32 @@ struct CommandResult: Codable, Equatable, Sendable {
     /// returns snapshot/cpu/memory/os/network/hw; the console shows a slice.
     var output: [String: [[String]]]?
     var error: CommandError?
+}
+
+/// The hardware census. Symmetric by contract: whoever receives the
+/// request answers for its own machine. A report paginates like a file
+/// listing; the guest is the side with hardware worth asking about, and
+/// the host answers `refused` until it grows its own census.
+struct CensusRequest: Codable, Equatable, Sendable {
+    var id: Int
+    var probe: String
+    var cursor: Int?
+}
+
+struct CensusReport: Codable, Equatable, Sendable {
+    var id: Int
+    var probe: String
+    /// present | absent | partial | refused | failed | not-attempted.
+    /// `absent` (the machine said no) is never conflated with `refused`
+    /// (the responder declined to look).
+    var outcome: String
+    /// One page of [name, raw, meaning] triples; the raw value always
+    /// survives beside the decoded meaning.
+    var rows: [[String]]
+    var more: Bool
+    var cursor: Int?
+    var total: Int?
+    var note: String?
 }
 
 struct CaptureRequest: Codable, Equatable, Sendable {
@@ -402,6 +430,12 @@ enum ControlMessageCodec {
         case "command.result":
             return .commandResult(
                 try decoder.decode(CommandResult.self, from: data))
+        case "census.request":
+            return .censusRequest(
+                try decoder.decode(CensusRequest.self, from: data))
+        case "census.report":
+            return .censusReport(
+                try decoder.decode(CensusReport.self, from: data))
         case "capture.request":
             return .captureRequest(
                 try decoder.decode(CaptureRequest.self, from: data))
@@ -499,6 +533,8 @@ enum ControlMessageCodec {
         case .error(let error): return try tagged("error", error)
         case .commandRequest(let m): return try tagged("command.request", m)
         case .commandResult(let m): return try tagged("command.result", m)
+        case .censusRequest(let m): return try tagged("census.request", m)
+        case .censusReport(let m): return try tagged("census.report", m)
         case .captureRequest(let m): return try tagged("capture.request", m)
         case .fileList(let m): return try tagged("file.list", m)
         case .fileListing(let m): return try tagged("file.listing", m)

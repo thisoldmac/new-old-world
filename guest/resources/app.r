@@ -113,6 +113,16 @@ resource 'ics#' (132) {
     }
 };
 
+/* 133 chip (Hardware): a die with pins on all four sides. */
+resource 'ics#' (133) {
+    {
+        $"0000 0490 0490 1FF8 1008 700E 1008 1188"
+        $"718E 1188 1008 700E 1FF8 0490 0490 0000",
+        $"0000 0490 0490 1FF8 1FF8 7FFE 1FF8 1FF8"
+        $"7FFE 1FF8 1FF8 7FFE 1FF8 0490 0490 0000"
+    }
+};
+
 resource 'SIZE' (-1) {
     reserved,
     acceptSuspendResumeEvents,

@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "census_module.h"
 #include "connection_module.h"
 #include "console_module.h"
 #include "files_module.h"
@@ -40,6 +41,9 @@ static const struct {
     { "Console",
       "Commands run on this PowerBook. Only declared commands are available.",
       "Console still lives in its own window (Windows menu)." },
+    { "Hardware",
+      "A passive census of this Mac. Probes run on request, never at idle.",
+      "Hardware census is not built into this window yet." },
     { "Connection",
       "This Mac dials the other Mac and keeps one persistent connection.",
       "Connection is still a dialog (Windows menu)." }
@@ -148,6 +152,7 @@ Boolean workshop_open(void)
     g_ops[kWorkshopScreenshots] = screenshots_module_ops();
     g_ops[kWorkshopFiles] = files_module_ops();
     g_ops[kWorkshopConsole] = console_module_ops();
+    g_ops[kWorkshopHardware] = census_module_ops();
     g_ops[kWorkshopConnection] = connection_module_ops();
     now_prefs_load(&prefs);
     if (restorable_bounds(&prefs.workshop_rect)) {

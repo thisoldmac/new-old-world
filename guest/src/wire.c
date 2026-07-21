@@ -7,6 +7,7 @@
 #include "capture.h"
 #include "fileshare.h"
 #include "commands.h"
+#include "census.h"
 #include "json.h"
 #include "nowlog.h"
 #include "pixels.h"
@@ -2508,6 +2509,48 @@ static void finish_put(const char *reply)
     note_shot(note);
 }
 
+/* Answer a census.request for THIS machine's own share. Whoever receives
+   the request serves it (contract: censusExchange); the guest is the one
+   with the hardware worth asking about. One bounded page per request, so a
+   probe never does more than a page of work and the wire never stalls. */
+static void serve_census(const char *request)
+{
+    char probe[24];
+    long id = now_json_find_int(request, "id", 0);
+    long cursor = now_json_find_int(request, "cursor", 0);
+    CensusPage page;
+    char out[kNowMaxControl];
+    long n;
+
+    if (!now_json_find_string(request, "probe", probe, sizeof probe)) {
+        strcpy(probe, "?");
+    }
+    if (now_census_gather(probe, cursor, &page) != 0) {
+        /* Unknown probe: a well-formed refusal, never a protocol error. */
+        page.count = 0;
+        page.outcome = kCensusRefused;
+        page.more = 0;
+        page.next_cursor = 0;
+        page.total = -1;
+        snprintf(page.note, sizeof page.note, "unknown probe \"%.15s\"",
+                 probe);
+    }
+    n = census_report_json(probe, id, &page, out, sizeof out);
+    if (n < 0) {
+        /* The page overran the frame - a paging bug, never truncate onto
+           the wire. Answer a failed report so the asker learns cleanly. */
+        page.count = 0;
+        page.outcome = kCensusFailed;
+        page.more = 0;
+        page.total = -1;
+        snprintf(page.note, sizeof page.note, "census page too large");
+        n = census_report_json(probe, id, &page, out, sizeof out);
+    }
+    if (n > 0) {
+        send_control(out);
+    }
+}
+
 static void serve_file_list(const char *request)
 {
     enum { kPage = 16 };              /* control frames cap at 4 KB */
@@ -3526,6 +3569,10 @@ static int handle_frame(const char *reply)
             fail("Connection lost");
             return 0;
         }
+        return 1;
+    }
+    if (now_json_type_is(reply, "census.request")) {
+        serve_census(reply);
         return 1;
     }
     if (now_json_type_is(reply, "error")) {

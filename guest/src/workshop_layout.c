@@ -43,7 +43,7 @@ void workshop_layout_compute(const Rect *content, WorkshopLayout *out)
     row_left = (short)(out->rail_list.left + kRowInset);
     row_right = (short)(out->rail_list.right - kRowInset);
     row_top = (short)(out->rail_list.top + kRowTopPad);
-    for (i = 0; i < 3; ++i) {
+    for (i = 0; i < 4; ++i) {
         set_rect(&out->nav_rows[i], row_left, row_top, row_right,
                  (short)(row_top + kWorkshopSidebarRowHeight));
         row_top = (short)(row_top + kWorkshopSidebarRowHeight);
