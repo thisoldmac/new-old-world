@@ -14,9 +14,10 @@
 
 enum {
     kWinWidth = 460,
-    kWinHeight = 420,
+    kWinHeight = 460,
     kLineHeight = 12,
-    kMaxLines = 64
+    kMaxLines = 64,
+    kListTop = 250            /* report above, real control below */
 };
 
 static WindowRef g_window;
@@ -214,6 +215,208 @@ static void run_probe(void)
     }
 }
 
+/* --- the control itself -------------------------------------------------
+   The probe says the symbols are there and the headers declare them.
+   What neither can say is whether the control BEHAVES: draws native,
+   sorts when a header is clicked, reports selection and double-clicks.
+   Three hardcoded rows answer that, and cost nothing if the answer is
+   no. */
+
+enum {
+    kColName = 'name',
+    kColKind = 'kind',
+    kColSize = 'size'
+};
+
+typedef struct {
+    const char *name;
+    const char *kind;
+    long size;
+} SpikeRow;
+
+static const SpikeRow kRows[] = {
+    { "Read Me", "SimpleText document", 4096 },
+    { "System Folder", "folder", 0 },
+    { "Zebra.jpg", "JPEG image", 81920 }
+};
+
+static ControlRef g_browser;
+static char g_events[4][80];
+static int g_event_count;
+
+static void note_event(const char *fmt, ...)
+{
+    va_list args;
+    int i;
+
+    if (g_event_count == 4) {         /* keep the last four */
+        for (i = 0; i < 3; ++i) {
+            memcpy(g_events[i], g_events[i + 1], sizeof g_events[0]);
+        }
+        --g_event_count;
+    }
+    va_start(args, fmt);
+    vsnprintf(g_events[g_event_count], sizeof g_events[0], fmt, args);
+    va_end(args);
+    ++g_event_count;
+    {
+        Rect strip;
+
+        SetRect(&strip, 12, kListTop - 46, kWinWidth - 12, kListTop - 4);
+        InvalWindowRect(g_window, &strip);
+    }
+}
+
+/* What the browser asks us for, one cell at a time. */
+static OSStatus item_data(ControlRef browser, DataBrowserItemID item,
+                          DataBrowserPropertyID property,
+                          DataBrowserItemDataRef data, Boolean changeValue)
+{
+    const SpikeRow *row;
+    CFStringRef text;
+    char buf[32];
+
+    (void)browser;
+    if (changeValue || item < 1
+        || item > (DataBrowserItemID)(sizeof kRows / sizeof kRows[0])) {
+        return errDataBrowserPropertyNotSupported;
+    }
+    row = &kRows[item - 1];
+    switch (property) {
+    case kColName: text = CFStringCreateWithCString(NULL, row->name,
+                                                    kCFStringEncodingMacRoman);
+        break;
+    case kColKind: text = CFStringCreateWithCString(NULL, row->kind,
+                                                    kCFStringEncodingMacRoman);
+        break;
+    case kColSize:
+        if (row->size == 0) {
+            strcpy(buf, "--");
+        } else {
+            snprintf(buf, sizeof buf, "%ld K", row->size / 1024);
+        }
+        text = CFStringCreateWithCString(NULL, buf,
+                                         kCFStringEncodingMacRoman);
+        break;
+    default:
+        return errDataBrowserPropertyNotSupported;
+    }
+    if (text == NULL) {
+        return memFullErr;
+    }
+    SetDataBrowserItemDataText(data, text);
+    CFRelease(text);
+    return noErr;
+}
+
+/* Selection and opening, which is what a file browser is made of. */
+static void item_notify(ControlRef browser, DataBrowserItemID item,
+                        DataBrowserItemNotification message)
+{
+    (void)browser;
+    if (item < 1
+        || item > (DataBrowserItemID)(sizeof kRows / sizeof kRows[0])) {
+        return;
+    }
+    switch (message) {
+    case kDataBrowserItemSelected:
+        note_event("selected: %s", kRows[item - 1].name);
+        break;
+    case kDataBrowserItemDoubleClicked:
+        note_event("opened: %s", kRows[item - 1].name);
+        break;
+    default:
+        break;
+    }
+}
+
+static OSStatus add_column(DataBrowserPropertyID id, const char *title,
+                           UInt16 width, Boolean isName, DataBrowserTableViewColumnIndex at)
+{
+    DataBrowserListViewColumnDesc col;
+    OSStatus err;
+
+    memset(&col, 0, sizeof col);
+    col.propertyDesc.propertyID = id;
+    col.propertyDesc.propertyType = kDataBrowserTextType;
+    col.propertyDesc.propertyFlags = kDataBrowserListViewSortableColumn
+        | (isName ? kDataBrowserListViewSelectionColumn : 0);
+    col.headerBtnDesc.version = kDataBrowserListViewLatestHeaderDesc;
+    col.headerBtnDesc.minimumWidth = 40;
+    col.headerBtnDesc.maximumWidth = 400;
+    col.headerBtnDesc.titleOffset = 0;
+    col.headerBtnDesc.initialOrder = kDataBrowserOrderIncreasing;
+    col.headerBtnDesc.btnFontStyle.flags = 0;
+    col.headerBtnDesc.btnContentInfo.contentType = kControlContentTextOnly;
+    col.headerBtnDesc.titleString =
+        CFStringCreateWithCString(NULL, title, kCFStringEncodingMacRoman);
+    err = AddDataBrowserListViewColumn(g_browser, &col, at);
+    if (col.headerBtnDesc.titleString != NULL) {
+        CFRelease(col.headerBtnDesc.titleString);
+    }
+    if (err == noErr) {
+        SetDataBrowserTableViewNamedColumnWidth(g_browser, id, width);
+    }
+    return err;
+}
+
+static void build_browser(void)
+{
+    Rect bounds;
+    DataBrowserCallbacks callbacks;
+    DataBrowserItemID ids[3];
+    OSStatus err;
+    int i;
+
+    SetRect(&bounds, 12, kListTop, kWinWidth - 12, kWinHeight - 12);
+    err = CreateDataBrowserControl(g_window, &bounds, kDataBrowserListView,
+                                   &g_browser);
+    if (err != noErr) {
+        report("CreateDataBrowserControl FAILED (%d)", (int)err);
+        return;
+    }
+
+    memset(&callbacks, 0, sizeof callbacks);
+    callbacks.version = kDataBrowserLatestCallbacks;
+    InitDataBrowserCallbacks(&callbacks);
+    /* On CFM PowerPC a UPP is the routine pointer itself, so the cast
+       avoids NewDataBrowserItemDataUPP - a weakly linked import that
+       resolves to NULL on some CarbonLib builds and then crashes. Same
+       reasoning as the AE handler in the guest. */
+    callbacks.u.v1.itemDataCallback = (DataBrowserItemDataUPP)item_data;
+    callbacks.u.v1.itemNotificationCallback =
+        (DataBrowserItemNotificationUPP)item_notify;
+    err = SetDataBrowserCallbacks(g_browser, &callbacks);
+    if (err != noErr) {
+        report("SetDataBrowserCallbacks FAILED (%d)", (int)err);
+        return;
+    }
+
+    err = add_column(kColName, "Name", 200, true, 0);
+    if (err != noErr) {
+        report("AddDataBrowserListViewColumn FAILED (%d)", (int)err);
+        return;
+    }
+    add_column(kColKind, "Kind", 140, false, 1);
+    add_column(kColSize, "Size", 60, false, 2);
+
+    SetDataBrowserListViewHeaderBtnHeight(g_browser, 16);
+    SetDataBrowserHasScrollBars(g_browser, false, true);
+    SetDataBrowserSelectionFlags(g_browser, kDataBrowserCmdTogglesSelection);
+    SetDataBrowserSortProperty(g_browser, kColName);
+
+    for (i = 0; i < 3; ++i) {
+        ids[i] = (DataBrowserItemID)(i + 1);
+    }
+    err = AddDataBrowserItems(g_browser, kDataBrowserNoItem, 3, ids,
+                              kDataBrowserItemNoProperty);
+    if (err != noErr) {
+        report("AddDataBrowserItems FAILED (%d)", (int)err);
+        return;
+    }
+    report("Control built. Click a row, double-click, click a header.");
+}
+
 /* --- getting the answer off the machine --------------------------------- */
 
 static void write_report(void)
@@ -259,10 +462,24 @@ static void draw(void)
     GetWindowPortBounds(g_window, &bounds);
     EraseRect(&bounds);
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-    for (i = 0; i < g_count; ++i) {
+    for (i = 0; i < g_count && 20 + i * kLineHeight < kListTop - 50; ++i) {
         MoveTo(12, 20 + i * kLineHeight);
         CopyCStringToPascal(g_lines[i], text);
         DrawString(text);
+    }
+    for (i = 0; i < g_event_count; ++i) {
+        MoveTo(12, kListTop - 42 + i * kLineHeight);
+        CopyCStringToPascal(g_events[i], text);
+        DrawString(text);
+    }
+    {
+        RgnHandle visible = NewRgn();
+
+        if (visible != NULL) {
+            GetPortVisibleRegion(GetWindowPort(g_window), visible);
+            UpdateControls(g_window, visible);
+            DisposeRgn(visible);
+        }
     }
 }
 
@@ -289,6 +506,7 @@ int main(void)
 
     run_probe();
     write_report();
+    build_browser();
 
     while (running) {
         if (!WaitNextEvent(everyEvent, &event, 20, NULL)) {
@@ -307,6 +525,16 @@ int main(void)
                 && TrackGoAway(which, event.where)) {
                 running = false;
             }
+            if (FindWindow(event.where, &which) == inContent
+                && which == g_window) {
+                Point local = event.where;
+
+                SetPortWindowPort(g_window);
+                GlobalToLocal(&local);
+                /* The control wants the raw click: it runs its own
+                   tracking for selection, dragging and header sorts. */
+                HandleControlClick(g_browser, local, event.modifiers, NULL);
+            }
             if (FindWindow(event.where, &which) == inDrag) {
                 Rect drag;
 
@@ -315,12 +543,21 @@ int main(void)
             }
             break;
         }
-        case keyDown:
-            if ((event.message & charCodeMask) == 'q'
-                || (event.message & charCodeMask) == 'Q') {
+        case keyDown: {
+            char c = (char)(event.message & charCodeMask);
+
+            if ((event.modifiers & cmdKey) && (c == 'q' || c == 'Q')) {
                 running = false;
+                break;
+            }
+            /* Type-select and arrow keys are the control's business. */
+            if (g_browser != NULL) {
+                HandleControlKey(g_browser, (SInt16)((event.message
+                                                      & keyCodeMask) >> 8),
+                                 c, event.modifiers);
             }
             break;
+        }
         }
     }
     return 0;
