@@ -308,6 +308,40 @@ WindowRef shots_panel_ref(void)
     return g_window;
 }
 
+/* See share_panel_activate: nothing dimmed these controls before, so the
+   panel drew live buttons behind other windows and in the background.
+   Nothing here carries a conditional enable state, so this is the plain
+   pair. */
+void shots_panel_activate(Boolean becoming_active)
+{
+    ControlRef all[9];
+    int i;
+
+    if (g_window == NULL) {
+        return;
+    }
+    SetPortWindowPort(g_window);
+    all[0] = g_depth_popup;
+    all[1] = g_chunk_popup;
+    all[2] = g_pace_popup;
+    all[3] = g_pack_check;
+    all[4] = g_predictive_check;
+    all[5] = g_interlace_check;
+    all[6] = g_shoot_button;
+    all[7] = g_send_button;
+    all[8] = g_stream_button;
+    for (i = 0; i < 9; ++i) {
+        if (all[i] == NULL) {
+            continue;
+        }
+        if (becoming_active) {
+            ActivateControl(all[i]);
+        } else {
+            DeactivateControl(all[i]);
+        }
+    }
+}
+
 void shots_panel_draw(void)
 {
     Rect bounds;

@@ -15,6 +15,10 @@ WindowRef shots_panel_ref(void);
 void shots_panel_draw(void);
 void shots_panel_click(Point local);
 
+/* Window became front / went behind, including the foreground switch:
+   SIZE says doesActivateOnFGSwitch, so nothing else will do this. */
+void shots_panel_activate(Boolean becoming_active);
+
 /* Status line from the wire about a push transfer; safe when closed. */
 void shots_panel_note(const char *line);
 

@@ -571,10 +571,48 @@ void host_browser_key(const EventRecord *event)
                      event->modifiers);
 }
 
+/* This existed, took the flag, and threw it away — nothing called it
+   either, because the event loop had no activateEvt case at all. Both
+   halves are fixed now: main.c routes activation here, and here it means
+   what it says.
+
+   The Data Browser draws its own active/inactive selection and header, but
+   only if it is told; the three buttons around it need the usual pair. Up
+   keeps its own rule (disabled at the root), so re-activation re-derives
+   it rather than blanket-enabling. */
 void host_browser_activate(Boolean becoming_active)
 {
-    if (g_browser != NULL) {
-        SetControlVisibility(g_browser, true, true);
-        (void)becoming_active;
+    if (g_window == NULL) {
+        return;
+    }
+    SetPortWindowPort(g_window);
+    if (becoming_active) {
+        if (g_browser != NULL) {
+            ActivateControl(g_browser);
+            SetKeyboardFocus(g_window, g_browser, kControlFocusNextPart);
+        }
+        if (g_up != NULL) {
+            ActivateControl(g_up);
+            HiliteControl(g_up, g_path[0] == '\0' ? 255 : 0);
+        }
+        if (g_where != NULL) {
+            ActivateControl(g_where);
+        }
+        if (g_reveal != NULL) {
+            ActivateControl(g_reveal);
+        }
+    } else {
+        if (g_browser != NULL) {
+            DeactivateControl(g_browser);
+        }
+        if (g_up != NULL) {
+            DeactivateControl(g_up);
+        }
+        if (g_where != NULL) {
+            DeactivateControl(g_where);
+        }
+        if (g_reveal != NULL) {
+            DeactivateControl(g_reveal);
+        }
     }
 }

@@ -15,6 +15,10 @@ WindowRef share_panel_ref(void);
 void share_panel_draw(void);
 void share_panel_click(Point local);
 
+/* Window became front / went behind, including the foreground switch:
+   SIZE says doesActivateOnFGSwitch, so nothing else will do this. */
+void share_panel_activate(Boolean becoming_active);
+
 /* The status line a file send narrates into (conn_set_file_note). */
 void share_panel_note(const char *line);
 

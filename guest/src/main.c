@@ -153,6 +153,38 @@ static void compute_screen_bounds(void)
     }
 }
 
+/* Routes activation to whichever module owns the window.
+   ------------------------------------------------------------------
+   Nothing did this before: the loop had no activateEvt case, so no
+   window ever dimmed and host_browser_activate() sat unreachable. The
+   foreground switch is the same call, because SIZE says
+   doesActivateOnFGSwitch — that flag is a promise that the APPLICATION
+   activates its own windows, so with it set and no osEvt case the panels
+   kept drawing live controls while NOW was in the background and could
+   not be clicked at all. */
+static Boolean is_our_window(WindowRef window)
+{
+    return window != NULL
+        && (console_win_is(window) || share_panel_is(window)
+            || host_browser_is(window) || shots_panel_is(window));
+}
+
+static void set_window_active(WindowRef window, Boolean active)
+{
+    if (window == NULL) {
+        return;
+    }
+    if (console_win_is(window)) {
+        console_win_activate(active);
+    } else if (share_panel_is(window)) {
+        share_panel_activate(active);
+    } else if (host_browser_is(window)) {
+        host_browser_activate(active);
+    } else if (shots_panel_is(window)) {
+        shots_panel_activate(active);
+    }
+}
+
 static void close_front_window(void)
 {
     WindowRef front = FrontWindow();
@@ -233,6 +265,17 @@ static void handle_mouse_down(const EventRecord *event)
         long choice = MenuSelect(event->where);
         handle_menu_choice(choice);
         HiliteMenu(0);
+        return;
+    }
+    /* WindowShade. The console asks for kWindowStandardDocumentAttributes
+       and the screenshots panel asks for kWindowCollapseBoxAttribute, so
+       both have drawn a collapse box all along — and clicking it did
+       nothing, because no case here handled it. A control that is drawn
+       and does nothing is worse than one that is absent. */
+    if (part == inCollapseBox && is_our_window(window)) {
+        if (TrackBox(window, event->where, part)) {
+            CollapseWindow(window, !IsWindowCollapsed(window));
+        }
         return;
     }
     if (console_win_is(window)) {
@@ -441,6 +484,18 @@ int main(void)
                 BeginUpdate(host_browser_ref());
                 host_browser_draw();
                 EndUpdate(host_browser_ref());
+            }
+            break;
+        case activateEvt:
+            set_window_active((WindowRef)event.message,
+                              (event.modifiers & activeFlag) != 0);
+            break;
+        case osEvt:
+            /* Suspend and resume. The high byte of the message names the
+               kind of osEvt; only this one concerns us. */
+            if (((event.message >> 24) & 0x0FF) == suspendResumeMessage) {
+                set_window_active(FrontWindow(),
+                                  (event.message & resumeFlag) != 0);
             }
             break;
         case kHighLevelEvent:

@@ -211,6 +211,39 @@ WindowRef share_panel_ref(void)
     return g_window;
 }
 
+/* An inactive window's controls have to LOOK inactive; until this existed
+   nothing ever called Activate/DeactivateControl, so every panel drew its
+   buttons live no matter which window was front — and, because SIZE says
+   doesActivateOnFGSwitch, they stayed live even with NOW in the
+   background, where the app cannot be clicked at all.
+
+   Coming back is not a plain ActivateControl: Send and Choose carry their
+   own enable state (no connection, send in flight, boot-volume share), and
+   activating a control clears its hilite. So re-activation re-derives that
+   state rather than assuming everything is enabled. */
+void share_panel_activate(Boolean becoming_active)
+{
+    if (g_window == NULL) {
+        return;
+    }
+    SetPortWindowPort(g_window);
+    if (becoming_active) {
+        ActivateControl(g_boot_check);
+        ActivateControl(g_choose_button);
+        ActivateControl(g_send_button);
+        ActivateControl(g_browse_button);
+        g_send_hilite = -1;           /* force the re-derive to paint */
+        sync_share_controls();
+        sync_send_control();
+    } else {
+        DeactivateControl(g_boot_check);
+        DeactivateControl(g_choose_button);
+        DeactivateControl(g_send_button);
+        DeactivateControl(g_browse_button);
+        g_send_hilite = -1;
+    }
+}
+
 void share_panel_draw(void)
 {
     Rect bounds;

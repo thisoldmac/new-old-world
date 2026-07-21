@@ -14,6 +14,7 @@ Boolean console_win_is(WindowRef window);
 WindowRef console_win_ref(void);
 void console_win_draw(void);
 void console_win_invalidate(void);    /* repaint after a resize/zoom */
+void console_win_activate(Boolean becoming_active);
 void console_win_key(char ch);        /* printable / return / backspace */
 
 #endif

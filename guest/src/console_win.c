@@ -30,6 +30,11 @@ static short g_count = 0;
 static char g_input[kMaxCols];
 static short g_input_len = 0;
 static short g_font = 0;
+/* The console has no Toolbox controls, so its only visible active/inactive
+   difference is the insertion mark on the input line. A window that is not
+   front must not show one: a blinking-looking caret in a background window
+   says "type here" to a keystroke that will go somewhere else. */
+static Boolean g_active = true;
 
 /* Command history: newest last. g_hist_pos == g_hist_count means "editing a
    fresh line"; arrow keys walk back into the saved commands. */
@@ -709,7 +714,8 @@ static void draw_input(void)
     EraseRect(&ir);
     TextFont(g_font);
     TextSize(9);
-    snprintf(prompt, sizeof prompt, "> %.120s_", g_input);
+    snprintf(prompt, sizeof prompt, "> %.120s%s", g_input,
+             g_active ? "_" : "");
     MoveTo((short)(bounds.left + kMargin), (short)(bounds.bottom - kMargin));
     CopyCStringToPascal(prompt, text);
     DrawString(text);
@@ -745,6 +751,18 @@ void console_win_draw(void)
     }
 
     /* Input line pinned to the bottom (via draw_input's shared layout). */
+    draw_input();
+}
+
+void console_win_activate(Boolean becoming_active)
+{
+    if (g_window == NULL || becoming_active == g_active) {
+        return;
+    }
+    g_active = becoming_active;
+    /* Only the input strip changes, so only the input strip repaints —
+       redrawing the whole scrollback to move one underscore is the kind
+       of idle-path cost this window has already been taught to avoid. */
     draw_input();
 }
 
