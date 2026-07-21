@@ -70,20 +70,31 @@ transfer is not.
 
 ### UI
 
-Body, top to bottom (`compute_rects` fills a struct of rects from the
-body rect; click and draw read the same numbers):
+A split view (`compute_rects` fills both panes' rects from the body
+rect; click and draw read the same numbers). The split is fixed — a
+draggable splitter is a custom control this rung does not buy.
+Mockup: [mockups/processes-mockup.html](mockups/processes-mockup.html).
 
-- **List** — a Data Browser in list view, `files_browser_view.c`
-  pattern: Name (icon via `GetIconRef` on type/creator + text), Kind,
-  Memory ("312K of 1,024K"). Header sorting works; type-select does
-  not (documented limitation, not a migration invitation). One row
-  selected at a time. Dispose callback UPPs after the window is gone,
-  never before.
-- **Button row** — `Bring to Front` and `Ask to Quit`, push buttons,
-  enabled by selection. Tracking pumps via `now_pump_action`.
-- The classic About-This-Computer memory bar per row is a stretch goal
-  and **provisional**: it needs a Data Browser custom-draw column,
-  which is unproven on this runtime. The text form ships first.
+- **Left: the list** — a Data Browser in list view,
+  `files_browser_view.c` pattern, one sortable Name column (icon via
+  `GetIconRef` on type/creator + text). Header sorting works;
+  type-select does not (documented limitation, not a migration
+  invitation). One row selected at a time. Dispose callback UPPs after
+  the window is gone, never before.
+- **Right: the detail pane** — the selected process, drawn by the
+  module itself: name, kind, `type / creator`, memory as text **and**
+  the About-This-Computer bar (plain QuickDraw in our own pane — the
+  split view is what makes the bar free; as a Data Browser custom
+  column it was provisional), launch date. Below the facts,
+  `Bring to Front` and `Ask to Quit` push buttons (tracking pumps via
+  `now_pump_action`). At the bottom, a "NOW Extension" group box that
+  always states the peek status honestly and is where each later
+  rung's affordance lands — front-window bounds and Front & Capture at
+  rung 2, windows and controls at rung 4 — so the ladder grows the
+  pane instead of redesigning the page.
+
+The detail pane repaints only when the selection or a shown value
+changes; the throttled walk diffs into both panes.
 
 `status_text`: `"7 processes - 12.4 MB free"`. ASCII only.
 
