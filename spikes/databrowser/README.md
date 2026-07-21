@@ -49,6 +49,33 @@ will not.
 On screen, and written to `Data Browser Spike Report` on the desktop so
 the answer can leave the machine as text.
 
+## The verdict (PB1400c, 2026-07-20): use it
+
+The control draws native and behaves. Selection, double-click and
+column-header sorting all work on the real machine, from a plain
+WaitNextEvent loop with no Carbon Event handlers. Phase 2's browser is
+ordinary Carbon work.
+
+What the spike taught, beyond yes:
+
+- **A UPP is not a cast on this runtime.** MixedMode.h switches on
+  RUNTIME, not architecture: TARGET_RT_MAC_CFM makes STACK_UPP_TYPE a
+  UniversalProcPtr, so a C function handed straight to the Toolbox is a
+  Type 3 the moment it is called. Use NewDataBrowser*UPP and check for
+  NULL. The cast is right on Mach-O, which is where the belief came
+  from.
+- **Type-select needs keyboard FOCUS**, not just the key event.
+  SetKeyboardFocus(window, browser, kControlFocusNextPart) - without it
+  the list draws, selects, opens and sorts perfectly, and typing does
+  nothing.
+- **Icons are available both ways.** GetIconRefFromFile for a real file;
+  GetIconRef (present) for a type/creator pair, which is all a listing
+  off the wire carries. Only GetIconRefFromTypeInfo and the CoreGraphics
+  PlotIconRefInContext are absent, and neither is needed.
+- The probe missed the two UPP constructors on its first pass, reported
+  20 of 20, and the thing still crashed. **A probe covers what it was
+  asked about.**
+
 ## The result (PB1400c, 2026-07-20)
 
 System 9.1.0, CarbonLib 1.6.0, Appearance 1.1.1.

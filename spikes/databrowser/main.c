@@ -13,11 +13,12 @@
 #include <string.h>
 
 enum {
-    kWinWidth = 460,
-    kWinHeight = 460,
+    kWinWidth = 470,
+    kWinHeight = 520,
     kLineHeight = 12,
     kMaxLines = 64,
-    kListTop = 250            /* report above, real control below */
+    kEventStripTop = 300,     /* the last few notifications */
+    kListTop = 356            /* report above, real control below */
 };
 
 static WindowRef g_window;
@@ -266,7 +267,8 @@ static void note_event(const char *fmt, ...)
     {
         Rect strip;
 
-        SetRect(&strip, 12, kListTop - 46, kWinWidth - 12, kListTop - 4);
+        SetRect(&strip, 12, kEventStripTop - 12, kWinWidth - 12,
+                kListTop - 8);
         InvalWindowRect(g_window, &strip);
     }
 }
@@ -432,8 +434,17 @@ static void build_browser(void)
         report("AddDataBrowserItems FAILED (%d)", (int)err);
         return;
     }
+    /* Type-select answers to the FOCUSED control, not to whichever one
+       was handed the key. Without this the browser draws, selects,
+       opens and sorts perfectly and typing does nothing - which is
+       exactly how it failed the first time. */
+    err = SetKeyboardFocus(g_window, g_browser, kControlFocusNextPart);
+    if (err != noErr) {
+        report("SetKeyboardFocus failed (%d) - type-select will not work",
+               (int)err);
+    }
     step("control built");
-    report("Control built. Click a row, double-click, click a header.");
+    report("Built. Click, double-click, click a header, type \"z\".");
 }
 
 /* --- getting the answer off the machine --------------------------------- */
@@ -514,13 +525,13 @@ static void draw(void)
     GetWindowPortBounds(g_window, &bounds);
     EraseRect(&bounds);
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-    for (i = 0; i < g_count && 20 + i * kLineHeight < kListTop - 50; ++i) {
+    for (i = 0; i < g_count && 20 + i * kLineHeight < kEventStripTop - 6; ++i) {
         MoveTo(12, 20 + i * kLineHeight);
         CopyCStringToPascal(g_lines[i], text);
         DrawString(text);
     }
     for (i = 0; i < g_event_count; ++i) {
-        MoveTo(12, kListTop - 42 + i * kLineHeight);
+        MoveTo(12, kEventStripTop + i * kLineHeight);
         CopyCStringToPascal(g_events[i], text);
         DrawString(text);
     }
