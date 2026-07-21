@@ -62,6 +62,7 @@ typedef struct {
     char peer_version[32];
     char status[128];
     char last_fail[128];
+    unsigned long connected_tick;     /* when the hello completed */
 } ConnState;
 
 static ConnState g;
@@ -541,6 +542,7 @@ static void on_hello(const char *reply)
         strcpy(g.peer_version, "?");
     }
     g.phase = kConnConnected;
+    g.connected_tick = TickCount();
     g.backoff_ticks = 0;              /* success resets backoff */
     g.last_fail[0] = '\0';
     g.pings_sent = 0;
@@ -3640,9 +3642,13 @@ void conn_init(void)
     now_prefs_load(&prefs);
     strncpy(g.host, prefs.host, sizeof g.host - 1);
     g.port = prefs.port;
-    g.want_connection = true;
     strcpy(g.status, "Not connected");
-    start_connect();
+    /* The Connection page's "Connect when New Old World opens". Off
+       means the target is loaded but nothing dials until asked. */
+    if (prefs.auto_connect) {
+        g.want_connection = true;
+        start_connect();
+    }
 }
 
 void conn_shutdown(void)
@@ -3818,6 +3824,34 @@ Boolean conn_is_connected(void)
 void conn_status(char *out, long cap)
 {
     snprintf(out, cap, "%s", g.status);
+}
+
+void conn_snapshot(ConnSnapshot *out)
+{
+    unsigned long now = TickCount();
+
+    memset(out, 0, sizeof *out);
+    out->phase = g.phase;
+    strncpy(out->host, g.host, sizeof out->host - 1);
+    out->port = g.port;
+    strncpy(out->peer_name, g.peer_name, sizeof out->peer_name - 1);
+    strncpy(out->peer_version, g.peer_version,
+            sizeof out->peer_version - 1);
+    strncpy(out->last_fail, g.last_fail, sizeof out->last_fail - 1);
+    out->retry_in_secs = -1;
+    out->connected_secs = -1;
+    out->quiet_secs = -1;
+    if (g.phase == kConnBackoff && g.backoff_until > now) {
+        out->retry_in_secs = (long)((g.backoff_until - now + 59) / 60);
+    }
+    if (g.phase == kConnConnected && g.connected_tick != 0) {
+        out->connected_secs = (long)((now - g.connected_tick) / 60);
+    }
+    if (g.last_rx_tick != 0) {
+        out->quiet_secs = (long)((now - g.last_rx_tick) / 60);
+    }
+    out->contract_revision = kNowContractRevision;
+    out->transfer_active = conn_wants_fast_pump();
 }
 
 long conn_last_rtt_ms(void)

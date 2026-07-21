@@ -56,6 +56,26 @@ Boolean conn_wants_fast_pump(void);
    or "Reconnecting in 4s (no answer)". */
 void conn_status(char *out, long cap);
 
+/* A read-only picture of the connection for UI that composes its own
+   words - the Workshop's Connection page and sidebar glance. Filling it
+   copies and does arithmetic only: no allocation, no servicing, and no
+   reaching into wire internals from window code. */
+typedef struct {
+    ConnPhase phase;
+    char host[64];                /* the dialed or configured target */
+    unsigned short port;
+    char peer_name[64];           /* from hello; empty before one */
+    char peer_version[32];
+    char last_fail[96];           /* empty when nothing has failed */
+    long retry_in_secs;           /* backoff: seconds to redial; else -1 */
+    long connected_secs;          /* connected: since hello; else -1 */
+    long quiet_secs;              /* since last inbound bytes; -1 if none */
+    short contract_revision;
+    Boolean transfer_active;      /* anything on the bulk path right now */
+} ConnSnapshot;
+
+void conn_snapshot(ConnSnapshot *out);
+
 /* What to call the machine on the other end, for anything a human
    reads. It is the name that machine sent in its hello; before a
    connection there is no name to use, so it degrades to a plain

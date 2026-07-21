@@ -43,11 +43,24 @@ typedef struct {
     Boolean console_open;
     Rect panel_rect;          /* content bounds; empty = default position */
     Rect console_rect;
+
+    /* Console appearance: black-on-white unless inverted. Persisted by
+       the Console surface; carried here so the record has one shape. */
+    Boolean console_invert;
+
+    /* Whether launching the app dials the saved target by itself. Off
+       means the Workshop's Connection page is the only dialer. */
+    Boolean auto_connect;
+
+    /* Workshop session: which module was selected, and where the window
+       sat. Empty rect = the standard centered bounds. */
+    short workshop_module;
+    Rect workshop_rect;
 } NowPrefs;
 
 /* Loads saved settings, or the defaults (10.0.2.2:5250 — the QEMU host
    address — 8-bit, pack on, 8K chunks, no pacing, panel open). Reads the
-   v1/v2 record formats (host/port only) as well as v3 through v8. */
+   v1/v2 record formats (host/port only) as well as v3 through v9. */
 void now_prefs_load(NowPrefs *prefs);
 OSErr now_prefs_save(const NowPrefs *prefs);
 

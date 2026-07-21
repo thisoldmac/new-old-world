@@ -29,6 +29,9 @@ typedef struct WorkshopModuleOps {
     Boolean (*key)(const EventRecord *event);
     void (*activate)(Boolean active);
     void (*idle)(void);
+    /* One line for the bottom status placard. Optional; the Workshop
+       falls back to a quiet default. */
+    void (*status_text)(char *out, long cap);
 } WorkshopModuleOps;
 
 #endif /* NOW_WORKSHOP_MODULE_H */

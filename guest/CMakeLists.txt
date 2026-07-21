@@ -22,7 +22,8 @@ add_application(now-guest
     src/nowlog.c
     src/wire.c
     src/prefs.c
-    src/settings_dialog.c
+    src/conn_fields.c
+    src/connection_module.c
     src/workshop_layout.c
     src/workshop_sidebar.c
     src/workshop_window.c

@@ -14,7 +14,6 @@
 #include "pump.h"
 #include "shots_panel.h"
 #include "prefs.h"
-#include "settings_dialog.h"
 #include "wire.h"
 #include "workshop_layout.h"
 #include "workshop_window.h"
@@ -50,7 +49,7 @@ static const unsigned char k_console_menu_item[] = {
     9, 'C', 'o', 'n', 's', 'o', 'l', 'e', '/', 'L'
 };
 static const unsigned char k_connection_menu_item[] = {
-    13, 'C', 'o', 'n', 'n', 'e', 'c', 't', 'i', 'o', 'n', 0xC9, '/', 'K'
+    12, 'C', 'o', 'n', 'n', 'e', 'c', 't', 'i', 'o', 'n', '/', 'K'
 };
 static const unsigned char k_separator_menu_item[] = {
     2, '-', ' '
@@ -295,7 +294,10 @@ static void handle_menu_choice(long choice)
         } else if (LoWord(choice) == kWindowsConsoleItem) {
             console_win_open();
         } else if (LoWord(choice) == kWindowsConnectionItem) {
-            now_settings_dialog_run();
+            /* The dialog retired into the Workshop's Connection page. */
+            if (workshop_open()) {
+                workshop_select_module(kWorkshopConnection);
+            }
         }
     }
 }

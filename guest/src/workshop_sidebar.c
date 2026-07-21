@@ -312,23 +312,43 @@ void workshop_sidebar_activate(Boolean active)
 
 void workshop_sidebar_idle(void)
 {
-    ConnPhase phase;
+    ConnSnapshot snap;
     char detail[96];
 
     if (g_owner == NULL) {
         return;
     }
-    phase = conn_phase();
-    if (phase == kConnConnected) {
-        conn_peer_label(detail, sizeof detail);
-    } else {
-        conn_status(detail, sizeof detail);
+    /* Short, purpose-built words: the row is narrow, and a truncated
+       status line reads worse than a plain one. */
+    conn_snapshot(&snap);
+    switch (snap.phase) {
+    case kConnConnected:
+        if (snap.peer_name[0] != '\0') {
+            snprintf(detail, sizeof detail, "%.40s", snap.peer_name);
+        } else {
+            strcpy(detail, "Connected");
+        }
+        break;
+    case kConnConnecting:
+    case kConnHandshaking:
+        strcpy(detail, "Connecting...");
+        break;
+    case kConnBackoff:
+        snprintf(detail, sizeof detail, "Retry in %ld s",
+                 snap.retry_in_secs);
+        break;
+    case kConnNeedsCarbonLib:
+        strcpy(detail, "No CarbonLib 1.6");
+        break;
+    default:
+        strcpy(detail, "No link");
+        break;
     }
-    if (phase == g_shown_phase
+    if (snap.phase == g_shown_phase
         && strcmp(detail, g_shown_detail) == 0) {
         return;
     }
-    g_shown_phase = phase;
+    g_shown_phase = snap.phase;
     strcpy(g_shown_detail, detail);
     InvalWindowRect(g_owner, &g_lay.conn_row);
 }

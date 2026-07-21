@@ -156,34 +156,6 @@ resource 'DITL' (200) {
     }
 };
 
-resource 'DLOG' (300) {
-    {120, 140, 332, 560},
-    movableDBoxProc,
-    invisible,
-    noGoAway,
-    0,
-    300,
-    "Connection",
-    centerMainScreen
-};
-
-resource 'DITL' (300) {
-    {
-        /* 1 Save   */ {176, 330, 196, 400}, Button { enabled, "Save" };
-        /* 2 Cancel */ {176, 244, 196, 314}, Button { enabled, "Cancel" };
-        /* 3 Connect */ {176, 20, 196, 130},
-            Button { enabled, "Connect" };
-        /* 4 host   */ {24, 110, 40, 300}, EditText { enabled, "" };
-        /* 5 port   */ {54, 110, 70, 180}, EditText { enabled, "" };
-        /* 6 status */ {118, 20, 162, 400}, StaticText { disabled, "" };
-        /* 7 */ {24, 20, 40, 100}, StaticText { disabled, "Address:" };
-        /* 8 */ {54, 20, 70, 100}, StaticText { disabled, "Port:" };
-        /* 9 retry */ {84, 110, 100, 160}, EditText { enabled, "" };
-        /* 10 */ {84, 20, 100, 100}, StaticText { disabled, "Retry:" };
-        /* 11 */ {84, 170, 100, 400},
-            StaticText { disabled, "seconds (0 = automatic backoff)" };
-    }
-};
 
 
 resource 'MENU' (130) {
@@ -218,5 +190,17 @@ resource 'MENU' (132) {
         "5 ms", noIcon, noKey, noMark, plain;
         "10 ms", noIcon, noKey, noMark, plain;
         "20 ms", noIcon, noKey, noMark, plain
+    }
+};
+
+/* The Connection page's Retry pop-up. Item order is load-bearing:
+   conn_fields.c maps items 1-4 to 0/2/5/10 seconds. */
+resource 'MENU' (133) {
+    133, textMenuProc, allEnabled, enabled, "Retry",
+    {
+        "Automatic backoff", noIcon, noKey, noMark, plain;
+        "2 seconds", noIcon, noKey, noMark, plain;
+        "5 seconds", noIcon, noKey, noMark, plain;
+        "10 seconds", noIcon, noKey, noMark, plain
     }
 };

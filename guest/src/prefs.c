@@ -59,6 +59,14 @@ typedef struct {
     long dl_dir;
 } PrefsRecordV8;
 
+typedef struct {
+    PrefsRecordV8 v8;                 /* format = 9 */
+    short console_invert;
+    short auto_connect;
+    short workshop_module;
+    Rect workshop_rect;
+} PrefsRecordV9;
+
 /* Preferences are per COPY of the app, not per creator. Running two
    guests at once is a real workflow — one for each host, on different
    ports — and a shared file would have them overwrite each other's port
@@ -121,6 +129,12 @@ static void set_defaults(NowPrefs *prefs)
     prefs->console_open = false;
     SetRect(&prefs->panel_rect, 0, 0, 0, 0);
     SetRect(&prefs->console_rect, 0, 0, 0, 0);
+    prefs->console_invert = false;
+    /* Dialing on launch is the established behavior; the checkbox on the
+       Connection page is how it is turned off. */
+    prefs->auto_connect = true;
+    prefs->workshop_module = 1;       /* Screenshots */
+    SetRect(&prefs->workshop_rect, 0, 0, 0, 0);
 }
 
 static Boolean valid_depth(short depth)
@@ -133,8 +147,8 @@ void now_prefs_load(NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV8);
-    PrefsRecordV8 v8;
+    long count = sizeof(PrefsRecordV9);
+    PrefsRecordV9 v9;
     PrefsRecordV3 record;
     OSErr err;
 
@@ -146,10 +160,10 @@ void now_prefs_load(NowPrefs *prefs)
     if (FSpOpenDF(&spec, fsRdPerm, &ref) != noErr) {
         return;
     }
-    memset(&v8, 0, sizeof v8);
-    err = FSRead(ref, &count, &v8);
+    memset(&v9, 0, sizeof v9);
+    err = FSRead(ref, &count, &v9);
     FSClose(ref);
-    record = v8.v7.v6.v5.v4.v3;
+    record = v9.v8.v7.v6.v5.v4.v3;
     if ((err != noErr && err != eofErr)
         || record.magic != kPrefsMagic || record.port == 0) {
         return;
@@ -176,27 +190,35 @@ void now_prefs_load(NowPrefs *prefs)
     prefs->panel_rect = record.panel_rect;
     prefs->console_rect = record.console_rect;
     if (record.format >= 4 && count >= (long)sizeof(PrefsRecordV4)
-        && v8.v7.v6.v5.v4.retry_secs >= 0 && v8.v7.v6.v5.v4.retry_secs <= 300) {
-        prefs->retry_secs = v8.v7.v6.v5.v4.retry_secs;
+        && v9.v8.v7.v6.v5.v4.retry_secs >= 0 && v9.v8.v7.v6.v5.v4.retry_secs <= 300) {
+        prefs->retry_secs = v9.v8.v7.v6.v5.v4.retry_secs;
     }
     if (record.format >= 5 && count >= (long)sizeof(PrefsRecordV5)) {
-        prefs->predictive = v8.v7.v6.v5.predictive != 0;
-        prefs->interlace = v8.v7.v6.v5.interlace != 0;
+        prefs->predictive = v9.v8.v7.v6.v5.predictive != 0;
+        prefs->interlace = v9.v8.v7.v6.v5.interlace != 0;
     }
     if (record.format >= 6 && count >= (long)sizeof(PrefsRecordV6)) {
-        v8.v7.v6.share_root[sizeof v8.v7.v6.share_root - 1] = '\0';
-        strcpy(prefs->share_root, v8.v7.v6.share_root);
+        v9.v8.v7.v6.share_root[sizeof v9.v8.v7.v6.share_root - 1] = '\0';
+        strcpy(prefs->share_root, v9.v8.v7.v6.share_root);
     }
     if (record.format >= 7 && count >= (long)sizeof(PrefsRecordV7)) {
-        v8.v7.share_vol[sizeof v8.v7.share_vol - 1] = '\0';
-        strcpy(prefs->share_vol, v8.v7.share_vol);
-        prefs->share_dir = v8.v7.share_dir;
+        v9.v8.v7.share_vol[sizeof v9.v8.v7.share_vol - 1] = '\0';
+        strcpy(prefs->share_vol, v9.v8.v7.share_vol);
+        prefs->share_dir = v9.v8.v7.share_dir;
     }
     if (record.format >= 8 && count >= (long)sizeof(PrefsRecordV8)) {
-        prefs->share_boot = v8.share_boot != 0;
-        v8.dl_vol[sizeof v8.dl_vol - 1] = '\0';
-        strcpy(prefs->dl_vol, v8.dl_vol);
-        prefs->dl_dir = v8.dl_dir;
+        prefs->share_boot = v9.v8.share_boot != 0;
+        v9.v8.dl_vol[sizeof v9.v8.dl_vol - 1] = '\0';
+        strcpy(prefs->dl_vol, v9.v8.dl_vol);
+        prefs->dl_dir = v9.v8.dl_dir;
+    }
+    if (record.format >= 9 && count >= (long)sizeof(PrefsRecordV9)) {
+        prefs->console_invert = v9.console_invert != 0;
+        prefs->auto_connect = v9.auto_connect != 0;
+        if (v9.workshop_module >= 1 && v9.workshop_module <= 4) {
+            prefs->workshop_module = v9.workshop_module;
+        }
+        prefs->workshop_rect = v9.workshop_rect;
     }
 }
 
@@ -204,14 +226,14 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV8);
-    PrefsRecordV8 v8;
+    long count = sizeof(PrefsRecordV9);
+    PrefsRecordV9 v9;
     PrefsRecordV3 record;
     OSErr err;
 
     memset(&record, 0, sizeof record);
     record.magic = kPrefsMagic;
-    record.format = 8;
+    record.format = 9;
     record.port = prefs->port;
     strncpy(record.host, prefs->host, sizeof record.host - 1);
     record.shot_depth = prefs->shot_depth;
@@ -235,19 +257,24 @@ OSErr now_prefs_save(const NowPrefs *prefs)
     if (err != noErr) {
         return err;
     }
-    memset(&v8, 0, sizeof v8);
-    v8.v7.v6.v5.v4.v3 = record;
-    v8.v7.v6.v5.v4.retry_secs = prefs->retry_secs;
-    v8.v7.v6.v5.predictive = prefs->predictive ? 1 : 0;
-    v8.v7.v6.v5.interlace = prefs->interlace ? 1 : 0;
-    strncpy(v8.v7.v6.share_root, prefs->share_root,
-            sizeof v8.v7.v6.share_root - 1);
-    strncpy(v8.v7.share_vol, prefs->share_vol, sizeof v8.v7.share_vol - 1);
-    v8.v7.share_dir = prefs->share_dir;
-    v8.share_boot = prefs->share_boot ? 1 : 0;
-    strncpy(v8.dl_vol, prefs->dl_vol, sizeof v8.dl_vol - 1);
-    v8.dl_dir = prefs->dl_dir;
-    err = FSWrite(ref, &count, &v8);
+    memset(&v9, 0, sizeof v9);
+    v9.v8.v7.v6.v5.v4.v3 = record;
+    v9.v8.v7.v6.v5.v4.retry_secs = prefs->retry_secs;
+    v9.v8.v7.v6.v5.predictive = prefs->predictive ? 1 : 0;
+    v9.v8.v7.v6.v5.interlace = prefs->interlace ? 1 : 0;
+    strncpy(v9.v8.v7.v6.share_root, prefs->share_root,
+            sizeof v9.v8.v7.v6.share_root - 1);
+    strncpy(v9.v8.v7.share_vol, prefs->share_vol,
+            sizeof v9.v8.v7.share_vol - 1);
+    v9.v8.v7.share_dir = prefs->share_dir;
+    v9.v8.share_boot = prefs->share_boot ? 1 : 0;
+    strncpy(v9.v8.dl_vol, prefs->dl_vol, sizeof v9.v8.dl_vol - 1);
+    v9.v8.dl_dir = prefs->dl_dir;
+    v9.console_invert = prefs->console_invert ? 1 : 0;
+    v9.auto_connect = prefs->auto_connect ? 1 : 0;
+    v9.workshop_module = prefs->workshop_module;
+    v9.workshop_rect = prefs->workshop_rect;
+    err = FSWrite(ref, &count, &v9);
     if (err == noErr) {
         SetEOF(ref, count);           /* what we wrote, not an older record */
     }

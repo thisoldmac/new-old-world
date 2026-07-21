@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "connection_module.h"
+#include "prefs.h"
 #include "workshop_layout.h"
 #include "workshop_sidebar.h"
 #include "wire.h"
@@ -102,16 +104,51 @@ static void on_sidebar_select(WorkshopModuleID module)
     workshop_select_module(module);
 }
 
+static void ensure_module_created(WorkshopModuleID module)
+{
+    if (g_ops[module] != NULL && !g_created[module]
+        && g_ops[module]->create != NULL) {
+        g_created[module] =
+            g_ops[module]->create(g_window, &g_lay.body) == noErr;
+    }
+}
+
+/* A restored rectangle is only used when it still fits the desktop and
+   the minimum size; anything else falls back to the standard bounds. */
+static Boolean restorable_bounds(const Rect *r)
+{
+    Rect screen;
+    RgnHandle desktop = GetGrayRgn();
+
+    if (r->right - r->left < kWorkshopMinContentW
+        || r->bottom - r->top < kWorkshopMinContentH) {
+        return false;
+    }
+    if (desktop == NULL) {
+        return true;
+    }
+    GetRegionBounds(desktop, &screen);
+    return r->left >= screen.left - 8 && r->top >= screen.top + 12
+        && r->left + 64 < screen.right && r->top < screen.bottom - 64;
+}
+
 Boolean workshop_open(void)
 {
     Rect bounds;
     Str255 title;
+    NowPrefs prefs;
 
     if (g_window != NULL) {
         SelectWindow(g_window);
         return true;
     }
-    standard_bounds(&bounds);
+    g_ops[kWorkshopConnection] = connection_module_ops();
+    now_prefs_load(&prefs);
+    if (restorable_bounds(&prefs.workshop_rect)) {
+        bounds = prefs.workshop_rect;
+    } else {
+        standard_bounds(&bounds);
+    }
     CreateNewWindow(kDocumentWindowClass, kWindowStandardDocumentAttributes,
                     &bounds, &g_window);
     if (g_window == NULL) {
@@ -129,6 +166,18 @@ Boolean workshop_open(void)
         return false;
     }
     g_shown_peer[0] = '\0';
+    g_selected = kWorkshopScreenshots;
+    if (prefs.workshop_module >= 1
+        && prefs.workshop_module <= kWorkshopModuleCount
+        && prefs.workshop_module != (short)g_selected) {
+        workshop_select_module((WorkshopModuleID)prefs.workshop_module);
+    } else {
+        ensure_module_created(g_selected);
+        if (g_created[g_selected] && g_ops[g_selected]->show != NULL) {
+            g_ops[g_selected]->show(true);
+        }
+        workshop_sidebar_set_selection(g_selected);
+    }
     ShowWindow(g_window);
     SelectWindow(g_window);
     return true;
@@ -140,6 +189,17 @@ void workshop_close(void)
 
     if (g_window == NULL) {
         return;
+    }
+    /* The session rides in the prefs file, like the old windows'. */
+    {
+        NowPrefs prefs;
+        Rect bounds;
+
+        now_prefs_load(&prefs);
+        GetWindowBounds(g_window, kWindowContentRgn, &bounds);
+        prefs.workshop_rect = bounds;
+        prefs.workshop_module = (short)g_selected;
+        now_prefs_save(&prefs);
     }
     for (i = 1; i <= kWorkshopModuleCount; ++i) {
         if (g_created[i] && g_ops[i] != NULL && g_ops[i]->dispose != NULL) {
@@ -180,11 +240,7 @@ void workshop_select_module(WorkshopModuleID module)
         old_ops->show(false);
     }
     g_selected = module;
-    if (g_ops[module] != NULL && !g_created[module]
-        && g_ops[module]->create != NULL) {
-        g_created[module] =
-            g_ops[module]->create(g_window, &g_lay.body) == noErr;
-    }
+    ensure_module_created(module);
     if (g_ops[module] != NULL && g_created[module]
         && g_ops[module]->show != NULL) {
         g_ops[module]->show(true);
@@ -225,12 +281,19 @@ static void draw_header(void)
 static void draw_status(void)
 {
     Str255 text;
+    char line[120];
+    const WorkshopModuleOps *ops = selected_ops();
 
     DrawThemePlacard(&g_lay.status,
                      g_active ? kThemeStateActive : kThemeStateInactive);
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
     MoveTo((short)(g_lay.status.left + 10), (short)(g_lay.status.top + 15));
-    CopyCStringToPascal("Nothing to report yet.", text);
+    if (ops != NULL && g_created[g_selected] && ops->status_text != NULL) {
+        ops->status_text(line, sizeof line);
+    } else {
+        strcpy(line, "Nothing to report yet.");
+    }
+    CopyCStringToPascal(line, text);
     TruncString((short)(g_lay.grow_safe.left - g_lay.status.left - 14),
                 text, truncEnd);
     DrawString(text);
@@ -266,12 +329,6 @@ void workshop_draw(void)
 
     draw_header();
     draw_status();
-    if (ops != NULL && g_created[g_selected] && ops->draw != NULL) {
-        ops->draw();
-    } else {
-        draw_placeholder_body();
-    }
-    workshop_sidebar_draw();
 
     DrawControls(g_window);
     visible = NewRgn();
@@ -280,6 +337,15 @@ void workshop_draw(void)
         UpdateControls(g_window, visible);
         DisposeRgn(visible);
     }
+
+    /* Module text goes over the controls: group-box interiors are the
+       module's canvas, so labels and values land after the frames. */
+    if (ops != NULL && g_created[g_selected] && ops->draw != NULL) {
+        ops->draw();
+    } else {
+        draw_placeholder_body();
+    }
+    workshop_sidebar_draw();
 
     /* The grow icon, without the scroll-bar delimiter lines DrawGrowIcon
        would run up both edges: clip it to the corner. */
@@ -351,6 +417,9 @@ void workshop_activate(Boolean active)
 void workshop_idle(void)
 {
     char peer[40];
+    char status[120];
+    static char shown_status[120];
+    const WorkshopModuleOps *ops;
     int i;
 
     if (g_window == NULL) {
@@ -368,6 +437,16 @@ void workshop_idle(void)
     for (i = 1; i <= kWorkshopModuleCount; ++i) {
         if (g_created[i] && g_ops[i] != NULL && g_ops[i]->idle != NULL) {
             g_ops[i]->idle();
+        }
+    }
+    /* The status placard mirrors the selected module's line; repaint
+       only on change, and only the placard. */
+    ops = selected_ops();
+    if (ops != NULL && g_created[g_selected] && ops->status_text != NULL) {
+        ops->status_text(status, sizeof status);
+        if (strcmp(status, shown_status) != 0) {
+            strcpy(shown_status, status);
+            InvalWindowRect(g_window, &g_lay.status);
         }
     }
 }
