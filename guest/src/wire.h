@@ -82,6 +82,14 @@ int now_wire_offer_shot(char *err, long cap);
    0 = under way (the panel narrates the rest), -1 = err says why. */
 int now_wire_send_file(const FSSpec *spec, char *err, long cap);
 
+/* A send the host refused because something is already there. Wire
+   code cannot ask a person (pump.h: a modal opened from a network
+   callback nests inside whatever loop is already running), so it holds
+   the staged bytes and raises this; the event loop asks and answers.
+   Until it does, the send has no deadline — a question waits. */
+Boolean now_wire_send_pending_replace(char *name, long cap);
+void now_wire_send_resolve_replace(Boolean replace);
+
 /* One-line progress reports for push transfers ("Sent to host (312 ms)").
    The Screenshots panel registers itself here; a NULL fn unhooks. */
 typedef void (*ConnShotNote)(const char *line);

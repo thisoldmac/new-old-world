@@ -152,6 +152,19 @@ final class HostShareTests: XCTestCase {
                                                overwrite: true))
     }
 
+    /// Replacing is recoverable: the person who said yes is at the
+    /// other machine and cannot see what they are replacing.
+    func testReplacingPutsTheOldFileInTheTrash() throws {
+        try write("Sent.txt", "the original")
+        let url = try share.destination(name: "Sent.txt", path: "",
+                                        overwrite: true)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path),
+                       "the old file moved out of the way")
+        try "the replacement".data(using: .utf8)!.write(to: url)
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8),
+                       "the replacement")
+    }
+
     func testDestinationSanitizesTheIncomingName() throws {
         let url = try share.destination(name: "../../escape", path: "",
                                         overwrite: false)

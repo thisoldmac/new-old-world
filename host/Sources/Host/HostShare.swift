@@ -172,8 +172,15 @@ final class HostShare {
             throw ShareError.badPath
         }
         let url = folder.appendingPathComponent(safe)
-        if FileManager.default.fileExists(atPath: url.path), !overwrite {
-            throw ShareError.exists
+        if FileManager.default.fileExists(atPath: url.path) {
+            guard overwrite else { throw ShareError.exists }
+            /* Replacing puts the old one in the Trash rather than
+               destroying it. The person who agreed to this is sitting
+               at the OTHER machine, looking at a list of names — they
+               cannot see what they are about to lose, so the answer
+               has to be recoverable from this end. */
+            try FileManager.default.trashItem(at: url,
+                                              resultingItemURL: nil)
         }
         return url
     }

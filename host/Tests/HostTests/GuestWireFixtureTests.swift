@@ -42,6 +42,21 @@ final class GuestWireFixtureTests: XCTestCase {
         XCTAssertEqual(offer.container, "data")
     }
 
+    /// send_offer(true): the same offer again after a person said to
+    /// replace. Only the overwrite flag differs, and the conformance
+    /// check cannot see this variant - it instantiates the optional
+    /// fragment as absent, which is the other branch.
+    func testFileOfferWithOverwriteAsTheGuestWritesIt() throws {
+        let json = #"{"type":"file.offer","id":1,"name":"Notes","path":"","#
+            + #""container":"data","bytes":66,"fileType":"TEXT","#
+            + #""creator":"ttxt","modified":3300000000,"overwrite":true}"#
+        guard case .fileOffer(let offer) = try decode(json) else {
+            return XCTFail("not an offer")
+        }
+        XCTAssertEqual(offer.overwrite, true)
+        XCTAssertEqual(offer.name, "Notes", "the same file, asked again")
+    }
+
     /// send_accepted(): the guest announcing the transfer that follows.
     func testFileBeginAsTheGuestWritesIt() throws {
         let json = """

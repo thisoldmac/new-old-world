@@ -77,6 +77,7 @@ static Boolean wire_busy(void);
    that dies on the wire. */
 static void send_cleanup(void);
 static void note_file(const char *line);
+static Boolean send_offer(Boolean overwrite);
 static Boolean send_owns_transfer(long id);
 static void take_bulk_in(const unsigned char *bytes, long len);
 static void put_drop(void);
@@ -1393,6 +1394,11 @@ enum { kSendTimeoutTicks = 60 * 20 };
 static struct {
     Boolean active;                   /* offered, or sending */
     Boolean sending;                  /* the host said yes; bytes moving */
+    /* The host says something is already there. The staged bytes stay
+       put while a person decides; wire code cannot ask (pump.h), so it
+       raises this and the event loop does the asking. */
+    Boolean awaiting_confirm;
+    char occupied_by[64];             /* what the host called the clash */
     long id;
     FileStage stage;
     char name[32];                    /* kept past the stage handoff */
@@ -1432,13 +1438,13 @@ static void send_cleanup(void)
     now_files_stage_dispose(&g_send.stage);
     g_send.active = false;
     g_send.sending = false;
+    g_send.awaiting_confirm = false;
 }
 
 int now_wire_send_file(const FSSpec *spec, char *err, long cap)
 {
     NowPrefs prefs;
     FileStage stage;
-    char json[512];
     char peer[40];
     char line[96];
     int rc;
@@ -1478,6 +1484,27 @@ int now_wire_send_file(const FSSpec *spec, char *err, long cap)
     g_send.sending = false;
     ++g.offer_seq;
     g_send.id = g.offer_seq;
+    if (!send_offer(false)) {
+        send_cleanup();
+        snprintf(err, (size_t)cap, "Connection lost");
+        return -1;
+    }
+    g_send.active = true;
+    g_send.deadline = TickCount() + kSendTimeoutTicks;
+    conn_peer_label(peer, sizeof peer);
+    snprintf(line, sizeof line, "Asking %.20s to accept %.31s...",
+             peer, stage.name);
+    note_file(line);
+    return 0;
+}
+
+/* The offer itself. Sent once to ask, and again with overwrite set if
+   the person says to replace what is already there. */
+static Boolean send_offer(Boolean overwrite)
+{
+    char json[512];
+    const FileStage stage = g_send.stage;
+
     {
         char type[8], creator[8];
         char esc_name[200], esc_type[40], esc_creator[40];
@@ -1496,23 +1523,13 @@ int now_wire_send_file(const FSSpec *spec, char *err, long cap)
                  "{\"type\":\"file.offer\",\"id\":%ld,\"name\":\"%s\","
                  "\"path\":\"\",\"container\":\"%s\",\"bytes\":%ld,"
                  "\"fileType\":\"%s\",\"creator\":\"%s\","
-                 "\"modified\":%lu}",
+                 "\"modified\":%lu%s}",
                  g_send.id, esc_name,
                  stage.container == kContainerMacBinary ? "macbinary" : "data",
-                 stage.total_bytes, esc_type, esc_creator, stage.modified);
+                 stage.total_bytes, esc_type, esc_creator, stage.modified,
+                 overwrite ? ",\"overwrite\":true" : "");
     }
-    if (!send_control(json)) {
-        send_cleanup();
-        snprintf(err, (size_t)cap, "Connection lost");
-        return -1;
-    }
-    g_send.active = true;
-    g_send.deadline = TickCount() + kSendTimeoutTicks;
-    conn_peer_label(peer, sizeof peer);
-    snprintf(line, sizeof line, "Asking %.20s to accept %.31s...",
-             peer, stage.name);
-    note_file(line);
-    return 0;
+    return send_control(json);
 }
 
 /* The host said yes: announce the transfer, then hand the staged bytes
@@ -1570,14 +1587,30 @@ static void send_accepted(const char *reply)
 static void send_refused(const char *reply)
 {
     char reason[64];
+    char code[32];
     char line[96];
     char peer[40];
 
     if (!g_send.active || now_json_find_int(reply, "id", -1) != g_send.id) {
         return;
     }
-    send_cleanup();
     conn_peer_label(peer, sizeof peer);
+
+    /* "Something is already there" is a question for a person, not a
+       failure. The staged bytes stay exactly where they are; the event
+       loop asks, and answers by sending the same offer again. */
+    code[0] = '\0';
+    now_json_find_string(reply, "code", code, sizeof code);
+    if (strcmp(code, "exists") == 0 && !g_send.sending) {
+        g_send.awaiting_confirm = true;
+        snprintf(g_send.occupied_by, sizeof g_send.occupied_by, "%.63s",
+                 g_send.name);
+        snprintf(line, sizeof line, "%.20s already has %.31s", peer,
+                 g_send.name);
+        note_file(line);
+        return;
+    }
+    send_cleanup();
     if (now_json_find_string(reply, "reason", reason, sizeof reason)) {
         snprintf(line, sizeof line, "%.30s declined: %.50s", peer, reason);
     } else {
@@ -1610,11 +1643,54 @@ static void send_done(const char *reply)
     note_file(line);
 }
 
+/* What the event loop needs to know to ask. Returns false when nothing
+   is waiting on a person. */
+Boolean now_wire_send_pending_replace(char *name, long cap)
+{
+    if (!g_send.awaiting_confirm) {
+        return false;
+    }
+    if (name != NULL && cap > 0) {
+        strncpy(name, g_send.occupied_by, (size_t)cap - 1);
+        name[cap - 1] = '\0';
+    }
+    return true;
+}
+
+/* The answer. Replacing re-sends the SAME staged bytes with overwrite
+   set, so nothing is read off the disk twice and the file cannot have
+   changed underneath the question. */
+void now_wire_send_resolve_replace(Boolean replace)
+{
+    char line[96];
+    char peer[40];
+
+    if (!g_send.awaiting_confirm) {
+        return;
+    }
+    g_send.awaiting_confirm = false;
+    conn_peer_label(peer, sizeof peer);
+    if (!replace) {
+        send_cleanup();
+        note_file("Not sent");
+        return;
+    }
+    if (!send_offer(true)) {
+        send_cleanup();
+        note_file("Connection lost");
+        return;
+    }
+    g_send.deadline = TickCount() + kSendTimeoutTicks;
+    snprintf(line, sizeof line, "Replacing %.31s on %.20s...",
+             g_send.name, peer);
+    note_file(line);
+}
+
 static void service_send(void)
 {
     /* Only the ANSWER is on a clock. Once bytes are moving the transfer
        machine owns the deadline, and a slow file is not a dead host. */
-    if (g_send.active && !g_send.sending
+    if (g_send.active && !g_send.sending && !g_send.awaiting_confirm
         && TickCount() > g_send.deadline) {
         char peer[40];
         char line[96];

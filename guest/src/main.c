@@ -2,6 +2,9 @@
 
 #include <string.h>
 
+#include <stdio.h>
+
+#include "confirm.h"
 #include "console_win.h"
 #include "fileshare.h"
 #include "product_identity.h"
@@ -318,6 +321,28 @@ static pascal OSErr handle_quit_apple_event(const AppleEvent *event,
     return noErr;
 }
 
+/* The wire holds a send that the other machine says would replace
+   something, and raises a flag rather than asking — a modal opened from
+   a network callback nests inside whatever loop is running (pump.h).
+   Here, at the top of the event loop, asking is safe. */
+static void ask_about_replacing(void)
+{
+    char name[64];
+    char heading[96];
+    char detail[128];
+    char peer[40];
+
+    if (!now_wire_send_pending_replace(name, sizeof name)) {
+        return;
+    }
+    conn_peer_label(peer, sizeof peer);
+    snprintf(heading, sizeof heading, "Replace \"%.31s\"?", name);
+    snprintf(detail, sizeof detail,
+             "%.20s already has a file with this name. The old one goes "
+             "to its Trash.", peer);
+    now_wire_send_resolve_replace(now_confirm(heading, detail, "Replace"));
+}
+
 int main(void)
 {
     EventRecord event;
@@ -345,6 +370,7 @@ int main(void)
     while (g_running) {
         conn_service();
         share_panel_idle();
+        ask_about_replacing();
         if (!WaitNextEvent(everyEvent, &event,
                            conn_wants_fast_pump() ? 0 : 6, NULL)) {
             continue;
