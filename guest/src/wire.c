@@ -1489,9 +1489,12 @@ int now_wire_send_file(const FSSpec *spec, char *err, long cap)
         now_json_escape(stage.name, esc_name, sizeof esc_name);
         now_json_escape(type, esc_type, sizeof esc_type);
         now_json_escape(creator, esc_creator, sizeof esc_creator);
+        /* path is REQUIRED by the contract — "" means the root of the
+           receiver's share. Leaving it out cost a dropped connection:
+           the host could not decode the frame at all. */
         snprintf(json, sizeof json,
                  "{\"type\":\"file.offer\",\"id\":%ld,\"name\":\"%s\","
-                 "\"container\":\"%s\",\"bytes\":%ld,"
+                 "\"path\":\"\",\"container\":\"%s\",\"bytes\":%ld,"
                  "\"fileType\":\"%s\",\"creator\":\"%s\","
                  "\"modified\":%lu}",
                  g_send.id, esc_name,
@@ -1523,10 +1526,20 @@ static void send_accepted(const char *reply)
         return;
     }
     xfer = next_xfer();
-    snprintf(json, sizeof json,
-             "{\"type\":\"file.begin\",\"id\":%ld,\"transfer\":%u,"
-             "\"bytes\":%ld}",
-             g_send.id, xfer, g_send.stage.total_bytes);
+    {
+        char esc_name[200];
+
+        /* name and container are REQUIRED here as well; a frame the
+           receiver cannot decode costs the whole connection. */
+        now_json_escape(g_send.name, esc_name, sizeof esc_name);
+        snprintf(json, sizeof json,
+                 "{\"type\":\"file.begin\",\"id\":%ld,\"transfer\":%u,"
+                 "\"name\":\"%s\",\"container\":\"%s\",\"bytes\":%ld}",
+                 g_send.id, xfer, esc_name,
+                 g_send.stage.container == kContainerMacBinary
+                     ? "macbinary" : "data",
+                 g_send.total);
+    }
     if (!send_control(json)) {
         send_cleanup();
         return;

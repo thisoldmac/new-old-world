@@ -1162,7 +1162,20 @@ final class Session {
         do {
             message = try ControlMessageCodec.decode(payload)
         } catch {
-            protocolError("bad control message: \(error)")
+            /* A frame we cannot read is not a reason to drop a working
+               connection. These two halves ship separately: a verb one
+               side has learned and the other has not would otherwise
+               brick the older peer, and a single missing field would
+               take down a transfer that was fine — which is exactly the
+               shape of bug this cost us once already, where the visible
+               symptom was "the connection dropped and nothing arrived".
+               The hello handshake below stays strict; after that, we
+               say loudly what we could not read and keep the wire. */
+            if !helloed {
+                protocolError("bad control message: \(error)")
+                return
+            }
+            onLog("ignored an unreadable control message: \(error)")
             return
         }
         guard helloed else {

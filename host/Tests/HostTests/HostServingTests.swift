@@ -147,6 +147,35 @@ final class HostServingTests: XCTestCase {
         XCTAssertEqual(refuse.code, "not-found")
     }
 
+    // MARK: - Surviving each other
+
+    /// A frame the host cannot read must not cost the connection: the
+    /// two halves ship separately, and this exact shape — an offer
+    /// missing a required field — dropped the wire and made a working
+    /// send look like it did nothing.
+    func testAnUnreadableFrameDoesNotDropTheConnection() async throws {
+        let guest = try await connectedGuest()
+        // file.offer with no path, which is what the guest used to send.
+        guest.sendRaw(try FrameCodec.encode(
+            channel: .control,
+            payload: Data(#"{"type":"file.offer","id":9,"name":"X","#.utf8)
+                + Data(#""container":"data","bytes":4}"#.utf8)))
+        // A verb this host has never heard of.
+        guest.sendRaw(try FrameCodec.encode(
+            channel: .control,
+            payload: Data(#"{"type":"file.telepathy","id":10}"#.utf8)))
+
+        // Still connected, and still answering.
+        try guest.send(.ping(id: 11))
+        try await waitUntil("a pong") {
+            guest.received.contains { if case .pong = $0 { return true }
+                                      else { return false } }
+        }
+        if case .connected = listener.state {} else {
+            XCTFail("the connection did not survive")
+        }
+    }
+
     // MARK: - Pushing
 
     func testGuestCanSendAFileAndItLandsInTheShare() async throws {
