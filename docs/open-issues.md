@@ -77,6 +77,66 @@ working on the PowerBook.
   untested on metal; it is `kAENoReply` so it should not block, but that
   is reasoning rather than evidence.
 
+## The host's receiving half is sender-only
+
+Found by an altitude review 2026-07-20; the largest thing on this list.
+
+The host as a SENDER got the full treatment: a resume token on the
+offer, honouring `have`, an offset on `file.begin`, a CRC on `file.end`,
+and a send window clocked on the guest's `file.progress`. The host as a
+RECEIVER got none of it. It accumulates the whole file in memory,
+writes once at the end, and checks only that the byte count matches. It
+never sends `file.progress`, never offers a resume point, and never
+verifies the CRC the sender may have sent.
+
+The guest does all three. So the same `file.offer` behaves differently
+depending on which machine receives it, which is exactly what the
+contract says must not happen.
+
+The consequence is not only symmetry. **A sender needs the receiver's
+count to clock against**, and that clock is what stops the send buffer
+backlogging into the 340 KB/s → 5 KB/s collapse that
+`docs/large-transfers.md` explains. The host does not send progress, so
+in the guest → host direction nothing bounds the guest's sending. The
+fix for that pathology landed on one side of a symmetric protocol.
+
+The shape of the fix is one job, not three: make the inbound side a
+streaming sink — a file handle, a running CRC, a received count — and
+progress, CRC verification, and eventually resume all fall out of it.
+Two other things point at the same refactor: the bulk branch keeps THREE
+parallel accumulators (a push, a pull, a capture) for a wire that
+carries one transfer at a time, and `TransferIdentity.CRC32` is a
+streaming checksum with no streaming caller, written for exactly this
+and left when it was not built.
+
+One contract edit goes with it: `FileProgress` says "sent by the guest
+while it receives a put", which contradicts the symmetry the same
+document asserts and is probably how this drifted. It should say
+"sent by the receiver".
+
+## Structural work deferred on the host
+
+A cleanup pass (2026-07-20) applied what was cheap and left three
+extractions from `GuestListener.swift`, which is 2094 lines:
+
+- `Session` is built with 28 `on...` closures, 25 of which only forward
+  to a listener method. A `weak var owner` or a delegate protocol
+  collapses about 180 lines, and adding a message stops meaning edits in
+  four places.
+- The share-serving block (~140 lines) touches only `share`, `session`
+  and `state`. It is a file server living inside a listener.
+- The outbound write path (~400 lines) shares one invariant — nothing
+  may write to the connection while a bulk frame is half-written —
+  currently enforced by a flag two unrelated methods must remember to
+  check. As its own type the flag cannot be forgotten.
+
+These were skipped on purpose. Two reviews proposed DIFFERENT
+reorganisations of the same file, and the receiving-half work above
+implies a third (one transfer sink rather than three accumulators).
+Doing any one now makes the others harder, and only the receiving half
+has a consequence beyond tidiness. Whoever takes that should take these
+with it.
+
 ## Rough edges
 
 **A send stages the whole file in RAM.** Pulling streams to disk, but
