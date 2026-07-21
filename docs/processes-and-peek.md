@@ -193,7 +193,10 @@ the UI learns to render them before the extension exists.
 
 One file, one installer checkbox, one restart story. Not tbt's
 sibling-INITs shape — but it must keep the two things that shape was
-buying, by internal discipline instead of separate binaries.
+buying, by internal discipline instead of separate binaries. The
+family charter — tiers, table rules, identity codes, verification
+gates — is [resident-components.md](resident-components.md); this
+section is the ladder-specific view.
 
 ### Domain rules
 

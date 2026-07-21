@@ -36,7 +36,9 @@ add_application(now-guest
     resources/app.r
 )
 
-target_include_directories(now-guest PRIVATE src)
+# contract/ carries the in-memory table header shared with the (future)
+# 68K extension build - the wire contract's sibling.
+target_include_directories(now-guest PRIVATE src ../contract)
 target_compile_options(now-guest PRIVATE
     -Wall
     -Wextra
