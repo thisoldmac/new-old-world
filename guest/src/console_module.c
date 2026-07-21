@@ -390,14 +390,17 @@ static void console_draw(void)
 
 static Boolean console_click(const EventRecord *event, Point local)
 {
-    ControlRef control = NULL;
+    ControlRef control;
     ControlPartCode part;
 
     (void)event;
     if (g_owner == NULL || !g_visible) {
         return false;
     }
-    part = FindControl(local, g_owner, &control);
+    /* FindControlUnderMouse, not FindControl: the window has a root
+       control now, and FindControl does not understand embedding. It
+       reports the part through the same out-parameter. */
+    control = FindControlUnderMouse(local, g_owner, &part);
     if (control == g_scroll) {
         if (part == kControlIndicatorPart) {
             /* The thumb tracks as an outline and reports at release. */

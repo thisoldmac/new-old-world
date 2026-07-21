@@ -81,19 +81,34 @@ dials the gateway, and the UI must stay alive.
 
 **The Connection fields were dead once Connection became a page**
 (fixed 2026-07-21, `claude/processes-module-cb2d9c`). Address and port
-took no clicks: they are embedded in the "Other Mac" group-box control,
-and the Workshop window gains a control-embedding hierarchy the moment
-any page builds a Data Browser (Files, Processes), which forces a root
-control onto the shared window. `FindControl` predates embedding and
-returned the enclosing group box, so `control == g_addr` never matched.
-`conn_click` now uses `FindControlUnderMouse`. Worked as a standalone
-dialog because there was no Data Browser and no root control; the
-unification is what exposed it. The mute-on-metal bug that prompted it
-WAS watched on the machine; **the fix itself is unverified on metal** -
-build and suites pass, but no one has yet clicked into the fields with
-this build. Other pages are clear: only Connection nests interactive
-controls in a group box; the Processes group box embeds nothing and its
-buttons hit-test by `PtInRect`.
+took no clicks. The real cause, after two wrong guesses: the Workshop
+window had **no root control**, so it had no control-embedding
+hierarchy, so `SetKeyboardFocus` could not work and an edit-text
+control could take neither focus, clicks, nor keystrokes. This is the
+same wall the Console hit on metal - "the edit-text field never took a
+keystroke" - which is why it hand-rolled its input. Connection is the
+only page that uses edit-text controls; every other page's controls
+(buttons, checkboxes, popups, Data Browser, scrollbar) respond through
+`TrackControl`/`HandleControlClick`, which need no focus, so only
+Connection was affected.
+
+The fix creates one root control on the window at creation
+(`workshop_open`), before any module builds controls, so the hierarchy
+is present and identical for every page rather than appearing only
+after a Data Browser page implicitly made one. With a hierarchy in
+place, `FindControl` is wrong everywhere - it does not understand
+embedding - so all Workshop-window click handlers moved to
+`FindControlUnderMouse` (Screenshots, Files share, Console,
+Connection). That call is correct with or without a hierarchy, so the
+conversion cannot regress the pages that already worked. `confirm.c`
+keeps `FindControl`: it runs on its own dialog window, which has no
+root control.
+
+**Unverified on metal.** Build clean, host suite and native tests
+green, but the whole point is keyboard focus on the real machine: only
+the PowerBook (or 3400c) proves the fields now edit AND that
+Screenshots/Files/Console still take their clicks under the new
+hierarchy. Re-check all four pages, not just Connection.
 
 **Type-select does nothing in the browser list.** Selection,
 double-click and header sorting all work; typing a letter does not jump.

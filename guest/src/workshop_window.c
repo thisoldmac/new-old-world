@@ -169,6 +169,21 @@ Boolean workshop_open(void)
     SetWTitle(g_window, title);
     SetThemeWindowBackground(g_window, kThemeBrushDialogBackgroundActive,
                              true);
+    /* One root control for the whole window, before any module builds
+       its controls. Without it the window has no control-embedding
+       hierarchy, so SetKeyboardFocus fails and edit-text controls take
+       neither clicks nor keystrokes - the Connection fields were dead
+       and the Console had to hand-roll its input for the same reason.
+       Creating it here (rather than letting a Data Browser page create
+       one implicitly, which made the hierarchy depend on navigation
+       order) means every page sees the same window. Modules must hit-
+       test with FindControlUnderMouse, never FindControl, which does
+       not understand embedding. */
+    {
+        ControlRef root = NULL;
+
+        CreateRootControl(g_window, &root);
+    }
     compute_layout();
     if (!workshop_sidebar_create(g_window, &g_lay, on_sidebar_select)) {
         DisposeWindow(g_window);
