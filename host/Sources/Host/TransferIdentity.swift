@@ -17,18 +17,31 @@ enum TransferIdentity {
         }
     }()
 
-    /// Running CRC-32, so a large file is checksummed without a second
-    /// copy of it in memory.
+
+    /// A checksum taken in pieces.
+    ///
+    /// The guest necessarily computes it in arrival-sized chunks, so
+    /// this side must be able to do the same and agree. Nothing in the
+    /// host streams yet — it accumulates a whole file in memory and
+    /// checksums it at the end — which is a gap rather than a reason to
+    /// delete this: see docs/open-issues.md, "the host's receiving half
+    /// is sender-only". Its equality with the one-shot form is tested
+    /// across arbitrary splits.
     struct CRC32 {
         private var value: UInt32 = 0xFFFF_FFFF
 
         init() {}
 
         mutating func update(_ bytes: Data) {
+            /* Over a raw buffer rather than Data's iterator: this runs
+               over whole multi-megabyte files on the main actor, and the
+               iterator costs about an order of magnitude per byte. */
             var v = value
-            for b in bytes {
-                v = TransferIdentity.table[Int((v ^ UInt32(b)) & 0xFF)]
-                    ^ (v >> 8)
+            bytes.withUnsafeBytes { raw in
+                for byte in raw {
+                    v = TransferIdentity.table[Int((v ^ UInt32(byte)) & 0xFF)]
+                        ^ (v >> 8)
+                }
             }
             value = v
         }
@@ -55,6 +68,13 @@ enum TransferIdentity {
     /// accepting it, so a collision costs a wasted transfer, never a
     /// corrupt file.
     static func resumeToken(for bytes: Data) -> String {
-        String(format: "%d-%08x", bytes.count, crc32(bytes))
+        token(bytes: bytes.count, crc32: crc32(bytes))
+    }
+
+    /// The same token from a checksum already computed. A caller that
+    /// needs the CRC anyway must not pay for a second pass over the
+    /// whole file to get the token as well.
+    static func token(bytes: Int, crc32: UInt32) -> String {
+        String(format: "%d-%08x", bytes, crc32)
     }
 }

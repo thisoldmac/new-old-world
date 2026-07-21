@@ -126,10 +126,15 @@ final class HostShareTests: XCTestCase {
         XCTAssertEqual(Set(seen).count, 40, "no entry served twice")
     }
 
-    /// Names that leave ASCII are escaped to \\uXXXX and cost six bytes
-    /// a character, so a page that fits when counted in entries can
-    /// still not fit when counted in bytes. This is the case that made
-    /// the byte bound necessary rather than theoretical.
+    /// The byte bound cuts a page short when the entries are heavy
+    /// enough.
+    ///
+    /// The cap is lowered to force it. At the real 4096 a page of
+    /// sixteen 31-character names does not come near the limit — the
+    /// original failure was the GUEST's 1200-byte receive buffer, not
+    /// this cap — so testing it at 4096 would assert a threshold that
+    /// cannot be crossed, which is a test that passes for the wrong
+    /// reason.
     func testAPageOfHeavyNamesIsCutShortByBytes() throws {
         for i in 0..<20 {
             // 31 characters, the most the other machine can hold, all
@@ -137,6 +142,7 @@ final class HostShareTests: XCTestCase {
             try write(String(format: "%02d-", i)
                       + String(repeating: "\u{e9}", count: 28), "x")
         }
+        share.maxListingBytes = 900
         let page = try share.list(path: "", cursor: 1, limit: 16)
         XCTAssertLessThan(page.entries.count, 16,
                           "heavy names must cut the page short of the count")
@@ -145,7 +151,14 @@ final class HostShareTests: XCTestCase {
         let encoded = try ControlMessageCodec.encode(.fileListing(
             FileListing(id: 1, path: "", entries: page.entries,
                         more: page.more, cursor: page.next, root: root.path)))
-        XCTAssertLessThanOrEqual(encoded.count, 4096)
+        XCTAssertLessThanOrEqual(encoded.count, 900,
+                                 "and what it serves fits the cap it was given")
+
+        // A single entry over the cap still goes: serving nothing would
+        // stall the browse forever.
+        share.maxListingBytes = 1
+        XCTAssertEqual(try share.list(path: "", cursor: 1, limit: 16)
+            .entries.count, 1)
     }
 
     func testListingAFileIsRefused() throws {

@@ -33,6 +33,21 @@ final class HostShare {
         set { defaults.set(newValue.path, forKey: Self.key) }
     }
 
+    /// One error, mapped once. Two envelopes carry it — file.refuse for
+    /// a request we will not serve, file.result for a change that
+    /// failed — and both used to re-derive the same two expressions,
+    /// so a new ShareError case would have taught only one of them.
+    struct WireFault {
+        let code: String
+        let reason: String
+
+        init(_ error: Error) {
+            let known = error as? HostShare.ShareError
+            code = known?.code ?? "io-error"
+            reason = known?.message ?? "\(error)"
+        }
+    }
+
     enum ShareError: Error {
         case badPath, notFound, notADirectory, exists, io(String)
 
@@ -130,21 +145,24 @@ final class HostShare {
                 modified: values?.contentModificationDate
                     .flatMap(ClassicDate.macSeconds(from:)))
         }
-        /* A page is bounded by BYTES as well as by count. The wire caps
-           a control frame at 4 KB, and sixteen long names plus their
-           types and dates can exceed that — at which point the reader
-           either drops the message or, as happened here, the whole
-           connection. Counting entries is not the same as counting what
-           they weigh. */
+        /* A page is bounded by BYTES as well as by count: sixteen long
+           names plus their types and dates can exceed the control-frame
+           cap, and a message the receiver cannot hold used to cost the
+           whole connection.
+
+           The size is MEASURED by encoding the candidate page, not
+           estimated. An estimate is a second, approximate copy of the
+           codec's rules, and it drifts silently the first time a field
+           is added to an entry — in whichever direction is not safe. */
         var page: [FileEntry] = []
-        var bytes = Self.listingOverhead
         for entry in entries {
-            let size = Self.encodedSize(of: entry)
-            if !page.isEmpty && bytes + size > Self.maxListingBytes {
-                break
-            }
+            let candidate = page + [entry]
+            let probe = FileListing(id: 0, path: path, entries: candidate,
+                                    more: true, cursor: 0, root: root.path)
+            let size = (try? ControlMessageCodec.encode(.fileListing(probe)))?
+                .count ?? Int.max
+            if !page.isEmpty && size > maxListingBytes { break }
             page.append(entry)
-            bytes += size
         }
         let served = start + page.count
         return (page, served < contents.count, served + 1)
@@ -261,20 +279,16 @@ final class HostShare {
 
     /// The contract's control-frame cap, less room for the envelope the
     /// entries sit in (type, path, cursor, root, and the share label).
-    private static let maxListingBytes = 4096
-    private static let listingOverhead = 512
+    /// The contract's control-frame cap. A listing must fit in one.
+    ///
+    /// With a 16-entry page and names the other machine can hold (31
+    /// characters), a real listing does not come close — so this bound
+    /// is defence against a future page size or a longer name, not
+    /// something the current shape reaches. Settable so a test can prove
+    /// the mechanism works rather than assert a threshold that cannot be
+    /// crossed.
+    var maxListingBytes = 4096
 
-    /// What one entry costs on the wire, near enough to bound a page by.
-    /// Deliberately an over-estimate: being one entry conservative costs
-    /// a round trip, being one entry optimistic costs the message.
-    private static func encodedSize(of entry: FileEntry) -> Int {
-        // Names are escaped to \uXXXX when they leave ASCII, so a
-        // character can cost six bytes.
-        let name = entry.name.unicodeScalars.reduce(0) {
-            $0 + ($1.isASCII ? 1 : 6)
-        }
-        return name + 120
-    }
 
     /// Reads a file for the other machine, converted the way a download
     /// is: this is the same journey, in the same direction, started from
@@ -289,8 +303,16 @@ final class HostShare {
         guard let data = try? Data(contentsOf: url) else {
             throw ShareError.io("could not read that file")
         }
-        return OutboundFile.plan(url: url, data: data,
-                                 convertText: convertText)
+        var plan = OutboundFile.plan(url: url, data: data,
+                                     convertText: convertText)
+        /* Taken here, where the file was already resolved and read.
+           Asking for it afterwards meant resolving the path a second
+           time — and resolve reads a default and walks symlinks. */
+        plan.modified = (try? url.resourceValues(
+            forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate
+            .flatMap(ClassicDate.macSeconds(from:))
+        return plan
     }
 
     /// Where an incoming file should be written. The name arrives in

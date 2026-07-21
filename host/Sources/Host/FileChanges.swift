@@ -302,7 +302,6 @@ extension FilesModuleModel {
 /// Path arithmetic for the guest's share: colon-separated, relative to
 /// the share root, and bounded by what HFS will accept.
 enum FileChangeNames {
-    static let maxNameLength = 31
 
     static func leaf(_ path: String) -> String {
         path.split(separator: ":").last.map(String.init) ?? path
@@ -321,9 +320,22 @@ enum FileChangeNames {
 
     /// A name HFS will take, or nil. Colons are the separator, so a name
     /// containing one is not a name.
+    /// What a person is told the limit is. The enforced rule is
+    /// `hfsName`, which counts BYTES — this is the same number in the
+    /// common case and the honest way to say it in a sentence.
+    static let maxNameLength = 31
+
+    /// A name is acceptable exactly when the conversion would leave it
+    /// alone.
+    ///
+    /// This used to have its own rule — no colon, 31 CHARACTERS — while
+    /// `OutboundFile.hfsName` enforced 31 BYTES. An accented name of 31
+    /// characters passed here and was then silently truncated on the way
+    /// out, so the file that arrived was not the one that was named. Two
+    /// spellings of one rule always drift; this asks the rule itself.
     static func validate(_ name: String) -> String? {
-        guard !name.isEmpty, !name.contains(":"),
-              name.count <= maxNameLength else { return nil }
+        guard !name.isEmpty, !name.contains(HostShare.separator),
+              OutboundFile.hfsName(name) == name else { return nil }
         return name
     }
 

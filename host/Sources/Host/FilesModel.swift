@@ -244,6 +244,22 @@ final class FilesModuleModel: ObservableObject {
             }
     }
 
+    /// The rows in display order, sorted once per change rather than
+    /// once per `body`. A transfer republishes progress per frame, and
+    /// sorting the listing on every one of those is work nothing asked
+    /// for — the listing did not change.
+    private var sortCache: (order: [KeyPathComparator<FileRow>],
+                            rows: [FileRow], sorted: [FileRow])?
+
+    func sorted(using order: [KeyPathComparator<FileRow>]) -> [FileRow] {
+        if let cache = sortCache, cache.order == order, cache.rows == rows {
+            return cache.sorted
+        }
+        let sorted = rows.sorted(using: order)
+        sortCache = (order, rows, sorted)
+        return sorted
+    }
+
     // MARK: - Browsing
 
     func refresh() {
