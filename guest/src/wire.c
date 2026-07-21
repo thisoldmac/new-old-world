@@ -2865,6 +2865,16 @@ Boolean now_wire_stream_active(void)
     return g_stream.active;
 }
 
+long now_wire_stream_interval_ms(void)
+{
+    if (!g_stream.active) {
+        return -1;
+    }
+    /* Ticks back to ms; the rounding-up at arrival means this can read
+       a hair over what the host asked, which is the honest direction. */
+    return g_stream.min_interval_ticks * 1000L / 60L;
+}
+
 /* The panel's Stop: guest ends its own bracket - stream.stopped without a
    reason reads as a clean stop on the host. */
 void now_wire_stream_stop(void)

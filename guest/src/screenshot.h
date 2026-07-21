@@ -27,4 +27,10 @@ typedef struct {
 int now_screenshot(short depth, short bands, Boolean save, ShotStats *stats,
                    char *err, long err_cap);
 
+/* The most recent capture, scaled to preview size while the full pixels
+   still existed. Owned by the screenshot path: replaced on the next
+   capture, NULL before the first. bounds gets the preview's own
+   coordinate space when the preview exists. */
+GWorldPtr now_screenshot_preview(Rect *bounds);
+
 #endif

@@ -14,7 +14,7 @@ add_application(now-guest
     src/screenshot.c
     src/vprobe.c
     src/pixels.c
-    src/shots_panel.c
+    src/screenshots_module.c
     src/share_panel.c
     src/confirm.c
     src/host_browser.c

@@ -174,6 +174,12 @@ int now_wire_stream_request(char *err, long cap);
 /* True while a stream bracket is open (either origin). */
 Boolean now_wire_stream_active(void);
 
+/* The active stream's negotiated minimum frame interval in ms: -1 when
+   no stream is running, 0 when the host asked for no floor. Wire
+   revision 1 makes this the HOST's number (stream.start); the guest
+   only reports it. */
+long now_wire_stream_interval_ms(void);
+
 /* Ends the guest's current stream cleanly (stream.stopped, no reason). */
 void now_wire_stream_stop(void);
 

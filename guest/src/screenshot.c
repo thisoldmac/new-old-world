@@ -114,6 +114,78 @@ static OSErr save_pict(PicHandle pic, char *name_out, long name_cap)
     return err;
 }
 
+/* The latest capture, scaled once for the Workshop's preview well while
+   the full-screen pixels still exist - never by recapturing, and never
+   at full size. Owned here; each capture replaces the last. */
+static GWorldPtr g_preview;
+static Rect g_preview_bounds;
+
+enum {
+    kPreviewMaxW = 400,
+    kPreviewMaxH = 300
+};
+
+static void update_preview(CaptureImage *image)
+{
+    CGrafPtr saved_port;
+    GDHandle saved_device;
+    PixMapHandle src_pixels;
+    PixMapHandle dst_pixels;
+    GWorldPtr world = NULL;
+    Rect dst;
+    long w = image->bounds.right - image->bounds.left;
+    long h = image->bounds.bottom - image->bounds.top;
+    long pw = kPreviewMaxW;
+    long ph;
+    RGBColor black = { 0, 0, 0 };
+    RGBColor white = { 0xFFFF, 0xFFFF, 0xFFFF };
+
+    if (g_preview != NULL) {
+        DisposeGWorld(g_preview);
+        g_preview = NULL;
+    }
+    if (w <= 0 || h <= 0) {
+        return;
+    }
+    ph = h * pw / w;
+    if (ph > kPreviewMaxH) {
+        ph = kPreviewMaxH;
+        pw = w * ph / h;
+    }
+    SetRect(&dst, 0, 0, (short)pw, (short)ph);
+    if (NewGWorld(&world, image->depth, &dst, NULL, NULL, 0) != noErr
+        || world == NULL) {
+        return;                       /* the preview is optional */
+    }
+    src_pixels = GetGWorldPixMap(image->world);
+    dst_pixels = GetGWorldPixMap(world);
+    if (src_pixels == NULL || dst_pixels == NULL
+        || !LockPixels(src_pixels) || !LockPixels(dst_pixels)) {
+        DisposeGWorld(world);
+        return;
+    }
+    GetGWorld(&saved_port, &saved_device);
+    SetGWorld(world, NULL);
+    RGBForeColor(&black);
+    RGBBackColor(&white);
+    CopyBits(GetPortBitMapForCopyBits(image->world),
+             GetPortBitMapForCopyBits(world),
+             &image->bounds, &dst, srcCopy, NULL);
+    SetGWorld(saved_port, saved_device);
+    UnlockPixels(src_pixels);
+    UnlockPixels(dst_pixels);
+    g_preview = world;
+    g_preview_bounds = dst;
+}
+
+GWorldPtr now_screenshot_preview(Rect *bounds)
+{
+    if (g_preview != NULL && bounds != NULL) {
+        *bounds = g_preview_bounds;
+    }
+    return g_preview;
+}
+
 int now_screenshot(short depth, short bands, Boolean save, ShotStats *stats,
                    char *err, long err_cap)
 {
@@ -190,6 +262,7 @@ int now_screenshot(short depth, short bands, Boolean save, ShotStats *stats,
             return kCapturePixelsUnavailable;
         }
     }
+    update_preview(&image);
     KillPicture(pic);
     capture_image_dispose(&image);
     return 0;

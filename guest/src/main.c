@@ -11,7 +11,7 @@
 #include "product_identity.h"
 #include "share_panel.h"
 #include "pump.h"
-#include "shots_panel.h"
+#include "screenshots_module.h"
 #include "prefs.h"
 #include "wire.h"
 #include "workshop_layout.h"
@@ -195,7 +195,7 @@ static Boolean is_our_window(WindowRef window)
 {
     return window != NULL
         && (share_panel_is(window) || host_browser_is(window)
-            || shots_panel_is(window) || workshop_is(window));
+            || workshop_is(window));
 }
 
 static void set_window_active(WindowRef window, Boolean active)
@@ -207,8 +207,6 @@ static void set_window_active(WindowRef window, Boolean active)
         share_panel_activate(active);
     } else if (host_browser_is(window)) {
         host_browser_activate(active);
-    } else if (shots_panel_is(window)) {
-        shots_panel_activate(active);
     } else if (workshop_is(window)) {
         workshop_activate(active);
     }
@@ -226,36 +224,8 @@ static void close_front_window(void)
         host_browser_close();
         return;
     }
-    if (shots_panel_is(front)) {
-        shots_panel_close(true);
-    } else if (workshop_is(front)) {
+    if (workshop_is(front)) {
         workshop_close();
-    }
-}
-
-/* The session (which windows are open, and where the panel sits) rides in
-   the prefs file, so a relaunch restores what was on screen. */
-static void save_session(void)
-{
-    NowPrefs prefs;
-    Rect bounds;
-
-    now_prefs_load(&prefs);
-    prefs.panel_open = shots_panel_ref() != NULL;
-    if (shots_panel_ref() != NULL) {
-        GetWindowBounds(shots_panel_ref(), kWindowContentRgn, &bounds);
-        prefs.panel_rect = bounds;
-    }
-    now_prefs_save(&prefs);
-}
-
-static void restore_session(void)
-{
-    NowPrefs prefs;
-
-    now_prefs_load(&prefs);
-    if (prefs.panel_open) {
-        shots_panel_open();
     }
 }
 
@@ -280,7 +250,9 @@ static void handle_menu_choice(long choice)
         if (LoWord(choice) == kWindowsWorkshopItem) {
             workshop_open();
         } else if (LoWord(choice) == kWindowsScreenshotsItem) {
-            shots_panel_open();
+            if (workshop_open()) {
+                workshop_select_module(kWorkshopScreenshots);
+            }
         } else if (LoWord(choice) == kWindowsConsoleItem) {
             /* The Console lives in the Workshop now. */
             if (workshop_open()) {
@@ -388,25 +360,6 @@ static void handle_mouse_down(const EventRecord *event)
         }
         return;
     }
-    if (shots_panel_is(window)) {
-        if (part == inDrag) {
-            DragWindow(window, event->where, &g_screen_bounds);
-        } else if (part == inGoAway) {
-            if (TrackGoAway(window, event->where)) {
-                shots_panel_close(true);
-            }
-        } else if (part == inContent) {
-            if (window != FrontWindow()) {
-                SelectWindow(window);
-                return;
-            }
-            local = event->where;
-            SetPortWindowPort(window);
-            GlobalToLocal(&local);
-            shots_panel_click(local);
-        }
-        return;
-    }
 }
 
 static void handle_key_down(const EventRecord *event)
@@ -469,11 +422,10 @@ int main(void)
     }
     compute_screen_bounds();
     create_menu_bar();
-    restore_session();
-    /* The Workshop is the primary window; the old module windows stay
-       reachable from the menus until each one moves in. If the shell
-       cannot build its navigation, say so once - the rest of the app
-       still works the old way. */
+    /* The Workshop is the primary window; the remaining old module
+       windows stay reachable from the menus until each one moves in. If
+       the shell cannot build its navigation, say so once - the rest of
+       the app still works the old way. */
     if (!workshop_open()) {
         static const unsigned char k_empty[] = { 0 };
         Str255 message;
@@ -485,7 +437,7 @@ int main(void)
     }
     conn_init();
     now_log_open();
-    conn_set_shot_note(shots_panel_note);
+    conn_set_shot_note(screenshots_module_note);
     conn_set_file_note(share_panel_note);
     conn_set_listing(host_browser_listing);
     conn_set_get_note(host_browser_note);
@@ -527,11 +479,7 @@ int main(void)
             handle_key_down(&event);
             break;
         case updateEvt:
-            if (shots_panel_is((WindowRef)event.message)) {
-                BeginUpdate(shots_panel_ref());
-                shots_panel_draw();
-                EndUpdate(shots_panel_ref());
-            } else if (share_panel_is((WindowRef)event.message)) {
+            if (share_panel_is((WindowRef)event.message)) {
                 BeginUpdate(share_panel_ref());
                 share_panel_draw();
                 EndUpdate(share_panel_ref());
@@ -565,7 +513,6 @@ int main(void)
         }
     }
 
-    save_session();
     conn_shutdown();
     now_log_close();
     now_pump_shutdown();
@@ -578,7 +525,6 @@ int main(void)
         DisposeAEEventHandlerUPP(quit_handler);
         quit_handler = NULL;
     }
-    shots_panel_close(false);
     workshop_close();
     return 0;
 }
