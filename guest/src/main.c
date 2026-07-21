@@ -6,6 +6,7 @@
 
 #include "confirm.h"
 #include "host_browser.h"
+#include "nowlog.h"
 #include "console_win.h"
 #include "fileshare.h"
 #include "product_identity.h"
@@ -382,6 +383,7 @@ int main(void)
     create_menu_bar();
     restore_session();
     conn_init();
+    now_log_open();
     conn_set_shot_note(shots_panel_note);
     conn_set_file_note(share_panel_note);
     conn_set_listing(host_browser_listing);
@@ -441,6 +443,7 @@ int main(void)
 
     save_session();
     conn_shutdown();
+    now_log_close();
     now_pump_shutdown();
     AERemoveEventHandler(kCoreEventClass, kAEQuitApplication,
                          quit_handler, false);

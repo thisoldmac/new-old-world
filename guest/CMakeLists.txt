@@ -19,6 +19,7 @@ add_application(now-guest
     src/host_browser.c
     src/ot_carbon.c
     src/json.c
+    src/nowlog.c
     src/wire.c
     src/prefs.c
     src/settings_dialog.c

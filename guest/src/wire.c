@@ -8,6 +8,7 @@
 #include "fileshare.h"
 #include "commands.h"
 #include "json.h"
+#include "nowlog.h"
 #include "pixels.h"
 #include "contract.h"
 #include "ot_carbon.h"
@@ -202,6 +203,7 @@ static void close_endpoint(void)
 /* Move to backoff after a failure; status keeps the reason already set. */
 static void enter_backoff(void)
 {
+    now_log(kLogWarn, "wire", "disconnected: %.60s", g.last_fail);
     xfer_cleanup();                   /* a dropped link cancels any transfer */
     offer_cleanup();
     stream_drop();                    /* no stopped message on a dead wire */
@@ -513,6 +515,8 @@ static int next_frame(char *payload_out, long cap)
         g.discard_remaining = (long)length;
         snprintf(g.status, sizeof g.status,
                  "Ignored a %lu-byte message (too big to read)", length);
+        now_log(kLogWarn, "wire", "skipped a %lu-byte control frame: bigger "
+                "than this buffer holds", length);
         payload_out[0] = '\0';
         return 0;
     }
@@ -1265,6 +1269,8 @@ static void file_refuse(long id, const char *code, const char *reason)
 {
     char json[256];
 
+    now_log(kLogWarn, "files", "refused %ld: %s (%.60s)", id, code, reason);
+
     snprintf(json, sizeof json,
              "{\"type\":\"file.refuse\",\"id\":%ld,\"code\":\"%s\","
              "\"reason\":\"%.120s\"}", id, code, reason);
@@ -1741,6 +1747,7 @@ static void get_begin(const char *reply)
     }
     g_get.receiving = true;
     g_get.deadline = TickCount() + kGetTimeoutTicks;
+    now_log(kLogInfo, "get", "%.31s, %ld bytes", g_get.name, g_get.expected);
     snprintf(line, sizeof line, "Getting %.31s...", g_get.name);
     get_note(line);
 }
@@ -1891,6 +1898,8 @@ int now_wire_send_file(const FSSpec *spec, char *err, long cap)
     }
     g_send.active = true;
     g_send.deadline = TickCount() + kSendTimeoutTicks;
+    now_log(kLogInfo, "send", "offering %.31s, %ld bytes", stage.name,
+            stage.total_bytes);
     conn_peer_label(peer, sizeof peer);
     snprintf(line, sizeof line, "Asking %.20s to accept %.31s...",
              peer, stage.name);

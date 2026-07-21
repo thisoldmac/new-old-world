@@ -121,6 +121,11 @@ final class GuestListener: ObservableObject {
         if ProcessInfo.processInfo.environment["NOW_HOST_DEBUG"] != nil {
             FileHandle.standardError.write(Data("[now-host] \(text)\n".utf8))
         }
+        /* The window keeps the last hundred lines; the file keeps all of
+           them. Everything worth knowing after the fact — what happened
+           before you looked, and what happened after you quit — is only
+           in the second one. */
+        HostLog.shared.write(text)
         log.append(LogEntry(at: Date(), text: text))
         if log.count > Self.logLimit {
             log.removeFirst(log.count - Self.logLimit)

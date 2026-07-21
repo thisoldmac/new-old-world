@@ -11,6 +11,7 @@
 #include "screenshot.h"
 #include "fileshare.h"
 #include "wire.h"
+#include "nowlog.h"
 #include "build_stamp.h"
 #include "vprobe.h"
 
@@ -137,6 +138,13 @@ static void help_for(const char *name)
         append_line("  lists the root itself. The root is chosen in");
         append_line("  File > File Sharing... and defaults to the");
         append_line("  startup volume; nothing outside it is reachable.");
+    } else if (strcmp(name, "tail") == 0) {
+        append_line("tail - the last lines of this launch's log");
+        append_line("  Usage: tail [lines]   (default 20, most 40)");
+        append_line("  The log is a file per launch in a \"now-logs\"");
+        append_line("  folder beside this application, so what happened");
+        append_line("  survives a crash that takes everything else. The");
+        append_line("  same command works from the other Mac's console.");
     } else if (strcmp(name, "put") == 0) {
         append_line("put - send a file to the host");
         append_line("  Usage: put <full path>");
@@ -195,6 +203,7 @@ static void help_list(void)
     append_line("              --no-save)");
     append_line("  ls          list a shared folder (ls [path])");
     append_line("  put         send a file to the host (put <full path>)");
+    append_line("  tail        the last lines of this launch's log");
     append_line("  mv          move or rename (mv <path> <new path>)");
     append_line("  trash       move to the Trash (trash <path>)");
     append_line("  untrash     put back (untrash <trash name> <path>)");
@@ -551,6 +560,35 @@ static void run_command(const char *input)
             append_line("  (empty)");
         } else if (more) {
             append_line("  ... more entries follow");
+        }
+        return;
+    }
+    if (strcmp(name, "tail") == 0) {
+        char lines[2600];
+        long count = target[0] != '\0' ? strtol(target, NULL, 10) : 20;
+        const char *p;
+        int got;
+
+        if (count < 1) { count = 1; }
+        if (count > 40) { count = 40; }
+        got = now_log_tail((int)count, lines, sizeof lines);
+        snprintf(line, sizeof line, "  %s", now_log_path());
+        append_line(line);
+        if (got == 0) {
+            append_line("  (nothing logged yet)");
+            return;
+        }
+        for (p = lines; *p != '\0'; ) {
+            const char *nl = strchr(p, '\n');
+            long len = nl != NULL ? (long)(nl - p) : (long)strlen(p);
+
+            if (len > (long)sizeof line - 3) {
+                len = (long)sizeof line - 3;
+            }
+            memcpy(line, p, (size_t)len);
+            line[len] = '\0';
+            append_line(line);
+            p = nl != NULL ? nl + 1 : p + strlen(p);
         }
         return;
     }

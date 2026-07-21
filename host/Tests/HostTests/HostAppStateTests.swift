@@ -47,3 +47,32 @@ final class HostAppStateTests: XCTestCase {
     }
 }
 
+
+/// The log file, which exists because the window forgets.
+@MainActor
+final class HostLogTests: XCTestCase {
+    func testTheLogFileIsWrittenAndTailable() throws {
+        let log = HostLog.shared
+        let url = try XCTUnwrap(log.url, "a log file should have been opened")
+        XCTAssertTrue(url.path.contains("now-logs"))
+        XCTAssertTrue(url.lastPathComponent.hasSuffix(".log"))
+
+        log.write("a line worth keeping")
+        let text = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(text.contains("a line worth keeping"))
+        XCTAssertTrue(text.hasSuffix("\n"), "one line per line, for tail")
+
+        // Timestamped per launch: the name has to sort chronologically.
+        let name = url.deletingPathExtension().lastPathComponent
+        XCTAssertNotNil(DateFormatter.now_test_stamp.date(from: name),
+                        "the file name is the launch time: \(name)")
+    }
+}
+
+extension DateFormatter {
+    static let now_test_stamp: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HHmmss"
+        return f
+    }()
+}

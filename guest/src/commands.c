@@ -1,4 +1,5 @@
 #include "commands.h"
+#include "nowlog.h"
 
 #include <Carbon.h>
 
@@ -559,6 +560,31 @@ static void run_putstat(long id, char *out, long cap)
              conn_rcv_peak(), conn_service_passes());
 }
 
+/* The last lines of this launch's log. The same table serves the guest's
+   own console and the host's, so "tail" works from either machine -
+   which matters most for the one that is hard to look at. */
+static void run_tail(const char *request_json, long id, char *out, long cap)
+{
+    char lines[2048];
+    char esc[3072];
+    long count = now_json_find_int(request_json, "lines", 20);
+    int got;
+
+    if (count < 1) {
+        count = 1;
+    }
+    if (count > 40) {
+        count = 40;                   /* a control frame is 4 KB */
+    }
+    got = now_log_tail((int)count, lines, sizeof lines);
+    now_json_escape(lines, esc, sizeof esc);
+    snprintf(out, (size_t)cap,
+             "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+             "\"output\":{\"tail\":[[\"Log\",\"%s\"],"
+             "[\"Lines\",\"%d\"],[\"Text\",\"%s\"]]}}",
+             id, now_log_path(), got, esc);
+}
+
 void now_command_run(const char *name, const char *request_json, long id,
                      char *out, long cap)
 {
@@ -580,6 +606,10 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "ls") == 0) {
         run_ls(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "tail") == 0) {
+        run_tail(request_json, id, out, cap);
         return;
     }
     snprintf(out, cap,
