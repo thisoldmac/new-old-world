@@ -5,6 +5,7 @@
 
 #include "connection_module.h"
 #include "console_module.h"
+#include "files_module.h"
 #include "screenshots_module.h"
 #include "prefs.h"
 #include "workshop_layout.h"
@@ -145,6 +146,7 @@ Boolean workshop_open(void)
         return true;
     }
     g_ops[kWorkshopScreenshots] = screenshots_module_ops();
+    g_ops[kWorkshopFiles] = files_module_ops();
     g_ops[kWorkshopConsole] = console_module_ops();
     g_ops[kWorkshopConnection] = connection_module_ops();
     now_prefs_load(&prefs);

@@ -5,11 +5,12 @@
 #include <stdio.h>
 
 #include "confirm.h"
-#include "host_browser.h"
 #include "nowlog.h"
 #include "fileshare.h"
 #include "product_identity.h"
-#include "share_panel.h"
+#include "files_module.h"
+#include "files_browser_view.h"
+#include "files_share_view.h"
 #include "pump.h"
 #include "screenshots_module.h"
 #include "prefs.h"
@@ -26,9 +27,6 @@ enum {
     kFileQuitItem = 5,
     kWindowsMenuID = 140,
     kWindowsWorkshopItem = 1,
-    kWindowsScreenshotsItem = 3,
-    kWindowsConsoleItem = 4,
-    kWindowsConnectionItem = 5,
     kViewMenuID = 141
 };
 
@@ -40,15 +38,6 @@ static const unsigned char k_file_menu_title[] = {
 };
 static const unsigned char k_windows_menu_title[] = {
     7, 'W', 'i', 'n', 'd', 'o', 'w', 's'
-};
-static const unsigned char k_screenshots_menu_item[] = {
-    13, 'S', 'c', 'r', 'e', 'e', 'n', 's', 'h', 'o', 't', 's', '/', 'S'
-};
-static const unsigned char k_console_menu_item[] = {
-    9, 'C', 'o', 'n', 's', 'o', 'l', 'e', '/', 'L'
-};
-static const unsigned char k_connection_menu_item[] = {
-    12, 'C', 'o', 'n', 'n', 'e', 'c', 't', 'i', 'o', 'n', '/', 'K'
 };
 static const unsigned char k_separator_menu_item[] = {
     2, '-', ' '
@@ -94,18 +83,14 @@ static void create_menu_bar(void)
     AppendMenu(file_menu, k_separator_menu_item);
     AppendMenu(file_menu, k_quit_menu_item);
     InsertMenu(file_menu, 0);
-    /* View selects a Workshop module; the Windows menu keeps the old
-       separate windows reachable until each one moves in. */
+    /* View selects a Workshop module (Cmd-1..4); Windows reopens the
+       one window. Every module lives in the Workshop now. */
     AppendMenu(view_menu, k_view_screenshots_item);
     AppendMenu(view_menu, k_view_files_item);
     AppendMenu(view_menu, k_view_console_item);
     AppendMenu(view_menu, k_view_connection_item);
     InsertMenu(view_menu, 0);
     AppendMenu(windows_menu, k_workshop_menu_item);
-    AppendMenu(windows_menu, k_separator_menu_item);
-    AppendMenu(windows_menu, k_screenshots_menu_item);
-    AppendMenu(windows_menu, k_console_menu_item);
-    AppendMenu(windows_menu, k_connection_menu_item);
     InsertMenu(windows_menu, 0);
     DrawMenuBar();
 }
@@ -182,49 +167,24 @@ static void compute_screen_bounds(void)
     }
 }
 
-/* Routes activation to whichever module owns the window.
-   ------------------------------------------------------------------
-   Nothing did this before: the loop had no activateEvt case, so no
-   window ever dimmed and host_browser_activate() sat unreachable. The
-   foreground switch is the same call, because SIZE says
-   doesActivateOnFGSwitch — that flag is a promise that the APPLICATION
-   activates its own windows, so with it set and no osEvt case the panels
-   kept drawing live controls while NOW was in the background and could
-   not be clicked at all. */
+/* Activation routing (activateEvt and the osEvt foreground switch —
+   SIZE says doesActivateOnFGSwitch, a promise that the APPLICATION
+   activates its own windows). One window remains. */
 static Boolean is_our_window(WindowRef window)
 {
-    return window != NULL
-        && (share_panel_is(window) || host_browser_is(window)
-            || workshop_is(window));
+    return window != NULL && workshop_is(window);
 }
 
 static void set_window_active(WindowRef window, Boolean active)
 {
-    if (window == NULL) {
-        return;
-    }
-    if (share_panel_is(window)) {
-        share_panel_activate(active);
-    } else if (host_browser_is(window)) {
-        host_browser_activate(active);
-    } else if (workshop_is(window)) {
+    if (workshop_is(window)) {
         workshop_activate(active);
     }
 }
 
 static void close_front_window(void)
 {
-    WindowRef front = FrontWindow();
-
-    if (share_panel_is(front)) {
-        share_panel_close();
-        return;
-    }
-    if (host_browser_is(front)) {
-        host_browser_close();
-        return;
-    }
-    if (workshop_is(front)) {
+    if (workshop_is(FrontWindow())) {
         workshop_close();
     }
 }
@@ -235,7 +195,10 @@ static void handle_menu_choice(long choice)
         if (LoWord(choice) == kFileCloseItem) {
             close_front_window();
         } else if (LoWord(choice) == kFileSharingItem) {
-            share_panel_open();
+            /* File Sharing lives on the Workshop's Files page now. */
+            if (workshop_open()) {
+                workshop_select_module(kWorkshopFiles);
+            }
         } else if (LoWord(choice) == kFileQuitItem) {
             g_running = false;
         }
@@ -249,20 +212,6 @@ static void handle_menu_choice(long choice)
     } else if (HiWord(choice) == kWindowsMenuID) {
         if (LoWord(choice) == kWindowsWorkshopItem) {
             workshop_open();
-        } else if (LoWord(choice) == kWindowsScreenshotsItem) {
-            if (workshop_open()) {
-                workshop_select_module(kWorkshopScreenshots);
-            }
-        } else if (LoWord(choice) == kWindowsConsoleItem) {
-            /* The Console lives in the Workshop now. */
-            if (workshop_open()) {
-                workshop_select_module(kWorkshopConsole);
-            }
-        } else if (LoWord(choice) == kWindowsConnectionItem) {
-            /* The dialog retired into the Workshop's Connection page. */
-            if (workshop_open()) {
-                workshop_select_module(kWorkshopConnection);
-            }
         }
     }
 }
@@ -270,7 +219,6 @@ static void handle_menu_choice(long choice)
 static void handle_mouse_down(const EventRecord *event)
 {
     WindowRef window;
-    Point local;
     short part = FindWindow(event->where, &window);
 
     if (part == inMenuBar) {
@@ -323,43 +271,6 @@ static void handle_mouse_down(const EventRecord *event)
         }
         return;
     }
-    if (share_panel_is(window)) {
-        if (part == inDrag) {
-            DragWindow(window, event->where, &g_screen_bounds);
-        } else if (part == inGoAway) {
-            if (TrackGoAway(window, event->where)) {
-                share_panel_close();
-            }
-        } else if (part == inContent) {
-            if (window != FrontWindow()) {
-                SelectWindow(window);
-                return;
-            }
-            local = event->where;
-            SetPortWindowPort(window);
-            GlobalToLocal(&local);
-            share_panel_click(local);
-        }
-        return;
-    }
-    if (host_browser_is(window)) {
-        if (part == inDrag) {
-            DragWindow(window, event->where, &g_screen_bounds);
-        } else if (part == inGoAway) {
-            if (TrackGoAway(window, event->where)) {
-                host_browser_close();
-            }
-        } else if (part == inContent) {
-            if (window != FrontWindow()) {
-                SelectWindow(window);
-                return;
-            }
-            /* The list wants the click in GLOBAL coordinates: it does
-               its own tracking, so it converts for itself. */
-            host_browser_click(event);
-        }
-        return;
-    }
 }
 
 static void handle_key_down(const EventRecord *event)
@@ -370,8 +281,6 @@ static void handle_key_down(const EventRecord *event)
         long choice = MenuKey(key);
         handle_menu_choice(choice);
         HiliteMenu(0);
-    } else if (host_browser_is(FrontWindow())) {
-        host_browser_key(event);
     } else if (workshop_is(FrontWindow())) {
         workshop_key(event);
     }
@@ -438,9 +347,9 @@ int main(void)
     conn_init();
     now_log_open();
     conn_set_shot_note(screenshots_module_note);
-    conn_set_file_note(share_panel_note);
-    conn_set_listing(host_browser_listing);
-    conn_set_get_note(host_browser_note);
+    conn_set_file_note(files_share_note);
+    conn_set_listing(files_browser_listing);
+    conn_set_get_note(files_browser_note);
 
     /* A real UPP, not a cast. The old comment here claimed "on CFM
        PowerPC a UPP is the tvector itself" - that is true on Mach-O and
@@ -461,8 +370,6 @@ int main(void)
 
     while (g_running) {
         conn_service();
-        share_panel_idle();
-        host_browser_idle();
         workshop_idle();
         ask_about_replacing();
         if (!WaitNextEvent(everyEvent, &event,
@@ -479,15 +386,7 @@ int main(void)
             handle_key_down(&event);
             break;
         case updateEvt:
-            if (share_panel_is((WindowRef)event.message)) {
-                BeginUpdate(share_panel_ref());
-                share_panel_draw();
-                EndUpdate(share_panel_ref());
-            } else if (host_browser_is((WindowRef)event.message)) {
-                BeginUpdate(host_browser_ref());
-                host_browser_draw();
-                EndUpdate(host_browser_ref());
-            } else if (workshop_is((WindowRef)event.message)) {
+            if (workshop_is((WindowRef)event.message)) {
                 BeginUpdate(workshop_ref());
                 workshop_draw();
                 EndUpdate(workshop_ref());

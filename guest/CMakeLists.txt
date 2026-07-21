@@ -15,9 +15,10 @@ add_application(now-guest
     src/vprobe.c
     src/pixels.c
     src/screenshots_module.c
-    src/share_panel.c
+    src/files_module.c
+    src/files_browser_view.c
+    src/files_share_view.c
     src/confirm.c
-    src/host_browser.c
     src/ot_carbon.c
     src/json.c
     src/nowlog.c
