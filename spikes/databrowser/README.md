@@ -7,23 +7,36 @@ It matters because the alternative is drawing a list by hand, which is
 roughly triple the work and will not feel native no matter how careful
 we are.
 
-## Why this is a symbol probe and not a working list
+## Why a symbol probe
 
-There are **no Data Browser declarations anywhere on this machine** —
-not in Retro68's headers, not in the Apple Universal Interfaces, not in
-the MPW Golden Master. Those are Universal Interfaces 3.x; Data Browser
-arrived with Appearance Manager 1.1 and was declared in later SDKs.
+An API can be declared in a header and absent from the machine's actual
+CarbonLib, and then a strong import aborts launch with an opaque system
+dialog — the trap that made the guest resolve Open Transport at runtime.
+So before building anything on Data Browser, ask the machine in front of
+us whether it exports it.
 
-So using it at all means hand-declaring the ABI — struct layouts,
-callback signatures, dozens of constants — from documentation, with no
-compile-time checking, on a machine where a wrong struct layout is a
-crash rather than an error. That is a real cost, and it is only worth
-paying if the symbols are actually there.
+`GetSharedLibrary` + `FindSymbol` answer by NAME alone. Nothing is
+called, no struct laid out, no callback installed, so the probe cannot
+wedge the machine.
 
-`GetSharedLibrary` + `FindSymbol` answer that by NAME alone. Nothing is
-called, no struct is laid out, no callback is installed. The spike
-cannot crash the machine, and it either opens the expensive path or
-closes it.
+### A wrong turn worth recording
+
+This spike was first written on the belief that Data Browser was
+**undeclared everywhere on this machine** — that using it meant
+hand-writing struct layouts and callback ABIs from documentation with no
+compile-time checking.
+
+That was false, and the cause is worth knowing: Retro68's headers carry
+high MacRoman bytes and CR line endings, so **grep treats them as binary
+and prints nothing at all** — not "no match", not a binary-file note,
+just silence, which reads exactly like "this API does not exist."
+`grep -a` finds 788 matches for `DataBrowser` in `ControlDefinitions.h`
+(Universal Interfaces 3.4), and a program calling the API compiles and
+links cleanly.
+
+Before concluding a Toolbox API is missing: `grep -a`, then compile a
+call to it. The compiler reads those files correctly even when grep
+will not.
 
 ## What it reports
 
@@ -36,10 +49,18 @@ closes it.
 On screen, and written to `Data Browser Spike Report` on the desktop so
 the answer can leave the machine as text.
 
-## Reading the result
+## The result (PB1400c, 2026-07-20)
 
-- **All Data Browser symbols present** — the path is open. Next
-  question is whether hand-declaring the ABI is worth it, which is a
-  judgement call, not a probe.
-- **Any missing** — the path is closed on this machine, and Phase 2
-  uses the List Manager. Cheaper to know now than after the ABI work.
+System 9.1.0, CarbonLib 1.6.0, Appearance 1.1.1.
+
+- **Data Browser: 20 of 20 present.** With the headers, Phase 2 is
+  ordinary Carbon code — declared, compile-checked, strongly linkable,
+  because the machine really does export it.
+- **Icons: `GetIconRefFromTypeInfo` is absent (-2802)**, but
+  `GetIconRefFromFile`, `AcquireIconRef`, `PlotIconRef` and
+  `ReleaseIconRef` are present. For the guest's own files that is the
+  better call anyway. Open question, being probed in the second run: a
+  listing off the WIRE has no file, only a type and creator, so it needs
+  a type/creator lookup (`GetIconRef` and friends).
+- **List Manager: 8 of 8 present**, so the fallback is real if it is
+  ever wanted.
