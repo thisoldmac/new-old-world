@@ -87,8 +87,9 @@ progress or verify checksums the way the classic side does.
 - `contract/asyncapi.yaml` — the wire contract (AsyncAPI 3.0 + normative
   prose): frame header, connection rules, messages, `x-commands`.
 - `guest/` — Retro68 retrocarbon C. `src/wire.c` is the connection
-  manager; `capture`/`pixels` the capture and wire-pixel engines;
-  `commands`/`console_win`/`shots_panel` the human surfaces.
+  manager; `capture`/`pixels` the capture and wire-pixel engines; the
+  human surface is the Workshop (`workshop_*`, one `*_module.c` per
+  page) over `commands`/`console_model` and the file services.
 - `host/` — Swift package (`GuestListener` + modules) plus
   `NewOldWorld.xcodeproj` for signed builds.
 - `docs/` — architecture and measurement notes.
