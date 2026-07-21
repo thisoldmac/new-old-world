@@ -185,3 +185,23 @@ void proc_status_text(int count, long free_kb, char *out, long cap)
              count == 1 ? "" : "es", free_kb / 1024,
              (free_kb % 1024) * 10 / 1024);
 }
+
+void proc_uptime_text(long ticks_ago, char *out, long cap)
+{
+    long secs = (ticks_ago < 0 ? 0 : ticks_ago) / 60;
+
+    if (secs < 5) {
+        snprintf(out, (size_t)cap, "just now");
+    } else if (secs < 60) {
+        snprintf(out, (size_t)cap, "%ld sec ago", secs);
+    } else if (secs < 3600) {
+        snprintf(out, (size_t)cap, "%ld min ago", secs / 60);
+    } else if (secs < 86400) {
+        long hrs = secs / 3600;
+        long mins = (secs % 3600) / 60;
+
+        snprintf(out, (size_t)cap, "%ld hr %ld min ago", hrs, mins);
+    } else {
+        snprintf(out, (size_t)cap, "%ld days ago", secs / 86400);
+    }
+}

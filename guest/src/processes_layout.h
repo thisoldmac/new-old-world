@@ -67,4 +67,11 @@ long proc_mem_fill(long used_kb, long size_kb, long bar_width);
 /* "7 processes - 12.4 MB free" for the status placard. */
 void proc_status_text(int count, long free_kb, char *out, long cap);
 
+/* How long a process has been running, from the tick delta between now
+   and its launch. ProcessInfoRec.processLaunchDate is ticks since boot,
+   NOT a calendar date (rendering it as one gave "1/1/04" for
+   everything - caught on the PowerBook), and the same-epoch delta is
+   the only honest thing it yields. 60 ticks per second. */
+void proc_uptime_text(long ticks_ago, char *out, long cap);
+
 #endif /* NOW_PROCESSES_LAYOUT_H */

@@ -137,6 +137,21 @@ static void check_formatters(void)
     proc_status_text(1, 1024, buf, sizeof buf);
     check(strcmp(buf, "1 process - 1.0 MB free") == 0,
           "status line singular");
+
+    /* processLaunchDate is ticks since boot; the delta is a duration,
+       never a date (60 ticks/sec). */
+    proc_uptime_text(120, buf, sizeof buf);       /* 2 s */
+    check(strcmp(buf, "just now") == 0, "under 5s reads just now");
+    proc_uptime_text(600, buf, sizeof buf);       /* 10 s */
+    check(strcmp(buf, "10 sec ago") == 0, "seconds granularity");
+    proc_uptime_text(60L * 60 * 3, buf, sizeof buf); /* 3 min */
+    check(strcmp(buf, "3 min ago") == 0, "minutes granularity");
+    proc_uptime_text(60L * (3600 * 2 + 60 * 14), buf, sizeof buf);
+    check(strcmp(buf, "2 hr 14 min ago") == 0, "hours and minutes");
+    proc_uptime_text(60L * 86400 * 3, buf, sizeof buf);
+    check(strcmp(buf, "3 days ago") == 0, "days granularity");
+    proc_uptime_text(-50, buf, sizeof buf);       /* clock skew guard */
+    check(strcmp(buf, "just now") == 0, "negative delta clamps");
 }
 
 int main(void)

@@ -41,7 +41,8 @@ typedef struct {
     unsigned long sig;
     long size_kb;
     long used_kb;
-    unsigned long launched;           /* seconds since 1904 */
+    unsigned long launched;           /* processLaunchDate: TICKS since
+                                         boot, not a date */
     Boolean self;
     short quit_state;
     unsigned long quit_ticks;
@@ -672,17 +673,11 @@ static void draw_detail(void)
     proc_mem_text(entry->used_kb, entry->size_kb, line, sizeof line);
     draw_fact(&g_r.mem_line, "Memory:", line);
     draw_mem_bar(entry);
-    {
-        /* LongDateString, never DateString: classic seconds passed 2^31
-           in 1972, and the signed API clamps every modern date there. */
-        LongDateTime when = (LongDateTime)entry->launched;
-        Str255 date_text;
-
-        LongDateString(&when, shortDate, date_text, NULL);
-        memcpy(line, date_text + 1, date_text[0]);
-        line[date_text[0]] = '\0';
-        draw_fact(&g_r.launched_line, "Launched:", line);
-    }
+    /* processLaunchDate is ticks since boot, not a 1904 date; the delta
+       to now is the only honest reading (proc_uptime_text). */
+    proc_uptime_text((long)(TickCount() - entry->launched), line,
+                     sizeof line);
+    draw_fact(&g_r.launched_line, "Launched:", line);
 }
 
 static void procs_draw(void)

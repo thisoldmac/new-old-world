@@ -19,7 +19,7 @@ end-to-end). We rebuild fresh; the findings are what carry.
 | rung | what ships | needs | status |
 |---|---|---|---|
 | 0 | Processes page: list, front, ask-to-quit | nothing new | **metal-verified** (2026-07-21) |
-| 1 | NOW Extension M0: residence, discovery, versioning | the extension | **built, awaiting metal** |
+| 1 | NOW Extension M0: residence, discovery, versioning | the extension | **metal-verified** (2026-07-21) |
 | 2 | Anchor plane: per-process window bounds; cropped Front & Capture | ext P1 | |
 | 3 | `process.*` wire family; host sees the guest's processes | contract | |
 | 4 | Semantic tree; `peek.*` family; host tree view | ext P2 | |

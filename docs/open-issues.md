@@ -60,6 +60,24 @@ metal-verified: the async-connect launch wedge, and Connection field
 editing (see below). The Processes page itself was good across those
 rounds.
 
+**NOW Extension M0 is metal-verified** (2026-07-21, rung 1, `ext/`).
+The guest's first resident code: a 68K INIT publishing the shared
+table, registering Gestalt `'NWex'`, and chaining a jGNE heartbeat
+filter. Booted on the PB1400c at 9.1; the app's `now_peek_status()`
+probed it and the Processes group box read "NOW Extension active."
+That proves install, DetachResource residency, Gestalt registration,
+table validation across the compiler boundary, and a live jGNE chain -
+the whole of M0. Size ~48 KB (Retro68 flat runtime), loads at 9.1;
+8.6 loader ceiling still unprobed (waits on the 3400c). The recovery
+drill (Shift-boot off, drag-out) and the QEMU-clone pre-check remain
+good practice for the next resident change but M0 itself is done.
+
+**Metal found one rung-0 bug, now fixed:** the detail pane's "Launched"
+line read "1/1/04" for every process. `ProcessInfoRec.processLaunchDate`
+is ticks since boot, not a 1904-epoch date, so `LongDateString` clamped
+it. Now rendered as elapsed time via `proc_uptime_text` (pure, native-
+tested, watched failing by mutation): "3 min ago", "2 hr 14 min ago".
+
 **Workshop follow-ups, deliberately not done in the arc:** a CarbonLib
 1.6 launch gate (wire.c still surfaces `kConnNeedsCarbonLib` at connect
 time instead); the capture disclosure's expanded state is session-only,
@@ -161,44 +179,6 @@ Not load-bearing; parked as a known gap rather than chased.
 Everything here builds and passes its tests. None of it has been watched
 working on the PowerBook.
 
-- **NOW Extension M0 — the first resident code** (rung 1,
-  `ext/`, 2026-07-21). A 68K INIT that publishes the shared table in the
-  system heap, registers Gestalt `'NWex'`, and chains a jGNE filter that
-  stamps a heartbeat. The app's `now_peek_status()` now really probes
-  Gestalt + validates the table + scans Extensions for the file, so the
-  Processes page's group box reflects live state. Builds clean under the
-  Retro68 68K toolchain; the shared header compiles identically on all
-  three compilers; `inspect_init.py` confirms INIT 128, type `INIT`,
-  creator `NOWx`. **Nothing has booted.** The INIT executes inside every
-  app that pumps events, so this is attended-metal-only, and the size
-  (~48 KB, the Retro68 flat runtime) is above the generic 32 KB budget
-  but within AXPeek's ~51 KB proven at 9.1; the 8.6 loader ceiling is
-  unprobed.
-
-  **Metal test (PB1400c, 9.1), in order:**
-  1. Baseline: launch the current app, open Processes. The group box
-     reads "NOW Extension not installed."
-  2. Install: put `NOW Extension.bin` (type INIT / creator NOWx) into
-     `System Folder:Extensions`. Before rebooting, relaunch the app —
-     Processes should now read "installed - restart to activate" (the
-     file scan found it; Gestalt is still silent).
-  3. Cold boot — a real restart, not QMP `system_powerdown` (OS 9
-     ignores it; INITs load at boot only). Watch the boot complete
-     cleanly with no crash.
-  4. Active: launch the app, open Processes. The group box reads "NOW
-     Extension active." That is Gestalt answering, the table validating,
-     magic/major/length all good.
-  5. Liveness (optional, needs a table peek): the table's `heartbeat`
-     advances while any app pumps events — the jGNE chain is live.
-  6. Recovery drill: hold Shift through a boot (extensions off) → app
-     reads "not installed" again. Drag the file out, reboot → "not
-     installed." Both must be clean.
-
-  Run steps 1–4 on a disposable QEMU clone first if convenient (it
-  proves structure and the Gestalt/file logic, though only metal proves
-  the INIT loads and the filter is safe in every context). Recovery is
-  always in place: Shift-boot disables it, and the file is one drag from
-  gone.
 - **Prefs v10 module renumbering.** Connection moved 4 to 5; a v9 file
   should reopen on the page the person had (the remap is three lines
   in `now_prefs_load`), exercised only by reasoning - same status as
