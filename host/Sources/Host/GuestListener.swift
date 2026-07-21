@@ -117,7 +117,11 @@ final class GuestListener: ObservableObject {
 
     private static let logLimit = 100
 
-    func note(_ text: String) {
+    /// A line for the window and the file. `area` is the subsystem the
+    /// line belongs to, so a log can be read by subsystem the way the
+    /// other machine's can (docs/logging.md).
+    func note(_ text: String, area: String = "wire",
+              level: HostLog.LogLevel = .info) {
         if ProcessInfo.processInfo.environment["NOW_HOST_DEBUG"] != nil {
             FileHandle.standardError.write(Data("[now-host] \(text)\n".utf8))
         }
@@ -125,7 +129,7 @@ final class GuestListener: ObservableObject {
            them. Everything worth knowing after the fact — what happened
            before you looked, and what happened after you quit — is only
            in the second one. */
-        HostLog.shared.write(text)
+        HostLog.shared.write(level, area, text)
         log.append(LogEntry(at: Date(), text: text))
         if log.count > Self.logLimit {
             log.removeFirst(log.count - Self.logLimit)
@@ -219,6 +223,10 @@ final class GuestListener: ObservableObject {
             let page = try share.list(path: request.path,
                                       cursor: request.cursor ?? 1,
                                       limit: 16)
+            note("#\(request.id) listed \(page.entries.count) "
+                 + "item\(page.entries.count == 1 ? "" : "s") of "
+                 + "\(request.path.isEmpty ? "the share root" : request.path)",
+                 area: "files")
             session?.send(.fileListing(FileListing(
                 id: request.id, path: request.path, entries: page.entries,
                 more: page.more, cursor: page.next,
@@ -243,6 +251,8 @@ final class GuestListener: ObservableObject {
                     forKeys: [.contentModificationDateKey]) }?
                 .contentModificationDate
                 .flatMap(ClassicDate.macSeconds(from:))
+            note("#\(request.id) serving \(plan.name), "
+                 + "\(plan.bytes.count) bytes", area: "files")
             session?.serveFile(id: request.id, plan: plan,
                                container: request.container,
                                modified: modified)
@@ -260,6 +270,8 @@ final class GuestListener: ObservableObject {
             let url = try share.destination(
                 name: offer.name, path: offer.path,
                 overwrite: offer.overwrite ?? false)
+            note("#\(offer.id) accepting \(offer.name), "
+                 + "\(offer.bytes) bytes, into the share", area: "files")
             session?.beginReceiving(offer: offer, to: url)
         } catch {
             session?.refuseFile(id: offer.id, error: error)
@@ -851,7 +863,9 @@ final class GuestListener: ObservableObject {
                 self.session = activated
                 self.state = .connected(guestName: activated.guestName)
             },
-            onLog: { [weak self] text in self?.note(text) },
+            onLog: { [weak self] text, area, level in
+                self?.note(text, area: area, level: level)
+            },
             onHealth: { [weak self] health in self?.health = health },
             onCommandResult: { [weak self] result in
                 self?.resolveCommand(result)
@@ -970,7 +984,7 @@ final class Session {
     private let pacing: GuestListener.Pacing
     private let isBusy: () -> String?
     private let onActive: (Session) -> Void
-    private let onLog: (String) -> Void
+    private let onLog: (String, String, HostLog.LogLevel) -> Void
     private let onHealth: (GuestListener.SessionHealth?) -> Void
     private let onCommandResult: (CommandResult) -> Void
     private let onCapture:
@@ -1034,7 +1048,7 @@ final class Session {
          pacing: GuestListener.Pacing,
          isBusy: @escaping () -> String?,
          onActive: @escaping (Session) -> Void,
-         onLog: @escaping (String) -> Void,
+         onLog: @escaping (String, String, HostLog.LogLevel) -> Void,
          onHealth: @escaping (GuestListener.SessionHealth?) -> Void,
          onCommandResult: @escaping (CommandResult) -> Void,
          onCapture: @escaping (Result<GuestListener.CaptureDelivery,
@@ -1196,7 +1210,8 @@ final class Session {
                 protocolError("bad control message: \(error)")
                 return
             }
-            onLog("ignored an unreadable control message: \(error)")
+            onLog("ignored an unreadable control message: \(error)",
+                  "wire", .warn)
             return
         }
         guard helloed else {
@@ -1293,7 +1308,8 @@ final class Session {
         }
         acceptedOfferId = offer.id
         onLog("\(guestName) offers a \(offer.width)x\(offer.height) "
-              + "\(offer.depth)-bit screenshot (\(offer.bytes / 1024) KB)")
+              + "\(offer.depth)-bit screenshot (\(offer.bytes / 1024) KB)",
+              "capture", .info)
         send(.captureAccept(CaptureAccept(id: offer.id)))
     }
 
@@ -1372,6 +1388,8 @@ final class Session {
     /// Turns any serving failure into the one refusal the contract has.
     func refuseFile(id: Int, error: Error) {
         let known = error as? HostShare.ShareError
+        onLog("#\(id) refused: \(known?.code ?? "io-error") "
+              + "(\(known?.message ?? "\(error)"))", "files", .warn)
         send(.fileRefuse(FileRefuse(
             id: id, code: known?.code ?? "io-error",
             reason: known?.message ?? "\(error)")))
@@ -1446,6 +1464,8 @@ final class Session {
                     [.modificationDate: date], ofItemAtPath: url.path)
             }
             onReceived(url)
+            onLog("#\(end.id) received \(url.lastPathComponent), "
+                  + "\(file.bytes.count) bytes", "files", .info)
             send(.fileDone(FileDone(id: end.id, ok: true, code: nil,
                                     reason: nil)))
         } catch {
@@ -1532,7 +1552,7 @@ final class Session {
         if let have = accept.have, have > 0, have < bytes.count,
            offer.resumeToken != nil {
             start = have
-            onLog("Resuming at \(have) of \(bytes.count) bytes")
+            onLog("Resuming at \(have) of \(bytes.count) bytes", "wire", .info)
         }
         send(.fileBegin(FileBegin(
             id: offer.id, transfer: Int(transfer), name: offer.name,
@@ -1800,7 +1820,7 @@ final class Session {
                 return               /* an aborted frame; the bracket rules */
             }
             if pushed {
-                onLog("\(guestName)'s screenshot push failed")
+                onLog("\(guestName)'s screenshot push failed", "wire", .info)
             } else {
                 solicitedId = nil
                 onCapture(.failure(.init(message: cancelled
@@ -1841,9 +1861,9 @@ final class Session {
             }
         } catch {
             if streaming {
-                onLog("dropped an undecodable stream frame: \(error)")
+                onLog("dropped an undecodable stream frame: \(error)", "wire", .info)
             } else if pushed {
-                onLog("could not decode \(guestName)'s screenshot: \(error)")
+                onLog("could not decode \(guestName)'s screenshot: \(error)", "wire", .info)
             } else {
                 solicitedId = nil
                 onCapture(.failure(.init(
@@ -1879,12 +1899,12 @@ final class Session {
             line += " (guest \(hello.version)"
             line += hello.os.map { ", OS \($0))" } ?? ")"
         }
-        onLog(line)
+        onLog(line, "wire", .info)
         onActive(self)
     }
 
     private func refuse(_ reason: String) {
-        onLog("Refused a connection: \(reason)")
+        onLog("Refused a connection: \(reason)", "wire", .info)
         finish(reason: "Refused: \(reason)",
                sending: .refuse(Refuse(contract: Contract.revision,
                                        reason: reason)))
@@ -1996,7 +2016,7 @@ final class Session {
         guard !closed else { return }
         closed = true
         if helloed {
-            onLog(reason)
+            onLog(reason, "wire", .info)
         }
         idleTask?.cancel()
         if let farewell,

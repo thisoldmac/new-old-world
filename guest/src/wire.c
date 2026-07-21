@@ -1269,7 +1269,7 @@ static void file_refuse(long id, const char *code, const char *reason)
 {
     char json[256];
 
-    now_log(kLogWarn, "files", "refused %ld: %s (%.60s)", id, code, reason);
+    now_log(kLogWarn, "files", "#%ld refused: %s (%.60s)", id, code, reason);
 
     snprintf(json, sizeof json,
              "{\"type\":\"file.refuse\",\"id\":%ld,\"code\":\"%s\","
@@ -1747,7 +1747,8 @@ static void get_begin(const char *reply)
     }
     g_get.receiving = true;
     g_get.deadline = TickCount() + kGetTimeoutTicks;
-    now_log(kLogInfo, "get", "%.31s, %ld bytes", g_get.name, g_get.expected);
+    now_log(kLogInfo, "get", "#%ld %.31s, %ld bytes", g_get.id, g_get.name,
+            g_get.expected);
     snprintf(line, sizeof line, "Getting %.31s...", g_get.name);
     get_note(line);
 }
@@ -1761,6 +1762,8 @@ static void get_end(const char *reply)
         return;
     }
     if (!now_json_find_bool(reply, "ok", 0)) {
+        now_log(kLogWarn, "get", "#%ld ended early at %ld of %ld bytes",
+                g_get.id, g_get.rx.received, g_get.expected);
         get_cleanup(false);
         get_note("The other Mac stopped sending");
         return;
@@ -1770,6 +1773,8 @@ static void get_end(const char *reply)
         get_note("Could not finish writing the file");
         return;
     }
+    now_log(kLogInfo, "get", "#%ld %.31s complete, %ld bytes", g_get.id,
+            g_get.name, g_get.rx.received);
     get_cleanup(true);
     {
         char where[64];
@@ -1898,8 +1903,8 @@ int now_wire_send_file(const FSSpec *spec, char *err, long cap)
     }
     g_send.active = true;
     g_send.deadline = TickCount() + kSendTimeoutTicks;
-    now_log(kLogInfo, "send", "offering %.31s, %ld bytes", stage.name,
-            stage.total_bytes);
+    now_log(kLogInfo, "send", "#%ld offering %.31s, %ld bytes", g_send.id,
+            stage.name, stage.total_bytes);
     conn_peer_label(peer, sizeof peer);
     snprintf(line, sizeof line, "Asking %.20s to accept %.31s...",
              peer, stage.name);
@@ -2385,6 +2390,8 @@ static void serve_file_offer(const char *request)
         return;
     }
     g_put.active = true;
+    now_log(kLogInfo, "put", "#%ld %.31s, %ld bytes, into the share", id,
+            name, bytes);
     /* `have` is omitted rather than sent as 0, so an accept to an old
        host looks exactly as it always did. */
     if (have > 0) {
@@ -2456,6 +2463,8 @@ static void finish_put(const char *reply)
     }
     if (now_json_value(reply, "ok") != NULL
         && !now_json_find_bool(reply, "ok", 1)) {
+        now_log(kLogWarn, "put", "#%ld cancelled at %ld bytes", g_put.id,
+                g_put.rx.received);
         put_abort("cancelled", "the sender stopped");
         note_shot("Incoming file cancelled");
         return;
@@ -2470,6 +2479,9 @@ static void finish_put(const char *reply)
         /* Deleted, not kept: bytes that failed their own checksum are
            not a resume candidate, and keeping them would invite the
            same wrong file to be appended to forever. */
+        now_log(kLogError, "put", "#%ld checksum failed: wanted %08lX, "
+                "got %08lX, %ld bytes discarded", g_put.id, want_crc,
+                g_put.rx.crc, g_put.rx.received);
         now_files_receive_discard(&g_put.rx);
         put_done(false, "corrupt", "the checksum did not match");
         note_shot("Incoming file was corrupt");
@@ -2486,6 +2498,8 @@ static void finish_put(const char *reply)
         note_shot("Incoming file failed");
         return;
     }
+    now_log(kLogInfo, "put", "#%ld complete, %ld bytes%s", g_put.id,
+            g_put.rx.received, has_crc ? ", checksum ok" : ", unchecked");
     put_done(true, NULL, NULL);
     snprintf(note, sizeof note, "Received %.31s",
              g_put.rx.final.name + 1);

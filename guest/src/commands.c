@@ -560,29 +560,85 @@ static void run_putstat(long id, char *out, long cap)
              conn_rcv_peak(), conn_service_passes());
 }
 
-/* The last lines of this launch's log. The same table serves the guest's
-   own console and the host's, so "tail" works from either machine -
-   which matters most for the one that is hard to look at. */
+/* The last lines of this launch's log, one ROW per line so either
+   console renders them aligned rather than as one long string. A row is
+   [time, the rest] — the shape every other command returns, which is
+   why a new command needs no host code.
+
+   Bounded by BYTES, not just line count: a control frame caps at 4 KB
+   and forty long lines do not fit. When they do not, the OLDEST go and
+   the answer says so; a tail that silently shortens is a tail that lies
+   about what happened most recently. */
 static void run_tail(const char *request_json, long id, char *out, long cap)
 {
-    char lines[2048];
-    char esc[3072];
-    long count = now_json_find_int(request_json, "lines", 20);
-    int got;
+    char lines[2600];
+    const char *starts[kLogKept];
+    long want = now_json_find_int(request_json, "lines", 20);
+    long pos;
+    long budget;
+    int got, first, i;
+    char *p;
 
-    if (count < 1) {
-        count = 1;
+    if (want < 1) {
+        want = 1;
     }
-    if (count > 40) {
-        count = 40;                   /* a control frame is 4 KB */
+    if (want > 40) {
+        want = 40;
     }
-    got = now_log_tail((int)count, lines, sizeof lines);
-    now_json_escape(lines, esc, sizeof esc);
-    snprintf(out, (size_t)cap,
-             "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
-             "\"output\":{\"tail\":[[\"Log\",\"%s\"],"
-             "[\"Lines\",\"%d\"],[\"Text\",\"%s\"]]}}",
-             id, now_log_path(), got, esc);
+    got = now_log_tail((int)want, lines, sizeof lines);
+
+    /* now_log_tail writes oldest first; index them in place. */
+    p = lines;
+    for (i = 0; i < got && p != NULL && *p != '\0'; ++i) {
+        starts[i] = p;
+        p = strchr(p, '\n');
+        if (p != NULL) {
+            *p++ = '\0';
+        }
+    }
+    got = i;
+
+    /* Walk backwards from the newest to find how many fit, so that the
+       lines dropped are the ones furthest from what just happened. */
+    budget = cap - 160;               /* the JSON around the rows */
+    first = got;
+    for (i = got - 1; i >= 0; --i) {
+        long len = (long)strlen(starts[i]) * 6 + 8;   /* worst-case escape */
+
+        if (budget - len < 0) {
+            break;
+        }
+        budget -= len;
+        first = i;
+    }
+
+    pos = snprintf(out, (size_t)cap,
+                   "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                   "\"output\":{\"tail\":[", id);
+    for (i = first; i < got; ++i) {
+        char stamp[16];
+        char esc_time[40];
+        char esc_rest[320];
+        const char *rest = starts[i];
+        const char *space = strchr(starts[i], ' ');
+
+        if (space != NULL && space - starts[i] < (long)sizeof stamp) {
+            memcpy(stamp, starts[i], (size_t)(space - starts[i]));
+            stamp[space - starts[i]] = '\0';
+            rest = space + 1;
+        } else {
+            stamp[0] = '\0';
+        }
+        now_json_escape(stamp, esc_time, sizeof esc_time);
+        now_json_escape(rest, esc_rest, sizeof esc_rest);
+        pos += snprintf(out + pos, (size_t)cap - (size_t)pos,
+                        "%s[\"%s\",\"%s\"]", i > first ? "," : "",
+                        esc_time, esc_rest);
+    }
+    snprintf(out + pos, (size_t)cap - (size_t)pos,
+             "],\"log\":[[\"file\",\"%s\"],[\"shown\",\"%d of %d%s\"]]}}",
+             now_log_path(), got - first, got,
+             first > 0 ? " (older ones did not fit)" : "");
 }
 
 void now_command_run(const char *name, const char *request_json, long id,

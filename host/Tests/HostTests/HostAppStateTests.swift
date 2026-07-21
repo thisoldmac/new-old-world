@@ -57,7 +57,7 @@ final class HostLogTests: XCTestCase {
         XCTAssertTrue(url.path.contains("now-logs"))
         XCTAssertTrue(url.lastPathComponent.hasSuffix(".log"))
 
-        log.write("a line worth keeping")
+        log.write(.info, "app", "a line worth keeping")
         let text = try String(contentsOf: url, encoding: .utf8)
         XCTAssertTrue(text.contains("a line worth keeping"))
         XCTAssertTrue(text.hasSuffix("\n"), "one line per line, for tail")

@@ -157,11 +157,12 @@ tidiness preference.)*
 | | State |
 |---|---|
 | Guest: file, ring buffer, `tail` on its own console | **Metal-verified** 2026-07-20 (PB1400c) |
-| Guest: events logged (connection, transfers, refusals, skips) | Built, not yet read back in anger |
-| Host: file per launch | Built, **unverified** |
+| Guest: events — connect, transfers both directions, refusals, skips | Built, **not yet read back in anger** |
+| Host: file per launch, in the line format above | Built, **unverified on a real run** |
 | Host: `tail` of the guest's log | Built; needs `fork/logging` landed and a rebuild |
-| `tail` output as one row per line | **Not built** — currently one blob in a single row, which the host console will render as one unreadable line |
-| Correlation ids in both logs | **Not built** |
+| `tail` output as one row per line | Built — byte-bounded, oldest dropped first, and it says so |
+| Correlation ids in both logs | Built for the file family; **capture and stream still have none** |
+| Per-chunk rule enforced by a test | Built (`LoggingSpecTests`), mutation-checked |
 | Rotation | **Not built** |
 | Host log surfaced in the UI | **Not built** |
 

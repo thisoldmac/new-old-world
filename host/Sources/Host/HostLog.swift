@@ -41,16 +41,26 @@ final class HostLog {
             FileManager.default.createFile(atPath: file.path, contents: nil)
             handle = try FileHandle(forWritingTo: file)
             url = file
-            write("started")
+            write(.info, "app", "started")
         } catch {
             // A machine that cannot write a log must still run.
             handle = nil
         }
     }
 
-    func write(_ text: String) {
+    /// One line, in the format docs/logging.md defines:
+    /// `HH:MM:SS area   [!?] message`. Both machines write the same
+    /// shape so the two files can be read as one.
+    func write(_ level: LogLevel = .info, _ area: String = "host",
+               _ text: String) {
         guard let handle else { return }
-        let line = "\(Self.clock.string(from: Date())) \(text)\n"
+        let mark = level == .error ? "! " : (level == .warn ? "? " : "")
+        let tag = area.padding(toLength: 6, withPad: " ", startingAt: 0)
+        let line = "\(Self.clock.string(from: Date())) \(tag) \(mark)\(text)\n"
         try? handle.write(contentsOf: Data(line.utf8))
+    }
+
+    enum LogLevel {
+        case info, warn, error
     }
 }
