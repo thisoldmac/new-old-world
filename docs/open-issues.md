@@ -40,6 +40,26 @@ was reimplemented against `claude/processes-module-cb2d9c` on
 2026-07-21 (see "An unreachable host presents as a hang" below); the
 branch itself stays abandoned.
 
+**The Processes page landed and is metal-verified** (2026-07-21,
+`main` at `22f129a`; spec in `processes-and-peek.md`). The fifth
+Workshop module: a split view with a Data Browser process list
+(icon-and-text column, header sort) on the left and a detail pane
+(kind, type/creator, memory text + partition bar, launch date) on the
+right, plus Bring to Front and Ask to Quit (confirm -> quit Apple
+Event -> keep the PSN until the walk proves the process gone ->
+`(no reply)` after 10 s). The `peek.h` seam ships answering "NOW
+Extension not installed"; the group box renders it. Watched working on
+the PowerBook the same day. This is **rung 0** of the extension ladder
+- everything above it (the NOW Extension itself, `process.*`/`peek.*`
+wire families, the semantic mirror) is still ahead.
+
+The detour that dominated the arc was NOT the Processes page - it was
+reaching the Connection settings to repoint a chip that was listening
+on the wrong port. That exposed two real, now-fixed defects, both
+metal-verified: the async-connect launch wedge, and Connection field
+editing (see below). The Processes page itself was good across those
+rounds.
+
 **Workshop follow-ups, deliberately not done in the arc:** a CarbonLib
 1.6 launch gate (wire.c still surfaces `kConnNeedsCarbonLib` at connect
 time instead); the capture disclosure's expanded state is session-only,
@@ -74,10 +94,10 @@ returns to synchronous before the hello. `now_log_open()` also moved
 above `conn_init()` so this failure finally leaves a log.
 `ot_connect_source_test.py` pins the sequence — it was watched failing
 against the pre-patch sources — because this fix has now been lost
-once. **Unverified on metal**; the emulator forgives the synchronous
-form, so only the PowerBook (or the 3400c) can prove it, and the chip
-build `now-chip` exists for exactly that: launched with no prefs it
-dials the gateway, and the UI must stay alive.
+once. **Metal-verified 2026-07-21** on the PB1400c: launched with no
+prefs it dials the gateway and the UI stays alive and drivable, where
+before it wedged blank. (The emulator forgives the synchronous form,
+so this could only ever be proven on hardware.)
 
 **The Connection fields were dead once Connection became a page**
 (fixed 2026-07-21, `claude/processes-module-cb2d9c`). Address and port
@@ -122,12 +142,10 @@ window. The filter pumps the wire; validation stays in `conn_fields.c`.
 Net change from the last metal-verified state is only the Connection
 dialog: every page's control handling is back to no-root + `FindControl`.
 
-**Unverified on metal.** Build clean, host suite and native tests
-green. Watch on the machine: the "Other Mac" popup/checkbox/Edit button
-click again; the Edit dialog's fields take clicks and keys; Save writes
-back and the page redraws the target. And confirm Screenshots/Files/
-Console are unchanged (they should be - byte-for-byte back to their
-verified click handlers).
+**Metal-verified 2026-07-21** on the PB1400c: the "Other Mac"
+popup/checkbox/Edit button click, the Edit dialog's fields take clicks
+and keys, and Save repoints the connection - which is how the
+wrong-port chip got corrected. Screenshots/Files/Console unchanged.
 
 **Type-select does nothing in the browser list.** Selection,
 double-click and header sorting all work; typing a letter does not jump.
@@ -143,17 +161,6 @@ Not load-bearing; parked as a known gap rather than chased.
 Everything here builds and passes its tests. None of it has been watched
 working on the PowerBook.
 
-- **The whole Processes page** (2026-07-21, spec in
-  `processes-and-peek.md`): the Data Browser list with its
-  icon-and-text column and compare callback, the detail pane and its
-  memory bar, Bring to Front, and Ask to Quit's whole ladder -
-  confirm, AE send, `(quitting...)`, the 10-second `(no reply)`
-  timeout, and the walk noticing the exit. The pure geometry and
-  formatters are native-tested (watched failing by mutation); nothing
-  Toolbox-facing has run anywhere yet, including the emulator. Known
-  soft spots to watch first on metal: `SetDataBrowserItemDataIcon` on
-  CarbonLib 1.6, the compare callback actually sorting, and selection
-  surviving a list rebuild mid-click.
 - **Prefs v10 module renumbering.** Connection moved 4 to 5; a v9 file
   should reopen on the page the person had (the remap is three lines
   in `now_prefs_load`), exercised only by reasoning - same status as
