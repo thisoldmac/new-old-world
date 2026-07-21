@@ -26,6 +26,16 @@ implementation currently has no client.** It is tested and symmetric,
 and it is also unused code until this is picked up; anyone auditing for
 dead weight should know it was built deliberately, not left over.
 
+## In flight elsewhere
+
+**A guest UI rework** is under way in codex thread
+`019f8272-8aac-73a2-ad5c-c3f4884b587c` (Michelle, 2026-07-20). It will
+need reconciling with `thread/files` when it lands, and it overlaps
+`fork/carbon-ui-cleanup` — a Carbon UI correctness pass on the same
+windows. Two independent passes over the same files is the expensive
+merge; whichever lands second should expect to rebase rather than
+merge, and the reconciler should read both before resolving anything.
+
 ## Broken
 
 **Resume by offset hangs.** A transfer resumed against a matching
