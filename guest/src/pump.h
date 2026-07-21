@@ -36,6 +36,21 @@ NavEventUPP now_pump_nav_event(void);
    their own action — and must not be given this one. */
 ControlActionUPP now_pump_action(void);
 
+/* --- what cannot be pumped ----------------------------------------------
+   Three Toolbox loops take no callback at all, so the wire genuinely
+   stops for their duration. They are listed rather than fixed because
+   the honest answer is "this stalls", and the peer is built to survive
+   it: the host's idle timeout is 75 s and every one of these is a
+   human holding the mouse for a second or two.
+
+     MenuSelect     a menu is down
+     DragWindow     a window is being dragged
+     GrowWindow     a window is being resized
+
+   If one of these ever needs to be long-running, it has to be replaced
+   with a tracking loop of our own, not given a callback it does not
+   have. Anything NEW that stalls belongs in this list or gets a pump. */
+
 /* Disposes the UPPs. Call once at quit. */
 void now_pump_shutdown(void);
 

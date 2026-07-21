@@ -1,16 +1,23 @@
 import AppKit
+import Combine
 import SwiftUI
 
 struct FilesModuleView: View {
     @ObservedObject var model: FilesModuleModel
     @State private var sortOrder = [KeyPathComparator(\FileRow.name)]
-    /// Row id being hovered by a drag; "" means the table itself.
-    @State private var dropTarget: String?
     /// Ticks while a transfer waits, so the elapsed time visibly moves
     /// and a slow tail does not read as a freeze.
     @State private var elapsed = Date()
-    private let clock = Timer.publish(every: 1, on: .main, in: .common)
-        .autoconnect()
+    /// Ticks only while something is in flight. It exists to make a
+    /// stalled transfer visibly still moving; running it for the life of
+    /// the pane invalidated `body` once a second forever, and `body`
+    /// sorts the row array.
+    private var clock: AnyPublisher<Date, Never> {
+        model.transfer == nil
+            ? Empty().eraseToAnyPublisher()
+            : Timer.publish(every: 1, on: .main, in: .common)
+                .autoconnect().eraseToAnyPublisher()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -212,7 +219,7 @@ struct FilesModuleView: View {
 
     private var table: some View {
         FileBrowserTable(model: model,
-                         rows: model.rows.sorted(using: sortOrder),
+                         rows: model.sorted(using: sortOrder),
                          onOpen: { row in
                              if row.isFolder {
                                  model.open(row)
@@ -404,33 +411,9 @@ struct FilesModuleView: View {
                                   countStyle: .file)
     }
 
-    private func dateText(_ date: Date) -> String {
-        date.formatted(date: .abbreviated, time: .shortened)
-    }
 }
 
 
-/// A folder row that accepts a Finder drop straight into it, so a drop
-/// does not require navigating first.
-private struct FolderDropTarget: ViewModifier {
-    let row: FileRow
-    let model: FilesModuleModel
-    let isTargeted: Bool
-
-    func body(content: Content) -> some View {
-        if row.isFolder {
-            content
-                .dropDestination(for: URL.self) { urls, _ in
-                    model.enqueue(urls, into: row.path)
-                    return true
-                }
-                .background(isTargeted ? Color.accentColor.opacity(0.2)
-                                       : Color.clear)
-        } else {
-            content
-        }
-    }
-}
 
 
 /// The question asked before anything in the share changes. Two buttons,

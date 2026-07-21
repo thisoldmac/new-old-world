@@ -34,13 +34,20 @@ final class HostServingTests: XCTestCase {
         try? FileManager.default.removeItem(at: root)
     }
 
+    private struct WaitTimeout: Error { let what: String }
+
+    /// Throws on timeout rather than returning. Returning let every
+    /// assertion after the wait run anyway, turning one honest "timed
+    /// out waiting for a listing" into a cascade of downstream failures
+    /// that named the wrong thing — in the file that exercises the
+    /// newest path, where a hang is the likeliest way to fail.
     private func waitUntil(_ what: String, timeout: TimeInterval = 5,
                            _ condition: @escaping () -> Bool) async throws {
         let deadline = Date().addingTimeInterval(timeout)
         while !condition() {
             guard Date() < deadline else {
                 XCTFail("timed out waiting for \(what)")
-                return
+                throw WaitTimeout(what: what)
             }
             try await Task.sleep(nanoseconds: 20_000_000)
         }
@@ -179,6 +186,12 @@ final class HostServingTests: XCTestCase {
     // MARK: - Pushing
 
     func testGuestCanSendAFileAndItLandsInTheShare() async throws {
+        /* The announce hook, not a published array: an arriving file is
+           made visible by a system notification, and a test that
+           asserted a list nothing reads would have passed while the
+           visible half was broken. */
+        var announced: [URL] = []
+        listener.announceReceivedFile = { _, url, _ in announced.append(url) }
         let guest = try await connectedGuest()
         let bytes = "sent from the PowerBook\r".data(using: .macOSRoman)!
 
@@ -213,7 +226,9 @@ final class HostServingTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: landed, encoding: .utf8),
                        "sent from the PowerBook\n",
                        "line endings this Mac reads")
-        XCTAssertEqual(listener.received.first?.lastPathComponent, "Sent.txt")
+        XCTAssertEqual(announced.last?.lastPathComponent, "Sent.txt",
+                       "and the arrival is announced, which is what the "
+                       + "app actually shows a person")
     }
 
     func testATruncatedPushIsNotSavedAsAWholeFile() async throws {

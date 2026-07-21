@@ -33,6 +33,21 @@ final class HostShare {
         set { defaults.set(newValue.path, forKey: Self.key) }
     }
 
+    /// One error, mapped once. Two envelopes carry it — file.refuse for
+    /// a request we will not serve, file.result for a change that
+    /// failed — and both used to re-derive the same two expressions,
+    /// so a new ShareError case would have taught only one of them.
+    struct WireFault {
+        let code: String
+        let reason: String
+
+        init(_ error: Error) {
+            let known = error as? HostShare.ShareError
+            code = known?.code ?? "io-error"
+            reason = known?.message ?? "\(error)"
+        }
+    }
+
     enum ShareError: Error {
         case badPath, notFound, notADirectory, exists, io(String)
 
@@ -130,42 +145,150 @@ final class HostShare {
                 modified: values?.contentModificationDate
                     .flatMap(ClassicDate.macSeconds(from:)))
         }
-        /* A page is bounded by BYTES as well as by count. The wire caps
-           a control frame at 4 KB, and sixteen long names plus their
-           types and dates can exceed that — at which point the reader
-           either drops the message or, as happened here, the whole
-           connection. Counting entries is not the same as counting what
-           they weigh. */
+        /* A page is bounded by BYTES as well as by count: sixteen long
+           names plus their types and dates can exceed the control-frame
+           cap, and a message the receiver cannot hold used to cost the
+           whole connection.
+
+           The size is MEASURED by encoding the candidate page, not
+           estimated. An estimate is a second, approximate copy of the
+           codec's rules, and it drifts silently the first time a field
+           is added to an entry — in whichever direction is not safe. */
         var page: [FileEntry] = []
-        var bytes = Self.listingOverhead
         for entry in entries {
-            let size = Self.encodedSize(of: entry)
-            if !page.isEmpty && bytes + size > Self.maxListingBytes {
-                break
-            }
+            let candidate = page + [entry]
+            let probe = FileListing(id: 0, path: path, entries: candidate,
+                                    more: true, cursor: 0, root: root.path)
+            let size = (try? ControlMessageCodec.encode(.fileListing(probe)))?
+                .count ?? Int.max
+            if !page.isEmpty && size > maxListingBytes { break }
             page.append(entry)
-            bytes += size
         }
         let served = start + page.count
         return (page, served < contents.count, served + 1)
     }
 
+    // MARK: - Changing what we share
+
+    /* The guest asks for these the same way the host does, and they mean
+       the same thing whichever side serves them. Every one is
+       reversible, which is what lets the asker offer undo. */
+
+    /// Moves and/or renames. `toPath` is the full destination path
+    /// including the new name. Parents are NOT created: moving into a
+    /// folder that is not there is a mistake, not an instruction.
+    func move(from: String, to: String, overwrite: Bool) throws -> String {
+        let source = try resolve(from)
+        let target = try resolve(to)
+        guard FileManager.default.fileExists(atPath: source.path) else {
+            throw ShareError.notFound
+        }
+        let parent = target.deletingLastPathComponent()
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: parent.path,
+                                             isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            throw ShareError.notFound
+        }
+        if FileManager.default.fileExists(atPath: target.path) {
+            guard overwrite else { throw ShareError.exists }
+            /* Replacing keeps the old one, for the same reason a push
+               does: the person who agreed is at the other machine and
+               cannot see what they are replacing. */
+            try FileManager.default.trashItem(at: target,
+                                              resultingItemURL: nil)
+        }
+        do {
+            try FileManager.default.moveItem(at: source, to: target)
+        } catch {
+            throw ShareError.io("\(error.localizedDescription)")
+        }
+        return relativePath(of: target)
+    }
+
+    /// Moves an item to the Trash and reports the name it landed under —
+    /// which is not always the name it had, because the Trash may
+    /// already hold one. That name is what a restore needs, so recording
+    /// the name we ASKED for would eventually put something else back.
+    func trash(path: String) throws -> String {
+        let url = try resolve(path)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw ShareError.notFound
+        }
+        var landed: NSURL?
+        do {
+            try FileManager.default.trashItem(at: url,
+                                              resultingItemURL: &landed)
+        } catch {
+            throw ShareError.io("\(error.localizedDescription)")
+        }
+        return (landed as URL?)?.lastPathComponent ?? url.lastPathComponent
+    }
+
+    /// Puts a trashed item back. Both halves are names, so an undo
+    /// survives a restart of either machine.
+    func restore(trashedAs: String, to path: String) throws -> String {
+        let target = try resolve(path)
+        let trash = try FileManager.default.url(
+            for: .trashDirectory, in: .userDomainMask,
+            appropriateFor: nil, create: false)
+        let source = trash.appendingPathComponent(trashedAs)
+        guard FileManager.default.fileExists(atPath: source.path) else {
+            /* Emptied, or dragged out by hand. Not our failure, and the
+               asker can say so precisely. */
+            throw ShareError.notFound
+        }
+        if FileManager.default.fileExists(atPath: target.path) {
+            throw ShareError.exists
+        }
+        do {
+            try FileManager.default.moveItem(at: source, to: target)
+        } catch {
+            throw ShareError.io("\(error.localizedDescription)")
+        }
+        return relativePath(of: target)
+    }
+
+    /// Makes a folder, and the parents it needs.
+    func makeFolder(path: String) throws -> String {
+        let url = try resolve(path)
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: url.path,
+                                          isDirectory: &isDirectory) {
+            guard isDirectory.boolValue else { throw ShareError.exists }
+            return relativePath(of: url)   // already there is not a failure
+        }
+        do {
+            try FileManager.default.createDirectory(
+                at: url, withIntermediateDirectories: true)
+        } catch {
+            throw ShareError.io("\(error.localizedDescription)")
+        }
+        return relativePath(of: url)
+    }
+
+    /// A path back in the other machine's spelling, for reporting where
+    /// something actually landed.
+    private func relativePath(of url: URL) -> String {
+        let base = root.standardizedFileURL.path
+        let full = url.standardizedFileURL.path
+        guard full.hasPrefix(base + "/") else { return "" }
+        return String(full.dropFirst(base.count + 1))
+            .replacingOccurrences(of: "/", with: Self.separator)
+    }
+
     /// The contract's control-frame cap, less room for the envelope the
     /// entries sit in (type, path, cursor, root, and the share label).
-    private static let maxListingBytes = 4096
-    private static let listingOverhead = 512
+    /// The contract's control-frame cap. A listing must fit in one.
+    ///
+    /// With a 16-entry page and names the other machine can hold (31
+    /// characters), a real listing does not come close — so this bound
+    /// is defence against a future page size or a longer name, not
+    /// something the current shape reaches. Settable so a test can prove
+    /// the mechanism works rather than assert a threshold that cannot be
+    /// crossed.
+    var maxListingBytes = 4096
 
-    /// What one entry costs on the wire, near enough to bound a page by.
-    /// Deliberately an over-estimate: being one entry conservative costs
-    /// a round trip, being one entry optimistic costs the message.
-    private static func encodedSize(of entry: FileEntry) -> Int {
-        // Names are escaped to \uXXXX when they leave ASCII, so a
-        // character can cost six bytes.
-        let name = entry.name.unicodeScalars.reduce(0) {
-            $0 + ($1.isASCII ? 1 : 6)
-        }
-        return name + 120
-    }
 
     /// Reads a file for the other machine, converted the way a download
     /// is: this is the same journey, in the same direction, started from
@@ -180,8 +303,16 @@ final class HostShare {
         guard let data = try? Data(contentsOf: url) else {
             throw ShareError.io("could not read that file")
         }
-        return OutboundFile.plan(url: url, data: data,
-                                 convertText: convertText)
+        var plan = OutboundFile.plan(url: url, data: data,
+                                     convertText: convertText)
+        /* Taken here, where the file was already resolved and read.
+           Asking for it afterwards meant resolving the path a second
+           time — and resolve reads a default and walks symlinks. */
+        plan.modified = (try? url.resourceValues(
+            forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate
+            .flatMap(ClassicDate.macSeconds(from:))
+        return plan
     }
 
     /// Where an incoming file should be written. The name arrives in

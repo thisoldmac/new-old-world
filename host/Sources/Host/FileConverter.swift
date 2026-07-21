@@ -102,6 +102,10 @@ enum OutboundFile {
         var bytes: Data
         var fileType: String?
         var creator: String?
+        /// Classic seconds since 1904, read while the file was. Asking
+        /// the file system a second time for what we just had is a
+        /// resolve and a stat for a number already in hand.
+        var modified: Int?
         /// What was done, for the badge and the transfer log.
         var note: String?
     }

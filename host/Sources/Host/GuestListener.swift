@@ -213,9 +213,6 @@ final class GuestListener: ObservableObject {
     /// setting for the ones we fetch.
     var convertServedText = true
 
-    /// Files the guest has sent us, newest first — the module shows them
-    /// so an arrival is visible rather than silent.
-    @Published private(set) var received: [URL] = []
 
     /// Answers a listing request from the guest.
     fileprivate func serveList(_ request: FileList) {
@@ -246,16 +243,11 @@ final class GuestListener: ObservableObject {
                 path: request.path,
                 convertText: convertServedText
                     && request.container != "data")
-            let modified = (try? share.resolve(request.path))
-                .flatMap { try? $0.resourceValues(
-                    forKeys: [.contentModificationDateKey]) }?
-                .contentModificationDate
-                .flatMap(ClassicDate.macSeconds(from:))
             note("#\(request.id) serving \(plan.name), "
                  + "\(plan.bytes.count) bytes", area: "files")
             session?.serveFile(id: request.id, plan: plan,
                                container: request.container,
-                               modified: modified)
+                               modified: plan.modified)
         } catch {
             session?.refuseFile(id: request.id, error: error)
         }
@@ -283,9 +275,73 @@ final class GuestListener: ObservableObject {
     /// and the tests stay silent.
     var announceReceivedFile: ((String, URL, Int) -> Void)?
 
+    /// The four change operations, answered the way the guest answers
+    /// them: one file.result, success or not, because the asker is
+    /// holding an undo stack and a silent failure leaves it believing
+    /// something it can reverse.
+    fileprivate func serveChange(_ change: ChangeRequest) {
+        do {
+            switch change {
+            case .move(let request):
+                let landed = try share.move(from: request.path,
+                                            to: request.toPath,
+                                            overwrite: request.overwrite
+                                                ?? false)
+                note("#\(request.id) moved \(request.path) to \(landed)",
+                     area: "files")
+                session?.send(.fileResult(FileResult(
+                    id: request.id, ok: true, path: landed,
+                    trashedAs: nil, code: nil, reason: nil)))
+            case .trash(let request):
+                let landed = try share.trash(path: request.path)
+                /* The other machine putting a file of yours in the
+                   Trash is the line most worth having later. */
+                note("#\(request.id) trashed \(request.path), it is in the "
+                     + "Trash as \(landed)", area: "files")
+                session?.send(.fileResult(FileResult(
+                    id: request.id, ok: true, path: request.path,
+                    trashedAs: landed, code: nil, reason: nil)))
+            case .restore(let request):
+                let landed = try share.restore(trashedAs: request.trashedAs,
+                                               to: request.toPath)
+                note("#\(request.id) restored \(request.trashedAs) to "
+                     + "\(landed)", area: "files")
+                session?.send(.fileResult(FileResult(
+                    id: request.id, ok: true, path: landed,
+                    trashedAs: nil, code: nil, reason: nil)))
+            case .mkdir(let request):
+                let landed = try share.makeFolder(path: request.path)
+                note("#\(request.id) made the folder \(landed)",
+                     area: "files")
+                session?.send(.fileResult(FileResult(
+                    id: request.id, ok: true, path: landed,
+                    trashedAs: nil, code: nil, reason: nil)))
+            }
+        } catch {
+            let fault = HostShare.WireFault(error)
+            note("#\(change.id) change refused: \(fault.code) "
+                 + "(\(fault.reason))", area: "files", level: .warn)
+            session?.send(.fileResult(FileResult(
+                id: change.id, ok: false, path: nil, trashedAs: nil,
+                code: fault.code, reason: fault.reason)))
+        }
+    }
+
+    enum ChangeRequest {
+        case move(FileMove), trash(FileTrash)
+        case restore(FileRestore), mkdir(FileMkdir)
+
+        var id: Int {
+            switch self {
+            case .move(let r): return r.id
+            case .trash(let r): return r.id
+            case .restore(let r): return r.id
+            case .mkdir(let r): return r.id
+            }
+        }
+    }
+
     fileprivate func noteReceived(_ url: URL) {
-        received.insert(url, at: 0)
-        if received.count > 20 { received.removeLast() }
         let bytes = (try? FileManager.default.attributesOfItem(
             atPath: url.path)[.size] as? Int) ?? nil
         let who: String
@@ -446,13 +502,20 @@ final class GuestListener: ObservableObject {
         // Named by content, so an interrupted attempt can be continued and
         // an edited one cannot be mistaken for it. Computed once here; the
         // same checksum rides file.end.
+        /* One pass over the file, not two. The token and file.end's
+           checksum are the same number, and computing it twice put a
+           full CRC of the whole file in front of the first byte AND
+           another one at the moment the person is watching for the
+           transfer to finish. */
+        let checksum = TransferIdentity.crc32(bytes)
         session.sendFileOffer(
             FileOffer(id: id, name: name, path: path, container: container,
                       bytes: bytes.count, fileType: fileType,
                       creator: creator, modified: modified,
                       overwrite: overwrite,
-                      resumeToken: TransferIdentity.resumeToken(for: bytes)),
-            bytes: bytes)
+                      resumeToken: TransferIdentity.token(bytes: bytes.count,
+                                                          crc32: checksum)),
+            bytes: bytes, crc32: checksum)
     }
 
     private var pendingPut: ((Result<Void, FileFailure>) -> Void)?
@@ -607,7 +670,6 @@ final class GuestListener: ObservableObject {
     fileprivate func failFile(_ refuse: FileRefuse) {
         let failure = FileFailure(code: refuse.code,
                                   message: refuse.reason ?? refuse.code)
-        clearWatchdog(refuse.id)
         clearWatchdog(refuse.id)
         if let completion = pendingListings.removeValue(forKey: refuse.id) {
             completion(.failure(failure))
@@ -935,6 +997,9 @@ final class GuestListener: ObservableObject {
             onAcceptOffer: { [weak self] offer in
                 self?.acceptOffer(offer)
             },
+            onServeChange: { [weak self] change in
+                self?.serveChange(change)
+            },
             onReceived: { [weak self] url in
                 self?.noteReceived(url)
             },
@@ -1005,6 +1070,7 @@ final class Session {
     private let onServeList: (FileList) -> Void
     private let onServeGet: (FileGet) -> Void
     private let onAcceptOffer: (FileOffer) -> Void
+    private let onServeChange: (GuestListener.ChangeRequest) -> Void
     private let onReceived: (URL) -> Void
     private let onOutboundProgress: (Int, Int) -> Void
     private let onOutboundFailed: (String) -> Void
@@ -1069,6 +1135,7 @@ final class Session {
          onServeList: @escaping (FileList) -> Void,
          onServeGet: @escaping (FileGet) -> Void,
          onAcceptOffer: @escaping (FileOffer) -> Void,
+         onServeChange: @escaping (GuestListener.ChangeRequest) -> Void,
          onReceived: @escaping (URL) -> Void,
          onOutboundProgress: @escaping (Int, Int) -> Void,
          onOutboundFailed: @escaping (String) -> Void,
@@ -1097,6 +1164,7 @@ final class Session {
         self.onServeList = onServeList
         self.onServeGet = onServeGet
         self.onAcceptOffer = onAcceptOffer
+        self.onServeChange = onServeChange
         self.onReceived = onReceived
         self.onOutboundProgress = onOutboundProgress
         self.onOutboundFailed = onOutboundFailed
@@ -1238,6 +1306,14 @@ final class Session {
             onServeGet(request)
         case .fileOffer(let offer):
             onAcceptOffer(offer)
+        case .fileMove(let request):
+            onServeChange(.move(request))
+        case .fileTrash(let request):
+            onServeChange(.trash(request))
+        case .fileRestore(let request):
+            onServeChange(.restore(request))
+        case .fileMkdir(let request):
+            onServeChange(.mkdir(request))
         case .fileAccept(let accept):
             sendAcceptedFile(accept)
         case .fileDone(let done):
@@ -1348,11 +1424,12 @@ final class Session {
     /// Holds an offered file until the guest accepts it. The bytes wait
     /// here rather than riding with the offer: a refusal (busy, a name
     /// collision) must cost nothing but the message.
-    private var pendingOffer: (offer: FileOffer, bytes: Data)?
+    private var pendingOffer: (offer: FileOffer, bytes: Data,
+                               crc32: UInt32?)?
     private var transferSeq: UInt16 = 0
 
-    func sendFileOffer(_ offer: FileOffer, bytes: Data) {
-        pendingOffer = (offer, bytes)
+    func sendFileOffer(_ offer: FileOffer, bytes: Data, crc32: UInt32?) {
+        pendingOffer = (offer, bytes, crc32)
         send(.fileOffer(offer))
     }
 
@@ -1372,6 +1449,10 @@ final class Session {
         var bytes: Data
         var sent: Int
         var cancelled: Bool
+        /// Over the WHOLE file, computed once when the transfer was
+        /// staged. A resumed file is stitched from two attempts and
+        /// this seam is what nothing else checks.
+        var crc32: UInt32?
         /// Bytes the guest has said it holds. The window is measured
         /// against this, never against `sent`.
         var acked: Int = 0
@@ -1387,12 +1468,14 @@ final class Session {
 
     /// Turns any serving failure into the one refusal the contract has.
     func refuseFile(id: Int, error: Error) {
-        let known = error as? HostShare.ShareError
-        onLog("#\(id) refused: \(known?.code ?? "io-error") "
-              + "(\(known?.message ?? "\(error)"))", "files", .warn)
-        send(.fileRefuse(FileRefuse(
-            id: id, code: known?.code ?? "io-error",
-            reason: known?.message ?? "\(error)")))
+        let fault = HostShare.WireFault(error)
+        /* Logged with the SAME words that go on the wire: a refusal the
+           other machine reports and a refusal in this file that read
+           differently are two things to reconcile later. */
+        onLog("#\(id) refused: \(fault.code) (\(fault.reason))",
+              "files", .warn)
+        send(.fileRefuse(FileRefuse(id: id, code: fault.code,
+                                    reason: fault.reason)))
     }
 
     /// Serves a file we hold: begin, metered bulk, end — the same path
@@ -1408,7 +1491,8 @@ final class Session {
             fileType: plan.fileType, creator: plan.creator,
             modified: modified)))
         outbound = Outbound(id: id, transfer: transfer, bytes: plan.bytes,
-                            sent: 0, cancelled: false)
+                            sent: 0, cancelled: false,
+                            crc32: TransferIdentity.crc32(plan.bytes))
         onOutboundProgress(0, plan.bytes.count)
         sendNextOutboundChunk()
     }
@@ -1541,7 +1625,7 @@ final class Session {
 
     /// Streams an accepted file: begin, the bulk frames, then end.
     private func sendAcceptedFile(_ accept: FileAccept) {
-        guard let (offer, bytes) = pendingOffer,
+        guard let (offer, bytes, checksum) = pendingOffer,
               offer.id == accept.id else { return }
         pendingOffer = nil
         let transfer = nextTransfer()
@@ -1562,7 +1646,8 @@ final class Session {
             offset: start > 0 ? start : nil,
             resumeToken: offer.resumeToken)))
         outbound = Outbound(id: offer.id, transfer: transfer, bytes: bytes,
-                            sent: start, cancelled: false, acked: start)
+                            sent: start, cancelled: false, crc32: checksum,
+                            acked: start)
         onOutboundProgress(start, bytes.count)
         sendNextOutboundChunk()
     }
@@ -1581,8 +1666,7 @@ final class Session {
             // resumed file is stitched from two attempts and the seam is
             // exactly what nothing else checks.
             send(.fileEnd(FileEnd(id: out.id, transfer: Int(out.transfer),
-                                  ok: true, sendMs: nil,
-                                  crc32: TransferIdentity.crc32(out.bytes))))
+                                  ok: true, sendMs: nil, crc32: out.crc32)))
             return
         }
         // Wait for the receiver to catch up rather than piling bytes into
