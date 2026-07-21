@@ -1,0 +1,534 @@
+<title>Processes page — Platinum mock</title>
+<style>
+  :root {
+    --page-bg: #eceef1;
+    --page-ink: #23282e;
+    --page-muted: #5c6570;
+    --card-bg: #ffffff;
+    --card-line: #d3d8de;
+    --accent: #2f5e8f;
+    --ok: #2c6b4f;
+    --warn: #8a6116;
+    --no: #8a3030;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page-bg: #1c2026;
+      --page-ink: #e4e8ec;
+      --page-muted: #9aa4af;
+      --card-bg: #262b33;
+      --card-line: #3a414b;
+      --accent: #7fa8cf;
+      --ok: #7fc2a2;
+      --warn: #d9b36a;
+      --no: #d98a8a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page-bg: #1c2026;
+    --page-ink: #e4e8ec;
+    --page-muted: #9aa4af;
+    --card-bg: #262b33;
+    --card-line: #3a414b;
+    --accent: #7fa8cf;
+    --ok: #7fc2a2;
+    --warn: #d9b36a;
+    --no: #d98a8a;
+  }
+  :root[data-theme="light"] {
+    --page-bg: #eceef1;
+    --page-ink: #23282e;
+    --page-muted: #5c6570;
+    --card-bg: #ffffff;
+    --card-line: #d3d8de;
+    --accent: #2f5e8f;
+    --ok: #2c6b4f;
+    --warn: #8a6116;
+    --no: #8a3030;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page-bg);
+    color: var(--page-ink);
+    font: 15px/1.55 Charcoal, Geneva, Verdana, system-ui, sans-serif;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 28px 20px 60px; }
+  h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: 0.2px; }
+  .dek { color: var(--page-muted); margin: 0 0 22px; max-width: 68ch; }
+  .dek code { font: 13px ui-monospace, Monaco, monospace; }
+
+  /* ---------- the stage: an OS 8.6 desktop ---------- */
+  .stage-scroll { overflow-x: auto; border: 1px solid var(--card-line); border-radius: 6px; }
+  .stage {
+    min-width: 820px;
+    background:
+      repeating-conic-gradient(#7590b2 0% 25%, #6d87a9 0% 50%) 0 0 / 4px 4px;
+    padding: 0 0 34px;
+  }
+
+  /* menubar */
+  .menubar {
+    height: 20px; background: #e8e8e8; border-bottom: 1px solid #555;
+    display: flex; align-items: center; gap: 0;
+    font: bold 12px Charcoal, Geneva, Verdana, sans-serif; color: #000;
+    padding: 0 10px;
+  }
+  .menubar span { padding: 0 9px; }
+  .menubar .apple { padding: 0 6px 0 2px; display: flex; align-items: center; }
+  .menubar .spacer { flex: 1; }
+  .menubar .appname { display: flex; align-items: center; gap: 5px; font-weight: bold; }
+
+  /* window chrome */
+  .macwindow {
+    width: 746px; margin: 26px auto 0;
+    border: 1px solid #222;
+    box-shadow: 1px 2px 0 rgba(0,0,0,0.35);
+    background: #dddddd;
+  }
+  .titlebar {
+    height: 19px; position: relative;
+    display: flex; align-items: center;
+    border-bottom: 1px solid #555;
+    background: linear-gradient(#f4f4f4, #d0d0d0);
+    padding: 0 6px;
+  }
+  .titlebar .stripes {
+    position: absolute; inset: 3px 26px 3px 26px;
+    background: repeating-linear-gradient(#0000 0 1px, #0003 1px 2px);
+    pointer-events: none;
+  }
+  .tb-box {
+    width: 11px; height: 11px; border: 1px solid #333; background: #ddd;
+    box-shadow: inset 1px 1px 0 #fff, inset -1px -1px 0 #999;
+    z-index: 1;
+  }
+  .titlebar .title {
+    flex: 1; text-align: center;
+    font: bold 12px Charcoal, Geneva, Verdana, sans-serif;
+    color: #000; z-index: 1;
+  }
+  .titlebar .title em {
+    font-style: normal;
+    background: #dfdfdf; padding: 0 8px;
+  }
+  .titlebar .right { display: flex; gap: 4px; z-index: 1; }
+
+  /* content grid: rail | main */
+  .content {
+    width: 744px; height: 478px;
+    display: grid; grid-template-columns: 160px 1fr;
+    background: #dddddd;
+  }
+
+  /* sidebar */
+  .rail { padding: 8px; }
+  .rail-list {
+    height: 100%;
+    background: #ffffff;
+    border: 1px solid #777;
+    box-shadow: inset 1px 1px 0 #bbb;
+    display: flex; flex-direction: column;
+  }
+  .navrow {
+    height: 32px; display: flex; align-items: center; gap: 6px;
+    padding: 0 7px; cursor: default;
+  }
+  .navrow svg { flex: none; }
+  .navrow .t { font: bold 11px Charcoal, Geneva, Verdana, sans-serif; line-height: 1.15; }
+  .navrow .s { font: 10px Geneva, Verdana, sans-serif; color: #555; line-height: 1.15; }
+  .navrow.sel { background: #a5b8dc; }
+  .navrow.sel .s { color: #333; }
+  .rail-spacer { flex: 1; }
+  .conn-divider { height: 1px; background: #999; margin: 0 4px; }
+
+  /* header placard */
+  .main { display: flex; flex-direction: column; min-width: 0; }
+  .placard {
+    background: #dddddd;
+    box-shadow: inset 0 1px 0 #f6f6f6, inset 0 -1px 0 #999;
+  }
+  .header { height: 38px; padding: 5px 12px 0; }
+  .header .t { font: bold 12px Charcoal, Geneva, Verdana, sans-serif; }
+  .header .b { font: 10px Geneva, Verdana, sans-serif; color: #444; }
+
+  /* body: the split */
+  .body {
+    flex: 1; background: #dddddd; padding: 10px 12px;
+    display: grid; grid-template-columns: 218px 1fr; gap: 10px;
+    min-height: 0;
+  }
+
+  /* left: data browser, one Name column */
+  .db {
+    background: #fff; border: 1px solid #666;
+    box-shadow: inset 1px 1px 0 #ccc;
+    display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+  }
+  .db-head { display: flex; height: 17px; border-bottom: 1px solid #888; background: #ddd; flex: none; }
+  .db-head .col {
+    flex: 1; font: 10px Geneva, Verdana, sans-serif; color: #222;
+    padding: 2px 6px 0;
+    box-shadow: inset 0 1px 0 #fff;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .db-head .sort::after {
+    content: ""; width: 0; height: 0; border: 4px solid transparent;
+    border-top-color: #333; margin-top: 4px;
+  }
+  .db-rows { overflow: hidden; }
+  .dbrow {
+    display: flex; height: 19px; align-items: center; gap: 5px;
+    padding: 0 6px; font: 11px Geneva, Verdana, sans-serif; cursor: default;
+  }
+  .dbrow.sel { background: #a5b8dc; }
+  .dbrow .note { color: #666; font-style: italic; font-size: 9px; margin-left: auto; }
+
+  /* right: detail pane */
+  .detail {
+    background: #dddddd; border: 1px solid #999;
+    box-shadow: inset 1px 1px 0 #f2f2f2;
+    padding: 12px 14px; display: flex; flex-direction: column; gap: 0;
+    min-height: 0; overflow: hidden;
+  }
+  .d-title { display: flex; align-items: center; gap: 8px; }
+  .d-title .nm { font: bold 12px Charcoal, Geneva, Verdana, sans-serif; }
+  .d-title .note { font: italic 10px Geneva, Verdana, sans-serif; color: #555; }
+  .d-facts { margin: 10px 0 0; display: grid; grid-template-columns: 78px 1fr; gap: 3px 8px; }
+  .d-facts dt { font: 10px Geneva, Verdana, sans-serif; color: #555; text-align: right; margin: 0; }
+  .d-facts dd { font: 10px Geneva, Verdana, sans-serif; color: #111; margin: 0; }
+  .d-facts dd.mono { font-family: Monaco, ui-monospace, monospace; }
+
+  .membar { width: 200px; height: 11px; border: 1px solid #555; background: #eee; margin-top: 2px; }
+  .membar i { display: block; height: 100%; background: repeating-linear-gradient(90deg, #7d90b8 0 2px, #91a2c6 2px 4px); }
+
+  .d-buttons { display: flex; gap: 10px; margin-top: 14px; }
+  .pushbtn {
+    font: 12px Charcoal, Geneva, Verdana, sans-serif; color: #000;
+    background: linear-gradient(#f2f2f2, #cfcfcf);
+    border: 1px solid #444; border-radius: 7px;
+    padding: 2px 14px 3px; min-width: 68px;
+    box-shadow: inset 1px 1px 0 #fff;
+    cursor: pointer;
+  }
+  .pushbtn:active { background: linear-gradient(#9db0d0, #8aa0c4); }
+  .pushbtn:disabled { color: #888; border-color: #999; box-shadow: none; background: #ddd; cursor: default; }
+  .pushbtn.default { outline: 2px solid #333; outline-offset: 2px; }
+  .pushbtn.ghost { border-style: dashed; color: #777; background: #e6e6e6; }
+  .rungtag { font: 9px Geneva, Verdana, sans-serif; color: #777; margin-left: 4px; }
+
+  /* extension group box */
+  .groupbox {
+    margin-top: 16px; border: 1px solid #999; border-radius: 3px;
+    box-shadow: inset 1px 1px 0 #f2f2f2;
+    padding: 10px 12px 12px; position: relative;
+  }
+  .groupbox legend, .gb-legend {
+    position: absolute; top: -7px; left: 10px;
+    background: #dddddd; padding: 0 5px;
+    font: 10px Geneva, Verdana, sans-serif; color: #333;
+  }
+  .peekline { font: 10px Geneva, Verdana, sans-serif; color: #555; }
+  .peekline.active { color: #1c4a1c; }
+  .gb-extras { margin-top: 8px; display: none; flex-direction: column; gap: 6px; }
+  .gb-extras.on { display: flex; }
+  .gb-extras .fact { font: 10px Geneva, Verdana, sans-serif; color: #111; }
+  .gb-extras .fact b { font-family: Monaco, ui-monospace, monospace; font-weight: normal; }
+  .gb-extras .future { font: italic 10px Geneva, Verdana, sans-serif; color: #777; }
+
+  /* status placard */
+  .status { height: 23px; display: flex; align-items: center; padding: 0 4px 0 12px; }
+  .status .txt { flex: 1; font: 10px Geneva, Verdana, sans-serif; color: #333; }
+  .growbox {
+    width: 15px; height: 15px; border: 1px solid #666; background: #ddd;
+    box-shadow: inset 1px 1px 0 #fff;
+    position: relative; margin-right: 3px;
+  }
+  .growbox::after {
+    content: ""; position: absolute; inset: 2px;
+    background:
+      linear-gradient(135deg, #0000 44%, #888 44% 52%, #0000 52%),
+      linear-gradient(135deg, #0000 62%, #888 62% 70%, #0000 70%);
+  }
+
+  /* movable modal */
+  .modal {
+    display: none;
+    position: absolute; width: 340px; left: 260px; top: 190px;
+    border: 1px solid #222; background: #ddd;
+    box-shadow: 2px 3px 0 rgba(0,0,0,0.4);
+    z-index: 5;
+  }
+  .modal.open { display: block; }
+  .modal .titlebar .title { font-size: 12px; }
+  .modal .mbody { padding: 14px 16px 14px; font: 11px Geneva, Verdana, sans-serif; color: #111; }
+  .modal .mbtns { display: flex; justify-content: flex-end; gap: 12px; padding: 0 16px 14px; }
+  .stage-inner { position: relative; }
+
+  /* ---------- page-level controls & gates ---------- */
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    margin: 18px 0 30px;
+  }
+  .controls .lbl { font-size: 13px; color: var(--page-muted); }
+  .chip {
+    font: 13px inherit; color: var(--page-ink);
+    background: var(--card-bg); border: 1px solid var(--card-line);
+    border-radius: 4px; padding: 5px 12px; cursor: pointer;
+  }
+  .chip[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: bold; }
+  .chip:focus-visible, .pushbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  h2 { font-size: 16px; margin: 34px 0 12px; }
+  .gates { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+  .gate {
+    background: var(--card-bg); border: 1px solid var(--card-line);
+    border-radius: 6px; padding: 14px 16px;
+  }
+  .gate h3 { margin: 0 0 8px; font-size: 12px; letter-spacing: 0.8px; text-transform: uppercase; }
+  .gate.exact h3 { color: var(--accent); }
+  .gate.proven h3 { color: var(--ok); }
+  .gate.prov h3 { color: var(--warn); }
+  .gate.not h3 { color: var(--no); }
+  .gate ul { margin: 0; padding-left: 18px; font-size: 13.5px; color: var(--page-ink); }
+  .gate li { margin: 4px 0; }
+  .gate li small { color: var(--page-muted); }
+  .foot { margin-top: 26px; font-size: 13px; color: var(--page-muted); max-width: 74ch; }
+</style>
+
+<div class="wrap">
+  <h1>The Processes page, mocked in Platinum</h1>
+  <p class="dek">Rung 0 of <code>docs/processes-and-peek.md</code> as a split view: Data Browser
+  list on the left, detail and controls on the right, at the Workshop's real geometry
+  (744&times;478 body, 160px rail, 38/23px placards — from <code>workshop_layout.h</code>).
+  Click rows, try <em>Ask to Quit</em>, and switch the extension state below the desktop.</p>
+
+  <div class="stage-scroll"><div class="stage"><div class="stage-inner">
+    <div class="menubar">
+      <span class="apple"><svg width="13" height="15" viewBox="0 0 13 15">
+        <defs><clipPath id="ap"><path d="M7.2 3.6c1-.1 2 .3 2.8 1-1.4 1-1.5 3.2.3 4.2-.4 1.3-1.2 3.4-2.6 3.4-.8 0-1-.5-2-.5s-1.3.5-2 .5C2.2 12.2 1 9.6 1 7.6c0-2.3 1.5-3.5 2.9-3.5.9 0 1.6.5 2.1.5.4 0 .8-.3 1.2-.5z"/><path d="M8.4 1.2c.2 1-.7 2.3-1.9 2.3-.2-1.2.9-2.3 1.9-2.3z"/></clipPath></defs>
+        <g clip-path="url(#ap)">
+          <rect y="0" width="13" height="3.1" fill="#4faf4f"/><rect y="3.1" width="13" height="2.4" fill="#c9c934"/>
+          <rect y="5.5" width="13" height="2.4" fill="#e08a2e"/><rect y="7.9" width="13" height="2.4" fill="#d0453a"/>
+          <rect y="10.3" width="13" height="2.4" fill="#8a4a9e"/><rect y="12.7" width="13" height="2.3" fill="#3a6ec0"/>
+        </g></svg></span>
+      <span>File</span><span>Edit</span><span>View</span><span>Windows</span>
+      <span class="spacer"></span>
+      <span class="appname"><svg width="14" height="14" viewBox="0 0 16 16" shape-rendering="crispEdges"><rect x="1" y="1" width="14" height="14" fill="#fff" stroke="#333"/><rect x="3" y="4" width="10" height="2" fill="#7d90b8"/><rect x="3" y="7" width="10" height="2" fill="#c0c8dc"/><rect x="3" y="10" width="7" height="2" fill="#c0c8dc"/></svg> NOW</span>
+    </div>
+
+    <div class="macwindow">
+      <div class="titlebar">
+        <div class="tb-box" title="close"></div>
+        <div class="stripes"></div>
+        <div class="title"><em>New Old World</em></div>
+        <div class="right"><div class="tb-box"></div><div class="tb-box"></div></div>
+      </div>
+      <div class="content">
+        <div class="rail"><div class="rail-list">
+          <div class="navrow"><svg width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges"><rect x="1" y="4" width="14" height="9" fill="#ddd" stroke="#333"/><rect x="5" y="2" width="6" height="2" fill="#999"/><circle cx="8" cy="8.5" r="2.5" fill="#7d90b8" stroke="#333"/></svg>
+            <div><div class="t">Screenshots</div><div class="s">Capture and stream</div></div></div>
+          <div class="navrow"><svg width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges"><path d="M1 4h5l1 2h8v7H1z" fill="#e8d9a0" stroke="#333"/></svg>
+            <div><div class="t">Files</div><div class="s">Browse and exchange</div></div></div>
+          <div class="navrow"><svg width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges"><rect x="1" y="2" width="14" height="12" fill="#222"/><text x="3" y="11" font-size="8" fill="#9f9" font-family="Monaco,monospace">&gt;_</text></svg>
+            <div><div class="t">Console</div><div class="s">Local commands</div></div></div>
+          <div class="navrow sel"><svg width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges"><rect x="1" y="1" width="14" height="14" fill="#fff" stroke="#333"/><rect x="3" y="3" width="10" height="2" fill="#7d90b8"/><rect x="3" y="6" width="10" height="2" fill="#c8c8c8"/><rect x="3" y="9" width="10" height="2" fill="#c8c8c8"/><rect x="3" y="12" width="6" height="2" fill="#c8c8c8"/></svg>
+            <div><div class="t">Processes</div><div class="s">Running applications</div></div></div>
+          <div class="rail-spacer"></div>
+          <div class="conn-divider"></div>
+          <div class="navrow"><svg width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges"><rect x="2" y="6" width="6" height="4" fill="#bbb" stroke="#333"/><rect x="8" y="7" width="4" height="2" fill="#333"/><rect x="12" y="5" width="2" height="6" fill="#7d90b8" stroke="#333"/></svg>
+            <div><div class="t">Connection</div></div></div>
+        </div></div>
+
+        <div class="main">
+          <div class="placard header">
+            <div class="t">Processes</div>
+            <div class="b">Everything running on this Mac. Quit asks politely and never forces.</div>
+          </div>
+
+          <div class="body">
+            <div class="db">
+              <div class="db-head"><div class="col sort">Name</div></div>
+              <div class="db-rows" id="rows"></div>
+            </div>
+
+            <div class="detail" id="detail"></div>
+          </div>
+
+          <div class="placard status">
+            <div class="txt" id="statustxt">7 processes - 12.4 MB free</div>
+            <div class="growbox"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="modal">
+      <div class="titlebar"><div class="stripes" style="inset:3px 8px"></div>
+        <div class="title"><em>Quit</em></div></div>
+      <div class="mbody" id="modaltext"></div>
+      <div class="mbtns">
+        <button class="pushbtn" id="mcancel">Cancel</button>
+        <button class="pushbtn default" id="mquit">Quit</button>
+      </div>
+    </div>
+  </div></div></div>
+
+  <div class="controls">
+    <span class="lbl">Extension state:</span>
+    <button class="chip" data-peek="ni" aria-pressed="true">Not installed</button>
+    <button class="chip" data-peek="nr" aria-pressed="false">Needs restart</button>
+    <button class="chip" data-peek="wv" aria-pressed="false">Wrong version</button>
+    <button class="chip" data-peek="ok" aria-pressed="false">Active</button>
+  </div>
+
+  <h2>What this mock is gated by</h2>
+  <div class="gates">
+    <div class="gate exact"><h3>Exact by construction</h3><ul>
+      <li>All geometry from <code>workshop_layout.h</code>: 744&times;478 content, rail 160, header 38, status 23, nav rows 32, grow box 15</li>
+      <li>Split is fixed, not a draggable splitter — both panes from one <code>compute_rects</code></li>
+      <li>Memory bar drawn by the module in its own pane — plain QuickDraw, no custom Data Browser column needed</li>
+      <li>Launch date via <code>LongDateString</code>; strings ASCII/MacRoman-safe</li>
+      <li>Quit is an Apple Event request; the row keeps its PSN until the walk proves it gone</li>
+    </ul></div>
+    <div class="gate proven"><h3>Metal-proven at 9.1</h3><ul>
+      <li>Data Browser list, header sort, native selection <small>(files page uses it today)</small></li>
+      <li>Row icons via <code>GetIconRef</code> on type/creator</li>
+      <li>Movable modal confirm that pumps the wire <small>(confirm.c)</small></li>
+      <li><code>SetFrontProcess</code> and AE quit are cross-process</li>
+    </ul></div>
+    <div class="gate prov"><h3>Provisional</h3><ul>
+      <li>Everything at 8.6 <small>(gate machine: the 3400c, pending screen repair)</small></li>
+      <li>Data Browser behavior on CarbonLib 1.6 over 8.6 specifically</li>
+      <li>Front &amp; Capture needs extension plane P1 for window bounds</li>
+      <li>The extension group's rung-4 line (per-process windows) is aspiration, drawn ghosted</li>
+    </ul></div>
+    <div class="gate not"><h3>Not offered</h3><ul>
+      <li>Type-select in the list <small>(Data Browser limitation on this runtime)</small></li>
+      <li>Force quit — no safe kill exists here</li>
+      <li>Seeing another app's windows or controls without the extension <small>(per-process Toolbox wall)</small></li>
+      <li>A draggable splitter <small>(custom control; not worth it at rung 0)</small></li>
+    </ul></div>
+  </div>
+
+  <p class="foot">Fonts are approximated (Charcoal/Geneva fall back to Verdana in a browser) and the
+  desktop weave is set dressing; metrics, control choices, states, and copy are the spec. The
+  detail pane is where the ladder climbs: rung 0 facts and actions today, extension status always
+  honest, and each later rung adds its affordance to the group box rather than redesigning the page.</p>
+</div>
+
+<script>
+  const procs = [
+    { name: "Finder",              type: "FNDR", sig: "MACS", used: 1847, size: 2400, icon: "finder", launched: "Mon, Jul 21, 2026, 8:04 AM" },
+    { name: "now-guest",           type: "APPL", sig: "NOWg", used: 512,  size: 1024, icon: "app", self: true, launched: "Mon, Jul 21, 2026, 8:05 AM" },
+    { name: "SimpleText",          type: "APPL", sig: "ttxt", used: 312,  size: 512,  icon: "app", launched: "Mon, Jul 21, 2026, 9:12 AM" },
+    { name: "Graphing Calculator", type: "APPL", sig: "gcal", used: 780,  size: 1024, icon: "app", launched: "Mon, Jul 21, 2026, 9:40 AM" },
+    { name: "Stickies",            type: "APPL", sig: "notz", used: 340,  size: 460,  icon: "app", launched: "Mon, Jul 21, 2026, 8:06 AM" },
+    { name: "Scrapbook",           type: "APPL", sig: "scbk", used: 268,  size: 380,  icon: "app", launched: "Mon, Jul 21, 2026, 9:58 AM" },
+    { name: "Time Synchronizer",   type: "appe", sig: "tsyn", used: 96,   size: 160,  icon: "appe", launched: "Mon, Jul 21, 2026, 8:04 AM" }
+  ];
+  const icons = {
+    finder: '<svg width="14" height="14" viewBox="0 0 16 16" shape-rendering="crispEdges"><rect x="2" y="1" width="12" height="14" fill="#cfd8ea" stroke="#333"/><rect x="4" y="3" width="8" height="6" fill="#fff" stroke="#333"/><rect x="5" y="5" width="2" height="2" fill="#333"/><rect x="9" y="5" width="2" height="2" fill="#333"/><rect x="6" y="11" width="4" height="1" fill="#333"/></svg>',
+    app:    '<svg width="14" height="14" viewBox="0 0 16 16" shape-rendering="crispEdges"><path d="M8 1 15 8 8 15 1 8z" fill="#e6e6e6" stroke="#333"/><path d="M5 8l2 2 4-4" fill="none" stroke="#7d90b8" stroke-width="1.6"/></svg>',
+    appe:   '<svg width="14" height="14" viewBox="0 0 16 16" shape-rendering="crispEdges"><circle cx="8" cy="8" r="5" fill="#ddd" stroke="#333"/><circle cx="8" cy="8" r="1.6" fill="#333"/><rect x="7" y="1" width="2" height="2" fill="#333"/><rect x="7" y="13" width="2" height="2" fill="#333"/><rect x="1" y="7" width="2" height="2" fill="#333"/><rect x="13" y="7" width="2" height="2" fill="#333"/></svg>'
+  };
+  const kindWord = t => t === "APPL" ? "application" : t === "appe" ? "background only" : "Finder";
+  const fmt = k => k.toLocaleString("en-US");
+
+  const rowsEl = document.getElementById("rows");
+  const detailEl = document.getElementById("detail");
+  let selected = 3;                     // Graphing Calculator
+  let peek = "ni";
+  const quitting = new Set();
+  const notResponding = new Set();
+
+  const peekTexts = {
+    ni: ["NOW Extension not installed", false],
+    nr: ["NOW Extension installed - restart to activate", false],
+    wv: ["NOW Extension 0.9 needs updating", false],
+    ok: ["NOW Extension 1.0 active", true]
+  };
+
+  function noteFor(i) {
+    return notResponding.has(i) ? "(not responding to quit)"
+         : quitting.has(i) ? "(quitting...)" : "";
+  }
+
+  function render() {
+    rowsEl.innerHTML = procs.map((p, i) =>
+      `<div class="dbrow ${i === selected ? "sel" : ""}" data-i="${i}">
+        ${icons[p.icon]}<span>${p.name}</span>
+        ${noteFor(i) ? `<span class="note">${quitting.has(i) ? "quitting..." : "no reply"}</span>` : ""}
+      </div>`).join("");
+
+    const p = procs[selected];
+    const pct = Math.round(100 * p.used / p.size);
+    const [peekTxt, active] = peekTexts[peek];
+    const busy = quitting.has(selected) || notResponding.has(selected);
+    detailEl.innerHTML = `
+      <div class="d-title">${icons[p.icon].replace('width="14" height="14"', 'width="16" height="16"')}
+        <span class="nm">${p.name}</span>
+        ${noteFor(selected) ? `<span class="note">${noteFor(selected)}</span>` : ""}
+      </div>
+      <dl class="d-facts">
+        <dt>Kind</dt><dd>${kindWord(p.type)}</dd>
+        <dt>Type</dt><dd class="mono">${p.type} / ${p.sig}</dd>
+        <dt>Memory</dt><dd>${fmt(p.used)}K used of ${fmt(p.size)}K
+          <span class="membar"><i style="width:${pct}%"></i></span></dd>
+        <dt>Launched</dt><dd>${p.launched}</dd>
+      </dl>
+      <div class="d-buttons">
+        <button class="pushbtn" id="front">Bring to Front</button>
+        <button class="pushbtn" id="quit" ${p.self || busy ? "disabled" : ""}>Ask to Quit</button>
+      </div>
+      <div class="groupbox">
+        <span class="gb-legend">NOW Extension</span>
+        <div class="peekline ${active ? "active" : ""}">${peekTxt}</div>
+        <div class="gb-extras ${active ? "on" : ""}">
+          <div class="fact">Front window: <b>512 x 342 at (64, 58)</b></div>
+          <div><button class="pushbtn ghost" disabled>Front &amp; Capture<span class="rungtag">rung 2</span></button></div>
+          <div class="future">Windows and controls appear here at rung 4.</div>
+        </div>
+      </div>`;
+    document.getElementById("quit").addEventListener("click", askQuit);
+  }
+
+  rowsEl.addEventListener("click", e => {
+    const r = e.target.closest(".dbrow");
+    if (r) { selected = +r.dataset.i; render(); }
+  });
+
+  const modal = document.getElementById("modal");
+  function askQuit() {
+    document.getElementById("modaltext").innerHTML =
+      `Ask &ldquo;${procs[selected].name}&rdquo; to quit? A busy application can decline, or take a while.`;
+    modal.classList.add("open");
+  }
+  document.getElementById("mcancel").addEventListener("click", () => modal.classList.remove("open"));
+  document.getElementById("mquit").addEventListener("click", () => {
+    modal.classList.remove("open");
+    const i = selected;
+    quitting.add(i); render();
+    setTimeout(() => {                  // the walk proves it gone...
+      if (procs[i].name === "SimpleText") {
+        procs.splice(i, 1); quitting.delete(i);
+        if (selected >= procs.length) selected = procs.length - 1;
+        document.getElementById("statustxt").textContent =
+          `${procs.length} processes - 12.9 MB free`;
+      } else {                          // ...or it survives the timeout
+        quitting.delete(i); notResponding.add(i);
+      }
+      render();
+    }, 2600);
+  });
+
+  document.querySelectorAll(".chip").forEach(ch => ch.addEventListener("click", () => {
+    document.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", "false"));
+    ch.setAttribute("aria-pressed", "true");
+    peek = ch.dataset.peek;
+    render();
+  }));
+
+  render();
+</script>

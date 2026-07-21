@@ -28,14 +28,20 @@ add_application(now-guest
     src/wire.c
     src/prefs.c
     src/conn_fields.c
+    src/conn_edit_dialog.c
     src/connection_module.c
+    src/peek.c
+    src/processes_layout.c
+    src/processes_module.c
     src/workshop_layout.c
     src/workshop_sidebar.c
     src/workshop_window.c
     resources/app.r
 )
 
-target_include_directories(now-guest PRIVATE src)
+# contract/ carries the in-memory table header shared with the (future)
+# 68K extension build - the wire contract's sibling.
+target_include_directories(now-guest PRIVATE src ../contract)
 target_compile_options(now-guest PRIVATE
     -Wall
     -Wextra

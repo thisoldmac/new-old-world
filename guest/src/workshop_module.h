@@ -14,11 +14,13 @@ typedef enum {
     kWorkshopScreenshots = 1,
     kWorkshopFiles,
     kWorkshopConsole,
+    kWorkshopProcesses,
     kWorkshopHardware,
-    kWorkshopConnection
+    kWorkshopConnection      /* pinned; renumbering it moved the prefs
+                                format to 10 - see now_prefs_load */
 } WorkshopModuleID;
 
-enum { kWorkshopModuleCount = 5 };
+enum { kWorkshopModuleCount = 6 };
 
 typedef struct WorkshopModuleOps {
     OSErr (*create)(WindowRef owner, const Rect *body);

@@ -8,9 +8,18 @@ this one.
 ## What this is
 
 Two applications and one contract between them: a PowerPC Carbon app for
-Mac OS 9.1–9.2.2, and a native macOS app. No TimBotTu runtime code is
-imported on either side. `now/` is a **nested repository with its own
-history**, gitignored by the parent exactly like `qemu/`.
+Mac OS 8.6–9.2.2 (the CarbonLib 1.6 range), and a native macOS app. No
+TimBotTu runtime code is imported on either side. `now/` is a **nested
+repository with its own history**, gitignored by the parent exactly like
+`qemu/`.
+
+NOW may also ship **optional resident components** on the guest (the NOW
+Extension), each behind a versioned in-memory contract stated once in a
+shared header; foreign-context execution lives only in resident
+components, foreign-memory reads live only in the application, and a
+resident component is always optional — the product degrades honestly
+without it. The family charter is
+[docs/resident-components.md](docs/resident-components.md).
 
 The product is human-facing. Both halves are meant to feel native to
 their own machine — not to each other, and not to the web.
@@ -32,6 +41,13 @@ State a limit **once**, where both sides read it. The control-frame cap
 lived in prose, in the sender, and as a different number in the
 receiver's buffer; nothing was wrong until a message grew past the
 smallest of the three.
+
+The same discipline covers the **in-memory contracts**: a resident
+component's shared table is one header (`contract/peek_table.h`),
+compiled by every side that reads it — 68K extension, PPC application,
+and the host `cc` for its native test — with static asserts pinning the
+layout, because two compilers sharing a struct is where silent packing
+drift bites.
 
 ## Two dialects
 

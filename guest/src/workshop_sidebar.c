@@ -25,7 +25,8 @@ enum {
     kFilesIconID = 130,
     kConsoleIconID = 131,
     kConnectionIconID = 132,
-    kHardwareIconID = 133
+    kProcessesIconID = 133,
+    kHardwareIconID = 134
 };
 
 static WindowRef g_owner;
@@ -48,6 +49,7 @@ static const struct {
     { "Screenshots", "Capture and stream", kScreenshotsIconID },
     { "Files", "Browse and exchange", kFilesIconID },
     { "Console", "Local commands", kConsoleIconID },
+    { "Processes", "Running applications", kProcessesIconID },
     { "Hardware", "Census and probes", kHardwareIconID },
     { "Connection", NULL, kConnectionIconID }
 };

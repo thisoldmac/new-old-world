@@ -35,10 +35,30 @@ modules (Screenshots, Files, Console, Connection) behind the
 dialog are deleted, and all four pages were watched working on the
 PowerBook the same night. The codex branch `codex/guest-console-invert`
 is **abandoned by decision** (Michelle, 2026-07-21) — do not merge it.
-Its one still-valuable idea is the **async OT connect path**
-(`160ed85`), which is the fix for "an unreachable host presents as a
-hang" below; whoever picks that up should reimplement it against this
-branch rather than merging.
+Its one still-valuable idea, the **async OT connect path** (`160ed85`),
+was reimplemented against `claude/processes-module-cb2d9c` on
+2026-07-21 (see "An unreachable host presents as a hang" below); the
+branch itself stays abandoned.
+
+**The Processes page landed and is metal-verified** (2026-07-21,
+`main` at `22f129a`; spec in `processes-and-peek.md`). The fifth
+Workshop module: a split view with a Data Browser process list
+(icon-and-text column, header sort) on the left and a detail pane
+(kind, type/creator, memory text + partition bar, launch date) on the
+right, plus Bring to Front and Ask to Quit (confirm -> quit Apple
+Event -> keep the PSN until the walk proves the process gone ->
+`(no reply)` after 10 s). The `peek.h` seam ships answering "NOW
+Extension not installed"; the group box renders it. Watched working on
+the PowerBook the same day. This is **rung 0** of the extension ladder
+- everything above it (the NOW Extension itself, `process.*`/`peek.*`
+wire families, the semantic mirror) is still ahead.
+
+The detour that dominated the arc was NOT the Processes page - it was
+reaching the Connection settings to repoint a chip that was listening
+on the wrong port. That exposed two real, now-fixed defects, both
+metal-verified: the async-connect launch wedge, and Connection field
+editing (see below). The Processes page itself was good across those
+rounds.
 
 **Workshop follow-ups, deliberately not done in the arc:** a CarbonLib
 1.6 launch gate (wire.c still surfaces `kConnNeedsCarbonLib` at connect
@@ -61,8 +81,71 @@ the common case is understood and fixed — this residual says the
 understanding is not complete. Measured, not reasoned about; the numbers
 are in `docs/large-transfers.md`.
 
-**An unreachable host presents as a hang.** Diagnosed, not fixed. The
-guest waits rather than saying it cannot reach anyone.
+**An unreachable host presents as a hang.** Reimplemented on
+`claude/processes-module-cb2d9c` (2026-07-21) after the wedge bit again
+on metal: `now-guest-processes` decoded under a fresh name, found no
+prefs, dialed `10.0.2.2`, and a synchronous `OTConnect` to an address
+that never answers blocks INSIDE the call — before the first update
+event, so the window stays blank and only a force quit ends it. The fix
+is the codex branch's shape (`160ed85`) rebuilt against this tree: the
+endpoint goes asynchronous for the dial only, a notifier publishes one
+flag, the main loop finishes or fails the connect, and the endpoint
+returns to synchronous before the hello. `now_log_open()` also moved
+above `conn_init()` so this failure finally leaves a log.
+`ot_connect_source_test.py` pins the sequence — it was watched failing
+against the pre-patch sources — because this fix has now been lost
+once. **Metal-verified 2026-07-21** on the PB1400c: launched with no
+prefs it dials the gateway and the UI stays alive and drivable, where
+before it wedged blank. (The emulator forgives the synchronous form,
+so this could only ever be proven on hardware.)
+
+**The Connection fields were dead once Connection became a page**
+(fixed 2026-07-21, `claude/processes-module-cb2d9c`). Address and port
+took no clicks. The real cause, after two wrong guesses: the Workshop
+window had **no root control**, so it had no control-embedding
+hierarchy, so `SetKeyboardFocus` could not work and an edit-text
+control could take neither focus, clicks, nor keystrokes. This is the
+same wall the Console hit on metal - "the edit-text field never took a
+keystroke" - which is why it hand-rolled its input. Connection is the
+only page that uses edit-text controls; every other page's controls
+(buttons, checkboxes, popups, Data Browser, scrollbar) respond through
+`TrackControl`/`HandleControlClick`, which need no focus, so only
+Connection was affected.
+
+Two dead ends before the fix, both worth recording because they are
+the wrong instinct:
+
+1. `FindControlUnderMouse` instead of `FindControl` - no effect, because
+   the window had no embedding hierarchy to be wrong about.
+2. Adding a root control to the window. It got the field to *focus* but
+   it still took no mouse or keys (the Appearance edit-text control just
+   does not work for entry in this WaitNextEvent app), AND it **broke
+   every other control in the group**: a root control turns the
+   group-box control into an embedder, and an embedded control only
+   receives clicks when HIToolbox's standard Carbon Event handler routes
+   them, which this app deliberately does not install. So the retry
+   popup and checkbox - which had worked - went dead too. The root
+   control was removed.
+
+The fix that holds: no root control anywhere (controls stay flat
+siblings the classic Control Manager hit-tests directly, with plain
+`FindControl`), and text entry moved out of the page entirely. Address
+and port are drawn **read-only**; an **Edit** button opens a
+movable-modal **dialog** (`conn_edit_dialog.c`, DLOG/DITL 301) whose
+entry the **Dialog Manager** drives - `GetNewDialog` +
+`ModalDialog(now_pump_modal_filter())` + `GetDialogItemText` on
+`editText` items. That is the exact mechanism the original Connection
+dialog used before the Workshop rewrite, proven on this PowerBook; its
+own window has its own text handling, independent of the Workshop
+window. The filter pumps the wire; validation stays in `conn_fields.c`.
+
+Net change from the last metal-verified state is only the Connection
+dialog: every page's control handling is back to no-root + `FindControl`.
+
+**Metal-verified 2026-07-21** on the PB1400c: the "Other Mac"
+popup/checkbox/Edit button click, the Edit dialog's fields take clicks
+and keys, and Save repoints the connection - which is how the
+wrong-port chip got corrected. Screenshots/Files/Console unchanged.
 
 **Type-select does nothing in the browser list.** Selection,
 double-click and header sorting all work; typing a letter does not jump.
@@ -78,6 +161,10 @@ Not load-bearing; parked as a known gap rather than chased.
 Everything here builds and passes its tests. None of it has been watched
 working on the PowerBook.
 
+- **Prefs v10 module renumbering.** Connection moved 4 to 5; a v9 file
+  should reopen on the page the person had (the remap is three lines
+  in `now_prefs_load`), exercised only by reasoning - same status as
+  the v9 note below.
 - **Corners of the Workshop no one has exercised anywhere:** the send
   progress bar actually moving, and the preview well at 16/32-bit
   depths. (The first metal pass found two bugs - a mute Console

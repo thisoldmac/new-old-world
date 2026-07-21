@@ -76,7 +76,7 @@ resource 'ICN#' (128) {
    masks, same rules as ics#(128): drawn at their real size, one-pixel
    art, mask is what the system fills for a selected state.
    129 camera (Screenshots), 130 folder (Files), 131 terminal (Console),
-   132 globe (Connection). */
+   132 globe (Connection), 133 row list (Processes), 134 chip (Hardware). */
 resource 'ics#' (129) {
     {
         $"0000 0000 0780 7FFE 4002 43C2 4422 4812"
@@ -113,8 +113,18 @@ resource 'ics#' (132) {
     }
 };
 
-/* 133 chip (Hardware): a die with pins on all four sides. */
+/* 133: a framed list of rows - the process list (Processes). */
 resource 'ics#' (133) {
+    {
+        $"0000 7FFE 4002 5FFA 4002 5FFA 4002 5FFA"
+        $"4002 5FFA 4002 5FFA 4002 7FFE 0000 0000",
+        $"0000 7FFE 7FFE 7FFE 7FFE 7FFE 7FFE 7FFE"
+        $"7FFE 7FFE 7FFE 7FFE 7FFE 7FFE 0000 0000"
+    }
+};
+
+/* 134 chip (Hardware): a die with pins on all four sides. */
+resource 'ics#' (134) {
     {
         $"0000 0490 0490 1FF8 1008 700E 1008 1188"
         $"718E 1188 1008 700E 1FF8 0490 0490 0000",
@@ -163,6 +173,33 @@ resource 'DITL' (200) {
     {
         /* 1 */ {76, 290, 96, 358}, Button { enabled, "OK" };
         /* 2 */ {14, 20, 66, 358}, StaticText { disabled, "^0" };
+    }
+};
+
+/* The Connection page's address/port editor. A movable-modal DIALOG
+   because the Dialog Manager's edit-text items take clicks and keys
+   where an Appearance edit-text control does not in this app (see
+   conn_edit_dialog.c). Item numbers match the enum there. */
+resource 'DLOG' (301) {
+    {120, 140, 300, 500},
+    movableDBoxProc,
+    invisible,
+    noGoAway,
+    0,
+    301,
+    "Connection",
+    centerMainScreen
+};
+
+resource 'DITL' (301) {
+    {
+        /* 1 Save    */ {144, 274, 164, 344}, Button { enabled, "Save" };
+        /* 2 Cancel  */ {144, 190, 164, 260}, Button { enabled, "Cancel" };
+        /* 3 addr    */ {22, 96, 38, 344}, EditText { enabled, "" };
+        /* 4 port    */ {50, 96, 66, 176}, EditText { enabled, "" };
+        /* 5 status  */ {82, 20, 130, 344}, StaticText { disabled, "" };
+        /* 6 */ {22, 20, 38, 90}, StaticText { disabled, "Address:" };
+        /* 7 */ {50, 20, 66, 90}, StaticText { disabled, "Port:" };
     }
 };
 

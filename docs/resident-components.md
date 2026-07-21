@@ -1,0 +1,198 @@
+# Resident components
+
+NOW's charter says two applications and one wire contract. This note
+adds the third thing the product will ship: **optional resident
+components** on the guest — boot-time code that exists so the
+application can see what a normal process cannot. It is the family
+charter: what may be resident, what never may, and the conventions
+every member follows. The first member is the NOW Extension
+([processes-and-peek.md](processes-and-peek.md) is its feature ladder);
+the rules here outlive it.
+
+The prior art is the parent project's AX workstream (AXPeek, qdpeek,
+the Worker, the mirror spike). **No code is imported from it** — the
+charter's rule stands — but its findings are load-bearing throughout,
+and they are cited where they bite.
+
+## The three tiers
+
+Every candidate feature gets the cheapest tier that can carry it, and
+must say why the cheaper tiers cannot.
+
+**Tier A — the application.** The default home for everything. The
+wire terminates in the app, so anything that only matters while NOW is
+running belongs here — including "the host launches an app on this
+Mac", which is a contract verb plus `LaunchApplication`, no residency
+required. Boot presence for the app itself is the Startup Items
+folder, not code.
+
+**Tier B — a background-only app (`'appe'` in Extensions).** The
+platform's sanctioned service shape: boot-launched, full Process
+Manager context, real networking, an event loop, a safe lifecycle.
+This tier earns its place only when something must answer the wire
+while the application is closed (launch-on-demand, crash watchdog).
+**Deferred**: no current feature needs it. Its known lesson, when it
+comes: an `'appe'` starts before the TCP stack is up, so a failed bind
+is never fatal and autostart waits.
+
+**Tier C — the extension (INIT).** Reserved for the one thing nothing
+else can do: executing inside other processes' contexts. Classic Mac
+OS keeps Window/Menu/Control state per process (finding
+`observe-process-local-ui`, metal-proven); the only ways across are a
+resident hook that runs in every context, or Apple Events to the
+narrow scriptable tier. Trap patches and draw-time hooks also live
+here or nowhere.
+
+## One extension, not a family of files
+
+tbt shipped sibling INITs (AXPeek, qdpeek) to isolate failure domains
+and let experiments evolve independently. NOW ships **one file — the
+NOW Extension** — and keeps what the sibling shape bought by internal
+discipline instead:
+
+- **Boot-minimal frozen core.** The only code that runs at boot: a
+  chained jGNE filter, the shared table, one Gestalt selector. It
+  reaches done at M0 and then changes rarely; it is the part whose
+  failure needs a shift-boot, so it stays small enough to audit
+  exhaustively.
+- **Planes, dormant until armed.** Every capability beyond the core is
+  a plane: code that executes only after the application writes an arm
+  request into the table, with the filter — already in the target's
+  context — performing any in-context installation, and disarm working
+  the same way. The failure boundary is *which code has run*, not
+  which file shipped. A machine that never opens the mirror never
+  executes a draw hook.
+- **Planes talk only through the core.** Separate translation units,
+  no cross-plane calls. Review enforces what separate binaries used
+  to.
+- **Dev builds are their own INITs.** An unproven plane is developed
+  as a throwaway extension under an honest name on the QEMU clone
+  (`tools/mb_rename.py` gives a build its chip name *inside* the
+  MacBinary header, where the decoded name actually comes from), and
+  folds into NOW Extension only after its ladder passes.
+
+Why one file: one installer checkbox, one restart story, one Gestalt
+probe, one version — and "drag NOW Extension out, reboot, does it
+persist?" is a one-step support diagnostic. Version skew between
+planes never exists.
+
+## The table is a contract, stated once
+
+The extension publishes one table in the system heap; the Gestalt
+selector answers with its address. The layout lives in **one header,
+[`contract/peek_table.h`](../contract/peek_table.h)**, compiled by the
+68K extension, the PPC application, and the host `cc` (for the native
+test) — the in-memory analogue of `asyncapi.yaml`, under the same
+rule: a limit is stated once, where every reader reads it.
+
+Three compilers sharing a struct is exactly where silent packing drift
+bites (m68k gcc aligns 32-bit fields to 2 bytes; PPC to 4), so the
+header is designed to need **no padding under any of them** — every
+field 32 bits, or 16-bit fields in adjacent pairs — and static asserts
+pin every offset. The native test watches the asserts fail before
+trusting them.
+
+Rules the table carries:
+
+- **Accretive, per-plane versioning.** The prelude has the extension's
+  major (exact match required) and a length; each plane has its own
+  format word. A reader requires its plane's format and
+  `length >=` what it reads — the prefs-record rule, applied here.
+- **Capabilities are bits, never inferred from versions.** A plane can
+  ship dark in a binary before it has earned metal verification.
+- **Freshness is per-slot and honest.** Anchors are captured when a
+  process pumps its event loop, so a faceless or wedged app has an
+  absent or stale slot — distinct states, both rendered truthfully by
+  every consumer up to the mirror. Slots carry a ticks stamp; readers
+  judge staleness, the extension never guesses.
+- **The filter writes the table; the app writes only the arm cells.**
+  One direction per word, no locking to reason about beyond the
+  volatile single-writer stamps.
+
+## What is never resident
+
+**Foreign-memory reads live in the application.** The extension
+publishes anchors (addresses it read from low memory in the proper
+context); *following* them into another process's heap — partition
+validation, bounded record chains, fail-closed resolution — is
+application code, where a bug is fixed by copying a file instead of a
+reboot, and where the blast radius is one app, not every drawing
+process. This is the single most important line in this note.
+
+Also never resident: protocol, logging, UI, allocation on the hot
+path, anything that can be polled from the main loop instead.
+
+## Discovery and degradation
+
+`guest/src/peek.h` is the application's view; the four states exist
+because an installer needs all four legible:
+
+| state | evidence |
+|---|---|
+| active | Gestalt answers, major matches, length suffices |
+| not installed | no Gestalt, no file |
+| installed, needs restart | file in Extensions, no Gestalt (INITs load at boot only) |
+| wrong version | Gestalt answers, major differs — disabled, never partially trusted |
+
+Every page renders these honestly (the Processes page's group box is
+the pattern), and features gate on capability bits, not on state
+alone. The `'appe'`, when it exists, joins the same discovery scheme.
+
+Identity decisions, fixed now so nothing squats them: Gestalt selector
+**`'NWex'`**, table magic **`'NWpt'`**, extension file name **"NOW
+Extension"**, file type `'INIT'`, creator `'NOWx'`. Not `'TBax'` /
+`'TBqd'` — those are tbt's.
+
+## Target contract and verification
+
+Floor and ceiling: **Mac OS 8.6–9.2.2, PowerPC** (the application's
+CarbonLib 1.6 range; the extension itself is 68000-code, runs under
+emulation, and must not touch CarbonLib — it is not a boot-time
+dependency). System 7+ floor means no `sysz`. Size: AXPeek proved a
+~51 KB INIT loads at 9.1; the core stays far under that regardless,
+and the 8.6 loader's ceiling is a probe.
+
+The evidence ladder (the INIT skill's, abbreviated): compiles ≠ links
+≠ packages ≠ loads ≠ callbacks run ≠ survives boot/shift-disable/
+removal cycles. Say which step a claim sits on. Gates, in order:
+
+1. **QEMU clone first** (`tools/launch` in the parent) — free, and it
+   catches structure. The cold-boot recipe matters: OS 9 ignores a
+   soft power-down, INITs load at boot only, so cycling is hard-quit
+   and relaunch, then dismiss the Disk First Aid modal.
+2. **PB1400c at 9.1, attended** — the metal authority. The filter runs
+   under 68K emulation there, so the hot path's early-out is measured,
+   not assumed (AXPeek's envelope: 0–1 tick on a 33 MHz 68040).
+3. **8.6 gate: the 3400c**, once its screen is repaired. Until an 8.6
+   machine boots the extension, every 8.6 claim is header-level and
+   says so.
+
+Recovery is always in place before an install: shift-boot disables
+extensions on this whole range, and the QEMU clone is disposable by
+construction. Coexistence next to era-typical third-party residents
+gets at least one deliberate boot before "verified" is claimed.
+
+## The planes, as foreseen
+
+- **P0 — core** (extension M0): residence, chaining, Gestalt,
+  heartbeat. Exists to run the ladder end to end and to flip
+  `peek.h` to "active" for the first time.
+- **P1 — anchors**: per-process `CurrentA5`, `WindowList`, `MenuList`,
+  ticks stamp. First payoff: front-window bounds, cropped captures.
+- **P2 — semantic assist**: whatever tree-walking needs beyond
+  anchors; may be empty (tbt's Worker built full trees from anchors
+  alone).
+- **P3 — content**: QuickDraw bottleneck hooks, the full Timbuktu
+  move. The riskiest class we would ever ship; dark until the mirror
+  needs interiors better than pixel fill, armed per-port, separate
+  failure domain in everything but the file.
+
+## Charter amendment
+
+AGENTS.md's "what this is" grows one sentence, and this note is its
+long form: *NOW may ship optional resident components on the guest,
+each behind a versioned in-memory contract stated once in a shared
+header; foreign-context execution lives only in resident components,
+foreign-memory reads live only in the application, and a resident
+component is always optional — the product degrades honestly without
+it.*

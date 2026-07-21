@@ -7,6 +7,7 @@
 #include "connection_module.h"
 #include "console_module.h"
 #include "files_module.h"
+#include "processes_module.h"
 #include "screenshots_module.h"
 #include "prefs.h"
 #include "workshop_layout.h"
@@ -41,6 +42,9 @@ static const struct {
     { "Console",
       "Commands run on this PowerBook. Only declared commands are available.",
       "Console still lives in its own window (Windows menu)." },
+    { "Processes",
+      "Everything running on this Mac. Quit asks politely and never forces.",
+      "Processes has not moved in yet." },
     { "Hardware",
       "A passive census of this Mac. Probes run on request, never at idle.",
       "Hardware census is not built into this window yet." },
@@ -152,6 +156,7 @@ Boolean workshop_open(void)
     g_ops[kWorkshopScreenshots] = screenshots_module_ops();
     g_ops[kWorkshopFiles] = files_module_ops();
     g_ops[kWorkshopConsole] = console_module_ops();
+    g_ops[kWorkshopProcesses] = processes_module_ops();
     g_ops[kWorkshopHardware] = census_module_ops();
     g_ops[kWorkshopConnection] = connection_module_ops();
     now_prefs_load(&prefs);
@@ -169,6 +174,17 @@ Boolean workshop_open(void)
     SetWTitle(g_window, title);
     SetThemeWindowBackground(g_window, kThemeBrushDialogBackgroundActive,
                              true);
+    /* No root control on this window, on purpose. A root control turns
+       the group-box controls into embedders, and an embedded control
+       only receives clicks when HIToolbox's standard Carbon Event
+       handler routes them - which this WaitNextEvent app does not
+       install (same reason as confirm.c's kWindowStandardHandler ban).
+       With a root control the "Other Mac" group swallowed clicks to its
+       popup, checkbox and button; without it the controls are flat
+       siblings the classic Control Manager hit-tests directly. It also
+       did not make edit-text usable - text entry lives in a real
+       DIALOG (conn_edit_dialog.c), which has its own window and its own
+       Dialog-Manager text handling. */
     compute_layout();
     if (!workshop_sidebar_create(g_window, &g_lay, on_sidebar_select)) {
         DisposeWindow(g_window);
