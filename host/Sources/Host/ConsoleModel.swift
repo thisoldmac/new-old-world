@@ -24,7 +24,7 @@ final class ConsoleModel: ObservableObject {
 
     /// Declared commands (contract x-commands) plus console built-ins.
     static let commands = ["gestalt", "screenshot", "vprobe", "ls",
-                           "putstat"]
+                           "putstat", "tail"]
 
     /// Per-command docs, mirroring the contract's x-commands descriptions.
     /// help and --help render from here — documentation never hits the wire.
@@ -74,6 +74,15 @@ final class ConsoleModel: ObservableObject {
                    "  milliseconds spent inside FSWrite versus the whole",
                    "  receive path. Measured on that Mac, so it tells",
                    "  the disk apart from the wire."]),
+        "tail": .init(
+            summary: "the last lines of the other Mac's log",
+            help: ["tail — the last lines of the classic Mac's log",
+                   "  Usage: tail [lines]   (default 20, most 40)",
+                   "  That Mac keeps a file per launch in a \"now-logs\"",
+                   "  folder beside the application, so what happened",
+                   "  survives a crash that takes everything else with",
+                   "  it. This reads it from here, which is the point:",
+                   "  that machine is the harder one to look at."]),
         "help": .init(
             summary: "show this list (\"help <cmd>\" for details)",
             help: ["help — list commands, or \"help <cmd>\" for one"]),

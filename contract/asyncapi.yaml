@@ -1094,6 +1094,35 @@ components:
         type: object
         properties:
           ls: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    putstat:
+      description: >
+        Where the last file the guest RECEIVED spent its time: bytes,
+        chunk and write counts, and the milliseconds inside FSWrite
+        against the whole receive path. Measured on that machine, which
+        is the only place the disk can be told apart from the wire —
+        diagnosing a transfer from the far end of it is how several
+        wrong theories got their evidence.
+      args: {}
+      output:
+        type: object
+        properties:
+          putstat: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    tail:
+      description: >
+        The last lines of the guest's log for this launch. The log is a
+        file per launch in a "now-logs" folder beside the application, so
+        what happened survives a crash that takes the window, the status
+        line and every in-memory buffer with it. The same command answers
+        on that Mac's own console; this is the copy read from here, which
+        matters because that machine is the harder one to look at.
+      args:
+        lines:
+          type: integer
+          description: How many, newest last. Default 20, most 40.
+      output:
+        type: object
+        properties:
+          tail: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
     vprobe:
       description: >
         Measure the guest's VRAM read cost by access method: raw
