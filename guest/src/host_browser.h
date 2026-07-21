@@ -21,6 +21,11 @@ void host_browser_click(const EventRecord *event);
 void host_browser_key(const EventRecord *event);
 void host_browser_activate(Boolean becoming_active);
 
+/* Running commentary on a pull (conn_set_get_note), and the tick that
+   keeps its percentage moving. */
+void host_browser_note(const char *line);
+void host_browser_idle(void);
+
 /* The wire's answer (conn_set_listing). */
 void host_browser_listing(const char *path, const FileEntry *entries,
                           int count, Boolean more, long cursor,

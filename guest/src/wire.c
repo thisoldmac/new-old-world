@@ -1561,6 +1561,198 @@ static void service_browse(void)
     }
 }
 
+/* --- pulling a file FROM the other machine -------------------------------
+   The same bytes as an inbound push, asked for rather than offered, so
+   the receiving machinery is the same and only the destination differs:
+   a pulled file lands in the downloads folder, outside the share. What
+   a person fetches is theirs, not something the other machine can then
+   reach back into. */
+
+enum { kGetTimeoutTicks = 60 * 30 };
+
+static struct {
+    Boolean pending;                  /* asked; no bytes yet */
+    Boolean receiving;                /* file.begin seen; writing */
+    long id;
+    long expected;
+    char name[32];
+    FileReceive rx;
+    unsigned long deadline;
+} g_get;
+
+static ConnGetNote g_get_note;
+
+void conn_set_get_note(ConnGetNote fn)
+{
+    g_get_note = fn;
+}
+
+static void get_note(const char *line)
+{
+    if (g_get_note != NULL) {
+        g_get_note(line);
+    }
+}
+
+static void get_cleanup(Boolean keep_file)
+{
+    if (g_get.receiving && !keep_file) {
+        now_files_receive_abort(&g_get.rx);
+    }
+    g_get.pending = false;
+    g_get.receiving = false;
+}
+
+Boolean now_wire_get_active(long *received, long *expected)
+{
+    if (!g_get.pending && !g_get.receiving) {
+        return false;
+    }
+    if (received != NULL) {
+        *received = g_get.receiving ? g_get.rx.received : 0;
+    }
+    if (expected != NULL) {
+        *expected = g_get.expected;
+    }
+    return true;
+}
+
+int now_wire_get_host(const char *path, const char *name, char *err, long cap)
+{
+    char json[720];
+    char esc[600];
+
+    if (g.phase != kConnConnected) {
+        snprintf(err, (size_t)cap, "Not connected");
+        return -1;
+    }
+    if (g_get.pending || g_get.receiving || wire_busy()) {
+        snprintf(err, (size_t)cap, "A transfer is already in flight");
+        return -1;
+    }
+    now_json_escape(path, esc, sizeof esc);
+    ++g.offer_seq;
+    g_get.id = g.offer_seq;
+    g_get.expected = 0;
+    snprintf(g_get.name, sizeof g_get.name, "%.31s", name != NULL ? name : "");
+    snprintf(json, sizeof json,
+             "{\"type\":\"file.get\",\"id\":%ld,\"path\":\"%s\"}",
+             g_get.id, esc);
+    if (!send_control(json)) {
+        snprintf(err, (size_t)cap, "Connection lost");
+        return -1;
+    }
+    g_get.pending = true;
+    g_get.deadline = TickCount() + kGetTimeoutTicks;
+    return 0;
+}
+
+/* The answer: bytes are coming. Opening the file here rather than at
+   the end means a big file never has to be held in memory - the same
+   rule an inbound push already follows. */
+static void get_begin(const char *reply)
+{
+    char container_arg[16];
+    char type[8], creator[8];
+    short vref;
+    long dir;
+    FileContainer container = kContainerData;
+    OSType file_type = 0, creator_code = 0;
+    char name[64];
+    char line[128];
+    int rc;
+
+    if (!g_get.pending || now_json_find_int(reply, "id", -1) != g_get.id) {
+        return;
+    }
+    g_get.pending = false;
+    g_get.expected = now_json_find_int(reply, "bytes", 0);
+
+    /* The sender names the file; it has already made the name one this
+       machine can hold. Ours was only a guess from the listing. */
+    if (now_json_find_text(reply, "name", name, sizeof name)
+        && name[0] != '\0') {
+        snprintf(g_get.name, sizeof g_get.name, "%.31s", name);
+    }
+    if (now_json_find_string(reply, "container", container_arg,
+                             sizeof container_arg)
+        && strcmp(container_arg, "macbinary") == 0) {
+        container = kContainerMacBinary;
+    }
+    type[0] = '\0';
+    creator[0] = '\0';
+    now_json_find_string(reply, "fileType", type, sizeof type);
+    now_json_find_string(reply, "creator", creator, sizeof creator);
+    if (strlen(type) == 4) {
+        memcpy(&file_type, type, 4);
+    }
+    if (strlen(creator) == 4) {
+        memcpy(&creator_code, creator, 4);
+    }
+
+    if (now_files_downloads(&vref, &dir) != kFilesOK) {
+        get_cleanup(false);
+        get_note("Cannot find the downloads folder");
+        return;
+    }
+    rc = now_files_receive_begin_at(vref, dir, g_get.name, container,
+                                    g_get.expected, file_type, creator_code,
+                                    (unsigned long)now_json_find_int(
+                                        reply, "modified", 0),
+                                    false, &g_get.rx);
+    if (rc == kFilesExists) {
+        /* Not an error and not a silent overwrite: the file is already
+           there, and this machine keeps what it has. */
+        get_cleanup(false);
+        snprintf(line, sizeof line, "%.31s is already in the downloads folder",
+                 g_get.name);
+        get_note(line);
+        return;
+    }
+    if (rc != kFilesOK) {
+        get_cleanup(false);
+        get_note(rc == kFilesTooBig ? "Not enough room on the disk"
+                                    : "Could not create the file");
+        return;
+    }
+    g_get.receiving = true;
+    g_get.deadline = TickCount() + kGetTimeoutTicks;
+    snprintf(line, sizeof line, "Getting %.31s...", g_get.name);
+    get_note(line);
+}
+
+/* file.end for a pull: rename into place, or throw away the part. */
+static void get_end(const char *reply)
+{
+    char line[128];
+
+    if (!g_get.receiving || now_json_find_int(reply, "id", -1) != g_get.id) {
+        return;
+    }
+    if (!now_json_find_bool(reply, "ok", 0)) {
+        get_cleanup(false);
+        get_note("The other Mac stopped sending");
+        return;
+    }
+    if (now_files_receive_finish(&g_get.rx) != kFilesOK) {
+        get_cleanup(false);
+        get_note("Could not finish writing the file");
+        return;
+    }
+    get_cleanup(true);
+    snprintf(line, sizeof line, "Got %.31s", g_get.name);
+    get_note(line);
+}
+
+static void service_get(void)
+{
+    if ((g_get.pending || g_get.receiving)
+        && TickCount() > g_get.deadline) {
+        get_cleanup(false);
+        get_note("The other Mac stopped answering");
+    }
+}
+
 /* --- sending a file to the host -----------------------------------------
    The mirror image of receiving one, and deliberately the same shape:
    we offer, the host answers, and only then do bytes move. The guest
@@ -1969,6 +2161,18 @@ static void take_bulk_in(const unsigned char *bytes, long len)
 {
     int rc;
 
+    /* A pull we asked for. Only one of these can be live at a time -
+       the shared lane is one transfer wide - so which one is expecting
+       bytes is never ambiguous. */
+    if (g_get.receiving) {
+        rc = now_files_receive_chunk(&g_get.rx, bytes, len);
+        if (rc != kFilesOK) {
+            get_cleanup(false);
+            get_note("Could not write the file");
+        }
+        g_get.deadline = TickCount() + kGetTimeoutTicks;
+        return;
+    }
     if (!g_put.active) {
         return;                       /* nothing is expecting these */
     }
@@ -3016,7 +3220,15 @@ static int handle_frame(const char *reply)
         return 1;
     }
     if (now_json_type_is(reply, "file.refuse")) {
-        if (!browse_refused(reply)) {
+        if (g_get.pending && now_json_find_int(reply, "id", -1) == g_get.id) {
+            char reason[96];
+
+            get_cleanup(false);
+            if (!now_json_find_text(reply, "reason", reason, sizeof reason)) {
+                strcpy(reason, "the other Mac refused");
+            }
+            get_note(reason);
+        } else if (!browse_refused(reply)) {
             send_refused(reply);
         }
         return 1;
@@ -3026,10 +3238,15 @@ static int handle_frame(const char *reply)
         return 1;
     }
     if (now_json_type_is(reply, "file.begin")) {
-        return 1;                     /* announced; bytes follow on bulk */
+        get_begin(reply);             /* ours, or a push we accepted */
+        return 1;
     }
     if (now_json_type_is(reply, "file.end")) {
-        finish_put(reply);
+        if (g_get.receiving) {
+            get_end(reply);
+        } else {
+            finish_put(reply);
+        }
         return 1;
     }
     if (now_json_type_is(reply, "stream.start")) {
@@ -3258,6 +3475,7 @@ void conn_service(void)
             service_offer();
     service_send();
     service_browse();
+    service_get();
         }
         if (g.phase == kConnConnected) {
             service_stream();

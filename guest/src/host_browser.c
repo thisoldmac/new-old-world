@@ -92,11 +92,19 @@ static void open_row(int index)
         return;
     }
     if (!g_rows[index].folder) {
-        /* Pulling a file is the next rung; opening one says so rather
-           than doing nothing, which reads as a broken double-click. */
-        snprintf(g_status, sizeof g_status,
-                 "Getting a file is not built yet: %.31s",
-                 g_rows[index].name);
+        char full[260];
+        char err[96];
+
+        if (g_path[0] == '\0') {
+            snprintf(full, sizeof full, "%.31s", g_rows[index].name);
+        } else {
+            snprintf(full, sizeof full, "%.200s:%.31s", g_path,
+                     g_rows[index].name);
+        }
+        if (now_wire_get_host(full, g_rows[index].name, err,
+                              sizeof err) < 0) {
+            snprintf(g_status, sizeof g_status, "%.110s", err);
+        }
         invalidate_bar();
         return;
     }
@@ -368,6 +376,45 @@ Boolean host_browser_is(WindowRef window)
 WindowRef host_browser_ref(void)
 {
     return g_window;
+}
+
+/* The wire's running commentary on a pull (conn_set_get_note). */
+void host_browser_note(const char *line)
+{
+    if (g_window == NULL) {
+        return;
+    }
+    snprintf(g_status, sizeof g_status, "%.110s", line);
+    invalidate_bar();
+}
+
+/* Every event-loop pass while a pull is running, so the count moves
+   instead of the window looking hung. Costs nothing when idle, and does
+   NOT read preferences or redraw unless the number changed - the last
+   panel that did paid for it by starving the transfer it was drawing. */
+void host_browser_idle(void)
+{
+    long received = 0, expected = 0;
+    static long last_shown = -1;
+
+    if (g_window == NULL) {
+        return;
+    }
+    if (!now_wire_get_active(&received, &expected)) {
+        last_shown = -1;
+        return;
+    }
+    if (received / 4096 == last_shown) {
+        return;
+    }
+    last_shown = received / 4096;
+    if (expected > 0) {
+        snprintf(g_status, sizeof g_status, "Getting... %ld%% of %ld K",
+                 received * 100 / expected, expected / 1024);
+    } else {
+        snprintf(g_status, sizeof g_status, "Getting... %ld K", received / 1024);
+    }
+    invalidate_bar();
 }
 
 void host_browser_draw(void)

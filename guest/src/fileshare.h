@@ -128,6 +128,19 @@ int now_files_receive_begin(const char *rel_path, const char *name,
                             unsigned long modified, Boolean overwrite,
                             FileReceive *rx);
 
+/* The same, into a folder named by volume and directory ID rather than
+   through the share: where a PULLED file lands is the person's own
+   downloads folder, deliberately outside what the other machine can
+   reach. */
+int now_files_receive_begin_at(short vref, long dir_id, const char *name,
+                               FileContainer container, long bytes,
+                               OSType file_type, OSType creator,
+                               unsigned long modified, Boolean overwrite,
+                               FileReceive *rx);
+
+/* The downloads folder from preferences, or the Desktop. */
+int now_files_downloads(short *vref, long *dir);
+
 /* Writes the next chunk. Returns kFiles* ; the caller stops on error. */
 int now_files_receive_chunk(FileReceive *rx, const void *bytes, long len);
 

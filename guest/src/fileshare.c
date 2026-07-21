@@ -626,6 +626,44 @@ int now_files_pick_file(FSSpec *out, char *why, long why_cap)
     return 1;
 }
 
+/* Where a pulled file lands. Preferences name it the same way the share
+   is named - volume plus directory ID - and an unset preference means
+   the Desktop, which is where a person looks for something they just
+   fetched. */
+int now_files_downloads(short *vref, long *dir)
+{
+    NowPrefs prefs;
+    HParamBlockRec pb;
+    Str255 vname;
+    short index;
+
+    now_prefs_load(&prefs);
+    if (prefs.dl_vol[0] != '\0' && prefs.dl_dir > 0) {
+        for (index = 1; index < 64; ++index) {
+            memset(&pb, 0, sizeof pb);
+            vname[0] = 0;
+            pb.volumeParam.ioNamePtr = vname;
+            pb.volumeParam.ioVolIndex = index;
+            if (PBHGetVInfoSync(&pb) != noErr) {
+                break;
+            }
+            vname[vname[0] + 1] = '\0';
+            if (strcmp((char *)vname + 1, prefs.dl_vol) == 0) {
+                *vref = pb.volumeParam.ioVRefNum;
+                *dir = prefs.dl_dir;
+                return kFilesOK;
+            }
+        }
+        /* The volume is gone. The Desktop is a better answer than a
+           failed download. */
+    }
+    if (FindFolder(kOnSystemDisk, kDesktopFolderType, kCreateFolder,
+                   vref, dir) != noErr) {
+        return kFilesIOError;
+    }
+    return kFilesOK;
+}
+
 int now_files_choose_root(char *why, long why_cap)
 {
     NavDialogOptions options;
@@ -928,12 +966,36 @@ int now_files_receive_begin(const char *rel_path, const char *name,
                             FileReceive *rx)
 {
     FSSpec folder;
-    FSSpec existing;
     long dir_id;
+    int rc = resolve_folder_creating(rel_path, &folder, &dir_id);
+
+    if (rc != kFilesOK) {
+        memset(rx, 0, sizeof *rx);
+        rx->data_ref = -1;
+        rx->rsrc_ref = -1;
+        return rc;
+    }
+    return now_files_receive_begin_at(folder.vRefNum, dir_id, name,
+                                      container, bytes, file_type, creator,
+                                      modified, overwrite, rx);
+}
+
+/* The same, into a folder named directly rather than through the share.
+   A file PULLED from the other machine lands where the person keeps
+   downloads, which is deliberately outside the share: what they fetch
+   is theirs, not something the other machine may then reach back
+   into. */
+int now_files_receive_begin_at(short vref, long dir_id, const char *name,
+                               FileContainer container, long bytes,
+                               OSType file_type, OSType creator,
+                               unsigned long modified, Boolean overwrite,
+                               FileReceive *rx)
+{
+    FSSpec folder;
+    FSSpec existing;
     Str255 pname;
     Str255 temp_name;
     char temp[40];
-    int rc;
     OSErr err;
 
     memset(rx, 0, sizeof *rx);
@@ -943,10 +1005,9 @@ int now_files_receive_begin(const char *rel_path, const char *name,
         || strchr(name, ':') != NULL) {
         return kFilesBadPath;
     }
-    rc = resolve_folder_creating(rel_path, &folder, &dir_id);
-    if (rc != kFilesOK) {
-        return rc;
-    }
+    folder.vRefNum = vref;
+    folder.parID = dir_id;
+    folder.name[0] = 0;
 
     /* Refuse before a doomed transfer rather than after it: at this
        wire's speed, discovering a full disk at the end of a megabyte is

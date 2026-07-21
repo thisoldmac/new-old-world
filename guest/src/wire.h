@@ -109,6 +109,19 @@ void conn_set_listing(ConnListing fn);
 /* 0 once the question is on the wire; -1 with a reason in err. */
 int now_wire_list_host(const char *path, long cursor, char *err, long cap);
 
+/* --- pulling a file from the other machine -------------------------------
+   Asks for one file and writes it into the downloads folder (prefs, or
+   the Desktop) as the bytes arrive - never held whole in memory. The
+   outcome arrives through the get-note hook. */
+typedef void (*ConnGetNote)(const char *line);
+void conn_set_get_note(ConnGetNote fn);
+
+int now_wire_get_host(const char *path, const char *name,
+                      char *err, long cap);
+
+/* True while a pull is in flight, so a window can show a bar. */
+Boolean now_wire_get_active(long *received, long *expected);
+
 /* One-line progress reports for push transfers ("Sent to host (312 ms)").
    The Screenshots panel registers itself here; a NULL fn unhooks. */
 typedef void (*ConnShotNote)(const char *line);

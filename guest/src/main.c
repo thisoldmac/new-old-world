@@ -385,6 +385,7 @@ int main(void)
     conn_set_shot_note(shots_panel_note);
     conn_set_file_note(share_panel_note);
     conn_set_listing(host_browser_listing);
+    conn_set_get_note(host_browser_note);
 
     /* On CFM PowerPC a UPP is the tvector itself; the cast avoids
        NewAEEventHandlerUPP, a weakly-linked import that would resolve to
@@ -396,6 +397,7 @@ int main(void)
     while (g_running) {
         conn_service();
         share_panel_idle();
+        host_browser_idle();
         ask_about_replacing();
         if (!WaitNextEvent(everyEvent, &event,
                            conn_wants_fast_pump() ? 0 : 6, NULL)) {
