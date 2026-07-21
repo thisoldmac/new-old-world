@@ -13,9 +13,9 @@ on either side.
   (Screenshots, Files, Console, with Connection pinned at the bottom
   behind a divider and a status lamp), a header placard per page, a
   status placard below, Cmd-1..4 to switch. The five separate windows
-  and the Connection dialog are gone. The shell is emulator-tested and
-  deployed; the four pages inside it are **built and unit-tested but
-  not yet watched on any display** — the ledger says so too.
+  and the Connection dialog are gone. Metal-verified on the PB1400c:
+  all four pages, including a live listing, a pull, a capture with its
+  preview, streaming start/stop, and the in-canvas Console prompt.
 - **Persistent connection** — the guest dials the host and holds one TCP
   connection with a guest-driven heartbeat, capped-backoff reconnect
   (adaptive or a fixed cadence from the Connection page), and orderly

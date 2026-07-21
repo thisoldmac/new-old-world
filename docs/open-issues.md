@@ -78,16 +78,12 @@ Not load-bearing; parked as a known gap rather than chased.
 Everything here builds and passes its tests. None of it has been watched
 working on the PowerBook.
 
-- **The metal pass found two Workshop bugs, both fixed the same
-  night:** the Console's edit-text field took no keystrokes (replaced
-  with an in-canvas prompt line - terminal-shaped, no focus to lose),
-  and every Modified date read 1/19/72 (DateString is signed and
-  1904-epoch seconds passed 2^31 during 1972; LongDateString now).
-  The fixes are emulator-verified (typing, history submit, Invert,
-  capture preview, the disconnected Files page); the fixed build has
-  not yet been back to the PowerBook. Still never exercised anywhere:
-  a live remote listing with real Modified dates, the send progress
-  bar moving, and the preview well at 16/32-bit depths.
+- **Corners of the Workshop no one has exercised anywhere:** the send
+  progress bar actually moving, and the preview well at 16/32-bit
+  depths. (The first metal pass found two bugs - a mute Console
+  edit-text and Modified dates clamped to 1/19/72 by signed
+  DateString - both fixed the same night and metal-verified the next
+  morning, 2026-07-21.)
 - **Prefs v9.** Reads v1-v8 files and seeds the Console page from a
   legacy console_open flag; exercised only by reasoning, not by an old
   prefs file on the machine.
