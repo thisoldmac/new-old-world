@@ -30,8 +30,10 @@ void files_browser_go_up(void);
 Boolean files_browser_at_root(void);
 /* The path row's text: "<peer>: <share root><path>". */
 void files_browser_path_text(char *out, long cap);
-/* The live item count, or a listing status/error line. */
-void files_browser_status(char *out, long cap);
+/* The live listing state for the path row: "Reading...", "N items". */
+void files_browser_count_text(char *out, long cap);
+/* Transfer commentary and errors, for the status placard. */
+void files_browser_note_text(char *out, long cap);
 
 /* The wire's listing answer (conn_set_listing). */
 void files_browser_listing(const char *path, const FileEntry *entries,

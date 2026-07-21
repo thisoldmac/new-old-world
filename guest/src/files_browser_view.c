@@ -22,7 +22,8 @@ static FileEntry g_rows[kMaxRows];
 static int g_row_count;
 static char g_path[224];          /* what we are looking at, share-relative */
 static char g_root[160];          /* what the other machine calls its share */
-static char g_status[128];
+static char g_count[48];          /* listing state, for the path row */
+static char g_note[128];          /* transfer talk and errors, placard */
 static Boolean g_loading;
 
 static void invalidate_chrome(void)
@@ -51,11 +52,11 @@ static void request(const char *path, long cursor)
         g_path[sizeof g_path - 1] = '\0';
     }
     if (now_wire_list_host(g_path, cursor, err, sizeof err) < 0) {
-        snprintf(g_status, sizeof g_status, "%.100s", err);
+        snprintf(g_note, sizeof g_note, "%.100s", err);
         g_loading = false;
     } else {
         g_loading = true;
-        snprintf(g_status, sizeof g_status, "Reading...");
+        snprintf(g_count, sizeof g_count, "Reading...");
     }
     invalidate_chrome();
 }
@@ -101,7 +102,7 @@ static void open_row(int index)
         }
         if (now_wire_get_host(full, g_rows[index].name, err,
                               sizeof err) < 0) {
-            snprintf(g_status, sizeof g_status, "%.110s", err);
+            snprintf(g_note, sizeof g_note, "%.110s", err);
         }
         invalidate_chrome();
         return;
@@ -165,8 +166,12 @@ static OSStatus item_data(ControlRef browser, DataBrowserItemID item,
                                              kCFStringEncodingMacRoman);
         } else {
             Str255 when;
+            LongDateTime ldt = (LongDateTime)row->modified;
 
-            DateString((long)row->modified, shortDate, when, NULL);
+            /* LongDateString, not DateString: 1904-epoch seconds pass
+               2^31 in 1972, so every modern date through the signed API
+               clamps to 1/19/72 - watched happening on the PowerBook. */
+            LongDateString(&ldt, shortDate, when, NULL);
             text = CFStringCreateWithPascalString(
                 NULL, when, kCFStringEncodingMacRoman);
         }
@@ -246,7 +251,8 @@ Boolean files_browser_create(WindowRef owner, const Rect *area)
 
     g_owner = owner;
     g_area = *area;
-    g_status[0] = '\0';
+    g_count[0] = '\0';
+    g_note[0] = '\0';
     if (CreateDataBrowserControl(owner, &g_area, kDataBrowserListView,
                                  &g_browser) != noErr) {
         g_browser = NULL;
@@ -415,10 +421,10 @@ void files_browser_idle(void)
     }
     last_shown = received / 4096;
     if (expected > 0) {
-        snprintf(g_status, sizeof g_status, "Getting... %ld%% of %ld K",
+        snprintf(g_note, sizeof g_note, "Getting... %ld%% of %ld K",
                  received * 100 / expected, expected / 1024);
     } else {
-        snprintf(g_status, sizeof g_status, "Getting... %ld K",
+        snprintf(g_note, sizeof g_note, "Getting... %ld K",
                  received / 1024);
     }
 }
@@ -434,9 +440,14 @@ void files_browser_path_text(char *out, long cap)
     }
 }
 
-void files_browser_status(char *out, long cap)
+void files_browser_count_text(char *out, long cap)
 {
-    snprintf(out, (size_t)cap, "%s", g_status);
+    snprintf(out, (size_t)cap, "%s", g_count);
+}
+
+void files_browser_note_text(char *out, long cap)
+{
+    snprintf(out, (size_t)cap, "%s", g_note);
 }
 
 /* --- the wire's answer -------------------------------------------------- */
@@ -457,7 +468,8 @@ void files_browser_listing(const char *path, const FileEntry *entries,
     }
     g_loading = false;
     if (error != NULL) {
-        snprintf(g_status, sizeof g_status, "%.110s", error);
+        snprintf(g_note, sizeof g_note, "%.110s", error);
+        g_count[0] = '\0';
         invalidate_chrome();
         return;
     }
@@ -483,12 +495,12 @@ void files_browser_listing(const char *path, const FileEntry *entries,
         return;
     }
     if (more) {
-        snprintf(g_status, sizeof g_status, "%d items (more not shown)",
+        snprintf(g_count, sizeof g_count, "%d items (more not shown)",
                  g_row_count);
     } else if (g_row_count == 0) {
-        strcpy(g_status, "Empty");
+        strcpy(g_count, "Empty");
     } else {
-        snprintf(g_status, sizeof g_status, "%d item%s", g_row_count,
+        snprintf(g_count, sizeof g_count, "%d item%s", g_row_count,
                  g_row_count == 1 ? "" : "s");
     }
     invalidate_chrome();
@@ -499,6 +511,6 @@ void files_browser_note(const char *line)
     if (g_owner == NULL) {
         return;
     }
-    snprintf(g_status, sizeof g_status, "%.110s", line);
+    snprintf(g_note, sizeof g_note, "%.110s", line);
     invalidate_chrome();
 }

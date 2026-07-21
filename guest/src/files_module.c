@@ -164,7 +164,7 @@ static void files_draw(void)
     DrawString(text);
 
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-    files_browser_status(line, sizeof line);
+    files_browser_count_text(line, sizeof line);
     CopyCStringToPascal(line, text);
     TruncString(96, text, truncEnd);
     MoveTo((short)(g_r.path_row.right - StringWidth(text)),
@@ -268,15 +268,16 @@ static void files_status_text(char *out, long cap)
     if (out[0] != '\0') {
         return;
     }
+    files_browser_note_text(out, cap);
+    if (out[0] != '\0') {
+        return;
+    }
     if (!conn_is_connected()) {
         snprintf(out, (size_t)cap,
                  "Not connected - the other Mac's share is unreachable.");
         return;
     }
-    files_browser_status(out, cap);
-    if (out[0] == '\0') {
-        snprintf(out, (size_t)cap, "Ready.");
-    }
+    snprintf(out, (size_t)cap, "Ready.");
 }
 
 static const WorkshopModuleOps k_ops = {

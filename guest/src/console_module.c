@@ -8,26 +8,32 @@
 #include "pump.h"
 #include "wire.h"
 
-/* The page owns controls and pixels only; every remembered thing -
+/* The page owns pixels and the input line; every remembered thing -
    scrollback, history, the command table - lives in console_model.c, so
-   switching modules or closing the Workshop loses nothing. */
+   switching modules or closing the Workshop loses nothing.
+
+   The input is INSIDE the canvas, a "> " prompt on the bottom line of
+   the same white (or inverted) area - the terminal shape the old
+   console window had. On metal the first build's separate edit-text
+   field never took a keystroke; this one has no focus to lose, because
+   the page itself is the focus while it is selected. Arrows are
+   history, like any terminal; the sidebar still switches by click and
+   Cmd-1..4. */
 
 enum {
     kMargin = 10,
     kLineHeight = 12,
     kTextInset = 4,
     kScrollBarWidth = 16,
-    kInputRowHeight = 26,
-    kRunWidth = 52,
+    kInputStripHeight = 18,       /* rule + the prompt line */
     kInvertWidth = 66
 };
 
 typedef struct {
-    Rect box;             /* framed scrollback, without the scroll bar */
-    Rect text;            /* where lines draw, inset from the box */
+    Rect box;             /* framed canvas, without the scroll bar */
+    Rect scroll_text;     /* where scrollback lines draw */
+    Rect input_strip;     /* the prompt line at the canvas bottom */
     Rect scrollbar;
-    Rect field;
-    Rect run_btn;
     Rect invert_box;      /* lives on the status placard below the body */
 } ConsoleRects;
 
@@ -38,12 +44,13 @@ static Boolean g_visible;
 static short g_font;
 
 static ControlRef g_scroll;
-static ControlRef g_field;
-static ControlRef g_run;
 static ControlRef g_invert;
 static ControlActionUPP g_scroll_action_upp;
 
 static Boolean g_inverted;
+static Boolean g_active = true;   /* the caret hides in the background */
+static char g_input[kConsoleMaxCols];
+static short g_input_len;
 /* First visible scrollback line. Pinned to the newest output unless the
    human scrolled away; survives module switches with the rest. */
 static short g_top;
@@ -51,7 +58,8 @@ static Boolean g_pinned = true;
 
 static short visible_lines(void)
 {
-    short n = (short)((g_r.text.bottom - g_r.text.top) / kLineHeight);
+    short n = (short)((g_r.scroll_text.bottom - g_r.scroll_text.top)
+                      / kLineHeight);
 
     return n < 1 ? 1 : n;
 }
@@ -66,24 +74,18 @@ static short max_top(void)
 
 static void compute_rects(const Rect *body, ConsoleRects *r)
 {
-    short input_top = (short)(body->bottom - kInputRowHeight);
-
     SetRect(&r->box, (short)(body->left + kMargin), (short)(body->top + 8),
             (short)(body->right - kMargin - kScrollBarWidth + 1),
-            (short)(input_top - 6));
-    SetRect(&r->text, (short)(r->box.left + kTextInset),
+            (short)(body->bottom - 8));
+    SetRect(&r->scroll_text, (short)(r->box.left + kTextInset),
             (short)(r->box.top + kTextInset),
             (short)(r->box.right - kTextInset),
-            (short)(r->box.bottom - kTextInset));
+            (short)(r->box.bottom - kInputStripHeight));
+    SetRect(&r->input_strip, (short)(r->box.left + 1),
+            (short)(r->box.bottom - kInputStripHeight),
+            (short)(r->box.right - 1), (short)(r->box.bottom - 1));
     SetRect(&r->scrollbar, (short)(r->box.right - 1), r->box.top,
             (short)(r->box.right - 1 + kScrollBarWidth), r->box.bottom);
-    SetRect(&r->field, (short)(body->left + kMargin + 14),
-            (short)(input_top + 4),
-            (short)(body->right - kMargin - kRunWidth - 12),
-            (short)(input_top + 20));
-    SetRect(&r->run_btn, (short)(body->right - kMargin - kRunWidth),
-            (short)(input_top + 2), (short)(body->right - kMargin),
-            (short)(input_top + 22));
     /* The status placard sits directly under the body; the Invert switch
        lives at its far right, clear of the grow box. */
     SetRect(&r->invert_box, (short)(body->right - kInvertWidth - 22),
@@ -109,16 +111,59 @@ static void sync_scrollbar(void)
     HiliteControl(g_scroll, (max > 0 && g_visible) ? 0 : 255);
 }
 
-static void draw_scrollback(void)
+static void set_canvas_colors(void)
 {
     RGBColor black = { 0, 0, 0 };
     RGBColor white = { 0xFFFF, 0xFFFF, 0xFFFF };
+
+    RGBBackColor(g_inverted ? &black : &white);
+    RGBForeColor(g_inverted ? &white : &black);
+}
+
+static void restore_colors(RGBColor *saved_back)
+{
+    RGBColor black = { 0, 0, 0 };
+
+    RGBForeColor(&black);
+    RGBBackColor(saved_back);
+}
+
+/* Only the prompt line: a keystroke must not repaint the scrollback. */
+static void draw_input_line(void)
+{
+    RGBColor saved_back;
+    Str255 text;
+    char prompt[kConsoleMaxCols + 4];
+
+    if (g_owner == NULL || !g_visible) {
+        return;
+    }
+    SetPortWindowPort(g_owner);
+    GetBackColor(&saved_back);
+    set_canvas_colors();
+    EraseRect(&g_r.input_strip);
+    TextFont(g_font);
+    TextSize(9);
+    snprintf(prompt, sizeof prompt, "> %.120s%s", g_input,
+             g_active ? "_" : "");
+    MoveTo((short)(g_r.scroll_text.left),
+           (short)(g_r.input_strip.bottom - 5));
+    CopyCStringToPascal(prompt, text);
+    DrawString(text);
+    restore_colors(&saved_back);
+    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+}
+
+static void draw_canvas(void)
+{
+    RGBColor black = { 0, 0, 0 };
     RGBColor saved_back;
     Str255 text;
     short vis = visible_lines();
     short count = (short)console_model_count();
     short i;
     short y;
+    Rect inner;
 
     if (g_owner == NULL || !g_visible) {
         return;
@@ -127,26 +172,23 @@ static void draw_scrollback(void)
     GetBackColor(&saved_back);
     RGBForeColor(&black);
     FrameRect(&g_r.box);
-    RGBBackColor(g_inverted ? &black : &white);
-    RGBForeColor(g_inverted ? &white : &black);
-    {
-        Rect inner = g_r.box;
-
-        InsetRect(&inner, 1, 1);
-        EraseRect(&inner);
-    }
+    set_canvas_colors();
+    inner = g_r.box;
+    InsetRect(&inner, 1, 1);
+    inner.bottom = g_r.input_strip.top;
+    EraseRect(&inner);
     TextFont(g_font);
     TextSize(9);
-    y = (short)(g_r.text.top + kLineHeight - 2);
+    y = (short)(g_r.scroll_text.top + kLineHeight - 2);
     for (i = g_top; i < count && i < g_top + vis; ++i) {
-        MoveTo(g_r.text.left, y);
+        MoveTo(g_r.scroll_text.left, y);
         CopyCStringToPascal(console_model_line(i), text);
         DrawString(text);
         y = (short)(y + kLineHeight);
     }
-    RGBForeColor(&black);
-    RGBBackColor(&saved_back);
+    restore_colors(&saved_back);
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    draw_input_line();
 }
 
 static void scroll_to(short top, Boolean live)
@@ -166,7 +208,7 @@ static void scroll_to(short top, Boolean live)
     g_pinned = (g_top >= max);
     SetControlValue(g_scroll, g_top);
     if (live) {
-        draw_scrollback();            /* mid-track: paint now, not later */
+        draw_canvas();                /* mid-track: paint now, not later */
     } else if (g_owner != NULL) {
         InvalWindowRect(g_owner, &g_r.box);
     }
@@ -205,54 +247,37 @@ static pascal void scroll_action(ControlRef control, ControlPartCode part)
 
 /* --- input -------------------------------------------------------------- */
 
-static void set_field_text(const char *text)
-{
-    if (g_field == NULL) {
-        return;
-    }
-    SetControlData(g_field, kControlEditTextPart, kControlEditTextTextTag,
-                   (Size)strlen(text), text);
-    if (g_owner != NULL) {
-        Rect r = g_r.field;
-
-        InsetRect(&r, -3, -3);
-        InvalWindowRect(g_owner, &r);
-    }
-}
-
 static void run_submit(void)
 {
-    char text[kConsoleMaxCols];
-    Size actual = 0;
     long start = 0;
     long end;
 
-    text[0] = '\0';
-    if (GetControlData(g_field, kControlEditTextPart,
-                       kControlEditTextTextTag, sizeof text - 1, text,
-                       &actual) == noErr) {
-        if (actual > (Size)(sizeof text - 1)) {
-            actual = sizeof text - 1;
-        }
-        text[actual] = '\0';
-    }
-    while (text[start] == ' ') {
+    while (g_input[start] == ' ') {
         ++start;
     }
-    end = (long)strlen(text);
-    while (end > start && text[end - 1] == ' ') {
+    end = (long)strlen(g_input);
+    while (end > start && g_input[end - 1] == ' ') {
         --end;
     }
-    text[end] = '\0';
-    console_model_history_add(text + start);
-    console_model_run(text + start);
-    set_field_text("");
+    g_input[end] = '\0';
+    console_model_history_add(g_input + start);
+    console_model_run(g_input + start);
+    g_input[0] = '\0';
+    g_input_len = 0;
     g_pinned = true;
     g_top = max_top();
     sync_scrollbar();
     if (g_owner != NULL) {
         InvalWindowRect(g_owner, &g_r.box);
     }
+}
+
+static void take_history(const char *recalled)
+{
+    strncpy(g_input, recalled, sizeof g_input - 1);
+    g_input[sizeof g_input - 1] = '\0';
+    g_input_len = (short)strlen(g_input);
+    draw_input_line();
 }
 
 static void persist_invert(void)
@@ -283,6 +308,8 @@ static OSErr console_create(WindowRef owner, const Rect *body)
     }
     now_prefs_load(&prefs);
     g_inverted = prefs.console_invert;
+    g_input[0] = '\0';
+    g_input_len = 0;
 
     g_scroll_action_upp = NewControlActionUPP(scroll_action);
     if (g_scroll_action_upp == NULL) {
@@ -291,16 +318,10 @@ static OSErr console_create(WindowRef owner, const Rect *body)
     text[0] = 0;
     g_scroll = NewControl(owner, &g_r.scrollbar, text, false, 0, 0, 0,
                           scrollBarProc, 0);
-    g_field = NewControl(owner, &g_r.field, text, false, 0, 0, 0,
-                         kControlEditTextProc, 0);
-    CopyCStringToPascal("Run", text);
-    g_run = NewControl(owner, &g_r.run_btn, text, false, 0, 0, 1,
-                       pushButProc, 0);
     CopyCStringToPascal("Invert", text);
     g_invert = NewControl(owner, &g_r.invert_box, text, false,
                           g_inverted ? 1 : 0, 0, 1, checkBoxProc, 0);
-    if (g_scroll == NULL || g_field == NULL || g_run == NULL
-        || g_invert == NULL) {
+    if (g_scroll == NULL || g_invert == NULL) {
         return memFullErr;
     }
     console_model_banner();
@@ -318,8 +339,6 @@ static void console_dispose(void)
     }
     g_owner = NULL;
     g_scroll = NULL;
-    g_field = NULL;
-    g_run = NULL;
     g_invert = NULL;
 }
 
@@ -339,38 +358,25 @@ static void console_show(Boolean visible)
 {
     g_visible = visible;
     show_control(g_scroll, visible);
-    show_control(g_field, visible);
-    show_control(g_run, visible);
     show_control(g_invert, visible);
-    if (g_owner == NULL) {
-        return;
-    }
     if (visible) {
         sync_scrollbar();
-        SetKeyboardFocus(g_owner, g_field, kControlFocusNextPart);
-    } else {
-        ClearKeyboardFocus(g_owner);
     }
-}
-
-static void move_control(ControlRef control, const Rect *r)
-{
-    if (control == NULL) {
-        return;
-    }
-    MoveControl(control, r->left, r->top);
-    SizeControl(control, (SInt16)(r->right - r->left),
-                (SInt16)(r->bottom - r->top));
 }
 
 static void console_layout(const Rect *body)
 {
     g_body = *body;
     compute_rects(body, &g_r);
-    move_control(g_scroll, &g_r.scrollbar);
-    move_control(g_field, &g_r.field);
-    move_control(g_run, &g_r.run_btn);
-    move_control(g_invert, &g_r.invert_box);
+    if (g_scroll != NULL) {
+        MoveControl(g_scroll, g_r.scrollbar.left, g_r.scrollbar.top);
+        SizeControl(g_scroll,
+                    (SInt16)(g_r.scrollbar.right - g_r.scrollbar.left),
+                    (SInt16)(g_r.scrollbar.bottom - g_r.scrollbar.top));
+    }
+    if (g_invert != NULL) {
+        MoveControl(g_invert, g_r.invert_box.left, g_r.invert_box.top);
+    }
     if (g_pinned) {
         g_top = max_top();
     }
@@ -379,19 +385,7 @@ static void console_layout(const Rect *body)
 
 static void console_draw(void)
 {
-    Str255 text;
-
-    if (g_owner == NULL || !g_visible) {
-        return;
-    }
-    draw_scrollback();
-    TextFont(g_font);
-    TextSize(9);
-    MoveTo((short)(g_body.left + kMargin),
-           (short)(g_r.field.bottom - 3));
-    CopyCStringToPascal(">", text);
-    DrawString(text);
-    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    draw_canvas();
 }
 
 static Boolean console_click(const EventRecord *event, Point local)
@@ -399,6 +393,7 @@ static Boolean console_click(const EventRecord *event, Point local)
     ControlRef control = NULL;
     ControlPartCode part;
 
+    (void)event;
     if (g_owner == NULL || !g_visible) {
         return false;
     }
@@ -415,17 +410,6 @@ static Boolean console_click(const EventRecord *event, Point local)
         }
         return true;
     }
-    if (control == g_field) {
-        SetKeyboardFocus(g_owner, g_field, kControlFocusNextPart);
-        HandleControlClick(control, local, event->modifiers, NULL);
-        return true;
-    }
-    if (control == g_run) {
-        if (TrackControl(control, local, now_pump_action()) != 0) {
-            run_submit();
-        }
-        return true;
-    }
     if (control == g_invert) {
         if (TrackControl(control, local, now_pump_action()) != 0) {
             g_inverted = !g_inverted;
@@ -435,13 +419,15 @@ static Boolean console_click(const EventRecord *event, Point local)
         }
         return true;
     }
-    return false;
+    /* Clicks in the canvas are the page's own; there is nothing to
+       place a cursor into, but they must not fall through to the
+       sidebar either. */
+    return PtInRect(local, &g_r.box);
 }
 
 static Boolean console_key(const EventRecord *event)
 {
     char c = (char)(event->message & charCodeMask);
-    ControlRef focus = NULL;
     short page = (short)(visible_lines() - 1);
 
     if (g_owner == NULL || !g_visible) {
@@ -450,7 +436,6 @@ static Boolean console_key(const EventRecord *event)
     if (page < 1) {
         page = 1;
     }
-    /* The scrollback answers these wherever the focus is. */
     if (c == 0x0B) {                  /* page up */
         scroll_to((short)(g_top - page), false);
         return true;
@@ -467,43 +452,52 @@ static Boolean console_key(const EventRecord *event)
         scroll_to(max_top(), false);
         return true;
     }
-    if (GetKeyboardFocus(g_owner, &focus) != noErr || focus != g_field) {
-        return false;
-    }
     if (c == '\r' || c == 3) {
         run_submit();
         return true;
     }
     if (c == 0x1E || c == 0x1F) {     /* up/down: command history */
-        set_field_text(console_model_history_recall(c == 0x1E ? -1 : 1));
+        take_history(console_model_history_recall(c == 0x1E ? -1 : 1));
         return true;
     }
-    if (c == '\t') {
-        return false;                 /* the Workshop moves the focus */
+    if (c == '\b' || c == 0x7F) {
+        if (g_input_len > 0) {
+            g_input[--g_input_len] = '\0';
+            draw_input_line();
+        }
+        return true;
     }
-    HandleControlKey(g_field, (SInt16)((event->message & keyCodeMask) >> 8),
-                     c, event->modifiers);
-    return true;
+    if (c >= 0x20 && c < 0x7F) {
+        if (g_input_len < (short)(sizeof g_input - 2)) {
+            g_input[g_input_len++] = c;
+            g_input[g_input_len] = '\0';
+            draw_input_line();
+        }
+        return true;
+    }
+    return false;
 }
 
 static void console_activate(Boolean active)
 {
-    ControlRef controls[4];
-    int i;
-
-    controls[0] = g_scroll;
-    controls[1] = g_field;
-    controls[2] = g_run;
-    controls[3] = g_invert;
-    for (i = 0; i < 4; ++i) {
-        if (controls[i] == NULL) {
-            continue;
-        }
+    if (g_scroll != NULL) {
         if (active) {
-            ActivateControl(controls[i]);
+            ActivateControl(g_scroll);
         } else {
-            DeactivateControl(controls[i]);
+            DeactivateControl(g_scroll);
         }
+    }
+    if (g_invert != NULL) {
+        if (active) {
+            ActivateControl(g_invert);
+        } else {
+            DeactivateControl(g_invert);
+        }
+    }
+    if (active != g_active) {
+        g_active = active;
+        /* Only the caret changes; only the prompt line repaints. */
+        draw_input_line();
     }
     if (active) {
         sync_scrollbar();             /* re-derives the disabled state */
@@ -512,10 +506,8 @@ static void console_activate(Boolean active)
 
 static void console_idle(void)
 {
-    if (g_owner == NULL || !g_visible) {
-        return;
-    }
-    IdleControls(g_owner);            /* the caret blink */
+    /* Nothing to poll: output arrives through commands the page itself
+       runs, and the caret is a plain underscore, not a blinker. */
 }
 
 static void console_status_text(char *out, long cap)
