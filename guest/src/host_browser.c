@@ -8,9 +8,10 @@
 #include "wire.h"
 
 enum {
-    kWinWidth = 460,
-    kWinHeight = 320,
+    kWinWidth = 470,
+    kWinHeight = 348,
     kBarHeight = 44,              /* path line and the Up button */
+    kFootHeight = 34,             /* where things land, and how to get there */
     kMaxRows = 128,               /* pages accumulate into this */
 
     kColName = 'name',
@@ -23,6 +24,8 @@ enum {
 static WindowRef g_window;
 static ControlRef g_browser;
 static ControlRef g_up;
+static ControlRef g_where;        /* the downloads folder */
+static ControlRef g_reveal;
 static FileEntry g_rows[kMaxRows];
 static int g_row_count;
 static char g_path[224];          /* what we are looking at, share-relative */
@@ -219,7 +222,8 @@ static Boolean build_control(void)
     DataBrowserItemDataUPP data_upp;
     DataBrowserItemNotificationUPP notify_upp;
 
-    SetRect(&bounds, -1, kBarHeight, kWinWidth + 1, kWinHeight + 1);
+    SetRect(&bounds, -1, kBarHeight, kWinWidth + 1,
+            kWinHeight - kFootHeight);
     if (CreateDataBrowserControl(g_window, &bounds, kDataBrowserListView,
                                  &g_browser) != noErr) {
         return false;
@@ -346,6 +350,25 @@ void host_browser_open(void)
     g_up = NewControl(g_window, &bounds, text, true, 0, 0, 1, pushButProc,
                       kUpButton);
 
+    {
+        char where[64];
+        char label[96];
+
+        now_files_downloads_name(where, sizeof where);
+        snprintf(label, sizeof label, "Get files into: %.31s", where);
+        SetRect(&bounds, 12, kWinHeight - kFootHeight + 6, 296,
+                kWinHeight - 8);
+        CopyCStringToPascal(label, text);
+        g_where = NewControl(g_window, &bounds, text, true, 0, 0, 1,
+                             pushButProc, 0);
+
+        SetRect(&bounds, 304, kWinHeight - kFootHeight + 6, 372,
+                kWinHeight - 8);
+        CopyCStringToPascal("Open", text);
+        g_reveal = NewControl(g_window, &bounds, text, true, 0, 0, 1,
+                              pushButProc, 0);
+    }
+
     if (!build_control()) {
         strcpy(g_status, "This Mac cannot show a list here");
         ShowWindow(g_window);
@@ -379,6 +402,21 @@ WindowRef host_browser_ref(void)
 }
 
 /* The wire's running commentary on a pull (conn_set_get_note). */
+static void refresh_where(void)
+{
+    char where[64];
+    char label[96];
+    Str255 text;
+
+    if (g_where == NULL) {
+        return;
+    }
+    now_files_downloads_name(where, sizeof where);
+    snprintf(label, sizeof label, "Get files into: %.31s", where);
+    CopyCStringToPascal(label, text);
+    SetControlTitle(g_where, text);
+}
+
 void host_browser_note(const char *line)
 {
     if (g_window == NULL) {
@@ -430,6 +468,8 @@ void host_browser_draw(void)
     SetPortWindowPort(g_window);
     SetRect(&bar, 0, 0, kWinWidth, kBarHeight);
     EraseRect(&bar);
+    SetRect(&bar, 0, kWinHeight - kFootHeight, kWinWidth, kWinHeight);
+    EraseRect(&bar);
 
     UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
     MoveTo(16, 18);
@@ -468,9 +508,30 @@ void host_browser_click(const EventRecord *event)
     }
     SetPortWindowPort(g_window);
     GlobalToLocal(&local);
-    if (FindControl(local, g_window, &control) != 0 && control == g_up) {
-        if (TrackControl(control, local, now_pump_action()) != 0) {
+    if (FindControl(local, g_window, &control) != 0 && control != NULL
+        && (control == g_up || control == g_where || control == g_reveal)) {
+        if (TrackControl(control, local, now_pump_action()) == 0) {
+            return;
+        }
+        if (control == g_up) {
             go_up();
+        } else if (control == g_where) {
+            char why[128];
+            int rc = now_files_choose_downloads(why, sizeof why);
+
+            if (rc > 0) {
+                refresh_where();
+                snprintf(g_status, sizeof g_status, "Files you get land there");
+            } else if (rc < 0) {
+                snprintf(g_status, sizeof g_status, "%.110s", why);
+            }
+            invalidate_bar();
+        } else {
+            if (now_files_reveal_downloads() != kFilesOK) {
+                snprintf(g_status, sizeof g_status,
+                         "Could not open that folder");
+                invalidate_bar();
+            }
         }
         return;
     }

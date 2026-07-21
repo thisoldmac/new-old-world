@@ -664,6 +664,172 @@ int now_files_downloads(short *vref, long *dir)
     return kFilesOK;
 }
 
+/* The name of the downloads folder, for a button that has to say where
+   things land. */
+void now_files_downloads_name(char *out, long cap)
+{
+    short vref;
+    long dir;
+
+    if (now_files_downloads(&vref, &dir) != kFilesOK
+        || !full_path_of_dir(vref, dir, out, cap)) {
+        strncpy(out, "Desktop", (size_t)cap - 1);
+        out[cap - 1] = '\0';
+        return;
+    }
+    /* The last named segment: a button is not the place for a full
+       path, and the enclosing folders are not what is being chosen. */
+    {
+        long n = (long)strlen(out);
+        char *last;
+
+        while (n > 0 && out[n - 1] == ':') {
+            out[--n] = '\0';
+        }
+        last = strrchr(out, ':');
+        if (last != NULL && last[1] != '\0') {
+            memmove(out, last + 1, strlen(last + 1) + 1);
+        }
+    }
+}
+
+/* Picks where pulled files land, and remembers it. 1 = changed,
+   0 = cancelled, -1 = failed (why says how). */
+int now_files_choose_downloads(char *why, long why_cap)
+{
+    NavDialogOptions options;
+    NavReplyRecord reply;
+    NowPrefs prefs;
+    FSSpec spec;
+    CInfoPBRec pb;
+    Str255 name;
+    HParamBlockRec vpb;
+    Str255 vname;
+
+    why[0] = '\0';
+    if (NavGetDefaultDialogOptions(&options) != noErr) {
+        snprintf(why, (size_t)why_cap, "Navigation Services is unavailable");
+        return -1;
+    }
+    CopyCStringToPascal("Choose where files you get are put",
+                        options.message);
+    if (NavChooseFolder(NULL, &reply, &options, now_pump_nav_event(),
+                        NULL, NULL) != noErr
+        || !reply.validRecord) {
+        return 0;
+    }
+    if (!spec_from_nav(&reply, &spec, why, why_cap)) {
+        NavDisposeReply(&reply);
+        return -1;
+    }
+    NavDisposeReply(&reply);
+
+    /* Same identity as the share: a volume name and a directory ID.
+       Nav hands back the folder's own spec, whose parID is its PARENT,
+       so ask the File Manager which directory this actually is. */
+    memset(&pb, 0, sizeof pb);
+    memcpy(name, spec.name, spec.name[0] + 1);
+    pb.dirInfo.ioNamePtr = name;
+    pb.dirInfo.ioVRefNum = spec.vRefNum;
+    pb.dirInfo.ioDrDirID = spec.parID;
+    pb.dirInfo.ioFDirIndex = spec.name[0] == 0 ? -1 : 0;
+    if (PBGetCatInfoSync(&pb) != noErr
+        || (pb.dirInfo.ioFlAttrib & ioDirMask) == 0) {
+        snprintf(why, (size_t)why_cap, "that is not a folder");
+        return -1;
+    }
+
+    memset(&vpb, 0, sizeof vpb);
+    vname[0] = 0;
+    vpb.volumeParam.ioNamePtr = vname;
+    vpb.volumeParam.ioVRefNum = spec.vRefNum;
+    vpb.volumeParam.ioVolIndex = 0;
+    if (PBHGetVInfoSync(&vpb) != noErr || vname[0] == 0) {
+        snprintf(why, (size_t)why_cap, "could not name that volume");
+        return -1;
+    }
+
+    now_prefs_load(&prefs);
+    if (vname[0] > (short)sizeof prefs.dl_vol - 1) {
+        vname[0] = (unsigned char)(sizeof prefs.dl_vol - 1);
+    }
+    memcpy(prefs.dl_vol, vname + 1, vname[0]);
+    prefs.dl_vol[vname[0]] = '\0';
+    prefs.dl_dir = pb.dirInfo.ioDrDirID;
+    if (now_prefs_save(&prefs) != noErr) {
+        snprintf(why, (size_t)why_cap, "could not save that setting");
+        return -1;
+    }
+    return 1;
+}
+
+/* Opens the downloads folder in the Finder. A person who just pulled a
+   file should not have to go looking for it, and "where did it go" is
+   the question this whole window kept failing to answer. */
+int now_files_reveal_downloads(void)
+{
+    AppleEvent event, reply;
+    AEAddressDesc target;
+    AEDescList docs;
+    AliasHandle alias;
+    FSSpec spec;
+    CInfoPBRec pb;
+    Str255 name;
+    OSType finder = 'MACS';
+    short vref;
+    long dir;
+    OSErr err;
+
+    if (now_files_downloads(&vref, &dir) != kFilesOK) {
+        return kFilesNotFound;
+    }
+    /* An FSSpec naming the folder ITSELF: index -1 reports the
+       directory's own name and its parent. */
+    memset(&pb, 0, sizeof pb);
+    name[0] = 0;
+    pb.dirInfo.ioNamePtr = name;
+    pb.dirInfo.ioVRefNum = vref;
+    pb.dirInfo.ioDrDirID = dir;
+    pb.dirInfo.ioFDirIndex = -1;
+    if (PBGetCatInfoSync(&pb) != noErr) {
+        return kFilesNotFound;
+    }
+    if (FSMakeFSSpec(vref, pb.dirInfo.ioDrParID, name, &spec) != noErr) {
+        return kFilesNotFound;
+    }
+    if (NewAlias(NULL, &spec, &alias) != noErr || alias == NULL) {
+        return kFilesIOError;
+    }
+
+    err = AECreateDesc(typeApplSignature, &finder, sizeof finder, &target);
+    if (err == noErr) {
+        err = AECreateAppleEvent(kCoreEventClass, kAEOpenDocuments, &target,
+                                 kAutoGenerateReturnID, kAnyTransactionID,
+                                 &event);
+        AEDisposeDesc(&target);
+    }
+    if (err == noErr) {
+        err = AECreateList(NULL, 0, false, &docs);
+    }
+    if (err == noErr) {
+        HLock((Handle)alias);
+        err = AEPutPtr(&docs, 1, typeAlias, *(Handle)alias,
+                       GetHandleSize((Handle)alias));
+        HUnlock((Handle)alias);
+        if (err == noErr) {
+            err = AEPutParamDesc(&event, keyDirectObject, &docs);
+        }
+        AEDisposeDesc(&docs);
+    }
+    if (err == noErr) {
+        err = AESend(&event, &reply, kAENoReply, kAENormalPriority,
+                     kAEDefaultTimeout, NULL, NULL);
+        AEDisposeDesc(&event);
+    }
+    DisposeHandle((Handle)alias);
+    return err == noErr ? kFilesOK : kFilesIOError;
+}
+
 int now_files_choose_root(char *why, long why_cap)
 {
     NavDialogOptions options;

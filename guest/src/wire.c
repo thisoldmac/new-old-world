@@ -1764,7 +1764,13 @@ static void get_end(const char *reply)
         return;
     }
     get_cleanup(true);
-    snprintf(line, sizeof line, "Got %.31s", g_get.name);
+    {
+        char where[64];
+
+        now_files_downloads_name(where, sizeof where);
+        snprintf(line, sizeof line, "Got %.31s - it is in %.31s",
+                 g_get.name, where);
+    }
     get_note(line);
 }
 
@@ -2026,7 +2032,10 @@ static void send_done(const char *reply)
     }
     send_cleanup();
     conn_peer_label(peer, sizeof peer);
-    if (now_json_find_int(reply, "ok", 0)) {
+    /* "ok" is a BOOLEAN. now_json_find_int is strtol, and strtol on
+       "true" is 0 — so reading it as an int reports every successful
+       send as a failure, which is exactly what it did. */
+    if (now_json_find_bool(reply, "ok", 0)) {
         snprintf(line, sizeof line, "Sent to %s", peer);
     } else if (now_json_find_string(reply, "reason", reason, sizeof reason)) {
         snprintf(line, sizeof line, "%.30s could not save it: %.60s",
@@ -2436,9 +2445,8 @@ static void finish_put(const char *reply)
     if (!g_put.active) {
         return;
     }
-    if (now_json_find_int(reply, "ok", 0) == 0
-        && now_json_value(reply, "ok") != NULL
-        && *now_json_value(reply, "ok") == 'f') {
+    if (now_json_value(reply, "ok") != NULL
+        && !now_json_find_bool(reply, "ok", 1)) {
         put_abort("cancelled", "the sender stopped");
         note_shot("Incoming file cancelled");
         return;

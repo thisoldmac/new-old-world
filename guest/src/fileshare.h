@@ -185,6 +185,17 @@ int now_files_receive_begin_at(short vref, long dir_id, const char *name,
 /* The downloads folder from preferences, or the Desktop. */
 int now_files_downloads(short *vref, long *dir);
 
+/* Its short name, for a button that says where things land. */
+void now_files_downloads_name(char *out, long cap);
+
+/* Chooses it (NavChooseFolder) and remembers it. 1 = changed,
+   0 = cancelled, -1 = failed. */
+int now_files_choose_downloads(char *why, long why_cap);
+
+/* Opens it in the Finder, so "where did it go" has an answer that is
+   one click rather than a hunt. */
+int now_files_reveal_downloads(void);
+
 /* Writes the next chunk. Returns kFiles* ; the caller stops on error. */
 int now_files_receive_chunk(FileReceive *rx, const void *bytes, long len);
 

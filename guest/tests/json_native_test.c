@@ -20,6 +20,23 @@
    The host speaks UTF-8; this machine draws MacRoman and stores MacRoman
    in file names. Everything a person reads crosses that boundary, and a
    name that changes crossing it names a different file. */
+/* The trap that reported every successful send as a failure: "ok" is a
+   JSON boolean, find_int is strtol, and strtol on "true" is 0. Reading
+   a boolean as an int is not a type mismatch the compiler can see —
+   both return long — so it has to be caught here. */
+static void test_booleans_are_not_integers(void)
+{
+    const char done[] = "{\"type\":\"file.done\",\"id\":5,\"ok\":true}";
+
+    assert(now_json_find_int(done, "ok", -1) == 0);   /* the trap */
+    assert(now_json_find_bool(done, "ok", 0) == 1);   /* the answer */
+    assert(now_json_find_bool("{\"ok\":false}", "ok", 1) == 0);
+    /* Absent reads as the fallback, so "no answer" and "said no" stay
+       different things. */
+    assert(now_json_find_bool("{\"id\":1}", "ok", 1) == 1);
+    assert(now_json_find_bool("{\"id\":1}", "ok", 0) == 0);
+}
+
 static void test_text_decoding(void)
 {
     char buf[64];
@@ -265,6 +282,7 @@ int main(void)
     }
 
     printf("json_native_test: all assertions passed\n");
+    test_booleans_are_not_integers();
     test_text_decoding();
     test_array_walking();
 
