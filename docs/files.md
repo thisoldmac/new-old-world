@@ -370,11 +370,14 @@ anything on this disk while looking local. Resolution now rejects the
 first and compares what a path actually reaches — not what it says —
 for the second.
 
-**Phase 2 — the browser.** *Rung 1 done 2026-07-20, metal-verified: the
-guest browses the host's share in a real Data Browser list. Files are
-listed but not yet pullable. Remaining: Get, then HostShare learning
-move / trash / restore / mkdir — no new verbs for any of it, they are
-already in the contract.* Data Browser list with Icon Services icons,
+**Phase 2 — the browser.** *Rungs 1 and 2 done 2026-07-20,
+metal-verified: the guest browses the host's share in a real Data
+Browser list, and push and pull both work from the classic side. A
+pulled file lands in a chosen downloads folder, outside the share, and
+the window says which one and opens it in the Finder. Remaining:
+HostShare learning move / trash / restore / mkdir, so the browser gets
+the controls — no new verbs for any of it, they are already in the
+contract and the guest already serves them.* Data Browser list with Icon Services icons,
 sortable columns, both selection styles, double-click / Cmd-Up /
 Cmd-click path menu / type-select, the status line, and Get downloading
 to the configured folder. **De-risk first:** Data Browser under
