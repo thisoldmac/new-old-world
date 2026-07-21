@@ -150,6 +150,115 @@ final class HostShare {
         return (page, served < contents.count, served + 1)
     }
 
+    // MARK: - Changing what we share
+
+    /* The guest asks for these the same way the host does, and they mean
+       the same thing whichever side serves them. Every one is
+       reversible, which is what lets the asker offer undo. */
+
+    /// Moves and/or renames. `toPath` is the full destination path
+    /// including the new name. Parents are NOT created: moving into a
+    /// folder that is not there is a mistake, not an instruction.
+    func move(from: String, to: String, overwrite: Bool) throws -> String {
+        let source = try resolve(from)
+        let target = try resolve(to)
+        guard FileManager.default.fileExists(atPath: source.path) else {
+            throw ShareError.notFound
+        }
+        let parent = target.deletingLastPathComponent()
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: parent.path,
+                                             isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            throw ShareError.notFound
+        }
+        if FileManager.default.fileExists(atPath: target.path) {
+            guard overwrite else { throw ShareError.exists }
+            /* Replacing keeps the old one, for the same reason a push
+               does: the person who agreed is at the other machine and
+               cannot see what they are replacing. */
+            try FileManager.default.trashItem(at: target,
+                                              resultingItemURL: nil)
+        }
+        do {
+            try FileManager.default.moveItem(at: source, to: target)
+        } catch {
+            throw ShareError.io("\(error.localizedDescription)")
+        }
+        return relativePath(of: target)
+    }
+
+    /// Moves an item to the Trash and reports the name it landed under —
+    /// which is not always the name it had, because the Trash may
+    /// already hold one. That name is what a restore needs, so recording
+    /// the name we ASKED for would eventually put something else back.
+    func trash(path: String) throws -> String {
+        let url = try resolve(path)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw ShareError.notFound
+        }
+        var landed: NSURL?
+        do {
+            try FileManager.default.trashItem(at: url,
+                                              resultingItemURL: &landed)
+        } catch {
+            throw ShareError.io("\(error.localizedDescription)")
+        }
+        return (landed as URL?)?.lastPathComponent ?? url.lastPathComponent
+    }
+
+    /// Puts a trashed item back. Both halves are names, so an undo
+    /// survives a restart of either machine.
+    func restore(trashedAs: String, to path: String) throws -> String {
+        let target = try resolve(path)
+        let trash = try FileManager.default.url(
+            for: .trashDirectory, in: .userDomainMask,
+            appropriateFor: nil, create: false)
+        let source = trash.appendingPathComponent(trashedAs)
+        guard FileManager.default.fileExists(atPath: source.path) else {
+            /* Emptied, or dragged out by hand. Not our failure, and the
+               asker can say so precisely. */
+            throw ShareError.notFound
+        }
+        if FileManager.default.fileExists(atPath: target.path) {
+            throw ShareError.exists
+        }
+        do {
+            try FileManager.default.moveItem(at: source, to: target)
+        } catch {
+            throw ShareError.io("\(error.localizedDescription)")
+        }
+        return relativePath(of: target)
+    }
+
+    /// Makes a folder, and the parents it needs.
+    func makeFolder(path: String) throws -> String {
+        let url = try resolve(path)
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: url.path,
+                                          isDirectory: &isDirectory) {
+            guard isDirectory.boolValue else { throw ShareError.exists }
+            return relativePath(of: url)   // already there is not a failure
+        }
+        do {
+            try FileManager.default.createDirectory(
+                at: url, withIntermediateDirectories: true)
+        } catch {
+            throw ShareError.io("\(error.localizedDescription)")
+        }
+        return relativePath(of: url)
+    }
+
+    /// A path back in the other machine's spelling, for reporting where
+    /// something actually landed.
+    private func relativePath(of url: URL) -> String {
+        let base = root.standardizedFileURL.path
+        let full = url.standardizedFileURL.path
+        guard full.hasPrefix(base + "/") else { return "" }
+        return String(full.dropFirst(base.count + 1))
+            .replacingOccurrences(of: "/", with: Self.separator)
+    }
+
     /// The contract's control-frame cap, less room for the envelope the
     /// entries sit in (type, path, cursor, root, and the share label).
     private static let maxListingBytes = 4096

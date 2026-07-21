@@ -271,6 +271,61 @@ final class GuestListener: ObservableObject {
     /// and the tests stay silent.
     var announceReceivedFile: ((String, URL, Int) -> Void)?
 
+    /// The four change operations, answered the way the guest answers
+    /// them: one file.result, success or not, because the asker is
+    /// holding an undo stack and a silent failure leaves it believing
+    /// something it can reverse.
+    fileprivate func serveChange(_ change: ChangeRequest) {
+        do {
+            switch change {
+            case .move(let request):
+                let landed = try share.move(from: request.path,
+                                            to: request.toPath,
+                                            overwrite: request.overwrite
+                                                ?? false)
+                session?.send(.fileResult(FileResult(
+                    id: request.id, ok: true, path: landed,
+                    trashedAs: nil, code: nil, reason: nil)))
+            case .trash(let request):
+                let landed = try share.trash(path: request.path)
+                session?.send(.fileResult(FileResult(
+                    id: request.id, ok: true, path: request.path,
+                    trashedAs: landed, code: nil, reason: nil)))
+            case .restore(let request):
+                let landed = try share.restore(trashedAs: request.trashedAs,
+                                               to: request.toPath)
+                session?.send(.fileResult(FileResult(
+                    id: request.id, ok: true, path: landed,
+                    trashedAs: nil, code: nil, reason: nil)))
+            case .mkdir(let request):
+                let landed = try share.makeFolder(path: request.path)
+                session?.send(.fileResult(FileResult(
+                    id: request.id, ok: true, path: landed,
+                    trashedAs: nil, code: nil, reason: nil)))
+            }
+        } catch {
+            let known = error as? HostShare.ShareError
+            session?.send(.fileResult(FileResult(
+                id: change.id, ok: false, path: nil, trashedAs: nil,
+                code: known?.code ?? "io-error",
+                reason: known?.message ?? "\(error)")))
+        }
+    }
+
+    enum ChangeRequest {
+        case move(FileMove), trash(FileTrash)
+        case restore(FileRestore), mkdir(FileMkdir)
+
+        var id: Int {
+            switch self {
+            case .move(let r): return r.id
+            case .trash(let r): return r.id
+            case .restore(let r): return r.id
+            case .mkdir(let r): return r.id
+            }
+        }
+    }
+
     fileprivate func noteReceived(_ url: URL) {
         received.insert(url, at: 0)
         if received.count > 20 { received.removeLast() }
@@ -921,6 +976,9 @@ final class GuestListener: ObservableObject {
             onAcceptOffer: { [weak self] offer in
                 self?.acceptOffer(offer)
             },
+            onServeChange: { [weak self] change in
+                self?.serveChange(change)
+            },
             onReceived: { [weak self] url in
                 self?.noteReceived(url)
             },
@@ -991,6 +1049,7 @@ final class Session {
     private let onServeList: (FileList) -> Void
     private let onServeGet: (FileGet) -> Void
     private let onAcceptOffer: (FileOffer) -> Void
+    private let onServeChange: (GuestListener.ChangeRequest) -> Void
     private let onReceived: (URL) -> Void
     private let onOutboundProgress: (Int, Int) -> Void
     private let onOutboundFailed: (String) -> Void
@@ -1055,6 +1114,7 @@ final class Session {
          onServeList: @escaping (FileList) -> Void,
          onServeGet: @escaping (FileGet) -> Void,
          onAcceptOffer: @escaping (FileOffer) -> Void,
+         onServeChange: @escaping (GuestListener.ChangeRequest) -> Void,
          onReceived: @escaping (URL) -> Void,
          onOutboundProgress: @escaping (Int, Int) -> Void,
          onOutboundFailed: @escaping (String) -> Void,
@@ -1083,6 +1143,7 @@ final class Session {
         self.onServeList = onServeList
         self.onServeGet = onServeGet
         self.onAcceptOffer = onAcceptOffer
+        self.onServeChange = onServeChange
         self.onReceived = onReceived
         self.onOutboundProgress = onOutboundProgress
         self.onOutboundFailed = onOutboundFailed
@@ -1223,6 +1284,14 @@ final class Session {
             onServeGet(request)
         case .fileOffer(let offer):
             onAcceptOffer(offer)
+        case .fileMove(let request):
+            onServeChange(.move(request))
+        case .fileTrash(let request):
+            onServeChange(.trash(request))
+        case .fileRestore(let request):
+            onServeChange(.restore(request))
+        case .fileMkdir(let request):
+            onServeChange(.mkdir(request))
         case .fileAccept(let accept):
             sendAcceptedFile(accept)
         case .fileDone(let done):

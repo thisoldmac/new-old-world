@@ -232,3 +232,186 @@ final class HostShareTests: XCTestCase {
         XCTAssertFalse(url.lastPathComponent.hasPrefix("."))
     }
 }
+
+/// The four change operations the guest can ask of this Mac. Every one
+/// is reversible, because the asker is holding an undo stack — a
+/// destructive answer here would be an undo that lies.
+@MainActor
+final class HostShareChangeTests: XCTestCase {
+    private var root: URL!
+    private var share: HostShare!
+
+    override func setUp() async throws {
+        root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("now-change-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root,
+                                                withIntermediateDirectories: true)
+        let defaults = UserDefaults(suiteName: "now.tests.\(UUID().uuidString)")!
+        share = HostShare(defaults: defaults)
+        share.root = root
+    }
+
+    override func tearDown() async throws {
+        try? FileManager.default.removeItem(at: root)
+    }
+
+    @discardableResult
+    private func write(_ name: String, _ text: String = "hello") throws -> URL {
+        let url = root.appendingPathComponent(name)
+        try text.data(using: .utf8)!.write(to: url)
+        return url
+    }
+
+    private func exists(_ name: String) -> Bool {
+        FileManager.default.fileExists(
+            atPath: root.appendingPathComponent(name).path)
+    }
+
+    // MARK: - Move and rename
+
+    func testRenameInPlace() throws {
+        try write("Old.txt", "contents")
+        let landed = try share.move(from: "Old.txt", to: "New.txt",
+                                    overwrite: false)
+        XCTAssertEqual(landed, "New.txt")
+        XCTAssertFalse(exists("Old.txt"))
+        XCTAssertEqual(try String(contentsOf: root
+            .appendingPathComponent("New.txt"), encoding: .utf8), "contents")
+    }
+
+    func testMoveIntoAFolderReportsWhereItLanded() throws {
+        try write("Notes.txt")
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("Docs"),
+            withIntermediateDirectories: false)
+        let landed = try share.move(from: "Notes.txt", to: "Docs:Notes.txt",
+                                    overwrite: false)
+        XCTAssertEqual(landed, "Docs:Notes.txt",
+                       "reported in the asker's spelling, with colons")
+        XCTAssertTrue(exists("Docs/Notes.txt"))
+    }
+
+    func testMovingIntoAFolderThatIsNotThereIsRefused() throws {
+        try write("Notes.txt")
+        XCTAssertThrowsError(try share.move(from: "Notes.txt",
+                                            to: "Nope:Notes.txt",
+                                            overwrite: false)) {
+            XCTAssertEqual(($0 as? HostShare.ShareError)?.code, "not-found")
+        }
+        XCTAssertTrue(exists("Notes.txt"), "and the source is untouched")
+    }
+
+    func testMoveOntoAnExistingNameNeedsOverwrite() throws {
+        try write("A.txt", "a")
+        try write("B.txt", "b")
+        XCTAssertThrowsError(try share.move(from: "A.txt", to: "B.txt",
+                                            overwrite: false)) {
+            XCTAssertEqual(($0 as? HostShare.ShareError)?.code, "exists")
+        }
+        XCTAssertNoThrow(try share.move(from: "A.txt", to: "B.txt",
+                                        overwrite: true))
+        XCTAssertEqual(try String(contentsOf: root
+            .appendingPathComponent("B.txt"), encoding: .utf8), "a")
+    }
+
+    func testMoveOutOfTheShareIsRefused() throws {
+        try write("Notes.txt")
+        XCTAssertThrowsError(try share.move(from: "Notes.txt",
+                                            to: "..:Notes.txt",
+                                            overwrite: false))
+        XCTAssertTrue(exists("Notes.txt"))
+    }
+
+    // MARK: - Trash and restore
+
+    func testTrashReportsTheNameItLandedUnder() throws {
+        try write("Notes.txt", "first")
+        let landed = try share.trash(path: "Notes.txt")
+        XCTAssertFalse(exists("Notes.txt"))
+        XCTAssertFalse(landed.isEmpty)
+
+        // The round trip an undo makes.
+        let back = try share.restore(trashedAs: landed, to: "Notes.txt")
+        XCTAssertEqual(back, "Notes.txt")
+        XCTAssertEqual(try String(contentsOf: root
+            .appendingPathComponent("Notes.txt"), encoding: .utf8), "first")
+    }
+
+    /// Two files with the same name from different folders: the Trash
+    /// renames the second, and recording the name we ASKED for rather
+    /// than the one it got would eventually put the wrong file back.
+    func testTwoFilesOfTheSameNameRestoreToTheRightPlaces() throws {
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("One"),
+            withIntermediateDirectories: false)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("Two"),
+            withIntermediateDirectories: false)
+        try "from one".data(using: .utf8)!
+            .write(to: root.appendingPathComponent("One/Same.txt"))
+        try "from two".data(using: .utf8)!
+            .write(to: root.appendingPathComponent("Two/Same.txt"))
+
+        let first = try share.trash(path: "One:Same.txt")
+        let second = try share.trash(path: "Two:Same.txt")
+        XCTAssertNotEqual(first, second,
+                          "the Trash cannot hold two of the same name")
+
+        try share.restore(trashedAs: second, to: "Two:Same.txt")
+        try share.restore(trashedAs: first, to: "One:Same.txt")
+        XCTAssertEqual(try String(contentsOf: root
+            .appendingPathComponent("One/Same.txt"), encoding: .utf8),
+                       "from one")
+        XCTAssertEqual(try String(contentsOf: root
+            .appendingPathComponent("Two/Same.txt"), encoding: .utf8),
+                       "from two")
+    }
+
+    func testRestoringSomethingNoLongerInTheTrashIsNotFound() {
+        XCTAssertThrowsError(try share.restore(trashedAs: "Gone.txt",
+                                               to: "Gone.txt")) {
+            XCTAssertEqual(($0 as? HostShare.ShareError)?.code, "not-found")
+        }
+    }
+
+    func testRestoringOverSomethingIsRefused() throws {
+        try write("Notes.txt", "original")
+        let landed = try share.trash(path: "Notes.txt")
+        try write("Notes.txt", "a new one in its place")
+        XCTAssertThrowsError(try share.restore(trashedAs: landed,
+                                               to: "Notes.txt")) {
+            XCTAssertEqual(($0 as? HostShare.ShareError)?.code, "exists")
+        }
+        XCTAssertEqual(try String(contentsOf: root
+            .appendingPathComponent("Notes.txt"), encoding: .utf8),
+                       "a new one in its place")
+    }
+
+    // MARK: - New folders
+
+    func testMakeFolderAndItsParents() throws {
+        let landed = try share.makeFolder(path: "Docs:2026:July")
+        XCTAssertEqual(landed, "Docs:2026:July")
+        var isDirectory: ObjCBool = false
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: root.appendingPathComponent("Docs/2026/July").path,
+            isDirectory: &isDirectory))
+        XCTAssertTrue(isDirectory.boolValue)
+    }
+
+    func testMakingAFolderThatIsAlreadyThereIsNotAFailure() throws {
+        try share.makeFolder(path: "Docs")
+        XCTAssertNoThrow(try share.makeFolder(path: "Docs"))
+    }
+
+    func testAFolderCannotReplaceAFile() throws {
+        try write("Docs")
+        XCTAssertThrowsError(try share.makeFolder(path: "Docs")) {
+            XCTAssertEqual(($0 as? HostShare.ShareError)?.code, "exists")
+        }
+    }
+
+    func testMakingAFolderOutsideTheShareIsRefused() {
+        XCTAssertThrowsError(try share.makeFolder(path: "..:Escape"))
+    }
+}
