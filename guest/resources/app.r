@@ -166,6 +166,33 @@ resource 'DITL' (200) {
     }
 };
 
+/* The Connection page's address/port editor. A movable-modal DIALOG
+   because the Dialog Manager's edit-text items take clicks and keys
+   where an Appearance edit-text control does not in this app (see
+   conn_edit_dialog.c). Item numbers match the enum there. */
+resource 'DLOG' (301) {
+    {120, 140, 300, 500},
+    movableDBoxProc,
+    invisible,
+    noGoAway,
+    0,
+    301,
+    "Connection",
+    centerMainScreen
+};
+
+resource 'DITL' (301) {
+    {
+        /* 1 Save    */ {144, 274, 164, 344}, Button { enabled, "Save" };
+        /* 2 Cancel  */ {144, 190, 164, 260}, Button { enabled, "Cancel" };
+        /* 3 addr    */ {22, 96, 38, 344}, EditText { enabled, "" };
+        /* 4 port    */ {50, 96, 66, 176}, EditText { enabled, "" };
+        /* 5 status  */ {82, 20, 130, 344}, StaticText { disabled, "" };
+        /* 6 */ {22, 20, 38, 90}, StaticText { disabled, "Address:" };
+        /* 7 */ {50, 20, 66, 90}, StaticText { disabled, "Port:" };
+    }
+};
+
 
 
 resource 'MENU' (130) {

@@ -3,15 +3,20 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "conn_edit_dialog.h"
 #include "conn_fields.h"
 #include "prefs.h"
 #include "pump.h"
 #include "wire.h"
 
-/* The page has two halves: an "Other Mac" group whose fields edit the
-   saved target, and an "At a glance" group of live read-only rows fed
-   by conn_snapshot(). Nothing here services the wire, opens a dialog,
-   or blocks; actions hand the target to wire.c and return. */
+/* The page has two halves: an "Other Mac" group that SHOWS the saved
+   target (address and port drawn read-only, changed through the Edit
+   button's movable-modal dialog - conn_edit_dialog.c - because the
+   Appearance edit-text control takes no input in this app), and an
+   "At a glance" group of live read-only rows fed by conn_snapshot().
+   Nothing here services the wire or blocks; actions hand the target to
+   wire.c and return. The Edit button opens a modal, which is main-loop
+   code, never pumped wire code, so the pump.h rule holds. */
 
 enum {
     kRetryMenuID = 133,
@@ -25,8 +30,9 @@ enum {
 
 typedef struct {
     Rect other_group;
-    Rect addr_field;
-    Rect port_field;
+    Rect addr_line;       /* "Address:  10.0.2.2", drawn read-only */
+    Rect port_line;       /* "Port:  5250", drawn read-only */
+    Rect edit_btn;        /* opens the movable-modal editor */
     Rect retry_popup;
     Rect auto_box;
     Rect glance_group;
@@ -41,14 +47,18 @@ static ConnRects g_r;
 static Boolean g_visible;
 
 static ControlRef g_group_other;
-static ControlRef g_addr;
-static ControlRef g_port;
+static ControlRef g_edit;
 static ControlRef g_retry;
 static ControlRef g_auto;
 static ControlRef g_group_glance;
 static ControlRef g_action;
 static ControlRef g_revert;
 static ControlRef g_save;
+
+/* The edited target, the module's own state now that no control holds
+   it. Seeded from prefs, changed by the Edit dialog, persisted by Save. */
+static char g_host[64];
+static unsigned short g_port_val;
 
 /* Transient result of the last action, shown in the status placard
    until the next action or module switch. */
@@ -102,13 +112,16 @@ static void compute_rects(const Rect *body, ConnRects *r)
     short right = (short)(body->right - kMargin);
     short top = (short)(body->top + 8);
     short other_right = stacked ? right : (short)(left + 300);
-    short field_left = (short)(left + 84);
+    short edit_w = 78;
+    short edit_left = (short)(other_right - 14 - edit_w);
 
     SetRect(&r->other_group, left, top, other_right, (short)(top + 148));
-    SetRect(&r->addr_field, field_left, (short)(top + 22),
-            (short)(other_right - 14), (short)(top + 22 + kFieldHeight));
-    SetRect(&r->port_field, field_left, (short)(top + 48),
-            (short)(field_left + 60), (short)(top + 48 + kFieldHeight));
+    SetRect(&r->edit_btn, edit_left, (short)(top + 30),
+            (short)(other_right - 14), (short)(top + 30 + kButtonHeight));
+    SetRect(&r->addr_line, (short)(left + 12), (short)(top + 22),
+            (short)(edit_left - 8), (short)(top + 22 + kFieldHeight));
+    SetRect(&r->port_line, (short)(left + 12), (short)(top + 48),
+            (short)(edit_left - 8), (short)(top + 48 + kFieldHeight));
     SetRect(&r->retry_popup, (short)(left + 10), (short)(top + 74),
             (short)(other_right - 14), (short)(top + 94));
     SetRect(&r->auto_box, (short)(left + 12), (short)(top + 104),
@@ -134,42 +147,21 @@ static void compute_rects(const Rect *body, ConnRects *r)
 
 /* --- field access ------------------------------------------------------- */
 
-static void field_text(ControlRef field, char *out, long cap)
+static void invalidate_other_group(void)
 {
-    Size actual = 0;
-
-    out[0] = '\0';
-    if (GetControlData(field, kControlEditTextPart, kControlEditTextTextTag,
-                       cap - 1, out, &actual) == noErr) {
-        if (actual > cap - 1) {
-            actual = cap - 1;
-        }
-        out[actual] = '\0';
-    }
-}
-
-static void set_field_text(ControlRef field, const char *text)
-{
-    SetControlData(field, kControlEditTextPart, kControlEditTextTextTag,
-                   (Size)strlen(text), text);
-    if (g_owner != NULL) {
-        Rect r;
-
-        GetControlBounds(field, &r);
-        InsetRect(&r, -3, -3);        /* the frame draws outside */
-        InvalWindowRect(g_owner, &r);
+    if (g_owner != NULL && g_visible) {
+        InvalWindowRect(g_owner, &g_r.other_group);
     }
 }
 
 static void load_fields(const NowPrefs *prefs)
 {
-    char text[16];
-
-    set_field_text(g_addr, prefs->host);
-    snprintf(text, sizeof text, "%u", prefs->port);
-    set_field_text(g_port, text);
+    strncpy(g_host, prefs->host, sizeof g_host - 1);
+    g_host[sizeof g_host - 1] = '\0';
+    g_port_val = prefs->port;
     SetControlValue(g_retry, now_conn_retry_item_for_secs(prefs->retry_secs));
     SetControlValue(g_auto, prefs->auto_connect ? 1 : 0);
+    invalidate_other_group();
 }
 
 static void set_status(const char *text)
@@ -184,26 +176,20 @@ static void set_status(const char *text)
     }
 }
 
-/* Validate the visible fields into host/port. On failure, says why in
-   the status placard and returns false. */
+/* The edited target, validated. The Edit dialog only writes back valid
+   values, so this normally just copies; it re-checks defensively (a
+   prefs file could carry an old malformed host) and reports in the
+   placard if somehow invalid. */
 static Boolean read_fields(char *host, long host_cap, long *port_out)
 {
-    char port_text[16];
-    long port;
-
-    field_text(g_addr, host, host_cap);
-    field_text(g_port, port_text, sizeof port_text);
-    if (!now_conn_ipv4_valid(host)) {
+    if (!now_conn_ipv4_valid(g_host)) {
         set_status("The address must be a dotted IPv4 number, "
-                   "like 10.91.5.20.");
+                   "like 10.91.5.20. Use Edit to set it.");
         return false;
     }
-    port = now_conn_port_parse(port_text);
-    if (port < 0) {
-        set_status("The port must be a number from 1 through 65535.");
-        return false;
-    }
-    *port_out = port;
+    strncpy(host, g_host, (size_t)(host_cap - 1));
+    host[host_cap - 1] = '\0';
+    *port_out = g_port_val;
     return true;
 }
 
@@ -369,11 +355,7 @@ static OSErr conn_create(WindowRef owner, const Rect *body)
     CopyCStringToPascal("At a glance", text);
     g_group_glance = NewControl(owner, &g_r.glance_group, text, false, 0,
                                 0, 0, kControlGroupBoxTextTitleProc, 0);
-    CopyCStringToPascal("", text);
-    g_addr = NewControl(owner, &g_r.addr_field, text, false, 0, 0, 0,
-                        kControlEditTextProc, 0);
-    g_port = NewControl(owner, &g_r.port_field, text, false, 0, 0, 0,
-                        kControlEditTextProc, 0);
+    g_edit = make_button(&g_r.edit_btn, "Edit\xC9");   /* MacRoman ellipsis */
     CopyCStringToPascal("Retry:", text);
     /* classic popup CDEF: value = title justification, min = MENU id,
        max = title width in pixels */
@@ -387,8 +369,8 @@ static OSErr conn_create(WindowRef owner, const Rect *body)
     g_revert = make_button(&g_r.revert_btn, "Revert");
     g_save = make_button(&g_r.save_btn, "Save");
 
-    if (g_group_other == NULL || g_group_glance == NULL || g_addr == NULL
-        || g_port == NULL || g_retry == NULL || g_auto == NULL
+    if (g_group_other == NULL || g_group_glance == NULL || g_edit == NULL
+        || g_retry == NULL || g_auto == NULL
         || g_action == NULL || g_revert == NULL || g_save == NULL) {
         return memFullErr;
     }
@@ -407,8 +389,7 @@ static void conn_dispose(void)
     /* DisposeWindow takes the controls; nothing else is owned here. */
     g_owner = NULL;
     g_group_other = NULL;
-    g_addr = NULL;
-    g_port = NULL;
+    g_edit = NULL;
     g_retry = NULL;
     g_auto = NULL;
     g_group_glance = NULL;
@@ -434,20 +415,13 @@ static void conn_show(Boolean visible)
     g_visible = visible;
     show_control(g_group_other, visible);
     show_control(g_group_glance, visible);
-    show_control(g_addr, visible);
-    show_control(g_port, visible);
+    show_control(g_edit, visible);
     show_control(g_retry, visible);
     show_control(g_auto, visible);
     show_control(g_action, visible);
     show_control(g_revert, visible);
     show_control(g_save, visible);
-    if (g_owner == NULL) {
-        return;
-    }
-    if (visible) {
-        SetKeyboardFocus(g_owner, g_addr, kControlFocusNextPart);
-    } else {
-        ClearKeyboardFocus(g_owner);
+    if (!visible) {
         g_status[0] = '\0';
     }
 }
@@ -468,8 +442,7 @@ static void conn_layout(const Rect *body)
     compute_rects(body, &g_r);
     move_control(g_group_other, &g_r.other_group);
     move_control(g_group_glance, &g_r.glance_group);
-    move_control(g_addr, &g_r.addr_field);
-    move_control(g_port, &g_r.port_field);
+    move_control(g_edit, &g_r.edit_btn);
     move_control(g_retry, &g_r.retry_popup);
     move_control(g_auto, &g_r.auto_box);
     move_control(g_action, &g_r.action_btn);
@@ -486,13 +459,27 @@ static void conn_draw(void)
         return;
     }
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-    MoveTo((short)(g_r.other_group.left + 12),
-           (short)(g_r.addr_field.top + 12));
+    MoveTo(g_r.addr_line.left, (short)(g_r.addr_line.top + 12));
     CopyCStringToPascal("Address:", text);
     DrawString(text);
-    MoveTo((short)(g_r.other_group.left + 12),
-           (short)(g_r.port_field.top + 12));
+    CopyCStringToPascal(g_host[0] != '\0' ? g_host : "not set", text);
+    MoveTo((short)(g_r.addr_line.left + 58),
+           (short)(g_r.addr_line.top + 12));
+    TruncString((short)(g_r.addr_line.right - g_r.addr_line.left - 58),
+                text, truncEnd);
+    DrawString(text);
+
+    MoveTo(g_r.port_line.left, (short)(g_r.port_line.top + 12));
     CopyCStringToPascal("Port:", text);
+    DrawString(text);
+    {
+        char port_text[16];
+
+        snprintf(port_text, sizeof port_text, "%u", g_port_val);
+        CopyCStringToPascal(port_text, text);
+    }
+    MoveTo((short)(g_r.port_line.left + 58),
+           (short)(g_r.port_line.top + 12));
     DrawString(text);
 
     for (i = 0; i < kGlanceRowCount; ++i) {
@@ -524,25 +511,33 @@ static Boolean conn_click(const EventRecord *event, Point local)
     ControlRef control;
     SInt16 part;
 
+    (void)event;                      /* controls track by point, not event */
     if (g_owner == NULL || !g_visible) {
         return false;
     }
-    /* FindControlUnderMouse, not FindControl: the address and port
-       fields are embedded in the "Other Mac" group-box CONTROL, and the
-       Workshop window has a control-embedding hierarchy the moment any
-       page builds a Data Browser (Files, Processes), which forces a root
-       control onto the shared window. FindControl predates embedding and
-       returns the enclosing group box, so the fields took no clicks once
-       Connection stopped being its own dialog. This call returns the
-       embedded control, and is correct whether or not a hierarchy
-       exists. */
+    /* FindControlUnderMouse, not FindControl: the Workshop window has a
+       control-embedding hierarchy (a root control, plus any Data Browser
+       page's own), and FindControl does not understand embedding. This
+       call is correct whether or not a hierarchy exists. */
     control = FindControlUnderMouse(local, g_owner, &part);
     if (control == NULL) {
         return false;
     }
-    if (control == g_addr || control == g_port) {
-        SetKeyboardFocus(g_owner, control, kControlFocusNextPart);
-        HandleControlClick(control, local, event->modifiers, NULL);
+    if (control == g_edit) {
+        if (TrackControl(control, local, now_pump_action()) != 0) {
+            char host[64];
+            unsigned short port = g_port_val;
+
+            strcpy(host, g_host);
+            /* A modal from a click is main-loop code, not pumped wire
+               code, so opening it here is allowed (pump.h). */
+            if (now_conn_edit(host, sizeof host, &port)) {
+                strcpy(g_host, host);
+                g_port_val = port;
+                invalidate_other_group();
+                set_status("Address changed - Save to keep it.");
+            }
+        }
         return true;
     }
     if (control == g_retry) {
@@ -585,44 +580,34 @@ static Boolean conn_click(const EventRecord *event, Point local)
 static Boolean conn_key(const EventRecord *event)
 {
     char c = (char)(event->message & charCodeMask);
-    ControlRef focus = NULL;
 
     if (g_owner == NULL || !g_visible) {
         return false;
     }
-    if (GetKeyboardFocus(g_owner, &focus) != noErr || focus == NULL) {
-        return false;
-    }
-    if (focus != g_addr && focus != g_port) {
-        return false;
-    }
-    if (c == '\r' || c == 3) {        /* Return or Enter runs Save */
+    /* The page has no text field of its own now; Return means Save, the
+       way a dialog's default button would. Everything else falls
+       through to the Workshop (sidebar arrows, Tab). */
+    if (c == '\r' || c == 3) {
         do_save(false);
         return true;
     }
-    if (c == '\t') {
-        return false;                 /* the Workshop moves the focus */
-    }
-    HandleControlKey(focus, (SInt16)((event->message & keyCodeMask) >> 8),
-                     c, event->modifiers);
-    return true;
+    return false;
 }
 
 static void conn_activate(Boolean active)
 {
-    ControlRef controls[9];
+    ControlRef controls[8];
     int i;
 
     controls[0] = g_group_other;
     controls[1] = g_group_glance;
-    controls[2] = g_addr;
-    controls[3] = g_port;
-    controls[4] = g_retry;
-    controls[5] = g_auto;
-    controls[6] = g_action;
-    controls[7] = g_revert;
-    controls[8] = g_save;
-    for (i = 0; i < 9; ++i) {
+    controls[2] = g_edit;
+    controls[3] = g_retry;
+    controls[4] = g_auto;
+    controls[5] = g_action;
+    controls[6] = g_revert;
+    controls[7] = g_save;
+    for (i = 0; i < 8; ++i) {
         if (controls[i] == NULL) {
             continue;
         }
@@ -645,8 +630,6 @@ static void conn_idle(void)
     if (g_owner == NULL || !g_visible) {
         return;
     }
-    IdleControls(g_owner);            /* the edit-text caret blink */
-
     conn_snapshot(&snap);
     build_values(&snap, vals, fail_line, sizeof fail_line);
     for (i = 0; i < kGlanceRowCount; ++i) {

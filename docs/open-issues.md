@@ -92,23 +92,29 @@ only page that uses edit-text controls; every other page's controls
 `TrackControl`/`HandleControlClick`, which need no focus, so only
 Connection was affected.
 
-The fix creates one root control on the window at creation
-(`workshop_open`), before any module builds controls, so the hierarchy
-is present and identical for every page rather than appearing only
-after a Data Browser page implicitly made one. With a hierarchy in
-place, `FindControl` is wrong everywhere - it does not understand
-embedding - so all Workshop-window click handlers moved to
-`FindControlUnderMouse` (Screenshots, Files share, Console,
-Connection). That call is correct with or without a hierarchy, so the
-conversion cannot regress the pages that already worked. `confirm.c`
-keeps `FindControl`: it runs on its own dialog window, which has no
-root control.
+A root control got the field to *focus* but it still took no mouse or
+keys - the Appearance edit-text control simply does not work for entry
+in this WaitNextEvent app, which is the same wall the Console hit and
+why it hand-rolled its input. So the edit-text controls are gone from
+the page. Address and port are now drawn **read-only**, and an **Edit**
+button opens a movable-modal **dialog** (`conn_edit_dialog.c`, DLOG/
+DITL 301) whose text entry the **Dialog Manager** drives - `GetNewDialog`
++ `ModalDialog(now_pump_modal_filter())` + `GetDialogItemText` on
+`editText` items. That is the exact mechanism the original Connection
+dialog used before the Workshop rewrite, proven on this PowerBook; the
+filter pumps the wire so a long edit never drops the link. Validation
+stays in `conn_fields.c`.
+
+The root control and the `FindControlUnderMouse` conversion (Screenshots,
+Files share, Console, Connection) stay - they are correct regardless,
+fixed focus and Tab, and cannot regress the leaf-control pages.
+`confirm.c` keeps `FindControl` on its own dialog window.
 
 **Unverified on metal.** Build clean, host suite and native tests
-green, but the whole point is keyboard focus on the real machine: only
-the PowerBook (or 3400c) proves the fields now edit AND that
-Screenshots/Files/Console still take their clicks under the new
-hierarchy. Re-check all four pages, not just Connection.
+green. Left to watch on the machine: the Edit dialog opens, its fields
+take clicks and keys, Save writes back and the page redraws the new
+target; and that Screenshots/Files/Console still take their clicks
+under the root control. Re-check all four pages.
 
 **Type-select does nothing in the browser list.** Selection,
 double-click and header sorting all work; typing a letter does not jump.

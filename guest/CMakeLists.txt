@@ -25,6 +25,7 @@ add_application(now-guest
     src/wire.c
     src/prefs.c
     src/conn_fields.c
+    src/conn_edit_dialog.c
     src/connection_module.c
     src/peek.c
     src/processes_layout.c
