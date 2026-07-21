@@ -285,11 +285,15 @@ final class GuestListener: ObservableObject {
             self.session?.cancelOutbound()
             self.settlePut(.failure(.init(code: "timeout", message: reason)))
         }
+        // Named by content, so an interrupted attempt can be continued and
+        // an edited one cannot be mistaken for it. Computed once here; the
+        // same checksum rides file.end.
         session.sendFileOffer(
             FileOffer(id: id, name: name, path: path, container: container,
                       bytes: bytes.count, fileType: fileType,
                       creator: creator, modified: modified,
-                      overwrite: overwrite),
+                      overwrite: overwrite,
+                      resumeToken: TransferIdentity.resumeToken(for: bytes)),
             bytes: bytes)
     }
 
@@ -1197,14 +1201,25 @@ final class Session {
               offer.id == accept.id else { return }
         pendingOffer = nil
         let transfer = nextTransfer()
+        // Resume where the guest says it already is. Trust but bound it:
+        // a `have` past the end of the file, or one offered without our
+        // token, would silently skip bytes that were never sent.
+        var start = 0
+        if let have = accept.have, have > 0, have < bytes.count,
+           offer.resumeToken != nil {
+            start = have
+            onLog("Resuming at \(have) of \(bytes.count) bytes")
+        }
         send(.fileBegin(FileBegin(
             id: offer.id, transfer: Int(transfer), name: offer.name,
             container: offer.container, bytes: bytes.count,
             dataBytes: nil, rsrcBytes: nil, fileType: offer.fileType,
-            creator: offer.creator, modified: offer.modified)))
+            creator: offer.creator, modified: offer.modified,
+            offset: start > 0 ? start : nil,
+            resumeToken: offer.resumeToken)))
         outbound = Outbound(id: offer.id, transfer: transfer, bytes: bytes,
-                            sent: 0, cancelled: false)
-        onOutboundProgress(0, bytes.count)
+                            sent: start, cancelled: false, acked: start)
+        onOutboundProgress(start, bytes.count)
         sendNextOutboundChunk()
     }
 
@@ -1218,8 +1233,12 @@ final class Session {
         }
         guard out.sent < out.bytes.count else {
             outbound = nil
+            // Over the WHOLE file, not the bytes this session sent: a
+            // resumed file is stitched from two attempts and the seam is
+            // exactly what nothing else checks.
             send(.fileEnd(FileEnd(id: out.id, transfer: Int(out.transfer),
-                                  ok: true, sendMs: nil)))
+                                  ok: true, sendMs: nil,
+                                  crc32: TransferIdentity.crc32(out.bytes))))
             return
         }
         // Wait for the receiver to catch up rather than piling bytes into
