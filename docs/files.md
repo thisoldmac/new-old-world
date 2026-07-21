@@ -311,9 +311,9 @@ files work today; the fix is being pursued with the large-transfer work.
 Each phase is independently testable on the machine and each leaves the
 product usable.
 
-**Phase 1 — the host serves, the guest sends.** *Built 2026-07-20;
-green on the host's 173 tests including seven that serve a real guest
-over loopback. Not yet run against the PowerBook.* Host: a share-folder
+**Phase 1 — the host serves, the guest sends.** *Done 2026-07-20:
+metal-verified on the PB1400c — a file picked on the classic Mac lands
+in the host's share. 198 host tests green.* Host: a share-folder
 setting, then serving `file.list` and `file.get`, and accepting
 `file.offer` with the reverse of the conversions already done in the
 other direction (MacRoman names to UTF-8, classic epoch to Foundation
@@ -324,6 +324,42 @@ side. Done when a file picked on the classic Mac lands in the host's
 share with its name, type and date intact. Capped at small files until
 the staging fix lands — say so in the UI rather than failing
 mysteriously.
+
+What Phase 1 cost, and what it bought
+-------------------------------------
+
+Three bugs, and they rhyme: each was a place where **one half assumed
+what the other half does**, and no test spanned the two.
+
+**The guest sent frames the host could not decode.** `file.offer` had no
+`path`; `file.begin` had no `name` or `container`. All contract-required.
+The host's decoder threw on the first frame of every send and closed the
+connection, so the symptom — "drops, reconnects, no file" — pointed
+nowhere near the cause. Eight tests covered this path and none caught
+it, because every one built messages as Swift values: they proved the
+host agrees with itself. `GuestWireFixtureTests` now decodes the literal
+strings `wire.c` emits, and is the only place in the suite where the
+guest's bytes meet the host's decoder. **A test that constructs the
+message it is about to parse tests one half twice.**
+
+An unreadable frame is no longer fatal either. These halves ship
+separately; a verb one side has learned and the other has not should not
+brick the older peer. Loud and survivable beats strict and dead.
+
+**The panel meant to make a send visible starved it.** It read a
+preferences file, called `HiliteControl` three times, and invalidated
+the whole window on *every* event-loop pass — and during a transfer that
+loop runs with no sleep. `HiliteControl` redraws whatever it is passed,
+so the "is it enabled" check was itself a flicker loop. On a 603e the
+instrument consumed what it was measuring. Idle work on this machine has
+to be free unless something changed: read no files, draw nothing,
+invalidate the smallest rectangle that differs.
+
+**A send reported into the wrong window.** It narrated through
+`note_shot`, the Screenshots panel's hook, so the File Sharing panel was
+silent — and silent is indistinguishable from broken, which is how it
+was reported. Feedback that lands somewhere other than where the human
+is looking is not feedback.
 
 Two escapes the host's serving side had, both caught by its own tests
 before the guest ever saw them, both from the same root: a path that
