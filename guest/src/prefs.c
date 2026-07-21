@@ -125,10 +125,6 @@ static void set_defaults(NowPrefs *prefs)
     prefs->shot_pack = true;
     prefs->chunk_kb = 8;
     prefs->pace_ms = 0;
-    prefs->panel_open = true;
-    prefs->console_open = false;
-    SetRect(&prefs->panel_rect, 0, 0, 0, 0);
-    SetRect(&prefs->console_rect, 0, 0, 0, 0);
     prefs->console_invert = false;
     /* Dialing on launch is the established behavior; the checkbox on the
        Connection page is how it is turned off. */
@@ -185,10 +181,6 @@ void now_prefs_load(NowPrefs *prefs)
     if (record.pace_ms >= 0 && record.pace_ms <= 100) {
         prefs->pace_ms = record.pace_ms;
     }
-    prefs->panel_open = record.panel_open != 0;
-    prefs->console_open = record.console_open != 0;
-    prefs->panel_rect = record.panel_rect;
-    prefs->console_rect = record.console_rect;
     if (record.format >= 4 && count >= (long)sizeof(PrefsRecordV4)
         && v9.v8.v7.v6.v5.v4.retry_secs >= 0 && v9.v8.v7.v6.v5.v4.retry_secs <= 300) {
         prefs->retry_secs = v9.v8.v7.v6.v5.v4.retry_secs;
@@ -219,9 +211,10 @@ void now_prefs_load(NowPrefs *prefs)
             prefs->workshop_module = v9.workshop_module;
         }
         prefs->workshop_rect = v9.workshop_rect;
-    } else if (prefs->console_open) {
-        /* Seed from the old window session: someone who kept the Console
-           open wants the Console page, not Screenshots. */
+    } else if (record.console_open != 0) {
+        /* Seed from the old window session: someone who kept the
+           Console window open wants the Console page, not Screenshots.
+           This is the only surviving use of the v3 window fields. */
         prefs->workshop_module = 3;
     }
 }
@@ -244,10 +237,8 @@ OSErr now_prefs_save(const NowPrefs *prefs)
     record.shot_pack = prefs->shot_pack ? 1 : 0;
     record.chunk_kb = prefs->chunk_kb;
     record.pace_ms = prefs->pace_ms;
-    record.panel_open = prefs->panel_open ? 1 : 0;
-    record.console_open = prefs->console_open ? 1 : 0;
-    record.panel_rect = prefs->panel_rect;
-    record.console_rect = prefs->console_rect;
+    /* The v3 window-session slots stay zero: the windows they described
+       no longer exist, and the record is memset above. */
 
     err = prefs_spec(&spec);
     if (err != noErr && err != fnfErr) {

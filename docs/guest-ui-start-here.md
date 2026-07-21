@@ -1,11 +1,14 @@
 # Start here: building guest UI
 
-For whoever builds the workshop window. Everything below cost this
-project real time on the real machine, and none of it is in the
+For whoever touches guest UI. Everything below cost this project real
+time on the real machine, and none of it is in the
 `classic-mac-carbon-ui` skill, because it is local to this codebase or
 to this runtime.
 
-Read the skill first — it is the standard. This is the errata.
+Read the skill first — it is the standard. This is the errata. The
+Workshop window it was originally written for now exists; to add a page
+to it, read [adding-a-workshop-module.md](adding-a-workshop-module.md)
+after this.
 
 ## Six rules that have each already broken something
 
@@ -79,7 +82,7 @@ to it. Finding: `carbon-databrowser-usable-carbonlib-16`.
 - **Data Browser works** under CarbonLib 1.6: 22/22 symbols, draws
   native, selection, double-click and header sorting from a plain
   `WaitNextEvent` loop. Type-select does not. `spikes/databrowser` is
-  the probe; `guest/src/host_browser.c` is a working list.
+  the probe; `guest/src/files_browser_view.c` is a working list.
 - **Icons are available**: `GetIconRefFromFile` for a real file,
   `GetIconRef` for a type/creator pair, which is all a listing off the
   wire carries. `GetIconRefFromTypeInfo` is absent.
@@ -90,11 +93,17 @@ to it. Finding: `carbon-databrowser-usable-carbonlib-16`.
 
 ## How to not lose two hours
 
-Put the shell on the machine before it does anything. One window, the
-sidebar, no modules. Deploy it, launch it, look at it. The failure mode
-this advice exists for is a UI that was rendered and described but never
-compiled for the target — the check that catches it is a build on the
-PowerBook, not a screenshot.
+Put it on the machine before it is finished. The Workshop shell went to
+the PowerBook with three empty placeholder pages, and that was the right
+order: the failure mode this advice exists for is a UI that was rendered
+and described but never compiled for the target, and the check that
+catches it is a launch on the PowerBook, not a screenshot.
+
+The emulator is worth a pass first — it is free and it catches drawing
+bugs — but it does not settle anything. Of the two bugs the Workshop
+shipped with, the emulator showed one (a wrong icon) and hid the other
+(a text field that took no keystrokes there **or** on metal, but only
+looked broken on metal, where someone tried to type into it).
 
 And deploy under an honest name. A build named for what it was meant to
 be, rather than what it is, cost an evening of diagnosis pointed at the

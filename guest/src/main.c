@@ -19,8 +19,6 @@
 #include "workshop_window.h"
 
 enum {
-    kWindowMinWidth = 360,
-    kWindowMinHeight = 240,
     kFileMenuID = 129,
     kFileCloseItem = 1,
     kFileSharingItem = 3,
@@ -227,11 +225,10 @@ static void handle_mouse_down(const EventRecord *event)
         HiliteMenu(0);
         return;
     }
-    /* WindowShade. The console asks for kWindowStandardDocumentAttributes
-       and the screenshots panel asks for kWindowCollapseBoxAttribute, so
-       both have drawn a collapse box all along — and clicking it did
-       nothing, because no case here handled it. A control that is drawn
-       and does nothing is worse than one that is absent. */
+    /* WindowShade. The Workshop asks for
+       kWindowStandardDocumentAttributes, so it draws a collapse box; a
+       control that is drawn and does nothing is worse than one that is
+       absent. */
     if (part == inCollapseBox && is_our_window(window)) {
         if (TrackBox(window, event->where, part)) {
             CollapseWindow(window, !IsWindowCollapsed(window));

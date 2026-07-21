@@ -48,28 +48,31 @@ where the human means "abandon my request".
 
 ## Audit: every nested loop in the guest
 
+Re-audited 2026-07-21, after the Workshop replaced the five windows.
+**There is no `ModalDialog` in the guest any more** — the Connection
+dialog became a page — so the two sites that once blocked indefinitely
+are gone, and Navigation Services now takes `now_pump_nav_event()`
+everywhere.
+
 | Site | Loop | Pumps the wire? | Blocks for |
 |---|---|---|---|
-| `settings_dialog.c:162` | `ModalDialog(filter, …)` | **Yes** — `settings_filter` calls `conn_service()` and chains `GetStdFilterProc` | — |
-| `fileshare.c:530` | `ModalDialog(NULL, …)` | **No** | Until the human dismisses it |
-| `fileshare.c:469` | `NavChooseFolder(…, NULL eventProc, …)` | **No** | Until the human dismisses it |
-| `main.c:156` | `MenuSelect` | No | Mouse-down duration |
-| `main.c:163,191` | `DragWindow` | No | Drag duration |
-| `main.c:165,193` | `TrackGoAway` | No | Mouse-down duration |
-| `main.c:173` | `GrowWindow` | No | Drag duration |
-| `main.c:179` | `TrackBox` | No | Mouse-down duration |
-| `shots_panel.c:326,330` | `TrackControl` | No | Mouse-down duration |
+| `fileshare.c` — `NavGetFile`, `NavChooseFolder` ×2 | Navigation Services | **Yes** — `now_pump_nav_event()` | — |
+| `confirm.c` — the movable-modal question | own `WaitNextEvent` loop | **Yes** — the loop calls `conn_service()`; its `TrackControl` takes `now_pump_action()` | — |
+| every module's buttons and checkboxes | `TrackControl` | **Yes** — `now_pump_action()` | — |
+| `console_module.c` — scroll bar arrows/page | `TrackControl` | **Yes** — the action proc scrolls and calls `now_wire_pump()` | — |
+| `console_module.c` — scroll bar **thumb** | `TrackControl(…, NULL)` | No | Drag duration |
+| `connection_module.c`, `screenshots_module.c` — pop-ups | `TrackControl(…, (ControlActionUPP)-1L)` | No | Menu-down duration |
+| `connection_module.c` — text fields | `HandleControlClick` | No | Selection-drag duration |
+| `files_browser_view.c` — the list | `HandleControlClick` | No | Selection/sort-drag duration |
+| `main.c` | `MenuSelect`, `DragWindow`, `TrackGoAway`, `GrowWindow`, `TrackBox` | No | Mouse-down / drag duration |
 
-The settings dialog is the only site that got this right, and its
-comment already states the rule the rest of the codebase drifted from:
-
-> The connection is serviced from the main event loop, but that loop is
-> suspended while ModalDialog runs. This filter keeps it pumping.
-
-The tracking loops (menus, drags, buttons) are human-scale — seconds —
-so they stall a stream and delay a heartbeat but rarely trip the 65 s
-guest death timer. The two dialog sites block **indefinitely**, which is
-what makes them the bug.
+The remaining non-pumping sites are all **human-scale** — seconds — so
+they stall a stream and delay a heartbeat but do not reach the 65 s
+guest death timer. Three of them cannot be fixed rather than merely have
+not been: `MenuSelect`, `DragWindow` and `GrowWindow` take no callback
+at all (`pump.h` says so), a popup CDEF needs its own action, and the
+Control Manager does not call an action proc for a scroll bar's
+indicator part.
 
 ## What we can and cannot fix
 

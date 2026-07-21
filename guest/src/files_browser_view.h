@@ -6,9 +6,9 @@
 #include "fileshare.h"
 
 /* The remote half of the Files page: the peer's share in a Data
-   Browser, with the Up button's path model and file retrieval. The
-   callbacks, paging, and UPP ownership are host_browser.c's, re-homed
-   into the Workshop; the view owns child controls only. */
+   Browser, with the Up button's path model and file retrieval. The view
+   owns its child controls and the two callback UPPs; the Workshop owns
+   the window. */
 
 Boolean files_browser_create(WindowRef owner, const Rect *area);
 /* After DisposeWindow, never before: the list may still call back

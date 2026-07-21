@@ -151,9 +151,15 @@ than trusting the guest to answer.
 - `capture.c` — span/decimation GWorld capture, pumped in bounded steps.
 - `pixels.c` — wire pixel export (palette + per-row PackBits), diff.
 - `json.c` — the one tolerant JSON scanner (natively unit-tested).
-- `commands.c` — one command table serving both consoles.
-- `console_win.c` / `shots_panel.c` / `settings_dialog.c` — the human
-  surfaces; `prefs.c` versioned preferences.
+- `commands.c` — one command table serving both consoles;
+  `console_model.c` the guest console's scrollback and history.
+- `workshop_window.c` / `workshop_sidebar.c` / `workshop_layout.c` — the
+  one window, its rail, and the pure geometry both read.
+- `screenshots_module.c` / `files_module.c` (+ `files_browser_view.c`,
+  `files_share_view.c`) / `console_module.c` / `connection_module.c` —
+  the pages, one per sidebar row, behind `WorkshopModuleOps`. Adding one
+  is [docs/adding-a-workshop-module.md](adding-a-workshop-module.md).
+- `prefs.c` — versioned preferences (accretive record, v9).
 - `main.c` — Toolbox event loop; drops its WaitNextEvent sleep to 0
   while any pump is live.
 

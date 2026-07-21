@@ -376,7 +376,7 @@ static OSErr conn_create(WindowRef owner, const Rect *body)
                         kControlEditTextProc, 0);
     CopyCStringToPascal("Retry:", text);
     /* classic popup CDEF: value = title justification, min = MENU id,
-       max = title width in pixels (shots_panel's pattern) */
+       max = title width in pixels */
     g_retry = NewControl(owner, &g_r.retry_popup, text, false,
                          popupTitleLeftJust, kRetryMenuID, 44,
                          popupMenuProc, 0);

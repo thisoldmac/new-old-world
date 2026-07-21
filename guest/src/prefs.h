@@ -38,11 +38,13 @@ typedef struct {
        else a fixed retry every N seconds */
     short retry_secs;
 
-    /* window session: what was open, restored on relaunch */
-    Boolean panel_open;
-    Boolean console_open;
-    Rect panel_rect;          /* content bounds; empty = default position */
-    Rect console_rect;
+    /* The v3 record also carried which of the five old windows were
+       open and where they sat. Those windows are gone (one Workshop
+       window now), so the fields are read at load only - a set
+       console_open seeds the Workshop's Console page - and are not
+       exposed here. Their SLOTS remain in the on-disk record, because
+       the format is accretive and every later version is layered on
+       top of v3. */
 
     /* Console appearance: black-on-white unless inverted. Persisted by
        the Console surface; carried here so the record has one shape. */

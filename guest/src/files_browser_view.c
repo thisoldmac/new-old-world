@@ -227,9 +227,11 @@ static OSStatus add_column(DataBrowserPropertyID id, const char *title,
     return err;
 }
 
-/* Real UPPs, retained for the control's lifetime; the reasons are
-   written on host_browser.c's grave (CFM routine descriptors, and the
-   leak a local would cost per create/dispose cycle). */
+/* Real UPPs, retained for the control's lifetime. Two reasons, both
+   learned the hard way: on this CFM runtime a UPP is a routine
+   descriptor rather than a cast function pointer (finding
+   carbon-upp-is-not-a-cast-on-cfm), and as locals they would leak one
+   descriptor pair per create/dispose cycle. */
 static DataBrowserItemDataUPP g_data_upp;
 static DataBrowserItemNotificationUPP g_notify_upp;
 

@@ -8,12 +8,12 @@
 #include "screenshot.h"
 #include "wire.h"
 
-/* Capture semantics are shots_panel.c's, unchanged: now_screenshot for
-   the local PICT, now_wire_offer_shot / stream request+stop for the
-   peer, prefs for every setting. What is new is the preview well fed by
-   now_screenshot_preview() and the Advanced Transport disclosure that
-   keeps the chunk and pacing pop-ups without giving them top billing -
-   they matter on real classic network hardware. */
+/* now_screenshot takes the local PICT, now_wire_offer_shot and the
+   stream request/stop reach the peer, and prefs holds every setting.
+   The preview well is fed by now_screenshot_preview(); chunk and pacing
+   live under the Advanced Transport disclosure rather than taking top
+   billing - they matter on real classic network hardware, but not
+   often. */
 
 enum {
     kMargin = 12,

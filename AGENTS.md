@@ -42,6 +42,13 @@ the `classic-mac-carbon-ui` skill. Non-negotiables live there; the two
 that bite hardest are that a UPP is never a cast on this runtime, and
 that every nested Toolbox loop must pump the wire (`pump.h`).
 
+The guest is **one window** — the Workshop — and every human-facing
+feature is a page inside it behind `WorkshopModuleOps`. There are no
+other windows, and a new feature does not get one: it gets a module.
+[docs/adding-a-workshop-module.md](docs/adding-a-workshop-module.md) is
+the contract, the six edits a page needs, and the rules a page breaks
+first.
+
 **Host — Swift, SwiftUI with AppKit where SwiftUI cannot reach.** The
 browser is an `NSTableView` because SwiftUI's `Table` cannot be a file
 drag source. Prefer the native control over a reimplementation.
