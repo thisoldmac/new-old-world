@@ -72,6 +72,47 @@ resource 'ICN#' (128) {
     }
 };
 
+/* The Workshop sidebar's module icons, 16x16 1-bit with solid-silhouette
+   masks, same rules as ics#(128): drawn at their real size, one-pixel
+   art, mask is what the system fills for a selected state.
+   129 camera (Screenshots), 130 folder (Files), 131 terminal (Console),
+   132 globe (Connection). */
+resource 'ics#' (129) {
+    {
+        $"0000 0000 0780 7FFE 4002 43C2 4422 4812"
+        $"4812 4422 43C2 4002 7FFE 0000 0000 0000",
+        $"0000 0000 0780 7FFE 7FFE 7FFE 7FFE 7FFE"
+        $"7FFE 7FFE 7FFE 7FFE 7FFE 0000 0000 0000"
+    }
+};
+
+resource 'ics#' (130) {
+    {
+        $"0000 0000 0000 3E00 7FFE 4002 4002 4002"
+        $"4002 4002 4002 4002 7FFE 0000 0000 0000",
+        $"0000 0000 0000 3E00 7FFE 7FFE 7FFE 7FFE"
+        $"7FFE 7FFE 7FFE 7FFE 7FFE 0000 0000 0000"
+    }
+};
+
+resource 'ics#' (131) {
+    {
+        $"0000 0000 7FFE 4002 4802 4402 4202 4402"
+        $"4802 4002 40F2 4002 7FFE 0000 0000 0000",
+        $"0000 0000 7FFE 7FFE 7FFE 7FFE 7FFE 7FFE"
+        $"7FFE 7FFE 7FFE 7FFE 7FFE 0000 0000 0000"
+    }
+};
+
+resource 'ics#' (132) {
+    {
+        $"0000 0000 07E0 1998 2184 4182 4182 7FFE"
+        $"4182 4182 2184 1998 07E0 0000 0000 0000",
+        $"0000 0000 07E0 1FF8 3FFC 7FFE 7FFE 7FFE"
+        $"7FFE 7FFE 3FFC 1FF8 07E0 0000 0000 0000"
+    }
+};
+
 resource 'SIZE' (-1) {
     reserved,
     acceptSuspendResumeEvents,

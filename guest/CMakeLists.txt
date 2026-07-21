@@ -23,6 +23,9 @@ add_application(now-guest
     src/wire.c
     src/prefs.c
     src/settings_dialog.c
+    src/workshop_layout.c
+    src/workshop_sidebar.c
+    src/workshop_window.c
     resources/app.r
 )
 

@@ -16,6 +16,8 @@
 #include "prefs.h"
 #include "settings_dialog.h"
 #include "wire.h"
+#include "workshop_layout.h"
+#include "workshop_window.h"
 
 enum {
     kWindowMinWidth = 360,
@@ -25,9 +27,11 @@ enum {
     kFileSharingItem = 3,
     kFileQuitItem = 5,
     kWindowsMenuID = 140,
-    kWindowsScreenshotsItem = 1,
-    kWindowsConsoleItem = 2,
-    kWindowsConnectionItem = 3
+    kWindowsWorkshopItem = 1,
+    kWindowsScreenshotsItem = 3,
+    kWindowsConsoleItem = 4,
+    kWindowsConnectionItem = 5,
+    kViewMenuID = 141
 };
 
 static Boolean g_running = true;
@@ -61,10 +65,29 @@ static const unsigned char k_sharing_menu_item[] = {
     16, 'F', 'i', 'l', 'e', ' ', 'S', 'h', 'a', 'r', 'i', 'n', 'g',
     '.', '.', '.', ' '
 };
+static const unsigned char k_view_menu_title[] = {
+    4, 'V', 'i', 'e', 'w'
+};
+static const unsigned char k_view_screenshots_item[] = {
+    13, 'S', 'c', 'r', 'e', 'e', 'n', 's', 'h', 'o', 't', 's', '/', '1'
+};
+static const unsigned char k_view_files_item[] = {
+    7, 'F', 'i', 'l', 'e', 's', '/', '2'
+};
+static const unsigned char k_view_console_item[] = {
+    9, 'C', 'o', 'n', 's', 'o', 'l', 'e', '/', '3'
+};
+static const unsigned char k_view_connection_item[] = {
+    12, 'C', 'o', 'n', 'n', 'e', 'c', 't', 'i', 'o', 'n', '/', '4'
+};
+static const unsigned char k_workshop_menu_item[] = {
+    8, 'W', 'o', 'r', 'k', 's', 'h', 'o', 'p'
+};
 
 static void create_menu_bar(void)
 {
     MenuRef file_menu = NewMenu(kFileMenuID, k_file_menu_title);
+    MenuRef view_menu = NewMenu(kViewMenuID, k_view_menu_title);
     MenuRef windows_menu = NewMenu(kWindowsMenuID, k_windows_menu_title);
 
     AppendMenu(file_menu, k_close_menu_item);
@@ -73,7 +96,15 @@ static void create_menu_bar(void)
     AppendMenu(file_menu, k_separator_menu_item);
     AppendMenu(file_menu, k_quit_menu_item);
     InsertMenu(file_menu, 0);
-    /* Modules live in the Windows menu; there is no main app window. */
+    /* View selects a Workshop module; the Windows menu keeps the old
+       separate windows reachable until each one moves in. */
+    AppendMenu(view_menu, k_view_screenshots_item);
+    AppendMenu(view_menu, k_view_files_item);
+    AppendMenu(view_menu, k_view_console_item);
+    AppendMenu(view_menu, k_view_connection_item);
+    InsertMenu(view_menu, 0);
+    AppendMenu(windows_menu, k_workshop_menu_item);
+    AppendMenu(windows_menu, k_separator_menu_item);
     AppendMenu(windows_menu, k_screenshots_menu_item);
     AppendMenu(windows_menu, k_console_menu_item);
     AppendMenu(windows_menu, k_connection_menu_item);
@@ -166,7 +197,8 @@ static Boolean is_our_window(WindowRef window)
 {
     return window != NULL
         && (console_win_is(window) || share_panel_is(window)
-            || host_browser_is(window) || shots_panel_is(window));
+            || host_browser_is(window) || shots_panel_is(window)
+            || workshop_is(window));
 }
 
 static void set_window_active(WindowRef window, Boolean active)
@@ -182,6 +214,8 @@ static void set_window_active(WindowRef window, Boolean active)
         host_browser_activate(active);
     } else if (shots_panel_is(window)) {
         shots_panel_activate(active);
+    } else if (workshop_is(window)) {
+        workshop_activate(active);
     }
 }
 
@@ -201,6 +235,8 @@ static void close_front_window(void)
         shots_panel_close(true);
     } else if (console_win_is(front)) {
         console_win_close();
+    } else if (workshop_is(front)) {
+        workshop_close();
     }
 }
 
@@ -244,8 +280,17 @@ static void handle_menu_choice(long choice)
         } else if (LoWord(choice) == kFileQuitItem) {
             g_running = false;
         }
+    } else if (HiWord(choice) == kViewMenuID) {
+        /* The item numbers are the module IDs. */
+        if (LoWord(choice) >= 1 && LoWord(choice) <= kWorkshopModuleCount) {
+            if (workshop_open()) {
+                workshop_select_module((WorkshopModuleID)LoWord(choice));
+            }
+        }
     } else if (HiWord(choice) == kWindowsMenuID) {
-        if (LoWord(choice) == kWindowsScreenshotsItem) {
+        if (LoWord(choice) == kWindowsWorkshopItem) {
+            workshop_open();
+        } else if (LoWord(choice) == kWindowsScreenshotsItem) {
             shots_panel_open();
         } else if (LoWord(choice) == kWindowsConsoleItem) {
             console_win_open();
@@ -275,6 +320,39 @@ static void handle_mouse_down(const EventRecord *event)
     if (part == inCollapseBox && is_our_window(window)) {
         if (TrackBox(window, event->where, part)) {
             CollapseWindow(window, !IsWindowCollapsed(window));
+        }
+        return;
+    }
+    if (workshop_is(window)) {
+        if (part == inDrag) {
+            DragWindow(window, event->where, &g_screen_bounds);
+        } else if (part == inGoAway) {
+            if (TrackGoAway(window, event->where)) {
+                workshop_close();
+            }
+        } else if (part == inGrow) {
+            Rect limits;
+            long size;
+
+            SetRect(&limits, kWorkshopMinContentW, kWorkshopMinContentH,
+                    2048, 2048);
+            size = GrowWindow(window, event->where, &limits);
+            if (size != 0) {
+                SizeWindow(window, LoWord(size), HiWord(size), true);
+                workshop_resized();
+            }
+        } else if (part == inZoomIn || part == inZoomOut) {
+            if (TrackBox(window, event->where, part)) {
+                SetPortWindowPort(window);
+                ZoomWindow(window, part, false);
+                workshop_resized();
+            }
+        } else if (part == inContent) {
+            if (window != FrontWindow()) {
+                SelectWindow(window);
+                return;
+            }
+            workshop_click(event);
         }
         return;
     }
@@ -376,6 +454,8 @@ static void handle_key_down(const EventRecord *event)
         console_win_key(key);
     } else if (host_browser_is(FrontWindow())) {
         host_browser_key(event);
+    } else if (workshop_is(FrontWindow())) {
+        workshop_key(event);
     }
 }
 
@@ -425,6 +505,19 @@ int main(void)
     compute_screen_bounds();
     create_menu_bar();
     restore_session();
+    /* The Workshop is the primary window; the old module windows stay
+       reachable from the menus until each one moves in. If the shell
+       cannot build its navigation, say so once - the rest of the app
+       still works the old way. */
+    if (!workshop_open()) {
+        static const unsigned char k_empty[] = { 0 };
+        Str255 message;
+
+        CopyCStringToPascal("The Workshop window could not be created. "
+                            "The Windows menu still works.", message);
+        ParamText(message, k_empty, k_empty, k_empty);
+        StopAlert(200, now_pump_modal_filter());
+    }
     conn_init();
     now_log_open();
     conn_set_shot_note(shots_panel_note);
@@ -453,6 +546,7 @@ int main(void)
         conn_service();
         share_panel_idle();
         host_browser_idle();
+        workshop_idle();
         ask_about_replacing();
         if (!WaitNextEvent(everyEvent, &event,
                            conn_wants_fast_pump() ? 0 : 6, NULL)) {
@@ -484,6 +578,10 @@ int main(void)
                 BeginUpdate(host_browser_ref());
                 host_browser_draw();
                 EndUpdate(host_browser_ref());
+            } else if (workshop_is((WindowRef)event.message)) {
+                BeginUpdate(workshop_ref());
+                workshop_draw();
+                EndUpdate(workshop_ref());
             }
             break;
         case activateEvt:
@@ -521,5 +619,6 @@ int main(void)
     }
     shots_panel_close(false);
     console_win_close();
+    workshop_close();
     return 0;
 }
