@@ -169,21 +169,17 @@ Boolean workshop_open(void)
     SetWTitle(g_window, title);
     SetThemeWindowBackground(g_window, kThemeBrushDialogBackgroundActive,
                              true);
-    /* One root control for the whole window, before any module builds
-       its controls. Without it the window has no control-embedding
-       hierarchy, so SetKeyboardFocus fails and edit-text controls take
-       neither clicks nor keystrokes - the Connection fields were dead
-       and the Console had to hand-roll its input for the same reason.
-       Creating it here (rather than letting a Data Browser page create
-       one implicitly, which made the hierarchy depend on navigation
-       order) means every page sees the same window. Modules must hit-
-       test with FindControlUnderMouse, never FindControl, which does
-       not understand embedding. */
-    {
-        ControlRef root = NULL;
-
-        CreateRootControl(g_window, &root);
-    }
+    /* No root control on this window, on purpose. A root control turns
+       the group-box controls into embedders, and an embedded control
+       only receives clicks when HIToolbox's standard Carbon Event
+       handler routes them - which this WaitNextEvent app does not
+       install (same reason as confirm.c's kWindowStandardHandler ban).
+       With a root control the "Other Mac" group swallowed clicks to its
+       popup, checkbox and button; without it the controls are flat
+       siblings the classic Control Manager hit-tests directly. It also
+       did not make edit-text usable - text entry lives in a real
+       DIALOG (conn_edit_dialog.c), which has its own window and its own
+       Dialog-Manager text handling. */
     compute_layout();
     if (!workshop_sidebar_create(g_window, &g_lay, on_sidebar_select)) {
         DisposeWindow(g_window);

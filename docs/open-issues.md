@@ -92,29 +92,42 @@ only page that uses edit-text controls; every other page's controls
 `TrackControl`/`HandleControlClick`, which need no focus, so only
 Connection was affected.
 
-A root control got the field to *focus* but it still took no mouse or
-keys - the Appearance edit-text control simply does not work for entry
-in this WaitNextEvent app, which is the same wall the Console hit and
-why it hand-rolled its input. So the edit-text controls are gone from
-the page. Address and port are now drawn **read-only**, and an **Edit**
-button opens a movable-modal **dialog** (`conn_edit_dialog.c`, DLOG/
-DITL 301) whose text entry the **Dialog Manager** drives - `GetNewDialog`
-+ `ModalDialog(now_pump_modal_filter())` + `GetDialogItemText` on
-`editText` items. That is the exact mechanism the original Connection
-dialog used before the Workshop rewrite, proven on this PowerBook; the
-filter pumps the wire so a long edit never drops the link. Validation
-stays in `conn_fields.c`.
+Two dead ends before the fix, both worth recording because they are
+the wrong instinct:
 
-The root control and the `FindControlUnderMouse` conversion (Screenshots,
-Files share, Console, Connection) stay - they are correct regardless,
-fixed focus and Tab, and cannot regress the leaf-control pages.
-`confirm.c` keeps `FindControl` on its own dialog window.
+1. `FindControlUnderMouse` instead of `FindControl` - no effect, because
+   the window had no embedding hierarchy to be wrong about.
+2. Adding a root control to the window. It got the field to *focus* but
+   it still took no mouse or keys (the Appearance edit-text control just
+   does not work for entry in this WaitNextEvent app), AND it **broke
+   every other control in the group**: a root control turns the
+   group-box control into an embedder, and an embedded control only
+   receives clicks when HIToolbox's standard Carbon Event handler routes
+   them, which this app deliberately does not install. So the retry
+   popup and checkbox - which had worked - went dead too. The root
+   control was removed.
+
+The fix that holds: no root control anywhere (controls stay flat
+siblings the classic Control Manager hit-tests directly, with plain
+`FindControl`), and text entry moved out of the page entirely. Address
+and port are drawn **read-only**; an **Edit** button opens a
+movable-modal **dialog** (`conn_edit_dialog.c`, DLOG/DITL 301) whose
+entry the **Dialog Manager** drives - `GetNewDialog` +
+`ModalDialog(now_pump_modal_filter())` + `GetDialogItemText` on
+`editText` items. That is the exact mechanism the original Connection
+dialog used before the Workshop rewrite, proven on this PowerBook; its
+own window has its own text handling, independent of the Workshop
+window. The filter pumps the wire; validation stays in `conn_fields.c`.
+
+Net change from the last metal-verified state is only the Connection
+dialog: every page's control handling is back to no-root + `FindControl`.
 
 **Unverified on metal.** Build clean, host suite and native tests
-green. Left to watch on the machine: the Edit dialog opens, its fields
-take clicks and keys, Save writes back and the page redraws the new
-target; and that Screenshots/Files/Console still take their clicks
-under the root control. Re-check all four pages.
+green. Watch on the machine: the "Other Mac" popup/checkbox/Edit button
+click again; the Edit dialog's fields take clicks and keys; Save writes
+back and the page redraws the target. And confirm Screenshots/Files/
+Console are unchanged (they should be - byte-for-byte back to their
+verified click handlers).
 
 **Type-select does nothing in the browser list.** Selection,
 double-click and header sorting all work; typing a letter does not jump.

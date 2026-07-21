@@ -439,17 +439,13 @@ static void shots_draw(void)
 
 static Boolean shots_click(const EventRecord *event, Point local)
 {
-    ControlRef control;
-    SInt16 part;
+    ControlRef control = NULL;
 
     (void)event;
     if (g_owner == NULL || !g_visible) {
         return false;
     }
-    /* FindControlUnderMouse, not FindControl: the window has a root
-       control now, and FindControl does not understand embedding. */
-    control = FindControlUnderMouse(local, g_owner, &part);
-    if (control == NULL) {
+    if (FindControl(local, g_owner, &control) == 0 || control == NULL) {
         return false;
     }
     if (control == g_depth || control == g_chunk || control == g_pace) {

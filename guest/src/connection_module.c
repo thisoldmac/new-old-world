@@ -508,19 +508,16 @@ static void conn_draw(void)
 
 static Boolean conn_click(const EventRecord *event, Point local)
 {
-    ControlRef control;
-    SInt16 part;
+    ControlRef control = NULL;
 
     (void)event;                      /* controls track by point, not event */
     if (g_owner == NULL || !g_visible) {
         return false;
     }
-    /* FindControlUnderMouse, not FindControl: the Workshop window has a
-       control-embedding hierarchy (a root control, plus any Data Browser
-       page's own), and FindControl does not understand embedding. This
-       call is correct whether or not a hierarchy exists. */
-    control = FindControlUnderMouse(local, g_owner, &part);
-    if (control == NULL) {
+    /* Plain FindControl: the window has no root control (workshop_window.c
+       explains why), so the controls are flat siblings and this is the
+       correct classic hit-test. */
+    if (FindControl(local, g_owner, &control) == 0 || control == NULL) {
         return false;
     }
     if (control == g_edit) {
