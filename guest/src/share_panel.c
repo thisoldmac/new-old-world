@@ -4,13 +4,14 @@
 #include <string.h>
 
 #include "fileshare.h"
+#include "host_browser.h"
 #include "prefs.h"
 #include "pump.h"
 #include "wire.h"
 #include "build_stamp.h"
 
 enum {
-    kPanelWidth = 400,
+    kPanelWidth = 470,
     kPanelHeight = 188,
     kBarLeft = 16,
     kBarTop = 108,
@@ -22,6 +23,7 @@ static WindowRef g_window = NULL;
 static ControlRef g_choose_button;
 static ControlRef g_boot_check;
 static ControlRef g_send_button;
+static ControlRef g_browse_button;
 static char g_note[128];
 /* What the last send did, so the line survives the transfer ending. */
 static Boolean g_send_was_active;
@@ -63,6 +65,9 @@ static void sync_send_control(void)
     if (want != g_send_hilite) {
         g_send_hilite = want;
         HiliteControl(g_send_button, want);
+        /* Browsing needs a connection too, but not an idle wire: a
+           listing is control-plane and works mid-transfer. */
+        HiliteControl(g_browse_button, conn_is_connected() ? 0 : 255);
     }
 }
 
@@ -157,7 +162,7 @@ void share_panel_open(void)
     g_boot_check = NewControl(g_window, &bounds, text, true, 0, 0, 1,
                               checkBoxProc, 0);
 
-    SetRect(&bounds, kPanelWidth - 130, kPanelHeight - 36,
+    SetRect(&bounds, kPanelWidth - 134, kPanelHeight - 36,
             kPanelWidth - 16, kPanelHeight - 12);
     CopyCStringToPascal("Choose Folder...", text);
     g_choose_button = NewControl(g_window, &bounds, text, true, 0, 0, 1,
@@ -168,11 +173,17 @@ void share_panel_open(void)
         char label[64];
 
         conn_peer_label(peer, sizeof peer);
-        snprintf(label, sizeof label, "Send to %.20s...", peer);
-        SetRect(&bounds, 16, kPanelHeight - 36, 156, kPanelHeight - 12);
+        snprintf(label, sizeof label, "Send to %.14s...", peer);
+        SetRect(&bounds, 16, kPanelHeight - 36, 160, kPanelHeight - 12);
         CopyCStringToPascal(label, text);
         g_send_button = NewControl(g_window, &bounds, text, true, 0, 0, 1,
                                    pushButProc, 0);
+
+        snprintf(label, sizeof label, "Browse %.14s...", peer);
+        SetRect(&bounds, 168, kPanelHeight - 36, 306, kPanelHeight - 12);
+        CopyCStringToPascal(label, text);
+        g_browse_button = NewControl(g_window, &bounds, text, true, 0, 0, 1,
+                                     pushButProc, 0);
     }
     sync_share_controls();
     sync_send_control();
@@ -320,6 +331,8 @@ void share_panel_click(Point local)
         }
         sync_share_controls();
         invalidate();
+    } else if (control == g_browse_button) {
+        host_browser_open();
     } else if (control == g_send_button) {
         FSSpec spec;
         char why[128];

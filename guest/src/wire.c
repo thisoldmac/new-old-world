@@ -1383,6 +1383,154 @@ static void serve_file_mkdir(const char *request)
     note_shot("Folder created");
 }
 
+/* --- browsing the OTHER machine's share ----------------------------------
+   The mirror of serve_file_list: the same message, asked rather than
+   answered. Listings are control-plane, so browsing works while a
+   transfer or a stream is in flight - only the ANSWER is one at a
+   time, and a second request simply replaces the first. */
+
+enum { kBrowseTimeoutTicks = 60 * 20 };
+
+static struct {
+    Boolean pending;
+    long id;
+    char path[224];
+    unsigned long deadline;
+} g_browse;
+
+static ConnListing g_listing_hook;
+
+void conn_set_listing(ConnListing fn)
+{
+    g_listing_hook = fn;
+}
+
+int now_wire_list_host(const char *path, long cursor, char *err, long cap)
+{
+    char json[720];               /* an escaped path can be 6x its bytes */
+    char esc[600];
+
+    if (g.phase != kConnConnected) {
+        snprintf(err, (size_t)cap, "Not connected");
+        return -1;
+    }
+    if (path == NULL) {
+        path = "";
+    }
+    if (strlen(path) >= sizeof g_browse.path) {
+        snprintf(err, (size_t)cap, "That path is too long");
+        return -1;
+    }
+    now_json_escape(path, esc, sizeof esc);
+    ++g.offer_seq;
+    g_browse.id = g.offer_seq;
+    strcpy(g_browse.path, path);
+    snprintf(json, sizeof json,
+             "{\"type\":\"file.list\",\"id\":%ld,\"path\":\"%s\","
+             "\"cursor\":%ld}",
+             g_browse.id, esc, cursor > 0 ? cursor : 1);
+    if (!send_control(json)) {
+        snprintf(err, (size_t)cap, "Connection lost");
+        return -1;
+    }
+    g_browse.pending = true;
+    g_browse.deadline = TickCount() + kBrowseTimeoutTicks;
+    return 0;
+}
+
+/* A listing off the wire. Names are DECODED (UTF-8 to MacRoman) because
+   everything here is either drawn or used as a file name, and neither
+   can hold anything else. */
+static void browse_listing(const char *reply)
+{
+    FileEntry entries[16];
+    char object[320];
+    char root[160];
+    char kind[16];
+    const char *p;
+    int n = 0;
+
+    if (!g_browse.pending
+        || now_json_find_int(reply, "id", -1) != g_browse.id) {
+        return;
+    }
+    g_browse.pending = false;
+
+    memset(entries, 0, sizeof entries);
+    p = now_json_array(reply, "entries");
+    while (p != NULL && n < (int)(sizeof entries / sizeof entries[0])) {
+        char type[8], creator[8];
+
+        p = now_json_next_object(p, object, sizeof object);
+        if (p == NULL) {
+            break;
+        }
+        now_json_find_text(object, "name", entries[n].name,
+                           sizeof entries[n].name);
+        if (entries[n].name[0] == '\0') {
+            continue;                 /* a nameless entry is unusable */
+        }
+        kind[0] = '\0';
+        now_json_find_string(object, "kind", kind, sizeof kind);
+        entries[n].folder = (strcmp(kind, "folder") == 0);
+        entries[n].data_bytes = now_json_find_int(object, "dataBytes", 0);
+        entries[n].rsrc_bytes = now_json_find_int(object, "rsrcBytes", 0);
+        entries[n].modified =
+            (unsigned long)now_json_find_int(object, "modified", 0);
+        type[0] = '\0';
+        creator[0] = '\0';
+        now_json_find_string(object, "fileType", type, sizeof type);
+        now_json_find_string(object, "creator", creator, sizeof creator);
+        if (strlen(type) == 4) {
+            memcpy(&entries[n].file_type, type, 4);
+        }
+        if (strlen(creator) == 4) {
+            memcpy(&entries[n].creator, creator, 4);
+        }
+        ++n;
+    }
+
+    root[0] = '\0';
+    now_json_find_text(reply, "root", root, sizeof root);
+    if (g_listing_hook != NULL) {
+        g_listing_hook(g_browse.path, entries, n,
+                       now_json_find_bool(reply, "more", 0) ? true : false,
+                       now_json_find_int(reply, "cursor", 1),
+                       root[0] != '\0' ? root : NULL, NULL);
+    }
+}
+
+/* Does this refusal answer OUR question? Browsing and sending both use
+   the offer sequence, so the id says which. */
+static Boolean browse_refused(const char *reply)
+{
+    char reason[96];
+
+    if (!g_browse.pending
+        || now_json_find_int(reply, "id", -1) != g_browse.id) {
+        return false;
+    }
+    g_browse.pending = false;
+    if (!now_json_find_text(reply, "reason", reason, sizeof reason)) {
+        strcpy(reason, "the other Mac refused");
+    }
+    if (g_listing_hook != NULL) {
+        g_listing_hook(g_browse.path, NULL, 0, false, 1, NULL, reason);
+    }
+    return true;
+}
+
+static void service_browse(void)
+{
+    if (g_browse.pending && TickCount() > g_browse.deadline) {
+        g_browse.pending = false;
+        if (g_listing_hook != NULL) {
+            g_listing_hook(g_browse.path, NULL, 0, false, 1, NULL,
+                           "no answer");
+        }
+    }
+}
+
 /* --- sending a file to the host -----------------------------------------
    The mirror image of receiving one, and deliberately the same shape:
    we offer, the host answers, and only then do bytes move. The guest
@@ -2833,8 +2981,14 @@ static int handle_frame(const char *reply)
         send_accepted(reply);
         return 1;
     }
+    if (now_json_type_is(reply, "file.listing")) {
+        browse_listing(reply);
+        return 1;
+    }
     if (now_json_type_is(reply, "file.refuse")) {
-        send_refused(reply);
+        if (!browse_refused(reply)) {
+            send_refused(reply);
+        }
         return 1;
     }
     if (now_json_type_is(reply, "file.done")) {
@@ -3068,6 +3222,7 @@ void conn_service(void)
         if (g.phase == kConnConnected) {
             service_offer();
     service_send();
+    service_browse();
         }
         if (g.phase == kConnConnected) {
             service_stream();

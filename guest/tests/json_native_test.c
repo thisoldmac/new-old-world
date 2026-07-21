@@ -15,6 +15,157 @@
 
 #include "json.h"
 
+
+/* --- decoding what the other machine sends ------------------------------
+   The host speaks UTF-8; this machine draws MacRoman and stores MacRoman
+   in file names. Everything a person reads crosses that boundary, and a
+   name that changes crossing it names a different file. */
+static void test_text_decoding(void)
+{
+    char buf[64];
+
+    /* Swift's encoder emits raw UTF-8 for non-ASCII, not \u escapes. */
+    assert(now_json_find_text("{\"name\":\"caf\xC3\xA9\"}", "name",
+                              buf, sizeof buf) == 1);
+    assert((unsigned char)buf[3] == 0x8E);   /* MacRoman e-acute */
+    assert(buf[4] == '\0');
+
+    /* And \u escapes, which is what THIS machine emits going the other
+       way, so a name can survive a round trip. */
+    assert(now_json_find_text("{\"name\":\"caf\\u00e9\"}", "name",
+                              buf, sizeof buf) == 1);
+    assert((unsigned char)buf[3] == 0x8E);
+
+    /* The Apple logo: MacRoman 0xF0, U+F8FF. A file really can be
+       called this, and it is the character most likely to be mangled. */
+    assert(now_json_find_text("{\"n\":\"\\uF8FF\"}", "n", buf,
+                              sizeof buf) == 1);
+    assert((unsigned char)buf[0] == 0xF0);
+
+    /* Something MacRoman has no answer for becomes a visible mark, not
+       nothing: a name must not silently shorten. */
+    assert(now_json_find_text("{\"n\":\"a\\u4E2Db\"}", "n", buf,
+                              sizeof buf) == 1);
+    assert(strcmp(buf, "a?b") == 0);
+
+    /* Outside the BMP arrives as a surrogate pair and must consume BOTH
+       halves, or the second one decodes as a stray character. */
+    assert(now_json_find_text("{\"n\":\"a\\uD83D\\uDE00b\"}", "n", buf,
+                              sizeof buf) == 1);
+    assert(strcmp(buf, "a?b") == 0);
+
+    /* Escaped quotes and backslashes survive as themselves. */
+    assert(now_json_find_text("{\"n\":\"a\\\"b\\\\c\"}", "n", buf,
+                              sizeof buf) == 1);
+    assert(strcmp(buf, "a\"b\\c") == 0);
+
+    /* A newline in a name becomes CR: this machine's line ending. The
+       classic volume root really does contain "Icon\r". */
+    assert(now_json_find_text("{\"n\":\"Icon\\n\"}", "n", buf,
+                              sizeof buf) == 1);
+    assert(strcmp(buf, "Icon\r") == 0);
+
+    /* Malformed UTF-8 must not walk off the end. Built at runtime: a
+       \xFF followed by 'b' in a literal is one hex escape out of range. */
+    {
+        char malformed[16];
+
+        snprintf(malformed, sizeof malformed, "{\"n\":\"a%c%cb\"}",
+                 (char)0xFF, (char)0xFE);
+        assert(now_json_find_text(malformed, "n", buf, sizeof buf) == 1);
+        assert(strlen(buf) <= 4);
+    }
+
+    /* Bounded like every other copy here. */
+    {
+        char small[4];
+
+        assert(now_json_find_text("{\"n\":\"abcdefgh\"}", "n", small,
+                                  sizeof small) == 1);
+        assert(strlen(small) == 3);
+    }
+
+    /* A round trip: escape then decode gives back what we started with. */
+    {
+        char wire[128];
+        char back[64];
+        char original[16];
+
+        snprintf(original, sizeof original, "Caf%c %c Notes",
+                 (char)0x8E, (char)0xF0);      /* e-acute, Apple logo */
+        char message[160];
+
+        now_json_escape(original, wire, sizeof wire);
+        snprintf(message, sizeof message, "{\"n\":\"%s\"}", wire);
+        assert(now_json_find_text(message, "n", back, sizeof back) == 1);
+        assert(strcmp(back, original) == 0);
+    }
+}
+
+/* --- walking a listing --------------------------------------------------
+   Flat key lookup cannot read an array of objects, and a lookup that
+   runs past its object silently answers with a sibling's value. */
+static void test_array_walking(void)
+{
+    const char listing[] =
+        "{\"type\":\"file.listing\",\"path\":\"\",\"entries\":["
+        "{\"name\":\"Docs\",\"kind\":\"folder\",\"modified\":1},"
+        "{\"name\":\"Notes\",\"kind\":\"file\",\"dataBytes\":66}],"
+        "\"more\":false,\"cursor\":3}";
+    char object[128];
+    char name[32];
+    const char *p;
+
+    p = now_json_array(listing, "entries");
+    assert(p != NULL);
+
+    p = now_json_next_object(p, object, sizeof object);
+    assert(p != NULL);
+    assert(now_json_find_text(object, "name", name, sizeof name) == 1);
+    assert(strcmp(name, "Docs") == 0);
+    /* The key belongs to the NEXT object: reading it here would be
+       reading a sibling. */
+    assert(now_json_find_int(object, "dataBytes", -1) == -1);
+
+    p = now_json_next_object(p, object, sizeof object);
+    assert(p != NULL);
+    assert(now_json_find_text(object, "name", name, sizeof name) == 1);
+    assert(strcmp(name, "Notes") == 0);
+    assert(now_json_find_int(object, "dataBytes", -1) == 66);
+
+    assert(now_json_next_object(p, object, sizeof object) == NULL);
+
+    /* An empty array ends immediately rather than reporting an object. */
+    assert(now_json_next_object(now_json_array("{\"entries\":[]}",
+                                               "entries"),
+                                object, sizeof object) == NULL);
+
+    /* A name containing a brace must not end the object early. */
+    {
+        const char tricky[] = "{\"entries\":[{\"name\":\"a}b{c\"},"
+                              "{\"name\":\"second\"}]}";
+
+        p = now_json_array(tricky, "entries");
+        p = now_json_next_object(p, object, sizeof object);
+        assert(p != NULL);
+        assert(now_json_find_text(object, "name", name, sizeof name) == 1);
+        assert(strcmp(name, "a}b{c") == 0);
+        p = now_json_next_object(p, object, sizeof object);
+        assert(p != NULL);
+        assert(now_json_find_text(object, "name", name, sizeof name) == 1);
+        assert(strcmp(name, "second") == 0);
+    }
+
+    /* A truncated array refuses rather than handing back half an
+       object: a half-read name is a wrong name, not a shorter one. */
+    {
+        const char cut[] = "{\"entries\":[{\"name\":\"Docs\"";
+
+        assert(now_json_next_object(now_json_array(cut, "entries"),
+                                    object, sizeof object) == NULL);
+    }
+}
+
 int main(void)
 {
     char buf[64];
@@ -114,5 +265,8 @@ int main(void)
     }
 
     printf("json_native_test: all assertions passed\n");
+    test_text_decoding();
+    test_array_walking();
+
     return 0;
 }

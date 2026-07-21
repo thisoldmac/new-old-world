@@ -5,6 +5,7 @@
 #include <stdio.h>
 
 #include "confirm.h"
+#include "host_browser.h"
 #include "console_win.h"
 #include "fileshare.h"
 #include "product_identity.h"
@@ -159,6 +160,10 @@ static void close_front_window(void)
         share_panel_close();
         return;
     }
+    if (host_browser_is(front)) {
+        host_browser_close();
+        return;
+    }
     if (shots_panel_is(front)) {
         shots_panel_close(true);
     } else if (console_win_is(front)) {
@@ -276,6 +281,24 @@ static void handle_mouse_down(const EventRecord *event)
         }
         return;
     }
+    if (host_browser_is(window)) {
+        if (part == inDrag) {
+            DragWindow(window, event->where, &g_screen_bounds);
+        } else if (part == inGoAway) {
+            if (TrackGoAway(window, event->where)) {
+                host_browser_close();
+            }
+        } else if (part == inContent) {
+            if (window != FrontWindow()) {
+                SelectWindow(window);
+                return;
+            }
+            /* The list wants the click in GLOBAL coordinates: it does
+               its own tracking, so it converts for itself. */
+            host_browser_click(event);
+        }
+        return;
+    }
     if (shots_panel_is(window)) {
         if (part == inDrag) {
             DragWindow(window, event->where, &g_screen_bounds);
@@ -307,6 +330,8 @@ static void handle_key_down(const EventRecord *event)
         HiliteMenu(0);
     } else if (console_win_is(FrontWindow())) {
         console_win_key(key);
+    } else if (host_browser_is(FrontWindow())) {
+        host_browser_key(event);
     }
 }
 
@@ -359,6 +384,7 @@ int main(void)
     conn_init();
     conn_set_shot_note(shots_panel_note);
     conn_set_file_note(share_panel_note);
+    conn_set_listing(host_browser_listing);
 
     /* On CFM PowerPC a UPP is the tvector itself; the cast avoids
        NewAEEventHandlerUPP, a weakly-linked import that would resolve to
@@ -397,6 +423,10 @@ int main(void)
                 BeginUpdate(share_panel_ref());
                 share_panel_draw();
                 EndUpdate(share_panel_ref());
+            } else if (host_browser_is((WindowRef)event.message)) {
+                BeginUpdate(host_browser_ref());
+                host_browser_draw();
+                EndUpdate(host_browser_ref());
             }
             break;
         case kHighLevelEvent:

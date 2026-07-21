@@ -3,6 +3,8 @@
 
 #include <Carbon.h>
 
+#include "fileshare.h"
+
 /* The persistent connection to the host. The guest holds one TCP connection
    open for its whole run: dial the saved host, hello, then keep it alive with
    a guest-driven ping/pong heartbeat, reconnecting on a capped backoff. All
@@ -89,6 +91,23 @@ int now_wire_send_file(const FSSpec *spec, char *err, long cap);
    Until it does, the send has no deadline — a question waits. */
 Boolean now_wire_send_pending_replace(char *name, long cap);
 void now_wire_send_resolve_replace(Boolean replace);
+
+/* --- browsing the other machine's share ---------------------------------
+   Asking the same file.list the guest already answers. A listing is
+   control-plane, so this works mid-transfer; only the answer is one at
+   a time, and asking again replaces the question.
+
+   The hook is called exactly once per request: with entries on success,
+   or with error set and count 0 on a refusal or a silence. Names arrive
+   DECODED to MacRoman - they are drawn and used as file names, and
+   neither can hold anything else. */
+typedef void (*ConnListing)(const char *path, const FileEntry *entries,
+                            int count, Boolean more, long cursor,
+                            const char *root, const char *error);
+void conn_set_listing(ConnListing fn);
+
+/* 0 once the question is on the wire; -1 with a reason in err. */
+int now_wire_list_host(const char *path, long cursor, char *err, long cap);
 
 /* One-line progress reports for push transfers ("Sent to host (312 ms)").
    The Screenshots panel registers itself here; a NULL fn unhooks. */

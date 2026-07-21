@@ -103,6 +103,172 @@ static const unsigned short k_macroman_high[128] = {
     0x00AF, 0x02D8, 0x02D9, 0x02DA, 0x00B8, 0x02DD, 0x02DB, 0x02C7
 };
 
+/* Unicode back to MacRoman: the same table read the other way. Anything
+   with no Mac equivalent becomes "?" rather than being dropped, so a
+   name never silently shortens - a name is an identifier here, and one
+   character quieter is a different file. */
+static char macroman_for(unsigned long code)
+{
+    int i;
+
+    if (code < 0x80) {
+        return (char)code;
+    }
+    for (i = 0; i < 128; ++i) {
+        if (k_macroman_high[i] == code) {
+            return (char)(0x80 + i);
+        }
+    }
+    return '?';
+}
+
+/* One UTF-8 sequence to its code point. Returns how many bytes it ate;
+   an invalid sequence eats one byte and reports U+FFFD, so a malformed
+   name cannot walk the parser off the end of the string. */
+static int utf8_code(const unsigned char *p, unsigned long *out)
+{
+    if (p[0] < 0x80) {
+        *out = p[0];
+        return 1;
+    }
+    if ((p[0] & 0xE0) == 0xC0 && (p[1] & 0xC0) == 0x80) {
+        *out = ((unsigned long)(p[0] & 0x1F) << 6) | (p[1] & 0x3F);
+        return 2;
+    }
+    if ((p[0] & 0xF0) == 0xE0 && (p[1] & 0xC0) == 0x80
+        && (p[2] & 0xC0) == 0x80) {
+        *out = ((unsigned long)(p[0] & 0x0F) << 12)
+            | ((unsigned long)(p[1] & 0x3F) << 6) | (p[2] & 0x3F);
+        return 3;
+    }
+    if ((p[0] & 0xF8) == 0xF0 && (p[1] & 0xC0) == 0x80
+        && (p[2] & 0xC0) == 0x80 && (p[3] & 0xC0) == 0x80) {
+        /* Outside the BMP: no MacRoman equivalent exists anyway. */
+        *out = 0xFFFD;
+        return 4;
+    }
+    *out = 0xFFFD;
+    return 1;
+}
+
+static unsigned long hex4(const char *p)
+{
+    unsigned long v = 0;
+    int i;
+
+    for (i = 0; i < 4; ++i) {
+        char c = p[i];
+
+        v <<= 4;
+        if (c >= '0' && c <= '9') { v |= (unsigned long)(c - '0'); }
+        else if (c >= 'a' && c <= 'f') { v |= (unsigned long)(c - 'a' + 10); }
+        else if (c >= 'A' && c <= 'F') { v |= (unsigned long)(c - 'A' + 10); }
+        else { return 0xFFFD; }
+    }
+    return v;
+}
+
+int now_json_find_text(const char *json, const char *key, char *out, long cap)
+{
+    const char *v = now_json_value(json, key);
+    long n = 0;
+
+    if (out == NULL || cap < 1) {
+        return 0;
+    }
+    if (v == NULL || *v != '"') {
+        return 0;
+    }
+    ++v;
+    while (*v != '\0' && *v != '"' && n < cap - 1) {
+        unsigned long code;
+
+        if (*v == '\\') {
+            switch (v[1]) {
+            case 'u':
+                code = hex4(v + 2);
+                /* A surrogate pair encodes something outside the BMP,
+                   which MacRoman cannot hold either way. */
+                if (code >= 0xD800 && code <= 0xDBFF && v[6] == '\\'
+                    && v[7] == 'u') {
+                    v += 12;
+                    out[n++] = '?';
+                    continue;
+                }
+                v += 6;
+                out[n++] = macroman_for(code);
+                continue;
+            case 'n': out[n++] = '\r'; v += 2; continue;  /* Mac lines */
+            case 'r': out[n++] = '\r'; v += 2; continue;
+            case 't': out[n++] = '\t'; v += 2; continue;
+            case 'b': out[n++] = '\b'; v += 2; continue;
+            case 'f': out[n++] = '\f'; v += 2; continue;
+            case '\0': v += 1; continue;
+            default:  out[n++] = v[1]; v += 2; continue;   /* " \\ / */
+            }
+        }
+        if ((unsigned char)*v < 0x80) {
+            out[n++] = *v++;
+            continue;
+        }
+        v += utf8_code((const unsigned char *)v, &code);
+        out[n++] = macroman_for(code);
+    }
+    out[n] = '\0';
+    return 1;
+}
+
+const char *now_json_array(const char *json, const char *key)
+{
+    const char *v = now_json_value(json, key);
+
+    return (v != NULL && *v == '[') ? v + 1 : NULL;
+}
+
+const char *now_json_next_object(const char *p, char *out, long cap)
+{
+    long depth = 0;
+    long n = 0;
+    int in_string = 0;
+
+    if (p == NULL || out == NULL || cap < 1) {
+        return NULL;
+    }
+    while (*p != '\0' && *p != '{') {
+        if (*p == ']') {
+            return NULL;              /* end of the array */
+        }
+        ++p;
+    }
+    if (*p != '{') {
+        return NULL;
+    }
+    for (; *p != '\0'; ++p) {
+        if (n < cap - 1) {
+            out[n++] = *p;
+        }
+        if (in_string) {
+            if (*p == '\\' && p[1] != '\0') {
+                if (n < cap - 1) { out[n++] = p[1]; }
+                ++p;
+            } else if (*p == '"') {
+                in_string = 0;
+            }
+            continue;
+        }
+        if (*p == '"') { in_string = 1; }
+        else if (*p == '{') { ++depth; }
+        else if (*p == '}') {
+            if (--depth == 0) {
+                out[n] = '\0';
+                return p + 1;
+            }
+        }
+    }
+    out[n] = '\0';
+    return NULL;                      /* truncated: refuse rather than guess */
+}
+
 void now_json_escape(const char *src, char *out, long cap)
 {
     long n = 0;

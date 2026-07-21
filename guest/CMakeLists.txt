@@ -16,6 +16,7 @@ add_application(now-guest
     src/shots_panel.c
     src/share_panel.c
     src/confirm.c
+    src/host_browser.c
     src/ot_carbon.c
     src/json.c
     src/wire.c

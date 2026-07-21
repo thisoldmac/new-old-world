@@ -25,6 +25,23 @@ long now_json_find_int(const char *json, const char *key, long fallback);
    Only a literal true reads as true; anything else is false. */
 int now_json_find_bool(const char *json, const char *key, int fallback);
 
+/* Like now_json_find_string, but DECODES: \uXXXX escapes and raw UTF-8
+   become MacRoman, which is the only thing this machine can draw or
+   store in a file name. A character MacRoman does not have becomes "?"
+   rather than vanishing - a name is an identifier, and one character
+   shorter is a different file. Use this for anything a person reads;
+   use find_string for protocol tokens, which are ASCII by contract. */
+int now_json_find_text(const char *json, const char *key, char *out, long cap);
+
+/* Walking an array of objects, which flat key lookup cannot do.
+   now_json_array returns a cursor just inside "key": [ , or NULL.
+   now_json_next_object copies the next whole object into out (brace
+   matched, string aware) and returns the cursor after it, or NULL at
+   the end of the array or on a truncated one. Each object is copied so
+   a lookup inside it cannot run on into its siblings. */
+const char *now_json_array(const char *json, const char *key);
+const char *now_json_next_object(const char *p, char *out, long cap);
+
 /* Returns 1 if the message's "type" string equals type. */
 int now_json_type_is(const char *json, const char *type);
 
