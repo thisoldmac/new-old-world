@@ -29,12 +29,27 @@ on either side.
 - **Recording** — every stream is encoded live to a temp QuickTime movie
   (hardware H.264, real variable-frame-rate timestamps); stopping offers
   Save As / Discard instantly.
-- **Files** — browse the folder the classic Mac shares (chosen on that
-  machine; nothing outside it is reachable) and download from it, with
-  the container rule doing the right thing without being asked: plain
+- **Files, both directions** — each machine shares a folder the other
+  may browse, pull from and write into, and the same messages mean the
+  same thing whichever side sends them. From this side: a browser with
+  drag in and out, rename, move, delete-to-Trash with undo, and new
+  folders. From the classic side: a native list of what this Mac shares,
+  double-click to fetch into a chosen downloads folder, *Send to* for
+  the other direction, and a replace prompt when a name is taken — the
+  file it replaces goes to the Trash, because the person agreeing is at
+  the other machine and cannot see what they are losing.
+
+  The container rule does the right thing without being asked: plain
   files arrive plain, resource-only files arrive as MacBinary, and
-  classic text arrives as UTF-8 with Unix line endings. Metal-verified
-  byte-for-byte, including a 2 MB transfer and cancel mid-flight.
+  classic text arrives as UTF-8 with Unix line endings. Names cross the
+  gap intact, including accents and the Apple logo. Metal-verified
+  byte-for-byte in both directions, including cancel mid-flight; large
+  transfers are clocked on the receiver's own count, which is what stops
+  a long send collapsing (docs/large-transfers.md).
+- **A log on both machines** — one file per launch, in `now-logs` beside
+  the classic app and in `~/Library/Logs` here, plus `tail` from either
+  console. Built because three separate evenings were spent on
+  information that existed and had nowhere to live.
 - **Menu-bar capture** — one command grabs the connected machine's
   screen straight to the clipboard, no window needed.
 
@@ -45,6 +60,18 @@ Each side calls the other by the name it sent during the handshake:
 "guest" and "host" are words for the protocol, not for the person using
 it, and "the Mac" identifies nothing when both machines are Macs. The measurement story behind the design lives in
 [docs/vram-readout.md](docs/vram-readout.md) and the TimBotTu corpus.
+
+## What does not work
+
+A "what works" list without its companion is a sales pitch.
+[docs/open-issues.md](docs/open-issues.md) is the ledger, organised
+around **broken** versus **unverified** — the second is not the lesser
+category, since most of the surprises so far came from code that looked
+obviously correct and had never run on the real machine. The headlines:
+resume-by-offset hangs, one large transfer in about six degrades badly,
+an unreachable host still presents as a hang rather than saying which
+address it cannot reach, and the host's receiving half does not report
+progress or verify checksums the way the classic side does.
 
 ## Layout
 
