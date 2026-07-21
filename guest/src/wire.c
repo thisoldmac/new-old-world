@@ -1237,7 +1237,19 @@ static struct {
    natural cadence — one report per flush — and on a 2.7 MB file that is
    about 85 control frames across several minutes, which is nothing next
    to the bulk stream they describe. */
-enum { kPutProgressStep = 32 * 1024 };
+/* How often the guest tells the host what it has taken.
+ *
+ * This is not only a progress bar: the host clocks its sender on these
+ * reports and will not run more than a few of them ahead. So the step is
+ * flow control, and a coarse one caps how tightly the sender can be
+ * bounded — at 32 KB the host could not go below a 64 KB window without
+ * deadlocking (it parks, then waits for a report needing bytes it has
+ * decided not to send). Matching the host's 8 KB bulk frame means one
+ * report per frame, which is what makes a ~24 KB in-flight bound work.
+ *
+ * Reports stay advisory and are still dropped when the control queue is
+ * busy; `received` is cumulative, so a skipped one costs nothing. */
+enum { kPutProgressStep = 8 * 1024 };
 
 /* Tells the host what has actually landed. The sender cannot know this:
    its own completion fires when the local socket accepts a chunk, which

@@ -295,6 +295,53 @@ at 2.5–3.6 s. NOW's transfers are still healthy at the moment every
 prior measurement stops — this collapse sits precisely in the corpus's
 blind spot, which is why nothing there describes it.
 
+## The fix that worked (2026-07-20, `now-chip` build 21:16:50)
+
+Three coordinated changes, no contract change — `kNowMaxPayload` is a
+ceiling so smaller frames were always legal, and `file.progress` is
+advisory so reporting more often is too:
+
+| Where | Change |
+|---|---|
+| Host | file bulk frames 32 KB → **8 KB** (`outboundFrameBytes`) |
+| Guest | `kPutProgressStep` 32 KB → **8 KB** — one ack per frame |
+| Host | `outboundWindowBytes` → **24 KB** (3 frames) |
+
+This is the geometry TimBotTu measured at ~300 KiB/s sustained on this
+same PowerBook (4 KB chunks under a 12 KiB in-flight cap), not a number
+chosen for being small. Measured here:
+
+| Size | Before | After |
+|---|---|---|
+| 512 KB | 1.5 s | 1.5 s — 336 KB/s |
+| 1 MB | 3.0 s | 3.3 s — 314 KB/s |
+| 2 MB | failed, or ~300 s | **6.1 s** — 336 KB/s |
+| 4 MB | never completed | **11.9 s** — 345 KB/s |
+| **12 MB** (the original failure) | died at ~1.7 MB | **41.9 s** — 293 KB/s |
+
+`Rcv peak` sits at 24658 on every run — the bound binding exactly.
+Guest counters on the 12 MB run: `Bytes=12582912` exactly, `Writes=384`,
+`In FSWrite=5203 ms`. **Byte integrity re-verified at the new geometry**
+(`testAPutFileComesBackByteIdentical`, 200000 bytes identical on a
+round trip) — a frame-size change is precisely the kind that corrupts
+while every counter still looks right.
+
+### Not a clean sweep: one 12 MB run degraded
+
+Before the successful run above, a 12 MB attempt reached only 3.1 MB in
+599 s, moving one 8 KB frame per ~2 s, with the same starved-guest
+signature (loop spinning, `In FSWrite` healthy, backlog ~2 KB). The very
+next 12 MB run completed in 41.9 s.
+
+So the residual fault is **intermittent, not a size threshold** — which
+is a different and harder claim than the one this document could make an
+hour earlier. Whether that run met the second mechanism (RTO inflation
+over a connection's life, per the TimBotTu corpus) or simply the wireless
+link this machine dropped twice tonight is **not established**. It wants
+repeated 12 MB runs with a packet capture, and nobody has taken one.
+Do not read the table above as "solved" — read it as "the size-keyed
+collapse is gone, and something rarer is not".
+
 ## Where this got to, and what is still open
 
 **A 2 MB put now completes.** It failed or wedged every time before, and

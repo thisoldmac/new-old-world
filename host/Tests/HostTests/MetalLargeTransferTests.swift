@@ -283,6 +283,24 @@ final class MetalLargeTransferTests: XCTestCase {
         print("=== trace done ===\n")
     }
 
+    /// The transfer this whole investigation started from: 12 MB, which
+    /// reached about 1.7 MB and died. Kept at exactly that size so the
+    /// original failure has a standing regression test rather than a
+    /// story about it.
+    func testTheTwelveMegabyteFileThatStartedThis() async throws {
+        _ = try await waitForGuest()
+        let size = 12 * 1024 * 1024
+        print("\n=== 12 MB put ===")
+        let (outcome, samples) = await profiledPut("zz chip 12mb.bin",
+                                                   pattern(size),
+                                                   timeout: 600)
+        print("=== outcome: \(outcome)")
+        report("12 MB", samples, size)
+        print("=== putstat: \(await command("putstat"))")
+        XCTAssertFalse(outcome.contains("FAILED") || outcome.contains("HUNG"),
+                       outcome)
+    }
+
     /// The ladder. Each rung reports its profile, then whether the guest
     /// is still answering, then what is left on its disk.
     func testTheSizeLadderToFindWhereItBreaks() async throws {

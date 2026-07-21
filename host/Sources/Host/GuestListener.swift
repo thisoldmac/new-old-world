@@ -1153,7 +1153,30 @@ final class Session {
            let n = Int(raw) {
             return n
         }
-        return 192 * 1024
+        return 3 * outboundFrameBytes
+    }()
+
+    /// Bulk frame size for a host->guest file, deliberately smaller than
+    /// the 32 KB the frame header allows.
+    ///
+    /// The window above cannot be tighter than the rate at which the
+    /// receiver acknowledges, and the guest acknowledges once per frame
+    /// (`kPutProgressStep`, wire.c). At 32 KB frames the tightest usable
+    /// window was 64 KB, which still lets ~1.4 MB reach the wire before
+    /// the sender is ever held back. Smaller frames buy a proportionally
+    /// tighter window: this is the geometry TimBotTu measured at
+    /// ~300 KiB/s sustained on this same PowerBook — 4 KB chunks under a
+    /// 12 KiB in-flight cap — rather than a number picked to be small.
+    ///
+    /// Nothing on the wire changes: kNowMaxPayload is a ceiling, the
+    /// guest reassembles a byte stream, and it cannot tell.
+    static let outboundFrameBytes: Int = {
+        if let raw = ProcessInfo.processInfo.environment["NOW_FRAME"],
+           let n = Int(raw), n > 0,
+           n <= FrameHeader.maxPayloadLength {
+            return n
+        }
+        return 8192
     }()
 
     /// Folds a guest progress report into the window and restarts the
@@ -1209,7 +1232,7 @@ final class Session {
             outbound = out
             return
         }
-        let end = min(out.sent + FrameHeader.maxPayloadLength,
+        let end = min(out.sent + Self.outboundFrameBytes,
                       out.bytes.count)
         let last = end == out.bytes.count
         guard let frame = try? FrameCodec.encode(
