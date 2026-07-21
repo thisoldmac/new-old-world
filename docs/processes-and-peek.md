@@ -16,19 +16,21 @@ end-to-end). We rebuild fresh; the findings are what carry.
 
 ## The ladder
 
-| rung | what ships | needs |
-|---|---|---|
-| 0 | Processes page: list, front, ask-to-quit | nothing new |
-| 1 | NOW Extension M0: residence, discovery, versioning | the extension |
-| 2 | Anchor plane: per-process window bounds; cropped Front & Capture | ext P1 |
-| 3 | `process.*` wire family; host sees the guest's processes | contract |
-| 4 | Semantic tree; `peek.*` family; host tree view | ext P2 |
-| 5 | Host mock desktop (scene IR, native renderer) | 3 + 4 |
-| 6 | Interiors: bounds-cropped pixel fill inside the mock desktop | 2 + 5 |
-| 7 | Drive: actions routed back at stable refs | much later |
+| rung | what ships | needs | status |
+|---|---|---|---|
+| 0 | Processes page: list, front, ask-to-quit | nothing new | **metal-verified** (2026-07-21) |
+| 1 | NOW Extension M0: residence, discovery, versioning | the extension | **built, awaiting metal** |
+| 2 | Anchor plane: per-process window bounds; cropped Front & Capture | ext P1 | |
+| 3 | `process.*` wire family; host sees the guest's processes | contract | |
+| 4 | Semantic tree; `peek.*` family; host tree view | ext P2 | |
+| 5 | Host mock desktop (scene IR, native renderer) | 3 + 4 | |
+| 6 | Interiors: bounds-cropped pixel fill inside the mock desktop | 2 + 5 | |
+| 7 | Drive: actions routed back at stable refs | much later | |
 
 Each rung is independently useful and independently verifiable. Nothing
-below rung 1 installs resident code.
+below rung 1 installs resident code. Rung 1's code lives in
+[`ext/`](../ext/); its metal test plan is in
+[open-issues.md](open-issues.md).
 
 ## Rung 0 — the Processes page
 
