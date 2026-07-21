@@ -20,6 +20,37 @@ resource 'FREF' (128) {
     'APPL', 0, ""
 };
 
+/* Finder's Get Info version, and what a version-checking installer or
+   deploy script reads. It was absent, so the Finder showed this app with
+   no version at all - and "is the machine running the build I just sent?"
+   had only the in-app build stamp to answer it. Kept in step with
+   PRODUCT_VERSION in src/product_identity.h (0.1.0); BCD 0x00,0x10 is
+   major 0, minor 1, bugfix 0. */
+resource 'vers' (1) {
+    0x00, 0x10,
+    release, 0x00,
+    verUS,
+    "0.1.0",
+    "0.1.0, New Old World"
+};
+
+/* The 16x16 small icon. Only ICN# existed, so every Finder list view, the
+   application menu and the about-to-switch bar had to shrink the 32x32 -
+   which on a 1-bit icon means dropping every other row and column, and
+   this design is a one-pixel frame, so half of it disappeared. Drawn at
+   its real size instead: same outer frame, same centred inner box.
+
+   Mask is the solid silhouette, not a copy of the art: it is what the
+   Finder fills for the selected state. */
+resource 'ics#' (128) {
+    {
+        $"0000 7FFE 4002 4002 4002 4FF2 4812 4812"
+        $"4FF2 4002 4002 4002 4002 7FFE 0000 0000",
+        $"0000 7FFE 7FFE 7FFE 7FFE 7FFE 7FFE 7FFE"
+        $"7FFE 7FFE 7FFE 7FFE 7FFE 7FFE 0000 0000"
+    }
+};
+
 resource 'ICN#' (128) {
     {
         $"00000000 00000000 0FFFFFF0 10000008"

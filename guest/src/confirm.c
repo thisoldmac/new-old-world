@@ -7,9 +7,10 @@
 
 enum {
     kWidth = 340,
-    kHeight = 128,
+    kHeight = 156,
     kButtonWidth = 84,
-    kButtonHeight = 20
+    kButtonHeight = 20,
+    kMargin = 16
 };
 
 static WindowRef g_window;
@@ -17,10 +18,31 @@ static ControlRef g_action, g_cancel;
 static const char *g_heading;
 static const char *g_detail;
 
+/* Both strings were drawn with a single MoveTo/DrawString, which does not
+   wrap: the detail line is built from a peer name plus a fixed sentence
+   and runs past 300 pixels for any ordinary machine name, so the end of
+   the sentence - the part that says the old file goes to the Trash - was
+   simply off the edge of the window. A question whose consequence is
+   clipped is not a question.
+
+   TETextBox wraps inside a rect using the port's current font, so it
+   composes with UseThemeFont and needs no measuring here. */
+static void draw_wrapped(const char *s, short top, short bottom)
+{
+    Str255 text;
+    Rect box;
+
+    if (s == NULL || s[0] == '\0') {
+        return;
+    }
+    CopyCStringToPascal(s, text);
+    SetRect(&box, kMargin, top, kWidth - kMargin, bottom);
+    TETextBox(text + 1, (SInt32)text[0], &box, teJustLeft);
+}
+
 static void draw(void)
 {
     Rect bounds;
-    Str255 text;
 
     SetPortWindowPort(g_window);
     GetWindowPortBounds(g_window, &bounds);
@@ -28,14 +50,10 @@ static void draw(void)
     DrawControls(g_window);
 
     UseThemeFont(kThemeEmphasizedSystemFont, smSystemScript);
-    MoveTo(20, 30);
-    CopyCStringToPascal(g_heading, text);
-    DrawString(text);
+    draw_wrapped(g_heading, 14, 50);
 
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-    MoveTo(20, 52);
-    CopyCStringToPascal(g_detail, text);
-    DrawString(text);
+    draw_wrapped(g_detail, 56, 108);
 }
 
 Boolean now_confirm(const char *heading, const char *detail,
@@ -67,14 +85,27 @@ Boolean now_confirm(const char *heading, const char *detail,
     SetThemeWindowBackground(g_window, kThemeBrushDialogBackgroundActive,
                              true);
 
-    SetRect(&bounds, kWidth - 16 - kButtonWidth, kHeight - 16 - kButtonHeight,
-            kWidth - 16, kHeight - 16);
+    SetRect(&bounds, kWidth - kMargin - kButtonWidth,
+            kHeight - kMargin - kButtonHeight, kWidth - kMargin,
+            kHeight - kMargin);
     CopyCStringToPascal(action, text);
     g_action = NewControl(g_window, &bounds, text, true, 0, 0, 1,
                           pushButProc, 0);
-    SetRect(&bounds, kWidth - 28 - kButtonWidth * 2,
-            kHeight - 16 - kButtonHeight, kWidth - 28 - kButtonWidth,
-            kHeight - 16);
+    /* Return already chose this button; nothing SAID so. The default ring
+       is the only thing that tells a person which key commits, and its
+       absence is why this dialog read as "two equal buttons, pick one".
+       The 12 px between the two base rects is the HIG figure and excludes
+       the ring, which is drawn outside by the CDEF. */
+    if (g_action != NULL) {
+        Boolean is_default = true;
+
+        SetControlData(g_action, kControlEntireControl,
+                       kControlPushButtonDefaultTag,
+                       (Size)sizeof is_default, &is_default);
+    }
+    SetRect(&bounds, kWidth - kMargin - 12 - kButtonWidth * 2,
+            kHeight - kMargin - kButtonHeight,
+            kWidth - kMargin - 12 - kButtonWidth, kHeight - kMargin);
     CopyCStringToPascal("Cancel", text);
     g_cancel = NewControl(g_window, &bounds, text, true, 0, 0, 1,
                           pushButProc, 0);
