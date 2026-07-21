@@ -10,6 +10,29 @@ PowerBook 1400c** (10.91.5.47, port 5251, OS 9.1, 56 MB, CarbonLib 1.6)
 unless a line says otherwise. Host tests that need no hardware are
 marked "local".
 
+## Status at handoff (2026-07-20)
+
+**The 12 MB file that started this now lands in 41.9 s at 293 KB/s.** It
+used to die at about 1.7 MB.
+
+Everything below marked *metal* was measured against `now-chip` — an
+isolated test copy of the guest on the real PowerBook 1400c, with its
+own binary name and its own preferences, deliberately unable to touch
+either of the two guests other work uses.
+
+| | State |
+|---|---|
+| Size-keyed collapse | **Fixed and explained.** 512 KB–12 MB all complete at wire speed (metal) |
+| Whole-file CRC-32 | **Works.** Two independent implementations agree (metal) |
+| Control spliced into bulk frames | **Fixed.** Real bug, unrelated to the collapse |
+| Guest instrumentation | **Works.** Replaces a stat that was never assigned |
+| Resume by offset | **DOES NOT WORK.** Hangs when a partial matches; test committed failing |
+| Unreachable host presents as a hang | **Diagnosed, NOT fixed** |
+| Residual intermittent degradation | **Open.** One 12 MB run in ~6 degraded badly |
+
+Read the failures as failures. The headline number is real and the
+feature list is not complete.
+
 ## What it is not
 
 Three theories were tested and killed before the mechanism was found.
@@ -379,15 +402,84 @@ splice it prevents is real — but the latency budget claimed for it
 ("~70 ms, one frame") only holds at full speed, and during a collapse it
 is seconds. That belongs in the fix, not just in a comment.
 
+## Open, in the order I would take them
+
+1. **Resume hangs when a partial matches the offer's token.** Metal:
+   interrupt a 4 MB put at 1,187,840 bytes, offer the same bytes again,
+   and the second offer never completes; the guest stops answering for
+   the duration and recovers afterwards. `Resumed from=0` and
+   `CRC reseed=0 ms` say it hangs BEFORE the reseed, so the blocking
+   reseed below is not the cause. Failing test:
+   `testAnInterruptedPutContinuesInsteadOfStartingOver`.
+2. **An unreachable host presents as a wedged app.** Fully diagnosed and
+   NOT fixed — the agent assigned to it died mid-task and wrote nothing.
+   `prefs_spec` names the preferences file per COPY of the app, so a
+   copy launched under a new name finds none, falls back to
+   `set_defaults` (host `10.0.2.2`, port 5250 — the QEMU gateway), and
+   grinds against an unroutable address looking exactly like a hang.
+   Cost us most of an evening. The guest dials out precisely so no
+   classic-side listener exists, which is right — but it means every
+   connection failure is silent by construction, and the app has no way
+   to say which address it cannot reach. It should say so in its own
+   window.
+3. **Residual intermittent degradation.** One 12 MB run reached 3.1 MB
+   in 599 s; the next completed in 41.9 s. Intermittent, not size-keyed.
+   Candidates are RTO inflation over a connection's life (the TimBotTu
+   corpus records that shape) or this machine's wireless link, which
+   dropped to 100% loss twice the same evening. Wants repeated 12 MB
+   runs with a packet capture; needs root, never taken.
+4. **Whether the CRC reseed may block the wire.** On resume the guest
+   reads its partial back to seed the checksum — synchronous, and
+   proportional to file size, so a 12 MB resume blocks for seconds with
+   no pings answered. `docs/architecture.md` says nothing on the wire
+   path waits. Options: defer the reseed until `file.begin` confirms the
+   offset (also stops the work being wasted when the sender chooses 0),
+   or persist the running CRC beside the partial so resume is O(1).
+5. **Control latency during a collapse.** The control queue holds
+   host→guest frames until the bulk frame in flight is whole. The
+   comment claims ~70 ms, which is true at full speed and became
+   *seconds* during a collapse — `putstat` went unanswered for 25 s
+   while guest→host progress flowed fine. Smaller frames improved it
+   4x; the claim in the comment should be qualified.
+
+**Whether to finish resume at all is worth re-deciding.** Its stated
+justification was that a failure at 1.7 MB of 12 MB means starting over
+— "the difference between eventually works and give up". A 12 MB
+transfer now takes 42 seconds, so restarting one is an annoyance rather
+than a reason to give up, while resume costs partials persisting on the
+guest's disk, an orphan sweep that must age them out, and an open hang.
+The CRC half is worth keeping regardless.
+
 ## corpus_impact
 
 `corpus_impact: pending` — this belongs in the TimBotTu corpus as a
-finding (working slug `now-large-transfer-pacing-collapse`), because
-"large transfers collapse to the pre-pacing rate and do not recover" is a
-durable fact about this stack and a direct extension of the existing
-inbound-pacing finding: it establishes that the 1448 B / 3 ms rule is
-necessary but **not sufficient**, and that the missing half is a bound on
-how far the sender may run ahead of the receiver.
+finding (working slug `now-large-transfer-pacing-collapse`). The durable
+claim, now demonstrated rather than hypothesised:
+
+> Metering writes is necessary but **not sufficient** on the PB1400c.
+> A paced sender that is not also *bounded* fills the kernel send
+> buffer, after which the gap exists in the code and not on the wire,
+> and throughput collapses to the unpaced rate and does not recover.
+> The bound cannot be tighter than the receiver's acknowledgement
+> granularity — which is what makes ack frequency a flow-control
+> parameter, not a progress-reporting one.
+
+Three supporting facts worth carrying across:
+
+- The 1448 B rule as recorded in the corpus is a **guest-transmit** fix
+  bounding one `OTSnd` within a response. Applying that number to a
+  host's writes is a different intervention wearing the same label.
+- `XTI_SNDBUF` and `TCP_NODELAY` on the guest endpoint remain measured
+  no-ops here, consistent with `pb-farallon-send-cliff`.
+- The entire PB1400c evidence base tops out at **1 MiB per transfer**,
+  every confirmation ending at 2.5–3.6 s. This collapse begins after
+  every prior measurement stops, which is why nothing in the corpus
+  describes it. That blind spot is itself worth recording.
+
+It is not written into `data/findings/` here because that lives in the
+parent TimBotTu repository, whose checkout is shared with other
+sessions; this branch is in the NOW subrepo. The row wants authoring
+from a TimBotTu worktree, citing this document as its `doc_ref`.
 
 It is not written here because `data/findings/` lives in the parent
 TimBotTu repository, whose checkout is shared with other sessions; this
