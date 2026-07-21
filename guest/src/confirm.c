@@ -47,7 +47,14 @@ Boolean now_confirm(const char *heading, const char *detail,
     Boolean answer = false;
 
     SetRect(&bounds, 100, 120, 100 + kWidth, 120 + kHeight);
-    CreateNewWindow(kMovableModalWindowClass, kWindowStandardHandlerAttribute,
+    /* NO kWindowStandardHandlerAttribute. It installs HIToolbox's
+       standard CARBON EVENT handler, which expects
+       RunApplicationEventLoop; in this app's WaitNextEvent loop it eats
+       the events instead, so the window drew its controls, never drew
+       its text, and answered no clicks. An empty box with dead buttons
+       and no way out - the whole app looked wedged, because a modal
+       that cannot be dismissed is a wedge. */
+    CreateNewWindow(kMovableModalWindowClass, kWindowNoAttributes,
                     &bounds, &g_window);
     if (g_window == NULL) {
         return false;                 /* cannot ask: do not assume yes */
@@ -72,6 +79,8 @@ Boolean now_confirm(const char *heading, const char *detail,
                           pushButProc, 0);
     ShowWindow(g_window);
     SelectWindow(g_window);
+    draw();                           /* before any event, so the
+                                         question is readable at once */
 
     while (!done) {
         /* The wire keeps running while the question waits. A person
@@ -130,7 +139,12 @@ Boolean now_confirm(const char *heading, const char *detail,
                 answer = true;
                 done = true;
             } else if (c == 27                  /* Escape */
-                       || ((event.modifiers & cmdKey) && c == '.')) {
+                       || ((event.modifiers & cmdKey) && c == '.')
+                       || ((event.modifiers & cmdKey)
+                           && (c == 'q' || c == 'Q'))) {
+                /* Escape, Cmd-period and Cmd-Q all mean "not this".
+                   A modal with no keyboard way out is one bug away
+                   from being unrecoverable. */
                 answer = false;
                 done = true;
             }
