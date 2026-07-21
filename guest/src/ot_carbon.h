@@ -19,6 +19,11 @@ typedef struct {
                                 TEndpointInfo *info, OSStatus *err,
                                 OTClientContextPtr ctx);
     OSStatus (*closeProvider)(ProviderRef ref);
+    OSStatus (*installNotifier)(ProviderRef ref, OTNotifyUPP proc,
+                                void *context);
+    void (*removeNotifier)(ProviderRef ref);
+    OSStatus (*setAsynchronous)(ProviderRef ref);
+    OSStatus (*setSynchronous)(ProviderRef ref);
     OSStatus (*setNonBlocking)(ProviderRef ref);
     OSStatus (*bind)(EndpointRef ref, TBind *req, TBind *ret);
     OSStatus (*connect)(EndpointRef ref, TCall *sndCall, TCall *rcvCall);

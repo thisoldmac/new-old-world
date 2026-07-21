@@ -37,6 +37,11 @@ typedef struct {
 
     EndpointRef ep;
     UInt32 address;
+    InetAddress connect_address;      /* async OTConnect retains both */
+    TCall connect_call;
+    volatile OSStatus connect_result;
+    volatile Boolean connect_done;
+    Boolean connect_notifier_installed;
 
     unsigned char rx[kRxBufferSize];
     long rx_len;
@@ -66,6 +71,7 @@ typedef struct {
 } ConnState;
 
 static ConnState g;
+static OTNotifyUPP g_connect_notifier;
 
 static void send_hello(void);
 static void xfer_cleanup(void);
@@ -87,6 +93,38 @@ static void take_bulk_in(const unsigned char *bytes, long len);
 static void put_drop(void);
 static void stream_drop(void);
 static void note_shot(const char *line);
+
+/* Only the connect operation runs asynchronously: on the physical
+   PowerBook a synchronous OTConnect to an unreachable address blocks
+   inside the call forever (the emulator forgives it - the launch
+   freeze this exists to prevent lived only on metal). The notifier
+   runs at deferred-task time, acknowledges the event, and publishes
+   one small result; all protocol, logging and UI work stays in
+   conn_service on the main loop. OT notifiers are C-convention - the
+   UPP macro is the documented exception to routine descriptors. */
+static pascal void connect_notifier(void *context, OTEventCode code,
+                                    OTResult result, void *cookie)
+{
+    ConnState *state = (ConnState *)context;
+
+    (void)cookie;
+    if (state == NULL || state->ep == kOTInvalidEndpointRef
+        || state->connect_done) {
+        return;
+    }
+    if (code == T_CONNECT) {
+        state->connect_result = gNowOT.rcvConnect(state->ep, NULL);
+        state->connect_done = true;
+    } else if (code == T_DISCONNECT) {
+        gNowOT.rcvDisconnect(state->ep, NULL);
+        state->connect_result = result != noErr ? result : kOTLookErr;
+        state->connect_done = true;
+    } else if (code == T_ORDREL) {
+        gNowOT.rcvOrderlyDisconnect(state->ep);
+        state->connect_result = result != noErr ? result : kOTLookErr;
+        state->connect_done = true;
+    }
+}
 
 /* --- helpers ------------------------------------------------------------ */
 
@@ -193,6 +231,10 @@ static int send_control(const char *json)
 static void close_endpoint(void)
 {
     if (g.ep != kOTInvalidEndpointRef) {
+        if (g.connect_notifier_installed) {
+            gNowOT.removeNotifier(g.ep);
+            g.connect_notifier_installed = false;
+        }
         gNowOT.unbind(g.ep);
         gNowOT.closeProvider(g.ep);
         g.ep = kOTInvalidEndpointRef;
@@ -204,7 +246,8 @@ static void close_endpoint(void)
 /* Move to backoff after a failure; status keeps the reason already set. */
 static void enter_backoff(void)
 {
-    now_log(kLogWarn, "wire", "disconnected: %.60s", g.last_fail);
+    now_log(kLogWarn, "wire", "disconnected from %s:%u: %.60s",
+            g.host, g.port, g.last_fail);
     xfer_cleanup();                   /* a dropped link cancels any transfer */
     offer_cleanup();
     stream_drop();                    /* no stopped message on a dead wire */
@@ -245,6 +288,14 @@ static void fail(const char *reason)
     enter_backoff();
 }
 
+static void fail_ot(const char *operation, OSStatus err)
+{
+    char reason[96];
+
+    snprintf(reason, sizeof reason, "%s (OT %ld)", operation, (long)err);
+    fail(reason);
+}
+
 /* --- connect ------------------------------------------------------------ */
 
 /* Open Transport's default receive window is small enough that a sender
@@ -272,11 +323,27 @@ static long g_rcv_peak = -3;
    means the loop is healthy and the bytes are simply not arriving. */
 static long g_service_passes = 0;
 
+/* The connect completed (either path); the rest of the protocol is
+   written synchronously, so the endpoint goes back to that mode with
+   the notifier gone before the first hello leaves. */
+static void finish_connect(void)
+{
+    if (g.connect_notifier_installed) {
+        gNowOT.removeNotifier(g.ep);
+        g.connect_notifier_installed = false;
+    }
+    if (gNowOT.setSynchronous(g.ep) != noErr) {
+        fail("Could not finish connection");
+        return;
+    }
+    g.phase = kConnHandshaking;
+    g.phase_deadline = TickCount() + kHelloTimeoutTicks;
+    send_hello();
+}
+
 static void start_connect(void)
 {
     OSStatus err, open_err = -1;
-    InetAddress inet;
-    TCall call;
 
     close_endpoint();
     g.rx_len = 0;
@@ -298,62 +365,87 @@ static void start_connect(void)
         fail("Open Transport could not start");
         return;
     }
+    if (g_connect_notifier == NULL) {
+        g_connect_notifier = NewOTNotifyUPP(connect_notifier);
+        if (g_connect_notifier == NULL) {
+            fail("Not enough memory for networking");
+            return;
+        }
+    }
     g.ep = gNowOT.openEndpoint(OTCreateConfiguration(kTCPName), 0, NULL,
                                &open_err, gNowOTContext);
-    if (g.ep == kOTInvalidEndpointRef) {
+    if (open_err != noErr || g.ep == kOTInvalidEndpointRef) {
         fail("Could not open a TCP endpoint");
         return;
     }
-    gNowOT.setNonBlocking(g.ep);
-    if (gNowOT.bind(g.ep, NULL, NULL) != noErr) {
+    err = gNowOT.installNotifier(g.ep, g_connect_notifier, &g);
+    if (err != noErr) {
+        fail("Could not install networking callback");
+        return;
+    }
+    g.connect_notifier_installed = true;
+    err = gNowOT.bind(g.ep, NULL, NULL);      /* local operation, still sync */
+    if (err != noErr) {
         fail("Bind failed");
         return;
     }
+    /* Asynchronous for the dial itself: on metal a synchronous OTConnect
+       to an address that never answers blocks INSIDE the call, and the
+       whole application wedges before its first update event. The
+       emulator forgives the synchronous form, which is how it shipped
+       that way once already. */
+    err = gNowOT.setAsynchronous(g.ep);
+    if (err != noErr) {
+        fail("Could not make connection asynchronous");
+        return;
+    }
+    err = gNowOT.setNonBlocking(g.ep);
+    if (err != noErr) {
+        fail("Could not make connection nonblocking");
+        return;
+    }
 
-    memset(&inet, 0, sizeof inet);
-    inet.fAddressType = AF_INET;
-    inet.fPort = g.port;
-    inet.fHost = g.address;
-    memset(&call, 0, sizeof call);
-    call.addr.buf = (UInt8 *)&inet;
-    call.addr.len = sizeof inet;
-
-    err = gNowOT.connect(g.ep, &call, NULL);
+    memset(&g.connect_address, 0, sizeof g.connect_address);
+    g.connect_address.fAddressType = AF_INET;
+    g.connect_address.fPort = g.port;
+    g.connect_address.fHost = g.address;
+    memset(&g.connect_call, 0, sizeof g.connect_call);
+    g.connect_call.addr.buf = (UInt8 *)&g.connect_address;
+    g.connect_call.addr.len = sizeof g.connect_address;
+    g.connect_result = kOTNoDataErr;
+    g.connect_done = false;
     g.phase_deadline = TickCount() + kConnectTimeoutTicks;
     snprintf(g.status, sizeof g.status, "Connecting to %s:%u...",
              g.host, g.port);
+    now_log(kLogInfo, "wire", "connecting to %s:%u", g.host, g.port);
+    err = gNowOT.connect(g.ep, &g.connect_call, NULL);
     if (err == noErr) {
-        /* Loopback can complete synchronously; OTRcvConnect would then be
-           out-of-state (-3155), so go straight to the handshake. */
-        g.phase = kConnHandshaking;
-        g.phase_deadline = TickCount() + kHelloTimeoutTicks;
-        send_hello();
+        /* An asynchronous endpoint normally returns kOTNoDataErr and
+           later delivers T_CONNECT. A local provider may still finish
+           immediately; no completion event is owed in that case. */
+        finish_connect();
     } else if (err == kOTNoDataErr) {
         g.phase = kConnConnecting;
     } else {
-        fail("Could not connect");
+        fail_ot("Connect failed", err);
     }
 }
 
 static void service_connecting(void)
 {
-    OSStatus err = gNowOT.rcvConnect(g.ep, NULL);
+    if (g.connect_done) {
+        OSStatus result = g.connect_result;
 
-    if (err == noErr) {
-        g.phase = kConnHandshaking;
-        g.phase_deadline = TickCount() + kHelloTimeoutTicks;
-        send_hello();
-        return;
-    }
-    if (err == kOTLookErr) {
-        OTResult look = gNowOT.look(g.ep);
-        if (look == T_DISCONNECT) {
-            gNowOT.rcvDisconnect(g.ep, NULL);
-            fail("Connection refused");
+        g.connect_done = false;
+        if (g.connect_notifier_installed) {
+            gNowOT.removeNotifier(g.ep);
+            g.connect_notifier_installed = false;
+        }
+        if (result != noErr) {
+            fail_ot("Connection refused", result);
             return;
         }
-    } else if (err != kOTNoDataErr) {
-        fail("Connect failed");
+        finish_connect();
         return;
     }
     if (TickCount() > g.phase_deadline) {
@@ -3680,6 +3772,10 @@ void conn_shutdown(void)
     }
     g.want_connection = false;
     g.phase = kConnIdle;
+    if (g_connect_notifier != NULL) {
+        DisposeOTNotifyUPP(g_connect_notifier);
+        g_connect_notifier = NULL;
+    }
 }
 
 void now_wire_pump(void)

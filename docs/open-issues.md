@@ -35,10 +35,10 @@ modules (Screenshots, Files, Console, Connection) behind the
 dialog are deleted, and all four pages were watched working on the
 PowerBook the same night. The codex branch `codex/guest-console-invert`
 is **abandoned by decision** (Michelle, 2026-07-21) — do not merge it.
-Its one still-valuable idea is the **async OT connect path**
-(`160ed85`), which is the fix for "an unreachable host presents as a
-hang" below; whoever picks that up should reimplement it against this
-branch rather than merging.
+Its one still-valuable idea, the **async OT connect path** (`160ed85`),
+was reimplemented against `claude/processes-module-cb2d9c` on
+2026-07-21 (see "An unreachable host presents as a hang" below); the
+branch itself stays abandoned.
 
 **Workshop follow-ups, deliberately not done in the arc:** a CarbonLib
 1.6 launch gate (wire.c still surfaces `kConnNeedsCarbonLib` at connect
@@ -61,8 +61,23 @@ the common case is understood and fixed — this residual says the
 understanding is not complete. Measured, not reasoned about; the numbers
 are in `docs/large-transfers.md`.
 
-**An unreachable host presents as a hang.** Diagnosed, not fixed. The
-guest waits rather than saying it cannot reach anyone.
+**An unreachable host presents as a hang.** Reimplemented on
+`claude/processes-module-cb2d9c` (2026-07-21) after the wedge bit again
+on metal: `now-guest-processes` decoded under a fresh name, found no
+prefs, dialed `10.0.2.2`, and a synchronous `OTConnect` to an address
+that never answers blocks INSIDE the call — before the first update
+event, so the window stays blank and only a force quit ends it. The fix
+is the codex branch's shape (`160ed85`) rebuilt against this tree: the
+endpoint goes asynchronous for the dial only, a notifier publishes one
+flag, the main loop finishes or fails the connect, and the endpoint
+returns to synchronous before the hello. `now_log_open()` also moved
+above `conn_init()` so this failure finally leaves a log.
+`ot_connect_source_test.py` pins the sequence — it was watched failing
+against the pre-patch sources — because this fix has now been lost
+once. **Unverified on metal**; the emulator forgives the synchronous
+form, so only the PowerBook (or the 3400c) can prove it, and the chip
+build `now-chip` exists for exactly that: launched with no prefs it
+dials the gateway, and the UI must stay alive.
 
 **Type-select does nothing in the browser list.** Selection,
 double-click and header sorting all work; typing a letter does not jump.

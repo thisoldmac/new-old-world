@@ -346,8 +346,10 @@ int main(void)
         ParamText(message, k_empty, k_empty, k_empty);
         StopAlert(200, now_pump_modal_filter());
     }
-    conn_init();
+    /* Log first: a hang during connection setup is precisely the case
+       the log exists for, and the old order left none. */
     now_log_open();
+    conn_init();
     conn_set_shot_note(screenshots_module_note);
     conn_set_file_note(files_share_note);
     conn_set_listing(files_browser_listing);
