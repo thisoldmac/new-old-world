@@ -32,13 +32,13 @@ dead weight should know it was built deliberately, not left over.
 (2026-07-21): one window, a hand-drawn sidebar rail, and all four
 modules (Screenshots, Files, Console, Connection) behind the
 `WorkshopModuleOps` contract. The five old windows and the Connection
-dialog are deleted. The codex branch `codex/guest-console-invert` still
-holds two UNMERGED commits (`f3e8e0f` console invert, `160ed85` async
-OT connect + rename-stable prefs identity) — the merge is on Michelle's
-hold. The Workshop reimplemented the invert and prefs-v9 pieces
-independently, so the codex value that remains is chiefly the **async
-connect path**, which relates to "an unreachable host presents as a
-hang" below: without it, `OTConnect` on this branch is synchronous.
+dialog are deleted, and all four pages were watched working on the
+PowerBook the same night. The codex branch `codex/guest-console-invert`
+is **abandoned by decision** (Michelle, 2026-07-21) — do not merge it.
+Its one still-valuable idea is the **async OT connect path**
+(`160ed85`), which is the fix for "an unreachable host presents as a
+hang" below; whoever picks that up should reimplement it against this
+branch rather than merging.
 
 **Workshop follow-ups, deliberately not done in the arc:** a CarbonLib
 1.6 launch gate (wire.c still surfaces `kConnNeedsCarbonLib` at connect
@@ -78,14 +78,16 @@ Not load-bearing; parked as a known gap rather than chased.
 Everything here builds and passes its tests. None of it has been watched
 working on the PowerBook.
 
-- **The whole Workshop beyond the Phase-1 shell.** The shell (rail,
-  placards, switching) ran in the emulator and was deployed to the
-  PowerBook; the Connection, Console, Screenshots and Files pages have
-  never been rendered on ANY display — the VM loop was skipped by
-  decision after the shell checked out. First metal launch should
-  expect first-render surprises in: edit-text focus/caret, the popup
-  and disclosure CDEFs inside a window (not a dialog), the progress
-  bar, and the preview well's CopyBits at 16/32-bit depths.
+- **The metal pass found two Workshop bugs, both fixed the same
+  night:** the Console's edit-text field took no keystrokes (replaced
+  with an in-canvas prompt line - terminal-shaped, no focus to lose),
+  and every Modified date read 1/19/72 (DateString is signed and
+  1904-epoch seconds passed 2^31 during 1972; LongDateString now).
+  The fixes are emulator-verified (typing, history submit, Invert,
+  capture preview, the disconnected Files page); the fixed build has
+  not yet been back to the PowerBook. Still never exercised anywhere:
+  a live remote listing with real Modified dates, the send progress
+  bar moving, and the preview well at 16/32-bit depths.
 - **Prefs v9.** Reads v1-v8 files and seeds the Console page from a
   legacy console_open flag; exercised only by reasoning, not by an old
   prefs file on the machine.
