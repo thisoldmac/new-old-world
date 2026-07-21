@@ -7,7 +7,6 @@
 #include "confirm.h"
 #include "host_browser.h"
 #include "nowlog.h"
-#include "console_win.h"
 #include "fileshare.h"
 #include "product_identity.h"
 #include "share_panel.h"
@@ -195,9 +194,8 @@ static void compute_screen_bounds(void)
 static Boolean is_our_window(WindowRef window)
 {
     return window != NULL
-        && (console_win_is(window) || share_panel_is(window)
-            || host_browser_is(window) || shots_panel_is(window)
-            || workshop_is(window));
+        && (share_panel_is(window) || host_browser_is(window)
+            || shots_panel_is(window) || workshop_is(window));
 }
 
 static void set_window_active(WindowRef window, Boolean active)
@@ -205,9 +203,7 @@ static void set_window_active(WindowRef window, Boolean active)
     if (window == NULL) {
         return;
     }
-    if (console_win_is(window)) {
-        console_win_activate(active);
-    } else if (share_panel_is(window)) {
+    if (share_panel_is(window)) {
         share_panel_activate(active);
     } else if (host_browser_is(window)) {
         host_browser_activate(active);
@@ -232,8 +228,6 @@ static void close_front_window(void)
     }
     if (shots_panel_is(front)) {
         shots_panel_close(true);
-    } else if (console_win_is(front)) {
-        console_win_close();
     } else if (workshop_is(front)) {
         workshop_close();
     }
@@ -252,7 +246,6 @@ static void save_session(void)
         GetWindowBounds(shots_panel_ref(), kWindowContentRgn, &bounds);
         prefs.panel_rect = bounds;
     }
-    prefs.console_open = console_win_ref() != NULL;
     now_prefs_save(&prefs);
 }
 
@@ -263,9 +256,6 @@ static void restore_session(void)
     now_prefs_load(&prefs);
     if (prefs.panel_open) {
         shots_panel_open();
-    }
-    if (prefs.console_open) {
-        console_win_open();
     }
 }
 
@@ -292,7 +282,10 @@ static void handle_menu_choice(long choice)
         } else if (LoWord(choice) == kWindowsScreenshotsItem) {
             shots_panel_open();
         } else if (LoWord(choice) == kWindowsConsoleItem) {
-            console_win_open();
+            /* The Console lives in the Workshop now. */
+            if (workshop_open()) {
+                workshop_select_module(kWorkshopConsole);
+            }
         } else if (LoWord(choice) == kWindowsConnectionItem) {
             /* The dialog retired into the Workshop's Connection page. */
             if (workshop_open()) {
@@ -355,34 +348,6 @@ static void handle_mouse_down(const EventRecord *event)
                 return;
             }
             workshop_click(event);
-        }
-        return;
-    }
-    if (console_win_is(window)) {
-        if (part == inDrag) {
-            DragWindow(window, event->where, &g_screen_bounds);
-        } else if (part == inGoAway) {
-            if (TrackGoAway(window, event->where)) {
-                console_win_close();
-            }
-        } else if (part == inGrow) {
-            Rect limits;
-            long size;
-
-            SetRect(&limits, 280, 160, 2048, 2048);
-            size = GrowWindow(window, event->where, &limits);
-            if (size != 0) {
-                SizeWindow(window, LoWord(size), HiWord(size), true);
-                console_win_invalidate();
-            }
-        } else if (part == inZoomIn || part == inZoomOut) {
-            if (TrackBox(window, event->where, part)) {
-                SetPortWindowPort(window);
-                ZoomWindow(window, part, false);
-                console_win_invalidate();
-            }
-        } else if (part == inContent && window != FrontWindow()) {
-            SelectWindow(window);
         }
         return;
     }
@@ -452,8 +417,6 @@ static void handle_key_down(const EventRecord *event)
         long choice = MenuKey(key);
         handle_menu_choice(choice);
         HiliteMenu(0);
-    } else if (console_win_is(FrontWindow())) {
-        console_win_key(key);
     } else if (host_browser_is(FrontWindow())) {
         host_browser_key(event);
     } else if (workshop_is(FrontWindow())) {
@@ -564,11 +527,7 @@ int main(void)
             handle_key_down(&event);
             break;
         case updateEvt:
-            if (console_win_is((WindowRef)event.message)) {
-                BeginUpdate(console_win_ref());
-                console_win_draw();
-                EndUpdate(console_win_ref());
-            } else if (shots_panel_is((WindowRef)event.message)) {
+            if (shots_panel_is((WindowRef)event.message)) {
                 BeginUpdate(shots_panel_ref());
                 shots_panel_draw();
                 EndUpdate(shots_panel_ref());
@@ -620,7 +579,6 @@ int main(void)
         quit_handler = NULL;
     }
     shots_panel_close(false);
-    console_win_close();
     workshop_close();
     return 0;
 }

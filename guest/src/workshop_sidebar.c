@@ -9,9 +9,9 @@
    quiet subtitle per row, Connection pinned at the bottom behind a
    divider with the status lamp. A Data Browser cannot pin a row or
    draw two-line cells without custom-callback territory this CarbonLib
-   has not proved, and console_win.c already set the precedent for a
-   hand-drawn view; system look comes from the theme fonts and the
-   system highlight color, not from imitation chrome. */
+   has not proved, and the Console's hand-drawn scrollback set the
+   precedent for an owned view; system look comes from the theme fonts
+   and the system highlight color, not from imitation chrome. */
 
 enum {
     kIconInset = 8,           /* panel edge to icon */

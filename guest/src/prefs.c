@@ -219,6 +219,10 @@ void now_prefs_load(NowPrefs *prefs)
             prefs->workshop_module = v9.workshop_module;
         }
         prefs->workshop_rect = v9.workshop_rect;
+    } else if (prefs->console_open) {
+        /* Seed from the old window session: someone who kept the Console
+           open wants the Console page, not Screenshots. */
+        prefs->workshop_module = 3;
     }
 }
 

@@ -1,40 +1,29 @@
-#include "console_win.h"
+#include "console_model.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include <Carbon.h>
+
+#include "build_stamp.h"
 #include "capture.h"
 #include "commands.h"
+#include "fileshare.h"
 #include "json.h"
+#include "nowlog.h"
 #include "prefs.h"
 #include "screenshot.h"
-#include "fileshare.h"
-#include "wire.h"
-#include "nowlog.h"
-#include "build_stamp.h"
 #include "vprobe.h"
+#include "wire.h"
 
 enum {
-    kMaxLines = 200,
-    kMaxCols = 128,
-    kLineHeight = 12,
-    kMargin = 6,
-    kWinWidth = 520,
-    kWinHeight = 360
+    kMaxLines = kConsoleMaxLines,
+    kMaxCols = kConsoleMaxCols
 };
 
-static WindowRef g_window = NULL;
 static char g_lines[kMaxLines][kMaxCols];
 static short g_count = 0;
-static char g_input[kMaxCols];
-static short g_input_len = 0;
-static short g_font = 0;
-/* The console has no Toolbox controls, so its only visible active/inactive
-   difference is the insertion mark on the input line. A window that is not
-   front must not show one: a blinking-looking caret in a background window
-   says "type here" to a keystroke that will go somewhere else. */
-static Boolean g_active = true;
 
 /* Command history: newest last. g_hist_pos == g_hist_count means "editing a
    fresh line"; arrow keys walk back into the saved commands. */
@@ -43,7 +32,7 @@ static char g_hist[kHistMax][kMaxCols];
 static short g_hist_count = 0;
 static short g_hist_pos = 0;
 
-static void history_add(const char *cmd)
+void console_model_history_add(const char *cmd)
 {
     if (cmd[0] == '\0') {
         return;
@@ -63,12 +52,12 @@ static void history_add(const char *cmd)
     g_hist_pos = g_hist_count;
 }
 
-static void history_recall(short delta)
+const char *console_model_history_recall(short delta)
 {
     short pos = (short)(g_hist_pos + delta);
 
     if (g_hist_count == 0) {
-        return;
+        return "";
     }
     if (pos < 0) {
         pos = 0;
@@ -78,16 +67,12 @@ static void history_recall(short delta)
     }
     g_hist_pos = pos;
     if (pos == g_hist_count) {
-        g_input[0] = '\0';            /* past the newest: empty line */
-        g_input_len = 0;
-        return;
+        return "";                    /* past the newest: empty line */
     }
-    strncpy(g_input, g_hist[pos], kMaxCols - 1);
-    g_input[kMaxCols - 1] = '\0';
-    g_input_len = (short)strlen(g_input);
+    return g_hist[pos];
 }
 
-static void append_line(const char *text)
+void console_model_append(const char *text)
 {
     if (g_count == kMaxLines) {
         memmove(g_lines[0], g_lines[1],
@@ -120,103 +105,103 @@ static void help_for(const char *name)
     char line[kMaxCols];
 
     if (strcmp(name, "screenshot") == 0) {
-        append_line("screenshot - capture the screen to the desktop");
-        append_line("  Usage: screenshot [--depth {1,2,4,8,16,32}]");
-        append_line("         [--bands N] [--no-save]");
-        append_line("  Captures the whole screen as a packed PICT. Depth");
-        append_line("  defaults to the Screenshots panel setting; --no-save");
-        append_line("  measures capture+encode without writing a file.");
-        append_line("  --bands N (2..32) captures in N banded CopyBits");
-        append_line("  calls and reports the per-band cost spread.");
+        console_model_append("screenshot - capture the screen to the desktop");
+        console_model_append("  Usage: screenshot [--depth {1,2,4,8,16,32}]");
+        console_model_append("         [--bands N] [--no-save]");
+        console_model_append("  Captures the whole screen as a packed PICT. Depth");
+        console_model_append("  defaults to the Screenshots panel setting; --no-save");
+        console_model_append("  measures capture+encode without writing a file.");
+        console_model_append("  --bands N (2..32) captures in N banded CopyBits");
+        console_model_append("  calls and reports the per-band cost spread.");
     } else if (strcmp(name, "vprobe") == 0) {
-        append_line("vprobe - measure VRAM read cost by method");
-        append_line("  Usage: vprobe");
-        append_line("  Times raw framebuffer reads (8/16/32/64-bit) against");
-        append_line("  the CopyBits baseline, checks reread caching, partial-");
-        append_line("  read scaling, and pixel fidelity. Takes ~3 seconds;");
-        append_line("  the screen should be still during the run.");
+        console_model_append("vprobe - measure VRAM read cost by method");
+        console_model_append("  Usage: vprobe");
+        console_model_append("  Times raw framebuffer reads (8/16/32/64-bit) against");
+        console_model_append("  the CopyBits baseline, checks reread caching, partial-");
+        console_model_append("  read scaling, and pixel fidelity. Takes ~3 seconds;");
+        console_model_append("  the screen should be still during the run.");
     } else if (strcmp(name, "ls") == 0) {
-        append_line("ls - list a folder in the shared files");
-        append_line("  Usage: ls [path]");
-        append_line("  Paths are relative to the share root, with");
-        append_line("  colons between folders: \"Lab:Code\". No path");
-        append_line("  lists the root itself. The root is chosen in");
-        append_line("  File > File Sharing... and defaults to the");
-        append_line("  startup volume; nothing outside it is reachable.");
+        console_model_append("ls - list a folder in the shared files");
+        console_model_append("  Usage: ls [path]");
+        console_model_append("  Paths are relative to the share root, with");
+        console_model_append("  colons between folders: \"Lab:Code\". No path");
+        console_model_append("  lists the root itself. The root is chosen in");
+        console_model_append("  File > File Sharing... and defaults to the");
+        console_model_append("  startup volume; nothing outside it is reachable.");
     } else if (strcmp(name, "tail") == 0) {
-        append_line("tail - the last lines of this launch's log");
-        append_line("  Usage: tail [lines]   (default 20, most 40)");
-        append_line("  The log is a file per launch in a \"now-logs\"");
-        append_line("  folder beside this application, so what happened");
-        append_line("  survives a crash that takes everything else. The");
-        append_line("  same command works from the other Mac's console.");
+        console_model_append("tail - the last lines of this launch's log");
+        console_model_append("  Usage: tail [lines]   (default 20, most 40)");
+        console_model_append("  The log is a file per launch in a \"now-logs\"");
+        console_model_append("  folder beside this application, so what happened");
+        console_model_append("  survives a crash that takes everything else. The");
+        console_model_append("  same command works from the other Mac's console.");
     } else if (strcmp(name, "put") == 0) {
-        append_line("put - send a file to the host");
-        append_line("  Usage: put <full path>");
-        append_line("  \"Macintosh HD:Notes:Read Me\". The path is a full");
-        append_line("  HFS path, not a share-relative one: sending is not");
-        append_line("  browsing, so the file need not be in the share. The");
-        append_line("  host saves it in whatever folder it shares.");
+        console_model_append("put - send a file to the host");
+        console_model_append("  Usage: put <full path>");
+        console_model_append("  \"Macintosh HD:Notes:Read Me\". The path is a full");
+        console_model_append("  HFS path, not a share-relative one: sending is not");
+        console_model_append("  browsing, so the file need not be in the share. The");
+        console_model_append("  host saves it in whatever folder it shares.");
     } else if (strcmp(name, "mv") == 0) {
-        append_line("mv - move or rename something in the shared files");
-        append_line("  Usage: mv <path> <new path>");
-        append_line("  Both paths are relative to the share root. The");
-        append_line("  second is the whole destination including the new");
-        append_line("  name, so a rename is \"mv Notes Notes Old\". The");
-        append_line("  destination folder must already exist, and an");
-        append_line("  existing item is never replaced.");
+        console_model_append("mv - move or rename something in the shared files");
+        console_model_append("  Usage: mv <path> <new path>");
+        console_model_append("  Both paths are relative to the share root. The");
+        console_model_append("  second is the whole destination including the new");
+        console_model_append("  name, so a rename is \"mv Notes Notes Old\". The");
+        console_model_append("  destination folder must already exist, and an");
+        console_model_append("  existing item is never replaced.");
     } else if (strcmp(name, "trash") == 0) {
-        append_line("trash - move something to the Trash");
-        append_line("  Usage: trash <path>");
-        append_line("  The item goes to this volume's Trash, so it can be");
-        append_line("  dragged back out until the Trash is emptied. It is");
-        append_line("  not erased. Reports the name it landed under, which");
-        append_line("  differs if the Trash already held that name.");
+        console_model_append("trash - move something to the Trash");
+        console_model_append("  Usage: trash <path>");
+        console_model_append("  The item goes to this volume's Trash, so it can be");
+        console_model_append("  dragged back out until the Trash is emptied. It is");
+        console_model_append("  not erased. Reports the name it landed under, which");
+        console_model_append("  differs if the Trash already held that name.");
     } else if (strcmp(name, "untrash") == 0) {
-        append_line("untrash - put something back from the Trash");
-        append_line("  Usage: untrash <trash name> <path>");
-        append_line("  The first is what trash reported the item is");
-        append_line("  called in the Trash; the second is where in the");
-        append_line("  share to put it back, including its name.");
+        console_model_append("untrash - put something back from the Trash");
+        console_model_append("  Usage: untrash <trash name> <path>");
+        console_model_append("  The first is what trash reported the item is");
+        console_model_append("  called in the Trash; the second is where in the");
+        console_model_append("  share to put it back, including its name.");
     } else if (strcmp(name, "mkdir") == 0) {
-        append_line("mkdir - make a folder in the shared files");
-        append_line("  Usage: mkdir <path>");
-        append_line("  The enclosing folder must already exist. Names are");
-        append_line("  at most 31 characters and cannot contain a colon.");
+        console_model_append("mkdir - make a folder in the shared files");
+        console_model_append("  Usage: mkdir <path>");
+        console_model_append("  The enclosing folder must already exist. Names are");
+        console_model_append("  at most 31 characters and cannot contain a colon.");
     } else if (strcmp(name, "gestalt") == 0) {
-        append_line("gestalt - report this Mac's identity");
-        append_line("  Usage: gestalt [group] [--save]");
-        append_line("  With no group, prints a short snapshot. Groups:");
-        append_line("    --cpu --memory --os --network --hardware");
-        append_line("    --full        every group");
-        append_line("    --save        also write the output to the desktop");
+        console_model_append("gestalt - report this Mac's identity");
+        console_model_append("  Usage: gestalt [group] [--save]");
+        console_model_append("  With no group, prints a short snapshot. Groups:");
+        console_model_append("    --cpu --memory --os --network --hardware");
+        console_model_append("    --full        every group");
+        console_model_append("    --save        also write the output to the desktop");
     } else if (strcmp(name, "help") == 0) {
-        append_line("help - list commands; \"help <cmd>\" for one command");
+        console_model_append("help - list commands; \"help <cmd>\" for one command");
     } else if (strcmp(name, "clear") == 0) {
-        append_line("clear - clear the console scrollback");
+        console_model_append("clear - clear the console scrollback");
     } else {
         snprintf(line, sizeof line, "No help for \"%s\"", name);
-        append_line(line);
+        console_model_append(line);
     }
 }
 
 static void help_list(void)
 {
-    append_line("Commands on this Mac:");
-    append_line("  gestalt     report this Mac (add a group or --full)");
-    append_line("  screenshot  capture the screen (--depth N, --bands N,");
-    append_line("              --no-save)");
-    append_line("  ls          list a shared folder (ls [path])");
-    append_line("  put         send a file to the host (put <full path>)");
-    append_line("  tail        the last lines of this launch's log");
-    append_line("  mv          move or rename (mv <path> <new path>)");
-    append_line("  trash       move to the Trash (trash <path>)");
-    append_line("  untrash     put back (untrash <trash name> <path>)");
-    append_line("  mkdir       make a folder (mkdir <path>)");
-    append_line("  vprobe      measure VRAM read cost by method");
-    append_line("  help        show this list (\"help <cmd>\" for details)");
-    append_line("  clear       clear the console scrollback");
-    append_line("Add --help or -h to any command for details.");
+    console_model_append("Commands on this Mac:");
+    console_model_append("  gestalt     report this Mac (add a group or --full)");
+    console_model_append("  screenshot  capture the screen (--depth N, --bands N,");
+    console_model_append("              --no-save)");
+    console_model_append("  ls          list a shared folder (ls [path])");
+    console_model_append("  put         send a file to the host (put <full path>)");
+    console_model_append("  tail        the last lines of this launch's log");
+    console_model_append("  mv          move or rename (mv <path> <new path>)");
+    console_model_append("  trash       move to the Trash (trash <path>)");
+    console_model_append("  untrash     put back (untrash <trash name> <path>)");
+    console_model_append("  mkdir       make a folder (mkdir <path>)");
+    console_model_append("  vprobe      measure VRAM read cost by method");
+    console_model_append("  help        show this list (\"help <cmd>\" for details)");
+    console_model_append("  clear       clear the console scrollback");
+    console_model_append("Add --help or -h to any command for details.");
 }
 
 /* --- gestalt rendering + save ------------------------------------------- */
@@ -312,22 +297,22 @@ static void run_gestalt_view(const char *group, Boolean full, Boolean save)
     if (full) {
         for (g = 0; kGestaltFullGroups[g] != NULL; ++g) {
             snprintf(line, sizeof line, "[%s]", kGestaltFullGroups[g]);
-            append_line(line);
+            console_model_append(line);
             gestalt_group_lines(rows, count, kGestaltFullGroups[g],
-                                append_line);
+                                console_model_append);
         }
     } else if (group != NULL) {
-        gestalt_group_lines(rows, count, group, append_line);
+        gestalt_group_lines(rows, count, group, console_model_append);
     } else {
-        gestalt_group_lines(rows, count, "snapshot", append_line);
+        gestalt_group_lines(rows, count, "snapshot", console_model_append);
     }
     if (save) {
         err = gestalt_save(rows, count, full, group);
         if (err == noErr) {
-            append_line("Saved to the desktop: \"NOW gestalt.txt\"");
+            console_model_append("Saved to the desktop: \"NOW gestalt.txt\"");
         } else {
             snprintf(line, sizeof line, "Save failed (error %d)", err);
-            append_line(line);
+            console_model_append(line);
         }
     }
 }
@@ -348,34 +333,34 @@ static void run_screenshot_local(short depth_flag, short bands_flag,
     if (now_screenshot(depth, bands, !no_save, &stats,
                        err, sizeof err) != 0) {
         snprintf(line, sizeof line, "screenshot: %.80s", err);
-        append_line(line);
+        console_model_append(line);
         return;
     }
     snprintf(line, sizeof line,
              "  %dx%d %d-bit  raw %ld KB  PICT %ld KB",
              stats.width, stats.height, stats.depth,
              stats.raw_bytes / 1024, stats.pict_bytes / 1024);
-    append_line(line);
+    console_model_append(line);
     snprintf(line, sizeof line, "  capture %ld ms  encode %ld ms",
              stats.capture_ms, stats.encode_ms);
-    append_line(line);
+    console_model_append(line);
     if (stats.bands > 1) {
         snprintf(line, sizeof line,
                  "  %d bands: min %ld.%ld ms  max %ld.%ld ms",
                  stats.bands,
                  stats.band_min_us / 1000, (stats.band_min_us % 1000) / 100,
                  stats.band_max_us / 1000, (stats.band_max_us % 1000) / 100);
-        append_line(line);
+        console_model_append(line);
     }
     if (no_save) {
-        append_line("  (not saved)");
+        console_model_append("  (not saved)");
     } else {
         snprintf(line, sizeof line, "  Saved: %.28s", stats.saved_name);
-        append_line(line);
+        console_model_append(line);
     }
 }
 
-static void run_command(const char *input)
+void console_model_run(const char *input)
 {
     char line[kMaxCols];
     char name[48];
@@ -396,7 +381,7 @@ static void run_command(const char *input)
     Boolean expect_bands = false;
 
     snprintf(line, sizeof line, "> %s", input);
-    append_line(line);
+    console_model_append(line);
 
     p = next_token(input, name, sizeof name);
     if (name[0] == '\0') {
@@ -481,13 +466,13 @@ static void run_command(const char *input)
 
         if (vn < 0) {
             snprintf(line, sizeof line, "vprobe: %.80s", verr);
-            append_line(line);
+            console_model_append(line);
             return;
         }
         for (vi = 0; vi < vn; ++vi) {
             snprintf(line, sizeof line, "  %-16s %s",
                      rows[vi].label, rows[vi].value);
-            append_line(line);
+            console_model_append(line);
         }
         return;
     }
@@ -501,7 +486,7 @@ static void run_command(const char *input)
             || ((strcmp(name, "mv") == 0 || strcmp(name, "untrash") == 0)
                 && target2[0] == '\0')) {
             snprintf(line, sizeof line, "%s: see \"help %s\"", name, name);
-            append_line(line);
+            console_model_append(line);
             return;
         }
         if (strcmp(name, "mv") == 0) {
@@ -520,7 +505,7 @@ static void run_command(const char *input)
                      : rc == kFilesNotFound ? "no such item in the share"
                      : rc == kFilesExists ? "something is already there"
                      : "the File Manager refused");
-            append_line(line);
+            console_model_append(line);
             return;
         }
         if (landed[0] != '\0') {
@@ -529,7 +514,7 @@ static void run_command(const char *input)
         } else {
             snprintf(line, sizeof line, "%s: done", name);
         }
-        append_line(line);
+        console_model_append(line);
         return;
     }
     if (strcmp(name, "ls") == 0) {
@@ -549,22 +534,22 @@ static void run_command(const char *input)
                      : fn == kFilesNotFound ? "no such folder in the share"
                      : fn == kFilesNotAFolder ? "that is a file, not a folder"
                      : "the File Manager refused");
-            append_line(line);
+            console_model_append(line);
             return;
         }
         now_files_root_name(root, sizeof root);
         snprintf(line, sizeof line, "  %.80s%.40s", root, target);
-        append_line(line);
+        console_model_append(line);
         for (fi = 0; fi < fn; ++fi) {
             now_files_describe(&entries[fi], value, sizeof value);
             snprintf(line, sizeof line, "  %-32.31s%.60s",
                      entries[fi].name, value);
-            append_line(line);
+            console_model_append(line);
         }
         if (fn == 0) {
-            append_line("  (empty)");
+            console_model_append("  (empty)");
         } else if (more) {
-            append_line("  ... more entries follow");
+            console_model_append("  ... more entries follow");
         }
         return;
     }
@@ -578,9 +563,9 @@ static void run_command(const char *input)
         if (count > 40) { count = 40; }
         got = now_log_tail((int)count, lines, sizeof lines);
         snprintf(line, sizeof line, "  %s", now_log_path());
-        append_line(line);
+        console_model_append(line);
         if (got == 0) {
-            append_line("  (nothing logged yet)");
+            console_model_append("  (nothing logged yet)");
             return;
         }
         for (p = lines; *p != '\0'; ) {
@@ -592,7 +577,7 @@ static void run_command(const char *input)
             }
             memcpy(line, p, (size_t)len);
             line[len] = '\0';
-            append_line(line);
+            console_model_append(line);
             p = nl != NULL ? nl + 1 : p + strlen(p);
         }
         return;
@@ -605,227 +590,60 @@ static void run_command(const char *input)
         /* A full HFS path, because sending is not browsing: this need
            not be anywhere near the share. */
         if (strchr(target, ':') == NULL) {
-            append_line("put: needs a full path (\"Macintosh HD:Notes\")");
+            console_model_append("put: needs a full path (\"Macintosh HD:Notes\")");
             return;
         }
         CopyCStringToPascal(target, hfs);
         if (FSMakeFSSpec(0, 0, hfs, &spec) != noErr) {
-            append_line("put: no such file");
+            console_model_append("put: no such file");
             return;
         }
         if (now_wire_send_file(&spec, why, sizeof why) < 0) {
             snprintf(line, sizeof line, "put: %.80s", why);
-            append_line(line);
+            console_model_append(line);
             return;
         }
-        append_line("  offered; the File Sharing panel reports the rest");
+        console_model_append("  offered; the File Sharing panel reports the rest");
         return;
     }
     now_command_run(name, NULL, 0, result, sizeof result);
     if (now_json_find_string(result, "message", message, sizeof message)) {
         snprintf(line, sizeof line, "%s", message);
-        append_line(line);
+        console_model_append(line);
     } else {
-        append_line("command failed");
+        console_model_append("command failed");
     }
 }
 
-/* --- window ------------------------------------------------------------- */
 
-void console_win_open(void)
+void console_model_clear(void)
 {
-    Rect bounds;
-    Str255 title;
-    Str255 monaco;
+    g_count = 0;
+}
 
-    if (g_window != NULL) {
-        SelectWindow(g_window);
+int console_model_count(void)
+{
+    return g_count;
+}
+
+const char *console_model_line(int index)
+{
+    if (index < 0 || index >= g_count) {
+        return "";
+    }
+    return g_lines[index];
+}
+
+void console_model_banner(void)
+{
+    char banner[96];
+
+    if (g_count != 0) {
         return;
     }
-    SetRect(&bounds, 40, 60, 40 + kWinWidth, 60 + kWinHeight);
-    CreateNewWindow(kDocumentWindowClass,
-                    kWindowStandardDocumentAttributes, &bounds, &g_window);
-    if (g_window == NULL) {
-        return;
-    }
-    CopyCStringToPascal("Console", title);
-    SetWTitle(g_window, title);
-    if (g_font == 0) {
-        CopyCStringToPascal("Monaco", monaco);
-        GetFNum(monaco, &g_font);
-    }
-    if (g_count == 0) {
-        {
-            char banner[96];
-
-            snprintf(banner, sizeof banner,
-                     "NOW console - runs commands on this Mac.  [%s]",
-                     now_build_stamp());
-            append_line(banner);
-        }
-        append_line("Type \"help\" for the list.");
-    }
-    g_input_len = 0;
-    g_input[0] = '\0';
-    ShowWindow(g_window);
-    SelectWindow(g_window);
-}
-
-void console_win_close(void)
-{
-    if (g_window != NULL) {
-        DisposeWindow(g_window);
-        g_window = NULL;
-    }
-}
-
-Boolean console_win_is(WindowRef window)
-{
-    return g_window != NULL && window == g_window;
-}
-
-WindowRef console_win_ref(void)
-{
-    return g_window;
-}
-
-/* The bottom strip that holds the input line. Redrawing only this on each
-   keystroke avoids erasing (and flickering) the whole scrollback. */
-static void input_rect(const Rect *bounds, Rect *r)
-{
-    r->left = bounds->left;
-    r->right = bounds->right;
-    r->bottom = bounds->bottom;
-    r->top = (short)(bounds->bottom - kLineHeight - kMargin);
-}
-
-static void draw_input(void)
-{
-    Rect bounds, ir;
-    Str255 text;
-    char prompt[kMaxCols + 2];
-
-    if (g_window == NULL) {
-        return;
-    }
-    SetPortWindowPort(g_window);
-    GetWindowPortBounds(g_window, &bounds);
-    input_rect(&bounds, &ir);
-    EraseRect(&ir);
-    TextFont(g_font);
-    TextSize(9);
-    snprintf(prompt, sizeof prompt, "> %.120s%s", g_input,
-             g_active ? "_" : "");
-    MoveTo((short)(bounds.left + kMargin), (short)(bounds.bottom - kMargin));
-    CopyCStringToPascal(prompt, text);
-    DrawString(text);
-}
-
-void console_win_draw(void)
-{
-    Rect bounds;
-    short content_h, visible, first, i, y;
-    Str255 text;
-
-    if (g_window == NULL) {
-        return;
-    }
-    SetPortWindowPort(g_window);
-    GetWindowPortBounds(g_window, &bounds);
-    EraseRect(&bounds);
-    TextFont(g_font);
-    TextSize(9);
-
-    content_h = (short)(bounds.bottom - bounds.top);
-    visible = (short)((content_h - 2 * kLineHeight) / kLineHeight);
-    if (visible < 1) {
-        visible = 1;
-    }
-    first = g_count > visible ? (short)(g_count - visible) : 0;
-    y = (short)(bounds.top + kMargin + kLineHeight);
-    for (i = first; i < g_count; ++i) {
-        MoveTo(bounds.left + kMargin, y);
-        CopyCStringToPascal(g_lines[i], text);
-        DrawString(text);
-        y += kLineHeight;
-    }
-
-    /* Input line pinned to the bottom (via draw_input's shared layout). */
-    draw_input();
-}
-
-void console_win_activate(Boolean becoming_active)
-{
-    if (g_window == NULL || becoming_active == g_active) {
-        return;
-    }
-    g_active = becoming_active;
-    /* Only the input strip changes, so only the input strip repaints —
-       redrawing the whole scrollback to move one underscore is the kind
-       of idle-path cost this window has already been taught to avoid. */
-    draw_input();
-}
-
-void console_win_invalidate(void)
-{
-    Rect bounds;
-
-    if (g_window == NULL) {
-        return;
-    }
-    SetPortWindowPort(g_window);
-    GetWindowPortBounds(g_window, &bounds);
-    InvalWindowRect(g_window, &bounds);
-}
-
-void console_win_key(char ch)
-{
-    Rect bounds;
-
-    if (g_window == NULL) {
-        return;
-    }
-    if (ch == '\r' || ch == '\n') {
-        long start = 0, end;
-
-        while (g_input[start] == ' ') {
-            ++start;
-        }
-        end = (long)strlen(g_input);
-        while (end > start && g_input[end - 1] == ' ') {
-            --end;
-        }
-        g_input[end] = '\0';
-        history_add(g_input + start);
-        run_command(g_input + start);
-        g_input_len = 0;
-        g_input[0] = '\0';
-        /* The scrollback changed: this is the one case that needs a full
-           redraw, so invalidate and let the update event repaint. */
-        SetPortWindowPort(g_window);
-        GetWindowPortBounds(g_window, &bounds);
-        InvalWindowRect(g_window, &bounds);
-        return;
-    }
-    if (ch == 0x1E) {                  /* up arrow: older */
-        history_recall(-1);
-    } else if (ch == 0x1F) {           /* down arrow: newer */
-        history_recall(1);
-    } else if (ch == '\b' || ch == 0x7F) {
-        if (g_input_len > 0) {
-            g_input[--g_input_len] = '\0';
-        } else {
-            return;
-        }
-    } else if (ch >= 0x20 && ch < 0x7F) {
-        if (g_input_len >= kMaxCols - 2) {
-            return;
-        }
-        g_input[g_input_len++] = ch;
-        g_input[g_input_len] = '\0';
-    } else {
-        return;
-    }
-    /* Only the input line changed: repaint just that strip, no flicker. */
-    draw_input();
+    snprintf(banner, sizeof banner,
+             "NOW console - runs commands on this Mac.  [%s]",
+             now_build_stamp());
+    console_model_append(banner);
+    console_model_append("Type \"help\" for the list.");
 }

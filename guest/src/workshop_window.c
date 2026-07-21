@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "connection_module.h"
+#include "console_module.h"
 #include "prefs.h"
 #include "workshop_layout.h"
 #include "workshop_sidebar.h"
@@ -142,6 +143,7 @@ Boolean workshop_open(void)
         SelectWindow(g_window);
         return true;
     }
+    g_ops[kWorkshopConsole] = console_module_ops();
     g_ops[kWorkshopConnection] = connection_module_ops();
     now_prefs_load(&prefs);
     if (restorable_bounds(&prefs.workshop_rect)) {

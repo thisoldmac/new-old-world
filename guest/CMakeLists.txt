@@ -5,7 +5,8 @@ add_application(now-guest
     CREATOR "NOWo"
     src/main.c
     src/commands.c
-    src/console_win.c
+    src/console_model.c
+    src/console_module.c
     src/capture.c
     src/fileshare.c
     src/pump.c
