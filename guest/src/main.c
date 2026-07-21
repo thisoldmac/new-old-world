@@ -389,12 +389,22 @@ int main(void)
     conn_set_listing(host_browser_listing);
     conn_set_get_note(host_browser_note);
 
-    /* On CFM PowerPC a UPP is the tvector itself; the cast avoids
-       NewAEEventHandlerUPP, a weakly-linked import that would resolve to
-       NULL (and crash) on CarbonLib versions that lack it. */
-    quit_handler = (AEEventHandlerUPP)handle_quit_apple_event;
-    AEInstallEventHandler(kCoreEventClass, kAEQuitApplication,
-                          quit_handler, 0, false);
+    /* A real UPP, not a cast. The old comment here claimed "on CFM
+       PowerPC a UPP is the tvector itself" - that is true on Mach-O and
+       false on this runtime, where MixedMode.h makes a UPP a routine
+       descriptor. The same belief cost a Type 3 in the Data Browser
+       spike; this one survived only because the Apple Event Manager
+       happens to tolerate a bare pointer.
+
+       If the constructor is unavailable the handler is simply not
+       installed: an installer that wants us to quit will hang waiting,
+       which is a known and survivable outcome, where a bad pointer is
+       a crash in someone else's transfer. */
+    quit_handler = NewAEEventHandlerUPP(handle_quit_apple_event);
+    if (quit_handler != NULL) {
+        AEInstallEventHandler(kCoreEventClass, kAEQuitApplication,
+                              quit_handler, 0, false);
+    }
 
     while (g_running) {
         conn_service();

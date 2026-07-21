@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "pump.h"
 #include "wire.h"
 
 enum {
@@ -123,9 +124,13 @@ Boolean now_confirm(const char *heading, const char *detail,
 
                 SetPortWindowPort(g_window);
                 GlobalToLocal(&local);
+                /* Tracking is a nested loop: with no action proc the
+                   wire stops for as long as a finger rests on the
+                   button. Every other tracked control here pumps. */
                 if (FindControl(local, g_window, &control) != 0
                     && control != NULL
-                    && TrackControl(control, local, NULL) != 0) {
+                    && TrackControl(control, local,
+                                    now_pump_action()) != 0) {
                     answer = (control == g_action);
                     done = true;
                 }
