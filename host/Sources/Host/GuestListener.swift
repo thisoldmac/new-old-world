@@ -71,6 +71,18 @@ final class GuestListener: ObservableObject {
         /// 1448 B per 3 ms tops out near 480 KB/s — twice what this wire
         /// manages in its healthy direction, so the meter never binds.
         static let classicMac = Pacing(bytes: 1448, gap: 0.003)
+
+        /// How long each metered write took the socket to ACCEPT, against
+        /// how far into the file it was. A transfer that runs at 340 KB/s
+        /// and then 4 KB/s is either a host that stopped offering bytes
+        /// or a socket that stopped taking them, and only this separates
+        /// them: at 4 KB/s with 1448-byte writes each accept must be
+        /// taking ~400 ms, which is backpressure the host did not choose.
+        /// Off unless NOW_SEND_TRACE is set — it must cost nothing in
+        /// normal operation.
+        nonisolated(unsafe) static var trace: [(atByte: Int, ms: Double)] = []
+        static let traceEnabled =
+            ProcessInfo.processInfo.environment["NOW_SEND_TRACE"] != nil
         /// Hand each frame over whole, as before.
         static let none = Pacing(bytes: 0, gap: 0)
     }
@@ -1265,8 +1277,16 @@ final class Session {
                            completion: @escaping (NWError?) -> Void) {
         let end = min(offset + pacing.bytes, frame.endIndex)
         let last = end >= frame.endIndex
+        let started = GuestListener.Pacing.traceEnabled ? Date() : nil
         connection.send(content: frame[offset..<end],
                         completion: .contentProcessed { [weak self] error in
+            if let started {
+                let ms = Date().timeIntervalSince(started) * 1000
+                Task { @MainActor [weak self] in
+                    GuestListener.Pacing.trace.append(
+                        (atByte: self?.outbound?.sent ?? 0, ms: ms))
+                }
+            }
             Task { @MainActor in
                 guard let self, !self.closed else { return }
                 if let error { completion(error); return }

@@ -238,6 +238,51 @@ final class MetalLargeTransferTests: XCTestCase {
         print("=== watch done ===\n")
     }
 
+    /// Times the host's own socket writes across the collapse boundary.
+    ///
+    ///   NOW_METAL=1 NOW_SEND_TRACE=1 swift test --filter testWhereTheHost
+    ///
+    /// The transfer runs at ~340 KB/s for roughly a megabyte and then
+    /// ~4 KB/s. Two possibilities remain once the guest and the link are
+    /// exonerated: the host stopped offering bytes, or the socket stopped
+    /// accepting them. At 4 KB/s with 1448-byte writes each write must be
+    /// taking ~400 ms to be accepted. If the trace shows that, it is TCP
+    /// backpressure — the host is blocked, not idle — and the search
+    /// moves to why the far side's window closes. If instead the writes
+    /// stay fast and simply become rare, the host is pausing and the
+    /// fault is in our own send scheduling.
+    func testWhereTheHostsWritesGoWhenItCollapses() async throws {
+        _ = try await waitForGuest()
+        try XCTSkipUnless(GuestListener.Pacing.traceEnabled,
+                          "set NOW_SEND_TRACE=1")
+        GuestListener.Pacing.trace = []
+
+        var done = false
+        listener.putFile(name: "zz chip trace.bin", into: "",
+                         container: "data", bytes: pattern(2 * 1024 * 1024),
+                         overwrite: true) { _ in done = true }
+        let deadline = Date().addingTimeInterval(600)
+        while !done, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+        }
+        if !done { listener.cancelFile() }
+
+        let trace = GuestListener.Pacing.trace
+        print("\n=== \(trace.count) metered writes ===")
+        print("  bytes-into-file   writes   median ms   p90 ms   max ms")
+        let bucket = 128 * 1024
+        var buckets: [Int: [Double]] = [:]
+        for s in trace { buckets[s.atByte / bucket, default: []].append(s.ms) }
+        for key in buckets.keys.sorted() {
+            let v = buckets[key]!.sorted()
+            print(String(format: "  %10d KB  %7d  %9.1f  %7.1f  %7.1f",
+                         key * bucket / 1024, v.count,
+                         v[v.count / 2], v[Int(Double(v.count) * 0.9)],
+                         v[v.count - 1]))
+        }
+        print("=== trace done ===\n")
+    }
+
     /// The ladder. Each rung reports its profile, then whether the guest
     /// is still answering, then what is left on its disk.
     func testTheSizeLadderToFindWhereItBreaks() async throws {

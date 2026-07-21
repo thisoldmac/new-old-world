@@ -202,6 +202,83 @@ See `contract/asyncapi.yaml` for the normative form. The shape:
   most exactly here: a resumed file is stitched from two sessions and
   nothing else checks the seam.
 
+## The host's own writes name the mechanism
+
+`NOW_SEND_TRACE=1` times how long each metered write takes the socket to
+**accept**, bucketed by how far into the file it was. One 2 MB put:
+
+| Bytes into file | Writes | Median | p90 | Max |
+|---|---|---|---|---|
+| 0 – 1536 KB | 92 each | **0.1 ms** | 0.1 | ≤0.6 |
+| 1664 KB | 92 | 0.1 ms | 16.8 | **664.5** |
+| 1792 KB | 92 | **386.8 ms** | 779.8 | 797.3 |
+| 1920 KB | 92 | 386.6 ms | 774.2 | 790.5 |
+| 2048 KB | 23 | 387.2 ms | 772.3 | 791.9 |
+
+1448 bytes per 387 ms is **3.7 KB/s** — exactly the collapsed rate. The
+host is not idle, it is **blocked**: the socket stops accepting. The knee
+is visible in one bucket.
+
+So the mechanism is the one this document originally proposed and then
+wrongly discarded. The host offers 482 KB/s (1448 B / 3 ms) into a wire
+that drains near 300; the surplus accumulates in the kernel send buffer
+until it is full at ~1.66 MB; from that moment the buffer is never empty,
+so TCP transmits from the backlog back-to-back on every ACK, the pacing
+gap exists in the code but **not on the wire**, and the card's
+burst-drop behaviour takes it to the unpaced rate. It does not recover
+because the spiral keeps the buffer full.
+
+It was discarded because a 192 KB window did not fix it. That was a bug
+in the window, not a refutation of the mechanism — the trace shows the
+sender reaching 1.66 MB unthrottled, so the window never bound.
+
+### Bounding in-flight bytes works, and how tight it can be is capped
+
+Same 2 MB put, same machine, varying only `NOW_WINDOW`:
+
+| Window | Result |
+|---|---|
+| 192 KB | ~300 s; backpressure from 1.66 MB |
+| **64 KB** | **61.8 s**; send trace flat at 0.1 ms — backpressure never occurs |
+| 12 KB (TBT's cap) | **deadlock** at 32768 bytes |
+
+64 KB holds 335 KB/s for the first 1.44 MB and never fills the buffer,
+which is a 5x improvement and confirms the mechanism. It still decays
+later, so a bound alone is necessary and not sufficient.
+
+**The deadlock is the useful result.** The host parks once
+`sent - acked` reaches the window; the guest emits `file.progress` only
+every 32 KB *past its previous report* (`kPutProgressStep`, wire.c). With
+a 12 KB window the host parks after one 32 KB frame and waits for a
+report the guest will only send after receiving 34208 bytes it is never
+going to be sent. **A window smaller than the progress step cannot
+work.** Acknowledgement granularity sets a hard floor on flow control.
+
+That is exactly why TBT can do what NOW cannot: its host caps
+un-acknowledged application bytes at **12 KiB** and blocks for a reply
+between chunks (`mcp-classic/timbottu_mcp_classic/harness.py`), but it
+acknowledges *every chunk* in a request/response protocol rather than
+every 32 KB. Its measured result on this same PowerBook is ~300 KiB/s
+sustained across a full MiB, host→guest, **with no host-side pacing at
+all**.
+
+### Two corrections to received wisdom, from the TBT corpus
+
+- **The 1448 B rule is a GUEST-transmit fix, applied here to the wrong
+  direction.** In TBT, 1448 bytes with a 1 ms gate bounds a single
+  `OTSnd` *within one response*, guest→host. Its host writes whole
+  ~5.6 KB lines unpaced. NOW inserts a gap *between* application writes,
+  which is not the same intervention.
+- **`XTI_SNDBUF` and `TCP_NODELAY` on the guest endpoint are measured
+  no-ops on this exact hardware** (`data/findings/pb-farallon-send-cliff.md`).
+  Nobody should spend time there.
+
+Also worth recording: the entire PB1400c evidence base in the TimBotTu
+corpus tops out at **1 MiB** per transfer. Every confirmation run ends
+at 2.5–3.6 s. NOW's transfers are still healthy at the moment every
+prior measurement stops — this collapse sits precisely in the corpus's
+blind spot, which is why nothing there describes it.
+
 ## Where this got to, and what is still open
 
 **A 2 MB put now completes.** It failed or wedged every time before, and
