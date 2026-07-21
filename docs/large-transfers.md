@@ -107,12 +107,23 @@ the explanation. (Caveat kept honestly: ping at 3 packets/s does not
 test the burst spacing the pacing finding is actually about. The FTP
 number is the load-bearing one.)
 
-### It is not the receiver-clocked window
+### A window of 192 KB changes nothing — and that reading was wrong
 
 Same transfer with `NOW_WINDOW=0` (window entirely off): **329 s**,
-against 297 s with a 192 KB window. The window neither causes nor cures
-the collapse, and `outboundWindowBytes` is now overridable precisely so
-that claim stays falsifiable at the wire.
+against 297 s with a 192 KB window.
+
+This was read at the time as "bounding the sender is not the answer",
+and the search moved on. **That inference was wrong**, and it is left
+here rather than deleted because it is the most expensive mistake in
+this document. A window that changes nothing is equally consistent with
+"bounding the sender does not help" and with "this window never bound",
+and nothing had been measured that could tell those apart. The send
+trace below shows it was the second: the sender reached 1.66 MB
+unthrottled with the window supposedly at 192 KB. At 64 KB the same
+mechanism cuts the transfer from ~300 s to 62 s.
+
+The rule worth keeping: a negative result from a control you have not
+verified is *engaged* is not a negative result.
 
 ### The shape, restated
 
@@ -147,16 +158,21 @@ to flow control rather than to progress reporting.
 ## The fix: clock the sender on the receiver
 
 `file.progress` already carries the guest's own count of bytes taken off
-the wire. The sender now treats it as an acknowledgement and runs no
-more than `outboundWindowBytes` (192 KB, six progress steps) ahead of
-it, parking at a frame boundary when it would exceed that and resuming
-when a report lands. `received` is cumulative, so a dropped progress
-report — which the contract permits — costs nothing: the next one
-reopens the window whatever was skipped.
+the wire. The sender treats it as an acknowledgement and runs no more
+than `outboundWindowBytes` ahead of it, parking at a frame boundary when
+it would exceed that and resuming when a report lands. `received` is
+cumulative, so a dropped progress report — which the contract permits —
+costs nothing: the next one reopens the window whatever was skipped.
 
 The window engages only after the guest has reported at least once, so a
 guest that never sends `file.progress` keeps exactly its old behaviour
 rather than deadlocking against a peer that cannot clock it.
+
+**The window must be at least twice the guest's progress step**, which
+is why the shipped default is not as tight as the mechanism wants. See
+the deadlock at 12 KB below: acknowledgement granularity is a hard floor
+under any flow control built on top of it. Loosening that floor is the
+proposed next change, not a tuning exercise.
 
 ## The second bug, found while reading: control spliced into bulk
 
@@ -290,20 +306,21 @@ survivability, which was the point — but it is inference from a
 before/after, not a proven causal chain, and it should be labelled that
 way until someone reproduces the desync deliberately.
 
-**The collapse itself is still unexplained.** ~340 KB/s to about a
-megabyte, then ~4 KB/s, reproducible, with a healthy link, an idle
-guest, and no dependence on the sender window. The rate it falls to is
-the unpaced rate from the pacing finding, which says the metering stops
-being effective — but *why* it stops, after roughly a megabyte, on a
-link that concurrently carries 89 KB/s for FTP, is not established.
+**The collapse is explained** (see "The host's own writes name the
+mechanism"): the sender fills the kernel send buffer, the pacing gap
+stops reaching the wire, and the card's burst-drop takes it to the
+unpaced rate. Bounding in-flight bytes to 64 KB cuts a 2 MB put from
+~300 s to 61.8 s and keeps the socket accepting throughout.
 
-The next measurement to make, and the one this stopped short of: **time
-the host's own `connection.send` completions.** At 3.5 KB/s with
-1448-byte writes each completion must be taking ~400 ms, which is TCP
-backpressure and would say the socket cannot hand off — the one link in
-the chain still unmeasured. A histogram of completion latency across the
-collapse boundary would show whether the host is blocked or simply not
-trying.
+**What is not yet established** is the residual decay *inside* the
+bounded case: at a 64 KB window the transfer still holds 335 KB/s only
+for the first ~1.44 MB before falling away, having never filled the
+buffer. So the buffer is one mechanism and probably not the only one.
+The RTO-inflation shape recorded in the TimBotTu corpus — repeated
+losses raising the retransmit timer over the life of one connection, so
+each subsequent recovery costs more — is the leading candidate and is
+untested here. Confirming it wants a packet capture, which needs root
+and did not happen.
 
 **Host→guest control is starved during bulk, and that may be self
 inflicted.** `putstat` went unanswered for 25 s repeatedly while
