@@ -71,6 +71,13 @@ static void offer_cleanup(void);
    every path that starts one has to ask the same question — four
    hand-written copies of this list had already drifted apart. */
 static Boolean wire_busy(void);
+
+/* A file send outlives the transfer that carries it — it ends on the
+   host's receipt — so the transfer machine has to be able to end one
+   that dies on the wire. */
+static void send_cleanup(void);
+static void note_file(const char *line);
+static Boolean send_owns_transfer(long id);
 static void take_bulk_in(const unsigned char *bytes, long len);
 static void put_drop(void);
 static void stream_drop(void);
@@ -697,6 +704,20 @@ static void xfer_finish(Boolean ok)
             }
         }
     }
+    /* A send that dies on the wire never gets a receipt, so this is the
+       only place that can end it. Success stays quiet: the host has not
+       written the file yet, and saying "sent" before it lands is the
+       lie this whole path exists to avoid. */
+    if (!ok && g_xfer.kind == kXferFile && send_owns_transfer(g_xfer.id)) {
+        char peer[40];
+        char failed[96];
+
+        send_cleanup();
+        conn_peer_label(peer, sizeof peer);
+        snprintf(failed, sizeof failed, "Could not finish sending to %s",
+                 peer);
+        note_file(failed);
+    }
     xfer_cleanup();
 }
 
@@ -794,6 +815,7 @@ static void xfer_abort(void)
 
 /* Panel hook: one status line about push transfers ("Sent to host"). */
 static ConnShotNote g_shot_note;
+static ConnFileNote g_file_note;
 
 void conn_set_shot_note(ConnShotNote fn)
 {
@@ -804,6 +826,19 @@ static void note_shot(const char *line)
 {
     if (g_shot_note != NULL) {
         g_shot_note(line);
+    }
+}
+
+void conn_set_file_note(ConnFileNote fn)
+{
+    g_file_note = fn;
+}
+
+/* A file's progress belongs in the window the human sent it from. */
+static void note_file(const char *line)
+{
+    if (g_file_note != NULL) {
+        g_file_note(line);
     }
 }
 
@@ -1356,18 +1391,47 @@ static void serve_file_mkdir(const char *request)
 enum { kSendTimeoutTicks = 60 * 20 };
 
 static struct {
-    Boolean active;                   /* offered; waiting for an answer */
+    Boolean active;                   /* offered, or sending */
+    Boolean sending;                  /* the host said yes; bytes moving */
     long id;
     FileStage stage;
+    char name[32];                    /* kept past the stage handoff */
+    long total;
     long chunk;
     short pace_ms;
     unsigned long deadline;
 } g_send;
 
+static Boolean send_owns_transfer(long id)
+{
+    return g_send.active && g_send.sending && g_send.id == id;
+}
+
+SendPhase now_wire_send_state(long *sent, long *total,
+                              char *name, long name_cap)
+{
+    if (!g_send.active) {
+        return kSendNothing;
+    }
+    if (name != NULL && name_cap > 0) {
+        strncpy(name, g_send.name, (size_t)name_cap - 1);
+        name[name_cap - 1] = '\0';
+    }
+    if (total != NULL) {
+        *total = g_send.total;
+    }
+    if (sent != NULL) {
+        *sent = (g_send.sending && g_xfer.active && g_xfer.id == g_send.id)
+            ? g_xfer.offset : 0;
+    }
+    return g_send.sending ? kSendSending : kSendOffering;
+}
+
 static void send_cleanup(void)
 {
     now_files_stage_dispose(&g_send.stage);
     g_send.active = false;
+    g_send.sending = false;
 }
 
 int now_wire_send_file(const FSSpec *spec, char *err, long cap)
@@ -1408,6 +1472,10 @@ int now_wire_send_file(const FSSpec *spec, char *err, long cap)
     }
     g_send.pace_ms = prefs.pace_ms;
     g_send.stage = stage;
+    strncpy(g_send.name, stage.name, sizeof g_send.name - 1);
+    g_send.name[sizeof g_send.name - 1] = '\0';
+    g_send.total = stage.total_bytes;
+    g_send.sending = false;
     ++g.offer_seq;
     g_send.id = g.offer_seq;
     {
@@ -1438,9 +1506,9 @@ int now_wire_send_file(const FSSpec *spec, char *err, long cap)
     g_send.active = true;
     g_send.deadline = TickCount() + kSendTimeoutTicks;
     conn_peer_label(peer, sizeof peer);
-    snprintf(line, sizeof line, "Offering %.31s to %.20s...",
-             stage.name, peer);
-    note_shot(line);
+    snprintf(line, sizeof line, "Asking %.20s to accept %.31s...",
+             peer, stage.name);
+    note_file(line);
     return 0;
 }
 
@@ -1454,7 +1522,6 @@ static void send_accepted(const char *reply)
     if (!g_send.active || now_json_find_int(reply, "id", -1) != g_send.id) {
         return;
     }
-    g_send.active = false;
     xfer = next_xfer();
     snprintf(json, sizeof json,
              "{\"type\":\"file.begin\",\"id\":%ld,\"transfer\":%u,"
@@ -1468,11 +1535,23 @@ static void send_accepted(const char *reply)
                            g_send.stage.total_bytes, g_send.chunk,
                            g_send.pace_ms, kXferFile)) {
         send_cleanup();
-        note_shot("Could not start the transfer");
+        note_file("Could not start the transfer");
         return;
     }
     g_send.stage.blob = NULL;         /* the transfer owns it now */
-    send_cleanup();
+    now_files_stage_dispose(&g_send.stage);
+    /* active stays true: the send is not over until the host's receipt,
+       and until then the panel has something to report. */
+    g_send.sending = true;
+    {
+        char line[96];
+        char peer[40];
+
+        conn_peer_label(peer, sizeof peer);
+        snprintf(line, sizeof line, "Sending %.31s to %.20s...",
+                 g_send.name, peer);
+        note_file(line);
+    }
 }
 
 static void send_refused(const char *reply)
@@ -1491,7 +1570,7 @@ static void send_refused(const char *reply)
     } else {
         snprintf(line, sizeof line, "%s declined the file", peer);
     }
-    note_shot(line);
+    note_file(line);
 }
 
 /* The host's receipt. A send is not finished until the file exists at
@@ -1502,6 +1581,10 @@ static void send_done(const char *reply)
     char line[112];
     char peer[40];
 
+    if (!g_send.active) {
+        return;                       /* not ours */
+    }
+    send_cleanup();
     conn_peer_label(peer, sizeof peer);
     if (now_json_find_int(reply, "ok", 0)) {
         snprintf(line, sizeof line, "Sent to %s", peer);
@@ -1511,19 +1594,22 @@ static void send_done(const char *reply)
     } else {
         snprintf(line, sizeof line, "%s could not save it", peer);
     }
-    note_shot(line);
+    note_file(line);
 }
 
 static void service_send(void)
 {
-    if (g_send.active && TickCount() > g_send.deadline) {
+    /* Only the ANSWER is on a clock. Once bytes are moving the transfer
+       machine owns the deadline, and a slow file is not a dead host. */
+    if (g_send.active && !g_send.sending
+        && TickCount() > g_send.deadline) {
         char peer[40];
         char line[96];
 
         send_cleanup();
         conn_peer_label(peer, sizeof peer);
         snprintf(line, sizeof line, "%s did not answer", peer);
-        note_shot(line);
+        note_file(line);
     }
 }
 
@@ -1795,9 +1881,29 @@ static void serve_file_list(const char *request)
         pos += snprintf(json + pos, sizeof json - (size_t)pos,
                         ",\"modified\":%lu}", entries[i].modified);
     }
-    snprintf(json + pos, sizeof json - (size_t)pos,
-             "],\"more\":%s,\"cursor\":%d}",
-             more ? "true" : "false", (int)next);
+    pos += snprintf(json + pos, sizeof json - (size_t)pos,
+                    "],\"more\":%s,\"cursor\":%d",
+                    more ? "true" : "false", (int)next);
+    /* Only the root listing carries it: it names the place, and a
+       subfolder listing already knows where it is. */
+    if (path[0] == '\0') {
+        char root[160];
+        char esc_root[336];
+        char field[352];
+        long len;
+
+        now_files_root_name(root, sizeof root);
+        now_json_escape(root, esc_root, sizeof esc_root);
+        len = snprintf(field, sizeof field, ",\"root\":\"%s\"", esc_root);
+        /* A page of long names can leave no room. Dropping the label is
+           harmless; half a label would truncate mid-string and cost the
+           asker the whole listing. */
+        if (len > 0 && pos + len + 2 < (long)sizeof json) {
+            memcpy(json + pos, field, (size_t)len);
+            pos += len;
+        }
+    }
+    snprintf(json + pos, sizeof json - (size_t)pos, "}");
     send_control(json);
 }
 

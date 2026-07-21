@@ -119,7 +119,7 @@ struct FilesModuleView: View {
             .disabled(model.breadcrumb.isEmpty || !model.canBrowse)
             .help("Enclosing folder")
 
-            Button("Share") { model.jump(toDepth: -1) }
+            Button(model.shareRootName) { model.jump(toDepth: -1) }
                 .buttonStyle(.plain)
                 .foregroundStyle(model.breadcrumb.isEmpty
                                  ? .primary : Color.accentColor)

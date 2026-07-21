@@ -148,6 +148,21 @@ final class FilesModuleModel: ObservableObject {
     /// initiative, so it lives beside — not inside — the folder we
     /// download into: one is what they may take, the other is where
     /// what we take lands.
+    /// What the guest says it is sharing, in its own spelling
+    /// ("Macintosh HD:Lab:"). The breadcrumb names that place rather
+    /// than calling it "Share", which told you nothing about which
+    /// folder you were looking into.
+    @Published private(set) var shareRoot: String?
+
+    /// The last named component of the share root, for the crumb.
+    var shareRootName: String {
+        guard let root = shareRoot else { return "Share" }
+        let parts = root.split(separator: ":").filter { !$0.isEmpty }
+        // A whole volume is "Macintosh HD:" — one part, and the right
+        // name to show. A folder is the last part.
+        return parts.last.map(String.init) ?? "Share"
+    }
+
     @Published var shareDirectory: URL {
         didSet {
             listener.share.root = shareDirectory
@@ -280,6 +295,9 @@ final class FilesModuleModel: ObservableObject {
                     FileRow(entry: $0, path: prefix + $0.name)
                 }
                 self.pageCursor = listing.more ? listing.cursor : nil
+                if let root = listing.root, !root.isEmpty {
+                    self.shareRoot = root
+                }
             case .failure(let failure):
                 self.lastError = failure.message
                 self.pageCursor = nil

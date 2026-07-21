@@ -14,8 +14,12 @@ final class HostAppState: ObservableObject {
         return model
     }()
     private let notifier = CaptureNotifier()
-    private(set) lazy var files =
-        FilesModuleModel(listener: listener, defaults: defaults)
+    private(set) lazy var files: FilesModuleModel = {
+        listener.announceReceivedFile = { [notifier] guest, url, bytes in
+            notifier.announce(fileFrom: guest, url: url, bytes: bytes)
+        }
+        return FilesModuleModel(listener: listener, defaults: defaults)
+    }()
 
     /// The menu-bar "Screenshot Guest" command. Reports through the system
     /// notifier and, because that path is silent under an ad-hoc signature,

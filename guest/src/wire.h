@@ -87,6 +87,23 @@ int now_wire_send_file(const FSSpec *spec, char *err, long cap);
 typedef void (*ConnShotNote)(const char *line);
 void conn_set_shot_note(ConnShotNote fn);
 
+/* The same, for files the guest sends. A separate hook because it is a
+   separate window: a file's progress reported into the Screenshots
+   panel is indistinguishable from no report at all. */
+typedef void (*ConnFileNote)(const char *line);
+void conn_set_file_note(ConnFileNote fn);
+
+/* Where a file the guest is sending has got to, so the panel can show a
+   moving bar rather than a line that sits still for a minute. Returns
+   false when nothing is being sent. */
+typedef enum {
+    kSendNothing = 0,
+    kSendOffering,                    /* waiting for the host to answer */
+    kSendSending                      /* bytes on the wire */
+} SendPhase;
+SendPhase now_wire_send_state(long *sent, long *total,
+                              char *name, long name_cap);
+
 /* Asks the host to open a live-stream bracket at the panel's depth. The
    bracket stays host-owned: the host answers stream.start (streaming
    begins) or declines; either lands via the shot-note hook. */

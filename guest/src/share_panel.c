@@ -19,17 +19,29 @@ static ControlRef g_choose_button;
 static ControlRef g_boot_check;
 static ControlRef g_send_button;
 static char g_note[128];
+/* What the last send did, so the line survives the transfer ending. */
+static Boolean g_send_was_active;
 
-/* The chooser is meaningless while the whole volume is shared, and a
-   button that does nothing is worse than one that is visibly off. */
+/* Controls that cannot do anything are shown as unable to, rather than
+   accepting a click and failing quietly. Re-synced every idle pass,
+   because the connection can drop while the window sits there. */
 static void sync_controls(void)
 {
     NowPrefs prefs;
 
+    if (g_window == NULL) {
+        return;
+    }
     now_prefs_load(&prefs);
     SetControlValue(g_boot_check, prefs.share_boot ? 1 : 0);
     HiliteControl(g_choose_button, prefs.share_boot ? 255 : 0);
+    HiliteControl(g_send_button,
+                  (conn_is_connected()
+                   && now_wire_send_state(NULL, NULL, NULL, 0) == kSendNothing)
+                      ? 0 : 255);
 }
+
+static void draw_send_progress(void);
 
 static void invalidate(void)
 {
@@ -41,6 +53,34 @@ static void invalidate(void)
     SetPortWindowPort(g_window);
     GetWindowPortBounds(g_window, &r);
     InvalWindowRect(g_window, &r);
+}
+
+/* The status line the send narrates into. */
+void share_panel_note(const char *line)
+{
+    if (g_window == NULL) {
+        return;
+    }
+    snprintf(g_note, sizeof g_note, "%.120s", line);
+    invalidate();
+}
+
+/* Called every event-loop pass: keeps the buttons honest about what
+   they can do, and repaints while a file is moving so the bar advances
+   instead of the window looking hung. */
+void share_panel_idle(void)
+{
+    Boolean sending;
+
+    if (g_window == NULL) {
+        return;
+    }
+    sync_controls();
+    sending = now_wire_send_state(NULL, NULL, NULL, 0) != kSendNothing;
+    if (sending || g_send_was_active) {
+        invalidate();
+    }
+    g_send_was_active = sending;
 }
 
 void share_panel_open(void)
@@ -155,11 +195,45 @@ void share_panel_draw(void)
     MoveTo(16, 100);
     if (g_note[0] != '\0') {
         CopyCStringToPascal(g_note, text);
+    } else if (!conn_is_connected()) {
+        CopyCStringToPascal("Not connected - nothing can reach this folder.",
+                            text);
     } else {
         CopyCStringToPascal("Nothing outside it is reachable over the wire.",
                             text);
     }
     DrawString(text);
+    draw_send_progress();
+}
+
+/* A bar for the bytes actually gone. Drawn only while a send is in
+   flight: a permanent empty bar reads as a broken one. */
+static void draw_send_progress(void)
+{
+    Rect bar;
+    long sent = 0, total = 0;
+    SendPhase phase = now_wire_send_state(&sent, &total, NULL, 0);
+
+    if (phase == kSendNothing) {
+        return;
+    }
+    SetRect(&bar, 16, 108, kPanelWidth - 16, 120);
+    FrameRect(&bar);
+    InsetRect(&bar, 1, 1);
+    if (phase == kSendSending && total > 0) {
+        long width = (bar.right - bar.left);
+        long filled = (long)((double)width * (double)sent / (double)total);
+
+        if (filled > 0) {
+            Rect done = bar;
+
+            if (filled > width) {
+                filled = width;
+            }
+            done.right = (short)(done.left + filled);
+            PaintRect(&done);
+        }
+    }
 }
 
 void share_panel_click(Point local)

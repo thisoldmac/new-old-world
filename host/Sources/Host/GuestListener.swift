@@ -204,7 +204,10 @@ final class GuestListener: ObservableObject {
                                       limit: 16)
             session?.send(.fileListing(FileListing(
                 id: request.id, path: request.path, entries: page.entries,
-                more: page.more, cursor: page.next)))
+                more: page.more, cursor: page.next,
+                /* Only the root listing names the place; a subfolder
+                   listing already knows where it is. */
+                root: request.path.isEmpty ? share.root.path : nil)))
         } catch {
             session?.refuseFile(id: request.id, error: error)
         }
@@ -246,9 +249,21 @@ final class GuestListener: ObservableObject {
         }
     }
 
+    /// Set by the app so an arriving file is visible from outside the
+    /// window. Kept as a hook so this file stays free of AppKit chrome
+    /// and the tests stay silent.
+    var announceReceivedFile: ((String, URL, Int) -> Void)?
+
     fileprivate func noteReceived(_ url: URL) {
         received.insert(url, at: 0)
         if received.count > 20 { received.removeLast() }
+        let bytes = (try? FileManager.default.attributesOfItem(
+            atPath: url.path)[.size] as? Int) ?? nil
+        let who: String
+        if case .connected(let name) = state { who = name } else {
+            who = "the other Mac"
+        }
+        announceReceivedFile?(who, url, bytes ?? 0)
     }
 
     // MARK: - Files

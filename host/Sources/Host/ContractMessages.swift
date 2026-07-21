@@ -135,6 +135,9 @@ struct FileListing: Codable, Equatable, Sendable {
     var entries: [FileEntry]
     var more: Bool
     var cursor: Int?
+    /// What the other machine is sharing, in its own spelling. Display
+    /// only; every path on the wire is relative to it.
+    var root: String?
 }
 
 struct FileGet: Codable, Equatable, Sendable {

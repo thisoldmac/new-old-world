@@ -28,7 +28,16 @@ struct FileBrowserTable: NSViewRepresentable {
         table.doubleAction = #selector(Coordinator.doubleClicked(_:))
         table.dataSource = context.coordinator
         table.delegate = context.coordinator
-        table.registerForDraggedTypes([.fileURL])
+        /* A drag out of here carries a file PROMISE, not a URL, so the
+           table has to accept promise types or a drag that started in
+           this very view is never offered to validateDrop — which is
+           why dragging a row onto a folder did nothing. Folders drag
+           under a private type, since they have no promise. */
+        table.registerForDraggedTypes(
+            [.fileURL, Coordinator.localRow]
+            + NSFilePromiseReceiver.readableDraggedTypes.map {
+                NSPasteboard.PasteboardType($0)
+            })
         let menu = NSMenu()
         menu.delegate = context.coordinator
         table.menu = menu
@@ -140,7 +149,24 @@ struct FileBrowserTable: NSViewRepresentable {
                     text.target = self
                     text.action = #selector(commitRename(_:))
                     text.identifier = NSUserInterfaceItemIdentifier(item.id)
-                    DispatchQueue.main.async { text.becomeFirstResponder() }
+                    /* becomeFirstResponder on a field that is not in a
+                       window yet quietly fails, which left the row
+                       editable but unfocused. Ask the window once the
+                       view is actually in one, then select the base
+                       name the way the Finder does — the extension is
+                       rarely what you are changing. */
+                    DispatchQueue.main.async { [weak text] in
+                        guard let text, let window = text.window else {
+                            return
+                        }
+                        window.makeFirstResponder(text)
+                        guard let editor = text.currentEditor() else { return }
+                        let name = text.stringValue
+                        let stem = (name as NSString).deletingPathExtension
+                        editor.selectedRange = stem.isEmpty || stem == name
+                            ? NSRange(location: 0, length: (name as NSString).length)
+                            : NSRange(location: 0, length: (stem as NSString).length)
+                    }
                 }
                 stack.addArrangedSubview(icon)
                 stack.addArrangedSubview(text)
@@ -303,11 +329,21 @@ struct FileBrowserTable: NSViewRepresentable {
 
         // MARK: - Dragging out (file promises)
 
+        /// Marks a drag as one of ours. A folder has nothing to promise
+        /// the Finder but can still be moved inside the share, so it
+        /// travels under this alone.
+        static let localRow =
+            NSPasteboard.PasteboardType("dev.newoldworld.now.row")
+
         func tableView(_ tableView: NSTableView,
                        pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
-            // Folders would need a recursive pull; files only for now.
-            guard let item = item(at: row), !item.isFolder else {
-                return nil
+            guard let item = item(at: row) else { return nil }
+            if item.isFolder {
+                // Draggable within the share; dragging one OUT would
+                // need a recursive pull, which the Finder will not get.
+                let entry = NSPasteboardItem()
+                entry.setString(item.id, forType: Coordinator.localRow)
+                return entry
             }
             let type = UTType(filenameExtension:
                 (item.name as NSString).pathExtension) ?? .data

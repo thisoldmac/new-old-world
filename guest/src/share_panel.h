@@ -15,4 +15,11 @@ WindowRef share_panel_ref(void);
 void share_panel_draw(void);
 void share_panel_click(Point local);
 
+/* The status line a file send narrates into (conn_set_file_note). */
+void share_panel_note(const char *line);
+
+/* Every event-loop pass: re-enables controls and keeps a send's bar
+   moving. Cheap when the window is closed. */
+void share_panel_idle(void);
+
 #endif /* NOW_SHARE_PANEL_H */

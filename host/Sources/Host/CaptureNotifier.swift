@@ -35,6 +35,25 @@ final class CaptureNotifier: NSObject, UNUserNotificationCenterDelegate {
                                          content: content, trigger: nil))
     }
 
+    /// Announce a file the guest sent us. Same reasoning as a pushed
+    /// screenshot: someone at the other machine pressed Send and this
+    /// one may not be frontmost, so the arrival has to be visible from
+    /// outside the app. Click opens the enclosing folder.
+    func announce(fileFrom guest: String, url: URL, bytes: Int) {
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        requestAuthorizationIfNeeded(center)
+
+        let content = UNMutableNotificationContent()
+        content.title = "File from \(guest)"
+        content.body = url.lastPathComponent + " · "
+            + ByteCountFormatter.string(fromByteCount: Int64(bytes),
+                                        countStyle: .file)
+        content.userInfo = [Self.filePathKey: url.path]
+        center.add(UNNotificationRequest(identifier: UUID().uuidString,
+                                         content: content, trigger: nil))
+    }
+
     /// Announce a host-initiated menu capture. No attachment and no
     /// click-to-open: the image is already on the clipboard, which is where
     /// the person asked for it — the banner only has to confirm.

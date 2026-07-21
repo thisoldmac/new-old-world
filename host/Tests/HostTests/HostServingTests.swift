@@ -97,6 +97,21 @@ final class HostServingTests: XCTestCase {
         XCTAssertEqual(refuse.code, "bad-path")
     }
 
+    func testTheRootListingNamesWhatIsShared() async throws {
+        try write("Notes.txt", "hello")
+        let guest = try await connectedGuest()
+        try guest.send(.fileList(FileList(id: 8, path: "", cursor: nil)))
+        try await waitUntil("a listing") {
+            guest.received.contains { if case .fileListing = $0 { return true }
+                                      else { return false } }
+        }
+        guard case .fileListing(let listing)? = guest.received.last(where: {
+            if case .fileListing = $0 { return true } else { return false }
+        }) else { return XCTFail("no listing") }
+        XCTAssertEqual(listing.root, root.path,
+                       "the asker can name the place it is looking at")
+    }
+
     // MARK: - Pulling
 
     func testGuestCanPullAFileAndGetsItConverted() async throws {

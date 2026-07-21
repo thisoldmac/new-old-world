@@ -635,6 +635,15 @@ components:
                 description: Classic Mac seconds since 1904.
         more: { type: boolean }
         cursor: { type: integer }
+        root:
+          type: string
+          description: >
+            What the responder is sharing, as that machine would write
+            it ("Macintosh HD:Lab:", "/Users/me/Downloads"). Display
+            only — never a path to send back, since everything on the
+            wire is relative to this. Sent with the root listing so the
+            asker can name the place it is looking at instead of
+            calling it "the share".
     FileGet:
       type: object
       required: [type, id, path]
