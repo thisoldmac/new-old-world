@@ -159,10 +159,19 @@ struct FileOffer: Codable, Equatable, Sendable {
     var creator: String?
     var modified: Int?
     var overwrite: Bool?
+    /// Stable identity of the SOURCE file. The receiver never interprets
+    /// it — it stores the token beside a partial and compares it later,
+    /// so resuming can never land the tail of one file onto the head of
+    /// another. Must change whenever the bytes would.
+    var resumeToken: String?
 }
 
 struct FileAccept: Codable, Equatable, Sendable {
     var id: Int
+    /// Bytes of THIS file the receiver already holds from an interrupted
+    /// attempt, and so the offset to begin at. Only ever non-zero when
+    /// the offer carried a resumeToken the receiver recognises.
+    var have: Int?
 }
 
 struct FileDone: Codable, Equatable, Sendable {
@@ -243,6 +252,11 @@ struct FileBegin: Codable, Equatable, Sendable {
     var fileType: String?
     var creator: String?
     var modified: Int?
+    /// First byte of the file this stream carries; absent or 0 is whole.
+    /// `bytes` stays the size of the WHOLE file either way, so progress
+    /// means the same thing on a resumed transfer as on a fresh one.
+    var offset: Int?
+    var resumeToken: String?
 }
 
 struct FileEnd: Codable, Equatable, Sendable {
@@ -250,6 +264,11 @@ struct FileEnd: Codable, Equatable, Sendable {
     var transfer: Int
     var ok: Bool
     var sendMs: Int?
+    /// CRC-32 of the WHOLE file, not of this stream — so a file stitched
+    /// from two attempts is checked as the thing it is meant to be.
+    /// Absent means the sender computed none, which a receiver must read
+    /// as "unchecked", never as "correct".
+    var crc32: UInt32?
 }
 
 struct FileCancel: Codable, Equatable, Sendable {

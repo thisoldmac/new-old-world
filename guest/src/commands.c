@@ -541,10 +541,22 @@ static void run_putstat(long id, char *out, long cap)
              "[\"Writes\",\"%ld\"],"
              "[\"In FSWrite\",\"%lu ms\"],"
              "[\"In receive\",\"%lu ms\"],"
-             "[\"Rcv window\",\"%ld\"]"
+             /* Resume has no other visible trace: without these two a
+                resumed transfer and a fresh one look identical from
+                here, and the only way to tell them apart is a
+                debugger on a machine that may not have one. */
+             "[\"Resumed from\",\"%ld\"],"
+             "[\"CRC reseed\",\"%lu ms\"],"
+             "[\"CRC-32\",\"%08lx\"],"
+             "[\"Rcv backlog\",\"%ld\"],"
+             "[\"Rcv peak\",\"%ld\"],"
+             "[\"Loop passes\",\"%ld\"]"
              "]}}",
              id, st.bytes, st.chunks, st.writes,
-             st.us_write / 1000, st.us_total / 1000, conn_rcv_window());
+             st.us_write / 1000, st.us_total / 1000,
+             st.resumed_from, st.us_reseed / 1000, st.crc,
+             conn_rcv_window(),
+             conn_rcv_peak(), conn_service_passes());
 }
 
 void now_command_run(const char *name, const char *request_json, long id,

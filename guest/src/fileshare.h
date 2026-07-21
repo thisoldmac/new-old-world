@@ -94,9 +94,19 @@ typedef struct {
     long bytes;
     unsigned long us_write;           /* time inside FSWrite */
     unsigned long us_total;
+    long resumed_from;                /* byte this attempt started at */
+    unsigned long us_reseed;          /* time re-reading the partial's CRC */
+    unsigned long crc;                /* CRC-32 the guest computed */
 } FileReceiveStats;
 
 void now_files_receive_stats(FileReceiveStats *out);
+
+/* CRC-32 (IEEE, the zlib polynomial 0xEDB88320) with zlib's own
+   convention: seed with 0, feed successive runs of bytes, and the
+   return value is always the finished CRC of everything fed so far. The
+   composition property is the point — a file stitched from two sessions
+   must check out the same as one written in a single pass. */
+unsigned long now_crc32(unsigned long crc, const void *bytes, long len);
 
 typedef struct {
     Boolean active;
@@ -117,15 +127,48 @@ typedef struct {
        catalog updates. */
     Ptr buf;
     long buf_len;
+    /* Running CRC-32 of the WHOLE file, seeded on resume from the bytes
+       already on disk, so it covers the seam between two sessions. */
+    unsigned long crc;
+    /* A partial worth resuming from: abort keeps it instead of deleting
+       it. Only ever set when the sender named the file with a
+       resumeToken, so an old peer's failures still clean up after
+       themselves. */
+    Boolean keep_partial;
 } FileReceive;
+
+/* Bytes of a resumable partial already held for `resume_token` in the
+   folder `rel_path`, or 0 when there is nothing to resume from. This is
+   what the guest answers file.accept's `have` with.
+
+   The token IS the storage: the temp's name is derived from it, so
+   there is no sidecar to fall out of step with the file. A 32-bit hash
+   can collide, so a partial only counts when its size is also <=
+   total_bytes; the end-to-end CRC on file.end is the real backstop, and
+   the only thing that can prove the bytes are the right ones. */
+long now_files_partial_bytes(const char *rel_path, const char *resume_token,
+                             long total_bytes);
 
 /* Opens `name` in the folder `rel_path` for writing. Creates missing
    parent folders inside the share. Returns kFiles* — kFilesExists when
-   the file is there and overwrite is false. */
+   the file is there and overwrite is false.
+
+   resume_token (NULL or "" when the sender did not name the file)
+   decides two things at once: the temp is named after the token rather
+   than the clock, and a failed transfer KEEPS its partial instead of
+   deleting it. Without a token the old behavior stands exactly —
+   clock-named temp, deleted on abort — so a peer that never learned to
+   resume is not made worse.
+
+   resume_offset > 0 reopens the existing partial and continues at that
+   byte, seeding the CRC from what is already on disk (which also proves
+   the partial is readable). It requires a token and the data container;
+   0 is a fresh start. */
 int now_files_receive_begin(const char *rel_path, const char *name,
                             FileContainer container, long bytes,
                             OSType file_type, OSType creator,
                             unsigned long modified, Boolean overwrite,
+                            const char *resume_token, long resume_offset,
                             FileReceive *rx);
 
 /* The same, into a folder named by volume and directory ID rather than
@@ -136,6 +179,7 @@ int now_files_receive_begin_at(short vref, long dir_id, const char *name,
                                FileContainer container, long bytes,
                                OSType file_type, OSType creator,
                                unsigned long modified, Boolean overwrite,
+                               const char *resume_token, long resume_offset,
                                FileReceive *rx);
 
 /* The downloads folder from preferences, or the Desktop. */
@@ -148,9 +192,18 @@ int now_files_receive_chunk(FileReceive *rx, const void *bytes, long len);
    Returns kFiles*. */
 int now_files_receive_finish(FileReceive *rx);
 
-/* Abandons a transfer: closes anything open and deletes the temp. */
+/* Abandons a transfer: closes anything open, and deletes the temp
+   UNLESS it is resumable, in which case the partial is flushed and
+   truncated to the bytes actually written and left for a later attempt.
+   Truncation is what makes the temp's EOF an honest byte count, which
+   is the whole basis on which `have` is reported. */
 void now_files_receive_abort(FileReceive *rx);
 
+/* Abandons a transfer and deletes the temp whatever its token says.
+   For bytes that failed their own checksum: a file that cannot prove it
+   is correct is not a resume candidate, it is garbage, and leaving it
+   would let the same bad bytes be resumed onto forever. */
+void now_files_receive_discard(FileReceive *rx);
 /* The OSErr behind the most recent kFilesIOError. "The File Manager
    refused" names no cause; the number does. */
 OSErr now_files_last_error(void);
@@ -179,6 +232,7 @@ int now_files_restore(const char *trashed_as, const char *to_rel);
 
 /* Creates a folder. kFilesExists if something is already there. */
 int now_files_mkdir(const char *rel);
+
 
 /* The share root as a display string ("Macintosh HD:Lab:"), for UI. */
 void now_files_root_name(char *out, long cap);

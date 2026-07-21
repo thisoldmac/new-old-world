@@ -250,6 +250,28 @@ operations:
       remembered on either side and an undo survives a restart of either.
       The Trash is a real folder; a name in it is as durable a way to say
       "that item" as a path anywhere else.
+
+      file.progress is also the sender's CLOCK. A sender may run no more
+      than a bounded number of bytes ahead of the count the receiver has
+      confirmed, because a bulk stream offered faster than the link
+      carries it accumulates in the sending kernel's buffer, and from the
+      moment that buffer is non-empty the careful gaps between writes
+      stop existing on the wire (see the pacing rule in
+      docs/architecture.md). That is not a tuning preference: on this
+      link it is the difference between 340 KB/s and 5 KB/s, and the
+      collapse does not recover on its own.
+
+      Transfers RESUME rather than restart. An offer may carry a
+      resumeToken naming the source file; a receiver holding a partial
+      recorded under that same token answers file.accept with `have`,
+      and the sender begins at that offset with file.begin carrying it.
+      A receiver never resumes onto a file it cannot prove is the same
+      one — no token, or a token it does not recognise, means start at
+      zero, which is merely slow where the alternative is silently
+      wrong. file.end may carry a crc32 over the whole file, which
+      matters most exactly here: a resumed file is stitched from two
+      sessions and nothing else checks the seam.
+
   guestServesFiles:
     action: send
     channel: { $ref: "#/channels/control" }
@@ -657,6 +679,22 @@ components:
           description: >
             auto (default) applies the container rule; macbinary forces
             the whole artifact.
+        offset:
+          type: integer
+          description: >
+            Resume: start the bulk stream at this byte instead of zero.
+            Absent or 0 is a fresh pull. The requester is the receiver,
+            so the offset is simply how much it already holds.
+        resumeToken:
+          type: string
+          description: >
+            The token the guest gave in the file.begin of the interrupted
+            attempt. Required whenever offset > 0: the guest recomputes
+            its token for the file as it stands NOW and refuses `changed`
+            if it differs, because appending the tail of a file onto the
+            head of a different one is worse than starting over. Absent
+            with offset > 0 is refused `changed` as well — resuming
+            blind is not offered.
     FileOffer:
       type: object
       required: [type, id, name, path, container, bytes]
@@ -686,6 +724,16 @@ components:
           description: >
             Absent or false means an existing file refuses `exists`;
             the sender may retry with true once a human has agreed.
+        resumeToken:
+          type: string
+          description: >
+            Stable identity of the SOURCE file, computed by the sender
+            and never interpreted by the receiver — it only stores the
+            token beside the partial and compares it later. It must
+            change whenever the bytes would differ. The receiver answers
+            file.accept with `have` > 0 only when it holds a partial
+            recorded under this exact token, so an offer with no token,
+            or with a token it has not seen, always starts at zero.
     FileAccept:
       type: object
       required: [type, id]
@@ -693,6 +741,14 @@ components:
       properties:
         type: { const: file.accept }
         id: { type: integer }
+        have:
+          type: integer
+          description: >
+            Bytes of THIS file the receiver already holds from an
+            interrupted attempt, and therefore the offset the sender
+            should begin at. Absent or 0 means start from the beginning.
+            Only ever non-zero when the offer carried a resumeToken
+            matching a partial the receiver still has.
     FileDone:
       type: object
       required: [type, id, ok]
@@ -702,7 +758,7 @@ components:
         id: { type: integer }
         ok: { type: boolean }
         code:
-          enum: [exists, bad-path, io-error, too-big, cancelled]
+          enum: [exists, bad-path, io-error, too-big, cancelled, corrupt]
         reason: { type: string }
     FileProgress:
       type: object
@@ -732,7 +788,8 @@ components:
         type: { const: file.refuse }
         id: { type: integer }
         code:
-          enum: [busy, exists, bad-path, not-found, io-error, too-big]
+          enum: [busy, exists, bad-path, not-found, io-error, too-big,
+                 changed]
         reason: { type: string }
     FileBegin:
       type: object
@@ -750,6 +807,21 @@ components:
         fileType: { type: string }
         creator: { type: string }
         modified: { type: integer }
+        offset:
+          type: integer
+          description: >
+            First byte of the file this stream carries. Absent or 0 is a
+            whole file. `bytes` remains the size of the WHOLE file, not
+            of the stream, so a receiver's progress and a human's
+            progress bar mean the same thing on a resumed transfer as on
+            a fresh one.
+        resumeToken:
+          type: string
+          description: >
+            Identity of the file being sent, for the receiver to store
+            beside a partial so a later attempt can prove it is the same
+            file. On a pull this is the guest's token for its own file;
+            on a push it echoes the offer's.
     FileEnd:
       type: object
       required: [type, id, transfer, ok]
@@ -833,6 +905,17 @@ components:
         code:
           enum: [exists, bad-path, not-found, io-error, busy]
         reason: { type: string }
+        crc32:
+          type: integer
+          description: >
+            CRC-32 (IEEE, the zlib polynomial) of the WHOLE file's bytes,
+            not of this stream — so a file stitched from two attempts is
+            checked as the thing it is meant to be. Optional: absent
+            means the sender did not compute one, which a receiver must
+            treat as "unchecked", never as "correct". A receiver that
+            computes a mismatch answers file.done ok:false code:corrupt
+            and keeps nothing.
+
     FileCancel:
       type: object
       required: [type, transfer]

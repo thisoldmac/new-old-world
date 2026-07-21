@@ -260,7 +260,14 @@ static void fail(const char *reason)
    window needs a notifier — or the option set in the endpoint's
    configuration at open time — and neither belongs in a fix made at
    speed. The rate stays slow and honest until then. */
-static long g_rcv_window = -3;        /* -3: not attempted */
+/* Bytes readable at the last pass, and the high-water mark since the
+   connection came up. -3 means never sampled (no OTCountDataBytes). */
+static long g_rcv_window = -3;
+static long g_rcv_peak = -3;
+/* Passes of the event loop that reached conn_service since the last
+   file receive began. A collapsed transfer with this climbing normally
+   means the loop is healthy and the bytes are simply not arriving. */
+static long g_service_passes = 0;
 
 static void start_connect(void)
 {
@@ -381,6 +388,21 @@ static int pump_rx(void)
     OTFlags flags = 0;
     OTResult got;
 
+    /* Sampled BEFORE draining, so it is the backlog the guest was left
+       holding since the previous pass — the number that separates "this
+       machine cannot keep up" from "nothing is arriving". Both look the
+       same from the far end of the wire, which is how three throughput
+       theories died here. */
+    if (gNowOT.countDataBytes != NULL && g.ep != kOTInvalidEndpointRef) {
+        OTByteCount waiting = 0;
+
+        if (gNowOT.countDataBytes(g.ep, &waiting) == noErr) {
+            g_rcv_window = (long)waiting;
+            if ((long)waiting > g_rcv_peak) {
+                g_rcv_peak = (long)waiting;
+            }
+        }
+    }
     for (;;) {
         if (g.rx_len >= kRxBufferSize) {
             /* Full is not broken. A bulk stream fills this buffer every
@@ -1695,11 +1717,13 @@ static void get_begin(const char *reply)
         get_note("Cannot find the downloads folder");
         return;
     }
+    /* No resume token on a pull yet: resuming is the sender's protocol
+       and this side has never been the sender. A pull starts at zero. */
     rc = now_files_receive_begin_at(vref, dir, g_get.name, container,
                                     g_get.expected, file_type, creator_code,
                                     (unsigned long)now_json_find_int(
                                         reply, "modified", 0),
-                                    false, &g_get.rx);
+                                    false, NULL, 0, &g_get.rx);
     if (rc == kFilesExists) {
         /* Not an error and not a silent overwrite: the file is already
            there, and this machine keeps what it has. */
@@ -2082,6 +2106,18 @@ static struct {
     long id;
     long reported;                    /* bytes announced with file.progress */
     FileReceive rx;
+    /* The offer, kept because file.begin — not file.offer — is what
+       finally says where the stream starts. The guest opens optimistically
+       at the offset it reported as `have`, and a sender that starts
+       somewhere else instead makes it reopen. */
+    char path[224];
+    char name[64];
+    char token[96];
+    FileContainer container;
+    long bytes;
+    OSType file_type, creator;
+    unsigned long modified;
+    Boolean overwrite;
 } g_put;
 
 static Boolean wire_busy(void)
@@ -2090,11 +2126,61 @@ static Boolean wire_busy(void)
         || g_send.active || g_put.active;
 }
 
+/* A CRC-32 is a 32-bit unsigned value and routinely has its top bit
+   set, which now_json_find_int cannot carry: it is strtol into a long,
+   and long is 32 bits on this toolchain, so every CRC above 2^31-1
+   saturates at LONG_MAX. Left alone, roughly half of all transfers
+   would compare a real checksum against 0x7FFFFFFF and be declared
+   corrupt. Parsed here as unsigned instead.
+
+   A leading minus is folded rather than rejected: an encoder that
+   serialises the value as a signed int32 writes -889275714 for
+   0xCAFEBABE, and that is the same 32 bits, not a different format. A
+   present-but-unparseable value reads as absent — "unchecked" is the
+   honest answer there, and far better than a false "corrupt". */
+static unsigned long json_find_u32(const char *json, const char *key,
+                                   Boolean *found)
+{
+    const char *p = now_json_value(json, key);
+    unsigned long v = 0;
+    Boolean negative = false;
+
+    *found = false;
+    if (p == NULL) {
+        return 0;
+    }
+    if (*p == '-') {
+        negative = true;
+        ++p;
+    }
+    if (*p < '0' || *p > '9') {
+        return 0;
+    }
+    while (*p >= '0' && *p <= '9') {
+        v = (v * 10UL + (unsigned long)(*p - '0')) & 0xFFFFFFFFUL;
+        ++p;
+    }
+    *found = true;
+    return negative ? (0UL - v) & 0xFFFFFFFFUL : v;
+}
+
 /* How often the guest says where it has got to. The write batch is the
    natural cadence — one report per flush — and on a 2.7 MB file that is
    about 85 control frames across several minutes, which is nothing next
    to the bulk stream they describe. */
-enum { kPutProgressStep = 32 * 1024 };
+/* How often the guest tells the host what it has taken.
+ *
+ * This is not only a progress bar: the host clocks its sender on these
+ * reports and will not run more than a few of them ahead. So the step is
+ * flow control, and a coarse one caps how tightly the sender can be
+ * bounded — at 32 KB the host could not go below a 64 KB window without
+ * deadlocking (it parks, then waits for a report needing bytes it has
+ * decided not to send). Matching the host's 8 KB bulk frame means one
+ * report per frame, which is what makes a ~24 KB in-flight bound work.
+ *
+ * Reports stay advisory and are still dropped when the control queue is
+ * busy; `received` is cumulative, so a skipped one costs nothing. */
+enum { kPutProgressStep = 8 * 1024 };
 
 /* Tells the host what has actually landed. The sender cannot know this:
    its own completion fires when the local socket accepts a chunk, which
@@ -2204,6 +2290,7 @@ static void serve_file_offer(const char *request)
     OSType file_type = 0, creator = 0;
     FileContainer container = kContainerData;
     Boolean overwrite;
+    long have;
     int rc;
 
     if (wire_busy()) {
@@ -2233,9 +2320,35 @@ static void serve_file_offer(const char *request)
 
     memset(&g_put, 0, sizeof g_put);
     g_put.id = id;
+    now_json_find_string(request, "resumeToken", g_put.token,
+                         sizeof g_put.token);
+    /* What we already hold under this token, and therefore where the
+       sender should start. Zero for an offer with no token, which is
+       every offer an older host makes. */
+    have = now_files_partial_bytes(path, g_put.token, bytes);
+
+    strncpy(g_put.path, path, sizeof g_put.path - 1);
+    strncpy(g_put.name, name, sizeof g_put.name - 1);
+    g_put.container = container;
+    g_put.bytes = bytes;
+    g_put.file_type = file_type;
+    g_put.creator = creator;
+    g_put.modified = (unsigned long)modified;
+    g_put.overwrite = overwrite;
+
     rc = now_files_receive_begin(path, name, container, bytes, file_type,
                                  creator, (unsigned long)modified,
-                                 overwrite, &g_put.rx);
+                                 overwrite, g_put.token, have, &g_put.rx);
+    if (rc != kFilesOK && have > 0) {
+        /* The partial was there a moment ago and is not usable now.
+           Losing it costs time, not correctness — start over rather
+           than refuse the file. */
+        have = 0;
+        rc = now_files_receive_begin(path, name, container, bytes,
+                                     file_type, creator,
+                                     (unsigned long)modified, overwrite,
+                                     g_put.token, 0, &g_put.rx);
+    }
     if (rc != kFilesOK) {
         switch (rc) {
         case kFilesExists:
@@ -2254,15 +2367,61 @@ static void serve_file_offer(const char *request)
         return;
     }
     g_put.active = true;
-    snprintf(json, sizeof json,
-             "{\"type\":\"file.accept\",\"id\":%ld}", id);
+    /* `have` is omitted rather than sent as 0, so an accept to an old
+       host looks exactly as it always did. */
+    if (have > 0) {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"file.accept\",\"id\":%ld,\"have\":%ld}",
+                 id, have);
+    } else {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"file.accept\",\"id\":%ld}", id);
+    }
     if (!send_control(json)) {
         now_files_receive_abort(&g_put.rx);
         g_put.active = false;
         return;
     }
-    snprintf(note, sizeof note, "Receiving %.31s...", name);
+    if (have > 0) {
+        snprintf(note, sizeof note, "Resuming %.31s...", name);
+    } else {
+        snprintf(note, sizeof note, "Receiving %.31s...", name);
+    }
     note_shot(note);
+}
+
+/* file.begin is what actually fixes where the stream starts. Usually it
+   agrees with the `have` just reported and there is nothing to do; a
+   sender is free to start somewhere else, though, and then the file
+   opened at the wrong offset has to be reopened at the right one before
+   a single byte lands. Getting this wrong writes the tail of a file
+   over the middle of it, which no checksum can repair — only detect. */
+static void put_begin(const char *request)
+{
+    long offset;
+    int rc;
+
+    if (!g_put.active) {
+        return;
+    }
+    offset = now_json_find_int(request, "offset", 0);
+    if (offset == g_put.rx.received) {
+        return;                       /* the sender took our advice */
+    }
+    if (offset < 0 || offset > g_put.bytes) {
+        put_abort("io-error", "the sender named an impossible offset");
+        return;
+    }
+    now_files_receive_abort(&g_put.rx);   /* keeps a resumable partial */
+    rc = now_files_receive_begin(g_put.path, g_put.name, g_put.container,
+                                 g_put.bytes, g_put.file_type,
+                                 g_put.creator, g_put.modified,
+                                 g_put.overwrite, g_put.token, offset,
+                                 &g_put.rx);
+    if (rc != kFilesOK) {
+        put_done(false, "io-error", "could not start at that offset");
+        note_shot("Incoming file failed");
+    }
 }
 
 /* The sender's file.end closes the transfer; the guest confirms only
@@ -2270,6 +2429,8 @@ static void serve_file_offer(const char *request)
 static void finish_put(const char *reply)
 {
     char note[128];
+    unsigned long want_crc;
+    Boolean has_crc;
     int rc;
 
     if (!g_put.active) {
@@ -2280,6 +2441,21 @@ static void finish_put(const char *reply)
         && *now_json_value(reply, "ok") == 'f') {
         put_abort("cancelled", "the sender stopped");
         note_shot("Incoming file cancelled");
+        return;
+    }
+    /* The seam check. A resumed file is stitched from two sessions and
+       nothing else looks at the join, so this is the one thing that can
+       say the result is the file the sender meant. An absent crc32 is
+       "unchecked" — the transfer still completes, it just completes
+       without this proof. */
+    want_crc = json_find_u32(reply, "crc32", &has_crc);
+    if (has_crc && want_crc != g_put.rx.crc) {
+        /* Deleted, not kept: bytes that failed their own checksum are
+           not a resume candidate, and keeping them would invite the
+           same wrong file to be appended to forever. */
+        now_files_receive_discard(&g_put.rx);
+        put_done(false, "corrupt", "the checksum did not match");
+        note_shot("Incoming file was corrupt");
         return;
     }
     /* One last report before the confirmation, so the far side sees the
@@ -2399,6 +2575,20 @@ static void serve_file_get(const char *request)
     }
     path[0] = '\0';
     now_json_find_string(request, "path", path, sizeof path);
+
+    /* Resuming a PULL is not offered yet: the guest does not compute a
+       token for its own files, so it can never prove the file it would
+       send is the one the partial came from. The contract's answer for
+       a token it cannot match is `changed`, and refusing costs a
+       restart where the alternative is silent corruption — a whole file
+       sent to a host expecting only the tail gets appended to the
+       partial it already holds. */
+    if (now_json_find_int(request, "offset", 0) > 0) {
+        file_refuse(id, "changed",
+                    "this Mac cannot prove the file is unchanged; "
+                    "ask for it from the beginning");
+        return;
+    }
     if (now_json_find_string(request, "container", container_arg,
                              sizeof container_arg)) {
         if (strcmp(container_arg, "macbinary") == 0) {
@@ -3238,7 +3428,15 @@ static int handle_frame(const char *reply)
         return 1;
     }
     if (now_json_type_is(reply, "file.begin")) {
-        get_begin(reply);             /* ours, or a push we accepted */
+        /* file.begin now announces two different things: a file we
+           ASKED for, and one the other machine offered and we accepted.
+           The pending pull decides, and only one can be live because
+           the bulk lane is one transfer wide. */
+        if (g_get.pending) {
+            get_begin(reply);
+        } else {
+            put_begin(reply);
+        }
         return 1;
     }
     if (now_json_type_is(reply, "file.end")) {
@@ -3451,6 +3649,7 @@ void now_wire_pump(void)
 
 void conn_service(void)
 {
+    ++g_service_passes;
     switch (g.phase) {
     case kConnConnecting:
         service_connecting();
@@ -3548,6 +3747,16 @@ void conn_connect_now(void)
 long conn_rcv_window(void)
 {
     return g_rcv_window;
+}
+
+long conn_rcv_peak(void)
+{
+    return g_rcv_peak;
+}
+
+long conn_service_passes(void)
+{
+    return g_service_passes;
 }
 
 void conn_peer_label(char *out, long cap)

@@ -71,6 +71,18 @@ final class GuestListener: ObservableObject {
         /// 1448 B per 3 ms tops out near 480 KB/s — twice what this wire
         /// manages in its healthy direction, so the meter never binds.
         static let classicMac = Pacing(bytes: 1448, gap: 0.003)
+
+        /// How long each metered write took the socket to ACCEPT, against
+        /// how far into the file it was. A transfer that runs at 340 KB/s
+        /// and then 4 KB/s is either a host that stopped offering bytes
+        /// or a socket that stopped taking them, and only this separates
+        /// them: at 4 KB/s with 1448-byte writes each accept must be
+        /// taking ~400 ms, which is backpressure the host did not choose.
+        /// Off unless NOW_SEND_TRACE is set — it must cost nothing in
+        /// normal operation.
+        nonisolated(unsafe) static var trace: [(atByte: Int, ms: Double)] = []
+        static let traceEnabled =
+            ProcessInfo.processInfo.environment["NOW_SEND_TRACE"] != nil
         /// Hand each frame over whole, as before.
         static let none = Pacing(bytes: 0, gap: 0)
     }
@@ -414,11 +426,15 @@ final class GuestListener: ObservableObject {
             self.session?.cancelOutbound()
             self.settlePut(.failure(.init(code: "timeout", message: reason)))
         }
+        // Named by content, so an interrupted attempt can be continued and
+        // an edited one cannot be mistaken for it. Computed once here; the
+        // same checksum rides file.end.
         session.sendFileOffer(
             FileOffer(id: id, name: name, path: path, container: container,
                       bytes: bytes.count, fileType: fileType,
                       creator: creator, modified: modified,
-                      overwrite: overwrite),
+                      overwrite: overwrite,
+                      resumeToken: TransferIdentity.resumeToken(for: bytes)),
             bytes: bytes)
     }
 
@@ -1207,6 +1223,7 @@ final class Session {
         case .fileDone(let done):
             onFileDone(done)
         case .fileProgress(let progress):
+            noteOutboundAck(progress)
             onFileProgress(progress)
         case .fileRefuse(let refuse):
             fileBegin = nil
@@ -1334,6 +1351,15 @@ final class Session {
         var bytes: Data
         var sent: Int
         var cancelled: Bool
+        /// Bytes the guest has said it holds. The window is measured
+        /// against this, never against `sent`.
+        var acked: Int = 0
+        /// Set once the guest has reported at all. Until then there is
+        /// nothing to clock against and the window stays open, which is
+        /// what an older guest that never reports keeps forever.
+        var acking: Bool = false
+        /// True while a frame is being withheld for want of window.
+        var parked: Bool = false
     }
 
     private var outbound: Outbound?
@@ -1424,20 +1450,95 @@ final class Session {
         }
     }
 
+    /// How far ahead of the receiver the sender may run.
+    ///
+    /// The pacing gap only works while the kernel's send buffer is
+    /// EMPTY: a paced write leaves TCP nothing to fire on the next ACK,
+    /// which is the entire mechanism. Offering bytes faster than the
+    /// link carries them builds a backlog in that buffer, and from the
+    /// moment it is non-empty TCP sends back-to-back on every ACK no
+    /// matter how politely the app is writing. The gap is still in the
+    /// code and no longer on the wire — which is why a transfer runs at
+    /// 340 KB/s until the buffer fills and then collapses to ~5 KB/s and
+    /// never recovers (see docs/large-transfers.md).
+    ///
+    /// Clocking on the receiver's own count keeps the backlog bounded,
+    /// so the gap stays real for the whole transfer. Six 32 KB progress
+    /// steps is enough to keep the wire busy across a skipped report —
+    /// `received` is cumulative, so one later report reopens the window
+    /// whatever was dropped in between.
+    /// NOW_WINDOW overrides it (0 = no window at all), because a flow
+    /// control rule has to be falsifiable at the wire: the only way to
+    /// know what the window costs is to run the same transfer without
+    /// it against the same machine.
+    static let outboundWindowBytes: Int = {
+        if let raw = ProcessInfo.processInfo.environment["NOW_WINDOW"],
+           let n = Int(raw) {
+            return n
+        }
+        return 3 * outboundFrameBytes
+    }()
+
+    /// Bulk frame size for a host->guest file, deliberately smaller than
+    /// the 32 KB the frame header allows.
+    ///
+    /// The window above cannot be tighter than the rate at which the
+    /// receiver acknowledges, and the guest acknowledges once per frame
+    /// (`kPutProgressStep`, wire.c). At 32 KB frames the tightest usable
+    /// window was 64 KB, which still lets ~1.4 MB reach the wire before
+    /// the sender is ever held back. Smaller frames buy a proportionally
+    /// tighter window: this is the geometry TimBotTu measured at
+    /// ~300 KiB/s sustained on this same PowerBook — 4 KB chunks under a
+    /// 12 KiB in-flight cap — rather than a number picked to be small.
+    ///
+    /// Nothing on the wire changes: kNowMaxPayload is a ceiling, the
+    /// guest reassembles a byte stream, and it cannot tell.
+    static let outboundFrameBytes: Int = {
+        if let raw = ProcessInfo.processInfo.environment["NOW_FRAME"],
+           let n = Int(raw), n > 0,
+           n <= FrameHeader.maxPayloadLength {
+            return n
+        }
+        return 8192
+    }()
+
+    /// Folds a guest progress report into the window and restarts the
+    /// sender if it was parked.
+    private func noteOutboundAck(_ progress: FileProgress) {
+        guard var out = outbound, out.id == progress.id else { return }
+        out.acking = true
+        out.acked = max(out.acked, progress.received)
+        let wasParked = out.parked
+        out.parked = false
+        outbound = out
+        if wasParked { sendNextOutboundChunk() }
+    }
+
     /// Streams an accepted file: begin, the bulk frames, then end.
     private func sendAcceptedFile(_ accept: FileAccept) {
         guard let (offer, bytes) = pendingOffer,
               offer.id == accept.id else { return }
         pendingOffer = nil
         let transfer = nextTransfer()
+        // Resume where the guest says it already is. Trust but bound it:
+        // a `have` past the end of the file, or one offered without our
+        // token, would silently skip bytes that were never sent.
+        var start = 0
+        if let have = accept.have, have > 0, have < bytes.count,
+           offer.resumeToken != nil {
+            start = have
+            onLog("Resuming at \(have) of \(bytes.count) bytes")
+        }
         send(.fileBegin(FileBegin(
             id: offer.id, transfer: Int(transfer), name: offer.name,
             container: offer.container, bytes: bytes.count,
             dataBytes: nil, rsrcBytes: nil, fileType: offer.fileType,
-            creator: offer.creator, modified: offer.modified)))
+            creator: offer.creator, modified: offer.modified,
+            offset: start > 0 ? start : nil,
+            resumeToken: offer.resumeToken)))
         outbound = Outbound(id: offer.id, transfer: transfer, bytes: bytes,
-                            sent: 0, cancelled: false)
-        onOutboundProgress(0, bytes.count)
+                            sent: start, cancelled: false, acked: start)
+        onOutboundProgress(start, bytes.count)
         sendNextOutboundChunk()
     }
 
@@ -1451,11 +1552,25 @@ final class Session {
         }
         guard out.sent < out.bytes.count else {
             outbound = nil
+            // Over the WHOLE file, not the bytes this session sent: a
+            // resumed file is stitched from two attempts and the seam is
+            // exactly what nothing else checks.
             send(.fileEnd(FileEnd(id: out.id, transfer: Int(out.transfer),
-                                  ok: true, sendMs: nil)))
+                                  ok: true, sendMs: nil,
+                                  crc32: TransferIdentity.crc32(out.bytes))))
             return
         }
-        let end = min(out.sent + FrameHeader.maxPayloadLength,
+        // Wait for the receiver to catch up rather than piling bytes into
+        // a send buffer it cannot drain. Parking here is what a progress
+        // report un-parks; if progress stops altogether the transfer is
+        // genuinely dead and the put watchdog says so.
+        if out.acking, Self.outboundWindowBytes > 0,
+           out.sent - out.acked >= Self.outboundWindowBytes {
+            out.parked = true
+            outbound = out
+            return
+        }
+        let end = min(out.sent + Self.outboundFrameBytes,
                       out.bytes.count)
         let last = end == out.bytes.count
         guard let frame = try? FrameCodec.encode(
@@ -1508,15 +1623,31 @@ final class Session {
             })
             return
         }
-        sendPiece(frame, from: frame.startIndex, completion: completion)
+        bulkFramePartiallySent = true
+        sendPiece(frame, from: frame.startIndex) { [weak self] error in
+            guard let self else { completion(error); return }
+            // The frame is whole on the wire again, so anything held back
+            // can go out — before the next frame starts and closes the
+            // window again.
+            self.bulkFramePartiallySent = false
+            self.drainControlQueue { completion(error) }
+        }
     }
 
     private func sendPiece(_ frame: Data, from offset: Data.Index,
                            completion: @escaping (NWError?) -> Void) {
         let end = min(offset + pacing.bytes, frame.endIndex)
         let last = end >= frame.endIndex
+        let started = GuestListener.Pacing.traceEnabled ? Date() : nil
         connection.send(content: frame[offset..<end],
                         completion: .contentProcessed { [weak self] error in
+            if let started {
+                let ms = Date().timeIntervalSince(started) * 1000
+                Task { @MainActor [weak self] in
+                    GuestListener.Pacing.trace.append(
+                        (atByte: self?.outbound?.sent ?? 0, ms: ms))
+                }
+            }
             Task { @MainActor in
                 guard let self, !self.closed else { return }
                 if let error { completion(error); return }
@@ -1785,13 +1916,62 @@ final class Session {
             paceMs: tuning.paceMs, pack: tuning.pack)))
     }
 
+    /// Control frames waiting for the bulk frame in flight to finish.
+    /// See `send(_:)` for why they cannot simply go out.
+    private var controlQueue: [Data] = []
+    /// True from the first piece of a bulk frame to its last. Metering
+    /// splits a frame across many sends with gaps between them, and a
+    /// control frame written into one of those gaps lands INSIDE the
+    /// frame on the wire.
+    private var bulkFramePartiallySent = false
+
+    /// Queues a control frame, holding it back while a bulk frame is
+    /// half-written.
+    ///
+    /// The guest's decoder gives bulk absolute priority: while
+    /// `bulk_remaining > 0` every byte it reads is file data, unexamined
+    /// (`next_frame`, wire.c). A control frame that arrives mid-frame is
+    /// therefore written into the file, and the stream is desynced by
+    /// its whole length — the next 8 bytes the guest reads as a header
+    /// are file content. That is either an instant protocol error or,
+    /// worse, a plausible length that silently swallows the rest.
+    ///
+    /// The guest already refuses to do this to us
+    /// (`bulk_frame_partially_sent`, wire.c); this is the missing mirror.
+    /// Waiting costs one frame — ~70 ms at the metered rate — which is
+    /// what keeps a cancel or a status request responsive during bulk
+    /// without a second connection.
     fileprivate func send(_ message: ControlMessage) {
         guard let payload = try? ControlMessageCodec.encode(message),
               let frame = try? FrameCodec.encode(channel: .control,
                                                  payload: payload) else {
             return
         }
-        connection.send(content: frame, completion: .idempotent)
+        guard bulkFramePartiallySent else {
+            connection.send(content: frame, completion: .idempotent)
+            return
+        }
+        controlQueue.append(frame)
+    }
+
+    /// Writes everything held back, at a frame boundary where it is safe.
+    /// Each still gets the pacing gap: this peer's card drops a frame
+    /// that lands on the heels of another, and a control frame followed
+    /// immediately by the next bulk piece is exactly that shape.
+    private func drainControlQueue(_ completion: @escaping () -> Void) {
+        guard !controlQueue.isEmpty else { completion(); return }
+        let frame = controlQueue.removeFirst()
+        connection.send(content: frame, completion: .contentProcessed {
+            [weak self] _ in
+            Task { @MainActor in
+                guard let self, !self.closed else { return }
+                if self.pacing.gap > 0 {
+                    try? await Task.sleep(nanoseconds:
+                        UInt64(self.pacing.gap * 1_000_000_000))
+                }
+                self.drainControlQueue(completion)
+            }
+        })
     }
 
     private func resetIdleClock() {
