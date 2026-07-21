@@ -123,6 +123,36 @@ final class GuestWireFixtureTests: XCTestCase {
         }
     }
 
+    /// file_result_ok() / file_result_fail(): the answer to every
+    /// change operation. Assembled across calls, so the conformance
+    /// check cannot reach it and these stand in — the success shape has
+    /// an optional trashedAs that the host's undo depends on.
+    func testFileResultAsTheGuestWritesIt() throws {
+        let moved = #"{"type":"file.result","id":6,"ok":true,"path":"Docs:Notes"}"#
+        guard case .fileResult(let ok) = try decode(moved) else {
+            return XCTFail("not a result")
+        }
+        XCTAssertTrue(ok.ok)
+        XCTAssertEqual(ok.path, "Docs:Notes")
+
+        let trashed = #"{"type":"file.result","id":7,"ok":true,"path":"","#
+            + #""trashedAs":"Notes 2"}"#
+        guard case .fileResult(let binned) = try decode(trashed) else {
+            return XCTFail("not a result")
+        }
+        XCTAssertEqual(binned.trashedAs, "Notes 2",
+                       "the name an undo has to put back")
+
+        let failed = #"{"type":"file.result","id":8,"ok":false,"#
+            + #""code":"io-error","#
+            + #""reason":"the File Manager refused (File Manager error -48)"}"#
+        guard case .fileResult(let bad) = try decode(failed) else {
+            return XCTFail("not a result")
+        }
+        XCTAssertFalse(bad.ok)
+        XCTAssertEqual(bad.code, "io-error")
+    }
+
     /// file.progress, sent mid-put so the host's bar moves.
     func testFileProgressAsTheGuestWritesIt() throws {
         let json = #"{"type":"file.progress","id":5,"received":32768}"#
