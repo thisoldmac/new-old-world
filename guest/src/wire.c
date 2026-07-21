@@ -1259,7 +1259,7 @@ static const char *files_reason(int rc)
 {
     switch (rc) {
     case kFilesBadPath:   return "that path leaves the shared folder";
-    case kFilesNotFound:  return "no such item — it may have been moved "
+    case kFilesNotFound:  return "no such item - it may have been moved "
                                  "or the Trash emptied";
     case kFilesNotAFolder:return "not a folder";
     case kFilesExists:    return "something is already there";

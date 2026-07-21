@@ -70,12 +70,36 @@ static const char *const kDataBrowser[] = {
     "GetDataBrowserItems"
 };
 
-static const char *const kIconServices[] = {
-    "GetIconRefFromTypeInfo",
+/* Two separate questions, because a file browser asks both. For the
+   guest's OWN files there is an FSSpec and GetIconRefFromFile is the
+   best answer - it picks up custom icons the Finder shows. For a
+   listing that arrived over the WIRE there is no file, only a type and
+   creator, so a type/creator lookup is the only way to draw anything.
+   The first round found GetIconRefFromTypeInfo missing; these are the
+   other doors into the same room. */
+static const char *const kIconFromFile[] = {
     "GetIconRefFromFile",
     "PlotIconRef",
     "ReleaseIconRef",
-    "AcquireIconRef"
+    "AcquireIconRef",
+    "PlotIconRefInContext"
+};
+
+static const char *const kIconFromType[] = {
+    "GetIconRef",                     /* vRefNum + creator + type */
+    "GetIconRefFromTypeInfo",         /* absent in CarbonLib 1.6.0 */
+    "GetIconRefFromFolder",
+    "RegisterIconRefFromResource",
+    "GetIconRefFromComponent"
+};
+
+/* The pre-Icon-Services way, in case none of the above answers. */
+static const char *const kIconSuites[] = {
+    "GetIconSuite",
+    "PlotIconSuite",
+    "DisposeIconSuite",
+    "PlotIconHandle",
+    "GetIcon"
 };
 
 /* The fallback. Reported so it is CONFIRMED rather than assumed — a
@@ -127,7 +151,7 @@ static int probe_group(const char *fragment, const char *title,
         }
     }
     report("   %d of %d present%s", found, count,
-           found == count ? " — all of them" : "");
+           found == count ? " - all of them" : "");
     return found == count;
 }
 
@@ -162,8 +186,14 @@ static void run_probe(void)
     browser = probe_group("CarbonLib", "Data Browser", kDataBrowser,
                           (int)(sizeof kDataBrowser / sizeof kDataBrowser[0]));
     report("");
-    icons = probe_group("CarbonLib", "Icon Services", kIconServices,
-                        (int)(sizeof kIconServices / sizeof kIconServices[0]));
+    icons = probe_group("CarbonLib", "Icons: from a file", kIconFromFile,
+                        (int)(sizeof kIconFromFile / sizeof kIconFromFile[0]));
+    report("");
+    probe_group("CarbonLib", "Icons: from a type/creator", kIconFromType,
+                (int)(sizeof kIconFromType / sizeof kIconFromType[0]));
+    report("");
+    probe_group("InterfaceLib", "Icons: the old suites", kIconSuites,
+                (int)(sizeof kIconSuites / sizeof kIconSuites[0]));
     report("");
     list = probe_group("InterfaceLib", "List Manager (fallback)",
                        kListManager,
@@ -173,12 +203,14 @@ static void run_probe(void)
     if (browser) {
         report("  Data Browser is available. The native list is possible;");
         report("  the cost is hand-declaring its ABI (no headers exist).");
-        report(icons ? "  Icons available too."
-                     : "  Icon Services INCOMPLETE — list would be text-only.");
+        report(icons ? "  Icons for local files: yes."
+                     : "  Icons for local files: NO.");
+        report("  For a listing off the WIRE there is no file, so read the");
+        report("  type/creator group above: that is what can draw an icon.");
     } else {
         report("  Data Browser is NOT available here. Phase 2 uses the");
         report(list ? "  List Manager, which is present."
-                    : "  List Manager — WHICH IS ALSO INCOMPLETE. Investigate.");
+                    : "  List Manager - WHICH IS ALSO INCOMPLETE. Investigate.");
     }
 }
 
