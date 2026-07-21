@@ -11,7 +11,11 @@
 
 enum {
     kPanelWidth = 400,
-    kPanelHeight = 188
+    kPanelHeight = 188,
+    kBarLeft = 16,
+    kBarTop = 108,
+    kBarBottom = 120,
+    kBarWidth = kPanelWidth - 32
 };
 
 static WindowRef g_window = NULL;
@@ -21,11 +25,17 @@ static ControlRef g_send_button;
 static char g_note[128];
 /* What the last send did, so the line survives the transfer ending. */
 static Boolean g_send_was_active;
+/* Last state pushed into the Send button, so it is only redrawn on a
+   change; and the last bar width drawn, so a repaint is only asked for
+   when a pixel would actually differ. */
+static short g_send_hilite = -1;
+static short g_bar_filled = -1;
 
-/* Controls that cannot do anything are shown as unable to, rather than
-   accepting a click and failing quietly. Re-synced every idle pass,
-   because the connection can drop while the window sits there. */
-static void sync_controls(void)
+/* Whether the share is the boot volume changes only when the checkbox
+   is clicked, so it is read from preferences THEN — never on the idle
+   path, where a file read every event-loop pass starved the very
+   transfer this panel exists to show. */
+static void sync_share_controls(void)
 {
     NowPrefs prefs;
 
@@ -35,10 +45,25 @@ static void sync_controls(void)
     now_prefs_load(&prefs);
     SetControlValue(g_boot_check, prefs.share_boot ? 1 : 0);
     HiliteControl(g_choose_button, prefs.share_boot ? 255 : 0);
-    HiliteControl(g_send_button,
-                  (conn_is_connected()
-                   && now_wire_send_state(NULL, NULL, NULL, 0) == kSendNothing)
-                      ? 0 : 255);
+}
+
+/* Send is off when there is nothing to send to, or a send is already
+   under way. HiliteControl REDRAWS whatever it is passed, so calling it
+   on every pass is a flicker loop — it is called only on a change. */
+static void sync_send_control(void)
+{
+    short want;
+
+    if (g_window == NULL) {
+        return;
+    }
+    want = (conn_is_connected()
+            && now_wire_send_state(NULL, NULL, NULL, 0) == kSendNothing)
+        ? 0 : 255;
+    if (want != g_send_hilite) {
+        g_send_hilite = want;
+        HiliteControl(g_send_button, want);
+    }
 }
 
 static void draw_send_progress(void);
@@ -55,6 +80,21 @@ static void invalidate(void)
     InvalWindowRect(g_window, &r);
 }
 
+/* Just the status line and the bar. A moving transfer must not repaint
+   the whole window: on this machine that is the difference between a
+   bar that advances and an event loop with no time left to send. */
+static void invalidate_status(void)
+{
+    Rect r;
+
+    if (g_window == NULL) {
+        return;
+    }
+    SetPortWindowPort(g_window);
+    SetRect(&r, 12, 86, kPanelWidth - 12, 124);
+    InvalWindowRect(g_window, &r);
+}
+
 /* The status line the send narrates into. */
 void share_panel_note(const char *line)
 {
@@ -62,23 +102,32 @@ void share_panel_note(const char *line)
         return;
     }
     snprintf(g_note, sizeof g_note, "%.120s", line);
-    invalidate();
+    invalidate_status();
 }
 
-/* Called every event-loop pass: keeps the buttons honest about what
-   they can do, and repaints while a file is moving so the bar advances
-   instead of the window looking hung. */
+/* Called every event-loop pass, so it must cost nearly nothing when
+   nothing is happening: two in-memory reads and, at most, an ask to
+   repaint 38 rows of pixels when the bar would actually look different.
+   No file access, no unconditional drawing. */
 void share_panel_idle(void)
 {
+    long sent = 0, total = 0;
+    SendPhase phase;
     Boolean sending;
+    short filled;
 
     if (g_window == NULL) {
         return;
     }
-    sync_controls();
-    sending = now_wire_send_state(NULL, NULL, NULL, 0) != kSendNothing;
-    if (sending || g_send_was_active) {
-        invalidate();
+    sync_send_control();
+    phase = now_wire_send_state(&sent, &total, NULL, 0);
+    sending = (phase != kSendNothing);
+    filled = (phase == kSendSending && total > 0)
+        ? (short)(kBarWidth * sent / total) : 0;
+
+    if (sending != g_send_was_active || filled != g_bar_filled) {
+        g_bar_filled = filled;
+        invalidate_status();
     }
     g_send_was_active = sending;
 }
@@ -125,7 +174,8 @@ void share_panel_open(void)
         g_send_button = NewControl(g_window, &bounds, text, true, 0, 0, 1,
                                    pushButProc, 0);
     }
-    sync_controls();
+    sync_share_controls();
+    sync_send_control();
     g_note[0] = '\0';
     ShowWindow(g_window);
     SelectWindow(g_window);
@@ -214,22 +264,24 @@ static void draw_send_progress(void)
     long sent = 0, total = 0;
     SendPhase phase = now_wire_send_state(&sent, &total, NULL, 0);
 
-    if (phase == kSendNothing) {
+    /* Only once bytes are moving. An empty bar sitting at zero while
+       the host has not answered yet says "stuck" when the truth is
+       "waiting" — the status line above already says which. */
+    if (phase != kSendSending) {
         return;
     }
-    SetRect(&bar, 16, 108, kPanelWidth - 16, 120);
+    SetRect(&bar, kBarLeft, kBarTop, kBarLeft + kBarWidth, kBarBottom);
     FrameRect(&bar);
     InsetRect(&bar, 1, 1);
-    if (phase == kSendSending && total > 0) {
-        long width = (bar.right - bar.left);
-        long filled = (long)((double)width * (double)sent / (double)total);
+    if (total > 0) {
+        long filled = (long)kBarWidth * sent / total;
 
+        if (filled > bar.right - bar.left) {
+            filled = bar.right - bar.left;
+        }
         if (filled > 0) {
             Rect done = bar;
 
-            if (filled > width) {
-                filled = width;
-            }
             done.right = (short)(done.left + filled);
             PaintRect(&done);
         }
@@ -266,7 +318,7 @@ void share_panel_click(Point local)
         } else {
             g_note[0] = '\0';
         }
-        sync_controls();
+        sync_share_controls();
         invalidate();
     } else if (control == g_send_button) {
         FSSpec spec;
