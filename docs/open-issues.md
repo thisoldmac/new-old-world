@@ -78,6 +78,21 @@ Not load-bearing; parked as a known gap rather than chased.
 Everything here builds and passes its tests. None of it has been watched
 working on the PowerBook.
 
+- **The whole Processes page** (2026-07-21, spec in
+  `processes-and-peek.md`): the Data Browser list with its
+  icon-and-text column and compare callback, the detail pane and its
+  memory bar, Bring to Front, and Ask to Quit's whole ladder -
+  confirm, AE send, `(quitting...)`, the 10-second `(no reply)`
+  timeout, and the walk noticing the exit. The pure geometry and
+  formatters are native-tested (watched failing by mutation); nothing
+  Toolbox-facing has run anywhere yet, including the emulator. Known
+  soft spots to watch first on metal: `SetDataBrowserItemDataIcon` on
+  CarbonLib 1.6, the compare callback actually sorting, and selection
+  surviving a list rebuild mid-click.
+- **Prefs v10 module renumbering.** Connection moved 4 to 5; a v9 file
+  should reopen on the page the person had (the remap is three lines
+  in `now_prefs_load`), exercised only by reasoning - same status as
+  the v9 note below.
 - **Corners of the Workshop no one has exercised anywhere:** the send
   progress bar actually moving, and the preview well at 16/32-bit
   depths. (The first metal pass found two bugs - a mute Console

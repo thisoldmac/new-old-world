@@ -6,6 +6,7 @@
 #include "connection_module.h"
 #include "console_module.h"
 #include "files_module.h"
+#include "processes_module.h"
 #include "screenshots_module.h"
 #include "prefs.h"
 #include "workshop_layout.h"
@@ -40,6 +41,9 @@ static const struct {
     { "Console",
       "Commands run on this PowerBook. Only declared commands are available.",
       "Console still lives in its own window (Windows menu)." },
+    { "Processes",
+      "Everything running on this Mac. Quit asks politely and never forces.",
+      "Processes has not moved in yet." },
     { "Connection",
       "This Mac dials the other Mac and keeps one persistent connection.",
       "Connection is still a dialog (Windows menu)." }
@@ -148,6 +152,7 @@ Boolean workshop_open(void)
     g_ops[kWorkshopScreenshots] = screenshots_module_ops();
     g_ops[kWorkshopFiles] = files_module_ops();
     g_ops[kWorkshopConsole] = console_module_ops();
+    g_ops[kWorkshopProcesses] = processes_module_ops();
     g_ops[kWorkshopConnection] = connection_module_ops();
     now_prefs_load(&prefs);
     if (restorable_bounds(&prefs.workshop_rect)) {

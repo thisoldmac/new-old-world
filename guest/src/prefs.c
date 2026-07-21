@@ -205,10 +205,19 @@ void now_prefs_load(NowPrefs *prefs)
         prefs->dl_dir = v9.v8.dl_dir;
     }
     if (record.format >= 9 && count >= (long)sizeof(PrefsRecordV9)) {
+        short module = v9.workshop_module;
+
         prefs->console_invert = v9.console_invert != 0;
         prefs->auto_connect = v9.auto_connect != 0;
-        if (v9.workshop_module >= 1 && v9.workshop_module <= 4) {
-            prefs->workshop_module = v9.workshop_module;
+        /* Format 10 renumbered the modules when Processes arrived:
+           Connection moved 4 -> 5. Same record layout; the bump only
+           marks what the number MEANS, so a v9 file reopens on the
+           page the person actually had. */
+        if (record.format == 9 && module == 4) {
+            module = 5;
+        }
+        if (module >= 1 && module <= 5) {
+            prefs->workshop_module = module;
         }
         prefs->workshop_rect = v9.workshop_rect;
     } else if (record.console_open != 0) {
@@ -230,7 +239,7 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 
     memset(&record, 0, sizeof record);
     record.magic = kPrefsMagic;
-    record.format = 9;
+    record.format = 10;               /* v9 layout, renumbered modules */
     record.port = prefs->port;
     strncpy(record.host, prefs->host, sizeof record.host - 1);
     record.shot_depth = prefs->shot_depth;

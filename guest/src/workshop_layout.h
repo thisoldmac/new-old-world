@@ -35,13 +35,17 @@ enum {
     kWorkshopStatusHeight = 23,
     /* Two text lines per row: bold title over a quiet subtitle. */
     kWorkshopSidebarRowHeight = 32,
-    kWorkshopGrowBoxSize = 15
+    kWorkshopGrowBoxSize = 15,
+
+    /* Non-pinned modules; Connection is pinned and not among these. */
+    kWorkshopNavRows = 4
 };
 
 typedef struct WorkshopLayout {
     Rect sidebar;       /* the whole rail, window-background gray */
     Rect rail_list;     /* one framed white panel holding every row */
-    Rect nav_rows[3];   /* Screenshots, Files, Console */
+    Rect nav_rows[kWorkshopNavRows];  /* Screenshots, Files, Console,
+                                         Processes */
     Rect conn_divider;  /* one-pixel rule above the pinned row */
     Rect conn_row;      /* Connection, pinned at the panel's bottom */
     Rect header;        /* module header placard */

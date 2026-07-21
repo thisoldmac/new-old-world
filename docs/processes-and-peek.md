@@ -136,9 +136,10 @@ Quit. Everything else is the user's machine and the user's call.
 4. `workshop_window.c` — `k_module_info` entry (title, blurb,
    placeholder line) and `processes_module_ops()` registered in
    `workshop_open()`.
-5. `main.c` — View menu gains "Processes" with Cmd-5 before
-   Connection; Connection becomes Cmd-5's neighbor. Menu item number
-   is the module ID, so the existing dispatch holds.
+5. `main.c` — View menu gains "Processes" as item 4 with Cmd-4, and
+   Connection moves to item 5 / Cmd-5: the menu item number IS the
+   module ID, so the keys follow the numbering rather than muscle
+   memory. The existing dispatch holds unchanged.
 6. `guest/CMakeLists.txt` — `processes_module.c` (+ `proc_snapshot.c`
    if the walk/format code splits out for native testing).
 

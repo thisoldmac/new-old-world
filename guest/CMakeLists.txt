@@ -26,6 +26,9 @@ add_application(now-guest
     src/prefs.c
     src/conn_fields.c
     src/connection_module.c
+    src/peek.c
+    src/processes_layout.c
+    src/processes_module.c
     src/workshop_layout.c
     src/workshop_sidebar.c
     src/workshop_window.c

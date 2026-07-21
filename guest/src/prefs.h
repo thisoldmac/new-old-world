@@ -62,7 +62,8 @@ typedef struct {
 
 /* Loads saved settings, or the defaults (10.0.2.2:5250 — the QEMU host
    address — 8-bit, pack on, 8K chunks, no pacing, panel open). Reads the
-   v1/v2 record formats (host/port only) as well as v3 through v9. */
+   v1/v2 record formats (host/port only) as well as v3 through v10 (v10
+   is the v9 layout with the module numbers renumbered for Processes). */
 void now_prefs_load(NowPrefs *prefs);
 OSErr now_prefs_save(const NowPrefs *prefs);
 

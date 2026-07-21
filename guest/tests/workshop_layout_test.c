@@ -65,7 +65,7 @@ static void check_common(const Rect *content, const WorkshopLayout *lay,
     CHECK(contains(content, &lay->status), "status inside content");
     CHECK(contains(&lay->sidebar, &lay->rail_list),
           "panel inside sidebar");
-    for (i = 0; i < 3; ++i) {
+    for (i = 0; i < kWorkshopNavRows; ++i) {
         CHECK(contains(&lay->rail_list, &lay->nav_rows[i]),
               "module row inside panel");
     }
@@ -81,15 +81,17 @@ static void check_common(const Rect *content, const WorkshopLayout *lay,
     CHECK(disjoint(&lay->sidebar, &lay->status), "rail vs status");
     CHECK(disjoint(&lay->header, &lay->body), "header vs body");
     CHECK(disjoint(&lay->body, &lay->status), "body vs status");
-    for (i = 0; i < 2; ++i) {
+    for (i = 0; i < kWorkshopNavRows - 1; ++i) {
         CHECK(disjoint(&lay->nav_rows[i], &lay->nav_rows[i + 1]),
               "module rows do not overlap");
     }
-    CHECK(disjoint(&lay->nav_rows[2], &lay->conn_divider),
+    CHECK(disjoint(&lay->nav_rows[kWorkshopNavRows - 1],
+                   &lay->conn_divider),
           "last module row vs divider");
     CHECK(disjoint(&lay->conn_divider, &lay->conn_row),
           "divider vs connection row");
-    CHECK(lay->conn_divider.top > lay->nav_rows[2].bottom,
+    CHECK(lay->conn_divider.top
+              > lay->nav_rows[kWorkshopNavRows - 1].bottom,
           "divider below the module rows");
     CHECK(lay->conn_divider.bottom <= lay->conn_row.top,
           "divider above the pinned row");
@@ -102,7 +104,7 @@ static void check_common(const Rect *content, const WorkshopLayout *lay,
     CHECK(lay->header.right == content->right, "header reaches the edge");
 
     /* Row geometry: two-line rows, connection pinned at the bottom. */
-    for (i = 0; i < 3; ++i) {
+    for (i = 0; i < kWorkshopNavRows; ++i) {
         CHECK(height(&lay->nav_rows[i]) == kWorkshopSidebarRowHeight,
               "module row height");
     }

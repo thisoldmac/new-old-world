@@ -1,0 +1,70 @@
+#ifndef NOW_PROCESSES_LAYOUT_H
+#define NOW_PROCESSES_LAYOUT_H
+
+/* Pure rectangle arithmetic and text formatting for the Processes
+   page. No Toolbox calls live here, so the same file compiles under
+   the host's cc for the native test (guest/tests/
+   processes_layout_test.c) - the pattern workshop_layout.c set. */
+
+#if TARGET_API_MAC_CARBON
+#include <MacTypes.h>
+#else
+typedef struct Rect {
+    short top;
+    short left;
+    short bottom;
+    short right;
+} Rect;
+typedef unsigned char Boolean;
+#endif
+
+enum {
+    kProcMargin = 12,         /* body edge to the panes */
+    kProcPaneGap = 10,        /* list to detail */
+    kProcListWide = 218,
+    kProcListNarrow = 190,
+    kProcListNarrowBelow = 560,   /* body width, not window width */
+    kProcFactLabelWidth = 62, /* right-aligned labels, one column */
+    kProcFactLineHeight = 16,
+    kProcMemBarHeight = 11,
+    kProcMemBarMaxWidth = 200,
+    kProcButtonHeight = 20,
+    kProcGroupMinHeight = 58  /* the extension box never collapses */
+};
+
+typedef struct ProcessesLayout {
+    Rect list;                /* the Data Browser */
+    Rect detail;              /* everything to its right */
+    Rect title_line;          /* selected process name */
+    Rect kind_line;
+    Rect type_line;
+    Rect mem_line;
+    Rect mem_bar;
+    Rect launched_line;
+    Rect front_btn;
+    Rect quit_btn;
+    Rect group;               /* the NOW Extension group box */
+    Rect peek_line;           /* status text inside the group box */
+} ProcessesLayout;
+
+void processes_layout_compute(const Rect *body, ProcessesLayout *out);
+
+/* Four printable characters and a terminator; anything unprintable
+   becomes a period, so a garbage type cannot smuggle control bytes
+   into DrawString. */
+void proc_fourcc_text(unsigned long code, char out[5]);
+
+/* The word a person reads for a process type: application, background
+   only, the Finder - or the raw four characters when we do not know. */
+void proc_kind_text(unsigned long type, char *out, long cap);
+
+/* "312K used of 1,024K" - classic thousands grouping, ASCII only. */
+void proc_mem_text(long used_kb, long size_kb, char *out, long cap);
+
+/* Fill width for the partition bar, clamped to [0, bar_width]. */
+long proc_mem_fill(long used_kb, long size_kb, long bar_width);
+
+/* "7 processes - 12.4 MB free" for the status placard. */
+void proc_status_text(int count, long free_kb, char *out, long cap);
+
+#endif /* NOW_PROCESSES_LAYOUT_H */
