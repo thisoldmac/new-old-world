@@ -521,12 +521,23 @@ static void conn_draw(void)
 
 static Boolean conn_click(const EventRecord *event, Point local)
 {
-    ControlRef control = NULL;
+    ControlRef control;
+    SInt16 part;
 
     if (g_owner == NULL || !g_visible) {
         return false;
     }
-    if (FindControl(local, g_owner, &control) == 0 || control == NULL) {
+    /* FindControlUnderMouse, not FindControl: the address and port
+       fields are embedded in the "Other Mac" group-box CONTROL, and the
+       Workshop window has a control-embedding hierarchy the moment any
+       page builds a Data Browser (Files, Processes), which forces a root
+       control onto the shared window. FindControl predates embedding and
+       returns the enclosing group box, so the fields took no clicks once
+       Connection stopped being its own dialog. This call returns the
+       embedded control, and is correct whether or not a hierarchy
+       exists. */
+    control = FindControlUnderMouse(local, g_owner, &part);
+    if (control == NULL) {
         return false;
     }
     if (control == g_addr || control == g_port) {

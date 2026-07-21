@@ -79,6 +79,22 @@ form, so only the PowerBook (or the 3400c) can prove it, and the chip
 build `now-chip` exists for exactly that: launched with no prefs it
 dials the gateway, and the UI must stay alive.
 
+**The Connection fields were dead once Connection became a page**
+(fixed 2026-07-21, `claude/processes-module-cb2d9c`). Address and port
+took no clicks: they are embedded in the "Other Mac" group-box control,
+and the Workshop window gains a control-embedding hierarchy the moment
+any page builds a Data Browser (Files, Processes), which forces a root
+control onto the shared window. `FindControl` predates embedding and
+returned the enclosing group box, so `control == g_addr` never matched.
+`conn_click` now uses `FindControlUnderMouse`. Worked as a standalone
+dialog because there was no Data Browser and no root control; the
+unification is what exposed it. The mute-on-metal bug that prompted it
+WAS watched on the machine; **the fix itself is unverified on metal** -
+build and suites pass, but no one has yet clicked into the fields with
+this build. Other pages are clear: only Connection nests interactive
+controls in a group box; the Processes group box embeds nothing and its
+buttons hit-test by `PtInRect`.
+
 **Type-select does nothing in the browser list.** Selection,
 double-click and header sorting all work; typing a letter does not jump.
 `SetKeyboardFocus` is set and the key reaches the control. Universal
