@@ -156,6 +156,7 @@ static int list_dir_id(const char *rel_path, const FSSpec *spec,
 
     if (rel_path == NULL || rel_path[0] == '\0') {
         now_prefs_load(&prefs);
+        share_point(&prefs);          /* same share the spec came from */
         *dir_id = prefs.share_dir > 0 ? prefs.share_dir : fsRtDirID;
         return kFilesOK;
     }
@@ -1348,6 +1349,7 @@ static int trash_folder(short *vref, long *dir)
     short found_vref;
 
     now_prefs_load(&prefs);
+    share_point(&prefs);              /* the volume the share is on now */
     if (!share_volume(&share_vref, &prefs)) {
         return kFilesIOError;
     }

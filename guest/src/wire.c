@@ -66,6 +66,11 @@ static ConnState g;
 static void send_hello(void);
 static void xfer_cleanup(void);
 static void offer_cleanup(void);
+
+/* Is the shared lane in use? One transfer at a time is the rule, and
+   every path that starts one has to ask the same question — four
+   hand-written copies of this list had already drifted apart. */
+static Boolean wire_busy(void);
 static void take_bulk_in(const unsigned char *bytes, long len);
 static void put_drop(void);
 static void stream_drop(void);
@@ -1066,7 +1071,7 @@ int now_wire_offer_shot(char *err, long cap)
         snprintf(err, (size_t)cap, "Already streaming");
         return -1;
     }
-    if (g_xfer.active || g_offer.active) {
+    if (wire_busy()) {
         snprintf(err, (size_t)cap, "A transfer is already in flight");
         return -1;
     }
@@ -1342,216 +1347,6 @@ static void serve_file_mkdir(const char *request)
     note_shot("Folder created");
 }
 
-/* --- receiving a put ----------------------------------------------------
-   The host offers, the guest answers without prompting anyone, and the
-   bytes then stream to disk as they arrive. Nothing is buffered: the
-   app partition is smaller than the files people will send. */
-
-static struct {
-    Boolean active;                   /* accepted; bytes may arrive */
-    long id;
-    long reported;                    /* bytes announced with file.progress */
-    FileReceive rx;
-} g_put;
-
-/* How often the guest says where it has got to. The write batch is the
-   natural cadence — one report per flush — and on a 2.7 MB file that is
-   about 85 control frames across several minutes, which is nothing next
-   to the bulk stream they describe. */
-enum { kPutProgressStep = 32 * 1024 };
-
-/* Tells the host what has actually landed. The sender cannot know this:
-   its own completion fires when the local socket accepts a chunk, which
-   on this link runs minutes ahead of the machine receiving it — the bar
-   reached 100% with a third of the file delivered, and the put watchdog
-   was being fed by that same lie, so a stalled guest looked healthy.
-
-   Advisory on purpose. The control queue is eight slots deep and shared
-   with the messages that carry meaning (pongs, file.done); progress is
-   the one thing here that may be dropped, so it yields rather than
-   crowding them out, and a skipped report costs the host nothing but a
-   coarser bar. */
-static void put_report_progress(Boolean force)
-{
-    char json[128];
-
-    if (!force && g_ctlq.count >= kCtlQueueSlots / 2) {
-        return;                       /* real traffic first */
-    }
-    g_put.reported = g_put.rx.received;
-    snprintf(json, sizeof json,
-             "{\"type\":\"file.progress\",\"id\":%ld,\"received\":%ld}",
-             g_put.id, g_put.rx.received);
-    send_control(json);               /* best effort: a drop is not a fault */
-}
-
-static void put_drop(void)
-{
-    if (g_put.active) {
-        now_files_receive_abort(&g_put.rx);
-        g_put.active = false;
-    }
-}
-
-static void put_done(Boolean ok, const char *code, const char *reason)
-{
-    char json[256];
-
-    if (ok) {
-        snprintf(json, sizeof json,
-                 "{\"type\":\"file.done\",\"id\":%ld,\"ok\":true}",
-                 g_put.id);
-    } else {
-        snprintf(json, sizeof json,
-                 "{\"type\":\"file.done\",\"id\":%ld,\"ok\":false,"
-                 "\"code\":\"%s\",\"reason\":\"%.100s\"}",
-                 g_put.id, code, reason);
-    }
-    send_control(json);
-    g_put.active = false;
-}
-
-static void put_abort(const char *code, const char *reason)
-{
-    if (!g_put.active) {
-        return;
-    }
-    now_files_receive_abort(&g_put.rx);
-    put_done(false, code, reason);
-}
-
-/* Called for every inbound bulk frame. */
-static void take_bulk_in(const unsigned char *bytes, long len)
-{
-    int rc;
-
-    if (!g_put.active) {
-        return;                       /* nothing is expecting these */
-    }
-    rc = now_files_receive_chunk(&g_put.rx, bytes, len);
-    if (rc != kFilesOK) {
-        put_abort("io-error", "could not write the file");
-        return;
-    }
-    /* The first chunk reports immediately: that is what tells the host
-       this guest reports at all, so it can stop trusting its own send
-       counter early rather than after the first 32 KB. */
-    if (g_put.reported == 0
-        || g_put.rx.received - g_put.reported >= kPutProgressStep) {
-        put_report_progress(false);
-    }
-}
-
-static void serve_file_offer(const char *request)
-{
-    char name[64];
-    char path[224];
-    char container_arg[16];
-    char json[256];
-    char note[128];
-    long id = now_json_find_int(request, "id", 0);
-    long bytes = now_json_find_int(request, "bytes", 0);
-    long modified = now_json_find_int(request, "modified", 0);
-    char type_arg[8], creator_arg[8];
-    OSType file_type = 0, creator = 0;
-    FileContainer container = kContainerData;
-    Boolean overwrite;
-    int rc;
-
-    if (g_stream.active || g_xfer.active || g_offer.active
-        || g_put.active) {
-        file_refuse(id, "busy", "a transfer is already in flight");
-        return;
-    }
-    name[0] = '\0';
-    path[0] = '\0';
-    now_json_find_string(request, "name", name, sizeof name);
-    now_json_find_string(request, "path", path, sizeof path);
-    if (now_json_find_string(request, "container", container_arg,
-                             sizeof container_arg)
-        && strcmp(container_arg, "macbinary") == 0) {
-        container = kContainerMacBinary;
-    }
-    if (now_json_find_string(request, "fileType", type_arg, sizeof type_arg)
-        && strlen(type_arg) == 4) {
-        memcpy(&file_type, type_arg, 4);
-    }
-    if (now_json_find_string(request, "creator", creator_arg,
-                             sizeof creator_arg)
-        && strlen(creator_arg) == 4) {
-        memcpy(&creator, creator_arg, 4);
-    }
-    overwrite = now_json_value(request, "overwrite") != NULL
-        && *now_json_value(request, "overwrite") == 't';
-
-    memset(&g_put, 0, sizeof g_put);
-    g_put.id = id;
-    rc = now_files_receive_begin(path, name, container, bytes, file_type,
-                                 creator, (unsigned long)modified,
-                                 overwrite, &g_put.rx);
-    if (rc != kFilesOK) {
-        switch (rc) {
-        case kFilesExists:
-            file_refuse(id, "exists", "a file of that name is already there");
-            break;
-        case kFilesBadPath:
-            file_refuse(id, "bad-path", "that name or folder is not usable");
-            break;
-        case kFilesTooBig:
-            file_refuse(id, "too-big", "not enough room on that disk");
-            break;
-        default:
-            file_refuse(id, "io-error", "could not create the file");
-            break;
-        }
-        return;
-    }
-    g_put.active = true;
-    snprintf(json, sizeof json,
-             "{\"type\":\"file.accept\",\"id\":%ld}", id);
-    if (!send_control(json)) {
-        now_files_receive_abort(&g_put.rx);
-        g_put.active = false;
-        return;
-    }
-    snprintf(note, sizeof note, "Receiving %.31s...", name);
-    note_shot(note);
-}
-
-/* The sender's file.end closes the transfer; the guest confirms only
-   after the bytes are written and the file is stamped and named. */
-static void finish_put(const char *reply)
-{
-    char note[128];
-    int rc;
-
-    if (!g_put.active) {
-        return;
-    }
-    if (now_json_find_int(reply, "ok", 0) == 0
-        && now_json_value(reply, "ok") != NULL
-        && *now_json_value(reply, "ok") == 'f') {
-        put_abort("cancelled", "the sender stopped");
-        note_shot("Incoming file cancelled");
-        return;
-    }
-    /* One last report before the confirmation, so the far side sees the
-       count reach the total rather than stopping at whatever the 32 KB
-       cadence last happened to land on. Forced past the yield rule: it
-       is a single frame and it is the one that closes the bar. */
-    put_report_progress(true);
-    rc = now_files_receive_finish(&g_put.rx);
-    if (rc != kFilesOK) {
-        put_done(false, "io-error", "could not finish writing the file");
-        note_shot("Incoming file failed");
-        return;
-    }
-    put_done(true, NULL, NULL);
-    snprintf(note, sizeof note, "Received %.31s",
-             g_put.rx.final.name + 1);
-    note_shot(note);
-}
-
 /* --- sending a file to the host -----------------------------------------
    The mirror image of receiving one, and deliberately the same shape:
    we offer, the host answers, and only then do bytes move. The guest
@@ -1588,8 +1383,7 @@ int now_wire_send_file(const FSSpec *spec, char *err, long cap)
         snprintf(err, (size_t)cap, "Not connected");
         return -1;
     }
-    if (g_stream.active || g_xfer.active || g_offer.active
-        || g_send.active || g_put.active) {
+    if (wire_busy()) {
         snprintf(err, (size_t)cap, "A transfer is already in flight");
         return -1;
     }
@@ -1733,6 +1527,221 @@ static void service_send(void)
     }
 }
 
+/* --- receiving a put ----------------------------------------------------
+   The host offers, the guest answers without prompting anyone, and the
+   bytes then stream to disk as they arrive. Nothing is buffered: the
+   app partition is smaller than the files people will send. */
+
+static struct {
+    Boolean active;                   /* accepted; bytes may arrive */
+    long id;
+    long reported;                    /* bytes announced with file.progress */
+    FileReceive rx;
+} g_put;
+
+static Boolean wire_busy(void)
+{
+    return g_stream.active || g_xfer.active || g_offer.active
+        || g_send.active || g_put.active;
+}
+
+/* How often the guest says where it has got to. The write batch is the
+   natural cadence — one report per flush — and on a 2.7 MB file that is
+   about 85 control frames across several minutes, which is nothing next
+   to the bulk stream they describe. */
+enum { kPutProgressStep = 32 * 1024 };
+
+/* Tells the host what has actually landed. The sender cannot know this:
+   its own completion fires when the local socket accepts a chunk, which
+   on this link runs minutes ahead of the machine receiving it — the bar
+   reached 100% with a third of the file delivered, and the put watchdog
+   was being fed by that same lie, so a stalled guest looked healthy.
+
+   Advisory on purpose. The control queue is eight slots deep and shared
+   with the messages that carry meaning (pongs, file.done); progress is
+   the one thing here that may be dropped, so it yields rather than
+   crowding them out, and a skipped report costs the host nothing but a
+   coarser bar. */
+static void put_report_progress(Boolean force)
+{
+    char json[128];
+
+    if (!force && g_ctlq.count >= kCtlQueueSlots / 2) {
+        return;                       /* real traffic first */
+    }
+    g_put.reported = g_put.rx.received;
+    snprintf(json, sizeof json,
+             "{\"type\":\"file.progress\",\"id\":%ld,\"received\":%ld}",
+             g_put.id, g_put.rx.received);
+    send_control(json);               /* best effort: a drop is not a fault */
+}
+
+static void put_drop(void)
+{
+    if (g_put.active) {
+        now_files_receive_abort(&g_put.rx);
+        g_put.active = false;
+    }
+}
+
+static void put_done(Boolean ok, const char *code, const char *reason)
+{
+    char json[256];
+
+    if (ok) {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"file.done\",\"id\":%ld,\"ok\":true}",
+                 g_put.id);
+    } else {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"file.done\",\"id\":%ld,\"ok\":false,"
+                 "\"code\":\"%s\",\"reason\":\"%.100s\"}",
+                 g_put.id, code, reason);
+    }
+    send_control(json);
+    g_put.active = false;
+}
+
+static void put_abort(const char *code, const char *reason)
+{
+    if (!g_put.active) {
+        return;
+    }
+    now_files_receive_abort(&g_put.rx);
+    put_done(false, code, reason);
+}
+
+/* Called for every inbound bulk frame. */
+static void take_bulk_in(const unsigned char *bytes, long len)
+{
+    int rc;
+
+    if (!g_put.active) {
+        return;                       /* nothing is expecting these */
+    }
+    rc = now_files_receive_chunk(&g_put.rx, bytes, len);
+    if (rc != kFilesOK) {
+        put_abort("io-error", "could not write the file");
+        return;
+    }
+    /* The first chunk reports immediately: that is what tells the host
+       this guest reports at all, so it can stop trusting its own send
+       counter early rather than after the first 32 KB. */
+    if (g_put.reported == 0
+        || g_put.rx.received - g_put.reported >= kPutProgressStep) {
+        put_report_progress(false);
+    }
+}
+
+static void serve_file_offer(const char *request)
+{
+    char name[64];
+    char path[224];
+    char container_arg[16];
+    char json[256];
+    char note[128];
+    long id = now_json_find_int(request, "id", 0);
+    long bytes = now_json_find_int(request, "bytes", 0);
+    long modified = now_json_find_int(request, "modified", 0);
+    char type_arg[8], creator_arg[8];
+    OSType file_type = 0, creator = 0;
+    FileContainer container = kContainerData;
+    Boolean overwrite;
+    int rc;
+
+    if (wire_busy()) {
+        file_refuse(id, "busy", "a transfer is already in flight");
+        return;
+    }
+    name[0] = '\0';
+    path[0] = '\0';
+    now_json_find_string(request, "name", name, sizeof name);
+    now_json_find_string(request, "path", path, sizeof path);
+    if (now_json_find_string(request, "container", container_arg,
+                             sizeof container_arg)
+        && strcmp(container_arg, "macbinary") == 0) {
+        container = kContainerMacBinary;
+    }
+    if (now_json_find_string(request, "fileType", type_arg, sizeof type_arg)
+        && strlen(type_arg) == 4) {
+        memcpy(&file_type, type_arg, 4);
+    }
+    if (now_json_find_string(request, "creator", creator_arg,
+                             sizeof creator_arg)
+        && strlen(creator_arg) == 4) {
+        memcpy(&creator, creator_arg, 4);
+    }
+    overwrite = now_json_value(request, "overwrite") != NULL
+        && *now_json_value(request, "overwrite") == 't';
+
+    memset(&g_put, 0, sizeof g_put);
+    g_put.id = id;
+    rc = now_files_receive_begin(path, name, container, bytes, file_type,
+                                 creator, (unsigned long)modified,
+                                 overwrite, &g_put.rx);
+    if (rc != kFilesOK) {
+        switch (rc) {
+        case kFilesExists:
+            file_refuse(id, "exists", "a file of that name is already there");
+            break;
+        case kFilesBadPath:
+            file_refuse(id, "bad-path", "that name or folder is not usable");
+            break;
+        case kFilesTooBig:
+            file_refuse(id, "too-big", "not enough room on that disk");
+            break;
+        default:
+            file_refuse(id, "io-error", "could not create the file");
+            break;
+        }
+        return;
+    }
+    g_put.active = true;
+    snprintf(json, sizeof json,
+             "{\"type\":\"file.accept\",\"id\":%ld}", id);
+    if (!send_control(json)) {
+        now_files_receive_abort(&g_put.rx);
+        g_put.active = false;
+        return;
+    }
+    snprintf(note, sizeof note, "Receiving %.31s...", name);
+    note_shot(note);
+}
+
+/* The sender's file.end closes the transfer; the guest confirms only
+   after the bytes are written and the file is stamped and named. */
+static void finish_put(const char *reply)
+{
+    char note[128];
+    int rc;
+
+    if (!g_put.active) {
+        return;
+    }
+    if (now_json_find_int(reply, "ok", 0) == 0
+        && now_json_value(reply, "ok") != NULL
+        && *now_json_value(reply, "ok") == 'f') {
+        put_abort("cancelled", "the sender stopped");
+        note_shot("Incoming file cancelled");
+        return;
+    }
+    /* One last report before the confirmation, so the far side sees the
+       count reach the total rather than stopping at whatever the 32 KB
+       cadence last happened to land on. Forced past the yield rule: it
+       is a single frame and it is the one that closes the bar. */
+    put_report_progress(true);
+    rc = now_files_receive_finish(&g_put.rx);
+    if (rc != kFilesOK) {
+        put_done(false, "io-error", "could not finish writing the file");
+        note_shot("Incoming file failed");
+        return;
+    }
+    put_done(true, NULL, NULL);
+    snprintf(note, sizeof note, "Received %.31s",
+             g_put.rx.final.name + 1);
+    note_shot(note);
+}
+
 static void serve_file_list(const char *request)
 {
     enum { kPage = 16 };              /* control frames cap at 4 KB */
@@ -1807,7 +1816,7 @@ static void serve_file_get(const char *request)
     unsigned short xfer;
     int rc;
 
-    if (g_stream.active || g_xfer.active || g_offer.active) {
+    if (wire_busy()) {
         file_refuse(id, "busy", "a transfer is already in flight");
         return;
     }
@@ -1953,7 +1962,7 @@ static void stream_start(const char *reply)
     long depth_arg;
     long id = now_json_find_int(reply, "id", 0);
 
-    if (g_stream.active || g_xfer.active || g_offer.active) {
+    if (wire_busy()) {
         stream_send_stopped(id, "busy: a transfer is in flight");
         return;
     }
