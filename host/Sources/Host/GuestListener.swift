@@ -1132,7 +1132,17 @@ final class Session {
     /// steps is enough to keep the wire busy across a skipped report —
     /// `received` is cumulative, so one later report reopens the window
     /// whatever was dropped in between.
-    static let outboundWindowBytes = 192 * 1024
+    /// NOW_WINDOW overrides it (0 = no window at all), because a flow
+    /// control rule has to be falsifiable at the wire: the only way to
+    /// know what the window costs is to run the same transfer without
+    /// it against the same machine.
+    static let outboundWindowBytes: Int = {
+        if let raw = ProcessInfo.processInfo.environment["NOW_WINDOW"],
+           let n = Int(raw) {
+            return n
+        }
+        return 192 * 1024
+    }()
 
     /// Folds a guest progress report into the window and restarts the
     /// sender if it was parked.
@@ -1181,7 +1191,7 @@ final class Session {
         // a send buffer it cannot drain. Parking here is what a progress
         // report un-parks; if progress stops altogether the transfer is
         // genuinely dead and the put watchdog says so.
-        if out.acking,
+        if out.acking, Self.outboundWindowBytes > 0,
            out.sent - out.acked >= Self.outboundWindowBytes {
             out.parked = true
             outbound = out

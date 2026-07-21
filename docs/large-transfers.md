@@ -74,6 +74,52 @@ Two further facts constrain the mechanism:
   time (1 MB runs for 4.4 s at the slower rate and is fine) and not by
   the byte at which it happens (which varies).
 
+## What the guest's own counters say (2026-07-20, `now-chip`)
+
+The instrumented guest answers the question the earlier rounds could
+only guess at. Two 2 MB puts, the second with a ping running alongside:
+
+| | |
+|---|---|
+| Outcome | **completed**, ~300 s, both runs |
+| `Loop passes` across one transfer | 1,146,015 → 1,998,160 = **852,145** (~2,870/s) |
+| `In receive` | **976 ms** of 297,000 ms — 0.3% |
+| `Rcv backlog` | 178 → 1,611 bytes; never accumulates |
+
+**The guest is starved, not overloaded.** Its event loop spins fast, its
+endpoint holds nothing, and its receive path is idle 99.7% of the time.
+Whatever throttles the transfer is upwind of the guest.
+
+### It is not the link
+
+Measured during and immediately after the transfers:
+
+- ping, 64 B: 355 replies, **0 timeouts**, median 4.0 ms, flat ~5 ms
+  across every 30 s bucket of a 297 s transfer.
+- ping, **1400 B and 1472 B** (full MTU, unfragmented): 0% loss. Size
+  alone is not being dropped.
+- **FTP: 195 KB in 2.56 s = 76 KB/s** pulled from the machine, and
+  195 KB pushed INTO it in 2.2 s = 89 KB/s — the same direction as the
+  failing transfer, over the same link, minutes apart.
+
+A link that carries 89 KB/s for Rumpus while NOW gets 3.5 KB/s is not
+the explanation. (Caveat kept honestly: ping at 3 packets/s does not
+test the burst spacing the pacing finding is actually about. The FTP
+number is the load-bearing one.)
+
+### It is not the receiver-clocked window
+
+Same transfer with `NOW_WINDOW=0` (window entirely off): **329 s**,
+against 297 s with a 192 KB window. The window neither causes nor cures
+the collapse, and `outboundWindowBytes` is now overridable precisely so
+that claim stays falsifiable at the wire.
+
+### The shape, restated
+
+Every run agrees: ~340 KB/s for roughly the first megabyte, then ~4 KB/s
+for the remainder. What changed tonight is that it now **finishes**
+rather than dying — see below.
+
 ## Mechanism
 
 The pacing rule in `docs/architecture.md` is precise about why the gap
@@ -155,6 +201,42 @@ See `contract/asyncapi.yaml` for the normative form. The shape:
   must read its absence as "unchecked", never as "correct". It matters
   most exactly here: a resumed file is stitched from two sessions and
   nothing else checks the seam.
+
+## Where this got to, and what is still open
+
+**A 2 MB put now completes.** It failed or wedged every time before, and
+it has since succeeded twice, ~300 s each. The most likely reason is the
+control-splicing fix: with control frames no longer landing inside bulk
+frames, the stream stays coherent instead of desyncing, so a slow
+transfer stays a slow transfer rather than becoming a dead one. That is
+survivability, which was the point — but it is inference from a
+before/after, not a proven causal chain, and it should be labelled that
+way until someone reproduces the desync deliberately.
+
+**The collapse itself is still unexplained.** ~340 KB/s to about a
+megabyte, then ~4 KB/s, reproducible, with a healthy link, an idle
+guest, and no dependence on the sender window. The rate it falls to is
+the unpaced rate from the pacing finding, which says the metering stops
+being effective — but *why* it stops, after roughly a megabyte, on a
+link that concurrently carries 89 KB/s for FTP, is not established.
+
+The next measurement to make, and the one this stopped short of: **time
+the host's own `connection.send` completions.** At 3.5 KB/s with
+1448-byte writes each completion must be taking ~400 ms, which is TCP
+backpressure and would say the socket cannot hand off — the one link in
+the chain still unmeasured. A histogram of completion latency across the
+collapse boundary would show whether the host is blocked or simply not
+trying.
+
+**Host→guest control is starved during bulk, and that may be self
+inflicted.** `putstat` went unanswered for 25 s repeatedly while
+`file.progress` (guest→host, the opposite direction) flowed fine
+throughout. The asymmetry points at the new control queue holding
+host→guest frames: at 4 KB/s a 32 KB frame occupies ~8 s, so the drain
+window between frames is narrow. Correctness is not in question — the
+splice it prevents is real — but the latency budget claimed for it
+("~70 ms, one frame") only holds at full speed, and during a collapse it
+is seconds. That belongs in the fix, not just in a comment.
 
 ## corpus_impact
 

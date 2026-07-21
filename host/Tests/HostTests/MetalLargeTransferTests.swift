@@ -176,8 +176,16 @@ final class MetalLargeTransferTests: XCTestCase {
     /// answer? Moves no bytes, so it is safe to run against a machine
     /// whose state is in doubt — including one just recovered from a
     /// wedge, where the first question is whether it came back at all.
+    /// NOW_METAL_WAIT sets how long to hold the port open, because the
+    /// human has to launch the guest INTO a live listener — a probe that
+    /// gives up after 60 s measures the gap between two people, not the
+    /// machine. Reading silence from a listener that outlived the guest,
+    /// or vice versa, cost this investigation several hours.
     func testJustTellMeTheGuestIsAliveAndWhichBuild() async throws {
-        let guest = try await waitForGuest(60)
+        let wait = ProcessInfo.processInfo.environment["NOW_METAL_WAIT"]
+            .flatMap { TimeInterval($0) } ?? 60
+        print("=== holding 5251 open for \(Int(wait))s — launch the guest now")
+        let guest = try await waitForGuest(wait)
         print("\n=== connected to \(guest) ===")
         print("=== about:   \(await command("about"))")
         print("=== putstat: \(await command("putstat"))")
