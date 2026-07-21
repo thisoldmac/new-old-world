@@ -66,6 +66,14 @@ half of OS 9 networking, so every listener stays on the modern side.
   else. Advisory by design — dropped rather than queued when the control
   queue is busy, so its absence means an old peer, not a stalled one.
 
+## Logging
+
+Each side keeps a log: one file per launch in a `now-logs` folder, plus
+the last lines in memory. `tail` reads either machine's from either
+console. What belongs in one, what must never be logged (anything in a
+per-chunk path), and how to read the two together is
+[docs/logging.md](logging.md).
+
 ## Capture and streaming
 
 Full-screen capture cost is VRAM read bandwidth — transaction-bound at
