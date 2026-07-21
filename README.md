@@ -9,11 +9,20 @@ on either side.
 
 ## What works today
 
+- **The Workshop** — the guest is one window now: a sidebar rail
+  (Screenshots, Files, Console, with Connection pinned at the bottom
+  behind a divider and a status lamp), a header placard per page, a
+  status placard below, Cmd-1..4 to switch. The five separate windows
+  and the Connection dialog are gone. The shell is emulator-tested and
+  deployed; the four pages inside it are **built and unit-tested but
+  not yet watched on any display** — the ledger says so too.
 - **Persistent connection** — the guest dials the host and holds one TCP
   connection with a guest-driven heartbeat, capped-backoff reconnect
-  (adaptive or a fixed cadence from the Connection dialog), and orderly
+  (adaptive or a fixed cadence from the Connection page), and orderly
   goodbyes. Control messages ride a retry queue so flow control on a
-  saturated wire can never silently eat a protocol word.
+  saturated wire can never silently eat a protocol word. Connecting on
+  launch is now a checkbox — off means the Connection page is the only
+  dialer, and a Save never dials by surprise.
 - **Console** — the same command table runs locally on the guest and as a
   remote shell from the host (`gestalt`, `screenshot`, `vprobe`, unix-style
   flags, history).

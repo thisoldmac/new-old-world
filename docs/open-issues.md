@@ -28,13 +28,25 @@ dead weight should know it was built deliberately, not left over.
 
 ## In flight elsewhere
 
-**A guest UI rework** is under way in codex thread
-`019f8272-8aac-73a2-ad5c-c3f4884b587c` (Michelle, 2026-07-20). It will
-need reconciling with `thread/files` when it lands, and it overlaps
-`fork/carbon-ui-cleanup` — a Carbon UI correctness pass on the same
-windows. Two independent passes over the same files is the expensive
-merge; whichever lands second should expect to rebase rather than
-merge, and the reconciler should read both before resolving anything.
+**The unified Workshop landed** on `claude/guest-workshop-unified-a3aab9`
+(2026-07-21): one window, a hand-drawn sidebar rail, and all four
+modules (Screenshots, Files, Console, Connection) behind the
+`WorkshopModuleOps` contract. The five old windows and the Connection
+dialog are deleted. The codex branch `codex/guest-console-invert` still
+holds two UNMERGED commits (`f3e8e0f` console invert, `160ed85` async
+OT connect + rename-stable prefs identity) — the merge is on Michelle's
+hold. The Workshop reimplemented the invert and prefs-v9 pieces
+independently, so the codex value that remains is chiefly the **async
+connect path**, which relates to "an unreachable host presents as a
+hang" below: without it, `OTConnect` on this branch is synchronous.
+
+**Workshop follow-ups, deliberately not done in the arc:** a CarbonLib
+1.6 launch gate (wire.c still surfaces `kConnNeedsCarbonLib` at connect
+time instead); the capture disclosure's expanded state is session-only,
+not persisted; the Files page's Send File button sits in the share block
+rather than the header placard the spec drew; and the sidebar has no
+focus ring, so Tab reaches controls but never the rail (arrows work
+whenever no field has focus).
 
 ## Broken
 
@@ -66,6 +78,17 @@ Not load-bearing; parked as a known gap rather than chased.
 Everything here builds and passes its tests. None of it has been watched
 working on the PowerBook.
 
+- **The whole Workshop beyond the Phase-1 shell.** The shell (rail,
+  placards, switching) ran in the emulator and was deployed to the
+  PowerBook; the Connection, Console, Screenshots and Files pages have
+  never been rendered on ANY display — the VM loop was skipped by
+  decision after the shell checked out. First metal launch should
+  expect first-render surprises in: edit-text focus/caret, the popup
+  and disclosure CDEFs inside a window (not a dialog), the progress
+  bar, and the preview well's CopyBits at 16/32-bit depths.
+- **Prefs v9.** Reads v1-v8 files and seeds the Console page from a
+  legacy console_open flag; exercised only by reasoning, not by an old
+  prefs file on the machine.
 - **The host serving move / trash / restore / mkdir.** 13 tests, zero
   minutes of machine time. No client asks for it yet (see above).
 - **Accented file names.** macOS stores names decomposed, so "café" is
