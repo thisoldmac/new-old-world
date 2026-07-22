@@ -189,7 +189,19 @@ whose own window records do not sit there. `now_peek_windows_for_psn` /
 Manager (`FrontWindow`/`GetNextWindow`/`GetWindowBounds`/`GetWTitle`) -
 no reason to go foreign for oneself. So self now crops like any other
 process; the full-screen fallback remains only for the truly windowless.
-Tested + builds; the self crop is not yet metal-verified. `process.launch` (opening an
+**Metal-verified on the PB1400c** (2026-07-22): the detail pane reads
+NOW's own windows and Screenshot App crops NOW's Workshop window.
+
+With that, the whole drive arc is metal-verified: Bring to Front, Ask to
+Quit, the self-quit refusal, and Screenshot App cropping Finder, Strider,
+and NOW itself.
+
+**Smell, deferred:** the host's process list can hold stale PSNs across a
+guest relaunch, and a drive verb on a stale PSN fails (safely - the guest
+re-validates and answers ok:false / capture.end ok:false) until a manual
+Refresh. It fails closed, so it is a UX wart not a correctness bug, but
+the list should notice a reconnect and re-fetch itself rather than making
+the human hit Refresh. Left for a later pass. `process.launch` (opening an
 app that is not yet running) is the honest next verb; it needs a
 path/signature to name an unlaunched app, not a PSN. Everything is tested
 (contract round-trips incl. `process.shot`, a guest `process.result`
