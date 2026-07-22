@@ -44,6 +44,10 @@ static WindowRef g_window;
 static char g_lines[kMaxLines][96];
 static int g_count;
 
+static void crumb(const char *file, const char *what, Boolean truncate);
+
+/* Persist every line to "Census Trap Spike" the instant it is reported, so
+   a crash mid-run still leaves the whole story on the desktop. */
 static void report(const char *fmt, ...)
 {
     va_list a;
@@ -51,6 +55,7 @@ static void report(const char *fmt, ...)
     va_start(a, fmt);
     vsnprintf(g_lines[g_count], sizeof g_lines[0], fmt, a);
     va_end(a);
+    crumb("Census Trap Spike", g_lines[g_count], g_count == 0);
     ++g_count;
 }
 
@@ -137,7 +142,12 @@ static unsigned short g_pccard_thunk[] = {
 static RoutineDescriptor g_pccard_rd =
     BUILD_M68K_RD(kThunkInfo, g_pccard_thunk);
 
-typedef long (*CallUPPProc)(UniversalProcPtr, ProcInfoType, void *);
+/* VARIADIC on purpose: CallUniversalProc reads its args per procInfo from
+   the PowerPC stack parameter-save area, the way a variadic callee does.
+   A fixed-arg pointer would leave the arg only in a register and the
+   manager would marshal garbage - the Type 1 bus error. Declaring the
+   pointer variadic makes gcc spill the args to the stack as expected. */
+typedef long (*CallUPPProc)(UniversalProcPtr, ProcInfoType, ...);
 static CallUPPProc g_call_upp;
 
 static int resolve_call_upp(void)
@@ -198,21 +208,25 @@ static void run_probe(void)
         report("CallUniversalProc not in InterfaceLib - cannot dispatch. STOP");
         return;
     }
-    report("CallUniversalProc resolved.");
+    report("CallUniversalProc resolved at $%08lX", (unsigned long)g_call_upp);
+    report("self descriptor $%08lX, thunk $%08lX",
+           (unsigned long)&g_self_rd, (unsigned long)g_self_thunk);
     MakeDataExecutable(g_self_thunk, sizeof g_self_thunk);
     MakeDataExecutable(g_ata_thunk, sizeof g_ata_thunk);
     MakeDataExecutable(g_pccard_thunk, sizeof g_pccard_thunk);
     report("");
 
     /* Stage 1 - the trap-free control. */
-    step("selftest: dispatch trap-free thunk");
+    step("selftest: ABOUT TO dispatch trap-free thunk");
+    report("selftest: about to call...");
     {
         SInt16 r = dispatch(&g_self_rd, (void *)0);
+        step("selftest: RETURNED (did not crash)");
         report("selftest: returned $%04X %s", (unsigned short)r,
                (unsigned short)r == 0x4242 ? "- Mixed Mode OK"
                                            : "- WRONG, stopping");
         if ((unsigned short)r != 0x4242) {
-            step("selftest failed - not touching traps");
+            step("selftest wrong value - not touching traps");
             return;
         }
     }
@@ -330,10 +344,8 @@ int main(void)
         }
     }
     step("launched");
-    run_probe();
-    for (i = 0; i < g_count; i++) {
-        crumb("Census Trap Spike", g_lines[i], i == 0);
-    }
+    run_probe();                        /* report() persists each line itself */
+    (void)i;
     step("done");
 
     while (running) {
