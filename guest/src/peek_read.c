@@ -220,6 +220,51 @@ static void read_title(const ReadableZones *z, unsigned long wl,
     out[len] = '\0';
 }
 
+/* Our OWN windows, read through the Window Manager rather than the anchor
+   plane's foreign-memory walk. NOW is a Carbon app: its window records do
+   not sit at the classic 68K WindowRecord offsets the foreign path reads,
+   so reading self that way returns "unreadable". For self there is no
+   reason to go foreign at all - the Toolbox will hand us our own bounds
+   and titles directly, and they are always live. */
+static NowPeekReadStatus read_own_windows(NowPeekWindowList *out)
+{
+    WindowRef win = FrontWindow();
+    int hops;
+
+    out->stamp_ticks = (NowPeekU32)TickCount();   /* own state is live */
+    for (hops = 0; win != NULL && hops < kWindowChainCap; ++hops) {
+        Rect r;
+
+        GetWindowBounds(win, kWindowStructureRgn, &r);
+        if (now_peek_rect_sane(r.top, r.left, r.bottom, r.right)) {
+            if (out->count < kNowPeekMaxWindows) {
+                NowPeekWindow *w = &out->windows[out->count];
+                Str255 title;
+                short len;
+
+                w->top = r.top;
+                w->left = r.left;
+                w->bottom = r.bottom;
+                w->right = r.right;
+                GetWTitle(win, title);
+                len = title[0];
+                if (len > kNowPeekTitleMax - 1) {
+                    len = kNowPeekTitleMax - 1;
+                }
+                if (len > 0) {
+                    memcpy(w->title, title + 1, (size_t)len);
+                }
+                w->title[len] = '\0';
+                ++out->count;
+            } else {
+                out->more = true;
+            }
+        }
+        win = GetNextWindow(win);
+    }
+    return out->count > 0 ? kNowPeekReadOk : kNowPeekReadNoWindows;
+}
+
 NowPeekReadStatus now_peek_windows_for_psn(const ProcessSerialNumber *psn,
                                            NowPeekWindowList *out)
 {
@@ -228,8 +273,16 @@ NowPeekReadStatus now_peek_windows_for_psn(const ProcessSerialNumber *psn,
     NowPeekU32 stamp = 0;
     NowPeekReadStatus st;
     int hops;
+    ProcessSerialNumber self;
+    Boolean is_self = false;
 
     memset(out, 0, sizeof *out);
+    if (GetCurrentProcess(&self) == noErr) {
+        (void)SameProcess(psn, &self, &is_self);
+    }
+    if (is_self) {
+        return read_own_windows(out);
+    }
     st = resolve(psn, &z, &wl, &stamp);
     if (st != kNowPeekReadOk) {
         return st;
@@ -266,8 +319,20 @@ NowPeekReadStatus now_peek_window_count(const ProcessSerialNumber *psn,
     NowPeekReadStatus st;
     int hops;
     short n = 0;
+    ProcessSerialNumber self;
+    Boolean is_self = false;
 
     *count = 0;
+    if (GetCurrentProcess(&self) == noErr) {
+        (void)SameProcess(psn, &self, &is_self);
+    }
+    if (is_self) {
+        NowPeekWindowList w;
+
+        st = read_own_windows(&w);
+        *count = w.count;
+        return st;
+    }
     st = resolve(psn, &z, &wl, &stamp);   /* stamp unused for the badge */
     if (st != kNowPeekReadOk) {
         return st;                    /* NoWindows/NoAnchor/etc as-is */

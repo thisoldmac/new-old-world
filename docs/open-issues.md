@@ -175,13 +175,21 @@ reuses `arm_transfer`/capture.begin so the host receives it exactly as
 any capture, landing in the Screenshots module. The guest owns the
 timing, so the host-side delay hack is gone. **Metal-verified cropping
 Finder and Strider on the PB1400c** (2026-07-22). When the window bounds
-cannot be read - a windowless process, or NOW reading its OWN anchor slot
-(which failed "capture ended without a begin") - it falls back to a
+cannot be read - a genuinely windowless process - it falls back to a
 full-screen capture rather than erroring: the app is front, so the screen
-with it on it is a truthful answer. Why the self-read specifically fails
-is unresolved (Finder/Strider read fine); the fallback makes it a
-non-issue in practice, and running self to ground needs on-device peek
-debugging. `process.launch` (opening an
+with it on it is a truthful answer.
+
+**Self-read fixed** (2026-07-22): NOW reading its OWN windows returned
+"unreadable" (in the detail pane and to `process.shot`, which then failed
+"capture ended without a begin"). Cause: the anchor plane walks foreign
+memory at the classic 68K `WindowRecord` offsets, and NOW is a Carbon app
+whose own window records do not sit there. `now_peek_windows_for_psn` /
+`now_peek_window_count` now special-case self (`SameProcess` with
+`GetCurrentProcess`) and read NOW's own windows straight from the Window
+Manager (`FrontWindow`/`GetNextWindow`/`GetWindowBounds`/`GetWTitle`) -
+no reason to go foreign for oneself. So self now crops like any other
+process; the full-screen fallback remains only for the truly windowless.
+Tested + builds; the self crop is not yet metal-verified. `process.launch` (opening an
 app that is not yet running) is the honest next verb; it needs a
 path/signature to name an unlaunched app, not a PSN. Everything is tested
 (contract round-trips incl. `process.shot`, a guest `process.result`
