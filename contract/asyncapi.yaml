@@ -1526,6 +1526,27 @@ components:
         type: object
         properties:
           launch: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    vers:
+      description: >
+        One file's 'vers' resources — the short version, the numeric
+        version and stage, the Get Info string, and the product (id 2)
+        when present — read from that one file's resource fork alone
+        (Get1Resource, never the chain: the System's 'vers' answering
+        for a file that has none is the most convincing wrong answer).
+        Deliberately single-file: a fork open per file is the measured
+        expensive path, so nothing ever loops this over an inventory.
+        Resolution is launch's — bare name searches applications, a
+        full path reads any file. Absence of a 'vers' is an answer.
+      args:
+        type: object
+        properties:
+          name:
+            type: string
+            description: An application name, or a full HFS path.
+      output:
+        type: object
+        properties:
+          vers: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
 
   # The census probe registry: the CLOSED, DECLARED set of probes a side may
   # be asked about, and the outcome vocabulary every report speaks. Adding a

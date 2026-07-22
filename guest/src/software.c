@@ -60,10 +60,59 @@ static void p2c(const unsigned char *p, char *out, long cap)
     out[n] = '\0';
 }
 
-/* One catalog entry as a row: "TYPE/CREA  123K" plus "(off)" when it
-   came from a disabled folder. */
+/* --- the running join ----------------------------------------------------
+   Which installed things are processes right now. One Process Manager
+   walk per gather; the compare is the FSSpec triple, not the display
+   name, because two things may share a name but never a catalog slot.
+   Names compare with EqualString(no case, diacritics) — HFS's rules. */
+
+#define kRunningMax 48
+
+typedef struct {
+    FSSpec specs[kRunningMax];
+    int count;
+} RunningSet;
+
+static void running_gather(RunningSet *rs)
+{
+    ProcessSerialNumber psn = { 0, kNoProcess };
+
+    rs->count = 0;
+    while (rs->count < kRunningMax
+           && GetNextProcess(&psn) == noErr) {
+        ProcessInfoRec info;
+        FSSpec spec;
+
+        memset(&info, 0, sizeof info);
+        info.processInfoLength = sizeof info;
+        info.processName = NULL;
+        info.processAppSpec = &spec;
+        if (GetProcessInformation(&psn, &info) == noErr) {
+            rs->specs[rs->count] = spec;
+            rs->count += 1;
+        }
+    }
+}
+
+static Boolean running_has(const RunningSet *rs, short vRefNum, long parID,
+                           ConstStr255Param name)
+{
+    int i;
+
+    for (i = 0; i < rs->count; ++i) {
+        if (rs->specs[i].vRefNum == vRefNum
+            && rs->specs[i].parID == parID
+            && EqualString(rs->specs[i].name, name, false, true)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* One catalog entry as a row: "TYPE/CREA  123K" plus its states. */
 static void file_row(SoftwareRow *row, const unsigned char *pname,
-                     const FInfo *info, long bytes, Boolean off)
+                     const FInfo *info, long bytes, Boolean off,
+                     Boolean running)
 {
     char type[5], creator[5], size[12];
 
@@ -71,16 +120,17 @@ static void file_row(SoftwareRow *row, const unsigned char *pname,
     fourcc(info->fdType, type);
     fourcc(info->fdCreator, creator);
     size_text(bytes, size, sizeof size);
-    snprintf(row->detail, sizeof row->detail, "%s/%s  %s%s",
-             type, creator, size, off ? "  (off)" : "");
+    snprintf(row->detail, sizeof row->detail, "%s/%s  %s%s%s",
+             type, creator, size, off ? "  (off)" : "",
+             running ? "  (running)" : "");
 }
 
 /* Walks one folder's files (subfolders skipped: a domain folder's
    nested folders — Printer Descriptions and kin — are containers, not
    installed things). Adds rows while there is room, keeps counting
    after; returns the file count. */
-static int walk_folder(OSType folder, Boolean off, SoftwareRow *rows,
-                       int max, int *n, Boolean *more)
+static int walk_folder(OSType folder, Boolean off, const RunningSet *rs,
+                       SoftwareRow *rows, int max, int *n, Boolean *more)
 {
     short vRef;
     long dirID;
@@ -110,9 +160,12 @@ static int walk_folder(OSType folder, Boolean off, SoftwareRow *rows,
         count += 1;
         if (rows != NULL) {
             if (*n < max) {
+                Boolean running = rs != NULL
+                    && running_has(rs, vRef, dirID, pname);
+
                 file_row(&rows[*n], pname, &pb.hFileInfo.ioFlFndrInfo,
                          pb.hFileInfo.ioFlLgLen + pb.hFileInfo.ioFlRLgLen,
-                         off);
+                         off, running);
                 *n += 1;
             } else if (more != NULL) {
                 *more = true;
@@ -128,10 +181,11 @@ int now_software_overview(SoftwareRow *rows, int max)
     int d;
 
     for (d = 0; d < kDomainCount && n < max; ++d) {
-        int on = walk_folder(k_domains[d].folder, false, NULL, 0,
+        int on = walk_folder(k_domains[d].folder, false, NULL, NULL, 0,
                              NULL, NULL);
         int off = k_domains[d].disabled != 0
-            ? walk_folder(k_domains[d].disabled, true, NULL, 0, NULL, NULL)
+            ? walk_folder(k_domains[d].disabled, true, NULL, NULL, 0,
+                          NULL, NULL)
             : 0;
 
         snprintf(rows[n].name, sizeof rows[n].name, "%s",
@@ -153,7 +207,7 @@ int now_software_overview(SoftwareRow *rows, int max)
     return n;
 }
 
-/* --- the APPL sweep ------------------------------------------------------ */
+/* --- the resumable APPL sweep ------------------------------------------- */
 
 enum {
     kSweepSliceTicks = 15,            /* catsearch's verified budget */
@@ -164,92 +218,115 @@ enum {
 
 static FSSpec g_matches[kSweepMatchMax];
 
-/* Runs PBCatSearch on the startup volume for APPL files whose name is
-   `pname` (NULL = every application), calling collect() per hit until
-   it declines more. Returns eofErr for a completed sweep, noErr for a
-   stopped-early one, or the File Manager's error. */
-typedef Boolean (*SweepCollect)(const FSSpec *spec, void *ctx);
-
-static OSErr appl_sweep(ConstStr255Param pname, SweepCollect collect,
-                        void *ctx)
+void now_software_sweep_begin(SweepState *s, ConstStr255Param name_or_null)
 {
-    short vRef;
     long sysDir;
+
+    memset(s, 0, sizeof *s);
+    if (name_or_null != NULL) {
+        long n = name_or_null[0] < 63 ? name_or_null[0] : 63;
+
+        s->name[0] = (unsigned char)n;
+        memcpy(s->name + 1, name_or_null + 1, (size_t)n);
+    }
+    s->err = FindFolder(kOnSystemDisk, kSystemFolderType,
+                        kDontCreateFolder, &s->vRef, &sysDir);
+    if (s->err != noErr) {
+        s->done = true;
+        return;
+    }
+    s->opt_buf = NewPtr(kSweepOptBytes);   /* NULL is legal: just slower */
+}
+
+int now_software_sweep_step(SweepState *s, SweepCollect collect, void *ctx)
+{
     CSParam pb;
     CInfoPBRec want, mask;
-    CatPositionRec pos;
-    Str63 want_name;
-    Ptr optBuf;
-    long spent = 0;
+    long t0;
+    long i;
+    int delivered = 0;
     OSErr err;
 
-    err = FindFolder(kOnSystemDisk, kSystemFolderType, kDontCreateFolder,
-                     &vRef, &sysDir);
-    if (err != noErr) {
-        return err;
+    if (s->done) {
+        return 0;
     }
     memset(&want, 0, sizeof want);
     memset(&mask, 0, sizeof mask);
-    memset(&pos, 0, sizeof pos);
     want.hFileInfo.ioFlFndrInfo.fdType = 'APPL';
     mask.hFileInfo.ioFlFndrInfo.fdType = (OSType)0xFFFFFFFFUL;
     want.hFileInfo.ioFlAttrib = 0;
     mask.hFileInfo.ioFlAttrib = ioDirMask;
-    if (pname != NULL) {
-        long n = pname[0] < 63 ? pname[0] : 63;
-
-        want_name[0] = (unsigned char)n;
-        memcpy(want_name + 1, pname + 1, (size_t)n);
-        want.hFileInfo.ioNamePtr = want_name;
+    if (s->name[0] != 0) {
+        want.hFileInfo.ioNamePtr = s->name;
     }
-    optBuf = NewPtr(kSweepOptBytes);   /* NULL is legal: just slower */
 
-    for (;;) {
-        long t0;
-        long i;
+    memset(&pb, 0, sizeof pb);
+    pb.ioVRefNum = s->vRef;
+    pb.ioMatchPtr = g_matches;
+    pb.ioReqMatchCount = kSweepMatchMax;
+    pb.ioSearchBits = fsSBFlFndrInfo | fsSBFlAttrib
+        | (s->name[0] != 0 ? fsSBFullName : 0);
+    pb.ioSearchInfo1 = &want;
+    pb.ioSearchInfo2 = &mask;
+    pb.ioSearchTime = kSweepSliceTicks;
+    pb.ioCatPosition = s->pos;
+    pb.ioOptBuffer = s->opt_buf;
+    pb.ioOptBufSize = s->opt_buf != NULL ? kSweepOptBytes : 0;
 
-        memset(&pb, 0, sizeof pb);
-        pb.ioVRefNum = vRef;
-        pb.ioMatchPtr = g_matches;
-        pb.ioReqMatchCount = kSweepMatchMax;
-        pb.ioSearchBits = fsSBFlFndrInfo | fsSBFlAttrib
-            | (pname != NULL ? fsSBFullName : 0);
-        pb.ioSearchInfo1 = &want;
-        pb.ioSearchInfo2 = &mask;
-        pb.ioSearchTime = kSweepSliceTicks;
-        pb.ioCatPosition = pos;
-        pb.ioOptBuffer = optBuf;
-        pb.ioOptBufSize = optBuf != NULL ? kSweepOptBytes : 0;
+    t0 = (long)TickCount();
+    err = PBCatSearchSync(&pb);
+    s->spent_ticks += (long)TickCount() - t0;
+    s->pos = pb.ioCatPosition;
 
-        t0 = (long)TickCount();
-        err = PBCatSearchSync(&pb);
-        spent += (long)TickCount() - t0;
-        pos = pb.ioCatPosition;
-
-        for (i = 0; i < pb.ioActMatchCount; ++i) {
-            if (!collect(&g_matches[i], ctx)) {
-                if (optBuf != NULL) {
-                    DisposePtr(optBuf);
-                }
-                return noErr;          /* stopped early, on purpose */
-            }
-        }
-        if (err == catChangedErr) {
-            /* The position token died with the catalog generation; for
-               an inventory page a restart would double-count, so stop
-               here as a stopped-early sweep (continuing would just get
-               catChangedErr again, forever). */
-            err = noErr;
-            break;
-        }
-        if (err != noErr || spent > kSweepCapTicks) {
-            break;
+    for (i = 0; i < pb.ioActMatchCount; ++i) {
+        delivered += 1;
+        if (!collect(&g_matches[i], ctx)) {
+            s->done = true;
+            s->err = noErr;            /* stopped early, on purpose */
+            now_software_sweep_end(s);
+            return delivered;
         }
     }
-    if (optBuf != NULL) {
-        DisposePtr(optBuf);
+    if (err == catChangedErr) {
+        /* The position token died with the catalog generation; a
+           restart would double-count, so this sweep ends here. */
+        s->done = true;
+        s->err = noErr;
+    } else if (err != noErr) {
+        s->done = true;
+        s->err = err;                  /* eofErr = swept it all */
+    } else if (s->spent_ticks > kSweepCapTicks) {
+        s->done = true;
+        s->err = noErr;
     }
-    return err;
+    if (s->done) {
+        now_software_sweep_end(s);
+    }
+    return delivered;
+}
+
+void now_software_sweep_end(SweepState *s)
+{
+    if (s->opt_buf != NULL) {
+        DisposePtr(s->opt_buf);
+        s->opt_buf = NULL;
+    }
+    s->done = true;
+}
+
+/* The console's shape: run a sweep to its end in one call. The page
+   will call step from idle() instead — same loop, different pacing. */
+static OSErr appl_sweep(ConstStr255Param pname, SweepCollect collect,
+                        void *ctx)
+{
+    SweepState s;
+
+    now_software_sweep_begin(&s, pname);
+    while (!s.done) {
+        now_software_sweep_step(&s, collect, ctx);
+    }
+    now_software_sweep_end(&s);
+    return s.err;
 }
 
 typedef struct {
@@ -257,6 +334,7 @@ typedef struct {
     int max;
     int n;
     Boolean more;
+    const RunningSet *running;
 } AppsCtx;
 
 static Boolean collect_app_row(const FSSpec *spec, void *vctx)
@@ -264,6 +342,7 @@ static Boolean collect_app_row(const FSSpec *spec, void *vctx)
     AppsCtx *ctx = (AppsCtx *)vctx;
     CInfoPBRec pb;
     Str63 pname;
+    Boolean running;
 
     if (ctx->n >= ctx->max) {
         ctx->more = true;
@@ -271,6 +350,9 @@ static Boolean collect_app_row(const FSSpec *spec, void *vctx)
     }
     memcpy(pname, spec->name,
            (size_t)(spec->name[0] < 63 ? spec->name[0] : 63) + 1);
+    running = ctx->running != NULL
+        && running_has(ctx->running, spec->vRefNum, spec->parID,
+                       spec->name);
     memset(&pb, 0, sizeof pb);
     pb.hFileInfo.ioNamePtr = pname;
     pb.hFileInfo.ioVRefNum = spec->vRefNum;
@@ -279,12 +361,14 @@ static Boolean collect_app_row(const FSSpec *spec, void *vctx)
     if (PBGetCatInfoSync(&pb) == noErr) {
         file_row(&ctx->rows[ctx->n], spec->name,
                  &pb.hFileInfo.ioFlFndrInfo,
-                 pb.hFileInfo.ioFlLgLen + pb.hFileInfo.ioFlRLgLen, false);
+                 pb.hFileInfo.ioFlLgLen + pb.hFileInfo.ioFlRLgLen,
+                 false, running);
     } else {
         p2c(spec->name, ctx->rows[ctx->n].name,
             sizeof ctx->rows[ctx->n].name);
         snprintf(ctx->rows[ctx->n].detail,
-                 sizeof ctx->rows[ctx->n].detail, "APPL");
+                 sizeof ctx->rows[ctx->n].detail, "APPL%s",
+                 running ? "  (running)" : "");
     }
     ctx->n += 1;
     return true;
@@ -293,9 +377,11 @@ static Boolean collect_app_row(const FSSpec *spec, void *vctx)
 int now_software_gather(const char *domain, SoftwareRow *rows, int max,
                         Boolean *more)
 {
+    RunningSet rs;
     int d;
 
     *more = false;
+    running_gather(&rs);
     if (strcmp(domain, "apps") == 0) {
         AppsCtx ctx;
         OSErr err;
@@ -304,6 +390,7 @@ int now_software_gather(const char *domain, SoftwareRow *rows, int max,
         ctx.max = max;
         ctx.n = 0;
         ctx.more = false;
+        ctx.running = &rs;
         err = appl_sweep(NULL, collect_app_row, &ctx);
         if (err != noErr && err != eofErr) {
             return 0;                  /* volume trouble reads as empty */
@@ -315,9 +402,10 @@ int now_software_gather(const char *domain, SoftwareRow *rows, int max,
         if (strcmp(domain, k_domains[d].name) == 0) {
             int n = 0;
 
-            walk_folder(k_domains[d].folder, false, rows, max, &n, more);
+            walk_folder(k_domains[d].folder, false, &rs, rows, max,
+                        &n, more);
             if (k_domains[d].disabled != 0) {
-                walk_folder(k_domains[d].disabled, true, rows, max,
+                walk_folder(k_domains[d].disabled, true, &rs, rows, max,
                             &n, more);
             }
             return n;
@@ -326,7 +414,7 @@ int now_software_gather(const char *domain, SoftwareRow *rows, int max,
     return -1;
 }
 
-/* --- launch -------------------------------------------------------------- */
+/* --- resolution: an argument names one file ------------------------------ */
 
 typedef struct {
     FSSpec spec;
@@ -343,6 +431,87 @@ static Boolean collect_first_two(const FSSpec *spec, void *vctx)
     ctx->hits += 1;
     return ctx->hits < 2;              /* two is enough to refuse */
 }
+
+/* Full path (contains ':') = that file, whatever it is; bare name = an
+   exact-name APPL search. require_appl also gates the path branch, for
+   the caller that only makes sense on applications. Returns 0 with the
+   spec, or -1 with the reason in msg. */
+static int resolve_to_spec(const char *arg, Boolean require_appl,
+                           FSSpec *out, char *msg, long cap)
+{
+    Str255 parg;
+
+    if (arg == NULL || arg[0] == '\0') {
+        snprintf(msg, (size_t)cap, "name a file or a full path");
+        return -1;
+    }
+    if (strlen(arg) > 255) {
+        snprintf(msg, (size_t)cap, "that is longer than any HFS path");
+        return -1;
+    }
+    CopyCStringToPascal(arg, parg);
+
+    if (strchr(arg, ':') != NULL) {
+        CInfoPBRec pb;
+        Str63 pname;
+
+        if (FSMakeFSSpec(0, 0, parg, out) != noErr) {
+            snprintf(msg, (size_t)cap, "no such file: %.200s", arg);
+            return -1;
+        }
+        if (!require_appl) {
+            return 0;
+        }
+        memcpy(pname, out->name, (size_t)out->name[0] + 1);
+        memset(&pb, 0, sizeof pb);
+        pb.hFileInfo.ioNamePtr = pname;
+        pb.hFileInfo.ioVRefNum = out->vRefNum;
+        pb.hFileInfo.ioDirID = out->parID;
+        pb.hFileInfo.ioFDirIndex = 0;
+        if (PBGetCatInfoSync(&pb) == noErr
+            && pb.hFileInfo.ioFlFndrInfo.fdType != 'APPL') {
+            char type[5];
+
+            fourcc(pb.hFileInfo.ioFlFndrInfo.fdType, type);
+            snprintf(msg, (size_t)cap,
+                     "not an application (type %s)", type);
+            return -1;
+        }
+        return 0;
+    }
+
+    {
+        FindCtx ctx;
+        OSErr err;
+
+        /* Names longer than an HFS file name cannot match anything. */
+        if (parg[0] > 31) {
+            snprintf(msg, (size_t)cap,
+                     "no application named %.200s (names cap at 31)", arg);
+            return -1;
+        }
+        ctx.hits = 0;
+        err = appl_sweep(parg, collect_first_two, &ctx);
+        if (ctx.hits == 0) {
+            snprintf(msg, (size_t)cap,
+                     err == eofErr
+                         ? "no application named %.200s"
+                         : "%.200s not found before the search gave up",
+                     arg);
+            return -1;
+        }
+        if (ctx.hits > 1) {
+            snprintf(msg, (size_t)cap,
+                     "more than one application named %.200s; "
+                     "use a full path", arg);
+            return -1;
+        }
+        *out = ctx.spec;
+        return 0;
+    }
+}
+
+/* --- launch -------------------------------------------------------------- */
 
 static int launch_spec(const FSSpec *spec, char *msg, long cap)
 {
@@ -373,71 +542,151 @@ static int launch_spec(const FSSpec *spec, char *msg, long cap)
 
 int now_software_launch(const char *arg, char *msg, long cap)
 {
-    Str255 parg;
+    FSSpec spec;
 
-    if (arg == NULL || arg[0] == '\0') {
-        snprintf(msg, (size_t)cap, "launch what? (a name or a full path)");
+    if (resolve_to_spec(arg, true, &spec, msg, cap) < 0) {
         return -1;
     }
-    if (strlen(arg) > 255) {
-        snprintf(msg, (size_t)cap, "that is longer than any HFS path");
+    return launch_spec(&spec, msg, cap);
+}
+
+/* --- vers ---------------------------------------------------------------- */
+
+static const char *stage_name(unsigned char stage)
+{
+    switch (stage) {
+    case 0x20: return "development";
+    case 0x40: return "alpha";
+    case 0x60: return "beta";
+    case 0x80: return "final";
+    default:   return "stage?";
+    }
+}
+
+/* One 'vers' resource (id 1 = this file, id 2 = the product it belongs
+   to) into rows. The layout is fixed: 4 bytes numeric version, 2 bytes
+   region, then two Pascal strings — short version, then the Get Info
+   string. Every read is bounded by the handle's actual size, because a
+   truncated resource in an old file is data, not a crash. */
+static void vers_rows(Handle h, const char *label, const char *num_label,
+                      SoftwareRow *rows, int max, int *n)
+{
+    long size = GetHandleSize(h);
+    const unsigned char *b = (const unsigned char *)*h;
+    char text[64];
+
+    if (*n < max && size >= 7) {
+        long slen = b[6];
+
+        if (7 + slen > size) {
+            slen = size - 7;
+        }
+        if (slen > 63) {
+            slen = 63;
+        }
+        memcpy(text, b + 7, (size_t)slen);
+        text[slen] = '\0';
+        snprintf(rows[*n].name, sizeof rows[*n].name, "%s", label);
+        snprintf(rows[*n].detail, sizeof rows[*n].detail, "%.48s", text);
+        *n += 1;
+
+        if (*n < max) {
+            snprintf(rows[*n].name, sizeof rows[*n].name, "%s",
+                     num_label);
+            snprintf(rows[*n].detail, sizeof rows[*n].detail,
+                     "%x.%x.%x %s%s", b[0], (b[1] >> 4) & 0xF,
+                     b[1] & 0xF, stage_name(b[2]),
+                     b[2] != 0x80 && b[3] != 0 ? " (prerelease)" : "");
+            *n += 1;
+        }
+        /* The Get Info string follows the short one. */
+        if (*n < max && 7 + b[6] < size) {
+            const unsigned char *ls = b + 7 + b[6];
+            long llen = ls[0];
+
+            if ((ls - b) + 1 + llen > size) {
+                llen = size - (ls - b) - 1;
+            }
+            if (llen > 0) {
+                memcpy(text, ls + 1,
+                       (size_t)(llen < 63 ? llen : 63));
+                text[llen < 63 ? llen : 63] = '\0';
+                snprintf(rows[*n].name, sizeof rows[*n].name, "Info");
+                snprintf(rows[*n].detail, sizeof rows[*n].detail,
+                         "%.48s", text);
+                *n += 1;
+            }
+        }
+    }
+}
+
+int now_software_vers(const char *arg, SoftwareRow *rows, int max,
+                      char *msg, long cap)
+{
+    FSSpec spec;
+    short saved;
+    short ref;
+    int n = 0;
+
+    if (resolve_to_spec(arg, false, &spec, msg, cap) < 0) {
         return -1;
     }
-    CopyCStringToPascal(arg, parg);
+    p2c(spec.name, rows[n].name, sizeof rows[n].name);
+    snprintf(rows[n].detail, sizeof rows[n].detail, "vers, read alone");
+    n += 1;
 
-    if (strchr(arg, ':') != NULL) {
-        FSSpec spec;
-        CInfoPBRec pb;
-        Str63 pname;
-
-        if (FSMakeFSSpec(0, 0, parg, &spec) != noErr) {
-            snprintf(msg, (size_t)cap, "no such file: %.200s", arg);
-            return -1;
+    saved = CurResFile();
+    ref = FSpOpenResFile(&spec, fsRdPerm);
+    if (ref == -1) {
+        if (n < max) {
+            snprintf(rows[n].name, sizeof rows[n].name, "Resource fork");
+            snprintf(rows[n].detail, sizeof rows[n].detail,
+                     "not readable (err %d)", ResError());
+            n += 1;
         }
-        memcpy(pname, spec.name, (size_t)spec.name[0] + 1);
-        memset(&pb, 0, sizeof pb);
-        pb.hFileInfo.ioNamePtr = pname;
-        pb.hFileInfo.ioVRefNum = spec.vRefNum;
-        pb.hFileInfo.ioDirID = spec.parID;
-        pb.hFileInfo.ioFDirIndex = 0;
-        if (PBGetCatInfoSync(&pb) == noErr
-            && pb.hFileInfo.ioFlFndrInfo.fdType != 'APPL') {
-            char type[5];
-
-            fourcc(pb.hFileInfo.ioFlFndrInfo.fdType, type);
-            snprintf(msg, (size_t)cap,
-                     "not an application (type %s)", type);
-            return -1;
-        }
-        return launch_spec(&spec, msg, cap);
+        return n;
     }
-
+    UseResFile(ref);
     {
-        FindCtx ctx;
-        OSErr err;
+        /* Get1Resource, never GetResource: the chain would answer the
+           System file's 'vers' for a file that has none, which is the
+           most convincing possible wrong answer. */
+        Handle h1 = Get1Resource('vers', 1);
+        Handle h2 = Get1Resource('vers', 2);
 
-        /* Names longer than an HFS file name cannot match anything. */
-        if (parg[0] > 31) {
-            snprintf(msg, (size_t)cap,
-                     "no application named %.200s (names cap at 31)", arg);
-            return -1;
+        if (h1 != NULL && *h1 != NULL) {
+            vers_rows(h1, "Version", "Numeric", rows, max, &n);
         }
-        ctx.hits = 0;
-        err = appl_sweep(parg, collect_first_two, &ctx);
-        if (ctx.hits == 0) {
-            snprintf(msg, (size_t)cap,
-                     err == eofErr
-                         ? "no application named %.200s"
-                         : "%.200s not found before the search gave up",
-                     arg);
-            return -1;
+        if (h2 != NULL && *h2 != NULL && n < max) {
+            long size = GetHandleSize(h2);
+            const unsigned char *b = (const unsigned char *)*h2;
+
+            if (size >= 7) {
+                char text[64];
+                long slen = b[6];
+
+                if (7 + slen > size) {
+                    slen = size - 7;
+                }
+                if (slen > 63) {
+                    slen = 63;
+                }
+                memcpy(text, b + 7, (size_t)slen);
+                text[slen] = '\0';
+                snprintf(rows[n].name, sizeof rows[n].name, "Product");
+                snprintf(rows[n].detail, sizeof rows[n].detail, "%.48s",
+                         text);
+                n += 1;
+            }
         }
-        if (ctx.hits > 1) {
-            snprintf(msg, (size_t)cap,
-                     "more than one application named %.200s; "
-                     "use a full path", arg);
-            return -1;
+        if (h1 == NULL && h2 == NULL && n < max) {
+            snprintf(rows[n].name, sizeof rows[n].name, "Version");
+            snprintf(rows[n].detail, sizeof rows[n].detail,
+                     "no 'vers' resource");
+            n += 1;
         }
-        return launch_spec(&ctx.spec, msg, cap);
     }
+    CloseResFile(ref);
+    UseResFile(saved);
+    return n;
 }

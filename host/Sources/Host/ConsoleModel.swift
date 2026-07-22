@@ -25,7 +25,7 @@ final class ConsoleModel: ObservableObject {
     /// Declared commands (contract x-commands) plus console built-ins.
     static let commands = ["gestalt", "screenshot", "vprobe", "ls",
                            "putstat", "tail", "ps", "census", "catsearch",
-                           "sw", "launch"]
+                           "sw", "launch", "vers"]
 
     /// Per-command docs, mirroring the contract's x-commands descriptions.
     /// help and --help render from here — documentation never hits the wire.
@@ -128,6 +128,14 @@ final class ConsoleModel: ObservableObject {
                    "  Mac's startup disk; the app comes to its front, so a",
                    "  screenshot or ps right after shows it. Two apps with",
                    "  one name refuse rather than guess — use a full path."]),
+        "vers": .init(
+            summary: "one file's version resources on the other Mac",
+            help: ["vers — one file's version, read on the connected Mac",
+                   "  Usage: vers <name or full path>",
+                   "  Reads that one file's 'vers' resources. A bare name",
+                   "  searches that Mac's applications; a full HFS path",
+                   "  reads any file (extensions want their path).",
+                   "  Absence of a version is an answer, not an error."]),
         "help": .init(
             summary: "show this list (\"help <cmd>\" for details)",
             help: ["help — list commands, or \"help <cmd>\" for one"]),
@@ -204,6 +212,10 @@ final class ConsoleModel: ObservableObject {
         }
         if name == "launch" {
             runLaunch(rest)
+            return
+        }
+        if name == "vers" {
+            runVers(rest)
             return
         }
         run(name)
@@ -376,6 +388,17 @@ final class ConsoleModel: ObservableObject {
                                                          : ["name": name]) {
             [weak self] result in
             self?.renderRows(result, command: "launch")
+        }
+    }
+
+    /// vers takes the rest of the line whole, same reason as launch.
+    private func runVers(_ rest: [String]) {
+        let name = rest.joined(separator: " ")
+            .trimmingCharacters(in: .whitespaces)
+        listener.runCommand("vers", args: name.isEmpty ? nil
+                                                       : ["name": name]) {
+            [weak self] result in
+            self?.renderRows(result, command: "vers")
         }
     }
 

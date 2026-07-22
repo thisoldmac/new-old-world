@@ -200,6 +200,14 @@ static void help_for(const char *name)
         console_model_append("  the startup disk (\"launch SimpleText\"); two");
         console_model_append("  apps with the same name refuse rather than");
         console_model_append("  guess - use a full path then.");
+    } else if (strcmp(name, "vers") == 0) {
+        console_model_append("vers - one file's version resources");
+        console_model_append("  Usage: vers <name or full path>");
+        console_model_append("  Reads that one file's 'vers' resources (never a");
+        console_model_append("  whole folder's - a fork open per file is the");
+        console_model_append("  expensive path). A bare name searches for an");
+        console_model_append("  application; a full path reads any file, so");
+        console_model_append("  extensions want their path.");
     } else if (strcmp(name, "catsearch") == 0) {
         console_model_append("catsearch - time a whole-disk application search");
         console_model_append("  Usage: catsearch");
@@ -244,6 +252,7 @@ static void help_list(void)
     console_model_append("  census      run a hardware probe (census [probe])");
     console_model_append("  sw          installed software (sw [domain])");
     console_model_append("  launch      open an application (launch <name>)");
+    console_model_append("  vers        one file's version (vers <name|path>)");
     console_model_append("  catsearch   time a whole-disk application search");
     console_model_append("  help        show this list (\"help <cmd>\" for details)");
     console_model_append("  clear       clear the console scrollback");
@@ -562,6 +571,27 @@ void console_model_run(const char *input)
         now_software_launch(raw_args, msg, sizeof msg);
         snprintf(line, sizeof line, "%.100s", msg);
         console_model_append(line);
+        return;
+    }
+    if (strcmp(name, "vers") == 0) {
+        SoftwareRow rows[8];
+        char msg[240];
+        int vn, vi;
+
+        while (*raw_args == ' ') {
+            ++raw_args;
+        }
+        vn = now_software_vers(raw_args, rows, 8, msg, sizeof msg);
+        if (vn < 0) {
+            snprintf(line, sizeof line, "vers: %.100s", msg);
+            console_model_append(line);
+            return;
+        }
+        for (vi = 0; vi < vn; ++vi) {
+            snprintf(line, sizeof line, "  %-16s %.60s",
+                     rows[vi].name, rows[vi].detail);
+            console_model_append(line);
+        }
         return;
     }
     if (strcmp(name, "catsearch") == 0) {

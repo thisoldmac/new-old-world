@@ -920,6 +920,46 @@ static void run_launch(const char *request_json, long id, char *out,
              "\"output\":{\"launch\":[[\"Launch\",\"%s\"]]}}", id, esc);
 }
 
+/* vers: one file's version resources, read alone — the lazy detail the
+   Software page will hang on a selected row. */
+static void run_vers(const char *request_json, long id, char *out,
+                     long cap)
+{
+    SoftwareRow rows[8];
+    char arg[256];
+    char msg[240];
+    long pos;
+    int n, i;
+
+    arg[0] = '\0';
+    if (request_json != NULL) {
+        now_json_find_string(request_json, "name", arg, sizeof arg);
+    }
+    n = now_software_vers(arg, rows, 8, msg, sizeof msg);
+    if (n < 0) {
+        char esc[480];
+
+        now_json_escape(msg, esc, sizeof esc);
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+                 "\"error\":{\"code\":\"vers-refused\","
+                 "\"message\":\"%s\"}}", id, esc);
+        return;
+    }
+    pos = snprintf(out, (size_t)cap,
+                   "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                   "\"output\":{\"vers\":[", id);
+    for (i = 0; i < n && pos < cap - 240; ++i) {
+        char esc_name[80], esc_detail[160];
+
+        now_json_escape(rows[i].name, esc_name, sizeof esc_name);
+        now_json_escape(rows[i].detail, esc_detail, sizeof esc_detail);
+        pos += snprintf(out + pos, (size_t)(cap - pos), "%s[\"%s\",\"%s\"]",
+                        i > 0 ? "," : "", esc_name, esc_detail);
+    }
+    snprintf(out + pos, (size_t)(cap - pos), "]}}");
+}
+
 void now_command_run(const char *name, const char *request_json, long id,
                      char *out, long cap)
 {
@@ -965,6 +1005,10 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "launch") == 0) {
         run_launch(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "vers") == 0) {
+        run_vers(request_json, id, out, cap);
         return;
     }
     snprintf(out, cap,
