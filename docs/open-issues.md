@@ -393,13 +393,12 @@ working on the PowerBook.
     name launches the FIRST found and names its version (one fork
     open, no walk), `-v` forces a copy, positional `Name 1.2.3` retired
     with a "did you mean -v" hint. Emulator-verified: quote-strip,
-    first-of-2-with-version, the hint. **The `-v` launch itself is
-    tested (builds) but not cleanly emulator-watched** — the harness
-    dropped a leading prefix on every injected `-v` console line (the
-    echoes show it), so the flag path shares the already-verified
-    `launch_at_version` but wants a human-typed metal keystroke to
-    close. That, the several-SimpleTexts disk, and the `swpage`
-    firsts are the open metal items.
+    first-of-2-with-version, the hint. The `-v` launch flag is
+    **metal-verified** (Michelle, 2026-07-22, human-typed — the
+    emulator keystroke injection had dropped its leading chars, an
+    input artifact, never the code). The `software.list` wire family
+    (`swpage`) remains the one never-run-live path — it needs a host
+    linked to the guest, deferred until the guest page is dialed in.
 
 - **`sw` and `launch` — the software family's first verbs** (2026-07-22).
   The Software module's data layer (`software.c`) surfaced as console
