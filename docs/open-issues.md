@@ -121,7 +121,7 @@ proves out end to end: extension captures anchors -> app validates and
 reads bounds -> app crops a genuine screenshot to them.
 
 **Rung 3 - the `process.*` wire family is metal-verified, host Processes
-module built on top (pane not yet watched)** (2026-07-21). The contract
+module metal-verified** (2026-07-21). The contract
 gained
 `process.list`/`process.listing` (symmetric, paginated by a 1-based
 cursor, entries capped at 24 a page). The guest serves its own Process
@@ -143,13 +143,19 @@ read-only Processes module (`ProcessesModel`/`ProcessesModuleView`) that
 pages the whole table in on refresh, groups it into Applications (with
 the Finder) and Background, flags the front process, captions each row
 with kind/4CCs/partition size, and reads as the snapshot it is ("as of
-HH:MM:SS"). The pane is **tested + builds, not yet watched on screen** —
-the wire beneath it is metal-verified, the SwiftUI rendering is not.
-**One contract-level gap remains:** the GUEST can serve a `process.list`
-but cannot yet ASK one (no consume handler, no page), so the mirror runs
-one way - host sees guest, not the reverse. The receive/serve halves are
-symmetric and complete; the guest's ask-and-display side is the only
-piece left.
+HH:MM:SS"). Metal-verified on the PB1400c: the pane drew the machine's 7
+processes correctly grouped and flagged.
+
+**The one-way direction is by design, not a gap.** NOW drives old-from-
+new - the host is the cockpit, the guest the operated machine - so
+host-sees-guest is the product and guest-sees-host is a non-goal. The
+guest has no ASK/UI for the host's processes on purpose. The wire family
+stays symmetric anyway (the host serves its own list via `HostProcesses`
+off `NSWorkspace`, honouring the contract's receive-side rule), but that
+serve is a contract obligation, not a product surface, and nothing in
+the product exercises it. `process.front`/`.launch`/`.quit` - the drive
+verbs, which run the SAME direction the product wants - are still design,
+unbuilt.
 
 **Metal found one rung-0 bug, now fixed:** the detail pane's "Launched"
 line read "1/1/04" for every process. `ProcessInfoRec.processLaunchDate`

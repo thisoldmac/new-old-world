@@ -22,7 +22,7 @@ end-to-end). We rebuild fresh; the findings are what carry.
 | 1 | NOW Extension M0: residence, discovery, versioning | the extension | **metal-verified** (2026-07-21) |
 | 2a | Anchor plane + per-process validated window read | ext P1 | **metal-verified** (2026-07-21) |
 | 2b | Front & Capture crops to those bounds | 2a | **metal-verified** (2026-07-21) |
-| 3 | `process.*` wire family; host sees the guest's processes | contract | **wire metal-verified** — host read the PB1400c's table over the wire; the Processes module that displays it is tested + builds, not yet watched on screen (2026-07-21) |
+| 3 | `process.*` wire family; host sees the guest's processes | contract | **metal-verified** — the host Processes module drew the PB1400c's table over the wire (2026-07-21) |
 | 4 | Semantic tree; `peek.*` family; host tree view | ext P2 | |
 | 5 | Host mock desktop (scene IR, native renderer) | 3 + 4 | |
 | 6 | Interiors: bounds-cropped pixel fill inside the mock desktop | 2 + 5 | |
@@ -366,11 +366,17 @@ plane — and the host asks and DISPLAYS: a read-only Processes module
 (`ProcessesModel` / `ProcessesModuleView`) that pages the whole table in
 on refresh, groups it into Applications (with the Finder) and Background,
 flags the front process, and captions each row with its kind, 4CCs and
-partition size. It reads as the snapshot it is ("as of HH:MM:SS"). The
-wire under it is metal-verified; the pane itself is tested and builds but
-has not yet been watched on screen with a Mac connected. One gap remains,
-UI not contract: the GUEST cannot yet ask — it only serves, so the mirror
-runs one way. `process.front` / `.launch` / `.quit` are still design,
+partition size. It reads as the snapshot it is ("as of HH:MM:SS"). Both
+wire and pane are metal-verified on the PB1400c.
+
+**The one-way direction is the design, not a gap.** NOW drives old-from-
+new: the host is the cockpit, the guest the machine being operated, so
+host-sees-guest is the product and guest-sees-host is a non-goal. The
+guest has no ask-for-the-host's-processes UI on purpose. The wire family
+stays symmetric — the host still serves its own list (`HostProcesses`),
+honouring the receive-side rule — but that serve is a contract obligation
+nothing in the product exercises. `process.front` / `.launch` / `.quit`,
+the drive verbs, run that same host→guest arrow and are still design,
 unbuilt.
 
 Rung 4's `peek.request` / `peek.tree` carries the semantic tree with

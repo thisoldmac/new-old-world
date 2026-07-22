@@ -62,10 +62,11 @@ on either side.
   among them — and Background, flags the front process, and captions each
   row with its kind, its two 4CCs and its partition size. It reads as the
   snapshot it is ("as of HH:MM:SS"); a process list is stale the instant
-  it is taken. The wire is metal-verified — the PB1400c's own table, read
-  from this Mac — but the pane that draws it is so far only tested and
-  built, not yet watched on screen. The mirror runs one way — the host
-  sees the guest, and the guest serves but does not yet ask.
+  it is taken. Metal-verified on the PB1400c — the machine's own process
+  table, read and drawn on this Mac. It runs one way by design: NOW is
+  for driving old Macs from new ones, so the host sees the guest and not
+  the reverse (the wire stays symmetric, but the guest has no reason to
+  ask about this Mac's processes).
 - **A log on both machines** — one file per launch, in `now-logs` beside
   the classic app and in `~/Library/Logs` here, plus `tail` from either
   console. Built because three separate evenings were spent on
