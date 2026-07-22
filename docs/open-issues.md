@@ -266,11 +266,29 @@ working on the PowerBook.
   paging 16 at a time; (3) the chip icon actually plotting from `ics#`
   133 rather than losing to a System family at that id. See
   docs/adding-a-workshop-module.md.
-- **The host's own census.** The `census` family is symmetric in the
-  contract; the host answers every probe `refused` ("does not serve a
-  census yet") until a later slice gives it an IOKit/sysctl census of
-  the modern Mac. Declared asymmetry, tested — not dead code, a stub
-  half with its other half scheduled.
+- **The host Hardware module — runs and reads the GUEST's census**
+  (2026-07-22). A native macOS dossier: a `census` module in the sidebar
+  (`CensusModel` + `CensusModuleView`), a probe list on the left and the
+  selected probe's rows on the right, a Run Census sweep and per-probe
+  rerun. It is a REQUESTER only — it asks the guest and displays the
+  reports, following the `more`/`cursor` pagination to accumulate a
+  probe's rows one page per request. The host probe registry
+  (`CensusProbes.all`) is a copy of the guest's `k_probes[]` and the
+  contract's `x-probes`; `CensusProbeRegistryTests` pins the set to the
+  contract and the order to the guest, so a probe grown on one side and
+  forgotten here fails a test. **Tested, not seen against a real guest.**
+  `CensusModuleModelTests` drives the whole request→report path over the
+  loopback listener with a scripted guest (pagination, cursor threading,
+  outcome/note propagation, the full sweep, the disconnected guard, and
+  rerun-replaces-not-appends); the SwiftUI view itself has not been run
+  against a connected PowerBook.
+- **The host does NOT serve its own census, by design.** The `census`
+  family is symmetric in the contract, but the guest is the machine with
+  hardware worth asking about; the host is the requester. When the guest
+  sends the host a `census.request`, the host answers `refused` ("the
+  host does not serve a census yet"). That is a deliberate, permanent-
+  feeling asymmetry now, not a scheduled stub — a host self-census (IOKit/
+  sysctl) is not planned as part of this feature.
 - **The `ata` and `pccard` probes reach 68K-trap-only managers through a
   metal-proven Mixed Mode dispatch** (`census_trap.c`, 2026-07-22). The
   1400c's ATA Manager ($AAF1) and PC Card Manager ($AAF0) are trap-only

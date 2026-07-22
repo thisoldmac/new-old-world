@@ -62,6 +62,12 @@ struct ModuleRegistry: Sendable {
             summary: "A shell into the connected Mac"
         ),
         ModuleDescriptor(
+            id: "census",
+            title: "Hardware",
+            symbol: "cpu",
+            summary: "Run and read the connected Mac's hardware census"
+        ),
+        ModuleDescriptor(
             id: "settings",
             title: "Connection",
             symbol: "network",
