@@ -324,15 +324,21 @@ working on the PowerBook.
 
 - **`catsearch` — the Software module's feasibility probe** (2026-07-22).
   Times a whole-volume `PBCatSearch` sweep for APPL files on the startup
-  volume, in 15-tick slices, cold then warm, and reports slice-budget
-  honoring, hit count, and `bHasCatSearch`. Console verb on both sides
+  volume, in 15-tick slices, cold then warm. Console verb on both sides
   (contract `x-commands`, guest `commands.c`, host `ConsoleModel`).
-  **Emulator-verified** (OS 9.1 clone VM, 2546-file disk): 205 APPL hits,
-  cold sweep 7 ticks in 9 slices, warm 3 ticks, longest slice 1 tick,
-  clean eofErr end. The emulated disk is effectively free, so the number
-  the Software module's design actually hangs on — a real spinner's cold
-  sweep — is exactly the part still unmeasured. Run `catsearch` on the
-  1400c and write the numbers here.
+  **Metal-verified on the 1400c** (guest console path; same-day emulator
+  run agreed in shape): 22,127 files / 2,411 folders, 601 APPL hits,
+  cold sweep **228 ticks = 3.8 s in 184 slices**, warm 172 ticks =
+  2.9 s, longest slice 3 ticks against the 15-tick budget, zero
+  restarts. Two conclusions the Software module can build on: a full
+  inventory sweep is affordable as background `idle()` work (~50 ms
+  worst slice), and 184 slices ≈ the catalog arriving one 16 KB opt
+  buffer per call — so the buffer size, not `ioSearchTime`, is the
+  real slice-length dial. Warm is barely cheaper than cold; do not
+  design around the cache. Still unwatched: the same verb invoked from
+  the HOST console (same `now_command_run` path, host-tested, and the
+  MacRoman-high-byte names in `First hits` go through the `\uXXXX`
+  escaper — but it has not been run live).
 
 - **`ps` and `census` console commands + guest verb logging**
   (2026-07-22). The two new modules — Processes and Hardware/census —
