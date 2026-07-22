@@ -73,13 +73,21 @@ void now_software_sweep_end(SweepState *s);
 int now_software_gather(const char *domain, SoftwareRow *rows, int max,
                         Boolean *more);
 
-/* Launches an application: a full HFS path (contains ':'), or a bare
-   name found by an exact-name catalog search over the startup volume.
-   Returns 0 and says what launched in msg, or -1 with the refusal in
-   msg — ambiguous names refuse rather than guess, because "launch"
-   picking one of two same-named apps is a wrong answer that looks
-   right. */
+/* Launches an application: a full HFS path (contains ':'), a bare name
+   found by an exact-name catalog search over the startup volume, or
+   "#n" picking from the last stored match list. Returns 0 and says
+   what launched in msg; -2 when the name was ambiguous (the matches
+   are stored — print them with now_software_matches and pick with
+   "#n"); -1 with any other refusal in msg. Ambiguity refuses rather
+   than guesses, because "launch" picking one of two same-named apps
+   is a wrong answer that looks right. */
 int now_software_launch(const char *arg, char *msg, long cap);
+
+/* The last bare-name search's matches, numbered, with full paths
+   wrapped across continuation rows — the list "#n" picks from. It is
+   guest-side state, so the pick works from either console. Returns the
+   row count; 0 = nothing stored. */
+int now_software_matches(SoftwareRow *rows, int max);
 
 /* --- the wire's inventory pages ------------------------------------------
    software.list is served from a one-domain cache of FSSpecs: cursor 1

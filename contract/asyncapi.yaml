@@ -1622,9 +1622,11 @@ components:
         mutation. A bare name is resolved by an exact-name catalog
         search of the startup volume; a full HFS path (contains a
         colon) is used directly, and non-APPL targets are refused. An
-        ambiguous name — two applications with the same name — refuses
-        rather than guesses, and the refusal names the paths it found,
-        because the person's next move is a full path. The launched app comes to that machine's
+        ambiguous name refuses rather than guesses (error code
+        launch-ambiguous) and STORES the numbered matches on the
+        responder, so the asker's next frame can say just "#2" — vers
+        on the same name prints the list. The stored list lives until
+        the next bare-name search on that machine. The launched app comes to that machine's
         front (LaunchApplication without launchDontSwitch), which the
         next process.listing or process.shot will show. Both outcomes
         are logged under the sw area with the wire id.
@@ -1634,7 +1636,8 @@ components:
           target:
             type: string
             description: >
-              An application name, or a full HFS path. "target" and not
+              An application name, a full HFS path, or "#n" picking
+              from the responder's stored match list. "target" and not
               "name" — see the arg-key rule in the preamble above.
       output:
         type: object
@@ -1649,9 +1652,11 @@ components:
         for a file that has none is the most convincing wrong answer).
         Bounded by design: a fork open per file is the measured
         expensive path, so this never loops an inventory — but a bare
-        name that matches SEVERAL applications shows them all (path
-        first, then version), up to five, because a real disk has real
-        duplicates and which copy answered is the point. Resolution is
+        name that matches SEVERAL applications shows them all as a
+        NUMBERED list, full paths wrapped across continuation rows
+        (truncated paths were a metal complaint), up to five. The
+        numbers are live: they are stored on the responder, and a
+        following launch or vers may say just "#n". Resolution is
         launch's — bare name searches applications, a full path reads
         any file. Absence of a 'vers' is an answer.
       args:
@@ -1660,7 +1665,8 @@ components:
           target:
             type: string
             description: >
-              An application name, or a full HFS path. "target" and not
+              An application name, a full HFS path, or "#n" picking
+              from the responder's stored match list. "target" and not
               "name" — see the arg-key rule in the preamble above.
       output:
         type: object

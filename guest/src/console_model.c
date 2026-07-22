@@ -195,17 +195,19 @@ static void help_for(const char *name)
         console_model_append("  seconds) and shows one page of applications.");
     } else if (strcmp(name, "launch") == 0) {
         console_model_append("launch - open an application on this Mac");
-        console_model_append("  Usage: launch <name or full path>");
+        console_model_append("  Usage: launch <name | full path | #n>");
         console_model_append("  A bare name is found by an exact-name search of");
-        console_model_append("  the startup disk (\"launch SimpleText\"); two");
-        console_model_append("  apps with the same name refuse rather than");
-        console_model_append("  guess - use a full path then.");
+        console_model_append("  the startup disk. Several apps with one name");
+        console_model_append("  print a numbered list instead of guessing;");
+        console_model_append("  \"launch #2\" then picks from it (so does");
+        console_model_append("  \"vers #2\"). Full paths always work.");
     } else if (strcmp(name, "vers") == 0) {
         console_model_append("vers - one file's version resources");
-        console_model_append("  Usage: vers <name or full path>");
+        console_model_append("  Usage: vers <name | full path | #n>");
         console_model_append("  Reads that file's 'vers' resources. A bare name");
-        console_model_append("  searches applications and shows EVERY match,");
-        console_model_append("  path first - duplicates are the point. A full");
+        console_model_append("  searches applications and shows EVERY match as");
+        console_model_append("  a numbered list, full paths and all - then");
+        console_model_append("  \"vers #2\" or \"launch #2\" picks one. A full");
         console_model_append("  path reads any file, so extensions want their");
         console_model_append("  path. Never loops a whole folder.");
     } else if (strcmp(name, "catsearch") == 0) {
@@ -564,24 +566,38 @@ void console_model_run(const char *input)
     }
     if (strcmp(name, "launch") == 0) {
         char msg[240];
+        int rc;
 
         while (*raw_args == ' ') {
             ++raw_args;
         }
-        now_software_launch(raw_args, msg, sizeof msg);
+        rc = now_software_launch(raw_args, msg, sizeof msg);
         snprintf(line, sizeof line, "%.100s", msg);
         console_model_append(line);
+        if (rc == -2) {
+            /* Ambiguous: print the numbered list right here, so the
+               next line typed can be "launch #2". */
+            SoftwareRow rows[30];
+            int mn = now_software_matches(rows, 30);
+            int mi;
+
+            for (mi = 0; mi < mn; ++mi) {
+                snprintf(line, sizeof line, "  %-4s %.60s",
+                         rows[mi].name, rows[mi].detail);
+                console_model_append(line);
+            }
+        }
         return;
     }
     if (strcmp(name, "vers") == 0) {
-        SoftwareRow rows[26];
+        SoftwareRow rows[40];
         char msg[240];
         int vn, vi;
 
         while (*raw_args == ' ') {
             ++raw_args;
         }
-        vn = now_software_vers(raw_args, rows, 26, msg, sizeof msg);
+        vn = now_software_vers(raw_args, rows, 40, msg, sizeof msg);
         if (vn < 0) {
             snprintf(line, sizeof line, "vers: %.100s", msg);
             console_model_append(line);

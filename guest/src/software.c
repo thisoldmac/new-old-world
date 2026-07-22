@@ -4,6 +4,7 @@
 #include <Processes.h>
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* The special folders, by console name. Disabled siblings are how the
@@ -698,6 +699,93 @@ static Boolean collect_matches(const FSSpec *spec, void *vctx)
     return ctx->hits <= kResolveMax;   /* one past the cap proves "more" */
 }
 
+/* The last bare-name search, kept for "#n" picks. Guest-side state on
+   purpose: the pick works from either console, and over the wire the
+   follow-up frame carries only "#2". Typing a 60-character HFS path to
+   disambiguate was the second metal complaint. */
+static struct {
+    FSSpec specs[kResolveMax];
+    int hits;
+} g_last;
+
+/* "#n" -> n, else 0. A leading '#' with only digits is pick syntax; a
+   file actually named like that still has the full-path door. */
+static int parse_pick(const char *arg)
+{
+    long n;
+    char *end;
+
+    if (arg == NULL || arg[0] != '#' || arg[1] == '\0') {
+        return 0;
+    }
+    n = strtol(arg + 1, &end, 10);
+    if (*end != '\0' || n < 1 || n > kResolveMax) {
+        return 0;
+    }
+    return (int)n;
+}
+
+/* Exact-name sweep that remembers its matches for "#n". */
+static OSErr find_by_name(ConstStr255Param parg, FindCtx *ctx)
+{
+    OSErr err;
+
+    ctx->hits = 0;
+    err = appl_sweep(parg, collect_matches, ctx);
+    g_last.hits = ctx->hits < kResolveMax ? ctx->hits : kResolveMax;
+    memcpy(g_last.specs, ctx->specs, sizeof g_last.specs);
+    return err;
+}
+
+/* One match's full path as rows: the first carries the label, the rest
+   wrap. Truncated paths were the first metal complaint — the
+   distinguishing folders live in the middle of a path, so nothing may
+   be dropped. */
+static int path_rows(const char *label, const FSSpec *spec,
+                     SoftwareRow *rows, int max, int n)
+{
+    char path[224];
+    const char *p;
+    Boolean first = true;
+
+    if (!file_full_path(spec, path, sizeof path)) {
+        if (n < max) {
+            snprintf(rows[n].name, sizeof rows[n].name, "%s", label);
+            p2c(spec->name, rows[n].detail, sizeof rows[n].detail);
+            n += 1;
+        }
+        return n;
+    }
+    p = path;
+    while (*p != '\0' && n < max) {
+        long len = (long)strlen(p);
+        long take = len < 48 ? len : 48;
+
+        snprintf(rows[n].name, sizeof rows[n].name, "%s",
+                 first ? label : "");
+        memcpy(rows[n].detail, p, (size_t)take);
+        rows[n].detail[take] = '\0';
+        n += 1;
+        p += take;
+        first = false;
+    }
+    return n;
+}
+
+int now_software_matches(SoftwareRow *rows, int max)
+{
+    int n = 0;
+    int i;
+
+    for (i = 0; i < g_last.hits && n < max; ++i) {
+        char label[12];
+
+        snprintf(label, sizeof label, "#%d", i + 1);
+        n = path_rows(label, &g_last.specs[i], rows, max, n);
+    }
+    return n;
+}
+
 /* Full path (contains ':') = that file, whatever it is; bare name = an
    exact-name APPL search. require_appl also gates the path branch, for
    the caller that only makes sense on applications. Returns 0 with the
@@ -749,15 +837,25 @@ static int resolve_to_spec(const char *arg, Boolean require_appl,
     {
         FindCtx ctx;
         OSErr err;
+        int pick = parse_pick(arg);
 
+        if (pick > 0) {
+            if (pick > g_last.hits) {
+                snprintf(msg, (size_t)cap, g_last.hits == 0
+                         ? "no match list stored - name something first"
+                         : "the last list has %d entries", g_last.hits);
+                return -1;
+            }
+            *out = g_last.specs[pick - 1];
+            return 0;
+        }
         /* Names longer than an HFS file name cannot match anything. */
         if (parg[0] > 31) {
             snprintf(msg, (size_t)cap,
                      "no application named %.200s (names cap at 31)", arg);
             return -1;
         }
-        ctx.hits = 0;
-        err = appl_sweep(parg, collect_matches, &ctx);
+        err = find_by_name(parg, &ctx);
         if (ctx.hits == 0) {
             snprintf(msg, (size_t)cap,
                      err == eofErr
@@ -767,19 +865,16 @@ static int resolve_to_spec(const char *arg, Boolean require_appl,
             return -1;
         }
         if (ctx.hits > 1) {
-            /* Refuse, but name what was found: the person's next move
-               is a full path, so hand them the paths. */
-            char p1[224], p2[224];
-
-            file_full_path(&ctx.specs[0], p1, sizeof p1);
-            file_full_path(&ctx.specs[1], p2, sizeof p2);
+            /* Refuse, but leave the matches stored: "#n" is the next
+               move, not a 60-character path. */
             snprintf(msg, (size_t)cap,
-                     "%d named %.40s - use a full path: %.80s / %.80s%s",
+                     "%d%s named %.40s - launch #1..#%d picks; "
+                     "vers %.40s lists them",
                      ctx.hits > kResolveMax ? kResolveMax : ctx.hits,
-                     arg, p1[0] != '\0' ? p1 : "(unnameable)",
-                     p2[0] != '\0' ? p2 : "(unnameable)",
-                     ctx.hits > 2 ? " / ..." : "");
-            return -1;
+                     ctx.hits > kResolveMax ? "+" : "", arg,
+                     ctx.hits > kResolveMax ? kResolveMax : ctx.hits,
+                     arg);
+            return -2;
         }
         *out = ctx.specs[0];
         return 0;
@@ -818,9 +913,10 @@ static int launch_spec(const FSSpec *spec, char *msg, long cap)
 int now_software_launch(const char *arg, char *msg, long cap)
 {
     FSSpec spec;
+    int rc = resolve_to_spec(arg, true, &spec, msg, cap);
 
-    if (resolve_to_spec(arg, true, &spec, msg, cap) < 0) {
-        return -1;
+    if (rc < 0) {
+        return rc;                     /* -2 = ambiguous, list stored */
     }
     return launch_spec(&spec, msg, cap);
 }
@@ -963,34 +1059,6 @@ static int vers_read_file(const FSSpec *spec, Boolean full_detail,
     return n;
 }
 
-/* The path (or, failing that, the name) as one row heading a match. */
-static int vers_file_row(const FSSpec *spec, SoftwareRow *rows, int max,
-                         int n)
-{
-    char path[224];
-
-    if (n >= max) {
-        return n;
-    }
-    snprintf(rows[n].name, sizeof rows[n].name, "File");
-    if (file_full_path(spec, path, sizeof path)) {
-        long len = (long)strlen(path);
-
-        /* Duplicates differ at the END of their paths, so a long one
-           keeps its tail and drops its head. */
-        if (len > (long)sizeof rows[n].detail - 2) {
-            snprintf(rows[n].detail, sizeof rows[n].detail, "...%.45s",
-                     path + len - ((long)sizeof rows[n].detail - 5));
-        } else {
-            snprintf(rows[n].detail, sizeof rows[n].detail, "%.48s",
-                     path);
-        }
-    } else {
-        p2c(spec->name, rows[n].detail, sizeof rows[n].detail);
-    }
-    return n + 1;
-}
-
 int now_software_vers(const char *arg, SoftwareRow *rows, int max,
                       char *msg, long cap)
 {
@@ -1014,15 +1082,34 @@ int now_software_vers(const char *arg, SoftwareRow *rows, int max,
             snprintf(msg, (size_t)cap, "no such file: %.200s", arg);
             return -1;
         }
-        n = vers_file_row(&spec, rows, max, n);
+        n = path_rows("File", &spec, rows, max, n);
         return vers_read_file(&spec, true, rows, max, n);
     }
 
     {
-        /* A bare name shows EVERY match, path first — the metal run
-           found several SimpleTexts, and which copy answered is the
-           whole point when a disk has duplicates. Bounded fork opens:
-           at most kResolveMax, on an explicit ask. */
+        /* "#n" reads one file from the last match list in full. */
+        int pick = parse_pick(arg);
+
+        if (pick > 0) {
+            if (pick > g_last.hits) {
+                snprintf(msg, (size_t)cap, g_last.hits == 0
+                         ? "no match list stored - name something first"
+                         : "the last list has %d entries", g_last.hits);
+                return -1;
+            }
+            n = path_rows("File", &g_last.specs[pick - 1], rows, max, n);
+            return vers_read_file(&g_last.specs[pick - 1], true, rows,
+                                  max, n);
+        }
+    }
+
+    {
+        /* A bare name shows EVERY match, numbered, full path first —
+           the metal run found several SimpleTexts, and which copy is
+           which is the whole point on a disk with duplicates. Bounded
+           fork opens: at most kResolveMax, on an explicit ask. The
+           numbers are live: "launch #2" and "vers #2" pick from this
+           list. */
         FindCtx ctx;
         OSErr err;
         int shown, i;
@@ -1033,8 +1120,7 @@ int now_software_vers(const char *arg, SoftwareRow *rows, int max,
                      arg);
             return -1;
         }
-        ctx.hits = 0;
-        err = appl_sweep(parg, collect_matches, &ctx);
+        err = find_by_name(parg, &ctx);
         if (ctx.hits == 0) {
             snprintf(msg, (size_t)cap,
                      err == eofErr
@@ -1045,7 +1131,11 @@ int now_software_vers(const char *arg, SoftwareRow *rows, int max,
         }
         shown = ctx.hits < kResolveMax ? ctx.hits : kResolveMax;
         for (i = 0; i < shown; ++i) {
-            n = vers_file_row(&ctx.specs[i], rows, max, n);
+            char label[12];
+
+            snprintf(label, sizeof label, "#%d", i + 1);
+            n = path_rows(shown > 1 ? label : "File", &ctx.specs[i],
+                          rows, max, n);
             n = vers_read_file(&ctx.specs[i], ctx.hits == 1, rows, max,
                                n);
         }
