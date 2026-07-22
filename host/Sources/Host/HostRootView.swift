@@ -67,6 +67,8 @@ struct HostRootView: View {
             ConsoleModuleView(model: state.console, listener: state.listener)
         case "census":
             CensusModuleView(model: state.census)
+        case "logs":
+            LogsModuleView(model: state.logs, log: state.logs.log)
         case "settings":
             SettingsModuleView(settings: state.settings,
                                listener: state.listener,
@@ -127,16 +129,19 @@ struct FooterModuleRow: View {
                     .frame(width: 18)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(module.title)
-                    Text(status.sidebarLine)
+                    Text(subtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
                 Spacer(minLength: 4)
-                Image(systemName: indicator.symbol)
-                    .font(.caption2)
-                    .foregroundStyle(indicator.tint)
+                // Only the link's own row carries the live status dot.
+                if module.showsLinkStatus {
+                    Image(systemName: indicator.symbol)
+                        .font(.caption2)
+                        .foregroundStyle(indicator.tint)
+                }
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
@@ -149,7 +154,13 @@ struct FooterModuleRow: View {
         )
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         // The caption is abbreviated to fit; the tooltip is the full line.
-        .help(status.menuLine)
+        .help(module.showsLinkStatus ? status.menuLine : module.summary)
+    }
+
+    /// The link's row reads as status; any other footer module reads as
+    /// what it is.
+    private var subtitle: String {
+        module.showsLinkStatus ? status.sidebarLine : module.summary
     }
 
     /// The same dot vocabulary the modules use in their own headers.

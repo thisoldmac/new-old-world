@@ -77,7 +77,11 @@ on either side.
 - **A log on both machines** — one file per launch, in `now-logs` beside
   the classic app and in `~/Library/Logs` here, plus `tail` from either
   console. Built because three separate evenings were spent on
-  information that existed and had nowhere to live.
+  information that existed and had nowhere to live. Both machines now have
+  a **Logs page** — pinned in the sidebar footer, above Connection — that
+  dumps the last ~2000 lines and follows them live, with switches to
+  invert the canvas and to turn disk persistence on or off. The guest page
+  is metal-verified; the host one is built and tested.
 - **Menu-bar capture** — one command grabs the connected machine's
   screen straight to the clipboard, no window needed.
 

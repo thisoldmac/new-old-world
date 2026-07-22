@@ -19,6 +19,7 @@ add_application(now-guest
     src/census_module.c
     src/census_probes.c
     src/census_trap.c
+    src/logs_module.c
     src/census_decode.c
     src/census_report.c
     src/files_module.c

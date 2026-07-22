@@ -42,6 +42,9 @@ final class HostAppState: ObservableObject {
     /// Drives the menu bar's connection glyph and status line.
     private(set) lazy var guestStatus = GuestStatusMonitor(listener: listener)
     let settings: SettingsModel
+    /// Not lazy: constructing it applies the saved disk-persistence switch
+    /// to HostLog before the first wire event has a line to write.
+    let logs: LogsModel
     let listener: GuestListener
     private(set) lazy var console = ConsoleModel(listener: listener)
     private(set) lazy var census = CensusModuleModel(listener: listener)
@@ -68,6 +71,7 @@ final class HostAppState: ObservableObject {
              suiteName: ProductIdentity.preferencesSuite) ?? .standard) {
         self.defaults = defaults
         settings = SettingsModel(defaults: defaults)
+        logs = LogsModel(log: .shared, defaults: defaults)
         listener = GuestListener(identity: .init(
             version: ProductIdentity.version,
             name: Host.current().localizedName ?? "Mac"))

@@ -109,9 +109,47 @@ void now_log_close(void)
     g_ref = -1;
 }
 
+void now_log_set_disk(Boolean on)
+{
+    if (on) {
+        now_log_open();               /* no-op if the file is already open */
+        return;
+    }
+    if (g_ref == -1) {
+        return;
+    }
+    /* The line saying so has to reach the file before it closes. */
+    now_log(kLogInfo, "app", "disk logging off");
+    FSClose(g_ref);
+    g_ref = -1;
+}
+
+Boolean now_log_disk_on(void)
+{
+    return g_ref != -1;
+}
+
 const char *now_log_path(void)
 {
     return g_path[0] != '\0' ? g_path : "(no log file)";
+}
+
+int now_log_count(void)
+{
+    return g_count;
+}
+
+const char *now_log_line(int index)
+{
+    int slot;
+
+    if (index < 0 || index >= g_count) {
+        return "";
+    }
+    /* Oldest-first: the oldest held line sits g_count slots behind the
+       write cursor. The doubled kLogKept keeps the modulo non-negative. */
+    slot = (g_next - g_count + index + kLogKept * 2) % kLogKept;
+    return g_lines[slot];
 }
 
 void now_log(LogLevel level, const char *area, const char *fmt, ...)

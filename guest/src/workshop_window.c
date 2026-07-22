@@ -7,6 +7,7 @@
 #include "connection_module.h"
 #include "console_module.h"
 #include "files_module.h"
+#include "logs_module.h"
 #include "processes_module.h"
 #include "screenshots_module.h"
 #include "prefs.h"
@@ -48,6 +49,9 @@ static const struct {
     { "Hardware",
       "A passive census of this Mac. Probes run on request, never at idle.",
       "Hardware census is not built into this window yet." },
+    { "Logs",
+      "This launch's event log. Toggle whether it also reaches the disk.",
+      "Logs has not moved in yet." },
     { "Connection",
       "This Mac dials the other Mac and keeps one persistent connection.",
       "Connection is still a dialog (Windows menu)." }
@@ -158,6 +162,7 @@ Boolean workshop_open(void)
     g_ops[kWorkshopConsole] = console_module_ops();
     g_ops[kWorkshopProcesses] = processes_module_ops();
     g_ops[kWorkshopHardware] = census_module_ops();
+    g_ops[kWorkshopLogs] = logs_module_ops();
     g_ops[kWorkshopConnection] = connection_module_ops();
     now_prefs_load(&prefs);
     if (restorable_bounds(&prefs.workshop_rect)) {

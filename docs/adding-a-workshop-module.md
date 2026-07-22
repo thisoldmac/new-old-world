@@ -57,10 +57,15 @@ appear or does not switch.
    `kWorkshopModuleCount`. The enum order **is** the View menu order and
    the sidebar order; the menu item number is the module ID.
 2. **`workshop_layout.h` / `.c`** — `nav_rows[]` is sized for the
-   non-pinned modules (4 today: Screenshots, Files, Console, Hardware).
-   Grow the array and the loop in
-   `workshop_layout_compute`. `Connection` is special: it is pinned to
-   the bottom as `conn_row` and is not in `nav_rows`.
+   non-pinned modules (5 today: Screenshots, Files, Console, Processes,
+   Hardware) via `kWorkshopNavRows`. Grow that constant; the loop in
+   `workshop_layout_compute` is already generic. `Connection` and `Logs`
+   are special: both are pinned below the divider (`conn_row`, `logs_row`)
+   and are not in `nav_rows`. A module placed above `Connection` renumbers
+   it, which bumps the prefs format — Logs took it to 12, its Invert switch
+   to 13; see `now_prefs_load`. To pin a new page in the footer instead of
+   the scrolling list, add its own row rect the way `logs_row` does and map
+   it in `row_rect()`.
 3. **`workshop_sidebar.c`** — add a `k_rows` entry (title, subtitle,
    icon ID) and, if it is not pinned, make sure `row_rect()` maps it.
 4. **`workshop_window.c`** — add a `k_module_info` entry (title, blurb,

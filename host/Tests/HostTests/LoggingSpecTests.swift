@@ -16,6 +16,7 @@ final class LoggingSpecTests: XCTestCase {
     @MainActor
     func testALineMatchesTheFormatTheSpecDefines() throws {
         let log = HostLog.shared
+        log.setPersistsToDisk(true)             // the file is a switch now
         let url = try XCTUnwrap(log.url)
         log.write(.warn, "files", "#7 refused: exists (something is there)")
         let line = try XCTUnwrap(

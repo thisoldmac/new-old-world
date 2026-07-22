@@ -624,7 +624,9 @@ static void run_putstat(long id, char *out, long cap)
 static void run_tail(const char *request_json, long id, char *out, long cap)
 {
     char lines[2600];
-    const char *starts[kLogKept];
+    /* tail never returns more than 40 lines (the cap below); size the
+       index to that, not to the whole ring, which is now thousands. */
+    const char *starts[kLogTailMax];
     long want = now_json_find_int(request_json, "lines", 20);
     long pos;
     long budget;

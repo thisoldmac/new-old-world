@@ -68,8 +68,11 @@ static const unsigned char k_view_processes_item[] = {
 static const unsigned char k_view_hardware_item[] = {
     10, 'H', 'a', 'r', 'd', 'w', 'a', 'r', 'e', '/', '5'
 };
+static const unsigned char k_view_logs_item[] = {
+    6, 'L', 'o', 'g', 's', '/', '6'
+};
 static const unsigned char k_view_connection_item[] = {
-    12, 'C', 'o', 'n', 'n', 'e', 'c', 't', 'i', 'o', 'n', '/', '6'
+    12, 'C', 'o', 'n', 'n', 'e', 'c', 't', 'i', 'o', 'n', '/', '7'
 };
 static const unsigned char k_workshop_menu_item[] = {
     8, 'W', 'o', 'r', 'k', 's', 'h', 'o', 'p'
@@ -87,7 +90,7 @@ static void create_menu_bar(void)
     AppendMenu(file_menu, k_separator_menu_item);
     AppendMenu(file_menu, k_quit_menu_item);
     InsertMenu(file_menu, 0);
-    /* View selects a Workshop module (Cmd-1..6, the item number IS the
+    /* View selects a Workshop module (Cmd-1..7, the item number IS the
        module ID); Windows reopens the one window. Every module lives in
        the Workshop now. */
     AppendMenu(view_menu, k_view_screenshots_item);
@@ -95,6 +98,7 @@ static void create_menu_bar(void)
     AppendMenu(view_menu, k_view_console_item);
     AppendMenu(view_menu, k_view_processes_item);
     AppendMenu(view_menu, k_view_hardware_item);
+    AppendMenu(view_menu, k_view_logs_item);
     AppendMenu(view_menu, k_view_connection_item);
     InsertMenu(view_menu, 0);
     AppendMenu(windows_menu, k_workshop_menu_item);
@@ -351,8 +355,14 @@ int main(void)
         StopAlert(200, now_pump_modal_filter());
     }
     /* Log first: a hang during connection setup is precisely the case
-       the log exists for, and the old order left none. */
-    now_log_open();
+       the log exists for, and the old order left none. The in-memory ring
+       is always live; the saved switch only governs the disk file, which
+       is on unless the Logs page turned it off. */
+    {
+        NowPrefs log_prefs;
+        now_prefs_load(&log_prefs);
+        now_log_set_disk(log_prefs.log_to_disk);
+    }
     conn_init();
     conn_set_shot_note(screenshots_module_note);
     conn_set_file_note(files_share_note);

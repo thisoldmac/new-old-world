@@ -340,6 +340,30 @@ working on the PowerBook.
   MacRoman-high-byte names in `First hits` go through the `\uXXXX`
   escaper — but it has not been run live).
 
+- **The Logs page, both machines** (2026-07-22). A Monaco dump of the
+  in-memory log ring that follows the tail live like a terminal, with
+  Invert and Log-to-disk switches. The **guest** page was watched working
+  on the PB1400c; the footer move, the invert switch, and the whole
+  **host** module are built and tested but unrun since.
+  - **Placement.** Pinned in the footer below the divider, directly above
+    Connection — a `logs_row` on the guest (id 6, Connection 7), a
+    `.footer` descriptor before `settings` on the host. The host footer
+    row now shows link status only for the row that IS the link.
+  - **Guest scrollback.** The ring grew 200 -> 2000 lines (`kLogKept`),
+    ~240 KB of statics against a 6 MB partition. `run_tail`'s stack index
+    was decoupled from `kLogKept` so it stays 48, not 2000, pointers.
+  - **Disk toggle.** `now_log_set_disk`/`now_log_disk_on` (guest) and
+    `HostLog.setPersistsToDisk` gate the file at runtime; the ring is
+    always live. Default on (crash survival is the point). Both switches
+    reflect the ACTUAL state, so a failed open reads as off. On the host
+    the file is now a switch, not opened at launch — `LogsModel` applies
+    the saved choice.
+  - **Invert.** A dark canvas like Console, saved per page. Guest prefs
+    reached format 13 for it (12 was the disk field + Connection renumber);
+    the host keeps `logsInvert` in UserDefaults.
+  - **Watch on metal:** the host module unrun entirely; on the guest, that
+    the invert switch redraws cleanly and the footer pair (Logs above
+    Connection, under the divider) lays out at 640x480.
 - **`ps` and `census` console commands + guest verb logging**
   (2026-07-22). The two new modules — Processes and Hardware/census —
   had no console verb and logged nothing; both are now closed.
