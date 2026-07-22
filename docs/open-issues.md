@@ -340,6 +340,24 @@ working on the PowerBook.
   are metal-verified — including MacRoman-high-byte names in
   `First hits` crossing the wire through the `\uXXXX` escaper.
 
+- **Software rungs 1–2: resumable sweep, `vers`, running tags, and the
+  `software.list` family** (2026-07-22, spec in `software-module.md`).
+  Rung 1 is **emulator-verified**: `sw extensions` tagged exactly the
+  three running `appe` files the harness's process list names
+  (Control Strip Extension, DVD AutoLauncher, FBC Indexing Scheduler),
+  and `vers SimpleText` read Version 1.4 / "1.4.0 final" / the Get Info
+  string / Product 1.1 by name-search resolution. Known texture:
+  Application Switcher runs but is untagged — its process appSpec
+  evidently names the System file, and the strict FSSpec compare
+  declines to guess; that is the join being honest, not a defect.
+  Rung 2 (the wire family, served from a one-domain cache with
+  full-path launch keys) **builds and is host-tested** — fixtures pin
+  the piecemeal listing including a MacRoman ® — but has **never run
+  live end to end**: it needs the new host build connected to the new
+  guest build, driven by the host console's `swpage [domain] [cursor]`.
+  Nothing from rungs 1–2 has run on the 1400c, and the rung-0 verbs
+  are also still unwatched there.
+
 - **`sw` and `launch` — the software family's first verbs** (2026-07-22).
   The Software module's data layer (`software.c`) surfaced as console
   verbs on both sides before the page exists. `sw` inventories the
