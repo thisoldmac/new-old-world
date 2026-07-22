@@ -1467,6 +1467,22 @@ components:
         type: object
         properties:
           census: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    catsearch:
+      description: >
+        Time a whole-volume catalog search for applications: PBCatSearch
+        over the receiver's startup volume matching file type APPL, run
+        in short time slices — cold, then warm to expose caching. The
+        measurement probe behind the Software module's planned inventory
+        sweep; it answers whether a full application index is affordable
+        on the machine's real disk before anything is built on that
+        assumption. Read-only — the sweep reads the catalog, never a
+        file. Seconds normally; bounded at ~20 s per pass on a disk
+        that cannot answer faster.
+      args: {}
+      output:
+        type: object
+        properties:
+          catsearch: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
 
   # The census probe registry: the CLOSED, DECLARED set of probes a side may
   # be asked about, and the outcome vocabulary every report speaks. Adding a

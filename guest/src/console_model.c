@@ -16,6 +16,7 @@
 #include "prefs.h"
 #include "screenshot.h"
 #include "vprobe.h"
+#include "catsearch.h"
 #include "wire.h"
 
 enum {
@@ -183,6 +184,13 @@ static void help_for(const char *name)
         console_model_append("  (application / background / finder), size, and");
         console_model_append("  whether it is frontmost. A reading only; the");
         console_model_append("  Processes page is where they are driven.");
+    } else if (strcmp(name, "catsearch") == 0) {
+        console_model_append("catsearch - time a whole-disk application search");
+        console_model_append("  Usage: catsearch");
+        console_model_append("  Sweeps the startup volume's catalog for applications");
+        console_model_append("  with PBCatSearch, in short slices, cold then warm.");
+        console_model_append("  Measures whether a full application index is");
+        console_model_append("  affordable on this disk. Seconds-long; read-only.");
     } else if (strcmp(name, "census") == 0) {
         console_model_append("census - run one hardware-census probe");
         console_model_append("  Usage: census [probe]   (no probe = overview)");
@@ -218,6 +226,7 @@ static void help_list(void)
     console_model_append("  vprobe      measure VRAM read cost by method");
     console_model_append("  ps          the processes running on this Mac");
     console_model_append("  census      run a hardware probe (census [probe])");
+    console_model_append("  catsearch   time a whole-disk application search");
     console_model_append("  help        show this list (\"help <cmd>\" for details)");
     console_model_append("  clear       clear the console scrollback");
     console_model_append("Add --help or -h to any command for details.");
@@ -491,6 +500,24 @@ void console_model_run(const char *input)
         for (vi = 0; vi < vn; ++vi) {
             snprintf(line, sizeof line, "  %-16s %s",
                      rows[vi].label, rows[vi].value);
+            console_model_append(line);
+        }
+        return;
+    }
+    if (strcmp(name, "catsearch") == 0) {
+        CatSearchRow rows[16];
+        char cerr[96];
+        int cn = now_catsearch_run(rows, 16, cerr, sizeof cerr);
+        int ci;
+
+        if (cn < 0) {
+            snprintf(line, sizeof line, "catsearch: %.80s", cerr);
+            console_model_append(line);
+            return;
+        }
+        for (ci = 0; ci < cn; ++ci) {
+            snprintf(line, sizeof line, "  %-16s %s",
+                     rows[ci].label, rows[ci].value);
             console_model_append(line);
         }
         return;

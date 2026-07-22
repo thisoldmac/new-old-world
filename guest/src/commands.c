@@ -16,6 +16,7 @@
 #include "wire.h"
 #include "screenshot.h"
 #include "vprobe.h"
+#include "catsearch.h"
 
 const char *const kGestaltFullGroups[] = {
     "cpu", "memory", "os", "network", "hw", NULL
@@ -780,6 +781,42 @@ static void run_census(const char *request_json, long id, char *out, long cap)
     snprintf(out + pos, (size_t)(cap - pos), "]}}");
 }
 
+/* catsearch: what a whole-volume application sweep costs, measured where
+   the disk is. Rows go through the escaper because two of them carry
+   catalog strings — the volume's name and the first hits' names — and a
+   quote in a file name must stay a file name, not become JSON. */
+static void run_catsearch(long id, char *out, long cap)
+{
+    CatSearchRow rows[16];
+    char cerr[96];
+    int n = now_catsearch_run(rows, 16, cerr, sizeof cerr);
+    long pos;
+    int i;
+
+    if (n < 0) {
+        char esc[200];
+
+        now_json_escape(cerr, esc, sizeof esc);
+        snprintf(out, cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+                 "\"error\":{\"code\":\"catsearch-failed\","
+                 "\"message\":\"%s\"}}", id, esc);
+        return;
+    }
+    pos = snprintf(out, (size_t)cap,
+                   "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                   "\"output\":{\"catsearch\":[", id);
+    for (i = 0; i < n && pos < cap - 240; ++i) {
+        char esc_label[64], esc_value[200];
+
+        now_json_escape(rows[i].label, esc_label, sizeof esc_label);
+        now_json_escape(rows[i].value, esc_value, sizeof esc_value);
+        pos += snprintf(out + pos, (size_t)(cap - pos), "%s[\"%s\",\"%s\"]",
+                        i > 0 ? "," : "", esc_label, esc_value);
+    }
+    snprintf(out + pos, (size_t)(cap - pos), "]}}");
+}
+
 void now_command_run(const char *name, const char *request_json, long id,
                      char *out, long cap)
 {
@@ -813,6 +850,10 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "census") == 0) {
         run_census(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "catsearch") == 0) {
+        run_catsearch(id, out, cap);
         return;
     }
     snprintf(out, cap,

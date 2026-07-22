@@ -24,7 +24,7 @@ final class ConsoleModel: ObservableObject {
 
     /// Declared commands (contract x-commands) plus console built-ins.
     static let commands = ["gestalt", "screenshot", "vprobe", "ls",
-                           "putstat", "tail", "ps", "census"]
+                           "putstat", "tail", "ps", "census", "catsearch"]
 
     /// Per-command docs, mirroring the contract's x-commands descriptions.
     /// help and --help render from here — documentation never hits the wire.
@@ -101,6 +101,15 @@ final class ConsoleModel: ObservableObject {
                    "  Passive reads of tables that Mac's OS keeps. Absence",
                    "  is an answer, not an error. The Hardware module pages",
                    "  the same census through its own view."]),
+        "catsearch": .init(
+            summary: "time a whole-disk application search on the other Mac",
+            help: ["catsearch — time a whole-disk search for applications",
+                   "  Usage: catsearch",
+                   "  The other Mac sweeps its startup volume's catalog for",
+                   "  applications with PBCatSearch, in short slices, cold",
+                   "  then warm. Groundwork for the Software module: is a",
+                   "  full application index affordable on that disk?",
+                   "  Seconds-long; read-only."]),
         "help": .init(
             summary: "show this list (\"help <cmd>\" for details)",
             help: ["help — list commands, or \"help <cmd>\" for one"]),
