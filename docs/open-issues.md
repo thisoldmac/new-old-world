@@ -355,8 +355,20 @@ working on the PowerBook.
   the piecemeal listing including a MacRoman ® — but has **never run
   live end to end**: it needs the new host build connected to the new
   guest build, driven by the host console's `swpage [domain] [cursor]`.
-  Nothing from rungs 1–2 has run on the 1400c, and the rung-0 verbs
-  are also still unwatched there.
+  - **First metal round (2026-07-22, partial):** `sw apps` and `vers`
+    ran on the 1400c from the host console. Two findings, both closed
+    the same day: `launch` from the host dispatched as unknown-command
+    — the host sorts JSON keys, `args` precedes `name`, and the guest
+    scans frames FLAT, so launch's arg named "name" was read as the
+    command name (arg renamed `target`; the never-shadow-an-envelope-key
+    rule now lives in the contract's x-commands preamble); and `vers`
+    on a bare name met the disk's several SimpleTexts — it now shows
+    every match path-first instead of refusing, `launch`'s ambiguity
+    refusal names the paths, and a duplicate finder (same/different
+    version, user-driven consolidation) is marked in the spec as later
+    work. The fixes are emulator-verified; the metal re-run of
+    `launch`-from-host and `vers`-duplicates is what remains, plus the
+    `swpage` firsts above.
 
 - **`sw` and `launch` — the software family's first verbs** (2026-07-22).
   The Software module's data layer (`software.c`) surfaced as console
