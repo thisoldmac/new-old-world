@@ -22,10 +22,15 @@ struct ProcessesModuleView: View {
                alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear { if model.rows.isEmpty { model.refresh() } }
-        // If the Mac dials in while this pane is already open, fill it
-        // then rather than waiting for a manual Refresh.
+        // Refill the pane whenever the Mac (re)connects while it is open,
+        // rather than waiting for a manual Refresh. On a first connect the
+        // table is empty; on a reconnect after a redeploy the model has
+        // already dropped the stale rows — so either way this reads the new
+        // guest's table. onAppear covers a pane opened after the Mac was
+        // already connected, and the two never both fire for one connect,
+        // so there is no double fetch.
         .onChange(of: model.connection) { connection in
-            if connection.canCapture, model.rows.isEmpty { model.refresh() }
+            if connection.canCapture { model.refresh() }
         }
     }
 

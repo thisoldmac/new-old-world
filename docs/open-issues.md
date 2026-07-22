@@ -196,12 +196,20 @@ With that, the whole drive arc is metal-verified: Bring to Front, Ask to
 Quit, the self-quit refusal, and Screenshot App cropping Finder, Strider,
 and NOW itself.
 
-**Smell, deferred:** the host's process list can hold stale PSNs across a
-guest relaunch, and a drive verb on a stale PSN fails (safely - the guest
-re-validates and answers ok:false / capture.end ok:false) until a manual
-Refresh. It fails closed, so it is a UX wart not a correctness bug, but
-the list should notice a reconnect and re-fetch itself rather than making
-the human hit Refresh. Left for a later pass. `process.launch` (opening an
+**Smell, now fixed (tested, not yet metal-verified):** the host's process
+list could hold stale PSNs across a guest relaunch, and a drive verb on a
+stale PSN failed (safely - the guest re-validated and answered ok:false /
+capture.end ok:false) until a manual Refresh. The list now notices the
+connection itself: `ProcessesModel` drops its whole table the instant the
+connection leaves `.connected` (rows belong to one connection, and the
+next guest reconnects with fresh PSNs), and the view re-reads on any
+transition back to connected - so a reconnect, or a pane reopened after
+one, reads afresh without a manual Refresh. Clearing on disconnect also
+covers the case the view's `.onChange` cannot see, a reconnect that
+happens while the Processes pane is closed. Host suite passes and the app
+builds; still needs a metal pass (relaunch the guest, confirm the list
+updates and the three drive verbs work with no Refresh). `process.launch`
+(opening an
 app that is not yet running) is the honest next verb; it needs a
 path/signature to name an unlaunched app, not a PSN. Everything is tested
 (contract round-trips incl. `process.shot`, a guest `process.result`
