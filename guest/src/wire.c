@@ -1332,33 +1332,40 @@ static void service_shot(void)
 {
     NowPeekWindowList w;
     Rect rect;
+    Boolean have_rect = false;
     PixelBlob blob;
     ShotMeta meta;
+    int ok;
 
     if (!g_shot.active || TickCount() < g_shot.deadline) {
         return;
     }
     g_shot.active = false;
 
-    if (now_peek_windows_for_psn(&g_shot.target, &w) != kNowPeekReadOk
-        || w.count < 1) {
-        SetFrontProcess(&g_shot.self);
-        capture_fail(g_shot.id);      /* no window to bound the shot */
-        return;
+    /* Crop to the target's front window when the anchor plane can read its
+       bounds. When it cannot - a windowless process, or NOW reading its
+       own slot - fall back to the whole screen rather than failing: the
+       human asked for a picture of that app, and the app is now front, so
+       the screen with it on it is a truthful answer, not an error. */
+    if (now_peek_windows_for_psn(&g_shot.target, &w) == kNowPeekReadOk
+        && w.count >= 1) {
+        SetRect(&rect, w.windows[0].left, w.windows[0].top,
+                w.windows[0].right, w.windows[0].bottom);
+        have_rect = true;
     }
-    SetRect(&rect, w.windows[0].left, w.windows[0].top,
-            w.windows[0].right, w.windows[0].bottom);
 
     memset(&blob, 0, sizeof blob);
-    if (!gather_shot_rect(g_shot.depth, &rect, g_shot.pack, &blob, &meta)) {
-        SetFrontProcess(&g_shot.self);
+    ok = have_rect
+        ? gather_shot_rect(g_shot.depth, &rect, g_shot.pack, &blob, &meta)
+        : gather_shot(g_shot.depth, g_shot.pack, &blob, &meta);
+    /* Pixels grabbed; NOW comes back to the front to send them (it pumps
+       the wire either way, but this leaves the human's machine where they
+       left it). */
+    SetFrontProcess(&g_shot.self);
+    if (!ok) {
         capture_fail(g_shot.id);
         return;
     }
-    /* The pixels are grabbed; NOW can come back to the front to send them
-       (it pumps the wire either way, but this keeps the human's machine
-       where they left it). */
-    SetFrontProcess(&g_shot.self);
     arm_transfer(g_shot.id, next_xfer(), &meta, &blob, g_shot.chunk,
                  g_shot.pace_ms, false);
 }
