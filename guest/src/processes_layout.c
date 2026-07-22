@@ -77,17 +77,40 @@ void processes_layout_compute(const Rect *body, ProcessesLayout *out)
                  (short)(value_x + bar_w),
                  (short)(y + 2 + kProcMemBarHeight));
     }
-    y = (short)(out->mem_bar.bottom + 6);
+    y = (short)(out->mem_bar.bottom + 4);
+    set_rect(&out->cpu_line, inner_left, y,
+             (short)(out->detail.right - 12),
+             (short)(y + kProcFactLineHeight));
+    y = out->cpu_line.bottom;
     set_rect(&out->launched_line, inner_left, y,
+             (short)(out->detail.right - 12),
+             (short)(y + kProcFactLineHeight));
+    y = (short)(out->launched_line.bottom + 4);
+    set_rect(&out->windows_line, inner_left, y,
+             (short)(out->detail.right - 12),
+             (short)(y + kProcFactLineHeight));
+    y = out->windows_line.bottom;
+    {
+        int i;
+
+        for (i = 0; i < kProcDetailWindows; ++i) {
+            set_rect(&out->window_rows[i], (short)(inner_left + 12), y,
+                     (short)(out->detail.right - 12),
+                     (short)(y + kProcWindowRowHeight));
+            y = (short)(y + kProcWindowRowHeight);
+        }
+    }
+    y = (short)(y + 4);
+    set_rect(&out->menus_line, inner_left, y,
              (short)(out->detail.right - 12),
              (short)(y + kProcFactLineHeight));
 
     /* The extension group pins to the pane's bottom; the buttons float
        above it rather than under the facts, so a short pane squeezes
        the empty middle instead of the controls. */
-    group_top = (short)(out->detail.bottom - 10 - 74);
-    if (group_top < out->launched_line.bottom + 40) {
-        group_top = (short)(out->launched_line.bottom + 40);
+    group_top = (short)(out->detail.bottom - 10 - 54);
+    if (group_top < out->menus_line.bottom + 40) {
+        group_top = (short)(out->menus_line.bottom + 40);
     }
     if (out->detail.bottom - 10 - group_top < kProcGroupMinHeight) {
         group_top = (short)(out->detail.bottom - 10 - kProcGroupMinHeight);
@@ -184,4 +207,51 @@ void proc_status_text(int count, long free_kb, char *out, long cap)
     snprintf(out, (size_t)cap, "%d process%s - %ld.%ld MB free", count,
              count == 1 ? "" : "es", free_kb / 1024,
              (free_kb % 1024) * 10 / 1024);
+}
+
+void proc_cpu_text(unsigned long active_ticks, char *out, long cap)
+{
+    unsigned long secs = active_ticks / 60;
+
+    if (secs < 60) {
+        snprintf(out, (size_t)cap, "%lu sec", secs);
+    } else {
+        snprintf(out, (size_t)cap, "%lu min %lu sec", secs / 60,
+                 secs % 60);
+    }
+}
+
+void proc_kind_name(short kind, char *out, long cap)
+{
+    if (kind == kProcKindBackground) {
+        snprintf(out, (size_t)cap, "background only");
+    } else if (kind == kProcKindFinder) {
+        snprintf(out, (size_t)cap, "the Finder");
+    } else {
+        snprintf(out, (size_t)cap, "application");
+    }
+}
+
+/* Minute granularity on purpose: a launch time does not need to tick
+   every second, and a per-second string would repaint the detail pane
+   every second. Below a minute it is coarse ("just now", "less than a
+   minute ago"); from there it changes only when the minute rolls. */
+void proc_uptime_text(long ticks_ago, char *out, long cap)
+{
+    long secs = (ticks_ago < 0 ? 0 : ticks_ago) / 60;
+
+    if (secs < 10) {
+        snprintf(out, (size_t)cap, "just now");
+    } else if (secs < 60) {
+        snprintf(out, (size_t)cap, "less than a minute ago");
+    } else if (secs < 3600) {
+        snprintf(out, (size_t)cap, "%ld min ago", secs / 60);
+    } else if (secs < 86400) {
+        long hrs = secs / 3600;
+        long mins = (secs % 3600) / 60;
+
+        snprintf(out, (size_t)cap, "%ld hr %ld min ago", hrs, mins);
+    } else {
+        snprintf(out, (size_t)cap, "%ld days ago", secs / 86400);
+    }
 }

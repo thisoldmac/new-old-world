@@ -60,6 +60,50 @@ metal-verified: the async-connect launch wedge, and Connection field
 editing (see below). The Processes page itself was good across those
 rounds.
 
+**NOW Extension M0 is metal-verified** (2026-07-21, rung 1, `ext/`).
+The guest's first resident code: a 68K INIT publishing the shared
+table, registering Gestalt `'NWex'`, and chaining a jGNE heartbeat
+filter. Booted on the PB1400c at 9.1; the app's `now_peek_status()`
+probed it and the Processes group box read "NOW Extension active."
+That proves install, DetachResource residency, Gestalt registration,
+table validation across the compiler boundary, and a live jGNE chain -
+the whole of M0. Size ~48 KB (Retro68 flat runtime), loads at 9.1;
+8.6 loader ceiling still unprobed (waits on the 3400c). The recovery
+drill (Shift-boot off, drag-out) and the QEMU-clone pre-check remain
+good practice for the next resident change but M0 itself is done.
+
+**Rung 2a is metal-verified** (2026-07-21) - the anchor plane and the
+first foreign-memory read. The extension's jGNE filter, once the
+Processes page arms the plane, records each process's low-memory
+CurrentA5/WindowList/MenuList into A5-keyed slots. Clicking a process in
+NOW's list reads THAT process's front-window global bounds (the
+per-process `axtree` behaviour): PSN -> partition
+(`GetProcessInformation`) -> the fresh anchor whose A5 lies in that
+partition (the correlation, validated by containment) -> `strucRgn` ->
+`rgnBBox`, every foreign pointer checked inside the partition OR the
+system heap before it is dereferenced (`peek_validate.c`, native-tested
++ mutation-checked), byte reads at fixed classic offsets. Watched on the
+PB1400c: NOW's own window read correct, and Finder read "516 x 557 at
+(7, 25)" - a real other process's window - once the validation was
+widened to accept the system heap (partition-only read "unreadable",
+exactly tbt's axtree lesson). The foreign read lives in the app, never
+the extension.
+
+Known texture, not a defect: the readout is only as fresh as the target
+process's last event-loop pass. A dormant background app reads "no
+anchor yet" until it pumps (interacting with it refreshes it within
+~10 s / kFreshTicks); an app with no windows reads "none open". Still
+open for a later pass: whether any app keeps its window structures in a
+zone neither the partition nor the system heap covers (would read
+"unreadable"); and rung 2b, cropping the actual Front & Capture to the
+rect.
+
+**Metal found one rung-0 bug, now fixed:** the detail pane's "Launched"
+line read "1/1/04" for every process. `ProcessInfoRec.processLaunchDate`
+is ticks since boot, not a 1904-epoch date, so `LongDateString` clamped
+it. Now rendered as elapsed time via `proc_uptime_text` (pure, native-
+tested, watched failing by mutation): "3 min ago", "2 hr 14 min ago".
+
 **Workshop follow-ups, deliberately not done in the arc:** a CarbonLib
 1.6 launch gate (wire.c still surfaces `kConnNeedsCarbonLib` at connect
 time instead); the capture disclosure's expanded state is session-only,
@@ -161,6 +205,30 @@ Not load-bearing; parked as a known gap rather than chased.
 Everything here builds and passes its tests. None of it has been watched
 working on the PowerBook.
 
+- **The Processes page's product pass** (2026-07-21) - built and
+  suite-green, unrun on metal. All app-side (extension unchanged):
+  - **Kind grouping.** Processes are classed from `processMode`
+    (`modeOnlyBackground`), not guessed from the `'appe'` type. The list
+    sorts front-process first, then applications, a divider row, then
+    background-only - kind and front-ness are the sort axes, never
+    window state, so a row never jumps when a window opens/closes.
+  - **Row badges.** Front app reads "(front)"; apps show their window
+    count ("3 windows"); windowless and background rows show none - the
+    windowed/windowless distinction, visible without selecting.
+  - **Richer detail.** CPU time (`processActiveTime`), accurate Kind
+    with "(frontmost)", and a Windows section listing each window's
+    title + size (up to 3, "...and N more"), read through the anchor
+    plane's validated foreign path (now walking the `nextWindow` chain
+    and reading `titleHandle`). Menus line is a reserved STUB - the
+    anchor captures `MenuList`, the walk is a later pass.
+
+  **Watch on metal:** the **divider row** is a non-process sentinel item
+  in the Data Browser (`kDividerItem`), non-selectable by bouncing the
+  selection off it - the one bit of fake-row territory in an otherwise
+  proven-DB design; confirm it draws between the groups and cannot be
+  selected. Also that window titles read correctly (another foreign
+  pointer hop, `titleHandle`), and that per-app window-count reads every
+  second don't cost visible time on the 33 MHz metal.
 - **Prefs v10 module renumbering.** Connection moved 4 to 5; a v9 file
   should reopen on the page the person had (the remap is three lines
   in `now_prefs_load`), exercised only by reasoning - same status as

@@ -68,15 +68,23 @@ static void check_common(const Rect *body, const ProcessesLayout *lay,
     CHECK(contains(&lay->detail, &lay->type_line), "type in detail");
     CHECK(contains(&lay->detail, &lay->mem_line), "memory in detail");
     CHECK(contains(&lay->detail, &lay->mem_bar), "bar in detail");
+    CHECK(contains(&lay->detail, &lay->cpu_line), "cpu in detail");
     CHECK(contains(&lay->detail, &lay->launched_line),
           "launched in detail");
+    CHECK(contains(&lay->detail, &lay->windows_line),
+          "windows header in detail");
+    CHECK(contains(&lay->detail, &lay->window_rows[0]),
+          "first window row in detail");
+    CHECK(contains(&lay->detail, &lay->window_rows[kProcDetailWindows - 1]),
+          "last window row in detail");
+    CHECK(contains(&lay->detail, &lay->menus_line), "menus in detail");
     CHECK(contains(&lay->detail, &lay->front_btn), "front in detail");
     CHECK(contains(&lay->detail, &lay->quit_btn), "quit in detail");
     CHECK(contains(&lay->detail, &lay->group), "group in detail");
     CHECK(contains(&lay->group, &lay->peek_line), "peek line in group");
 
-    /* The facts stack, the bar sits under the memory line, and the
-       buttons never collide with the facts or the group. */
+    /* The facts stack, the bar sits under the memory line, the window
+       rows stack under their header, and the buttons never collide. */
     CHECK(lay->kind_line.top >= lay->title_line.bottom,
           "kind below title");
     CHECK(lay->type_line.top >= lay->kind_line.bottom,
@@ -84,9 +92,16 @@ static void check_common(const Rect *body, const ProcessesLayout *lay,
     CHECK(lay->mem_line.top >= lay->type_line.bottom,
           "memory below type");
     CHECK(lay->mem_bar.top >= lay->mem_line.bottom, "bar below memory");
-    CHECK(lay->launched_line.top >= lay->mem_bar.bottom,
-          "launched below bar");
-    CHECK(lay->front_btn.top >= lay->launched_line.bottom,
+    CHECK(lay->cpu_line.top >= lay->mem_bar.bottom, "cpu below bar");
+    CHECK(lay->launched_line.top >= lay->cpu_line.bottom,
+          "launched below cpu");
+    CHECK(lay->windows_line.top >= lay->launched_line.bottom,
+          "windows header below launched");
+    CHECK(lay->window_rows[0].top >= lay->windows_line.bottom,
+          "window rows below their header");
+    CHECK(lay->menus_line.top >= lay->window_rows[kProcDetailWindows - 1].bottom,
+          "menus below the window rows");
+    CHECK(lay->front_btn.top >= lay->menus_line.bottom,
           "buttons below facts");
     CHECK(disjoint(&lay->front_btn, &lay->quit_btn),
           "buttons do not overlap");
@@ -137,6 +152,35 @@ static void check_formatters(void)
     proc_status_text(1, 1024, buf, sizeof buf);
     check(strcmp(buf, "1 process - 1.0 MB free") == 0,
           "status line singular");
+
+    /* processLaunchDate is ticks since boot; the delta is a duration,
+       never a date (60 ticks/sec). Coarse below a minute so it does not
+       tick every second. */
+    proc_uptime_text(60L * 3, buf, sizeof buf);   /* 3 s */
+    check(strcmp(buf, "just now") == 0, "under 10s reads just now");
+    proc_uptime_text(60L * 30, buf, sizeof buf);  /* 30 s */
+    check(strcmp(buf, "less than a minute ago") == 0,
+          "under a minute is coarse");
+    proc_uptime_text(60L * 60 * 3, buf, sizeof buf); /* 3 min */
+    check(strcmp(buf, "3 min ago") == 0, "minutes granularity");
+    proc_uptime_text(60L * (3600 * 2 + 60 * 14), buf, sizeof buf);
+    check(strcmp(buf, "2 hr 14 min ago") == 0, "hours and minutes");
+    proc_uptime_text(60L * 86400 * 3, buf, sizeof buf);
+    check(strcmp(buf, "3 days ago") == 0, "days granularity");
+    proc_uptime_text(-50, buf, sizeof buf);       /* clock skew guard */
+    check(strcmp(buf, "just now") == 0, "negative delta clamps");
+
+    proc_cpu_text(60L * 12, buf, sizeof buf);      /* 12 s */
+    check(strcmp(buf, "12 sec") == 0, "cpu seconds");
+    proc_cpu_text(60L * (60 * 3 + 20), buf, sizeof buf);
+    check(strcmp(buf, "3 min 20 sec") == 0, "cpu minutes and seconds");
+
+    proc_kind_name(kProcKindApp, buf, sizeof buf);
+    check(strcmp(buf, "application") == 0, "kind app");
+    proc_kind_name(kProcKindBackground, buf, sizeof buf);
+    check(strcmp(buf, "background only") == 0, "kind background");
+    proc_kind_name(kProcKindFinder, buf, sizeof buf);
+    check(strcmp(buf, "the Finder") == 0, "kind finder");
 }
 
 int main(void)

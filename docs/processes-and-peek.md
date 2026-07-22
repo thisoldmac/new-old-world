@@ -16,19 +16,22 @@ end-to-end). We rebuild fresh; the findings are what carry.
 
 ## The ladder
 
-| rung | what ships | needs |
-|---|---|---|
-| 0 | Processes page: list, front, ask-to-quit | nothing new |
-| 1 | NOW Extension M0: residence, discovery, versioning | the extension |
-| 2 | Anchor plane: per-process window bounds; cropped Front & Capture | ext P1 |
-| 3 | `process.*` wire family; host sees the guest's processes | contract |
-| 4 | Semantic tree; `peek.*` family; host tree view | ext P2 |
-| 5 | Host mock desktop (scene IR, native renderer) | 3 + 4 |
-| 6 | Interiors: bounds-cropped pixel fill inside the mock desktop | 2 + 5 |
-| 7 | Drive: actions routed back at stable refs | much later |
+| rung | what ships | needs | status |
+|---|---|---|---|
+| 0 | Processes page: list, front, ask-to-quit | nothing new | **metal-verified** (2026-07-21) |
+| 1 | NOW Extension M0: residence, discovery, versioning | the extension | **metal-verified** (2026-07-21) |
+| 2a | Anchor plane + per-process validated window read | ext P1 | **metal-verified** (2026-07-21) |
+| 2b | Front & Capture crops to those bounds | 2a | not started |
+| 3 | `process.*` wire family; host sees the guest's processes | contract | |
+| 4 | Semantic tree; `peek.*` family; host tree view | ext P2 | |
+| 5 | Host mock desktop (scene IR, native renderer) | 3 + 4 | |
+| 6 | Interiors: bounds-cropped pixel fill inside the mock desktop | 2 + 5 | |
+| 7 | Drive: actions routed back at stable refs | much later | |
 
 Each rung is independently useful and independently verifiable. Nothing
-below rung 1 installs resident code.
+below rung 1 installs resident code. Rung 1's code lives in
+[`ext/`](../ext/); its metal test plan is in
+[open-issues.md](open-issues.md).
 
 ## Rung 0 — the Processes page
 
@@ -268,6 +271,68 @@ Deferred by design: the Tier B background app (`'appe'`) for
 launch-NOW-when-closed, and the possibly-single-file `'appe'`+INIT
 packaging — recorded as probe-required, decided when the requirement
 is real.
+
+### Rung 2 — the anchor plane (P1), in detail
+
+The first plane that produces data the app cannot get itself, and the
+first foreign-memory read. Three parts, split so the risky one is
+smallest and isolated.
+
+**What the filter captures, and how it is keyed.** The jGNE filter
+already runs in every process's context. When armed, it reads three
+low-memory globals of *that* context — `LMGetCurrentA5`,
+`LMGetWindowList`, `LMGetMenuList` — and a `LMGetTicks` stamp, into an
+anchor slot. Nothing else: no Process Manager call (forbidden the
+lesson-hard way from resident code), no allocation, no toolbox that
+moves memory. Slots are **keyed by A5**, not PSN — A5 is a cheap,
+unique-per-process low-memory read, and getting the PSN would mean a
+Process Manager call this context must not make. This mirrors AXPeek
+exactly: the resident code observes A5/WindowList/MenuList; the PSN
+correlation happens later, in the application.
+
+Slot management, all O(32) scans (cheap, and the changed-anchor
+early-out keeps the common pass near-free): match the current A5, else
+take an empty slot (`a5 == 0`), else recycle the stalest. A quit
+process leaves a slot whose stamp stops advancing; the app judges it
+stale. A5 reuse by a later process is self-correcting — the next pass
+overwrites with that world's fresh `WindowList`. `anchor_format` flips
+`None → V1`; the slot's `psn_*` fields stay zero (the extension never
+fills them), which V1 documents.
+
+**The arm handshake — the plane's first real exercise.** P1 is dormant
+until asked. The extension advertises it (`caps |= CapAnchors`) but
+captures nothing until the app writes `arm_request |= CapAnchors`; the
+filter, seeing the request, begins capturing and sets
+`arm_active |= CapAnchors`. Disarm reverses it. One writer per word:
+the app owns `arm_request`, the extension owns everything else. A
+machine whose user never opens a bounds-consuming feature never runs
+the capture loop.
+
+**The app-side validated read — where the foreign memory is touched.**
+This is application code, never resident code, because a bug here is a
+file copy from fixed. To get the front window's bounds:
+
+1. `GetFrontProcess` → PSN → `GetProcessInformation` for its
+   `processLocation` and `processSize`: the exact partition bounds.
+2. Find the anchor slot whose `a5` falls **inside that partition** and
+   whose stamp is fresh. That is the PSN↔A5 correlation, validated by
+   containment — an A5 outside the front process's partition is not its
+   A5, and the read fails closed.
+3. Follow `window_list` to the front `WindowRecord`, then its
+   `strucRgn`/`portRect` bounding box — every dereference bounds-checked
+   against the same partition (and validated SysZone for shared
+   structures) before it is read. Any pointer that lands outside fails
+   the whole read; the app degrades to full-screen capture and says so.
+
+The reader's pure arithmetic — is an address inside `[loc, loc+size)`,
+is a `Rect` sane — is host-testable and gets a native test; only the
+dereferences themselves are Toolbox-bound and metal-gated.
+
+**First payoff:** Front & Capture crops to the front window's rect
+instead of grabbing the whole screen (partial VRAM reads scale
+linearly, so the crop is also the fast path). The Processes page's
+"Front & Capture" affordance, ghosted since rung 0, lights up when
+`caps & CapAnchors` and the read validates.
 
 ### Known INIT-side probes
 

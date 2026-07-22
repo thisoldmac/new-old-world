@@ -32,6 +32,8 @@ add_application(now-guest
     src/conn_edit_dialog.c
     src/connection_module.c
     src/peek.c
+    src/peek_validate.c
+    src/peek_read.c
     src/processes_layout.c
     src/processes_module.c
     src/workshop_layout.c

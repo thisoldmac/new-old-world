@@ -5,6 +5,7 @@
 
 #include "confirm.h"
 #include "peek.h"
+#include "peek_read.h"
 #include "processes_layout.h"
 #include "pump.h"
 
@@ -28,6 +29,9 @@ enum {
     kQuitPatienceTicks = 600,         /* 10 s before "no reply" */
 
     kColName = 'name',
+    /* A non-process sentinel row: the "background" divider between the
+       two groups. Well outside the process item-id range (1..32). */
+    kDividerItem = 1000,
 
     kQuitNone = 0,
     kQuitAsked = 1,
@@ -41,8 +45,14 @@ typedef struct {
     unsigned long sig;
     long size_kb;
     long used_kb;
-    unsigned long launched;           /* seconds since 1904 */
+    unsigned long launched;           /* processLaunchDate: TICKS since
+                                         boot, not a date */
+    unsigned long active_time;        /* processActiveTime: CPU ticks */
+    unsigned long mode;               /* processMode flags */
     Boolean self;
+    Boolean is_front;                 /* the frontmost process */
+    short kind;                       /* kProcKind* */
+    short window_count;               /* -1 unknown, else windows open */
     short quit_state;
     unsigned long quit_ticks;
     IconRef icon;                     /* may be NULL; released on drop */
@@ -68,6 +78,27 @@ static unsigned long g_next_walk;
 static char g_status[64];
 static short g_front_hilite = -1;
 static short g_quit_hilite = -1;
+/* Set while rebuilding the browser: RemoveDataBrowserItems fires a
+   deselect for the selected row, whose notification would otherwise
+   clobber g_selected mid-rebuild. */
+static Boolean g_in_rebuild;
+
+/* The selected process's windows, read through the anchor plane on the
+   throttled idle (the foreign read lives on the 1 Hz path, never in
+   draw) and drawn in the detail pane. g_sel_win_psn is whose windows
+   the cache holds, so a transient stale read for the SAME process can
+   carry the last good result instead of blinking. */
+static NowPeekWindowList g_sel_windows;
+static NowPeekReadStatus g_sel_win_status = kNowPeekReadNoPlane;
+static ProcessSerialNumber g_sel_win_psn;
+
+/* Last-drawn stat strings, so a per-second refresh repaints only the
+   fact line that actually changed - and the memory bar only when its
+   pixel fill moves, not on every KB of jitter. */
+static long g_shown_mem_fill = -1;
+static char g_shown_mem[32];
+static char g_shown_cpu[24];
+static char g_shown_launched[32];
 
 /* Real UPPs, retained for the control's lifetime; the shape (and the
    reason it is not a cast) is files_browser_view.c. */
@@ -120,11 +151,29 @@ static void drop_icons(ProcEntry *table, int count)
     }
 }
 
+/* The kind that drives grouping and the "Kind:" label. From
+   processMode, not from guessing at the 'appe' type - the mode's
+   modeOnlyBackground bit is the authority on what is faceless. */
+static short kind_of(unsigned long type, unsigned long sig,
+                     unsigned long mode)
+{
+    if (type == NOW_PEEK_4CC('F', 'N', 'D', 'R')
+        || sig == NOW_PEEK_4CC('M', 'A', 'C', 'S')) {
+        return kProcKindFinder;
+    }
+    if ((mode & modeOnlyBackground) != 0) {
+        return kProcKindBackground;
+    }
+    return kProcKindApp;
+}
+
 static int walk_processes(ProcEntry *out, int max)
 {
     ProcessSerialNumber psn = { 0, kNoProcess };
     ProcessSerialNumber self;
+    ProcessSerialNumber front;
     Boolean have_self = GetCurrentProcess(&self) == noErr;
+    Boolean have_front = GetFrontProcess(&front) == noErr;
     int count = 0;
 
     while (count < max && GetNextProcess(&psn) == noErr) {
@@ -154,8 +203,15 @@ static int walk_processes(ProcEntry *out, int max)
             entry->used_kb = 0;
         }
         entry->launched = info.processLaunchDate;
+        entry->active_time = info.processActiveTime;
+        entry->mode = (unsigned long)info.processMode;
+        entry->kind = kind_of(entry->type, entry->sig, entry->mode);
+        entry->window_count = -1;         /* filled by the anchor read */
         entry->self = have_self && SameProcess(&psn, &self, &same) == noErr
             && same;
+        same = false;
+        entry->is_front = have_front
+            && SameProcess(&psn, &front, &same) == noErr && same;
         ++count;
     }
     return count;
@@ -168,22 +224,41 @@ static void invalidate_detail(void)
     }
 }
 
+static void invalidate_line(const Rect *line)
+{
+    if (g_owner != NULL && g_visible) {
+        InvalWindowRect(g_owner, line);
+    }
+}
+
 static void rebuild_browser_items(void)
 {
-    DataBrowserItemID ids[kMaxProcs];
+    DataBrowserItemID ids[kMaxProcs + 1];
+    int n = 0;
+    int apps = 0;
+    int bg = 0;
     int i;
 
     if (g_browser == NULL) {
         return;
     }
+    g_in_rebuild = true;              /* swallow the removal's deselect */
     RemoveDataBrowserItems(g_browser, kDataBrowserNoItem, 0, NULL,
                            kDataBrowserItemNoProperty);
     for (i = 0; i < g_proc_count; ++i) {
-        ids[i] = (DataBrowserItemID)(i + 1);
+        ids[n++] = (DataBrowserItemID)(i + 1);
+        if (g_procs[i].kind == kProcKindBackground) {
+            ++bg;
+        } else {
+            ++apps;
+        }
     }
-    if (g_proc_count > 0) {
-        AddDataBrowserItems(g_browser, kDataBrowserNoItem,
-                            (UInt32)g_proc_count, ids,
+    /* The divider only appears when both groups do. */
+    if (apps > 0 && bg > 0) {
+        ids[n++] = kDividerItem;
+    }
+    if (n > 0) {
+        AddDataBrowserItems(g_browser, kDataBrowserNoItem, (UInt32)n, ids,
                             kDataBrowserItemNoProperty);
     }
     if (g_selected >= 0) {
@@ -192,6 +267,7 @@ static void rebuild_browser_items(void)
         SetDataBrowserSelectedItems(g_browser, 1, &sel,
                                     kDataBrowserItemsAssign);
     }
+    g_in_rebuild = false;
 }
 
 /* Refresh the table from the Process Manager. Membership changes
@@ -204,8 +280,9 @@ static void refresh(void)
     int fresh_count = walk_processes(fresh, kMaxProcs);
     ProcessSerialNumber selected_psn;
     Boolean had_selection = false;
-    Boolean membership_changed = fresh_count != g_proc_count;
-    Boolean values_changed = false;
+    /* list_changed = anything that reorders or re-captions a row (needs
+       a browser rebuild); values_changed = detail-only (memory). */
+    Boolean list_changed = fresh_count != g_proc_count;
     unsigned long now = TickCount();
     long free_kb = TempFreeMem() / 1024;
     char status[64];
@@ -219,8 +296,28 @@ static void refresh(void)
     for (i = 0; i < fresh_count; ++i) {
         int old = find_by_psn(g_procs, g_proc_count, &fresh[i].psn);
 
+        /* The list badge: window count for foreground apps (a foreign
+           read through the anchor plane); background rows carry none. A
+           definitive read (Ok / no windows) updates it; a transient
+           miss (stale anchor) CARRIES the last known count rather than
+           flapping the badge to nothing and forcing a rebuild. */
+        if (fresh[i].kind != kProcKindBackground) {
+            short wc = 0;
+            NowPeekReadStatus st =
+                now_peek_window_count(&fresh[i].psn, &wc);
+
+            if (st == kNowPeekReadOk) {
+                fresh[i].window_count = wc;
+            } else if (st == kNowPeekReadNoWindows) {
+                fresh[i].window_count = 0;
+            } else {
+                fresh[i].window_count =
+                    old >= 0 ? g_procs[old].window_count : -1;
+            }
+        }
+
         if (old < 0) {
-            membership_changed = true;
+            list_changed = true;
             take_icon(&fresh[i]);
             continue;
         }
@@ -230,17 +327,15 @@ static void refresh(void)
         fresh[i].quit_ticks = g_procs[old].quit_ticks;
         fresh[i].icon = g_procs[old].icon;
         g_procs[old].icon = NULL;
-        if (old != i || strcmp(fresh[i].name, g_procs[old].name) != 0) {
-            membership_changed = true;
-        }
-        if (fresh[i].used_kb != g_procs[old].used_kb
-            || fresh[i].size_kb != g_procs[old].size_kb) {
-            values_changed = true;
+        if (old != i || strcmp(fresh[i].name, g_procs[old].name) != 0
+            || fresh[i].is_front != g_procs[old].is_front
+            || fresh[i].window_count != g_procs[old].window_count) {
+            list_changed = true;      /* order or caption changed */
         }
         if (fresh[i].quit_state == kQuitAsked
             && now - fresh[i].quit_ticks > kQuitPatienceTicks) {
             fresh[i].quit_state = kQuitNoReply;
-            membership_changed = true;    /* the row's caption changed */
+            list_changed = true;
         }
     }
     drop_icons(g_procs, g_proc_count);    /* releases only unclaimed ones */
@@ -258,14 +353,15 @@ static void refresh(void)
     proc_status_text(g_proc_count, free_kb, status, sizeof status);
     strcpy(g_status, status);         /* placard diffing is the shell's */
 
-    if (membership_changed) {
+    if (list_changed) {
         rebuild_browser_items();
-        invalidate_detail();
-    } else if (values_changed && g_selected >= 0) {
         invalidate_detail();
     } else if (had_selection && g_selected < 0) {
         invalidate_detail();
     }
+    /* The ticking stats (memory/CPU/launched) repaint per changed line
+       in update_selected_stats, not here - so the bar does not flash on
+       a CPU tick. */
 }
 
 /* --- actions ------------------------------------------------------------ */
@@ -337,8 +433,19 @@ static void row_caption(const ProcEntry *entry, char *out, long cap)
 {
     if (entry->quit_state == kQuitAsked) {
         snprintf(out, (size_t)cap, "%s (quitting...)", entry->name);
-    } else if (entry->quit_state == kQuitNoReply) {
+        return;
+    }
+    if (entry->quit_state == kQuitNoReply) {
         snprintf(out, (size_t)cap, "%s (no reply)", entry->name);
+        return;
+    }
+    if (entry->is_front) {
+        snprintf(out, (size_t)cap, "%s  (front)", entry->name);
+    } else if (entry->window_count == 1) {
+        snprintf(out, (size_t)cap, "%s  1 window", entry->name);
+    } else if (entry->window_count > 1) {
+        snprintf(out, (size_t)cap, "%s  %d windows", entry->name,
+                 entry->window_count);
     } else {
         snprintf(out, (size_t)cap, "%s", entry->name);
     }
@@ -353,8 +460,33 @@ static OSStatus item_data(ControlRef browser, DataBrowserItemID item,
     char caption[48];
 
     (void)browser;
-    if (changeValue || property != kColName || item < 1
-        || item > (DataBrowserItemID)g_proc_count) {
+    if (item == kDividerItem) {
+        /* The one non-process row: the group separator. The Data
+           Browser itself is told the row is not selectable, so it
+           behaves like a rule, not a list item; the text is a run of
+           MacRoman em dashes (0xD1) that reads as one. */
+        if (property == kDataBrowserItemIsSelectableProperty) {
+            SetDataBrowserItemDataBooleanValue(data, false);
+            return noErr;
+        }
+        if (property != kColName) {
+            return errDataBrowserPropertyNotSupported;
+        }
+        text = CFStringCreateWithCString(
+            NULL, "\xD1\xD1\xD1\xD1\xD1\xD1  background  "
+                  "\xD1\xD1\xD1\xD1\xD1\xD1",
+            kCFStringEncodingMacRoman);
+        if (text == NULL) {
+            return memFullErr;
+        }
+        SetDataBrowserItemDataText(data, text);
+        CFRelease(text);
+        return noErr;
+    }
+    if (changeValue || property != kColName) {
+        return errDataBrowserPropertyNotSupported;
+    }
+    if (item < 1 || item > (DataBrowserItemID)g_proc_count) {
         return errDataBrowserPropertyNotSupported;
     }
     entry = &g_procs[item - 1];
@@ -376,13 +508,20 @@ static void item_notify(ControlRef browser, DataBrowserItemID item,
                         DataBrowserItemNotification message)
 {
     (void)browser;
+    /* Notifications fired by our own rebuild are not user intent - the
+       removal deselects the selected row, which we must not act on. */
+    if (g_in_rebuild || item == kDividerItem) {
+        return;
+    }
     if (message == kDataBrowserItemSelected) {
         g_selected = (int)item - 1;
         invalidate_detail();
+        g_next_walk = 0;              /* re-read this process's window now */
     } else if (message == kDataBrowserItemDeselected
                && g_selected == (int)item - 1) {
         g_selected = -1;
         invalidate_detail();
+        g_next_walk = 0;
     }
 }
 
@@ -391,15 +530,44 @@ static char ascii_lower(char c)
     return (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c;
 }
 
+/* Group order: the front process pins to the top, then applications,
+   then the divider, then background-only processes; within a group, by
+   name. Kind (static) and front-ness are the sort axes - window state
+   is not, so a row never jumps when a window opens or closes. */
+static short rank_of(DataBrowserItemID item)
+{
+    const ProcEntry *e;
+
+    if (item == kDividerItem) {
+        return 2;
+    }
+    if (item < 1 || item > (DataBrowserItemID)g_proc_count) {
+        return 4;
+    }
+    e = &g_procs[item - 1];
+    if (e->is_front) {
+        return 0;
+    }
+    return e->kind == kProcKindBackground ? 3 : 1;
+}
+
 static Boolean item_compare(ControlRef browser, DataBrowserItemID a,
                             DataBrowserItemID b,
                             DataBrowserPropertyID property)
 {
+    short ra = rank_of(a);
+    short rb = rank_of(b);
     const char *na;
     const char *nb;
 
     (void)browser;
     (void)property;
+    if (ra != rb) {
+        return ra < rb;
+    }
+    /* Same rank: only two processes (apps, or background) ever tie -
+       front and divider are unique - so a plain name compare orders
+       them. */
     if (a < 1 || a > (DataBrowserItemID)g_proc_count || b < 1
         || b > (DataBrowserItemID)g_proc_count) {
         return a < b;
@@ -557,10 +725,22 @@ static void procs_show(Boolean visible)
     show_control(g_front, visible);
     show_control(g_quit, visible);
     show_control(g_group, visible);
+    /* Arm the anchor plane only while this page is the one consuming it,
+       and release it on the way out - a machine whose user never opens
+       Processes never runs the capture loop (the charter's rule). A
+       no-op when the extension is absent. */
     if (visible) {
+        now_peek_arm(kNowPeekCapAnchors);
         g_next_walk = 0;              /* a fresh page walks now */
         g_front_hilite = -1;
         g_quit_hilite = -1;
+        memset(&g_sel_windows, 0, sizeof g_sel_windows);
+        g_sel_win_status = kNowPeekReadNoPlane;   /* re-read on first idle */
+        memset(&g_sel_win_psn, 0, sizeof g_sel_win_psn);
+        g_shown_mem_fill = -1;
+        g_shown_mem[0] = g_shown_cpu[0] = g_shown_launched[0] = '\0';
+    } else {
+        now_peek_disarm(kNowPeekCapAnchors);
     }
 }
 
@@ -629,6 +809,98 @@ static void draw_mem_bar(const ProcEntry *entry)
     }
 }
 
+/* A one-pixel etched separator (dark line over white) across the detail
+   width at y - the Platinum rule the HIG uses to divide a pane. */
+static void draw_detail_rule(short y)
+{
+    RGBColor edge = { 0x8888, 0x8888, 0x8888 };
+    RGBColor lite = { 0xFFFF, 0xFFFF, 0xFFFF };
+    short x0 = (short)(g_r.detail.left + 12);
+    short x1 = (short)(g_r.detail.right - 12);
+
+    RGBForeColor(&edge);
+    MoveTo(x0, y);
+    LineTo(x1, y);
+    RGBForeColor(&lite);
+    MoveTo(x0, (short)(y + 1));
+    LineTo(x1, (short)(y + 1));
+    ForeColor(blackColor);
+}
+
+/* The Windows subsection for the selected process: a bold "Windows"
+   header carrying the count or the read status (none open / no anchor
+   yet / unreadable), then up to kProcDetailWindows title+size rows. A
+   faceless background app is stated as such rather than chased. */
+static void draw_window_facts(const ProcEntry *entry)
+{
+    Str255 text;
+    char line[96];
+    char value[40];
+    int rows;
+    int full;
+    int i;
+
+    if (entry->kind == kProcKindBackground) {
+        snprintf(value, sizeof value, "none (background app)");
+    } else {
+        switch (g_sel_win_status) {
+        case kNowPeekReadOk:
+            snprintf(value, sizeof value, "%d%s", g_sel_windows.count,
+                     g_sel_windows.more ? " (more)" : "");
+            break;
+        case kNowPeekReadNoWindows:
+            snprintf(value, sizeof value, "none open");
+            break;
+        case kNowPeekReadNoAnchor:
+            snprintf(value, sizeof value, "no anchor yet");
+            break;
+        case kNowPeekReadUnreadable:
+            snprintf(value, sizeof value, "unreadable");
+            break;
+        default:
+            snprintf(value, sizeof value, "-");   /* no plane */
+            break;
+        }
+    }
+    /* Bold "Windows" header, so the subsection reads as its own group. */
+    UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
+    CopyCStringToPascal("Windows", text);
+    MoveTo(g_r.windows_line.left, (short)(g_r.windows_line.top + 11));
+    DrawString(text);
+    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    CopyCStringToPascal(value, text);
+    MoveTo((short)(g_r.windows_line.left + 62),
+           (short)(g_r.windows_line.top + 11));
+    DrawString(text);
+
+    if (entry->kind == kProcKindBackground) {
+        return;
+    }
+    rows = kProcDetailWindows;
+    full = g_sel_windows.count <= rows ? g_sel_windows.count : rows - 1;
+    for (i = 0; i < full; ++i) {
+        const NowPeekWindow *w = &g_sel_windows.windows[i];
+        const Rect *r = &g_r.window_rows[i];
+
+        snprintf(line, sizeof line, "%s  %d x %d",
+                 w->title[0] != '\0' ? w->title : "(untitled)",
+                 w->right - w->left, w->bottom - w->top);
+        CopyCStringToPascal(line, text);
+        TruncString((short)(r->right - r->left), text, truncEnd);
+        MoveTo(r->left, (short)(r->top + 10));
+        DrawString(text);
+    }
+    if (g_sel_windows.count > rows) {
+        const Rect *r = &g_r.window_rows[rows - 1];
+
+        snprintf(line, sizeof line, "... and %d more",
+                 g_sel_windows.count - full);
+        CopyCStringToPascal(line, text);
+        MoveTo(r->left, (short)(r->top + 10));
+        DrawString(text);
+    }
+}
+
 static void draw_detail(void)
 {
     Str255 text;
@@ -650,15 +922,30 @@ static void draw_detail(void)
         return;
     }
 
+    /* Title is the process name only - the window badge belongs to the
+       list row, and duplicating it here can disagree (the badge's count
+       walk and the detail's full walk validate differently). */
+    if (entry->quit_state == kQuitAsked) {
+        snprintf(line, sizeof line, "%s (quitting...)", entry->name);
+    } else if (entry->quit_state == kQuitNoReply) {
+        snprintf(line, sizeof line, "%s (no reply)", entry->name);
+    } else {
+        snprintf(line, sizeof line, "%s", entry->name);
+    }
     UseThemeFont(kThemeEmphasizedSystemFont, smSystemScript);
-    row_caption(entry, line, sizeof line);
     CopyCStringToPascal(line, text);
     TruncString((short)(g_r.title_line.right - g_r.title_line.left), text,
                 truncEnd);
     MoveTo(g_r.title_line.left, (short)(g_r.title_line.top + 13));
     DrawString(text);
+    draw_detail_rule((short)(g_r.title_line.bottom + 1));
 
-    proc_kind_text(entry->type, line, sizeof line);
+    proc_kind_name(entry->kind, line, sizeof line);
+    if (entry->is_front) {
+        size_t n = strlen(line);
+
+        snprintf(line + n, sizeof line - n, " (frontmost)");
+    }
     draw_fact(&g_r.kind_line, "Kind:", line);
     {
         char type_four[5];
@@ -672,17 +959,22 @@ static void draw_detail(void)
     proc_mem_text(entry->used_kb, entry->size_kb, line, sizeof line);
     draw_fact(&g_r.mem_line, "Memory:", line);
     draw_mem_bar(entry);
-    {
-        /* LongDateString, never DateString: classic seconds passed 2^31
-           in 1972, and the signed API clamps every modern date there. */
-        LongDateTime when = (LongDateTime)entry->launched;
-        Str255 date_text;
+    proc_cpu_text(entry->active_time, line, sizeof line);
+    draw_fact(&g_r.cpu_line, "CPU:", line);
+    /* processLaunchDate is ticks since boot, not a 1904 date; the delta
+       to now is the only honest reading (proc_uptime_text). */
+    proc_uptime_text((long)(TickCount() - entry->launched), line,
+                     sizeof line);
+    draw_fact(&g_r.launched_line, "Launched:", line);
 
-        LongDateString(&when, shortDate, date_text, NULL);
-        memcpy(line, date_text + 1, date_text[0]);
-        line[date_text[0]] = '\0';
-        draw_fact(&g_r.launched_line, "Launched:", line);
-    }
+    draw_window_facts(entry);
+
+    /* Menus: the anchor captures MenuList, but the walk is a later pass;
+       the slot is here so it does not move when it arrives. A faceless
+       background app has no menu bar to read. */
+    draw_fact(&g_r.menus_line, "Menus:",
+              entry->kind == kProcKindBackground ? "none (background app)"
+                                                 : "not read yet");
 }
 
 static void procs_draw(void)
@@ -786,6 +1078,104 @@ static void procs_activate(Boolean active)
     }
 }
 
+/* Read the selected process's windows into the cache the detail pane
+   draws. On the throttled path (foreign memory), only on change. */
+static void refresh_selected_windows(void)
+{
+    NowPeekWindowList w;
+    NowPeekWindowList desired;
+    NowPeekReadStatus st;
+    NowPeekReadStatus desired_st;
+    ProcessSerialNumber psn;
+    Boolean new_sel;
+    Boolean had_definitive;
+
+    if (g_selected < 0 || g_selected >= g_proc_count) {
+        if (g_sel_win_status != kNowPeekReadNoPlane
+            || g_sel_windows.count != 0) {
+            memset(&g_sel_windows, 0, sizeof g_sel_windows);
+            g_sel_win_status = kNowPeekReadNoPlane;
+            invalidate_detail();
+        }
+        return;
+    }
+    psn = g_procs[g_selected].psn;
+    new_sel = !same_psn(&psn, &g_sel_win_psn);
+
+    memset(&w, 0, sizeof w);
+    if (g_procs[g_selected].kind == kProcKindBackground) {
+        /* A faceless background app has no user windows; do not chase an
+           anchor that will only go stale. */
+        st = kNowPeekReadNoWindows;
+    } else {
+        st = now_peek_windows_for_psn(&psn, &w);
+    }
+
+    /* Carry the last DEFINITIVE read (windows, or confirmed none) across
+       a transient stale/unreadable blip for the SAME process, so an idle
+       backgrounded app's readout persists instead of blinking. A new
+       selection, or one with no good prior read, shows the reason. */
+    had_definitive = g_sel_win_status == kNowPeekReadOk
+        || g_sel_win_status == kNowPeekReadNoWindows;
+    desired = g_sel_windows;
+    desired_st = g_sel_win_status;
+    if (st == kNowPeekReadOk || st == kNowPeekReadNoWindows) {
+        desired = w;
+        desired_st = st;
+    } else if (new_sel || !had_definitive) {
+        memset(&desired, 0, sizeof desired);
+        desired_st = st;
+    }
+    g_sel_win_psn = psn;
+
+    if (desired_st != g_sel_win_status
+        || memcmp(&desired, &g_sel_windows, sizeof desired) != 0) {
+        g_sel_windows = desired;
+        g_sel_win_status = desired_st;
+        invalidate_detail();
+    }
+}
+
+/* Repaint only the fact line whose displayed value changed. The memory
+   bar is gated on its pixel fill, not raw KB, so sub-pixel jitter never
+   flashes it; the CPU line updates each second, the launch line only
+   when the minute rolls. */
+static void update_selected_stats(void)
+{
+    const ProcEntry *e;
+    char buf[32];
+    long fill;
+
+    if (g_selected < 0 || g_selected >= g_proc_count) {
+        g_shown_mem_fill = -1;
+        g_shown_mem[0] = g_shown_cpu[0] = g_shown_launched[0] = '\0';
+        return;
+    }
+    e = &g_procs[g_selected];
+
+    proc_mem_text(e->used_kb, e->size_kb, buf, sizeof buf);
+    if (strcmp(buf, g_shown_mem) != 0) {
+        strcpy(g_shown_mem, buf);
+        invalidate_line(&g_r.mem_line);
+    }
+    fill = proc_mem_fill(e->used_kb, e->size_kb,
+                         g_r.mem_bar.right - g_r.mem_bar.left - 2);
+    if (fill != g_shown_mem_fill) {
+        g_shown_mem_fill = fill;
+        invalidate_line(&g_r.mem_bar);
+    }
+    proc_cpu_text(e->active_time, buf, sizeof buf);
+    if (strcmp(buf, g_shown_cpu) != 0) {
+        strcpy(g_shown_cpu, buf);
+        invalidate_line(&g_r.cpu_line);
+    }
+    proc_uptime_text((long)(TickCount() - e->launched), buf, sizeof buf);
+    if (strcmp(buf, g_shown_launched) != 0) {
+        strcpy(g_shown_launched, buf);
+        invalidate_line(&g_r.launched_line);
+    }
+}
+
 static void procs_idle(void)
 {
     short want_front;
@@ -798,6 +1188,8 @@ static void procs_idle(void)
     if (TickCount() >= g_next_walk) {
         g_next_walk = TickCount() + kWalkIntervalTicks;
         refresh();
+        refresh_selected_windows();   /* the foreign read, throttled */
+        update_selected_stats();      /* per-line stat repaints */
     }
     if (g_selected >= 0 && g_selected < g_proc_count) {
         entry = &g_procs[g_selected];

@@ -29,7 +29,9 @@ enum {
     kProcMemBarHeight = 11,
     kProcMemBarMaxWidth = 200,
     kProcButtonHeight = 20,
-    kProcGroupMinHeight = 58  /* the extension box never collapses */
+    kProcGroupMinHeight = 40, /* the extension box never collapses */
+    kProcDetailWindows = 3,   /* window rows shown in the detail pane */
+    kProcWindowRowHeight = 13
 };
 
 typedef struct ProcessesLayout {
@@ -40,7 +42,11 @@ typedef struct ProcessesLayout {
     Rect type_line;
     Rect mem_line;
     Rect mem_bar;
+    Rect cpu_line;
     Rect launched_line;
+    Rect windows_line;        /* "Windows: N" header */
+    Rect window_rows[kProcDetailWindows];   /* per-window title + size */
+    Rect menus_line;          /* the menu-bar readout (stubbed) */
     Rect front_btn;
     Rect quit_btn;
     Rect group;               /* the NOW Extension group box */
@@ -66,5 +72,22 @@ long proc_mem_fill(long used_kb, long size_kb, long bar_width);
 
 /* "7 processes - 12.4 MB free" for the status placard. */
 void proc_status_text(int count, long free_kb, char *out, long cap);
+
+/* How long a process has been running, from the tick delta between now
+   and its launch. ProcessInfoRec.processLaunchDate is ticks since boot,
+   NOT a calendar date (rendering it as one gave "1/1/04" for
+   everything - caught on the PowerBook), and the same-epoch delta is
+   the only honest thing it yields. 60 ticks per second. */
+void proc_uptime_text(long ticks_ago, char *out, long cap);
+
+/* Cumulative CPU time (processActiveTime, in ticks) as a duration:
+   "12 sec", "3 min 20 sec". Distinct from uptime - no "ago". */
+void proc_cpu_text(unsigned long active_ticks, char *out, long cap);
+
+/* The one-word kind for a process: 0 application, 1 background only,
+   2 the Finder. Determined from processMode by the caller; this only
+   names it. */
+enum { kProcKindApp = 0, kProcKindBackground = 1, kProcKindFinder = 2 };
+void proc_kind_name(short kind, char *out, long cap);
 
 #endif /* NOW_PROCESSES_LAYOUT_H */
