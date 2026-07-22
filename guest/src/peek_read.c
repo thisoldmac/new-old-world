@@ -1,5 +1,6 @@
 #include "peek_read.h"
 
+#include <MacMemory.h>
 #include <Processes.h>
 
 #include <string.h>
@@ -17,16 +18,10 @@
    big-endian, and the fields sit at these fixed classic offsets across
    8.6-9.2.2). */
 enum {
-    /* WindowRecord: a 108-byte GrafPort/CGrafPort, then windowKind(2),
-       visible(1), hilited(1), goAwayFlag(1), spareFlag(1), then
-       strucRgn. Total record is 156 bytes. */
-    kWindowRecordSize = 156,
+    kWindowRecordSize = 156,      /* classic WindowRecord */
     kOffStrucRgn = 114,           /* RgnHandle within the WindowRecord */
-    /* Region: rgnSize(2), then rgnBBox. */
-    kOffRgnBBox = 2,
-    kRegionHeader = kOffRgnBBox + 8,   /* enough to hold the bbox */
-
-    kFreshTicks = 120             /* ~2 s; the front app stamps far fresher */
+    kOffRgnBBox = 2,              /* Rect after the 2-byte rgnSize */
+    kRegionHeader = kOffRgnBBox + 8
 };
 
 /* Byte reads at a validated address - always aligned, explicitly
@@ -46,16 +41,47 @@ static short read_be16(unsigned long addr)
     return (short)(((unsigned)p[0] << 8) | (unsigned)p[1]);
 }
 
-/* The front app's front-window pointer from a fresh, in-partition
-   anchor, or 0. Double-samples the stamp so a torn cross-update read is
-   skipped rather than trusted. */
-static unsigned long front_window_pointer(const NowPeekTable *table,
-                                          unsigned long loc,
-                                          unsigned long size,
-                                          unsigned long now)
+/* The two zones a foreign window structure may legally live in: the
+   process's own partition, or the system heap. A window record is
+   usually in the app's heap, but some regions and master pointers are
+   in the system heap - validating only the partition read "unreadable"
+   for every process but oneself (tbt's axtree needed the same widening:
+   partition PLUS validated SysZone). */
+typedef struct {
+    unsigned long loc;
+    unsigned long size;
+    unsigned long sys_lo;
+    unsigned long sys_hi;
+} ReadableZones;
+
+static int in_readable(const ReadableZones *z, unsigned long addr,
+                       unsigned long len)
+{
+    if (now_peek_range_in_partition(addr, len, z->loc, z->size)) {
+        return 1;
+    }
+    if (z->sys_hi > z->sys_lo
+        && now_peek_range_in_partition(addr, len, z->sys_lo,
+                                       z->sys_hi - z->sys_lo)) {
+        return 1;
+    }
+    return 0;
+}
+
+/* The window-list head for the process whose partition is [loc,size):
+   the anchor slot whose A5 lies in that partition (the containment IS
+   the PSN<->A5 correlation). Double-samples the stamp so a torn
+   cross-update read is skipped. `*found` distinguishes "no anchor for
+   this process" from "anchor found, but the process has no windows"
+   (WindowList 0). No age gate: a live process's slot is what matters,
+   and the A5-in-partition check already rejects a recycled slot. */
+static unsigned long process_window_list(const NowPeekTable *table,
+                                         unsigned long loc,
+                                         unsigned long size, int *found)
 {
     int i;
 
+    *found = 0;
     for (i = 0; i < (int)kNowPeekMaxAnchors; ++i) {
         const NowPeekAnchorSlot *slot = &table->anchors[i];
         NowPeekU32 s1 = slot->stamp_ticks;
@@ -72,30 +98,26 @@ static unsigned long front_window_pointer(const NowPeekTable *table,
         if (s1 != s2) {
             continue;                 /* torn: updated while reading */
         }
-        if ((NowPeekU32)(now - s1) > (NowPeekU32)kFreshTicks) {
-            continue;                 /* stale: its app is not pumping */
-        }
-        /* The anchor is this process's only if its A5 lives in the
-           process's partition - the containment IS the PSN<->A5
-           correlation, and it fails closed. */
         if (!now_peek_range_in_partition(a5, 4, loc, size)) {
-            continue;
+            continue;                 /* not this process's A5 */
         }
+        *found = 1;
         return wl;
     }
     return 0;
 }
 
-NowPeekReadStatus now_peek_front_window(NowPeekBounds *out)
+NowPeekReadStatus now_peek_window_for_psn(const ProcessSerialNumber *psn,
+                                          NowPeekBounds *out)
 {
     const NowPeekTable *table;
-    ProcessSerialNumber psn;
     ProcessInfoRec info;
-    unsigned long loc;
-    unsigned long size;
+    ReadableZones z;
+    THz sys;
     unsigned long wl;
     unsigned long struc;
     unsigned long region;
+    int found;
     short top;
     short left;
     short bottom;
@@ -106,40 +128,44 @@ NowPeekReadStatus now_peek_front_window(NowPeekBounds *out)
     table = now_peek_table();
     if (table == NULL || (table->caps & kNowPeekCapAnchors) == 0
         || (table->arm_active & kNowPeekCapAnchors) == 0) {
-        return kNowPeekReadNoPlane;   /* absent, no plane, or not armed */
+        return kNowPeekReadNoPlane;
     }
 
-    if (GetFrontProcess(&psn) != noErr) {
-        return kNowPeekReadNoAnchor;
-    }
     memset(&info, 0, sizeof info);
     info.processInfoLength = sizeof info;
-    if (GetProcessInformation(&psn, &info) != noErr) {
+    if (GetProcessInformation(psn, &info) != noErr) {
         return kNowPeekReadNoAnchor;
     }
-    loc = (unsigned long)info.processLocation;
-    size = (unsigned long)info.processSize;
-    if (loc == 0 || size == 0) {
+    z.loc = (unsigned long)info.processLocation;
+    z.size = (unsigned long)info.processSize;
+    if (z.loc == 0 || z.size == 0) {
         return kNowPeekReadNoAnchor;
     }
+    /* System-heap bounds: [zone header, bkLim). bkLim is the zone's
+       first field, so it reads at the header address itself. */
+    sys = LMGetSysZone();
+    z.sys_lo = (unsigned long)sys;
+    z.sys_hi = (sys != NULL) ? read_be32(z.sys_lo) : 0;
 
-    wl = front_window_pointer(table, loc, size, (unsigned long)TickCount());
+    wl = process_window_list(table, z.loc, z.size, &found);
+    if (!found) {
+        return kNowPeekReadNoAnchor;
+    }
     if (wl == 0) {
-        return kNowPeekReadNoAnchor;  /* no fresh anchor for the front app */
+        return kNowPeekReadNoWindows; /* anchor is fine; no open windows */
     }
 
-    /* Every dereference below is gated on the partition first; a value
-       that fails a check means we misread, and we fail closed - which
-       reads as "unreadable", distinct from "no anchor". */
-    if (!now_peek_range_in_partition(wl, kWindowRecordSize, loc, size)) {
+    /* Every dereference is gated on a readable zone first; a value that
+       fails means we misread, and we fail closed as "unreadable". */
+    if (!in_readable(&z, wl, kWindowRecordSize)) {
         return kNowPeekReadUnreadable;
     }
     struc = read_be32(wl + kOffStrucRgn);          /* the RgnHandle */
-    if (!now_peek_range_in_partition(struc, 4, loc, size)) {
+    if (!in_readable(&z, struc, 4)) {
         return kNowPeekReadUnreadable;
     }
     region = read_be32(struc);                     /* master-ptr deref */
-    if (!now_peek_range_in_partition(region, kRegionHeader, loc, size)) {
+    if (!in_readable(&z, region, kRegionHeader)) {
         return kNowPeekReadUnreadable;
     }
     top = read_be16(region + kOffRgnBBox);

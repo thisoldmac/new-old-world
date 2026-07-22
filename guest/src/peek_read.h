@@ -25,25 +25,30 @@ typedef struct {
     Boolean valid;
 } NowPeekBounds;
 
-/* Why a read did or did not produce bounds - so a "-" on the page
-   becomes a signal about WHERE the path stopped, not a shrug. */
+/* Why a read did or did not produce bounds - so the page shows a signal
+   about WHERE the path stopped, not a shrug. */
 typedef enum {
     kNowPeekReadOk = 0,       /* out holds valid bounds */
     kNowPeekReadNoPlane,      /* extension absent, or anchors not armed */
-    kNowPeekReadNoAnchor,     /* no fresh in-partition anchor for the
-                                 front process - a capture or A5<->PSN
-                                 correlation miss */
+    kNowPeekReadNoAnchor,     /* no in-partition anchor for the process -
+                                 a capture or A5<->PSN correlation miss */
+    kNowPeekReadNoWindows,    /* anchor found, but the process has no
+                                 windows (its WindowList is empty) */
     kNowPeekReadUnreadable    /* anchor found, but the window walk failed
-                                 a partition check or a sanity check - a
-                                 layout/validation miss */
+                                 a validation or sanity check */
 } NowPeekReadStatus;
 
-/* Read the FRONT process's front-window global bounds from its anchor.
-   Requires the extension present with the anchor plane, the plane armed
-   (arm it via now_peek_arm first - the filter needs a pass to begin
-   capturing), a fresh anchor for the front process, and every pointer
-   on the path validating in-partition. Returns which stage it reached;
-   out->valid is set iff the result is kNowPeekReadOk. Reads only. */
-NowPeekReadStatus now_peek_front_window(NowPeekBounds *out);
+/* Read a GIVEN process's front-window global bounds from its anchor -
+   any process, not just the front one, which is the per-process
+   `axtree` behaviour: click through the list and read each window.
+   Requires the extension with the anchor plane armed (now_peek_arm),
+   and the process to have pumped its event loop at least once since
+   arming so the filter captured its anchor. Every foreign pointer is
+   validated inside the process's partition OR the system heap before it
+   is dereferenced - the system heap because some window structures live
+   there, which is why a partition-only check read "unreadable". Returns
+   which stage it reached; out->valid iff kNowPeekReadOk. Reads only. */
+NowPeekReadStatus now_peek_window_for_psn(const ProcessSerialNumber *psn,
+                                          NowPeekBounds *out);
 
 #endif /* NOW_PEEK_READ_H */

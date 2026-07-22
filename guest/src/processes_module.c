@@ -385,10 +385,12 @@ static void item_notify(ControlRef browser, DataBrowserItemID item,
     if (message == kDataBrowserItemSelected) {
         g_selected = (int)item - 1;
         invalidate_detail();
+        g_next_walk = 0;              /* re-read this process's window now */
     } else if (message == kDataBrowserItemDeselected
                && g_selected == (int)item - 1) {
         g_selected = -1;
         invalidate_detail();
+        g_next_walk = 0;
     }
 }
 
@@ -805,9 +807,10 @@ static void procs_activate(Boolean active)
     }
 }
 
-/* The group box's second line: what the anchor plane can read right
-   now, or why it cannot. Empty when there is no anchor plane at all (an
-   M0 extension or none), so the line simply does not appear. */
+/* The group box's second line: the SELECTED process's window, read
+   through the anchor plane, or why it could not be read. Empty when
+   there is no anchor plane at all (an M0 extension or none) or nothing
+   is selected, so the line simply does not appear. */
 static void format_peek_bounds(char *out, long cap)
 {
     unsigned long caps = 0;
@@ -815,19 +818,23 @@ static void format_peek_bounds(char *out, long cap)
 
     out[0] = '\0';
     if (now_peek_status(&caps) != kNowPeekActive
-        || (caps & kNowPeekCapAnchors) == 0) {
-        return;                       /* no plane to report on */
+        || (caps & kNowPeekCapAnchors) == 0
+        || g_selected < 0 || g_selected >= g_proc_count) {
+        return;                       /* no plane, or nothing selected */
     }
-    switch (now_peek_front_window(&b)) {
+    switch (now_peek_window_for_psn(&g_procs[g_selected].psn, &b)) {
     case kNowPeekReadOk:
-        snprintf(out, (size_t)cap, "Front window: %d x %d at (%d, %d)",
+        snprintf(out, (size_t)cap, "Window: %d x %d at (%d, %d)",
                  b.right - b.left, b.bottom - b.top, b.left, b.top);
         break;
+    case kNowPeekReadNoWindows:
+        snprintf(out, (size_t)cap, "Window: none open");
+        break;
     case kNowPeekReadNoAnchor:
-        snprintf(out, (size_t)cap, "Front window: no anchor yet");
+        snprintf(out, (size_t)cap, "Window: no anchor yet");
         break;
     case kNowPeekReadUnreadable:
-        snprintf(out, (size_t)cap, "Front window: unreadable");
+        snprintf(out, (size_t)cap, "Window: unreadable");
         break;
     default:
         break;                        /* NoPlane: leave empty */
