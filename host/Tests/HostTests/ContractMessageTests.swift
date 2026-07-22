@@ -149,6 +149,37 @@ final class ContractMessageTests: XCTestCase {
                        .bye(Bye(code: .normal, reason: nil)))
     }
 
+    func testProcessFamilyRoundTrip() throws {
+        let request = ProcessList(id: 12, cursor: 17)
+        let listing = ProcessListing(
+            id: 12,
+            processes: [
+                ProcessEntry(name: "NOW", kind: "application", code: "APPL",
+                             creator: "NwWs", sizeKB: 3072, front: true),
+                ProcessEntry(name: "Finder", kind: "finder", code: "FNDR",
+                             creator: "MACS", sizeKB: 2048, front: false),
+            ],
+            more: true, cursor: 3)
+        for message: ControlMessage in [.processList(request),
+                                        .processListing(listing)] {
+            XCTAssertEqual(
+                try ControlMessageCodec.decode(
+                    ControlMessageCodec.encode(message)),
+                message)
+        }
+    }
+
+    func testProcessListWithoutCursorDecodes() throws {
+        // The first ask carries no cursor; the guest starts at 1.
+        let json = #"{"type":"process.list","id":1}"#
+        guard case .processList(let request) =
+            try ControlMessageCodec.decode(Data(json.utf8)) else {
+            return XCTFail("expected process.list")
+        }
+        XCTAssertNil(request.cursor)
+        XCTAssertEqual(request.id, 1)
+    }
+
     func testUnknownTypeThrows() {
         let json = Data("{\"type\":\"teleport\"}".utf8)
         XCTAssertThrowsError(try ControlMessageCodec.decode(json)) { error in

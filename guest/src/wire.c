@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <Processes.h>
+
 #include "capture.h"
 #include "fileshare.h"
 #include "commands.h"
@@ -2679,6 +2681,94 @@ static void serve_file_list(const char *request)
     send_control(json);
 }
 
+/* Serve process.list from this guest's OWN Process Manager - the guest's
+   share of the symmetric process family (the host serves its own list
+   the same way). Read-only; a process list is no more than the
+   Application menu already shows. Paginates: cursor is a 1-based
+   position among readable processes, more/cursor continue it. */
+static void serve_process_list(const char *request)
+{
+    enum { kPage = 16 };              /* control frames cap at 4 KB */
+    /* Spelled-out 4CCs: multi-character char constants warn under
+       -Werror, and these classify the process's kind. */
+    const unsigned long kTypeFinder = 0x464E4452UL;   /* 'FNDR' */
+    const unsigned long kSigFinder = 0x4D414353UL;    /* 'MACS' */
+    char json[3072];
+    long id = now_json_find_int(request, "id", 0);
+    long cursor = now_json_find_int(request, "cursor", 1);
+    ProcessSerialNumber psn = { 0, kNoProcess };
+    ProcessSerialNumber front;
+    Boolean have_front = GetFrontProcess(&front) == noErr;
+    long pos;
+    long index = 0;                   /* readable-process position, 1-based */
+    int emitted = 0;
+    Boolean more = false;
+
+    if (cursor < 1) {
+        cursor = 1;
+    }
+    pos = snprintf(json, sizeof json,
+                   "{\"type\":\"process.listing\",\"id\":%ld,"
+                   "\"processes\":[", id);
+    while (GetNextProcess(&psn) == noErr) {
+        ProcessInfoRec info;
+        Str31 name;
+        char cname[32];
+        char code[8], creator[8];
+        char esc_name[64], esc_code[40], esc_creator[40];
+        const char *kind;
+        Boolean is_front = false;
+
+        memset(&info, 0, sizeof info);
+        info.processInfoLength = sizeof info;
+        info.processName = name;
+        info.processAppSpec = NULL;
+        name[0] = 0;
+        if (GetProcessInformation(&psn, &info) != noErr) {
+            continue;                 /* unreadable: not a position */
+        }
+        ++index;
+        if (index < cursor) {
+            continue;                 /* before this page */
+        }
+        if (emitted >= kPage) {
+            more = true;              /* this one starts the next page */
+            break;
+        }
+        memcpy(cname, name + 1, name[0]);
+        cname[name[0]] = '\0';
+        memcpy(code, &info.processType, 4);
+        code[4] = '\0';
+        memcpy(creator, &info.processSignature, 4);
+        creator[4] = '\0';
+        if ((unsigned long)info.processType == kTypeFinder
+            || (unsigned long)info.processSignature == kSigFinder) {
+            kind = "finder";
+        } else if ((info.processMode & modeOnlyBackground) != 0) {
+            kind = "background";
+        } else {
+            kind = "application";
+        }
+        if (have_front) {
+            (void)SameProcess(&psn, &front, &is_front);
+        }
+        now_json_escape(cname, esc_name, sizeof esc_name);
+        now_json_escape(code, esc_code, sizeof esc_code);
+        now_json_escape(creator, esc_creator, sizeof esc_creator);
+        pos += snprintf(json + pos, sizeof json - (size_t)pos,
+                        "%s{\"name\":\"%s\",\"kind\":\"%s\",\"code\":\"%s\","
+                        "\"creator\":\"%s\",\"sizeKB\":%ld,\"front\":%s}",
+                        emitted > 0 ? "," : "", esc_name, kind, esc_code,
+                        esc_creator, (long)(info.processSize / 1024),
+                        is_front ? "true" : "false");
+        ++emitted;
+    }
+    snprintf(json + pos, sizeof json - (size_t)pos,
+             "],\"more\":%s,\"cursor\":%ld}", more ? "true" : "false",
+             cursor + emitted);
+    send_control(json);
+}
+
 static void serve_file_get(const char *request)
 {
     NowPrefs prefs;
@@ -3501,6 +3591,10 @@ static int handle_frame(const char *reply)
     }
     if (now_json_type_is(reply, "file.list")) {
         serve_file_list(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "process.list")) {
+        serve_process_list(reply);
         return 1;
     }
     if (now_json_type_is(reply, "file.get")) {

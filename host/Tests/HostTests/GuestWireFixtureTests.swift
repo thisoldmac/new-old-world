@@ -168,6 +168,47 @@ final class GuestWireFixtureTests: XCTestCase {
         XCTAssertEqual(bad.code, "io-error")
     }
 
+    /// serve_process_list(): the guest's running processes, assembled
+    /// across a header / per-entry / tail set of snprintf calls, so the
+    /// conformance check cannot reach it. The three kinds and the
+    /// front flag are what the host's Processes mirror reads.
+    func testProcessListingAsTheGuestWritesIt() throws {
+        let json = """
+        {"type":"process.listing","id":9,"processes":[\
+        {"name":"Finder","kind":"finder","code":"FNDR","creator":"MACS",\
+        "sizeKB":2048,"front":false},\
+        {"name":"NOW","kind":"application","code":"APPL","creator":"NwWs",\
+        "sizeKB":3072,"front":true},\
+        {"name":"File Sharing Extension","kind":"background","code":"appe",\
+        "creator":"fsee","sizeKB":512,"front":false}],\
+        "more":false,"cursor":4}
+        """
+        guard case .processListing(let listing) = try decode(json) else {
+            return XCTFail("not a process listing")
+        }
+        XCTAssertEqual(listing.processes.count, 3)
+        XCTAssertEqual(listing.processes.first?.kind, "finder")
+        XCTAssertEqual(listing.processes[1].front, true, "NOW is front")
+        XCTAssertTrue(listing.processes[2].isBackground)
+        XCTAssertFalse(listing.more)
+    }
+
+    /// A first page that fills: `more` is true and the cursor points past
+    /// what was sent, which is what the host carries to ask for the rest.
+    func testProcessListingWithMorePages() throws {
+        let json = """
+        {"type":"process.listing","id":10,"processes":[\
+        {"name":"NOW","kind":"application","code":"APPL","creator":"NwWs",\
+        "sizeKB":3072,"front":true}],\
+        "more":true,"cursor":17}
+        """
+        guard case .processListing(let listing) = try decode(json) else {
+            return XCTFail("not a process listing")
+        }
+        XCTAssertTrue(listing.more)
+        XCTAssertEqual(listing.cursor, 17, "where the next page resumes")
+    }
+
     /// file.progress, sent mid-put so the host's bar moves.
     func testFileProgressAsTheGuestWritesIt() throws {
         let json = #"{"type":"file.progress","id":5,"received":32768}"#

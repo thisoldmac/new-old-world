@@ -120,6 +120,27 @@ its CLUT and PackBits rows, opened as the real window. So the whole rung
 proves out end to end: extension captures anchors -> app validates and
 reads bounds -> app crops a genuine screenshot to them.
 
+**Rung 3 - the `process.*` wire family is tested, host consume + both
+serves done, UI still ahead** (2026-07-21). The contract gained
+`process.list`/`process.listing` (symmetric, paginated by a 1-based
+cursor, entries capped at 24 a page). The guest serves its own Process
+Manager walk on request (`serve_process_list` in `wire.c`: name, kind of
+application/background/finder, code/creator 4CCs, sizeKB, front). The
+host answers the mirror direction with its own running apps
+(`HostProcesses` off `NSWorkspace` - the degraded plane: modern macOS
+gives no OSType code/creator and no classic partition size, so those
+fields are honestly absent), and can ASK via `GuestListener.listProcesses`.
+Tested here: a byte-accurate guest fixture (multi-`snprintf`, so the
+conformance check names it as needing one), a `process.list`/`.listing`
+round-trip, and the conformance known-partial set. A `NOW_METAL` test
+(`MetalProcessTests`) pages the real PowerBook's process table onto the
+host and prints it - the metal-verify path, **not yet run**. **Two
+honest gaps, both UI not contract:** the guest can serve a
+`process.list` but has no way to ASK one yet (no consume handler, no
+page), and the host's `listProcesses` has no view calling it - so
+neither side yet SHOWS the other's processes. The receive/serve halves
+are symmetric and complete; only the two ask-and-display features remain.
+
 **Metal found one rung-0 bug, now fixed:** the detail pane's "Launched"
 line read "1/1/04" for every process. `ProcessInfoRec.processLaunchDate`
 is ticks since boot, not a 1904-epoch date, so `LongDateString` clamped

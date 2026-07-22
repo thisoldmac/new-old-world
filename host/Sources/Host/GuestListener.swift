@@ -235,6 +235,18 @@ final class GuestListener: ObservableObject {
         }
     }
 
+    /// Answers a process.list request from the guest with this Mac's own
+    /// running processes — the symmetric mirror direction.
+    fileprivate func serveProcessList(_ request: ProcessList) {
+        let page = HostProcesses.page(cursor: request.cursor ?? 1)
+        note("#\(request.id) listed \(page.entries.count) "
+             + "process\(page.entries.count == 1 ? "" : "es")",
+             area: "processes")
+        session?.send(.processListing(ProcessListing(
+            id: request.id, processes: page.entries,
+            more: page.more, cursor: page.next)))
+    }
+
     /// Answers a pull request: the same begin / bulk / end shape the
     /// guest uses, metered the same way.
     fileprivate func serveGet(_ request: FileGet) {
@@ -389,6 +401,27 @@ final class GuestListener: ObservableObject {
                 .failure(.init(code: "timeout", message: reason)))
         }
         session.sendFileList(id: id, path: path, cursor: cursor)
+    }
+
+    /// Lists one page of the guest's running processes. Symmetric with
+    /// listFiles: the same request/listing shape, paged by a 1-based
+    /// cursor the guest carries.
+    func listProcesses(cursor: Int? = nil,
+                       completion: @escaping (Result<ProcessListing,
+                                                     FileFailure>) -> Void) {
+        guard let session, case .connected = state else {
+            completion(.failure(.init(code: "disconnected",
+                                      message: "No Mac is connected")))
+            return
+        }
+        let id = nextCommandId
+        nextCommandId += 1
+        pendingProcessListings[id] = completion
+        armWatchdog(id: id, seconds: 15) { [weak self] reason in
+            self?.pendingProcessListings.removeValue(forKey: id)?(
+                .failure(.init(code: "timeout", message: reason)))
+        }
+        session.sendProcessList(id: id, cursor: cursor)
     }
 
     /// Moves or renames an item inside the share. One operation, because
@@ -644,6 +677,8 @@ final class GuestListener: ObservableObject {
 
     private var pendingListings:
         [Int: (Result<FileListing, FileFailure>) -> Void] = [:]
+    private var pendingProcessListings:
+        [Int: (Result<ProcessListing, FileFailure>) -> Void] = [:]
     private var pendingFile:
         ((Result<FileDelivery, FileFailure>) -> Void)?
     private var pendingChanges:
@@ -665,6 +700,12 @@ final class GuestListener: ObservableObject {
     fileprivate func resolveListing(_ listing: FileListing) {
         clearWatchdog(listing.id)
         pendingListings.removeValue(forKey: listing.id)?(.success(listing))
+    }
+
+    fileprivate func resolveProcessListing(_ listing: ProcessListing) {
+        clearWatchdog(listing.id)
+        pendingProcessListings.removeValue(forKey: listing.id)?(
+            .success(listing))
     }
 
     fileprivate func failFile(_ refuse: FileRefuse) {
@@ -1000,6 +1041,12 @@ final class GuestListener: ObservableObject {
             onServeChange: { [weak self] change in
                 self?.serveChange(change)
             },
+            onProcessListing: { [weak self] listing in
+                self?.resolveProcessListing(listing)
+            },
+            onServeProcessList: { [weak self] request in
+                self?.serveProcessList(request)
+            },
             onReceived: { [weak self] url in
                 self?.noteReceived(url)
             },
@@ -1071,6 +1118,8 @@ final class Session {
     private let onServeGet: (FileGet) -> Void
     private let onAcceptOffer: (FileOffer) -> Void
     private let onServeChange: (GuestListener.ChangeRequest) -> Void
+    private let onProcessListing: (ProcessListing) -> Void
+    private let onServeProcessList: (ProcessList) -> Void
     private let onReceived: (URL) -> Void
     private let onOutboundProgress: (Int, Int) -> Void
     private let onOutboundFailed: (String) -> Void
@@ -1136,6 +1185,8 @@ final class Session {
          onServeGet: @escaping (FileGet) -> Void,
          onAcceptOffer: @escaping (FileOffer) -> Void,
          onServeChange: @escaping (GuestListener.ChangeRequest) -> Void,
+         onProcessListing: @escaping (ProcessListing) -> Void,
+         onServeProcessList: @escaping (ProcessList) -> Void,
          onReceived: @escaping (URL) -> Void,
          onOutboundProgress: @escaping (Int, Int) -> Void,
          onOutboundFailed: @escaping (String) -> Void,
@@ -1165,6 +1216,8 @@ final class Session {
         self.onServeGet = onServeGet
         self.onAcceptOffer = onAcceptOffer
         self.onServeChange = onServeChange
+        self.onProcessListing = onProcessListing
+        self.onServeProcessList = onServeProcessList
         self.onReceived = onReceived
         self.onOutboundProgress = onOutboundProgress
         self.onOutboundFailed = onOutboundFailed
@@ -1302,6 +1355,10 @@ final class Session {
             onFileResult(result)
         case .fileList(let request):
             onServeList(request)
+        case .processListing(let listing):
+            onProcessListing(listing)
+        case .processList(let request):
+            onServeProcessList(request)
         case .fileGet(let request):
             onServeGet(request)
         case .fileOffer(let offer):
@@ -1401,6 +1458,10 @@ final class Session {
 
     func sendFileList(id: Int, path: String, cursor: Int?) {
         send(.fileList(FileList(id: id, path: path, cursor: cursor)))
+    }
+
+    func sendProcessList(id: Int, cursor: Int?) {
+        send(.processList(ProcessList(id: id, cursor: cursor)))
     }
 
     func sendFileMove(_ m: FileMove) { send(.fileMove(m)) }
