@@ -241,3 +241,78 @@ int census_detail(const NowCensusSelector *sel, unsigned long raw,
 #undef LINE
     return n;
 }
+
+/* --- slice-2 probe decoders --------------------------------------------- */
+
+void census_dctl_flags(unsigned short flags, char *out, long cap)
+{
+    static const struct { unsigned short mask; const char *name; } k[] = {
+        { 0x0020, "open" },
+        { 0x0040, "RAM-based" },
+        { 0x0080, "active" },
+        { 0x0100, "reads" },
+        { 0x0200, "writes" },
+        { 0x0400, "controls" },
+        { 0x0800, "status" },
+        { 0x2000, "needs time" },
+        { 0x4000, "needs lock" }
+    };
+    long pos = 0;
+    int i, first = 1;
+
+    out[0] = '\0';
+    for (i = 0; i < (int)(sizeof k / sizeof k[0]); i++) {
+        if ((flags & k[i].mask) == 0) {
+            continue;
+        }
+        if (!first) {
+            cat(out, cap, &pos, ", ");
+        }
+        cat(out, cap, &pos, k[i].name);
+        first = 0;
+    }
+    if (first) {
+        cat(out, cap, &pos, "closed");
+    }
+}
+
+void census_adb_device(int default_address, int handler_id, char *out,
+                       long cap)
+{
+    const char *kind;
+
+    switch (default_address) {
+    case 1: kind = "protocol adapter"; break;
+    case 2: kind = "keyboard"; break;
+    case 3: kind = "mouse (relative)"; break;
+    case 4: kind = "tablet (absolute)"; break;
+    case 5: kind = "modem"; break;
+    case 7: kind = "misc device"; break;
+    default: kind = NULL; break;
+    }
+    if (kind != NULL) {
+        snprintf(out, cap, "%s, handler %d", kind, handler_id);
+    } else {
+        snprintf(out, cap, "address %d, handler %d", default_address,
+                 handler_id);
+    }
+}
+
+const char *census_pram_meaning(int offset)
+{
+    /* The well-known bytes of the classic 20-byte SysParm block. */
+    switch (offset) {
+    case 0:  return "valid marker";
+    case 1:  return "AppleTalk node hint, port A";
+    case 2:  return "AppleTalk node hint, port B";
+    case 3:  return "serial port use";
+    case 4:  return "port A configuration";
+    case 6:  return "port B configuration";
+    case 8:  return "alarm setting";
+    case 12: return "application font";
+    case 14: return "keyboard and print flags";
+    case 16: return "volume, click, caret";
+    case 18: return "misc flags";
+    default: return "";
+    }
+}

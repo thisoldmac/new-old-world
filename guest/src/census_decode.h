@@ -50,4 +50,20 @@ int census_detail(const NowCensusSelector *sel, unsigned long raw,
                   const NowCensusAttrBit *bits, int nbits,
                   char *out, int max_lines, long line_cap);
 
+/* --- slice-2 probe decoders (pure; native-tested) ----------------------- */
+
+/* A Device Manager dCtlFlags word, in words: "open, RAM-based, needs
+   lock" and the like. Empty stays "closed". */
+void census_dctl_flags(unsigned short flags, char *out, long cap);
+
+/* An ADB device named by its default (original) address: 2 keyboards,
+   3 relative (mice), 4 absolute (tablets), etc. Falls back to the raw
+   address when it is not one we name. */
+void census_adb_device(int default_address, int handler_id,
+                       char *out, long cap);
+
+/* What a byte at `offset` in the 20-byte SysParm PRAM copy means, or ""
+   for a byte with no well-known meaning. */
+const char *census_pram_meaning(int offset);
+
 #endif /* NOW_CENSUS_DECODE_H */

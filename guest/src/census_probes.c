@@ -23,6 +23,7 @@
 #include "machine_names.h"
 
 #include <Carbon.h>
+#include <SCSI.h>              /* SCSIInstr + sc* opcodes; funcs resolved */
 
 #include <stdio.h>
 #include <string.h>
@@ -440,6 +441,443 @@ static void gather_volumes(long cursor, CensusPage *page)
     }
 }
 
+/* --- drives: the low-memory drive queue --------------------------------- *
+ * This toolchain's Carbon headers define QHdr but not DrvQEl, so the
+ * element is laid out by hand. The QHdr at 0x0308 is qFlags(2), qHead(4),
+ * qTail(4); the head pointer to the first element lives at 0x030A. Fields
+ * past qLink are what a census reads. (Metal-confirmed reachable, spike
+ * 2026-07-21.) */
+
+typedef struct CensusDrvQEl {
+    struct CensusDrvQEl *qLink;   /* 0 */
+    short qType;                  /* 4 */
+    short dQDrive;                /* 6 */
+    short dQRefNum;               /* 8 */
+    short dQFSID;                 /* 10 */
+} CensusDrvQEl;
+
+static void gather_drives(long cursor, CensusPage *page)
+{
+    CensusDrvQEl *el = *(CensusDrvQEl **)0x030A;
+    long ordinal = 0;
+    long target = (cursor < 0) ? 0 : cursor;
+
+    while (el != NULL && ordinal < target) {
+        el = el->qLink;
+        ordinal++;
+    }
+    while (el != NULL && page->count < kCensusPageMax) {
+        char label[kCensusRowNameCap];
+        char raw[kCensusRowRawCap];
+        char meaning[kCensusRowMeaningCap];
+
+        snprintf(label, sizeof label, "Drive %d", el->dQDrive);
+        snprintf(raw, sizeof raw, "ref %d fsid %d", el->dQRefNum,
+                 el->dQFSID);
+        snprintf(meaning, sizeof meaning, el->dQFSID == 0
+                 ? "local HFS drive" : "external file system");
+        set_row(&page->rows[page->count++], label, raw, meaning);
+        el = el->qLink;
+        ordinal++;
+    }
+    if (el != NULL) {
+        page->more = 1;
+        page->next_cursor = ordinal;
+    }
+    if (page->count == 0 && cursor == 0) {
+        page->outcome = kCensusAbsent;
+        snprintf(page->note, sizeof page->note, "the drive queue is empty");
+    }
+}
+
+/* --- drivers: the Device Manager unit table ----------------------------- *
+ * UTableBase (a DCtlHandle array) at 0x011C, count at 0x01D2. Each loaded
+ * unit's DCtlEntry gives its flags and its DRVR; the driver name is a
+ * Pascal string at offset 18 of the DRVR header. Read-only. */
+
+static void driver_name(Ptr drvr, char *out, long cap)
+{
+    unsigned char *name;
+    long n, i;
+
+    if (drvr == NULL) {
+        snprintf(out, cap, "(no name)");
+        return;
+    }
+    name = (unsigned char *)drvr + 18;   /* drvrName in the DRVR header */
+    n = name[0];
+    if (n <= 0 || n > 40) {
+        snprintf(out, cap, "(unnamed)");
+        return;
+    }
+    if (n > cap - 1) {
+        n = cap - 1;
+    }
+    for (i = 0; i < n; i++) {
+        unsigned char c = name[1 + i];
+        out[i] = (c >= 32 && c < 127) ? (char)c : '.';
+    }
+    out[n] = '\0';
+}
+
+static void gather_drivers(long cursor, CensusPage *page)
+{
+    DCtlHandle *base = *(DCtlHandle **)0x011C;
+    short count = *(short *)0x01D2;
+    long unit = (cursor < 0) ? 0 : cursor;
+
+    if (base == NULL || count <= 0 || count > 512) {
+        if (cursor == 0) {
+            page->outcome = kCensusFailed;
+            snprintf(page->note, sizeof page->note,
+                     "unit table unreadable (count %d)", count);
+        }
+        return;
+    }
+    page->total = count;
+    while (unit < count && page->count < kCensusPageMax) {
+        DCtlHandle h = base[unit];
+        long u = unit;
+
+        unit++;
+        if (h == NULL || *h == NULL) {
+            continue;                 /* an empty unit-table slot */
+        }
+        {
+            DCtlEntry *e = *h;
+            char label[kCensusRowNameCap];
+            char raw[kCensusRowRawCap];
+            char meaning[kCensusRowMeaningCap];
+            char name[32];
+            unsigned short flags = (unsigned short)e->dCtlFlags;
+
+            driver_name(e->dCtlDriver, name, sizeof name);
+            snprintf(label, sizeof label, "%.24s", name);
+            snprintf(raw, sizeof raw, "unit %ld ref %d", u, e->dCtlRefNum);
+            {
+                char words[48];
+                census_dctl_flags(flags, words, sizeof words);
+                snprintf(meaning, sizeof meaning, "%s%s",
+                         (flags & 0x0040) ? "RAM: " : "ROM: ", words);
+            }
+            set_row(&page->rows[page->count++], label, raw, meaning);
+        }
+    }
+    if (unit < count) {
+        page->more = 1;
+        page->next_cursor = unit;
+    }
+    if (page->count == 0 && cursor == 0) {
+        page->outcome = kCensusAbsent;
+        snprintf(page->note, sizeof page->note, "no loaded drivers");
+    }
+}
+
+/* --- pram: the 20-byte SysParm copy ------------------------------------- *
+ * On PowerPC there is no ReadXPRam trap, so the 20-byte low-memory SysParm
+ * copy at 0x01F8 is all a census can reach: the outcome is `partial`. The
+ * decoded spans come first, then the raw hex. (Spike-confirmed.) */
+
+static void gather_pram(long cursor, CensusPage *page)
+{
+    const unsigned char *sp = (const unsigned char *)0x01F8;
+    int off;
+
+    (void)cursor;                       /* 20 bytes fit one page */
+    for (off = 0; off < 20; off++) {
+        const char *meaning = census_pram_meaning(off);
+        char label[kCensusRowNameCap];
+        char raw[kCensusRowRawCap];
+
+        if (meaning[0] == '\0') {
+            continue;                   /* only the named spans, decoded */
+        }
+        snprintf(label, sizeof label, "$%02X", off);
+        snprintf(raw, sizeof raw, "%02X", sp[off]);
+        set_row(&page->rows[page->count++], label, raw, meaning);
+    }
+    /* Then the raw bytes, eight per row, so nothing is hidden. */
+    for (off = 0; off < 20 && page->count < kCensusPageMax; off += 8) {
+        char label[kCensusRowNameCap];
+        char raw[kCensusRowRawCap];
+        char *p = raw;
+        int i;
+
+        snprintf(label, sizeof label, "raw $%02X", off);
+        for (i = 0; i < 8 && off + i < 20; i++) {
+            p += snprintf(p, 4, "%02X ", sp[off + i]);
+        }
+        set_row(&page->rows[page->count++], label, raw, "");
+    }
+    page->outcome = kCensusPartial;
+    snprintf(page->note, sizeof page->note,
+             "20 of 256 bytes - no XPRAM trap on this PowerPC");
+}
+
+/* --- adb: the ADB device table (resolved from InterfaceLib) -------------- *
+ * The ADB Manager is Carbon-unavailable: GetIndADB is declared only as a
+ * 68K trap, so it is resolved from InterfaceLib by name and called through
+ * a pointer - a runtime call, never a strong import that would abort
+ * launch. The spike proved CountADBs answers this way (2 devices, metal
+ * 2026-07-21). ADBDataBlock is hand-defined because DeskBus.h is gated out
+ * under Carbon. */
+
+typedef struct {
+    signed char devType;            /* handler id */
+    signed char origADBAddr;        /* default address */
+    Ptr serviceRtPtr;
+    Ptr dataAreaAddr;
+} CensusADBDataBlock;
+
+typedef short (*CensusCountADBs)(void);
+typedef short (*CensusGetIndADB)(CensusADBDataBlock *, short);
+
+static CensusCountADBs g_count_adbs;
+static CensusGetIndADB g_get_ind_adb;
+static int g_adb_resolved;              /* 0 unknown, 1 yes, -1 no */
+
+static void resolve_adb(void)
+{
+    CFragConnectionID conn = 0;
+    Ptr mainAddr = NULL;
+    Str255 err;
+    Str255 pname;
+    Ptr addr;
+    CFragSymbolClass cls;
+
+    if (g_adb_resolved != 0) {
+        return;
+    }
+    g_adb_resolved = -1;
+    CopyCStringToPascal("InterfaceLib", pname);
+    if (GetSharedLibrary(pname, kPowerPCCFragArch, kReferenceCFrag,
+                         &conn, &mainAddr, err) != noErr) {
+        return;
+    }
+    CopyCStringToPascal("CountADBs", pname);
+    if (FindSymbol(conn, pname, &addr, &cls) != noErr) {
+        return;
+    }
+    g_count_adbs = (CensusCountADBs)addr;
+    CopyCStringToPascal("GetIndADB", pname);
+    if (FindSymbol(conn, pname, &addr, &cls) != noErr) {
+        return;
+    }
+    g_get_ind_adb = (CensusGetIndADB)addr;
+    g_adb_resolved = 1;
+}
+
+static void gather_adb(long cursor, CensusPage *page)
+{
+    short count, i;
+
+    (void)cursor;
+    resolve_adb();
+    if (g_adb_resolved != 1) {
+        page->outcome = kCensusRefused;
+        snprintf(page->note, sizeof page->note,
+                 "the ADB Manager is not exported here");
+        return;
+    }
+    count = g_count_adbs();
+    for (i = 1; i <= count && page->count < kCensusPageMax; i++) {
+        CensusADBDataBlock blk;
+        short addr;
+        char label[kCensusRowNameCap];
+        char raw[kCensusRowRawCap];
+        char meaning[kCensusRowMeaningCap];
+
+        memset(&blk, 0, sizeof blk);
+        addr = g_get_ind_adb(&blk, i);
+        snprintf(label, sizeof label, "Device %d", i);
+        snprintf(raw, sizeof raw, "addr %d handler %d", addr,
+                 (int)blk.devType);
+        census_adb_device(blk.origADBAddr, blk.devType, meaning,
+                          sizeof meaning);
+        set_row(&page->rows[page->count++], label, raw, meaning);
+    }
+    if (page->count == 0) {
+        page->outcome = kCensusAbsent;
+        snprintf(page->note, sizeof page->note, "no ADB devices");
+    }
+}
+
+/* --- scsi: the INQUIRY bus scan (SCSI Manager v1, resolved) -------------- *
+ * THE ONE active-I/O probe. Gated on gestaltHardwareAttr saying a bus
+ * exists (answering `absent` otherwise), it selects each target and issues
+ * INQUIRY through v1 entry points resolved from InterfaceLib (SCSIBusReset
+ * is absent on this machine and not used). One target per page, so a
+ * wedged target stalls at most one frame turnaround. Builds-only until an
+ * attended metal run - active bus I/O cannot be proven in the emulator.
+ * gestalt bit 7 = gestaltHasSCSI. */
+
+typedef OSErr (*CensusSCSIGet)(void);
+typedef OSErr (*CensusSCSISelect)(short);
+typedef OSErr (*CensusSCSICmd)(Ptr, short);
+typedef OSErr (*CensusSCSIRead)(Ptr);
+typedef OSErr (*CensusSCSIComplete)(short *, short *, unsigned long);
+
+static CensusSCSIGet g_scsi_get;
+static CensusSCSISelect g_scsi_select;
+static CensusSCSICmd g_scsi_cmd;
+static CensusSCSIRead g_scsi_read;
+static CensusSCSIComplete g_scsi_complete;
+static int g_scsi_resolved;
+
+static Ptr resolve_one(CFragConnectionID conn, const char *sym)
+{
+    Str255 pname;
+    Ptr addr = NULL;
+    CFragSymbolClass cls;
+
+    CopyCStringToPascal(sym, pname);
+    if (FindSymbol(conn, pname, &addr, &cls) != noErr) {
+        return NULL;
+    }
+    return addr;
+}
+
+static void resolve_scsi(void)
+{
+    CFragConnectionID conn = 0;
+    Ptr mainAddr = NULL;
+    Str255 err;
+    Str255 pname;
+
+    if (g_scsi_resolved != 0) {
+        return;
+    }
+    g_scsi_resolved = -1;
+    CopyCStringToPascal("InterfaceLib", pname);
+    if (GetSharedLibrary(pname, kPowerPCCFragArch, kReferenceCFrag,
+                         &conn, &mainAddr, err) != noErr) {
+        return;
+    }
+    g_scsi_get = (CensusSCSIGet)resolve_one(conn, "SCSIGet");
+    g_scsi_select = (CensusSCSISelect)resolve_one(conn, "SCSISelect");
+    g_scsi_cmd = (CensusSCSICmd)resolve_one(conn, "SCSICmd");
+    g_scsi_read = (CensusSCSIRead)resolve_one(conn, "SCSIRead");
+    g_scsi_complete = (CensusSCSIComplete)resolve_one(conn, "SCSIComplete");
+    if (g_scsi_get && g_scsi_select && g_scsi_cmd && g_scsi_read
+        && g_scsi_complete) {
+        g_scsi_resolved = 1;
+    }
+}
+
+/* One target: select, INQUIRY, read 36 bytes. Returns 1 with a row filled,
+   0 if the target did not respond (absent). Never resets the bus. */
+static int scsi_inquire(short id, CensusRow *row)
+{
+    unsigned char cdb[6];
+    unsigned char data[36];
+    SCSIInstr tib[2];
+    short stat = 0, msg = 0;
+    char vendor[9], product[17], rev[5];
+    int i;
+
+    if (g_scsi_get() != noErr) {
+        return 0;                     /* could not arbitrate for the bus */
+    }
+    if (g_scsi_select(id) != noErr) {
+        g_scsi_complete(&stat, &msg, 300);
+        return 0;                     /* no target at this id */
+    }
+    memset(cdb, 0, sizeof cdb);
+    cdb[0] = 0x12;                    /* INQUIRY */
+    cdb[4] = 36;                      /* allocation length */
+    memset(data, 0, sizeof data);
+    tib[0].scOpcode = scInc;
+    tib[0].scParam1 = (long)data;
+    tib[0].scParam2 = sizeof data;
+    tib[1].scOpcode = scStop;
+    tib[1].scParam1 = 0;
+    tib[1].scParam2 = 0;
+    if (g_scsi_cmd((Ptr)cdb, sizeof cdb) != noErr) {
+        g_scsi_complete(&stat, &msg, 300);
+        return 0;
+    }
+    g_scsi_read((Ptr)tib);
+    g_scsi_complete(&stat, &msg, 300);
+
+    for (i = 0; i < 8; i++) {
+        unsigned char c = data[8 + i];
+        vendor[i] = (c >= 32 && c < 127) ? (char)c : ' ';
+    }
+    vendor[8] = '\0';
+    for (i = 0; i < 16; i++) {
+        unsigned char c = data[16 + i];
+        product[i] = (c >= 32 && c < 127) ? (char)c : ' ';
+    }
+    product[16] = '\0';
+    for (i = 0; i < 4; i++) {
+        unsigned char c = data[32 + i];
+        rev[i] = (c >= 32 && c < 127) ? (char)c : ' ';
+    }
+    rev[4] = '\0';
+
+    {
+        static const char *const types[] = {
+            "disk", "tape", "printer", "processor", "WORM", "CD-ROM",
+            "scanner", "optical", "changer", "comms"
+        };
+        int t = data[0] & 0x1F;
+        const char *tn = (t < 10) ? types[t] : "device";
+        char raw[kCensusRowRawCap];
+        char meaning[kCensusRowMeaningCap];
+
+        snprintf(raw, sizeof raw, "id %d type %d", id, t);
+        snprintf(meaning, sizeof meaning, "%s: %.8s %.16s %.4s", tn, vendor,
+                 product, rev);
+        {
+            char label[kCensusRowNameCap];
+            snprintf(label, sizeof label, "Target %d", id);
+            strncpy(row->name, label, sizeof row->name - 1);
+            row->name[sizeof row->name - 1] = '\0';
+        }
+        strncpy(row->raw, raw, sizeof row->raw - 1);
+        row->raw[sizeof row->raw - 1] = '\0';
+        strncpy(row->meaning, meaning, sizeof row->meaning - 1);
+        row->meaning[sizeof row->meaning - 1] = '\0';
+    }
+    return 1;
+}
+
+static void gather_scsi(long cursor, CensusPage *page)
+{
+    long hw = 0;
+    short id = (short)((cursor < 0) ? 0 : cursor);
+
+    /* The machine's own answer first: no bus means absent, not an error,
+       and never a select into hardware that is not there. */
+    if (Gestalt(gestaltHardwareAttr, &hw) != noErr
+        || (hw & (1L << 7)) == 0) {         /* gestaltHasSCSI */
+        page->outcome = kCensusAbsent;
+        snprintf(page->note, sizeof page->note, "no SCSI bus on this Mac");
+        return;
+    }
+    resolve_scsi();
+    if (g_scsi_resolved != 1) {
+        page->outcome = kCensusRefused;
+        snprintf(page->note, sizeof page->note,
+                 "SCSI Manager v1 not exported here");
+        return;
+    }
+    page->total = 7;
+    if (id <= 6) {                            /* one target per page */
+        if (scsi_inquire(id, &page->rows[page->count])) {
+            page->count++;
+        }
+        if (id < 6) {
+            page->more = 1;
+            page->next_cursor = id + 1;
+        }
+    }
+    if (page->count == 0 && !page->more && cursor == 0) {
+        page->outcome = kCensusAbsent;
+        snprintf(page->note, sizeof page->note, "bus present, no targets");
+    }
+}
+
 /* --- dispatch ----------------------------------------------------------- */
 
 static const struct {
@@ -451,6 +889,11 @@ static const struct {
     { "selectors", gather_selectors },
     { "video",     gather_video },
     { "volumes",   gather_volumes },
+    { "drives",    gather_drives },
+    { "drivers",   gather_drivers },
+    { "adb",       gather_adb },
+    { "pram",      gather_pram },
+    { "scsi",      gather_scsi },
 };
 
 #define kProbeCount ((int)(sizeof k_probes / sizeof k_probes[0]))

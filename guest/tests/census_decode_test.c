@@ -136,6 +136,34 @@ static void test_detail_version_shows_reading(void)
     assert(saw);
 }
 
+static void test_dctl_flags(void)
+{
+    char out[80];
+    /* open | RAM-based | active | needs lock */
+    census_dctl_flags(0x0020 | 0x0040 | 0x0080 | 0x4000, out, sizeof out);
+    assert(strcmp(out, "open, RAM-based, active, needs lock") == 0);
+    census_dctl_flags(0, out, sizeof out);
+    assert(strcmp(out, "closed") == 0);
+}
+
+static void test_adb_device(void)
+{
+    char out[80];
+    census_adb_device(2, 5, out, sizeof out);
+    assert(strcmp(out, "keyboard, handler 5") == 0);
+    census_adb_device(3, 2, out, sizeof out);
+    assert(strcmp(out, "mouse (relative), handler 2") == 0);
+    census_adb_device(9, 1, out, sizeof out);   /* unknown addr keeps raw */
+    assert(strcmp(out, "address 9, handler 1") == 0);
+}
+
+static void test_pram_meaning(void)
+{
+    assert(strcmp(census_pram_meaning(0), "valid marker") == 0);
+    assert(strcmp(census_pram_meaning(16), "volume, click, caret") == 0);
+    assert(strcmp(census_pram_meaning(5), "") == 0);    /* no known meaning */
+}
+
 int main(void)
 {
     test_version_bcd();
@@ -147,6 +175,9 @@ int main(void)
     test_size_and_hz();
     test_detail_attr_lists_bits();
     test_detail_version_shows_reading();
+    test_dctl_flags();
+    test_adb_device();
+    test_pram_meaning();
     printf("census_decode_test: ok\n");
     return 0;
 }
