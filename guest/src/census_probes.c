@@ -766,6 +766,13 @@ static void resolve_scsi(void)
 
 /* One target: select, INQUIRY, read 36 bytes. Returns 1 with a row filled,
    0 if the target did not respond (absent). Never resets the bus. */
+/* Completion waits are a CAP, not a fixed delay - a live target answers in
+   milliseconds. But an ABSENT target's select fails, and calling complete
+   with a long wait then burns the whole timeout with nothing pending: at
+   300 ticks x 7 targets that was the ~35 s freeze. The cleanup wait is
+   short; the real read gets a modest cap. */
+enum { kScsiReadWait = 60, kScsiCleanupWait = 2 };
+
 static int scsi_inquire(short id, CensusRow *row)
 {
     unsigned char cdb[6];
@@ -779,7 +786,7 @@ static int scsi_inquire(short id, CensusRow *row)
         return 0;                     /* could not arbitrate for the bus */
     }
     if (g_scsi_select(id) != noErr) {
-        g_scsi_complete(&stat, &msg, 300);
+        g_scsi_complete(&stat, &msg, kScsiCleanupWait);
         return 0;                     /* no target at this id */
     }
     memset(cdb, 0, sizeof cdb);
@@ -793,11 +800,11 @@ static int scsi_inquire(short id, CensusRow *row)
     tib[1].scParam1 = 0;
     tib[1].scParam2 = 0;
     if (g_scsi_cmd((Ptr)cdb, sizeof cdb) != noErr) {
-        g_scsi_complete(&stat, &msg, 300);
+        g_scsi_complete(&stat, &msg, kScsiCleanupWait);
         return 0;
     }
     g_scsi_read((Ptr)tib);
-    g_scsi_complete(&stat, &msg, 300);
+    g_scsi_complete(&stat, &msg, kScsiReadWait);
 
     for (i = 0; i < 8; i++) {
         unsigned char c = data[8 + i];
