@@ -15,9 +15,11 @@
    selected row: an attr's every set bit, a version's three encodings, an
    Overview fact's provenance.
 
-   Everything is guest-local: probes run on a click and are answered by the
-   same census core the wire serves. idle() does nothing - a census is a
-   click, never a poll. */
+   Everything is guest-local: probes run on request and are answered by the
+   same census core the wire serves. A run is NOT synchronous - it advances
+   one page per idle() pass so the cooperatively-scheduled machine keeps
+   redrawing, pumping the wire and answering the mouse throughout, instead
+   of wedging for the seconds a full sweep (SCSI especially) takes. */
 
 enum {
     kMargin = 12,
@@ -102,45 +104,25 @@ static const char *probe_name(int i)
     return now_census_probe_name(i);
 }
 
-/* --- running probes ----------------------------------------------------- */
+/* --- running probes, one page per event-loop pass ----------------------- *
+ * The machine is cooperatively scheduled, so gathering every probe in one
+ * synchronous loop wedges it for the whole run (SCSI alone selects seven
+ * targets, each waiting out its timeout). Instead a run is a state machine
+ * that does exactly ONE page in idle() and returns, so between pages the
+ * loop redraws the rail, pumps the wire and answers the mouse. Because
+ * each page invalidates a rectangle, WaitNextEvent never sleeps mid-run -
+ * the redraw paces it. */
 
-/* Walk a probe's pages into g_rows; return the settled outcome and a short
-   subtitle for the rail. */
-static CensusOutcome run_probe(const char *probe, char *subtitle,
-                               long sub_cap)
+static Boolean g_pumping;               /* a gather is in progress */
+static Boolean g_sweep;                 /* Run Census (all probes) vs one */
+static int g_pump_probe;                /* probe currently being gathered */
+static long g_pump_cursor;
+static Boolean g_pump_first;            /* capture outcome from first page */
+
+static void rail_row_rect(int i, Rect *out)
 {
-    CensusPage page;
-    long cursor = 0;
-    CensusOutcome outcome = kCensusFailed;
-    int first = 1;
-
-    g_row_count = 0;
-    for (;;) {
-        int i;
-
-        if (now_census_gather(probe, cursor, &page) != 0) {
-            outcome = kCensusRefused;
-            break;
-        }
-        if (first) {
-            outcome = page.outcome;
-            first = 0;
-        }
-        for (i = 0; i < page.count && g_row_count < kMaxRows; i++) {
-            g_rows[g_row_count++] = page.rows[i];
-        }
-        if (!page.more || g_row_count >= kMaxRows) {
-            break;
-        }
-        cursor = page.next_cursor;
-    }
-    if (page.note[0] != '\0') {
-        snprintf(subtitle, sub_cap, "%s", page.note);
-    } else {
-        snprintf(subtitle, sub_cap, "%s - %d rows",
-                 census_outcome_name(outcome), g_row_count);
-    }
-    return outcome;
+    SetRect(out, g_r.rail.left, (short)(g_r.rail.top + 2 + i * kRowH),
+            g_r.rail.right, (short)(g_r.rail.top + 2 + (i + 1) * kRowH));
 }
 
 /* Recompute the detail lines for the selected browser row. */
@@ -156,50 +138,128 @@ static void refresh_detail(void)
         kDetailLineCap);
 }
 
-/* Load the selected probe's rows into the browser (running it fresh). */
-static void load_selected_probe(void)
+static void run_button_title(const char *title)
 {
-    DataBrowserItemID ids[kMaxRows];
-    int i;
+    Str255 t;
 
-    if (g_browser == NULL || g_sel_probe < 0) {
-        return;
+    if (g_run != NULL) {
+        CopyCStringToPascal(title, t);
+        SetControlTitle(g_run, t);
     }
-    RemoveDataBrowserItems(g_browser, kDataBrowserNoItem, 0, NULL,
-                           kDataBrowserItemNoProperty);
-    g_row_count = 0;
-    g_sel_row = -1;
-    if (g_outcome[g_sel_probe] == kCensusNotAttempted) {
-        refresh_detail();
-        InvalWindowRect(g_owner, &g_r.detail);
-        return;
-    }
-    g_outcome[g_sel_probe] = run_probe(probe_name(g_sel_probe),
-                                       g_subtitle[g_sel_probe],
-                                       sizeof g_subtitle[0]);
-    for (i = 0; i < g_row_count; i++) {
-        ids[i] = (DataBrowserItemID)(i + 1);
-    }
-    if (g_row_count > 0) {
-        AddDataBrowserItems(g_browser, kDataBrowserNoItem, g_row_count, ids,
-                            kDataBrowserItemNoProperty);
-        g_sel_row = 0;
-    }
-    refresh_detail();
-    InvalWindowRect(g_owner, &g_r.detail);
 }
 
-static void run_all(void)
+/* Begin gathering `probe`. sweep = keep going through every probe after
+   this one (Run Census); otherwise stop when this probe is done (a rail
+   selection or Rerun). The displayed browser fills live for whichever
+   probe is selected. */
+static void begin_gather(int probe, Boolean sweep)
 {
+    if (g_browser == NULL || probe < 0) {
+        return;
+    }
+    g_pumping = true;
+    g_sweep = sweep;
+    g_pump_probe = probe;
+    g_pump_cursor = 0;
+    g_pump_first = true;
+    if (probe == g_sel_probe) {
+        RemoveDataBrowserItems(g_browser, kDataBrowserNoItem, 0, NULL,
+                               kDataBrowserItemNoProperty);
+        g_row_count = 0;
+        g_sel_row = -1;
+        g_detail_count = 0;
+        InvalWindowRect(g_owner, &g_r.detail);
+    }
+    HiliteControl(g_rerun, 255);        /* no reruns mid-run */
+    run_button_title(sweep ? "Stop" : "Run Census");
+    {
+        Rect r;
+        rail_row_rect(probe, &r);
+        InvalWindowRect(g_owner, &r);
+    }
+}
+
+static void end_gather(const char *status)
+{
+    g_pumping = false;
+    HiliteControl(g_rerun, 0);
+    run_button_title("Run Census");
+    set_status(status);
+}
+
+/* One page of work - called from idle() while a gather is live. */
+static void pump_step(void)
+{
+    CensusPage page;
+    const char *probe = probe_name(g_pump_probe);
+    Rect railr;
     int i;
 
-    for (i = 0; i < g_probe_count; i++) {
-        g_outcome[i] = run_probe(probe_name(i), g_subtitle[i],
-                                 sizeof g_subtitle[0]);
+    if (now_census_gather(probe, g_pump_cursor, &page) != 0) {
+        page.count = 0;
+        page.outcome = kCensusRefused;
+        page.more = 0;
+        snprintf(page.note, sizeof page.note, "unknown probe");
     }
-    InvalWindowRect(g_owner, &g_r.rail);
-    load_selected_probe();
-    set_status("Census complete.");
+    if (g_pump_first) {
+        g_outcome[g_pump_probe] = page.outcome;
+        g_pump_first = false;
+    }
+    /* Live-fill the browser only for the probe on screen. */
+    if (g_pump_probe == g_sel_probe) {
+        DataBrowserItemID ids[kCensusPageMax];
+        int added = 0;
+
+        for (i = 0; i < page.count && g_row_count < kMaxRows; i++) {
+            g_rows[g_row_count] = page.rows[i];
+            ids[added++] = (DataBrowserItemID)(++g_row_count);
+        }
+        if (added > 0) {
+            AddDataBrowserItems(g_browser, kDataBrowserNoItem, added, ids,
+                                kDataBrowserItemNoProperty);
+            if (g_sel_row < 0) {
+                g_sel_row = 0;
+                refresh_detail();
+                InvalWindowRect(g_owner, &g_r.detail);
+            }
+        }
+    }
+    /* The rail's subtitle animates the count while more pages follow. */
+    if (page.more) {
+        snprintf(g_subtitle[g_pump_probe], sizeof g_subtitle[0],
+                 "scanning... %ld", page.next_cursor);
+        g_pump_cursor = page.next_cursor;
+    } else {
+        if (page.note[0] != '\0') {
+            snprintf(g_subtitle[g_pump_probe], sizeof g_subtitle[0], "%.44s",
+                     page.note);
+        } else {
+            int shown = (g_pump_probe == g_sel_probe) ? g_row_count : -1;
+
+            if (shown >= 0) {
+                snprintf(g_subtitle[g_pump_probe], sizeof g_subtitle[0],
+                         "%s - %d rows",
+                         census_outcome_name(g_outcome[g_pump_probe]), shown);
+            } else {
+                snprintf(g_subtitle[g_pump_probe], sizeof g_subtitle[0], "%.44s",
+                         census_outcome_name(g_outcome[g_pump_probe]));
+            }
+        }
+        if (g_sweep && g_pump_probe + 1 < g_probe_count) {
+            g_pump_probe++;
+            g_pump_cursor = 0;
+            g_pump_first = true;
+        } else if (g_sweep) {
+            end_gather("Census complete.");
+        } else {
+            char done[120];
+
+            snprintf(done, sizeof done, "%s.", g_subtitle[g_pump_probe]);
+            end_gather(done);
+        }
+    }
+    rail_row_rect(g_pump_probe, &railr);
+    InvalWindowRect(g_owner, &railr);
 }
 
 /* --- the rows browser --------------------------------------------------- */
@@ -364,7 +424,7 @@ static void draw_rail(void)
         UseThemeFont(kThemeSmallSystemFont, smSystemScript);
         RGBForeColor(&gray);
         MoveTo((short)(row.left + 12), (short)(base + 27));
-        if (g_outcome[i] == kCensusNotAttempted) {
+        if (g_subtitle[i][0] == '\0') {
             CopyCStringToPascal("not run yet", text);
         } else {
             CopyCStringToPascal(g_subtitle[i], text);
@@ -521,6 +581,12 @@ static void census_show(Boolean visible)
     if (g_rerun != NULL) {
         if (visible) { ShowControl(g_rerun); } else { HideControl(g_rerun); }
     }
+    /* First arrival: fill Overview so the page is not blank, cheaply and
+       non-blocking. Everything else waits for Run Census. */
+    if (visible && !g_pumping && g_row_count == 0
+        && g_subtitle[g_sel_probe][0] == '\0') {
+        begin_gather(g_sel_probe, false);
+    }
 }
 
 static void size_to(ControlRef c, const Rect *r)
@@ -561,23 +627,18 @@ static Boolean census_click(const EventRecord *event, Point local)
     }
     hit = rail_row_at(local);
     if (hit >= 0) {
-        if (hit != g_sel_probe) {
+        /* Ignore rail selection mid-sweep: the sweep owns the browser, and
+           a probe it has not reached yet has no rows cached to show. */
+        if (hit != g_sel_probe && !(g_pumping && g_sweep)) {
             int prev = g_sel_probe;
+            Rect a, b;
+
             g_sel_probe = hit;
-            {
-                Rect a, b;
-                SetRect(&a, g_r.rail.left,
-                        (short)(g_r.rail.top + 2 + prev * kRowH),
-                        g_r.rail.right,
-                        (short)(g_r.rail.top + 2 + (prev + 1) * kRowH));
-                SetRect(&b, g_r.rail.left,
-                        (short)(g_r.rail.top + 2 + hit * kRowH),
-                        g_r.rail.right,
-                        (short)(g_r.rail.top + 2 + (hit + 1) * kRowH));
-                InvalWindowRect(g_owner, &a);
-                InvalWindowRect(g_owner, &b);
-            }
-            load_selected_probe();
+            rail_row_rect(prev, &a);
+            rail_row_rect(hit, &b);
+            InvalWindowRect(g_owner, &a);
+            InvalWindowRect(g_owner, &b);
+            begin_gather(hit, false);   /* fill this probe, then stop */
         }
         return true;
     }
@@ -590,17 +651,25 @@ static Boolean census_click(const EventRecord *event, Point local)
     }
     if (control == g_run) {
         if (TrackControl(control, local, now_pump_action()) != 0) {
-            set_status("Running census...");
-            run_all();
+            if (g_pumping && g_sweep) {
+                end_gather("Census stopped.");
+            } else {
+                int i;
+                for (i = 0; i < g_probe_count; i++) {
+                    g_subtitle[i][0] = '\0';
+                    g_outcome[i] = kCensusNotAttempted;
+                }
+                InvalWindowRect(g_owner, &g_r.rail);
+                set_status("Running census...");
+                begin_gather(0, true);   /* sweep every probe */
+            }
         }
         return true;
     }
     if (control == g_rerun) {
         if (TrackControl(control, local, now_pump_action()) != 0
-            && g_sel_probe >= 0) {
-            g_outcome[g_sel_probe] = kCensusNotAttempted;
-            load_selected_probe();
-            InvalWindowRect(g_owner, &g_r.rail);
+            && g_sel_probe >= 0 && !g_pumping) {
+            begin_gather(g_sel_probe, false);
         }
         return true;
     }
@@ -615,6 +684,9 @@ static Boolean census_key(const EventRecord *event)
     if (g_sel_probe < 0 || g_probe_count == 0) {
         return false;
     }
+    if (g_pumping && g_sweep) {
+        return false;                   /* the sweep owns the selection */
+    }
     if (c == 0x1E && g_sel_probe > 0) {                 /* up arrow */
         g_sel_probe--;
     } else if (c == 0x1F && g_sel_probe < g_probe_count - 1) {  /* down */
@@ -623,7 +695,7 @@ static Boolean census_key(const EventRecord *event)
         return false;
     }
     InvalWindowRect(g_owner, &g_r.rail);
-    load_selected_probe();
+    begin_gather(g_sel_probe, false);
     return true;
 }
 
@@ -649,7 +721,11 @@ static void census_activate(Boolean active)
 
 static void census_idle(void)
 {
-    /* A census is a click, never a poll. */
+    /* A run advances one page per pass, so the loop redraws and pumps the
+       wire between pages instead of wedging for the whole census. */
+    if (g_pumping && g_owner != NULL && g_visible) {
+        pump_step();
+    }
 }
 
 static void census_status_text(char *out, long cap)
