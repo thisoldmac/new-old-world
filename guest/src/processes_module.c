@@ -99,6 +99,7 @@ static long g_shown_mem_fill = -1;
 static char g_shown_mem[32];
 static char g_shown_cpu[24];
 static char g_shown_launched[32];
+static char g_shown_freshness[24];    /* the window snapshot's "as of" */
 
 /* Real UPPs, retained for the control's lifetime; the shape (and the
    reason it is not a cast) is files_browser_view.c. */
@@ -739,6 +740,7 @@ static void procs_show(Boolean visible)
         memset(&g_sel_win_psn, 0, sizeof g_sel_win_psn);
         g_shown_mem_fill = -1;
         g_shown_mem[0] = g_shown_cpu[0] = g_shown_launched[0] = '\0';
+        g_shown_freshness[0] = '\0';
     } else {
         now_peek_disarm(kNowPeekCapAnchors);
     }
@@ -844,10 +846,25 @@ static void draw_window_facts(const ProcEntry *entry)
         snprintf(value, sizeof value, "none (background app)");
     } else {
         switch (g_sel_win_status) {
-        case kNowPeekReadOk:
-            snprintf(value, sizeof value, "%d%s", g_sel_windows.count,
-                     g_sel_windows.more ? " (more)" : "");
+        case kNowPeekReadOk: {
+            char fresh[24];
+
+            /* Honest staleness: an actively-pumping app is live and
+               gets no marker; a process whose snapshot has aged shows
+               how old it is (the AXPeek/qdpeek discipline). */
+            proc_freshness_text(
+                (unsigned long)(TickCount() - g_sel_windows.stamp_ticks),
+                fresh, sizeof fresh);
+            if (fresh[0] != '\0') {
+                snprintf(value, sizeof value, "%d%s  %s",
+                         g_sel_windows.count,
+                         g_sel_windows.more ? " (more)" : "", fresh);
+            } else {
+                snprintf(value, sizeof value, "%d%s", g_sel_windows.count,
+                         g_sel_windows.more ? " (more)" : "");
+            }
             break;
+        }
         case kNowPeekReadNoWindows:
             snprintf(value, sizeof value, "none open");
             break;
@@ -1148,7 +1165,8 @@ static void update_selected_stats(void)
 
     if (g_selected < 0 || g_selected >= g_proc_count) {
         g_shown_mem_fill = -1;
-        g_shown_mem[0] = g_shown_cpu[0] = g_shown_launched[0] = '\0';
+        g_shown_mem[0] = g_shown_cpu[0] = '\0';
+        g_shown_launched[0] = g_shown_freshness[0] = '\0';
         return;
     }
     e = &g_procs[g_selected];
@@ -1173,6 +1191,21 @@ static void update_selected_stats(void)
     if (strcmp(buf, g_shown_launched) != 0) {
         strcpy(g_shown_launched, buf);
         invalidate_line(&g_r.launched_line);
+    }
+
+    /* The window snapshot's freshness ticks past its coarse boundaries
+       (live -> a moment ago -> N min ago); repaint the header only when
+       the shown phrase actually changes. */
+    if (g_sel_win_status == kNowPeekReadOk) {
+        proc_freshness_text(
+            (unsigned long)(TickCount() - g_sel_windows.stamp_ticks), buf,
+            sizeof buf);
+    } else {
+        buf[0] = '\0';
+    }
+    if (strcmp(buf, g_shown_freshness) != 0) {
+        strcpy(g_shown_freshness, buf);
+        invalidate_line(&g_r.windows_line);
     }
 }
 

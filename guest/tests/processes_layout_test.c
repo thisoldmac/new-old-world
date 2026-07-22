@@ -181,6 +181,15 @@ static void check_formatters(void)
     check(strcmp(buf, "background only") == 0, "kind background");
     proc_kind_name(kProcKindFinder, buf, sizeof buf);
     check(strcmp(buf, "the Finder") == 0, "kind finder");
+
+    /* Freshness: live below 3 s (empty), coarse after so it does not
+       tick every second. */
+    proc_freshness_text(60L, buf, sizeof buf);     /* 1 s */
+    check(buf[0] == '\0', "under 3s is live, no marker");
+    proc_freshness_text(60L * 20, buf, sizeof buf); /* 20 s */
+    check(strcmp(buf, "as of a moment ago") == 0, "seconds are coarse");
+    proc_freshness_text(60L * 60 * 4, buf, sizeof buf); /* 4 min */
+    check(strcmp(buf, "as of 4 min ago") == 0, "minutes granularity");
 }
 
 int main(void)

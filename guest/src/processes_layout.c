@@ -232,6 +232,19 @@ void proc_kind_name(short kind, char *out, long cap)
     }
 }
 
+void proc_freshness_text(unsigned long age_ticks, char *out, long cap)
+{
+    unsigned long secs = age_ticks / 60;
+
+    if (secs < 3) {
+        out[0] = '\0';                /* live: no marker, no noise */
+    } else if (secs < 60) {
+        snprintf(out, (size_t)cap, "as of a moment ago");
+    } else {
+        snprintf(out, (size_t)cap, "as of %lu min ago", secs / 60);
+    }
+}
+
 /* Minute granularity on purpose: a launch time does not need to tick
    every second, and a per-second string would repaint the detail pane
    every second. Below a minute it is coarse ("just now", "less than a

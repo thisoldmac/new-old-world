@@ -90,4 +90,11 @@ void proc_cpu_text(unsigned long active_ticks, char *out, long cap);
 enum { kProcKindApp = 0, kProcKindBackground = 1, kProcKindFinder = 2 };
 void proc_kind_name(short kind, char *out, long cap);
 
+/* How stale a window snapshot is, from the tick age of its anchor. An
+   actively-pumping app is live and produces an empty string (no marker
+   needed); only a process that has not pumped recently gets an honest
+   "as of ..." - coarse, so it does not tick every second. Empty when
+   fresh. 60 ticks per second. */
+void proc_freshness_text(unsigned long age_ticks, char *out, long cap);
+
 #endif /* NOW_PROCESSES_LAYOUT_H */

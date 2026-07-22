@@ -81,11 +81,13 @@ static int in_readable(const ReadableZones *z, unsigned long addr,
    *found tells "no anchor at all" from "anchor found, WindowList 0". */
 static unsigned long process_window_list(const NowPeekTable *table,
                                          unsigned long loc,
-                                         unsigned long size, int *found)
+                                         unsigned long size, int *found,
+                                         NowPeekU32 *stamp_out)
 {
     int i;
 
     *found = 0;
+    *stamp_out = 0;
     for (i = 0; i < (int)kNowPeekMaxAnchors; ++i) {
         const NowPeekAnchorSlot *slot = &table->anchors[i];
         NowPeekU32 s1 = slot->stamp_ticks;
@@ -106,6 +108,7 @@ static unsigned long process_window_list(const NowPeekTable *table,
             continue;                 /* not this process's A5 */
         }
         *found = 1;
+        *stamp_out = s1;              /* the capture tick, for freshness */
         return wl;
     }
     return 0;
@@ -116,7 +119,8 @@ static unsigned long process_window_list(const NowPeekTable *table,
    first window, and NoWindows is returned when the anchor is fine but
    the list is empty. */
 static NowPeekReadStatus resolve(const ProcessSerialNumber *psn,
-                                 ReadableZones *z, unsigned long *wl_head)
+                                 ReadableZones *z, unsigned long *wl_head,
+                                 NowPeekU32 *stamp_out)
 {
     const NowPeekTable *table;
     ProcessInfoRec info;
@@ -125,6 +129,7 @@ static NowPeekReadStatus resolve(const ProcessSerialNumber *psn,
     int found;
 
     *wl_head = 0;
+    *stamp_out = 0;
     table = now_peek_table();
     if (table == NULL || (table->caps & kNowPeekCapAnchors) == 0
         || (table->arm_active & kNowPeekCapAnchors) == 0) {
@@ -144,7 +149,7 @@ static NowPeekReadStatus resolve(const ProcessSerialNumber *psn,
     z->sys_lo = (unsigned long)sys;
     z->sys_hi = (sys != NULL) ? read_be32(z->sys_lo) : 0;
 
-    wl = process_window_list(table, z->loc, z->size, &found);
+    wl = process_window_list(table, z->loc, z->size, &found, stamp_out);
     if (!found) {
         return kNowPeekReadNoAnchor;
     }
@@ -220,14 +225,16 @@ NowPeekReadStatus now_peek_windows_for_psn(const ProcessSerialNumber *psn,
 {
     ReadableZones z;
     unsigned long wl;
+    NowPeekU32 stamp = 0;
     NowPeekReadStatus st;
     int hops;
 
     memset(out, 0, sizeof *out);
-    st = resolve(psn, &z, &wl);
+    st = resolve(psn, &z, &wl, &stamp);
     if (st != kNowPeekReadOk) {
         return st;
     }
+    out->stamp_ticks = stamp;
     for (hops = 0; wl != 0 && hops < kWindowChainCap; ++hops) {
         NowPeekWindow w;
 
@@ -255,12 +262,13 @@ NowPeekReadStatus now_peek_window_count(const ProcessSerialNumber *psn,
 {
     ReadableZones z;
     unsigned long wl;
+    NowPeekU32 stamp = 0;
     NowPeekReadStatus st;
     int hops;
     short n = 0;
 
     *count = 0;
-    st = resolve(psn, &z, &wl);
+    st = resolve(psn, &z, &wl, &stamp);   /* stamp unused for the badge */
     if (st != kNowPeekReadOk) {
         return st;                    /* NoWindows/NoAnchor/etc as-is */
     }
