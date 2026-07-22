@@ -22,7 +22,7 @@ end-to-end). We rebuild fresh; the findings are what carry.
 | 1 | NOW Extension M0: residence, discovery, versioning | the extension | **metal-verified** (2026-07-21) |
 | 2a | Anchor plane + per-process validated window read | ext P1 | **metal-verified** (2026-07-21) |
 | 2b | Front & Capture crops to those bounds | 2a | **metal-verified** (2026-07-21) |
-| 3 | `process.*` wire family; host sees the guest's processes | contract | **metal-verified** — host read the PB1400c's process table over the wire; display UI still ahead (2026-07-21) |
+| 3 | `process.*` wire family; host sees the guest's processes | contract | **wire metal-verified** — host read the PB1400c's table over the wire; the Processes module that displays it is tested + builds, not yet watched on screen (2026-07-21) |
 | 4 | Semantic tree; `peek.*` family; host tree view | ext P2 | |
 | 5 | Host mock desktop (scene IR, native renderer) | 3 + 4 | |
 | 6 | Interiors: bounds-cropped pixel fill inside the mock desktop | 2 + 5 | |
@@ -362,10 +362,16 @@ Rung 3 adds the first symmetric family to `contract/asyncapi.yaml`
 **Landed (2026-07-21):** the `process.list` / `process.listing` pair
 only. Both serve halves are done and symmetric — the guest walks the
 Process Manager, the host answers with `NSWorkspace` in the degraded
-plane — and the host can ask (`GuestListener.listProcesses`). Two gaps
-remain, both UI rather than contract: the guest has no way to ask yet,
-and no view on either side displays the peer's list. `process.front` /
-`.launch` / `.quit` are still design, unbuilt.
+plane — and the host asks and DISPLAYS: a read-only Processes module
+(`ProcessesModel` / `ProcessesModuleView`) that pages the whole table in
+on refresh, groups it into Applications (with the Finder) and Background,
+flags the front process, and captions each row with its kind, 4CCs and
+partition size. It reads as the snapshot it is ("as of HH:MM:SS"). The
+wire under it is metal-verified; the pane itself is tested and builds but
+has not yet been watched on screen with a Mac connected. One gap remains,
+UI not contract: the GUEST cannot yet ask — it only serves, so the mirror
+runs one way. `process.front` / `.launch` / `.quit` are still design,
+unbuilt.
 
 Rung 4's `peek.request` / `peek.tree` carries the semantic tree with
 stable, pointer-free refs. Design it snapshot-first but

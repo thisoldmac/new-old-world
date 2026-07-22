@@ -55,6 +55,17 @@ on either side.
   byte-for-byte in both directions, including cancel mid-flight; large
   transfers are clocked on the receiver's own count, which is what stops
   a long send collapsing (docs/large-transfers.md).
+- **Processes, from the host** — a Processes module here reads the
+  connected Mac's running process table over the wire (`process.list` /
+  `process.listing`, the first symmetric family to carry live state
+  rather than files). It groups the table into Applications — the Finder
+  among them — and Background, flags the front process, and captions each
+  row with its kind, its two 4CCs and its partition size. It reads as the
+  snapshot it is ("as of HH:MM:SS"); a process list is stale the instant
+  it is taken. The wire is metal-verified — the PB1400c's own table, read
+  from this Mac — but the pane that draws it is so far only tested and
+  built, not yet watched on screen. The mirror runs one way — the host
+  sees the guest, and the guest serves but does not yet ask.
 - **A log on both machines** — one file per launch, in `now-logs` beside
   the classic app and in `~/Library/Logs` here, plus `tail` from either
   console. Built because three separate evenings were spent on

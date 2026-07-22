@@ -61,6 +61,8 @@ struct HostRootView: View {
             ScreenshotsModuleView(model: state.screenshots)
         case "files":
             FilesModuleView(model: state.files)
+        case "processes":
+            ProcessesModuleView(model: state.processes)
         case "console":
             ConsoleModuleView(model: state.console, listener: state.listener)
         case "settings":

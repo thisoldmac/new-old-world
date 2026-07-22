@@ -120,8 +120,9 @@ its CLUT and PackBits rows, opened as the real window. So the whole rung
 proves out end to end: extension captures anchors -> app validates and
 reads bounds -> app crops a genuine screenshot to them.
 
-**Rung 3 - the `process.*` wire family is metal-verified, display UI
-still ahead** (2026-07-21). The contract gained
+**Rung 3 - the `process.*` wire family is metal-verified, host Processes
+module built on top (pane not yet watched)** (2026-07-21). The contract
+gained
 `process.list`/`process.listing` (symmetric, paginated by a 1-based
 cursor, entries capped at 24 a page). The guest serves its own Process
 Manager walk on request (`serve_process_list` in `wire.c`: name, kind of
@@ -137,12 +138,18 @@ round-trip, and the conformance known-partial set. A `NOW_METAL` test
 host and prints it; run on the PB1400c (2026-07-21) it read 8 processes
 correctly classified - the `appe` faceless-background set (Control Strip,
 Folder Actions, ORiNOCO Monitor, tbt-appe), the Finder by `FNDR`, three
-`APPL`s, and the guest itself flagged front. **Two honest gaps, both UI
-not contract:** the guest can serve a
-`process.list` but has no way to ASK one yet (no consume handler, no
-page), and the host's `listProcesses` has no view calling it - so
-neither side yet SHOWS the other's processes. The receive/serve halves
-are symmetric and complete; only the two ask-and-display features remain.
+`APPL`s, and the guest itself flagged front. The host now DISPLAYS it: a
+read-only Processes module (`ProcessesModel`/`ProcessesModuleView`) that
+pages the whole table in on refresh, groups it into Applications (with
+the Finder) and Background, flags the front process, captions each row
+with kind/4CCs/partition size, and reads as the snapshot it is ("as of
+HH:MM:SS"). The pane is **tested + builds, not yet watched on screen** —
+the wire beneath it is metal-verified, the SwiftUI rendering is not.
+**One contract-level gap remains:** the GUEST can serve a `process.list`
+but cannot yet ASK one (no consume handler, no page), so the mirror runs
+one way - host sees guest, not the reverse. The receive/serve halves are
+symmetric and complete; the guest's ask-and-display side is the only
+piece left.
 
 **Metal found one rung-0 bug, now fixed:** the detail pane's "Launched"
 line read "1/1/04" for every process. `ProcessInfoRec.processLaunchDate`

@@ -44,6 +44,7 @@ final class HostAppState: ObservableObject {
     let settings: SettingsModel
     let listener: GuestListener
     private(set) lazy var console = ConsoleModel(listener: listener)
+    private(set) lazy var processes = ProcessesModel(listener: listener)
 
     private let defaults: UserDefaults
     private static let selectionKey = "selectedModuleID"
@@ -64,6 +65,7 @@ final class HostAppState: ObservableObject {
         stateMirror = listener.$state.sink { [weak self] state in
             self?.screenshots.connection = Self.guestState(from: state)
             self?.files.connection = Self.guestState(from: state)
+            self?.processes.connection = Self.guestState(from: state)
             self?.captureSmokeIfRequested(state)
         }
         if settings.listenAtLaunch {
