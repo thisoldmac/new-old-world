@@ -158,6 +158,7 @@ tidiness preference.)*
 |---|---|
 | Guest: file, ring buffer, `tail` on its own console | **Metal-verified** 2026-07-20 (PB1400c) |
 | Guest: events — connect, transfers both directions, refusals, skips | Built, **not yet read back in anger** |
+| Guest: events — process drive verbs (front/quit/shot), census outcomes, process-list refresh | Built 2026-07-22; **not compiled on a Retro68 toolchain this session, not metal-verified**. Each carries the wire id; drive-verb refusal reasons now reach the log, not only the wire. `process.list` logs once per refresh (cursor 1), never per page |
 | Host: file per launch, in the line format above | Built, **unverified on a real run** |
 | Host: `tail` of the guest's log | Built; needs `fork/logging` landed and a rebuild |
 | `tail` output as one row per line | Built — byte-bounded, oldest dropped first, and it says so |

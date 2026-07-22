@@ -322,6 +322,30 @@ Not load-bearing; parked as a known gap rather than chased.
 Everything here builds and passes its tests. None of it has been watched
 working on the PowerBook.
 
+- **`ps` and `census` console commands + guest verb logging**
+  (2026-07-22). The two new modules — Processes and Hardware/census —
+  had no console verb and logged nothing; both are now closed.
+  - **Console.** `ps` (flat process list, the reading of `process.list`
+    the Processes module drives) and `census [probe]` (one probe page,
+    the flat cousin of `censusExchange`) were added across all three
+    halves — contract `x-commands`, guest `commands.c` dispatch, host
+    `ConsoleModel` offer + help — the way `ls` is to `file.list`.
+    `CommandRegistryTests` reads all three and is green, so the set
+    agrees and every offered command has help. The guest's own console
+    (`console_model.c`) renders both locally too.
+  - **Logging.** The guest drive verbs (`process.front`/`quit`/`shot`),
+    census outcomes, and the process-list refresh now log their shape
+    with the wire id (areas `proc`, `census`). The refusal *reasons*
+    that used to live only on the wire now reach the log. `process.list`
+    logs once per refresh (cursor 1), never per page, to stay off the
+    per-chunk heartbeat rule.
+  - **Verified only here:** host suite (263 tests) green, `audit_source.py`
+    clean, the census/json header chains compile under
+    `cc -Wall -Wextra -Werror`. **Not** cross-compiled — no Retro68
+    toolchain this session, so the guest-only additions (`run_ps`,
+    `run_census`, the two console handlers, the `wire.c` log lines) are
+    not even at *builds* yet. First metal run should confirm `ps`,
+    `census pci`/`ata`/etc., and that a declined `quit` shows in the log.
 - **The Processes page's product pass** (2026-07-21) - built and
   suite-green, unrun on metal. All app-side (extension unchanged):
   - **Kind grouping.** Processes are classed from `processMode`

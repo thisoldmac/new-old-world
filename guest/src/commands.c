@@ -9,6 +9,7 @@
 
 #include "machine_names.h"
 #include "capture.h"
+#include "census.h"
 #include "json.h"
 #include "prefs.h"
 #include "fileshare.h"
@@ -293,6 +294,56 @@ int now_gestalt_gather(GestaltRow *rows, int max)
         add_row(rows, &n, max, "hw", "ROM version", buf);
     }
 
+    return n;
+}
+
+/* --- processes ---------------------------------------------------------- */
+
+int now_process_gather(ProcRow *rows, int max)
+{
+    /* Spelled-out 4CCs: multi-character char constants warn under -Werror.
+       These classify a process's kind, the same test serve_process_list
+       makes. */
+    const unsigned long kTypeFinder = 0x464E4452UL;   /* 'FNDR' */
+    const unsigned long kSigFinder = 0x4D414353UL;    /* 'MACS' */
+    ProcessSerialNumber psn = { 0, kNoProcess };
+    ProcessSerialNumber front;
+    Boolean have_front = GetFrontProcess(&front) == noErr;
+    int n = 0;
+
+    while (n < max && GetNextProcess(&psn) == noErr) {
+        ProcessInfoRec info;
+        Str31 name;
+        const char *kind;
+        Boolean is_front = false;
+        long sz;
+
+        memset(&info, 0, sizeof info);
+        info.processInfoLength = sizeof info;
+        info.processName = name;
+        info.processAppSpec = NULL;
+        name[0] = 0;
+        if (GetProcessInformation(&psn, &info) != noErr) {
+            continue;                 /* unreadable: skip, as the wire does */
+        }
+        if ((unsigned long)info.processType == kTypeFinder
+            || (unsigned long)info.processSignature == kSigFinder) {
+            kind = "finder";
+        } else if ((info.processMode & modeOnlyBackground) != 0) {
+            kind = "background";
+        } else {
+            kind = "application";
+        }
+        if (have_front) {
+            (void)SameProcess(&psn, &front, &is_front);
+        }
+        memcpy(rows[n].name, name + 1, name[0]);
+        rows[n].name[name[0]] = '\0';
+        sz = (long)(info.processSize / 1024);
+        snprintf(rows[n].detail, sizeof rows[n].detail, "%s, %ld KB%s",
+                 kind, sz, is_front ? ", front" : "");
+        ++n;
+    }
     return n;
 }
 
@@ -641,6 +692,94 @@ static void run_tail(const char *request_json, long id, char *out, long cap)
              first > 0 ? " (older ones did not fit)" : "");
 }
 
+/* ps: the running processes as flat [name, detail] rows. The Processes
+   module drives process.list (PSNs, paging); this is the reading of it. */
+static void run_ps(long id, char *out, long cap)
+{
+    ProcRow rows[kProcMaxRows];
+    int n = now_process_gather(rows, kProcMaxRows);
+    long pos;
+    int i;
+
+    pos = snprintf(out, (size_t)cap,
+                   "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                   "\"output\":{\"ps\":[", id);
+    for (i = 0; i < n && pos < cap - 200; ++i) {
+        char esc_name[64], esc_detail[128];
+
+        now_json_escape(rows[i].name, esc_name, sizeof esc_name);
+        now_json_escape(rows[i].detail, esc_detail, sizeof esc_detail);
+        pos += snprintf(out + pos, (size_t)(cap - pos), "%s[\"%s\",\"%s\"]",
+                        i > 0 ? "," : "", esc_name, esc_detail);
+    }
+    snprintf(out + pos, (size_t)(cap - pos), "]}}");
+}
+
+/* census: one probe, one page, as flat [name, meaning] rows. The raw value
+   folds into the meaning column when a row has no decoded form, so nothing
+   the wire triple carries is dropped. No probe name runs "overview"; an
+   unknown one is a well-formed ok=false, never a protocol error. */
+static void run_census(const char *request_json, long id, char *out, long cap)
+{
+    char probe[24];
+    CensusPage page;
+    long pos;
+    int i;
+
+    probe[0] = '\0';
+    if (request_json != NULL) {
+        now_json_find_string(request_json, "probe", probe, sizeof probe);
+    }
+    if (probe[0] == '\0') {
+        strcpy(probe, "overview");
+    }
+    if (now_census_gather(probe, 0, &page) != 0) {
+        char esc[40];
+        now_json_escape(probe, esc, sizeof esc);
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+                 "\"error\":{\"code\":\"unknown-probe\","
+                 "\"message\":\"no census probe \\\"%s\\\" - see help census\""
+                 "}}", id, esc);
+        return;
+    }
+    pos = snprintf(out, (size_t)cap,
+                   "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                   "\"output\":{\"census\":[", id);
+    for (i = 0; i < page.count && pos < cap - 240; ++i) {
+        const char *value = page.rows[i].meaning[0] != '\0'
+            ? page.rows[i].meaning : page.rows[i].raw;
+        char esc_name[64], esc_value[160];
+
+        now_json_escape(page.rows[i].name, esc_name, sizeof esc_name);
+        now_json_escape(value, esc_value, sizeof esc_value);
+        pos += snprintf(out + pos, (size_t)(cap - pos), "%s[\"%s\",\"%s\"]",
+                        i > 0 ? "," : "", esc_name, esc_value);
+    }
+    /* An empty page (absent), a partial one, or a note has nothing in the
+       rows to say so — carry the outcome in a trailing row rather than
+       leaving the console blank. */
+    if (page.count == 0 || page.outcome != kCensusPresent
+        || page.note[0] != '\0' || page.more) {
+        char status[kCensusNoteCap + 32];
+        char esc_status[240];
+
+        if (page.note[0] != '\0') {
+            snprintf(status, sizeof status, "%s - %s",
+                     census_outcome_name(page.outcome), page.note);
+        } else {
+            snprintf(status, sizeof status, "%s%s",
+                     census_outcome_name(page.outcome),
+                     page.more ? " (more follows)" : "");
+        }
+        now_json_escape(status, esc_status, sizeof esc_status);
+        pos += snprintf(out + pos, (size_t)(cap - pos),
+                        "%s[\"(%s)\",\"%s\"]", page.count > 0 ? "," : "",
+                        probe, esc_status);
+    }
+    snprintf(out + pos, (size_t)(cap - pos), "]}}");
+}
+
 void now_command_run(const char *name, const char *request_json, long id,
                      char *out, long cap)
 {
@@ -666,6 +805,14 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "tail") == 0) {
         run_tail(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "ps") == 0) {
+        run_ps(id, out, cap);
+        return;
+    }
+    if (strcmp(name, "census") == 0) {
+        run_census(request_json, id, out, cap);
         return;
     }
     snprintf(out, cap,

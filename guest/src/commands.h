@@ -38,4 +38,21 @@ int now_gestalt_gather(GestaltRow *rows, int max);
    and is intentionally excluded from --full). NULL-terminated. */
 extern const char *const kGestaltFullGroups[];
 
+/* --- processes, as flat rows (the `ps` command's data layer) ------------ */
+
+#define kProcMaxRows 64
+
+typedef struct {
+    char name[32];       /* the process name */
+    char detail[64];     /* kind, size, and whether it is frontmost */
+} ProcRow;
+
+/* Walks this machine's Process Manager into `rows`, one per readable
+   process, and returns the count. The wire's `ps` serializes these to
+   [name, detail] pairs; the guest console renders them directly. This is
+   the flat, unpaged cousin of wire.c's serve_process_list, which carries
+   PSNs and pages because the drive verbs need to name a process; ps names
+   nothing, so it needs neither. */
+int now_process_gather(ProcRow *rows, int max);
+
 #endif

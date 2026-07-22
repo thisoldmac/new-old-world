@@ -24,7 +24,7 @@ final class ConsoleModel: ObservableObject {
 
     /// Declared commands (contract x-commands) plus console built-ins.
     static let commands = ["gestalt", "screenshot", "vprobe", "ls",
-                           "putstat", "tail"]
+                           "putstat", "tail", "ps", "census"]
 
     /// Per-command docs, mirroring the contract's x-commands descriptions.
     /// help and --help render from here — documentation never hits the wire.
@@ -83,6 +83,24 @@ final class ConsoleModel: ObservableObject {
                    "  survives a crash that takes everything else with",
                    "  it. This reads it from here, which is the point:",
                    "  that machine is the harder one to look at."]),
+        "ps": .init(
+            summary: "the processes running on the other Mac",
+            help: ["ps — the processes running on the connected Mac",
+                   "  Usage: ps",
+                   "  One line per process: its name, then kind",
+                   "  (application / background / finder), size, and",
+                   "  whether it is frontmost. A reading only — the",
+                   "  Processes module is where they are driven."]),
+        "census": .init(
+            summary: "run one hardware-census probe on the other Mac",
+            help: ["census — run one hardware probe on the connected Mac",
+                   "  Usage: census [probe]   (no probe = overview)",
+                   "  Probes: overview identity selectors video volumes",
+                   "          drives drivers adb ata pccard pram power",
+                   "          pci scsi",
+                   "  Passive reads of tables that Mac's OS keeps. Absence",
+                   "  is an answer, not an error. The Hardware module pages",
+                   "  the same census through its own view."]),
         "help": .init(
             summary: "show this list (\"help <cmd>\" for details)",
             help: ["help — list commands, or \"help <cmd>\" for one"]),
@@ -147,6 +165,10 @@ final class ConsoleModel: ObservableObject {
         }
         if name == "ls" {
             runLs(rest)
+            return
+        }
+        if name == "census" {
+            runCensus(rest)
             return
         }
         run(name)
@@ -285,6 +307,17 @@ final class ConsoleModel: ObservableObject {
                                                      : ["path": path]) {
             [weak self] result in
             self?.renderRows(result, command: "ls")
+        }
+    }
+
+    /// census carries a positional probe name: "census pci". No name runs
+    /// "overview" on the guest, so an empty arg is passed as absent.
+    private func runCensus(_ rest: [String]) {
+        let probe = rest.first { !$0.hasPrefix("-") } ?? ""
+        listener.runCommand("census", args: probe.isEmpty ? nil
+                                                          : ["probe": probe]) {
+            [weak self] result in
+            self?.renderRows(result, command: "census")
         }
     }
 

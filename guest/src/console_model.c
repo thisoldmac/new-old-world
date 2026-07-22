@@ -8,6 +8,7 @@
 
 #include "build_stamp.h"
 #include "capture.h"
+#include "census.h"
 #include "commands.h"
 #include "fileshare.h"
 #include "json.h"
@@ -175,6 +176,22 @@ static void help_for(const char *name)
         console_model_append("    --cpu --memory --os --network --hardware");
         console_model_append("    --full        every group");
         console_model_append("    --save        also write the output to the desktop");
+    } else if (strcmp(name, "ps") == 0) {
+        console_model_append("ps - the processes running on this Mac");
+        console_model_append("  Usage: ps");
+        console_model_append("  One line per process: its name, then kind");
+        console_model_append("  (application / background / finder), size, and");
+        console_model_append("  whether it is frontmost. A reading only; the");
+        console_model_append("  Processes page is where they are driven.");
+    } else if (strcmp(name, "census") == 0) {
+        console_model_append("census - run one hardware-census probe");
+        console_model_append("  Usage: census [probe]   (no probe = overview)");
+        console_model_append("  Probes:");
+        console_model_append("    overview identity selectors video volumes");
+        console_model_append("    drives drivers adb ata pccard pram power");
+        console_model_append("    pci scsi");
+        console_model_append("  Passive reads of tables the OS keeps. Absence is");
+        console_model_append("  an answer, not an error (no PCI slots = absent).");
     } else if (strcmp(name, "help") == 0) {
         console_model_append("help - list commands; \"help <cmd>\" for one command");
     } else if (strcmp(name, "clear") == 0) {
@@ -199,6 +216,8 @@ static void help_list(void)
     console_model_append("  untrash     put back (untrash <trash name> <path>)");
     console_model_append("  mkdir       make a folder (mkdir <path>)");
     console_model_append("  vprobe      measure VRAM read cost by method");
+    console_model_append("  ps          the processes running on this Mac");
+    console_model_append("  census      run a hardware probe (census [probe])");
     console_model_append("  help        show this list (\"help <cmd>\" for details)");
     console_model_append("  clear       clear the console scrollback");
     console_model_append("Add --help or -h to any command for details.");
@@ -579,6 +598,53 @@ void console_model_run(const char *input)
             line[len] = '\0';
             console_model_append(line);
             p = nl != NULL ? nl + 1 : p + strlen(p);
+        }
+        return;
+    }
+    if (strcmp(name, "ps") == 0) {
+        ProcRow rows[kProcMaxRows];
+        int pn = now_process_gather(rows, kProcMaxRows);
+        int pi;
+
+        for (pi = 0; pi < pn; ++pi) {
+            snprintf(line, sizeof line, "  %-28.31s %s",
+                     rows[pi].name, rows[pi].detail);
+            console_model_append(line);
+        }
+        if (pn == 0) {
+            console_model_append("  (no processes read)");
+        }
+        return;
+    }
+    if (strcmp(name, "census") == 0) {
+        CensusPage page;
+        const char *probe = target[0] != '\0' ? target : "overview";
+        int ci;
+
+        if (now_census_gather(probe, 0, &page) != 0) {
+            snprintf(line, sizeof line,
+                     "census: no probe \"%.20s\" - see \"help census\"", probe);
+            console_model_append(line);
+            return;
+        }
+        for (ci = 0; ci < page.count; ++ci) {
+            const char *value = page.rows[ci].meaning[0] != '\0'
+                ? page.rows[ci].meaning : page.rows[ci].raw;
+            snprintf(line, sizeof line, "  %-24.31s %.90s",
+                     page.rows[ci].name, value);
+            console_model_append(line);
+        }
+        if (page.count == 0 || page.outcome != kCensusPresent
+            || page.note[0] != '\0' || page.more) {
+            if (page.note[0] != '\0') {
+                snprintf(line, sizeof line, "  (%s) %s",
+                         census_outcome_name(page.outcome), page.note);
+            } else {
+                snprintf(line, sizeof line, "  (%s)%s",
+                         census_outcome_name(page.outcome),
+                         page.more ? " more follows" : "");
+            }
+            console_model_append(line);
         }
         return;
     }

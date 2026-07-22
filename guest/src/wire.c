@@ -1294,6 +1294,8 @@ static void serve_process_shot(const char *request)
     long depth_arg = now_json_find_int(request, "depth", 0);
 
     if (g_stream.active || g_xfer.active || g_shot.active) {
+        now_log(kLogWarn, "proc", "#%ld shot refused: a transfer is in flight",
+                id);
         capture_fail(id);             /* one transfer at a time */
         return;
     }
@@ -1309,8 +1311,15 @@ static void serve_process_shot(const char *request)
     name[0] = 0;
     if (GetProcessInformation(&psn, &info) != noErr
         || GetCurrentProcess(&g_shot.self) != noErr) {
+        now_log(kLogWarn, "proc", "#%ld shot refused: no such process", id);
         capture_fail(id);
         return;
+    }
+    {
+        char cname[32];
+        memcpy(cname, name + 1, name[0]);
+        cname[name[0]] = '\0';
+        now_log(kLogInfo, "proc", "#%ld shot of %.31s begun", id, cname);
     }
     now_prefs_load(&prefs);
     g_shot.target = psn;
@@ -2792,6 +2801,14 @@ static void serve_census(const char *request)
         snprintf(page.note, sizeof page.note, "census page too large");
         n = census_report_json(probe, id, &page, out, sizeof out);
     }
+    /* An unknown probe or an oversized page is a warn - the asker learned,
+       but something went wrong. present/absent/partial are the machine
+       answering honestly and log as info. */
+    now_log(page.outcome == kCensusRefused || page.outcome == kCensusFailed
+                ? kLogWarn : kLogInfo,
+            "census", "#%ld %.15s: %s, %d rows%s", id, probe,
+            census_outcome_name(page.outcome), page.count,
+            page.more ? " (more)" : "");
     if (n > 0) {
         send_control(out);
     }
@@ -2970,6 +2987,14 @@ static void serve_process_list(const char *request)
     snprintf(json + pos, sizeof json - (size_t)pos,
              "],\"more\":%s,\"cursor\":%ld}", more ? "true" : "false",
              cursor + emitted);
+    /* One line per refresh, not per page: a refresh that pages is still one
+       event, and a list is read often enough that per-page logging would be
+       the heartbeat the log is meant to avoid. The first page (cursor 1)
+       stands for the whole walk. */
+    if (cursor == 1) {
+        now_log(kLogInfo, "proc", "#%ld listed %d processes%s", id, emitted,
+                more ? " (more)" : "");
+    }
     send_control(json);
 }
 
@@ -3021,6 +3046,27 @@ static void serve_process_act(const char *request, Boolean quit)
         err = now_proc_bring_to_front(&psn);
         if (err != noErr) {
             reason = "the Mac would not bring it to the front";
+        }
+    }
+
+    /* A drive verb changes the machine's state, and its refusal reason
+       lives nowhere else once the reply is off the wire - the log is where
+       "asked Finder to quit, it declined" survives the window closing. */
+    {
+        char cname[32];
+        const char *verb = quit ? "quit" : "front";
+
+        if (name[0] > 0) {
+            memcpy(cname, name + 1, name[0]);
+            cname[name[0]] = '\0';
+        } else {
+            strcpy(cname, "?");
+        }
+        if (reason == NULL) {
+            now_log(kLogInfo, "proc", "#%ld %s %.31s", id, verb, cname);
+        } else {
+            now_log(kLogWarn, "proc", "#%ld %s refused: %.60s",
+                    id, verb, reason);
         }
     }
 

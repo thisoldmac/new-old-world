@@ -19,8 +19,8 @@ const char *console_model_line(int index);
 
 /* Echoes the command into the scrollback, runs it, appends the output.
    Commands are the established local table (help, gestalt, screenshot,
-   ls, put, tail, mv, trash, untrash, mkdir, vprobe, clear), falling
-   through to commands.c. */
+   ls, put, tail, mv, trash, untrash, mkdir, vprobe, ps, census, clear),
+   falling through to commands.c. */
 void console_model_run(const char *command);
 
 void console_model_history_add(const char *command);

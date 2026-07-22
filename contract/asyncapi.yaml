@@ -1436,6 +1436,37 @@ components:
         properties:
           screenshot:
             $ref: "#/components/x-commands/gestalt/x-rowArray"
+    ps:
+      description: >
+        The guest's running processes, one row per process: the name, and
+        its kind / size / whether it is frontmost. The console's flat read
+        of the same Process Manager the Processes module drives — as ls is
+        to file.list, ps is to process.list. Read-only; a process list is
+        no more than the Application menu already shows. One generous page;
+        the row count is small on this hardware, so it does not paginate.
+      args: {}
+      output:
+        type: object
+        properties:
+          ps: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    census:
+      description: >
+        Run one hardware-census probe and return its rows. The console's
+        flat, single-page read of the census the Hardware module pages
+        through censusExchange — the same probe registry (x-census below),
+        collapsed to [name, meaning] for a text surface. No probe name runs
+        "overview". An unknown name is ok=false, never a protocol error, so
+        the command set stays additive across versions.
+      args:
+        type: object
+        properties:
+          probe:
+            type: string
+            description: A probe name from x-census; empty runs "overview".
+      output:
+        type: object
+        properties:
+          census: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
 
   # The census probe registry: the CLOSED, DECLARED set of probes a side may
   # be asked about, and the outcome vocabulary every report speaks. Adding a
