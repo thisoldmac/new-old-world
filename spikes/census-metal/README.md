@@ -59,6 +59,32 @@ symbols are resolved at runtime — so it launches on any OS 9 machine.
 Send it to the PowerBook under its own name (`now-census-spike`), run it,
 read the desktop report.
 
-## The verdict
+## The verdict (PB1400c, 2026-07-21): all five reachable
 
-_(pending first run on the PB1400c)_
+System 9.1.0, CarbonLib 1.6.0. **Every slice-2 probe can be built.**
+
+- **ADB: works.** All 3 symbols present; `CountADBs()`, called through
+  its resolved pointer, returned **2 devices**. The resolved-pointer
+  call is the pattern the real probe uses — a strong import would have
+  aborted launch, a runtime call did not.
+- **Drive queue: works.** 2 entries walked from `0x030A` (drive 1
+  refNum -5, drive 8 refNum -54 — the floppy and the internal disk).
+- **Unit table: works.** 96 units, 28 loaded, from `0x011C`/`0x01D2`.
+- **PRAM: works, partial by design.** The 20-byte SysParm copy read
+  clean from `0x01F8`; the full 256-byte XPRAM needs a 68K trap this
+  machine's CFM does not carry, so `pram` is an honest `partial`.
+- **SCSI v1: reachable.** `SCSIGet`, `SCSISelect`, `SCSICmd`,
+  `SCSIRead`, `SCSIComplete` all present — the five a select+INQUIRY
+  scan needs. Only `SCSIBusReset` is missing, which the passive scan
+  does not use. (SCSI Manager 4.3 async is NOT usable: `SCSIBusInquiry`
+  and `SCSIExecIO` are absent, only `SCSIAction` resolves — so the probe
+  uses the v1 path.) Active bus I/O stays gated + attended.
+
+**Spike bug worth recording:** the VERDICT line printed "scsi: NO SCSI
+Manager entry points" because it demanded *all* symbols in a group
+(`found == count`). SCSIBusReset's absence failed the whole group even
+though the five needed symbols are present. The raw per-symbol output
+above is correct; the summary was over-strict. A verdict is only as good
+as its threshold — read the symbols, not the headline. (Same lesson as
+the databrowser spike's "20 of 20 and still crashed": a probe reports
+exactly what it was asked, no more.)
