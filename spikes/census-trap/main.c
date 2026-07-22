@@ -118,10 +118,18 @@ static unsigned short g_self_thunk[] = {
 static RoutineDescriptor g_self_rd =
     BUILD_M68K_RD(kThunkInfo, g_self_thunk);
 
-/* ata: MOVEA.L 4(SP),A0 (pb, no pop); DC.W $AAF1; MOVE.W D0,8(SP); RTS.
-   The ATA trap is register-based (A0 = pb, result word in D0). */
+/* ata: ataManager is ONEWORDINLINE($AAF1) with no #pragma parameter, so it
+   is pascal stack-based (pb pushed, autopop) - NOT register-based. Same
+   shape as the PC Card thunk, minus the selector:
+     MOVEA.L 4(SP),A0    ; pb = our single arg (no pop)
+     CLR.W   -(SP)       ; ATA result space
+     MOVE.L  A0,-(SP)    ; push pb for the trap
+     dc.w    $AAF1       ; trap autopops pb, leaves result
+     MOVE.W  (SP)+,D0    ; pop the SInt16 result
+     MOVE.W  D0,8(SP)    ; -> our pascal result slot
+     RTS */
 static unsigned short g_ata_thunk[] = {
-    0x206F, 0x0004, 0xAAF1, 0x3F40, 0x0008, 0x4E75
+    0x206F, 0x0004, 0x4267, 0x2F08, 0xAAF1, 0x301F, 0x3F40, 0x0008, 0x4E75
 };
 static RoutineDescriptor g_ata_rd = BUILD_M68K_RD(kThunkInfo, g_ata_thunk);
 
@@ -232,7 +240,36 @@ static void run_probe(void)
     }
     report("");
 
-    /* Stage 2 - ATA IDENTIFY via $AAF1. */
+    /* Stage 2 - Card Services info via $AAF0 (the PROVEN pascal ABI first,
+       so a real trap succeeding confirms the whole path). */
+    {
+        static unsigned char vendor[64];
+        SpikeCSInfo pb;
+        CSArg arg;
+        SInt16 err;
+
+        memset(&pb, 0, sizeof pb);
+        memset(vendor, 0, sizeof vendor);
+        pb.vStrLen = sizeof vendor - 1;     /* real buffer: no NULL scribble */
+        pb.vendorString = vendor;
+        arg.selector = kCSGetCardServicesInfo;
+        arg.pb = &pb;
+        step("pccard: $AAF0 CSGetCardServicesInfo (sel 7)");
+        err = dispatch(&g_pccard_rd, &arg);
+        report("pccard: trap err=%d", (int)err);
+        if (err == 0) {
+            report("pccard: sig %c%c, %u sockets, CS level $%04X",
+                   pb.signature[0] ? pb.signature[0] : '?',
+                   pb.signature[1] ? pb.signature[1] : '?',
+                   pb.count, pb.csLevel);
+            report("pccard: vendor \"%.40s\"", (char *)vendor);
+        } else {
+            report("pccard: Card Services returned an error");
+        }
+    }
+    report("");
+
+    /* Stage 3 - ATA IDENTIFY via $AAF1 (pascal ABI, corrected). */
     {
         static unsigned char buf[512];
         SpikeAtaIdentify pb;
@@ -259,34 +296,6 @@ static void run_probe(void)
             report("ata: model \"%s\"", model);
         } else {
             report("ata: no drive at 0.0 (or the ATA trap ABI differs)");
-        }
-    }
-    report("");
-
-    /* Stage 3 - Card Services info via $AAF0. */
-    {
-        static unsigned char vendor[64];
-        SpikeCSInfo pb;
-        CSArg arg;
-        SInt16 err;
-
-        memset(&pb, 0, sizeof pb);
-        memset(vendor, 0, sizeof vendor);
-        pb.vStrLen = sizeof vendor - 1;     /* real buffer: no NULL scribble */
-        pb.vendorString = vendor;
-        arg.selector = kCSGetCardServicesInfo;
-        arg.pb = &pb;
-        step("pccard: $AAF0 CSGetCardServicesInfo (sel 7)");
-        err = dispatch(&g_pccard_rd, &arg);
-        report("pccard: trap err=%d", (int)err);
-        if (err == 0) {
-            report("pccard: sig %c%c, %u sockets, CS level $%04X",
-                   pb.signature[0] ? pb.signature[0] : '?',
-                   pb.signature[1] ? pb.signature[1] : '?',
-                   pb.count, pb.csLevel);
-            report("pccard: vendor \"%.40s\"", (char *)vendor);
-        } else {
-            report("pccard: no Card Services (err above)");
         }
     }
     report("");
