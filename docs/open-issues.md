@@ -385,9 +385,21 @@ working on the PowerBook.
     copy by its short version string; full path and `#n` still work.
     The whole arg is tried as a literal name first, so "Sherlock 2"
     stays whole. Emulator-verified (newest-of-2, version pick,
-    wrong-version message, single-match plain launch). **The metal
-    re-run** of this flow with the real several-SimpleTexts disk is
-    what remains, plus the still-never-live `swpage` firsts.
+    wrong-version message, single-match plain launch).
+  - **Fourth round → `-v` flag (2026-07-22):** launch-newest became
+    too surprising to reason about (which version won?), so the shape
+    settled: `launch [-v VERSION] NAME`, NAME the whole remainder
+    (spaces need no quotes; quotes stripped if used), a bare ambiguous
+    name launches the FIRST found and names its version (one fork
+    open, no walk), `-v` forces a copy, positional `Name 1.2.3` retired
+    with a "did you mean -v" hint. Emulator-verified: quote-strip,
+    first-of-2-with-version, the hint. **The `-v` launch itself is
+    tested (builds) but not cleanly emulator-watched** — the harness
+    dropped a leading prefix on every injected `-v` console line (the
+    echoes show it), so the flag path shares the already-verified
+    `launch_at_version` but wants a human-typed metal keystroke to
+    close. That, the several-SimpleTexts disk, and the `swpage`
+    firsts are the open metal items.
 
 - **`sw` and `launch` — the software family's first verbs** (2026-07-22).
   The Software module's data layer (`software.c`) surfaced as console
