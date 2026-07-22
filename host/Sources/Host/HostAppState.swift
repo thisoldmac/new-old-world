@@ -44,7 +44,22 @@ final class HostAppState: ObservableObject {
     let settings: SettingsModel
     let listener: GuestListener
     private(set) lazy var console = ConsoleModel(listener: listener)
-    private(set) lazy var processes = ProcessesModel(listener: listener)
+    private(set) lazy var processes: ProcessesModel = {
+        let model = ProcessesModel(listener: listener)
+        // "Screenshot app" fronts the process, then this fires: show the
+        // Screenshots page and capture. The delay lets the just-fronted app
+        // pump its own loop and redraw first — the guest set it front but
+        // cannot make it paint (see the rung-2b deferred capture).
+        model.onScreenshotApp = { [weak self] in
+            guard let self else { return }
+            self.selectedModuleID = "screenshots"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
+                [weak self] in
+                self?.screenshots.capture()
+            }
+        }
+        return model
+    }()
 
     private let defaults: UserDefaults
     private static let selectionKey = "selectedModuleID"

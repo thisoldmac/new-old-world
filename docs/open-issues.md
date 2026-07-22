@@ -149,13 +149,27 @@ processes correctly grouped and flagged.
 **The one-way direction is by design, not a gap.** NOW drives old-from-
 new - the host is the cockpit, the guest the operated machine - so
 host-sees-guest is the product and guest-sees-host is a non-goal. The
-guest has no ASK/UI for the host's processes on purpose. The wire family
-stays symmetric anyway (the host serves its own list via `HostProcesses`
-off `NSWorkspace`, honouring the contract's receive-side rule), but that
-serve is a contract obligation, not a product surface, and nothing in
-the product exercises it. `process.front`/`.launch`/`.quit` - the drive
-verbs, which run the SAME direction the product wants - are still design,
-unbuilt.
+guest issues no verbs at the host and has no ASK/UI for the host's
+processes, on purpose. The wire family stays symmetric in MEANING, but
+the host serves nothing back: the dead `HostProcesses`/`NSWorkspace`
+serve was removed rather than kept as ballast (2026-07-22).
+
+**Drive verbs added (2026-07-22, tested + builds, not yet metal).** The
+Processes pane grew three actions on the selected row, all host->guest:
+Bring to Front (`process.front` -> `SetFrontProcess`), Ask to Quit
+(`process.quit` -> a 'quit' Apple Event it may decline), and Screenshot
+App (front the process, then capture into the Screenshots module). Each
+verb names its target by the PSN the listing now carries (`psnHigh`/
+`psnLow`); the guest re-validates the PSN against a live process before
+acting, and refuses a quit of NOW itself - that would sever the wire
+mid-reply. One `process.result` shape answers both. The Toolbox actions
+are factored into `proc_actions.c` so the guest's own page and the wire
+handler share one implementation. `process.launch` (opening an app that
+is not yet running) is the honest next verb; it needs a path/signature to
+name an unlaunched app, not a PSN. All this is tested (contract
+round-trips, a guest process.result fixture, the drivable/PSN decode) and
+builds clean on both halves, but has NOT been watched driving the
+PB1400c.
 
 **Metal found one rung-0 bug, now fixed:** the detail pane's "Launched"
 line read "1/1/04" for every process. `ProcessInfoRec.processLaunchDate`

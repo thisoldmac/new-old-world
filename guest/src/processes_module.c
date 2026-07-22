@@ -7,6 +7,7 @@
 #include "peek.h"
 #include "peek_read.h"
 #include "prefs.h"
+#include "proc_actions.h"
 #include "processes_layout.h"
 #include "pump.h"
 #include "screenshot.h"
@@ -387,34 +388,10 @@ static void refresh(void)
 
 /* --- actions ------------------------------------------------------------ */
 
-static OSErr send_quit_event(const ProcessSerialNumber *psn)
-{
-    AEAddressDesc target;
-    AppleEvent event;
-    AppleEvent reply;
-    OSErr err;
-
-    err = AECreateDesc(typeProcessSerialNumber, psn, sizeof *psn, &target);
-    if (err != noErr) {
-        return err;
-    }
-    err = AECreateAppleEvent(kCoreEventClass, kAEQuitApplication, &target,
-                             kAutoGenerateReturnID, kAnyTransactionID,
-                             &event);
-    AEDisposeDesc(&target);
-    if (err != noErr) {
-        return err;
-    }
-    err = AESend(&event, &reply, kAENoReply | kAENeverInteract,
-                 kAENormalPriority, kAEDefaultTimeout, NULL, NULL);
-    AEDisposeDesc(&event);
-    return err;
-}
-
 static void bring_to_front(void)
 {
     if (g_selected >= 0 && g_selected < g_proc_count) {
-        SetFrontProcess(&g_procs[g_selected].psn);
+        now_proc_bring_to_front(&g_procs[g_selected].psn);
     }
 }
 
@@ -437,7 +414,7 @@ static void ask_to_quit(void)
                      "Quit")) {
         return;
     }
-    if (send_quit_event(&entry->psn) != noErr) {
+    if (now_proc_ask_quit(&entry->psn) != noErr) {
         entry->quit_state = kQuitNoReply;
     } else {
         entry->quit_state = kQuitAsked;

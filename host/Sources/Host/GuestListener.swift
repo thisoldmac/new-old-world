@@ -412,6 +412,33 @@ final class GuestListener: ObservableObject {
         session.sendProcessList(id: id, cursor: cursor)
     }
 
+    /// The two drive verbs, one host->guest arrow: bring a process to the
+    /// front, or ask it to quit.
+    enum ProcessVerb { case front, quit }
+
+    /// Drives a process on the guest by the PSN it named in a listing.
+    /// The completion carries the guest's process.result — ok:false is a
+    /// real answer (a stale PSN, a Toolbox refusal), not a transport
+    /// failure, which arrives as .failure instead.
+    func driveProcess(psnHigh: Int, psnLow: Int, verb: ProcessVerb,
+                      completion: @escaping (Result<ProcessResult,
+                                                    FileFailure>) -> Void) {
+        guard let session, case .connected = state else {
+            completion(.failure(.init(code: "disconnected",
+                                      message: "No Mac is connected")))
+            return
+        }
+        let id = nextCommandId
+        nextCommandId += 1
+        pendingProcessResults[id] = completion
+        armWatchdog(id: id, seconds: 15) { [weak self] reason in
+            self?.pendingProcessResults.removeValue(forKey: id)?(
+                .failure(.init(code: "timeout", message: reason)))
+        }
+        session.sendProcessDrive(id: id, psnHigh: psnHigh, psnLow: psnLow,
+                                 verb: verb)
+    }
+
     /// Moves or renames an item inside the share. One operation, because
     /// on this file system they are one operation.
     func moveFile(from: String, to: String, overwrite: Bool = false,
@@ -667,6 +694,8 @@ final class GuestListener: ObservableObject {
         [Int: (Result<FileListing, FileFailure>) -> Void] = [:]
     private var pendingProcessListings:
         [Int: (Result<ProcessListing, FileFailure>) -> Void] = [:]
+    private var pendingProcessResults:
+        [Int: (Result<ProcessResult, FileFailure>) -> Void] = [:]
     private var pendingFile:
         ((Result<FileDelivery, FileFailure>) -> Void)?
     private var pendingChanges:
@@ -694,6 +723,12 @@ final class GuestListener: ObservableObject {
         clearWatchdog(listing.id)
         pendingProcessListings.removeValue(forKey: listing.id)?(
             .success(listing))
+    }
+
+    fileprivate func resolveProcessResult(_ result: ProcessResult) {
+        clearWatchdog(result.id)
+        pendingProcessResults.removeValue(forKey: result.id)?(
+            .success(result))
     }
 
     fileprivate func failFile(_ refuse: FileRefuse) {
@@ -1032,6 +1067,9 @@ final class GuestListener: ObservableObject {
             onProcessListing: { [weak self] listing in
                 self?.resolveProcessListing(listing)
             },
+            onProcessResult: { [weak self] result in
+                self?.resolveProcessResult(result)
+            },
             onReceived: { [weak self] url in
                 self?.noteReceived(url)
             },
@@ -1104,6 +1142,7 @@ final class Session {
     private let onAcceptOffer: (FileOffer) -> Void
     private let onServeChange: (GuestListener.ChangeRequest) -> Void
     private let onProcessListing: (ProcessListing) -> Void
+    private let onProcessResult: (ProcessResult) -> Void
     private let onReceived: (URL) -> Void
     private let onOutboundProgress: (Int, Int) -> Void
     private let onOutboundFailed: (String) -> Void
@@ -1170,6 +1209,7 @@ final class Session {
          onAcceptOffer: @escaping (FileOffer) -> Void,
          onServeChange: @escaping (GuestListener.ChangeRequest) -> Void,
          onProcessListing: @escaping (ProcessListing) -> Void,
+         onProcessResult: @escaping (ProcessResult) -> Void,
          onReceived: @escaping (URL) -> Void,
          onOutboundProgress: @escaping (Int, Int) -> Void,
          onOutboundFailed: @escaping (String) -> Void,
@@ -1200,6 +1240,7 @@ final class Session {
         self.onAcceptOffer = onAcceptOffer
         self.onServeChange = onServeChange
         self.onProcessListing = onProcessListing
+        self.onProcessResult = onProcessResult
         self.onReceived = onReceived
         self.onOutboundProgress = onOutboundProgress
         self.onOutboundFailed = onOutboundFailed
@@ -1339,6 +1380,8 @@ final class Session {
             onServeList(request)
         case .processListing(let listing):
             onProcessListing(listing)
+        case .processResult(let result):
+            onProcessResult(result)
         case .fileGet(let request):
             onServeGet(request)
         case .fileOffer(let offer):
@@ -1442,6 +1485,18 @@ final class Session {
 
     func sendProcessList(id: Int, cursor: Int?) {
         send(.processList(ProcessList(id: id, cursor: cursor)))
+    }
+
+    func sendProcessDrive(id: Int, psnHigh: Int, psnLow: Int,
+                          verb: GuestListener.ProcessVerb) {
+        switch verb {
+        case .front:
+            send(.processFront(ProcessFront(
+                id: id, psnHigh: psnHigh, psnLow: psnLow)))
+        case .quit:
+            send(.processQuit(ProcessQuit(
+                id: id, psnHigh: psnHigh, psnLow: psnLow)))
+        }
     }
 
     func sendFileMove(_ m: FileMove) { send(.fileMove(m)) }

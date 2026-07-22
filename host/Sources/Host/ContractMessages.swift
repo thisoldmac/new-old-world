@@ -47,6 +47,9 @@ enum ControlMessage: Equatable, Sendable {
     case captureEnd(CaptureEnd)
     case processList(ProcessList)
     case processListing(ProcessListing)
+    case processFront(ProcessFront)
+    case processQuit(ProcessQuit)
+    case processResult(ProcessResult)
 }
 
 struct Hello: Codable, Equatable, Sendable {
@@ -166,9 +169,16 @@ struct ProcessEntry: Codable, Equatable, Sendable, Identifiable {
     var creator: String?
     var sizeKB: Int?
     var front: Bool?
+    /// The two halves of the process serial number, which name this
+    /// process to the drive verbs. Absent if the responder predates them.
+    var psnHigh: Int?
+    var psnLow: Int?
 
     var id: String { "\(name)#\(code ?? "")#\(creator ?? "")" }
     var isBackground: Bool { kind == "background" }
+
+    /// A process can only be driven if it named itself with a PSN.
+    var isDrivable: Bool { psnHigh != nil && psnLow != nil }
 }
 
 struct ProcessListing: Codable, Equatable, Sendable {
@@ -176,6 +186,27 @@ struct ProcessListing: Codable, Equatable, Sendable {
     var processes: [ProcessEntry]
     var more: Bool
     var cursor: Int?
+}
+
+/// A drive verb: bring a process to the front, or ask it to quit. Both
+/// name their target by the PSN echoed from a process.listing entry.
+struct ProcessFront: Codable, Equatable, Sendable {
+    var id: Int
+    var psnHigh: Int
+    var psnLow: Int
+}
+
+struct ProcessQuit: Codable, Equatable, Sendable {
+    var id: Int
+    var psnHigh: Int
+    var psnLow: Int
+}
+
+/// The one reply to either drive verb.
+struct ProcessResult: Codable, Equatable, Sendable {
+    var id: Int
+    var ok: Bool
+    var reason: String?
 }
 
 /// A push into the guest's share. The share bounds what the guest may
@@ -513,6 +544,15 @@ enum ControlMessageCodec {
         case "process.listing":
             return .processListing(
                 try decoder.decode(ProcessListing.self, from: data))
+        case "process.front":
+            return .processFront(
+                try decoder.decode(ProcessFront.self, from: data))
+        case "process.quit":
+            return .processQuit(
+                try decoder.decode(ProcessQuit.self, from: data))
+        case "process.result":
+            return .processResult(
+                try decoder.decode(ProcessResult.self, from: data))
         default:
             throw ControlMessageError.unknownType(probe.type)
         }
@@ -567,6 +607,9 @@ enum ControlMessageCodec {
         case .captureEnd(let m): return try tagged("capture.end", m)
         case .processList(let m): return try tagged("process.list", m)
         case .processListing(let m): return try tagged("process.listing", m)
+        case .processFront(let m): return try tagged("process.front", m)
+        case .processQuit(let m): return try tagged("process.quit", m)
+        case .processResult(let m): return try tagged("process.result", m)
         }
     }
 }

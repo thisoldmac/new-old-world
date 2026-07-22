@@ -17,6 +17,14 @@ final class ProcessesModel: ObservableObject {
     /// it is — a process list goes stale the instant it is read.
     @Published private(set) var fetchedAt: Date?
     @Published var selection: ProcessEntry.ID?
+    /// A drive verb (front / quit / screenshot) is waiting on the guest.
+    /// Buttons disable while it is, so one click cannot stack another.
+    @Published private(set) var actionInFlight = false
+
+    /// Fired after a successful "Screenshot app" front, once the target is
+    /// forward on the guest — the host wires this to take the capture. Kept
+    /// as a hook so the model does not reach into the Screenshots module.
+    var onScreenshotApp: (() -> Void)?
 
     private let listener: GuestListener
     /// Guards against a slow page landing after the human hit Refresh:
@@ -28,6 +36,11 @@ final class ProcessesModel: ObservableObject {
     }
 
     var canBrowse: Bool { connection.canCapture }
+
+    /// The row a person has selected, if it is still in the list.
+    var selectedEntry: ProcessEntry? {
+        rows.first { $0.id == selection }
+    }
 
     /// Two buckets a person reads at a glance: what has a face, and what
     /// runs behind everything. The Finder sits with the applications —
@@ -65,9 +78,63 @@ final class ProcessesModel: ObservableObject {
         guard canBrowse else { return }
         loadToken += 1
         rows = []
-        selection = nil
+        // Selection is kept, not cleared: a refresh after driving a process
+        // should leave the same row picked if it is still running, and drop
+        // the highlight by itself if it has gone.
         lastError = nil
         load(cursor: nil, token: loadToken)
+    }
+
+    /// Bring the selected process to the front of the guest's screen.
+    func bringToFront(_ entry: ProcessEntry) { drive(entry, .front) }
+
+    /// Ask the selected process to quit — a request it may decline.
+    func askToQuit(_ entry: ProcessEntry) { drive(entry, .quit) }
+
+    /// Bring the process forward, then (once it is) take a screenshot. The
+    /// front and the capture are two steps because the target has to pump
+    /// its own event loop to actually come forward and redraw.
+    func screenshotApp(_ entry: ProcessEntry) {
+        guard let high = entry.psnHigh, let low = entry.psnLow,
+              !actionInFlight else { return }
+        actionInFlight = true
+        lastError = nil
+        listener.driveProcess(psnHigh: high, psnLow: low,
+                              verb: .front) { [weak self] result in
+            guard let self else { return }
+            self.actionInFlight = false
+            switch result {
+            case .success(let r) where r.ok:
+                self.onScreenshotApp?()
+            case .success(let r):
+                self.lastError = r.reason ?? "Could not bring it forward"
+            case .failure(let f):
+                self.lastError = f.message
+            }
+        }
+    }
+
+    private func drive(_ entry: ProcessEntry,
+                       _ verb: GuestListener.ProcessVerb) {
+        guard let high = entry.psnHigh, let low = entry.psnLow,
+              !actionInFlight else { return }
+        actionInFlight = true
+        lastError = nil
+        listener.driveProcess(psnHigh: high, psnLow: low,
+                              verb: verb) { [weak self] result in
+            guard let self else { return }
+            self.actionInFlight = false
+            switch result {
+            case .success(let r) where r.ok:
+                // Front changed, or a quit was sent: re-read so the front
+                // flag moves and a process that took the hint drops out.
+                self.refresh()
+            case .success(let r):
+                self.lastError = r.reason ?? "The Mac declined"
+            case .failure(let f):
+                self.lastError = f.message
+            }
+        }
     }
 
     /// One page, chaining straight into the next while `more` holds, so a

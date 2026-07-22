@@ -117,6 +117,9 @@ channels:
       captureEnd: { $ref: "#/components/messages/captureEnd" }
       processList: { $ref: "#/components/messages/processList" }
       processListing: { $ref: "#/components/messages/processListing" }
+      processFront: { $ref: "#/components/messages/processFront" }
+      processQuit: { $ref: "#/components/messages/processQuit" }
+      processResult: { $ref: "#/components/messages/processResult" }
   bulk:
     address: "1"
     description: >
@@ -318,15 +321,17 @@ operations:
     messages:
       - $ref: "#/channels/control/messages/processList"
     description: >
-      THE PROCESS FAMILY IS SYMMETRIC, like the file family: process.list
-      means the same thing whichever side sends it, and whoever RECEIVES
-      it serves its OWN running processes. The guest answers from the
-      Process Manager; the host answers from its own process list. It is
-      read-only and needs no share - a process list reveals nothing a
-      person could not see in the Application menu or About This Computer.
-      The listing paginates (control frames cap at 4 KB) with cursor/more.
-      This is also the mirror's degraded plane: the process list and the
-      front app are legible without the resident anchor plane at all.
+      process.list means the same thing whichever side sends it, and
+      whoever RECEIVES it serves its OWN running processes - so the family
+      is symmetric in MEANING. But NOW is a cockpit for driving old Macs
+      from new ones, so it implements one direction only: the host asks,
+      the guest (Process Manager) answers. The reverse (guest asking the
+      host) is a non-goal and deliberately unimplemented - the host will
+      ignore a process.list rather than serve one. Read-only and needs no
+      share: a process list reveals nothing a person could not see in the
+      Application menu. The listing paginates (frames cap at 4 KB) with
+      cursor/more, and is also the mirror's degraded plane - process list
+      and front app are legible without the resident anchor plane at all.
   guestServesProcesses:
     action: send
     channel: { $ref: "#/channels/control" }
@@ -334,9 +339,33 @@ operations:
       - $ref: "#/channels/control/messages/processListing"
     description: >
       The answer to process.list: one entry per running process, the
-      responder's own. kind classifies each (application / background /
-      finder) from the responder's OS; front marks the one frontmost
-      process. Paginates when the list outgrows a 4 KB frame.
+      guest's own. kind classifies each (application / background /
+      finder); front marks the frontmost; psnHigh/psnLow name the process
+      to the drive verbs. Paginates when the list outgrows a 4 KB frame.
+  hostDrivesProcess:
+    action: receive
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/processFront"
+      - $ref: "#/channels/control/messages/processQuit"
+    description: >
+      The drive verbs, same host->guest arrow as the listing: process.front
+      brings a process forward (SetFrontProcess), process.quit asks it to
+      quit (a 'quit' Apple Event it may decline). Each names its target by
+      the PSN echoed from a process.listing entry; the guest re-validates
+      that PSN against a live process before acting. Like the listing, the
+      reverse direction is a non-goal - the guest issues no drive verbs at
+      the host.
+  guestAnswersDrive:
+    action: send
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/processResult"
+    description: >
+      The one reply shape for both drive verbs: ok true when the verb was
+      applied (for quit, that the event was sent - not that the app has
+      gone, which it may decline), or ok false with a reason when the PSN
+      no longer names a live process or the Toolbox refused.
 
 components:
   messages:
@@ -454,6 +483,15 @@ components:
     processListing:
       name: process.listing
       payload: { $ref: "#/components/schemas/ProcessListing" }
+    processFront:
+      name: process.front
+      payload: { $ref: "#/components/schemas/ProcessFront" }
+    processQuit:
+      name: process.quit
+      payload: { $ref: "#/components/schemas/ProcessQuit" }
+    processResult:
+      name: process.result
+      payload: { $ref: "#/components/schemas/ProcessResult" }
 
   schemas:
     Hello:
@@ -745,8 +783,54 @@ components:
               front:
                 type: boolean
                 description: The one frontmost process on that machine.
+              psnHigh:
+                type: integer
+                description: >
+                  High half of the process serial number. The PSN names a
+                  running process to the drive verbs (process.front /
+                  process.quit): it is valid only while the process lives,
+                  so a stale one is refused rather than acted on.
+              psnLow:
+                type: integer
+                description: Low half of the process serial number.
         more: { type: boolean }
         cursor: { type: integer }
+    ProcessFront:
+      type: object
+      required: [type, id, psnHigh, psnLow]
+      additionalProperties: false
+      properties:
+        type: { const: process.front }
+        id: { type: integer }
+        psnHigh:
+          type: integer
+          description: >
+            High half of the target's PSN, echoed from a process.listing
+            entry. The responder re-validates it against a live process
+            and refuses if it has gone.
+        psnLow: { type: integer }
+    ProcessQuit:
+      type: object
+      required: [type, id, psnHigh, psnLow]
+      additionalProperties: false
+      properties:
+        type: { const: process.quit }
+        id: { type: integer }
+        psnHigh:
+          type: integer
+          description: High half of the target's PSN, as process.front.
+        psnLow: { type: integer }
+    ProcessResult:
+      type: object
+      required: [type, id, ok]
+      additionalProperties: false
+      properties:
+        type: { const: process.result }
+        id: { type: integer }
+        ok: { type: boolean }
+        reason:
+          type: string
+          description: Present when ok is false; why the verb did not apply.
     FileGet:
       type: object
       required: [type, id, path]

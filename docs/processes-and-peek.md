@@ -353,31 +353,33 @@ Rung 3 adds the first symmetric family to `contract/asyncapi.yaml`
   plane (tbt's spike mirrored process list + front app at ~1.2 ms per
   poll with no extension at all), so it is worth having before the
   semantic tree exists.
-- `process.front`, `process.launch`, `process.quit` — the page's
-  actions, offered to the peer. The host receiving `process.launch`
-  opens an application via NSWorkspace; the guest receiving it calls
-  `LaunchApplication`. Host-launches-guest-app needs nothing resident
-  as long as NOW is running, because the wire terminates in NOW.
+- `process.front`, `process.quit` — the drive verbs, host→guest. Each
+  names its target by the PSN echoed from a listing entry; the guest
+  re-validates that PSN against a live process before acting, and refuses
+  a quit of NOW itself (it would sever the wire mid-reply). `process.quit`
+  is a 'quit' Apple Event the app may decline. `process.launch` — opening
+  an app that is not yet running — is still design; it needs a way to
+  name an unlaunched app (a path or signature), not a PSN.
 
-**Landed (2026-07-21):** the `process.list` / `process.listing` pair
-only. Both serve halves are done and symmetric — the guest walks the
-Process Manager, the host answers with `NSWorkspace` in the degraded
-plane — and the host asks and DISPLAYS: a read-only Processes module
+**Landed (2026-07-22):** the `process.list` / `process.listing` pair and
+the two drive verbs. The host asks and DISPLAYS — a Processes module
 (`ProcessesModel` / `ProcessesModuleView`) that pages the whole table in
 on refresh, groups it into Applications (with the Finder) and Background,
-flags the front process, and captions each row with its kind, 4CCs and
-partition size. It reads as the snapshot it is ("as of HH:MM:SS"). Both
-wire and pane are metal-verified on the PB1400c.
+flags the front process, captions each row with kind/4CCs/size, reads as
+the snapshot it is ("as of HH:MM:SS"), and now DRIVES: Bring to Front,
+Ask to Quit, and Screenshot App (front the process, then capture) on the
+selected row. The list and its display are metal-verified on the PB1400c;
+the drive buttons are tested and build but have not yet been watched
+driving the real machine.
 
 **The one-way direction is the design, not a gap.** NOW drives old-from-
 new: the host is the cockpit, the guest the machine being operated, so
 host-sees-guest is the product and guest-sees-host is a non-goal. The
-guest has no ask-for-the-host's-processes UI on purpose. The wire family
-stays symmetric — the host still serves its own list (`HostProcesses`),
-honouring the receive-side rule — but that serve is a contract obligation
-nothing in the product exercises. `process.front` / `.launch` / `.quit`,
-the drive verbs, run that same host→guest arrow and are still design,
-unbuilt.
+guest issues no verbs at the host and has no ask-for-the-host UI, on
+purpose. The wire family stays symmetric in MEANING, but the host serves
+nothing back — the dead `HostProcesses` serve was removed rather than
+kept as ballast. `process.launch` (above) is the honest next verb on the
+same arrow.
 
 Rung 4's `peek.request` / `peek.tree` carries the semantic tree with
 stable, pointer-free refs. Design it snapshot-first but

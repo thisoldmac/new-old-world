@@ -176,11 +176,12 @@ final class GuestWireFixtureTests: XCTestCase {
         let json = """
         {"type":"process.listing","id":9,"processes":[\
         {"name":"Finder","kind":"finder","code":"FNDR","creator":"MACS",\
-        "sizeKB":2048,"front":false},\
+        "sizeKB":2048,"front":false,"psnHigh":0,"psnLow":8386},\
         {"name":"NOW","kind":"application","code":"APPL","creator":"NwWs",\
-        "sizeKB":3072,"front":true},\
+        "sizeKB":3072,"front":true,"psnHigh":0,"psnLow":16519},\
         {"name":"File Sharing Extension","kind":"background","code":"appe",\
-        "creator":"fsee","sizeKB":512,"front":false}],\
+        "creator":"fsee","sizeKB":512,"front":false,"psnHigh":0,\
+        "psnLow":24601}],\
         "more":false,"cursor":4}
         """
         guard case .processListing(let listing) = try decode(json) else {
@@ -191,6 +192,30 @@ final class GuestWireFixtureTests: XCTestCase {
         XCTAssertEqual(listing.processes[1].front, true, "NOW is front")
         XCTAssertTrue(listing.processes[2].isBackground)
         XCTAssertFalse(listing.more)
+        // The PSN is what the drive verbs echo back to name a process.
+        XCTAssertEqual(listing.processes[1].psnLow, 16519)
+        XCTAssertTrue(listing.processes[1].isDrivable)
+    }
+
+    /// serve_process_act(): the guest's answer to a drive verb. Two
+    /// literals in one function, each a complete object, so the
+    /// conformance check reaches them — but the ok:false shape carries a
+    /// reason the ok:true shape omits, which these pin.
+    func testProcessResultAsTheGuestWritesIt() throws {
+        let ok = #"{"type":"process.result","id":11,"ok":true}"#
+        guard case .processResult(let applied) = try decode(ok) else {
+            return XCTFail("not a process result")
+        }
+        XCTAssertTrue(applied.ok)
+        XCTAssertNil(applied.reason)
+
+        let refused = #"{"type":"process.result","id":12,"ok":false,"#
+            + #""reason":"that process is no longer running"}"#
+        guard case .processResult(let declined) = try decode(refused) else {
+            return XCTFail("not a process result")
+        }
+        XCTAssertFalse(declined.ok)
+        XCTAssertEqual(declined.reason, "that process is no longer running")
     }
 
     /// A first page that fills: `more` is true and the cursor points past

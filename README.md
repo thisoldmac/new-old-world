@@ -63,10 +63,15 @@ on either side.
   row with its kind, its two 4CCs and its partition size. It reads as the
   snapshot it is ("as of HH:MM:SS"); a process list is stale the instant
   it is taken. Metal-verified on the PB1400c — the machine's own process
-  table, read and drawn on this Mac. It runs one way by design: NOW is
-  for driving old Macs from new ones, so the host sees the guest and not
-  the reverse (the wire stays symmetric, but the guest has no reason to
-  ask about this Mac's processes).
+  table, read and drawn on this Mac. And it drives: a selected process
+  can be brought to the front, asked to quit (a request it may decline),
+  or screenshotted (front it, then capture) — all from here. Each action
+  names its target by the process serial number the listing carries, and
+  the classic Mac re-checks that the process still exists before acting;
+  it also refuses to quit NOW itself. The drive actions are tested and
+  build but are not yet metal-verified. It runs one way by design: NOW is
+  for driving old Macs from new ones, so the host sees and drives the
+  guest, never the reverse.
 - **A log on both machines** — one file per launch, in `now-logs` beside
   the classic app and in `~/Library/Logs` here, plus `tail` from either
   console. Built because three separate evenings were spent on

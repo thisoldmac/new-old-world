@@ -109,24 +109,61 @@ struct ProcessesModuleView: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 12) {
-            Button {
-                model.refresh()
-            } label: {
-                Label("Refresh", systemImage: "arrow.clockwise")
-            }
-            .disabled(!model.canBrowse || model.isLoading)
-
-            if model.isLoading {
-                ProgressView().controlSize(.small)
-            }
-            Spacer()
-            if !model.rows.isEmpty {
-                Text(countLine)
+        VStack(alignment: .leading, spacing: 8) {
+            if let error = model.lastError, model.canBrowse {
+                Label(error, systemImage: "exclamationmark.triangle")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.orange)
+            }
+            HStack(spacing: 12) {
+                Button {
+                    model.refresh()
+                } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .disabled(!model.canBrowse || model.isLoading)
+
+                Divider().frame(height: 16)
+                actionButtons
+
+                if model.actionInFlight || model.isLoading {
+                    ProgressView().controlSize(.small)
+                }
+                Spacer()
+                if !model.rows.isEmpty {
+                    Text(countLine)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
+    }
+
+    /// The three drive verbs, one host→guest arrow. Enabled only when a
+    /// process is selected that named itself with a PSN (an old guest that
+    /// sends no PSN cannot be driven), and nothing else is in flight.
+    private var actionButtons: some View {
+        let entry = model.selectedEntry
+        let enabled = entry?.isDrivable == true
+            && model.canBrowse && !model.actionInFlight
+        return Group {
+            Button {
+                if let entry { model.bringToFront(entry) }
+            } label: {
+                Label("Bring to Front", systemImage: "arrow.up.forward.app")
+            }
+            Button {
+                if let entry { model.askToQuit(entry) }
+            } label: {
+                Label("Ask to Quit", systemImage: "xmark.circle")
+            }
+            Button {
+                if let entry { model.screenshotApp(entry) }
+            } label: {
+                Label("Screenshot App", systemImage: "camera")
+            }
+        }
+        .disabled(!enabled)
     }
 
     /// A snapshot's honest caption: how many, and that it is a snapshot.

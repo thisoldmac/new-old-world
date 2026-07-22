@@ -15,6 +15,7 @@
 #include "contract.h"
 #include "ot_carbon.h"
 #include "prefs.h"
+#include "proc_actions.h"
 #include "product_identity.h"
 
 enum {
@@ -2689,11 +2690,16 @@ static void serve_file_list(const char *request)
 static void serve_process_list(const char *request)
 {
     enum { kPage = 16 };              /* control frames cap at 4 KB */
+    /* One entry's worst case (a 31-char name escaped, two 4CCs, three
+       numbers) is ~240 bytes; keep this much free for it plus the tail so
+       a row never truncates mid-JSON - a truncated frame decodes to
+       nothing and the send silently does nothing. */
+    enum { kEntryMargin = 320 };
     /* Spelled-out 4CCs: multi-character char constants warn under
        -Werror, and these classify the process's kind. */
     const unsigned long kTypeFinder = 0x464E4452UL;   /* 'FNDR' */
     const unsigned long kSigFinder = 0x4D414353UL;    /* 'MACS' */
-    char json[3072];
+    char json[kNowMaxControl];
     long id = now_json_find_int(request, "id", 0);
     long cursor = now_json_find_int(request, "cursor", 1);
     ProcessSerialNumber psn = { 0, kNoProcess };
@@ -2731,7 +2737,8 @@ static void serve_process_list(const char *request)
         if (index < cursor) {
             continue;                 /* before this page */
         }
-        if (emitted >= kPage) {
+        if (emitted >= kPage
+            || pos > (long)sizeof json - kEntryMargin) {
             more = true;              /* this one starts the next page */
             break;
         }
@@ -2757,15 +2764,80 @@ static void serve_process_list(const char *request)
         now_json_escape(creator, esc_creator, sizeof esc_creator);
         pos += snprintf(json + pos, sizeof json - (size_t)pos,
                         "%s{\"name\":\"%s\",\"kind\":\"%s\",\"code\":\"%s\","
-                        "\"creator\":\"%s\",\"sizeKB\":%ld,\"front\":%s}",
+                        "\"creator\":\"%s\",\"sizeKB\":%ld,\"front\":%s,"
+                        "\"psnHigh\":%lu,\"psnLow\":%lu}",
                         emitted > 0 ? "," : "", esc_name, kind, esc_code,
                         esc_creator, (long)(info.processSize / 1024),
-                        is_front ? "true" : "false");
+                        is_front ? "true" : "false",
+                        (unsigned long)psn.highLongOfPSN,
+                        (unsigned long)psn.lowLongOfPSN);
         ++emitted;
     }
     snprintf(json + pos, sizeof json - (size_t)pos,
              "],\"more\":%s,\"cursor\":%ld}", more ? "true" : "false",
              cursor + emitted);
+    send_control(json);
+}
+
+/* A drive verb: bring a process to front, or ask it to quit. The target
+   is the PSN the host echoed from a listing; because that listing may be
+   seconds stale, the PSN is re-validated against a live process first and
+   a dead one fails closed rather than driving whatever now holds that
+   serial. Both verbs answer with the one process.result shape. */
+static void serve_process_act(const char *request, Boolean quit)
+{
+    char json[192];
+    long id = now_json_find_int(request, "id", 0);
+    ProcessSerialNumber psn;
+    ProcessInfoRec info;
+    Str31 name;
+    OSErr err = noErr;
+    const char *reason = NULL;
+
+    psn.highLongOfPSN =
+        (unsigned long)now_json_find_int(request, "psnHigh", 0);
+    psn.lowLongOfPSN =
+        (unsigned long)now_json_find_int(request, "psnLow", 0);
+
+    memset(&info, 0, sizeof info);
+    info.processInfoLength = sizeof info;
+    info.processName = name;
+    info.processAppSpec = NULL;
+    name[0] = 0;
+    if (GetProcessInformation(&psn, &info) != noErr) {
+        reason = "that process is no longer running";
+    } else if (quit) {
+        ProcessSerialNumber self;
+        Boolean is_self = false;
+        /* Quitting NOW itself over the wire would sever the connection
+           mid-reply - refuse it here, where the current PSN is known,
+           rather than trusting the far end never to ask. */
+        if (GetCurrentProcess(&self) == noErr) {
+            (void)SameProcess(&psn, &self, &is_self);
+        }
+        if (is_self) {
+            reason = "NOW will not ask itself to quit";
+        } else {
+            err = now_proc_ask_quit(&psn);
+            if (err != noErr) {
+                reason = "the Mac would not deliver the quit request";
+            }
+        }
+    } else {
+        err = now_proc_bring_to_front(&psn);
+        if (err != noErr) {
+            reason = "the Mac would not bring it to the front";
+        }
+    }
+
+    if (reason == NULL) {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"process.result\",\"id\":%ld,\"ok\":true}", id);
+    } else {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"process.result\",\"id\":%ld,\"ok\":false,"
+                 "\"reason\":\"%s\"}", id, reason);
+    }
     send_control(json);
 }
 
@@ -3595,6 +3667,14 @@ static int handle_frame(const char *reply)
     }
     if (now_json_type_is(reply, "process.list")) {
         serve_process_list(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "process.front")) {
+        serve_process_act(reply, false);
+        return 1;
+    }
+    if (now_json_type_is(reply, "process.quit")) {
+        serve_process_act(reply, true);
         return 1;
     }
     if (now_json_type_is(reply, "file.get")) {
