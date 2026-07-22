@@ -82,6 +82,11 @@ static void check_common(const Rect *body, const ProcessesLayout *lay,
     CHECK(contains(&lay->detail, &lay->quit_btn), "quit in detail");
     CHECK(contains(&lay->detail, &lay->group), "group in detail");
     CHECK(contains(&lay->group, &lay->peek_line), "peek line in group");
+    CHECK(contains(&lay->group, &lay->capture_btn), "capture btn in group");
+    CHECK(lay->capture_btn.top >= lay->peek_line.bottom,
+          "capture btn below the status line");
+    CHECK(height(&lay->capture_btn) == kProcButtonHeight,
+          "capture btn height");
 
     /* The facts stack, the bar sits under the memory line, the window
        rows stack under their header, and the buttons never collide. */

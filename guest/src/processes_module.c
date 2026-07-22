@@ -6,8 +6,10 @@
 #include "confirm.h"
 #include "peek.h"
 #include "peek_read.h"
+#include "prefs.h"
 #include "processes_layout.h"
 #include "pump.h"
+#include "screenshot.h"
 
 /* The Processes page: a Data Browser of everything the Process Manager
    reports on the left, the selected process on the right, and the two
@@ -68,6 +70,24 @@ static ControlRef g_browser;
 static ControlRef g_front;
 static ControlRef g_quit;
 static ControlRef g_group;
+static ControlRef g_capture;          /* "Front & Capture" in the group box */
+
+/* Front & Capture runs in two steps so nothing nests an event loop: the
+   click brings the target forward and arms a deadline; a later idle,
+   once the target has come front and redrawn, reads its fresh window
+   bounds, crops the capture, and restores NOW. */
+static Boolean g_capture_pending;
+static ProcessSerialNumber g_capture_target;
+static ProcessSerialNumber g_capture_self;
+static unsigned long g_capture_deadline;
+static char g_capture_name[32];
+static short g_capture_hilite = -1;
+
+/* A transient message that outranks the process-count status line for a
+   few seconds - capture feedback, which the per-second walk would
+   otherwise overwrite immediately. */
+static char g_notice[96];
+static unsigned long g_notice_until;
 
 static ProcEntry g_procs[kMaxProcs];
 static int g_proc_count;
@@ -428,6 +448,81 @@ static void ask_to_quit(void)
     g_next_walk = 0;                  /* watch for the exit promptly */
 }
 
+/* A message that outranks the process count for a few seconds. */
+static void set_notice(const char *msg)
+{
+    snprintf(g_notice, sizeof g_notice, "%s", msg);
+    g_notice_until = TickCount() + 60 * 8;      /* ~8 seconds */
+}
+
+/* Step one of Front & Capture (main-loop code, from the button): bring
+   the selected process forward and arm the deferred capture. Nothing
+   nests a loop - the main loop gives the target time to come front, and
+   a later idle finishes the job. */
+static void front_and_capture(void)
+{
+    if (g_selected < 0 || g_selected >= g_proc_count) {
+        return;
+    }
+    if (g_sel_win_status != kNowPeekReadOk || g_sel_windows.count < 1) {
+        set_notice("No readable window to capture for this process.");
+        return;
+    }
+    if (GetCurrentProcess(&g_capture_self) != noErr) {
+        return;
+    }
+    g_capture_target = g_procs[g_selected].psn;
+    snprintf(g_capture_name, sizeof g_capture_name, "%.31s",
+             g_procs[g_selected].name);
+    SetFrontProcess(&g_capture_target);
+    g_capture_pending = true;
+    /* ~0.75 s for the target to come front and redraw before we read the
+       framebuffer; the main loop's WaitNextEvent yields do the waiting. */
+    g_capture_deadline = TickCount() + 45;
+    {
+        char msg[80];
+
+        snprintf(msg, sizeof msg, "Bringing %s forward to capture...",
+                 g_capture_name);
+        set_notice(msg);
+    }
+}
+
+/* Step two (from idle, once the deadline passes): read the now-front
+   target's fresh window bounds, crop the capture to them, restore NOW. */
+static void do_capture(void)
+{
+    NowPeekWindowList w;
+    Rect rect;
+    ShotStats stats;
+    char err[96];
+    char msg[120];
+    NowPrefs prefs;
+
+    g_capture_pending = false;
+    if (now_peek_windows_for_psn(&g_capture_target, &w) != kNowPeekReadOk
+        || w.count < 1) {
+        SetFrontProcess(&g_capture_self);
+        set_notice("The window could not be read for capture.");
+        return;
+    }
+    SetRect(&rect, w.windows[0].left, w.windows[0].top,
+            w.windows[0].right, w.windows[0].bottom);
+    now_prefs_load(&prefs);
+    if (now_screenshot_rect(&rect, prefs.shot_depth, true, &stats, err,
+                            sizeof err) != 0) {
+        SetFrontProcess(&g_capture_self);
+        snprintf(msg, sizeof msg, "Capture failed: %.80s", err);
+        set_notice(msg);
+        return;
+    }
+    SetFrontProcess(&g_capture_self);         /* back to NOW */
+    snprintf(msg, sizeof msg,
+             "Captured %s - %d x %d - saved \"%.24s\" on the Desktop",
+             g_capture_name, stats.width, stats.height, stats.saved_name);
+    set_notice(msg);
+}
+
 /* --- the list ----------------------------------------------------------- */
 
 static void row_caption(const ProcEntry *entry, char *out, long cap)
@@ -685,7 +780,11 @@ static OSErr procs_create(WindowRef owner, const Rect *body)
     CopyCStringToPascal("NOW Extension", text);
     g_group = NewControl(owner, &g_r.group, text, false, 0, 0, 1,
                          kControlGroupBoxTextTitleProc, 0);
-    if (g_front == NULL || g_quit == NULL || g_group == NULL) {
+    CopyCStringToPascal("Front & Capture", text);
+    g_capture = NewControl(owner, &g_r.capture_btn, text, false, 0, 0, 1,
+                           pushButProc, 0);
+    if (g_front == NULL || g_quit == NULL || g_group == NULL
+        || g_capture == NULL) {
         return memFullErr;
     }
     /* A missing Data Browser costs the list, not the page: the detail
@@ -704,6 +803,7 @@ static void procs_dispose(void)
     g_front = NULL;
     g_quit = NULL;
     g_group = NULL;
+    g_capture = NULL;
     dispose_callbacks();
 }
 
@@ -726,6 +826,7 @@ static void procs_show(Boolean visible)
     show_control(g_front, visible);
     show_control(g_quit, visible);
     show_control(g_group, visible);
+    show_control(g_capture, visible);
     /* Arm the anchor plane only while this page is the one consuming it,
        and release it on the way out - a machine whose user never opens
        Processes never runs the capture loop (the charter's rule). A
@@ -741,6 +842,7 @@ static void procs_show(Boolean visible)
         g_shown_mem_fill = -1;
         g_shown_mem[0] = g_shown_cpu[0] = g_shown_launched[0] = '\0';
         g_shown_freshness[0] = '\0';
+        g_capture_hilite = -1;
     } else {
         now_peek_disarm(kNowPeekCapAnchors);
     }
@@ -768,6 +870,9 @@ static void procs_layout(const Rect *body)
         MoveControl(g_group, g_r.group.left, g_r.group.top);
         SizeControl(g_group, (SInt16)(g_r.group.right - g_r.group.left),
                     (SInt16)(g_r.group.bottom - g_r.group.top));
+    }
+    if (g_capture != NULL) {
+        MoveControl(g_capture, g_r.capture_btn.left, g_r.capture_btn.top);
     }
 }
 
@@ -1040,6 +1145,13 @@ static Boolean procs_click(const EventRecord *event, Point local)
         }
         return true;
     }
+    if (g_capture != NULL && PtInRect(local, &g_r.capture_btn)) {
+        if (g_capture_hilite == 0
+            && TrackControl(g_capture, local, now_pump_action()) != 0) {
+            front_and_capture();
+        }
+        return true;
+    }
     if (g_browser != NULL && PtInRect(local, &g_r.list)) {
         /* The control runs its own tracking: selection and the header. */
         HandleControlClick(g_browser, local, event->modifiers, NULL);
@@ -1069,14 +1181,15 @@ static Boolean procs_key(const EventRecord *event)
 
 static void procs_activate(Boolean active)
 {
-    ControlRef controls[4];
+    ControlRef controls[5];
     int i;
 
     controls[0] = g_browser;
     controls[1] = g_front;
     controls[2] = g_quit;
     controls[3] = g_group;
-    for (i = 0; i < 4; ++i) {
+    controls[4] = g_capture;
+    for (i = 0; i < 5; ++i) {
         if (controls[i] == NULL) {
             continue;
         }
@@ -1089,6 +1202,7 @@ static void procs_activate(Boolean active)
     if (active) {
         g_front_hilite = -1;          /* re-derive the dimming */
         g_quit_hilite = -1;
+        g_capture_hilite = -1;
         if (g_browser != NULL && g_visible && g_owner != NULL) {
             SetKeyboardFocus(g_owner, g_browser, kControlFocusNextPart);
         }
@@ -1229,10 +1343,17 @@ static void procs_idle(void)
 {
     short want_front;
     short want_quit;
+    short want_capture;
     const ProcEntry *entry = NULL;
 
     if (g_owner == NULL || !g_visible) {
         return;
+    }
+    /* Finish a deferred Front & Capture once the target has had time to
+       come forward and redraw. Runs even while NOW is in the background,
+       which is exactly when it must. */
+    if (g_capture_pending && TickCount() >= g_capture_deadline) {
+        do_capture();
     }
     if (TickCount() >= g_next_walk) {
         g_next_walk = TickCount() + kWalkIntervalTicks;
@@ -1249,6 +1370,11 @@ static void procs_idle(void)
                          && entry->quit_state == kQuitNone)
                             ? 0
                             : 255);
+    /* Capture needs a window we could actually read through the plane. */
+    want_capture = (short)((g_sel_win_status == kNowPeekReadOk
+                            && g_sel_windows.count >= 1 && !g_capture_pending)
+                               ? 0
+                               : 255);
     if (want_front != g_front_hilite && g_front != NULL) {
         g_front_hilite = want_front;
         HiliteControl(g_front, want_front);
@@ -1257,11 +1383,17 @@ static void procs_idle(void)
         g_quit_hilite = want_quit;
         HiliteControl(g_quit, want_quit);
     }
+    if (want_capture != g_capture_hilite && g_capture != NULL) {
+        g_capture_hilite = want_capture;
+        HiliteControl(g_capture, want_capture);
+    }
 }
 
 static void procs_status_text(char *out, long cap)
 {
-    if (g_status[0] != '\0') {
+    if (g_notice[0] != '\0' && TickCount() < g_notice_until) {
+        snprintf(out, (size_t)cap, "%s", g_notice);
+    } else if (g_status[0] != '\0') {
         snprintf(out, (size_t)cap, "%s", g_status);
     } else {
         snprintf(out, (size_t)cap, "Reading the process list...");

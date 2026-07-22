@@ -73,6 +73,15 @@ void banded_capture_abort(BandedCapture *cap);
    converts during the blit). Caller owns the image; dispose when done. */
 int capture_screen(short depth, CaptureImage *image);
 
+/* Captures just `screen_rect` (global screen coordinates) - one blit, no
+   banding, sized to the rect. The rect is clamped to the screen first, so
+   a window poking off an edge yields its on-screen part; a rect wholly off
+   the screen returns kCaptureNoScreen. This is the anchor plane's payoff:
+   crop a capture to a window instead of grabbing the whole display. Caller
+   owns the image. */
+int capture_screen_rect(short depth, const Rect *screen_rect,
+                        CaptureImage *image);
+
 void capture_image_dispose(CaptureImage *image);
 
 #endif

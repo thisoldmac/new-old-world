@@ -27,6 +27,14 @@ typedef struct {
 int now_screenshot(short depth, short bands, Boolean save, ShotStats *stats,
                    char *err, long err_cap);
 
+/* Capture just `screen_rect` (global coords) - the anchor plane's payoff,
+   a window crop rather than the whole display. Encodes and (save) writes
+   the PICT, updates the preview, and fills stats, exactly like
+   now_screenshot but bounded to the rect. Returns 0, or a nonzero capture
+   error with err text. */
+int now_screenshot_rect(const Rect *screen_rect, short depth, Boolean save,
+                        ShotStats *stats, char *err, long err_cap);
+
 /* The most recent capture, scaled to preview size while the full pixels
    still existed. Owned by the screenshot path: replaced on the next
    capture, NULL before the first. bounds gets the preview's own

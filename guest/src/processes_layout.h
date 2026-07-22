@@ -29,7 +29,7 @@ enum {
     kProcMemBarHeight = 11,
     kProcMemBarMaxWidth = 200,
     kProcButtonHeight = 20,
-    kProcGroupMinHeight = 40, /* the extension box never collapses */
+    kProcGroupMinHeight = 62, /* the box holds the status line + button */
     kProcDetailWindows = 3,   /* window rows shown in the detail pane */
     kProcWindowRowHeight = 13
 };
@@ -51,6 +51,7 @@ typedef struct ProcessesLayout {
     Rect quit_btn;
     Rect group;               /* the NOW Extension group box */
     Rect peek_line;           /* status text inside the group box */
+    Rect capture_btn;         /* "Front & Capture", inside the group box */
 } ProcessesLayout;
 
 void processes_layout_compute(const Rect *body, ProcessesLayout *out);

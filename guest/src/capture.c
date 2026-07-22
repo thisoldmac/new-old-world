@@ -214,6 +214,84 @@ int capture_screen(short depth, CaptureImage *image)
     return kCaptureOK;
 }
 
+int capture_screen_rect(short depth, const Rect *screen_rect,
+                        CaptureImage *image)
+{
+    GDHandle device;
+    PixMapHandle screen_pix;
+    PixMapHandle pixels;
+    GWorldPtr world = NULL;
+    Rect screen_bounds;
+    Rect clip;
+    Rect world_bounds;
+    CGrafPtr saved_port;
+    GDHandle saved_device;
+    RGBColor black = { 0, 0, 0 };
+    RGBColor white = { 0xFFFF, 0xFFFF, 0xFFFF };
+    OSErr err;
+    long w, h;
+
+    memset(image, 0, sizeof *image);
+    if (!capture_depth_is_supported(depth)) {
+        return kCaptureInvalidDepth;
+    }
+    device = GetMainDevice();
+    if (device == NULL || (**device).gdPMap == NULL) {
+        return kCaptureNoScreen;
+    }
+    screen_pix = (**device).gdPMap;
+    screen_bounds = (**screen_pix).bounds;
+
+    /* Clamp the requested rect to the screen: a window may extend past an
+       edge, and CopyBits must not read outside the framebuffer. */
+    clip = *screen_rect;
+    if (clip.left < screen_bounds.left) {
+        clip.left = screen_bounds.left;
+    }
+    if (clip.top < screen_bounds.top) {
+        clip.top = screen_bounds.top;
+    }
+    if (clip.right > screen_bounds.right) {
+        clip.right = screen_bounds.right;
+    }
+    if (clip.bottom > screen_bounds.bottom) {
+        clip.bottom = screen_bounds.bottom;
+    }
+    w = clip.right - clip.left;
+    h = clip.bottom - clip.top;
+    if (w < 1 || h < 1) {
+        return kCaptureNoScreen;      /* wholly off-screen */
+    }
+
+    SetRect(&world_bounds, 0, 0, (short)w, (short)h);
+    err = NewGWorld(&world, depth, &world_bounds, NULL, NULL, useTempMem);
+    if (err != noErr || world == NULL) {
+        return kCaptureNoMemory;
+    }
+    pixels = GetGWorldPixMap(world);
+    if (pixels == NULL || !LockPixels(pixels)) {
+        DisposeGWorld(world);
+        return kCapturePixelsUnavailable;
+    }
+    GetGWorld(&saved_port, &saved_device);
+    SetGWorld(world, NULL);
+    RGBForeColor(&black);
+    RGBBackColor(&white);
+    LockPixels(screen_pix);
+    CopyBits((BitMapPtr)*screen_pix, GetPortBitMapForCopyBits(world),
+             &clip, &world_bounds, srcCopy, NULL);
+    UnlockPixels(screen_pix);
+    SetGWorld(saved_port, saved_device);
+    UnlockPixels(pixels);
+
+    image->world = world;
+    image->bounds = world_bounds;
+    image->depth = depth;
+    image->row_bytes = (short)((**pixels).rowBytes & 0x3FFF);
+    image->pixel_bytes = (long)image->row_bytes * h;
+    return kCaptureOK;
+}
+
 void capture_image_dispose(CaptureImage *image)
 {
     if (image != NULL && image->world != NULL) {

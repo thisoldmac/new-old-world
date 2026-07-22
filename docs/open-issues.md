@@ -238,6 +238,25 @@ working on the PowerBook.
   selected. Also that window titles read correctly (another foreign
   pointer hop, `titleHandle`), and that per-app window-count reads every
   second don't cost visible time on the 33 MHz metal.
+- **Rung 2b - Front & Capture** (2026-07-21, app-only, extension
+  unchanged). The first USE of the window bounds: a "Front & Capture"
+  button in the NOW Extension group box, enabled when the selected
+  process has a readable window. It brings that process to front, then
+  DEFERS the capture to a later idle (~0.75 s) so nothing nests an event
+  loop - the main loop's WaitNextEvent yields give the target time to
+  come forward and redraw. The idle then reads the now-front window's
+  fresh bounds, crops the capture to them (`capture_screen_rect` /
+  `now_screenshot_rect` - one blit, clamped to the screen), saves a PICT
+  to the Desktop, and restores NOW. Result reported in a transient
+  status notice.
+
+  **Watch on metal:** that the crop lands on the RIGHT window at the
+  right size (the strucRgn bbox includes the title bar; the capture is
+  the whole window, not just content); that the 0.75 s settle is enough
+  for a heavy window to redraw before the blit (a partial redraw would
+  capture mid-draw - lengthen the deadline if so); the focus flip to the
+  target and back to NOW; and off-screen/edge windows clamping cleanly.
+  The captured PICT opens in SimpleText (type PICT / creator ttxt).
 - **Prefs v10 module renumbering.** Connection moved 4 to 5; a v9 file
   should reopen on the page the person had (the remap is three lines
   in `now_prefs_load`), exercised only by reasoning - same status as
