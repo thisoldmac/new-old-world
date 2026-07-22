@@ -195,12 +195,12 @@ static void help_for(const char *name)
         console_model_append("  seconds) and shows one page of applications.");
     } else if (strcmp(name, "launch") == 0) {
         console_model_append("launch - open an application on this Mac");
-        console_model_append("  Usage: launch <name [version] | full path | #n>");
-        console_model_append("  A bare name searches the startup disk. If several");
-        console_model_append("  apps share it, the NEWEST launches and the reply");
-        console_model_append("  says which. To force one: add its version");
-        console_model_append("  (\"launch SimpleText 1.1.1\"), give a full path, or");
-        console_model_append("  \"vers <name>\" then \"launch #2\".");
+        console_model_append("  Usage: launch [-v VERSION] <name | path | #n>");
+        console_model_append("  The name is the whole rest of the line - spaces");
+        console_model_append("  need no quotes. If several apps share it, the");
+        console_model_append("  first launches and the reply names its version.");
+        console_model_append("  To force one: -v (\"launch -v 1.1.1 SimpleText\"),");
+        console_model_append("  a full path, or \"vers <name>\" then \"launch #2\".");
     } else if (strcmp(name, "vers") == 0) {
         console_model_append("vers - one file's version resources");
         console_model_append("  Usage: vers <name | full path | #n>");

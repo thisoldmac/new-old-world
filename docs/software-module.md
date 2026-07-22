@@ -102,21 +102,31 @@ numbered, full path wrapped** (bounded at five) — the metal run found
 multiple SimpleTexts immediately, and which copy answered is the whole
 point on a disk with duplicates.
 
-**Launch disambiguation (revised after metal, 2026-07-22).** The first
-cut *refused* an ambiguous `launch` and made the person pick. On a real
-disk that was too much ceremony for "just open it," so `launch <name>`
-now **launches the highest-versioned copy and names it** in the reply
-— a visible answer, not a hidden guess. Control is additive:
-`launch <name> <version>` forces a copy by its short version string
-(the whole arg is tried as a literal name *first*, so "Sherlock 2" and
-"Illustrator® 8.0" stay whole; only a name that matches nothing peels a
-trailing `1.2.3`), a full path is exact, and `#n` still picks from the
-last search. Choosing the newest reads each candidate's `'vers'` — the
-expensive path — but bounded: a handful of fork opens, only on an
-ambiguous launch. Marked for later, not this ladder: a **duplicate
-finder** — group the sweep by name, lazily `vers` each group, and
-present same-version/different-version pairs for user-driven
-consolidation.
+**Launch disambiguation (settled after two metal rounds, 2026-07-22).**
+The path here was instructive: it went *refuse-and-list* →
+*launch-newest* → the shape below.
+
+- `launch <name>` — name is the **whole remainder** (spaces need no
+  quotes; surrounding quotes are stripped if used, so the Unix reflex
+  is harmless). One match launches. **Several** launches the *first
+  found* and the reply names its version — a visible answer, cheap
+  (one fork open to name what we opened, no vers *walk*).
+- `launch -v <version> <name>` — a leading flag forces the copy at that
+  short version string (reads candidates' `'vers'` to match — bounded,
+  explicit). The flag is leading-only so the name after it stays whole.
+- Full path and `#n` (from the last search's stored matches, which
+  `vers <name>` prints) round out the explicit picks.
+
+Why not *require* quotes, Unix-style? Because classic-Mac names are
+space-heavy ("Adobe Photoshop® 5.0"), so the whole-remainder rule is
+far less friction than quoting every launch; the `-v` flag removes the
+positional-version ambiguity that made a tokenizer tempting in the
+first place. Why first-found not highest-version by default? Reading
+every candidate's `'vers'` on *every* ambiguous launch is the expensive
+path we measured; first-found + a named version + `-v` to override is
+the honest, cheap middle. Marked for later, not this ladder: a
+**duplicate finder** — group the sweep by name, lazily `vers` each
+group, present same/different-version pairs for consolidation.
 
 ### Running tags — the Processes join
 

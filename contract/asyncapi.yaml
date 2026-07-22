@@ -1621,14 +1621,15 @@ components:
         Open an application on the receiver: the software family's one
         mutation. A bare name is resolved by an exact-name catalog
         search of the startup volume; a full HFS path (contains a
-        colon) is used directly, and non-APPL targets are refused. When
-        a bare name matches SEVERAL applications the responder launches
-        the highest-versioned and the reply says which — a visible
-        answer, not a hidden guess (choosing reads each candidate's
-        'vers', bounded to a handful of fork opens on an ambiguous
-        launch). To force a copy: append its short version string
-        ("SimpleText 1.1.1"), give a full path, or "#n" from the last
-        search's stored matches (which "vers <name>" prints). The launched app comes to that machine's
+        colon) is used directly, and non-APPL targets are refused. The
+        name is the whole target after an optional flag — spaces need
+        no quoting (surrounding quotes are stripped if used). When a
+        bare name matches SEVERAL applications the responder launches
+        the first found and the reply names its version (one fork open,
+        not a walk). To force a copy: the leading flag "-v VERSION"
+        matches a short version string ("-v 1.1.1 SimpleText"), a full
+        path is exact, or "#n" picks from the last search's stored
+        matches (which "vers <name>" prints). The launched app comes to that machine's
         front (LaunchApplication without launchDontSwitch), which the
         next process.listing or process.shot will show. Both outcomes
         are logged under the sw area with the wire id.
@@ -1638,10 +1639,10 @@ components:
           target:
             type: string
             description: >
-              An application name, "Name VERSION" to force one copy, a
-              full HFS path, or "#n" from the stored match list.
-              "target" and not "name" — see the arg-key rule in the
-              preamble above.
+              "[-v VERSION] NAME", where NAME is the whole remainder
+              (spaces need no quotes); or a full HFS path; or "#n" from
+              the stored match list. "target" and not "name" — see the
+              arg-key rule in the preamble above.
       output:
         type: object
         properties:

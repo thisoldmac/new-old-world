@@ -876,26 +876,6 @@ static Boolean split_trailing_version(const char *arg, char *name,
     return true;
 }
 
-/* Index of the highest-versioned match; ties keep the first found. */
-static int highest_match(const FindCtx *ctx)
-{
-    int shown = ctx->hits < kResolveMax ? ctx->hits : kResolveMax;
-    unsigned long best_key = 0;
-    int best = 0;
-    int i;
-
-    for (i = 0; i < shown; ++i) {
-        unsigned long k = 0;
-
-        file_vers(&ctx->specs[i], &k, NULL, 0);
-        if (i == 0 || k > best_key) {
-            best_key = k;
-            best = i;
-        }
-    }
-    return best;
-}
-
 /* --- launch -------------------------------------------------------------- */
 
 /* note is appended after "launched <name>" — the version and, when a
@@ -965,25 +945,94 @@ static int launch_at_version(const FindCtx *ctx, const char *name,
     }
 }
 
+/* Surrounding matching quotes are stripped if present — a nicety, not a
+   rule: classic-Mac names are full of spaces, so the name is the whole
+   remainder after any flag, and quoting it is optional. */
+static char *strip_quotes(char *s)
+{
+    long n = (long)strlen(s);
+
+    if (n >= 2 && (s[0] == '"' || s[0] == '\'') && s[n - 1] == s[0]) {
+        s[n - 1] = '\0';
+        return s + 1;
+    }
+    return s;
+}
+
+/* Parse the launch target in place: an optional leading "-v VERSION"
+   flag (forces a copy by its short version string), then the name as
+   the WHOLE remainder — spaces and all, no quoting required — with
+   surrounding quotes stripped if the person used them anyway. Returns
+   the name, or NULL with a usage message. */
+static char *parse_launch_target(char *work, char *ver, long vcap,
+                                 char *msg, long cap)
+{
+    char *p = work;
+
+    ver[0] = '\0';
+    while (*p == ' ') {
+        ++p;
+    }
+    if (p[0] == '-' && p[1] == 'v' && (p[2] == ' ' || p[2] == '\0')) {
+        char *vs;
+
+        p += 2;
+        while (*p == ' ') {
+            ++p;
+        }
+        vs = p;
+        while (*p != '\0' && *p != ' ') {
+            ++p;
+        }
+        if (*p != '\0') {
+            *p++ = '\0';
+        }
+        snprintf(ver, (size_t)vcap, "%s", vs);
+        while (*p == ' ') {
+            ++p;
+        }
+        if (ver[0] == '\0' || *p == '\0') {
+            snprintf(msg, (size_t)cap, "usage: launch -v VERSION NAME");
+            return NULL;
+        }
+    }
+    p = strip_quotes(p);
+    if (*p == '\0') {
+        snprintf(msg, (size_t)cap,
+                 "launch what? (a name, -v VERSION NAME, a path, or #n)");
+        return NULL;
+    }
+    return p;
+}
+
 int now_software_launch(const char *arg, char *msg, long cap)
 {
+    char work[256];
+    char ver[36];
     FSSpec spec;
     Str255 parg;
     FindCtx ctx;
     OSErr err;
+    char *name;
     int pick;
 
     if (arg == NULL || arg[0] == '\0') {
-        snprintf(msg, (size_t)cap, "launch what? (a name, a path, or #n)");
+        snprintf(msg, (size_t)cap,
+                 "launch what? (a name, -v VERSION NAME, a path, or #n)");
         return -1;
     }
     if (strlen(arg) > 255) {
         snprintf(msg, (size_t)cap, "that is longer than any HFS path");
         return -1;
     }
+    snprintf(work, sizeof work, "%s", arg);
+    name = parse_launch_target(work, ver, sizeof ver, msg, cap);
+    if (name == NULL) {
+        return -1;
+    }
 
-    /* "#n": a still-supported explicit pick from the last search. */
-    pick = parse_pick(arg);
+    /* "#n": an explicit pick from the last search (any -v is ignored). */
+    pick = parse_pick(name);
     if (pick > 0) {
         if (pick > g_last.hits) {
             snprintf(msg, (size_t)cap, g_last.hits == 0
@@ -995,13 +1044,13 @@ int now_software_launch(const char *arg, char *msg, long cap)
     }
 
     /* A full path names one file exactly; it must be an application. */
-    if (strchr(arg, ':') != NULL) {
+    if (strchr(name, ':') != NULL) {
         CInfoPBRec pb;
         Str63 pname;
 
-        CopyCStringToPascal(arg, parg);
+        CopyCStringToPascal(name, parg);
         if (FSMakeFSSpec(0, 0, parg, &spec) != noErr) {
-            snprintf(msg, (size_t)cap, "no such file: %.200s", arg);
+            snprintf(msg, (size_t)cap, "no such file: %.200s", name);
             return -1;
         }
         memcpy(pname, spec.name, (size_t)spec.name[0] + 1);
@@ -1022,65 +1071,52 @@ int now_software_launch(const char *arg, char *msg, long cap)
         return launch_spec(&spec, "", msg, cap);
     }
 
-    /* A bare name: the WHOLE string is tried as an application name
-       first, so a real name with a trailing number ("Sherlock 2") wins.
-       Only if nothing is named that do we read a trailing "1.2.3" as a
-       version selector. */
-    CopyCStringToPascal(arg, parg);
+    /* A bare name — the whole remainder, taken literally. */
+    CopyCStringToPascal(name, parg);
     if (parg[0] > 31) {
         snprintf(msg, (size_t)cap,
-                 "no application named %.200s (names cap at 31)", arg);
+                 "no application named %.200s (names cap at 31)", name);
         return -1;
     }
     err = find_by_name(parg, &ctx);
 
     if (ctx.hits == 0) {
-        char name[64], ver[36];
-        Str255 pname;
+        char sn[64], sv[36];
 
-        if (split_trailing_version(arg, name, sizeof name, ver,
-                                   sizeof ver)) {
-            CopyCStringToPascal(name, pname);
-            if (pname[0] > 31) {
-                snprintf(msg, (size_t)cap, "no application named %.200s",
-                         name);
-                return -1;
-            }
-            err = find_by_name(pname, &ctx);
-            if (ctx.hits == 0) {
-                snprintf(msg, (size_t)cap, err == eofErr
-                         ? "no application named %.200s"
-                         : "%.200s not found before the search gave up",
-                         name);
-                return -1;
-            }
-            return launch_at_version(&ctx, name, ver, msg, cap);
+        /* An old-style "Name 1.2.3" that matched nothing gets pointed
+           at the flag rather than a bare failure. */
+        if (ver[0] == '\0'
+            && split_trailing_version(name, sn, sizeof sn, sv, sizeof sv)) {
+            snprintf(msg, (size_t)cap,
+                     "no application named %.50s - did you mean "
+                     "\"launch -v %.20s %.50s\"?", name, sv, sn);
+        } else {
+            snprintf(msg, (size_t)cap, err == eofErr
+                     ? "no application named %.200s"
+                     : "%.200s not found before the search gave up", name);
         }
-        snprintf(msg, (size_t)cap, err == eofErr
-                 ? "no application named %.200s"
-                 : "%.200s not found before the search gave up", arg);
         return -1;
     }
 
+    if (ver[0] != '\0') {
+        return launch_at_version(&ctx, name, ver, msg, cap);
+    }
     if (ctx.hits == 1) {
         return launch_spec(&ctx.specs[0], "", msg, cap);
     }
 
-    /* Several copies: launch the newest, and SAY which — a visible
-       answer with the version, not a hidden guess. The rest are one
-       "vers <name>" (or "launch #n") away. */
+    /* Several copies and no version asked: launch the FIRST found and
+       warn, naming its version — one fork open to name what we opened,
+       not a walk. -v, a full path, or "#n" picks another. */
     {
-        int best = highest_match(&ctx);
-        char ver[36];
         char note[128];
 
-        file_vers(&ctx.specs[best], NULL, ver, sizeof ver);
+        file_vers(&ctx.specs[0], NULL, ver, sizeof ver);
         snprintf(note, sizeof note,
-                 " %s (newest of %d%s; \"vers %.28s\" lists them)",
+                 " %s - 1 of %d copies; -v or \"vers %.24s\" picks another",
                  ver[0] != '\0' ? ver : "no version",
-                 ctx.hits > kResolveMax ? kResolveMax : ctx.hits,
-                 ctx.hits > kResolveMax ? "+" : "", arg);
-        return launch_spec(&ctx.specs[best], note, msg, cap);
+                 ctx.hits > kResolveMax ? kResolveMax : ctx.hits, name);
+        return launch_spec(&ctx.specs[0], note, msg, cap);
     }
 }
 
