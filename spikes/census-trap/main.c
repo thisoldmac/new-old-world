@@ -297,6 +297,14 @@ static void run_probe(void)
             sig = (unsigned short)((buf[0] << 8) | buf[1]);
             report("ata id $%08lX: err=%d result=%d word0=$%04X",
                    ids[k], (int)err, (int)pb.result, sig);
+            if (err == noErr && pb.result == noErr) {
+                /* dump the first 16 bytes so an empty buffer is unambiguous */
+                report("  buf: %02X %02X %02X %02X %02X %02X %02X %02X "
+                       "%02X %02X %02X %02X %02X %02X %02X %02X",
+                       buf[0], buf[1], buf[2], buf[3], buf[4], buf[5],
+                       buf[6], buf[7], buf[8], buf[9], buf[10], buf[11],
+                       buf[12], buf[13], buf[14], buf[15]);
+            }
             if (err == noErr && pb.result == noErr && sig != 0) {
                 char model[42];
                 int i;
