@@ -235,18 +235,6 @@ final class GuestListener: ObservableObject {
         }
     }
 
-    /// Answers a process.list request from the guest with this Mac's own
-    /// running processes — the symmetric mirror direction.
-    fileprivate func serveProcessList(_ request: ProcessList) {
-        let page = HostProcesses.page(cursor: request.cursor ?? 1)
-        note("#\(request.id) listed \(page.entries.count) "
-             + "process\(page.entries.count == 1 ? "" : "es")",
-             area: "processes")
-        session?.send(.processListing(ProcessListing(
-            id: request.id, processes: page.entries,
-            more: page.more, cursor: page.next)))
-    }
-
     /// Answers a pull request: the same begin / bulk / end shape the
     /// guest uses, metered the same way.
     fileprivate func serveGet(_ request: FileGet) {
@@ -1044,9 +1032,6 @@ final class GuestListener: ObservableObject {
             onProcessListing: { [weak self] listing in
                 self?.resolveProcessListing(listing)
             },
-            onServeProcessList: { [weak self] request in
-                self?.serveProcessList(request)
-            },
             onReceived: { [weak self] url in
                 self?.noteReceived(url)
             },
@@ -1119,7 +1104,6 @@ final class Session {
     private let onAcceptOffer: (FileOffer) -> Void
     private let onServeChange: (GuestListener.ChangeRequest) -> Void
     private let onProcessListing: (ProcessListing) -> Void
-    private let onServeProcessList: (ProcessList) -> Void
     private let onReceived: (URL) -> Void
     private let onOutboundProgress: (Int, Int) -> Void
     private let onOutboundFailed: (String) -> Void
@@ -1186,7 +1170,6 @@ final class Session {
          onAcceptOffer: @escaping (FileOffer) -> Void,
          onServeChange: @escaping (GuestListener.ChangeRequest) -> Void,
          onProcessListing: @escaping (ProcessListing) -> Void,
-         onServeProcessList: @escaping (ProcessList) -> Void,
          onReceived: @escaping (URL) -> Void,
          onOutboundProgress: @escaping (Int, Int) -> Void,
          onOutboundFailed: @escaping (String) -> Void,
@@ -1217,7 +1200,6 @@ final class Session {
         self.onAcceptOffer = onAcceptOffer
         self.onServeChange = onServeChange
         self.onProcessListing = onProcessListing
-        self.onServeProcessList = onServeProcessList
         self.onReceived = onReceived
         self.onOutboundProgress = onOutboundProgress
         self.onOutboundFailed = onOutboundFailed
@@ -1357,8 +1339,6 @@ final class Session {
             onServeList(request)
         case .processListing(let listing):
             onProcessListing(listing)
-        case .processList(let request):
-            onServeProcessList(request)
         case .fileGet(let request):
             onServeGet(request)
         case .fileOffer(let offer):
