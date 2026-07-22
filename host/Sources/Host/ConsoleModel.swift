@@ -388,8 +388,9 @@ final class ConsoleModel: ObservableObject {
         }
     }
 
-    /// launch takes the rest of the line whole — application names have
-    /// spaces, and quoting is not a thing either console asks for.
+    /// launch forwards the whole line as one target string and parses
+    /// nothing: the -v flag, quotes, #n and paths are all read guest-side
+    /// in now_software_launch, so there is one parser, not two dialects.
     private func runLaunch(_ rest: [String]) {
         let name = rest.joined(separator: " ")
             .trimmingCharacters(in: .whitespaces)
