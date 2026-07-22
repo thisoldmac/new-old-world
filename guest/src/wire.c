@@ -14,6 +14,7 @@
 #include "pixels.h"
 #include "contract.h"
 #include "ot_carbon.h"
+#include "peek_read.h"
 #include "prefs.h"
 #include "proc_actions.h"
 #include "product_identity.h"
@@ -95,6 +96,7 @@ static Boolean send_owns_transfer(long id);
 static void take_bulk_in(const unsigned char *bytes, long len);
 static void put_drop(void);
 static void stream_drop(void);
+static void shot_drop(void);
 static void note_shot(const char *line);
 
 /* Only the connect operation runs asynchronously: on the physical
@@ -254,6 +256,7 @@ static void enter_backoff(void)
     xfer_cleanup();                   /* a dropped link cancels any transfer */
     offer_cleanup();
     stream_drop();                    /* no stopped message on a dead wire */
+    shot_drop();                      /* no deferred capture across a drop */
     put_drop();                       /* no half-written file left behind */
     ctlq_clear();
     close_endpoint();
@@ -768,6 +771,24 @@ static struct {
     short pace_ms;
 } g_xfer;
 
+/* "Screenshot App" (process.shot): bring a process forward, let it come
+   front and redraw, then capture just its front window and deliver that
+   over the capture transport - the wire-driven twin of the Processes
+   page's Front & Capture, cropped to the window rather than the screen.
+   Two-step, like that page: front now, capture from a later service pass,
+   so nothing nests an event loop while the target repaints. */
+static struct {
+    Boolean active;
+    ProcessSerialNumber target;
+    ProcessSerialNumber self;         /* NOW, to restore once captured */
+    long id;
+    short depth;
+    long chunk;
+    short pace_ms;
+    Boolean pack;
+    unsigned long deadline;
+} g_shot;
+
 static int bulk_frame_partially_sent(void)
 {
     return g_xfer.active && g_xfer.frame_sent > 0
@@ -1038,6 +1059,26 @@ static unsigned short next_xfer(void)
     return g.transfer_seq;
 }
 
+/* Fills the meta and exports the wire pixels from an already-captured
+   image, disposing it either way. Shared by the full-screen and
+   window-cropped gatherers. */
+static int export_shot(CaptureImage *image, short depth, Boolean pack,
+                       unsigned long t_start, PixelBlob *blob, ShotMeta *meta)
+{
+    memset(meta, 0, sizeof *meta);    /* kind = kFrameStandalone */
+    meta->capture_ms = (long)((TickCount() - t_start) * 1000 / 60);
+    meta->width = (short)(image->bounds.right - image->bounds.left);
+    meta->height = (short)(image->bounds.bottom - image->bounds.top);
+    meta->depth = depth;
+    meta->row_bytes = image->row_bytes;
+    if (now_pixels_export(image, pack, blob) != 0) {
+        capture_image_dispose(image);
+        return 0;
+    }
+    capture_image_dispose(image);
+    return 1;
+}
+
 /* Captures the screen and exports the wire pixels. On success the blob is
    the caller's to dispose. */
 static int gather_shot(short depth, Boolean pack, PixelBlob *blob,
@@ -1046,21 +1087,24 @@ static int gather_shot(short depth, Boolean pack, PixelBlob *blob,
     CaptureImage image;
     unsigned long t_start = TickCount();
 
-    memset(meta, 0, sizeof *meta);    /* kind = kFrameStandalone */
     if (capture_screen(depth, &image) != kCaptureOK) {
         return 0;
     }
-    meta->capture_ms = (long)((TickCount() - t_start) * 1000 / 60);
-    meta->width = (short)(image.bounds.right - image.bounds.left);
-    meta->height = (short)(image.bounds.bottom - image.bounds.top);
-    meta->depth = depth;
-    meta->row_bytes = image.row_bytes;
-    if (now_pixels_export(&image, pack, blob) != 0) {
-        capture_image_dispose(&image);
+    return export_shot(&image, depth, pack, t_start, blob, meta);
+}
+
+/* As gather_shot, but captures a single screen rectangle - the anchor
+   plane's payoff, used to crop "Screenshot App" to a process's window. */
+static int gather_shot_rect(short depth, const Rect *rect, Boolean pack,
+                            PixelBlob *blob, ShotMeta *meta)
+{
+    CaptureImage image;
+    unsigned long t_start = TickCount();
+
+    if (capture_screen_rect(depth, rect, &image) != kCaptureOK) {
         return 0;
     }
-    capture_image_dispose(&image);
-    return 1;
+    return export_shot(&image, depth, pack, t_start, blob, meta);
 }
 
 /* Announces capture.begin and arms the incremental sender. Takes ownership
@@ -1217,6 +1261,106 @@ static void serve_capture(const char *request)
         return;
     }
     arm_transfer(id, xfer, &meta, &blob, chunk, pace_ms, false);
+}
+
+/* The one failure shape a solicited capture (or shot) owes the host, so
+   it never waits on a transfer that will not come. */
+static void capture_fail(long id)
+{
+    char json[128];
+
+    snprintf(json, sizeof json,
+             "{\"type\":\"capture.end\",\"id\":%ld,\"transfer\":%u,"
+             "\"ok\":false}", id, next_xfer());
+    send_control(json);
+}
+
+static void shot_drop(void)
+{
+    g_shot.active = false;
+}
+
+/* "Screenshot App": front the target, then arm the deferred capture. No
+   reply yet - the answer is the capture transfer (or a capture.end
+   ok:false), correlated by this id, exactly as a plain capture.request. */
+static void serve_process_shot(const char *request)
+{
+    NowPrefs prefs;
+    ProcessSerialNumber psn;
+    ProcessInfoRec info;
+    Str31 name;
+    long id = now_json_find_int(request, "id", 0);
+    long depth_arg = now_json_find_int(request, "depth", 0);
+
+    if (g_stream.active || g_xfer.active || g_shot.active) {
+        capture_fail(id);             /* one transfer at a time */
+        return;
+    }
+    psn.highLongOfPSN =
+        (unsigned long)now_json_find_int(request, "psnHigh", 0);
+    psn.lowLongOfPSN =
+        (unsigned long)now_json_find_int(request, "psnLow", 0);
+
+    memset(&info, 0, sizeof info);
+    info.processInfoLength = sizeof info;
+    info.processName = name;
+    info.processAppSpec = NULL;
+    name[0] = 0;
+    if (GetProcessInformation(&psn, &info) != noErr
+        || GetCurrentProcess(&g_shot.self) != noErr) {
+        capture_fail(id);
+        return;
+    }
+    now_prefs_load(&prefs);
+    g_shot.target = psn;
+    g_shot.id = id;
+    g_shot.depth = capture_depth_is_supported((short)depth_arg)
+        ? (short)depth_arg : prefs.shot_depth;
+    tuning_from_json(request, &prefs, &g_shot.chunk, &g_shot.pace_ms,
+                     &g_shot.pack);
+    now_proc_bring_to_front(&psn);
+    g_shot.active = true;
+    /* ~0.75 s for the target to come front and repaint before we read the
+       framebuffer - the same beat the Front & Capture page waits. */
+    g_shot.deadline = TickCount() + 45;
+}
+
+/* Fires the deferred shot once the target has had time to come forward:
+   read its front window's fresh bounds, crop the capture to them, restore
+   NOW, and deliver over the capture transport. */
+static void service_shot(void)
+{
+    NowPeekWindowList w;
+    Rect rect;
+    PixelBlob blob;
+    ShotMeta meta;
+
+    if (!g_shot.active || TickCount() < g_shot.deadline) {
+        return;
+    }
+    g_shot.active = false;
+
+    if (now_peek_windows_for_psn(&g_shot.target, &w) != kNowPeekReadOk
+        || w.count < 1) {
+        SetFrontProcess(&g_shot.self);
+        capture_fail(g_shot.id);      /* no window to bound the shot */
+        return;
+    }
+    SetRect(&rect, w.windows[0].left, w.windows[0].top,
+            w.windows[0].right, w.windows[0].bottom);
+
+    memset(&blob, 0, sizeof blob);
+    if (!gather_shot_rect(g_shot.depth, &rect, g_shot.pack, &blob, &meta)) {
+        SetFrontProcess(&g_shot.self);
+        capture_fail(g_shot.id);
+        return;
+    }
+    /* The pixels are grabbed; NOW can come back to the front to send them
+       (it pumps the wire either way, but this keeps the human's machine
+       where they left it). */
+    SetFrontProcess(&g_shot.self);
+    arm_transfer(g_shot.id, next_xfer(), &meta, &blob, g_shot.chunk,
+                 g_shot.pace_ms, false);
 }
 
 /* --- guest-initiated push ----------------------------------------------
@@ -3677,6 +3821,10 @@ static int handle_frame(const char *reply)
         serve_process_act(reply, true);
         return 1;
     }
+    if (now_json_type_is(reply, "process.shot")) {
+        serve_process_shot(reply);
+        return 1;
+    }
     if (now_json_type_is(reply, "file.get")) {
         serve_file_get(reply);
         return 1;
@@ -3995,6 +4143,9 @@ void conn_service(void)
         }
         if (g.phase == kConnConnected) {
             service_stream();
+        }
+        if (g.phase == kConnConnected) {
+            service_shot();
         }
         if (g.phase == kConnConnected) {
             service_transfer();

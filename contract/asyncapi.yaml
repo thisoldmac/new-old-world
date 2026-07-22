@@ -119,6 +119,7 @@ channels:
       processListing: { $ref: "#/components/messages/processListing" }
       processFront: { $ref: "#/components/messages/processFront" }
       processQuit: { $ref: "#/components/messages/processQuit" }
+      processShot: { $ref: "#/components/messages/processShot" }
       processResult: { $ref: "#/components/messages/processResult" }
   bulk:
     address: "1"
@@ -348,14 +349,19 @@ operations:
     messages:
       - $ref: "#/channels/control/messages/processFront"
       - $ref: "#/channels/control/messages/processQuit"
+      - $ref: "#/channels/control/messages/processShot"
     description: >
       The drive verbs, same host->guest arrow as the listing: process.front
       brings a process forward (SetFrontProcess), process.quit asks it to
-      quit (a 'quit' Apple Event it may decline). Each names its target by
+      quit (a 'quit' Apple Event it may decline), and process.shot fronts a
+      process then captures just its front window. Each names its target by
       the PSN echoed from a process.listing entry; the guest re-validates
-      that PSN against a live process before acting. Like the listing, the
-      reverse direction is a non-goal - the guest issues no drive verbs at
-      the host.
+      that PSN against a live process before acting. process.front and
+      process.quit answer with process.result; process.shot answers with a
+      capture transfer (capture.begin/bulk/end), or capture.end ok:false on
+      failure - it reuses the capture transport rather than inventing one.
+      Like the listing, the reverse direction is a non-goal - the guest
+      issues no drive verbs at the host.
   guestAnswersDrive:
     action: send
     channel: { $ref: "#/channels/control" }
@@ -489,6 +495,9 @@ components:
     processQuit:
       name: process.quit
       payload: { $ref: "#/components/schemas/ProcessQuit" }
+    processShot:
+      name: process.shot
+      payload: { $ref: "#/components/schemas/ProcessShot" }
     processResult:
       name: process.result
       payload: { $ref: "#/components/schemas/ProcessResult" }
@@ -820,6 +829,26 @@ components:
           type: integer
           description: High half of the target's PSN, as process.front.
         psnLow: { type: integer }
+    ProcessShot:
+      type: object
+      required: [type, id, psnHigh, psnLow]
+      additionalProperties: false
+      properties:
+        type: { const: process.shot }
+        id: { type: integer }
+        psnHigh:
+          type: integer
+          description: >
+            High half of the target's PSN. The guest brings that process
+            forward, waits for it to repaint, then captures ONLY its front
+            window and delivers the crop over the capture transport
+            (capture.begin/bulk/end), correlated by this id exactly as a
+            plain capture.request. On any failure it answers capture.end
+            ok:false with this id, so the requester never waits forever.
+        psnLow: { type: integer }
+        depth:
+          enum: [1, 2, 4, 8, 16, 32]
+          description: Capture bit depth; the guest's preference if omitted.
     ProcessResult:
       type: object
       required: [type, id, ok]

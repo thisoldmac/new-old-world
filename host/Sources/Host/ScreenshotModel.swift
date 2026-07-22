@@ -371,31 +371,54 @@ final class ScreenshotModuleModel: ObservableObject {
         lastError = nil
         listener.requestCapture(depth: selectedDepth.rawValue,
                                 tuning: tuning) { [weak self] in
-            guard let self else { return }
-            self.isCapturing = false
-            self.progress = nil
-            switch $0 {
-            case .success(let delivery):
-                let record = ScreenshotRecord(
-                    capturedAt: Date(), image: delivery.image,
-                    format: delivery.format, transferMs: delivery.transferMs,
-                    wireBytes: delivery.wireBytes)
-                self.receive(record)
-                if forcingClipboard || self.autoCopy {
-                    self.copyToPasteboard(record)
-                }
-                var savedTo: URL?
-                if self.autoSave {
-                    self.lastError = self.write(record, to: self.saveDirectory,
-                                                savedTo: &savedTo)
-                }
-                completion?(.copied(width: record.width, height: record.height,
-                                    depth: record.format.depth,
-                                    savedAs: savedTo?.lastPathComponent))
-            case .failure(let failure):
-                self.lastError = failure.message
-                completion?(.failed(failure.message))
+            self?.receiveDelivery($0, forcingClipboard: forcingClipboard,
+                                  completion: completion)
+        }
+    }
+
+    /// "Screenshot App" from the Processes page: the guest fronts the
+    /// process and captures just its window, and it lands in this record
+    /// list like any other capture. Reuses the same delivery handling —
+    /// only the request differs.
+    func captureProcess(psnHigh: Int, psnLow: Int) {
+        guard canCapture else { return }
+        isCapturing = true
+        lastError = nil
+        listener.requestProcessShot(psnHigh: psnHigh, psnLow: psnLow,
+                                    depth: selectedDepth.rawValue) {
+            [weak self] in
+            self?.receiveDelivery($0, forcingClipboard: false,
+                                  completion: nil)
+        }
+    }
+
+    private func receiveDelivery(
+        _ result: Result<GuestListener.CaptureDelivery,
+                         GuestListener.CaptureFailure>,
+        forcingClipboard: Bool,
+        completion: ((QuickCaptureOutcome) -> Void)?) {
+        isCapturing = false
+        progress = nil
+        switch result {
+        case .success(let delivery):
+            let record = ScreenshotRecord(
+                capturedAt: Date(), image: delivery.image,
+                format: delivery.format, transferMs: delivery.transferMs,
+                wireBytes: delivery.wireBytes)
+            receive(record)
+            if forcingClipboard || autoCopy {
+                copyToPasteboard(record)
             }
+            var savedTo: URL?
+            if autoSave {
+                lastError = write(record, to: saveDirectory, savedTo: &savedTo)
+            }
+            completion?(.copied(width: record.width, height: record.height,
+                                depth: record.format.depth,
+                                savedAs: savedTo?.lastPathComponent))
+        case .failure(let failure):
+            lastError = failure.message
+            completion?(.failed(failure.message))
         }
     }
 

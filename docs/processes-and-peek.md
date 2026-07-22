@@ -353,24 +353,29 @@ Rung 3 adds the first symmetric family to `contract/asyncapi.yaml`
   plane (tbt's spike mirrored process list + front app at ~1.2 ms per
   poll with no extension at all), so it is worth having before the
   semantic tree exists.
-- `process.front`, `process.quit` — the drive verbs, host→guest. Each
-  names its target by the PSN echoed from a listing entry; the guest
-  re-validates that PSN against a live process before acting, and refuses
-  a quit of NOW itself (it would sever the wire mid-reply). `process.quit`
-  is a 'quit' Apple Event the app may decline. `process.launch` — opening
-  an app that is not yet running — is still design; it needs a way to
-  name an unlaunched app (a path or signature), not a PSN.
+- `process.front`, `process.quit`, `process.shot` — the drive verbs,
+  host→guest. Each names its target by the PSN echoed from a listing
+  entry; the guest re-validates that PSN against a live process before
+  acting, and refuses a quit of NOW itself (it would sever the wire
+  mid-reply). `process.quit` is a 'quit' Apple Event the app may decline.
+  `process.shot` fronts the process, lets it repaint, crops the capture to
+  its front window (`capture_screen_rect`), and delivers over the capture
+  transport — so "Screenshot App" is a genuine window shot, not the whole
+  screen. front/quit answer `process.result`; shot answers a capture
+  transfer. `process.launch` — opening an app that is not yet running — is
+  still design; it needs a way to name an unlaunched app (a path or
+  signature), not a PSN.
 
 **Landed (2026-07-22):** the `process.list` / `process.listing` pair and
 the two drive verbs. The host asks and DISPLAYS — a Processes module
 (`ProcessesModel` / `ProcessesModuleView`) that pages the whole table in
 on refresh, groups it into Applications (with the Finder) and Background,
 flags the front process, captions each row with kind/4CCs/size, reads as
-the snapshot it is ("as of HH:MM:SS"), and now DRIVES: Bring to Front,
-Ask to Quit, and Screenshot App (front the process, then capture) on the
-selected row. The list and its display are metal-verified on the PB1400c;
-the drive buttons are tested and build but have not yet been watched
-driving the real machine.
+the snapshot it is ("as of HH:MM:SS"), and now DRIVES the selected row:
+Bring to Front, Ask to Quit (both metal-verified, incl. the self-quit
+refusal), and Screenshot App — a genuine window shot via `process.shot`
+(front, repaint, crop to the front window, deliver), which is tested and
+builds but whose cropping is not yet metal-verified.
 
 **The one-way direction is the design, not a gap.** NOW drives old-from-
 new: the host is the cockpit, the guest the machine being operated, so

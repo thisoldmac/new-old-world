@@ -49,6 +49,7 @@ enum ControlMessage: Equatable, Sendable {
     case processListing(ProcessListing)
     case processFront(ProcessFront)
     case processQuit(ProcessQuit)
+    case processShot(ProcessShot)
     case processResult(ProcessResult)
 }
 
@@ -200,6 +201,15 @@ struct ProcessQuit: Codable, Equatable, Sendable {
     var id: Int
     var psnHigh: Int
     var psnLow: Int
+}
+
+/// Front a process, then capture just its front window. The answer is a
+/// capture transfer (reusing the capture transport), not a process.result.
+struct ProcessShot: Codable, Equatable, Sendable {
+    var id: Int
+    var psnHigh: Int
+    var psnLow: Int
+    var depth: Int?
 }
 
 /// The one reply to either drive verb.
@@ -550,6 +560,9 @@ enum ControlMessageCodec {
         case "process.quit":
             return .processQuit(
                 try decoder.decode(ProcessQuit.self, from: data))
+        case "process.shot":
+            return .processShot(
+                try decoder.decode(ProcessShot.self, from: data))
         case "process.result":
             return .processResult(
                 try decoder.decode(ProcessResult.self, from: data))
@@ -609,6 +622,7 @@ enum ControlMessageCodec {
         case .processListing(let m): return try tagged("process.listing", m)
         case .processFront(let m): return try tagged("process.front", m)
         case .processQuit(let m): return try tagged("process.quit", m)
+        case .processShot(let m): return try tagged("process.shot", m)
         case .processResult(let m): return try tagged("process.result", m)
         }
     }

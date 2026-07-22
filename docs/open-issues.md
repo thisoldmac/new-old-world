@@ -154,22 +154,32 @@ processes, on purpose. The wire family stays symmetric in MEANING, but
 the host serves nothing back: the dead `HostProcesses`/`NSWorkspace`
 serve was removed rather than kept as ballast (2026-07-22).
 
-**Drive verbs added (2026-07-22, tested + builds, not yet metal).** The
-Processes pane grew three actions on the selected row, all host->guest:
-Bring to Front (`process.front` -> `SetFrontProcess`), Ask to Quit
-(`process.quit` -> a 'quit' Apple Event it may decline), and Screenshot
-App (front the process, then capture into the Screenshots module). Each
-verb names its target by the PSN the listing now carries (`psnHigh`/
-`psnLow`); the guest re-validates the PSN against a live process before
-acting, and refuses a quit of NOW itself - that would sever the wire
-mid-reply. One `process.result` shape answers both. The Toolbox actions
-are factored into `proc_actions.c` so the guest's own page and the wire
-handler share one implementation. `process.launch` (opening an app that
-is not yet running) is the honest next verb; it needs a path/signature to
-name an unlaunched app, not a PSN. All this is tested (contract
-round-trips, a guest process.result fixture, the drivable/PSN decode) and
-builds clean on both halves, but has NOT been watched driving the
-PB1400c.
+**Drive verbs added (2026-07-22).** The Processes pane grew three actions
+on the selected row, all host->guest: Bring to Front (`process.front` ->
+`SetFrontProcess`), Ask to Quit (`process.quit` -> a 'quit' Apple Event it
+may decline), and Screenshot App. Each names its target by the PSN the
+listing now carries (`psnHigh`/`psnLow`); the guest re-validates the PSN
+against a live process before acting, and refuses a quit of NOW itself -
+that would sever the wire mid-reply. `process.front`/`.quit` share one
+`process.result` reply; their Toolbox calls are factored into
+`proc_actions.c` so the guest page and the wire handler use one
+implementation. **Front, Quit, and the self-quit refusal are
+metal-verified on the PB1400c.**
+
+Screenshot App is its own verb, `process.shot`: the guest fronts the
+process, waits ~0.75 s for it to repaint (a deferred service pass, like
+the page's Front & Capture), reads its front window's fresh bounds off
+the anchor plane, captures ONLY that rectangle (`capture_screen_rect`),
+restores NOW, and delivers the crop over the capture transport - it
+reuses `arm_transfer`/capture.begin so the host receives it exactly as
+any capture, landing in the Screenshots module. The guest owns the
+timing, so the host-side delay hack is gone. It is **tested + builds, not
+yet metal**: the earlier full-screen Screenshot App was watched working;
+the window-cropped `process.shot` has not. `process.launch` (opening an
+app that is not yet running) is the honest next verb; it needs a
+path/signature to name an unlaunched app, not a PSN. Everything is tested
+(contract round-trips incl. `process.shot`, a guest `process.result`
+fixture, the drivable/PSN decode) and builds clean on both halves.
 
 **Metal found one rung-0 bug, now fixed:** the detail pane's "Launched"
 line read "1/1/04" for every process. `ProcessInfoRec.processLaunchDate`

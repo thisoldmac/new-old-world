@@ -21,10 +21,10 @@ final class ProcessesModel: ObservableObject {
     /// Buttons disable while it is, so one click cannot stack another.
     @Published private(set) var actionInFlight = false
 
-    /// Fired after a successful "Screenshot app" front, once the target is
-    /// forward on the guest — the host wires this to take the capture. Kept
-    /// as a hook so the model does not reach into the Screenshots module.
-    var onScreenshotApp: (() -> Void)?
+    /// "Screenshot App" hands the target's PSN here; the host routes it to
+    /// the Screenshots module, which asks the guest for a window-cropped
+    /// capture. Kept as a hook so the model does not reach across modules.
+    var onScreenshotApp: ((Int, Int) -> Void)?
 
     private let listener: GuestListener
     /// Guards against a slow page landing after the human hit Refresh:
@@ -91,27 +91,14 @@ final class ProcessesModel: ObservableObject {
     /// Ask the selected process to quit — a request it may decline.
     func askToQuit(_ entry: ProcessEntry) { drive(entry, .quit) }
 
-    /// Bring the process forward, then (once it is) take a screenshot. The
-    /// front and the capture are two steps because the target has to pump
-    /// its own event loop to actually come forward and redraw.
+    /// Capture just this process's window. The whole sequence — front it,
+    /// let it repaint, crop to its window, deliver — happens on the guest
+    /// (process.shot); here we only route the target to the Screenshots
+    /// module, where the image lands.
     func screenshotApp(_ entry: ProcessEntry) {
-        guard let high = entry.psnHigh, let low = entry.psnLow,
-              !actionInFlight else { return }
-        actionInFlight = true
+        guard let high = entry.psnHigh, let low = entry.psnLow else { return }
         lastError = nil
-        listener.driveProcess(psnHigh: high, psnLow: low,
-                              verb: .front) { [weak self] result in
-            guard let self else { return }
-            self.actionInFlight = false
-            switch result {
-            case .success(let r) where r.ok:
-                self.onScreenshotApp?()
-            case .success(let r):
-                self.lastError = r.reason ?? "Could not bring it forward"
-            case .failure(let f):
-                self.lastError = f.message
-            }
-        }
+        onScreenshotApp?(high, low)
     }
 
     private func drive(_ entry: ProcessEntry,

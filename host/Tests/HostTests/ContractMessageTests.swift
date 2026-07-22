@@ -175,8 +175,10 @@ final class ContractMessageTests: XCTestCase {
         let applied = ProcessResult(id: 20, ok: true, reason: nil)
         let refused = ProcessResult(
             id: 21, ok: false, reason: "that process is no longer running")
+        let shot = ProcessShot(id: 22, psnHigh: 0, psnLow: 16519, depth: 8)
         for message: ControlMessage in [.processFront(front),
                                         .processQuit(quit),
+                                        .processShot(shot),
                                         .processResult(applied),
                                         .processResult(refused)] {
             XCTAssertEqual(
@@ -184,6 +186,17 @@ final class ContractMessageTests: XCTestCase {
                     ControlMessageCodec.encode(message)),
                 message)
         }
+    }
+
+    func testProcessShotWithoutDepthDecodes() throws {
+        // Depth is optional; omitted means the guest's own preference.
+        let json = #"{"type":"process.shot","id":5,"psnHigh":0,"psnLow":42}"#
+        guard case .processShot(let shot) =
+            try ControlMessageCodec.decode(Data(json.utf8)) else {
+            return XCTFail("expected process.shot")
+        }
+        XCTAssertNil(shot.depth)
+        XCTAssertEqual(shot.psnLow, 42)
     }
 
     func testProcessListingWithoutPSNStillDecodes() throws {

@@ -782,6 +782,30 @@ final class GuestListener: ObservableObject {
         session.sendCaptureRequest(id: id, depth: depth, tuning: tuning)
     }
 
+    /// Asks the guest to front a process and capture just its window. The
+    /// reply is an ordinary capture transfer, so it settles the same
+    /// pendingCapture path a plain requestCapture does — only the request
+    /// message and the longer wait (the guest fronts and lets the target
+    /// repaint first) differ.
+    func requestProcessShot(psnHigh: Int, psnLow: Int, depth: Int?,
+                            completion: @escaping (Result<CaptureDelivery,
+                                                          CaptureFailure>)
+                                -> Void) {
+        guard let session, case .connected = state else {
+            completion(.failure(.init(message: "No Mac is connected")))
+            return
+        }
+        let id = nextCommandId
+        nextCommandId += 1
+        pendingCapture = completion
+        captureWatchdogId = id
+        armWatchdog(id: id, seconds: 25) { [weak self] reason in
+            self?.deliverCapture(.failure(.init(message: reason)))
+        }
+        session.sendProcessShot(id: id, psnHigh: psnHigh, psnLow: psnLow,
+                                depth: depth)
+    }
+
     /// How far along an in-flight transfer is, for the panel's progress bar.
     struct CaptureProgress: Equatable, Sendable {
         var received: Int
@@ -2119,6 +2143,19 @@ final class Session {
         send(.captureRequest(CaptureRequest(
             id: id, depth: depth ?? 0, chunkKb: tuning.chunkKb,
             paceMs: tuning.paceMs, pack: tuning.pack)))
+    }
+
+    /// A window-cropped capture of one process. The answer rides the same
+    /// capture transport a plain request uses, so the receive state is
+    /// primed identically — only the message asking for it differs.
+    func sendProcessShot(id: Int, psnHigh: Int, psnLow: Int, depth: Int?) {
+        captureBegin = nil
+        captureBuffer = []
+        cancelled = false
+        solicitedId = id
+        captureStart = Date()
+        send(.processShot(ProcessShot(
+            id: id, psnHigh: psnHigh, psnLow: psnLow, depth: depth)))
     }
 
     /// Control frames waiting for the bulk frame in flight to finish.

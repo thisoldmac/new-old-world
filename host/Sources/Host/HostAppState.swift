@@ -46,17 +46,14 @@ final class HostAppState: ObservableObject {
     private(set) lazy var console = ConsoleModel(listener: listener)
     private(set) lazy var processes: ProcessesModel = {
         let model = ProcessesModel(listener: listener)
-        // "Screenshot app" fronts the process, then this fires: show the
-        // Screenshots page and capture. The delay lets the just-fronted app
-        // pump its own loop and redraw first — the guest set it front but
-        // cannot make it paint (see the rung-2b deferred capture).
-        model.onScreenshotApp = { [weak self] in
+        // "Screenshot App" shows the Screenshots page and asks for a
+        // window-cropped capture of the process. The guest owns the timing
+        // (front, let it repaint, crop, deliver — process.shot), so there
+        // is no delay to fake here.
+        model.onScreenshotApp = { [weak self] psnHigh, psnLow in
             guard let self else { return }
             self.selectedModuleID = "screenshots"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
-                [weak self] in
-                self?.screenshots.capture()
-            }
+            self.screenshots.captureProcess(psnHigh: psnHigh, psnLow: psnLow)
         }
         return model
     }()
