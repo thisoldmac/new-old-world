@@ -69,9 +69,18 @@ long census_report_json(const char *probe, long id, const CensusPage *page,
    probe this build does not know (the caller answers refused). */
 int now_census_gather(const char *probe, long cursor, CensusPage *out);
 
-/* The probes this build serves, for the module's list pane. */
+/* The probes this build serves, for the module's list rail. */
 int now_census_probe_count(void);
 const char *now_census_probe_name(int index);
+
+/* The full detail for one row - what the module's pane draws. `probe` and
+   `row_name` identify the row; the module passes the row's raw text back
+   (the wire triple keeps it). Writes up to max_lines of line_cap each into
+   `out` (flat, line_cap-strided); returns the line count. 0 means the row
+   has no detail beyond what the list already shows. */
+int now_census_row_detail(const char *probe, const char *row_name,
+                          const char *raw, char *out, int max_lines,
+                          long line_cap);
 
 #endif /* TARGET_API_MAC_CARBON */
 

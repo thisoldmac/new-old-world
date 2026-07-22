@@ -6,67 +6,61 @@
 #include "census.h"
 #include "pump.h"
 
-/* The Hardware census page. Split pane: the probe registry on the left with
-   each probe's outcome, the selected probe's rows on the right. Two flat
-   Data Browsers (the Files page proves one on this CarbonLib; two side by
-   side is the same control, and stays until metal-verified). Probes run on
-   a click - Run Census sweeps all, Rerun re-runs the selected one - and are
-   answered by the same census core the wire serves (one data layer, two
-   callers), so the page needs no connection to report this Mac.
+/* The Hardware census page. A hand-drawn probe rail on the left - the
+   Workshop sidebar's own two-line idiom, because a probe registry is
+   navigation, not a table, and its outcome belongs in a subtitle rather
+   than a sortable column. One Data Browser on the right holds the selected
+   probe's rows (Fact/Value, Selector/Meaning - the raw column is gone from
+   the list), and a drawn detail pane below carries the full reading of the
+   selected row: an attr's every set bit, a version's three encodings, an
+   Overview fact's provenance.
 
-   Everything here is guest-local: now_census_gather fills a bounded page,
-   and Run walks the cursor to accumulate a probe's rows. idle() does
-   nothing but keep the status placard honest; there is no per-pass work. */
+   Everything is guest-local: probes run on a click and are answered by the
+   same census core the wire serves. idle() does nothing - a census is a
+   click, never a poll. */
 
 enum {
     kMargin = 12,
-    kListW = 188,             /* the probe list is fixed-width */
-    kGap = 12,
+    kRailW = 168,
+    kRowH = 32,               /* two-line rail row, like the sidebar */
+    kGap = 14,
     kButtonH = 20,
-    kMaxDetail = 300,         /* accumulated rows for one probe */
+    kDetailH = 132,
+    kMaxDetailLines = 12,
+    kDetailLineCap = 72,
+    kMaxRows = 320,           /* accumulated rows for one probe */
 
-    kColProbe = 'prob',
-    kColOutcome = 'outc',
-    kColName = 'name',
-    kColRaw = 'raw ',
-    kColMeaning = 'mean'
+    kColName = 'cnam',
+    kColValue = 'cval'
 };
 
 typedef struct {
-    Rect list;                /* probe list browser */
-    Rect detail;              /* selected-probe rows browser */
+    Rect rail;
+    Rect browser;
+    Rect detail;
     Rect run_btn;
     Rect rerun_btn;
 } CensusRects;
-
-/* Per-probe column titles, matching the contract's x-census columns. */
-typedef struct {
-    const char *name;
-    const char *col0;         /* the probe's first column title */
-} ProbeCols;
-
-static const ProbeCols k_cols[] = {
-    { "gestalt", "Selector" },
-    { "video",   "Field" },
-    { "volumes", "Volume" },
-};
 
 static WindowRef g_owner;
 static Rect g_body;
 static CensusRects g_r;
 static Boolean g_visible;
 
-static ControlRef g_list;
-static ControlRef g_detail;
+static ControlRef g_browser;
 static ControlRef g_run;
 static ControlRef g_rerun;
 
 static int g_probe_count;
-static CensusOutcome g_outcome[16];   /* per probe; kCensusNotAttempted = unrun */
-static char g_note[16][kCensusNoteCap];
-static int g_selected;                /* selected probe index, or -1 */
+static CensusOutcome g_outcome[16];       /* kCensusNotAttempted = unrun */
+static char g_subtitle[16][48];           /* rail's quiet line, per probe */
+static int g_sel_probe;                   /* selected rail row, or -1 */
 
-static CensusRow g_detail_rows[kMaxDetail];
+static CensusRow g_rows[kMaxRows];
+static int g_row_count;
+static int g_sel_row;                     /* selected browser row, or -1 */
+
+static char g_detail[kMaxDetailLines][kDetailLineCap];
 static int g_detail_count;
 static char g_status[120];
 
@@ -78,14 +72,16 @@ static void compute_rects(const Rect *body, CensusRects *r)
     short top = (short)(body->top + 8);
     short right = (short)(body->right - kMargin);
     short buttons_y = (short)(body->bottom - (kButtonH + 8));
-    short list_bottom = (short)(buttons_y - 10);
-    short detail_left = (short)(x0 + kListW + kGap);
+    short col_bottom = (short)(buttons_y - 10);
+    short bx = (short)(x0 + kRailW + kGap);
+    short detail_top = (short)(col_bottom - kDetailH);
 
-    SetRect(&r->list, x0, top, (short)(x0 + kListW), list_bottom);
-    SetRect(&r->detail, detail_left, top, right, list_bottom);
+    SetRect(&r->rail, x0, top, (short)(x0 + kRailW), col_bottom);
+    SetRect(&r->browser, bx, top, right, (short)(detail_top - 8));
+    SetRect(&r->detail, bx, detail_top, right, col_bottom);
     SetRect(&r->run_btn, x0, buttons_y, (short)(x0 + 116),
             (short)(buttons_y + kButtonH));
-    SetRect(&r->rerun_btn, (short)(right - 128), buttons_y, right,
+    SetRect(&r->rerun_btn, (short)(right - 132), buttons_y, right,
             (short)(buttons_y + kButtonH));
 }
 
@@ -101,28 +97,24 @@ static void set_status(const char *text)
     }
 }
 
-/* --- running probes (guest-local) --------------------------------------- */
-
-static const char *probe_name(int index)
+static const char *probe_name(int i)
 {
-    return now_census_probe_name(index);
+    return now_census_probe_name(i);
 }
 
-static const char *outcome_word(CensusOutcome o)
-{
-    return census_outcome_name(o);
-}
+/* --- running probes ----------------------------------------------------- */
 
-/* Walk one probe's pages into g_detail_rows; returns the settled outcome. */
-static CensusOutcome run_probe_into(const char *probe, CensusRow *rows,
-                                    int cap, int *out_count)
+/* Walk a probe's pages into g_rows; return the settled outcome and a short
+   subtitle for the rail. */
+static CensusOutcome run_probe(const char *probe, char *subtitle,
+                               long sub_cap)
 {
     CensusPage page;
     long cursor = 0;
-    int total = 0;
     CensusOutcome outcome = kCensusFailed;
     int first = 1;
 
+    g_row_count = 0;
     for (;;) {
         int i;
 
@@ -134,68 +126,67 @@ static CensusOutcome run_probe_into(const char *probe, CensusRow *rows,
             outcome = page.outcome;
             first = 0;
         }
-        for (i = 0; i < page.count && total < cap; i++) {
-            rows[total++] = page.rows[i];
+        for (i = 0; i < page.count && g_row_count < kMaxRows; i++) {
+            g_rows[g_row_count++] = page.rows[i];
         }
-        if (!page.more || total >= cap) {
+        if (!page.more || g_row_count >= kMaxRows) {
             break;
         }
         cursor = page.next_cursor;
     }
-    *out_count = total;
+    if (page.note[0] != '\0') {
+        snprintf(subtitle, sub_cap, "%s", page.note);
+    } else {
+        snprintf(subtitle, sub_cap, "%s - %d rows",
+                 census_outcome_name(outcome), g_row_count);
+    }
     return outcome;
 }
 
-static void refill_detail(void)
+/* Recompute the detail lines for the selected browser row. */
+static void refresh_detail(void)
 {
-    if (g_detail == NULL) {
+    g_detail_count = 0;
+    if (g_sel_probe < 0 || g_sel_row < 0 || g_sel_row >= g_row_count) {
         return;
     }
-    RemoveDataBrowserItems(g_detail, kDataBrowserNoItem, 0, NULL,
-                           kDataBrowserItemNoProperty);
-    g_detail_count = 0;
-    if (g_selected < 0 || g_outcome[g_selected] == kCensusNotAttempted) {
-        return;                       /* nothing run for this probe yet */
-    }
-    {
-        const char *probe = probe_name(g_selected);
-        CensusOutcome o;
-        DataBrowserItemID ids[kMaxDetail];
-        int i;
-
-        o = run_probe_into(probe, g_detail_rows, kMaxDetail, &g_detail_count);
-        g_outcome[g_selected] = o;
-        for (i = 0; i < g_detail_count; i++) {
-            ids[i] = (DataBrowserItemID)(i + 1);
-        }
-        if (g_detail_count > 0) {
-            AddDataBrowserItems(g_detail, kDataBrowserNoItem, g_detail_count,
-                                ids, kDataBrowserItemNoProperty);
-        }
-    }
+    g_detail_count = now_census_row_detail(
+        probe_name(g_sel_probe), g_rows[g_sel_row].name,
+        g_rows[g_sel_row].raw, (char *)g_detail, kMaxDetailLines,
+        kDetailLineCap);
 }
 
-static void run_one(int index)
+/* Load the selected probe's rows into the browser (running it fresh). */
+static void load_selected_probe(void)
 {
-    const char *probe = probe_name(index);
-    char note[kCensusNoteCap];
-    int count = 0;
-    CensusOutcome o;
-    CensusPage page;
+    DataBrowserItemID ids[kMaxRows];
+    int i;
 
-    /* First page carries the note; the full walk settles the outcome. */
-    now_census_gather(probe, 0, &page);
-    strncpy(note, page.note, sizeof note - 1);
-    note[sizeof note - 1] = '\0';
-    o = run_probe_into(probe, g_detail_rows, kMaxDetail, &count);
-    g_outcome[index] = o;
-    strncpy(g_note[index], note, sizeof g_note[index] - 1);
-    g_note[index][sizeof g_note[index] - 1] = '\0';
-    /* Repaint the outcome cell. */
-    if (g_list != NULL) {
-        UpdateDataBrowserItems(g_list, kDataBrowserNoItem, 0, NULL,
-                               kDataBrowserItemNoProperty, kColOutcome);
+    if (g_browser == NULL || g_sel_probe < 0) {
+        return;
     }
+    RemoveDataBrowserItems(g_browser, kDataBrowserNoItem, 0, NULL,
+                           kDataBrowserItemNoProperty);
+    g_row_count = 0;
+    g_sel_row = -1;
+    if (g_outcome[g_sel_probe] == kCensusNotAttempted) {
+        refresh_detail();
+        InvalWindowRect(g_owner, &g_r.detail);
+        return;
+    }
+    g_outcome[g_sel_probe] = run_probe(probe_name(g_sel_probe),
+                                       g_subtitle[g_sel_probe],
+                                       sizeof g_subtitle[0]);
+    for (i = 0; i < g_row_count; i++) {
+        ids[i] = (DataBrowserItemID)(i + 1);
+    }
+    if (g_row_count > 0) {
+        AddDataBrowserItems(g_browser, kDataBrowserNoItem, g_row_count, ids,
+                            kDataBrowserItemNoProperty);
+        g_sel_row = 0;
+    }
+    refresh_detail();
+    InvalWindowRect(g_owner, &g_r.detail);
 }
 
 static void run_all(void)
@@ -203,123 +194,35 @@ static void run_all(void)
     int i;
 
     for (i = 0; i < g_probe_count; i++) {
-        run_one(i);
+        g_outcome[i] = run_probe(probe_name(i), g_subtitle[i],
+                                 sizeof g_subtitle[0]);
     }
-    refill_detail();
+    InvalWindowRect(g_owner, &g_r.rail);
+    load_selected_probe();
     set_status("Census complete.");
 }
 
-static void status_for_selection(void)
-{
-    if (g_selected < 0) {
-        set_status("Select a probe, or Run Census.");
-        return;
-    }
-    if (g_outcome[g_selected] == kCensusNotAttempted) {
-        set_status("Not run yet - Run Census, or Rerun.");
-        return;
-    }
-    {
-        char line[120];
-        const char *note = g_note[g_selected];
+/* --- the rows browser --------------------------------------------------- */
 
-        if (note[0] != '\0') {
-            snprintf(line, sizeof line, "%s: %s.",
-                     outcome_word(g_outcome[g_selected]), note);
-        } else {
-            snprintf(line, sizeof line, "%s - %d rows.",
-                     outcome_word(g_outcome[g_selected]), g_detail_count);
-        }
-        set_status(line);
-    }
-}
-
-/* --- the two browsers --------------------------------------------------- */
-
-static OSStatus list_data(ControlRef browser, DataBrowserItemID item,
+static OSStatus rows_data(ControlRef browser, DataBrowserItemID item,
                           DataBrowserPropertyID property,
                           DataBrowserItemDataRef data, Boolean changeValue)
 {
     CFStringRef text = NULL;
     int index = (int)item - 1;
-
-    (void)browser;
-    if (changeValue || index < 0 || index >= g_probe_count) {
-        return errDataBrowserPropertyNotSupported;
-    }
-    switch (property) {
-    case kColProbe:
-        text = CFStringCreateWithCString(NULL, probe_name(index),
-                                         kCFStringEncodingMacRoman);
-        break;
-    case kColOutcome:
-        if (g_outcome[index] == kCensusNotAttempted) {
-            text = CFStringCreateWithCString(NULL, "-",
-                                             kCFStringEncodingMacRoman);
-        } else {
-            text = CFStringCreateWithCString(NULL,
-                                             outcome_word(g_outcome[index]),
-                                             kCFStringEncodingMacRoman);
-        }
-        break;
-    default:
-        return errDataBrowserPropertyNotSupported;
-    }
-    if (text == NULL) {
-        return memFullErr;
-    }
-    SetDataBrowserItemDataText(data, text);
-    CFRelease(text);
-    return noErr;
-}
-
-static void list_notify(ControlRef browser, DataBrowserItemID item,
-                        DataBrowserItemNotification message)
-{
-    (void)browser;
-    (void)item;
-    if (message == kDataBrowserSelectionSetChanged) {
-        Handle sel = NewHandle(0);
-
-        if (sel != NULL) {
-            if (GetDataBrowserItems(g_list, kDataBrowserNoItem, false,
-                                    kDataBrowserItemIsSelected, sel) == noErr
-                && GetHandleSize(sel) >= (Size)sizeof(DataBrowserItemID)) {
-                DataBrowserItemID first;
-
-                memcpy(&first, *sel, sizeof first);
-                g_selected = (int)first - 1;
-                refill_detail();
-                status_for_selection();
-            }
-            DisposeHandle(sel);
-        }
-    }
-}
-
-static OSStatus detail_data(ControlRef browser, DataBrowserItemID item,
-                            DataBrowserPropertyID property,
-                            DataBrowserItemDataRef data, Boolean changeValue)
-{
     const CensusRow *row;
-    CFStringRef text = NULL;
-    int index = (int)item - 1;
 
     (void)browser;
-    if (changeValue || index < 0 || index >= g_detail_count) {
+    if (changeValue || index < 0 || index >= g_row_count) {
         return errDataBrowserPropertyNotSupported;
     }
-    row = &g_detail_rows[index];
+    row = &g_rows[index];
     switch (property) {
     case kColName:
         text = CFStringCreateWithCString(NULL, row->name,
                                          kCFStringEncodingMacRoman);
         break;
-    case kColRaw:
-        text = CFStringCreateWithCString(NULL, row->raw,
-                                         kCFStringEncodingMacRoman);
-        break;
-    case kColMeaning:
+    case kColValue:
         text = CFStringCreateWithCString(NULL, row->meaning,
                                          kCFStringEncodingMacRoman);
         break;
@@ -334,47 +237,50 @@ static OSStatus detail_data(ControlRef browser, DataBrowserItemID item,
     return noErr;
 }
 
-static void detail_notify(ControlRef browser, DataBrowserItemID item,
-                          DataBrowserItemNotification message)
+static void rows_notify(ControlRef browser, DataBrowserItemID item,
+                        DataBrowserItemNotification message)
 {
     (void)browser;
     (void)item;
-    (void)message;
+    if (message == kDataBrowserSelectionSetChanged) {
+        Handle sel = NewHandle(0);
+
+        if (sel != NULL) {
+            if (GetDataBrowserItems(g_browser, kDataBrowserNoItem, false,
+                                    kDataBrowserItemIsSelected, sel) == noErr
+                && GetHandleSize(sel) >= (Size)sizeof(DataBrowserItemID)) {
+                DataBrowserItemID first;
+
+                memcpy(&first, *sel, sizeof first);
+                g_sel_row = (int)first - 1;
+                refresh_detail();
+                InvalWindowRect(g_owner, &g_r.detail);
+            }
+            DisposeHandle(sel);
+        }
+    }
 }
 
-/* Real UPPs, held for the controls' lifetime (a UPP is a routine
-   descriptor here, not a cast pointer: carbon-upp-is-not-a-cast-on-cfm). */
-static DataBrowserItemDataUPP g_list_data_upp;
-static DataBrowserItemNotificationUPP g_list_notify_upp;
-static DataBrowserItemDataUPP g_detail_data_upp;
-static DataBrowserItemNotificationUPP g_detail_notify_upp;
+static DataBrowserItemDataUPP g_data_upp;
+static DataBrowserItemNotificationUPP g_notify_upp;
 
 static void dispose_upps(void)
 {
-    if (g_list_data_upp != NULL) {
-        DisposeDataBrowserItemDataUPP(g_list_data_upp);
-        g_list_data_upp = NULL;
+    if (g_data_upp != NULL) {
+        DisposeDataBrowserItemDataUPP(g_data_upp);
+        g_data_upp = NULL;
     }
-    if (g_list_notify_upp != NULL) {
-        DisposeDataBrowserItemNotificationUPP(g_list_notify_upp);
-        g_list_notify_upp = NULL;
-    }
-    if (g_detail_data_upp != NULL) {
-        DisposeDataBrowserItemDataUPP(g_detail_data_upp);
-        g_detail_data_upp = NULL;
-    }
-    if (g_detail_notify_upp != NULL) {
-        DisposeDataBrowserItemNotificationUPP(g_detail_notify_upp);
-        g_detail_notify_upp = NULL;
+    if (g_notify_upp != NULL) {
+        DisposeDataBrowserItemNotificationUPP(g_notify_upp);
+        g_notify_upp = NULL;
     }
 }
 
-static OSStatus add_column(ControlRef browser, DataBrowserPropertyID id,
-                           const char *title, UInt16 width, Boolean isName,
-                           DataBrowserTableViewColumnIndex at)
+static void add_column(DataBrowserPropertyID id, const char *title,
+                       UInt16 width, Boolean isName,
+                       DataBrowserTableViewColumnIndex at)
 {
     DataBrowserListViewColumnDesc col;
-    OSStatus err;
 
     memset(&col, 0, sizeof col);
     col.propertyDesc.propertyID = id;
@@ -390,14 +296,164 @@ static OSStatus add_column(ControlRef browser, DataBrowserPropertyID id,
     col.headerBtnDesc.btnContentInfo.contentType = kControlContentTextOnly;
     col.headerBtnDesc.titleString =
         CFStringCreateWithCString(NULL, title, kCFStringEncodingMacRoman);
-    err = AddDataBrowserListViewColumn(browser, &col, at);
+    if (AddDataBrowserListViewColumn(g_browser, &col, at) == noErr) {
+        SetDataBrowserTableViewNamedColumnWidth(g_browser, id, width);
+    }
     if (col.headerBtnDesc.titleString != NULL) {
         CFRelease(col.headerBtnDesc.titleString);
     }
-    if (err == noErr) {
-        SetDataBrowserTableViewNamedColumnWidth(browser, id, width);
+}
+
+/* Column titles read differently per probe; retitle by rebuild on switch. */
+static void set_columns(int probe_index)
+{
+    const char *name_title = "Field";
+    const char *value_title = "Value";
+    const char *p = probe_name(probe_index);
+
+    RemoveDataBrowserTableViewColumn(g_browser, kColName);
+    RemoveDataBrowserTableViewColumn(g_browser, kColValue);
+    if (p != NULL && strcmp(p, "overview") == 0) {
+        name_title = "Fact";
+    } else if (p != NULL && strcmp(p, "selectors") == 0) {
+        name_title = "Selector";
+        value_title = "Meaning";
     }
-    return err;
+    add_column(kColName, name_title, 150, true, 0);
+    add_column(kColValue, value_title, 200, false, 1);
+}
+
+/* --- the drawn probe rail ----------------------------------------------- */
+
+static int rail_row_at(Point local)
+{
+    int i;
+
+    for (i = 0; i < g_probe_count; i++) {
+        Rect row;
+
+        SetRect(&row, g_r.rail.left, (short)(g_r.rail.top + 2 + i * kRowH),
+                g_r.rail.right, (short)(g_r.rail.top + 2 + (i + 1) * kRowH));
+        if (PtInRect(local, &row)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static void draw_rail(void)
+{
+    RGBColor black = { 0, 0, 0 };
+    RGBColor gray = { 0x5555, 0x5555, 0x5555 };
+    RGBColor white = { 0xFFFF, 0xFFFF, 0xFFFF };
+    int i;
+
+    RGBForeColor(&white);
+    PaintRect(&g_r.rail);
+    RGBForeColor(&black);
+    FrameRect(&g_r.rail);
+
+    for (i = 0; i < g_probe_count; i++) {
+        Rect row;
+        Str255 text;
+        short base = (short)(g_r.rail.top + 2 + i * kRowH);
+
+        SetRect(&row, (short)(g_r.rail.left + 1), base,
+                (short)(g_r.rail.right - 1), (short)(base + kRowH));
+        if (i == g_sel_probe) {
+            RGBColor band;
+            LMGetHiliteRGB(&band);      /* the system list-highlight color */
+            RGBForeColor(&band);
+            PaintRect(&row);
+            RGBForeColor(&black);
+        }
+        UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
+        MoveTo((short)(row.left + 12), (short)(base + 14));
+        CopyCStringToPascal(probe_name(i), text);
+        text[1] = (unsigned char)(text[1] >= 'a' && text[1] <= 'z'
+                                  ? text[1] - 32 : text[1]);   /* Titlecase */
+        DrawString(text);
+
+        UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+        RGBForeColor(&gray);
+        MoveTo((short)(row.left + 12), (short)(base + 27));
+        if (g_outcome[i] == kCensusNotAttempted) {
+            CopyCStringToPascal("not run yet", text);
+        } else {
+            CopyCStringToPascal(g_subtitle[i], text);
+            TruncString((short)(row.right - row.left - 16), text, truncEnd);
+        }
+        DrawString(text);
+        RGBForeColor(&black);
+    }
+}
+
+/* --- the drawn detail pane ---------------------------------------------- */
+
+static void draw_detail(void)
+{
+    RGBColor black = { 0, 0, 0 };
+    RGBColor gray = { 0x5555, 0x5555, 0x5555 };
+    Str255 text;
+    const char *title = "Detail";
+    int i;
+    short y;
+
+    /* etched group box */
+    {
+        RGBColor light = { 0x8888, 0x8888, 0x8888 };
+        Rect box = g_r.detail;
+        box.top = (short)(box.top + 5);
+        RGBForeColor(&light);
+        FrameRect(&box);
+        RGBForeColor(&black);
+    }
+    if (g_sel_probe >= 0 && g_sel_row >= 0 && g_sel_row < g_row_count) {
+        title = g_rows[g_sel_row].name;
+        while (*title == ' ') {
+            title++;                    /* Overview facts are indented */
+        }
+    }
+    /* title breaks the top rule */
+    UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
+    {
+        RGBColor bg;
+        Rect cap;
+        short w;
+
+        CopyCStringToPascal(title, text);
+        w = StringWidth(text);
+        SetRect(&cap, (short)(g_r.detail.left + 10), g_r.detail.top,
+                (short)(g_r.detail.left + 16 + w), (short)(g_r.detail.top + 12));
+        GetThemeBrushAsColor(kThemeBrushDialogBackgroundActive, 32, true, &bg);
+        RGBForeColor(&bg);
+        PaintRect(&cap);
+        RGBForeColor(&black);
+        MoveTo((short)(g_r.detail.left + 16), (short)(g_r.detail.top + 10));
+        DrawString(text);
+    }
+
+    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    y = (short)(g_r.detail.top + 30);
+    for (i = 0; i < g_detail_count; i++) {
+        /* a blank line spaces the block, a summary line goes gray */
+        if (g_detail[i][0] == '\0') {
+            y = (short)(y + 8);
+            continue;
+        }
+        if (strstr(g_detail[i], "clear -") != NULL
+            || strstr(g_detail[i], "candidates") != NULL
+            || strstr(g_detail[i], "source") != NULL) {
+            RGBForeColor(&gray);
+        }
+        MoveTo((short)(g_r.detail.left + 16), y);
+        CopyCStringToPascal(g_detail[i], text);
+        TruncString((short)(g_r.detail.right - g_r.detail.left - 26), text,
+                    truncEnd);
+        DrawString(text);
+        RGBForeColor(&black);
+        y = (short)(y + 14);
+    }
 }
 
 /* --- module ops --------------------------------------------------------- */
@@ -411,69 +467,37 @@ static OSErr census_create(WindowRef owner, const Rect *body)
     g_owner = owner;
     g_body = *body;
     g_status[0] = '\0';
-    g_selected = -1;
+    g_sel_probe = 0;
+    g_sel_row = -1;
+    g_row_count = 0;
     g_detail_count = 0;
     g_probe_count = now_census_probe_count();
     for (i = 0; i < g_probe_count && i < 16; i++) {
         g_outcome[i] = kCensusNotAttempted;
-        g_note[i][0] = '\0';
+        g_subtitle[i][0] = '\0';
     }
     compute_rects(body, &g_r);
 
-    if (CreateDataBrowserControl(owner, &g_r.list, kDataBrowserListView,
-                                 &g_list) != noErr) {
-        g_list = NULL;
+    if (CreateDataBrowserControl(owner, &g_r.browser, kDataBrowserListView,
+                                 &g_browser) != noErr) {
+        g_browser = NULL;
         return memFullErr;
     }
-    if (CreateDataBrowserControl(owner, &g_r.detail, kDataBrowserListView,
-                                 &g_detail) != noErr) {
-        g_detail = NULL;
-        return memFullErr;
-    }
-    g_list_data_upp = NewDataBrowserItemDataUPP(list_data);
-    g_list_notify_upp = NewDataBrowserItemNotificationUPP(list_notify);
-    g_detail_data_upp = NewDataBrowserItemDataUPP(detail_data);
-    g_detail_notify_upp = NewDataBrowserItemNotificationUPP(detail_notify);
-    if (g_list_data_upp == NULL || g_list_notify_upp == NULL
-        || g_detail_data_upp == NULL || g_detail_notify_upp == NULL) {
+    g_data_upp = NewDataBrowserItemDataUPP(rows_data);
+    g_notify_upp = NewDataBrowserItemNotificationUPP(rows_notify);
+    if (g_data_upp == NULL || g_notify_upp == NULL) {
         dispose_upps();
         return memFullErr;
     }
-
     memset(&cb, 0, sizeof cb);
     cb.version = kDataBrowserLatestCallbacks;
     InitDataBrowserCallbacks(&cb);
-    cb.u.v1.itemDataCallback = g_list_data_upp;
-    cb.u.v1.itemNotificationCallback = g_list_notify_upp;
-    SetDataBrowserCallbacks(g_list, &cb);
-    memset(&cb, 0, sizeof cb);
-    cb.version = kDataBrowserLatestCallbacks;
-    InitDataBrowserCallbacks(&cb);
-    cb.u.v1.itemDataCallback = g_detail_data_upp;
-    cb.u.v1.itemNotificationCallback = g_detail_notify_upp;
-    SetDataBrowserCallbacks(g_detail, &cb);
-
-    add_column(g_list, kColProbe, "Probe", 100, true, 0);
-    add_column(g_list, kColOutcome, "Outcome", 80, false, 1);
-    SetDataBrowserListViewHeaderBtnHeight(g_list, 16);
-    SetDataBrowserHasScrollBars(g_list, false, true);
-
-    add_column(g_detail, kColName, "Field", 130, true, 0);
-    add_column(g_detail, kColRaw, "Raw", 96, false, 1);
-    add_column(g_detail, kColMeaning, "Meaning", 220, false, 2);
-    SetDataBrowserListViewHeaderBtnHeight(g_detail, 16);
-    SetDataBrowserHasScrollBars(g_detail, false, true);
-
-    /* Populate the probe list once; outcomes fill in as probes run. */
-    {
-        DataBrowserItemID ids[16];
-
-        for (i = 0; i < g_probe_count && i < 16; i++) {
-            ids[i] = (DataBrowserItemID)(i + 1);
-        }
-        AddDataBrowserItems(g_list, kDataBrowserNoItem, g_probe_count, ids,
-                            kDataBrowserItemNoProperty);
-    }
+    cb.u.v1.itemDataCallback = g_data_upp;
+    cb.u.v1.itemNotificationCallback = g_notify_upp;
+    SetDataBrowserCallbacks(g_browser, &cb);
+    set_columns(g_sel_probe);
+    SetDataBrowserListViewHeaderBtnHeight(g_browser, 16);
+    SetDataBrowserHasScrollBars(g_browser, false, true);
 
     CopyCStringToPascal("Run Census", text);
     g_run = NewControl(owner, &g_r.run_btn, text, false, 0, 0, 1,
@@ -484,16 +508,14 @@ static OSErr census_create(WindowRef owner, const Rect *body)
     if (g_run == NULL || g_rerun == NULL) {
         return memFullErr;
     }
-    HideControl(g_list);
-    HideControl(g_detail);
+    HideControl(g_browser);
     return noErr;
 }
 
 static void census_dispose(void)
 {
     g_owner = NULL;
-    g_list = NULL;
-    g_detail = NULL;
+    g_browser = NULL;
     g_run = NULL;
     g_rerun = NULL;
     dispose_upps();
@@ -502,11 +524,8 @@ static void census_dispose(void)
 static void census_show(Boolean visible)
 {
     g_visible = visible;
-    if (g_list != NULL) {
-        if (visible) { ShowControl(g_list); } else { HideControl(g_list); }
-    }
-    if (g_detail != NULL) {
-        if (visible) { ShowControl(g_detail); } else { HideControl(g_detail); }
+    if (g_browser != NULL) {
+        if (visible) { ShowControl(g_browser); } else { HideControl(g_browser); }
     }
     if (g_run != NULL) {
         if (visible) { ShowControl(g_run); } else { HideControl(g_run); }
@@ -530,28 +549,55 @@ static void census_layout(const Rect *body)
 {
     g_body = *body;
     compute_rects(body, &g_r);
-    size_to(g_list, &g_r.list);
-    size_to(g_detail, &g_r.detail);
+    size_to(g_browser, &g_r.browser);
     size_to(g_run, &g_r.run_btn);
     size_to(g_rerun, &g_r.rerun_btn);
 }
 
 static void census_draw(void)
 {
-    /* Browsers and buttons draw themselves; the page has no custom art. */
+    if (g_owner == NULL || !g_visible) {
+        return;
+    }
+    draw_rail();
+    draw_detail();
 }
 
 static Boolean census_click(const EventRecord *event, Point local)
 {
     ControlRef control = NULL;
+    int hit;
 
     if (g_owner == NULL || !g_visible) {
         return false;
     }
+    hit = rail_row_at(local);
+    if (hit >= 0) {
+        if (hit != g_sel_probe) {
+            int prev = g_sel_probe;
+            g_sel_probe = hit;
+            set_columns(hit);
+            {
+                Rect a, b;
+                SetRect(&a, g_r.rail.left,
+                        (short)(g_r.rail.top + 2 + prev * kRowH),
+                        g_r.rail.right,
+                        (short)(g_r.rail.top + 2 + (prev + 1) * kRowH));
+                SetRect(&b, g_r.rail.left,
+                        (short)(g_r.rail.top + 2 + hit * kRowH),
+                        g_r.rail.right,
+                        (short)(g_r.rail.top + 2 + (hit + 1) * kRowH));
+                InvalWindowRect(g_owner, &a);
+                InvalWindowRect(g_owner, &b);
+            }
+            load_selected_probe();
+        }
+        return true;
+    }
     if (FindControl(local, g_owner, &control) == 0 || control == NULL) {
         return false;
     }
-    if (control == g_list || control == g_detail) {
+    if (control == g_browser) {
         HandleControlClick(control, local, event->modifiers, NULL);
         return true;
     }
@@ -563,14 +609,11 @@ static Boolean census_click(const EventRecord *event, Point local)
         return true;
     }
     if (control == g_rerun) {
-        if (TrackControl(control, local, now_pump_action()) != 0) {
-            if (g_selected < 0) {
-                set_status("Select a probe to rerun.");
-            } else {
-                run_one(g_selected);
-                refill_detail();
-                status_for_selection();
-            }
+        if (TrackControl(control, local, now_pump_action()) != 0
+            && g_sel_probe >= 0) {
+            g_outcome[g_sel_probe] = kCensusNotAttempted;
+            load_selected_probe();
+            InvalWindowRect(g_owner, &g_r.rail);
         }
         return true;
     }
@@ -579,20 +622,34 @@ static Boolean census_click(const EventRecord *event, Point local)
 
 static Boolean census_key(const EventRecord *event)
 {
-    (void)event;
-    return false;
+    char c = (char)(event->message & charCodeMask);
+
+    /* Up/Down move the probe selection when the browser lacks focus. */
+    if (g_sel_probe < 0 || g_probe_count == 0) {
+        return false;
+    }
+    if (c == 0x1E && g_sel_probe > 0) {                 /* up arrow */
+        g_sel_probe--;
+    } else if (c == 0x1F && g_sel_probe < g_probe_count - 1) {  /* down */
+        g_sel_probe++;
+    } else {
+        return false;
+    }
+    set_columns(g_sel_probe);
+    InvalWindowRect(g_owner, &g_r.rail);
+    load_selected_probe();
+    return true;
 }
 
 static void census_activate(Boolean active)
 {
-    ControlRef controls[4];
+    ControlRef controls[3];
     int i;
 
-    controls[0] = g_list;
-    controls[1] = g_detail;
-    controls[2] = g_run;
-    controls[3] = g_rerun;
-    for (i = 0; i < 4; i++) {
+    controls[0] = g_browser;
+    controls[1] = g_run;
+    controls[2] = g_rerun;
+    for (i = 0; i < 3; i++) {
         if (controls[i] == NULL) {
             continue;
         }
@@ -606,7 +663,7 @@ static void census_activate(Boolean active)
 
 static void census_idle(void)
 {
-    /* Probes never run here - a census is a click, not a poll. */
+    /* A census is a click, never a poll. */
 }
 
 static void census_status_text(char *out, long cap)
@@ -614,7 +671,8 @@ static void census_status_text(char *out, long cap)
     if (g_status[0] != '\0') {
         snprintf(out, (size_t)cap, "%s", g_status);
     } else {
-        snprintf(out, (size_t)cap, "Passive census - probes run on request.");
+        snprintf(out, (size_t)cap,
+                 "Passive census - probes run on request. Nothing is a guess.");
     }
 }
 
@@ -633,6 +691,5 @@ static const WorkshopModuleOps k_ops = {
 
 const WorkshopModuleOps *census_module_ops(void)
 {
-    (void)k_cols;              /* per-probe column titles: slice-2 refinement */
     return &k_ops;
 }

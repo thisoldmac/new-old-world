@@ -1268,16 +1268,30 @@ components:
         re-asking is reasonable.
       not-attempted: The cursor never reached it, or it was skipped.
     x-probes:
-      gestalt:
+      overview:
+        columns: [Fact, Raw, Meaning]
+        description: >
+          The synthesis, in plain words: model, processor, memory,
+          system, display and storage as a person would say them.
+          Overview holds no truth of its own — it arranges what the
+          other probes read, and each fact keeps its trail (the probes
+          it came from), so the semantic layer is never an opaque guess.
+          Rows with an empty value are section captions.
+      identity:
+        columns: [Fact, Raw, Meaning]
+        description: >
+          The machine in a curated dozen: model, CPU and clock, RAM,
+          ROM, OS, CarbonLib, QuickDraw, keyboard, networking — the
+          ring-0 "what is this machine", decoded to words.
+      selectors:
         columns: [Selector, Raw, Meaning]
         description: >
-          Table walk of the documented Gestalt selectors — the full
-          walk, not an identity subset. Raw is the untouched result
-          value; attr-bit selectors decode known bits and name unknown
-          set bits as unrecognized rather than dropping them (the
-          unresolved bin is the corpus-growth path). Gestalt cannot
-          enumerate undocumented selectors, so the walk is exactly the
-          snapshotted table and says so.
+          The full documented Gestalt walk (renamed from gestalt). Raw
+          is the untouched value; the Meaning is a one-line summary and
+          the detail carries every set attr bit, named or numbered as a
+          candidate — the unresolved bin is the corpus-growth path.
+          Gestalt cannot enumerate undocumented selectors, so the walk
+          is exactly the snapshotted table and says so.
       video:
         columns: [Field, Raw, Meaning]
         description: GDevice walk; one record of fields per display.

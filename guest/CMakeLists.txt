@@ -17,6 +17,7 @@ add_application(now-guest
     src/screenshots_module.c
     src/census_module.c
     src/census_probes.c
+    src/census_decode.c
     src/census_report.c
     src/files_module.c
     src/files_browser_view.c
