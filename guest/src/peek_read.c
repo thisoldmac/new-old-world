@@ -25,16 +25,7 @@ enum {
     kOffRgnBBox = 2,              /* Rect after the 2-byte rgnSize */
     kRegionHeader = kOffRgnBBox + 8,
 
-    kWindowChainCap = 64,         /* bound the walk against a cyclic chain */
-
-    /* An anchor is only as current as the process's last event-loop
-       pass. An alive process keeps a valid window pointer as long as it
-       exists, and the A5-in-partition check already rejects a recycled
-       slot, so this bound is generous: a full minute covers even an
-       idle backgrounded app that pumps rarely, while still rejecting a
-       truly abandoned slot. The application also CARRIES the last good
-       read across a brief stale window, so the readout does not blink. */
-    kFreshTicks = 3600            /* ~60 s at 60 ticks/sec */
+    kWindowChainCap = 64          /* bound the walk against a cyclic chain */
 };
 
 /* The zones a foreign window structure may legally live in: the
@@ -78,15 +69,19 @@ static int in_readable(const ReadableZones *z, unsigned long addr,
     return 0;
 }
 
-/* The fresh anchor's window-list head for the process whose partition
-   is [loc,size): the slot whose A5 lies in that partition (the
-   containment IS the PSN<->A5 correlation). Double-samples the stamp
-   against a torn cross-update read, rejects a stale slot. *found tells
-   "no fresh anchor" from "anchor found, WindowList 0 (no windows)". */
+/* The anchor's window-list head for the process whose partition is
+   [loc,size): the slot whose A5 lies in that partition (the containment
+   IS the PSN<->A5 correlation, and it is what makes the slot provably
+   this process's - not time). Double-samples the stamp against a torn
+   cross-update read. There is no age gate: window state is always "as
+   of the target's last pump" (classic Mac OS has no cross-process live
+   window feed, so a snapshot is all any reader can have - axtree
+   included), and validation plus the A5 match, not a clock, are the
+   safety; the application carries the last good read across blips.
+   *found tells "no anchor at all" from "anchor found, WindowList 0". */
 static unsigned long process_window_list(const NowPeekTable *table,
                                          unsigned long loc,
-                                         unsigned long size,
-                                         unsigned long now, int *found)
+                                         unsigned long size, int *found)
 {
     int i;
 
@@ -99,13 +94,13 @@ static unsigned long process_window_list(const NowPeekTable *table,
         NowPeekU32 s2;
 
         if (s1 == 0) {
-            continue;
+            continue;                 /* never captured, or mid-update */
         }
         a5 = slot->a5;
         wl = slot->window_list;
         s2 = slot->stamp_ticks;
-        if (s1 != s2 || (NowPeekU32)(now - s1) > (NowPeekU32)kFreshTicks) {
-            continue;                 /* torn, or stale */
+        if (s1 != s2) {
+            continue;                 /* torn: updated while reading */
         }
         if (!now_peek_range_in_partition(a5, 4, loc, size)) {
             continue;                 /* not this process's A5 */
@@ -149,8 +144,7 @@ static NowPeekReadStatus resolve(const ProcessSerialNumber *psn,
     z->sys_lo = (unsigned long)sys;
     z->sys_hi = (sys != NULL) ? read_be32(z->sys_lo) : 0;
 
-    wl = process_window_list(table, z->loc, z->size,
-                             (unsigned long)TickCount(), &found);
+    wl = process_window_list(table, z->loc, z->size, &found);
     if (!found) {
         return kNowPeekReadNoAnchor;
     }

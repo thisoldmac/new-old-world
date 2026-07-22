@@ -89,14 +89,19 @@ widened to accept the system heap (partition-only read "unreadable",
 exactly tbt's axtree lesson). The foreign read lives in the app, never
 the extension.
 
-Known texture, not a defect: the readout is only as fresh as the target
-process's last event-loop pass. A dormant background app reads "no
-anchor yet" until it pumps (interacting with it refreshes it within
-~10 s / kFreshTicks); an app with no windows reads "none open". Still
-open for a later pass: whether any app keeps its window structures in a
-zone neither the partition nor the system heap covers (would read
-"unreadable"); and rung 2b, cropping the actual Front & Capture to the
-rect.
+Known texture, not a defect and not fixable: the readout is only as
+fresh as the target process's last event-loop pass. Window state is a
+SNAPSHOT captured by the filter when the process pumps - classic Mac OS
+has no cross-process live window feed (`axtree` had the identical
+limit), so no reader can re-take it on demand. There is deliberately no
+time-based freshness gate: the A5-in-partition match and the fail-closed
+validation, not a clock, prove a slot is this process's, and the app
+carries the last good read across a stale blip. An app that never pumped
+since arming reads "no anchor yet" until it does; an app with no windows
+reads "none open". Still open for a later pass: whether any app keeps its
+window structures in a zone neither the partition nor the system heap
+covers (would read "unreadable"); and rung 2b, cropping the actual Front
+& Capture to the rect.
 
 **Metal found one rung-0 bug, now fixed:** the detail pane's "Launched"
 line read "1/1/04" for every process. `ProcessInfoRec.processLaunchDate`
