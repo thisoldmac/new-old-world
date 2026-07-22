@@ -205,6 +205,30 @@ Not load-bearing; parked as a known gap rather than chased.
 Everything here builds and passes its tests. None of it has been watched
 working on the PowerBook.
 
+- **The Processes page's product pass** (2026-07-21) - built and
+  suite-green, unrun on metal. All app-side (extension unchanged):
+  - **Kind grouping.** Processes are classed from `processMode`
+    (`modeOnlyBackground`), not guessed from the `'appe'` type. The list
+    sorts front-process first, then applications, a divider row, then
+    background-only - kind and front-ness are the sort axes, never
+    window state, so a row never jumps when a window opens/closes.
+  - **Row badges.** Front app reads "(front)"; apps show their window
+    count ("3 windows"); windowless and background rows show none - the
+    windowed/windowless distinction, visible without selecting.
+  - **Richer detail.** CPU time (`processActiveTime`), accurate Kind
+    with "(frontmost)", and a Windows section listing each window's
+    title + size (up to 3, "...and N more"), read through the anchor
+    plane's validated foreign path (now walking the `nextWindow` chain
+    and reading `titleHandle`). Menus line is a reserved STUB - the
+    anchor captures `MenuList`, the walk is a later pass.
+
+  **Watch on metal:** the **divider row** is a non-process sentinel item
+  in the Data Browser (`kDividerItem`), non-selectable by bouncing the
+  selection off it - the one bit of fake-row territory in an otherwise
+  proven-DB design; confirm it draws between the groups and cannot be
+  selected. Also that window titles read correctly (another foreign
+  pointer hop, `titleHandle`), and that per-app window-count reads every
+  second don't cost visible time on the 33 MHz metal.
 - **Prefs v10 module renumbering.** Connection moved 4 to 5; a v9 file
   should reopen on the page the person had (the remap is three lines
   in `now_prefs_load`), exercised only by reasoning - same status as

@@ -29,6 +29,9 @@ enum {
     kQuitPatienceTicks = 600,         /* 10 s before "no reply" */
 
     kColName = 'name',
+    /* A non-process sentinel row: the "background" divider between the
+       two groups. Well outside the process item-id range (1..32). */
+    kDividerItem = 1000,
 
     kQuitNone = 0,
     kQuitAsked = 1,
@@ -44,7 +47,12 @@ typedef struct {
     long used_kb;
     unsigned long launched;           /* processLaunchDate: TICKS since
                                          boot, not a date */
+    unsigned long active_time;        /* processActiveTime: CPU ticks */
+    unsigned long mode;               /* processMode flags */
     Boolean self;
+    Boolean is_front;                 /* the frontmost process */
+    short kind;                       /* kProcKind* */
+    short window_count;               /* -1 unknown, else windows open */
     short quit_state;
     unsigned long quit_ticks;
     IconRef icon;                     /* may be NULL; released on drop */
@@ -70,10 +78,12 @@ static unsigned long g_next_walk;
 static char g_status[64];
 static short g_front_hilite = -1;
 static short g_quit_hilite = -1;
-/* The anchor-plane readout (group box, second line), refreshed on the
-   throttled idle so it tracks the front app even while NOW is in the
-   background - the foreign read lives on the 1 Hz path, never in draw. */
-static char g_shown_bounds[48];
+
+/* The selected process's windows, read through the anchor plane on the
+   throttled idle (the foreign read lives on the 1 Hz path, never in
+   draw) and drawn in the detail pane. */
+static NowPeekWindowList g_sel_windows;
+static NowPeekReadStatus g_sel_win_status = kNowPeekReadNoPlane;
 
 /* Real UPPs, retained for the control's lifetime; the shape (and the
    reason it is not a cast) is files_browser_view.c. */
@@ -126,11 +136,29 @@ static void drop_icons(ProcEntry *table, int count)
     }
 }
 
+/* The kind that drives grouping and the "Kind:" label. From
+   processMode, not from guessing at the 'appe' type - the mode's
+   modeOnlyBackground bit is the authority on what is faceless. */
+static short kind_of(unsigned long type, unsigned long sig,
+                     unsigned long mode)
+{
+    if (type == NOW_PEEK_4CC('F', 'N', 'D', 'R')
+        || sig == NOW_PEEK_4CC('M', 'A', 'C', 'S')) {
+        return kProcKindFinder;
+    }
+    if ((mode & modeOnlyBackground) != 0) {
+        return kProcKindBackground;
+    }
+    return kProcKindApp;
+}
+
 static int walk_processes(ProcEntry *out, int max)
 {
     ProcessSerialNumber psn = { 0, kNoProcess };
     ProcessSerialNumber self;
+    ProcessSerialNumber front;
     Boolean have_self = GetCurrentProcess(&self) == noErr;
+    Boolean have_front = GetFrontProcess(&front) == noErr;
     int count = 0;
 
     while (count < max && GetNextProcess(&psn) == noErr) {
@@ -160,8 +188,15 @@ static int walk_processes(ProcEntry *out, int max)
             entry->used_kb = 0;
         }
         entry->launched = info.processLaunchDate;
+        entry->active_time = info.processActiveTime;
+        entry->mode = (unsigned long)info.processMode;
+        entry->kind = kind_of(entry->type, entry->sig, entry->mode);
+        entry->window_count = -1;         /* filled by the anchor read */
         entry->self = have_self && SameProcess(&psn, &self, &same) == noErr
             && same;
+        same = false;
+        entry->is_front = have_front
+            && SameProcess(&psn, &front, &same) == noErr && same;
         ++count;
     }
     return count;
@@ -176,7 +211,10 @@ static void invalidate_detail(void)
 
 static void rebuild_browser_items(void)
 {
-    DataBrowserItemID ids[kMaxProcs];
+    DataBrowserItemID ids[kMaxProcs + 1];
+    int n = 0;
+    int apps = 0;
+    int bg = 0;
     int i;
 
     if (g_browser == NULL) {
@@ -185,11 +223,19 @@ static void rebuild_browser_items(void)
     RemoveDataBrowserItems(g_browser, kDataBrowserNoItem, 0, NULL,
                            kDataBrowserItemNoProperty);
     for (i = 0; i < g_proc_count; ++i) {
-        ids[i] = (DataBrowserItemID)(i + 1);
+        ids[n++] = (DataBrowserItemID)(i + 1);
+        if (g_procs[i].kind == kProcKindBackground) {
+            ++bg;
+        } else {
+            ++apps;
+        }
     }
-    if (g_proc_count > 0) {
-        AddDataBrowserItems(g_browser, kDataBrowserNoItem,
-                            (UInt32)g_proc_count, ids,
+    /* The divider only appears when both groups do. */
+    if (apps > 0 && bg > 0) {
+        ids[n++] = kDividerItem;
+    }
+    if (n > 0) {
+        AddDataBrowserItems(g_browser, kDataBrowserNoItem, (UInt32)n, ids,
                             kDataBrowserItemNoProperty);
     }
     if (g_selected >= 0) {
@@ -210,7 +256,9 @@ static void refresh(void)
     int fresh_count = walk_processes(fresh, kMaxProcs);
     ProcessSerialNumber selected_psn;
     Boolean had_selection = false;
-    Boolean membership_changed = fresh_count != g_proc_count;
+    /* list_changed = anything that reorders or re-captions a row (needs
+       a browser rebuild); values_changed = detail-only (memory). */
+    Boolean list_changed = fresh_count != g_proc_count;
     Boolean values_changed = false;
     unsigned long now = TickCount();
     long free_kb = TempFreeMem() / 1024;
@@ -223,10 +271,23 @@ static void refresh(void)
     }
 
     for (i = 0; i < fresh_count; ++i) {
-        int old = find_by_psn(g_procs, g_proc_count, &fresh[i].psn);
+        int old;
 
+        /* The list badge: window count for foreground apps (a foreign
+           read through the anchor plane); background rows carry none.
+           Unknown/unreadable leaves -1 -> no badge. */
+        if (fresh[i].kind != kProcKindBackground) {
+            short wc = 0;
+            NowPeekReadStatus st =
+                now_peek_window_count(&fresh[i].psn, &wc);
+
+            fresh[i].window_count = (st == kNowPeekReadOk) ? wc
+                : (st == kNowPeekReadNoWindows) ? 0 : -1;
+        }
+
+        old = find_by_psn(g_procs, g_proc_count, &fresh[i].psn);
         if (old < 0) {
-            membership_changed = true;
+            list_changed = true;
             take_icon(&fresh[i]);
             continue;
         }
@@ -236,17 +297,20 @@ static void refresh(void)
         fresh[i].quit_ticks = g_procs[old].quit_ticks;
         fresh[i].icon = g_procs[old].icon;
         g_procs[old].icon = NULL;
-        if (old != i || strcmp(fresh[i].name, g_procs[old].name) != 0) {
-            membership_changed = true;
+        if (old != i || strcmp(fresh[i].name, g_procs[old].name) != 0
+            || fresh[i].is_front != g_procs[old].is_front
+            || fresh[i].window_count != g_procs[old].window_count) {
+            list_changed = true;      /* order or caption changed */
         }
         if (fresh[i].used_kb != g_procs[old].used_kb
-            || fresh[i].size_kb != g_procs[old].size_kb) {
+            || fresh[i].size_kb != g_procs[old].size_kb
+            || fresh[i].active_time != g_procs[old].active_time) {
             values_changed = true;
         }
         if (fresh[i].quit_state == kQuitAsked
             && now - fresh[i].quit_ticks > kQuitPatienceTicks) {
             fresh[i].quit_state = kQuitNoReply;
-            membership_changed = true;    /* the row's caption changed */
+            list_changed = true;
         }
     }
     drop_icons(g_procs, g_proc_count);    /* releases only unclaimed ones */
@@ -264,7 +328,7 @@ static void refresh(void)
     proc_status_text(g_proc_count, free_kb, status, sizeof status);
     strcpy(g_status, status);         /* placard diffing is the shell's */
 
-    if (membership_changed) {
+    if (list_changed) {
         rebuild_browser_items();
         invalidate_detail();
     } else if (values_changed && g_selected >= 0) {
@@ -343,8 +407,19 @@ static void row_caption(const ProcEntry *entry, char *out, long cap)
 {
     if (entry->quit_state == kQuitAsked) {
         snprintf(out, (size_t)cap, "%s (quitting...)", entry->name);
-    } else if (entry->quit_state == kQuitNoReply) {
+        return;
+    }
+    if (entry->quit_state == kQuitNoReply) {
         snprintf(out, (size_t)cap, "%s (no reply)", entry->name);
+        return;
+    }
+    if (entry->is_front) {
+        snprintf(out, (size_t)cap, "%s  (front)", entry->name);
+    } else if (entry->window_count == 1) {
+        snprintf(out, (size_t)cap, "%s  1 window", entry->name);
+    } else if (entry->window_count > 1) {
+        snprintf(out, (size_t)cap, "%s  %d windows", entry->name,
+                 entry->window_count);
     } else {
         snprintf(out, (size_t)cap, "%s", entry->name);
     }
@@ -359,8 +434,22 @@ static OSStatus item_data(ControlRef browser, DataBrowserItemID item,
     char caption[48];
 
     (void)browser;
-    if (changeValue || property != kColName || item < 1
-        || item > (DataBrowserItemID)g_proc_count) {
+    if (changeValue || property != kColName) {
+        return errDataBrowserPropertyNotSupported;
+    }
+    if (item == kDividerItem) {
+        /* The one non-process row: the group separator. MacRoman em
+           dash (0xD1); no icon. */
+        text = CFStringCreateWithCString(NULL, "\xD1 background",
+                                         kCFStringEncodingMacRoman);
+        if (text == NULL) {
+            return memFullErr;
+        }
+        SetDataBrowserItemDataText(data, text);
+        CFRelease(text);
+        return noErr;
+    }
+    if (item < 1 || item > (DataBrowserItemID)g_proc_count) {
         return errDataBrowserPropertyNotSupported;
     }
     entry = &g_procs[item - 1];
@@ -378,16 +467,34 @@ static OSStatus item_data(ControlRef browser, DataBrowserItemID item,
     return noErr;
 }
 
+/* Restore the real selection after the divider is clicked, so the
+   separator can never be the selected row. */
+static void bounce_divider_selection(ControlRef browser)
+{
+    if (g_selected >= 0) {
+        DataBrowserItemID sel = (DataBrowserItemID)(g_selected + 1);
+
+        SetDataBrowserSelectedItems(browser, 1, &sel,
+                                    kDataBrowserItemsAssign);
+    } else {
+        SetDataBrowserSelectedItems(browser, 0, NULL,
+                                    kDataBrowserItemsAssign);
+    }
+}
+
 static void item_notify(ControlRef browser, DataBrowserItemID item,
                         DataBrowserItemNotification message)
 {
-    (void)browser;
     if (message == kDataBrowserItemSelected) {
+        if (item == kDividerItem) {
+            bounce_divider_selection(browser);
+            return;
+        }
         g_selected = (int)item - 1;
         invalidate_detail();
         g_next_walk = 0;              /* re-read this process's window now */
     } else if (message == kDataBrowserItemDeselected
-               && g_selected == (int)item - 1) {
+               && item != kDividerItem && g_selected == (int)item - 1) {
         g_selected = -1;
         invalidate_detail();
         g_next_walk = 0;
@@ -399,15 +506,44 @@ static char ascii_lower(char c)
     return (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c;
 }
 
+/* Group order: the front process pins to the top, then applications,
+   then the divider, then background-only processes; within a group, by
+   name. Kind (static) and front-ness are the sort axes - window state
+   is not, so a row never jumps when a window opens or closes. */
+static short rank_of(DataBrowserItemID item)
+{
+    const ProcEntry *e;
+
+    if (item == kDividerItem) {
+        return 2;
+    }
+    if (item < 1 || item > (DataBrowserItemID)g_proc_count) {
+        return 4;
+    }
+    e = &g_procs[item - 1];
+    if (e->is_front) {
+        return 0;
+    }
+    return e->kind == kProcKindBackground ? 3 : 1;
+}
+
 static Boolean item_compare(ControlRef browser, DataBrowserItemID a,
                             DataBrowserItemID b,
                             DataBrowserPropertyID property)
 {
+    short ra = rank_of(a);
+    short rb = rank_of(b);
     const char *na;
     const char *nb;
 
     (void)browser;
     (void)property;
+    if (ra != rb) {
+        return ra < rb;
+    }
+    /* Same rank: only two processes (apps, or background) ever tie -
+       front and divider are unique - so a plain name compare orders
+       them. */
     if (a < 1 || a > (DataBrowserItemID)g_proc_count || b < 1
         || b > (DataBrowserItemID)g_proc_count) {
         return a < b;
@@ -574,7 +710,8 @@ static void procs_show(Boolean visible)
         g_next_walk = 0;              /* a fresh page walks now */
         g_front_hilite = -1;
         g_quit_hilite = -1;
-        g_shown_bounds[0] = '\0';     /* re-read on the first idle */
+        memset(&g_sel_windows, 0, sizeof g_sel_windows);
+        g_sel_win_status = kNowPeekReadNoPlane;   /* re-read on first idle */
     } else {
         now_peek_disarm(kNowPeekCapAnchors);
     }
@@ -645,6 +782,65 @@ static void draw_mem_bar(const ProcEntry *entry)
     }
 }
 
+/* The "Windows:" header and up to kProcDetailWindows title+size rows for
+   the selected process, from the idle-refreshed cache. The header
+   doubles as the read status (none open / no anchor yet / unreadable),
+   so the anchor plane's state is always legible here. */
+static void draw_window_facts(void)
+{
+    Str255 text;
+    char line[96];
+    char value[40];
+    int rows;
+    int full;
+    int i;
+
+    switch (g_sel_win_status) {
+    case kNowPeekReadOk:
+        snprintf(value, sizeof value, "%d%s", g_sel_windows.count,
+                 g_sel_windows.more ? " (more)" : "");
+        break;
+    case kNowPeekReadNoWindows:
+        snprintf(value, sizeof value, "none open");
+        break;
+    case kNowPeekReadNoAnchor:
+        snprintf(value, sizeof value, "no anchor yet");
+        break;
+    case kNowPeekReadUnreadable:
+        snprintf(value, sizeof value, "unreadable");
+        break;
+    default:
+        snprintf(value, sizeof value, "-");   /* no plane */
+        break;
+    }
+    draw_fact(&g_r.windows_line, "Windows:", value);
+
+    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    rows = kProcDetailWindows;
+    full = g_sel_windows.count <= rows ? g_sel_windows.count : rows - 1;
+    for (i = 0; i < full; ++i) {
+        const NowPeekWindow *w = &g_sel_windows.windows[i];
+        const Rect *r = &g_r.window_rows[i];
+
+        snprintf(line, sizeof line, "%s  %d x %d",
+                 w->title[0] != '\0' ? w->title : "(untitled)",
+                 w->right - w->left, w->bottom - w->top);
+        CopyCStringToPascal(line, text);
+        TruncString((short)(r->right - r->left), text, truncEnd);
+        MoveTo(r->left, (short)(r->top + 10));
+        DrawString(text);
+    }
+    if (g_sel_windows.count > rows) {
+        const Rect *r = &g_r.window_rows[rows - 1];
+
+        snprintf(line, sizeof line, "... and %d more",
+                 g_sel_windows.count - full);
+        CopyCStringToPascal(line, text);
+        MoveTo(r->left, (short)(r->top + 10));
+        DrawString(text);
+    }
+}
+
 static void draw_detail(void)
 {
     Str255 text;
@@ -674,7 +870,12 @@ static void draw_detail(void)
     MoveTo(g_r.title_line.left, (short)(g_r.title_line.top + 13));
     DrawString(text);
 
-    proc_kind_text(entry->type, line, sizeof line);
+    proc_kind_name(entry->kind, line, sizeof line);
+    if (entry->is_front) {
+        size_t n = strlen(line);
+
+        snprintf(line + n, sizeof line - n, " (frontmost)");
+    }
     draw_fact(&g_r.kind_line, "Kind:", line);
     {
         char type_four[5];
@@ -688,11 +889,19 @@ static void draw_detail(void)
     proc_mem_text(entry->used_kb, entry->size_kb, line, sizeof line);
     draw_fact(&g_r.mem_line, "Memory:", line);
     draw_mem_bar(entry);
+    proc_cpu_text(entry->active_time, line, sizeof line);
+    draw_fact(&g_r.cpu_line, "CPU:", line);
     /* processLaunchDate is ticks since boot, not a 1904 date; the delta
        to now is the only honest reading (proc_uptime_text). */
     proc_uptime_text((long)(TickCount() - entry->launched), line,
                      sizeof line);
     draw_fact(&g_r.launched_line, "Launched:", line);
+
+    draw_window_facts();
+
+    /* Menus: the anchor captures MenuList, but the walk is a later pass;
+       the slot is here so it does not move when it arrives. */
+    draw_fact(&g_r.menus_line, "Menus:", "not read yet");
 }
 
 static void procs_draw(void)
@@ -720,17 +929,6 @@ static void procs_draw(void)
                 truncEnd);
     MoveTo(g_r.peek_line.left, (short)(g_r.peek_line.top + 11));
     DrawString(text);
-
-    /* The anchor-plane readout, from the idle-refreshed cache (the
-       foreign read happens there, never here). Empty when there is no
-       plane, so the group box shows only its status line. */
-    if (g_shown_bounds[0] != '\0') {
-        CopyCStringToPascal(g_shown_bounds, text);
-        TruncString((short)(g_r.peek_line.right - g_r.peek_line.left),
-                    text, truncEnd);
-        MoveTo(g_r.peek_line.left, (short)(g_r.peek_line.top + 25));
-        DrawString(text);
-    }
 }
 
 static Boolean procs_click(const EventRecord *event, Point local)
@@ -807,37 +1005,24 @@ static void procs_activate(Boolean active)
     }
 }
 
-/* The group box's second line: the SELECTED process's window, read
-   through the anchor plane, or why it could not be read. Empty when
-   there is no anchor plane at all (an M0 extension or none) or nothing
-   is selected, so the line simply does not appear. */
-static void format_peek_bounds(char *out, long cap)
+/* Read the selected process's windows into the cache the detail pane
+   draws. On the throttled path (foreign memory), only on change. */
+static void refresh_selected_windows(void)
 {
-    unsigned long caps = 0;
-    NowPeekBounds b;
+    NowPeekWindowList w;
+    NowPeekReadStatus st;
 
-    out[0] = '\0';
-    if (now_peek_status(&caps) != kNowPeekActive
-        || (caps & kNowPeekCapAnchors) == 0
-        || g_selected < 0 || g_selected >= g_proc_count) {
-        return;                       /* no plane, or nothing selected */
+    memset(&w, 0, sizeof w);
+    if (g_selected >= 0 && g_selected < g_proc_count) {
+        st = now_peek_windows_for_psn(&g_procs[g_selected].psn, &w);
+    } else {
+        st = kNowPeekReadNoPlane;
     }
-    switch (now_peek_window_for_psn(&g_procs[g_selected].psn, &b)) {
-    case kNowPeekReadOk:
-        snprintf(out, (size_t)cap, "Window: %d x %d at (%d, %d)",
-                 b.right - b.left, b.bottom - b.top, b.left, b.top);
-        break;
-    case kNowPeekReadNoWindows:
-        snprintf(out, (size_t)cap, "Window: none open");
-        break;
-    case kNowPeekReadNoAnchor:
-        snprintf(out, (size_t)cap, "Window: no anchor yet");
-        break;
-    case kNowPeekReadUnreadable:
-        snprintf(out, (size_t)cap, "Window: unreadable");
-        break;
-    default:
-        break;                        /* NoPlane: leave empty */
+    if (st != g_sel_win_status
+        || memcmp(&w, &g_sel_windows, sizeof w) != 0) {
+        g_sel_windows = w;
+        g_sel_win_status = st;
+        invalidate_detail();
     }
 }
 
@@ -851,22 +1036,9 @@ static void procs_idle(void)
         return;
     }
     if (TickCount() >= g_next_walk) {
-        char bounds[48];
-
         g_next_walk = TickCount() + kWalkIntervalTicks;
         refresh();
-        /* The one foreign read, on the throttled path and only on
-           change - so a backgrounded NOW tracks the front app without
-           touching foreign memory every event-loop pass. */
-        format_peek_bounds(bounds, sizeof bounds);
-        if (strcmp(bounds, g_shown_bounds) != 0) {
-            Rect line;
-
-            strcpy(g_shown_bounds, bounds);
-            line = g_r.peek_line;
-            line.bottom = (short)(g_r.peek_line.top + 30);   /* both lines */
-            InvalWindowRect(g_owner, &line);
-        }
+        refresh_selected_windows();   /* the foreign read, throttled */
     }
     if (g_selected >= 0 && g_selected < g_proc_count) {
         entry = &g_procs[g_selected];
