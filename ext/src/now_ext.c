@@ -1,14 +1,18 @@
 /*
- * now_ext.c - the NOW Extension, plane P0 (M0: core residence).
+ * now_ext.c - the NOW Extension: core (P0) + the anchor plane (P1).
  *
  * A 68K INIT that installs at boot, publishes the shared table in the
  * system heap, registers Gestalt selector 'NWex' to hand out its
- * address, and chains a jGNE filter that stamps a heartbeat every
- * event-loop pass. That is the whole of M0: it proves install,
- * Gestalt, filter chaining, and liveness, and it flips the
- * application's peek.h status from "not installed" to "active". No
- * anchors, no foreign reads, no arming - those are P1 and later, and
- * they hang off this same core.
+ * address, and chains a jGNE filter. The core (P0) stamps a heartbeat
+ * every event-loop pass - proof of install, Gestalt, chaining, and
+ * liveness. The anchor plane (P1), when the application arms it,
+ * additionally records each process's low-memory CurrentA5 / WindowList
+ * / MenuList into the shared table while that process's context is
+ * current - the only place its per-process Toolbox state is visible
+ * (finding observe-process-local-ui). It reads low memory ONLY: no
+ * Process Manager call, no allocation, nothing that moves memory. The
+ * app correlates A5 to PSN and follows the pointers; foreign-MEMORY
+ * reads never happen here (docs/resident-components.md).
  *
  * The table layout is the shared contract compiled by all three sides
  * (contract/peek_table.h); this file is the writer. Foreign-context
@@ -46,15 +50,94 @@ GetNextEventFilterUPP gNowExtOldGNEFilter = NULL;
 /* The assembly shim (now_ext_gne.S), tail-chained onto jGNE. */
 extern void now_ext_gne_filter(void);
 
+/* Fast-path cache: consecutive GetNextEvent calls are usually the same
+   front app, so an A5 match skips the slot scan. Lives in the resident
+   relocated BSS (fixed system-heap address), valid from any context. */
+static NowPeekU32 gLastA5;
+static short gLastSlot = -1;
+static NowPeekU16 gAnchorCount;
+
+/* Which slot holds this A5's anchor: an exact match, else an empty slot
+   (a5 == 0), else the stalest (oldest stamp) to recycle. O(32), and the
+   A5 fast path above skips it on the common pass. */
+static short find_anchor_slot(NowPeekU32 a5)
+{
+    short i;
+    short empty = -1;
+    short stalest = 0;
+    NowPeekU32 oldest = 0xFFFFFFFFUL;
+
+    for (i = 0; i < kNowPeekMaxAnchors; ++i) {
+        NowPeekAnchorSlot *slot = &gNowExtTable->anchors[i];
+
+        if (slot->a5 == a5) {
+            return i;
+        }
+        if (slot->a5 == 0 && empty < 0) {
+            empty = i;
+        }
+        if (slot->stamp_ticks < oldest) {
+            oldest = slot->stamp_ticks;
+            stalest = i;
+        }
+    }
+    return empty >= 0 ? empty : stalest;
+}
+
+/* Record the current context's anchors. Stamp is written LAST as the
+   commit, and zeroed first as an invalidation, so a reader that
+   double-samples the stamp can tell a torn cross-update read from a
+   stable one (peek_table.h documents the discipline). A5-aligned
+   32-bit stores are atomic on the 68020+/PPC this ships to. */
+static void capture_anchor(void)
+{
+    NowPeekU32 a5 = (NowPeekU32)LMGetCurrentA5();
+    NowPeekAnchorSlot *slot;
+    short idx;
+
+    if (a5 == 0) {
+        return;                       /* no valid A5 world to anchor */
+    }
+    if (a5 == gLastA5 && gLastSlot >= 0) {
+        idx = gLastSlot;
+    } else {
+        idx = find_anchor_slot(a5);
+        gLastA5 = a5;
+        gLastSlot = idx;
+    }
+    slot = &gNowExtTable->anchors[idx];
+    if (slot->a5 == 0 && gAnchorCount < kNowPeekMaxAnchors) {
+        gNowExtTable->anchor_count = ++gAnchorCount;
+    }
+    slot->stamp_ticks = 0;                          /* invalidate */
+    slot->a5 = a5;
+    slot->window_list = (NowPeekU32)LMGetWindowList();
+    slot->menu_list = (NowPeekU32)LMGetMenuList();
+    slot->psn_high = 0;               /* the extension never fills PSN; */
+    slot->psn_low = 0;                /* the app correlates A5 to PSN */
+    slot->stamp_ticks = (NowPeekU32)LMGetTicks();   /* commit last */
+}
+
 /* Called from the shim on every GetNextEvent/WaitNextEvent, in whatever
-   process is pumping. Must be nearly free and allocate nothing: one
-   TickCount read and one 32-bit store to the fixed table. This is the
-   liveness signal a reader uses to tell "running" from "wedged"; P1's
-   per-context anchor capture will extend it. */
+   process is pumping. The heartbeat (P0) is always stamped - it is how
+   a reader tells "running" from "wedged". The anchor capture (P1) runs
+   only when the application has armed it; the arm handshake is the
+   plane's contract (docs/resident-components.md). Both are a handful of
+   low-memory reads and stores - allocate nothing, call nothing that
+   moves memory. */
 void now_ext_gne_apply(void)
 {
-    if (gNowExtTable != NULL) {
-        gNowExtTable->heartbeat = (NowPeekU32)LMGetTicks();
+    NowPeekTable *table = gNowExtTable;
+
+    if (table == NULL) {
+        return;
+    }
+    table->heartbeat = (NowPeekU32)LMGetTicks();
+    if (table->arm_request & kNowPeekTableCapAnchors) {
+        capture_anchor();
+        table->arm_active |= kNowPeekTableCapAnchors;
+    } else if (table->arm_active & kNowPeekTableCapAnchors) {
+        table->arm_active &= ~(NowPeekU32)kNowPeekTableCapAnchors;
     }
 }
 
@@ -95,17 +178,18 @@ void _start(void)
     }
     table->ext_major = kNowPeekExtMajor;
     table->ext_minor = 0;
-    /* M0 publishes the prelude only; the anchor slots are allocated
-       (so P1 arms in place at the same Gestalt address) but not yet
-       backed, so length stops before them and a reader refuses anchor
-       reads. This is exactly what peek_table_test pins. */
-    table->length = (NowPeekU32)offsetof(NowPeekTable, anchors);
-    table->caps = 0;                  /* no planes armed at M0 */
+    /* The anchor region is real, backed memory now (P1), so length
+       covers the whole table; the app still trusts an individual slot
+       only when the plane is armed and the slot's stamp is fresh. */
+    table->length = (NowPeekU32)sizeof(NowPeekTable);
+    /* P1 is AVAILABLE but dark: advertised in caps, captured nothing
+       until the app writes arm_request. */
+    table->caps = kNowPeekTableCapAnchors;
     table->boot_ticks = (NowPeekU32)LMGetTicks();
     table->heartbeat = table->boot_ticks;
     table->arm_request = 0;
     table->arm_active = 0;
-    table->anchor_format = kNowPeekAnchorFormatNone;
+    table->anchor_format = kNowPeekAnchorFormatV1;
     table->anchor_count = 0;
     /* Magic last: a reader that somehow sees the address early finds it
        only once the table is fully formed. */
