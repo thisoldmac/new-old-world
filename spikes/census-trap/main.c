@@ -269,33 +269,44 @@ static void run_probe(void)
     }
     report("");
 
-    /* Stage 3 - ATA IDENTIFY via $AAF1 (pascal ABI, corrected). */
+    /* Stage 3 - ATA IDENTIFY via $AAF1 (pascal ABI, corrected). The trap
+       dispatches clean now; find which device id actually answers by
+       trying a few and dumping the IDENTIFY signature word (0x0000/0x848A
+       for ATA/ATAPI) so an empty-vs-real buffer is unambiguous. */
     {
-        static unsigned char buf[512];
-        SpikeAtaIdentify pb;
-        SInt16 err;
+        static const unsigned long ids[] = { 0x0000, 0x0100, 0x0001, 0x0101,
+                                             0x00000000UL, 0x20, 0xFFFFFF00UL };
+        int n = (int)(sizeof ids / sizeof ids[0]);
+        int k;
 
-        memset(&pb, 0, sizeof pb);
-        memset(buf, 0, sizeof buf);
-        pb.vers = 1;
-        pb.fn = kAtaFnIdentify;
-        pb.deviceID = 0x0000;               /* bus 0, device 0 */
-        pb.timeout = 1000;
-        pb.buffer = buf;
-        step("ata: $AAF1 IDENTIFY device 0.0");
-        err = dispatch(&g_ata_rd, &pb);
-        report("ata: trap err=%d, pb result=%d", (int)err, (int)pb.result);
-        if (err == noErr && pb.result == noErr) {
-            char model[42];
-            int i;
-            for (i = 0; i < 40; i++) {
-                unsigned char c = buf[27 * 2 + (i ^ 1)];  /* words 27.., swapped */
-                model[i] = (c >= 32 && c < 127) ? (char)c : ' ';
+        for (k = 0; k < n; k++) {
+            static unsigned char buf[512];
+            SpikeAtaIdentify pb;
+            SInt16 err;
+            unsigned short sig;
+
+            memset(&pb, 0, sizeof pb);
+            memset(buf, 0, sizeof buf);
+            pb.vers = 1;
+            pb.fn = kAtaFnIdentify;
+            pb.deviceID = ids[k];
+            pb.timeout = 1000;
+            pb.buffer = buf;
+            step("ata: $AAF1 IDENTIFY (an id)");
+            err = dispatch(&g_ata_rd, &pb);
+            sig = (unsigned short)((buf[0] << 8) | buf[1]);
+            report("ata id $%08lX: err=%d result=%d word0=$%04X",
+                   ids[k], (int)err, (int)pb.result, sig);
+            if (err == noErr && pb.result == noErr && sig != 0) {
+                char model[42];
+                int i;
+                for (i = 0; i < 40; i++) {
+                    unsigned char c = buf[27 * 2 + (i ^ 1)];
+                    model[i] = (c >= 32 && c < 127) ? (char)c : ' ';
+                }
+                model[40] = '\0';
+                report("ata id $%08lX: model \"%s\"", ids[k], model);
             }
-            model[40] = '\0';
-            report("ata: model \"%s\"", model);
-        } else {
-            report("ata: no drive at 0.0 (or the ATA trap ABI differs)");
         }
     }
     report("");
