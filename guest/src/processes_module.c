@@ -70,6 +70,10 @@ static unsigned long g_next_walk;
 static char g_status[64];
 static short g_front_hilite = -1;
 static short g_quit_hilite = -1;
+/* The anchor-plane readout (group box, second line), refreshed on the
+   throttled idle so it tracks the front app even while NOW is in the
+   background - the foreign read lives on the 1 Hz path, never in draw. */
+static char g_shown_bounds[48];
 
 /* Real UPPs, retained for the control's lifetime; the shape (and the
    reason it is not a cast) is files_browser_view.c. */
@@ -568,6 +572,7 @@ static void procs_show(Boolean visible)
         g_next_walk = 0;              /* a fresh page walks now */
         g_front_hilite = -1;
         g_quit_hilite = -1;
+        g_shown_bounds[0] = '\0';     /* re-read on the first idle */
     } else {
         now_peek_disarm(kNowPeekCapAnchors);
     }
@@ -714,31 +719,15 @@ static void procs_draw(void)
     MoveTo(g_r.peek_line.left, (short)(g_r.peek_line.top + 11));
     DrawString(text);
 
-    /* When the anchor plane is present, show what it buys: the front
-       window's global bounds, read through the validated foreign path.
-       A dash means armed-but-not-yet-readable (a fresh capture, or a
-       front app that has not pumped since arming). Drawn at page-draw
-       time, not on idle - the read touches foreign memory. */
-    {
-        unsigned long caps = 0;
-
-        if (now_peek_status(&caps) == kNowPeekActive
-            && (caps & kNowPeekCapAnchors) != 0) {
-            NowPeekBounds b;
-
-            if (now_peek_front_window(&b)) {
-                snprintf(line, sizeof line,
-                         "Front window: %d x %d at (%d, %d)",
-                         b.right - b.left, b.bottom - b.top, b.left, b.top);
-            } else {
-                snprintf(line, sizeof line, "Front window: -");
-            }
-            CopyCStringToPascal(line, text);
-            TruncString((short)(g_r.peek_line.right - g_r.peek_line.left),
-                        text, truncEnd);
-            MoveTo(g_r.peek_line.left, (short)(g_r.peek_line.top + 25));
-            DrawString(text);
-        }
+    /* The anchor-plane readout, from the idle-refreshed cache (the
+       foreign read happens there, never here). Empty when there is no
+       plane, so the group box shows only its status line. */
+    if (g_shown_bounds[0] != '\0') {
+        CopyCStringToPascal(g_shown_bounds, text);
+        TruncString((short)(g_r.peek_line.right - g_r.peek_line.left),
+                    text, truncEnd);
+        MoveTo(g_r.peek_line.left, (short)(g_r.peek_line.top + 25));
+        DrawString(text);
     }
 }
 
@@ -816,6 +805,35 @@ static void procs_activate(Boolean active)
     }
 }
 
+/* The group box's second line: what the anchor plane can read right
+   now, or why it cannot. Empty when there is no anchor plane at all (an
+   M0 extension or none), so the line simply does not appear. */
+static void format_peek_bounds(char *out, long cap)
+{
+    unsigned long caps = 0;
+    NowPeekBounds b;
+
+    out[0] = '\0';
+    if (now_peek_status(&caps) != kNowPeekActive
+        || (caps & kNowPeekCapAnchors) == 0) {
+        return;                       /* no plane to report on */
+    }
+    switch (now_peek_front_window(&b)) {
+    case kNowPeekReadOk:
+        snprintf(out, (size_t)cap, "Front window: %d x %d at (%d, %d)",
+                 b.right - b.left, b.bottom - b.top, b.left, b.top);
+        break;
+    case kNowPeekReadNoAnchor:
+        snprintf(out, (size_t)cap, "Front window: no anchor yet");
+        break;
+    case kNowPeekReadUnreadable:
+        snprintf(out, (size_t)cap, "Front window: unreadable");
+        break;
+    default:
+        break;                        /* NoPlane: leave empty */
+    }
+}
+
 static void procs_idle(void)
 {
     short want_front;
@@ -826,8 +844,22 @@ static void procs_idle(void)
         return;
     }
     if (TickCount() >= g_next_walk) {
+        char bounds[48];
+
         g_next_walk = TickCount() + kWalkIntervalTicks;
         refresh();
+        /* The one foreign read, on the throttled path and only on
+           change - so a backgrounded NOW tracks the front app without
+           touching foreign memory every event-loop pass. */
+        format_peek_bounds(bounds, sizeof bounds);
+        if (strcmp(bounds, g_shown_bounds) != 0) {
+            Rect line;
+
+            strcpy(g_shown_bounds, bounds);
+            line = g_r.peek_line;
+            line.bottom = (short)(g_r.peek_line.top + 30);   /* both lines */
+            InvalWindowRect(g_owner, &line);
+        }
     }
     if (g_selected >= 0 && g_selected < g_proc_count) {
         entry = &g_procs[g_selected];

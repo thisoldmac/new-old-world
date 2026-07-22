@@ -86,7 +86,7 @@ static unsigned long front_window_pointer(const NowPeekTable *table,
     return 0;
 }
 
-Boolean now_peek_front_window(NowPeekBounds *out)
+NowPeekReadStatus now_peek_front_window(NowPeekBounds *out)
 {
     const NowPeekTable *table;
     ProcessSerialNumber psn;
@@ -106,47 +106,48 @@ Boolean now_peek_front_window(NowPeekBounds *out)
     table = now_peek_table();
     if (table == NULL || (table->caps & kNowPeekCapAnchors) == 0
         || (table->arm_active & kNowPeekCapAnchors) == 0) {
-        return false;                 /* absent, no plane, or not armed */
+        return kNowPeekReadNoPlane;   /* absent, no plane, or not armed */
     }
 
     if (GetFrontProcess(&psn) != noErr) {
-        return false;
+        return kNowPeekReadNoAnchor;
     }
     memset(&info, 0, sizeof info);
     info.processInfoLength = sizeof info;
     if (GetProcessInformation(&psn, &info) != noErr) {
-        return false;
+        return kNowPeekReadNoAnchor;
     }
     loc = (unsigned long)info.processLocation;
     size = (unsigned long)info.processSize;
     if (loc == 0 || size == 0) {
-        return false;
+        return kNowPeekReadNoAnchor;
     }
 
     wl = front_window_pointer(table, loc, size, (unsigned long)TickCount());
     if (wl == 0) {
-        return false;                 /* no fresh anchor for the front app */
+        return kNowPeekReadNoAnchor;  /* no fresh anchor for the front app */
     }
 
     /* Every dereference below is gated on the partition first; a value
-       that fails a check means we misread, and we fail closed. */
+       that fails a check means we misread, and we fail closed - which
+       reads as "unreadable", distinct from "no anchor". */
     if (!now_peek_range_in_partition(wl, kWindowRecordSize, loc, size)) {
-        return false;
+        return kNowPeekReadUnreadable;
     }
     struc = read_be32(wl + kOffStrucRgn);          /* the RgnHandle */
     if (!now_peek_range_in_partition(struc, 4, loc, size)) {
-        return false;
+        return kNowPeekReadUnreadable;
     }
     region = read_be32(struc);                     /* master-ptr deref */
     if (!now_peek_range_in_partition(region, kRegionHeader, loc, size)) {
-        return false;
+        return kNowPeekReadUnreadable;
     }
     top = read_be16(region + kOffRgnBBox);
     left = read_be16(region + kOffRgnBBox + 2);
     bottom = read_be16(region + kOffRgnBBox + 4);
     right = read_be16(region + kOffRgnBBox + 6);
     if (!now_peek_rect_sane(top, left, bottom, right)) {
-        return false;
+        return kNowPeekReadUnreadable;
     }
 
     out->top = top;
@@ -154,5 +155,5 @@ Boolean now_peek_front_window(NowPeekBounds *out)
     out->bottom = bottom;
     out->right = right;
     out->valid = true;
-    return true;
+    return kNowPeekReadOk;
 }
