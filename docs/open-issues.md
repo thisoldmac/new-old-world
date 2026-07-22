@@ -366,9 +366,19 @@ working on the PowerBook.
     every match path-first instead of refusing, `launch`'s ambiguity
     refusal names the paths, and a duplicate finder (same/different
     version, user-driven consolidation) is marked in the spec as later
-    work. The fixes are emulator-verified; the metal re-run of
-    `launch`-from-host and `vers`-duplicates is what remains, plus the
-    `swpage` firsts above.
+    work.
+  - **Second metal round (2026-07-22, same day):** the multi-match
+    view worked but truncated paths mid-folder, and retyping a full
+    HFS path to disambiguate is brutal. Both fixed: matches print as
+    a **numbered list whose paths wrap** across continuation rows,
+    the list is **stored on the guest**, and `launch #2` / `vers #2`
+    pick from it — either console, one wire frame. launch's ambiguity
+    answers a distinct `launch-ambiguous` code for a future host UI.
+    Emulator-verified with a manufactured duplicate (two now-guests:
+    refusal listed both full paths, `vers #2` read the picked copy,
+    `launch #1` launched). The metal re-run of the whole
+    launch/vers/pick flow is what remains, plus the `swpage` firsts
+    above.
 
 - **`sw` and `launch` — the software family's first verbs** (2026-07-22).
   The Software module's data layer (`software.c`) surfaced as console
