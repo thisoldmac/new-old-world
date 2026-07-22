@@ -304,24 +304,11 @@ static void add_column(DataBrowserPropertyID id, const char *title,
     }
 }
 
-/* Column titles read differently per probe; retitle by rebuild on switch. */
-static void set_columns(int probe_index)
-{
-    const char *name_title = "Field";
-    const char *value_title = "Value";
-    const char *p = probe_name(probe_index);
-
-    RemoveDataBrowserTableViewColumn(g_browser, kColName);
-    RemoveDataBrowserTableViewColumn(g_browser, kColValue);
-    if (p != NULL && strcmp(p, "overview") == 0) {
-        name_title = "Fact";
-    } else if (p != NULL && strcmp(p, "selectors") == 0) {
-        name_title = "Selector";
-        value_title = "Meaning";
-    }
-    add_column(kColName, name_title, 150, true, 0);
-    add_column(kColValue, value_title, 200, false, 1);
-}
+/* Columns are added once and kept: removing and re-adding them (to retitle
+   per probe) leaves the list unable to display its items - the bug the v2
+   layout shipped with. A single neutral Field/Value pair reads correctly
+   for every probe; the caption rows and the header placard say which probe
+   is showing. */
 
 /* --- the drawn probe rail ----------------------------------------------- */
 
@@ -495,7 +482,8 @@ static OSErr census_create(WindowRef owner, const Rect *body)
     cb.u.v1.itemDataCallback = g_data_upp;
     cb.u.v1.itemNotificationCallback = g_notify_upp;
     SetDataBrowserCallbacks(g_browser, &cb);
-    set_columns(g_sel_probe);
+    add_column(kColName, "Field", 150, true, 0);
+    add_column(kColValue, "Value", 200, false, 1);
     SetDataBrowserListViewHeaderBtnHeight(g_browser, 16);
     SetDataBrowserHasScrollBars(g_browser, false, true);
 
@@ -576,7 +564,6 @@ static Boolean census_click(const EventRecord *event, Point local)
         if (hit != g_sel_probe) {
             int prev = g_sel_probe;
             g_sel_probe = hit;
-            set_columns(hit);
             {
                 Rect a, b;
                 SetRect(&a, g_r.rail.left,
@@ -635,7 +622,6 @@ static Boolean census_key(const EventRecord *event)
     } else {
         return false;
     }
-    set_columns(g_sel_probe);
     InvalWindowRect(g_owner, &g_r.rail);
     load_selected_probe();
     return true;
