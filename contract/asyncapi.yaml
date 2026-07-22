@@ -1310,11 +1310,22 @@ components:
       ata:
         columns: [Device, Raw, Meaning]
         description: >
-          IDENTIFY DEVICE through the native ATA Manager - the internal
-          IDE boot disk the SCSI scan cannot see. NativeATAMgr is
-          resolved from the ATAManager fragment; gated on gestaltATAAttr.
-          IDENTIFY is a non-destructive read but active bus I/O, so one
-          device per page and attended-first, like scsi.
+          IDENTIFY DEVICE through the ATA Manager - the internal IDE boot
+          disk the SCSI scan cannot see. The 1400c's ATA Manager is
+          68K-trap-only ($AAF1), reached through a metal-proven Mixed Mode
+          dispatch (see x-trap). IDENTIFY is a non-destructive read. On the
+          1400c the manager answers noErr with an empty IDENTIFY buffer, so
+          the row reports the device present without a model; a drive that
+          fills the buffer decodes into model, capacity and firmware.
+      pccard:
+        columns: [Field, Raw, Meaning]
+        description: >
+          Card Services' own view via CSGetCardServicesInfo ($AAF0,
+          selector 7) over the same Mixed Mode dispatch: CS version and
+          socket count, plus the CS vendor string. Touches no socket and
+          no card - a card's own identity lives in its CIS, which stays out
+          of the census (the 1400c's CIS-freeze history) until a gated
+          design exists. Metal-proven: CS 2.01, 4 sockets.
       power:
         columns: [Battery, Raw, Meaning]
         description: >

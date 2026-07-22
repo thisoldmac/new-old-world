@@ -20,11 +20,11 @@
 #include "census.h"
 #include "census_decode.h"
 #include "census_selectors.h"
+#include "census_trap.h"       /* Mixed Mode dispatch to $AAF1/$AAF0 */
 #include "machine_names.h"
 
 #include <Carbon.h>
 #include <SCSI.h>              /* SCSIInstr + sc* opcodes; funcs resolved */
-#include <ATA.h>               /* ataIdentify PB; NativeATAMgr resolved */
 #include <Power.h>             /* battery calls (Carbon-clean) */
 #include <NameRegistry.h>      /* RegEntry* types; funcs resolved from lib */
 
@@ -888,110 +888,135 @@ static void gather_scsi(long cursor, CensusPage *page)
     }
 }
 
-/* --- ata: IDENTIFY DEVICE through the native ATA Manager ---------------- *
+/* --- ata: IDENTIFY DEVICE through the ATA Manager ($AAF1, Mixed Mode) --- *
  * The internal boot disk is IDE, so the SCSI scan structurally cannot see
- * it - this is the probe that does. NativeATAMgr is Carbon-unavailable, so
- * it is resolved from the "ATAManager" fragment and called through a
- * pointer (never a strong import). Gated on gestaltATAAttr; IDENTIFY is a
- * non-destructive read but still active bus I/O, so one device per page
- * and attended-first, like SCSI. Device id = (device << 8) | bus. */
+ * it - this is the probe that does. The 1400c's ATA Manager is 68K-trap-
+ * only (gestaltATAAttr answers falsely absent, and there is no CFM
+ * fragment to resolve), so it is reached through census_trap's Mixed Mode
+ * dispatch, metal-proven ($4242 selftest). IDENTIFY is a non-destructive
+ * read and the dispatch is proven, so it runs in the sweep.
+ * Device id = (device << 8) | bus.
+ *
+ * Honest about this drive: on the 1400c the manager answers noErr with an
+ * EMPTY IDENTIFY buffer (metal, 2026-07-22) - the device is present but
+ * yields no model/serial, so the row says exactly that. When a drive does
+ * fill the buffer (a machine whose ATA Manager returns IDENTIFY data), the
+ * model, capacity and firmware decode into the row instead. Both are true. */
 
-typedef SInt16 (*CensusATAMgr)(ataPB *);
-static CensusATAMgr g_ata_mgr;
-static int g_ata_resolved;
-
-static void resolve_ata(void)
+static int ata_buf_empty(const unsigned char *buf)
 {
-    CFragConnectionID conn = 0;
-    Ptr mainAddr = NULL;
-    Str255 err;
-    Str255 pname;
-    Ptr addr;
-    CFragSymbolClass cls;
+    int i;
 
-    if (g_ata_resolved != 0) {
-        return;
+    for (i = 0; i < 512; i++) {
+        if (buf[i] != 0) {
+            return 0;
+        }
     }
-    g_ata_resolved = -1;
-    CopyCStringToPascal("ATAManager", pname);
-    if (GetSharedLibrary(pname, kPowerPCCFragArch, kReferenceCFrag,
-                         &conn, &mainAddr, err) != noErr) {
-        return;
-    }
-    CopyCStringToPascal("NativeATAMgr", pname);
-    if (FindSymbol(conn, pname, &addr, &cls) != noErr) {
-        return;
-    }
-    g_ata_mgr = (CensusATAMgr)addr;
-    g_ata_resolved = 1;
-}
-
-/* IDENTIFY one device id into `buf` (512 bytes). Returns 1 on success. */
-static int ata_identify(unsigned long device_id, unsigned char *buf)
-{
-    ataIdentify pb;
-
-    memset(&pb, 0, sizeof pb);
-    pb.ataPBVers = 1;
-    pb.ataPBFunctionCode = kATAMgrDriveIdentify;
-    pb.ataPBDeviceID = device_id;
-    pb.ataPBTimeOut = 400;               /* ms; four absent ids stay bounded */
-    pb.ataPBBuffer = buf;
-    if (g_ata_mgr((ataPB *)&pb) != noErr) {
-        return 0;
-    }
-    return pb.ataPBResult == noErr;
+    return 1;
 }
 
 static void gather_ata(long cursor, CensusPage *page)
 {
     /* candidate ids: internal bus 0 master/slave, then bus 1. Four short
-       IDENTIFYs fit one page; an absent device fails fast. */
+       IDENTIFYs fit one page; an absent device fails fast (nsDrvErr). */
     static const unsigned long k_ids[] = { 0x0000, 0x0100, 0x0001, 0x0101 };
     unsigned char buf[512];
     int i;
 
     (void)cursor;
-    /* The ATA Manager resolving is the authoritative "is ATA here" test -
-       gestaltATAAttr answers falsely absent on the PB1400c even though
-       OS 9.1's ATA Manager is present, so it is not the gate. */
-    resolve_ata();
-    if (g_ata_resolved != 1) {
+    if (!census_trap_ready()) {
         page->outcome = kCensusRefused;
         snprintf(page->note, sizeof page->note,
-                 "the native ATA Manager is not exported here");
+                 "the ATA Manager cannot be reached (no Mixed Mode)");
         return;
     }
     for (i = 0; i < (int)(sizeof k_ids / sizeof k_ids[0]); i++) {
-        char model[42], serial[22], fw[10];
         char label[kCensusRowNameCap];
         char raw[kCensusRowRawCap];
         char meaning[kCensusRowMeaningCap];
-        unsigned long sectors;
 
-        if (!ata_identify(k_ids[i], buf)) {
-            continue;
+        memset(buf, 0, sizeof buf);
+        if (census_ata_identify(k_ids[i], buf) != noErr) {
+            continue;                    /* no device at this id */
         }
-        sectors = (unsigned long)buf[120]
-            | ((unsigned long)buf[121] << 8)
-            | ((unsigned long)buf[122] << 16)
-            | ((unsigned long)buf[123] << 24);        /* words 60-61, LBA28 */
-        census_ata_string(buf, 27, 20, model, sizeof model);
-        census_ata_string(buf, 10, 10, serial, sizeof serial);
-        census_ata_string(buf, 23, 4, fw, sizeof fw);
         snprintf(label, sizeof label, "Device %d.%d",
                  (int)(k_ids[i] & 0xFF), (int)((k_ids[i] >> 8) & 1));
-        snprintf(raw, sizeof raw, "serial %.20s", serial);
-        snprintf(meaning, sizeof meaning, "%.28s, %lu MB, fw %.8s",
-                 model[0] ? model : "ATA drive", sectors / 2048UL, fw);
-        set_row(&page->rows[page->count++], label, raw, meaning);
+        if (ata_buf_empty(buf)) {
+            snprintf(raw, sizeof raw, "id $%04lX, IDENTIFY empty", k_ids[i]);
+            set_row(&page->rows[page->count++], label, raw,
+                    "present; drive returned no IDENTIFY data");
+        } else {
+            char model[42], serial[22], fw[10];
+            unsigned long sectors =
+                (unsigned long)buf[120]
+                | ((unsigned long)buf[121] << 8)
+                | ((unsigned long)buf[122] << 16)
+                | ((unsigned long)buf[123] << 24);    /* words 60-61, LBA28 */
+
+            census_ata_string(buf, 27, 20, model, sizeof model);
+            census_ata_string(buf, 10, 10, serial, sizeof serial);
+            census_ata_string(buf, 23, 4, fw, sizeof fw);
+            snprintf(raw, sizeof raw, "serial %.20s", serial);
+            snprintf(meaning, sizeof meaning, "%.28s, %lu MB, fw %.8s",
+                     model[0] ? model : "ATA drive", sectors / 2048UL, fw);
+            set_row(&page->rows[page->count++], label, raw, meaning);
+        }
     }
     if (page->count == 0) {
-        /* Manager present but no id answered: the id encoding or the
-           enumeration is what needs work next, not the manager. */
+        page->outcome = kCensusAbsent;
+        snprintf(page->note, sizeof page->note, "no ATA device answered");
+    }
+}
+
+/* --- pccard: Card Services' own view ($AAF0, Mixed Mode) ----------------- *
+ * The PB1400c has PC Card sockets behind the 68K-trap-only PC Card Manager.
+ * CSGetCardServicesInfo (selector 7) reads Card Services' version and socket
+ * count - it touches no socket and no card, so it is the SAFE discovery the
+ * machine's CIS-freeze history demands (corpus pb1400-pccard-trap-only): a
+ * card's own identity, which lives in its CIS, stays out of the census until
+ * a gated design exists. Metal-proven: CS 2.01, 4 sockets, Apple vendor. */
+
+static void gather_pccard(long cursor, CensusPage *page)
+{
+    unsigned char sig[2];
+    unsigned char vendor[64];
+    unsigned short count = 0, revision = 0, level = 0;
+    SInt16 err;
+    char raw[kCensusRowRawCap];
+    char meaning[kCensusRowMeaningCap];
+
+    (void)cursor;
+    if (!census_trap_ready()) {
+        page->outcome = kCensusRefused;
+        snprintf(page->note, sizeof page->note,
+                 "the PC Card Manager cannot be reached (no Mixed Mode)");
+        return;
+    }
+    sig[0] = sig[1] = 0;
+    memset(vendor, 0, sizeof vendor);
+    err = census_cs_info(sig, &count, &revision, &level, vendor,
+                         (unsigned short)sizeof vendor);
+    if (err != noErr) {
         page->outcome = kCensusAbsent;
         snprintf(page->note, sizeof page->note,
-                 "ATA Manager present; no device answered IDENTIFY");
+                 "no Card Services on this machine (err %d)", (int)err);
+        return;
+    }
+    /* Card Services level is BCD: $0201 reads as 2.01. */
+    snprintf(raw, sizeof raw, "$%04X", level);
+    snprintf(meaning, sizeof meaning, "Card Services %X.%02X",
+             (level >> 8) & 0xFF, level & 0xFF);
+    set_row(&page->rows[page->count++], "Version", raw, meaning);
+
+    snprintf(raw, sizeof raw, "%u", count);
+    snprintf(meaning, sizeof meaning, "%u PC Card socket%s", count,
+             count == 1 ? "" : "s");
+    set_row(&page->rows[page->count++], "Sockets", raw, meaning);
+
+    if (vendor[0] != '\0') {
+        char clean[kCensusRowMeaningCap];
+        sanitize((char *)vendor, clean, sizeof clean);
+        set_row(&page->rows[page->count++], "Vendor", "", clean);
     }
 }
 
@@ -1154,6 +1179,7 @@ static const struct {
     { "drivers",   gather_drivers },
     { "adb",       gather_adb },
     { "ata",       gather_ata },
+    { "pccard",    gather_pccard },
     { "pram",      gather_pram },
     { "power",     gather_power },
     { "pci",       gather_pci },

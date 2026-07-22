@@ -271,17 +271,40 @@ working on the PowerBook.
   census yet") until a later slice gives it an IOKit/sysctl census of
   the modern Mac. Declared asymmetry, tested — not dead code, a stub
   half with its other half scheduled.
-- **The `ata` and `power` probes.** Slice-2 follow-ups (2026-07-21).
-  `ata` does IDENTIFY DEVICE through the native ATA Manager
-  (`NativeATAMgr` resolved from the `ATAManager` fragment, gated on
-  `gestaltATAAttr`) — the internal IDE boot disk `scsi` structurally
-  cannot see. It is the highest-risk probe: active bus I/O to a manager
-  no test here exercises, so its parse (model/serial/LBA size, and the
-  IDENTIFY byte-swap in particular) is **builds-only and must be watched
-  attended** — the byte order may need flipping once a real drive
-  answers. `power` is Carbon-clean (BatteryCount / GetScaledBatteryInfo,
-  gated on `gestaltPowerMgrAttr`) and low-risk. Both compile, link and
-  pass their decoder unit tests; neither has run in the page on metal.
+- **The `ata` and `pccard` probes reach 68K-trap-only managers through a
+  metal-proven Mixed Mode dispatch** (`census_trap.c`, 2026-07-22). The
+  1400c's ATA Manager ($AAF1) and PC Card Manager ($AAF0) are trap-only
+  — no CFM fragment, and `gestaltATAAttr` answers falsely absent — so a
+  PowerPC Carbon app cannot import them. `census_trap.c` reaches them the
+  way the parent project proved safe after four machine wedges (corpus
+  `cis-metal-safe-mixed-mode-fix`): a hand-built M68K `RoutineDescriptor`
+  so `CallUniversalProc` thunks PPC→68K, `CallUniversalProc` resolved from
+  InterfaceLib and called **variadically** (a fixed-arg pointer leaves the
+  args in registers → Type 1 bus error), and each thunk keeping its RTS
+  return address on the stack. The mechanism itself is **metal-verified**
+  by `spikes/census-trap`: selftest `$4242`, then real traps.
+  - `pccard` (CSGetCardServicesInfo, selector 7) is **metal-verified** on
+    the 1400c: CS 2.01, 4 sockets, Apple vendor string. Read-only, touches
+    no socket or card, so it runs in the sweep. A card's own identity
+    (its CIS) stays OUT until a gated design — the CIS is what froze the
+    1400c historically (`pb1400-pccard-trap-only`).
+  - `ata` (IDENTIFY DEVICE) reaches the manager and it answers `noErr`,
+    but on the 1400c internal drive the IDENTIFY buffer comes back
+    **empty** (metal, 2026-07-22 — buffer dumped all-zeros for the one
+    device that answers, device id `$0000`). So the row honestly reports
+    the device *present* without a model. A drive that fills the buffer
+    decodes into model/capacity/firmware; that path is **builds-only**.
+    Getting model/serial off *this* drive is a separate follow-up
+    (`kATAMgrBusInquiry` enumeration, or `kATAMgrExecIO` issuing a raw
+    IDENTIFY task file rather than the manager's empty DriveIdentify) —
+    deferred, banked with the wins per Michelle's call.
+  - The whole integrated page — `pccard`/`ata` running inside the census
+    sweep and rail — is **tested and builds** here; it has **not** yet
+    been metal-verified as a page (only the underlying trap calls have).
+- **The `power` probe.** Slice-2 follow-up (2026-07-21). Carbon-clean
+  (BatteryCount / GetScaledBatteryInfo, gated on `gestaltPowerMgrAttr`)
+  and low-risk. Compiles, links and passes its decoder unit tests; has
+  not run in the page on metal.
 - **`network` and `software` probes, deferred as future modules**
   (decided 2026-07-21). Network (Open Transport interfaces and TCP/IP
   config) and installed-software (extensions and control panels with
@@ -289,11 +312,14 @@ working on the PowerBook.
   probe rail — Michelle's call was to grow them as their own future
   Workshop pages rather than more rows on Hardware. Not built; recorded
   so the intent is not lost.
-- **The rail has no scroll bar.** At twelve probes the hand-drawn probe
-  rail fits down to the minimum window only because the rows were
-  tightened to 26px. The next probes (the extension "witness" tier)
-  will overflow it; that is the point where the rail needs a real
-  vertical scroll bar rather than shorter rows.
+- **The rail has no scroll bar.** At fourteen probes the hand-drawn probe
+  rail fits the standard window (~371px of rail for 352px of rows at
+  25px/row) but overflows below about the minimum window. `draw_rail` now
+  clips the row list to the rail rect, so the tail truncates cleanly
+  instead of painting over the button strip — but truncated rows are then
+  unreachable. This is the point where the rail needs a real vertical
+  scroll bar rather than shorter rows; it lands with the extension
+  "witness" tier that adds the next probes.
 
 ## The host's receiving half is sender-only
 

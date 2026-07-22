@@ -28,10 +28,11 @@ enum {
     kRailMinW = 130,
     kRailMaxW = 360,
     kDivW = 8,                /* the draggable divider strip */
-    /* Two-line rail row. 25 fits all thirteen probes at the standard
-       window; at thirteen we are at the limit - the rail now genuinely
-       needs a vertical scroll bar rather than shorter rows, which is the
-       next probe (the witness tier) that lands. */
+    /* Two-line rail row. 25 fits all fourteen probes at the standard
+       window (~371 px of rail for 352 px of rows); below about the minimum
+       window the tail clips (draw_rail bounds the rows). The rail genuinely
+       needs a vertical scroll bar rather than shorter rows now - the next
+       probe (the witness tier) that lands. */
     kRowH = 25,
     kButtonH = 20,
     kDetailH = 132,
@@ -511,12 +512,23 @@ static void draw_rail(void)
     RGBColor black = { 0, 0, 0 };
     RGBColor gray = { 0x5555, 0x5555, 0x5555 };
     RGBColor white = { 0xFFFF, 0xFFFF, 0xFFFF };
+    RgnHandle save_clip;
     int i;
 
     RGBForeColor(&white);
     PaintRect(&g_r.rail);
     RGBForeColor(&black);
     FrameRect(&g_r.rail);
+
+    /* Bound the rows to the rail: with fourteen probes the list is taller
+       than a shrunk-down window, and an unclipped row would paint over the
+       button strip below. Clipping truncates the tail cleanly - the honest
+       stopgap until the rail carries a scroll bar (the witness tier). */
+    save_clip = NewRgn();
+    if (save_clip != NULL) {
+        GetClip(save_clip);
+    }
+    ClipRect(&g_r.rail);
 
     for (i = 0; i < g_probe_count; i++) {
         Rect row;
@@ -550,6 +562,11 @@ static void draw_rail(void)
         }
         DrawString(text);
         RGBForeColor(&black);
+    }
+
+    if (save_clip != NULL) {
+        SetClip(save_clip);
+        DisposeRgn(save_clip);
     }
 }
 
