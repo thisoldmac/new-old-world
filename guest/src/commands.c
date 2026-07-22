@@ -787,17 +787,36 @@ static void run_census(const char *request_json, long id, char *out, long cap)
    the disk is. Rows go through the escaper because two of them carry
    catalog strings — the volume's name and the first hits' names — and a
    quote in a file name must stay a file name, not become JSON. */
+
+static const char *catsearch_row_value(const CatSearchRow *rows, int n,
+                                       const char *label)
+{
+    int i;
+
+    for (i = 0; i < n; ++i) {
+        if (strcmp(rows[i].label, label) == 0) {
+            return rows[i].value;
+        }
+    }
+    return "?";
+}
+
 static void run_catsearch(long id, char *out, long cap)
 {
     CatSearchRow rows[16];
     char cerr[96];
-    int n = now_catsearch_run(rows, 16, cerr, sizeof cerr);
     long pos;
+    int n;
     int i;
 
+    /* Begun-then-ended, because the sweep stalls the wire for seconds:
+       a log that ends on "begun" names the crash site. */
+    now_log(kLogInfo, "sw", "#%ld catsearch begun", id);
+    n = now_catsearch_run(rows, 16, cerr, sizeof cerr);
     if (n < 0) {
         char esc[200];
 
+        now_log(kLogWarn, "sw", "#%ld catsearch failed: %.60s", id, cerr);
         now_json_escape(cerr, esc, sizeof esc);
         snprintf(out, cap,
                  "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
@@ -805,6 +824,9 @@ static void run_catsearch(long id, char *out, long cap)
                  "\"message\":\"%s\"}}", id, esc);
         return;
     }
+    now_log(kLogInfo, "sw", "#%ld catsearch: %.15s hits, cold %.40s", id,
+            catsearch_row_value(rows, n, "APPL hits"),
+            catsearch_row_value(rows, n, "Cold sweep"));
     pos = snprintf(out, (size_t)cap,
                    "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
                    "\"output\":{\"catsearch\":[", id);
