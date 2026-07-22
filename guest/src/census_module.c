@@ -24,7 +24,10 @@
 enum {
     kMargin = 12,
     kRailW = 168,
-    kRowH = 32,               /* two-line rail row, like the sidebar */
+    /* Two-line rail row. 26 keeps all probes visible down to the minimum
+       window; past ~13 probes (the witness tier) the rail needs a scroll
+       bar instead of shrinking further. */
+    kRowH = 26,
     kGap = 14,
     kButtonH = 20,
     kDetailH = 132,
@@ -490,7 +493,7 @@ static void draw_rail(void)
             RGBForeColor(&black);
         }
         UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
-        MoveTo((short)(row.left + 12), (short)(base + 14));
+        MoveTo((short)(row.left + 12), (short)(base + 12));
         CopyCStringToPascal(probe_name(i), text);
         text[1] = (unsigned char)(text[1] >= 'a' && text[1] <= 'z'
                                   ? text[1] - 32 : text[1]);   /* Titlecase */
@@ -498,7 +501,7 @@ static void draw_rail(void)
 
         UseThemeFont(kThemeSmallSystemFont, smSystemScript);
         RGBForeColor(&gray);
-        MoveTo((short)(row.left + 12), (short)(base + 27));
+        MoveTo((short)(row.left + 12), (short)(base + 23));
         if (g_subtitle[i][0] == '\0') {
             CopyCStringToPascal("not run yet", text);
         } else {

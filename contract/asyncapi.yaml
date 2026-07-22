@@ -1307,6 +1307,21 @@ components:
       adb:
         columns: [Device, Raw, Meaning]
         description: The ADB device table (CountADBs / GetIndADB).
+      ata:
+        columns: [Device, Raw, Meaning]
+        description: >
+          IDENTIFY DEVICE through the native ATA Manager - the internal
+          IDE boot disk the SCSI scan cannot see. NativeATAMgr is
+          resolved from the ATAManager fragment; gated on gestaltATAAttr.
+          IDENTIFY is a non-destructive read but active bus I/O, so one
+          device per page and attended-first, like scsi.
+      power:
+        columns: [Battery, Raw, Meaning]
+        description: >
+          The Power Manager's battery view - charge, source, state -
+          gated on gestaltPowerMgrAttr. Carbon-clean; a desktop answers
+          absent. The probe most worth watching over time once the
+          extension's counter tier lands.
       pram:
         columns: [Offset, Raw, Meaning]
         description: >

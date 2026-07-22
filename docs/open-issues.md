@@ -271,6 +271,29 @@ working on the PowerBook.
   census yet") until a later slice gives it an IOKit/sysctl census of
   the modern Mac. Declared asymmetry, tested — not dead code, a stub
   half with its other half scheduled.
+- **The `ata` and `power` probes.** Slice-2 follow-ups (2026-07-21).
+  `ata` does IDENTIFY DEVICE through the native ATA Manager
+  (`NativeATAMgr` resolved from the `ATAManager` fragment, gated on
+  `gestaltATAAttr`) — the internal IDE boot disk `scsi` structurally
+  cannot see. It is the highest-risk probe: active bus I/O to a manager
+  no test here exercises, so its parse (model/serial/LBA size, and the
+  IDENTIFY byte-swap in particular) is **builds-only and must be watched
+  attended** — the byte order may need flipping once a real drive
+  answers. `power` is Carbon-clean (BatteryCount / GetScaledBatteryInfo,
+  gated on `gestaltPowerMgrAttr`) and low-risk. Both compile, link and
+  pass their decoder unit tests; neither has run in the page on metal.
+- **`network` and `software` probes, deferred as future modules**
+  (decided 2026-07-21). Network (Open Transport interfaces and TCP/IP
+  config) and installed-software (extensions and control panels with
+  their `vers`) are both Carbon-clean and were scoped OUT of the census
+  probe rail — Michelle's call was to grow them as their own future
+  Workshop pages rather than more rows on Hardware. Not built; recorded
+  so the intent is not lost.
+- **The rail has no scroll bar.** At twelve probes the hand-drawn probe
+  rail fits down to the minimum window only because the rows were
+  tightened to 26px. The next probes (the extension "witness" tier)
+  will overflow it; that is the point where the rail needs a real
+  vertical scroll bar rather than shorter rows.
 
 ## The host's receiving half is sender-only
 

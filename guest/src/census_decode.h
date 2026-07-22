@@ -66,4 +66,15 @@ void census_adb_device(int default_address, int handler_id,
    for a byte with no well-known meaning. */
 const char *census_pram_meaning(int offset);
 
+/* An ATA IDENTIFY DEVICE string field (model, serial, firmware): the
+   drive stores each 16-bit word byte-swapped, so this swaps the pairs
+   back and trims trailing spaces. `id` is the 512-byte identify buffer;
+   `word_start`/`word_count` name the field (model is words 27..46). */
+void census_ata_string(const unsigned char *id, int word_start,
+                       int word_count, char *out, long cap);
+
+/* The Power Manager battery flags byte into words: "on battery,
+   charging" and the like. bit 7 installed, 6 charging, 5 charger. */
+void census_battery_flags(unsigned char flags, char *out, long cap);
+
 #endif /* NOW_CENSUS_DECODE_H */

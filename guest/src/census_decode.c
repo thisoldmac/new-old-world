@@ -298,6 +298,51 @@ void census_adb_device(int default_address, int handler_id, char *out,
     }
 }
 
+void census_ata_string(const unsigned char *id, int word_start,
+                       int word_count, char *out, long cap)
+{
+    long n = 0;
+    int i, last;
+
+    for (i = 0; i < word_count && n + 2 < cap; i++) {
+        int b = (word_start + i) * 2;
+        /* the two chars of a word are stored swapped */
+        out[n++] = (char)id[b + 1];
+        out[n++] = (char)id[b];
+    }
+    out[n] = '\0';
+    /* printable-only, then trim trailing spaces */
+    for (i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)out[i];
+        if (c < 32 || c > 126) {
+            out[i] = ' ';
+        }
+    }
+    last = (int)n - 1;
+    while (last >= 0 && out[last] == ' ') {
+        out[last--] = '\0';
+    }
+}
+
+void census_battery_flags(unsigned char flags, char *out, long cap)
+{
+    int installed = (flags & (1 << 7)) != 0;
+    int charging = (flags & (1 << 6)) != 0;
+    int charger = (flags & (1 << 5)) != 0;
+
+    if (!installed) {
+        snprintf(out, cap, "no battery");
+        return;
+    }
+    if (charging) {
+        snprintf(out, cap, "charging");
+    } else if (charger) {
+        snprintf(out, cap, "on charger");
+    } else {
+        snprintf(out, cap, "on battery");
+    }
+}
+
 const char *census_pram_meaning(int offset)
 {
     /* The well-known bytes of the classic 20-byte SysParm block. */

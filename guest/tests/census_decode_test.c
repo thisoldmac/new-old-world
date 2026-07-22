@@ -164,6 +164,42 @@ static void test_pram_meaning(void)
     assert(strcmp(census_pram_meaning(5), "") == 0);    /* no known meaning */
 }
 
+static void test_ata_string(void)
+{
+    /* IDENTIFY words store char pairs swapped: "eGne salid" -> "Generalid" */
+    unsigned char id[64];
+    char out[24];
+    int i;
+
+    memset(id, ' ', sizeof id);
+    /* put "Maxtor" swapped at words 0..2: bytes aM xt ro -> swap each pair */
+    id[0] = 'a'; id[1] = 'M';    /* word 0 -> "Ma" */
+    id[2] = 'x'; id[3] = 't';    /* word 1 -> "tx" ... wait, swap gives buf[1],buf[0] */
+    /* readable[0]=id[1]='M', readable[1]=id[0]='a' -> "Ma" ; word1 readable = id[3],id[2] = "tx" */
+    for (i = 4; i < 12; i++) id[i] = ' ';
+    census_ata_string(id, 0, 2, out, sizeof out);
+    /* words 0,1 -> "Ma" + "tx" = "Matx", trailing handled */
+    assert(strcmp(out, "Matx") == 0);
+    /* trailing spaces trimmed */
+    memset(id, ' ', sizeof id);
+    id[0] = 'i'; id[1] = 'H';    /* -> "Hi" then spaces */
+    census_ata_string(id, 0, 4, out, sizeof out);
+    assert(strcmp(out, "Hi") == 0);
+}
+
+static void test_battery_flags(void)
+{
+    char out[32];
+    census_battery_flags((1 << 7) | (1 << 6), out, sizeof out);
+    assert(strcmp(out, "charging") == 0);
+    census_battery_flags((1 << 7) | (1 << 5), out, sizeof out);
+    assert(strcmp(out, "on charger") == 0);
+    census_battery_flags(1 << 7, out, sizeof out);
+    assert(strcmp(out, "on battery") == 0);
+    census_battery_flags(0, out, sizeof out);
+    assert(strcmp(out, "no battery") == 0);
+}
+
 int main(void)
 {
     test_version_bcd();
@@ -178,6 +214,8 @@ int main(void)
     test_dctl_flags();
     test_adb_device();
     test_pram_meaning();
+    test_ata_string();
+    test_battery_flags();
     printf("census_decode_test: ok\n");
     return 0;
 }

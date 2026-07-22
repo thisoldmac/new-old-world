@@ -24,6 +24,8 @@
 
 #include <Carbon.h>
 #include <SCSI.h>              /* SCSIInstr + sc* opcodes; funcs resolved */
+#include <ATA.h>               /* ataIdentify PB; NativeATAMgr resolved */
+#include <Power.h>             /* battery calls (Carbon-clean) */
 
 #include <stdio.h>
 #include <string.h>
@@ -885,6 +887,157 @@ static void gather_scsi(long cursor, CensusPage *page)
     }
 }
 
+/* --- ata: IDENTIFY DEVICE through the native ATA Manager ---------------- *
+ * The internal boot disk is IDE, so the SCSI scan structurally cannot see
+ * it - this is the probe that does. NativeATAMgr is Carbon-unavailable, so
+ * it is resolved from the "ATAManager" fragment and called through a
+ * pointer (never a strong import). Gated on gestaltATAAttr; IDENTIFY is a
+ * non-destructive read but still active bus I/O, so one device per page
+ * and attended-first, like SCSI. Device id = (device << 8) | bus. */
+
+typedef SInt16 (*CensusATAMgr)(ataPB *);
+static CensusATAMgr g_ata_mgr;
+static int g_ata_resolved;
+
+static void resolve_ata(void)
+{
+    CFragConnectionID conn = 0;
+    Ptr mainAddr = NULL;
+    Str255 err;
+    Str255 pname;
+    Ptr addr;
+    CFragSymbolClass cls;
+
+    if (g_ata_resolved != 0) {
+        return;
+    }
+    g_ata_resolved = -1;
+    CopyCStringToPascal("ATAManager", pname);
+    if (GetSharedLibrary(pname, kPowerPCCFragArch, kReferenceCFrag,
+                         &conn, &mainAddr, err) != noErr) {
+        return;
+    }
+    CopyCStringToPascal("NativeATAMgr", pname);
+    if (FindSymbol(conn, pname, &addr, &cls) != noErr) {
+        return;
+    }
+    g_ata_mgr = (CensusATAMgr)addr;
+    g_ata_resolved = 1;
+}
+
+/* IDENTIFY one device id into `buf` (512 bytes). Returns 1 on success. */
+static int ata_identify(unsigned long device_id, unsigned char *buf)
+{
+    ataIdentify pb;
+
+    memset(&pb, 0, sizeof pb);
+    pb.ataPBVers = 1;
+    pb.ataPBFunctionCode = kATAMgrDriveIdentify;
+    pb.ataPBDeviceID = device_id;
+    pb.ataPBTimeOut = 2000;              /* ms */
+    pb.ataPBBuffer = buf;
+    if (g_ata_mgr((ataPB *)&pb) != noErr) {
+        return 0;
+    }
+    return pb.ataPBResult == noErr;
+}
+
+static void gather_ata(long cursor, CensusPage *page)
+{
+    /* candidate ids: internal bus 0 master/slave, then bus 1. */
+    static const unsigned long k_ids[] = { 0x0000, 0x0100, 0x0001, 0x0101 };
+    int slot = (int)((cursor < 0) ? 0 : cursor);
+    long hw = 0;
+    unsigned char buf[512];
+
+    if (Gestalt(gestaltATAAttr, &hw) != noErr || (hw & 1L) == 0) {
+        page->outcome = kCensusAbsent;
+        snprintf(page->note, sizeof page->note, "no ATA bus on this Mac");
+        return;
+    }
+    resolve_ata();
+    if (g_ata_resolved != 1) {
+        page->outcome = kCensusRefused;
+        snprintf(page->note, sizeof page->note,
+                 "the native ATA Manager is not present");
+        return;
+    }
+    page->total = (long)(sizeof k_ids / sizeof k_ids[0]);
+    if (slot < (int)(sizeof k_ids / sizeof k_ids[0])) {
+        if (ata_identify(k_ids[slot], buf)) {
+            char model[42], serial[22], fw[10];
+            char label[kCensusRowNameCap];
+            char raw[kCensusRowRawCap];
+            char meaning[kCensusRowMeaningCap];
+            unsigned long sectors = (unsigned long)buf[120]
+                | ((unsigned long)buf[121] << 8)
+                | ((unsigned long)buf[122] << 16)
+                | ((unsigned long)buf[123] << 24);   /* words 60-61, LBA28 */
+
+            census_ata_string(buf, 27, 20, model, sizeof model);
+            census_ata_string(buf, 10, 10, serial, sizeof serial);
+            census_ata_string(buf, 23, 4, fw, sizeof fw);
+            snprintf(label, sizeof label, "Device %d.%d",
+                     (int)(k_ids[slot] & 0xFF), (int)((k_ids[slot] >> 8) & 1));
+            snprintf(raw, sizeof raw, "serial %.20s", serial);
+            snprintf(meaning, sizeof meaning, "%.28s, %lu MB, fw %.8s",
+                     model[0] ? model : "ATA drive",
+                     sectors / 2048UL, fw);
+            set_row(&page->rows[page->count++], label, raw, meaning);
+        }
+        if (slot + 1 < (int)(sizeof k_ids / sizeof k_ids[0])) {
+            page->more = 1;
+            page->next_cursor = slot + 1;
+        }
+    }
+    if (page->count == 0 && !page->more && cursor == 0) {
+        page->outcome = kCensusAbsent;
+        snprintf(page->note, sizeof page->note, "bus present, no drives");
+    }
+}
+
+/* --- power: the Power Manager's battery view (Carbon-clean) -------------- *
+ * BatteryCount / GetScaledBatteryInfo are CarbonLib 1.0+, so these are
+ * direct calls, gated on gestaltPowerMgrAttr's exists bit - a desktop
+ * answers absent rather than an error. */
+
+static void gather_power(long cursor, CensusPage *page)
+{
+    long pm = 0;
+    short count, i;
+
+    (void)cursor;
+    if (Gestalt(gestaltPowerMgrAttr, &pm) != noErr || (pm & 1L) == 0) {
+        page->outcome = kCensusAbsent;
+        snprintf(page->note, sizeof page->note, "no Power Manager");
+        return;
+    }
+    count = BatteryCount();
+    if (count <= 0) {
+        page->outcome = kCensusAbsent;
+        snprintf(page->note, sizeof page->note, "no batteries (desktop?)");
+        return;
+    }
+    for (i = 1; i <= count && page->count < kCensusPageMax; i++) {
+        BatteryInfo bi;
+        char label[kCensusRowNameCap];
+        char raw[kCensusRowRawCap];
+        char meaning[kCensusRowMeaningCap];
+        char state[32];
+        int percent;
+
+        memset(&bi, 0, sizeof bi);
+        GetScaledBatteryInfo(i, &bi);
+        percent = (bi.batteryLevel * 100 + 127) / 255;
+        census_battery_flags(bi.flags, state, sizeof state);
+        snprintf(label, sizeof label, "Battery %d", i);
+        snprintf(raw, sizeof raw, "level %d/255 flags $%02X", bi.batteryLevel,
+                 bi.flags);
+        snprintf(meaning, sizeof meaning, "%d%%, %s", percent, state);
+        set_row(&page->rows[page->count++], label, raw, meaning);
+    }
+}
+
 /* --- dispatch ----------------------------------------------------------- */
 
 static const struct {
@@ -899,7 +1052,9 @@ static const struct {
     { "drives",    gather_drives },
     { "drivers",   gather_drivers },
     { "adb",       gather_adb },
+    { "ata",       gather_ata },
     { "pram",      gather_pram },
+    { "power",     gather_power },
     { "scsi",      gather_scsi },
 };
 
