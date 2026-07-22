@@ -259,7 +259,7 @@ final class GuestWireConformanceTests: XCTestCase {
         }
         XCTAssertEqual(found,
                        ["file.listing", "file.result", "command.result",
-                        "census.report"], """
+                        "census.report", "process.listing"], """
             The set of messages assembled piecemeal changed. Those are \
             NOT covered by the conformance checks above — either give the \
             new one a hand-written fixture in GuestWireFixtureTests, or \

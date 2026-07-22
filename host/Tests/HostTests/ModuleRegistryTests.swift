@@ -4,7 +4,8 @@ import XCTest
 final class ModuleRegistryTests: XCTestCase {
     func testStandardRegistryHasScreenshotsFirstAndSettings() {
         XCTAssertEqual(ModuleRegistry.standard.modules.map(\.id),
-                       ["screenshots", "files", "console", "census", "settings"])
+                       ["screenshots", "files", "processes", "console",
+                        "census", "settings"])
         XCTAssertEqual(ModuleRegistry.standard.module(id: "screenshots")?.title,
                        "Screenshots")
         XCTAssertEqual(ModuleRegistry.standard.module(id: "settings")?.title,
@@ -19,7 +20,8 @@ final class ModuleRegistryTests: XCTestCase {
         XCTAssertEqual(ModuleRegistry.standard.footerModules.map(\.id),
                        ["settings"])
         XCTAssertEqual(ModuleRegistry.standard.listModules.map(\.id),
-                       ["screenshots", "files", "console", "census"])
+                       ["screenshots", "files", "processes", "console",
+                        "census"])
     }
 
     /// The halves are a view of one array: together they are all of it, in

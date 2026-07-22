@@ -108,7 +108,7 @@ void processes_layout_compute(const Rect *body, ProcessesLayout *out)
     /* The extension group pins to the pane's bottom; the buttons float
        above it rather than under the facts, so a short pane squeezes
        the empty middle instead of the controls. */
-    group_top = (short)(out->detail.bottom - 10 - 54);
+    group_top = (short)(out->detail.bottom - 10 - kProcGroupMinHeight);
     if (group_top < out->menus_line.bottom + 40) {
         group_top = (short)(out->menus_line.bottom + 40);
     }
@@ -122,6 +122,10 @@ void processes_layout_compute(const Rect *body, ProcessesLayout *out)
              (short)(out->group.top + 14),
              (short)(out->group.right - 12),
              (short)(out->group.top + 14 + 14));
+    set_rect(&out->capture_btn, (short)(out->group.left + 12),
+             (short)(out->group.top + 32),
+             (short)(out->group.left + 12 + 140),
+             (short)(out->group.top + 32 + kProcButtonHeight));
 
     btn_y = (short)(out->group.top - 12 - kProcButtonHeight);
     set_rect(&out->front_btn, inner_left, btn_y,
@@ -229,6 +233,19 @@ void proc_kind_name(short kind, char *out, long cap)
         snprintf(out, (size_t)cap, "the Finder");
     } else {
         snprintf(out, (size_t)cap, "application");
+    }
+}
+
+void proc_freshness_text(unsigned long age_ticks, char *out, long cap)
+{
+    unsigned long secs = age_ticks / 60;
+
+    if (secs < 3) {
+        out[0] = '\0';                /* live: no marker, no noise */
+    } else if (secs < 60) {
+        snprintf(out, (size_t)cap, "as of a moment ago");
+    } else {
+        snprintf(out, (size_t)cap, "as of %lu min ago", secs / 60);
     }
 }
 

@@ -412,6 +412,54 @@ final class GuestListener: ObservableObject {
         session.sendFileList(id: id, path: path, cursor: cursor)
     }
 
+    /// Lists one page of the guest's running processes. Symmetric with
+    /// listFiles: the same request/listing shape, paged by a 1-based
+    /// cursor the guest carries.
+    func listProcesses(cursor: Int? = nil,
+                       completion: @escaping (Result<ProcessListing,
+                                                     FileFailure>) -> Void) {
+        guard let session, case .connected = state else {
+            completion(.failure(.init(code: "disconnected",
+                                      message: "No Mac is connected")))
+            return
+        }
+        let id = nextCommandId
+        nextCommandId += 1
+        pendingProcessListings[id] = completion
+        armWatchdog(id: id, seconds: 15) { [weak self] reason in
+            self?.pendingProcessListings.removeValue(forKey: id)?(
+                .failure(.init(code: "timeout", message: reason)))
+        }
+        session.sendProcessList(id: id, cursor: cursor)
+    }
+
+    /// The two drive verbs, one host->guest arrow: bring a process to the
+    /// front, or ask it to quit.
+    enum ProcessVerb { case front, quit }
+
+    /// Drives a process on the guest by the PSN it named in a listing.
+    /// The completion carries the guest's process.result — ok:false is a
+    /// real answer (a stale PSN, a Toolbox refusal), not a transport
+    /// failure, which arrives as .failure instead.
+    func driveProcess(psnHigh: Int, psnLow: Int, verb: ProcessVerb,
+                      completion: @escaping (Result<ProcessResult,
+                                                    FileFailure>) -> Void) {
+        guard let session, case .connected = state else {
+            completion(.failure(.init(code: "disconnected",
+                                      message: "No Mac is connected")))
+            return
+        }
+        let id = nextCommandId
+        nextCommandId += 1
+        pendingProcessResults[id] = completion
+        armWatchdog(id: id, seconds: 15) { [weak self] reason in
+            self?.pendingProcessResults.removeValue(forKey: id)?(
+                .failure(.init(code: "timeout", message: reason)))
+        }
+        session.sendProcessDrive(id: id, psnHigh: psnHigh, psnLow: psnLow,
+                                 verb: verb)
+    }
+
     /// Moves or renames an item inside the share. One operation, because
     /// on this file system they are one operation.
     func moveFile(from: String, to: String, overwrite: Bool = false,
@@ -665,6 +713,10 @@ final class GuestListener: ObservableObject {
 
     private var pendingListings:
         [Int: (Result<FileListing, FileFailure>) -> Void] = [:]
+    private var pendingProcessListings:
+        [Int: (Result<ProcessListing, FileFailure>) -> Void] = [:]
+    private var pendingProcessResults:
+        [Int: (Result<ProcessResult, FileFailure>) -> Void] = [:]
     private var pendingFile:
         ((Result<FileDelivery, FileFailure>) -> Void)?
     private var pendingChanges:
@@ -686,6 +738,18 @@ final class GuestListener: ObservableObject {
     fileprivate func resolveListing(_ listing: FileListing) {
         clearWatchdog(listing.id)
         pendingListings.removeValue(forKey: listing.id)?(.success(listing))
+    }
+
+    fileprivate func resolveProcessListing(_ listing: ProcessListing) {
+        clearWatchdog(listing.id)
+        pendingProcessListings.removeValue(forKey: listing.id)?(
+            .success(listing))
+    }
+
+    fileprivate func resolveProcessResult(_ result: ProcessResult) {
+        clearWatchdog(result.id)
+        pendingProcessResults.removeValue(forKey: result.id)?(
+            .success(result))
     }
 
     fileprivate func failFile(_ refuse: FileRefuse) {
@@ -737,6 +801,30 @@ final class GuestListener: ObservableObject {
             self?.deliverCapture(.failure(.init(message: reason)))
         }
         session.sendCaptureRequest(id: id, depth: depth, tuning: tuning)
+    }
+
+    /// Asks the guest to front a process and capture just its window. The
+    /// reply is an ordinary capture transfer, so it settles the same
+    /// pendingCapture path a plain requestCapture does — only the request
+    /// message and the longer wait (the guest fronts and lets the target
+    /// repaint first) differ.
+    func requestProcessShot(psnHigh: Int, psnLow: Int, depth: Int?,
+                            completion: @escaping (Result<CaptureDelivery,
+                                                          CaptureFailure>)
+                                -> Void) {
+        guard let session, case .connected = state else {
+            completion(.failure(.init(message: "No Mac is connected")))
+            return
+        }
+        let id = nextCommandId
+        nextCommandId += 1
+        pendingCapture = completion
+        captureWatchdogId = id
+        armWatchdog(id: id, seconds: 25) { [weak self] reason in
+            self?.deliverCapture(.failure(.init(message: reason)))
+        }
+        session.sendProcessShot(id: id, psnHigh: psnHigh, psnLow: psnLow,
+                                depth: depth)
     }
 
     /// How far along an in-flight transfer is, for the panel's progress bar.
@@ -1037,6 +1125,12 @@ final class GuestListener: ObservableObject {
             onServeChange: { [weak self] change in
                 self?.serveChange(change)
             },
+            onProcessListing: { [weak self] listing in
+                self?.resolveProcessListing(listing)
+            },
+            onProcessResult: { [weak self] result in
+                self?.resolveProcessResult(result)
+            },
             onReceived: { [weak self] url in
                 self?.noteReceived(url)
             },
@@ -1109,6 +1203,8 @@ final class Session {
     private let onServeGet: (FileGet) -> Void
     private let onAcceptOffer: (FileOffer) -> Void
     private let onServeChange: (GuestListener.ChangeRequest) -> Void
+    private let onProcessListing: (ProcessListing) -> Void
+    private let onProcessResult: (ProcessResult) -> Void
     private let onReceived: (URL) -> Void
     private let onOutboundProgress: (Int, Int) -> Void
     private let onOutboundFailed: (String) -> Void
@@ -1175,6 +1271,8 @@ final class Session {
          onServeGet: @escaping (FileGet) -> Void,
          onAcceptOffer: @escaping (FileOffer) -> Void,
          onServeChange: @escaping (GuestListener.ChangeRequest) -> Void,
+         onProcessListing: @escaping (ProcessListing) -> Void,
+         onProcessResult: @escaping (ProcessResult) -> Void,
          onReceived: @escaping (URL) -> Void,
          onOutboundProgress: @escaping (Int, Int) -> Void,
          onOutboundFailed: @escaping (String) -> Void,
@@ -1205,6 +1303,8 @@ final class Session {
         self.onServeGet = onServeGet
         self.onAcceptOffer = onAcceptOffer
         self.onServeChange = onServeChange
+        self.onProcessListing = onProcessListing
+        self.onProcessResult = onProcessResult
         self.onReceived = onReceived
         self.onOutboundProgress = onOutboundProgress
         self.onOutboundFailed = onOutboundFailed
@@ -1346,6 +1446,10 @@ final class Session {
             onFileResult(result)
         case .fileList(let request):
             onServeList(request)
+        case .processListing(let listing):
+            onProcessListing(listing)
+        case .processResult(let result):
+            onProcessResult(result)
         case .fileGet(let request):
             onServeGet(request)
         case .fileOffer(let offer):
@@ -1445,6 +1549,22 @@ final class Session {
 
     func sendFileList(id: Int, path: String, cursor: Int?) {
         send(.fileList(FileList(id: id, path: path, cursor: cursor)))
+    }
+
+    func sendProcessList(id: Int, cursor: Int?) {
+        send(.processList(ProcessList(id: id, cursor: cursor)))
+    }
+
+    func sendProcessDrive(id: Int, psnHigh: Int, psnLow: Int,
+                          verb: GuestListener.ProcessVerb) {
+        switch verb {
+        case .front:
+            send(.processFront(ProcessFront(
+                id: id, psnHigh: psnHigh, psnLow: psnLow)))
+        case .quit:
+            send(.processQuit(ProcessQuit(
+                id: id, psnHigh: psnHigh, psnLow: psnLow)))
+        }
     }
 
     func sendFileMove(_ m: FileMove) { send(.fileMove(m)) }
@@ -2078,6 +2198,19 @@ final class Session {
         send(.captureRequest(CaptureRequest(
             id: id, depth: depth ?? 0, chunkKb: tuning.chunkKb,
             paceMs: tuning.paceMs, pack: tuning.pack)))
+    }
+
+    /// A window-cropped capture of one process. The answer rides the same
+    /// capture transport a plain request uses, so the receive state is
+    /// primed identically — only the message asking for it differs.
+    func sendProcessShot(id: Int, psnHigh: Int, psnLow: Int, depth: Int?) {
+        captureBegin = nil
+        captureBuffer = []
+        cancelled = false
+        solicitedId = id
+        captureStart = Date()
+        send(.processShot(ProcessShot(
+            id: id, psnHigh: psnHigh, psnLow: psnLow, depth: depth)))
     }
 
     /// Control frames waiting for the bulk frame in flight to finish.

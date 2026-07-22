@@ -55,6 +55,25 @@ on either side.
   byte-for-byte in both directions, including cancel mid-flight; large
   transfers are clocked on the receiver's own count, which is what stops
   a long send collapsing (docs/large-transfers.md).
+- **Processes, from the host** — a Processes module here reads the
+  connected Mac's running process table over the wire (`process.list` /
+  `process.listing`, the first symmetric family to carry live state
+  rather than files). It groups the table into Applications — the Finder
+  among them — and Background, flags the front process, and captions each
+  row with its kind, its two 4CCs and its partition size. It reads as the
+  snapshot it is ("as of HH:MM:SS"); a process list is stale the instant
+  it is taken. Metal-verified on the PB1400c — the machine's own process
+  table, read and drawn on this Mac. And it drives: a selected process
+  can be brought to the front, asked to quit (a request it may decline),
+  or screenshotted — all from here. Screenshot App is a real window shot:
+  the classic Mac fronts the process, lets it repaint, and captures just
+  its front window, which lands in the Screenshots module. Each action
+  names its target by the process serial number the listing carries, and
+  the classic Mac re-checks that the process still exists before acting;
+  it also refuses to quit NOW itself. Front and Quit are metal-verified;
+  the window-cropped screenshot is tested and builds but not yet
+  metal-verified. It runs one way by design: NOW is for driving old Macs
+  from new ones, so the host sees and drives the guest, never the reverse.
 - **A log on both machines** — one file per launch, in `now-logs` beside
   the classic app and in `~/Library/Logs` here, plus `tail` from either
   console. Built because three separate evenings were spent on

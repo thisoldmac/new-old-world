@@ -149,6 +149,81 @@ final class ContractMessageTests: XCTestCase {
                        .bye(Bye(code: .normal, reason: nil)))
     }
 
+    func testProcessFamilyRoundTrip() throws {
+        let request = ProcessList(id: 12, cursor: 17)
+        let listing = ProcessListing(
+            id: 12,
+            processes: [
+                ProcessEntry(name: "NOW", kind: "application", code: "APPL",
+                             creator: "NwWs", sizeKB: 3072, front: true),
+                ProcessEntry(name: "Finder", kind: "finder", code: "FNDR",
+                             creator: "MACS", sizeKB: 2048, front: false),
+            ],
+            more: true, cursor: 3)
+        for message: ControlMessage in [.processList(request),
+                                        .processListing(listing)] {
+            XCTAssertEqual(
+                try ControlMessageCodec.decode(
+                    ControlMessageCodec.encode(message)),
+                message)
+        }
+    }
+
+    func testProcessDriveVerbsRoundTrip() throws {
+        let front = ProcessFront(id: 20, psnHigh: 0, psnLow: 16519)
+        let quit = ProcessQuit(id: 21, psnHigh: 0, psnLow: 8386)
+        let applied = ProcessResult(id: 20, ok: true, reason: nil)
+        let refused = ProcessResult(
+            id: 21, ok: false, reason: "that process is no longer running")
+        let shot = ProcessShot(id: 22, psnHigh: 0, psnLow: 16519, depth: 8)
+        for message: ControlMessage in [.processFront(front),
+                                        .processQuit(quit),
+                                        .processShot(shot),
+                                        .processResult(applied),
+                                        .processResult(refused)] {
+            XCTAssertEqual(
+                try ControlMessageCodec.decode(
+                    ControlMessageCodec.encode(message)),
+                message)
+        }
+    }
+
+    func testProcessShotWithoutDepthDecodes() throws {
+        // Depth is optional; omitted means the guest's own preference.
+        let json = #"{"type":"process.shot","id":5,"psnHigh":0,"psnLow":42}"#
+        guard case .processShot(let shot) =
+            try ControlMessageCodec.decode(Data(json.utf8)) else {
+            return XCTFail("expected process.shot")
+        }
+        XCTAssertNil(shot.depth)
+        XCTAssertEqual(shot.psnLow, 42)
+    }
+
+    func testProcessListingWithoutPSNStillDecodes() throws {
+        // A guest built before the drive verbs sends no PSN; the entry
+        // still decodes, and simply is not drivable.
+        let json = """
+        {"type":"process.listing","id":1,"processes":[\
+        {"name":"Finder","kind":"finder"}],"more":false}
+        """
+        guard case .processListing(let listing) =
+            try ControlMessageCodec.decode(Data(json.utf8)) else {
+            return XCTFail("expected process.listing")
+        }
+        XCTAssertFalse(listing.processes[0].isDrivable)
+    }
+
+    func testProcessListWithoutCursorDecodes() throws {
+        // The first ask carries no cursor; the guest starts at 1.
+        let json = #"{"type":"process.list","id":1}"#
+        guard case .processList(let request) =
+            try ControlMessageCodec.decode(Data(json.utf8)) else {
+            return XCTFail("expected process.list")
+        }
+        XCTAssertNil(request.cursor)
+        XCTAssertEqual(request.id, 1)
+    }
+
     func testUnknownTypeThrows() {
         let json = Data("{\"type\":\"teleport\"}".utf8)
         XCTAssertThrowsError(try ControlMessageCodec.decode(json)) { error in

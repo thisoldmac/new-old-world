@@ -45,6 +45,19 @@ final class HostAppState: ObservableObject {
     let listener: GuestListener
     private(set) lazy var console = ConsoleModel(listener: listener)
     private(set) lazy var census = CensusModuleModel(listener: listener)
+    private(set) lazy var processes: ProcessesModel = {
+        let model = ProcessesModel(listener: listener)
+        // "Screenshot App" shows the Screenshots page and asks for a
+        // window-cropped capture of the process. The guest owns the timing
+        // (front, let it repaint, crop, deliver — process.shot), so there
+        // is no delay to fake here.
+        model.onScreenshotApp = { [weak self] psnHigh, psnLow in
+            guard let self else { return }
+            self.selectedModuleID = "screenshots"
+            self.screenshots.captureProcess(psnHigh: psnHigh, psnLow: psnLow)
+        }
+        return model
+    }()
 
     private let defaults: UserDefaults
     private static let selectionKey = "selectedModuleID"
@@ -66,6 +79,7 @@ final class HostAppState: ObservableObject {
             self?.screenshots.connection = Self.guestState(from: state)
             self?.files.connection = Self.guestState(from: state)
             self?.census.connection = Self.guestState(from: state)
+            self?.processes.connection = Self.guestState(from: state)
             self?.captureSmokeIfRequested(state)
         }
         if settings.listenAtLaunch {

@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <Processes.h>
+
 #include "capture.h"
 #include "fileshare.h"
 #include "commands.h"
@@ -13,7 +15,9 @@
 #include "pixels.h"
 #include "contract.h"
 #include "ot_carbon.h"
+#include "peek_read.h"
 #include "prefs.h"
+#include "proc_actions.h"
 #include "product_identity.h"
 
 enum {
@@ -93,6 +97,7 @@ static Boolean send_owns_transfer(long id);
 static void take_bulk_in(const unsigned char *bytes, long len);
 static void put_drop(void);
 static void stream_drop(void);
+static void shot_drop(void);
 static void note_shot(const char *line);
 
 /* Only the connect operation runs asynchronously: on the physical
@@ -252,6 +257,7 @@ static void enter_backoff(void)
     xfer_cleanup();                   /* a dropped link cancels any transfer */
     offer_cleanup();
     stream_drop();                    /* no stopped message on a dead wire */
+    shot_drop();                      /* no deferred capture across a drop */
     put_drop();                       /* no half-written file left behind */
     ctlq_clear();
     close_endpoint();
@@ -766,6 +772,24 @@ static struct {
     short pace_ms;
 } g_xfer;
 
+/* "Screenshot App" (process.shot): bring a process forward, let it come
+   front and redraw, then capture just its front window and deliver that
+   over the capture transport - the wire-driven twin of the Processes
+   page's Front & Capture, cropped to the window rather than the screen.
+   Two-step, like that page: front now, capture from a later service pass,
+   so nothing nests an event loop while the target repaints. */
+static struct {
+    Boolean active;
+    ProcessSerialNumber target;
+    ProcessSerialNumber self;         /* NOW, to restore once captured */
+    long id;
+    short depth;
+    long chunk;
+    short pace_ms;
+    Boolean pack;
+    unsigned long deadline;
+} g_shot;
+
 static int bulk_frame_partially_sent(void)
 {
     return g_xfer.active && g_xfer.frame_sent > 0
@@ -1036,6 +1060,26 @@ static unsigned short next_xfer(void)
     return g.transfer_seq;
 }
 
+/* Fills the meta and exports the wire pixels from an already-captured
+   image, disposing it either way. Shared by the full-screen and
+   window-cropped gatherers. */
+static int export_shot(CaptureImage *image, short depth, Boolean pack,
+                       unsigned long t_start, PixelBlob *blob, ShotMeta *meta)
+{
+    memset(meta, 0, sizeof *meta);    /* kind = kFrameStandalone */
+    meta->capture_ms = (long)((TickCount() - t_start) * 1000 / 60);
+    meta->width = (short)(image->bounds.right - image->bounds.left);
+    meta->height = (short)(image->bounds.bottom - image->bounds.top);
+    meta->depth = depth;
+    meta->row_bytes = image->row_bytes;
+    if (now_pixels_export(image, pack, blob) != 0) {
+        capture_image_dispose(image);
+        return 0;
+    }
+    capture_image_dispose(image);
+    return 1;
+}
+
 /* Captures the screen and exports the wire pixels. On success the blob is
    the caller's to dispose. */
 static int gather_shot(short depth, Boolean pack, PixelBlob *blob,
@@ -1044,21 +1088,24 @@ static int gather_shot(short depth, Boolean pack, PixelBlob *blob,
     CaptureImage image;
     unsigned long t_start = TickCount();
 
-    memset(meta, 0, sizeof *meta);    /* kind = kFrameStandalone */
     if (capture_screen(depth, &image) != kCaptureOK) {
         return 0;
     }
-    meta->capture_ms = (long)((TickCount() - t_start) * 1000 / 60);
-    meta->width = (short)(image.bounds.right - image.bounds.left);
-    meta->height = (short)(image.bounds.bottom - image.bounds.top);
-    meta->depth = depth;
-    meta->row_bytes = image.row_bytes;
-    if (now_pixels_export(&image, pack, blob) != 0) {
-        capture_image_dispose(&image);
+    return export_shot(&image, depth, pack, t_start, blob, meta);
+}
+
+/* As gather_shot, but captures a single screen rectangle - the anchor
+   plane's payoff, used to crop "Screenshot App" to a process's window. */
+static int gather_shot_rect(short depth, const Rect *rect, Boolean pack,
+                            PixelBlob *blob, ShotMeta *meta)
+{
+    CaptureImage image;
+    unsigned long t_start = TickCount();
+
+    if (capture_screen_rect(depth, rect, &image) != kCaptureOK) {
         return 0;
     }
-    capture_image_dispose(&image);
-    return 1;
+    return export_shot(&image, depth, pack, t_start, blob, meta);
 }
 
 /* Announces capture.begin and arms the incremental sender. Takes ownership
@@ -1215,6 +1262,113 @@ static void serve_capture(const char *request)
         return;
     }
     arm_transfer(id, xfer, &meta, &blob, chunk, pace_ms, false);
+}
+
+/* The one failure shape a solicited capture (or shot) owes the host, so
+   it never waits on a transfer that will not come. */
+static void capture_fail(long id)
+{
+    char json[128];
+
+    snprintf(json, sizeof json,
+             "{\"type\":\"capture.end\",\"id\":%ld,\"transfer\":%u,"
+             "\"ok\":false}", id, next_xfer());
+    send_control(json);
+}
+
+static void shot_drop(void)
+{
+    g_shot.active = false;
+}
+
+/* "Screenshot App": front the target, then arm the deferred capture. No
+   reply yet - the answer is the capture transfer (or a capture.end
+   ok:false), correlated by this id, exactly as a plain capture.request. */
+static void serve_process_shot(const char *request)
+{
+    NowPrefs prefs;
+    ProcessSerialNumber psn;
+    ProcessInfoRec info;
+    Str31 name;
+    long id = now_json_find_int(request, "id", 0);
+    long depth_arg = now_json_find_int(request, "depth", 0);
+
+    if (g_stream.active || g_xfer.active || g_shot.active) {
+        capture_fail(id);             /* one transfer at a time */
+        return;
+    }
+    psn.highLongOfPSN =
+        (unsigned long)now_json_find_int(request, "psnHigh", 0);
+    psn.lowLongOfPSN =
+        (unsigned long)now_json_find_int(request, "psnLow", 0);
+
+    memset(&info, 0, sizeof info);
+    info.processInfoLength = sizeof info;
+    info.processName = name;
+    info.processAppSpec = NULL;
+    name[0] = 0;
+    if (GetProcessInformation(&psn, &info) != noErr
+        || GetCurrentProcess(&g_shot.self) != noErr) {
+        capture_fail(id);
+        return;
+    }
+    now_prefs_load(&prefs);
+    g_shot.target = psn;
+    g_shot.id = id;
+    g_shot.depth = capture_depth_is_supported((short)depth_arg)
+        ? (short)depth_arg : prefs.shot_depth;
+    tuning_from_json(request, &prefs, &g_shot.chunk, &g_shot.pace_ms,
+                     &g_shot.pack);
+    now_proc_bring_to_front(&psn);
+    g_shot.active = true;
+    /* ~0.75 s for the target to come front and repaint before we read the
+       framebuffer - the same beat the Front & Capture page waits. */
+    g_shot.deadline = TickCount() + 45;
+}
+
+/* Fires the deferred shot once the target has had time to come forward:
+   read its front window's fresh bounds, crop the capture to them, restore
+   NOW, and deliver over the capture transport. */
+static void service_shot(void)
+{
+    NowPeekWindowList w;
+    Rect rect;
+    Boolean have_rect = false;
+    PixelBlob blob;
+    ShotMeta meta;
+    int ok;
+
+    if (!g_shot.active || TickCount() < g_shot.deadline) {
+        return;
+    }
+    g_shot.active = false;
+
+    /* Crop to the target's front window when the anchor plane can read its
+       bounds. When it cannot - a windowless process, or NOW reading its
+       own slot - fall back to the whole screen rather than failing: the
+       human asked for a picture of that app, and the app is now front, so
+       the screen with it on it is a truthful answer, not an error. */
+    if (now_peek_windows_for_psn(&g_shot.target, &w) == kNowPeekReadOk
+        && w.count >= 1) {
+        SetRect(&rect, w.windows[0].left, w.windows[0].top,
+                w.windows[0].right, w.windows[0].bottom);
+        have_rect = true;
+    }
+
+    memset(&blob, 0, sizeof blob);
+    ok = have_rect
+        ? gather_shot_rect(g_shot.depth, &rect, g_shot.pack, &blob, &meta)
+        : gather_shot(g_shot.depth, g_shot.pack, &blob, &meta);
+    /* Pixels grabbed; NOW comes back to the front to send them (it pumps
+       the wire either way, but this leaves the human's machine where they
+       left it). */
+    SetFrontProcess(&g_shot.self);
+    if (!ok) {
+        capture_fail(g_shot.id);
+        return;
+    }
+    arm_transfer(g_shot.id, next_xfer(), &meta, &blob, g_shot.chunk,
+                 g_shot.pace_ms, false);
 }
 
 /* --- guest-initiated push ----------------------------------------------
@@ -2722,6 +2876,165 @@ static void serve_file_list(const char *request)
     send_control(json);
 }
 
+/* Serve process.list from this guest's OWN Process Manager - the guest's
+   share of the symmetric process family (the host serves its own list
+   the same way). Read-only; a process list is no more than the
+   Application menu already shows. Paginates: cursor is a 1-based
+   position among readable processes, more/cursor continue it. */
+static void serve_process_list(const char *request)
+{
+    enum { kPage = 16 };              /* control frames cap at 4 KB */
+    /* One entry's worst case (a 31-char name escaped, two 4CCs, three
+       numbers) is ~240 bytes; keep this much free for it plus the tail so
+       a row never truncates mid-JSON - a truncated frame decodes to
+       nothing and the send silently does nothing. */
+    enum { kEntryMargin = 320 };
+    /* Spelled-out 4CCs: multi-character char constants warn under
+       -Werror, and these classify the process's kind. */
+    const unsigned long kTypeFinder = 0x464E4452UL;   /* 'FNDR' */
+    const unsigned long kSigFinder = 0x4D414353UL;    /* 'MACS' */
+    char json[kNowMaxControl];
+    long id = now_json_find_int(request, "id", 0);
+    long cursor = now_json_find_int(request, "cursor", 1);
+    ProcessSerialNumber psn = { 0, kNoProcess };
+    ProcessSerialNumber front;
+    Boolean have_front = GetFrontProcess(&front) == noErr;
+    long pos;
+    long index = 0;                   /* readable-process position, 1-based */
+    int emitted = 0;
+    Boolean more = false;
+
+    if (cursor < 1) {
+        cursor = 1;
+    }
+    pos = snprintf(json, sizeof json,
+                   "{\"type\":\"process.listing\",\"id\":%ld,"
+                   "\"processes\":[", id);
+    while (GetNextProcess(&psn) == noErr) {
+        ProcessInfoRec info;
+        Str31 name;
+        char cname[32];
+        char code[8], creator[8];
+        char esc_name[64], esc_code[40], esc_creator[40];
+        const char *kind;
+        Boolean is_front = false;
+
+        memset(&info, 0, sizeof info);
+        info.processInfoLength = sizeof info;
+        info.processName = name;
+        info.processAppSpec = NULL;
+        name[0] = 0;
+        if (GetProcessInformation(&psn, &info) != noErr) {
+            continue;                 /* unreadable: not a position */
+        }
+        ++index;
+        if (index < cursor) {
+            continue;                 /* before this page */
+        }
+        if (emitted >= kPage
+            || pos > (long)sizeof json - kEntryMargin) {
+            more = true;              /* this one starts the next page */
+            break;
+        }
+        memcpy(cname, name + 1, name[0]);
+        cname[name[0]] = '\0';
+        memcpy(code, &info.processType, 4);
+        code[4] = '\0';
+        memcpy(creator, &info.processSignature, 4);
+        creator[4] = '\0';
+        if ((unsigned long)info.processType == kTypeFinder
+            || (unsigned long)info.processSignature == kSigFinder) {
+            kind = "finder";
+        } else if ((info.processMode & modeOnlyBackground) != 0) {
+            kind = "background";
+        } else {
+            kind = "application";
+        }
+        if (have_front) {
+            (void)SameProcess(&psn, &front, &is_front);
+        }
+        now_json_escape(cname, esc_name, sizeof esc_name);
+        now_json_escape(code, esc_code, sizeof esc_code);
+        now_json_escape(creator, esc_creator, sizeof esc_creator);
+        pos += snprintf(json + pos, sizeof json - (size_t)pos,
+                        "%s{\"name\":\"%s\",\"kind\":\"%s\",\"code\":\"%s\","
+                        "\"creator\":\"%s\",\"sizeKB\":%ld,\"front\":%s,"
+                        "\"psnHigh\":%lu,\"psnLow\":%lu}",
+                        emitted > 0 ? "," : "", esc_name, kind, esc_code,
+                        esc_creator, (long)(info.processSize / 1024),
+                        is_front ? "true" : "false",
+                        (unsigned long)psn.highLongOfPSN,
+                        (unsigned long)psn.lowLongOfPSN);
+        ++emitted;
+    }
+    snprintf(json + pos, sizeof json - (size_t)pos,
+             "],\"more\":%s,\"cursor\":%ld}", more ? "true" : "false",
+             cursor + emitted);
+    send_control(json);
+}
+
+/* A drive verb: bring a process to front, or ask it to quit. The target
+   is the PSN the host echoed from a listing; because that listing may be
+   seconds stale, the PSN is re-validated against a live process first and
+   a dead one fails closed rather than driving whatever now holds that
+   serial. Both verbs answer with the one process.result shape. */
+static void serve_process_act(const char *request, Boolean quit)
+{
+    char json[192];
+    long id = now_json_find_int(request, "id", 0);
+    ProcessSerialNumber psn;
+    ProcessInfoRec info;
+    Str31 name;
+    OSErr err = noErr;
+    const char *reason = NULL;
+
+    psn.highLongOfPSN =
+        (unsigned long)now_json_find_int(request, "psnHigh", 0);
+    psn.lowLongOfPSN =
+        (unsigned long)now_json_find_int(request, "psnLow", 0);
+
+    memset(&info, 0, sizeof info);
+    info.processInfoLength = sizeof info;
+    info.processName = name;
+    info.processAppSpec = NULL;
+    name[0] = 0;
+    if (GetProcessInformation(&psn, &info) != noErr) {
+        reason = "that process is no longer running";
+    } else if (quit) {
+        ProcessSerialNumber self;
+        Boolean is_self = false;
+        /* Quitting NOW itself over the wire would sever the connection
+           mid-reply - refuse it here, where the current PSN is known,
+           rather than trusting the far end never to ask. */
+        if (GetCurrentProcess(&self) == noErr) {
+            (void)SameProcess(&psn, &self, &is_self);
+        }
+        if (is_self) {
+            reason = "NOW will not ask itself to quit";
+        } else {
+            err = now_proc_ask_quit(&psn);
+            if (err != noErr) {
+                reason = "the Mac would not deliver the quit request";
+            }
+        }
+    } else {
+        err = now_proc_bring_to_front(&psn);
+        if (err != noErr) {
+            reason = "the Mac would not bring it to the front";
+        }
+    }
+
+    if (reason == NULL) {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"process.result\",\"id\":%ld,\"ok\":true}", id);
+    } else {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"process.result\",\"id\":%ld,\"ok\":false,"
+                 "\"reason\":\"%s\"}", id, reason);
+    }
+    send_control(json);
+}
+
 static void serve_file_get(const char *request)
 {
     NowPrefs prefs;
@@ -3546,6 +3859,22 @@ static int handle_frame(const char *reply)
         serve_file_list(reply);
         return 1;
     }
+    if (now_json_type_is(reply, "process.list")) {
+        serve_process_list(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "process.front")) {
+        serve_process_act(reply, false);
+        return 1;
+    }
+    if (now_json_type_is(reply, "process.quit")) {
+        serve_process_act(reply, true);
+        return 1;
+    }
+    if (now_json_type_is(reply, "process.shot")) {
+        serve_process_shot(reply);
+        return 1;
+    }
     if (now_json_type_is(reply, "file.get")) {
         serve_file_get(reply);
         return 1;
@@ -3868,6 +4197,9 @@ void conn_service(void)
         }
         if (g.phase == kConnConnected) {
             service_stream();
+        }
+        if (g.phase == kConnConnected) {
+            service_shot();
         }
         if (g.phase == kConnConnected) {
             service_transfer();

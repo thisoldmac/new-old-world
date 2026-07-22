@@ -29,7 +29,7 @@ enum {
     kProcMemBarHeight = 11,
     kProcMemBarMaxWidth = 200,
     kProcButtonHeight = 20,
-    kProcGroupMinHeight = 40, /* the extension box never collapses */
+    kProcGroupMinHeight = 62, /* the box holds the status line + button */
     kProcDetailWindows = 3,   /* window rows shown in the detail pane */
     kProcWindowRowHeight = 13
 };
@@ -51,6 +51,7 @@ typedef struct ProcessesLayout {
     Rect quit_btn;
     Rect group;               /* the NOW Extension group box */
     Rect peek_line;           /* status text inside the group box */
+    Rect capture_btn;         /* "Front & Capture", inside the group box */
 } ProcessesLayout;
 
 void processes_layout_compute(const Rect *body, ProcessesLayout *out);
@@ -89,5 +90,12 @@ void proc_cpu_text(unsigned long active_ticks, char *out, long cap);
    names it. */
 enum { kProcKindApp = 0, kProcKindBackground = 1, kProcKindFinder = 2 };
 void proc_kind_name(short kind, char *out, long cap);
+
+/* How stale a window snapshot is, from the tick age of its anchor. An
+   actively-pumping app is live and produces an empty string (no marker
+   needed); only a process that has not pumped recently gets an honest
+   "as of ..." - coarse, so it does not tick every second. Empty when
+   fresh. 60 ticks per second. */
+void proc_freshness_text(unsigned long age_ticks, char *out, long cap);
 
 #endif /* NOW_PROCESSES_LAYOUT_H */

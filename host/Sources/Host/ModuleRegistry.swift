@@ -56,6 +56,12 @@ struct ModuleRegistry: Sendable {
             summary: "Browse and download from the classic Mac's share"
         ),
         ModuleDescriptor(
+            id: "processes",
+            title: "Processes",
+            symbol: "cpu",
+            summary: "What is running on the connected Mac"
+        ),
+        ModuleDescriptor(
             id: "console",
             title: "Console",
             symbol: "terminal",

@@ -186,6 +186,71 @@ GWorldPtr now_screenshot_preview(Rect *bounds)
     return g_preview;
 }
 
+int now_screenshot_rect(const Rect *screen_rect, short depth, Boolean save,
+                        ShotStats *stats, char *err, long err_cap)
+{
+    CaptureImage image;
+    PicHandle pic;
+    UnsignedWide t0, t1, t2;
+    int rc;
+    OSErr oserr;
+
+    memset(stats, 0, sizeof *stats);
+    err[0] = '\0';
+
+    Microseconds(&t0);
+    rc = capture_screen_rect(depth, screen_rect, &image);
+    Microseconds(&t1);
+    if (rc != kCaptureOK) {
+        switch (rc) {
+        case kCaptureInvalidDepth:
+            snprintf(err, err_cap, "depth must be 1, 2, 4, 8, 16 or 32");
+            break;
+        case kCaptureNoScreen:
+            snprintf(err, err_cap, "the window is off-screen");
+            break;
+        case kCaptureNoMemory:
+            snprintf(err, err_cap, "not enough memory at %d-bit", depth);
+            break;
+        default:
+            snprintf(err, err_cap, "capture failed (%d)", rc);
+            break;
+        }
+        return rc;
+    }
+
+    pic = encode_pict(&image);
+    Microseconds(&t2);
+    if (pic == NULL) {
+        capture_image_dispose(&image);
+        snprintf(err, err_cap, "PICT encoding failed");
+        return kCapturePixelsUnavailable;
+    }
+
+    stats->width = (short)(image.bounds.right - image.bounds.left);
+    stats->height = (short)(image.bounds.bottom - image.bounds.top);
+    stats->depth = depth;
+    stats->bands = 1;
+    stats->raw_bytes = image.pixel_bytes;
+    stats->pict_bytes = GetHandleSize((Handle)pic);
+    stats->capture_ms = micros_to_ms(t0, t1);
+    stats->encode_ms = micros_to_ms(t1, t2);
+
+    if (save) {
+        oserr = save_pict(pic, stats->saved_name, sizeof stats->saved_name);
+        if (oserr != noErr) {
+            KillPicture(pic);
+            capture_image_dispose(&image);
+            snprintf(err, err_cap, "save failed (error %d)", oserr);
+            return kCapturePixelsUnavailable;
+        }
+    }
+    update_preview(&image);
+    KillPicture(pic);
+    capture_image_dispose(&image);
+    return 0;
+}
+
 int now_screenshot(short depth, short bands, Boolean save, ShotStats *stats,
                    char *err, long err_cap)
 {

@@ -35,6 +35,7 @@ add_application(now-guest
     src/peek.c
     src/peek_validate.c
     src/peek_read.c
+    src/proc_actions.c
     src/processes_layout.c
     src/processes_module.c
     src/workshop_layout.c

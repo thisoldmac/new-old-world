@@ -89,14 +89,123 @@ widened to accept the system heap (partition-only read "unreadable",
 exactly tbt's axtree lesson). The foreign read lives in the app, never
 the extension.
 
-Known texture, not a defect: the readout is only as fresh as the target
-process's last event-loop pass. A dormant background app reads "no
-anchor yet" until it pumps (interacting with it refreshes it within
-~10 s / kFreshTicks); an app with no windows reads "none open". Still
-open for a later pass: whether any app keeps its window structures in a
-zone neither the partition nor the system heap covers (would read
-"unreadable"); and rung 2b, cropping the actual Front & Capture to the
-rect.
+Known texture, not a defect and not fixable: the readout is only as
+fresh as the target process's last event-loop pass. Window state is a
+SNAPSHOT captured by the filter when the process pumps - classic Mac OS
+has no cross-process live window feed (`axtree` had the identical
+limit), so no reader can re-take it on demand. There is deliberately no
+time-based freshness gate on WHETHER to read: the A5-in-partition match
+and the fail-closed validation, not a clock, prove a slot is this
+process's, and the app carries the last good read across a stale blip.
+But staleness is surfaced HONESTLY (the AXPeek/qdpeek discipline, which
+hit this same wall): the reader reports the anchor's capture tick, and
+the detail's Windows header shows "as of a moment ago" / "as of N min
+ago" once the snapshot ages past ~3 s - an actively-pumping app stays
+live with no marker. An app that never pumped since arming reads "no
+anchor yet" until it does; an app with no windows reads "none open". Still open for a later pass: whether any app keeps its
+window structures in a zone neither the partition nor the system heap
+covers (would read "unreadable"); and rung 2b, cropping the actual Front
+& Capture to the rect.
+
+**Rung 2b - Front & Capture is metal-verified** (2026-07-21). The first
+USE of the window bounds, and the anchor plane's first real artifact: a
+"Front & Capture" button in the NOW Extension group box brings the
+selected process forward, DEFERS the capture to a later idle (~0.75 s, so
+nothing nests an event loop - the main loop's WaitNextEvent yields let
+the target come forward and redraw), reads the now-front window's fresh
+bounds, crops the capture to them (`capture_screen_rect` - one blit,
+clamped to the screen), saves a PICT to the Desktop, and restores NOW.
+Watched on the PB1400c: a captured window PICT, well-formed 8-bit with
+its CLUT and PackBits rows, opened as the real window. So the whole rung
+proves out end to end: extension captures anchors -> app validates and
+reads bounds -> app crops a genuine screenshot to them.
+
+**Rung 3 - the `process.*` wire family is metal-verified, host Processes
+module metal-verified** (2026-07-21). The contract
+gained
+`process.list`/`process.listing` (symmetric, paginated by a 1-based
+cursor, entries capped at 24 a page). The guest serves its own Process
+Manager walk on request (`serve_process_list` in `wire.c`: name, kind of
+application/background/finder, code/creator 4CCs, sizeKB, front). The
+host answers the mirror direction with its own running apps
+(`HostProcesses` off `NSWorkspace` - the degraded plane: modern macOS
+gives no OSType code/creator and no classic partition size, so those
+fields are honestly absent), and can ASK via `GuestListener.listProcesses`.
+Tested here: a byte-accurate guest fixture (multi-`snprintf`, so the
+conformance check names it as needing one), a `process.list`/`.listing`
+round-trip, and the conformance known-partial set. A `NOW_METAL` test
+(`MetalProcessTests`) pages the real PowerBook's process table onto the
+host and prints it; run on the PB1400c (2026-07-21) it read 8 processes
+correctly classified - the `appe` faceless-background set (Control Strip,
+Folder Actions, ORiNOCO Monitor, tbt-appe), the Finder by `FNDR`, three
+`APPL`s, and the guest itself flagged front. The host now DISPLAYS it: a
+read-only Processes module (`ProcessesModel`/`ProcessesModuleView`) that
+pages the whole table in on refresh, groups it into Applications (with
+the Finder) and Background, flags the front process, captions each row
+with kind/4CCs/partition size, and reads as the snapshot it is ("as of
+HH:MM:SS"). Metal-verified on the PB1400c: the pane drew the machine's 7
+processes correctly grouped and flagged.
+
+**The one-way direction is by design, not a gap.** NOW drives old-from-
+new - the host is the cockpit, the guest the operated machine - so
+host-sees-guest is the product and guest-sees-host is a non-goal. The
+guest issues no verbs at the host and has no ASK/UI for the host's
+processes, on purpose. The wire family stays symmetric in MEANING, but
+the host serves nothing back: the dead `HostProcesses`/`NSWorkspace`
+serve was removed rather than kept as ballast (2026-07-22).
+
+**Drive verbs added (2026-07-22).** The Processes pane grew three actions
+on the selected row, all host->guest: Bring to Front (`process.front` ->
+`SetFrontProcess`), Ask to Quit (`process.quit` -> a 'quit' Apple Event it
+may decline), and Screenshot App. Each names its target by the PSN the
+listing now carries (`psnHigh`/`psnLow`); the guest re-validates the PSN
+against a live process before acting, and refuses a quit of NOW itself -
+that would sever the wire mid-reply. `process.front`/`.quit` share one
+`process.result` reply; their Toolbox calls are factored into
+`proc_actions.c` so the guest page and the wire handler use one
+implementation. **Front, Quit, and the self-quit refusal are
+metal-verified on the PB1400c.**
+
+Screenshot App is its own verb, `process.shot`: the guest fronts the
+process, waits ~0.75 s for it to repaint (a deferred service pass, like
+the page's Front & Capture), reads its front window's fresh bounds off
+the anchor plane, captures ONLY that rectangle (`capture_screen_rect`),
+restores NOW, and delivers the crop over the capture transport - it
+reuses `arm_transfer`/capture.begin so the host receives it exactly as
+any capture, landing in the Screenshots module. The guest owns the
+timing, so the host-side delay hack is gone. **Metal-verified cropping
+Finder and Strider on the PB1400c** (2026-07-22). When the window bounds
+cannot be read - a genuinely windowless process - it falls back to a
+full-screen capture rather than erroring: the app is front, so the screen
+with it on it is a truthful answer.
+
+**Self-read fixed** (2026-07-22): NOW reading its OWN windows returned
+"unreadable" (in the detail pane and to `process.shot`, which then failed
+"capture ended without a begin"). Cause: the anchor plane walks foreign
+memory at the classic 68K `WindowRecord` offsets, and NOW is a Carbon app
+whose own window records do not sit there. `now_peek_windows_for_psn` /
+`now_peek_window_count` now special-case self (`SameProcess` with
+`GetCurrentProcess`) and read NOW's own windows straight from the Window
+Manager (`FrontWindow`/`GetNextWindow`/`GetWindowBounds`/`GetWTitle`) -
+no reason to go foreign for oneself. So self now crops like any other
+process; the full-screen fallback remains only for the truly windowless.
+**Metal-verified on the PB1400c** (2026-07-22): the detail pane reads
+NOW's own windows and Screenshot App crops NOW's Workshop window.
+
+With that, the whole drive arc is metal-verified: Bring to Front, Ask to
+Quit, the self-quit refusal, and Screenshot App cropping Finder, Strider,
+and NOW itself.
+
+**Smell, deferred:** the host's process list can hold stale PSNs across a
+guest relaunch, and a drive verb on a stale PSN fails (safely - the guest
+re-validates and answers ok:false / capture.end ok:false) until a manual
+Refresh. It fails closed, so it is a UX wart not a correctness bug, but
+the list should notice a reconnect and re-fetch itself rather than making
+the human hit Refresh. Left for a later pass. `process.launch` (opening an
+app that is not yet running) is the honest next verb; it needs a
+path/signature to name an unlaunched app, not a PSN. Everything is tested
+(contract round-trips incl. `process.shot`, a guest `process.result`
+fixture, the drivable/PSN decode) and builds clean on both halves.
 
 **Metal found one rung-0 bug, now fixed:** the detail pane's "Launched"
 line read "1/1/04" for every process. `ProcessInfoRec.processLaunchDate`

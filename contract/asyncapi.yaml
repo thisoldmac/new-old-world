@@ -117,6 +117,12 @@ channels:
       captureRefuse: { $ref: "#/components/messages/captureRefuse" }
       captureBegin: { $ref: "#/components/messages/captureBegin" }
       captureEnd: { $ref: "#/components/messages/captureEnd" }
+      processList: { $ref: "#/components/messages/processList" }
+      processListing: { $ref: "#/components/messages/processListing" }
+      processFront: { $ref: "#/components/messages/processFront" }
+      processQuit: { $ref: "#/components/messages/processQuit" }
+      processShot: { $ref: "#/components/messages/processShot" }
+      processResult: { $ref: "#/components/messages/processResult" }
   bulk:
     address: "1"
     description: >
@@ -328,10 +334,67 @@ operations:
       does at most one page of work per request (the SCSI scan touches
       one target per page), so a census never stalls the wire. The
       outcome vocabulary and probe registry live in x-census below.
-      A side that does not yet serve a probe answers outcome "refused"
-      with a note — a well-formed refusal, never a protocol error —
-      which is how the host answers every probe until it grows its own
-      census; the asymmetry is declared here, not accidental.
+      In practice the host asks and the guest — the machine with hardware
+      worth asking about — serves; a side that does not serve a probe
+      answers outcome "refused" with a note (a well-formed refusal, never
+      a protocol error), which is how the host answers a census.request
+      aimed at it. The asymmetry is declared here, not accidental.
+  hostBrowsesProcesses:
+    action: receive
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/processList"
+    description: >
+      process.list means the same thing whichever side sends it, and
+      whoever RECEIVES it serves its OWN running processes - so the family
+      is symmetric in MEANING. But NOW is a cockpit for driving old Macs
+      from new ones, so it implements one direction only: the host asks,
+      the guest (Process Manager) answers. The reverse (guest asking the
+      host) is a non-goal and deliberately unimplemented - the host will
+      ignore a process.list rather than serve one. Read-only and needs no
+      share: a process list reveals nothing a person could not see in the
+      Application menu. The listing paginates (frames cap at 4 KB) with
+      cursor/more, and is also the mirror's degraded plane - process list
+      and front app are legible without the resident anchor plane at all.
+  guestServesProcesses:
+    action: send
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/processListing"
+    description: >
+      The answer to process.list: one entry per running process, the
+      guest's own. kind classifies each (application / background /
+      finder); front marks the frontmost; psnHigh/psnLow name the process
+      to the drive verbs. Paginates when the list outgrows a 4 KB frame.
+  hostDrivesProcess:
+    action: receive
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/processFront"
+      - $ref: "#/channels/control/messages/processQuit"
+      - $ref: "#/channels/control/messages/processShot"
+    description: >
+      The drive verbs, same host->guest arrow as the listing: process.front
+      brings a process forward (SetFrontProcess), process.quit asks it to
+      quit (a 'quit' Apple Event it may decline), and process.shot fronts a
+      process then captures just its front window. Each names its target by
+      the PSN echoed from a process.listing entry; the guest re-validates
+      that PSN against a live process before acting. process.front and
+      process.quit answer with process.result; process.shot answers with a
+      capture transfer (capture.begin/bulk/end), or capture.end ok:false on
+      failure - it reuses the capture transport rather than inventing one.
+      Like the listing, the reverse direction is a non-goal - the guest
+      issues no drive verbs at the host.
+  guestAnswersDrive:
+    action: send
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/processResult"
+    description: >
+      The one reply shape for both drive verbs: ok true when the verb was
+      applied (for quit, that the event was sent - not that the app has
+      gone, which it may decline), or ok false with a reason when the PSN
+      no longer names a live process or the Toolbox refused.
 
 components:
   messages:
@@ -449,6 +512,24 @@ components:
     captureEnd:
       name: capture.end
       payload: { $ref: "#/components/schemas/CaptureEnd" }
+    processList:
+      name: process.list
+      payload: { $ref: "#/components/schemas/ProcessList" }
+    processListing:
+      name: process.listing
+      payload: { $ref: "#/components/schemas/ProcessListing" }
+    processFront:
+      name: process.front
+      payload: { $ref: "#/components/schemas/ProcessFront" }
+    processQuit:
+      name: process.quit
+      payload: { $ref: "#/components/schemas/ProcessQuit" }
+    processShot:
+      name: process.shot
+      payload: { $ref: "#/components/schemas/ProcessShot" }
+    processResult:
+      name: process.result
+      payload: { $ref: "#/components/schemas/ProcessResult" }
 
   schemas:
     Hello:
@@ -750,6 +831,120 @@ components:
             wire is relative to this. Sent with the root listing so the
             asker can name the place it is looking at instead of
             calling it "the share".
+    ProcessList:
+      type: object
+      required: [type, id]
+      additionalProperties: false
+      properties:
+        type: { const: process.list }
+        id: { type: integer }
+        cursor:
+          type: integer
+          description: Continue a paginated listing from this index.
+    ProcessListing:
+      type: object
+      required: [type, id, processes, more]
+      additionalProperties: false
+      properties:
+        type: { const: process.listing }
+        id: { type: integer }
+        processes:
+          type: array
+          maxItems: 24
+          items:
+            type: object
+            required: [name, kind]
+            additionalProperties: false
+            properties:
+              name: { type: string }
+              kind:
+                enum: [application, background, finder]
+                description: >
+                  The responder's classification. background is a faceless
+                  process (no user windows or menu bar); finder is that
+                  machine's Finder/desktop.
+              code:
+                type: string
+                description: >
+                  The process "type" four-character code (e.g. "APPL"), as
+                  the responding OS reports it; absent when it has none.
+              creator:
+                type: string
+                description: The process creator four-character code.
+              sizeKB:
+                type: integer
+                description: The process's memory partition, in KB.
+              front:
+                type: boolean
+                description: The one frontmost process on that machine.
+              psnHigh:
+                type: integer
+                description: >
+                  High half of the process serial number. The PSN names a
+                  running process to the drive verbs (process.front /
+                  process.quit): it is valid only while the process lives,
+                  so a stale one is refused rather than acted on.
+              psnLow:
+                type: integer
+                description: Low half of the process serial number.
+        more: { type: boolean }
+        cursor: { type: integer }
+    ProcessFront:
+      type: object
+      required: [type, id, psnHigh, psnLow]
+      additionalProperties: false
+      properties:
+        type: { const: process.front }
+        id: { type: integer }
+        psnHigh:
+          type: integer
+          description: >
+            High half of the target's PSN, echoed from a process.listing
+            entry. The responder re-validates it against a live process
+            and refuses if it has gone.
+        psnLow: { type: integer }
+    ProcessQuit:
+      type: object
+      required: [type, id, psnHigh, psnLow]
+      additionalProperties: false
+      properties:
+        type: { const: process.quit }
+        id: { type: integer }
+        psnHigh:
+          type: integer
+          description: High half of the target's PSN, as process.front.
+        psnLow: { type: integer }
+    ProcessShot:
+      type: object
+      required: [type, id, psnHigh, psnLow]
+      additionalProperties: false
+      properties:
+        type: { const: process.shot }
+        id: { type: integer }
+        psnHigh:
+          type: integer
+          description: >
+            High half of the target's PSN. The guest brings that process
+            forward, waits for it to repaint, then captures ONLY its front
+            window and delivers the crop over the capture transport
+            (capture.begin/bulk/end), correlated by this id exactly as a
+            plain capture.request. On any failure it answers capture.end
+            ok:false with this id, so the requester never waits forever.
+        psnLow: { type: integer }
+        depth:
+          enum: [1, 2, 4, 8, 16, 32]
+          description: Capture bit depth; the guest's preference if omitted.
+    ProcessResult:
+      type: object
+      required: [type, id, ok]
+      additionalProperties: false
+      properties:
+        type: { const: process.result }
+        id: { type: integer }
+        ok: { type: boolean }
+        reason:
+          type: string
+          description: Present when ok is false; why the verb did not apply.
     FileGet:
       type: object
       required: [type, id, path]

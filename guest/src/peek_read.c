@@ -25,16 +25,7 @@ enum {
     kOffRgnBBox = 2,              /* Rect after the 2-byte rgnSize */
     kRegionHeader = kOffRgnBBox + 8,
 
-    kWindowChainCap = 64,         /* bound the walk against a cyclic chain */
-
-    /* An anchor is only as current as the process's last event-loop
-       pass. An alive process keeps a valid window pointer as long as it
-       exists, and the A5-in-partition check already rejects a recycled
-       slot, so this bound is generous: a full minute covers even an
-       idle backgrounded app that pumps rarely, while still rejecting a
-       truly abandoned slot. The application also CARRIES the last good
-       read across a brief stale window, so the readout does not blink. */
-    kFreshTicks = 3600            /* ~60 s at 60 ticks/sec */
+    kWindowChainCap = 64          /* bound the walk against a cyclic chain */
 };
 
 /* The zones a foreign window structure may legally live in: the
@@ -78,19 +69,25 @@ static int in_readable(const ReadableZones *z, unsigned long addr,
     return 0;
 }
 
-/* The fresh anchor's window-list head for the process whose partition
-   is [loc,size): the slot whose A5 lies in that partition (the
-   containment IS the PSN<->A5 correlation). Double-samples the stamp
-   against a torn cross-update read, rejects a stale slot. *found tells
-   "no fresh anchor" from "anchor found, WindowList 0 (no windows)". */
+/* The anchor's window-list head for the process whose partition is
+   [loc,size): the slot whose A5 lies in that partition (the containment
+   IS the PSN<->A5 correlation, and it is what makes the slot provably
+   this process's - not time). Double-samples the stamp against a torn
+   cross-update read. There is no age gate: window state is always "as
+   of the target's last pump" (classic Mac OS has no cross-process live
+   window feed, so a snapshot is all any reader can have - axtree
+   included), and validation plus the A5 match, not a clock, are the
+   safety; the application carries the last good read across blips.
+   *found tells "no anchor at all" from "anchor found, WindowList 0". */
 static unsigned long process_window_list(const NowPeekTable *table,
                                          unsigned long loc,
-                                         unsigned long size,
-                                         unsigned long now, int *found)
+                                         unsigned long size, int *found,
+                                         NowPeekU32 *stamp_out)
 {
     int i;
 
     *found = 0;
+    *stamp_out = 0;
     for (i = 0; i < (int)kNowPeekMaxAnchors; ++i) {
         const NowPeekAnchorSlot *slot = &table->anchors[i];
         NowPeekU32 s1 = slot->stamp_ticks;
@@ -99,18 +96,19 @@ static unsigned long process_window_list(const NowPeekTable *table,
         NowPeekU32 s2;
 
         if (s1 == 0) {
-            continue;
+            continue;                 /* never captured, or mid-update */
         }
         a5 = slot->a5;
         wl = slot->window_list;
         s2 = slot->stamp_ticks;
-        if (s1 != s2 || (NowPeekU32)(now - s1) > (NowPeekU32)kFreshTicks) {
-            continue;                 /* torn, or stale */
+        if (s1 != s2) {
+            continue;                 /* torn: updated while reading */
         }
         if (!now_peek_range_in_partition(a5, 4, loc, size)) {
             continue;                 /* not this process's A5 */
         }
         *found = 1;
+        *stamp_out = s1;              /* the capture tick, for freshness */
         return wl;
     }
     return 0;
@@ -121,7 +119,8 @@ static unsigned long process_window_list(const NowPeekTable *table,
    first window, and NoWindows is returned when the anchor is fine but
    the list is empty. */
 static NowPeekReadStatus resolve(const ProcessSerialNumber *psn,
-                                 ReadableZones *z, unsigned long *wl_head)
+                                 ReadableZones *z, unsigned long *wl_head,
+                                 NowPeekU32 *stamp_out)
 {
     const NowPeekTable *table;
     ProcessInfoRec info;
@@ -130,6 +129,7 @@ static NowPeekReadStatus resolve(const ProcessSerialNumber *psn,
     int found;
 
     *wl_head = 0;
+    *stamp_out = 0;
     table = now_peek_table();
     if (table == NULL || (table->caps & kNowPeekCapAnchors) == 0
         || (table->arm_active & kNowPeekCapAnchors) == 0) {
@@ -149,8 +149,7 @@ static NowPeekReadStatus resolve(const ProcessSerialNumber *psn,
     z->sys_lo = (unsigned long)sys;
     z->sys_hi = (sys != NULL) ? read_be32(z->sys_lo) : 0;
 
-    wl = process_window_list(table, z->loc, z->size,
-                             (unsigned long)TickCount(), &found);
+    wl = process_window_list(table, z->loc, z->size, &found, stamp_out);
     if (!found) {
         return kNowPeekReadNoAnchor;
     }
@@ -221,19 +220,74 @@ static void read_title(const ReadableZones *z, unsigned long wl,
     out[len] = '\0';
 }
 
+/* Our OWN windows, read through the Window Manager rather than the anchor
+   plane's foreign-memory walk. NOW is a Carbon app: its window records do
+   not sit at the classic 68K WindowRecord offsets the foreign path reads,
+   so reading self that way returns "unreadable". For self there is no
+   reason to go foreign at all - the Toolbox will hand us our own bounds
+   and titles directly, and they are always live. */
+static NowPeekReadStatus read_own_windows(NowPeekWindowList *out)
+{
+    WindowRef win = FrontWindow();
+    int hops;
+
+    out->stamp_ticks = (NowPeekU32)TickCount();   /* own state is live */
+    for (hops = 0; win != NULL && hops < kWindowChainCap; ++hops) {
+        Rect r;
+
+        GetWindowBounds(win, kWindowStructureRgn, &r);
+        if (now_peek_rect_sane(r.top, r.left, r.bottom, r.right)) {
+            if (out->count < kNowPeekMaxWindows) {
+                NowPeekWindow *w = &out->windows[out->count];
+                Str255 title;
+                short len;
+
+                w->top = r.top;
+                w->left = r.left;
+                w->bottom = r.bottom;
+                w->right = r.right;
+                GetWTitle(win, title);
+                len = title[0];
+                if (len > kNowPeekTitleMax - 1) {
+                    len = kNowPeekTitleMax - 1;
+                }
+                if (len > 0) {
+                    memcpy(w->title, title + 1, (size_t)len);
+                }
+                w->title[len] = '\0';
+                ++out->count;
+            } else {
+                out->more = true;
+            }
+        }
+        win = GetNextWindow(win);
+    }
+    return out->count > 0 ? kNowPeekReadOk : kNowPeekReadNoWindows;
+}
+
 NowPeekReadStatus now_peek_windows_for_psn(const ProcessSerialNumber *psn,
                                            NowPeekWindowList *out)
 {
     ReadableZones z;
     unsigned long wl;
+    NowPeekU32 stamp = 0;
     NowPeekReadStatus st;
     int hops;
+    ProcessSerialNumber self;
+    Boolean is_self = false;
 
     memset(out, 0, sizeof *out);
-    st = resolve(psn, &z, &wl);
+    if (GetCurrentProcess(&self) == noErr) {
+        (void)SameProcess(psn, &self, &is_self);
+    }
+    if (is_self) {
+        return read_own_windows(out);
+    }
+    st = resolve(psn, &z, &wl, &stamp);
     if (st != kNowPeekReadOk) {
         return st;
     }
+    out->stamp_ticks = stamp;
     for (hops = 0; wl != 0 && hops < kWindowChainCap; ++hops) {
         NowPeekWindow w;
 
@@ -261,12 +315,25 @@ NowPeekReadStatus now_peek_window_count(const ProcessSerialNumber *psn,
 {
     ReadableZones z;
     unsigned long wl;
+    NowPeekU32 stamp = 0;
     NowPeekReadStatus st;
     int hops;
     short n = 0;
+    ProcessSerialNumber self;
+    Boolean is_self = false;
 
     *count = 0;
-    st = resolve(psn, &z, &wl);
+    if (GetCurrentProcess(&self) == noErr) {
+        (void)SameProcess(psn, &self, &is_self);
+    }
+    if (is_self) {
+        NowPeekWindowList w;
+
+        st = read_own_windows(&w);
+        *count = w.count;
+        return st;
+    }
+    st = resolve(psn, &z, &wl, &stamp);   /* stamp unused for the badge */
     if (st != kNowPeekReadOk) {
         return st;                    /* NoWindows/NoAnchor/etc as-is */
     }

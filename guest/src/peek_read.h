@@ -32,6 +32,13 @@ typedef struct {
 typedef struct {
     short count;                  /* windows filled in `windows` */
     Boolean more;                 /* the chain was longer than the cap */
+    /* The anchor's capture tick (LMGetTicks when the filter last
+       sampled this process). Window state is only ever as fresh as the
+       target's last event-loop pass - classic Mac OS has no
+       cross-process live feed - so the reader reports WHEN, and the
+       consumer says so honestly (the AXPeek/qdpeek discipline). Same
+       TickCount domain on both sides; age = TickCount() - stamp_ticks. */
+    unsigned long stamp_ticks;
     NowPeekWindow windows[kNowPeekMaxWindows];
 } NowPeekWindowList;
 
