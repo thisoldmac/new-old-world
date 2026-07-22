@@ -232,14 +232,18 @@ void proc_kind_name(short kind, char *out, long cap)
     }
 }
 
+/* Minute granularity on purpose: a launch time does not need to tick
+   every second, and a per-second string would repaint the detail pane
+   every second. Below a minute it is coarse ("just now", "less than a
+   minute ago"); from there it changes only when the minute rolls. */
 void proc_uptime_text(long ticks_ago, char *out, long cap)
 {
     long secs = (ticks_ago < 0 ? 0 : ticks_ago) / 60;
 
-    if (secs < 5) {
+    if (secs < 10) {
         snprintf(out, (size_t)cap, "just now");
     } else if (secs < 60) {
-        snprintf(out, (size_t)cap, "%ld sec ago", secs);
+        snprintf(out, (size_t)cap, "less than a minute ago");
     } else if (secs < 3600) {
         snprintf(out, (size_t)cap, "%ld min ago", secs / 60);
     } else if (secs < 86400) {

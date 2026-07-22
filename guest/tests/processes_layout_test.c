@@ -154,11 +154,13 @@ static void check_formatters(void)
           "status line singular");
 
     /* processLaunchDate is ticks since boot; the delta is a duration,
-       never a date (60 ticks/sec). */
-    proc_uptime_text(120, buf, sizeof buf);       /* 2 s */
-    check(strcmp(buf, "just now") == 0, "under 5s reads just now");
-    proc_uptime_text(600, buf, sizeof buf);       /* 10 s */
-    check(strcmp(buf, "10 sec ago") == 0, "seconds granularity");
+       never a date (60 ticks/sec). Coarse below a minute so it does not
+       tick every second. */
+    proc_uptime_text(60L * 3, buf, sizeof buf);   /* 3 s */
+    check(strcmp(buf, "just now") == 0, "under 10s reads just now");
+    proc_uptime_text(60L * 30, buf, sizeof buf);  /* 30 s */
+    check(strcmp(buf, "less than a minute ago") == 0,
+          "under a minute is coarse");
     proc_uptime_text(60L * 60 * 3, buf, sizeof buf); /* 3 min */
     check(strcmp(buf, "3 min ago") == 0, "minutes granularity");
     proc_uptime_text(60L * (3600 * 2 + 60 * 14), buf, sizeof buf);

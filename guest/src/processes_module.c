@@ -78,6 +78,10 @@ static unsigned long g_next_walk;
 static char g_status[64];
 static short g_front_hilite = -1;
 static short g_quit_hilite = -1;
+/* Set while rebuilding the browser: RemoveDataBrowserItems fires a
+   deselect for the selected row, whose notification would otherwise
+   clobber g_selected mid-rebuild. */
+static Boolean g_in_rebuild;
 
 /* The selected process's windows, read through the anchor plane on the
    throttled idle (the foreign read lives on the 1 Hz path, never in
@@ -209,6 +213,22 @@ static void invalidate_detail(void)
     }
 }
 
+/* Just the stats that tick - memory, CPU, launched - so a per-second
+   value change repaints a small band, not the whole pane. draw_detail
+   still runs, but the update clips to this band. */
+static void invalidate_detail_stats(void)
+{
+    if (g_owner != NULL && g_visible) {
+        Rect band;
+
+        band.left = g_r.detail.left;
+        band.top = g_r.mem_line.top;
+        band.right = g_r.detail.right;
+        band.bottom = g_r.launched_line.bottom;
+        InvalWindowRect(g_owner, &band);
+    }
+}
+
 static void rebuild_browser_items(void)
 {
     DataBrowserItemID ids[kMaxProcs + 1];
@@ -220,6 +240,7 @@ static void rebuild_browser_items(void)
     if (g_browser == NULL) {
         return;
     }
+    g_in_rebuild = true;              /* swallow the removal's deselect */
     RemoveDataBrowserItems(g_browser, kDataBrowserNoItem, 0, NULL,
                            kDataBrowserItemNoProperty);
     for (i = 0; i < g_proc_count; ++i) {
@@ -244,6 +265,7 @@ static void rebuild_browser_items(void)
         SetDataBrowserSelectedItems(g_browser, 1, &sel,
                                     kDataBrowserItemsAssign);
     }
+    g_in_rebuild = false;
 }
 
 /* Refresh the table from the Process Manager. Membership changes
@@ -271,21 +293,28 @@ static void refresh(void)
     }
 
     for (i = 0; i < fresh_count; ++i) {
-        int old;
+        int old = find_by_psn(g_procs, g_proc_count, &fresh[i].psn);
 
         /* The list badge: window count for foreground apps (a foreign
-           read through the anchor plane); background rows carry none.
-           Unknown/unreadable leaves -1 -> no badge. */
+           read through the anchor plane); background rows carry none. A
+           definitive read (Ok / no windows) updates it; a transient
+           miss (stale anchor) CARRIES the last known count rather than
+           flapping the badge to nothing and forcing a rebuild. */
         if (fresh[i].kind != kProcKindBackground) {
             short wc = 0;
             NowPeekReadStatus st =
                 now_peek_window_count(&fresh[i].psn, &wc);
 
-            fresh[i].window_count = (st == kNowPeekReadOk) ? wc
-                : (st == kNowPeekReadNoWindows) ? 0 : -1;
+            if (st == kNowPeekReadOk) {
+                fresh[i].window_count = wc;
+            } else if (st == kNowPeekReadNoWindows) {
+                fresh[i].window_count = 0;
+            } else {
+                fresh[i].window_count =
+                    old >= 0 ? g_procs[old].window_count : -1;
+            }
         }
 
-        old = find_by_psn(g_procs, g_proc_count, &fresh[i].psn);
         if (old < 0) {
             list_changed = true;
             take_icon(&fresh[i]);
@@ -332,7 +361,7 @@ static void refresh(void)
         rebuild_browser_items();
         invalidate_detail();
     } else if (values_changed && g_selected >= 0) {
-        invalidate_detail();
+        invalidate_detail_stats();    /* the ticking band only */
     } else if (had_selection && g_selected < 0) {
         invalidate_detail();
     }
@@ -434,20 +463,31 @@ static OSStatus item_data(ControlRef browser, DataBrowserItemID item,
     char caption[48];
 
     (void)browser;
-    if (changeValue || property != kColName) {
-        return errDataBrowserPropertyNotSupported;
-    }
     if (item == kDividerItem) {
-        /* The one non-process row: the group separator. MacRoman em
-           dash (0xD1); no icon. */
-        text = CFStringCreateWithCString(NULL, "\xD1 background",
-                                         kCFStringEncodingMacRoman);
+        /* The one non-process row: the group separator. The Data
+           Browser itself is told the row is not selectable, so it
+           behaves like a rule, not a list item; the text is a run of
+           MacRoman em dashes (0xD1) that reads as one. */
+        if (property == kDataBrowserItemIsSelectableProperty) {
+            SetDataBrowserItemDataBooleanValue(data, false);
+            return noErr;
+        }
+        if (property != kColName) {
+            return errDataBrowserPropertyNotSupported;
+        }
+        text = CFStringCreateWithCString(
+            NULL, "\xD1\xD1\xD1\xD1\xD1\xD1  background  "
+                  "\xD1\xD1\xD1\xD1\xD1\xD1",
+            kCFStringEncodingMacRoman);
         if (text == NULL) {
             return memFullErr;
         }
         SetDataBrowserItemDataText(data, text);
         CFRelease(text);
         return noErr;
+    }
+    if (changeValue || property != kColName) {
+        return errDataBrowserPropertyNotSupported;
     }
     if (item < 1 || item > (DataBrowserItemID)g_proc_count) {
         return errDataBrowserPropertyNotSupported;
@@ -467,34 +507,21 @@ static OSStatus item_data(ControlRef browser, DataBrowserItemID item,
     return noErr;
 }
 
-/* Restore the real selection after the divider is clicked, so the
-   separator can never be the selected row. */
-static void bounce_divider_selection(ControlRef browser)
-{
-    if (g_selected >= 0) {
-        DataBrowserItemID sel = (DataBrowserItemID)(g_selected + 1);
-
-        SetDataBrowserSelectedItems(browser, 1, &sel,
-                                    kDataBrowserItemsAssign);
-    } else {
-        SetDataBrowserSelectedItems(browser, 0, NULL,
-                                    kDataBrowserItemsAssign);
-    }
-}
-
 static void item_notify(ControlRef browser, DataBrowserItemID item,
                         DataBrowserItemNotification message)
 {
+    (void)browser;
+    /* Notifications fired by our own rebuild are not user intent - the
+       removal deselects the selected row, which we must not act on. */
+    if (g_in_rebuild || item == kDividerItem) {
+        return;
+    }
     if (message == kDataBrowserItemSelected) {
-        if (item == kDividerItem) {
-            bounce_divider_selection(browser);
-            return;
-        }
         g_selected = (int)item - 1;
         invalidate_detail();
         g_next_walk = 0;              /* re-read this process's window now */
     } else if (message == kDataBrowserItemDeselected
-               && item != kDividerItem && g_selected == (int)item - 1) {
+               && g_selected == (int)item - 1) {
         g_selected = -1;
         invalidate_detail();
         g_next_walk = 0;
@@ -782,11 +809,29 @@ static void draw_mem_bar(const ProcEntry *entry)
     }
 }
 
-/* The "Windows:" header and up to kProcDetailWindows title+size rows for
-   the selected process, from the idle-refreshed cache. The header
-   doubles as the read status (none open / no anchor yet / unreadable),
-   so the anchor plane's state is always legible here. */
-static void draw_window_facts(void)
+/* A one-pixel etched separator (dark line over white) across the detail
+   width at y - the Platinum rule the HIG uses to divide a pane. */
+static void draw_detail_rule(short y)
+{
+    RGBColor edge = { 0x8888, 0x8888, 0x8888 };
+    RGBColor lite = { 0xFFFF, 0xFFFF, 0xFFFF };
+    short x0 = (short)(g_r.detail.left + 12);
+    short x1 = (short)(g_r.detail.right - 12);
+
+    RGBForeColor(&edge);
+    MoveTo(x0, y);
+    LineTo(x1, y);
+    RGBForeColor(&lite);
+    MoveTo(x0, (short)(y + 1));
+    LineTo(x1, (short)(y + 1));
+    ForeColor(blackColor);
+}
+
+/* The Windows subsection for the selected process: a bold "Windows"
+   header carrying the count or the read status (none open / no anchor
+   yet / unreadable), then up to kProcDetailWindows title+size rows. A
+   faceless background app is stated as such rather than chased. */
+static void draw_window_facts(const ProcEntry *entry)
 {
     Str255 text;
     char line[96];
@@ -795,27 +840,42 @@ static void draw_window_facts(void)
     int full;
     int i;
 
-    switch (g_sel_win_status) {
-    case kNowPeekReadOk:
-        snprintf(value, sizeof value, "%d%s", g_sel_windows.count,
-                 g_sel_windows.more ? " (more)" : "");
-        break;
-    case kNowPeekReadNoWindows:
-        snprintf(value, sizeof value, "none open");
-        break;
-    case kNowPeekReadNoAnchor:
-        snprintf(value, sizeof value, "no anchor yet");
-        break;
-    case kNowPeekReadUnreadable:
-        snprintf(value, sizeof value, "unreadable");
-        break;
-    default:
-        snprintf(value, sizeof value, "-");   /* no plane */
-        break;
+    if (entry->kind == kProcKindBackground) {
+        snprintf(value, sizeof value, "none (background app)");
+    } else {
+        switch (g_sel_win_status) {
+        case kNowPeekReadOk:
+            snprintf(value, sizeof value, "%d%s", g_sel_windows.count,
+                     g_sel_windows.more ? " (more)" : "");
+            break;
+        case kNowPeekReadNoWindows:
+            snprintf(value, sizeof value, "none open");
+            break;
+        case kNowPeekReadNoAnchor:
+            snprintf(value, sizeof value, "no anchor yet");
+            break;
+        case kNowPeekReadUnreadable:
+            snprintf(value, sizeof value, "unreadable");
+            break;
+        default:
+            snprintf(value, sizeof value, "-");   /* no plane */
+            break;
+        }
     }
-    draw_fact(&g_r.windows_line, "Windows:", value);
-
+    /* Bold "Windows" header, so the subsection reads as its own group. */
+    UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
+    CopyCStringToPascal("Windows", text);
+    MoveTo(g_r.windows_line.left, (short)(g_r.windows_line.top + 11));
+    DrawString(text);
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    CopyCStringToPascal(value, text);
+    MoveTo((short)(g_r.windows_line.left + 62),
+           (short)(g_r.windows_line.top + 11));
+    DrawString(text);
+
+    if (entry->kind == kProcKindBackground) {
+        return;
+    }
     rows = kProcDetailWindows;
     full = g_sel_windows.count <= rows ? g_sel_windows.count : rows - 1;
     for (i = 0; i < full; ++i) {
@@ -862,13 +922,23 @@ static void draw_detail(void)
         return;
     }
 
+    /* Title is the process name only - the window badge belongs to the
+       list row, and duplicating it here can disagree (the badge's count
+       walk and the detail's full walk validate differently). */
+    if (entry->quit_state == kQuitAsked) {
+        snprintf(line, sizeof line, "%s (quitting...)", entry->name);
+    } else if (entry->quit_state == kQuitNoReply) {
+        snprintf(line, sizeof line, "%s (no reply)", entry->name);
+    } else {
+        snprintf(line, sizeof line, "%s", entry->name);
+    }
     UseThemeFont(kThemeEmphasizedSystemFont, smSystemScript);
-    row_caption(entry, line, sizeof line);
     CopyCStringToPascal(line, text);
     TruncString((short)(g_r.title_line.right - g_r.title_line.left), text,
                 truncEnd);
     MoveTo(g_r.title_line.left, (short)(g_r.title_line.top + 13));
     DrawString(text);
+    draw_detail_rule((short)(g_r.title_line.bottom + 1));
 
     proc_kind_name(entry->kind, line, sizeof line);
     if (entry->is_front) {
@@ -897,11 +967,14 @@ static void draw_detail(void)
                      sizeof line);
     draw_fact(&g_r.launched_line, "Launched:", line);
 
-    draw_window_facts();
+    draw_window_facts(entry);
 
     /* Menus: the anchor captures MenuList, but the walk is a later pass;
-       the slot is here so it does not move when it arrives. */
-    draw_fact(&g_r.menus_line, "Menus:", "not read yet");
+       the slot is here so it does not move when it arrives. A faceless
+       background app has no menu bar to read. */
+    draw_fact(&g_r.menus_line, "Menus:",
+              entry->kind == kProcKindBackground ? "none (background app)"
+                                                 : "not read yet");
 }
 
 static void procs_draw(void)
@@ -1013,10 +1086,14 @@ static void refresh_selected_windows(void)
     NowPeekReadStatus st;
 
     memset(&w, 0, sizeof w);
-    if (g_selected >= 0 && g_selected < g_proc_count) {
-        st = now_peek_windows_for_psn(&g_procs[g_selected].psn, &w);
-    } else {
+    if (g_selected < 0 || g_selected >= g_proc_count) {
         st = kNowPeekReadNoPlane;
+    } else if (g_procs[g_selected].kind == kProcKindBackground) {
+        /* A faceless background app has no user windows and no menu
+           bar; do not chase an anchor that will only go stale. */
+        st = kNowPeekReadNoWindows;
+    } else {
+        st = now_peek_windows_for_psn(&g_procs[g_selected].psn, &w);
     }
     if (st != g_sel_win_status
         || memcmp(&w, &g_sel_windows, sizeof w) != 0) {
