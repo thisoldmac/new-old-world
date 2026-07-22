@@ -26,6 +26,7 @@
 #include <SCSI.h>              /* SCSIInstr + sc* opcodes; funcs resolved */
 #include <ATA.h>               /* ataIdentify PB; NativeATAMgr resolved */
 #include <Power.h>             /* battery calls (Carbon-clean) */
+#include <NameRegistry.h>      /* RegEntry* types; funcs resolved from lib */
 
 #include <stdio.h>
 #include <string.h>
@@ -1036,6 +1037,108 @@ static void gather_power(long cursor, CensusPage *page)
     }
 }
 
+/* --- pci: the Name Registry (Open Firmware device tree) ----------------- *
+ * The PB1400c has no PCI and no Name Registry, so this answers `absent`
+ * here - but it enumerates the device tree on a PCI Mac (a 3400c, or
+ * anything New World), which is why the fleet wants it. The registry
+ * functions are Carbon-unavailable (68K traps behind $ABE9), so they are
+ * resolved from NameRegistryLib; gated first on gestaltNameRegistryVersion,
+ * a safe Gestalt call, so a pre-PCI Mac never touches the library. Walking
+ * the tree is a read-only descent. */
+
+typedef OSStatus (*RegIterCreate)(RegEntryIter *);
+typedef OSStatus (*RegIterProc)(RegEntryIter *, RegEntryIterationOp,
+                                RegEntryID *, Boolean *);
+typedef OSStatus (*RegIterDispose)(RegEntryIter *);
+typedef OSStatus (*RegToName)(const RegEntryID *, RegEntryID *,
+                              RegCStrEntryName *, Boolean *);
+
+static RegIterCreate g_reg_create;
+static RegIterProc g_reg_iter;
+static RegIterDispose g_reg_dispose;
+static RegToName g_reg_toname;
+static int g_reg_resolved;
+
+static void resolve_nr(void)
+{
+    CFragConnectionID conn = 0;
+    Ptr mainAddr = NULL;
+    Str255 err, pname;
+    Ptr addr;
+    CFragSymbolClass cls;
+
+    if (g_reg_resolved != 0) {
+        return;
+    }
+    g_reg_resolved = -1;
+    CopyCStringToPascal("NameRegistryLib", pname);
+    if (GetSharedLibrary(pname, kPowerPCCFragArch, kReferenceCFrag,
+                         &conn, &mainAddr, err) != noErr) {
+        return;
+    }
+    CopyCStringToPascal("RegistryEntryIterateCreate", pname);
+    if (FindSymbol(conn, pname, &addr, &cls) != noErr) return;
+    g_reg_create = (RegIterCreate)addr;
+    CopyCStringToPascal("RegistryEntryIterate", pname);
+    if (FindSymbol(conn, pname, &addr, &cls) != noErr) return;
+    g_reg_iter = (RegIterProc)addr;
+    CopyCStringToPascal("RegistryEntryIterateDispose", pname);
+    if (FindSymbol(conn, pname, &addr, &cls) != noErr) return;
+    g_reg_dispose = (RegIterDispose)addr;
+    CopyCStringToPascal("RegistryCStrEntryToName", pname);
+    if (FindSymbol(conn, pname, &addr, &cls) != noErr) return;
+    g_reg_toname = (RegToName)addr;
+    g_reg_resolved = 1;
+}
+
+static void gather_pci(long cursor, CensusPage *page)
+{
+    long ver;
+    RegEntryIter iter;
+    RegEntryID entry;
+    Boolean done = false;
+
+    (void)cursor;
+    if (Gestalt(gestaltNameRegistryVersion, &ver) != noErr) {
+        page->outcome = kCensusAbsent;
+        snprintf(page->note, sizeof page->note,
+                 "no Name Registry - this Mac predates PCI");
+        return;
+    }
+    resolve_nr();
+    if (g_reg_resolved != 1) {
+        page->outcome = kCensusRefused;
+        snprintf(page->note, sizeof page->note,
+                 "NameRegistryLib is not exported here");
+        return;
+    }
+    if (g_reg_create(&iter) != noErr) {
+        page->outcome = kCensusFailed;
+        snprintf(page->note, sizeof page->note, "could not open the registry");
+        return;
+    }
+    while (page->count < kCensusPageMax
+           && g_reg_iter(&iter, kRegIterDescendants, &entry, &done) == noErr
+           && !done) {
+        RegCStrEntryName name[64];
+        Boolean d2;
+
+        if (g_reg_toname(&entry, NULL, name, &d2) == noErr) {
+            char label[kCensusRowNameCap];
+            char clean[kCensusRowNameCap];
+
+            snprintf(label, sizeof label, "%.28s", (char *)name);
+            sanitize(label, clean, sizeof clean);
+            set_row(&page->rows[page->count++], clean, "", "device-tree node");
+        }
+    }
+    g_reg_dispose(&iter);
+    if (page->count == 0) {
+        page->outcome = kCensusAbsent;
+        snprintf(page->note, sizeof page->note, "empty device tree");
+    }
+}
+
 /* --- dispatch ----------------------------------------------------------- */
 
 static const struct {
@@ -1053,6 +1156,7 @@ static const struct {
     { "ata",       gather_ata },
     { "pram",      gather_pram },
     { "power",     gather_power },
+    { "pci",       gather_pci },
     { "scsi",      gather_scsi },
 };
 

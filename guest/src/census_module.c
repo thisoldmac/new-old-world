@@ -28,10 +28,11 @@ enum {
     kRailMinW = 130,
     kRailMaxW = 360,
     kDivW = 8,                /* the draggable divider strip */
-    /* Two-line rail row. 26 keeps all probes visible down to the minimum
-       window; past ~13 probes (the witness tier) the rail needs a scroll
-       bar instead of shrinking further. */
-    kRowH = 26,
+    /* Two-line rail row. 25 fits all thirteen probes at the standard
+       window; at thirteen we are at the limit - the rail now genuinely
+       needs a vertical scroll bar rather than shorter rows, which is the
+       next probe (the witness tier) that lands. */
+    kRowH = 25,
     kButtonH = 20,
     kDetailH = 132,
     kMaxDetailLines = 12,
@@ -540,7 +541,7 @@ static void draw_rail(void)
 
         UseThemeFont(kThemeSmallSystemFont, smSystemScript);
         RGBForeColor(&gray);
-        MoveTo((short)(row.left + 12), (short)(base + 23));
+        MoveTo((short)(row.left + 12), (short)(base + 22));
         if (g_subtitle[i][0] == '\0') {
             CopyCStringToPascal("not run yet", text);
         } else {

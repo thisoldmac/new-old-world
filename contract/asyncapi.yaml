@@ -1322,6 +1322,13 @@ components:
           gated on gestaltPowerMgrAttr. Carbon-clean; a desktop answers
           absent. The probe most worth watching over time once the
           extension's counter tier lands.
+      pci:
+        columns: [Device, Raw, Meaning]
+        description: >
+          The Name Registry (Open Firmware device tree). Resolved from
+          NameRegistryLib and gated on gestaltNameRegistryVersion, so a
+          pre-PCI Mac (the 1400c) answers `absent` without touching the
+          library; a PCI Mac enumerates its device-tree nodes. Read-only.
       pram:
         columns: [Offset, Raw, Meaning]
         description: >
