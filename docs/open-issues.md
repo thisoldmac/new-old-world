@@ -335,10 +335,10 @@ working on the PowerBook.
   worst slice), and 184 slices ≈ the catalog arriving one 16 KB opt
   buffer per call — so the buffer size, not `ioSearchTime`, is the
   real slice-length dial. Warm is barely cheaper than cold; do not
-  design around the cache. Still unwatched: the same verb invoked from
-  the HOST console (same `now_command_run` path, host-tested, and the
-  MacRoman-high-byte names in `First hits` go through the `\uXXXX`
-  escaper — but it has not been run live).
+  design around the cache. The host-console invocation was watched
+  working too (2026-07-22, post-merge build), so both invocation paths
+  are metal-verified — including MacRoman-high-byte names in
+  `First hits` crossing the wire through the `\uXXXX` escaper.
 
 - **The Logs page, both machines** (2026-07-22). A Monaco dump of the
   in-memory log ring that follows the tail live like a terminal, with
