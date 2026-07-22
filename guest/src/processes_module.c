@@ -85,9 +85,20 @@ static Boolean g_in_rebuild;
 
 /* The selected process's windows, read through the anchor plane on the
    throttled idle (the foreign read lives on the 1 Hz path, never in
-   draw) and drawn in the detail pane. */
+   draw) and drawn in the detail pane. g_sel_win_psn is whose windows
+   the cache holds, so a transient stale read for the SAME process can
+   carry the last good result instead of blinking. */
 static NowPeekWindowList g_sel_windows;
 static NowPeekReadStatus g_sel_win_status = kNowPeekReadNoPlane;
+static ProcessSerialNumber g_sel_win_psn;
+
+/* Last-drawn stat strings, so a per-second refresh repaints only the
+   fact line that actually changed - and the memory bar only when its
+   pixel fill moves, not on every KB of jitter. */
+static long g_shown_mem_fill = -1;
+static char g_shown_mem[32];
+static char g_shown_cpu[24];
+static char g_shown_launched[32];
 
 /* Real UPPs, retained for the control's lifetime; the shape (and the
    reason it is not a cast) is files_browser_view.c. */
@@ -213,19 +224,10 @@ static void invalidate_detail(void)
     }
 }
 
-/* Just the stats that tick - memory, CPU, launched - so a per-second
-   value change repaints a small band, not the whole pane. draw_detail
-   still runs, but the update clips to this band. */
-static void invalidate_detail_stats(void)
+static void invalidate_line(const Rect *line)
 {
     if (g_owner != NULL && g_visible) {
-        Rect band;
-
-        band.left = g_r.detail.left;
-        band.top = g_r.mem_line.top;
-        band.right = g_r.detail.right;
-        band.bottom = g_r.launched_line.bottom;
-        InvalWindowRect(g_owner, &band);
+        InvalWindowRect(g_owner, line);
     }
 }
 
@@ -281,7 +283,6 @@ static void refresh(void)
     /* list_changed = anything that reorders or re-captions a row (needs
        a browser rebuild); values_changed = detail-only (memory). */
     Boolean list_changed = fresh_count != g_proc_count;
-    Boolean values_changed = false;
     unsigned long now = TickCount();
     long free_kb = TempFreeMem() / 1024;
     char status[64];
@@ -331,11 +332,6 @@ static void refresh(void)
             || fresh[i].window_count != g_procs[old].window_count) {
             list_changed = true;      /* order or caption changed */
         }
-        if (fresh[i].used_kb != g_procs[old].used_kb
-            || fresh[i].size_kb != g_procs[old].size_kb
-            || fresh[i].active_time != g_procs[old].active_time) {
-            values_changed = true;
-        }
         if (fresh[i].quit_state == kQuitAsked
             && now - fresh[i].quit_ticks > kQuitPatienceTicks) {
             fresh[i].quit_state = kQuitNoReply;
@@ -360,11 +356,12 @@ static void refresh(void)
     if (list_changed) {
         rebuild_browser_items();
         invalidate_detail();
-    } else if (values_changed && g_selected >= 0) {
-        invalidate_detail_stats();    /* the ticking band only */
     } else if (had_selection && g_selected < 0) {
         invalidate_detail();
     }
+    /* The ticking stats (memory/CPU/launched) repaint per changed line
+       in update_selected_stats, not here - so the bar does not flash on
+       a CPU tick. */
 }
 
 /* --- actions ------------------------------------------------------------ */
@@ -739,6 +736,9 @@ static void procs_show(Boolean visible)
         g_quit_hilite = -1;
         memset(&g_sel_windows, 0, sizeof g_sel_windows);
         g_sel_win_status = kNowPeekReadNoPlane;   /* re-read on first idle */
+        memset(&g_sel_win_psn, 0, sizeof g_sel_win_psn);
+        g_shown_mem_fill = -1;
+        g_shown_mem[0] = g_shown_cpu[0] = g_shown_launched[0] = '\0';
     } else {
         now_peek_disarm(kNowPeekCapAnchors);
     }
@@ -1083,23 +1083,96 @@ static void procs_activate(Boolean active)
 static void refresh_selected_windows(void)
 {
     NowPeekWindowList w;
+    NowPeekWindowList desired;
     NowPeekReadStatus st;
+    NowPeekReadStatus desired_st;
+    ProcessSerialNumber psn;
+    Boolean new_sel;
+    Boolean had_definitive;
+
+    if (g_selected < 0 || g_selected >= g_proc_count) {
+        if (g_sel_win_status != kNowPeekReadNoPlane
+            || g_sel_windows.count != 0) {
+            memset(&g_sel_windows, 0, sizeof g_sel_windows);
+            g_sel_win_status = kNowPeekReadNoPlane;
+            invalidate_detail();
+        }
+        return;
+    }
+    psn = g_procs[g_selected].psn;
+    new_sel = !same_psn(&psn, &g_sel_win_psn);
 
     memset(&w, 0, sizeof w);
-    if (g_selected < 0 || g_selected >= g_proc_count) {
-        st = kNowPeekReadNoPlane;
-    } else if (g_procs[g_selected].kind == kProcKindBackground) {
-        /* A faceless background app has no user windows and no menu
-           bar; do not chase an anchor that will only go stale. */
+    if (g_procs[g_selected].kind == kProcKindBackground) {
+        /* A faceless background app has no user windows; do not chase an
+           anchor that will only go stale. */
         st = kNowPeekReadNoWindows;
     } else {
-        st = now_peek_windows_for_psn(&g_procs[g_selected].psn, &w);
+        st = now_peek_windows_for_psn(&psn, &w);
     }
-    if (st != g_sel_win_status
-        || memcmp(&w, &g_sel_windows, sizeof w) != 0) {
-        g_sel_windows = w;
-        g_sel_win_status = st;
+
+    /* Carry the last DEFINITIVE read (windows, or confirmed none) across
+       a transient stale/unreadable blip for the SAME process, so an idle
+       backgrounded app's readout persists instead of blinking. A new
+       selection, or one with no good prior read, shows the reason. */
+    had_definitive = g_sel_win_status == kNowPeekReadOk
+        || g_sel_win_status == kNowPeekReadNoWindows;
+    desired = g_sel_windows;
+    desired_st = g_sel_win_status;
+    if (st == kNowPeekReadOk || st == kNowPeekReadNoWindows) {
+        desired = w;
+        desired_st = st;
+    } else if (new_sel || !had_definitive) {
+        memset(&desired, 0, sizeof desired);
+        desired_st = st;
+    }
+    g_sel_win_psn = psn;
+
+    if (desired_st != g_sel_win_status
+        || memcmp(&desired, &g_sel_windows, sizeof desired) != 0) {
+        g_sel_windows = desired;
+        g_sel_win_status = desired_st;
         invalidate_detail();
+    }
+}
+
+/* Repaint only the fact line whose displayed value changed. The memory
+   bar is gated on its pixel fill, not raw KB, so sub-pixel jitter never
+   flashes it; the CPU line updates each second, the launch line only
+   when the minute rolls. */
+static void update_selected_stats(void)
+{
+    const ProcEntry *e;
+    char buf[32];
+    long fill;
+
+    if (g_selected < 0 || g_selected >= g_proc_count) {
+        g_shown_mem_fill = -1;
+        g_shown_mem[0] = g_shown_cpu[0] = g_shown_launched[0] = '\0';
+        return;
+    }
+    e = &g_procs[g_selected];
+
+    proc_mem_text(e->used_kb, e->size_kb, buf, sizeof buf);
+    if (strcmp(buf, g_shown_mem) != 0) {
+        strcpy(g_shown_mem, buf);
+        invalidate_line(&g_r.mem_line);
+    }
+    fill = proc_mem_fill(e->used_kb, e->size_kb,
+                         g_r.mem_bar.right - g_r.mem_bar.left - 2);
+    if (fill != g_shown_mem_fill) {
+        g_shown_mem_fill = fill;
+        invalidate_line(&g_r.mem_bar);
+    }
+    proc_cpu_text(e->active_time, buf, sizeof buf);
+    if (strcmp(buf, g_shown_cpu) != 0) {
+        strcpy(g_shown_cpu, buf);
+        invalidate_line(&g_r.cpu_line);
+    }
+    proc_uptime_text((long)(TickCount() - e->launched), buf, sizeof buf);
+    if (strcmp(buf, g_shown_launched) != 0) {
+        strcpy(g_shown_launched, buf);
+        invalidate_line(&g_r.launched_line);
     }
 }
 
@@ -1116,6 +1189,7 @@ static void procs_idle(void)
         g_next_walk = TickCount() + kWalkIntervalTicks;
         refresh();
         refresh_selected_windows();   /* the foreign read, throttled */
+        update_selected_stats();      /* per-line stat repaints */
     }
     if (g_selected >= 0 && g_selected < g_proc_count) {
         entry = &g_procs[g_selected];

@@ -28,13 +28,13 @@ enum {
     kWindowChainCap = 64,         /* bound the walk against a cyclic chain */
 
     /* An anchor is only as current as the process's last event-loop
-       pass. A process that pumped within this window is trusted; a
-       staler slot reads "no anchor yet" rather than being trusted with
-       a possibly-dangling window pointer. Generous, because a
-       cooperatively-scheduled background app still pumps every second
-       or two - only a truly dormant one falls past it. Freshness as an
-       honest state, not a guess. */
-    kFreshTicks = 600             /* ~10 s at 60 ticks/sec */
+       pass. An alive process keeps a valid window pointer as long as it
+       exists, and the A5-in-partition check already rejects a recycled
+       slot, so this bound is generous: a full minute covers even an
+       idle backgrounded app that pumps rarely, while still rejecting a
+       truly abandoned slot. The application also CARRIES the last good
+       read across a brief stale window, so the readout does not blink. */
+    kFreshTicks = 3600            /* ~60 s at 60 ticks/sec */
 };
 
 /* The zones a foreign window structure may legally live in: the
