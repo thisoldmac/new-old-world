@@ -21,7 +21,16 @@ enum {
     kWindowRecordSize = 156,      /* classic WindowRecord */
     kOffStrucRgn = 114,           /* RgnHandle within the WindowRecord */
     kOffRgnBBox = 2,              /* Rect after the 2-byte rgnSize */
-    kRegionHeader = kOffRgnBBox + 8
+    kRegionHeader = kOffRgnBBox + 8,
+
+    /* An anchor is only as current as the process's last event-loop
+       pass. A process that pumped within this window is trusted; a
+       staler slot is reported as "no anchor yet" (interact to refresh)
+       rather than trusted with a possibly-dangling window pointer.
+       Generous, because a cooperatively-scheduled background app still
+       pumps every second or two - only a truly dormant one falls past
+       it. This is freshness as an honest state, not a guess. */
+    kFreshTicks = 600             /* ~10 s at 60 ticks/sec */
 };
 
 /* Byte reads at a validated address - always aligned, explicitly
@@ -69,15 +78,17 @@ static int in_readable(const ReadableZones *z, unsigned long addr,
 }
 
 /* The window-list head for the process whose partition is [loc,size):
-   the anchor slot whose A5 lies in that partition (the containment IS
-   the PSN<->A5 correlation). Double-samples the stamp so a torn
-   cross-update read is skipped. `*found` distinguishes "no anchor for
-   this process" from "anchor found, but the process has no windows"
-   (WindowList 0). No age gate: a live process's slot is what matters,
-   and the A5-in-partition check already rejects a recycled slot. */
+   the fresh anchor slot whose A5 lies in that partition (the
+   containment IS the PSN<->A5 correlation). Double-samples the stamp so
+   a torn cross-update read is skipped, and rejects a slot staler than
+   kFreshTicks so a dormant process reads as "no anchor yet" rather than
+   being trusted with a possibly-dangling pointer. `*found`
+   distinguishes "no fresh anchor" from "anchor found, no windows"
+   (WindowList 0). */
 static unsigned long process_window_list(const NowPeekTable *table,
                                          unsigned long loc,
-                                         unsigned long size, int *found)
+                                         unsigned long size,
+                                         unsigned long now, int *found)
 {
     int i;
 
@@ -97,6 +108,9 @@ static unsigned long process_window_list(const NowPeekTable *table,
         s2 = slot->stamp_ticks;
         if (s1 != s2) {
             continue;                 /* torn: updated while reading */
+        }
+        if ((NowPeekU32)(now - s1) > (NowPeekU32)kFreshTicks) {
+            continue;                 /* stale: not pumped recently */
         }
         if (!now_peek_range_in_partition(a5, 4, loc, size)) {
             continue;                 /* not this process's A5 */
@@ -147,7 +161,8 @@ NowPeekReadStatus now_peek_window_for_psn(const ProcessSerialNumber *psn,
     z.sys_lo = (unsigned long)sys;
     z.sys_hi = (sys != NULL) ? read_be32(z.sys_lo) : 0;
 
-    wl = process_window_list(table, z.loc, z.size, &found);
+    wl = process_window_list(table, z.loc, z.size,
+                             (unsigned long)TickCount(), &found);
     if (!found) {
         return kNowPeekReadNoAnchor;
     }
