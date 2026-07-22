@@ -102,8 +102,14 @@ static void step(const char *what) { crumb("Census Trap Steps", what, false); }
     | RESULT_SIZE(SIZE_CODE(sizeof(OSErr)))                        \
     | STACK_ROUTINE_PARAMETER(1, SIZE_CODE(sizeof(void *))))
 
-/* selftest: write $4242 to the pascal result slot, RTS. No trap. */
-static unsigned short g_self_thunk[] = { 0x3F7C, 0x4242, 0x0008, 0x4E75 };
+/* selftest: the corpus's proven trap-free control (no trap touched).
+     MOVEA.L (SP)+,A1    ; pop the return address
+     ADDQ.L  #4,SP       ; discard the one 4-byte arg (pascal callee pops)
+     MOVE.W  #$4242,(SP) ; write the sentinel into the result slot
+     JMP     (A1)        ; return */
+static unsigned short g_self_thunk[] = {
+    0x225F, 0x588F, 0x3EBC, 0x4242, 0x4ED1
+};
 static RoutineDescriptor g_self_rd =
     BUILD_M68K_RD(kThunkInfo, g_self_thunk);
 
