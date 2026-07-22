@@ -340,7 +340,23 @@ working on the PowerBook.
   are metal-verified — including MacRoman-high-byte names in
   `First hits` crossing the wire through the `\uXXXX` escaper.
 
-- **The Logs page, both machines** (2026-07-22). A Monaco dump of the
+- **`sw` and `launch` — the software family's first verbs** (2026-07-22).
+  The Software module's data layer (`software.c`) surfaced as console
+  verbs on both sides before the page exists. `sw` inventories the
+  special folders live (Extensions Manager's disabled siblings tagged
+  "(off)") and pages applications via the catsearch-verified APPL sweep,
+  stopped at one page; `launch` opens an application by exact-name
+  search or full HFS path, refuses ambiguous names, and logs outcomes
+  under `sw` — it is the family's one mutation. Versions are
+  deliberately absent: one `'vers'` read per file is the expensive
+  path, deferred to the module's lazy detail.
+  **Emulator-verified** (OS 9.1 clone): overview counts (139/33/0/13),
+  `sw extensions` with types+sizes, `sw apps` page with the more
+  marker, and `launch SimpleText` bringing a live SimpleText to front.
+  **Not yet watched on the 1400c**, and the guest's LOCAL `launch`
+  intentionally does not log (only the wire path does — same rule as
+  `ls`/`ps`); the host-console invocations of both verbs are
+  host-tested but unrun live. A Monaco dump of the
   in-memory log ring that follows the tail live like a terminal, with
   Invert and Log-to-disk switches. The **guest** page was watched working
   on the PB1400c; the footer move, the invert switch, and the whole
