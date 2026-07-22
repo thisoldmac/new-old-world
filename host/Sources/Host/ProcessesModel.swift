@@ -9,7 +9,9 @@ import Foundation
 /// honest about being a snapshot from the moment it was asked.
 @MainActor
 final class ProcessesModel: ObservableObject {
-    @Published var connection: GuestConnectionState = .disconnected
+    @Published var connection: GuestConnectionState = .disconnected {
+        didSet { connectionChanged(from: oldValue) }
+    }
     @Published private(set) var rows: [ProcessEntry] = []
     @Published private(set) var isLoading = false
     @Published private(set) var lastError: String?
@@ -72,6 +74,25 @@ final class ProcessesModel: ObservableObject {
                 return lhs.name.localizedCaseInsensitiveCompare(rhs.name)
                     == .orderedAscending
             }
+    }
+
+    /// The process table belongs to one connection. When the Mac goes
+    /// away — most sharply on a redeploy, where a fresh guest reconnects
+    /// with a new set of PSNs — the rows we still hold name processes that
+    /// no longer exist, and driving one by its stale PSN fails closed. So
+    /// drop the table the instant the connection does: a stale list never
+    /// lingers into the next one, and because the rows are now empty the
+    /// reconnect (or a reopened pane) reads afresh on its own, with no
+    /// manual Refresh. This only clears — the re-read is driven from the
+    /// view, past the state change the listener has yet to see.
+    private func connectionChanged(from old: GuestConnectionState) {
+        guard connection != old, !connection.canCapture else { return }
+        rows = []
+        fetchedAt = nil
+        lastError = nil
+        // A page still in flight from the old connection must not append.
+        loadToken += 1
+        isLoading = false
     }
 
     func refresh() {
