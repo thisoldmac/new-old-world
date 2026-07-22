@@ -70,33 +70,68 @@ static Boolean extension_file_present(void)
     return g_file_present;
 }
 
+/* The validated table, or NULL. Shared by the status probe and the
+   arm/read paths so the acceptance rule lives in one place. */
+const NowPeekTable *now_peek_table(void)
+{
+    long response = 0;
+
+    if (Gestalt((OSType)kNowPeekGestaltSelector, &response) != noErr
+        || response == 0) {
+        return NULL;
+    }
+    {
+        const NowPeekTable *table = (const NowPeekTable *)response;
+
+        if (table->magic != (NowPeekU32)kNowPeekTableMagic
+            || table->ext_major != kNowPeekExtMajor
+            || table->length < (NowPeekU32)offsetof(NowPeekTable, anchors)) {
+            return NULL;              /* answered, but not one we trust */
+        }
+        return table;
+    }
+}
+
+void now_peek_arm(unsigned long caps)
+{
+    NowPeekTable *table = (NowPeekTable *)now_peek_table();
+
+    if (table != NULL) {
+        table->arm_request |= (NowPeekU32)caps;
+    }
+}
+
+void now_peek_disarm(unsigned long caps)
+{
+    NowPeekTable *table = (NowPeekTable *)now_peek_table();
+
+    if (table != NULL) {
+        table->arm_request &= ~(NowPeekU32)caps;
+    }
+}
+
 NowPeekState now_peek_status(unsigned long *caps)
 {
+    const NowPeekTable *table = now_peek_table();
     long response = 0;
 
     if (caps != NULL) {
         *caps = 0;
     }
-    if (Gestalt((OSType)kNowPeekGestaltSelector, &response) == noErr
-        && response != 0) {
-        const NowPeekTable *table = (const NowPeekTable *)response;
-
-        /* Gestalt answered, so an extension is loaded. Trust it only if
-           the table is well-formed and the major matches exactly;
-           anything else is a version we will not partially believe. */
-        if (table->magic != (NowPeekU32)kNowPeekTableMagic
-            || table->ext_major != kNowPeekExtMajor
-            || table->length < (NowPeekU32)offsetof(NowPeekTable, anchors)) {
-            return kNowPeekWrongVersion;
-        }
+    if (table != NULL) {
         if (caps != NULL) {
             *caps = table->caps;
         }
         return kNowPeekActive;
     }
-    /* Gestalt silent: nothing is loaded. The file being present means it
-       is installed but the machine has not rebooted (INITs load at boot
-       only); absent means it is simply not installed. */
+    /* Gestalt answering but the table rejected is a version we will not
+       partially believe; Gestalt silent means nothing is loaded. */
+    if (Gestalt((OSType)kNowPeekGestaltSelector, &response) == noErr
+        && response != 0) {
+        return kNowPeekWrongVersion;
+    }
+    /* The file being present means installed-but-not-rebooted (INITs
+       load at boot only); absent means simply not installed. */
     return extension_file_present() ? kNowPeekNeedsRestart
                                     : kNowPeekNotInstalled;
 }

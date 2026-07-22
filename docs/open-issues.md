@@ -179,6 +179,40 @@ Not load-bearing; parked as a known gap rather than chased.
 Everything here builds and passes its tests. None of it has been watched
 working on the PowerBook.
 
+- **Rung 2a — the anchor plane and the first foreign-memory read**
+  (`ext/` P1, `guest/src/peek_read.c`, 2026-07-21). The extension's jGNE
+  filter, when the Processes page arms it, records each context's
+  CurrentA5/WindowList/MenuList into A5-keyed slots. The app arms the
+  plane on page-show, then reads the FRONT window's global bounds: front
+  PSN -> partition bounds (`GetProcessInformation`) -> the anchor slot
+  whose A5 lives in that partition -> the window's `strucRgn` -> its
+  `rgnBBox`, every pointer validated in-partition (`peek_validate.c`,
+  native-tested and mutation-checked) before it is dereferenced, byte
+  reads at fixed classic offsets so PPC alignment cannot bite. Shows
+  "Front window: W x H at (x, y)" in the group box, or "-" until a fresh
+  capture lands.
+
+  **Two things only metal can tell us**, and they are the whole point:
+  (1) that the validated foreign read returns a *correct* rect (the
+  offsets/`rgnBBox` reasoning is sound but unrun), and (2) that a
+  corrupt or stale anchor genuinely fails closed rather than faulting -
+  the partition check should make a wrong read harmless, but "should"
+  is the word this project distrusts. The safest first observation is
+  NOW's OWN front window (front process = NOW when you are looking at
+  the page): reading your own partition is the least dangerous case and
+  still exercises the entire pipeline.
+
+  **Metal test (PB1400c, 9.1):** replace both the extension (`NOW
+  Extension.bin`, P1 - reinstall, cold boot) and the app
+  (`now-guest-processes.bin`). Open Processes: the group box should read
+  "NOW Extension active" and, below it, "Front window: W x H at (x, y)"
+  with numbers matching the Workshop window's actual size and position.
+  Bring another app to front, return to NOW, redraw the page (resize or
+  reselect) - the bounds should track whatever is frontmost. Anything
+  that reads as a wildly wrong rect, or any hang/crash, is a foreign-read
+  bug: capture it. Recovery unchanged (Shift-boot, drag-out). The
+  bounds line is draw-time only, not live - a follow-on, along with
+  rung 2b (cropping the actual capture to the rect).
 - **Prefs v10 module renumbering.** Connection moved 4 to 5; a v9 file
   should reopen on the page the person had (the remap is three lines
   in `now_prefs_load`), exercised only by reasoning - same status as

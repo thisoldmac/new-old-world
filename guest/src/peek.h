@@ -37,4 +37,17 @@ NowPeekState now_peek_status(unsigned long *caps);
 /* One placard-ready line for the current state. */
 void now_peek_status_line(char *out, long cap);
 
+/* The validated shared table, or NULL when the extension is absent or
+   the table does not pass the acceptance rule. The pointer is into the
+   system heap; treat it as the extension's to write except for
+   arm_request (ours). Re-probes Gestalt each call - cheap (a trap). */
+const NowPeekTable *now_peek_table(void);
+
+/* Request / release a plane by capability bit(s). Sets or clears the
+   arm_request word the extension polls; a no-op when the extension is
+   absent. Arming is what makes a dormant plane start doing work
+   (docs/resident-components.md). */
+void now_peek_arm(unsigned long caps);
+void now_peek_disarm(unsigned long caps);
+
 #endif /* NOW_PEEK_H */

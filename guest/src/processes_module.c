@@ -5,6 +5,7 @@
 
 #include "confirm.h"
 #include "peek.h"
+#include "peek_read.h"
 #include "processes_layout.h"
 #include "pump.h"
 
@@ -558,10 +559,17 @@ static void procs_show(Boolean visible)
     show_control(g_front, visible);
     show_control(g_quit, visible);
     show_control(g_group, visible);
+    /* Arm the anchor plane only while this page is the one consuming it,
+       and release it on the way out - a machine whose user never opens
+       Processes never runs the capture loop (the charter's rule). A
+       no-op when the extension is absent. */
     if (visible) {
+        now_peek_arm(kNowPeekCapAnchors);
         g_next_walk = 0;              /* a fresh page walks now */
         g_front_hilite = -1;
         g_quit_hilite = -1;
+    } else {
+        now_peek_disarm(kNowPeekCapAnchors);
     }
 }
 
@@ -705,6 +713,33 @@ static void procs_draw(void)
                 truncEnd);
     MoveTo(g_r.peek_line.left, (short)(g_r.peek_line.top + 11));
     DrawString(text);
+
+    /* When the anchor plane is present, show what it buys: the front
+       window's global bounds, read through the validated foreign path.
+       A dash means armed-but-not-yet-readable (a fresh capture, or a
+       front app that has not pumped since arming). Drawn at page-draw
+       time, not on idle - the read touches foreign memory. */
+    {
+        unsigned long caps = 0;
+
+        if (now_peek_status(&caps) == kNowPeekActive
+            && (caps & kNowPeekCapAnchors) != 0) {
+            NowPeekBounds b;
+
+            if (now_peek_front_window(&b)) {
+                snprintf(line, sizeof line,
+                         "Front window: %d x %d at (%d, %d)",
+                         b.right - b.left, b.bottom - b.top, b.left, b.top);
+            } else {
+                snprintf(line, sizeof line, "Front window: -");
+            }
+            CopyCStringToPascal(line, text);
+            TruncString((short)(g_r.peek_line.right - g_r.peek_line.left),
+                        text, truncEnd);
+            MoveTo(g_r.peek_line.left, (short)(g_r.peek_line.top + 25));
+            DrawString(text);
+        }
+    }
 }
 
 static Boolean procs_click(const EventRecord *event, Point local)

@@ -20,7 +20,8 @@ end-to-end). We rebuild fresh; the findings are what carry.
 |---|---|---|---|
 | 0 | Processes page: list, front, ask-to-quit | nothing new | **metal-verified** (2026-07-21) |
 | 1 | NOW Extension M0: residence, discovery, versioning | the extension | **metal-verified** (2026-07-21) |
-| 2 | Anchor plane: per-process window bounds; cropped Front & Capture | ext P1 | |
+| 2a | Anchor plane + validated front-window bounds readout | ext P1 | **built, awaiting metal** |
+| 2b | Front & Capture crops to those bounds | 2a | not started |
 | 3 | `process.*` wire family; host sees the guest's processes | contract | |
 | 4 | Semantic tree; `peek.*` family; host tree view | ext P2 | |
 | 5 | Host mock desktop (scene IR, native renderer) | 3 + 4 | |
