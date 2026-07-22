@@ -203,11 +203,11 @@ static void help_for(const char *name)
     } else if (strcmp(name, "vers") == 0) {
         console_model_append("vers - one file's version resources");
         console_model_append("  Usage: vers <name or full path>");
-        console_model_append("  Reads that one file's 'vers' resources (never a");
-        console_model_append("  whole folder's - a fork open per file is the");
-        console_model_append("  expensive path). A bare name searches for an");
-        console_model_append("  application; a full path reads any file, so");
-        console_model_append("  extensions want their path.");
+        console_model_append("  Reads that file's 'vers' resources. A bare name");
+        console_model_append("  searches applications and shows EVERY match,");
+        console_model_append("  path first - duplicates are the point. A full");
+        console_model_append("  path reads any file, so extensions want their");
+        console_model_append("  path. Never loops a whole folder.");
     } else if (strcmp(name, "catsearch") == 0) {
         console_model_append("catsearch - time a whole-disk application search");
         console_model_append("  Usage: catsearch");
@@ -574,14 +574,14 @@ void console_model_run(const char *input)
         return;
     }
     if (strcmp(name, "vers") == 0) {
-        SoftwareRow rows[8];
+        SoftwareRow rows[26];
         char msg[240];
         int vn, vi;
 
         while (*raw_args == ' ') {
             ++raw_args;
         }
-        vn = now_software_vers(raw_args, rows, 8, msg, sizeof msg);
+        vn = now_software_vers(raw_args, rows, 26, msg, sizeof msg);
         if (vn < 0) {
             snprintf(line, sizeof line, "vers: %.100s", msg);
             console_model_append(line);

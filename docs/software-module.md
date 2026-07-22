@@ -97,6 +97,14 @@ and prints them. Rules:
 Layer: `now_software_vers(const char *arg, rows…)` in `software.c`, so
 the page calls the same function per selected row.
 
+A bare name that matches several applications shows **every match,
+path first** (bounded at five) — the metal run found multiple
+SimpleTexts immediately, and which copy answered is the whole point on
+a disk with duplicates. Marked for later, not this ladder: a
+**duplicate finder** — group the sweep by name, lazily `vers` each
+group, and present same-version/different-version pairs for
+user-driven consolidation.
+
 ### Running tags — the Processes join
 
 `sw apps` (and the wire listing) tag an item that is currently running.

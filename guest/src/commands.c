@@ -902,7 +902,8 @@ static void run_launch(const char *request_json, long id, char *out,
 
     arg[0] = '\0';
     if (request_json != NULL) {
-        now_json_find_string(request_json, "name", arg, sizeof arg);
+        /* "target", never "name" — see run_vers. */
+        now_json_find_string(request_json, "target", arg, sizeof arg);
     }
     if (now_software_launch(arg, msg, sizeof msg) < 0) {
         now_log(kLogWarn, "sw", "#%ld launch refused: %.80s", id, msg);
@@ -925,7 +926,7 @@ static void run_launch(const char *request_json, long id, char *out,
 static void run_vers(const char *request_json, long id, char *out,
                      long cap)
 {
-    SoftwareRow rows[8];
+    SoftwareRow rows[26];
     char arg[256];
     char msg[240];
     long pos;
@@ -933,9 +934,13 @@ static void run_vers(const char *request_json, long id, char *out,
 
     arg[0] = '\0';
     if (request_json != NULL) {
-        now_json_find_string(request_json, "name", arg, sizeof arg);
+        /* "target", never "name": the frame is scanned FLAT, and an arg
+           key that shadows an envelope key (type/id/name/args) is read
+           as the command name — launch shipped that bug to metal. The
+           rule lives in the contract's x-commands preamble. */
+        now_json_find_string(request_json, "target", arg, sizeof arg);
     }
-    n = now_software_vers(arg, rows, 8, msg, sizeof msg);
+    n = now_software_vers(arg, rows, 26, msg, sizeof msg);
     if (n < 0) {
         char esc[480];
 

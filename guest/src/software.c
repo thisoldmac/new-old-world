@@ -596,6 +596,8 @@ static Boolean dir_path(short vRefNum, long parID, char *out, long cap)
     return true;
 }
 
+static Boolean file_full_path(const FSSpec *spec, char *out, long cap);
+
 int now_software_page(const char *domain, long cursor,
                       SoftwareEntry *entries, int max, Boolean *more,
                       Boolean *truncated)
@@ -645,19 +647,7 @@ int now_software_page(const char *domain, long cursor,
             e->size_k = (pb.hFileInfo.ioFlLgLen
                          + pb.hFileInfo.ioFlRLgLen + 1023) / 1024;
         }
-        e->path[0] = '\0';
-        if (dir_path(spec->vRefNum, spec->parID, e->path,
-                     (long)sizeof e->path)) {
-            long used = (long)strlen(e->path);
-
-            if (used + spec->name[0] < (long)sizeof e->path) {
-                memcpy(e->path + used, spec->name + 1,
-                       (size_t)spec->name[0]);
-                e->path[used + spec->name[0]] = '\0';
-            } else {
-                e->path[0] = '\0';     /* wrong is worse than none */
-            }
-        }
+        file_full_path(spec, e->path, (long)sizeof e->path);
         n += 1;
     }
     *more = start < g_sw_cache.count;
@@ -666,20 +656,46 @@ int now_software_page(const char *domain, long cursor,
 
 /* --- resolution: an argument names one file ------------------------------ */
 
+/* Full path of one file, dir chain plus name. False (and empty out)
+   when the chain could not be named honestly. */
+static Boolean file_full_path(const FSSpec *spec, char *out, long cap)
+{
+    long used;
+
+    out[0] = '\0';
+    if (!dir_path(spec->vRefNum, spec->parID, out, cap)) {
+        out[0] = '\0';
+        return false;
+    }
+    used = (long)strlen(out);
+    if (used + spec->name[0] >= cap) {
+        out[0] = '\0';
+        return false;
+    }
+    memcpy(out + used, spec->name + 1, (size_t)spec->name[0]);
+    out[used + spec->name[0]] = '\0';
+    return true;
+}
+
+/* A real disk has real duplicates — the metal run found several
+   SimpleTexts — so name resolution keeps the first few matches, enough
+   to show them all (vers) or name them in a refusal (launch). */
+#define kResolveMax 5
+
 typedef struct {
-    FSSpec spec;
-    int hits;
+    FSSpec specs[kResolveMax];
+    int hits;                          /* > kResolveMax = "and more" */
 } FindCtx;
 
-static Boolean collect_first_two(const FSSpec *spec, void *vctx)
+static Boolean collect_matches(const FSSpec *spec, void *vctx)
 {
     FindCtx *ctx = (FindCtx *)vctx;
 
-    if (ctx->hits == 0) {
-        ctx->spec = *spec;
+    if (ctx->hits < kResolveMax) {
+        ctx->specs[ctx->hits] = *spec;
     }
     ctx->hits += 1;
-    return ctx->hits < 2;              /* two is enough to refuse */
+    return ctx->hits <= kResolveMax;   /* one past the cap proves "more" */
 }
 
 /* Full path (contains ':') = that file, whatever it is; bare name = an
@@ -741,7 +757,7 @@ static int resolve_to_spec(const char *arg, Boolean require_appl,
             return -1;
         }
         ctx.hits = 0;
-        err = appl_sweep(parg, collect_first_two, &ctx);
+        err = appl_sweep(parg, collect_matches, &ctx);
         if (ctx.hits == 0) {
             snprintf(msg, (size_t)cap,
                      err == eofErr
@@ -751,12 +767,21 @@ static int resolve_to_spec(const char *arg, Boolean require_appl,
             return -1;
         }
         if (ctx.hits > 1) {
+            /* Refuse, but name what was found: the person's next move
+               is a full path, so hand them the paths. */
+            char p1[224], p2[224];
+
+            file_full_path(&ctx.specs[0], p1, sizeof p1);
+            file_full_path(&ctx.specs[1], p2, sizeof p2);
             snprintf(msg, (size_t)cap,
-                     "more than one application named %.200s; "
-                     "use a full path", arg);
+                     "%d named %.40s - use a full path: %.80s / %.80s%s",
+                     ctx.hits > kResolveMax ? kResolveMax : ctx.hits,
+                     arg, p1[0] != '\0' ? p1 : "(unnameable)",
+                     p2[0] != '\0' ? p2 : "(unnameable)",
+                     ctx.hits > 2 ? " / ..." : "");
             return -1;
         }
-        *out = ctx.spec;
+        *out = ctx.specs[0];
         return 0;
     }
 }
@@ -817,9 +842,12 @@ static const char *stage_name(unsigned char stage)
    to) into rows. The layout is fixed: 4 bytes numeric version, 2 bytes
    region, then two Pascal strings — short version, then the Get Info
    string. Every read is bounded by the handle's actual size, because a
-   truncated resource in an old file is data, not a crash. */
+   truncated resource in an old file is data, not a crash. want_info
+   gates the Get Info string: the multi-match view drops it to keep
+   five duplicates readable. */
 static void vers_rows(Handle h, const char *label, const char *num_label,
-                      SoftwareRow *rows, int max, int *n)
+                      Boolean want_info, SoftwareRow *rows, int max,
+                      int *n)
 {
     long size = GetHandleSize(h);
     const unsigned char *b = (const unsigned char *)*h;
@@ -850,7 +878,7 @@ static void vers_rows(Handle h, const char *label, const char *num_label,
             *n += 1;
         }
         /* The Get Info string follows the short one. */
-        if (*n < max && 7 + b[6] < size) {
+        if (want_info && *n < max && 7 + b[6] < size) {
             const unsigned char *ls = b + 7 + b[6];
             long llen = ls[0];
 
@@ -870,23 +898,15 @@ static void vers_rows(Handle h, const char *label, const char *num_label,
     }
 }
 
-int now_software_vers(const char *arg, SoftwareRow *rows, int max,
-                      char *msg, long cap)
+/* One file's 'vers' rows, appended from n. Bounded fork open, closed on
+   every path; full_detail adds the Get Info string and the product
+   (id 2), which the multi-match view drops for readability. */
+static int vers_read_file(const FSSpec *spec, Boolean full_detail,
+                          SoftwareRow *rows, int max, int n)
 {
-    FSSpec spec;
-    short saved;
-    short ref;
-    int n = 0;
+    short saved = CurResFile();
+    short ref = FSpOpenResFile(spec, fsRdPerm);
 
-    if (resolve_to_spec(arg, false, &spec, msg, cap) < 0) {
-        return -1;
-    }
-    p2c(spec.name, rows[n].name, sizeof rows[n].name);
-    snprintf(rows[n].detail, sizeof rows[n].detail, "vers, read alone");
-    n += 1;
-
-    saved = CurResFile();
-    ref = FSpOpenResFile(&spec, fsRdPerm);
     if (ref == -1) {
         if (n < max) {
             snprintf(rows[n].name, sizeof rows[n].name, "Resource fork");
@@ -894,6 +914,7 @@ int now_software_vers(const char *arg, SoftwareRow *rows, int max,
                      "not readable (err %d)", ResError());
             n += 1;
         }
+        UseResFile(saved);
         return n;
     }
     UseResFile(ref);
@@ -902,10 +923,11 @@ int now_software_vers(const char *arg, SoftwareRow *rows, int max,
            System file's 'vers' for a file that has none, which is the
            most convincing possible wrong answer. */
         Handle h1 = Get1Resource('vers', 1);
-        Handle h2 = Get1Resource('vers', 2);
+        Handle h2 = full_detail ? Get1Resource('vers', 2) : NULL;
 
         if (h1 != NULL && *h1 != NULL) {
-            vers_rows(h1, "Version", "Numeric", rows, max, &n);
+            vers_rows(h1, "Version", "Numeric", full_detail, rows, max,
+                      &n);
         }
         if (h2 != NULL && *h2 != NULL && n < max) {
             long size = GetHandleSize(h2);
@@ -929,7 +951,7 @@ int now_software_vers(const char *arg, SoftwareRow *rows, int max,
                 n += 1;
             }
         }
-        if (h1 == NULL && h2 == NULL && n < max) {
+        if (h1 == NULL && (!full_detail || h2 == NULL) && n < max) {
             snprintf(rows[n].name, sizeof rows[n].name, "Version");
             snprintf(rows[n].detail, sizeof rows[n].detail,
                      "no 'vers' resource");
@@ -939,4 +961,100 @@ int now_software_vers(const char *arg, SoftwareRow *rows, int max,
     CloseResFile(ref);
     UseResFile(saved);
     return n;
+}
+
+/* The path (or, failing that, the name) as one row heading a match. */
+static int vers_file_row(const FSSpec *spec, SoftwareRow *rows, int max,
+                         int n)
+{
+    char path[224];
+
+    if (n >= max) {
+        return n;
+    }
+    snprintf(rows[n].name, sizeof rows[n].name, "File");
+    if (file_full_path(spec, path, sizeof path)) {
+        long len = (long)strlen(path);
+
+        /* Duplicates differ at the END of their paths, so a long one
+           keeps its tail and drops its head. */
+        if (len > (long)sizeof rows[n].detail - 2) {
+            snprintf(rows[n].detail, sizeof rows[n].detail, "...%.45s",
+                     path + len - ((long)sizeof rows[n].detail - 5));
+        } else {
+            snprintf(rows[n].detail, sizeof rows[n].detail, "%.48s",
+                     path);
+        }
+    } else {
+        p2c(spec->name, rows[n].detail, sizeof rows[n].detail);
+    }
+    return n + 1;
+}
+
+int now_software_vers(const char *arg, SoftwareRow *rows, int max,
+                      char *msg, long cap)
+{
+    Str255 parg;
+    int n = 0;
+
+    if (arg == NULL || arg[0] == '\0') {
+        snprintf(msg, (size_t)cap, "name a file or a full path");
+        return -1;
+    }
+    if (strlen(arg) > 255) {
+        snprintf(msg, (size_t)cap, "that is longer than any HFS path");
+        return -1;
+    }
+    CopyCStringToPascal(arg, parg);
+
+    if (strchr(arg, ':') != NULL) {
+        FSSpec spec;
+
+        if (FSMakeFSSpec(0, 0, parg, &spec) != noErr) {
+            snprintf(msg, (size_t)cap, "no such file: %.200s", arg);
+            return -1;
+        }
+        n = vers_file_row(&spec, rows, max, n);
+        return vers_read_file(&spec, true, rows, max, n);
+    }
+
+    {
+        /* A bare name shows EVERY match, path first — the metal run
+           found several SimpleTexts, and which copy answered is the
+           whole point when a disk has duplicates. Bounded fork opens:
+           at most kResolveMax, on an explicit ask. */
+        FindCtx ctx;
+        OSErr err;
+        int shown, i;
+
+        if (parg[0] > 31) {
+            snprintf(msg, (size_t)cap,
+                     "no application named %.200s (names cap at 31)",
+                     arg);
+            return -1;
+        }
+        ctx.hits = 0;
+        err = appl_sweep(parg, collect_matches, &ctx);
+        if (ctx.hits == 0) {
+            snprintf(msg, (size_t)cap,
+                     err == eofErr
+                         ? "no application named %.200s"
+                         : "%.200s not found before the search gave up",
+                     arg);
+            return -1;
+        }
+        shown = ctx.hits < kResolveMax ? ctx.hits : kResolveMax;
+        for (i = 0; i < shown; ++i) {
+            n = vers_file_row(&ctx.specs[i], rows, max, n);
+            n = vers_read_file(&ctx.specs[i], ctx.hits == 1, rows, max,
+                               n);
+        }
+        if (ctx.hits > kResolveMax && n < max) {
+            snprintf(rows[n].name, sizeof rows[n].name, "...");
+            snprintf(rows[n].detail, sizeof rows[n].detail,
+                     "more matches exist; use full paths");
+            n += 1;
+        }
+        return n;
+    }
 }

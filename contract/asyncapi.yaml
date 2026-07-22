@@ -65,6 +65,10 @@
 #   unknown-command cleanly); changing a command's shape is breaking and
 #   bumps the revision. The wire is never a TTY: no raw keystrokes, no
 #   byte-streams — shell face, typed spine.
+#   RULE: an arg key must not shadow an envelope key (type, id, name,
+#   args). The classic guest scans a frame FLAT — first occurrence wins —
+#   so a shadowed key is read as the command name. launch shipped that
+#   bug to metal with an arg named "name"; the family uses "target".
 
 asyncapi: 3.0.0
 
@@ -1619,16 +1623,19 @@ components:
         search of the startup volume; a full HFS path (contains a
         colon) is used directly, and non-APPL targets are refused. An
         ambiguous name — two applications with the same name — refuses
-        rather than guesses. The launched app comes to that machine's
+        rather than guesses, and the refusal names the paths it found,
+        because the person's next move is a full path. The launched app comes to that machine's
         front (LaunchApplication without launchDontSwitch), which the
         next process.listing or process.shot will show. Both outcomes
         are logged under the sw area with the wire id.
       args:
         type: object
         properties:
-          name:
+          target:
             type: string
-            description: An application name, or a full HFS path.
+            description: >
+              An application name, or a full HFS path. "target" and not
+              "name" — see the arg-key rule in the preamble above.
       output:
         type: object
         properties:
@@ -1640,16 +1647,21 @@ components:
         when present — read from that one file's resource fork alone
         (Get1Resource, never the chain: the System's 'vers' answering
         for a file that has none is the most convincing wrong answer).
-        Deliberately single-file: a fork open per file is the measured
-        expensive path, so nothing ever loops this over an inventory.
-        Resolution is launch's — bare name searches applications, a
-        full path reads any file. Absence of a 'vers' is an answer.
+        Bounded by design: a fork open per file is the measured
+        expensive path, so this never loops an inventory — but a bare
+        name that matches SEVERAL applications shows them all (path
+        first, then version), up to five, because a real disk has real
+        duplicates and which copy answered is the point. Resolution is
+        launch's — bare name searches applications, a full path reads
+        any file. Absence of a 'vers' is an answer.
       args:
         type: object
         properties:
-          name:
+          target:
             type: string
-            description: An application name, or a full HFS path.
+            description: >
+              An application name, or a full HFS path. "target" and not
+              "name" — see the arg-key rule in the preamble above.
       output:
         type: object
         properties:

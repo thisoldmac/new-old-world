@@ -132,10 +132,11 @@ final class ConsoleModel: ObservableObject {
             summary: "one file's version resources on the other Mac",
             help: ["vers — one file's version, read on the connected Mac",
                    "  Usage: vers <name or full path>",
-                   "  Reads that one file's 'vers' resources. A bare name",
-                   "  searches that Mac's applications; a full HFS path",
-                   "  reads any file (extensions want their path).",
-                   "  Absence of a version is an answer, not an error."]),
+                   "  Reads that file's 'vers' resources. A bare name",
+                   "  searches that Mac's applications and shows every",
+                   "  match, path first — duplicates are the point. A",
+                   "  full HFS path reads any file (extensions want",
+                   "  their path). No version is an answer, not an error."]),
         "help": .init(
             summary: "show this list (\"help <cmd>\" for details)",
             help: ["help — list commands, or \"help <cmd>\" for one"]),
@@ -388,8 +389,10 @@ final class ConsoleModel: ObservableObject {
     private func runLaunch(_ rest: [String]) {
         let name = rest.joined(separator: " ")
             .trimmingCharacters(in: .whitespaces)
+        // "target", never "name": the guest scans the frame flat, and an
+        // arg key shadowing an envelope key is read as the command name.
         listener.runCommand("launch", args: name.isEmpty ? nil
-                                                         : ["name": name]) {
+                                                         : ["target": name]) {
             [weak self] result in
             self?.renderRows(result, command: "launch")
         }
@@ -400,7 +403,7 @@ final class ConsoleModel: ObservableObject {
         let name = rest.joined(separator: " ")
             .trimmingCharacters(in: .whitespaces)
         listener.runCommand("vers", args: name.isEmpty ? nil
-                                                       : ["name": name]) {
+                                                       : ["target": name]) {
             [weak self] result in
             self?.renderRows(result, command: "vers")
         }
