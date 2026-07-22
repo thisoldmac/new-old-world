@@ -137,14 +137,13 @@ from the UI. Building the path: a folder domain knows its own path once
 per listing; an apps-sweep hit walks `parID` upward with a small
 per-listing cache. Guest-side logic, exercised by the listing itself.
 
-**Symmetry, served honestly.** Whoever receives `software.list` serves
-its own share. The host's share for `domain:"apps"` is the top level of
-`/Applications` (bundle name, path, size; `running` via
-`NSWorkspace.runningApplications`). The other domains have no honest
-macOS equivalent the host should pretend to serve: it answers them with
-an empty listing and `more:false` — declared in the contract, not
-drifted into. The guest can ask (the Workshop has no page for it yet;
-the wire does not care).
+**Symmetry, declared honestly.** `software.list` means the same thing
+whichever side sends it — but NOW is a cockpit, and the family follows
+the `process.list` precedent exactly: the host asks, the guest serves,
+and the host *ignores* a `software.list` rather than serving one. That
+asymmetry is stated in the contract's operation description, not
+drifted into. (An earlier draft had the host serving `/Applications`;
+the established sender-only rule for the host's receiving half won.)
 
 **Conformance.** `software.listing` is built across `snprintf` calls, so
 `GuestWireConformanceTests` will fail until it gets a hand-written
@@ -209,9 +208,9 @@ registration), `main.c` (View menu Cmd-6 + renumber), CMakeLists
 source, so no `NSTableView` — with the domain picker, the same columns,
 and a Launch button sending `launch` with the entry's path. Model tests
 mirror `ProcessesModelTests` (paging, entry decode, running/off
-rendering); the listing decode is pinned by the rung-2 fixtures. The
-host's own serving half (`HostSoftware` over `/Applications`) gets its
-own tests, because the guest will one day ask.
+rendering); the listing decode is pinned by the rung-2 fixtures. Until
+this rung exists, the host console's local `swpage [domain] [cursor]`
+drives the family live.
 
 ## Failure honesty
 

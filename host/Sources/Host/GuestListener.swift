@@ -433,6 +433,28 @@ final class GuestListener: ObservableObject {
         session.sendProcessList(id: id, cursor: cursor)
     }
 
+    /// Lists one page of the guest's installed software. Symmetric in
+    /// meaning with listProcesses; cursor 1 rebuilds the guest's
+    /// inventory — for "apps" that is a whole-volume sweep, ~4 s on the
+    /// real machine, so the watchdog here is generous.
+    func listSoftware(domain: String, cursor: Int? = nil,
+                      completion: @escaping (Result<SoftwareListing,
+                                                    FileFailure>) -> Void) {
+        guard let session, case .connected = state else {
+            completion(.failure(.init(code: "disconnected",
+                                      message: "No Mac is connected")))
+            return
+        }
+        let id = nextCommandId
+        nextCommandId += 1
+        pendingSoftwareListings[id] = completion
+        armWatchdog(id: id, seconds: 30) { [weak self] reason in
+            self?.pendingSoftwareListings.removeValue(forKey: id)?(
+                .failure(.init(code: "timeout", message: reason)))
+        }
+        session.sendSoftwareList(id: id, domain: domain, cursor: cursor)
+    }
+
     /// The two drive verbs, one host->guest arrow: bring a process to the
     /// front, or ask it to quit.
     enum ProcessVerb { case front, quit }
@@ -717,6 +739,8 @@ final class GuestListener: ObservableObject {
         [Int: (Result<ProcessListing, FileFailure>) -> Void] = [:]
     private var pendingProcessResults:
         [Int: (Result<ProcessResult, FileFailure>) -> Void] = [:]
+    private var pendingSoftwareListings:
+        [Int: (Result<SoftwareListing, FileFailure>) -> Void] = [:]
     private var pendingFile:
         ((Result<FileDelivery, FileFailure>) -> Void)?
     private var pendingChanges:
@@ -743,6 +767,12 @@ final class GuestListener: ObservableObject {
     fileprivate func resolveProcessListing(_ listing: ProcessListing) {
         clearWatchdog(listing.id)
         pendingProcessListings.removeValue(forKey: listing.id)?(
+            .success(listing))
+    }
+
+    fileprivate func resolveSoftwareListing(_ listing: SoftwareListing) {
+        clearWatchdog(listing.id)
+        pendingSoftwareListings.removeValue(forKey: listing.id)?(
             .success(listing))
     }
 
@@ -1128,6 +1158,9 @@ final class GuestListener: ObservableObject {
             onProcessListing: { [weak self] listing in
                 self?.resolveProcessListing(listing)
             },
+            onSoftwareListing: { [weak self] listing in
+                self?.resolveSoftwareListing(listing)
+            },
             onProcessResult: { [weak self] result in
                 self?.resolveProcessResult(result)
             },
@@ -1204,6 +1237,7 @@ final class Session {
     private let onAcceptOffer: (FileOffer) -> Void
     private let onServeChange: (GuestListener.ChangeRequest) -> Void
     private let onProcessListing: (ProcessListing) -> Void
+    private let onSoftwareListing: (SoftwareListing) -> Void
     private let onProcessResult: (ProcessResult) -> Void
     private let onReceived: (URL) -> Void
     private let onOutboundProgress: (Int, Int) -> Void
@@ -1272,6 +1306,7 @@ final class Session {
          onAcceptOffer: @escaping (FileOffer) -> Void,
          onServeChange: @escaping (GuestListener.ChangeRequest) -> Void,
          onProcessListing: @escaping (ProcessListing) -> Void,
+         onSoftwareListing: @escaping (SoftwareListing) -> Void,
          onProcessResult: @escaping (ProcessResult) -> Void,
          onReceived: @escaping (URL) -> Void,
          onOutboundProgress: @escaping (Int, Int) -> Void,
@@ -1304,6 +1339,7 @@ final class Session {
         self.onAcceptOffer = onAcceptOffer
         self.onServeChange = onServeChange
         self.onProcessListing = onProcessListing
+        self.onSoftwareListing = onSoftwareListing
         self.onProcessResult = onProcessResult
         self.onReceived = onReceived
         self.onOutboundProgress = onOutboundProgress
@@ -1450,6 +1486,12 @@ final class Session {
             onProcessListing(listing)
         case .processResult(let result):
             onProcessResult(result)
+        case .softwareListing(let listing):
+            onSoftwareListing(listing)
+        case .softwareList:
+            // Declared asymmetry, the process.list rule: the host asks
+            // and never serves. Ignoring is the contract's word.
+            break
         case .fileGet(let request):
             onServeGet(request)
         case .fileOffer(let offer):
@@ -1553,6 +1595,11 @@ final class Session {
 
     func sendProcessList(id: Int, cursor: Int?) {
         send(.processList(ProcessList(id: id, cursor: cursor)))
+    }
+
+    func sendSoftwareList(id: Int, domain: String, cursor: Int?) {
+        send(.softwareList(SoftwareList(id: id, domain: domain,
+                                        cursor: cursor)))
     }
 
     func sendProcessDrive(id: Int, psnHigh: Int, psnLow: Int,

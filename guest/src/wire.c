@@ -19,6 +19,7 @@
 #include "prefs.h"
 #include "proc_actions.h"
 #include "product_identity.h"
+#include "software.h"
 
 enum {
     kConnectTimeoutTicks = 60 * 10,   /* 10s to establish the socket */
@@ -2998,6 +2999,100 @@ static void serve_process_list(const char *request)
     send_control(json);
 }
 
+/* Serve software.list from this guest's installed-software cache — the
+   wire's paged reading of the same data layer the sw command flattens.
+   Cursor 1 (re)builds the cache; for "apps" that is the whole blocking
+   sweep, ~4 s on the real machine, which the asker's watchdog must
+   outlive (the host allows 15 s). Entries carry the full path because
+   the path is the launch key: the host launches by path, so the
+   name-ambiguity refusal can never fire from a listing. */
+static void serve_software_list(const char *request)
+{
+    enum { kPage = 10 };              /* paths are long; frames cap at 4 KB */
+    /* Worst case per entry: a 31-char name and a 223-char path, both
+       escaped (6x), plus the fixed fields — call it 1700 bytes. The
+       margin below is what must remain BEFORE starting an entry, so a
+       worst-case row plus the tail still fits. */
+    enum { kEntryMargin = 1800 };
+    char json[kNowMaxControl];
+    SoftwareEntry entries[kPage];
+    char domain[16];
+    long id = now_json_find_int(request, "id", 0);
+    long cursor = now_json_find_int(request, "cursor", 1);
+    Boolean more = false;
+    Boolean truncated = false;
+    long pos;
+    int n, i;
+    int emitted = 0;
+
+    domain[0] = '\0';
+    if (!now_json_find_string(request, "domain", domain, sizeof domain)
+        || domain[0] == '\0') {
+        strcpy(domain, "apps");
+    }
+    if (cursor < 1) {
+        cursor = 1;
+    }
+    n = now_software_page(domain, cursor, entries, kPage, &more,
+                          &truncated);
+    if (n < 0) {
+        char esc[40];
+
+        now_json_escape(domain, esc, sizeof esc);
+        now_log(kLogWarn, "sw", "#%ld software.list refused: no domain "
+                "%.15s", id, domain);
+        pos = snprintf(json, sizeof json,
+                       "{\"type\":\"software.listing\",\"id\":%ld,"
+                       "\"domain\":\"%s\",\"entries\":[],\"more\":false,"
+                       "\"note\":\"no such domain\"}", id, esc);
+        send_control(json);
+        return;
+    }
+
+    {
+        char esc_domain[40];
+
+        now_json_escape(domain, esc_domain, sizeof esc_domain);
+        pos = snprintf(json, sizeof json,
+                       "{\"type\":\"software.listing\",\"id\":%ld,"
+                       "\"domain\":\"%s\",\"entries\":[", id, esc_domain);
+    }
+    for (i = 0; i < n; ++i) {
+        char esc_name[400], esc_path[1400], esc_type[40], esc_creator[40];
+
+        if (pos > (long)sizeof json - kEntryMargin) {
+            more = true;              /* this one starts the next page */
+            break;
+        }
+        now_json_escape(entries[i].name, esc_name, sizeof esc_name);
+        now_json_escape(entries[i].path, esc_path, sizeof esc_path);
+        now_json_escape(entries[i].type, esc_type, sizeof esc_type);
+        now_json_escape(entries[i].creator, esc_creator,
+                        sizeof esc_creator);
+        pos += snprintf(json + pos, sizeof json - (size_t)pos,
+                        "%s{\"name\":\"%s\",\"path\":\"%s\","
+                        "\"type\":\"%s\",\"creator\":\"%s\","
+                        "\"sizeK\":%ld,\"off\":%s,\"running\":%s}",
+                        emitted > 0 ? "," : "", esc_name, esc_path,
+                        esc_type, esc_creator, entries[i].size_k,
+                        entries[i].off ? "true" : "false",
+                        entries[i].running ? "true" : "false");
+        ++emitted;
+    }
+    snprintf(json + pos, sizeof json - (size_t)pos,
+             "],\"more\":%s,\"cursor\":%ld%s}",
+             more ? "true" : "false", cursor + emitted,
+             truncated ? ",\"note\":\"inventory truncated at cache\"" : "");
+    /* Cursor 1 stands for the whole refresh, the process.list rule —
+       and for "apps" it is also the line that says the sweep ran. */
+    if (cursor == 1) {
+        now_log(kLogInfo, "sw", "#%ld software.list %.15s: %d served%s%s",
+                id, domain, emitted, more ? " (more)" : "",
+                truncated ? " (truncated)" : "");
+    }
+    send_control(json);
+}
+
 /* A drive verb: bring a process to front, or ask it to quit. The target
    is the PSN the host echoed from a listing; because that listing may be
    seconds stale, the PSN is re-validated against a live process first and
@@ -3907,6 +4002,10 @@ static int handle_frame(const char *reply)
     }
     if (now_json_type_is(reply, "process.list")) {
         serve_process_list(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "software.list")) {
+        serve_software_list(reply);
         return 1;
     }
     if (now_json_type_is(reply, "process.front")) {

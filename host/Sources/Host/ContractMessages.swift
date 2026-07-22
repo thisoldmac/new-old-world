@@ -49,6 +49,8 @@ enum ControlMessage: Equatable, Sendable {
     case captureEnd(CaptureEnd)
     case processList(ProcessList)
     case processListing(ProcessListing)
+    case softwareList(SoftwareList)
+    case softwareListing(SoftwareListing)
     case processFront(ProcessFront)
     case processQuit(ProcessQuit)
     case processShot(ProcessShot)
@@ -215,6 +217,49 @@ struct ProcessListing: Codable, Equatable, Sendable {
     var processes: [ProcessEntry]
     var more: Bool
     var cursor: Int?
+}
+
+/// Ask the other machine for its installed software, one domain a page.
+/// Symmetric in meaning, one direction in implementation — the
+/// process.list precedent: the host asks, the guest serves, and the
+/// host ignores a software.list rather than serving one.
+struct SoftwareList: Codable, Equatable, Sendable {
+    var id: Int
+    var domain: String
+    /// 1-based; 1 (or absent) rebuilds the responder's inventory — for
+    /// "apps" that is a whole-volume sweep, ~4 s on real hardware.
+    var cursor: Int?
+}
+
+struct SoftwareEntry: Codable, Equatable, Sendable, Identifiable {
+    var name: String
+    /// Full HFS path — the launch key. Empty means the responder could
+    /// not name the parent chain honestly; listed, but not launchable
+    /// from afar.
+    var path: String
+    var type: String?
+    var creator: String?
+    /// Data + resource forks; -1 when unreadable.
+    var sizeK: Int?
+    /// In an Extensions Manager disabled folder.
+    var off: Bool?
+    /// Joined against the responder's process list.
+    var running: Bool?
+    /// Never gathered during a listing; present only when already known.
+    var version: String?
+
+    var id: String { path.isEmpty ? "\(name)#\(type ?? "")" : path }
+    var isLaunchable: Bool { !path.isEmpty }
+}
+
+struct SoftwareListing: Codable, Equatable, Sendable {
+    var id: Int
+    var domain: String
+    var entries: [SoftwareEntry]
+    var more: Bool
+    var cursor: Int?
+    /// The honest edges: unknown domain, or a truncated inventory.
+    var note: String?
 }
 
 /// A drive verb: bring a process to the front, or ask it to quit. Both
@@ -600,6 +645,12 @@ enum ControlMessageCodec {
         case "process.result":
             return .processResult(
                 try decoder.decode(ProcessResult.self, from: data))
+        case "software.list":
+            return .softwareList(
+                try decoder.decode(SoftwareList.self, from: data))
+        case "software.listing":
+            return .softwareListing(
+                try decoder.decode(SoftwareListing.self, from: data))
         default:
             throw ControlMessageError.unknownType(probe.type)
         }
@@ -656,6 +707,8 @@ enum ControlMessageCodec {
         case .captureEnd(let m): return try tagged("capture.end", m)
         case .processList(let m): return try tagged("process.list", m)
         case .processListing(let m): return try tagged("process.listing", m)
+        case .softwareList(let m): return try tagged("software.list", m)
+        case .softwareListing(let m): return try tagged("software.listing", m)
         case .processFront(let m): return try tagged("process.front", m)
         case .processQuit(let m): return try tagged("process.quit", m)
         case .processShot(let m): return try tagged("process.shot", m)

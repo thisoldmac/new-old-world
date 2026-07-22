@@ -81,6 +81,33 @@ int now_software_gather(const char *domain, SoftwareRow *rows, int max,
    right. */
 int now_software_launch(const char *arg, char *msg, long cap);
 
+/* --- the wire's inventory pages ------------------------------------------
+   software.list is served from a one-domain cache of FSSpecs: cursor 1
+   (re)builds it — for "apps" that is a whole blocking sweep, the
+   catsearch-measured ~4 s — and later cursors page through it without
+   re-paying. Entries are enriched (catalog info, path, running) only
+   as they are served, a page at a time. */
+
+typedef struct {
+    char name[64];
+    char path[224];      /* the launch key; deep-nested paths truncate
+                            to empty rather than lie (see .c) */
+    char type[5];
+    char creator[5];
+    long size_k;
+    Boolean off;
+    Boolean running;
+} SoftwareEntry;
+
+/* One page for the wire. cursor is 1-based over the cached inventory;
+   cursor <= 1 or a domain change rebuilds the cache. Returns the entry
+   count, sets *more while the cache holds later entries, *truncated
+   when the cache itself could not hold the whole domain. -1 = unknown
+   domain. */
+int now_software_page(const char *domain, long cursor,
+                      SoftwareEntry *entries, int max, Boolean *more,
+                      Boolean *truncated);
+
 /* One file's 'vers' resources, read lazily and alone — this never
    loops an inventory, because a resource-fork open per file is the
    expensive path the sweep numbers told us to avoid. Resolution is

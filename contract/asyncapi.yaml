@@ -123,6 +123,8 @@ channels:
       processQuit: { $ref: "#/components/messages/processQuit" }
       processShot: { $ref: "#/components/messages/processShot" }
       processResult: { $ref: "#/components/messages/processResult" }
+      softwareList: { $ref: "#/components/messages/softwareList" }
+      softwareListing: { $ref: "#/components/messages/softwareListing" }
   bulk:
     address: "1"
     description: >
@@ -366,6 +368,39 @@ operations:
       guest's own. kind classifies each (application / background /
       finder); front marks the frontmost; psnHigh/psnLow name the process
       to the drive verbs. Paginates when the list outgrows a 4 KB frame.
+  hostBrowsesSoftware:
+    action: receive
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/softwareList"
+    description: >
+      software.list means the same thing whichever side sends it, and
+      whoever RECEIVES it serves its OWN installed software — symmetric
+      in MEANING, one direction in implementation, the process.list
+      precedent exactly: the host asks, the guest answers, and the host
+      will ignore a software.list rather than serve one. Cursor 1 (or
+      absent) rebuilds the responder's inventory — for the "apps"
+      domain that is a whole-volume catalog sweep, measured ~4 s on
+      real hardware, so the asker's watchdog must outlive it. Later
+      cursors page the same inventory without re-paying the sweep.
+      Read-only.
+  guestServesSoftware:
+    action: send
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/softwareListing"
+    description: >
+      The answer to software.list: one entry per installed item. path is
+      the launch key — the asker launches by sending the launch command
+      with entry.path, so the name-ambiguity refusal can never fire from
+      a listing; an empty path means the chain could not be named
+      honestly and the entry is not launchable from afar. off marks the
+      Extensions Manager's disabled siblings; running is the join
+      against the responder's process list. version is never gathered
+      during a listing (a resource open per file is the measured
+      expensive path) — it appears only if already known. Paginates by
+      cursor/more inside 4 KB frames; note carries the honest edges
+      (unknown domain, inventory truncated at the cache).
   hostDrivesProcess:
     action: receive
     channel: { $ref: "#/channels/control" }
@@ -530,6 +565,12 @@ components:
     processResult:
       name: process.result
       payload: { $ref: "#/components/schemas/ProcessResult" }
+    softwareList:
+      name: software.list
+      payload: { $ref: "#/components/schemas/SoftwareList" }
+    softwareListing:
+      name: software.listing
+      payload: { $ref: "#/components/schemas/SoftwareListing" }
 
   schemas:
     Hello:
@@ -945,6 +986,72 @@ components:
         reason:
           type: string
           description: Present when ok is false; why the verb did not apply.
+    SoftwareList:
+      type: object
+      required: [type, id, domain]
+      additionalProperties: false
+      properties:
+        type: { const: software.list }
+        id: { type: integer }
+        domain:
+          enum: [apps, extensions, cdevs, startup, apple]
+          description: >
+            apps sweeps the startup volume's catalog for applications;
+            the rest enumerate the System Folder's special folders,
+            disabled siblings included.
+        cursor:
+          type: integer
+          description: >
+            1-based over the responder's cached inventory. 1 (or absent)
+            rebuilds the cache — for apps, the whole sweep.
+    SoftwareListing:
+      type: object
+      required: [type, id, domain, entries, more]
+      additionalProperties: false
+      properties:
+        type: { const: software.listing }
+        id: { type: integer }
+        domain: { type: string }
+        entries:
+          type: array
+          maxItems: 10
+          items:
+            type: object
+            required: [name, path]
+            additionalProperties: false
+            properties:
+              name: { type: string }
+              path:
+                type: string
+                description: >
+                  Full HFS path — the launch key. Empty when the parent
+                  chain could not be named honestly (too deep, or the
+                  walk failed); such an entry is listed but not
+                  launchable from afar.
+              type: { type: string, description: Finder type 4CC. }
+              creator: { type: string, description: Finder creator 4CC. }
+              sizeK:
+                type: integer
+                description: Data + resource forks; -1 when unreadable.
+              off:
+                type: boolean
+                description: In an Extensions Manager disabled folder.
+              running:
+                type: boolean
+                description: Joined against the responder's processes.
+              version:
+                type: string
+                description: >
+                  Never gathered during a listing (a resource open per
+                  file is the measured expensive path); present only
+                  when the responder already knew it.
+        more: { type: boolean }
+        cursor: { type: integer, description: Where the next page starts. }
+        note:
+          type: string
+          description: >
+            The honest edges: "no such domain", or the inventory
+            truncated at the responder's cache.
     FileGet:
       type: object
       required: [type, id, path]

@@ -414,6 +414,256 @@ int now_software_gather(const char *domain, SoftwareRow *rows, int max,
     return -1;
 }
 
+/* --- the wire's inventory pages ------------------------------------------ */
+
+/* The one-domain cache software.list pages through. 512 FSSpecs is
+   ~36 KB of statics against a 6 MB partition — and honestly larger
+   than the 1400c's 601 apps only barely, which *truncated reports. */
+#define kSwCacheMax 512
+
+typedef struct {
+    char domain[16];
+    short count;
+    Boolean valid;
+    Boolean truncated;
+    FSSpec specs[kSwCacheMax];
+    unsigned char off[kSwCacheMax];
+} SwCache;
+
+static SwCache g_sw_cache;
+
+typedef struct {
+    SwCache *cache;
+} CacheCtx;
+
+static Boolean collect_cache_spec(const FSSpec *spec, void *vctx)
+{
+    SwCache *c = ((CacheCtx *)vctx)->cache;
+
+    if (c->count >= kSwCacheMax) {
+        c->truncated = true;
+        return false;
+    }
+    c->specs[c->count] = *spec;
+    c->off[c->count] = 0;
+    c->count += 1;
+    return true;
+}
+
+/* Folder-domain collection into the cache: same walk as the console's,
+   collecting identity instead of rows. */
+static void cache_folder(OSType folder, Boolean off, SwCache *c)
+{
+    short vRef;
+    long dirID;
+    int index;
+
+    if (FindFolder(kOnSystemDisk, folder, kDontCreateFolder,
+                   &vRef, &dirID) != noErr) {
+        return;
+    }
+    for (index = 1; ; ++index) {
+        CInfoPBRec pb;
+        Str63 pname;
+
+        memset(&pb, 0, sizeof pb);
+        pname[0] = 0;
+        pb.hFileInfo.ioNamePtr = pname;
+        pb.hFileInfo.ioVRefNum = vRef;
+        pb.hFileInfo.ioDirID = dirID;
+        pb.hFileInfo.ioFDirIndex = (short)index;
+        if (PBGetCatInfoSync(&pb) != noErr) {
+            break;
+        }
+        if (pb.hFileInfo.ioFlAttrib & ioDirMask) {
+            continue;
+        }
+        if (c->count >= kSwCacheMax) {
+            c->truncated = true;
+            break;
+        }
+        c->specs[c->count].vRefNum = vRef;
+        c->specs[c->count].parID = dirID;
+        memcpy(c->specs[c->count].name, pname, (size_t)pname[0] + 1);
+        c->off[c->count] = off ? 1 : 0;
+        c->count += 1;
+    }
+}
+
+static int cache_build(const char *domain, SwCache *c)
+{
+    int d;
+
+    c->count = 0;
+    c->valid = false;
+    c->truncated = false;
+    snprintf(c->domain, sizeof c->domain, "%s", domain);
+
+    if (strcmp(domain, "apps") == 0) {
+        CacheCtx ctx;
+        OSErr err;
+
+        ctx.cache = c;
+        err = appl_sweep(NULL, collect_cache_spec, &ctx);
+        if (err != noErr && err != eofErr) {
+            return 0;                  /* volume trouble: empty, valid */
+        }
+        c->valid = true;
+        return c->count;
+    }
+    for (d = 0; d < kDomainCount; ++d) {
+        if (strcmp(domain, k_domains[d].name) == 0) {
+            cache_folder(k_domains[d].folder, false, c);
+            if (k_domains[d].disabled != 0) {
+                cache_folder(k_domains[d].disabled, true, c);
+            }
+            c->valid = true;
+            return c->count;
+        }
+    }
+    return -1;
+}
+
+/* Full path of the folder parID sits in, colon-terminated, by walking
+   the parent chain to the root. One-slot memo, because sweep hits and
+   folder domains cluster heavily by folder. A chain that overruns the
+   buffer yields an EMPTY path — a truncated path names some other
+   file, and the path is the launch key, so wrong is worse than none. */
+static Boolean dir_path(short vRefNum, long parID, char *out, long cap)
+{
+    static short memo_vref;
+    static long memo_par;
+    static char memo[224];
+    static Boolean memo_ok;
+
+    enum { kMaxDepth = 32 };
+    char names[224];                   /* segment texts, deepest first */
+    long seg_off[kMaxDepth];
+    long seg_len[kMaxDepth];
+    int segs = 0;
+    long used = 0;
+    long cur = parID;
+    long out_len;
+    int i;
+
+    if (memo_ok && memo_vref == vRefNum && memo_par == parID
+        && (long)strlen(memo) < cap) {
+        strcpy(out, memo);
+        return true;
+    }
+    while (cur != fsRtParID) {
+        CInfoPBRec pb;
+        Str63 pname;
+        long n;
+
+        memset(&pb, 0, sizeof pb);
+        pname[0] = 0;
+        pb.dirInfo.ioNamePtr = pname;
+        pb.dirInfo.ioVRefNum = vRefNum;
+        pb.dirInfo.ioDrDirID = cur;
+        pb.dirInfo.ioFDirIndex = -1;   /* the directory's own info */
+        if (PBGetCatInfoSync(&pb) != noErr) {
+            return false;
+        }
+        n = pname[0];
+        if (segs >= kMaxDepth || used + n > (long)sizeof names) {
+            return false;              /* too deep to name honestly */
+        }
+        seg_off[segs] = used;
+        seg_len[segs] = n;
+        memcpy(names + used, pname + 1, (size_t)n);
+        used += n;
+        segs += 1;
+        cur = pb.dirInfo.ioDrParID;
+    }
+
+    /* Deepest-first segments, emitted root-first. */
+    out_len = 0;
+    for (i = segs - 1; i >= 0; --i) {
+        if (out_len + seg_len[i] + 1 >= cap) {
+            return false;
+        }
+        memcpy(out + out_len, names + seg_off[i], (size_t)seg_len[i]);
+        out_len += seg_len[i];
+        out[out_len++] = ':';
+    }
+    out[out_len] = '\0';
+
+    memo_vref = vRefNum;
+    memo_par = parID;
+    snprintf(memo, sizeof memo, "%s", out);
+    memo_ok = true;
+    return true;
+}
+
+int now_software_page(const char *domain, long cursor,
+                      SoftwareEntry *entries, int max, Boolean *more,
+                      Boolean *truncated)
+{
+    RunningSet rs;
+    long start;
+    int n = 0;
+
+    *more = false;
+    *truncated = false;
+    if (cursor < 1) {
+        cursor = 1;
+    }
+    if (cursor == 1 || !g_sw_cache.valid
+        || strcmp(g_sw_cache.domain, domain) != 0) {
+        if (cache_build(domain, &g_sw_cache) < 0) {
+            return -1;
+        }
+    }
+    *truncated = g_sw_cache.truncated;
+    running_gather(&rs);
+
+    for (start = cursor - 1; start < g_sw_cache.count && n < max;
+         ++start) {
+        const FSSpec *spec = &g_sw_cache.specs[start];
+        SoftwareEntry *e = &entries[n];
+        CInfoPBRec pb;
+        Str63 pname;
+
+        p2c(spec->name, e->name, sizeof e->name);
+        e->off = g_sw_cache.off[start] != 0;
+        e->running = running_has(&rs, spec->vRefNum, spec->parID,
+                                 spec->name);
+        e->type[0] = '\0';
+        e->creator[0] = '\0';
+        e->size_k = -1;
+
+        memcpy(pname, spec->name, (size_t)spec->name[0] + 1);
+        memset(&pb, 0, sizeof pb);
+        pb.hFileInfo.ioNamePtr = pname;
+        pb.hFileInfo.ioVRefNum = spec->vRefNum;
+        pb.hFileInfo.ioDirID = spec->parID;
+        pb.hFileInfo.ioFDirIndex = 0;
+        if (PBGetCatInfoSync(&pb) == noErr) {
+            fourcc(pb.hFileInfo.ioFlFndrInfo.fdType, e->type);
+            fourcc(pb.hFileInfo.ioFlFndrInfo.fdCreator, e->creator);
+            e->size_k = (pb.hFileInfo.ioFlLgLen
+                         + pb.hFileInfo.ioFlRLgLen + 1023) / 1024;
+        }
+        e->path[0] = '\0';
+        if (dir_path(spec->vRefNum, spec->parID, e->path,
+                     (long)sizeof e->path)) {
+            long used = (long)strlen(e->path);
+
+            if (used + spec->name[0] < (long)sizeof e->path) {
+                memcpy(e->path + used, spec->name + 1,
+                       (size_t)spec->name[0]);
+                e->path[used + spec->name[0]] = '\0';
+            } else {
+                e->path[0] = '\0';     /* wrong is worse than none */
+            }
+        }
+        n += 1;
+    }
+    *more = start < g_sw_cache.count;
+    return n;
+}
+
 /* --- resolution: an argument names one file ------------------------------ */
 
 typedef struct {

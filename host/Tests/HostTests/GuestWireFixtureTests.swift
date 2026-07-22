@@ -197,6 +197,67 @@ final class GuestWireFixtureTests: XCTestCase {
         XCTAssertTrue(listing.processes[1].isDrivable)
     }
 
+    /// serve_software_list(): the guest's installed software, assembled
+    /// across header / per-entry / tail snprintf calls like the process
+    /// listing. The ® in the name pins the MacRoman-high-byte escape
+    /// path (0xA8 -> ®), and the off+running pair pins the two
+    /// state booleans the Software page will render.
+    func testSoftwareListingAsTheGuestWritesIt() throws {
+        let json = """
+        {"type":"software.listing","id":11,"domain":"apps","entries":[\
+        {"name":"Adobe Illustrator\\u00AE 8.0",\
+        "path":"Macintosh HD:Applications:Adobe Illustrator\\u00AE 8.0",\
+        "type":"APPL","creator":"ART5","sizeK":3072,"off":false,\
+        "running":false},\
+        {"name":"SimpleText","path":"Macintosh HD:SimpleText",\
+        "type":"APPL","creator":"ttxt","sizeK":92,"off":false,\
+        "running":true}],\
+        "more":true,"cursor":3}
+        """
+        guard case .softwareListing(let listing) = try decode(json) else {
+            return XCTFail("not a software listing")
+        }
+        XCTAssertEqual(listing.domain, "apps")
+        XCTAssertEqual(listing.entries.count, 2)
+        XCTAssertEqual(listing.entries.first?.name,
+                       "Adobe Illustrator\u{00AE} 8.0")
+        XCTAssertEqual(listing.entries[1].running, true)
+        XCTAssertTrue(listing.entries[1].isLaunchable)
+        XCTAssertTrue(listing.more)
+        XCTAssertEqual(listing.cursor, 3)
+    }
+
+    /// serve_software_list() refusing a domain, and marking a truncated
+    /// inventory: the two honest edges ride the same note field, and an
+    /// empty path must decode as listed-but-not-launchable.
+    func testSoftwareListingEdgesAsTheGuestWritesThem() throws {
+        let refused = """
+        {"type":"software.listing","id":12,"domain":"games",\
+        "entries":[],"more":false,"note":"no such domain"}
+        """
+        guard case .softwareListing(let empty) = try decode(refused) else {
+            return XCTFail("not a software listing")
+        }
+        XCTAssertEqual(empty.note, "no such domain")
+        XCTAssertTrue(empty.entries.isEmpty)
+
+        let truncated = """
+        {"type":"software.listing","id":13,"domain":"extensions",\
+        "entries":[{"name":"Deep Thing","path":"","type":"INIT",\
+        "creator":"deep","sizeK":12,"off":true,"running":false}],\
+        "more":false,"cursor":2,\
+        "note":"inventory truncated at cache"}
+        """
+        guard case .softwareListing(let listing) = try decode(truncated)
+        else {
+            return XCTFail("not a software listing")
+        }
+        XCTAssertEqual(listing.entries.first?.off, true)
+        XCTAssertFalse(listing.entries.first?.isLaunchable ?? true,
+                       "an empty path is listed but not launchable")
+        XCTAssertEqual(listing.note, "inventory truncated at cache")
+    }
+
     /// serve_process_act(): the guest's answer to a drive verb. Two
     /// literals in one function, each a complete object, so the
     /// conformance check reaches them — but the ok:false shape carries a

@@ -218,6 +218,10 @@ final class ConsoleModel: ObservableObject {
             runVers(rest)
             return
         }
+        if name == "swpage" {
+            runSwPage(rest)
+            return
+        }
         run(name)
     }
 
@@ -399,6 +403,46 @@ final class ConsoleModel: ObservableObject {
                                                        : ["name": name]) {
             [weak self] result in
             self?.renderRows(result, command: "vers")
+        }
+    }
+
+    /// swpage is a host-local driver for the software.list wire family,
+    /// not an x-command: it pages the same listing the Software module's
+    /// page will render, so the family can be watched working before
+    /// that page exists. "swpage [domain] [cursor]".
+    private func runSwPage(_ rest: [String]) {
+        let domain = rest.first { Int($0) == nil && !$0.hasPrefix("-") }
+            ?? "apps"
+        let cursor = rest.compactMap { Int($0) }.first
+        listener.listSoftware(domain: domain, cursor: cursor) {
+            [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .failure(let failure):
+                self.append(.failure,
+                            "swpage: \(failure.message) [\(failure.code)]")
+            case .success(let listing):
+                if let note = listing.note {
+                    self.append(.notice, "  (\(note))")
+                }
+                for e in listing.entries {
+                    var states: [String] = []
+                    if e.off == true { states.append("off") }
+                    if e.running == true { states.append("running") }
+                    let suffix = states.isEmpty
+                        ? "" : "  (\(states.joined(separator: ", ")))"
+                    self.append(.output,
+                                "  \(e.name)  \(e.type ?? "?")/"
+                                + "\(e.creator ?? "?") \(e.sizeK ?? -1)K"
+                                + "\(suffix)  \(e.path)")
+                }
+                self.append(.notice,
+                            "  \(listing.entries.count) entries"
+                            + (listing.more
+                               ? "; more (swpage \(listing.domain) "
+                                 + "\(listing.cursor ?? 0))"
+                               : "; end"))
+            }
         }
     }
 
