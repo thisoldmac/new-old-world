@@ -934,7 +934,7 @@ static int ata_identify(unsigned long device_id, unsigned char *buf)
     pb.ataPBVers = 1;
     pb.ataPBFunctionCode = kATAMgrDriveIdentify;
     pb.ataPBDeviceID = device_id;
-    pb.ataPBTimeOut = 2000;              /* ms */
+    pb.ataPBTimeOut = 400;               /* ms; four absent ids stay bounded */
     pb.ataPBBuffer = buf;
     if (g_ata_mgr((ataPB *)&pb) != noErr) {
         return 0;
@@ -944,55 +944,53 @@ static int ata_identify(unsigned long device_id, unsigned char *buf)
 
 static void gather_ata(long cursor, CensusPage *page)
 {
-    /* candidate ids: internal bus 0 master/slave, then bus 1. */
+    /* candidate ids: internal bus 0 master/slave, then bus 1. Four short
+       IDENTIFYs fit one page; an absent device fails fast. */
     static const unsigned long k_ids[] = { 0x0000, 0x0100, 0x0001, 0x0101 };
-    int slot = (int)((cursor < 0) ? 0 : cursor);
-    long hw = 0;
     unsigned char buf[512];
+    int i;
 
-    if (Gestalt(gestaltATAAttr, &hw) != noErr || (hw & 1L) == 0) {
-        page->outcome = kCensusAbsent;
-        snprintf(page->note, sizeof page->note, "no ATA bus on this Mac");
-        return;
-    }
+    (void)cursor;
+    /* The ATA Manager resolving is the authoritative "is ATA here" test -
+       gestaltATAAttr answers falsely absent on the PB1400c even though
+       OS 9.1's ATA Manager is present, so it is not the gate. */
     resolve_ata();
     if (g_ata_resolved != 1) {
         page->outcome = kCensusRefused;
         snprintf(page->note, sizeof page->note,
-                 "the native ATA Manager is not present");
+                 "the native ATA Manager is not exported here");
         return;
     }
-    page->total = (long)(sizeof k_ids / sizeof k_ids[0]);
-    if (slot < (int)(sizeof k_ids / sizeof k_ids[0])) {
-        if (ata_identify(k_ids[slot], buf)) {
-            char model[42], serial[22], fw[10];
-            char label[kCensusRowNameCap];
-            char raw[kCensusRowRawCap];
-            char meaning[kCensusRowMeaningCap];
-            unsigned long sectors = (unsigned long)buf[120]
-                | ((unsigned long)buf[121] << 8)
-                | ((unsigned long)buf[122] << 16)
-                | ((unsigned long)buf[123] << 24);   /* words 60-61, LBA28 */
+    for (i = 0; i < (int)(sizeof k_ids / sizeof k_ids[0]); i++) {
+        char model[42], serial[22], fw[10];
+        char label[kCensusRowNameCap];
+        char raw[kCensusRowRawCap];
+        char meaning[kCensusRowMeaningCap];
+        unsigned long sectors;
 
-            census_ata_string(buf, 27, 20, model, sizeof model);
-            census_ata_string(buf, 10, 10, serial, sizeof serial);
-            census_ata_string(buf, 23, 4, fw, sizeof fw);
-            snprintf(label, sizeof label, "Device %d.%d",
-                     (int)(k_ids[slot] & 0xFF), (int)((k_ids[slot] >> 8) & 1));
-            snprintf(raw, sizeof raw, "serial %.20s", serial);
-            snprintf(meaning, sizeof meaning, "%.28s, %lu MB, fw %.8s",
-                     model[0] ? model : "ATA drive",
-                     sectors / 2048UL, fw);
-            set_row(&page->rows[page->count++], label, raw, meaning);
+        if (!ata_identify(k_ids[i], buf)) {
+            continue;
         }
-        if (slot + 1 < (int)(sizeof k_ids / sizeof k_ids[0])) {
-            page->more = 1;
-            page->next_cursor = slot + 1;
-        }
+        sectors = (unsigned long)buf[120]
+            | ((unsigned long)buf[121] << 8)
+            | ((unsigned long)buf[122] << 16)
+            | ((unsigned long)buf[123] << 24);        /* words 60-61, LBA28 */
+        census_ata_string(buf, 27, 20, model, sizeof model);
+        census_ata_string(buf, 10, 10, serial, sizeof serial);
+        census_ata_string(buf, 23, 4, fw, sizeof fw);
+        snprintf(label, sizeof label, "Device %d.%d",
+                 (int)(k_ids[i] & 0xFF), (int)((k_ids[i] >> 8) & 1));
+        snprintf(raw, sizeof raw, "serial %.20s", serial);
+        snprintf(meaning, sizeof meaning, "%.28s, %lu MB, fw %.8s",
+                 model[0] ? model : "ATA drive", sectors / 2048UL, fw);
+        set_row(&page->rows[page->count++], label, raw, meaning);
     }
-    if (page->count == 0 && !page->more && cursor == 0) {
+    if (page->count == 0) {
+        /* Manager present but no id answered: the id encoding or the
+           enumeration is what needs work next, not the manager. */
         page->outcome = kCensusAbsent;
-        snprintf(page->note, sizeof page->note, "bus present, no drives");
+        snprintf(page->note, sizeof page->note,
+                 "ATA Manager present; no device answered IDENTIFY");
     }
 }
 
