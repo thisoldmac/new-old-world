@@ -1097,6 +1097,17 @@ static void procs_activate(Boolean active)
 
 /* Read the selected process's windows into the cache the detail pane
    draws. On the throttled path (foreign memory), only on change. */
+/* Window content only - NOT the capture stamp. The stamp advances on
+   every pump (once a second for an active app) while the windows are
+   unchanged, so comparing it would repaint the whole pane every second;
+   the freshness phrase is coarse and gated separately. */
+static Boolean windows_content_equal(const NowPeekWindowList *a,
+                                     const NowPeekWindowList *b)
+{
+    return a->count == b->count && a->more == b->more
+        && memcmp(a->windows, b->windows, sizeof a->windows) == 0;
+}
+
 static void refresh_selected_windows(void)
 {
     NowPeekWindowList w;
@@ -1146,10 +1157,15 @@ static void refresh_selected_windows(void)
     g_sel_win_psn = psn;
 
     if (desired_st != g_sel_win_status
-        || memcmp(&desired, &g_sel_windows, sizeof desired) != 0) {
+        || !windows_content_equal(&desired, &g_sel_windows)) {
         g_sel_windows = desired;
         g_sel_win_status = desired_st;
         invalidate_detail();
+    } else {
+        /* Same windows, newer capture: keep the stamp current so the
+           freshness readout stays live, but do NOT repaint - the coarse
+           "as of" phrase is gated in update_selected_stats. */
+        g_sel_windows.stamp_ticks = desired.stamp_ticks;
     }
 }
 
