@@ -376,9 +376,18 @@ working on the PowerBook.
     answers a distinct `launch-ambiguous` code for a future host UI.
     Emulator-verified with a manufactured duplicate (two now-guests:
     refusal listed both full paths, `vers #2` read the picked copy,
-    `launch #1` launched). The metal re-run of the whole
-    launch/vers/pick flow is what remains, plus the `swpage` firsts
-    above.
+    `launch #1` launched).
+  - **Third metal round → launch redesign (2026-07-22, same day):**
+    the numbered-pick flow worked on the 1400c but read as too much
+    ceremony for "just open it." `launch <name>` now launches the
+    **highest-versioned** copy and names it in the reply (a visible
+    answer, not a hidden guess); `launch <name> <version>` forces a
+    copy by its short version string; full path and `#n` still work.
+    The whole arg is tried as a literal name first, so "Sherlock 2"
+    stays whole. Emulator-verified (newest-of-2, version pick,
+    wrong-version message, single-match plain launch). **The metal
+    re-run** of this flow with the real several-SimpleTexts disk is
+    what remains, plus the still-never-live `swpage` firsts.
 
 - **`sw` and `launch` — the software family's first verbs** (2026-07-22).
   The Software module's data layer (`software.c`) surfaced as console
