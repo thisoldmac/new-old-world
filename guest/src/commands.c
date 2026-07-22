@@ -905,24 +905,14 @@ static void run_launch(const char *request_json, long id, char *out,
         /* "target", never "name" — see run_vers. */
         now_json_find_string(request_json, "target", arg, sizeof arg);
     }
-    {
-        int rc = now_software_launch(arg, msg, sizeof msg);
-
-        if (rc < 0) {
-            now_log(kLogWarn, "sw", "#%ld launch refused: %.80s", id,
-                    msg);
-            now_json_escape(msg, esc, sizeof esc);
-            /* -2 = ambiguous: the matches are stored guest-side, so
-               the asker's next frame can simply say "#2". A distinct
-               code so a future host UI can offer the picks itself. */
-            snprintf(out, (size_t)cap,
-                     "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
-                     "\"error\":{\"code\":\"%s\","
-                     "\"message\":\"%s\"}}", id,
-                     rc == -2 ? "launch-ambiguous" : "launch-refused",
-                     esc);
-            return;
-        }
+    if (now_software_launch(arg, msg, sizeof msg) < 0) {
+        now_log(kLogWarn, "sw", "#%ld launch refused: %.80s", id, msg);
+        now_json_escape(msg, esc, sizeof esc);
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+                 "\"error\":{\"code\":\"launch-refused\","
+                 "\"message\":\"%s\"}}", id, esc);
+        return;
     }
     now_log(kLogInfo, "sw", "#%ld %.80s", id, msg);
     now_json_escape(msg, esc, sizeof esc);

@@ -772,118 +772,136 @@ static int path_rows(const char *label, const FSSpec *spec,
     return n;
 }
 
-int now_software_matches(SoftwareRow *rows, int max)
+/* --- version reads, for picking among duplicates ------------------------
+   Reading 'vers' to choose a copy IS a resource-fork open per match, the
+   measured-expensive path — but bounded: only on an ambiguous launch, at
+   most kResolveMax of them, on an explicit act. Never an inventory loop. */
+
+/* One file's numeric version as an orderable key (the four 'vers' bytes,
+   big-endian: major.minor.bugfix, then stage, then non-release rev — so
+   a released 1.4 outranks a beta 1.4), and its short version string.
+   Bounded fork open, closed on every path; key 0 / empty when absent. */
+static Boolean file_vers(const FSSpec *spec, unsigned long *key,
+                         char *shortstr, long cap)
 {
-    int n = 0;
-    int i;
+    short saved = CurResFile();
+    short ref;
+    Boolean found = false;
 
-    for (i = 0; i < g_last.hits && n < max; ++i) {
-        char label[12];
-
-        snprintf(label, sizeof label, "#%d", i + 1);
-        n = path_rows(label, &g_last.specs[i], rows, max, n);
+    if (key != NULL) {
+        *key = 0;
     }
-    return n;
+    if (shortstr != NULL && cap > 0) {
+        shortstr[0] = '\0';
+    }
+    ref = FSpOpenResFile(spec, fsRdPerm);
+    if (ref == -1) {
+        UseResFile(saved);
+        return false;
+    }
+    UseResFile(ref);
+    {
+        Handle h = Get1Resource('vers', 1);
+
+        if (h != NULL && *h != NULL) {
+            long size = GetHandleSize(h);
+            const unsigned char *b = (const unsigned char *)*h;
+
+            if (size >= 4 && key != NULL) {
+                *key = ((unsigned long)b[0] << 24)
+                     | ((unsigned long)b[1] << 16)
+                     | ((unsigned long)b[2] << 8) | (unsigned long)b[3];
+            }
+            if (size >= 7 && shortstr != NULL && cap > 0) {
+                long slen = b[6];
+
+                if (7 + slen > size) {
+                    slen = size - 7;
+                }
+                if (slen > cap - 1) {
+                    slen = cap - 1;
+                }
+                if (slen > 0) {
+                    memcpy(shortstr, b + 7, (size_t)slen);
+                }
+                shortstr[slen > 0 ? slen : 0] = '\0';
+            }
+            found = true;
+        }
+    }
+    CloseResFile(ref);
+    UseResFile(saved);
+    return found;
 }
 
-/* Full path (contains ':') = that file, whatever it is; bare name = an
-   exact-name APPL search. require_appl also gates the path branch, for
-   the caller that only makes sense on applications. Returns 0 with the
-   spec, or -1 with the reason in msg. */
-static int resolve_to_spec(const char *arg, Boolean require_appl,
-                           FSSpec *out, char *msg, long cap)
+/* ASCII case-insensitive equality — version strings are digits and dots,
+   but a "1.0FC1" tail could carry a letter. */
+static Boolean eq_ci(const char *a, const char *b)
 {
-    Str255 parg;
+    for (; *a != '\0' && *b != '\0'; ++a, ++b) {
+        char ca = *a, cb = *b;
 
-    if (arg == NULL || arg[0] == '\0') {
-        snprintf(msg, (size_t)cap, "name a file or a full path");
-        return -1;
+        if (ca >= 'A' && ca <= 'Z') ca = (char)(ca + 32);
+        if (cb >= 'A' && cb <= 'Z') cb = (char)(cb + 32);
+        if (ca != cb) {
+            return false;
+        }
     }
-    if (strlen(arg) > 255) {
-        snprintf(msg, (size_t)cap, "that is longer than any HFS path");
-        return -1;
+    return *a == '\0' && *b == '\0';
+}
+
+/* "Name 1.2.3" -> name + version, but only when the trailing token looks
+   like a version (starts with a digit). The whole string is tried as a
+   name FIRST by the caller, so this fires only when nothing is literally
+   named that — which keeps "Sherlock 2" and "Illustrator 8.0" whole. */
+static Boolean split_trailing_version(const char *arg, char *name,
+                                      long ncap, char *ver, long vcap)
+{
+    const char *sp = strrchr(arg, ' ');
+    long nlen;
+
+    if (sp == NULL || sp == arg || !(sp[1] >= '0' && sp[1] <= '9')) {
+        return false;
     }
-    CopyCStringToPascal(arg, parg);
-
-    if (strchr(arg, ':') != NULL) {
-        CInfoPBRec pb;
-        Str63 pname;
-
-        if (FSMakeFSSpec(0, 0, parg, out) != noErr) {
-            snprintf(msg, (size_t)cap, "no such file: %.200s", arg);
-            return -1;
-        }
-        if (!require_appl) {
-            return 0;
-        }
-        memcpy(pname, out->name, (size_t)out->name[0] + 1);
-        memset(&pb, 0, sizeof pb);
-        pb.hFileInfo.ioNamePtr = pname;
-        pb.hFileInfo.ioVRefNum = out->vRefNum;
-        pb.hFileInfo.ioDirID = out->parID;
-        pb.hFileInfo.ioFDirIndex = 0;
-        if (PBGetCatInfoSync(&pb) == noErr
-            && pb.hFileInfo.ioFlFndrInfo.fdType != 'APPL') {
-            char type[5];
-
-            fourcc(pb.hFileInfo.ioFlFndrInfo.fdType, type);
-            snprintf(msg, (size_t)cap,
-                     "not an application (type %s)", type);
-            return -1;
-        }
-        return 0;
+    nlen = sp - arg;
+    while (nlen > 0 && arg[nlen - 1] == ' ') {
+        --nlen;                        /* trim "Name  1.0" */
     }
-
-    {
-        FindCtx ctx;
-        OSErr err;
-        int pick = parse_pick(arg);
-
-        if (pick > 0) {
-            if (pick > g_last.hits) {
-                snprintf(msg, (size_t)cap, g_last.hits == 0
-                         ? "no match list stored - name something first"
-                         : "the last list has %d entries", g_last.hits);
-                return -1;
-            }
-            *out = g_last.specs[pick - 1];
-            return 0;
-        }
-        /* Names longer than an HFS file name cannot match anything. */
-        if (parg[0] > 31) {
-            snprintf(msg, (size_t)cap,
-                     "no application named %.200s (names cap at 31)", arg);
-            return -1;
-        }
-        err = find_by_name(parg, &ctx);
-        if (ctx.hits == 0) {
-            snprintf(msg, (size_t)cap,
-                     err == eofErr
-                         ? "no application named %.200s"
-                         : "%.200s not found before the search gave up",
-                     arg);
-            return -1;
-        }
-        if (ctx.hits > 1) {
-            /* Refuse, but leave the matches stored: "#n" is the next
-               move, not a 60-character path. */
-            snprintf(msg, (size_t)cap,
-                     "%d%s named %.40s - launch #1..#%d picks; "
-                     "vers %.40s lists them",
-                     ctx.hits > kResolveMax ? kResolveMax : ctx.hits,
-                     ctx.hits > kResolveMax ? "+" : "", arg,
-                     ctx.hits > kResolveMax ? kResolveMax : ctx.hits,
-                     arg);
-            return -2;
-        }
-        *out = ctx.specs[0];
-        return 0;
+    if (nlen <= 0 || nlen >= ncap) {
+        return false;
     }
+    memcpy(name, arg, (size_t)nlen);
+    name[nlen] = '\0';
+    snprintf(ver, (size_t)vcap, "%s", sp + 1);
+    return true;
+}
+
+/* Index of the highest-versioned match; ties keep the first found. */
+static int highest_match(const FindCtx *ctx)
+{
+    int shown = ctx->hits < kResolveMax ? ctx->hits : kResolveMax;
+    unsigned long best_key = 0;
+    int best = 0;
+    int i;
+
+    for (i = 0; i < shown; ++i) {
+        unsigned long k = 0;
+
+        file_vers(&ctx->specs[i], &k, NULL, 0);
+        if (i == 0 || k > best_key) {
+            best_key = k;
+            best = i;
+        }
+    }
+    return best;
 }
 
 /* --- launch -------------------------------------------------------------- */
 
-static int launch_spec(const FSSpec *spec, char *msg, long cap)
+/* note is appended after "launched <name>" — the version and, when a
+   name was ambiguous, which copy of how many and how to see the rest. */
+static int launch_spec(const FSSpec *spec, const char *note, char *msg,
+                       long cap)
 {
     LaunchParamBlockRec lp;
     char cname[64];
@@ -897,28 +915,173 @@ static int launch_spec(const FSSpec *spec, char *msg, long cap)
     lp.launchAppSpec = (FSSpecPtr)spec;
     err = LaunchApplication(&lp);
     if (err == noErr) {
-        snprintf(msg, (size_t)cap, "launched %s", cname);
+        snprintf(msg, (size_t)cap, "launched %.40s%.180s", cname,
+                 note != NULL ? note : "");
         return 0;
     }
     if (err == memFullErr) {
-        snprintf(msg, (size_t)cap, "not enough memory to launch %s",
+        snprintf(msg, (size_t)cap, "not enough memory to launch %.40s",
                  cname);
     } else {
-        snprintf(msg, (size_t)cap, "%s: LaunchApplication err %d",
+        snprintf(msg, (size_t)cap, "%.40s: LaunchApplication err %d",
                  cname, err);
     }
     return -1;
 }
 
+/* Launch by exact name among matches, filtered to one version string.
+   ctx already holds the name's matches. */
+static int launch_at_version(const FindCtx *ctx, const char *name,
+                             const char *ver, char *msg, long cap)
+{
+    int shown = ctx->hits < kResolveMax ? ctx->hits : kResolveMax;
+    int matched = 0;
+    int mi = -1;
+    int i;
+
+    for (i = 0; i < shown; ++i) {
+        char sv[36];
+
+        file_vers(&ctx->specs[i], NULL, sv, sizeof sv);
+        if (eq_ci(sv, ver)) {
+            matched += 1;
+            if (mi < 0) {
+                mi = i;
+            }
+        }
+    }
+    if (mi < 0) {
+        snprintf(msg, (size_t)cap,
+                 "no %.40s is version %.20s - \"vers %.40s\" lists them",
+                 name, ver, name);
+        return -1;
+    }
+    {
+        char note[64];
+
+        snprintf(note, sizeof note, " %.20s%s", ver,
+                 matched > 1 ? " (first at that version)" : "");
+        return launch_spec(&ctx->specs[mi], note, msg, cap);
+    }
+}
+
 int now_software_launch(const char *arg, char *msg, long cap)
 {
     FSSpec spec;
-    int rc = resolve_to_spec(arg, true, &spec, msg, cap);
+    Str255 parg;
+    FindCtx ctx;
+    OSErr err;
+    int pick;
 
-    if (rc < 0) {
-        return rc;                     /* -2 = ambiguous, list stored */
+    if (arg == NULL || arg[0] == '\0') {
+        snprintf(msg, (size_t)cap, "launch what? (a name, a path, or #n)");
+        return -1;
     }
-    return launch_spec(&spec, msg, cap);
+    if (strlen(arg) > 255) {
+        snprintf(msg, (size_t)cap, "that is longer than any HFS path");
+        return -1;
+    }
+
+    /* "#n": a still-supported explicit pick from the last search. */
+    pick = parse_pick(arg);
+    if (pick > 0) {
+        if (pick > g_last.hits) {
+            snprintf(msg, (size_t)cap, g_last.hits == 0
+                     ? "no match list stored - name something first"
+                     : "the last list has %d entries", g_last.hits);
+            return -1;
+        }
+        return launch_spec(&g_last.specs[pick - 1], "", msg, cap);
+    }
+
+    /* A full path names one file exactly; it must be an application. */
+    if (strchr(arg, ':') != NULL) {
+        CInfoPBRec pb;
+        Str63 pname;
+
+        CopyCStringToPascal(arg, parg);
+        if (FSMakeFSSpec(0, 0, parg, &spec) != noErr) {
+            snprintf(msg, (size_t)cap, "no such file: %.200s", arg);
+            return -1;
+        }
+        memcpy(pname, spec.name, (size_t)spec.name[0] + 1);
+        memset(&pb, 0, sizeof pb);
+        pb.hFileInfo.ioNamePtr = pname;
+        pb.hFileInfo.ioVRefNum = spec.vRefNum;
+        pb.hFileInfo.ioDirID = spec.parID;
+        pb.hFileInfo.ioFDirIndex = 0;
+        if (PBGetCatInfoSync(&pb) == noErr
+            && pb.hFileInfo.ioFlFndrInfo.fdType != 'APPL') {
+            char type[5];
+
+            fourcc(pb.hFileInfo.ioFlFndrInfo.fdType, type);
+            snprintf(msg, (size_t)cap, "not an application (type %s)",
+                     type);
+            return -1;
+        }
+        return launch_spec(&spec, "", msg, cap);
+    }
+
+    /* A bare name: the WHOLE string is tried as an application name
+       first, so a real name with a trailing number ("Sherlock 2") wins.
+       Only if nothing is named that do we read a trailing "1.2.3" as a
+       version selector. */
+    CopyCStringToPascal(arg, parg);
+    if (parg[0] > 31) {
+        snprintf(msg, (size_t)cap,
+                 "no application named %.200s (names cap at 31)", arg);
+        return -1;
+    }
+    err = find_by_name(parg, &ctx);
+
+    if (ctx.hits == 0) {
+        char name[64], ver[36];
+        Str255 pname;
+
+        if (split_trailing_version(arg, name, sizeof name, ver,
+                                   sizeof ver)) {
+            CopyCStringToPascal(name, pname);
+            if (pname[0] > 31) {
+                snprintf(msg, (size_t)cap, "no application named %.200s",
+                         name);
+                return -1;
+            }
+            err = find_by_name(pname, &ctx);
+            if (ctx.hits == 0) {
+                snprintf(msg, (size_t)cap, err == eofErr
+                         ? "no application named %.200s"
+                         : "%.200s not found before the search gave up",
+                         name);
+                return -1;
+            }
+            return launch_at_version(&ctx, name, ver, msg, cap);
+        }
+        snprintf(msg, (size_t)cap, err == eofErr
+                 ? "no application named %.200s"
+                 : "%.200s not found before the search gave up", arg);
+        return -1;
+    }
+
+    if (ctx.hits == 1) {
+        return launch_spec(&ctx.specs[0], "", msg, cap);
+    }
+
+    /* Several copies: launch the newest, and SAY which — a visible
+       answer with the version, not a hidden guess. The rest are one
+       "vers <name>" (or "launch #n") away. */
+    {
+        int best = highest_match(&ctx);
+        char ver[36];
+        char note[128];
+
+        file_vers(&ctx.specs[best], NULL, ver, sizeof ver);
+        snprintf(note, sizeof note,
+                 " %s (newest of %d%s; \"vers %.28s\" lists them)",
+                 ver[0] != '\0' ? ver : "no version",
+                 ctx.hits > kResolveMax ? kResolveMax : ctx.hits,
+                 ctx.hits > kResolveMax ? "+" : "", arg);
+        return launch_spec(&ctx.specs[best], note, msg, cap);
+    }
 }
 
 /* --- vers ---------------------------------------------------------------- */

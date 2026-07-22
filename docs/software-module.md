@@ -98,12 +98,25 @@ Layer: `now_software_vers(const char *arg, rows…)` in `software.c`, so
 the page calls the same function per selected row.
 
 A bare name that matches several applications shows **every match,
-path first** (bounded at five) — the metal run found multiple
-SimpleTexts immediately, and which copy answered is the whole point on
-a disk with duplicates. Marked for later, not this ladder: a
-**duplicate finder** — group the sweep by name, lazily `vers` each
-group, and present same-version/different-version pairs for
-user-driven consolidation.
+numbered, full path wrapped** (bounded at five) — the metal run found
+multiple SimpleTexts immediately, and which copy answered is the whole
+point on a disk with duplicates.
+
+**Launch disambiguation (revised after metal, 2026-07-22).** The first
+cut *refused* an ambiguous `launch` and made the person pick. On a real
+disk that was too much ceremony for "just open it," so `launch <name>`
+now **launches the highest-versioned copy and names it** in the reply
+— a visible answer, not a hidden guess. Control is additive:
+`launch <name> <version>` forces a copy by its short version string
+(the whole arg is tried as a literal name *first*, so "Sherlock 2" and
+"Illustrator® 8.0" stay whole; only a name that matches nothing peels a
+trailing `1.2.3`), a full path is exact, and `#n` still picks from the
+last search. Choosing the newest reads each candidate's `'vers'` — the
+expensive path — but bounded: a handful of fork opens, only on an
+ambiguous launch. Marked for later, not this ladder: a **duplicate
+finder** — group the sweep by name, lazily `vers` each group, and
+present same-version/different-version pairs for user-driven
+consolidation.
 
 ### Running tags — the Processes join
 

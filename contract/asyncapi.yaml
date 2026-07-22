@@ -1621,12 +1621,14 @@ components:
         Open an application on the receiver: the software family's one
         mutation. A bare name is resolved by an exact-name catalog
         search of the startup volume; a full HFS path (contains a
-        colon) is used directly, and non-APPL targets are refused. An
-        ambiguous name refuses rather than guesses (error code
-        launch-ambiguous) and STORES the numbered matches on the
-        responder, so the asker's next frame can say just "#2" — vers
-        on the same name prints the list. The stored list lives until
-        the next bare-name search on that machine. The launched app comes to that machine's
+        colon) is used directly, and non-APPL targets are refused. When
+        a bare name matches SEVERAL applications the responder launches
+        the highest-versioned and the reply says which — a visible
+        answer, not a hidden guess (choosing reads each candidate's
+        'vers', bounded to a handful of fork opens on an ambiguous
+        launch). To force a copy: append its short version string
+        ("SimpleText 1.1.1"), give a full path, or "#n" from the last
+        search's stored matches (which "vers <name>" prints). The launched app comes to that machine's
         front (LaunchApplication without launchDontSwitch), which the
         next process.listing or process.shot will show. Both outcomes
         are logged under the sw area with the wire id.
@@ -1636,9 +1638,10 @@ components:
           target:
             type: string
             description: >
-              An application name, a full HFS path, or "#n" picking
-              from the responder's stored match list. "target" and not
-              "name" — see the arg-key rule in the preamble above.
+              An application name, "Name VERSION" to force one copy, a
+              full HFS path, or "#n" from the stored match list.
+              "target" and not "name" — see the arg-key rule in the
+              preamble above.
       output:
         type: object
         properties:

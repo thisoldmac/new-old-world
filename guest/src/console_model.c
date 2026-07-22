@@ -195,12 +195,12 @@ static void help_for(const char *name)
         console_model_append("  seconds) and shows one page of applications.");
     } else if (strcmp(name, "launch") == 0) {
         console_model_append("launch - open an application on this Mac");
-        console_model_append("  Usage: launch <name | full path | #n>");
-        console_model_append("  A bare name is found by an exact-name search of");
-        console_model_append("  the startup disk. Several apps with one name");
-        console_model_append("  print a numbered list instead of guessing;");
-        console_model_append("  \"launch #2\" then picks from it (so does");
-        console_model_append("  \"vers #2\"). Full paths always work.");
+        console_model_append("  Usage: launch <name [version] | full path | #n>");
+        console_model_append("  A bare name searches the startup disk. If several");
+        console_model_append("  apps share it, the NEWEST launches and the reply");
+        console_model_append("  says which. To force one: add its version");
+        console_model_append("  (\"launch SimpleText 1.1.1\"), give a full path, or");
+        console_model_append("  \"vers <name>\" then \"launch #2\".");
     } else if (strcmp(name, "vers") == 0) {
         console_model_append("vers - one file's version resources");
         console_model_append("  Usage: vers <name | full path | #n>");
@@ -566,27 +566,13 @@ void console_model_run(const char *input)
     }
     if (strcmp(name, "launch") == 0) {
         char msg[240];
-        int rc;
 
         while (*raw_args == ' ') {
             ++raw_args;
         }
-        rc = now_software_launch(raw_args, msg, sizeof msg);
-        snprintf(line, sizeof line, "%.100s", msg);
+        now_software_launch(raw_args, msg, sizeof msg);
+        snprintf(line, sizeof line, "%.120s", msg);
         console_model_append(line);
-        if (rc == -2) {
-            /* Ambiguous: print the numbered list right here, so the
-               next line typed can be "launch #2". */
-            SoftwareRow rows[30];
-            int mn = now_software_matches(rows, 30);
-            int mi;
-
-            for (mi = 0; mi < mn; ++mi) {
-                snprintf(line, sizeof line, "  %-4s %.60s",
-                         rows[mi].name, rows[mi].detail);
-                console_model_append(line);
-            }
-        }
         return;
     }
     if (strcmp(name, "vers") == 0) {
