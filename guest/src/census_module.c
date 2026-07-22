@@ -5,6 +5,7 @@
 
 #include "census.h"
 #include "pump.h"
+#include "wire.h"                 /* now_wire_pump, for the divider drag loop */
 
 /* The Hardware census page. A hand-drawn probe rail on the left - the
    Workshop sidebar's own two-line idiom, because a probe registry is
@@ -23,12 +24,14 @@
 
 enum {
     kMargin = 12,
-    kRailW = 168,
+    kRailDefaultW = 168,      /* the rail starts here; drag the divider wider */
+    kRailMinW = 130,
+    kRailMaxW = 360,
+    kDivW = 8,                /* the draggable divider strip */
     /* Two-line rail row. 26 keeps all probes visible down to the minimum
        window; past ~13 probes (the witness tier) the rail needs a scroll
        bar instead of shrinking further. */
     kRowH = 26,
-    kGap = 14,
     kButtonH = 20,
     kDetailH = 132,
     kMaxDetailLines = 12,
@@ -41,6 +44,7 @@ enum {
 
 typedef struct {
     Rect rail;
+    Rect divider;             /* between rail and browser; drag to resize */
     Rect browser;
     Rect detail;
     Rect run_btn;
@@ -51,6 +55,23 @@ static WindowRef g_owner;
 static Rect g_body;
 static CensusRects g_r;
 static Boolean g_visible;
+static short g_rail_w = kRailDefaultW;     /* current rail width; user-dragged */
+
+/* Cursor arbitration: watch while a probe runs, the resize cursor over the
+   divider, arrow otherwise - set only on change. */
+enum { kCurArrow = 0, kCurWatch, kCurResize };
+static int g_cursor = kCurArrow;
+
+/* The hand-drawn hover tooltip (HMDisplayTag is Mac OS X only), shown when
+   a rail row's text is truncated and the mouse rests on it. */
+static int g_hover_row = -1;
+static Point g_hover_pt;
+static unsigned long g_hover_since;
+static Boolean g_tip_shown;
+static Rect g_tip_rect;
+static char g_tip_text[96];
+
+static void hide_tip(void);     /* used by census_show, defined with the tip */
 
 static ControlRef g_browser;
 static ControlRef g_run;
@@ -84,10 +105,12 @@ static void compute_rects(const Rect *body, CensusRects *r)
     short right = (short)(body->right - kMargin);
     short buttons_y = (short)(body->bottom - (kButtonH + 8));
     short col_bottom = (short)(buttons_y - 10);
-    short bx = (short)(x0 + kRailW + kGap);
+    short rail_r = (short)(x0 + g_rail_w);
+    short bx = (short)(rail_r + kDivW + 6);
     short detail_top = (short)(col_bottom - kDetailH);
 
-    SetRect(&r->rail, x0, top, (short)(x0 + kRailW), col_bottom);
+    SetRect(&r->rail, x0, top, rail_r, col_bottom);
+    SetRect(&r->divider, rail_r, top, (short)(rail_r + kDivW), col_bottom);
     SetRect(&r->browser, bx, top, right, (short)(detail_top - 8));
     SetRect(&r->detail, bx, detail_top, right, col_bottom);
     SetRect(&r->run_btn, x0, buttons_y, (short)(x0 + 116),
@@ -169,9 +192,25 @@ static void refresh_detail(void)
    The animated variant cannot spin through a blocking Toolbox call (no
    callback fires inside it), so a static watch is the honest signal;
    re-asserted each page in case an update reset it. */
+static void apply_cursor(int want)
+{
+    static const ThemeCursor themes[] = {
+        kThemeArrowCursor, kThemeWatchCursor, kThemeResizeLeftRightCursor
+    };
+
+    if (want != g_cursor) {
+        g_cursor = want;
+        SetThemeCursor(themes[want]);
+    }
+}
+
 static void set_busy(Boolean busy)
 {
-    SetThemeCursor(busy ? kThemeWatchCursor : kThemeArrowCursor);
+    if (busy) {
+        apply_cursor(kCurWatch);
+    } else {
+        apply_cursor(kCurArrow);
+    }
 }
 
 static void run_button_title(const char *title)
@@ -665,6 +704,8 @@ static void census_show(Boolean visible)
         if (visible) { ShowControl(g_rerun); } else { HideControl(g_rerun); }
     }
     if (!visible) {
+        hide_tip();
+        g_hover_row = -1;
         set_busy(false);                /* don't leave the watch on other pages */
         return;
     }
@@ -694,13 +735,177 @@ static void census_layout(const Rect *body)
     size_to(g_rerun, &g_r.rerun_btn);
 }
 
+/* --- the resize divider ------------------------------------------------- */
+
+/* Drag the divider with a ghost line (XOR, so no full redraw per move),
+   committing the new rail width on mouse-up. Pumps the wire so a transfer
+   keeps moving while the user drags. */
+static void track_divider(void)
+{
+    short min_x = (short)(g_r.rail.left + kRailMinW);
+    short max_x = (short)(g_r.rail.left + kRailMaxW);
+    short top = g_r.rail.top;
+    short bottom = g_r.rail.bottom;
+    short last = -1;
+    Point pt;
+    Pattern gray;
+
+    SetPortWindowPort(g_owner);
+    GetQDGlobalsGray(&gray);
+    PenMode(patXor);
+    PenPat(&gray);
+    while (StillDown()) {
+        now_wire_pump();
+        GetMouse(&pt);
+        if (pt.h < min_x) { pt.h = min_x; }
+        if (pt.h > max_x) { pt.h = max_x; }
+        if (pt.h != last) {
+            if (last >= 0) {
+                MoveTo(last, top); LineTo(last, bottom);   /* erase old */
+            }
+            MoveTo(pt.h, top); LineTo(pt.h, bottom);       /* draw new */
+            last = pt.h;
+        }
+    }
+    if (last >= 0) {
+        MoveTo(last, top); LineTo(last, bottom);           /* erase final */
+    }
+    PenNormal();
+    if (last >= 0) {
+        g_rail_w = (short)(last - g_r.rail.left);
+        census_layout(&g_body);
+        InvalWindowRect(g_owner, &g_body);
+    }
+}
+
+/* --- the hover tooltip -------------------------------------------------- */
+
+static void hide_tip(void)
+{
+    if (g_tip_shown) {
+        g_tip_shown = false;
+        InvalWindowRect(g_owner, &g_tip_rect);
+    }
+}
+
+/* Is row i's title or subtitle wider than the rail can show? */
+static Boolean row_truncated(int i, const char **which)
+{
+    Str255 t;
+    short avail = (short)(g_r.rail.right - g_r.rail.left - 28);
+
+    UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
+    CopyCStringToPascal(probe_name(i), t);
+    if (StringWidth(t) > avail) {
+        *which = probe_name(i);
+        return true;
+    }
+    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    CopyCStringToPascal(g_subtitle[i][0] ? g_subtitle[i] : "not run yet", t);
+    if (StringWidth(t) > avail) {
+        *which = g_subtitle[i][0] ? g_subtitle[i] : "not run yet";
+        return true;
+    }
+    return false;
+}
+
+static void show_tip(int row)
+{
+    const char *text = NULL;
+    Str255 t;
+    short w, x, y;
+
+    if (!row_truncated(row, &text) || text == NULL) {
+        return;
+    }
+    snprintf(g_tip_text, sizeof g_tip_text, "%s", text);
+    CopyCStringToPascal(g_tip_text, t);
+    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    w = (short)(StringWidth(t) + 12);
+    x = (short)(g_r.rail.left + 16);
+    y = (short)(g_r.rail.top + 2 + (row + 1) * kRowH);
+    if (x + w > g_body.right - 4) {
+        x = (short)(g_body.right - 4 - w);
+    }
+    SetRect(&g_tip_rect, x, y, (short)(x + w), (short)(y + 16));
+    g_tip_shown = true;
+    InvalWindowRect(g_owner, &g_tip_rect);
+}
+
+static void draw_tip(void)
+{
+    RGBColor tip = { 0xFFFF, 0xFFFF, 0xCCCC };   /* the classic pale tag */
+    RGBColor black = { 0, 0, 0 };
+    Str255 t;
+
+    RGBForeColor(&tip);
+    PaintRect(&g_tip_rect);
+    RGBForeColor(&black);
+    FrameRect(&g_tip_rect);
+    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    MoveTo((short)(g_tip_rect.left + 6), (short)(g_tip_rect.top + 12));
+    CopyCStringToPascal(g_tip_text, t);
+    DrawString(t);
+}
+
+/* Called each idle pass: keep the cursor honest and raise a tooltip when
+   the mouse rests on a truncated row. */
+static void hover_idle(void)
+{
+    Point pt;
+    int row;
+    int want;
+
+    if (g_owner == NULL || !g_visible) {
+        return;
+    }
+    SetPortWindowPort(g_owner);
+    GetMouse(&pt);
+
+    /* cursor: watch wins while running, else resize over the divider */
+    if (g_pumping) {
+        want = kCurWatch;
+    } else if (PtInRect(pt, &g_r.divider)) {
+        want = kCurResize;
+    } else {
+        want = kCurArrow;
+    }
+    apply_cursor(want);
+
+    if (g_pumping) {
+        hide_tip();
+        return;
+    }
+    row = rail_row_at(pt);
+    if (row != g_hover_row || pt.h < g_hover_pt.h - 2 || pt.h > g_hover_pt.h + 2
+        || pt.v < g_hover_pt.v - 2 || pt.v > g_hover_pt.v + 2) {
+        hide_tip();
+        g_hover_row = row;
+        g_hover_pt = pt;
+        g_hover_since = TickCount();
+    } else if (row >= 0 && !g_tip_shown
+               && TickCount() - g_hover_since > 30) {
+        show_tip(row);
+    }
+}
+
 static void census_draw(void)
 {
     if (g_owner == NULL || !g_visible) {
         return;
     }
     draw_rail();
+    {
+        /* a native themed separator down the middle of the divider strip */
+        Rect sep = g_r.divider;
+        sep.left = (short)(sep.left + kDivW / 2);
+        sep.right = (short)(sep.left + 2);
+        DrawThemeSeparator(&sep, kThemeStateActive);
+    }
     draw_detail();
+    if (g_tip_shown) {
+        draw_tip();                     /* on top of everything */
+    }
 }
 
 static Boolean census_click(const EventRecord *event, Point local)
@@ -710,6 +915,11 @@ static Boolean census_click(const EventRecord *event, Point local)
 
     if (g_owner == NULL || !g_visible) {
         return false;
+    }
+    if (!g_pumping && PtInRect(local, &g_r.divider)) {
+        hide_tip();
+        track_divider();
+        return true;
     }
     hit = rail_row_at(local);
     if (hit >= 0) {
@@ -819,6 +1029,7 @@ static void census_idle(void)
     if (g_pumping && g_owner != NULL && g_visible) {
         pump_step();
     }
+    hover_idle();               /* cursor over the divider, and tooltips */
 }
 
 static void census_status_text(char *out, long cap)
