@@ -322,6 +322,18 @@ Not load-bearing; parked as a known gap rather than chased.
 Everything here builds and passes its tests. None of it has been watched
 working on the PowerBook.
 
+- **`catsearch` — the Software module's feasibility probe** (2026-07-22).
+  Times a whole-volume `PBCatSearch` sweep for APPL files on the startup
+  volume, in 15-tick slices, cold then warm, and reports slice-budget
+  honoring, hit count, and `bHasCatSearch`. Console verb on both sides
+  (contract `x-commands`, guest `commands.c`, host `ConsoleModel`).
+  **Emulator-verified** (OS 9.1 clone VM, 2546-file disk): 205 APPL hits,
+  cold sweep 7 ticks in 9 slices, warm 3 ticks, longest slice 1 tick,
+  clean eofErr end. The emulated disk is effectively free, so the number
+  the Software module's design actually hangs on — a real spinner's cold
+  sweep — is exactly the part still unmeasured. Run `catsearch` on the
+  1400c and write the numbers here.
+
 - **`ps` and `census` console commands + guest verb logging**
   (2026-07-22). The two new modules — Processes and Hardware/census —
   had no console verb and logged nothing; both are now closed.
