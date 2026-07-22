@@ -71,6 +71,8 @@ static void check_common(const Rect *content, const WorkshopLayout *lay,
     }
     CHECK(contains(&lay->rail_list, &lay->conn_row),
           "connection row inside panel");
+    CHECK(contains(&lay->rail_list, &lay->logs_row),
+          "logs row inside panel");
     CHECK(contains(&lay->rail_list, &lay->conn_divider),
           "divider inside panel");
 
@@ -88,13 +90,17 @@ static void check_common(const Rect *content, const WorkshopLayout *lay,
     CHECK(disjoint(&lay->nav_rows[kWorkshopNavRows - 1],
                    &lay->conn_divider),
           "last module row vs divider");
-    CHECK(disjoint(&lay->conn_divider, &lay->conn_row),
-          "divider vs connection row");
+    CHECK(disjoint(&lay->conn_divider, &lay->logs_row),
+          "divider vs logs row");
+    CHECK(disjoint(&lay->logs_row, &lay->conn_row),
+          "logs row vs connection row");
     CHECK(lay->conn_divider.top
               > lay->nav_rows[kWorkshopNavRows - 1].bottom,
           "divider below the module rows");
-    CHECK(lay->conn_divider.bottom <= lay->conn_row.top,
-          "divider above the pinned row");
+    CHECK(lay->conn_divider.bottom <= lay->logs_row.top,
+          "divider above the pinned pair");
+    CHECK(lay->logs_row.bottom <= lay->conn_row.top,
+          "logs pinned directly above connection");
 
     /* The fixed chrome heights the spec names. */
     CHECK(height(&lay->header) == kWorkshopHeaderHeight, "header is 38");
@@ -110,6 +116,8 @@ static void check_common(const Rect *content, const WorkshopLayout *lay,
     }
     CHECK(height(&lay->conn_row) == kWorkshopSidebarRowHeight,
           "connection row height");
+    CHECK(height(&lay->logs_row) == kWorkshopSidebarRowHeight,
+          "logs row height");
     CHECK(lay->conn_row.bottom >= lay->rail_list.bottom - 2,
           "connection pinned at the panel bottom");
 

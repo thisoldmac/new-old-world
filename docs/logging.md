@@ -32,7 +32,7 @@ disk.
 |---|---|---|
 | Folder | `now-logs` beside the application | `~/Library/Logs/now-logs` |
 | Name | `2026-07-20 225612.log` | `2026-07-20 225612.log` |
-| In memory | 200 lines | 100 lines (the Connection window) |
+| In memory | 2000 lines (the Logs page dumps them) | 100 lines (the Connection window) |
 | Line endings | CR (this machine's) | LF |
 
 Per launch rather than one growing file: the question is almost always
@@ -55,9 +55,27 @@ HH:MM:SS area   [!?] message
 
 - **Time** is the local clock of the machine writing it. The two
   machines do not share one — see *Reading both at once*.
-- **Area** is a short tag (`wire`, `files`, `get`, `send`, `browse`,
-  `app`) so a log can be read by subsystem.
+- **Area** is a short tag so a log can be read by subsystem — one of the
+  registry below, not an ad-hoc word.
 - **Level** shows as a prefix: nothing for info, `?` warn, `!` error.
+
+The area is padded to six columns on both machines, so a `grep area` and
+an eye both line up. It is a **small closed vocabulary**; reach for an
+existing tag before coining one, and add a new tag here when you do.
+
+| Area | Covers |
+|---|---|
+| `app` | process start/stop, and app-wide state (disk logging on/off) |
+| `wire` | the connection itself: connecting, disconnected with reason, frames skipped |
+| `get` | a file pulled *from* the peer |
+| `send` | a file offered *to* the peer |
+| `put` | a file received into the share |
+| `files` | share-side refusals and file operations |
+| `proc` | the process family: drive verbs (front/quit/shot), the list refresh |
+| `census` | a hardware-census probe's outcome |
+
+The host writes the same tags for the same events, so the two files read
+as one log of the whole system (see *Reading both at once*).
 
 ## Levels, and what they cost
 
@@ -115,7 +133,9 @@ host   21:04:10 files  #12 serving Notes.txt, 4096 bytes
 
 Then `grep '#12'` across both files is the whole transfer, both ends.
 The ids already exist in the protocol; this only asks that they be
-written down. *(Specified here, not yet implemented.)*
+written down. The file, process and census families do
+(`#<id>` as the first token); the capture and stream transports still do
+not — that gap is the one place a request cannot yet be traced end to end.
 
 Clocks are not synchronised and will not be: the guest's clock is
 whatever that machine believes. Use the ids to correlate, and treat the
@@ -158,22 +178,46 @@ tidiness preference.)*
 |---|---|
 | Guest: file, ring buffer, `tail` on its own console | **Metal-verified** 2026-07-20 (PB1400c) |
 | Guest: events — connect, transfers both directions, refusals, skips | Built, **not yet read back in anger** |
-| Guest: events — process drive verbs (front/quit/shot), census outcomes, process-list refresh | Built 2026-07-22; **not compiled on a Retro68 toolchain this session, not metal-verified**. Each carries the wire id; drive-verb refusal reasons now reach the log, not only the wire. `process.list` logs once per refresh (cursor 1), never per page |
+| Guest: events — process drive verbs (front/quit/shot), census outcomes, process-list refresh | Compiled 2026-07-22; **not yet exercised on metal**. Each carries the wire id; drive-verb refusal reasons now reach the log, not only the wire. `process.list` logs once per refresh (cursor 1), never per page |
 | Host: file per launch, in the line format above | Built, **unverified on a real run** |
 | Host: `tail` of the guest's log | Built; needs `fork/logging` landed and a rebuild |
 | `tail` output as one row per line | Built — byte-bounded, oldest dropped first, and it says so |
 | Correlation ids in both logs | Built for the file family; **capture and stream still have none** |
 | Per-chunk rule enforced by a test | Built (`LoggingSpecTests`), mutation-checked |
 | Rotation | **Not built** |
-| Host log surfaced in the UI | **Not built** |
+| Guest log surfaced in the UI | The Logs page, pinned in the footer just above Connection: a Monaco dump of the 2000-line ring that follows the tail live, with Invert and Log-to-disk switches | **Metal-verified** 2026-07-22 (PB1400c) |
+| Guest disk + invert are toggles | On/off for the file (off keeps the ring), and an inverted dark canvas like Console. Saved in prefs — disk at format 12, invert at 13 | Metal-verified 2026-07-22 |
+| Host log surfaced in the UI | The host's own Logs module, footer above Connection, same Invert + Log-to-disk switches over HostLog's ring | Built + tested 2026-07-22; **unverified on a real run** |
 
 ## Rules for anything added later
 
-1. A new verb logs its shape — begun, ended with a count, refused with
-   the reason — as part of being done, not as a follow-up.
-2. Nothing logs in a per-chunk path.
-3. Anything crossing the wire writes its id.
-4. A string that explains a failure goes to the log, not only to a
-   status line.
-5. A new wire command is declared, answered and offered, or the registry
-   test fails.
+These are the standard. A change that logs is reviewed against them.
+
+1. **Log the shape, not the heartbeat.** A new verb logs begun, ended
+   with a count, refused with the reason — as part of being done, not as
+   a follow-up. Not the thousand steps in between.
+2. **Nothing logs in a per-chunk path.** A disk write per chunk eats the
+   transfer it is measuring. `LoggingSpecTests` enforces this on the hot
+   functions and is mutation-checked.
+3. **Anything crossing the wire writes its id first.** `#<id>` is the
+   first token, so `grep '#<id>'` joins the two machines' files.
+4. **A string that explains a failure goes to the log**, not only to a
+   status line the next event overwrites. Refusal reasons especially:
+   they exist for exactly the moment someone is reading the log.
+5. **Pick the level by what happened**, because only `error` pays to
+   flush: `info` it happened, `warn` it went wrong and continued,
+   `error` it went wrong and stopped.
+6. **Tag with an area from the registry** in *The line*. Reuse a tag
+   before coining one; a genuinely new subsystem adds its tag to that
+   table in the same change.
+7. **One line, short and self-contained.** The ring is the Logs page's
+   scrollback and each line is one row there, so no multi-line entries
+   and nothing that only makes sense with the line before it.
+8. **Write unconditionally; the sink decides.** The in-memory ring is
+   always live and the file is a switch (default on) — never gate a
+   `now_log` / `HostLog.write` call on whether disk is on.
+9. **Both machines log the same event the same way** — same area, same
+   shape — so the two files read as one (*Reading both at once*).
+10. **A new wire command is declared, answered and offered**, or
+    `CommandRegistryTests` fails. Undeclared and unreachable is the
+    quietest kind of broken.

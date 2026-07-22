@@ -5,7 +5,7 @@ final class ModuleRegistryTests: XCTestCase {
     func testStandardRegistryHasScreenshotsFirstAndSettings() {
         XCTAssertEqual(ModuleRegistry.standard.modules.map(\.id),
                        ["screenshots", "files", "processes", "console",
-                        "census", "settings"])
+                        "census", "logs", "settings"])
         XCTAssertEqual(ModuleRegistry.standard.module(id: "screenshots")?.title,
                        "Screenshots")
         XCTAssertEqual(ModuleRegistry.standard.module(id: "settings")?.title,
@@ -16,12 +16,22 @@ final class ModuleRegistryTests: XCTestCase {
         XCTAssertNil(ModuleRegistry.standard.module(id: "missing"))
     }
 
-    func testConnectionIsTheOnlyFooterModule() {
+    func testFooterHoldsLogsAndConnectionInOrder() {
+        // Logs sits above Connection under the divider — the footer's order.
         XCTAssertEqual(ModuleRegistry.standard.footerModules.map(\.id),
-                       ["settings"])
+                       ["logs", "settings"])
         XCTAssertEqual(ModuleRegistry.standard.listModules.map(\.id),
                        ["screenshots", "files", "processes", "console",
                         "census"])
+    }
+
+    func testOnlyConnectionShowsLinkStatusInTheFooter() {
+        XCTAssertEqual(
+            ModuleRegistry.standard.module(id: "settings")?.showsLinkStatus,
+            true)
+        XCTAssertEqual(
+            ModuleRegistry.standard.module(id: "logs")?.showsLinkStatus,
+            false)
     }
 
     /// The halves are a view of one array: together they are all of it, in

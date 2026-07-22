@@ -54,6 +54,16 @@ typedef struct {
        means the Workshop's Connection page is the only dialer. */
     Boolean auto_connect;
 
+    /* Whether the log also reaches the now-logs file, not only the
+       in-memory ring. On by default: a crash keeps only what reached the
+       disk, which is the whole reason the log exists. The Logs page owns
+       the switch. */
+    Boolean log_to_disk;
+
+    /* Logs page appearance: black-on-white unless inverted, the same
+       switch the Console page carries and kept separate from it. */
+    Boolean logs_invert;
+
     /* Workshop session: which module was selected, and where the window
        sat. Empty rect = the standard centered bounds. */
     short workshop_module;
@@ -62,8 +72,9 @@ typedef struct {
 
 /* Loads saved settings, or the defaults (10.0.2.2:5250 — the QEMU host
    address — 8-bit, pack on, 8K chunks, no pacing, panel open). Reads the
-   v1/v2 record formats (host/port only) as well as v3 through v10 (v10
-   is the v9 layout with the module numbers renumbered for Processes). */
+   v1/v2 record formats (host/port only) through v11 (the v9 layout,
+   twice-renumbered for Processes and Hardware) and v12 (adds log_to_disk
+   and renumbers Connection again for the Logs page). */
 void now_prefs_load(NowPrefs *prefs);
 OSErr now_prefs_save(const NowPrefs *prefs);
 

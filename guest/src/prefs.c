@@ -67,6 +67,19 @@ typedef struct {
     Rect workshop_rect;
 } PrefsRecordV9;
 
+/* Formats 10 and 11 reused the V9 layout, bumping only the number to mark
+   what a module id MEANS. Format 12 is the first since 9 to add a field,
+   so it is a real new layout on top of V9. */
+typedef struct {
+    PrefsRecordV9 v9;                 /* format = 12 */
+    short log_to_disk;
+} PrefsRecordV12;
+
+typedef struct {
+    PrefsRecordV12 v12;               /* format = 13 */
+    short logs_invert;
+} PrefsRecordV13;
+
 /* Preferences are per COPY of the app, not per creator. Running two
    guests at once is a real workflow — one for each host, on different
    ports — and a shared file would have them overwrite each other's port
@@ -129,6 +142,11 @@ static void set_defaults(NowPrefs *prefs)
     /* Dialing on launch is the established behavior; the checkbox on the
        Connection page is how it is turned off. */
     prefs->auto_connect = true;
+    /* Persisting to disk is the established behavior and what crash
+       survival needs; the Logs page is how it is turned off. A pre-v12
+       file has no such field and keeps this default. */
+    prefs->log_to_disk = true;
+    prefs->logs_invert = false;
     prefs->workshop_module = 1;       /* Screenshots */
     SetRect(&prefs->workshop_rect, 0, 0, 0, 0);
 }
@@ -143,7 +161,9 @@ void now_prefs_load(NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV9);
+    long count = sizeof(PrefsRecordV13);
+    PrefsRecordV13 v13;
+    PrefsRecordV12 v12;
     PrefsRecordV9 v9;
     PrefsRecordV3 record;
     OSErr err;
@@ -156,9 +176,11 @@ void now_prefs_load(NowPrefs *prefs)
     if (FSpOpenDF(&spec, fsRdPerm, &ref) != noErr) {
         return;
     }
-    memset(&v9, 0, sizeof v9);
-    err = FSRead(ref, &count, &v9);
+    memset(&v13, 0, sizeof v13);
+    err = FSRead(ref, &count, &v13);
     FSClose(ref);
+    v12 = v13.v12;
+    v9 = v12.v9;
     record = v9.v8.v7.v6.v5.v4.v3;
     if ((err != noErr && err != eofErr)
         || record.magic != kPrefsMagic || record.port == 0) {
@@ -209,21 +231,31 @@ void now_prefs_load(NowPrefs *prefs)
 
         prefs->console_invert = v9.console_invert != 0;
         prefs->auto_connect = v9.auto_connect != 0;
-        /* Formats 10 and 11 renumbered the modules as pages arrived:
-           Processes made Connection 4 -> 5, Hardware made it 5 -> 6.
-           Same record layout each time; the bump only marks what the
-           number MEANS, so an old file reopens on the page the person
-           actually had. */
+        /* Each new page renumbered the ones below it, and Connection —
+           pinned last — moved every time: Processes made it 4 -> 5,
+           Hardware 5 -> 6, Logs 6 -> 7. The layout is unchanged; the bump
+           only marks what the number MEANS, so an old file reopens on the
+           page the person actually had. Only Connection ever moved, so
+           only the id that meant Connection is remapped, to its id now. */
         if (record.format == 9 && module == 4) {
-            module = 6;
+            module = 7;
         }
         if (record.format == 10 && module == 5) {
-            module = 6;
+            module = 7;
         }
-        if (module >= 1 && module <= 6) {
+        if (record.format == 11 && module == 6) {
+            module = 7;
+        }
+        if (module >= 1 && module <= 7) {
             prefs->workshop_module = module;
         }
         prefs->workshop_rect = v9.workshop_rect;
+        if (record.format >= 12 && count >= (long)sizeof(PrefsRecordV12)) {
+            prefs->log_to_disk = v12.log_to_disk != 0;
+        }
+        if (record.format >= 13 && count >= (long)sizeof(PrefsRecordV13)) {
+            prefs->logs_invert = v13.logs_invert != 0;
+        }
     } else if (record.console_open != 0) {
         /* Seed from the old window session: someone who kept the
            Console window open wants the Console page, not Screenshots.
@@ -236,14 +268,16 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV9);
+    long count = sizeof(PrefsRecordV13);
+    PrefsRecordV13 v13;
+    PrefsRecordV12 v12;
     PrefsRecordV9 v9;
     PrefsRecordV3 record;
     OSErr err;
 
     memset(&record, 0, sizeof record);
     record.magic = kPrefsMagic;
-    record.format = 11;               /* v9 layout, twice-renumbered modules */
+    record.format = 13;               /* + logs_invert on the Logs page */
     record.port = prefs->port;
     strncpy(record.host, prefs->host, sizeof record.host - 1);
     record.shot_depth = prefs->shot_depth;
@@ -282,7 +316,13 @@ OSErr now_prefs_save(const NowPrefs *prefs)
     v9.auto_connect = prefs->auto_connect ? 1 : 0;
     v9.workshop_module = prefs->workshop_module;
     v9.workshop_rect = prefs->workshop_rect;
-    err = FSWrite(ref, &count, &v9);
+    memset(&v12, 0, sizeof v12);
+    v12.v9 = v9;
+    v12.log_to_disk = prefs->log_to_disk ? 1 : 0;
+    memset(&v13, 0, sizeof v13);
+    v13.v12 = v12;
+    v13.logs_invert = prefs->logs_invert ? 1 : 0;
+    err = FSWrite(ref, &count, &v13);
     if (err == noErr) {
         SetEOF(ref, count);           /* what we wrote, not an older record */
     }

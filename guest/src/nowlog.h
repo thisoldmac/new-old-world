@@ -34,14 +34,30 @@ typedef enum {
 void now_log_open(void);
 void now_log_close(void);
 
+/* Disk persistence, on a switch the Logs module owns. The in-memory ring
+   is always live; this only governs whether a line also reaches the
+   now-logs file. Turning it on opens a fresh per-launch file; turning it
+   off closes the current one. Idempotent. now_log_disk_on reports the
+   actual state (a failed open leaves it off), so the switch stays honest. */
+void now_log_set_disk(Boolean on);
+Boolean now_log_disk_on(void);
+
 /* One line. `area` is a short tag ("wire", "files", "browse") so a log
    can be read by subsystem. */
 void now_log(LogLevel level, const char *area, const char *fmt, ...);
 
 /* The last `count` lines, newest last, for `tail`. Returns how many
-   were written into `out`, which must hold count * kLogLineMax. */
-enum { kLogLineMax = 120, kLogKept = 200 };
+   were written into `out`, which must hold count * kLogLineMax.
+   kLogKept is the in-memory scrollback the Logs module dumps; it is large
+   because that page is the reason to keep more than a `tail` of history. */
+enum { kLogLineMax = 120, kLogKept = 2000, kLogTailMax = 48 };
 int now_log_tail(int count, char *out, long cap);
+
+/* The ring as a scrollback for the Logs page: how many lines are held,
+   and the i-th line OLDEST-first (i in [0, now_log_count)). The returned
+   pointer is valid until the next now_log call. */
+int now_log_count(void);
+const char *now_log_line(int index);
 
 /* Where this launch is writing, for the console to name. */
 const char *now_log_path(void);

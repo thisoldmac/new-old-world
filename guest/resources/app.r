@@ -76,7 +76,8 @@ resource 'ICN#' (128) {
    masks, same rules as ics#(128): drawn at their real size, one-pixel
    art, mask is what the system fills for a selected state.
    129 camera (Screenshots), 130 folder (Files), 131 terminal (Console),
-   132 globe (Connection), 133 row list (Processes), 134 chip (Hardware). */
+   132 globe (Connection), 133 row list (Processes), 134 chip (Hardware),
+   135 lined page (Logs). */
 resource 'ics#' (129) {
     {
         $"0000 0000 0780 7FFE 4002 43C2 4422 4812"
@@ -130,6 +131,17 @@ resource 'ics#' (134) {
         $"718E 1188 1008 700E 1FF8 0490 0490 0000",
         $"0000 0490 0490 1FF8 1FF8 7FFE 1FF8 1FF8"
         $"7FFE 1FF8 1FF8 7FFE 1FF8 0490 0490 0000"
+    }
+};
+
+/* 135 lined page (Logs): a document outline with text lines of varying
+   length inside - distinct from 133's full-width table. */
+resource 'ics#' (135) {
+    {
+        $"0000 1FF8 1008 1008 17E8 1008 17C8 1008"
+        $"17E8 1008 1788 1008 1008 1FF8 0000 0000",
+        $"0000 1FF8 1FF8 1FF8 1FF8 1FF8 1FF8 1FF8"
+        $"1FF8 1FF8 1FF8 1FF8 1FF8 1FF8 0000 0000"
     }
 };
 

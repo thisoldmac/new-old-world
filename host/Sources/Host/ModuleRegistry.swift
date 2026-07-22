@@ -16,6 +16,9 @@ struct ModuleDescriptor: Identifiable, Equatable, Sendable {
     let symbol: String
     let summary: String
     var placement: ModulePlacement = .list
+    /// A footer row shows the live link state (dot + wire status) only for
+    /// the module that IS the link. Others — Logs — show their summary.
+    var showsLinkStatus: Bool = false
 }
 
 struct ModuleRegistry: Sendable {
@@ -74,11 +77,19 @@ struct ModuleRegistry: Sendable {
             summary: "Run and read the connected Mac's hardware census"
         ),
         ModuleDescriptor(
+            id: "logs",
+            title: "Logs",
+            symbol: "text.alignleft",
+            summary: "This Mac's event log",
+            placement: .footer
+        ),
+        ModuleDescriptor(
             id: "settings",
             title: "Connection",
             symbol: "network",
             summary: "Listening port and connection status",
-            placement: .footer
+            placement: .footer,
+            showsLinkStatus: true
         ),
     ])
 }

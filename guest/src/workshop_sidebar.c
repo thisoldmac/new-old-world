@@ -26,7 +26,8 @@ enum {
     kConsoleIconID = 131,
     kConnectionIconID = 132,
     kProcessesIconID = 133,
-    kHardwareIconID = 134
+    kHardwareIconID = 134,
+    kLogsIconID = 135
 };
 
 static WindowRef g_owner;
@@ -51,6 +52,7 @@ static const struct {
     { "Console", "Local commands", kConsoleIconID },
     { "Processes", "Running applications", kProcessesIconID },
     { "Hardware", "Census and probes", kHardwareIconID },
+    { "Logs", "This launch's events", kLogsIconID },
     { "Connection", NULL, kConnectionIconID }
 };
 
@@ -58,6 +60,9 @@ static const Rect *row_rect(WorkshopModuleID module)
 {
     if (module == kWorkshopConnection) {
         return &g_lay.conn_row;
+    }
+    if (module == kWorkshopLogs) {
+        return &g_lay.logs_row;       /* pinned above Connection */
     }
     return &g_lay.nav_rows[module - 1];
 }

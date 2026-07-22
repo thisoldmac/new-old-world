@@ -52,9 +52,15 @@ void workshop_layout_compute(const Rect *content, WorkshopLayout *out)
              (short)(out->rail_list.bottom - kRowInset
                      - kWorkshopSidebarRowHeight),
              row_right, (short)(out->rail_list.bottom - kRowInset));
+    /* Logs is pinned too, directly above Connection: the two make one
+       group below the divider, the way the reference pins the link state
+       and its log together at the foot of the rail. */
+    set_rect(&out->logs_row, row_left,
+             (short)(out->conn_row.top - kWorkshopSidebarRowHeight),
+             row_right, out->conn_row.top);
     set_rect(&out->conn_divider, row_left,
-             (short)(out->conn_row.top - kDividerGap), row_right,
-             (short)(out->conn_row.top - kDividerGap + 1));
+             (short)(out->logs_row.top - kDividerGap), row_right,
+             (short)(out->logs_row.top - kDividerGap + 1));
 
     set_rect(&out->header, rail_right, content->top, content->right,
              (short)(content->top + kWorkshopHeaderHeight));
