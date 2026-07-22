@@ -24,7 +24,8 @@ final class ConsoleModel: ObservableObject {
 
     /// Declared commands (contract x-commands) plus console built-ins.
     static let commands = ["gestalt", "screenshot", "vprobe", "ls",
-                           "putstat", "tail", "ps", "census", "catsearch"]
+                           "putstat", "tail", "ps", "census", "catsearch",
+                           "sw", "launch"]
 
     /// Per-command docs, mirroring the contract's x-commands descriptions.
     /// help and --help render from here — documentation never hits the wire.
@@ -110,6 +111,23 @@ final class ConsoleModel: ObservableObject {
                    "  then warm. Groundwork for the Software module: is a",
                    "  full application index affordable on that disk?",
                    "  Seconds-long; read-only."]),
+        "sw": .init(
+            summary: "what is installed on the other Mac (sw [domain])",
+            help: ["sw — the software installed on the connected Mac",
+                   "  Usage: sw [domain]",
+                   "  Domains: apps extensions cdevs startup apple",
+                   "  No domain shows per-domain counts. Items the",
+                   "  Extensions Manager disabled are listed too, tagged",
+                   "  (off). \"sw apps\" sweeps that Mac's whole startup",
+                   "  disk (a few seconds) and shows one page."]),
+        "launch": .init(
+            summary: "open an application on the other Mac",
+            help: ["launch — open an application on the connected Mac",
+                   "  Usage: launch <name or full path>",
+                   "  A bare name is found by an exact-name search of that",
+                   "  Mac's startup disk; the app comes to its front, so a",
+                   "  screenshot or ps right after shows it. Two apps with",
+                   "  one name refuse rather than guess — use a full path."]),
         "help": .init(
             summary: "show this list (\"help <cmd>\" for details)",
             help: ["help — list commands, or \"help <cmd>\" for one"]),
@@ -178,6 +196,14 @@ final class ConsoleModel: ObservableObject {
         }
         if name == "census" {
             runCensus(rest)
+            return
+        }
+        if name == "sw" {
+            runSw(rest)
+            return
+        }
+        if name == "launch" {
+            runLaunch(rest)
             return
         }
         run(name)
@@ -327,6 +353,29 @@ final class ConsoleModel: ObservableObject {
                                                           : ["probe": probe]) {
             [weak self] result in
             self?.renderRows(result, command: "census")
+        }
+    }
+
+    /// sw carries a positional domain: "sw extensions". No domain runs
+    /// the overview on the guest, so an empty arg is passed as absent.
+    private func runSw(_ rest: [String]) {
+        let domain = rest.first { !$0.hasPrefix("-") } ?? ""
+        listener.runCommand("sw", args: domain.isEmpty ? nil
+                                                       : ["domain": domain]) {
+            [weak self] result in
+            self?.renderRows(result, command: "sw")
+        }
+    }
+
+    /// launch takes the rest of the line whole — application names have
+    /// spaces, and quoting is not a thing either console asks for.
+    private func runLaunch(_ rest: [String]) {
+        let name = rest.joined(separator: " ")
+            .trimmingCharacters(in: .whitespaces)
+        listener.runCommand("launch", args: name.isEmpty ? nil
+                                                         : ["name": name]) {
+            [weak self] result in
+            self?.renderRows(result, command: "launch")
         }
     }
 

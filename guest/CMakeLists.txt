@@ -14,6 +14,7 @@ add_application(now-guest
     src/screenshot.c
     src/vprobe.c
     src/catsearch.c
+    src/software.c
     src/pixels.c
     src/screenshots_module.c
     src/census_module.c

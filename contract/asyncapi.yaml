@@ -1483,6 +1483,49 @@ components:
         type: object
         properties:
           catsearch: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    sw:
+      description: >
+        The receiver's installed software, one page a domain. No domain
+        is the overview — per-domain counts, enabled and disabled. The
+        folder domains (extensions, cdevs, startup, apple) enumerate the
+        System Folder's special folders live, including the Extensions
+        Manager's disabled siblings, tagged "(off)". "apps" sweeps the
+        startup volume's catalog for type APPL (the catsearch-verified
+        sweep) and stops at one page rather than paying for hits nobody
+        asked to see. Read-only; versions need a resource fork open per
+        file and are deliberately not here.
+      args:
+        type: object
+        properties:
+          domain:
+            type: string
+            enum: ["apps", "extensions", "cdevs", "startup", "apple"]
+            description: Empty or absent runs the overview.
+      output:
+        type: object
+        properties:
+          sw: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    launch:
+      description: >
+        Open an application on the receiver: the software family's one
+        mutation. A bare name is resolved by an exact-name catalog
+        search of the startup volume; a full HFS path (contains a
+        colon) is used directly, and non-APPL targets are refused. An
+        ambiguous name — two applications with the same name — refuses
+        rather than guesses. The launched app comes to that machine's
+        front (LaunchApplication without launchDontSwitch), which the
+        next process.listing or process.shot will show. Both outcomes
+        are logged under the sw area with the wire id.
+      args:
+        type: object
+        properties:
+          name:
+            type: string
+            description: An application name, or a full HFS path.
+      output:
+        type: object
+        properties:
+          launch: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
 
   # The census probe registry: the CLOSED, DECLARED set of probes a side may
   # be asked about, and the outcome vocabulary every report speaks. Adding a

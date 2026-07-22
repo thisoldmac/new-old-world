@@ -73,7 +73,7 @@ existing tag before coining one, and add a new tag here when you do.
 | `files` | share-side refusals and file operations |
 | `proc` | the process family: drive verbs (front/quit/shot), the list refresh |
 | `census` | a hardware-census probe's outcome |
-| `sw` | the software family: today the `catsearch` probe; the inventory and launch verbs to come |
+| `sw` | the software family: the `catsearch` probe, and `launch` outcomes (the `sw` listing itself is a read and stays quiet) |
 
 The host writes the same tags for the same events, so the two files read
 as one log of the whole system (see *Reading both at once*).

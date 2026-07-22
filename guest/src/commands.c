@@ -17,6 +17,7 @@
 #include "screenshot.h"
 #include "vprobe.h"
 #include "catsearch.h"
+#include "software.h"
 
 const char *const kGestaltFullGroups[] = {
     "cpu", "memory", "os", "network", "hw", NULL
@@ -841,6 +842,84 @@ static void run_catsearch(long id, char *out, long cap)
     snprintf(out + pos, (size_t)(cap - pos), "]}}");
 }
 
+/* sw: the installed-software inventory. No domain = the overview of
+   counts; a domain = one page of its items. Rows are catalog strings,
+   so everything goes through the escaper. */
+static void run_sw(const char *request_json, long id, char *out, long cap)
+{
+    SoftwareRow rows[kSoftwareRowMax];
+    char domain[16];
+    Boolean more = false;
+    long pos;
+    int n, i;
+
+    domain[0] = '\0';
+    if (request_json != NULL) {
+        now_json_find_string(request_json, "domain", domain, sizeof domain);
+    }
+    if (domain[0] == '\0') {
+        n = now_software_overview(rows, kSoftwareRowMax);
+    } else {
+        n = now_software_gather(domain, rows, kSoftwareRowMax, &more);
+    }
+    if (n < 0) {
+        char esc[40];
+
+        now_json_escape(domain, esc, sizeof esc);
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+                 "\"error\":{\"code\":\"unknown-domain\","
+                 "\"message\":\"no software domain \\\"%s\\\" - "
+                 "see help sw\"}}", id, esc);
+        return;
+    }
+    pos = snprintf(out, (size_t)cap,
+                   "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                   "\"output\":{\"sw\":[", id);
+    for (i = 0; i < n && pos < cap - 240; ++i) {
+        char esc_name[80], esc_detail[120];
+
+        now_json_escape(rows[i].name, esc_name, sizeof esc_name);
+        now_json_escape(rows[i].detail, esc_detail, sizeof esc_detail);
+        pos += snprintf(out + pos, (size_t)(cap - pos), "%s[\"%s\",\"%s\"]",
+                        i > 0 ? "," : "", esc_name, esc_detail);
+    }
+    if (more || i < n) {
+        pos += snprintf(out + pos, (size_t)(cap - pos),
+                        ",[\"...\",\"more items follow\"]");
+    }
+    snprintf(out + pos, (size_t)(cap - pos), "]}}");
+}
+
+/* launch: the family's one mutation, so it logs both outcomes — and the
+   refusal reason goes to the log, not only back down the wire. */
+static void run_launch(const char *request_json, long id, char *out,
+                       long cap)
+{
+    char arg[256];
+    char msg[240];
+    char esc[480];
+
+    arg[0] = '\0';
+    if (request_json != NULL) {
+        now_json_find_string(request_json, "name", arg, sizeof arg);
+    }
+    if (now_software_launch(arg, msg, sizeof msg) < 0) {
+        now_log(kLogWarn, "sw", "#%ld launch refused: %.80s", id, msg);
+        now_json_escape(msg, esc, sizeof esc);
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+                 "\"error\":{\"code\":\"launch-refused\","
+                 "\"message\":\"%s\"}}", id, esc);
+        return;
+    }
+    now_log(kLogInfo, "sw", "#%ld %.80s", id, msg);
+    now_json_escape(msg, esc, sizeof esc);
+    snprintf(out, (size_t)cap,
+             "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+             "\"output\":{\"launch\":[[\"Launch\",\"%s\"]]}}", id, esc);
+}
+
 void now_command_run(const char *name, const char *request_json, long id,
                      char *out, long cap)
 {
@@ -878,6 +957,14 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "catsearch") == 0) {
         run_catsearch(id, out, cap);
+        return;
+    }
+    if (strcmp(name, "sw") == 0) {
+        run_sw(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "launch") == 0) {
+        run_launch(request_json, id, out, cap);
         return;
     }
     snprintf(out, cap,

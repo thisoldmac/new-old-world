@@ -17,6 +17,7 @@
 #include "screenshot.h"
 #include "vprobe.h"
 #include "catsearch.h"
+#include "software.h"
 #include "wire.h"
 
 enum {
@@ -184,6 +185,21 @@ static void help_for(const char *name)
         console_model_append("  (application / background / finder), size, and");
         console_model_append("  whether it is frontmost. A reading only; the");
         console_model_append("  Processes page is where they are driven.");
+    } else if (strcmp(name, "sw") == 0) {
+        console_model_append("sw - what is installed on this Mac");
+        console_model_append("  Usage: sw [domain]");
+        console_model_append("  Domains: apps extensions cdevs startup apple");
+        console_model_append("  No domain shows counts. Items disabled by the");
+        console_model_append("  Extensions Manager are listed too, tagged (off).");
+        console_model_append("  \"sw apps\" sweeps the whole startup disk (a few");
+        console_model_append("  seconds) and shows one page of applications.");
+    } else if (strcmp(name, "launch") == 0) {
+        console_model_append("launch - open an application on this Mac");
+        console_model_append("  Usage: launch <name or full path>");
+        console_model_append("  A bare name is found by an exact-name search of");
+        console_model_append("  the startup disk (\"launch SimpleText\"); two");
+        console_model_append("  apps with the same name refuse rather than");
+        console_model_append("  guess - use a full path then.");
     } else if (strcmp(name, "catsearch") == 0) {
         console_model_append("catsearch - time a whole-disk application search");
         console_model_append("  Usage: catsearch");
@@ -226,6 +242,8 @@ static void help_list(void)
     console_model_append("  vprobe      measure VRAM read cost by method");
     console_model_append("  ps          the processes running on this Mac");
     console_model_append("  census      run a hardware probe (census [probe])");
+    console_model_append("  sw          installed software (sw [domain])");
+    console_model_append("  launch      open an application (launch <name>)");
     console_model_append("  catsearch   time a whole-disk application search");
     console_model_append("  help        show this list (\"help <cmd>\" for details)");
     console_model_append("  clear       clear the console scrollback");
@@ -398,6 +416,7 @@ void console_model_run(const char *input)
     char result[512];
     char message[96];
     const char *p;
+    const char *raw_args;
     const char *group = NULL;
     Boolean want_help = false;
     Boolean full = false;
@@ -415,6 +434,8 @@ void console_model_run(const char *input)
     if (name[0] == '\0') {
         return;
     }
+    raw_args = p;      /* launch takes the rest of the line whole: app
+                          names have spaces, and the tokenizer does not */
     target[0] = '\0';
     target2[0] = '\0';
     for (;;) {
@@ -502,6 +523,45 @@ void console_model_run(const char *input)
                      rows[vi].label, rows[vi].value);
             console_model_append(line);
         }
+        return;
+    }
+    if (strcmp(name, "sw") == 0) {
+        SoftwareRow rows[kSoftwareRowMax];
+        Boolean more = false;
+        int sn, si;
+
+        if (target[0] == '\0') {
+            sn = now_software_overview(rows, kSoftwareRowMax);
+        } else {
+            sn = now_software_gather(target, rows, kSoftwareRowMax, &more);
+        }
+        if (sn < 0) {
+            snprintf(line, sizeof line,
+                     "sw: no domain \"%.20s\" - see \"help sw\"", target);
+            console_model_append(line);
+            return;
+        }
+        for (si = 0; si < sn; ++si) {
+            snprintf(line, sizeof line, "  %-32.31s%.60s",
+                     rows[si].name, rows[si].detail);
+            console_model_append(line);
+        }
+        if (sn == 0) {
+            console_model_append("  (nothing there)");
+        } else if (more) {
+            console_model_append("  ... more items follow");
+        }
+        return;
+    }
+    if (strcmp(name, "launch") == 0) {
+        char msg[240];
+
+        while (*raw_args == ' ') {
+            ++raw_args;
+        }
+        now_software_launch(raw_args, msg, sizeof msg);
+        snprintf(line, sizeof line, "%.100s", msg);
+        console_model_append(line);
         return;
     }
     if (strcmp(name, "catsearch") == 0) {
