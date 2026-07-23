@@ -129,17 +129,22 @@ re-downloading.
 
 ## Git
 
-This checkout is **shared**. Other sessions have worktrees off it.
+This checkout is **shared**. Other sessions have worktrees off it, and
+agents branch in their own worktrees — so the shared checkout stays on
+`main`, at the head of the work.
 
-- **Never switch branches in the shared checkout.** Land with
-  `git fetch . <branch>:main`, which moves a ref without touching a
-  working tree.
+- **`main` is the head — keep the shared checkout on it.** Land a
+  finished thread by fast-forward or merge (`git -C <path> merge
+  --ff-only <branch>`), or move the ref without disturbing a working
+  tree with `git fetch . <branch>:main`. Don't leave the shared checkout
+  parked on a side branch; that is how it drifted onto a stale one and
+  looked like the app had regressed.
 - Use `git -C <absolute path>` rather than `cd`. A bare `cd` into the
   wrong repository root has put commits on another session's branch.
 - Stage explicit paths. Never `git add -A` — it is the difference
   between a stray commit and a destroyed afternoon.
-- Branch per thread; land by fast-forward or merge, never by committing
-  on `main` directly.
+- Branch per thread; land onto `main` by fast-forward or merge, not by
+  committing work-in-progress on it directly.
 
 ## Docs
 
