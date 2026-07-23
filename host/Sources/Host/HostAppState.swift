@@ -48,6 +48,7 @@ final class HostAppState: ObservableObject {
     let listener: GuestListener
     private(set) lazy var console = ConsoleModel(listener: listener)
     private(set) lazy var census = CensusModuleModel(listener: listener)
+    private(set) lazy var software = SoftwareModel(listener: listener)
     private(set) lazy var processes: ProcessesModel = {
         let model = ProcessesModel(listener: listener)
         // "Screenshot App" shows the Screenshots page and asks for a
@@ -84,6 +85,7 @@ final class HostAppState: ObservableObject {
             self?.files.connection = Self.guestState(from: state)
             self?.census.connection = Self.guestState(from: state)
             self?.processes.connection = Self.guestState(from: state)
+            self?.software.connection = Self.guestState(from: state)
             self?.captureSmokeIfRequested(state)
         }
         if settings.listenAtLaunch {

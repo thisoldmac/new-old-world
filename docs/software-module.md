@@ -159,7 +159,7 @@ Entry fields — all present unless marked optional:
 | `sizeK` | int | data + resource forks |
 | `off` | bool | disabled-folder sibling |
 | `running` | bool | the rung-1 join |
-| `version` | string, optional | present only when already known; **never** gathered during a listing |
+| `version` | string, optional | the `'vers'` short string, read per **served** entry (a page's worth of fork opens per request — bounded, explicitly asked-for); absent when a file has no `'vers'` |
 
 **Paths are the launch key.** The host launches a listed item by sending
 the existing `launch` command with `entry.path` — one mutation verb in

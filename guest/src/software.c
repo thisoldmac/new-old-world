@@ -755,6 +755,11 @@ int now_software_page(const char *domain, long cursor,
                          + pb.hFileInfo.ioFlRLgLen + 1023) / 1024;
         }
         file_full_path(spec, e->path, (long)sizeof e->path);
+        /* The version rides the page: a fork open per SERVED entry -
+           at most a page's worth per request, on an explicit ask -
+           never a whole-inventory walk. This is what fills the host
+           page's Version column. */
+        now_software_read_version(spec, e->version, sizeof e->version);
         n += 1;
     }
     *more = start < g_sw_cache.count;

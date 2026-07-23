@@ -245,7 +245,8 @@ struct SoftwareEntry: Codable, Equatable, Sendable, Identifiable {
     var off: Bool?
     /// Joined against the responder's process list.
     var running: Bool?
-    /// Never gathered during a listing; present only when already known.
+    /// The 'vers' short version string, read per served entry (a bounded
+    /// page's worth of fork opens); nil when the file has no 'vers'.
     var version: String?
 
     var id: String { path.isEmpty ? "\(name)#\(type ?? "")" : path }

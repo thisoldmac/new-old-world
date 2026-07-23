@@ -400,11 +400,12 @@ operations:
       a listing; an empty path means the chain could not be named
       honestly and the entry is not launchable from afar. off marks the
       Extensions Manager's disabled siblings; running is the join
-      against the responder's process list. version is never gathered
-      during a listing (a resource open per file is the measured
-      expensive path) — it appears only if already known. Paginates by
-      cursor/more inside 4 KB frames; note carries the honest edges
-      (unknown domain, inventory truncated at the cache).
+      against the responder's process list. version rides each served
+      page — a bounded handful of fork opens per request, the price a
+      page explicitly asks for — and is absent when a file has no
+      readable 'vers'. Paginates by cursor/more inside 4 KB frames;
+      note carries the honest edges (unknown domain, inventory
+      truncated at the cache).
   hostDrivesProcess:
     action: receive
     channel: { $ref: "#/channels/control" }
@@ -1046,9 +1047,10 @@ components:
               version:
                 type: string
                 description: >
-                  Never gathered during a listing (a resource open per
-                  file is the measured expensive path); present only
-                  when the responder already knew it.
+                  The 'vers' short version string, read per SERVED
+                  entry — a page's worth of fork opens per request, an
+                  explicitly bounded cost, never a whole-inventory
+                  walk. Absent when the file has no readable 'vers'.
         more: { type: boolean }
         cursor: { type: integer, description: Where the next page starts. }
         note:

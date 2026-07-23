@@ -5,7 +5,7 @@ final class ModuleRegistryTests: XCTestCase {
     func testStandardRegistryHasScreenshotsFirstAndSettings() {
         XCTAssertEqual(ModuleRegistry.standard.modules.map(\.id),
                        ["screenshots", "files", "processes", "console",
-                        "census", "logs", "settings"])
+                        "census", "software", "logs", "settings"])
         XCTAssertEqual(ModuleRegistry.standard.module(id: "screenshots")?.title,
                        "Screenshots")
         XCTAssertEqual(ModuleRegistry.standard.module(id: "settings")?.title,
@@ -22,7 +22,7 @@ final class ModuleRegistryTests: XCTestCase {
                        ["logs", "settings"])
         XCTAssertEqual(ModuleRegistry.standard.listModules.map(\.id),
                        ["screenshots", "files", "processes", "console",
-                        "census"])
+                        "census", "software"])
     }
 
     func testOnlyConnectionShowsLinkStatusInTheFooter() {

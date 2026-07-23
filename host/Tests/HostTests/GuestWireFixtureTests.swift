@@ -211,7 +211,7 @@ final class GuestWireFixtureTests: XCTestCase {
         "running":false},\
         {"name":"SimpleText","path":"Macintosh HD:SimpleText",\
         "type":"APPL","creator":"ttxt","sizeK":92,"off":false,\
-        "running":true}],\
+        "running":true,"version":"1.4"}],\
         "more":true,"cursor":3}
         """
         guard case .softwareListing(let listing) = try decode(json) else {
@@ -223,6 +223,10 @@ final class GuestWireFixtureTests: XCTestCase {
                        "Adobe Illustrator\u{00AE} 8.0")
         XCTAssertEqual(listing.entries[1].running, true)
         XCTAssertTrue(listing.entries[1].isLaunchable)
+        // Version is optional per entry: present when the guest read a
+        // 'vers', absent (nil) when the file has none.
+        XCTAssertEqual(listing.entries[1].version, "1.4")
+        XCTAssertNil(listing.entries.first?.version)
         XCTAssertTrue(listing.more)
         XCTAssertEqual(listing.cursor, 3)
     }

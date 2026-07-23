@@ -3010,10 +3010,10 @@ static void serve_software_list(const char *request)
 {
     enum { kPage = 10 };              /* paths are long; frames cap at 4 KB */
     /* Worst case per entry: a 31-char name and a 223-char path, both
-       escaped (6x), plus the fixed fields — call it 1700 bytes. The
-       margin below is what must remain BEFORE starting an entry, so a
-       worst-case row plus the tail still fits. */
-    enum { kEntryMargin = 1800 };
+       escaped (6x), plus the fixed fields and a version — call it 1750
+       bytes. The margin below is what must remain BEFORE starting an
+       entry, so a worst-case row plus the tail still fits. */
+    enum { kEntryMargin = 1900 };
     char json[kNowMaxControl];
     SoftwareEntry entries[kPage];
     char domain[16];
@@ -3072,11 +3072,21 @@ static void serve_software_list(const char *request)
         pos += snprintf(json + pos, sizeof json - (size_t)pos,
                         "%s{\"name\":\"%s\",\"path\":\"%s\","
                         "\"type\":\"%s\",\"creator\":\"%s\","
-                        "\"sizeK\":%ld,\"off\":%s,\"running\":%s}",
+                        "\"sizeK\":%ld,\"off\":%s,\"running\":%s",
                         emitted > 0 ? "," : "", esc_name, esc_path,
                         esc_type, esc_creator, entries[i].size_k,
                         entries[i].off ? "true" : "false",
                         entries[i].running ? "true" : "false");
+        /* Optional on the wire: absence means "no readable 'vers'",
+           which the schema spells out. */
+        if (entries[i].version[0] != '\0') {
+            char esc_ver[100];
+
+            now_json_escape(entries[i].version, esc_ver, sizeof esc_ver);
+            pos += snprintf(json + pos, sizeof json - (size_t)pos,
+                            ",\"version\":\"%s\"", esc_ver);
+        }
+        pos += snprintf(json + pos, sizeof json - (size_t)pos, "}");
         ++emitted;
     }
     snprintf(json + pos, sizeof json - (size_t)pos,

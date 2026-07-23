@@ -102,6 +102,7 @@ typedef struct {
     long size_k;
     Boolean off;
     Boolean running;
+    char version[16];    /* "" when the file has no readable 'vers' */
 } SoftwareEntry;
 
 /* One page for the wire. cursor is 1-based over the cached inventory;

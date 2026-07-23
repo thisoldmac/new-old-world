@@ -77,6 +77,12 @@ struct ModuleRegistry: Sendable {
             summary: "Run and read the connected Mac's hardware census"
         ),
         ModuleDescriptor(
+            id: "software",
+            title: "Software",
+            symbol: "shippingbox",
+            summary: "What is installed on the connected Mac"
+        ),
+        ModuleDescriptor(
             id: "logs",
             title: "Logs",
             symbol: "text.alignleft",
