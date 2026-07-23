@@ -1633,8 +1633,11 @@ static void serve_file_move(const char *request)
     int rc;
 
     from[0] = to[0] = '\0';
-    now_json_find_string(request, "path", from, sizeof from);
-    now_json_find_string(request, "toPath", to, sizeof to);
+    /* HFS names, not tokens: the host sends them UTF-8, and the File
+       Manager wants MacRoman. find_text decodes; find_string would hand
+       "café" to FSMakeFSSpec as the wrong bytes. */
+    now_json_find_text(request, "path", from, sizeof from);
+    now_json_find_text(request, "toPath", to, sizeof to);
     rc = now_files_move(from, to, overwrite);
     if (rc != kFilesOK) {
         file_result_fail(id, rc);
@@ -1652,7 +1655,7 @@ static void serve_file_trash(const char *request)
     int rc;
 
     path[0] = '\0';
-    now_json_find_string(request, "path", path, sizeof path);
+    now_json_find_text(request, "path", path, sizeof path);
     rc = now_files_trash(path, landed, sizeof landed);
     if (rc != kFilesOK) {
         file_result_fail(id, rc);
@@ -1670,8 +1673,8 @@ static void serve_file_restore(const char *request)
     int rc;
 
     path[0] = trashed_as[0] = '\0';
-    now_json_find_string(request, "trashedAs", trashed_as, sizeof trashed_as);
-    now_json_find_string(request, "toPath", path, sizeof path);
+    now_json_find_text(request, "trashedAs", trashed_as, sizeof trashed_as);
+    now_json_find_text(request, "toPath", path, sizeof path);
     rc = now_files_restore(trashed_as, path);
     if (rc != kFilesOK) {
         /* not-found here means the Trash no longer holds it — emptied,
@@ -1690,7 +1693,7 @@ static void serve_file_mkdir(const char *request)
     int rc;
 
     path[0] = '\0';
-    now_json_find_string(request, "path", path, sizeof path);
+    now_json_find_text(request, "path", path, sizeof path);
     rc = now_files_mkdir(path);
     if (rc != kFilesOK) {
         file_result_fail(id, rc);
@@ -2581,8 +2584,11 @@ static void serve_file_offer(const char *request)
     }
     name[0] = '\0';
     path[0] = '\0';
-    now_json_find_string(request, "name", name, sizeof name);
-    now_json_find_string(request, "path", path, sizeof path);
+    /* name and path are HFS identifiers the receiver opens; decode
+       UTF-8 to MacRoman. container/fileType/creator below are ASCII
+       tokens by contract and stay find_string. */
+    now_json_find_text(request, "name", name, sizeof name);
+    now_json_find_text(request, "path", path, sizeof path);
     if (now_json_find_string(request, "container", container_arg,
                              sizeof container_arg)
         && strcmp(container_arg, "macbinary") == 0) {
@@ -2830,7 +2836,7 @@ static void serve_file_list(const char *request)
     long pos;
 
     path[0] = '\0';
-    now_json_find_string(request, "path", path, sizeof path);
+    now_json_find_text(request, "path", path, sizeof path);
     if (cursor < 1) {
         cursor = 1;
     }
@@ -3206,7 +3212,7 @@ static void serve_file_get(const char *request)
         return;
     }
     path[0] = '\0';
-    now_json_find_string(request, "path", path, sizeof path);
+    now_json_find_text(request, "path", path, sizeof path);
 
     /* Resuming a PULL is not offered yet: the guest does not compute a
        token for its own files, so it can never prove the file it would

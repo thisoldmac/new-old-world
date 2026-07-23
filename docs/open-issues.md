@@ -419,10 +419,12 @@ working on the PowerBook.
     saw the MacRoman byte (`0xA8`). Fixed by reading `target` with
     `now_json_find_text` — the inbound half of `now_json_escape`, which
     decodes `\u` and raw UTF-8 back to MacRoman (a json_native_test case
-    pins the ® round trip). **The same latent bug remains in the Files
-    path commands** (mv/trash/untrash/ls in wire.c still use
-    `find_string` for HFS paths) — flagged as a separate task, not swept
-    in here because those are metal-verified. (2) **Selection hilite
+    pins the ® round trip). **The same latent bug in the Files path
+    commands** (mv/trash/restore/mkdir/offer/list/get in wire.c, console
+    `ls`) was fixed in the same defect class by a parallel task — see
+    "Non-ASCII paths INBOUND" in the Files section, guarded by
+    `test_inbound_hfs_path` and a source-reading conformance test.
+    (2) **Selection hilite
     hugged the text.** The Data Browser's default
     `kDataBrowserTableViewMinimalHilite` draws the selection only behind
     each cell's glyphs, so a selected row read as three disconnected
@@ -696,6 +698,22 @@ working on the PowerBook.
   "cafe" plus a combining accent, and MacRoman has the letter but not
   the mark — every accented name was arriving as "cafe_". The fix
   composes first. Nobody has pulled an accented file to the PowerBook.
+- **Non-ASCII paths INBOUND, host to guest.** The complement of the
+  above, and the same defect class as the Software fix: the host sends
+  every path UTF-8 (® is `0xC2 0xAE`), but `FSMakeFSSpec` wants the
+  MacRoman byte (`0xA8`). The guest's file-op verbs were pulling
+  `path`/`toPath`/`trashedAs` with `now_json_find_string`, which does
+  not convert, so a move/trash/restore/mkdir/list of any non-ASCII name
+  looked for a file that does not exist. Fixed by switching those
+  extractors (and `file.offer`'s `name`, and console `ls`) to
+  `now_json_find_text`; `container`/`fileType`/`creator`/tokens stay
+  find_string, ASCII by contract. Guarded two ways —
+  `json_native_test.c :: test_inbound_hfs_path` proves `café®` decodes
+  to `0x8E 0xA8` (and that find_string leaves the raw four bytes), and
+  `GuestWireConformanceTests :: testHfsPathArgumentsAreTextDecoded`
+  reads the C and fails if any of those keys reverts to find_string
+  (mutation-verified). **Tested, not metal-verified:** no one has moved
+  or trashed an accented file from the host to the PowerBook.
 - **The Finder reveal button.** "Open" in the browser sends `odoc` to
   the Finder with an alias to the downloads folder. Standard, and
   untested on metal; it is `kAENoReply` so it should not block, but that

@@ -245,6 +245,38 @@ final class GuestWireConformanceTests: XCTestCase {
         }
     }
 
+    /// The inbound side of the same seam. These keys name a file the
+    /// guest will open, never a protocol token: the host sends them
+    /// UTF-8 and FSMakeFSSpec wants the MacRoman byte, so they must be
+    /// pulled with `now_json_find_text` (which decodes) and never
+    /// `now_json_find_string` (which does not). The choice is only
+    /// visible in the C, which is why this reads the source — a "café®"
+    /// left as raw UTF-8 resolves to a file that does not exist, and
+    /// nothing on the wire says so. Regressing any one call fails here.
+    func testHfsPathArgumentsAreTextDecoded() throws {
+        let pathKeys = ["path", "toPath", "trashedAs"]
+        var checked = 0
+        for (file, text) in try guestSources() {
+            for key in pathKeys {
+                // now_json_find_string( <args, no ';'> "<key>"  — the
+                // negated class stops at the statement's semicolon, so a
+                // find_string for some OTHER key cannot reach this one.
+                let pattern = "now_json_find_string\\([^;]*\"\(key)\""
+                let re = try NSRegularExpression(pattern: pattern)
+                let hits = re.numberOfMatches(
+                    in: text, range: NSRange(text.startIndex..., in: text))
+                XCTAssertEqual(hits, 0, """
+                    \(file): "\(key)" is an HFS name fed to the File \
+                    Manager but is read with now_json_find_string, which \
+                    leaves the host's UTF-8 undecoded — use \
+                    now_json_find_text so a non-ASCII name resolves.
+                    """)
+                checked += 1
+            }
+        }
+        XCTAssertGreaterThan(checked, 0, "no guest sources scanned")
+    }
+
     /// Messages built up across several calls cannot be checked this
     /// way. Naming them keeps the gap visible instead of letting a green
     /// suite imply coverage it does not have.

@@ -543,7 +543,8 @@ static void run_ls(const char *request_json, long id, char *out, long cap)
 
     path[0] = '\0';
     if (request_json != NULL) {
-        now_json_find_string(request_json, "path", path, sizeof path);
+        /* HFS path fed to the File Manager: decode UTF-8 to MacRoman. */
+        now_json_find_text(request_json, "path", path, sizeof path);
     }
     n = now_files_list(path, 1, entries, kConsolePage, &more, &next);
     if (n < 0) {

@@ -130,6 +130,47 @@ static void test_text_decoding(void)
     }
 }
 
+/* --- the inbound HFS path the File Manager will open --------------------
+   A path argument is not a protocol token. The host sends it UTF-8, and
+   FSMakeFSSpec wants the MacRoman byte, so the file-op verbs (file.move,
+   file.trash, file.restore, file.list) pull "path"/"toPath"/"trashedAs"
+   with find_text. This pins the reason: the same file.move payload
+   decoded both ways, and only find_text hands the File Manager a name it
+   can resolve. If the extractor is ever reverted to find_string, the
+   registered sign below reaches FSMakeFSSpec as the wrong two bytes and
+   the move looks for a file that does not exist. */
+static void test_inbound_hfs_path(void)
+{
+    /* Disk:caf(e-acute)(registered): the accent is UTF-8 0xC3 0xA9, the
+       registered sign 0xC2 0xAE — the byte the Software fix was traced
+       to, MacRoman 0xA8. */
+    const char move[] =
+        "{\"type\":\"file.move\",\"id\":1,"
+        "\"path\":\"Disk:caf\xC3\xA9\xC2\xAE\","
+        "\"toPath\":\"Disk:Trash\"}";
+    char from[224], to[224];
+
+    /* What the fixed server does: UTF-8 collapsed to the MacRoman bytes
+       an FSSpec is built from. */
+    assert(now_json_find_text(move, "path", from, sizeof from) == 1);
+    assert(strncmp(from, "Disk:caf", 8) == 0);   /* ASCII, colon and all */
+    assert((unsigned char)from[8] == 0x8E);      /* e-acute   */
+    assert((unsigned char)from[9] == 0xA8);      /* registered */
+    assert(from[10] == '\0');                     /* two bytes became two */
+
+    /* The bug the swap removes: find_string keeps the raw UTF-8, so the
+       name is four bytes where the file's is two — a different file. */
+    assert(now_json_find_string(move, "path", from, sizeof from) == 1);
+    assert((unsigned char)from[8] == 0xC3);
+    assert((unsigned char)from[9] == 0xA9);
+    assert((unsigned char)from[10] == 0xC2);
+    assert((unsigned char)from[11] == 0xAE);
+
+    /* toPath comes through the same door; ASCII here, unchanged. */
+    assert(now_json_find_text(move, "toPath", to, sizeof to) == 1);
+    assert(strcmp(to, "Disk:Trash") == 0);
+}
+
 /* --- walking a listing --------------------------------------------------
    Flat key lookup cannot read an array of objects, and a lookup that
    runs past its object silently answers with a sibling's value. */
@@ -295,6 +336,7 @@ int main(void)
     printf("json_native_test: all assertions passed\n");
     test_booleans_are_not_integers();
     test_text_decoding();
+    test_inbound_hfs_path();
     test_array_walking();
 
     return 0;
