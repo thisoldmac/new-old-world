@@ -1,5 +1,7 @@
 #include "software.h"
 
+#include "sw_vers_parse.h"
+
 #include <Folders.h>
 #include <Processes.h>
 
@@ -1122,74 +1124,39 @@ int now_software_launch(const char *arg, char *msg, long cap)
 
 /* --- vers ---------------------------------------------------------------- */
 
-static const char *stage_name(unsigned char stage)
-{
-    switch (stage) {
-    case 0x20: return "development";
-    case 0x40: return "alpha";
-    case 0x60: return "beta";
-    case 0x80: return "final";
-    default:   return "stage?";
-    }
-}
-
 /* One 'vers' resource (id 1 = this file, id 2 = the product it belongs
-   to) into rows. The layout is fixed: 4 bytes numeric version, 2 bytes
-   region, then two Pascal strings — short version, then the Get Info
-   string. Every read is bounded by the handle's actual size, because a
-   truncated resource in an old file is data, not a crash. want_info
-   gates the Get Info string: the multi-match view drops it to keep
-   five duplicates readable. */
+   to) into rows. The byte layout and all its bounds live in
+   sw_parse_vers (sw_vers_parse.h), host-tested; this only lays the
+   parsed fields into rows. want_info gates the Get Info string: the
+   multi-match view drops it to keep five duplicates readable. */
 static void vers_rows(Handle h, const char *label, const char *num_label,
                       Boolean want_info, SoftwareRow *rows, int max,
                       int *n)
 {
-    long size = GetHandleSize(h);
-    const unsigned char *b = (const unsigned char *)*h;
-    char text[64];
+    char shortv[64];
+    char numeric[64];
+    char info[64];
 
-    if (*n < max && size >= 7) {
-        long slen = b[6];
-
-        if (7 + slen > size) {
-            slen = size - 7;
-        }
-        if (slen > 63) {
-            slen = 63;
-        }
-        memcpy(text, b + 7, (size_t)slen);
-        text[slen] = '\0';
+    if (!sw_parse_vers((const unsigned char *)*h, GetHandleSize(h),
+                       shortv, sizeof shortv, numeric, sizeof numeric,
+                       info, sizeof info)) {
+        return;
+    }
+    if (*n < max) {
         snprintf(rows[*n].name, sizeof rows[*n].name, "%s", label);
-        snprintf(rows[*n].detail, sizeof rows[*n].detail, "%.48s", text);
+        snprintf(rows[*n].detail, sizeof rows[*n].detail, "%.48s", shortv);
         *n += 1;
-
-        if (*n < max) {
-            snprintf(rows[*n].name, sizeof rows[*n].name, "%s",
-                     num_label);
-            snprintf(rows[*n].detail, sizeof rows[*n].detail,
-                     "%x.%x.%x %s%s", b[0], (b[1] >> 4) & 0xF,
-                     b[1] & 0xF, stage_name(b[2]),
-                     b[2] != 0x80 && b[3] != 0 ? " (prerelease)" : "");
-            *n += 1;
-        }
-        /* The Get Info string follows the short one. */
-        if (want_info && *n < max && 7 + b[6] < size) {
-            const unsigned char *ls = b + 7 + b[6];
-            long llen = ls[0];
-
-            if ((ls - b) + 1 + llen > size) {
-                llen = size - (ls - b) - 1;
-            }
-            if (llen > 0) {
-                memcpy(text, ls + 1,
-                       (size_t)(llen < 63 ? llen : 63));
-                text[llen < 63 ? llen : 63] = '\0';
-                snprintf(rows[*n].name, sizeof rows[*n].name, "Info");
-                snprintf(rows[*n].detail, sizeof rows[*n].detail,
-                         "%.48s", text);
-                *n += 1;
-            }
-        }
+    }
+    if (*n < max) {
+        snprintf(rows[*n].name, sizeof rows[*n].name, "%s", num_label);
+        snprintf(rows[*n].detail, sizeof rows[*n].detail, "%.48s", numeric);
+        *n += 1;
+    }
+    /* An empty Get Info field reads as absent — no row, as before. */
+    if (want_info && *n < max && info[0] != '\0') {
+        snprintf(rows[*n].name, sizeof rows[*n].name, "Info");
+        snprintf(rows[*n].detail, sizeof rows[*n].detail, "%.48s", info);
+        *n += 1;
     }
 }
 
@@ -1225,24 +1192,16 @@ static int vers_read_file(const FSSpec *spec, Boolean full_detail,
                       &n);
         }
         if (h2 != NULL && *h2 != NULL && n < max) {
-            long size = GetHandleSize(h2);
-            const unsigned char *b = (const unsigned char *)*h2;
+            char shortv[64];
 
-            if (size >= 7) {
-                char text[64];
-                long slen = b[6];
-
-                if (7 + slen > size) {
-                    slen = size - 7;
-                }
-                if (slen > 63) {
-                    slen = 63;
-                }
-                memcpy(text, b + 7, (size_t)slen);
-                text[slen] = '\0';
+            /* The product line is only the short version; the numeric
+               and Get Info fields are parsed but unused here. */
+            if (sw_parse_vers((const unsigned char *)*h2,
+                              GetHandleSize(h2), shortv, sizeof shortv,
+                              NULL, 0, NULL, 0)) {
                 snprintf(rows[n].name, sizeof rows[n].name, "Product");
                 snprintf(rows[n].detail, sizeof rows[n].detail, "%.48s",
-                         text);
+                         shortv);
                 n += 1;
             }
         }
@@ -1346,4 +1305,38 @@ int now_software_vers(const char *arg, SoftwareRow *rows, int max,
         }
         return n;
     }
+}
+
+/* The per-row cost the Software page's idle-paced trickle pays: one
+   resource fork opened, 'vers' 1's short version read through the same
+   host-tested parser, the fork closed and CurResFile restored on every
+   path. Get1Resource, never GetResource — the chain would answer the
+   System file's 'vers' for a file that has none, the most convincing
+   possible wrong answer. */
+Boolean now_software_read_version(const FSSpec *spec, char *out, long cap)
+{
+    short saved = CurResFile();
+    short ref;
+    Boolean ok = false;
+
+    if (out != NULL && cap > 0) {
+        out[0] = '\0';
+    }
+    ref = FSpOpenResFile(spec, fsRdPerm);
+    if (ref == -1) {
+        UseResFile(saved);
+        return false;
+    }
+    UseResFile(ref);
+    {
+        Handle h = Get1Resource('vers', 1);
+
+        if (h != NULL && *h != NULL) {
+            ok = sw_parse_vers((const unsigned char *)*h, GetHandleSize(h),
+                               out, cap, NULL, 0, NULL, 0) != 0;
+        }
+    }
+    CloseResFile(ref);
+    UseResFile(saved);
+    return ok;
 }

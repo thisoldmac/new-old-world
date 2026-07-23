@@ -122,4 +122,11 @@ int now_software_page(const char *domain, long cursor,
 int now_software_vers(const char *arg, SoftwareRow *rows, int max,
                       char *msg, long cap);
 
+/* One file's short version string, the bounded primitive the Software
+   page's idle-paced trickle calls per row. Opens spec's resource fork
+   read-only, reads 'vers' 1 through sw_parse_vers, closes the fork and
+   restores CurResFile on every path. Writes "" and returns false when
+   there is no readable 'vers'. One fork open, nothing else. */
+Boolean now_software_read_version(const FSSpec *spec, char *out, long cap);
+
 #endif /* NOW_SOFTWARE_H */
