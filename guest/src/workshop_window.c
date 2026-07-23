@@ -263,6 +263,7 @@ WindowRef workshop_ref(void)
 void workshop_select_module(WorkshopModuleID module)
 {
     const WorkshopModuleOps *old_ops;
+    RgnHandle saved_clip;
 
     if (g_window == NULL || (int)module < 1
         || (int)module > kWorkshopModuleCount) {
@@ -271,6 +272,20 @@ void workshop_select_module(WorkshopModuleID module)
     workshop_sidebar_set_selection(module);
     if (module == g_selected) {
         return;
+    }
+    /* HideControl erases each control on the spot and ShowControl
+       paints it back, so a switch used to repaint the pane piecemeal
+       and then a second time at the update event. Clip the direct
+       draws away for the swap; the controls still mark themselves
+       hidden or visible, and the invalidation below repaints every
+       pixel the clipped calls would have touched - once. */
+    SetPortWindowPort(g_window);
+    saved_clip = NewRgn();
+    if (saved_clip != NULL) {
+        Rect none = { 0, 0, 0, 0 };
+
+        GetClip(saved_clip);
+        ClipRect(&none);
     }
     old_ops = selected_ops();
     if (old_ops != NULL && g_created[g_selected]
@@ -282,6 +297,10 @@ void workshop_select_module(WorkshopModuleID module)
     if (g_ops[module] != NULL && g_created[module]
         && g_ops[module]->show != NULL) {
         g_ops[module]->show(true);
+    }
+    if (saved_clip != NULL) {
+        SetClip(saved_clip);
+        DisposeRgn(saved_clip);
     }
     invalidate_pane();
 }
@@ -354,7 +373,6 @@ static void draw_placeholder_body(void)
 
 void workshop_draw(void)
 {
-    Rect content;
     RgnHandle visible;
     const WorkshopModuleOps *ops = selected_ops();
 
@@ -362,13 +380,40 @@ void workshop_draw(void)
         return;
     }
     SetPortWindowPort(g_window);
-    GetWindowPortBounds(g_window, &content);
-    EraseRect(&content);
+    /* Erase only what nothing below paints for itself: the module body,
+       and the sidebar gutter outside the rail panel (stale after a
+       grow). The placards fill their own faces and the rail erases its
+       own panel white; the old full-port erase painted the rail rows
+       theme-gray a beat before the rail repainted them, one visible
+       flicker per page switch. BeginUpdate has already clipped the
+       visRgn, so each erase touches only invalidated pixels. */
+    EraseRect(&g_lay.body);
+    {
+        RgnHandle gutter = NewRgn();
+        RgnHandle rail = NewRgn();
+
+        if (gutter != NULL && rail != NULL) {
+            RectRgn(gutter, &g_lay.sidebar);
+            RectRgn(rail, &g_lay.rail_list);
+            DiffRgn(gutter, rail, gutter);
+            EraseRgn(gutter);
+        } else {
+            EraseRect(&g_lay.sidebar);
+        }
+        if (gutter != NULL) {
+            DisposeRgn(gutter);
+        }
+        if (rail != NULL) {
+            DisposeRgn(rail);
+        }
+    }
 
     draw_header();
     draw_status();
 
-    DrawControls(g_window);
+    /* One control pass: UpdateControls draws just the controls the
+       update region touches. The DrawControls that used to precede it
+       drew every control in the window a second time. */
     visible = NewRgn();
     if (visible != NULL) {
         GetPortVisibleRegion(GetWindowPort(g_window), visible);

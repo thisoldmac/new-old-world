@@ -17,6 +17,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WIRE = (ROOT / "src" / "wire.c").read_text()
 MAIN = (ROOT / "src" / "main.c").read_text()
+PREFS = (ROOT / "src" / "prefs.c").read_text()
+NOWLOG = (ROOT / "src" / "nowlog.c").read_text()
 
 
 def function_body(source: str, signature: str, next_signature: str) -> str:
@@ -63,8 +65,22 @@ assert "finish_connect();" in connect
 assert "else if (err == kOTNoDataErr)" in connect
 
 # A blocked or failed dial must still leave a launch log, and the log must
-# identify the endpoint rather than report only a generic failure.
-assert MAIN.index("now_log_open();") < MAIN.index("conn_init();")
+# identify the endpoint rather than report only a generic failure. The eager
+# now_log_open() became prefs-governed with the Logs page; the guarantee now
+# rests on three links, each pinned: the disk switch is applied before
+# conn_init, it defaults on (including for pre-v12 prefs files), and turning
+# it on actually opens the file.
+assert_in_order(
+    MAIN,
+    "now_prefs_load(&log_prefs);",
+    "now_log_set_disk(log_prefs.log_to_disk);",
+    "conn_init();",
+)
+assert "prefs->log_to_disk = true;" in PREFS
+set_disk = function_body(
+    NOWLOG, "void now_log_set_disk(Boolean on)", "Boolean now_log_disk_on(void)"
+)
+assert "now_log_open();" in set_disk
 assert '"disconnected from %s:%u: %.60s"' in WIRE
 
 print("ot_connect_source_test: all assertions passed")
