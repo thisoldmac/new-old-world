@@ -409,6 +409,20 @@ working on the PowerBook.
     singleton is the injection channel itself). Also unwatched:
     groups' collapsed-default on the unfiltered list. Nothing in this
     round is metal-verified yet.
+  - **Rung 4 lands (2026-07-22): versions on the wire + the host
+    Software page.** `serve_software_list` now fills each served
+    entry's version (a page's worth of fork opens per request, bounded,
+    explicitly asked for); the contract, fixture, and Swift docs agree.
+    `SoftwareModel`/`SoftwareModuleView` mirror the guest page
+    host-side — domain picker over a Table, client-side search, Launch
+    by the entry's path (the guest's words shown either way), the
+    listing's `note` surfaced verbatim — registered between Hardware
+    and the footer. Host suite green incl. `SoftwareModelTests` and the
+    updated registry manifest. **Never run live, all of it**: the
+    `software.list` round trip (and now the version enrichment and the
+    page on top of it) awaits the first connected session with both new
+    builds — `swpage extensions` in the host console, then the Software
+    page itself, is the one-sitting check.
   - **Fifth round (2026-07-22):** the metal report "a collapsed group
     will not re-expand" was a real contract miss: closing a container
     REMOVES its children (the Data Browser's own behavior) and
