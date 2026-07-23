@@ -129,4 +129,37 @@ int now_software_vers(const char *arg, SoftwareRow *rows, int max,
    there is no readable 'vers'. One fork open, nothing else. */
 Boolean now_software_read_version(const FSSpec *spec, char *out, long cap);
 
+/* --- the page's item model -----------------------------------------------
+   The Workshop page needs the FSSpec (to launch, reveal, and read the
+   version) that the console/wire row shapes drop. It carries one of these
+   per row and fills the version lazily via now_software_read_version. */
+
+typedef struct {
+    Str63 name;           /* Pascal, for EqualString and DrawString */
+    FSSpec spec;
+    OSType type;
+    OSType creator;
+    long size_k;
+    Boolean off;          /* in an Extensions Manager disabled folder */
+    Boolean running;
+    Boolean version_read; /* the trickle has visited this row */
+    char version[16];     /* "" until read, or when there is no 'vers' */
+} SwPageItem;
+
+/* Fill one item's catalog facts (name, type, creator, size, off) from its
+   FSSpec. running stays false and version empty; the caller marks running
+   over the whole array once and lets the trickle fill versions. */
+void now_software_item_fill(const FSSpec *spec, Boolean off, SwPageItem *out);
+
+/* Set running on each item by one Process Manager walk (the FSSpec-triple
+   join). Call once after the array is built, not per row. */
+void now_software_mark_running(SwPageItem *items, int count);
+
+/* Build a FOLDER domain's items (extensions, cdevs, startup, apple):
+   enabled first, then the disabled sibling's, each with running marked.
+   Returns the count, sets *truncated if the array filled first, or -1 for
+   "apps" (which the page streams through the sweep) or an unknown domain. */
+int now_software_page_folder(const char *domain, SwPageItem *items, int max,
+                             Boolean *truncated);
+
 #endif /* NOW_SOFTWARE_H */

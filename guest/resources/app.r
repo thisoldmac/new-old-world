@@ -264,6 +264,19 @@ resource 'MENU' (132) {
     }
 };
 
+/* The Software page's domain pop-up. Item order is load-bearing:
+   software_module.c maps items 1-5 to the domain keys in k_domains_ui. */
+resource 'MENU' (134) {
+    134, textMenuProc, allEnabled, enabled, "Show",
+    {
+        "Applications", noIcon, noKey, noMark, plain;
+        "Extensions", noIcon, noKey, noMark, plain;
+        "Control Panels", noIcon, noKey, noMark, plain;
+        "Startup Items", noIcon, noKey, noMark, plain;
+        "Apple Menu Items", noIcon, noKey, noMark, plain
+    }
+};
+
 /* The Connection page's Retry pop-up. Item order is load-bearing:
    conn_fields.c maps items 1-4 to 0/2/5/10 seconds. */
 resource 'MENU' (133) {

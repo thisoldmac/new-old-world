@@ -210,6 +210,109 @@ int now_software_overview(SoftwareRow *rows, int max)
     return n;
 }
 
+/* --- the page's item model ----------------------------------------------
+   The Workshop page carries the FSSpec the console/wire row shapes drop,
+   so it can launch, reveal, and lazily read the version of a selection. */
+
+void now_software_item_fill(const FSSpec *spec, Boolean off, SwPageItem *out)
+{
+    CInfoPBRec pb;
+    Str63 pname;
+
+    memset(out, 0, sizeof *out);
+    memcpy(out->name, spec->name, (size_t)spec->name[0] + 1);
+    out->spec = *spec;
+    out->off = off;
+    out->size_k = -1;
+
+    memcpy(pname, spec->name, (size_t)spec->name[0] + 1);
+    memset(&pb, 0, sizeof pb);
+    pb.hFileInfo.ioNamePtr = pname;
+    pb.hFileInfo.ioVRefNum = spec->vRefNum;
+    pb.hFileInfo.ioDirID = spec->parID;
+    pb.hFileInfo.ioFDirIndex = 0;
+    if (PBGetCatInfoSync(&pb) == noErr) {
+        out->type = pb.hFileInfo.ioFlFndrInfo.fdType;
+        out->creator = pb.hFileInfo.ioFlFndrInfo.fdCreator;
+        out->size_k = (pb.hFileInfo.ioFlLgLen
+                       + pb.hFileInfo.ioFlRLgLen + 1023) / 1024;
+    }
+}
+
+void now_software_mark_running(SwPageItem *items, int count)
+{
+    RunningSet rs;
+    int i;
+
+    running_gather(&rs);
+    for (i = 0; i < count; ++i) {
+        items[i].running = running_has(&rs, items[i].spec.vRefNum,
+                                       items[i].spec.parID, items[i].name);
+    }
+}
+
+static void page_walk_folder(OSType folder, Boolean off, SwPageItem *items,
+                             int max, int *n, Boolean *truncated)
+{
+    short vRef;
+    long dirID;
+    int index;
+
+    if (FindFolder(kOnSystemDisk, folder, kDontCreateFolder,
+                   &vRef, &dirID) != noErr) {
+        return;
+    }
+    for (index = 1; ; ++index) {
+        CInfoPBRec pb;
+        Str63 pname;
+        FSSpec spec;
+
+        memset(&pb, 0, sizeof pb);
+        pname[0] = 0;
+        pb.hFileInfo.ioNamePtr = pname;
+        pb.hFileInfo.ioVRefNum = vRef;
+        pb.hFileInfo.ioDirID = dirID;
+        pb.hFileInfo.ioFDirIndex = (short)index;
+        if (PBGetCatInfoSync(&pb) != noErr) {
+            break;
+        }
+        if (pb.hFileInfo.ioFlAttrib & ioDirMask) {
+            continue;
+        }
+        if (*n >= max) {
+            *truncated = true;
+            break;
+        }
+        spec.vRefNum = vRef;
+        spec.parID = dirID;
+        memcpy(spec.name, pname, (size_t)pname[0] + 1);
+        now_software_item_fill(&spec, off, &items[*n]);
+        *n += 1;
+    }
+}
+
+int now_software_page_folder(const char *domain, SwPageItem *items, int max,
+                             Boolean *truncated)
+{
+    int d;
+    int n = 0;
+
+    *truncated = false;
+    for (d = 0; d < kDomainCount; ++d) {
+        if (strcmp(domain, k_domains[d].name) == 0) {
+            page_walk_folder(k_domains[d].folder, false, items, max, &n,
+                             truncated);
+            if (k_domains[d].disabled != 0) {
+                page_walk_folder(k_domains[d].disabled, true, items, max,
+                                 &n, truncated);
+            }
+            now_software_mark_running(items, n);
+            return n;
+        }
+    }
+    return -1;                          /* "apps" (streamed) or unknown */
+}
+
 /* --- the resumable APPL sweep ------------------------------------------- */
 
 enum {
