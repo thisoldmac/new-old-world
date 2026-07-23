@@ -322,6 +322,31 @@ Not load-bearing; parked as a known gap rather than chased.
 Everything here builds and passes its tests. None of it has been watched
 working on the PowerBook.
 
+- **A page switch paints once, and only what changed** (2026-07-22).
+  Michelle watched Workshop page switches repaint the whole window on
+  the PowerBook — rail, placards, everything. The investigation found
+  the container's *invalidation* was already scoped (header/body/status
+  plus the two selection rows); the churn was in the *painting*, three
+  ways: `HideControl`/`ShowControl` draw immediately, so
+  `show(false)`/`show(true)` repainted the pane piecemeal before the
+  update event repainted it again; the update handler's full-port
+  `EraseRect` painted the invalidated rail rows theme-gray a beat before
+  the rail's own white erase; and `DrawControls` followed by
+  `UpdateControls` drew every control twice per update. All three fixed
+  in `workshop_window.c` alone: the swap runs under an empty clip and
+  paints exactly once at the coalesced update, the erase narrowed to the
+  body plus the sidebar gutter outside the rail panel (the placards and
+  the rail fill their own faces), and one `UpdateControls` pass.
+  Emulator-verified: all seven pages cycle with no stale pixels, zoom
+  leaves the gutter clean, controls still track after switches. **Watch
+  on metal:** that the rail genuinely stops flashing at the machine's
+  real drawing speed — the emulator is too fast to show a flash either
+  way. One module-side offender remains, out of the container's scope:
+  the copy-pasted `set_status` in screenshots/census/connection
+  invalidates a full-width bottom strip (port bounds, bottom 23 px) that
+  crosses the rail's foot, so the Connection row can still flick when a
+  module's status line changes. The module fix is to invalidate the
+  status placard's rect, not the port's.
 - **The Logs page, both machines** (2026-07-22). A Monaco dump of the
   in-memory log ring that follows the tail live like a terminal, with
   Invert and Log-to-disk switches. The **guest** page was watched working
