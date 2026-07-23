@@ -361,6 +361,23 @@ working on the PowerBook.
   quit/reveal buttons, and the idle-paced version trickle. None of that
   is metal-verified yet — only the emulator, and only the page's
   appearance + prefs migration.
+  - **Interactive cut (2026-07-22):** the page now works. A domain
+    pop-up over a scrollable Name/Version/Size/State list, a detail
+    pane, live search (driven from `key()` into a hand-drawn field,
+    because this WaitNextEvent app can't host inline edit-text — the
+    Connection-dialog reason), the idle-paced Applications sweep, the
+    version trickle (`now_software_read_version` per pass, cached), and
+    Launch on the selected FSSpec. **Emulator-verified**: the sweep
+    (205 apps), versions filling in, scroll, click-select + detail,
+    search ("apple" → 8 of 205), and Launch (row → app fronts).
+    **Not yet watched** — atomic click-injection can't drive a held
+    popup drag, so the domain switch and the synchronous folder-domain
+    path (`now_software_page_folder`) are code-complete but unwatched.
+    **Deferred to the next cut:** Bring to Front / Quit (need the
+    running process's PSN, not just the running bool), Show in Finder
+    (a verified Finder reveal Apple Event — the reveal 4CC wants
+    confirming before it ships), and the selected item's full path in
+    the detail. Nothing here is metal-verified.
 
 - **Software rungs 1–2: resumable sweep, `vers`, running tags, and the
   `software.list` family** (2026-07-22, spec in `software-module.md`).
