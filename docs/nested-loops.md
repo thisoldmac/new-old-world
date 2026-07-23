@@ -62,6 +62,7 @@ everywhere.
 | `console_module.c` — scroll bar arrows/page | `TrackControl` | **Yes** — the action proc scrolls and calls `now_wire_pump()` | — |
 | `console_module.c` — scroll bar **thumb** | `TrackControl(…, NULL)` | No | Drag duration |
 | `connection_module.c`, `screenshots_module.c` — pop-ups | `TrackControl(…, (ControlActionUPP)-1L)` | No | Menu-down duration |
+| `software_module.c` — splitter drag | own `StillDown` loop | **Yes** — calls `conn_service()` every pass | — |
 | `connection_module.c` — text fields | `HandleControlClick` | No | Selection-drag duration |
 | `files_browser_view.c` — the list | `HandleControlClick` | No | Selection/sort-drag duration |
 | `main.c` | `MenuSelect`, `DragWindow`, `TrackGoAway`, `GrowWindow`, `TrackBox` | No | Mouse-down / drag duration |

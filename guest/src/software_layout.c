@@ -14,6 +14,12 @@ static void set_rect(Rect *r, short left, short top, short right,
 
 void software_layout_compute(const Rect *body, SoftwareLayout *out)
 {
+    software_layout_compute_split(body, 0, out);
+}
+
+void software_layout_compute_split(const Rect *body, short want_list_w,
+                                   SoftwareLayout *out)
+{
     short width = (short)(body->right - body->left);
     short list_w = (short)(width < kSwListNarrowBelow ? kSwListNarrow
                                                       : kSwListWide);
@@ -23,6 +29,21 @@ void software_layout_compute(const Rect *body, SoftwareLayout *out)
     short inner_left;
     short y;
     short x;
+
+    /* A person-chosen width wins over the default, clamped so neither
+       pane can be dragged shut. */
+    if (want_list_w > 0) {
+        short max_w = (short)(width - 2 * kSwMargin - kSwPaneGap
+                              - kSwDetailMin);
+
+        list_w = want_list_w;
+        if (list_w > max_w) {
+            list_w = max_w;
+        }
+        if (list_w < kSwListMin) {
+            list_w = kSwListMin;
+        }
+    }
 
     /* Toolbar: popup pinned left, the search field pinned right so it
        stays put as the window grows. */
@@ -45,6 +66,9 @@ void software_layout_compute(const Rect *body, SoftwareLayout *out)
     set_rect(&out->detail, (short)(out->list.right + kSwPaneGap),
              content_top, (short)(body->right - kSwMargin),
              out->list.bottom);
+    /* The gap between the panes is the splitter's grab zone. */
+    set_rect(&out->splitter, out->list.right, content_top,
+             out->detail.left, out->list.bottom);
 
     /* Left row, under the list: Rescan then Show in Finder. Both act on
        the list / the selection rather than on a running process, so they

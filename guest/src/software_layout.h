@@ -28,6 +28,9 @@ enum {
     kSwListWide = 300,
     kSwListNarrow = 250,
     kSwListNarrowBelow = 548, /* body width, not window width */
+    kSwListMin = 200,         /* splitter clamp: list never thinner -
+                                 Rescan + Show in Finder need 192 */
+    kSwDetailMin = 190,       /* splitter clamp: detail never thinner */
     kSwButtonHeight = 20,
     kSwButtonGap = 10,
     kSwPopupWidth = 168,
@@ -53,6 +56,7 @@ typedef struct SoftwareLayout {
     Rect toolbar_popup;       /* domain selector (popup menu) */
     Rect toolbar_search;      /* live-filter edit field */
     Rect list;                /* the item Data Browser */
+    Rect splitter;            /* the draggable gap between the panes */
     Rect rescan_btn;          /* under the list, left */
     Rect detail;              /* everything to the list's right */
     Rect d_title;             /* name + version + running */
@@ -68,6 +72,14 @@ typedef struct SoftwareLayout {
 } SoftwareLayout;
 
 void software_layout_compute(const Rect *body, SoftwareLayout *out);
+
+/* The same geometry with a person-chosen list width - the splitter's
+   drag hands its result here. list_w <= 0 falls back to the default;
+   any value is clamped so both panes keep a usable minimum
+   (kSwListMin / kSwDetailMin), so a wild drag cannot wedge a pane
+   shut. */
+void software_layout_compute_split(const Rect *body, short list_w,
+                                   SoftwareLayout *out);
 
 /* "92K", "1.1M" - forks summed, classic style, ASCII only. */
 void sw_size_text(long bytes, char *out, long cap);

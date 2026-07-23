@@ -8,6 +8,7 @@
 #include "software.h"
 #include "software_layout.h"
 #include "pump.h"
+#include "wire.h"
 
 /* Rung 3, the Data Browser cut - rebuilt from the first metal round.
    What that round taught:
@@ -121,6 +122,10 @@ static int g_group_count;
 /* The selected item's full path, computed on selection change - never
    in draw, which must not touch the catalog. */
 static char g_sel_path[224];
+
+/* The person's chosen list width; 0 = the layout's default. Session
+   state, like the sidebar selection - not worth a prefs field yet. */
+static short g_split_w;
 
 static DomainState *dom(void)
 {
@@ -316,6 +321,29 @@ static void compute_groups(void)
     }
 }
 
+/* One group's children, added under its container row. Shared by the
+   rebuild and by kDataBrowserContainerOpened: closing a container
+   REMOVES its children (the Data Browser's own behavior), so every
+   reopen must put them back - the caret flipping over an empty group
+   was the first metal report of this round. */
+static void add_group_children(int gid)
+{
+    DataBrowserItemID kids[kSwMaxCap];
+    UInt32 nk = 0;
+    int k;
+
+    if (g_browser == NULL || gid < 0 || gid >= g_group_count) {
+        return;
+    }
+    for (k = 0; k < g_group_size[gid]; ++k) {
+        kids[nk++] = (DataBrowserItemID)(
+            g_sorted[g_group_first[gid] + k] + 1);
+    }
+    AddDataBrowserItems(g_browser,
+                        (DataBrowserItemID)(kGroupIdBase + gid),
+                        nk, kids, kDataBrowserItemNoProperty);
+}
+
 /* Repopulate the browser from the current domain's cache: filtered,
    duplicates collapsed under closed containers. The ONLY list-wide
    operation, and it runs on user intent or once at sweep end - never
@@ -360,23 +388,12 @@ static void rebuild_browser(void)
         int gid;
 
         for (gid = 0; gid < g_group_count; ++gid) {
-            DataBrowserItemID kids[kSwMaxCap];
-            UInt32 nk = 0;
-            int k;
-
             /* Members share the name, so the filter that admitted the
                parent admits every child. */
-            if (!name_matches(
+            if (name_matches(
                     &d->items[g_sorted[g_group_first[gid]]], needle)) {
-                continue;
+                add_group_children(gid);
             }
-            for (k = 0; k < g_group_size[gid]; ++k) {
-                kids[nk++] = (DataBrowserItemID)(
-                    g_sorted[g_group_first[gid] + k] + 1);
-            }
-            AddDataBrowserItems(g_browser,
-                                (DataBrowserItemID)(kGroupIdBase + gid),
-                                nk, kids, kDataBrowserItemNoProperty);
         }
     }
     g_shown_rows = shown;
@@ -536,12 +553,26 @@ static void item_notify(ControlRef browser, DataBrowserItemID item,
 {
     DomainState *d = dom();
 
-    (void)browser;
-    /* Notifications fired by our own rebuild are not user intent, and
-       container rows notify open/close, which is not selection. */
-    if (g_in_rebuild || item >= kGroupIdBase) {
+    /* Notifications fired by our own rebuild are not user intent. */
+    if (g_in_rebuild) {
         return;
     }
+    if (item >= kGroupIdBase) {
+        /* Reopening a container must restore the children its close
+           removed. The count check makes the re-add idempotent, so a
+           spurious open notification cannot double the rows. */
+        if (message == kDataBrowserContainerOpened) {
+            UInt32 have = 0;
+
+            GetDataBrowserItemCount(browser, item, false,
+                                    kDataBrowserItemAnyState, &have);
+            if (have == 0) {
+                add_group_children((int)(item - kGroupIdBase));
+            }
+        }
+        return;
+    }
+    (void)browser;
     if (message == kDataBrowserItemSelected) {
         d->sel = (int)item - 1;
         refresh_sel_path();
@@ -1062,7 +1093,7 @@ static OSErr software_create(WindowRef owner, const Rect *body)
 
     g_owner = owner;
     g_body = *body;
-    software_layout_compute(body, &g_lay);
+    software_layout_compute_split(body, g_split_w, &g_lay);
     g_launch_hilite = -1;
     g_search[0] = '\0';
     g_search_focus = false;
@@ -1160,7 +1191,7 @@ static void software_show(Boolean visible)
 static void software_layout_op(const Rect *body)
 {
     g_body = *body;
-    software_layout_compute(body, &g_lay);
+    software_layout_compute_split(body, g_split_w, &g_lay);
     if (g_popup != NULL) {
         MoveControl(g_popup, g_lay.toolbar_popup.left,
                     g_lay.toolbar_popup.top);
@@ -1194,6 +1225,57 @@ static void software_layout_op(const Rect *body)
     }
 }
 
+/* The splitter drag: a custom StillDown loop, so it pumps the wire
+   itself every pass (the nested-loops.md rule). Feedback is the classic
+   gray XOR outline; the real layout moves once, on release. Pen state
+   is PORT state on the shared window - saved and restored, the
+   background-color lesson applied before it bites twice. */
+static void track_splitter(void)
+{
+    PenState saved;
+    Pattern gray;
+    Point p;
+    short min_x, max_x, line_x, new_x;
+    Rect band = g_lay.splitter;
+
+    SetPortWindowPort(g_owner);
+    GetPenState(&saved);
+    GetQDGlobalsGray(&gray);
+    PenMode(patXor);
+    PenPat(&gray);
+
+    min_x = (short)(g_body.left + kSwMargin + kSwListMin);
+    max_x = (short)(g_body.right - kSwMargin - kSwDetailMin - kSwPaneGap);
+    line_x = g_lay.splitter.left;
+    MoveTo(line_x, band.top);
+    LineTo(line_x, band.bottom);
+    while (StillDown()) {
+        conn_service();               /* the wire never stops for a drag */
+        GetMouse(&p);
+        new_x = p.h;
+        if (new_x < min_x) {
+            new_x = min_x;
+        }
+        if (new_x > max_x) {
+            new_x = max_x;
+        }
+        if (new_x != line_x) {
+            MoveTo(line_x, band.top);
+            LineTo(line_x, band.bottom);
+            line_x = new_x;
+            MoveTo(line_x, band.top);
+            LineTo(line_x, band.bottom);
+        }
+    }
+    MoveTo(line_x, band.top);
+    LineTo(line_x, band.bottom);
+    SetPenState(&saved);
+
+    g_split_w = (short)(line_x - (g_body.left + kSwMargin));
+    software_layout_op(&g_body);
+    InvalWindowRect(g_owner, &g_body);
+}
+
 static void software_draw(void)
 {
     RGBColor black = { 0, 0, 0 };
@@ -1205,6 +1287,21 @@ static void software_draw(void)
     draw_search();
     draw_detail();
     RGBForeColor(&black);
+    /* The splitter's grip: three quiet dots between the panes. */
+    {
+        short cx = (short)((g_lay.splitter.left
+                            + g_lay.splitter.right) / 2);
+        short cy = (short)((g_lay.splitter.top
+                            + g_lay.splitter.bottom) / 2);
+        Rect dot;
+        int i;
+
+        for (i = -1; i <= 1; ++i) {
+            SetRect(&dot, (short)(cx - 1), (short)(cy + i * 6 - 1),
+                    (short)(cx + 1), (short)(cy + i * 6 + 1));
+            PaintRect(&dot);
+        }
+    }
 }
 
 static Boolean software_click(const EventRecord *event, Point local)
@@ -1224,6 +1321,10 @@ static Boolean software_click(const EventRecord *event, Point local)
     if (g_search_focus) {
         g_search_focus = false;
         InvalWindowRect(g_owner, &g_lay.toolbar_search);
+    }
+    if (PtInRect(local, &g_lay.splitter)) {
+        track_splitter();
+        return true;
     }
     if (g_browser != NULL && PtInRect(local, &g_lay.list)) {
         /* The control runs its own tracking: selection and the header. */

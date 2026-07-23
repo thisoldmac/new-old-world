@@ -186,6 +186,35 @@ int main(void)
               "reveal shifts rigidly with the origin");
     }
 
+    /* The splitter variant: a chosen width lands exactly, the gap rect
+       sits between the panes, and wild values clamp so neither pane
+       can be dragged shut. list_w 0 must equal the default compute. */
+    {
+        SoftwareLayout def, split;
+
+        body.left = 160; body.top = 38; body.right = 744; body.bottom = 455;
+        software_layout_compute(&body, &def);
+        software_layout_compute_split(&body, 0, &split);
+        check(memcmp(&def, &split, sizeof def) == 0,
+              "list_w 0 equals the default");
+
+        software_layout_compute_split(&body, 220, &split);
+        check_common(&body, &split, "split-220");
+        check(width(&split.list) == 220, "chosen width lands exactly");
+        check(split.splitter.left == split.list.right
+              && split.splitter.right == split.detail.left,
+              "splitter fills the pane gap");
+
+        software_layout_compute_split(&body, 20, &split);
+        check_common(&body, &split, "split-min");
+        check(width(&split.list) == kSwListMin, "low widths clamp up");
+
+        software_layout_compute_split(&body, 2000, &split);
+        check_common(&body, &split, "split-max");
+        check(width(&split.detail) >= kSwDetailMin,
+              "high widths keep the detail usable");
+    }
+
     check_formatters();
 
     if (g_failures) {
