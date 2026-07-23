@@ -409,6 +409,28 @@ working on the PowerBook.
     singleton is the injection channel itself). Also unwatched:
     groups' collapsed-default on the unfiltered list. Nothing in this
     round is metal-verified yet.
+  - **Metal feedback on the host page (2026-07-23), two fixes.**
+    (1) **The `®` was passed down poorly.** A launch/reveal from the
+    host against an app with a non-ASCII name ("Adobe Photoshop® 5.0")
+    came back "no such file", the echoed path double-mangled to `¬Æ`.
+    Cause: the host sends HFS names as UTF-8 (® = `0xC2 0xAE`), but
+    `run_launch`/`run_vers`/`run_reveal` read `target` with
+    `now_json_find_string` (a raw byte copy), so `FSMakeFSSpec` never
+    saw the MacRoman byte (`0xA8`). Fixed by reading `target` with
+    `now_json_find_text` — the inbound half of `now_json_escape`, which
+    decodes `\u` and raw UTF-8 back to MacRoman (a json_native_test case
+    pins the ® round trip). **The same latent bug remains in the Files
+    path commands** (mv/trash/untrash/ls in wire.c still use
+    `find_string` for HFS paths) — flagged as a separate task, not swept
+    in here because those are metal-verified. (2) **Selection hilite
+    hugged the text.** The Data Browser's default
+    `kDataBrowserTableViewMinimalHilite` draws the selection only behind
+    each cell's glyphs, so a selected row read as three disconnected
+    patches; switched to `kDataBrowserTableViewFillHilite` for one
+    continuous full-row bar (CarbonLib 1.1+, we floor at 1.6). Guest
+    builds clean under `-Werror`; both **unverified on metal** — the
+    reveal round trip needs the connected session, and the hilite is a
+    visual change to watch on the PowerBook.
   - **Host page reaches parity: split-pane, detail, reveal
     (2026-07-22).** The host Software page grew a second half. It is now
     an `HSplitView` — the inventory Table on the left, a detail pane on

@@ -903,7 +903,7 @@ static void run_launch(const char *request_json, long id, char *out,
     arg[0] = '\0';
     if (request_json != NULL) {
         /* "target", never "name" — see run_vers. */
-        now_json_find_string(request_json, "target", arg, sizeof arg);
+        now_json_find_text(request_json, "target", arg, sizeof arg);
     }
     if (now_software_launch(arg, msg, sizeof msg) < 0) {
         now_log(kLogWarn, "sw", "#%ld launch refused: %.80s", id, msg);
@@ -933,7 +933,7 @@ static void run_reveal(const char *request_json, long id, char *out,
     arg[0] = '\0';
     if (request_json != NULL) {
         /* "target", never "name" — see run_vers. */
-        now_json_find_string(request_json, "target", arg, sizeof arg);
+        now_json_find_text(request_json, "target", arg, sizeof arg);
     }
     if (now_software_reveal_target(arg, msg, sizeof msg) < 0) {
         now_log(kLogInfo, "sw", "#%ld reveal declined: %.80s", id, msg);
@@ -967,8 +967,15 @@ static void run_vers(const char *request_json, long id, char *out,
         /* "target", never "name": the frame is scanned FLAT, and an arg
            key that shadows an envelope key (type/id/name/args) is read
            as the command name — launch shipped that bug to metal. The
-           rule lives in the contract's x-commands preamble. */
-        now_json_find_string(request_json, "target", arg, sizeof arg);
+           rule lives in the contract's x-commands preamble.
+
+           find_TEXT, never find_string: the host sends an HFS name as
+           UTF-8 (® is 0xC2 0xAE), and FSMakeFSSpec wants the MacRoman
+           byte (0xA8). find_text is the inbound half of now_json_escape
+           — it decodes \u and raw UTF-8 back to MacRoman. Without it a
+           non-ASCII name round-trips to "no such file" and the echoed
+           path double-mangles (® -> ¬Æ). */
+        now_json_find_text(request_json, "target", arg, sizeof arg);
     }
     n = now_software_vers(arg, rows, 40, msg, sizeof msg);
     if (n < 0) {

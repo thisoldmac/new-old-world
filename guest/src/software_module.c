@@ -859,6 +859,13 @@ static Boolean create_browser(void)
     SetDataBrowserListViewHeaderBtnHeight(g_browser, 16);
     SetDataBrowserHasScrollBars(g_browser, false, true);
     SetDataBrowserSortProperty(g_browser, kColName);
+    /* Full-row selection bar, not the text-hugging default. A text cell
+       hilites only behind its glyphs under the MINIMAL style, so a
+       selected row reads as three disconnected patches; FILL hilite
+       spans each cell edge-to-edge, the one continuous bar a person
+       expects (CarbonLib 1.1+, and we floor at 1.6). */
+    SetDataBrowserTableViewHiliteStyle(g_browser,
+                                       kDataBrowserTableViewFillHilite);
     /* Duplicate groups disclose in the Name column (CarbonLib 1.1+). */
     SetDataBrowserListViewDisclosureColumn(g_browser, kColName, false);
     HideControl(g_browser);

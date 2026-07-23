@@ -53,6 +53,17 @@ static void test_text_decoding(void)
                               buf, sizeof buf) == 1);
     assert((unsigned char)buf[3] == 0x8E);
 
+    /* The registered mark: MacRoman 0xA8, U+00AE, UTF-8 0xC2 0xAE. The
+       host sends it raw (this form), and a launch/reveal target must
+       decode to the single MacRoman byte FSMakeFSSpec matches on -
+       "Adobe Photoshop(R) 5.0" round-tripped to "no such file" when the
+       command handlers read it with find_string instead. */
+    assert(now_json_find_text("{\"target\":\"P\xC2\xAE\"}", "target",
+                              buf, sizeof buf) == 1);
+    assert((unsigned char)buf[0] == 'P');
+    assert((unsigned char)buf[1] == 0xA8);   /* MacRoman registered mark */
+    assert(buf[2] == '\0');
+
     /* The Apple logo: MacRoman 0xF0, U+F8FF. A file really can be
        called this, and it is the character most likely to be mangled. */
     assert(now_json_find_text("{\"n\":\"\\uF8FF\"}", "n", buf,
