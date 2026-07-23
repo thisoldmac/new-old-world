@@ -340,6 +340,28 @@ working on the PowerBook.
   are metal-verified — including MacRoman-high-byte names in
   `First hits` crossing the wire through the `\uXXXX` escaper.
 
+- **Software rung 3 begins: the page is registered and appears**
+  (2026-07-22, spec in `software-module.md`, mock in
+  `mockups/software-mockup.html`). The six-edit registration for a new
+  nav module landed and is **emulator-verified**: Software shows as the
+  6th rail row (a boxed-app-tiles `ics#` 136) between Hardware and the
+  pinned Logs/Connection pair, Cmd-6 selects it, and it draws the live
+  installed-software overview (139 extensions, 33 control panels, …).
+  The delicate part — inserting Software as id 6 pushed Logs 6→7 and
+  Connection 7→8, the first insert to move an existing non-pinned id —
+  bumped prefs to **format 14** with a remap lifting both; the
+  save/load round-trip is verified (quit + relaunch reopened on
+  Software). Two supporting pieces are host-cc tested and integrated:
+  `software_layout.c` (split-view geometry) and `sw_vers_parse.c` +
+  `now_software_read_version()` (the `'vers'` parse extracted to a unit
+  with a mutation watched failing under ASan; the per-row primitive the
+  trickle will call). **Still ahead on this rung** (the frame is drawn,
+  these land on it): the interactive Data Browser with the FSSpec-
+  bearing item model, the domain popup, live search, the launch/front/
+  quit/reveal buttons, and the idle-paced version trickle. None of that
+  is metal-verified yet — only the emulator, and only the page's
+  appearance + prefs migration.
+
 - **Software rungs 1–2: resumable sweep, `vers`, running tags, and the
   `software.list` family** (2026-07-22, spec in `software-module.md`).
   Rung 1 is **emulator-verified**: `sw extensions` tagged exactly the
