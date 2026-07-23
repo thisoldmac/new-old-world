@@ -86,9 +86,14 @@ typedef struct {
 /* Preferences are per COPY of the app, not per creator. Running two
    guests at once is a real workflow — one for each host, on different
    ports — and a shared file would have them overwrite each other's port
-   and share root. The canonical copy keeps the original file name so
-   nothing already saved is orphaned; any other copy gets its own,
-   named after itself. */
+   and share root. The CANONICAL copy — the shipped product, named
+   "New Old World" to match the host app — keeps the base file name so
+   nothing already saved is orphaned; any other copy (a dev build called
+   "now-guest", a side experiment) gets its own file, named after itself,
+   and starts from defaults (which on the emulator means the 10.0.2.2
+   gateway). Renaming the canonical binary would therefore lose the
+   saved host and look like a hang on metal, so the name is pinned here
+   and in the build (guest/tools/name_macbinary.py). */
 static OSErr prefs_spec(FSSpec *spec)
 {
     ProcessSerialNumber self;
@@ -113,7 +118,7 @@ static OSErr prefs_spec(FSSpec *spec)
     if (GetCurrentProcess(&self) == noErr
         && GetProcessInformation(&self, &info) == noErr
         && app_name[0] > 0
-        && !EqualString(app_name, (ConstStr255Param)"\pnow-guest",
+        && !EqualString(app_name, (ConstStr255Param)"\pNew Old World",
                         false, false)) {
         long room = 31 - file_name[0] - 3;
 

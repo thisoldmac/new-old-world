@@ -105,15 +105,24 @@ FTP to `10.91.5.47` (`claude`/`claude`), into `Lab/`. Rumpus decodes a
 MacBinary `.bin` on arrival; verify by comparing fork sizes, not by
 re-downloading.
 
-- **Do not overwrite someone else's binary.** `now-guest` is the
-  canonical one a human is usually testing. A side experiment goes up as
-  `now-chip` or its own name.
+- **The canonical binary is `New Old World`.** The build emits it as
+  `New Old World.bin` beside `now-guest.bin` (the CMake target name can't
+  hold a space, so `guest/tools/name_macbinary.py` stamps the product
+  name into the MacBinary; Rumpus decodes by that internal name). That is
+  the one a human tests on metal and the one that lands on main.
+  `now-guest` and other names are dev / side builds — a side experiment
+  goes up as `now-chip` or its own name.
+- **Do not overwrite someone else's binary.** `New Old World` is the
+  shared canonical one; don't clobber it with an experiment.
 - **Deploy under an honest name.** A build named for what it was meant
   to be rather than what it is cost an evening of diagnosis aimed at the
   wrong half of the system.
-- **Preferences key off the binary's name.** Any name but `now-guest`
+- **Preferences key off the binary's name.** Any name but `New Old World`
   starts with no preferences and dials `10.0.2.2` — the QEMU gateway,
   which never answers on real hardware and looks exactly like a hang.
+  (The canonical name lives once, in `prefs.c :: prefs_spec`; the base
+  prefs file is `New Old World Prefs`, so the existing saved host carries
+  over from the old `now-guest` canonical.)
 - **Check the build stamp before believing a test result.** It can read
   a few minutes early, because CMake touches `build_stamp.c` at the end
   of a build; `touch guest/src/build_stamp.c` first to force it current.

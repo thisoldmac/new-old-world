@@ -69,3 +69,30 @@ add_custom_target(touch_build_stamp ALL
     COMMAND ${CMAKE_COMMAND} -E touch_nocreate
             ${CMAKE_CURRENT_SOURCE_DIR}/src/build_stamp.c)
 add_dependencies(now-guest touch_build_stamp)
+
+# The canonical deploy artifact carries the product's real name, spaces
+# and all: "New Old World.bin", to match "New Old World.app" on the host.
+# A classic HFS name allows the spaces; a CMake target name does not, and
+# Retro68 names the MacBinary after the target - so the name is stamped
+# into a copy of the .bin here instead. This is not cosmetic: Rumpus
+# decodes the .bin by its INTERNAL name, and prefs.c keys the canonical
+# preferences (and the real host, not the 10.0.2.2 emulator gateway) off
+# that process name. now-guest.bin stays for dev / side-by-side testing;
+# "New Old World.bin" is the one that goes to metal and lands on main.
+find_program(PYTHON3_EXECUTABLE NAMES python3 python)
+if(PYTHON3_EXECUTABLE)
+    add_custom_command(
+        OUTPUT "New Old World.bin"
+        COMMAND ${PYTHON3_EXECUTABLE}
+                "${CMAKE_CURRENT_SOURCE_DIR}/tools/name_macbinary.py"
+                "now-guest.bin" "New Old World.bin" "New Old World"
+        DEPENDS now-guest.bin
+                "${CMAKE_CURRENT_SOURCE_DIR}/tools/name_macbinary.py"
+        COMMENT "Stamping canonical MacBinary: New Old World.bin"
+        VERBATIM)
+    add_custom_target(now-guest-canonical ALL DEPENDS "New Old World.bin")
+else()
+    message(WARNING
+        "python3 not found: skipping the canonical 'New Old World.bin' "
+        "stamp; deploy now-guest.bin renamed by hand (see AGENTS.md).")
+endif()
