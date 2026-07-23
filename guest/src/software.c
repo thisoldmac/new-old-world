@@ -1,5 +1,6 @@
 #include "software.h"
 
+#include "proc_actions.h"
 #include "sw_vers_parse.h"
 
 #include <Folders.h>
@@ -760,6 +761,94 @@ int now_software_page(const char *domain, long cursor,
     return n;
 }
 
+/* --- the page's action helpers ------------------------------------------- */
+
+Boolean now_software_find_psn(const FSSpec *spec, ProcessSerialNumber *out)
+{
+    ProcessSerialNumber psn = { 0, kNoProcess };
+
+    while (GetNextProcess(&psn) == noErr) {
+        ProcessInfoRec info;
+        FSSpec app;
+
+        memset(&info, 0, sizeof info);
+        info.processInfoLength = sizeof info;
+        info.processName = NULL;
+        info.processAppSpec = &app;
+        if (GetProcessInformation(&psn, &info) == noErr
+            && app.vRefNum == spec->vRefNum && app.parID == spec->parID
+            && EqualString(app.name, spec->name, false, true)) {
+            *out = psn;
+            return true;
+        }
+    }
+    return false;
+}
+
+/* The Finder, by signature — the reveal's addressee. */
+static Boolean find_finder(ProcessSerialNumber *out)
+{
+    ProcessSerialNumber psn = { 0, kNoProcess };
+
+    while (GetNextProcess(&psn) == noErr) {
+        ProcessInfoRec info;
+
+        memset(&info, 0, sizeof info);
+        info.processInfoLength = sizeof info;
+        info.processName = NULL;
+        info.processAppSpec = NULL;
+        if (GetProcessInformation(&psn, &info) == noErr
+            && info.processSignature == 'MACS') {
+            *out = psn;
+            return true;
+        }
+    }
+    return false;
+}
+
+OSErr now_software_reveal(const FSSpec *spec)
+{
+    ProcessSerialNumber finder;
+    AliasHandle alias = NULL;
+    AEAddressDesc target = { typeNull, NULL };
+    AppleEvent event = { typeNull, NULL };
+    AppleEvent reply = { typeNull, NULL };
+    OSErr err;
+
+    if (!find_finder(&finder)) {
+        return procNotFound;
+    }
+    err = NewAliasMinimal(spec, &alias);
+    if (err != noErr || alias == NULL) {
+        return err != noErr ? err : memFullErr;
+    }
+    err = AECreateDesc(typeProcessSerialNumber, &finder, sizeof finder,
+                       &target);
+    if (err == noErr) {
+        err = AECreateAppleEvent(kAEMiscStandards, kAEMakeObjectsVisible,
+                                 &target, kAutoGenerateReturnID,
+                                 kAnyTransactionID, &event);
+    }
+    if (err == noErr) {
+        HLock((Handle)alias);
+        err = AEPutParamPtr(&event, keyDirectObject, typeAlias, *alias,
+                            GetHandleSize((Handle)alias));
+        HUnlock((Handle)alias);
+    }
+    if (err == noErr) {
+        err = AESend(&event, &reply, kAENoReply | kAENeverInteract,
+                     kAENormalPriority, kAEDefaultTimeout, NULL, NULL);
+    }
+    AEDisposeDesc(&event);
+    AEDisposeDesc(&target);
+    DisposeHandle((Handle)alias);
+    if (err == noErr) {
+        /* The reveal is invisible while the Finder is behind us. */
+        err = now_proc_bring_to_front(&finder);
+    }
+    return err;
+}
+
 /* --- resolution: an argument names one file ------------------------------ */
 
 /* Full path of one file, dir chain plus name. False (and empty out)
@@ -781,6 +870,11 @@ static Boolean file_full_path(const FSSpec *spec, char *out, long cap)
     memcpy(out + used, spec->name + 1, (size_t)spec->name[0]);
     out[used + spec->name[0]] = '\0';
     return true;
+}
+
+Boolean now_software_full_path(const FSSpec *spec, char *out, long cap)
+{
+    return file_full_path(spec, out, cap);
 }
 
 /* A real disk has real duplicates — the metal run found several

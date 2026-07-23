@@ -157,6 +157,21 @@ void now_software_item_fill(const FSSpec *spec, Boolean off, SwPageItem *out);
    join). Call once after the array is built, not per row. */
 void now_software_mark_running(SwPageItem *items, int count);
 
+/* Full HFS path of one file — the detail pane's Where line. False (and
+   "") when the parent chain could not be named honestly; wrong is worse
+   than none. */
+Boolean now_software_full_path(const FSSpec *spec, char *out, long cap);
+
+/* The running process whose binary is this exact file, if any: one
+   Process Manager walk, the FSSpec-triple join. Fresh per call, so the
+   answer is current at the moment a button acts on it. */
+Boolean now_software_find_psn(const FSSpec *spec, ProcessSerialNumber *out);
+
+/* Reveal one file in the Finder: an alias in a 'misc'/'mvis' Apple
+   Event to the Finder, which is then brought forward. noErr means the
+   event was SENT — the Finder does the showing. */
+OSErr now_software_reveal(const FSSpec *spec);
+
 /* Build a FOLDER domain's items (extensions, cdevs, startup, apple):
    enabled first, then the disabled sibling's, each with running marked.
    Returns the count, sets *truncated if the array filled first, or -1 for

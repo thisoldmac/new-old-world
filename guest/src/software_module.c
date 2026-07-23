@@ -1,8 +1,10 @@
 #include "software_module.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
+#include "proc_actions.h"
 #include "software.h"
 #include "software_layout.h"
 #include "pump.h"
@@ -85,9 +87,18 @@ static ControlRef g_popup;
 static ControlRef g_browser;
 static ControlRef g_detail_box;
 static ControlRef g_launch;
+static ControlRef g_front;
+static ControlRef g_quit;
+static ControlRef g_reveal;
 static ControlRef g_rescan;
 static Boolean g_browser_ok;
-static short g_launch_hilite = -1;    /* idle-cache: re-hilite on change */
+/* Button caches: hilite and shown state re-asserted only on change, so
+   a selection change never flickers a control it does not alter. */
+static short g_launch_hilite = -1;
+static short g_reveal_hilite = -1;
+static short g_launch_shown = -1;
+static short g_front_shown = -1;
+static short g_quit_shown = -1;
 
 static DataBrowserItemDataUPP g_data_upp;
 static DataBrowserItemNotificationUPP g_notify_upp;
@@ -96,6 +107,20 @@ static DataBrowserItemCompareUPP g_compare_upp;
    deselect for the selected row, whose notification would otherwise
    clobber the domain's selection mid-rebuild. */
 static Boolean g_in_rebuild;
+
+/* Duplicate groups, recomputed with the browser's contents: items
+   sharing a name (case-folded) collapse under a closed container row.
+   Parent rows live in their own item-id range, above any item index. */
+#define kGroupIdBase 0x00010000UL
+static short g_sorted[kSwMaxCap];     /* item indices, name order */
+static short g_group_of[kSwMaxCap];   /* item -> group id, -1 = alone */
+static short g_group_first[kSwMaxCap / 2];   /* gid -> pos in g_sorted */
+static short g_group_size[kSwMaxCap / 2];
+static int g_group_count;
+
+/* The selected item's full path, computed on selection change - never
+   in draw, which must not touch the catalog. */
+static char g_sel_path[224];
 
 static DomainState *dom(void)
 {
@@ -154,21 +179,6 @@ static int g_shown_rows;
 
 /* --- the browser --------------------------------------------------------- */
 
-static void update_launch_enable(void)
-{
-    DomainState *d = dom();
-    short want = 255;
-
-    if (d->sel >= 0 && d->sel < d->count
-        && (unsigned long)d->items[d->sel].type == kTypeAppl) {
-        want = 0;
-    }
-    if (g_launch != NULL && want != g_launch_hilite) {
-        HiliteControl(g_launch, want);
-        g_launch_hilite = want;
-    }
-}
-
 static void invalidate_detail(void)
 {
     if (g_owner != NULL) {
@@ -176,73 +186,241 @@ static void invalidate_detail(void)
     }
 }
 
-/* Repopulate the browser from the current domain's cache, filtered.
-   This is the only whole-list operation left, and it runs on user
-   intent (domain switch, keystroke, rescan) - never per arriving item. */
+static void refresh_sel_path(void)
+{
+    DomainState *d = dom();
+
+    g_sel_path[0] = '\0';
+    if (d->sel >= 0 && d->sel < d->count) {
+        now_software_full_path(&d->items[d->sel].spec, g_sel_path,
+                               sizeof g_sel_path);
+    }
+}
+
+static void show_or_hide(ControlRef c, short *shown, short want)
+{
+    if (c == NULL || *shown == want) {
+        return;
+    }
+    *shown = want;
+    if (!g_visible) {
+        return;
+    }
+    if (want) {
+        ShowControl(c);
+    } else {
+        HideControl(c);
+    }
+}
+
+/* The action row follows the selection: a dead app offers Launch, a
+   running one Bring to Front / Quit (Launch shares Front's slot -
+   they are never true together), and Show in Finder follows any
+   selection at all. Caches keep un-changed controls untouched. */
+static void sync_buttons(void)
+{
+    DomainState *d = dom();
+    Boolean have = d->sel >= 0 && d->sel < d->count;
+    Boolean running = have && d->items[d->sel].running;
+    Boolean launchable = have && !running
+        && (unsigned long)d->items[d->sel].type == kTypeAppl;
+    short want;
+
+    show_or_hide(g_launch, &g_launch_shown, (short)!running);
+    show_or_hide(g_front, &g_front_shown, (short)running);
+    show_or_hide(g_quit, &g_quit_shown, (short)running);
+
+    want = launchable ? 0 : 255;
+    if (g_launch != NULL && want != g_launch_hilite) {
+        HiliteControl(g_launch, want);
+        g_launch_hilite = want;
+    }
+    want = have ? 0 : 255;
+    if (g_reveal != NULL && want != g_reveal_hilite) {
+        HiliteControl(g_reveal, want);
+        g_reveal_hilite = want;
+    }
+}
+
+/* --- duplicate groups ---------------------------------------------------- */
+
+static const SwPageItem *g_cmp_items;   /* qsort has no context arg */
+
+static int cmp_by_name(const void *pa, const void *pb)
+{
+    short a = *(const short *)pa;
+    short b = *(const short *)pb;
+    const unsigned char *na = g_cmp_items[a].name;
+    const unsigned char *nb = g_cmp_items[b].name;
+    int len = na[0] < nb[0] ? na[0] : nb[0];
+    int i;
+
+    for (i = 1; i <= len; ++i) {
+        char ca = (char)na[i], cb = (char)nb[i];
+
+        if (ca >= 'A' && ca <= 'Z') ca = (char)(ca + 32);
+        if (cb >= 'A' && cb <= 'Z') cb = (char)(cb + 32);
+        if (ca != cb) {
+            return ca < cb ? -1 : 1;
+        }
+    }
+    if (na[0] != nb[0]) {
+        return na[0] < nb[0] ? -1 : 1;
+    }
+    return a - b;                      /* stable for equal names */
+}
+
+static Boolean same_name(const SwPageItem *a, const SwPageItem *b)
+{
+    return EqualString(a->name, b->name, false, true);
+}
+
+/* Group items sharing a name. ASCII case-folded sort brings HFS-equal
+   names adjacent (HFS compare is case-insensitive too); runs of two or
+   more become one container. */
+static void compute_groups(void)
+{
+    DomainState *d = dom();
+    int i;
+
+    g_group_count = 0;
+    for (i = 0; i < d->count; ++i) {
+        g_sorted[i] = (short)i;
+        g_group_of[i] = -1;
+    }
+    if (d->count < 2) {
+        return;
+    }
+    g_cmp_items = d->items;
+    qsort(g_sorted, (size_t)d->count, sizeof g_sorted[0], cmp_by_name);
+    i = 0;
+    while (i < d->count) {
+        int j = i + 1;
+
+        while (j < d->count
+               && same_name(&d->items[g_sorted[i]],
+                            &d->items[g_sorted[j]])) {
+            ++j;
+        }
+        if (j - i >= 2 && g_group_count < kSwMaxCap / 2) {
+            int gid = g_group_count++;
+            int k;
+
+            g_group_first[gid] = (short)i;
+            g_group_size[gid] = (short)(j - i);
+            for (k = i; k < j; ++k) {
+                g_group_of[g_sorted[k]] = (short)gid;
+            }
+        }
+        i = j;
+    }
+}
+
+/* Repopulate the browser from the current domain's cache: filtered,
+   duplicates collapsed under closed containers. The ONLY list-wide
+   operation, and it runs on user intent or once at sweep end - never
+   per arriving item; the third metal round's flashing was the batched
+   sorted inserts this replaces. */
 static void rebuild_browser(void)
 {
-    DataBrowserItemID ids[kSwMaxCap];
+    DataBrowserItemID roots[kSwMaxCap];
     DomainState *d = dom();
     char needle[48];
-    UInt32 n = 0;
+    UInt32 n_roots = 0;
+    int shown = 0;
     int i;
 
     if (g_browser == NULL) {
         return;
     }
+    compute_groups();
     lower_needle(needle, sizeof needle);
     g_in_rebuild = true;
     RemoveDataBrowserItems(g_browser, kDataBrowserNoItem, 0, NULL,
                            kDataBrowserItemNoProperty);
     for (i = 0; i < d->count; ++i) {
-        if (name_matches(&d->items[i], needle)) {
-            ids[n++] = (DataBrowserItemID)(i + 1);
+        int idx = g_sorted[i];
+        int gid = g_group_of[idx];
+
+        if (!name_matches(&d->items[idx], needle)) {
+            continue;
+        }
+        shown += 1;
+        if (gid < 0) {
+            roots[n_roots++] = (DataBrowserItemID)(idx + 1);
+        } else if (i == g_group_first[gid]) {
+            roots[n_roots++] = (DataBrowserItemID)(kGroupIdBase + gid);
         }
     }
-    if (n > 0) {
-        AddDataBrowserItems(g_browser, kDataBrowserNoItem, n, ids,
+    if (n_roots > 0) {
+        AddDataBrowserItems(g_browser, kDataBrowserNoItem, n_roots, roots,
                             kDataBrowserItemNoProperty);
     }
-    g_shown_rows = (int)n;
-    if (d->sel >= 0) {
-        if (d->sel < d->count
-            && name_matches(&d->items[d->sel], needle)) {
-            DataBrowserItemID sel = (DataBrowserItemID)(d->sel + 1);
+    {
+        int gid;
 
-            SetDataBrowserSelectedItems(g_browser, 1, &sel,
-                                        kDataBrowserItemsAssign);
-        } else {
-            d->sel = -1;
+        for (gid = 0; gid < g_group_count; ++gid) {
+            DataBrowserItemID kids[kSwMaxCap];
+            UInt32 nk = 0;
+            int k;
+
+            /* Members share the name, so the filter that admitted the
+               parent admits every child. */
+            if (!name_matches(
+                    &d->items[g_sorted[g_group_first[gid]]], needle)) {
+                continue;
+            }
+            for (k = 0; k < g_group_size[gid]; ++k) {
+                kids[nk++] = (DataBrowserItemID)(
+                    g_sorted[g_group_first[gid] + k] + 1);
+            }
+            AddDataBrowserItems(g_browser,
+                                (DataBrowserItemID)(kGroupIdBase + gid),
+                                nk, kids, kDataBrowserItemNoProperty);
         }
     }
+    g_shown_rows = shown;
+    if (d->sel >= 0
+        && !(d->sel < d->count
+             && name_matches(&d->items[d->sel], needle))) {
+        d->sel = -1;
+    }
+    if (d->sel < 0) {
+        /* Land on the first ungrouped row, so the detail pane has
+           something to say and the buttons something to act on. */
+        for (i = 0; i < d->count; ++i) {
+            int idx = g_sorted[i];
+
+            if (g_group_of[idx] < 0
+                && name_matches(&d->items[idx], needle)) {
+                d->sel = idx;
+                break;
+            }
+        }
+    }
+    if (d->sel >= 0) {
+        DataBrowserItemID sel = (DataBrowserItemID)(d->sel + 1);
+
+        SetDataBrowserSelectedItems(g_browser, 1, &sel,
+                                    kDataBrowserItemsAssign);
+    }
     g_in_rebuild = false;
-    update_launch_enable();
+    refresh_sel_path();
+    sync_buttons();
     invalidate_detail();
 }
 
-/* Append freshly swept items without touching the rows already there. */
-static void append_items(int from, int to)
+static OSStatus set_text(DataBrowserItemDataRef data, const char *caption)
 {
-    DataBrowserItemID ids[kSwMaxCap];
-    DomainState *d = dom();
-    char needle[48];
-    UInt32 n = 0;
-    int i;
+    CFStringRef text = CFStringCreateWithCString(NULL, caption,
+                                                 kCFStringEncodingMacRoman);
 
-    if (g_browser == NULL || to <= from) {
-        return;
+    if (text == NULL) {
+        return memFullErr;
     }
-    lower_needle(needle, sizeof needle);
-    for (i = from; i < to; ++i) {
-        if (name_matches(&d->items[i], needle)) {
-            ids[n++] = (DataBrowserItemID)(i + 1);
-        }
-    }
-    if (n > 0) {
-        AddDataBrowserItems(g_browser, kDataBrowserNoItem, n, ids,
-                            kDataBrowserItemNoProperty);
-        g_shown_rows += (int)n;
-    }
+    SetDataBrowserItemDataText(data, text);
+    CFRelease(text);
+    return noErr;
 }
 
 static OSStatus item_data(ControlRef browser, DataBrowserItemID item,
@@ -257,6 +435,67 @@ static OSStatus item_data(ControlRef browser, DataBrowserItemID item,
     (void)browser;
     if (changeValue) {
         return errDataBrowserPropertyNotSupported;
+    }
+    if (item >= kGroupIdBase
+        && item < kGroupIdBase + (DataBrowserItemID)g_group_count) {
+        /* A duplicate group's container row: the shared name, the
+           member count where a version would be, aggregate size and
+           state. Discloses, never selects (the divider pattern). */
+        int gid = (int)(item - kGroupIdBase);
+        int k;
+
+        if (property == kDataBrowserItemIsContainerProperty) {
+            SetDataBrowserItemDataBooleanValue(data, true);
+            return noErr;
+        }
+        if (property == kDataBrowserItemIsSelectableProperty) {
+            SetDataBrowserItemDataBooleanValue(data, false);
+            return noErr;
+        }
+        switch (property) {
+        case kColName: {
+            const SwPageItem *first =
+                &d->items[g_sorted[g_group_first[gid]]];
+            long n = first->name[0] < 63 ? first->name[0] : 63;
+
+            memcpy(caption, first->name + 1, (size_t)n);
+            caption[n] = '\0';
+            break;
+        }
+        case kColVersion:
+            snprintf(caption, sizeof caption, "%d items",
+                     g_group_size[gid]);
+            break;
+        case kColSize: {
+            long total = 0;
+
+            for (k = 0; k < g_group_size[gid]; ++k) {
+                const SwPageItem *m =
+                    &d->items[g_sorted[g_group_first[gid] + k]];
+
+                if (m->size_k > 0) {
+                    total += m->size_k;
+                }
+            }
+            sw_size_text(total * 1024L, caption, sizeof caption);
+            break;
+        }
+        case kColState: {
+            Boolean any_running = false;
+
+            for (k = 0; k < g_group_size[gid]; ++k) {
+                if (d->items[g_sorted[g_group_first[gid] + k]].running) {
+                    any_running = true;
+                }
+            }
+            snprintf(caption, sizeof caption, "%s",
+                     any_running ? "running" : "");
+            break;
+        }
+        default:
+            return errDataBrowserPropertyNotSupported;
+        }
+        return set_text(data, caption);
     }
     if (item < 1 || item > (DataBrowserItemID)d->count) {
         return errDataBrowserPropertyNotSupported;
@@ -288,14 +527,8 @@ static OSStatus item_data(ControlRef browser, DataBrowserItemID item,
     default:
         return errDataBrowserPropertyNotSupported;
     }
-    text = CFStringCreateWithCString(NULL, caption,
-                                     kCFStringEncodingMacRoman);
-    if (text == NULL) {
-        return memFullErr;
-    }
-    SetDataBrowserItemDataText(data, text);
-    CFRelease(text);
-    return noErr;
+    (void)text;
+    return set_text(data, caption);
 }
 
 static void item_notify(ControlRef browser, DataBrowserItemID item,
@@ -304,18 +537,21 @@ static void item_notify(ControlRef browser, DataBrowserItemID item,
     DomainState *d = dom();
 
     (void)browser;
-    /* Notifications fired by our own rebuild are not user intent. */
-    if (g_in_rebuild) {
+    /* Notifications fired by our own rebuild are not user intent, and
+       container rows notify open/close, which is not selection. */
+    if (g_in_rebuild || item >= kGroupIdBase) {
         return;
     }
     if (message == kDataBrowserItemSelected) {
         d->sel = (int)item - 1;
-        update_launch_enable();
+        refresh_sel_path();
+        sync_buttons();
         invalidate_detail();
     } else if (message == kDataBrowserItemDeselected
                && d->sel == (int)item - 1) {
         d->sel = -1;
-        update_launch_enable();
+        refresh_sel_path();
+        sync_buttons();
         invalidate_detail();
     }
 }
@@ -333,21 +569,33 @@ static short state_rank(const SwPageItem *it)
     return it->off ? 1 : 2;
 }
 
+/* The item a row id stands for; a container row is represented by its
+   first member, which carries the shared name. */
+static const SwPageItem *rep_item(DataBrowserItemID id)
+{
+    DomainState *d = dom();
+
+    if (id >= kGroupIdBase
+        && id < kGroupIdBase + (DataBrowserItemID)g_group_count) {
+        return &d->items[g_sorted[g_group_first[id - kGroupIdBase]]];
+    }
+    if (id >= 1 && id <= (DataBrowserItemID)d->count) {
+        return &d->items[id - 1];
+    }
+    return NULL;
+}
+
 static Boolean item_compare(ControlRef browser, DataBrowserItemID a,
                             DataBrowserItemID b,
                             DataBrowserPropertyID property)
 {
-    DomainState *d = dom();
-    const SwPageItem *ia;
-    const SwPageItem *ib;
+    const SwPageItem *ia = rep_item(a);
+    const SwPageItem *ib = rep_item(b);
 
     (void)browser;
-    if (a < 1 || a > (DataBrowserItemID)d->count || b < 1
-        || b > (DataBrowserItemID)d->count) {
+    if (ia == NULL || ib == NULL) {
         return a < b;
     }
-    ia = &d->items[a - 1];
-    ib = &d->items[b - 1];
     switch (property) {
     case kColSize:
         if (ia->size_k != ib->size_k) {
@@ -492,6 +740,8 @@ static Boolean create_browser(void)
     SetDataBrowserListViewHeaderBtnHeight(g_browser, 16);
     SetDataBrowserHasScrollBars(g_browser, false, true);
     SetDataBrowserSortProperty(g_browser, kColName);
+    /* Duplicate groups disclose in the Name column (CarbonLib 1.1+). */
+    SetDataBrowserListViewDisclosureColumn(g_browser, kColName, false);
     HideControl(g_browser);
     return true;
 }
@@ -760,6 +1010,39 @@ static void draw_detail(void)
              it->running ? "running"
                          : (it->off ? "disabled (off)" : "not running"));
     draw_at(x, y, buf);
+    y = (short)(y + 15);
+
+    /* Where: the full path, wrapped over two lines, broken after a
+       colon when one is near the split so segments stay whole. The
+       path was computed at selection time, never here. */
+    if (g_sel_path[0] != '\0') {
+        long len = (long)strlen(g_sel_path);
+        long split = len;
+        char line[64];
+
+        draw_at(x, y, "Where:");
+        y = (short)(y + 13);
+        if (len > 44) {
+            long p;
+
+            split = 44;
+            for (p = 44; p > 24; --p) {
+                if (g_sel_path[p - 1] == ':') {
+                    split = p;
+                    break;
+                }
+            }
+        }
+        memcpy(line, g_sel_path, (size_t)(split < 60 ? split : 60));
+        line[split < 60 ? split : 60] = '\0';
+        draw_at((short)(x + 8), y, line);
+        if (split < len) {
+            y = (short)(y + 13);
+            snprintf(line, sizeof line, "%.48s%s", g_sel_path + split,
+                     len - split > 48 ? "..." : "");
+            draw_at((short)(x + 8), y, line);
+        }
+    }
 }
 
 /* --- module ops --------------------------------------------------------- */
@@ -791,13 +1074,25 @@ static OSErr software_create(WindowRef owner, const Rect *body)
     CopyCStringToPascal("Launch", text);
     g_launch = NewControl(owner, &g_lay.launch_btn, text, false, 0, 0, 1,
                           pushButProc, 0);
+    CopyCStringToPascal("Bring to Front", text);
+    g_front = NewControl(owner, &g_lay.front_btn, text, false, 0, 0, 1,
+                         pushButProc, 0);
+    CopyCStringToPascal("Quit", text);
+    g_quit = NewControl(owner, &g_lay.quit_btn, text, false, 0, 0, 1,
+                        pushButProc, 0);
+    CopyCStringToPascal("Show in Finder", text);
+    g_reveal = NewControl(owner, &g_lay.reveal_btn, text, false, 0, 0, 1,
+                          pushButProc, 0);
     CopyCStringToPascal("Rescan", text);
     g_rescan = NewControl(owner, &g_lay.rescan_btn, text, false, 0, 0, 1,
                           pushButProc, 0);
     if (g_popup == NULL || g_detail_box == NULL || g_launch == NULL
+        || g_front == NULL || g_quit == NULL || g_reveal == NULL
         || g_rescan == NULL) {
         return memFullErr;
     }
+    g_launch_shown = g_front_shown = g_quit_shown = -1;
+    g_reveal_hilite = -1;
     /* A missing Data Browser costs the list, not the page - the
        processes_module degrade. */
     g_browser_ok = create_browser();
@@ -824,7 +1119,8 @@ static void software_dispose(void)
     /* The window took the controls with it; the UPPs are ours, and are
        disposed only now that the browser is gone. */
     dispose_callbacks();
-    g_popup = g_browser = g_detail_box = g_launch = g_rescan = NULL;
+    g_popup = g_browser = g_detail_box = g_launch = g_front = g_quit
+        = g_reveal = g_rescan = NULL;
     g_owner = NULL;
 }
 
@@ -841,15 +1137,23 @@ static void software_show(Boolean visible)
         if (visible) ShowControl(g_detail_box);
         else HideControl(g_detail_box);
     }
-    if (g_launch != NULL) {
-        if (visible) ShowControl(g_launch); else HideControl(g_launch);
+    if (g_reveal != NULL) {
+        if (visible) ShowControl(g_reveal); else HideControl(g_reveal);
     }
     if (g_rescan != NULL) {
         if (visible) ShowControl(g_rescan); else HideControl(g_rescan);
     }
     if (visible) {
-        g_launch_hilite = -1;         /* re-assert after reshow */
-        update_launch_enable();
+        /* Launch / Front / Quit visibility follows the selection. */
+        g_launch_shown = g_front_shown = g_quit_shown = -1;
+        g_launch_hilite = -1;
+        g_reveal_hilite = -1;
+        sync_buttons();
+    } else {
+        if (g_launch != NULL) HideControl(g_launch);
+        if (g_front != NULL) HideControl(g_front);
+        if (g_quit != NULL) HideControl(g_quit);
+        g_launch_shown = g_front_shown = g_quit_shown = -1;
     }
 }
 
@@ -875,6 +1179,15 @@ static void software_layout_op(const Rect *body)
     }
     if (g_launch != NULL) {
         MoveControl(g_launch, g_lay.launch_btn.left, g_lay.launch_btn.top);
+    }
+    if (g_front != NULL) {
+        MoveControl(g_front, g_lay.front_btn.left, g_lay.front_btn.top);
+    }
+    if (g_quit != NULL) {
+        MoveControl(g_quit, g_lay.quit_btn.left, g_lay.quit_btn.top);
+    }
+    if (g_reveal != NULL) {
+        MoveControl(g_reveal, g_lay.reveal_btn.left, g_lay.reveal_btn.top);
     }
     if (g_rescan != NULL) {
         MoveControl(g_rescan, g_lay.rescan_btn.left, g_lay.rescan_btn.top);
@@ -937,6 +1250,36 @@ static Boolean software_click(const EventRecord *event, Point local)
         }
         return true;
     }
+    if (c == g_front || c == g_quit) {
+        if (TrackControl(c, local, now_pump_action()) != 0) {
+            DomainState *d = dom();
+            ProcessSerialNumber psn;
+
+            /* The PSN is found at ACT time, fresh - the row's running
+               flag may be minutes old, and acting on a stale PSN would
+               poke whatever recycled it. */
+            if (d->sel >= 0 && d->sel < d->count
+                && now_software_find_psn(&d->items[d->sel].spec, &psn)) {
+                if (c == g_front) {
+                    now_proc_bring_to_front(&psn);
+                } else {
+                    now_proc_ask_quit(&psn);
+                }
+            }
+        }
+        return true;
+    }
+    if (c == g_reveal) {
+        if (g_reveal_hilite == 0
+            && TrackControl(c, local, now_pump_action()) != 0) {
+            DomainState *d = dom();
+
+            if (d->sel >= 0 && d->sel < d->count) {
+                now_software_reveal(&d->items[d->sel].spec);
+            }
+        }
+        return true;
+    }
     if (c == g_rescan) {
         if (TrackControl(c, local, now_pump_action()) != 0) {
             load_domain(g_domain);
@@ -987,30 +1330,17 @@ static void software_idle(void)
         return;
     }
     if (d->sweeping) {
-        int before = d->count;
-
+        /* The browser is fed NOTHING mid-sweep: batched sorted inserts
+           shuffled the visible rows and flashed the list a dozen times
+           (third metal round). The status placard counts the arrivals;
+           the list populates ONCE when the sweep completes. */
         now_software_sweep_step(&d->sweep, collect_app, d);
         if (d->sweep.done) {
             d->sweeping = false;
             now_software_mark_running(d->items, d->count);
             now_software_sweep_end(&d->sweep);
-            /* Running arrived for every row at once; one refresh of the
-               State column, by explicit ids - a one-time cost at sweep
-               end, not a per-item pattern. */
-            if (g_browser != NULL && d->count > 0) {
-                DataBrowserItemID ids[kSwMaxCap];
-                int i;
-
-                for (i = 0; i < d->count; ++i) {
-                    ids[i] = (DataBrowserItemID)(i + 1);
-                }
-                UpdateDataBrowserItems(g_browser, kDataBrowserNoItem,
-                                       (UInt32)d->count, ids,
-                                       kDataBrowserItemNoProperty,
-                                       kColState);
-            }
+            rebuild_browser();
         }
-        append_items(before, d->count);
         return;
     }
     /* Version trickle: one fork open per pass, one CELL repainted -
