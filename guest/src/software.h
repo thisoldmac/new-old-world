@@ -144,6 +144,8 @@ typedef struct {
     Boolean running;
     Boolean version_read; /* the trickle has visited this row */
     char version[16];     /* "" until read, or when there is no 'vers' */
+    IconRef icon;         /* acquired lazily on first selection; NULL
+                             until then; released when the page dies */
 } SwPageItem;
 
 /* Fill one item's catalog facts (name, type, creator, size, off) from its
