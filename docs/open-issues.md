@@ -390,10 +390,25 @@ working on the PowerBook.
     search focus ring — a control experiment showed the metal-verified
     Processes browser ALSO ignores injected clicks (atomic and
     QMP-held), so this is an injection-vs-DataBrowser artifact, not a
-    known defect; still, only a hand on a mouse closes it. **Deferred
-    to the next cut:** Bring to Front / Quit (need the PSN), Show in
-    Finder (reveal Apple Event wants its 4CC confirmed), full path in
-    the detail. Nothing in this cut is metal-verified yet.
+    known defect; still, only a hand on a mouse closes it.
+  - **Fourth round (2026-07-22):** the third metal round's four asks.
+    The residual flashing was batched *sorted* inserts shuffling
+    visible rows — the browser is now fed nothing mid-sweep (the
+    placard counts arrivals) and populates ONCE at sweep end, watched.
+    **Duplicate groups**: same-name items collapse under a container
+    row (disclosure in the Name column, "N items", aggregate size,
+    running-if-any; parents disclose, never select) — watched as
+    "now-guest · 2 items · 1.0M · running" with indented per-version
+    children, isolated by search ("2 of 206"). **Where:** the full
+    path, wrapped, in the detail — watched, computed on selection
+    never in draw. **Show in Finder**: alias in a 'misc'/'mvis' Apple
+    Event, Finder fronted — watched revealing Note Pad in Apple
+    Extras, matching the detail exactly. **Bring to Front / Quit**:
+    wired over the metal-verified `proc_actions` with a fresh
+    at-act-time PSN join; unwatched as buttons (the VM's only running
+    singleton is the injection channel itself). Also unwatched:
+    groups' collapsed-default on the unfiltered list. Nothing in this
+    round is metal-verified yet.
 
 - **Software rungs 1–2: resumable sweep, `vers`, running tags, and the
   `software.list` family** (2026-07-22, spec in `software-module.md`).
