@@ -426,6 +426,17 @@ working on the PowerBook.
     tighter clamp is a one-liner when it bothers. The whole-window
     redraw on module switch is spun off as its own task (parent
     container, not this module).
+  - **Sixth round (2026-07-22):** the search field repainted the whole
+    module per keystroke — Remove-all/Add-all, an unconditional detail
+    invalidation, the group qsort, and a catalog walk, every key.
+    Typing now refilters by DIFF against a view set (delta rows only,
+    groups leave children-first), the detail is touched only when the
+    selection actually changed, and there is no auto-pick mid-typing.
+    The full rebuild remains for content changes. Per the redraw
+    contract added to `classic-mac-carbon-ui` the same day. Emulator-
+    watched: the selection and detail pane SURVIVE keystrokes
+    untouched; a filtered-out selection clears once. The reduced
+    repaint itself, like all flicker, only reads on metal.
 
 - **Software rungs 1–2: resumable sweep, `vers`, running tags, and the
   `software.list` family** (2026-07-22, spec in `software-module.md`).
