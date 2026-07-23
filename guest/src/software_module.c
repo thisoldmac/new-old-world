@@ -119,6 +119,13 @@ static short g_group_first[kSwMaxCap / 2];   /* gid -> pos in g_sorted */
 static short g_group_size[kSwMaxCap / 2];
 static int g_group_count;
 
+/* What the browser holds right now - the diff base for the keystroke
+   refilter, which adds and removes only the rows whose match CHANGED
+   instead of rebuilding the list (the rebuild repainted the whole
+   module per keystroke; redraw-and-damage.md calls that out). */
+static unsigned char g_in_view[kSwMaxCap];
+static unsigned char g_parent_in_view[kSwMaxCap / 2];
+
 /* The selected item's full path, computed on selection change - never
    in draw, which must not touch the catalog. */
 static char g_sel_path[224];
@@ -366,6 +373,8 @@ static void rebuild_browser(void)
     g_in_rebuild = true;
     RemoveDataBrowserItems(g_browser, kDataBrowserNoItem, 0, NULL,
                            kDataBrowserItemNoProperty);
+    memset(g_in_view, 0, sizeof g_in_view);
+    memset(g_parent_in_view, 0, sizeof g_parent_in_view);
     for (i = 0; i < d->count; ++i) {
         int idx = g_sorted[i];
         int gid = g_group_of[idx];
@@ -376,8 +385,10 @@ static void rebuild_browser(void)
         shown += 1;
         if (gid < 0) {
             roots[n_roots++] = (DataBrowserItemID)(idx + 1);
+            g_in_view[idx] = 1;
         } else if (i == g_group_first[gid]) {
             roots[n_roots++] = (DataBrowserItemID)(kGroupIdBase + gid);
+            g_parent_in_view[gid] = 1;
         }
     }
     if (n_roots > 0) {
@@ -390,8 +401,7 @@ static void rebuild_browser(void)
         for (gid = 0; gid < g_group_count; ++gid) {
             /* Members share the name, so the filter that admitted the
                parent admits every child. */
-            if (name_matches(
-                    &d->items[g_sorted[g_group_first[gid]]], needle)) {
+            if (g_parent_in_view[gid]) {
                 add_group_children(gid);
             }
         }
@@ -425,6 +435,84 @@ static void rebuild_browser(void)
     refresh_sel_path();
     sync_buttons();
     invalidate_detail();
+}
+
+/* The keystroke path: adjust the browser by DIFF - remove rows whose
+   match ended, add rows whose match began - and touch the detail pane
+   only if the selection itself changed. The full rebuild repaints the
+   whole module and belongs to content changes (populate, domain
+   switch, rescan), not to typing; component-level damage is the
+   redraw contract's default. Group tables are untouched: the filter
+   never changes the domain's contents. */
+static void refilter_browser(void)
+{
+    DomainState *d = dom();
+    char needle[48];
+    int old_sel = d->sel;
+    int i;
+
+    if (g_browser == NULL) {
+        return;
+    }
+    lower_needle(needle, sizeof needle);
+    g_in_rebuild = true;
+    for (i = 0; i < d->count; ++i) {
+        DataBrowserItemID id = (DataBrowserItemID)(i + 1);
+        Boolean want;
+
+        if (g_group_of[i] >= 0) {
+            continue;                  /* grouped: the parent decides */
+        }
+        want = name_matches(&d->items[i], needle);
+        if (want && !g_in_view[i]) {
+            AddDataBrowserItems(g_browser, kDataBrowserNoItem, 1, &id,
+                                kDataBrowserItemNoProperty);
+            g_in_view[i] = 1;
+            g_shown_rows += 1;
+        } else if (!want && g_in_view[i]) {
+            RemoveDataBrowserItems(g_browser, kDataBrowserNoItem, 1, &id,
+                                   kDataBrowserItemNoProperty);
+            g_in_view[i] = 0;
+            g_shown_rows -= 1;
+        }
+    }
+    for (i = 0; i < g_group_count; ++i) {
+        DataBrowserItemID pid = (DataBrowserItemID)(kGroupIdBase + i);
+        Boolean want = name_matches(
+            &d->items[g_sorted[g_group_first[i]]], needle);
+
+        if (want && !g_parent_in_view[i]) {
+            AddDataBrowserItems(g_browser, kDataBrowserNoItem, 1, &pid,
+                                kDataBrowserItemNoProperty);
+            add_group_children(i);
+            g_parent_in_view[i] = 1;
+            g_shown_rows += g_group_size[i];
+        } else if (!want && g_parent_in_view[i]) {
+            /* Children first, explicitly - no reliance on a container
+               removal cascading - then the parent row. */
+            RemoveDataBrowserItems(g_browser, pid, 0, NULL,
+                                   kDataBrowserItemNoProperty);
+            RemoveDataBrowserItems(g_browser, kDataBrowserNoItem, 1,
+                                   &pid, kDataBrowserItemNoProperty);
+            g_parent_in_view[i] = 0;
+            g_shown_rows -= g_group_size[i];
+        }
+    }
+    /* A selection whose row just left the view clears; one that stays
+       needs nothing - the row was never removed. No auto-pick while
+       typing: the detail changing under every keystroke was half the
+       churn being fixed. */
+    if (d->sel >= 0
+        && !(d->sel < d->count
+             && name_matches(&d->items[d->sel], needle))) {
+        d->sel = -1;
+    }
+    g_in_rebuild = false;
+    if (d->sel != old_sel) {
+        refresh_sel_path();
+        sync_buttons();
+        invalidate_detail();
+    }
 }
 
 static OSStatus set_text(DataBrowserItemDataRef data, const char *caption)
@@ -1413,7 +1501,7 @@ static Boolean software_key(const EventRecord *event)
     } else {
         return false;                  /* arrows and kin are not ours */
     }
-    rebuild_browser();
+    refilter_browser();
     InvalWindowRect(g_owner, &g_lay.toolbar_search);
     return true;
 }
