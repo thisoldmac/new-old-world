@@ -361,23 +361,39 @@ working on the PowerBook.
   quit/reveal buttons, and the idle-paced version trickle. None of that
   is metal-verified yet — only the emulator, and only the page's
   appearance + prefs migration.
-  - **Interactive cut (2026-07-22):** the page now works. A domain
-    pop-up over a scrollable Name/Version/Size/State list, a detail
-    pane, live search (driven from `key()` into a hand-drawn field,
-    because this WaitNextEvent app can't host inline edit-text — the
-    Connection-dialog reason), the idle-paced Applications sweep, the
-    version trickle (`now_software_read_version` per pass, cached), and
-    Launch on the selected FSSpec. **Emulator-verified**: the sweep
-    (205 apps), versions filling in, scroll, click-select + detail,
-    search ("apple" → 8 of 205), and Launch (row → app fronts).
-    **Not yet watched** — atomic click-injection can't drive a held
-    popup drag, so the domain switch and the synchronous folder-domain
-    path (`now_software_page_folder`) are code-complete but unwatched.
-    **Deferred to the next cut:** Bring to Front / Quit (need the
-    running process's PSN, not just the running bool), Show in Finder
-    (a verified Finder reveal Apple Event — the reveal 4CC wants
-    confirming before it ships), and the selected item's full path in
-    the detail. Nothing here is metal-verified.
+  - **Interactive cut (2026-07-22):** first version was hand-drawn and
+    metal-tested the same day; the second metal round found real
+    problems, all fixed and re-verified in the emulator:
+    - **The module leaked port state.** Three `RGBBackColor(white)`
+      calls on the one shared Workshop window turned EVERY page's
+      background white. Fixed by rule, not by restore: the module
+      never touches the background color — white interiors are
+      fore-painted with `PaintRect`. Watched fixed (Hardware gray
+      again after visiting Software).
+    - **The list is a real Data Browser now** (the processes_module
+      pattern): Platinum header buttons, native four-column sort,
+      native truncation/scrolling. Loading appends items and versions
+      update one cell — the flashing was the hand-drawn list's
+      invalidation model, and it is gone with the list.
+    - **Domains cache in memory for the run** (lazy NewPtr each);
+      switching rebuilds the browser from the cache, never the disk;
+      Rescan is the only re-read; the apps sweep is resumable across
+      switches. Watched: Extensions ↔ Applications both ways, the
+      restore instant with versions intact.
+    - The search field takes its click (focus ring); the detail pane
+      is a group box with theme fonts and the selection's icon
+      (`GetIconRef` on first selection only, cached for the run).
+    **Emulator-watched:** sweep→browser fill, version cells trickling,
+    live search (8 of 205), the domain popup driven by a genuine held
+    QMP drag, cache restores, page-switch persistence, the bg fix.
+    **Not watched, needs a human click:** row click-to-select and the
+    search focus ring — a control experiment showed the metal-verified
+    Processes browser ALSO ignores injected clicks (atomic and
+    QMP-held), so this is an injection-vs-DataBrowser artifact, not a
+    known defect; still, only a hand on a mouse closes it. **Deferred
+    to the next cut:** Bring to Front / Quit (need the PSN), Show in
+    Finder (reveal Apple Event wants its 4CC confirmed), full path in
+    the detail. Nothing in this cut is metal-verified yet.
 
 - **Software rungs 1–2: resumable sweep, `vers`, running tags, and the
   `software.list` family** (2026-07-22, spec in `software-module.md`).
