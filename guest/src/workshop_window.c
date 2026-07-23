@@ -10,6 +10,7 @@
 #include "logs_module.h"
 #include "processes_module.h"
 #include "screenshots_module.h"
+#include "software_module.h"
 #include "prefs.h"
 #include "workshop_layout.h"
 #include "workshop_sidebar.h"
@@ -49,6 +50,10 @@ static const struct {
     { "Hardware",
       "A passive census of this Mac. Probes run on request, never at idle.",
       "Hardware census is not built into this window yet." },
+    { "Software",
+      "What is installed on this Mac, and starting it. Applications sweep "
+      "the disk; the rest read the System Folder.",
+      "Software has not moved in yet." },
     { "Logs",
       "This launch's event log. Toggle whether it also reaches the disk.",
       "Logs has not moved in yet." },
@@ -162,6 +167,7 @@ Boolean workshop_open(void)
     g_ops[kWorkshopConsole] = console_module_ops();
     g_ops[kWorkshopProcesses] = processes_module_ops();
     g_ops[kWorkshopHardware] = census_module_ops();
+    g_ops[kWorkshopSoftware] = software_module_ops();
     g_ops[kWorkshopLogs] = logs_module_ops();
     g_ops[kWorkshopConnection] = connection_module_ops();
     now_prefs_load(&prefs);

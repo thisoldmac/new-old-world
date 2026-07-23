@@ -68,11 +68,14 @@ static const unsigned char k_view_processes_item[] = {
 static const unsigned char k_view_hardware_item[] = {
     10, 'H', 'a', 'r', 'd', 'w', 'a', 'r', 'e', '/', '5'
 };
+static const unsigned char k_view_software_item[] = {
+    10, 'S', 'o', 'f', 't', 'w', 'a', 'r', 'e', '/', '6'
+};
 static const unsigned char k_view_logs_item[] = {
-    6, 'L', 'o', 'g', 's', '/', '6'
+    6, 'L', 'o', 'g', 's', '/', '7'
 };
 static const unsigned char k_view_connection_item[] = {
-    12, 'C', 'o', 'n', 'n', 'e', 'c', 't', 'i', 'o', 'n', '/', '7'
+    12, 'C', 'o', 'n', 'n', 'e', 'c', 't', 'i', 'o', 'n', '/', '8'
 };
 static const unsigned char k_workshop_menu_item[] = {
     8, 'W', 'o', 'r', 'k', 's', 'h', 'o', 'p'
@@ -90,7 +93,7 @@ static void create_menu_bar(void)
     AppendMenu(file_menu, k_separator_menu_item);
     AppendMenu(file_menu, k_quit_menu_item);
     InsertMenu(file_menu, 0);
-    /* View selects a Workshop module (Cmd-1..7, the item number IS the
+    /* View selects a Workshop module (Cmd-1..8, the item number IS the
        module ID); Windows reopens the one window. Every module lives in
        the Workshop now. */
     AppendMenu(view_menu, k_view_screenshots_item);
@@ -98,6 +101,7 @@ static void create_menu_bar(void)
     AppendMenu(view_menu, k_view_console_item);
     AppendMenu(view_menu, k_view_processes_item);
     AppendMenu(view_menu, k_view_hardware_item);
+    AppendMenu(view_menu, k_view_software_item);
     AppendMenu(view_menu, k_view_logs_item);
     AppendMenu(view_menu, k_view_connection_item);
     InsertMenu(view_menu, 0);

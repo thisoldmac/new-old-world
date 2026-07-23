@@ -145,6 +145,18 @@ resource 'ics#' (135) {
     }
 };
 
+/* 136 boxed app tiles (Software): a container holding three rows of two
+   application squares - "what is installed" - distinct from 133's table,
+   134's chip, and 135's lined document. */
+resource 'ics#' (136) {
+    {
+        $"0000 1FF8 1008 1668 1668 1008 1668 1668"
+        $"1008 1668 1668 1008 1FF8 0000 0000 0000",
+        $"0000 1FF8 1FF8 1FF8 1FF8 1FF8 1FF8 1FF8"
+        $"1FF8 1FF8 1FF8 1FF8 1FF8 0000 0000 0000"
+    }
+};
+
 resource 'SIZE' (-1) {
     reserved,
     acceptSuspendResumeEvents,

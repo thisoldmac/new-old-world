@@ -39,14 +39,14 @@ enum {
 
     /* Non-pinned modules; Logs and Connection are pinned below the
        divider and are not among these. */
-    kWorkshopNavRows = 5
+    kWorkshopNavRows = 6
 };
 
 typedef struct WorkshopLayout {
     Rect sidebar;       /* the whole rail, window-background gray */
     Rect rail_list;     /* one framed white panel holding every row */
     Rect nav_rows[kWorkshopNavRows];  /* Screenshots, Files, Console,
-                                         Processes, Hardware */
+                                         Processes, Hardware, Software */
     Rect conn_divider;  /* one-pixel rule above the pinned pair */
     Rect logs_row;      /* Logs, pinned just above Connection */
     Rect conn_row;      /* Connection, pinned at the panel's bottom */

@@ -79,6 +79,9 @@ typedef struct {
     PrefsRecordV12 v12;               /* format = 13 */
     short logs_invert;
 } PrefsRecordV13;
+/* Format 14 reuses this V13 layout, bumping only the number to mark that
+   Software joined as nav id 6 (Logs and Connection shifted down); it adds
+   no persisted field, like formats 10 and 11 before it. */
 
 /* Preferences are per COPY of the app, not per creator. Running two
    guests at once is a real workflow — one for each host, on different
@@ -246,7 +249,20 @@ void now_prefs_load(NowPrefs *prefs)
         if (record.format == 11 && module == 6) {
             module = 7;
         }
-        if (module >= 1 && module <= 7) {
+        /* Software went in as id 6 (the last nav row), pushing Logs 6 -> 7
+           and Connection 7 -> 8. After the remaps above, any pre-14 file
+           speaks the old numbering, where 6 meant Logs and 7 meant
+           Connection; lift both. This is the first insert to move an
+           EXISTING non-pinned id (Logs), not just the pinned Connection,
+           so it remaps two values, Connection first to avoid 6->7->8. */
+        if (record.format <= 13) {
+            if (module == 7) {
+                module = 8;           /* Connection */
+            } else if (module == 6) {
+                module = 7;           /* Logs */
+            }
+        }
+        if (module >= 1 && module <= 8) {
             prefs->workshop_module = module;
         }
         prefs->workshop_rect = v9.workshop_rect;
@@ -277,7 +293,8 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 
     memset(&record, 0, sizeof record);
     record.magic = kPrefsMagic;
-    record.format = 13;               /* + logs_invert on the Logs page */
+    record.format = 14;               /* Software inserted as nav id 6;
+                                         V13 layout reused (no new field) */
     record.port = prefs->port;
     strncpy(record.host, prefs->host, sizeof record.host - 1);
     record.shot_depth = prefs->shot_depth;
