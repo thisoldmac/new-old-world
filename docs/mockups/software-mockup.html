@@ -107,25 +107,35 @@
   }
   .toolbar .spacer { flex: 1; }
   .toolbar .count { font: 10px Geneva, Verdana, sans-serif; color: #555; }
+  /* a PLAIN Platinum edit field — square + inset. Not an Aqua search pill. */
+  .searchfield {
+    font: 11px Geneva, Verdana, sans-serif; color: #111;
+    background: #fff; border: 1px solid #555; border-radius: 0;
+    box-shadow: inset 1px 1px 1px #cfcfcf; padding: 1px 6px; height: 17px; width: 132px;
+  }
+  .searchfield::placeholder { color: #999; }
 
-  .split { display: grid; grid-template-columns: 300px 1fr; gap: 10px; min-height: 0; }
+  .split { display: grid; grid-template-columns: 322px 1fr; gap: 10px; min-height: 0; }
 
   /* left: item Data Browser */
   .db { background: #fff; border: 1px solid #666; box-shadow: inset 1px 1px 0 #ccc; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
   .db-head { display: flex; height: 17px; border-bottom: 1px solid #888; background: #ddd; flex: none; }
   .db-head .col { font: 10px Geneva, Verdana, sans-serif; color: #222; padding: 2px 6px 0; box-shadow: inset 0 1px 0 #fff; display: flex; align-items: center; gap: 4px; }
   .db-head .name { flex: 1; }
-  .db-head .size { width: 58px; }
-  .db-head .st { width: 62px; }
+  .db-head .ver { width: 46px; }
+  .db-head .size { width: 46px; }
+  .db-head .st { width: 58px; }
   .db-head .sort::after { content: ""; width: 0; height: 0; border: 4px solid transparent; border-top-color: #333; margin-top: 4px; }
   .db-rows { overflow-y: auto; flex: 1; }
   .dbrow { display: flex; height: 19px; align-items: center; padding: 0 6px; font: 11px Geneva, Verdana, sans-serif; cursor: default; }
   .dbrow:nth-child(even) { background: #f1f4f9; }
   .dbrow.sel { background: #a5b8dc; }
   .dbrow .nm { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-  .dbrow .sz { width: 52px; color: #333; }
-  .dbrow .st { width: 62px; color: #444; font-size: 10px; }
-  .dbrow.off .nm, .dbrow.off .sz { color: #999; }
+  .dbrow .vr { width: 46px; color: #333; }
+  .dbrow .vr.pending { color: #aaa; }
+  .dbrow .sz { width: 46px; color: #333; }
+  .dbrow .st { width: 58px; color: #444; font-size: 10px; }
+  .dbrow.off .nm, .dbrow.off .sz, .dbrow.off .vr { color: #999; }
   .dbrow .dot { color: var(--ok); }
   .dbrow .tail { color: #777; font-style: italic; font-size: 10px; }
   .db-foot { flex: none; border-top: 1px solid #aaa; background: #ddd; padding: 4px 6px; display: flex; }
@@ -241,11 +251,13 @@
               <span class="lab">Show:</span>
               <span class="popup" id="popup">Applications</span>
               <span class="spacer"></span>
+              <span class="lab">Search:</span>
+              <input class="searchfield" id="search" type="text" placeholder="filter by name" autocomplete="off">
               <span class="count" id="count"></span>
             </div>
             <div class="split">
               <div class="db">
-                <div class="db-head"><div class="col name sort">Name</div><div class="col size">Size</div><div class="col st">State</div></div>
+                <div class="db-head"><div class="col name sort">Name</div><div class="col ver">Version</div><div class="col size">Size</div><div class="col st">State</div></div>
                 <div class="db-rows" id="rows"></div>
                 <div class="db-foot"><button class="pushbtn sm" id="rescan">Rescan</button></div>
               </div>
@@ -265,21 +277,29 @@
       <ul>
         <li>The Processes/Hardware <b>split view</b> — item list left, detail right — reused, so Software sits beside its siblings.</li>
         <li>Domain <b>popup</b> above the list (not tabs); five domains don't earn tab chrome.</li>
-        <li>Detail pane is where the <b>lazy <code>vers</code></b> read lands — version, full path, dates — on selection only.</li>
+        <li><b>Show in Finder</b> is the universal action (a Finder reveal Apple&nbsp;Event on the FSSpec we already hold) — so non-app rows are no longer a dead button row. That retires the earlier open question.</li>
+      </ul>
+    </div>
+    <div class="gate proven">
+      <h3>Search — cheap by construction</h3>
+      <ul>
+        <li>Filters the <b>already-gathered rows</b>, never the disk — so live per-keystroke refresh is microseconds, affordable on a 1400c. A re-sweep per keystroke would be ~4&nbsp;s and is exactly what this must not do.</li>
+        <li>A <b>plain Platinum edit field</b>, not an Aqua search pill — that chrome doesn't exist here.</li>
       </ul>
     </div>
     <div class="gate q">
-      <h3>Open question — pick before building</h3>
+      <h3>Version in the list — the one cost to accept</h3>
       <ul>
-        <li>For a selected <b>non-running extension / control panel</b>, every action is disabled (see the Extensions domain). Is "nothing to do" right, or do these want a later verb — reveal in Finder, or an enable/disable toggle?</li>
-        <li>Duplicates are <b>rows</b>, told apart by the detail pane's path — no modal picker (that's the console's <code>#n</code>/<code>-v</code>).</li>
+        <li>Version lives only in the <code>'vers'</code> resource; the catalog (<code>PBGetCatInfo</code>) doesn't carry it, so there is <b>no free source</b> — a fork open per file is unavoidable.</li>
+        <li>Shape: the sweep stays catalog-only and fast, then an <b>idle-paced trickle</b> opens each fork and fills the column (cached per row). Blank/"—" until read (see the Sweeping state), never a blocking up-front pass, never a re-sweep. The <code>sw</code> verb can gain the column the same way.</li>
       </ul>
     </div>
     <div class="gate proven">
       <h3>Honest about the sweep</h3>
       <ul>
         <li>Sweeping shows <b>text</b> progress, never a determinate bar — <code>PBCatSearch</code> has no known total mid-sweep.</li>
-        <li>Rows stream in; <b>Rescan → Stop</b>; ~4&nbsp;s cold on the 1400c (catsearch-measured).</li>
+        <li>Rows stream in; <b>Rescan → Stop</b>; ~4&nbsp;s cold on the 1400c, then versions trickle.</li>
+        <li>Duplicates are <b>rows</b>, told apart by the detail pane's path — no modal picker (that's the console's <code>#n</code>/<code>-v</code>).</li>
       </ul>
     </div>
   </div>
@@ -339,27 +359,43 @@
     },
   };
 
-  let domain = "apps", state = "ready", sel = 0;
+  let domain = "apps", state = "ready", sel = 0, search = "";
 
   const $ = (id) => document.getElementById(id);
   const rowsEl = $("rows"), detailEl = $("detail"), statusEl = $("status"),
-        countEl = $("count"), popupEl = $("popup"), rescanEl = $("rescan");
+        countEl = $("count"), popupEl = $("popup"), rescanEl = $("rescan"),
+        searchEl = $("search");
 
   function isApp() { return domain === "apps" || domain === "startup"; }
+
+  // The filter runs over the already-gathered rows (the cache), never the
+  // disk — that is what makes live per-keystroke refresh affordable on a
+  // 1400c. Version is blank during the sweep and trickles in after (an
+  // idle-paced 'vers' fork-open pass, cached), so "sweeping" shows pending.
+  function visibleRows() {
+    let list = SET[domain].rows;
+    if (state === "sweeping") list = list.slice(0, 6);
+    const q = search.trim().toLowerCase();
+    if (q) list = list.filter((r) => r.nm.toLowerCase().includes(q));
+    return list;
+  }
 
   function render() {
     const set = SET[domain];
     popupEl.textContent = set.label;
+    const list = visibleRows();
+    if (sel >= list.length) sel = Math.max(0, list.length - 1);
 
     // rows
     rowsEl.innerHTML = "";
-    let list = set.rows;
-    if (state === "sweeping") list = set.rows.slice(0, 6);
     list.forEach((r, i) => {
       const div = document.createElement("div");
       div.className = "dbrow" + (i === sel && state !== "sweeping" ? " sel" : "") + (r.off ? " off" : "");
       const st = r.run ? '<span class="dot">● running</span>' : (r.off ? "off" : "");
-      div.innerHTML = `<span class="nm">${r.nm}</span><span class="sz">${r.sz}</span><span class="st">${st}</span>`;
+      const vr = state === "sweeping"
+        ? '<span class="vr pending">—</span>'
+        : `<span class="vr">${r.ver}</span>`;
+      div.innerHTML = `<span class="nm">${r.nm}</span>${vr}<span class="sz">${r.sz}</span><span class="st">${st}</span>`;
       div.onclick = () => { if (state === "sweeping") return; sel = i; render(); };
       rowsEl.appendChild(div);
     });
@@ -367,13 +403,19 @@
       const t = document.createElement("div");
       t.className = "dbrow"; t.innerHTML = '<span class="tail">… sweeping</span>';
       rowsEl.appendChild(t);
+    } else if (list.length === 0) {
+      const t = document.createElement("div");
+      t.className = "dbrow"; t.innerHTML = `<span class="tail">no match for “${search}”</span>`;
+      rowsEl.appendChild(t);
     }
 
     // detail
     if (state === "sweeping") {
       detailEl.innerHTML = '<div class="d-empty">Indexing the disk…<br>select an item when it appears.</div>';
+    } else if (list.length === 0) {
+      detailEl.innerHTML = '<div class="d-empty">Nothing matches the search.</div>';
     } else {
-      const r = list[sel] || list[0];
+      const r = list[sel];
       const runTag = r.run ? '<span class="run on">● running</span>'
                     : (r.off ? '<span class="run no">disabled (off)</span>'
                              : '<span class="run no">not running</span>');
@@ -390,43 +432,47 @@
     }
 
     // status + count
+    const total = set.rows.length;
     if (state === "sweeping") {
-      statusEl.textContent = "Indexing Macintosh HD — 96 applications so far…";
+      statusEl.textContent = "Indexing Macintosh HD — 96 applications so far… then reading versions…";
       statusEl.className = "txt busy";
       countEl.textContent = "sweeping…";
+    } else if (search.trim()) {
+      statusEl.textContent = `${list.length} of ${total} match “${search.trim()}”.`;
+      statusEl.className = "txt";
+      countEl.textContent = `${list.length} of ${total}`;
     } else {
       statusEl.textContent = set.total.charAt(0).toUpperCase() + set.total.slice(1) + ".";
       statusEl.className = "txt";
-      countEl.textContent = set.total;
+      countEl.textContent = "";
     }
     rescanEl.textContent = state === "sweeping" ? "Stop" : "Rescan";
   }
 
+  // Show in Finder is always available (a Finder reveal Apple Event on the
+  // FSSpec we already hold) — which also gives non-app domains a real
+  // action instead of a dead button row.
+  const reveal = '<button class="pushbtn">Show in Finder</button>';
   function buttons(r) {
     if (state === "sweeping") return "";
     if (isApp()) {
       if (r.run) {
         return `<div class="d-buttons">
-          <button class="pushbtn" disabled>Launch</button>
           <button class="pushbtn default">Bring to Front</button>
-          <button class="pushbtn">Quit</button></div>`;
+          <button class="pushbtn">Quit</button>${reveal}</div>`;
       }
       return `<div class="d-buttons">
-        <button class="pushbtn default">Launch</button>
-        <button class="pushbtn" disabled>Bring to Front</button>
-        <button class="pushbtn" disabled>Quit</button></div>`;
+        <button class="pushbtn default">Launch</button>${reveal}</div>`;
     }
-    // non-app domain
+    // non-app domain (extension / control panel / startup item)
     if (r.run) {
       return `<div class="d-buttons">
         <button class="pushbtn default">Bring to Front</button>
-        <button class="pushbtn">Quit</button>
-        <span class="d-note">running now</span></div>`;
+        <button class="pushbtn">Quit</button>${reveal}</div>`;
     }
     return `<div class="d-buttons">
-      <button class="pushbtn" disabled>Launch</button>
-      <button class="pushbtn" disabled>Bring to Front</button>
-      <span class="d-note">an extension isn't launched — see open question</span></div>`;
+      <button class="pushbtn default">Show in Finder</button>
+      <span class="d-note">${r.off ? "disabled — enable in Extensions Manager" : "not a running process"}</span></div>`;
   }
 
   document.querySelectorAll("[data-domain]").forEach((b) => b.onclick = () => {
@@ -442,10 +488,15 @@
   }
   document.querySelectorAll("[data-state]").forEach((b) => b.onclick = () => {
     if (b.dataset.state === "sweeping" && domain !== "apps") {
-      // sweeping only applies to Applications; jump there
       document.querySelector('[data-domain="apps"]').click();
     }
     setState(b.dataset.state); sel = 0; render();
+  });
+  // live filter — refreshes the list per keystroke, no submit
+  searchEl.addEventListener("input", () => {
+    search = searchEl.value;
+    if (state === "sweeping") setState("ready");
+    sel = 0; render();
   });
 
   render();

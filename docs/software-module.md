@@ -232,6 +232,32 @@ to the placard *and* the log (already the rung-0 rule). Selecting a row
 triggers the one lazy `vers` read for the detail line; cache the answer
 on the row.
 
+**Show in Finder** is the one universal action — a Finder *reveal* Apple
+Event (`kAEFinderEvents`) on the FSSpec the row already holds. It is
+enabled for every selection in every domain, which is what makes a
+non-app row (an extension, a control panel) worth selecting at all: the
+launch/front/quit set does not apply to them, but *show me where this
+lives* always does. This retires the earlier "dead button row" question
+for non-app domains.
+
+**Search filters the cache, never the disk.** A plain Appearance edit
+field (there is no Aqua search control on Platinum) refilters the
+displayed rows on every key-down — substring over the already-gathered
+names, microseconds, so a live per-keystroke refresh is affordable. The
+rule that makes it safe: it re-filters the in-memory list; it never
+re-runs the sweep. A search that touched the disk per keystroke is the
+one thing this must not be.
+
+**Version in the list, by trickle.** Version lives only in `'vers'`, and
+the catalog walk does not carry it — so there is no free source, only a
+resource-fork open per file. The sweep therefore stays catalog-only and
+fast, and a second **idle-paced pass** opens each fork and fills the
+Version column afterwards, caching the answer on the row (the same read
+`vers` already does, just eager for the list instead of lazy for the
+detail). Rows show blank until their version arrives; nothing blocks on
+it, and a re-sweep is never triggered to get it. The console `sw` verb
+can gain the column the same way, folded into its run.
+
 **The six edits, instantiated.** `workshop_module.h` (id 6 +
 `kWorkshopModuleCount`), `workshop_layout` (`nav_rows` 5 → 6),
 `workshop_sidebar` (row + 16×16 `ics#`, plotted with
