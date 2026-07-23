@@ -25,7 +25,7 @@ final class ConsoleModel: ObservableObject {
     /// Declared commands (contract x-commands) plus console built-ins.
     static let commands = ["gestalt", "screenshot", "vprobe", "ls",
                            "putstat", "tail", "ps", "census", "catsearch",
-                           "sw", "launch", "vers"]
+                           "sw", "launch", "reveal", "vers"]
 
     /// Per-command docs, mirroring the contract's x-commands descriptions.
     /// help and --help render from here — documentation never hits the wire.
@@ -131,6 +131,15 @@ final class ConsoleModel: ObservableObject {
                    "  names its version — force one with -v",
                    "  (\"launch -v 1.1.1 SimpleText\"), a full path, or",
                    "  \"vers <name>\" then \"launch #2\"."]),
+        "reveal": .init(
+            summary: "show an item in the other Mac's Finder",
+            help: ["reveal — show an item in the connected Mac's Finder",
+                   "  Usage: reveal <name | full path | #n>",
+                   "  Selects the item in its Finder window and brings that",
+                   "  Mac's Finder forward. Opens nothing, so any item",
+                   "  reveals — an extension or control panel by path, an",
+                   "  app by name (the first copy if several share it), or",
+                   "  \"#n\" from the last vers/launch list."]),
         "vers": .init(
             summary: "one file's version resources on the other Mac",
             help: ["vers — one file's version, read on the connected Mac",
@@ -217,6 +226,10 @@ final class ConsoleModel: ObservableObject {
         }
         if name == "launch" {
             runLaunch(rest)
+            return
+        }
+        if name == "reveal" {
+            runReveal(rest)
             return
         }
         if name == "vers" {
@@ -400,6 +413,17 @@ final class ConsoleModel: ObservableObject {
                                                          : ["target": name]) {
             [weak self] result in
             self?.renderRows(result, command: "launch")
+        }
+    }
+
+    /// reveal takes the rest of the line whole, same reason as launch.
+    private func runReveal(_ rest: [String]) {
+        let name = rest.joined(separator: " ")
+            .trimmingCharacters(in: .whitespaces)
+        listener.runCommand("reveal", args: name.isEmpty ? nil
+                                                         : ["target": name]) {
+            [weak self] result in
+            self?.renderRows(result, command: "reveal")
         }
     }
 

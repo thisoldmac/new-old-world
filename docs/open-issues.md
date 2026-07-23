@@ -409,6 +409,27 @@ working on the PowerBook.
     singleton is the injection channel itself). Also unwatched:
     groups' collapsed-default on the unfiltered list. Nothing in this
     round is metal-verified yet.
+  - **Host page reaches parity: split-pane, detail, reveal
+    (2026-07-22).** The host Software page grew a second half. It is now
+    an `HSplitView` — the inventory Table on the left, a detail pane on
+    the right carrying the selected item's version, size, state, kind,
+    and full path (selectable), with **Launch** and **Show in Finder**
+    beneath it. Search was already there; it stays, above the split.
+    "Show in Finder" is a **new wire verb, `reveal`** — launch's
+    read-only twin: it resolves a target exactly as launch and vers do
+    (path / `#n` / bare name) but reveals ANY item (an extension, a
+    control panel), since it opens nothing. The guest serves it by
+    sending its OWN Finder a `kAEMakeObjectsVisible` for the item's
+    alias then fronting the Finder — the same `now_software_reveal` the
+    guest page's own button uses, now reachable from the host and the
+    console (`reveal <name|path|#n>`). Contract-first: the `reveal`
+    x-command is declared, answered in `commands.c`, and offered by the
+    host console — `CommandRegistryTests`' three-way agreement holds.
+    Host suite green (276) incl. a reveal test; guest builds clean under
+    `-Werror`; audit clean. **Never run live**: like rung 4, the reveal
+    round trip and the split-pane page both await a connected session
+    with both new builds. `reveal` from the host console against a live
+    guest, and the detail pane's two buttons, are the one-sitting check.
   - **Rung 4 lands (2026-07-22): versions on the wire + the host
     Software page.** `serve_software_list` now fills each served
     entry's version (a page's worth of fork opens per request, bounded,

@@ -1649,6 +1649,34 @@ components:
         type: object
         properties:
           launch: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    reveal:
+      description: >
+        Show an installed item in the RECEIVER's own Finder, selected in
+        its enclosing window — the read-only companion to launch. It
+        opens nothing and runs nothing: it sends the receiver's Finder a
+        single "make objects visible" Apple Event (kAEMiscStandards /
+        kAEMakeObjectsVisible) for the item's alias, then brings the
+        Finder forward so the selection is not revealed behind another
+        window. The item is resolved exactly as launch and vers resolve
+        it — a bare name by exact-name catalog search (the first match
+        when several share it), a full HFS path used directly, or "#n"
+        from the stored match list — but ANY item is revealable, not only
+        applications, since nothing is executed. Symmetric: whoever
+        receives reveal reveals it in its OWN Finder, on its OWN screen.
+      args:
+        type: object
+        properties:
+          target:
+            type: string
+            description: >
+              An item name, a full HFS path (the software.listing's
+              path — the launch key doubles as the reveal key), or "#n"
+              from the stored match list. "target" and not "name" — see
+              the arg-key rule in the preamble above.
+      output:
+        type: object
+        properties:
+          reveal: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
     vers:
       description: >
         One file's 'vers' resources — the short version, the numeric

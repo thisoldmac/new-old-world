@@ -126,6 +126,30 @@ final class SoftwareModel: ObservableObject {
         }
     }
 
+    /// Reveal the selected entry in the guest's own Finder, by its full
+    /// path — the reveal key doubles the launch key. Read-only on the
+    /// guest: it selects the item and brings the Finder forward, opening
+    /// nothing, so anything with a path is revealable (an extension, a
+    /// control panel), not only applications. The words shown are the
+    /// guest's own.
+    func reveal(_ entry: SoftwareEntry) {
+        guard entry.isRevealable, !actionInFlight else { return }
+        actionInFlight = true
+        lastError = nil
+        lastAction = nil
+        listener.runCommand("reveal", args: ["target": entry.path]) {
+            [weak self] result in
+            guard let self else { return }
+            self.actionInFlight = false
+            if result.ok {
+                self.lastAction = result.output?["reveal"]?
+                    .first?.last ?? "Revealed"
+            } else {
+                self.lastError = result.error?.message ?? "The Mac declined"
+            }
+        }
+    }
+
     /// One page, chaining into the next while `more` holds. Cursor 1 is
     /// where the guest rebuilds its inventory — for Applications that is
     /// the whole ~4 s sweep, which the 30 s watchdog already allows.

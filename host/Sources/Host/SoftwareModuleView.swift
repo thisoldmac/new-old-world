@@ -1,9 +1,12 @@
 import SwiftUI
 
 /// The connected Mac's installed software: the host face of the
-/// software.* family. A domain picker over a table, a search field that
-/// filters the rows already fetched, and Launch by the entry's path —
-/// the mirror of the guest's own Software page.
+/// software.* family. A domain picker and a search field over a split
+/// view — the inventory table on the left, the selected item's detail
+/// and its actions on the right — mirroring the guest's own Software
+/// page. Launch and Show in Finder both act by the entry's path, the
+/// listing's launch key, so the guest's name-ambiguity refusal can
+/// never fire from this page.
 struct SoftwareModuleView: View {
     @ObservedObject var model: SoftwareModel
 
@@ -13,11 +16,19 @@ struct SoftwareModuleView: View {
             Divider()
             if model.canBrowse {
                 controls
-                table
+                HSplitView {
+                    table
+                        .frame(minWidth: 320, idealWidth: 440,
+                               maxWidth: .infinity)
+                    detail
+                        .frame(minWidth: 260, idealWidth: 300,
+                               maxWidth: 460)
+                }
+                .frame(maxHeight: .infinity)
+                footer
             } else {
                 disconnectedState
             }
-            footer
         }
         .padding(28)
         .frame(maxWidth: .infinity, maxHeight: .infinity,
@@ -68,6 +79,8 @@ struct SoftwareModuleView: View {
         }
     }
 
+    // MARK: list
+
     private var table: some View {
         Table(model.visibleRows, selection: $model.selection) {
             TableColumn("Name") { entry in
@@ -96,7 +109,6 @@ struct SoftwareModuleView: View {
                 emptyState
             }
         }
-        .frame(maxHeight: .infinity)
     }
 
     private var emptyState: some View {
@@ -123,6 +135,111 @@ struct SoftwareModuleView: View {
         .frame(maxWidth: 420)
     }
 
+    // MARK: detail
+
+    @ViewBuilder private var detail: some View {
+        if let entry = model.selectedEntry {
+            detailBody(entry)
+        } else {
+            detailEmpty
+        }
+    }
+
+    private func detailBody(_ entry: SoftwareEntry) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(entry.name)
+                    .font(.title3.weight(.semibold))
+                    .lineLimit(2)
+                if let kind = entry.kindLabel {
+                    Text(kind)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Divider()
+            VStack(alignment: .leading, spacing: 8) {
+                factRow("Version", entry.version ?? "—")
+                factRow("Size", entry.sizeLabel ?? "—")
+                factRow("State", entry.stateLabel.isEmpty
+                        ? "—" : entry.stateLabel)
+                factColumn("Where", entry.path.isEmpty
+                           ? "The Mac could not name this item’s path; it "
+                             + "cannot be launched or revealed from here."
+                           : entry.path)
+            }
+            Spacer(minLength: 0)
+            detailActions(entry)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity,
+               alignment: .topLeading)
+        .padding(16)
+    }
+
+    private func detailActions(_ entry: SoftwareEntry) -> some View {
+        HStack(spacing: 10) {
+            Button {
+                model.launch(entry)
+            } label: {
+                Label("Launch", systemImage: "arrow.up.forward.app")
+            }
+            .disabled(!entry.isLaunchable || !model.canBrowse
+                      || model.actionInFlight)
+
+            Button {
+                model.reveal(entry)
+            } label: {
+                Label("Show in Finder", systemImage: "magnifyingglass")
+            }
+            .disabled(!entry.isRevealable || !model.canBrowse
+                      || model.actionInFlight)
+
+            if model.actionInFlight {
+                ProgressView().controlSize(.small)
+            }
+        }
+    }
+
+    private var detailEmpty: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "hand.point.up.left")
+                .font(.system(size: 26))
+                .foregroundStyle(.tertiary)
+            Text("Select an item to see its version, size, and where it "
+                 + "lives — and to launch it or show it in the Finder.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(24)
+    }
+
+    private func factRow(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 58, alignment: .leading)
+            Text(value)
+                .font(.callout)
+                .textSelection(.enabled)
+        }
+    }
+
+    private func factColumn(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.primary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     private var disconnectedState: some View {
         VStack(spacing: 12) {
             Image(systemName: "shippingbox")
@@ -138,6 +255,8 @@ struct SoftwareModuleView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+
+    // MARK: footer
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -166,19 +285,7 @@ struct SoftwareModuleView: View {
                 }
                 .disabled(!model.canBrowse || model.isLoading)
 
-                Divider().frame(height: 16)
-
-                Button {
-                    if let entry = model.selectedEntry {
-                        model.launch(entry)
-                    }
-                } label: {
-                    Label("Launch", systemImage: "arrow.up.forward.app")
-                }
-                .disabled(model.selectedEntry?.isLaunchable != true
-                          || !model.canBrowse || model.actionInFlight)
-
-                if model.actionInFlight || model.isLoading {
+                if model.isLoading {
                     ProgressView().controlSize(.small)
                 }
                 Spacer()

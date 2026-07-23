@@ -921,6 +921,36 @@ static void run_launch(const char *request_json, long id, char *out,
              "\"output\":{\"launch\":[[\"Launch\",\"%s\"]]}}", id, esc);
 }
 
+/* reveal: launch's read-only twin — it shows a selection in this Mac's
+   Finder and mutates nothing, so it logs at info either way. */
+static void run_reveal(const char *request_json, long id, char *out,
+                       long cap)
+{
+    char arg[256];
+    char msg[240];
+    char esc[480];
+
+    arg[0] = '\0';
+    if (request_json != NULL) {
+        /* "target", never "name" — see run_vers. */
+        now_json_find_string(request_json, "target", arg, sizeof arg);
+    }
+    if (now_software_reveal_target(arg, msg, sizeof msg) < 0) {
+        now_log(kLogInfo, "sw", "#%ld reveal declined: %.80s", id, msg);
+        now_json_escape(msg, esc, sizeof esc);
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+                 "\"error\":{\"code\":\"reveal-refused\","
+                 "\"message\":\"%s\"}}", id, esc);
+        return;
+    }
+    now_log(kLogInfo, "sw", "#%ld %.80s", id, msg);
+    now_json_escape(msg, esc, sizeof esc);
+    snprintf(out, (size_t)cap,
+             "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+             "\"output\":{\"reveal\":[[\"Reveal\",\"%s\"]]}}", id, esc);
+}
+
 /* vers: one file's version resources, read alone — the lazy detail the
    Software page will hang on a selected row. */
 static void run_vers(const char *request_json, long id, char *out,
@@ -1010,6 +1040,10 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "launch") == 0) {
         run_launch(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "reveal") == 0) {
+        run_reveal(request_json, id, out, cap);
         return;
     }
     if (strcmp(name, "vers") == 0) {

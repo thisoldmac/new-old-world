@@ -1324,6 +1324,94 @@ int now_software_launch(const char *arg, char *msg, long cap)
     }
 }
 
+/* Reveal one resolved file and say so, or name why the Finder could not.
+   The mirror of launch_spec: it acts on the same FSSpec, but the act is
+   read-only, so it refuses nothing on the file's account. */
+static int reveal_spec(const FSSpec *spec, char *msg, long cap)
+{
+    char cname[64];
+    OSErr err;
+
+    p2c(spec->name, cname, sizeof cname);
+    err = now_software_reveal(spec);
+    if (err == noErr) {
+        snprintf(msg, (size_t)cap, "revealed %.40s in the Finder", cname);
+        return 0;
+    }
+    if (err == procNotFound) {
+        snprintf(msg, (size_t)cap, "the Finder is not running");
+    } else {
+        snprintf(msg, (size_t)cap, "%.40s: could not reveal (err %d)",
+                 cname, err);
+    }
+    return -1;
+}
+
+/* reveal: launch's read-only twin. It shares launch's resolution — a
+   full path, "#n", or a bare name — but reveals any item (an extension,
+   a control panel, a document), never only an application, because it
+   opens nothing. A bare name that matches several reveals the first
+   found; -v is meaningless here (nothing runs) and is not accepted. */
+int now_software_reveal_target(const char *arg, char *msg, long cap)
+{
+    char work[256];
+    FSSpec spec;
+    Str255 parg;
+    FindCtx ctx;
+    int pick;
+
+    if (arg == NULL || arg[0] == '\0') {
+        snprintf(msg, (size_t)cap, "reveal what? (a name, a path, or #n)");
+        return -1;
+    }
+    if (strlen(arg) > 255) {
+        snprintf(msg, (size_t)cap, "that is longer than any HFS path");
+        return -1;
+    }
+    while (*arg == ' ') {
+        ++arg;
+    }
+    snprintf(work, sizeof work, "%s", arg);
+
+    /* "#n": a pick from the last search (the same stored matches launch
+       and vers share). */
+    pick = parse_pick(work);
+    if (pick > 0) {
+        if (pick > g_last.hits) {
+            snprintf(msg, (size_t)cap, g_last.hits == 0
+                     ? "no match list stored - name something first"
+                     : "the last list has %d entries", g_last.hits);
+            return -1;
+        }
+        return reveal_spec(&g_last.specs[pick - 1], msg, cap);
+    }
+
+    /* A full path names one file exactly — any type reveals. */
+    if (strchr(work, ':') != NULL) {
+        CopyCStringToPascal(work, parg);
+        if (FSMakeFSSpec(0, 0, parg, &spec) != noErr) {
+            snprintf(msg, (size_t)cap, "no such file: %.200s", work);
+            return -1;
+        }
+        return reveal_spec(&spec, msg, cap);
+    }
+
+    /* A bare name — reveal the first copy found; several is not an error
+       here, since revealing does not have to choose which one to run. */
+    CopyCStringToPascal(work, parg);
+    if (parg[0] > 31) {
+        snprintf(msg, (size_t)cap,
+                 "no item named %.200s (names cap at 31)", work);
+        return -1;
+    }
+    find_by_name(parg, &ctx);
+    if (ctx.hits == 0) {
+        snprintf(msg, (size_t)cap, "nothing named %.200s to reveal", work);
+        return -1;
+    }
+    return reveal_spec(&ctx.specs[0], msg, cap);
+}
+
 /* --- vers ---------------------------------------------------------------- */
 
 /* One 'vers' resource (id 1 = this file, id 2 = the product it belongs

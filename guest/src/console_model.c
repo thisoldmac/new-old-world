@@ -201,6 +201,14 @@ static void help_for(const char *name)
         console_model_append("  first launches and the reply names its version.");
         console_model_append("  To force one: -v (\"launch -v 1.1.1 SimpleText\"),");
         console_model_append("  a full path, or \"vers <name>\" then \"launch #2\".");
+    } else if (strcmp(name, "reveal") == 0) {
+        console_model_append("reveal - show an item in this Mac's Finder");
+        console_model_append("  Usage: reveal <name | full path | #n>");
+        console_model_append("  Selects the item in its Finder window and brings");
+        console_model_append("  the Finder forward. Opens nothing, so any item");
+        console_model_append("  reveals - an extension or control panel by path,");
+        console_model_append("  an app by name (the first copy if several share");
+        console_model_append("  it), or \"#n\" from the last vers/launch list.");
     } else if (strcmp(name, "vers") == 0) {
         console_model_append("vers - one file's version resources");
         console_model_append("  Usage: vers <name | full path | #n>");
@@ -254,6 +262,7 @@ static void help_list(void)
     console_model_append("  census      run a hardware probe (census [probe])");
     console_model_append("  sw          installed software (sw [domain])");
     console_model_append("  launch      open an application (launch <name>)");
+    console_model_append("  reveal      show an item in the Finder (reveal <name|path>)");
     console_model_append("  vers        one file's version (vers <name|path>)");
     console_model_append("  catsearch   time a whole-disk application search");
     console_model_append("  help        show this list (\"help <cmd>\" for details)");
@@ -571,6 +580,17 @@ void console_model_run(const char *input)
             ++raw_args;
         }
         now_software_launch(raw_args, msg, sizeof msg);
+        snprintf(line, sizeof line, "%.120s", msg);
+        console_model_append(line);
+        return;
+    }
+    if (strcmp(name, "reveal") == 0) {
+        char msg[240];
+
+        while (*raw_args == ' ') {
+            ++raw_args;
+        }
+        now_software_reveal_target(raw_args, msg, sizeof msg);
         snprintf(line, sizeof line, "%.120s", msg);
         console_model_append(line);
         return;

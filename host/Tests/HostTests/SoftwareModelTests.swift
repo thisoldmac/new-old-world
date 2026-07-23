@@ -61,6 +61,16 @@ final class SoftwareModelTests: XCTestCase {
         XCTAssertFalse(entry("x", path: "").isLaunchable)
     }
 
+    func testRevealabilityFollowsThePathForAnyType() {
+        // Reveal opens nothing, so an extension (a non-APPL) is
+        // revealable exactly when its path is nameable — the same gate
+        // as launch, but not restricted to applications.
+        XCTAssertTrue(entry("Some INIT", path: "HD:System:Extensions:x",
+                            type: "INIT").isRevealable)
+        // No path, nothing to select in the Finder.
+        XCTAssertFalse(entry("x", path: "").isRevealable)
+    }
+
     func testEntryIdentitySurvivesDuplicateNames() {
         // Two SimpleTexts differ by path; the table's selection must
         // tell them apart.

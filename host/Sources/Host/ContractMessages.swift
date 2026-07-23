@@ -251,6 +251,9 @@ struct SoftwareEntry: Codable, Equatable, Sendable, Identifiable {
 
     var id: String { path.isEmpty ? "\(name)#\(type ?? "")" : path }
     var isLaunchable: Bool { !path.isEmpty }
+    /// Revealable whenever the responder could name the path — any item,
+    /// not only an application, since reveal opens nothing.
+    var isRevealable: Bool { !path.isEmpty }
 }
 
 struct SoftwareListing: Codable, Equatable, Sendable {

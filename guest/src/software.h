@@ -86,6 +86,13 @@ int now_software_gather(const char *domain, SoftwareRow *rows, int max,
    and how to see the rest) in msg, or -1 with the reason. */
 int now_software_launch(const char *arg, char *msg, long cap);
 
+/* Show one item in this Mac's Finder, selected in its window. Resolves
+   the argument exactly as now_software_launch does (a bare name, a full
+   path, or "#n"), but reveals ANY item, not only applications — nothing
+   is executed. Returns 0 with what was revealed in msg, or -1 with the
+   reason (no such item, ambiguous with no pick, the Finder unreachable). */
+int now_software_reveal_target(const char *arg, char *msg, long cap);
+
 /* --- the wire's inventory pages ------------------------------------------
    software.list is served from a one-domain cache of FSSpecs: cursor 1
    (re)builds it — for "apps" that is a whole blocking sweep, the
