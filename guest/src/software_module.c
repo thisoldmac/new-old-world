@@ -343,9 +343,14 @@ static void draw_list(void)
     draw_at(x_size, (short)(g_lay.list.top + 11), "Size");
     draw_at(x_state, (short)(g_lay.list.top + 11), "State");
 
-    /* body */
-    RGBBackColor(&white);
-    EraseRect(&content);
+    /* body. The white interior is PAINTED with the foreground, never
+       erased with a changed background: RGBBackColor is PORT state on
+       the one shared Workshop window, and leaving it white repainted
+       every module's page white (found on the PowerBook, 2026-07-22).
+       A module owns its pixels, not the port's colors. */
+    RGBForeColor(&white);
+    PaintRect(&content);
+    RGBForeColor(&black);
     TextSize(10);
     for (i = 0; i < vis; ++i) {
         int vi = g_top + i;
@@ -380,7 +385,6 @@ static void draw_list(void)
         draw_at(x_state, y,
                 it->running ? "running" : (it->off ? "off" : ""));
     }
-    RGBBackColor(&white);
 }
 
 static void draw_detail(void)
@@ -439,9 +443,11 @@ static void draw_search(void)
 
     RGBForeColor(&black);
     FrameRect(&f);
-    RGBBackColor(&white);
+    /* Fore-painted, never a background change - see draw_list. */
     InsetRect(&f, 1, 1);
-    EraseRect(&f);
+    RGBForeColor(&white);
+    PaintRect(&f);
+    RGBForeColor(&black);
     TextFont(g_font);
     TextSize(10);
     if (g_search[0] == '\0') {
