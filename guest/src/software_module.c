@@ -1060,6 +1060,63 @@ static void draw_search(void)
     }
 }
 
+/* Echo a keystroke into the field directly - the immediate-feedback
+   exception in the redraw contract (typing echo is its canonical
+   case). Erase only from the end of the unchanged prefix to the
+   field's right edge - that span covers the old caret, a removed
+   character, and the placeholder - then draw the new tail and caret.
+   Nothing is invalidated: the full draw_search reproduces these exact
+   pixels from g_search at any real update, and the whole-field
+   invalidate this replaces read as a white blink per key on metal. */
+static void echo_search_delta(const char *old_text)
+{
+    Rect f = g_lay.toolbar_search;
+    RGBColor black = { 0, 0, 0 };
+    RGBColor white = { 0xFFFF, 0xFFFF, 0xFFFF };
+    RgnHandle saved_clip;
+    Rect tail;
+    long prefix = 0;
+    short x;
+
+    if (g_owner == NULL || !g_visible) {
+        return;
+    }
+    SetPortWindowPort(g_owner);
+    saved_clip = NewRgn();
+    if (saved_clip == NULL) {
+        /* No region to restore the clip with: fall back to the update
+           path rather than leave port state wrong. */
+        InvalWindowRect(g_owner, &g_lay.toolbar_search);
+        return;
+    }
+    GetClip(saved_clip);
+    InsetRect(&f, 1, 1);
+    ClipRect(&f);
+    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    while (old_text[prefix] != '\0' && g_search[prefix] != '\0'
+           && old_text[prefix] == g_search[prefix]) {
+        ++prefix;
+    }
+    x = (short)(f.left + 3 + TextWidth(g_search, 0, (short)prefix));
+    tail = f;
+    if (x > tail.left) {
+        tail.left = x;
+    }
+    RGBForeColor(&white);
+    PaintRect(&tail);
+    RGBForeColor(&black);
+    MoveTo(x, (short)(f.bottom - 4));
+    if (g_search[prefix] != '\0') {
+        DrawText(g_search, (short)prefix,
+                 (short)(strlen(g_search) - prefix));
+    }
+    if (g_search_focus) {
+        DrawText("|", 0, 1);
+    }
+    SetClip(saved_clip);
+    DisposeRgn(saved_clip);
+}
+
 static void draw_detail(void)
 {
     DomainState *d = dom();
@@ -1482,11 +1539,13 @@ static Boolean software_click(const EventRecord *event, Point local)
 static Boolean software_key(const EventRecord *event)
 {
     char ch = (char)(event->message & charCodeMask);
+    char old_text[48];
     long n;
 
     if (g_owner == NULL || !g_visible) {
         return false;
     }
+    memcpy(old_text, g_search, sizeof old_text);
     if (ch == '\b' || ch == 0x7F) {
         n = (long)strlen(g_search);
         if (n > 0) {
@@ -1502,7 +1561,7 @@ static Boolean software_key(const EventRecord *event)
         return false;                  /* arrows and kin are not ours */
     }
     refilter_browser();
-    InvalWindowRect(g_owner, &g_lay.toolbar_search);
+    echo_search_delta(old_text);
     return true;
 }
 
