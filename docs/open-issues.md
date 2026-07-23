@@ -409,6 +409,23 @@ working on the PowerBook.
     singleton is the injection channel itself). Also unwatched:
     groups' collapsed-default on the unfiltered list. Nothing in this
     round is metal-verified yet.
+  - **Fifth round (2026-07-22):** the metal report "a collapsed group
+    will not re-expand" was a real contract miss: closing a container
+    REMOVES its children (the Data Browser's own behavior) and
+    item_notify ignored container notifications, so reopen had nothing
+    to show. Fixed: kDataBrowserContainerOpened re-adds the group's
+    children, idempotent via GetDataBrowserItemCount. **Unwatched** —
+    the disclosure triangle defeats click injection; the repro is on
+    the PowerBook. Also added: a **draggable splitter** between the
+    panes (gray XOR outline, own StillDown loop pumping the wire —
+    nested-loops.md row added — clamps tested host-cc, session-only
+    width). **Watched end to end** in the emulator. Bonus close: a
+    press-MOVE-release drives the Data Browser under injection, so
+    **row click-to-select is now watched** (previously the oldest gap).
+    Known nit: below ~260px list width the fixed columns clip; a
+    tighter clamp is a one-liner when it bothers. The whole-window
+    redraw on module switch is spun off as its own task (parent
+    container, not this module).
 
 - **Software rungs 1–2: resumable sweep, `vers`, running tags, and the
   `software.list` family** (2026-07-22, spec in `software-module.md`).
