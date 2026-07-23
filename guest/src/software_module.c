@@ -1287,6 +1287,20 @@ static void software_dispose(void)
 {
     int i;
 
+    /* Order matters, and the window does NOT take the browser first:
+       workshop_close disposes this module BEFORE DisposeWindow, so the
+       Data Browser is still live here. Disposing it fires item
+       notifications (removal, maybe a deselect), which reach item_data
+       and item_notify through the UPPs and read the domain model. So
+       tear the control down FIRST, while both are still valid; only
+       then free the UPPs and the model. Freeing the UPPs while the
+       browser still holds them let DisposeWindow later call through a
+       freed transition vector - an intermittent system crash on quit. */
+    if (g_browser != NULL) {
+        DisposeControl(g_browser);
+        g_browser = NULL;
+    }
+    dispose_callbacks();
     for (i = 0; i < kSwDomainCount; ++i) {
         now_software_sweep_end(&g_dom[i].sweep);
     }
@@ -1299,10 +1313,7 @@ static void software_dispose(void)
         g_dom[i].loaded = false;
         g_dom[i].count = 0;
     }
-    /* The window took the controls with it; the UPPs are ours, and are
-       disposed only now that the browser is gone. */
-    dispose_callbacks();
-    g_popup = g_browser = g_detail_box = g_launch = g_front = g_quit
+    g_popup = g_detail_box = g_launch = g_front = g_quit
         = g_reveal = g_rescan = NULL;
     g_owner = NULL;
 }

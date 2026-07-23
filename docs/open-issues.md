@@ -231,6 +231,30 @@ whenever no field has focus).
 
 ## Broken
 
+**Hard system crash (error 10) on quit — root-caused and fixed, metal
+soak pending (2026-07-23).** Twice, quitting NOW hard-crashed the guest
+(error 10, a Line-F/unimplemented-instruction exception) and required a
+reboot; not every quit, and the app logged its own clean "stopped"
+first. Root cause: a shutdown use-after-free in every Data Browser
+module. `workshop_close` disposes each module (`g_ops[i]->dispose()`)
+BEFORE `DisposeWindow`, but each module's dispose freed its Data Browser
+item-data/notification/compare UPPs while the browser control was still
+live in the window — on the belief that "the window took the controls
+with it," which the call order makes false. `DisposeWindow` then tore
+down that live browser, which fires item notifications (removal, a
+deselect) through the now-freed UPPs. On PPC a UPP is a transition
+vector; once freed and reused, that call lands in garbage — an illegal
+instruction that corrupts the system heap, hence the reboot. Intermittent
+because it depends on whether the freed block was reused yet and whether
+the browser still held items to notify on. Fixed in all four DB modules
+(software, processes, census, files_browser_view): `DisposeControl` the
+browser FIRST — while its UPPs and model are still valid — then free the
+UPPs, then the model. Builds clean under `-Werror`. **Unverified:** an
+intermittent crash cannot be proven gone by one quit; it needs a soak of
+repeated quits from each Data Browser page on the PowerBook. The Processes
+page was "metal-verified" and still carried this — the verification never
+included a quit-crash soak, which the ledger should now expect.
+
 **Resume by offset hangs.** A transfer resumed against a matching
 partial does not complete. The failing test is committed rather than
 skipped (`MetalLargeTransferTests`), which is the right shape: the

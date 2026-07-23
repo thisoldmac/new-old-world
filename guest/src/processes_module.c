@@ -772,16 +772,26 @@ static OSErr procs_create(WindowRef owner, const Rect *body)
 
 static void procs_dispose(void)
 {
+    /* workshop_close disposes this module BEFORE DisposeWindow, so the
+       Data Browser is still live. Its disposal fires item notifications
+       that reach item_data/item_notify through the UPPs and read the
+       process model, so tear the control down FIRST - while both are
+       valid - then free the UPPs and the model. Freeing the UPPs while
+       the browser still held them let DisposeWindow later call through a
+       freed transition vector: an intermittent system crash on quit. */
+    if (g_browser != NULL) {
+        DisposeControl(g_browser);
+        g_browser = NULL;
+    }
+    dispose_callbacks();
     drop_icons(g_procs, g_proc_count);
     g_proc_count = 0;
     g_selected = -1;
     g_owner = NULL;
-    g_browser = NULL;
     g_front = NULL;
     g_quit = NULL;
     g_group = NULL;
     g_capture = NULL;
-    dispose_callbacks();
 }
 
 static void show_control(ControlRef control, Boolean visible)

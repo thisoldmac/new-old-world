@@ -293,10 +293,18 @@ Boolean files_browser_create(WindowRef owner, const Rect *area)
 
 void files_browser_dispose(void)
 {
-    g_owner = NULL;
-    g_browser = NULL;
-    g_row_count = 0;
+    /* Dispose the Data Browser BEFORE its UPPs: workshop_close disposes
+       this module ahead of DisposeWindow, so the control is still live,
+       and its disposal fires item notifications through these UPPs.
+       Freeing them first let DisposeWindow later call a freed transition
+       vector - an intermittent system crash on quit. */
+    if (g_browser != NULL) {
+        DisposeControl(g_browser);
+        g_browser = NULL;
+    }
     dispose_callbacks();
+    g_owner = NULL;
+    g_row_count = 0;
 }
 
 Boolean files_browser_available(void)

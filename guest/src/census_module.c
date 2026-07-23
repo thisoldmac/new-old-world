@@ -702,11 +702,19 @@ static OSErr census_create(WindowRef owner, const Rect *body)
 
 static void census_dispose(void)
 {
+    /* Dispose the Data Browser BEFORE its UPPs: workshop_close disposes
+       this module ahead of DisposeWindow, so the control is still live,
+       and its disposal fires item notifications through these UPPs.
+       Freeing them first let DisposeWindow later call a freed transition
+       vector - an intermittent system crash on quit. */
+    if (g_browser != NULL) {
+        DisposeControl(g_browser);
+        g_browser = NULL;
+    }
+    dispose_upps();
     g_owner = NULL;
-    g_browser = NULL;
     g_run = NULL;
     g_rerun = NULL;
-    dispose_upps();
 }
 
 static void census_show(Boolean visible)
