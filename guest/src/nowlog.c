@@ -189,16 +189,23 @@ void now_log(LogLevel level, const char *area, const char *fmt, ...)
        crash loses it. Forcing it out costs real time, so only the lines
        that might be the LAST ones pay for it: if something is about to
        take the machine down, the line saying so has to be on the
-       platter already. */
+       platter already. An error is always such a line; teardown
+       breadcrumbs ask for the same guarantee by calling now_log_flush. */
     if (level == kLogError) {
-        FSSpec unused;
-        short vref = 0;
-        long dir = 0;
+        now_log_flush();
+    }
+}
 
-        (void)unused;
-        if (app_folder(&vref, &dir)) {
-            FlushVol(NULL, vref);
-        }
+void now_log_flush(void)
+{
+    short vref = 0;
+    long dir = 0;
+
+    if (g_ref == -1) {
+        return;
+    }
+    if (app_folder(&vref, &dir)) {
+        FlushVol(NULL, vref);
     }
 }
 

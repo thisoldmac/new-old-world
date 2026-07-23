@@ -46,6 +46,13 @@ Boolean now_log_disk_on(void);
    can be read by subsystem. */
 void now_log(LogLevel level, const char *area, const char *fmt, ...);
 
+/* Force the pending log to the platter now. A kLogInfo line otherwise
+   sits in the disk cache and a crash loses it; call this after a line
+   that might be the last one before a risky step (teardown), so the log
+   ends ON the stage it did not survive. No-op when disk logging is off.
+   now_log already does this for kLogError. */
+void now_log_flush(void);
+
 /* The last `count` lines, newest last, for `tail`. Returns how many
    were written into `out`, which must hold count * kLogLineMax.
    kLogKept is the in-memory scrollback the Logs module dumps; it is large

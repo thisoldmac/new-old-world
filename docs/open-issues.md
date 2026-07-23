@@ -253,7 +253,15 @@ UPPs, then the model. Builds clean under `-Werror`. **Unverified:** an
 intermittent crash cannot be proven gone by one quit; it needs a soak of
 repeated quits from each Data Browser page on the PowerBook. The Processes
 page was "metal-verified" and still carried this — the verification never
-included a quit-crash soak, which the ledger should now expect.
+included a quit-crash soak, which the ledger should now expect. To make a
+recurrence diagnosable, teardown now leaves a FLUSHED breadcrumb before
+each step (`quit: closing connection` → `stopping pump` → `removing
+handlers` → `disposing window` → `clean`) and closes the log LAST: a
+crash log that ends at `quit: disposing window` says the fix did not
+hold; one that reaches `quit: clean`/`stopped` is a clean teardown.
+Ordinary log lines sit in the disk cache and a crash loses them, so the
+breadcrumbs force `FlushVol` (`now_log_flush`), the same guarantee
+`now_log` already gives an error line.
 
 **Resume by offset hangs.** A transfer resumed against a matching
 partial does not complete. The failing test is committed rather than

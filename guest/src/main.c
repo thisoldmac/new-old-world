@@ -434,18 +434,38 @@ int main(void)
         }
     }
 
+    /* Teardown leaves a flushed breadcrumb before each step and closes
+       the log LAST, so a crash here (a reboot-class one lived in Data
+       Browser disposal) ends the log ON the stage it did not survive
+       instead of at a "stopped" written too early to catch it. Each
+       breadcrumb is forced to the platter; the disk cache would lose an
+       ordinary line in the crash. A clean quit runs to "quit: clean"
+       and then "stopped". */
+    now_log(kLogInfo, "app", "quit: closing connection");
+    now_log_flush();
     conn_shutdown();
-    now_log_close();
+
+    now_log(kLogInfo, "app", "quit: stopping pump");
+    now_log_flush();
     now_pump_shutdown();
+
     /* Only remove what was installed, and dispose the descriptor. The
        handler was installed conditionally (the constructor can fail)
        but removed unconditionally, and its UPP was never released. */
+    now_log(kLogInfo, "app", "quit: removing handlers");
+    now_log_flush();
     if (quit_handler != NULL) {
         AERemoveEventHandler(kCoreEventClass, kAEQuitApplication,
                              quit_handler, false);
         DisposeAEEventHandlerUPP(quit_handler);
         quit_handler = NULL;
     }
+
+    now_log(kLogInfo, "app", "quit: disposing window");
+    now_log_flush();
     workshop_close();
+
+    now_log(kLogInfo, "app", "quit: clean");
+    now_log_close();
     return 0;
 }
