@@ -1,0 +1,452 @@
+<title>Software page — Platinum mock</title>
+<style>
+  :root {
+    --page-bg: #eceef1; --page-ink: #23282e; --page-muted: #5c6570;
+    --card-bg: #ffffff; --card-line: #d3d8de; --accent: #2f5e8f;
+    --ok: #2c6b4f; --warn: #8a6116; --no: #8a3030;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page-bg: #1c2026; --page-ink: #e4e8ec; --page-muted: #9aa4af;
+      --card-bg: #262b33; --card-line: #3a414b; --accent: #7fa8cf;
+      --ok: #7fc2a2; --warn: #d9b36a; --no: #d98a8a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page-bg: #1c2026; --page-ink: #e4e8ec; --page-muted: #9aa4af;
+    --card-bg: #262b33; --card-line: #3a414b; --accent: #7fa8cf;
+    --ok: #7fc2a2; --warn: #d9b36a; --no: #d98a8a;
+  }
+  :root[data-theme="light"] {
+    --page-bg: #eceef1; --page-ink: #23282e; --page-muted: #5c6570;
+    --card-bg: #ffffff; --card-line: #d3d8de; --accent: #2f5e8f;
+    --ok: #2c6b4f; --warn: #8a6116; --no: #8a3030;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page-bg); color: var(--page-ink);
+    font: 15px/1.55 Charcoal, Geneva, Verdana, system-ui, sans-serif;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 28px 20px 60px; }
+  h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: 0.2px; }
+  .dek { color: var(--page-muted); margin: 0 0 22px; max-width: 70ch; }
+  .dek code { font: 13px ui-monospace, Monaco, monospace; }
+
+  /* desktop stage */
+  .stage-scroll { overflow-x: auto; border: 1px solid var(--card-line); border-radius: 6px; }
+  .stage {
+    min-width: 820px;
+    background: repeating-conic-gradient(#7590b2 0% 25%, #6d87a9 0% 50%) 0 0 / 4px 4px;
+    padding: 0 0 34px;
+  }
+  .menubar {
+    height: 20px; background: #e8e8e8; border-bottom: 1px solid #555;
+    display: flex; align-items: center;
+    font: bold 12px Charcoal, Geneva, Verdana, sans-serif; color: #000; padding: 0 10px;
+  }
+  .menubar span { padding: 0 9px; }
+  .menubar .apple { padding: 0 6px 0 2px; display: flex; align-items: center; }
+  .menubar .spacer { flex: 1; }
+  .menubar .appname { display: flex; align-items: center; gap: 5px; }
+
+  .macwindow {
+    width: 746px; margin: 26px auto 0; border: 1px solid #222;
+    box-shadow: 1px 2px 0 rgba(0,0,0,0.35); background: #dddddd;
+  }
+  .titlebar {
+    height: 19px; position: relative; display: flex; align-items: center;
+    border-bottom: 1px solid #555; background: linear-gradient(#f4f4f4, #d0d0d0); padding: 0 6px;
+  }
+  .titlebar .stripes {
+    position: absolute; inset: 3px 26px 3px 26px;
+    background: repeating-linear-gradient(#0000 0 1px, #0003 1px 2px); pointer-events: none;
+  }
+  .tb-box {
+    width: 11px; height: 11px; border: 1px solid #333; background: #ddd;
+    box-shadow: inset 1px 1px 0 #fff, inset -1px -1px 0 #999; z-index: 1;
+  }
+  .titlebar .title { flex: 1; text-align: center; font: bold 12px Charcoal, Geneva, Verdana, sans-serif; color: #000; z-index: 1; }
+  .titlebar .title em { font-style: normal; background: #dfdfdf; padding: 0 8px; }
+  .titlebar .right { display: flex; gap: 4px; z-index: 1; }
+
+  /* A real OS 9 window is always light — pin dark ink so the page's
+     dark theme can't wash out text on the white Data Browser. */
+  .content { width: 744px; height: 478px; display: grid; grid-template-columns: 160px 1fr; background: #dddddd; color: #1a1a1a; }
+  .dbrow .nm { color: #111; }
+
+  /* rail */
+  .rail { padding: 8px; }
+  .rail-list { height: 100%; background: #fff; border: 1px solid #777; box-shadow: inset 1px 1px 0 #bbb; display: flex; flex-direction: column; }
+  .navrow { height: 32px; display: flex; align-items: center; gap: 6px; padding: 0 7px; }
+  .navrow .t { font: bold 11px Charcoal, Geneva, Verdana, sans-serif; line-height: 1.15; }
+  .navrow .s { font: 10px Geneva, Verdana, sans-serif; color: #555; line-height: 1.15; }
+  .navrow.sel { background: #a5b8dc; }
+  .navrow.sel .s { color: #333; }
+  .rail-spacer { flex: 1; }
+  .conn-divider { height: 1px; background: #999; margin: 0 4px; }
+
+  /* main */
+  .main { display: flex; flex-direction: column; min-width: 0; }
+  .header { height: 38px; padding: 5px 12px 0; background: #dddddd; box-shadow: inset 0 -1px 0 #999; }
+  .header .t { font: bold 12px Charcoal, Geneva, Verdana, sans-serif; }
+  .header .b { font: 10px Geneva, Verdana, sans-serif; color: #444; }
+
+  .body { flex: 1; background: #dddddd; padding: 8px 12px 10px; display: grid; grid-template-rows: auto 1fr; gap: 6px; min-height: 0; }
+  .toolbar { display: flex; align-items: center; gap: 8px; }
+  .toolbar .lab { font: 10px Geneva, Verdana, sans-serif; color: #333; }
+  .popup {
+    font: 11px Charcoal, Geneva, Verdana, sans-serif; color: #000;
+    background: linear-gradient(#f6f6f6, #d8d8d8); border: 1px solid #444; border-radius: 3px;
+    padding: 1px 22px 2px 8px; position: relative; min-width: 150px; cursor: pointer;
+    box-shadow: inset 1px 1px 0 #fff;
+  }
+  .popup::after {
+    content: ""; position: absolute; right: 6px; top: 50%; margin-top: -2px;
+    width: 0; height: 0; border: 4px solid transparent; border-top-color: #333;
+  }
+  .toolbar .spacer { flex: 1; }
+  .toolbar .count { font: 10px Geneva, Verdana, sans-serif; color: #555; }
+
+  .split { display: grid; grid-template-columns: 300px 1fr; gap: 10px; min-height: 0; }
+
+  /* left: item Data Browser */
+  .db { background: #fff; border: 1px solid #666; box-shadow: inset 1px 1px 0 #ccc; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  .db-head { display: flex; height: 17px; border-bottom: 1px solid #888; background: #ddd; flex: none; }
+  .db-head .col { font: 10px Geneva, Verdana, sans-serif; color: #222; padding: 2px 6px 0; box-shadow: inset 0 1px 0 #fff; display: flex; align-items: center; gap: 4px; }
+  .db-head .name { flex: 1; }
+  .db-head .size { width: 58px; }
+  .db-head .st { width: 62px; }
+  .db-head .sort::after { content: ""; width: 0; height: 0; border: 4px solid transparent; border-top-color: #333; margin-top: 4px; }
+  .db-rows { overflow-y: auto; flex: 1; }
+  .dbrow { display: flex; height: 19px; align-items: center; padding: 0 6px; font: 11px Geneva, Verdana, sans-serif; cursor: default; }
+  .dbrow:nth-child(even) { background: #f1f4f9; }
+  .dbrow.sel { background: #a5b8dc; }
+  .dbrow .nm { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .dbrow .sz { width: 52px; color: #333; }
+  .dbrow .st { width: 62px; color: #444; font-size: 10px; }
+  .dbrow.off .nm, .dbrow.off .sz { color: #999; }
+  .dbrow .dot { color: var(--ok); }
+  .dbrow .tail { color: #777; font-style: italic; font-size: 10px; }
+  .db-foot { flex: none; border-top: 1px solid #aaa; background: #ddd; padding: 4px 6px; display: flex; }
+
+  /* right: detail pane */
+  .detail { background: #dddddd; border: 1px solid #999; box-shadow: inset 1px 1px 0 #f2f2f2; padding: 12px 14px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  .d-title { display: flex; align-items: baseline; gap: 8px; }
+  .d-title .nm { font: bold 13px Charcoal, Geneva, Verdana, sans-serif; }
+  .d-title .ver { font: 11px Geneva, Verdana, sans-serif; color: #333; }
+  .d-title .run { font: 10px Geneva, Verdana, sans-serif; margin-left: auto; }
+  .d-title .run.on { color: var(--ok); }
+  .d-title .run.no { color: #888; }
+  .d-facts { margin: 12px 0 0; display: grid; grid-template-columns: 74px 1fr; gap: 4px 8px; }
+  .d-facts dt { font: 10px Geneva, Verdana, sans-serif; color: #555; text-align: right; margin: 0; }
+  .d-facts dd { font: 11px Geneva, Verdana, sans-serif; color: #111; margin: 0; }
+  .d-facts dd.mono { font-family: Monaco, ui-monospace, monospace; font-size: 10px; word-break: break-all; }
+  .d-empty { font: italic 11px Geneva, Verdana, sans-serif; color: #666; margin-top: 24px; text-align: center; }
+  .d-spacer { flex: 1; }
+  .d-buttons { display: flex; gap: 10px; margin-top: 12px; align-items: center; }
+  .d-note { font: italic 10px Geneva, Verdana, sans-serif; color: #777; }
+
+  .pushbtn {
+    font: 12px Charcoal, Geneva, Verdana, sans-serif; color: #000;
+    background: linear-gradient(#f2f2f2, #cfcfcf); border: 1px solid #444; border-radius: 7px;
+    padding: 2px 12px 3px; min-width: 60px; box-shadow: inset 1px 1px 0 #fff; cursor: pointer;
+  }
+  .pushbtn.sm { font-size: 11px; padding: 1px 10px 2px; border-radius: 6px; min-width: 0; }
+  .pushbtn:active { background: linear-gradient(#9db0d0, #8aa0c4); }
+  .pushbtn:disabled { color: #999; border-color: #999; box-shadow: none; background: #ddd; cursor: default; }
+  .pushbtn.default { outline: 2px solid #333; outline-offset: 2px; }
+
+  .status { height: 23px; display: flex; align-items: center; padding: 0 4px 0 12px; background: #dddddd; box-shadow: inset 0 1px 0 #f6f6f6; }
+  .status .txt { flex: 1; font: 10px Geneva, Verdana, sans-serif; color: #333; }
+  .status .txt.busy::before { content: "\25CF"; color: var(--warn); margin-right: 5px; animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0.25; } }
+  .growbox { width: 15px; height: 15px; border: 1px solid #666; background: #ddd; box-shadow: inset 1px 1px 0 #fff; position: relative; margin-right: 3px; }
+  .growbox::after { content: ""; position: absolute; inset: 2px; background: linear-gradient(135deg,#0000 44%,#888 44% 52%,#0000 52%), linear-gradient(135deg,#0000 62%,#888 62% 70%,#0000 70%); }
+
+  /* page controls */
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 18px 0 26px; }
+  .controls .lbl { font-size: 13px; color: var(--page-muted); margin-right: 2px; }
+  .chip { font: 13px inherit; color: var(--page-ink); background: var(--card-bg); border: 1px solid var(--card-line); border-radius: 4px; padding: 5px 11px; cursor: pointer; }
+  .chip[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: bold; }
+  .chip:focus-visible, .pushbtn:focus-visible, .popup:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .sep { width: 1px; height: 22px; background: var(--card-line); margin: 0 4px; }
+
+  h2 { font-size: 16px; margin: 34px 0 12px; }
+  .gates { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .gate { background: var(--card-bg); border: 1px solid var(--card-line); border-radius: 6px; padding: 14px 16px; }
+  .gate h3 { margin: 0 0 8px; font-size: 12px; letter-spacing: 0.8px; text-transform: uppercase; }
+  .gate.proven h3 { color: var(--ok); }
+  .gate.q h3 { color: var(--warn); }
+  .gate.not h3 { color: var(--no); }
+  .gate ul { margin: 0; padding-left: 18px; font-size: 13.5px; }
+  .gate li { margin: 4px 0; }
+  .gate li small { color: var(--page-muted); }
+  .foot { margin-top: 26px; font-size: 13px; color: var(--page-muted); max-width: 76ch; }
+  .foot code { font: 12px ui-monospace, Monaco, monospace; }
+</style>
+
+<div class="wrap">
+  <h1>The Software page, mocked in Platinum</h1>
+  <p class="dek">Rung 3 of <code>docs/software-module.md</code> as a split view — the same idiom
+  as Processes and Hardware: an item list on the left, a detail pane on the right, at the
+  Workshop's real geometry (744&times;478 body, 160px rail, 38/23px placards from
+  <code>workshop_layout.h</code>). Switch domain and state below; click rows to see the detail
+  and how the action buttons adapt.</p>
+
+  <div class="controls">
+    <span class="lbl">Domain:</span>
+    <button class="chip" data-domain="apps" aria-pressed="true">Applications</button>
+    <button class="chip" data-domain="extensions" aria-pressed="false">Extensions</button>
+    <button class="chip" data-domain="cdevs" aria-pressed="false">Control Panels</button>
+    <button class="chip" data-domain="startup" aria-pressed="false">Startup Items</button>
+    <span class="sep"></span>
+    <span class="lbl">State:</span>
+    <button class="chip" data-state="ready" aria-pressed="true">Populated</button>
+    <button class="chip" data-state="sweeping" aria-pressed="false">Sweeping</button>
+  </div>
+
+  <div class="stage-scroll"><div class="stage">
+    <div class="menubar">
+      <span class="apple"><svg width="13" height="15" viewBox="0 0 13 15"><defs><clipPath id="ap"><path d="M7.2 3.6c1-.1 2 .3 2.8 1-1.4 1-1.5 3.2.3 4.2-.4 1.3-1.2 3.4-2.6 3.4-.8 0-1-.5-2-.5s-1.3.5-2 .5C2.2 12.2 1 9.6 1 7.6c0-2.3 1.5-3.5 2.9-3.5.9 0 1.6.5 2.1.5.4 0 .8-.3 1.2-.5z"/><path d="M8.4 1.2c.2 1-.7 2.3-1.9 2.3-.2-1.2.9-2.3 1.9-2.3z"/></clipPath></defs><g clip-path="url(#ap)"><rect y="0" width="13" height="3.1" fill="#4faf4f"/><rect y="3.1" width="13" height="2.4" fill="#c9c934"/><rect y="5.5" width="13" height="2.4" fill="#e08a2e"/><rect y="7.9" width="13" height="2.4" fill="#d0453a"/><rect y="10.3" width="13" height="2.4" fill="#8a4a9e"/><rect y="12.7" width="13" height="2.3" fill="#3a6ec0"/></g></svg></span>
+      <span>File</span><span>Edit</span><span>View</span><span>Windows</span>
+      <span class="spacer"></span>
+      <span class="appname">now-guest</span>
+    </div>
+
+    <div class="macwindow">
+      <div class="titlebar">
+        <div class="tb-box" title="close"></div><div class="stripes"></div>
+        <div class="title"><em>New Old World</em></div>
+        <div class="right"><div class="tb-box"></div><div class="tb-box"></div></div>
+      </div>
+      <div class="content">
+        <div class="rail"><div class="rail-list">
+          <div class="navrow"><svg width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges"><rect x="1" y="4" width="14" height="9" fill="#ddd" stroke="#333"/><rect x="5" y="2" width="6" height="2" fill="#999"/><circle cx="8" cy="8.5" r="2.5" fill="#7d90b8" stroke="#333"/></svg><div><div class="t">Screenshots</div><div class="s">Capture and stream</div></div></div>
+          <div class="navrow"><svg width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges"><path d="M1 4h5l1 2h8v7H1z" fill="#e8d9a0" stroke="#333"/></svg><div><div class="t">Files</div><div class="s">Browse and exchange</div></div></div>
+          <div class="navrow"><svg width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges"><rect x="1" y="2" width="14" height="12" fill="#222"/><text x="3" y="11" font-size="8" fill="#9f9" font-family="Monaco,monospace">&gt;_</text></svg><div><div class="t">Console</div><div class="s">Local commands</div></div></div>
+          <div class="navrow"><svg width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges"><rect x="1" y="1" width="14" height="14" fill="#fff" stroke="#333"/><rect x="3" y="3" width="10" height="2" fill="#7d90b8"/><rect x="3" y="6" width="10" height="2" fill="#c8c8c8"/><rect x="3" y="9" width="10" height="2" fill="#c8c8c8"/><rect x="3" y="12" width="6" height="2" fill="#c8c8c8"/></svg><div><div class="t">Processes</div><div class="s">Running applications</div></div></div>
+          <div class="navrow"><svg width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges"><rect x="2" y="2" width="12" height="12" fill="#c8cdd6" stroke="#333"/><rect x="5" y="5" width="6" height="6" fill="#7d90b8" stroke="#333"/><rect x="0" y="6" width="2" height="1" fill="#333"/><rect x="14" y="6" width="2" height="1" fill="#333"/><rect x="6" y="0" width="1" height="2" fill="#333"/><rect x="9" y="14" width="1" height="2" fill="#333"/></svg><div><div class="t">Hardware</div><div class="s">Census and probes</div></div></div>
+          <div class="navrow sel"><svg width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges"><rect x="2" y="1" width="12" height="14" fill="#fff" stroke="#333"/><rect x="4" y="4" width="8" height="2" fill="#5a7bb0"/><rect x="4" y="7" width="8" height="1.5" fill="#9fb0d0"/><rect x="4" y="10" width="8" height="1.5" fill="#9fb0d0"/><rect x="9" y="1" width="5" height="4" fill="#dfe4ee" stroke="#333"/></svg><div><div class="t">Software</div><div class="s">What is installed</div></div></div>
+          <div class="rail-spacer"></div>
+          <div class="conn-divider"></div>
+          <div class="navrow"><svg width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges"><rect x="2" y="1" width="12" height="14" fill="#fff" stroke="#333"/><rect x="4" y="4" width="8" height="1" fill="#888"/><rect x="4" y="7" width="8" height="1" fill="#888"/><rect x="4" y="10" width="6" height="1" fill="#888"/></svg><div><div class="t">Logs</div><div class="s">This launch's events</div></div></div>
+          <div class="navrow"><svg width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges"><circle cx="8" cy="8" r="6" fill="#cfe6cf" stroke="#333"/><circle cx="8" cy="8" r="2" fill="#2c6b4f"/></svg><div><div class="t">Connection</div><div class="s">Linked · idle</div></div></div>
+        </div></div>
+
+        <div class="main">
+          <div class="header"><div class="t">Software</div><div class="b">What is installed on this Mac, and starting it. Applications sweep the disk; the rest read the System Folder.</div></div>
+          <div class="body">
+            <div class="toolbar">
+              <span class="lab">Show:</span>
+              <span class="popup" id="popup">Applications</span>
+              <span class="spacer"></span>
+              <span class="count" id="count"></span>
+            </div>
+            <div class="split">
+              <div class="db">
+                <div class="db-head"><div class="col name sort">Name</div><div class="col size">Size</div><div class="col st">State</div></div>
+                <div class="db-rows" id="rows"></div>
+                <div class="db-foot"><button class="pushbtn sm" id="rescan">Rescan</button></div>
+              </div>
+              <div class="detail" id="detail"></div>
+            </div>
+          </div>
+          <div class="status"><span class="txt" id="status">Ready.</span><span class="growbox"></span></div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+
+  <h2>What the mock is for</h2>
+  <div class="gates">
+    <div class="gate proven">
+      <h3>Layout, decided</h3>
+      <ul>
+        <li>The Processes/Hardware <b>split view</b> — item list left, detail right — reused, so Software sits beside its siblings.</li>
+        <li>Domain <b>popup</b> above the list (not tabs); five domains don't earn tab chrome.</li>
+        <li>Detail pane is where the <b>lazy <code>vers</code></b> read lands — version, full path, dates — on selection only.</li>
+      </ul>
+    </div>
+    <div class="gate q">
+      <h3>Open question — pick before building</h3>
+      <ul>
+        <li>For a selected <b>non-running extension / control panel</b>, every action is disabled (see the Extensions domain). Is "nothing to do" right, or do these want a later verb — reveal in Finder, or an enable/disable toggle?</li>
+        <li>Duplicates are <b>rows</b>, told apart by the detail pane's path — no modal picker (that's the console's <code>#n</code>/<code>-v</code>).</li>
+      </ul>
+    </div>
+    <div class="gate proven">
+      <h3>Honest about the sweep</h3>
+      <ul>
+        <li>Sweeping shows <b>text</b> progress, never a determinate bar — <code>PBCatSearch</code> has no known total mid-sweep.</li>
+        <li>Rows stream in; <b>Rescan → Stop</b>; ~4&nbsp;s cold on the 1400c (catsearch-measured).</li>
+      </ul>
+    </div>
+  </div>
+  <p class="foot">This is an HTML approximation of the Platinum look for design review — not the
+  renderer. The controls are all <code>native-api-route</code> on CarbonLib&nbsp;1.6 (Data Browser
+  included). Real fonts are Charcoal/Geneva as here; the guest draws them through the Appearance
+  Manager. Verification of the built page is still <code>metal</code>, per the ledger.</p>
+</div>
+
+<script>
+  const SET = {
+    apps: {
+      label: "Applications", total: "214 applications on Macintosh HD",
+      cols: true,
+      rows: [
+        {nm:"SimpleText", sz:"92K", run:true, ver:"1.4", tc:"APPL / ttxt", path:"Macintosh HD:Applications:SimpleText", mod:"7 Dec 1998"},
+        {nm:"SimpleText", sz:"1.1M", ver:"1.0.3", tc:"APPL / ttxt", path:"Macintosh HD:Utilities:Old:SimpleText", mod:"3 Mar 1996", dup:true},
+        {nm:"Adobe Photoshop 5.0", sz:"4.2M", ver:"5.0", tc:"APPL / 8BIM", path:"Macintosh HD:Applications:Adobe Photoshop 5.0:Adobe Photoshop 5.0", mod:"12 Jun 1998"},
+        {nm:"Sherlock 2", sz:"412K", ver:"2.0.1", tc:"APPL / fndf", path:"Macintosh HD:System Folder:Sherlock 2", mod:"9 Sep 1999"},
+        {nm:"Microsoft Word", sz:"5.1M", run:true, ver:"98", tc:"APPL / MSWD", path:"Macintosh HD:Applications:Microsoft Office 98:Microsoft Word", mod:"15 Jan 1998"},
+        {nm:"Stickies", sz:"103K", ver:"2.0", tc:"APPL / notz", path:"Macintosh HD:Applications:Stickies", mod:"7 Dec 1998"},
+        {nm:"QuickTime Player", sz:"1.0M", ver:"4.0", tc:"APPL / TVOD", path:"Macintosh HD:Applications:QuickTime Player", mod:"2 Apr 1999"},
+        {nm:"Adobe Illustrator 8", sz:"3.0M", ver:"8.0", tc:"APPL / ART5", path:"Macintosh HD:Applications:Adobe Illustrator 8:Adobe Illustrator", mod:"1 Oct 1998"},
+        {nm:"Norton Utilities", sz:"2.4M", ver:"5.0", tc:"APPL / NU55", path:"Macintosh HD:Utilities:Norton Utilities:Norton Utilities", mod:"20 May 1999"},
+        {nm:"Disk Copy", sz:"620K", ver:"6.3.3", tc:"APPL / dCpy", path:"Macintosh HD:Utilities:Disk Copy", mod:"11 Nov 1998"},
+      ],
+    },
+    extensions: {
+      label: "Extensions", total: "139 extensions · 3 disabled",
+      rows: [
+        {nm:"Apple CD/DVD Driver", sz:"116K", ver:"1.5", tc:"INIT / dcdr", path:"Macintosh HD:System Folder:Extensions:Apple CD/DVD Driver", mod:"1 Oct 1999"},
+        {nm:"CarbonLib", sz:"3.9M", ver:"1.6", tc:"INIT / cbon", path:"Macintosh HD:System Folder:Extensions:CarbonLib", mod:"15 Feb 2001"},
+        {nm:"Contextual Menu Extension", sz:"74K", ver:"1.0.1", tc:"INIT / cmnu", path:"Macintosh HD:System Folder:Extensions:Contextual Menu Extension", mod:"1 Oct 1999"},
+        {nm:"Control Strip Extension", sz:"76K", run:true, ver:"2.0.4", tc:"cdev / sdev", path:"Macintosh HD:System Folder:Extensions:Control Strip Extension", mod:"1 Oct 1999"},
+        {nm:"QuickTime", sz:"1.8M", ver:"4.0", tc:"INIT / tvod", path:"Macintosh HD:System Folder:Extensions:QuickTime", mod:"2 Apr 1999"},
+        {nm:"Speed Doubler", sz:"212K", ver:"8.1.2", tc:"INIT / SDbl", path:"Macintosh HD:System Folder:Extensions (Disabled):Speed Doubler", mod:"3 Aug 1998", off:true},
+        {nm:"RAM Doubler", sz:"180K", ver:"9.0", tc:"INIT / rmdr", path:"Macintosh HD:System Folder:Extensions (Disabled):RAM Doubler", mod:"3 Aug 1998", off:true},
+        {nm:"After Dark", sz:"420K", ver:"4.0", tc:"INIT / adrk", path:"Macintosh HD:System Folder:Extensions (Disabled):After Dark", mod:"14 Dec 1995", off:true},
+      ],
+    },
+    cdevs: {
+      label: "Control Panels", total: "33 control panels",
+      rows: [
+        {nm:"Appearance", sz:"420K", ver:"1.1.4", tc:"cdev / appr", path:"Macintosh HD:System Folder:Control Panels:Appearance", mod:"1 Oct 1999"},
+        {nm:"Memory", sz:"88K", ver:"8.1", tc:"cdev / mem ", path:"Macintosh HD:System Folder:Control Panels:Memory", mod:"1 Oct 1999"},
+        {nm:"Monitors", sz:"200K", ver:"7.5", tc:"cdev / mntr", path:"Macintosh HD:System Folder:Control Panels:Monitors", mod:"1 Oct 1999"},
+        {nm:"TCP/IP", sz:"320K", ver:"2.5", tc:"cdev / tcpn", path:"Macintosh HD:System Folder:Control Panels:TCP/IP", mod:"1 Oct 1999"},
+        {nm:"Extensions Manager", sz:"260K", ver:"1.8", tc:"cdev / extm", path:"Macintosh HD:System Folder:Control Panels:Extensions Manager", mod:"1 Oct 1999"},
+      ],
+    },
+    startup: {
+      label: "Startup Items", total: "2 startup items",
+      rows: [
+        {nm:"Retrospect Client", sz:"1.2M", ver:"5.0", tc:"APPL / rexc", path:"Macintosh HD:System Folder:Startup Items:Retrospect Client", mod:"5 May 2000"},
+        {nm:"iTunes Helper", sz:"140K", ver:"1.0", tc:"APPL / hook", path:"Macintosh HD:System Folder:Startup Items:iTunes Helper", mod:"9 Jan 2001"},
+      ],
+    },
+  };
+
+  let domain = "apps", state = "ready", sel = 0;
+
+  const $ = (id) => document.getElementById(id);
+  const rowsEl = $("rows"), detailEl = $("detail"), statusEl = $("status"),
+        countEl = $("count"), popupEl = $("popup"), rescanEl = $("rescan");
+
+  function isApp() { return domain === "apps" || domain === "startup"; }
+
+  function render() {
+    const set = SET[domain];
+    popupEl.textContent = set.label;
+
+    // rows
+    rowsEl.innerHTML = "";
+    let list = set.rows;
+    if (state === "sweeping") list = set.rows.slice(0, 6);
+    list.forEach((r, i) => {
+      const div = document.createElement("div");
+      div.className = "dbrow" + (i === sel && state !== "sweeping" ? " sel" : "") + (r.off ? " off" : "");
+      const st = r.run ? '<span class="dot">● running</span>' : (r.off ? "off" : "");
+      div.innerHTML = `<span class="nm">${r.nm}</span><span class="sz">${r.sz}</span><span class="st">${st}</span>`;
+      div.onclick = () => { if (state === "sweeping") return; sel = i; render(); };
+      rowsEl.appendChild(div);
+    });
+    if (state === "sweeping") {
+      const t = document.createElement("div");
+      t.className = "dbrow"; t.innerHTML = '<span class="tail">… sweeping</span>';
+      rowsEl.appendChild(t);
+    }
+
+    // detail
+    if (state === "sweeping") {
+      detailEl.innerHTML = '<div class="d-empty">Indexing the disk…<br>select an item when it appears.</div>';
+    } else {
+      const r = list[sel] || list[0];
+      const runTag = r.run ? '<span class="run on">● running</span>'
+                    : (r.off ? '<span class="run no">disabled (off)</span>'
+                             : '<span class="run no">not running</span>');
+      detailEl.innerHTML = `
+        <div class="d-title"><span class="nm">${r.nm}</span><span class="ver">v${r.ver}</span>${runTag}</div>
+        <dl class="d-facts">
+          <dt>Kind</dt><dd>${r.tc}</dd>
+          <dt>Size</dt><dd>${r.sz} on disk</dd>
+          <dt>Where</dt><dd class="mono">${r.path}</dd>
+          <dt>Modified</dt><dd>${r.mod}</dd>
+        </dl>
+        <div class="d-spacer"></div>
+        ${buttons(r)}`;
+    }
+
+    // status + count
+    if (state === "sweeping") {
+      statusEl.textContent = "Indexing Macintosh HD — 96 applications so far…";
+      statusEl.className = "txt busy";
+      countEl.textContent = "sweeping…";
+    } else {
+      statusEl.textContent = set.total.charAt(0).toUpperCase() + set.total.slice(1) + ".";
+      statusEl.className = "txt";
+      countEl.textContent = set.total;
+    }
+    rescanEl.textContent = state === "sweeping" ? "Stop" : "Rescan";
+  }
+
+  function buttons(r) {
+    if (state === "sweeping") return "";
+    if (isApp()) {
+      if (r.run) {
+        return `<div class="d-buttons">
+          <button class="pushbtn" disabled>Launch</button>
+          <button class="pushbtn default">Bring to Front</button>
+          <button class="pushbtn">Quit</button></div>`;
+      }
+      return `<div class="d-buttons">
+        <button class="pushbtn default">Launch</button>
+        <button class="pushbtn" disabled>Bring to Front</button>
+        <button class="pushbtn" disabled>Quit</button></div>`;
+    }
+    // non-app domain
+    if (r.run) {
+      return `<div class="d-buttons">
+        <button class="pushbtn default">Bring to Front</button>
+        <button class="pushbtn">Quit</button>
+        <span class="d-note">running now</span></div>`;
+    }
+    return `<div class="d-buttons">
+      <button class="pushbtn" disabled>Launch</button>
+      <button class="pushbtn" disabled>Bring to Front</button>
+      <span class="d-note">an extension isn't launched — see open question</span></div>`;
+  }
+
+  document.querySelectorAll("[data-domain]").forEach((b) => b.onclick = () => {
+    document.querySelectorAll("[data-domain]").forEach((x) => x.setAttribute("aria-pressed", "false"));
+    b.setAttribute("aria-pressed", "true");
+    domain = b.dataset.domain; sel = 0;
+    if (domain !== "apps" && state === "sweeping") setState("ready");
+    render();
+  });
+  function setState(s) {
+    state = s;
+    document.querySelectorAll("[data-state]").forEach((x) => x.setAttribute("aria-pressed", x.dataset.state === s ? "true" : "false"));
+  }
+  document.querySelectorAll("[data-state]").forEach((b) => b.onclick = () => {
+    if (b.dataset.state === "sweeping" && domain !== "apps") {
+      // sweeping only applies to Applications; jump there
+      document.querySelector('[data-domain="apps"]').click();
+    }
+    setState(b.dataset.state); sel = 0; render();
+  });
+
+  render();
+</script>
