@@ -437,6 +437,13 @@ working on the PowerBook.
     watched: the selection and detail pane SURVIVE keystrokes
     untouched; a filtered-out selection clears once. The reduced
     repaint itself, like all flicker, only reads on metal.
+    - The field itself still blinked (whole-field invalidate + full
+      white repaint per key). Typing now echoes the DELTA directly —
+      the contract's immediate-feedback exception: erase from the end
+      of the unchanged prefix only, draw the tail + caret, clip
+      restored, nothing invalidated; draw_search reproduces the same
+      pixels at any real update. Emulator-watched ("quicktime" typed
+      and backspaced entirely through the echo path).
 
 - **Software rungs 1–2: resumable sweep, `vers`, running tags, and the
   `software.list` family** (2026-07-22, spec in `software-module.md`).
