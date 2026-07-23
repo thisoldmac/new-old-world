@@ -188,6 +188,12 @@ the `process.list` rule.
 
 Only after rungs 1–2 are watched working. The page renders functions
 that already ran; its jobs are geometry, controls, and pacing.
+Capability-gated previews of every state — populated, sweeping,
+duplicates, extensions — are in
+[mockups/software-mockups.md](mockups/software-mockups.md); they confirm
+the whole control set (Data Browser included) is `native-api-route` on
+CarbonLib 1.6, and they carry the open button-model question for
+non-app domains.
 
 **Placement.** Module id after Hardware, before the footer pair:
 sidebar order Screenshots, Files, Console, Processes, Hardware,
