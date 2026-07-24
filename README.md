@@ -118,6 +118,12 @@ an unreachable host still presents as a hang rather than saying which
 address it cannot reach, and the host's receiving half does not report
 progress or verify checksums the way the classic side does.
 
+Future host-product work is bounded by the
+[NOW V1 host roadmap](docs/plans/2026-07-24-002-feat-now-v1-host-product-roadmap-plan.md).
+It sequences a target catalog and host UI improvements after MCP V0 while
+preserving the current guest-dials-host, one-port, single-session
+transport. It is not a protocol migration or a multi-machine runtime.
+
 ## Layout
 
 - `contract/asyncapi.yaml` — the wire contract (AsyncAPI 3.0 + normative

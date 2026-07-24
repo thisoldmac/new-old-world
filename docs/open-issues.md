@@ -907,6 +907,23 @@ Doing any one now makes the others harder, and only the receiving half
 has a consequence beyond tidiness. Whoever takes that should take these
 with it.
 
+## V1 host product work is planned, not implemented
+
+The [NOW V1 host product roadmap](plans/2026-07-24-002-feat-now-v1-host-product-roadmap-plan.md)
+starts only after the optional MCP companion V0 is complete. It commits a
+persistent target catalog and host-side improvements to Files, Processes,
+Software, the menu bar, quit policy, and Settings while retaining the
+current guest-dials-host, one-port, single-session transport.
+
+V1 explicitly defers a guest listener, multi-session runtime, mobile
+transport, and shared protocol service. Any common-protocol extraction
+waits for CodeKitten's separate listener, pairing/security,
+health/latency, recovery, cooperative-loop, and adversarial multi-peer
+proof and would begin in another worktree. The exact target-switcher
+information architecture, pairing-conflict UX, thumbnail and history
+retention, inventory analyses, local-browser defaults, and remembered
+module-state policies remain intentionally open.
+
 ## Rough edges
 
 **A send stages the whole file in RAM.** Pulling streams to disk, but
