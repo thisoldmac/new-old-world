@@ -1,5 +1,6 @@
 import XCTest
 @testable import Host
+import NOWAgentIntegration
 
 @MainActor
 final class AgentIntegrationHealthTests: XCTestCase {

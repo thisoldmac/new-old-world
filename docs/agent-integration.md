@@ -1,30 +1,34 @@
 # Host agent-integration boundary
 
-The optional NOW agent-integration companion is host-side only. It may project a narrow typed view of capabilities already owned by a running NOW host, but it does not own the host app, the guest connection, the transport, the transfer lane, or any human-facing operation.
+The optional NOW agent-integration companion is host-side only. It projects a narrow typed view of capabilities already owned by a running NOW host, but it does not own the host app, guest connection, transport, transfer lane, or any human-facing operation.
 
-## First vertical slice
+## Session-health slice
 
-The first slice implements only the in-process host projection behind the planned `now_session_health` tool.
+The implemented slice exposes only the host-owned projection behind `now_session_health`.
 
 | Tool contract | Existing NOW owner | Implemented projection |
 | --- | --- | --- |
 | `now_session_health` | `GuestListener.State` and `GuestListener.SessionHealth` | `AgentIntegrationHostAdapter.sessionHealth` returns a side-effect-free snapshot of not-listening, listening, connected, or failed host state. Connected snapshots carry only existing guest health fields plus an opaque adapter-owned session ID. |
 
-The call has no inputs, sends no guest message, opens no connection, and exposes no listener lifecycle operation. `AgentIntegrationSessionHealthResult.hostUnavailable` fixes the companion-side failure vocabulary at `now-host-unavailable`, but no external transport currently emits it.
+The client-launched `NOWAgentCompanion` executable speaks newline-delimited JSON-RPC over stdio and advertises only this no-input tool. It opens one bounded local request to the running host for each call. It sends no guest message and exposes no host or listener lifecycle operation. If the host is absent, the result is `now-host-unavailable`; the companion never launches it.
 
 The other four planned V0 tools are not implemented.
 
-## Local adapter threat-model gate
+## Local trust boundary
 
-The repository has no existing host-local IPC or caller-authentication pattern to reuse. Its only listener is the guest-facing TCP `NWListener` in `GuestListener`; it has protocol handshake rules for a classic Mac and is not a local companion boundary. A repository search found no XPC service, Mach service, UNIX-domain socket, peer-credential check, audit-token check, or code-signature validation.
+V0 deliberately trusts processes running as the same macOS user. This protects against other local users and accidental clients; it does not protect against malicious code already running as that user.
 
-That leaves a product/security decision this slice does not make: which local processes are authorized to reach a future adapter.
+- The host creates `dev.newoldworld.now-agent-<uid>/host.sock` beneath the user's private temporary directory. The directory is mode `0700`; the socket is mode `0600`.
+- The host checks every accepted peer with `getpeereid` and serves it only when the effective UID matches.
+- The companion checks that the directory and socket are owned by its effective UID, have no group/other permission bits, and are a directory and socket rather than links or other file types.
+- The local schema is versioned, allows only `session_health`, permits one request per connection, and caps each request and response at 16 KiB. MCP stdio input is separately capped at 64 KiB per line.
 
-- A same-user boundary could use a private UNIX-domain socket plus peer-UID validation, but accepting every process running as the logged-in user is a policy choice.
-- A code-identity boundary would need a signed-client/XPC design and packaging analysis. It must still avoid a daemon, launch agent, second desktop app, or host-managed companion lifecycle.
+The local socket is not the guest wire. It creates no TCP listener, guest connection, protocol message, guest module, dashboard item, daemon, launch agent, or second app.
 
-Unauthenticated loopback TCP, a filesystem-published endpoint without peer validation, and reuse of the guest wire are rejected. No stdio MCP executable or host-local transport is added until the caller trust boundary is explicitly chosen.
+## Operational prerequisites
+
+Build the host app normally and build the companion with `swift build --package-path host --product NOWAgentCompanion`. An MCP client may launch that executable over stdio, but this repository intentionally contains no client configuration. NOW must already be running for an available health result; the companion does not start, stop, configure, or keep it alive.
 
 ## Current verification
 
-The host projection is **tested** here, not metal-verified. Focused tests cover idle and connected snapshots, stable identity across duplicate concurrent reads, identity invalidation across reconnect, typed host-unavailable vocabulary, and unchanged host module inventory/listener state when the facade is present. The full host regression suite also passes here; its metal tests remain skipped. An actual absent-host or malformed-local-request test remains blocked on the transport decision.
+The projection, local socket, and stdio wrapper are **tested** here. Focused tests cover missing host, malformed and oversized requests, endpoint permissions, real peer-UID comparison, forced peer rejection, duplicate and concurrent reads, socket-to-MCP traversal, and unchanged host module inventory/listener state with the socket absent or present. A built companion returned typed unavailable while the host process was absent, then reported a live `connected` session with the PowerBook 1400c after the host was launched. The tool path has therefore been observed against the real guest; broader paired human workflows were not re-run as part of this read-only check.

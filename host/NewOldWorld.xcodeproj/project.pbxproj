@@ -16,6 +16,11 @@
 			path = Sources/Host;
 			sourceTree = "<group>";
 		};
+		A1000021 /* Sources/NOWAgentIntegration */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Sources/NOWAgentIntegration;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -33,6 +38,7 @@
 			isa = PBXGroup;
 			children = (
 				A1000020 /* Sources/Host */,
+				A1000021 /* Sources/NOWAgentIntegration */,
 				A1000050 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -62,6 +68,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				A1000020 /* Sources/Host */,
+				A1000021 /* Sources/NOWAgentIntegration */,
 			);
 			name = "New Old World";
 			productName = "New Old World";

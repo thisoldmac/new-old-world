@@ -1,48 +1,9 @@
 import Foundation
+#if canImport(NOWAgentIntegration)
+import NOWAgentIntegration
+#endif
 
-struct AgentIntegrationUnavailable: Equatable, Sendable {
-    let code: String
-    let message: String
-}
-
-enum AgentIntegrationSessionHealthResult: Equatable, Sendable {
-    case available(AgentIntegrationSessionHealth)
-    case unavailable(AgentIntegrationUnavailable)
-
-    static let hostUnavailable = AgentIntegrationSessionHealthResult
-        .unavailable(.init(
-            code: "now-host-unavailable",
-            message: "New Old World host is unavailable"))
-}
-
-struct AgentIntegrationSessionHealth: Equatable, Sendable {
-    enum State: String, Equatable, Sendable {
-        case notListening
-        case listening
-        case connected
-        case failed
-    }
-
-    struct Guest: Equatable, Sendable {
-        let name: String
-        let version: String?
-        let operatingSystem: String?
-        let connectedAt: Date?
-        let lastTraffic: Date?
-        let quietFor: TimeInterval?
-        let pingsAnswered: Int?
-        let framesReceived: Int?
-    }
-
-    let state: State
-    let observedAt: Date
-    let listeningPort: UInt16?
-    let sessionID: UUID?
-    let guest: Guest?
-    let failure: String?
-}
-
-/// The in-process, read-only boundary a future local transport may expose.
+/// The in-process, read-only boundary exposed by the optional local adapter.
 ///
 /// This owns no listener lifecycle and sends nothing to the guest. Keeping
 /// the projection beside the live listener prevents a companion process from

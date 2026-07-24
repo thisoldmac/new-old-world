@@ -84,6 +84,12 @@ on either side.
   is metal-verified; the host one is built and tested.
 - **Menu-bar capture** — one command grabs the connected machine's
   screen straight to the clipboard, no window needed.
+- **Optional agent session health** — a separate, client-launched stdio
+  MCP companion can report the already-running host and guest session
+  state through a private same-user socket. It exposes no lifecycle
+  controls or other tools and changes neither app's module inventory.
+  Tested here; a built companion also reported the live PowerBook 1400c
+  pairing through this path.
 
 Measured on the real PB1400c: ~4.9 fps at 8-bit with predictive +
 interlace over 802.11b, and file transfers byte-exact at ~227 KB/s.
@@ -136,6 +142,13 @@ Host tests and app bundle:
 swift test --package-path host --scratch-path /private/tmp/now-host-tests
 ./scripts/build-host-app /private/tmp/now-host-product
 open /private/tmp/now-host-product/New\ Old\ World.app
+```
+
+The optional agent companion is a separate executable and has no
+checked-in client configuration:
+
+```sh
+swift build --package-path host --product NOWAgentCompanion
 ```
 
 The script's ad-hoc signature is fine for development, but system

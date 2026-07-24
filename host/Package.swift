@@ -6,11 +6,24 @@ let package = Package(
     platforms: [.macOS(.v13)],
     products: [
         .executable(name: "Host", targets: ["Host"]),
+        .executable(name: "NOWAgentCompanion",
+                    targets: ["NOWAgentCompanion"]),
     ],
     targets: [
-        .executableTarget(name: "Host", path: "Sources/Host"),
-        .testTarget(name: "HostTests", dependencies: ["Host"],
+        .target(name: "NOWAgentIntegration",
+                path: "Sources/NOWAgentIntegration"),
+        .executableTarget(name: "Host",
+                          dependencies: ["NOWAgentIntegration"],
+                          path: "Sources/Host"),
+        .executableTarget(name: "NOWAgentCompanion",
+                          dependencies: ["NOWAgentIntegration"],
+                          path: "Sources/NOWAgentCompanion"),
+        .testTarget(name: "HostTests",
+                    dependencies: ["Host", "NOWAgentIntegration"],
                     path: "Tests/HostTests"),
+        .testTarget(name: "NOWAgentCompanionTests",
+                    dependencies: ["NOWAgentCompanion",
+                                   "NOWAgentIntegration"],
+                    path: "Tests/NOWAgentCompanionTests"),
     ]
 )
-

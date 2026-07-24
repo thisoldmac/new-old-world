@@ -1,5 +1,8 @@
 import AppKit
 import Combine
+#if canImport(NOWAgentIntegration)
+import NOWAgentIntegration
+#endif
 import SwiftUI
 
 extension String {
@@ -18,10 +21,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private var window: NSWindow?
     private var flash: StatusItemFlash?
     private var statusWatch: AnyCancellable?
+    private var agentIntegrationServer: AgentIntegrationLocalServer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installStatusItem()
         openMainWindow()
+        startAgentIntegrationServer()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        agentIntegrationServer?.stop()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication,
@@ -154,6 +163,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     @objc private func quit() {
         NSApp.terminate(nil)
     }
+
+    /// Failure keeps the human product intact; this optional surface must
+    /// never become a prerequisite for launching or pairing NOW.
+    private func startAgentIntegrationServer() {
+        do {
+            let server = try AgentIntegrationLocalServer {
+                [agentIntegration = state.agentIntegration] in
+                agentIntegration.sessionHealth()
+            }
+            try server.start()
+            agentIntegrationServer = server
+        } catch {
+            HostLog.shared.write(
+                .warn, "agent",
+                "local agent integration unavailable: \(error)")
+        }
+    }
 }
 
 @main
@@ -168,4 +194,3 @@ enum HostMain {
         }
     }
 }
-
