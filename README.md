@@ -84,12 +84,15 @@ on either side.
   is metal-verified; the host one is built and tested.
 - **Menu-bar capture** — one command grabs the connected machine's
   screen straight to the clipboard, no window needed.
-- **Optional agent session health** — a separate, client-launched stdio
+- **Optional agent observation** — a separate, client-launched stdio
   MCP companion can report the already-running host and guest session
-  state through a private same-user socket. It exposes no lifecycle
-  controls or other tools and changes neither app's module inventory.
-  Tested here; a built companion also reported the live PowerBook 1400c
-  pairing through this path.
+  state and read a bounded point-in-time guest process snapshot through
+  a private same-user socket. Process references are opaque and
+  observation-only; no implemented tool can act on one. The companion
+  exposes no lifecycle controls and changes neither app's module
+  inventory. Both tools are tested here; session health also reported
+  the live PowerBook 1400c pairing through this path, while the MCP
+  process projection has not yet been watched on metal.
 
 Measured on the real PB1400c: ~4.9 fps at 8-bit with predictive +
 interlace over 802.11b, and file transfers byte-exact at ~227 KB/s.

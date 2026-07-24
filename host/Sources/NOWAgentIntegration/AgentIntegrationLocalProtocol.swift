@@ -8,6 +8,7 @@ public enum AgentIntegrationLocalProtocol {
 public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
     public enum Operation: String, Codable, Sendable {
         case sessionHealth = "session_health"
+        case listProcesses = "list_processes"
     }
 
     public let version: Int
@@ -20,6 +21,11 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         self.requestID = requestID
         self.operation = operation
     }
+}
+
+public enum AgentIntegrationLocalResult: Equatable, Sendable {
+    case sessionHealth(AgentIntegrationSessionHealthResult)
+    case processList(AgentIntegrationProcessListResult)
 }
 
 public struct AgentIntegrationLocalError: Codable, Equatable, Sendable {
@@ -36,6 +42,7 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
     public let version: Int
     public let requestID: UUID?
     public let result: AgentIntegrationSessionHealthResult?
+    public let processListResult: AgentIntegrationProcessListResult?
     public let error: AgentIntegrationLocalError?
 
     public init(requestID: UUID,
@@ -43,6 +50,16 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         version = AgentIntegrationLocalProtocol.version
         self.requestID = requestID
         self.result = result
+        processListResult = nil
+        error = nil
+    }
+
+    public init(requestID: UUID,
+                processListResult: AgentIntegrationProcessListResult) {
+        version = AgentIntegrationLocalProtocol.version
+        self.requestID = requestID
+        result = nil
+        self.processListResult = processListResult
         error = nil
     }
 
@@ -51,6 +68,7 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         version = AgentIntegrationLocalProtocol.version
         self.requestID = requestID
         result = nil
+        processListResult = nil
         self.error = error
     }
 }
@@ -99,6 +117,7 @@ public enum AgentIntegrationLocalCodec {
             data,
             allowedKeys: [
                 "version", "requestID", "result", "error",
+                "processListResult",
             ])
         guard object["version"] as? Int ==
                 AgentIntegrationLocalProtocol.version else {
@@ -106,8 +125,10 @@ public enum AgentIntegrationLocalCodec {
                 "Unsupported local protocol version")
         }
         let hasResult = object["result"] != nil
+        let hasProcessList = object["processListResult"] != nil
         let hasError = object["error"] != nil
-        guard hasResult != hasError else {
+        guard [hasResult, hasProcessList, hasError]
+                .filter({ $0 }).count == 1 else {
             throw AgentIntegrationLocalTransportError.invalidMessage(
                 "Response must contain exactly one result or error")
         }

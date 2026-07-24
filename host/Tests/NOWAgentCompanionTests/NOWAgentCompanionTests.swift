@@ -31,9 +31,9 @@ final class NOWAgentCompanionTests: XCTestCase {
     }
 
     private func initializedServer(
-        client: AgentIntegrationHealthClient
+        client: AgentIntegrationClient
     ) async throws -> NOWMCPServer {
-        let server = NOWMCPServer(healthClient: client)
+        let server = NOWMCPServer(client: client)
         _ = await server.handle(try Self.request(
             id: 1,
             method: "initialize",
@@ -50,18 +50,34 @@ final class NOWAgentCompanionTests: XCTestCase {
         return server
     }
 
-    func testListsOnlySessionHealth() async throws {
+    func testListsOnlyApprovedReadOnlyObservationTools() async throws {
         let server = try await initializedServer(
-            client: StubHealthClient(result: .hostUnavailable))
+            client: StubAgentIntegrationClient())
 
         let response = try Self.object(await server.handle(
             try Self.request(id: 2, method: "tools/list", params: [:])))
         let result = try XCTUnwrap(response["result"] as? [String: Any])
         let tools = try XCTUnwrap(result["tools"] as? [[String: Any]])
 
-        XCTAssertEqual(tools.count, 1)
-        XCTAssertEqual(tools.first?["name"] as? String,
-                       "now_session_health")
+        XCTAssertEqual(tools.compactMap { $0["name"] as? String }, [
+            "now_session_health",
+            "now_list_processes",
+        ])
+        let processTool = try XCTUnwrap(tools.last)
+        let output = try XCTUnwrap(
+            processTool["outputSchema"] as? [String: Any])
+        let properties = try XCTUnwrap(
+            output["properties"] as? [String: Any])
+        let snapshot = try XCTUnwrap(
+            properties["snapshot"] as? [String: Any])
+        let snapshotProperties = try XCTUnwrap(
+            snapshot["properties"] as? [String: Any])
+        let processes = try XCTUnwrap(
+            snapshotProperties["processes"] as? [String: Any])
+
+        XCTAssertEqual(processes["maxItems"] as? Int, 48)
+        XCTAssertNotNil(snapshotProperties["freshness"])
+        XCTAssertNotNil(snapshotProperties["referenceAuthority"])
     }
 
     func testHostAbsentReturnsTypedUnavailableWithoutLaunchingIt()
@@ -69,7 +85,7 @@ final class NOWAgentCompanionTests: XCTestCase {
         let (endpoint, root) = temporaryEndpoint()
         defer { try? FileManager.default.removeItem(at: root) }
         let server = try await initializedServer(
-            client: SocketHealthClient(endpoint: endpoint))
+            client: SocketAgentIntegrationClient(endpoint: endpoint))
 
         let response = try Self.object(await server.handle(try Self.request(
             id: 2,
@@ -87,9 +103,32 @@ final class NOWAgentCompanionTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
     }
 
+    func testProcessListReturnsTypedHostUnavailableWithoutLaunchingIt()
+        async throws {
+        let (endpoint, root) = temporaryEndpoint()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let server = try await initializedServer(
+            client: SocketAgentIntegrationClient(endpoint: endpoint))
+
+        let response = try Self.object(await server.handle(try Self.request(
+            id: 2,
+            method: "tools/call",
+            params: ["name": "now_list_processes", "arguments": [:]])))
+        let result = try XCTUnwrap(response["result"] as? [String: Any])
+        let structured = try XCTUnwrap(
+            result["structuredContent"] as? [String: Any])
+        let unavailable = try XCTUnwrap(
+            structured["unavailable"] as? [String: Any])
+
+        XCTAssertEqual(structured["available"] as? Bool, false)
+        XCTAssertEqual(unavailable["code"] as? String,
+                       "now-host-unavailable")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+    }
+
     func testMalformedJSONReturnsParseError() async throws {
         let server = NOWMCPServer(
-            healthClient: StubHealthClient(result: .hostUnavailable))
+            client: StubAgentIntegrationClient())
 
         let response = try Self.object(
             await server.handle(Data("{nope".utf8)))
@@ -101,7 +140,7 @@ final class NOWAgentCompanionTests: XCTestCase {
 
     func testFractionalRequestIDReturnsInvalidRequest() async throws {
         let server = NOWMCPServer(
-            healthClient: StubHealthClient(result: .hostUnavailable))
+            client: StubAgentIntegrationClient())
         let data = try JSONSerialization.data(withJSONObject: [
             "jsonrpc": "2.0",
             "id": 1.5,
@@ -117,7 +156,7 @@ final class NOWAgentCompanionTests: XCTestCase {
 
     func testSessionHealthRejectsArguments() async throws {
         let server = try await initializedServer(
-            client: StubHealthClient(result: .hostUnavailable))
+            client: StubAgentIntegrationClient())
 
         let response = try Self.object(await server.handle(try Self.request(
             id: 2,
@@ -145,11 +184,18 @@ final class NOWAgentCompanionTests: XCTestCase {
             failure: nil)
         let localServer = try AgentIntegrationLocalServer(
             endpoint: endpoint,
-            handler: { .available(health) })
+            handler: { operation in
+                switch operation {
+                case .sessionHealth:
+                    return .sessionHealth(.available(health))
+                case .listProcesses:
+                    return .processList(.guestUnavailable)
+                }
+            })
         try localServer.start()
         defer { localServer.stop() }
         let server = try await initializedServer(
-            client: SocketHealthClient(endpoint: endpoint))
+            client: SocketAgentIntegrationClient(endpoint: endpoint))
 
         let response = try Self.object(await server.handle(try Self.request(
             id: 2,
@@ -167,7 +213,7 @@ final class NOWAgentCompanionTests: XCTestCase {
 
     func testConcurrentSessionHealthCallsAllReturn() async throws {
         let server = try await initializedServer(
-            client: StubHealthClient(result: .hostUnavailable))
+            client: StubAgentIntegrationClient())
 
         let responses = try await withThrowingTaskGroup(
             of: [String: Any].self
@@ -180,6 +226,94 @@ final class NOWAgentCompanionTests: XCTestCase {
                             method: "tools/call",
                             params: [
                                 "name": "now_session_health",
+                                "arguments": [:],
+                            ])))
+                }
+            }
+            var values: [[String: Any]] = []
+            for try await value in group { values.append(value) }
+            return values
+        }
+
+        XCTAssertEqual(responses.count, 8)
+        XCTAssertTrue(responses.allSatisfy { $0["result"] != nil })
+    }
+
+    func testProcessListReturnsBoundedObservationOnlySnapshot()
+        async throws {
+        let process = AgentIntegrationObservedProcess(
+            reference: "now-process-opaque",
+            name: "Finder",
+            kind: .finder,
+            code: "FNDR",
+            creator: "MACS",
+            sizeKB: 4096,
+            front: true)
+        let snapshot = AgentIntegrationProcessSnapshot(
+            sessionID: UUID(),
+            observedAt: Date(timeIntervalSince1970: 1_000),
+            freshness: .pointInTime,
+            referenceAuthority: .observationOnly,
+            processes: [process])
+        let server = try await initializedServer(
+            client: StubAgentIntegrationClient(
+                processResult: .available(snapshot)))
+
+        let response = try Self.object(await server.handle(try Self.request(
+            id: 2,
+            method: "tools/call",
+            params: ["name": "now_list_processes", "arguments": [:]])))
+        let result = try XCTUnwrap(response["result"] as? [String: Any])
+        let structured = try XCTUnwrap(
+            result["structuredContent"] as? [String: Any])
+        let returned = try XCTUnwrap(
+            structured["snapshot"] as? [String: Any])
+        let processes = try XCTUnwrap(
+            returned["processes"] as? [[String: Any]])
+        let first = try XCTUnwrap(processes.first)
+
+        XCTAssertEqual(structured["available"] as? Bool, true)
+        XCTAssertEqual(returned["freshness"] as? String, "pointInTime")
+        XCTAssertEqual(returned["referenceAuthority"] as? String,
+                       "observationOnly")
+        XCTAssertEqual(first["reference"] as? String,
+                       "now-process-opaque")
+        XCTAssertNil(first["psnHigh"])
+        XCTAssertNil(first["psnLow"])
+        XCTAssertNil(first["path"])
+    }
+
+    func testProcessListRejectsArguments() async throws {
+        let server = try await initializedServer(
+            client: StubAgentIntegrationClient())
+
+        let response = try Self.object(await server.handle(try Self.request(
+            id: 2,
+            method: "tools/call",
+            params: [
+                "name": "now_list_processes",
+                "arguments": ["includePaths": true],
+            ])))
+        let error = try XCTUnwrap(response["error"] as? [String: Any])
+
+        XCTAssertEqual(error["code"] as? Int, -32602)
+    }
+
+    func testConcurrentProcessListCallsAllReturn() async throws {
+        let server = try await initializedServer(
+            client: StubAgentIntegrationClient())
+
+        let responses = try await withThrowingTaskGroup(
+            of: [String: Any].self
+        ) { group in
+            for id in 2..<10 {
+                group.addTask {
+                    try Self.object(await server.handle(
+                        try Self.request(
+                            id: id,
+                            method: "tools/call",
+                            params: [
+                                "name": "now_list_processes",
                                 "arguments": [:],
                             ])))
                 }
@@ -208,10 +342,15 @@ final class NOWAgentCompanionTests: XCTestCase {
     }
 }
 
-private struct StubHealthClient: AgentIntegrationHealthClient {
-    let result: AgentIntegrationSessionHealthResult
+private struct StubAgentIntegrationClient: AgentIntegrationClient {
+    var healthResult: AgentIntegrationSessionHealthResult = .hostUnavailable
+    var processResult: AgentIntegrationProcessListResult = .guestUnavailable
 
     func sessionHealth() async -> AgentIntegrationSessionHealthResult {
-        result
+        healthResult
+    }
+
+    func listProcesses() async -> AgentIntegrationProcessListResult {
+        processResult
     }
 }

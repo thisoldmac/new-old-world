@@ -13,8 +13,32 @@ public struct AgentIntegrationLocalClient: Sendable {
 
     public func sessionHealth() async throws
         -> AgentIntegrationSessionHealthResult {
+        let response = try await send(operation: .sessionHealth)
+        guard let result = response.result else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no session-health result")
+        }
+        return result
+    }
+
+    public func listProcesses() async throws
+        -> AgentIntegrationProcessListResult {
+        let response = try await send(operation: .listProcesses)
+        guard let result = response.processListResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no process-list result")
+        }
+        return result
+    }
+
+    func sendRaw(_ request: Data) async throws -> Data {
+        try await Task.detached { try sendRaw(request) }.value
+    }
+
+    private func send(operation: AgentIntegrationLocalRequest.Operation)
+        async throws -> AgentIntegrationLocalResponse {
         try await Task.detached {
-            let request = AgentIntegrationLocalRequest()
+            let request = AgentIntegrationLocalRequest(operation: operation)
             let response = try sendRaw(
                 AgentIntegrationLocalCodec.encode(request))
             let decoded = try AgentIntegrationLocalCodec.decodeResponse(
@@ -27,16 +51,8 @@ public struct AgentIntegrationLocalClient: Sendable {
                 throw AgentIntegrationLocalTransportError.invalidMessage(
                     "\(error.code): \(error.message)")
             }
-            guard let result = decoded.result else {
-                throw AgentIntegrationLocalTransportError.invalidMessage(
-                    "Local response had no result")
-            }
-            return result
+            return decoded
         }.value
-    }
-
-    func sendRaw(_ request: Data) async throws -> Data {
-        try await Task.detached { try sendRaw(request) }.value
     }
 
     private func sendRaw(_ request: Data) throws -> Data {

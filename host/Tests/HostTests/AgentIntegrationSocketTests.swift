@@ -24,7 +24,14 @@ final class AgentIntegrationSocketTests: XCTestCase {
         let adapter = AgentIntegrationHostAdapter(listener: listener)
         let server = try AgentIntegrationLocalServer(
             endpoint: endpoint,
-            handler: { adapter.sessionHealth() })
+            handler: { operation in
+                switch operation {
+                case .sessionHealth:
+                    return .sessionHealth(adapter.sessionHealth())
+                case .listProcesses:
+                    return .processList(await adapter.processList())
+                }
+            })
         try server.start()
         defer { server.stop() }
 
@@ -43,7 +50,7 @@ final class AgentIntegrationSocketTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let server = try AgentIntegrationLocalServer(
             endpoint: endpoint,
-            handler: { .hostUnavailable })
+            handler: { _ in .sessionHealth(.hostUnavailable) })
         try server.start()
         defer { server.stop() }
 
@@ -62,10 +69,10 @@ final class AgentIntegrationSocketTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let first = try AgentIntegrationLocalServer(
             endpoint: endpoint,
-            handler: { .hostUnavailable })
+            handler: { _ in .sessionHealth(.hostUnavailable) })
         let second = try AgentIntegrationLocalServer(
             endpoint: endpoint,
-            handler: { .hostUnavailable })
+            handler: { _ in .sessionHealth(.hostUnavailable) })
         try first.start()
         defer { first.stop() }
 
@@ -77,7 +84,7 @@ final class AgentIntegrationSocketTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let server = try AgentIntegrationLocalServer(
             endpoint: endpoint,
-            handler: { .hostUnavailable })
+            handler: { _ in .sessionHealth(.hostUnavailable) })
         try server.start()
         defer { server.stop() }
 
@@ -98,9 +105,9 @@ final class AgentIntegrationSocketTests: XCTestCase {
         let server = try AgentIntegrationLocalServer(
             endpoint: endpoint,
             peerAuthorizer: { _, _ in false },
-            handler: {
+            handler: { _ in
                 await invocation.mark()
-                return .hostUnavailable
+                return .sessionHealth(.hostUnavailable)
             })
         try server.start()
         defer { server.stop() }
@@ -137,7 +144,14 @@ final class AgentIntegrationSocketTests: XCTestCase {
         let adapter = AgentIntegrationHostAdapter(listener: listener)
         let server = try AgentIntegrationLocalServer(
             endpoint: endpoint,
-            handler: { adapter.sessionHealth() })
+            handler: { operation in
+                switch operation {
+                case .sessionHealth:
+                    return .sessionHealth(adapter.sessionHealth())
+                case .listProcesses:
+                    return .processList(await adapter.processList())
+                }
+            })
         try server.start()
         defer { server.stop() }
 
@@ -174,13 +188,109 @@ final class AgentIntegrationSocketTests: XCTestCase {
         let modules = ModuleRegistry.standard.modules
         let server = try AgentIntegrationLocalServer(
             endpoint: endpoint,
-            handler: { state.agentIntegration.sessionHealth() })
+            handler: { operation in
+                switch operation {
+                case .sessionHealth:
+                    return .sessionHealth(
+                        state.agentIntegration.sessionHealth())
+                case .listProcesses:
+                    return .processList(
+                        await state.agentIntegration.processList())
+                }
+            })
 
         try server.start()
         defer { server.stop() }
 
         XCTAssertEqual(ModuleRegistry.standard.modules, modules)
         XCTAssertEqual(state.listener.state, .idle)
+    }
+
+    func testSocketServesTypedProcessUnavailableWithoutCachedRows()
+        async throws {
+        let (endpoint, root) = try temporaryEndpoint()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let listener = GuestListener(
+            identity: .init(version: "0.1-test", name: "Test Host"))
+        let adapter = AgentIntegrationHostAdapter(listener: listener)
+        let server = try AgentIntegrationLocalServer(
+            endpoint: endpoint,
+            handler: { operation in
+                switch operation {
+                case .sessionHealth:
+                    return .sessionHealth(adapter.sessionHealth())
+                case .listProcesses:
+                    return .processList(await adapter.processList())
+                }
+            })
+        try server.start()
+        defer { server.stop() }
+
+        let result = try await AgentIntegrationLocalClient(
+            endpoint: endpoint).listProcesses()
+
+        guard case .unavailable(let unavailable) = result else {
+            return XCTFail("disconnected guest must be unavailable")
+        }
+        XCTAssertEqual(unavailable.code, "now-guest-unavailable")
+    }
+
+    func testMaximumProjectedProcessSnapshotFitsTheLocalProtocol()
+        throws {
+        let processes = (0..<48).map { index in
+            AgentIntegrationObservedProcess(
+                reference: "now-process-\(UUID().uuidString.lowercased())",
+                name: String(repeating: "🙂", count: 32),
+                kind: .application,
+                code: "APPL",
+                creator: "TEST",
+                sizeKB: index,
+                front: false)
+        }
+        let response = AgentIntegrationLocalResponse(
+            requestID: UUID(),
+            processListResult: .available(.init(
+                sessionID: UUID(),
+                observedAt: Date(timeIntervalSince1970: 1_000),
+                processes: processes)))
+
+        let encoded = try AgentIntegrationLocalCodec.encode(response)
+
+        XCTAssertLessThan(encoded.count,
+                          AgentIntegrationLocalProtocol.maximumMessageBytes)
+    }
+
+    func testSocketRoundTripsAnAvailableProcessSnapshot() async throws {
+        let (endpoint, root) = try temporaryEndpoint()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let snapshot = AgentIntegrationProcessSnapshot(
+            sessionID: UUID(),
+            observedAt: Date(timeIntervalSince1970: 1_000),
+            processes: [.init(
+                reference: "now-process-opaque",
+                name: "Finder",
+                kind: .finder,
+                code: "FNDR",
+                creator: "MACS",
+                sizeKB: 4096,
+                front: true)])
+        let server = try AgentIntegrationLocalServer(
+            endpoint: endpoint,
+            handler: { operation in
+                switch operation {
+                case .sessionHealth:
+                    return .sessionHealth(.hostUnavailable)
+                case .listProcesses:
+                    return .processList(.available(snapshot))
+                }
+            })
+        try server.start()
+        defer { server.stop() }
+
+        let result = try await AgentIntegrationLocalClient(
+            endpoint: endpoint).listProcesses()
+
+        XCTAssertEqual(result, .available(snapshot))
     }
 }
 

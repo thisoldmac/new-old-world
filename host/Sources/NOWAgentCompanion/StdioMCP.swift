@@ -52,7 +52,8 @@ struct MCPStandardOutput {
 @main
 enum NOWAgentCompanionMain {
     static func main() async {
-        let server = NOWMCPServer(healthClient: SocketHealthClient())
+        let server = NOWMCPServer(
+            client: SocketAgentIntegrationClient())
         let output = MCPStandardOutput()
         var framer = BoundedMCPLineFramer()
 

@@ -169,8 +169,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private func startAgentIntegrationServer() {
         do {
             let server = try AgentIntegrationLocalServer {
-                [agentIntegration = state.agentIntegration] in
-                agentIntegration.sessionHealth()
+                [agentIntegration = state.agentIntegration] operation in
+                switch operation {
+                case .sessionHealth:
+                    return .sessionHealth(
+                        agentIntegration.sessionHealth())
+                case .listProcesses:
+                    return .processList(
+                        await agentIntegration.processList())
+                }
             }
             try server.start()
             agentIntegrationServer = server

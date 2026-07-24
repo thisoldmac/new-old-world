@@ -10,9 +10,19 @@ import NOWAgentIntegration
 /// becoming a second owner of the guest connection.
 @MainActor
 final class AgentIntegrationHostAdapter {
+    private struct ProcessIdentity: Hashable {
+        let high: Int
+        let low: Int
+    }
+
+    private static let maximumProcesses = 48
+    private static let maximumPages = 8
+    private static let maximumNameScalars = 32
+
     private let listener: GuestListener
     private var sessionID: UUID?
     private var sessionConnectedAt: Date?
+    private var processReferences: [ProcessIdentity: UUID] = [:]
 
     init(listener: GuestListener) {
         self.listener = listener
@@ -75,6 +85,53 @@ final class AgentIntegrationHostAdapter {
         }
     }
 
+    /// Reads a complete, bounded snapshot from the current paired guest.
+    ///
+    /// Nothing is cached as a fallback: a disconnected or changing session
+    /// returns unavailable rather than presenting an old process table.
+    func processList(observedAt: Date? = nil) async
+        -> AgentIntegrationProcessListResult {
+        guard let expectedSessionID = connectedSessionID() else {
+            return .guestUnavailable
+        }
+
+        var entries: [ProcessEntry] = []
+        var cursor: Int?
+        var seenCursors: Set<Int> = []
+        var pages = 0
+        while true {
+            let page = await processPage(cursor: cursor)
+            guard connectedSessionID() == expectedSessionID else {
+                return .guestUnavailable
+            }
+            switch page {
+            case .failure:
+                return .unavailable(.init(
+                    code: "now-process-list-unavailable",
+                    message: "The paired guest process list is unavailable"))
+            case .success(let listing):
+                guard entries.count + listing.processes.count
+                        <= Self.maximumProcesses else {
+                    return processListTooLarge()
+                }
+                entries.append(contentsOf: listing.processes)
+                pages += 1
+                guard listing.more else {
+                    return makeProcessSnapshot(
+                        entries,
+                        sessionID: expectedSessionID,
+                        observedAt: observedAt ?? Date())
+                }
+                guard pages < Self.maximumPages,
+                      let next = listing.cursor,
+                      seenCursors.insert(next).inserted else {
+                    return processListTooLarge()
+                }
+                cursor = next
+            }
+        }
+    }
+
     private func refreshSession(connectedAt: Date?) {
         guard sessionID != nil else {
             self.sessionID = UUID()
@@ -89,10 +146,97 @@ final class AgentIntegrationHostAdapter {
         guard previous != connectedAt else { return }
         self.sessionID = UUID()
         sessionConnectedAt = connectedAt
+        processReferences = [:]
     }
 
     private func clearSession() {
         sessionID = nil
         sessionConnectedAt = nil
+        processReferences = [:]
+    }
+
+    private func connectedSessionID() -> UUID? {
+        guard case .connected = listener.state else {
+            clearSession()
+            return nil
+        }
+        refreshSession(connectedAt: listener.health?.connectedAt)
+        return sessionID
+    }
+
+    private func processPage(cursor: Int?) async
+        -> Result<ProcessListing, GuestListener.FileFailure> {
+        await withCheckedContinuation { continuation in
+            listener.listProcesses(cursor: cursor) {
+                continuation.resume(returning: $0)
+            }
+        }
+    }
+
+    private func makeProcessSnapshot(
+        _ entries: [ProcessEntry],
+        sessionID: UUID,
+        observedAt: Date
+    ) -> AgentIntegrationProcessListResult {
+        let liveIdentities = Set(entries.compactMap(processIdentity))
+        processReferences = processReferences.filter {
+            liveIdentities.contains($0.key)
+        }
+        let processes = entries.map { entry in
+            AgentIntegrationObservedProcess(
+                reference: processReference(for: entry),
+                name: boundedName(entry.name),
+                kind: processKind(entry.kind),
+                code: boundedFourCC(entry.code),
+                creator: boundedFourCC(entry.creator),
+                sizeKB: entry.sizeKB.flatMap { $0 >= 0 ? $0 : nil },
+                front: entry.front ?? false)
+        }
+        return .available(.init(
+            sessionID: sessionID,
+            observedAt: observedAt,
+            processes: processes))
+    }
+
+    private func processReference(for entry: ProcessEntry) -> String? {
+        guard let identity = processIdentity(entry) else { return nil }
+        if let existing = processReferences[identity] {
+            return "now-process-\(existing.uuidString.lowercased())"
+        }
+        let reference = UUID()
+        processReferences[identity] = reference
+        return "now-process-\(reference.uuidString.lowercased())"
+    }
+
+    private func processIdentity(_ entry: ProcessEntry) -> ProcessIdentity? {
+        guard let high = entry.psnHigh, let low = entry.psnLow else {
+            return nil
+        }
+        return .init(high: high, low: low)
+    }
+
+    private func boundedName(_ value: String) -> String {
+        String(value.unicodeScalars.prefix(Self.maximumNameScalars))
+    }
+
+    private func boundedFourCC(_ value: String?) -> String? {
+        value.map { String($0.unicodeScalars.prefix(4)) }
+    }
+
+    private func processKind(_ value: String)
+        -> AgentIntegrationObservedProcess.Kind {
+        switch value {
+        case "application": return .application
+        case "background": return .background
+        case "finder": return .finder
+        default: return .unknown
+        }
+    }
+
+    private func processListTooLarge()
+        -> AgentIntegrationProcessListResult {
+        .unavailable(.init(
+            code: "now-process-list-too-large",
+            message: "The paired guest process list exceeds the bounded agent view"))
     }
 }

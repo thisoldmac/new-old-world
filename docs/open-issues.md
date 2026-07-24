@@ -354,6 +354,13 @@ Not load-bearing; parked as a known gap rather than chased.
 Everything here builds and passes its tests. None of it has been watched
 working on the PowerBook.
 
+- **The MCP process-list projection** (2026-07-24) is tested through the
+  host adapter, private same-user socket, and stdio MCP tool, including
+  empty/populated results, disconnection, bounded output, concurrent
+  calls, and stable opaque references. NOW's underlying `process.list`
+  path is metal-verified; this new host-side projection has not yet been
+  invoked through the companion against the live PowerBook session.
+
 - **`catsearch` — the Software module's feasibility probe** (2026-07-22).
   Times a whole-volume `PBCatSearch` sweep for APPL files on the startup
   volume, in 15-tick slices, cold then warm. Console verb on both sides

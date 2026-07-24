@@ -2,8 +2,9 @@ import Darwin
 import Foundation
 
 public final class AgentIntegrationLocalServer {
-    public typealias Handler = @Sendable () async
-        -> AgentIntegrationSessionHealthResult
+    public typealias Handler = @MainActor @Sendable (
+        AgentIntegrationLocalRequest.Operation
+    ) async -> AgentIntegrationLocalResult
     typealias PeerAuthorizer = @Sendable (Int32, uid_t) -> Bool
 
     public let endpoint: AgentIntegrationEndpoint
@@ -21,8 +22,9 @@ public final class AgentIntegrationLocalServer {
     public convenience init(
         endpoint: AgentIntegrationEndpoint? = nil,
         expectedUID: uid_t = geteuid(),
-        handler: @escaping @MainActor @Sendable ()
-            -> AgentIntegrationSessionHealthResult
+        handler: @escaping @MainActor @Sendable (
+            AgentIntegrationLocalRequest.Operation
+        ) async -> AgentIntegrationLocalResult
     ) throws {
         try self.init(
             endpoint: endpoint,
@@ -30,7 +32,7 @@ public final class AgentIntegrationLocalServer {
             peerAuthorizer: {
                 Self.sameUserPeer($0, $1)
             },
-            handler: { await handler() })
+            handler: handler)
     }
 
     init(
@@ -133,9 +135,17 @@ public final class AgentIntegrationLocalServer {
                 close(descriptor)
                 return
             }
-            let result = await handler()
-            finish(descriptor, response: .init(
-                requestID: request.requestID, result: result))
+            let response: AgentIntegrationLocalResponse
+            switch await handler(request.operation) {
+            case .sessionHealth(let result):
+                response = .init(
+                    requestID: request.requestID, result: result)
+            case .processList(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    processListResult: result)
+            }
+            finish(descriptor, response: response)
         }
     }
 
@@ -191,7 +201,7 @@ public final class AgentIntegrationLocalServer {
         case AgentIntegrationLocalTransportError.messageTooLarge:
             return "Local request exceeded the size limit"
         default:
-            return "Local request did not match the session-health schema"
+            return "Local request did not match the agent schema"
         }
     }
 

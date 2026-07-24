@@ -1,6 +1,13 @@
 import Foundation
 
 public struct AgentIntegrationUnavailable: Codable, Equatable, Sendable {
+    public static let host = AgentIntegrationUnavailable(
+        code: "now-host-unavailable",
+        message: "New Old World host is unavailable")
+    public static let guest = AgentIntegrationUnavailable(
+        code: "now-guest-unavailable",
+        message: "No paired New Old World guest is connected")
+
     public let code: String
     public let message: String
 
@@ -15,9 +22,7 @@ public enum AgentIntegrationSessionHealthResult: Equatable, Sendable {
     case unavailable(AgentIntegrationUnavailable)
 
     public static let hostUnavailable = AgentIntegrationSessionHealthResult
-        .unavailable(.init(
-            code: "now-host-unavailable",
-            message: "New Old World host is unavailable"))
+        .unavailable(.host)
 }
 
 extension AgentIntegrationSessionHealthResult: Codable {
@@ -99,5 +104,107 @@ public struct AgentIntegrationSessionHealth: Codable, Equatable, Sendable {
         self.sessionID = sessionID
         self.guest = guest
         self.failure = failure
+    }
+}
+
+public enum AgentIntegrationProcessListResult: Equatable, Sendable {
+    case available(AgentIntegrationProcessSnapshot)
+    case unavailable(AgentIntegrationUnavailable)
+
+    public static let guestUnavailable = AgentIntegrationProcessListResult
+        .unavailable(.guest)
+}
+
+extension AgentIntegrationProcessListResult: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case available
+        case snapshot
+        case unavailable
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if try container.decode(Bool.self, forKey: .available) {
+            self = .available(try container.decode(
+                AgentIntegrationProcessSnapshot.self, forKey: .snapshot))
+        } else {
+            self = .unavailable(try container.decode(
+                AgentIntegrationUnavailable.self, forKey: .unavailable))
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .available(let snapshot):
+            try container.encode(true, forKey: .available)
+            try container.encode(snapshot, forKey: .snapshot)
+        case .unavailable(let unavailable):
+            try container.encode(false, forKey: .available)
+            try container.encode(unavailable, forKey: .unavailable)
+        }
+    }
+}
+
+public struct AgentIntegrationProcessSnapshot:
+    Codable, Equatable, Sendable {
+    public enum Freshness: String, Codable, Equatable, Sendable {
+        /// A complete read that was current only at `observedAt`.
+        case pointInTime
+    }
+
+    public enum ReferenceAuthority:
+        String, Codable, Equatable, Sendable {
+        /// References identify observations; no V0 action accepts them yet.
+        case observationOnly
+    }
+
+    public let sessionID: UUID
+    public let observedAt: Date
+    public let freshness: Freshness
+    public let referenceAuthority: ReferenceAuthority
+    public let processes: [AgentIntegrationObservedProcess]
+
+    public init(sessionID: UUID, observedAt: Date,
+                freshness: Freshness = .pointInTime,
+                referenceAuthority: ReferenceAuthority = .observationOnly,
+                processes: [AgentIntegrationObservedProcess]) {
+        self.sessionID = sessionID
+        self.observedAt = observedAt
+        self.freshness = freshness
+        self.referenceAuthority = referenceAuthority
+        self.processes = processes
+    }
+}
+
+public struct AgentIntegrationObservedProcess:
+    Codable, Equatable, Sendable {
+    public enum Kind: String, Codable, Equatable, Sendable {
+        case application
+        case background
+        case finder
+        case unknown
+    }
+
+    /// Present only when the paired guest supplied a live Process Serial
+    /// Number. The token discloses none of that identity and grants no action.
+    public let reference: String?
+    public let name: String
+    public let kind: Kind
+    public let code: String?
+    public let creator: String?
+    public let sizeKB: Int?
+    public let front: Bool
+
+    public init(reference: String?, name: String, kind: Kind,
+                code: String?, creator: String?, sizeKB: Int?,
+                front: Bool) {
+        self.reference = reference
+        self.name = name
+        self.kind = kind
+        self.code = code
+        self.creator = creator
+        self.sizeKB = sizeKB
+        self.front = front
     }
 }

@@ -13,7 +13,7 @@ date: 2026-07-24
 - **Execution profile:** Start conceptually with a lightweight, client-launched stdio executable. Do not commit client configuration or add a daemon, launch agent, or second desktop app.
 - **Stop conditions:** Stop if implementation requires a new guest message, a guest-side module, dashboard, or protocol mode, imports TimBotTu runtime code, lets the companion speak the guest wire directly, controls NOW's lifecycle or configuration, exposes an arbitrary path, command, or process-control escape hatch, or makes a future shared transport a dependency of current V0 work.
 - **Tail ownership:** With the companion absent, present, starting, or stopping, NOW must launch, connect, transfer files, and serve every paired human workflow with the same host and guest UI/module inventory.
-- **Handoff status:** `now_session_health`, the private same-user host adapter, and the client-launched stdio companion are implemented and tested. NOW still uses its existing guest-dials-host paired connection; no guest protocol change, guest listener, or client configuration was added. [`agent-integration.md`](../agent-integration.md) records the current trust and connection boundaries.
+- **Handoff status:** `now_session_health` and `now_list_processes`, the private same-user host adapter, and the client-launched stdio companion are implemented and tested. Process results are bounded point-in-time snapshots; their opaque references expose no PSN and grant no action authority. NOW still uses its existing guest-dials-host paired connection; no guest protocol change, guest listener, or client configuration was added. [`agent-integration.md`](../agent-integration.md) records the current trust and connection boundaries.
 
 ---
 
@@ -111,7 +111,7 @@ This mapping is the first implementation deliverable. It must be checked against
 
 ### Current verification rung
 
-The host-owned `session_health` projection, private host-local socket, and stdio MCP companion are **tested**, including the full host regression suite; they are not a replacement transport. A built companion has returned typed host-unavailable and has reported the live connected PowerBook session through the existing NOW pairing. Broader paired human workflows were not re-run for that read-only observation.
+The host-owned `session_health` and `list_processes` projections, private host-local socket, and stdio MCP companion are **tested**; they are not a replacement transport. A built companion has returned typed host-unavailable and has reported the live connected PowerBook session through the existing NOW pairing. The new MCP process projection is tested against the existing wire path with a fake guest but has not yet been watched against the real guest. Broader paired human workflows were not re-run for these read-only observations.
 
 - The persistent connection and ordinary bidirectional file workflows are metal-verified, subject to the broken resume path and intermittent large-transfer slowdown recorded in [`open-issues.md`](../open-issues.md).
 - Guest process listing and cooperative quit are metal-verified. Host stale-list clearing across reconnect is tested but still listed as not metal-verified in [`open-issues.md`](../open-issues.md).
@@ -132,7 +132,7 @@ The host-owned `session_health` projection, private host-local socket, and stdio
 
 1. Freeze the contract-to-tool map and failure vocabulary.
 2. Resolve and threat-model the narrow local host adapter, then expose session health through the client-launched stdio companion. This slice is complete.
-3. Add process listing over the same host-owned session.
+3. Add process listing over the same host-owned session. This slice is complete.
 4. Add safe launch and cooperative quit with at-act-time revalidation.
 5. Add the approval provider boundary and receipt-backed transfer.
 6. Keep the current dial-out connection unchanged throughout V0. After CodeKitten's listener is proven and stress-tested, evaluate a shared-service extraction in a separate worktree; do not mix that migration track into the MCP tool sequence.

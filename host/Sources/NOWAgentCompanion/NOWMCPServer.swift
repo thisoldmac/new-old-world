@@ -2,11 +2,12 @@ import CoreFoundation
 import Foundation
 import NOWAgentIntegration
 
-protocol AgentIntegrationHealthClient: Sendable {
+protocol AgentIntegrationClient: Sendable {
     func sessionHealth() async -> AgentIntegrationSessionHealthResult
+    func listProcesses() async -> AgentIntegrationProcessListResult
 }
 
-struct SocketHealthClient: AgentIntegrationHealthClient {
+struct SocketAgentIntegrationClient: AgentIntegrationClient {
     private let client: AgentIntegrationLocalClient?
     private let startupError: Error?
 
@@ -22,39 +23,50 @@ struct SocketHealthClient: AgentIntegrationHealthClient {
 
     func sessionHealth() async -> AgentIntegrationSessionHealthResult {
         guard let client else {
-            return unavailable(for: startupError)
+            return .unavailable(unavailable(for: startupError))
         }
         do {
             return try await client.sessionHealth()
         } catch {
-            return unavailable(for: error)
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
+    func listProcesses() async -> AgentIntegrationProcessListResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.listProcesses()
+        } catch {
+            return .unavailable(unavailable(for: error))
         }
     }
 
     private func unavailable(for error: Error?)
-        -> AgentIntegrationSessionHealthResult {
-        guard let error else { return .hostUnavailable }
+        -> AgentIntegrationUnavailable {
+        guard let error else { return .host }
         guard let local = error as? AgentIntegrationLocalTransportError
         else {
-            return .unavailable(.init(
+            return .init(
                 code: "now-host-communication-failed",
-                message: "New Old World host communication failed"))
+                message: "New Old World host communication failed")
         }
         switch local {
         case .hostUnavailable:
-            return .hostUnavailable
+            return .host
         case .unsafeEndpoint:
-            return .unavailable(.init(
+            return .init(
                 code: "now-host-endpoint-invalid",
-                message: "New Old World host endpoint is not trustworthy"))
+                message: "New Old World host endpoint is not trustworthy")
         case .invalidMessage, .messageTooLarge:
-            return .unavailable(.init(
+            return .init(
                 code: "now-host-invalid-response",
-                message: "New Old World host returned an invalid response"))
+                message: "New Old World host returned an invalid response")
         case .io:
-            return .unavailable(.init(
+            return .init(
                 code: "now-host-communication-failed",
-                message: "New Old World host communication failed"))
+                message: "New Old World host communication failed")
         }
     }
 }
@@ -68,12 +80,12 @@ actor NOWMCPServer {
         "2024-11-05",
     ]
 
-    private let healthClient: AgentIntegrationHealthClient
+    private let client: AgentIntegrationClient
     private var initializeResponded = false
     private var initialized = false
 
-    init(healthClient: AgentIntegrationHealthClient) {
-        self.healthClient = healthClient
+    init(client: AgentIntegrationClient) {
+        self.client = client
     }
 
     func handle(_ data: Data) async -> Data? {
@@ -162,7 +174,7 @@ actor NOWMCPServer {
                 "version": "0.1.0",
             ],
             "instructions":
-                "Reports health already owned by a running New Old World host.",
+                "Reports health and a bounded process snapshot already owned by a running New Old World host.",
         ])
     }
 
@@ -173,38 +185,148 @@ actor NOWMCPServer {
                                  message: "Invalid tools/list cursor")
         }
         return successResponse(id: id, result: [
-            "tools": [[
-                "name": "now_session_health",
-                "title": "New Old World Session Health",
-                "description":
-                    "Reports the running NOW host and paired guest session state without changing either application.",
-                "inputSchema": [
-                    "type": "object",
-                    "properties": [:],
-                    "additionalProperties": false,
-                ],
-                "outputSchema": [
-                    "type": "object",
-                    "properties": [
-                        "available": ["type": "boolean"],
-                        "health": ["type": "object"],
-                        "unavailable": ["type": "object"],
+            "tools": [
+                [
+                    "name": "now_session_health",
+                    "title": "New Old World Session Health",
+                    "description":
+                        "Reports the running NOW host and paired guest session state without changing either application.",
+                    "inputSchema": [
+                        "type": "object",
+                        "properties": [:],
+                        "additionalProperties": false,
                     ],
-                    "required": ["available"],
+                    "outputSchema": [
+                        "type": "object",
+                        "properties": [
+                            "available": ["type": "boolean"],
+                            "health": ["type": "object"],
+                            "unavailable": ["type": "object"],
+                        ],
+                        "required": ["available"],
+                    ],
+                    "annotations": [
+                        "readOnlyHint": true,
+                        "destructiveHint": false,
+                        "idempotentHint": true,
+                        "openWorldHint": false,
+                    ],
                 ],
-                "annotations": [
-                    "readOnlyHint": true,
-                    "destructiveHint": false,
-                    "idempotentHint": true,
-                    "openWorldHint": false,
-                ],
-            ]],
+                processListTool(),
+            ],
         ])
+    }
+
+    private func processListTool() -> [String: Any] {
+        [
+            "name": "now_list_processes",
+            "title": "List New Old World Guest Processes",
+            "description":
+                "Reads a bounded point-in-time snapshot of processes already observed through the running NOW host's paired guest session. Opaque references identify observations only and grant no control authority.",
+            "inputSchema": [
+                "type": "object",
+                "properties": [:],
+                "additionalProperties": false,
+            ],
+            "outputSchema": [
+                "type": "object",
+                "properties": [
+                    "available": ["type": "boolean"],
+                    "snapshot": [
+                        "type": "object",
+                        "properties": [
+                            "sessionID": [
+                                "type": "string",
+                                "format": "uuid",
+                            ],
+                            "observedAt": [
+                                "type": "string",
+                                "format": "date-time",
+                            ],
+                            "freshness": [
+                                "type": "string",
+                                "enum": ["pointInTime"],
+                            ],
+                            "referenceAuthority": [
+                                "type": "string",
+                                "enum": ["observationOnly"],
+                            ],
+                            "processes": [
+                                "type": "array",
+                                "maxItems": 48,
+                                "items": [
+                                    "type": "object",
+                                    "properties": [
+                                        "reference": [
+                                            "type": "string",
+                                        ],
+                                        "name": [
+                                            "type": "string",
+                                            "maxLength": 32,
+                                        ],
+                                        "kind": [
+                                            "type": "string",
+                                            "enum": [
+                                                "application",
+                                                "background",
+                                                "finder",
+                                                "unknown",
+                                            ],
+                                        ],
+                                        "code": [
+                                            "type": "string",
+                                            "maxLength": 4,
+                                        ],
+                                        "creator": [
+                                            "type": "string",
+                                            "maxLength": 4,
+                                        ],
+                                        "sizeKB": [
+                                            "type": "integer",
+                                            "minimum": 0,
+                                        ],
+                                        "front": ["type": "boolean"],
+                                    ],
+                                    "required": [
+                                        "name", "kind", "front",
+                                    ],
+                                    "additionalProperties": false,
+                                ],
+                            ],
+                        ],
+                        "required": [
+                            "sessionID", "observedAt", "freshness",
+                            "referenceAuthority", "processes",
+                        ],
+                        "additionalProperties": false,
+                    ],
+                    "unavailable": [
+                        "type": "object",
+                        "properties": [
+                            "code": ["type": "string"],
+                            "message": ["type": "string"],
+                        ],
+                        "required": ["code", "message"],
+                        "additionalProperties": false,
+                    ],
+                ],
+                "required": ["available"],
+                "additionalProperties": false,
+            ],
+            "annotations": [
+                "readOnlyHint": true,
+                "destructiveHint": false,
+                "idempotentHint": false,
+                "openWorldHint": false,
+            ],
+        ]
     }
 
     private func callTool(_ request: [String: Any], id: Any) async -> Data {
         guard let params = request["params"] as? [String: Any],
-              params["name"] as? String == "now_session_health" else {
+              let name = params["name"] as? String,
+              name == "now_session_health"
+                || name == "now_list_processes" else {
             return errorResponse(id: id, code: -32602,
                                  message: "Unknown tool")
         }
@@ -213,10 +335,26 @@ actor NOWMCPServer {
                   object.isEmpty else {
                 return errorResponse(
                     id: id, code: -32602,
-                    message: "now_session_health accepts no arguments")
+                    message: "\(name) accepts no arguments")
             }
         }
-        let result = await healthClient.sessionHealth()
+        switch name {
+        case "now_session_health":
+            let result = await client.sessionHealth()
+            return toolResponse(id: id, result: result)
+        case "now_list_processes":
+            let result = await client.listProcesses()
+            return toolResponse(id: id, result: result)
+        default:
+            return errorResponse(id: id, code: -32602,
+                                 message: "Unknown tool")
+        }
+    }
+
+    private func toolResponse<Result: Encodable>(
+        id: Any,
+        result: Result
+    ) -> Data {
         do {
             let structured = try structuredObject(result)
             let textData = try JSONSerialization.data(
@@ -233,8 +371,8 @@ actor NOWMCPServer {
         }
     }
 
-    private func structuredObject(
-        _ result: AgentIntegrationSessionHealthResult
+    private func structuredObject<Result: Encodable>(
+        _ result: Result
     ) throws -> [String: Any] {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
