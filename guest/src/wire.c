@@ -665,7 +665,7 @@ static void on_hello(const char *reply)
 
 enum {
     kXferSliceTicks = 3,              /* ~50 ms of sending per service call */
-    kXferDeadlineTicks = 60 * 120     /* give up on a stuck transfer */
+    kXferDeadlineTicks = 60 * 120     /* give up after 2 min without progress */
 };
 
 typedef enum {
@@ -757,10 +757,11 @@ static struct {
     Boolean pushed;                   /* guest-initiated: report to panel */
     Boolean aborting;                 /* drain to the frame boundary, then
                                          end ok:false - never mid-frame */
+    Boolean file_stream;              /* bytes come from File Manager */
     XferKind kind;
-    Handle data;                      /* the bytes on the wire; blob owns
-                                         them for captures, we do for files */
+    Handle data;                      /* capture bytes; ownership below */
     PixelBlob blob;
+    FileStage file;
     long total, offset;
     long chunk;
     unsigned short xfer;
@@ -837,7 +838,9 @@ static void xfer_cleanup(void)
     if (g_xfer.data != NULL) {
         HUnlock(g_xfer.data);
     }
-    if (g_xfer.blob.data != NULL) {
+    if (g_xfer.file_stream) {
+        now_files_stage_dispose(&g_xfer.file);
+    } else if (g_xfer.blob.data != NULL) {
         now_pixels_dispose(&g_xfer.blob);
     } else if (g_xfer.data != NULL) {
         DisposeHandle(g_xfer.data);
@@ -850,12 +853,25 @@ static void xfer_finish(Boolean ok)
 {
     char json[256];
 
-    snprintf(json, sizeof json,
-             "{\"type\":\"%s.end\",\"id\":%ld,\"transfer\":%u,"
-             "\"ok\":%s,\"sendMs\":%ld}",
-             g_xfer.kind == kXferFile ? "file" : "capture",
-             g_xfer.id, g_xfer.xfer, ok ? "true" : "false",
-             (long)((TickCount() - g_xfer.started) * 1000 / 60));
+    if (ok && g_xfer.file_stream
+        && !now_files_stage_unchanged(&g_xfer.file)) {
+        ok = false;
+    }
+    if (ok && g_xfer.kind == kXferFile && g_xfer.file_stream) {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"file.end\",\"id\":%ld,\"transfer\":%u,"
+                 "\"ok\":true,\"sendMs\":%ld,\"crc32\":%lu}",
+                 g_xfer.id, g_xfer.xfer,
+                 (long)((TickCount() - g_xfer.started) * 1000 / 60),
+                 g_xfer.file.crc & 0xFFFFFFFFUL);
+    } else {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"%s.end\",\"id\":%ld,\"transfer\":%u,"
+                 "\"ok\":%s,\"sendMs\":%ld}",
+                 g_xfer.kind == kXferFile ? "file" : "capture",
+                 g_xfer.id, g_xfer.xfer, ok ? "true" : "false",
+                 (long)((TickCount() - g_xfer.started) * 1000 / 60));
+    }
     send_control(json);
     if (ok && g_stream.active && g_xfer.id == g_stream.id) {
         g_stream.est_send_ticks = (long)(TickCount() - g_xfer.started);
@@ -898,9 +914,10 @@ static void xfer_finish(Boolean ok)
     xfer_cleanup();
 }
 
-static void xfer_build_frame(void)
+static int xfer_build_frame(void)
 {
     long n = g_xfer.total - g_xfer.offset;
+    long got = 0;
     Boolean last;
 
     if (n > g_xfer.chunk) {
@@ -915,10 +932,19 @@ static void xfer_build_frame(void)
     g_xfer.frame[5] = (char)((n >> 16) & 0xFF);
     g_xfer.frame[6] = (char)((n >> 8) & 0xFF);
     g_xfer.frame[7] = (char)(n & 0xFF);
-    memcpy(g_xfer.frame + kNowFrameHeaderBytes,
-           *g_xfer.data + g_xfer.offset, (size_t)n);
+    if (g_xfer.file_stream) {
+        if (now_files_stage_read(
+                &g_xfer.file, g_xfer.frame + kNowFrameHeaderBytes,
+                n, &got) != kFilesOK || got != n) {
+            return 0;
+        }
+    } else {
+        memcpy(g_xfer.frame + kNowFrameHeaderBytes,
+               *g_xfer.data + g_xfer.offset, (size_t)n);
+    }
     g_xfer.frame_len = kNowFrameHeaderBytes + n;
     g_xfer.frame_sent = 0;
+    return 1;
 }
 
 /* Pumps the active transfer for a short slice. Partial sends and flow
@@ -953,7 +979,10 @@ static void service_transfer(void)
                 xfer_finish(true);
                 return;
             }
-            xfer_build_frame();
+            if (!xfer_build_frame()) {
+                xfer_finish(false);
+                return;
+            }
             if (g_xfer.pace_ms > 0) {
                 g_xfer.next_tick = TickCount()
                     + (unsigned long)g_xfer.pace_ms * 60 / 1000 + 1;
@@ -964,6 +993,10 @@ static void service_transfer(void)
                           0);
         if (sent > 0) {
             g_xfer.frame_sent += sent;
+            /* This is an inactivity deadline, not a size ceiling. A
+               healthy transfer larger than ~27 MB takes over two
+               minutes on the measured link and must keep going. */
+            g_xfer.deadline = TickCount() + kXferDeadlineTicks;
         } else if (sent == kOTFlowErr || sent == kOTNoDataErr) {
             return;                   /* buffer full: retry next pass */
         } else {
@@ -1150,12 +1183,8 @@ static long begin_frame_fields(const ShotMeta *meta, char *out, long cap)
     return pos;
 }
 
-/* Arms the sender over an arbitrary handle. The caller has already
-   announced the transfer (capture.begin / file.begin); on success the
-   transfer owns the handle. */
-static int arm_blob_transfer(long id, unsigned short xfer, Handle data,
-                             long total, long chunk, short pace_ms,
-                             XferKind kind)
+static int arm_xfer_common(long id, unsigned short xfer, long total,
+                           long chunk, short pace_ms, XferKind kind)
 {
     Ptr frame = NewPtr(chunk + kNowFrameHeaderBytes);
 
@@ -1164,9 +1193,7 @@ static int arm_blob_transfer(long id, unsigned short xfer, Handle data,
     }
     memset(&g_xfer, 0, sizeof g_xfer);
     g_xfer.kind = kind;
-    g_xfer.data = data;
     g_xfer.frame = frame;
-    HLock(data);
     g_xfer.active = true;
     g_xfer.total = total;
     g_xfer.offset = 0;
@@ -1179,6 +1206,44 @@ static int arm_blob_transfer(long id, unsigned short xfer, Handle data,
     g_xfer.started = TickCount();
     g_xfer.next_tick = 0;
     g_xfer.deadline = TickCount() + kXferDeadlineTicks;
+    return 1;
+}
+
+/* Arms the sender over an arbitrary handle. The caller has already
+   announced the transfer (capture.begin / file.begin); on success the
+   transfer owns the handle. */
+static int arm_blob_transfer(long id, unsigned short xfer, Handle data,
+                             long total, long chunk, short pace_ms,
+                             XferKind kind)
+{
+    if (!arm_xfer_common(id, xfer, total, chunk, pace_ms, kind)) {
+        return 0;
+    }
+    g_xfer.data = data;
+    HLock(data);
+    return 1;
+}
+
+/* File bytes differ from captures only at the source boundary: one frame
+   is filled from open forks instead of copied from a whole-file handle.
+   After success the transfer owns `file`; the caller is reset to an
+   inert value so its normal cleanup remains safe. */
+static int arm_file_transfer(long id, unsigned short xfer, FileStage *file,
+                             long chunk, short pace_ms)
+{
+    if (now_files_stage_open(file) != kFilesOK) {
+        return 0;
+    }
+    if (!arm_xfer_common(id, xfer, file->total_bytes, chunk, pace_ms,
+                         kXferFile)) {
+        now_files_stage_dispose(file);
+        return 0;
+    }
+    g_xfer.file_stream = true;
+    g_xfer.file = *file;
+    memset(file, 0, sizeof *file);
+    file->data_ref = -1;
+    file->rsrc_ref = -1;
     return 1;
 }
 
@@ -1536,6 +1601,19 @@ static void file_refuse(long id, const char *code, const char *reason)
     send_control(json);
 }
 
+/* Once file.begin has been announced, failure is an end rather than a
+   refusal. The receiver has already opened its temp and needs the
+   transfer-correlated terminal message to clean it immediately. */
+static void file_start_failed(long id, unsigned short xfer)
+{
+    char json[160];
+
+    snprintf(json, sizeof json,
+             "{\"type\":\"file.end\",\"id\":%ld,\"transfer\":%u,"
+             "\"ok\":false}", id, xfer);
+    send_control(json);
+}
+
 static void file_refuse_rc(long id, int rc)
 {
     switch (rc) {
@@ -1549,7 +1627,7 @@ static void file_refuse_rc(long id, int rc)
         file_refuse(id, "bad-path", "not a folder");
         break;
     case kFilesTooBig:
-        file_refuse(id, "too-big", "not enough memory to stage the file");
+        file_refuse(id, "too-big", "the file cannot be prepared safely");
         break;
     default:
         file_refuse(id, "io-error", "the File Manager refused");
@@ -2077,6 +2155,8 @@ static struct {
     FileStage stage;
     char name[32];                    /* kept past the stage handoff */
     long total;
+    long received;                    /* host-confirmed, when it reports */
+    Boolean receiving_reports;
     long chunk;
     short pace_ms;
     unsigned long deadline;
@@ -2101,8 +2181,9 @@ SendPhase now_wire_send_state(long *sent, long *total,
         *total = g_send.total;
     }
     if (sent != NULL) {
-        *sent = (g_send.sending && g_xfer.active && g_xfer.id == g_send.id)
-            ? g_xfer.offset : 0;
+        *sent = g_send.receiving_reports ? g_send.received
+            : ((g_send.sending && g_xfer.active && g_xfer.id == g_send.id)
+                ? g_xfer.offset : 0);
     }
     return g_send.sending ? kSendSending : kSendOffering;
 }
@@ -2132,10 +2213,6 @@ int now_wire_send_file(const FSSpec *spec, char *err, long cap)
         return -1;
     }
     rc = now_files_stage_spec(spec, kContainerAuto, &stage);
-    if (rc == kFilesTooBig) {
-        snprintf(err, (size_t)cap, "Not enough memory to send that file");
-        return -1;
-    }
     if (rc == kFilesNotAFolder) {
         snprintf(err, (size_t)cap, "Folders cannot be sent yet");
         return -1;
@@ -2155,6 +2232,8 @@ int now_wire_send_file(const FSSpec *spec, char *err, long cap)
     strncpy(g_send.name, stage.name, sizeof g_send.name - 1);
     g_send.name[sizeof g_send.name - 1] = '\0';
     g_send.total = stage.total_bytes;
+    g_send.received = 0;
+    g_send.receiving_reports = false;
     g_send.sending = false;
     ++g.offer_seq;
     g_send.id = g.offer_seq;
@@ -2237,14 +2316,13 @@ static void send_accepted(const char *reply)
         send_cleanup();
         return;
     }
-    if (!arm_blob_transfer(g_send.id, xfer, g_send.stage.blob,
-                           g_send.stage.total_bytes, g_send.chunk,
-                           g_send.pace_ms, kXferFile)) {
+    if (!arm_file_transfer(g_send.id, xfer, &g_send.stage,
+                           g_send.chunk, g_send.pace_ms)) {
+        file_start_failed(g_send.id, xfer);
         send_cleanup();
         note_file("Could not start the transfer");
         return;
     }
-    g_send.stage.blob = NULL;         /* the transfer owns it now */
     now_files_stage_dispose(&g_send.stage);
     /* active stays true: the send is not over until the host's receipt,
        and until then the panel has something to report. */
@@ -3271,13 +3349,11 @@ static void serve_file_get(const char *request)
         now_files_stage_dispose(&stage);
         return;
     }
-    if (!arm_blob_transfer(id, xfer, stage.blob, stage.total_bytes,
-                           chunk, pace_ms, kXferFile)) {
+    if (!arm_file_transfer(id, xfer, &stage, chunk, pace_ms)) {
         now_files_stage_dispose(&stage);
-        file_refuse(id, "io-error", "could not start the transfer");
+        file_start_failed(id, xfer);
         return;
     }
-    stage.blob = NULL;                /* the transfer owns it now */
 }
 
 /* --- live stream ------------------------------------------------------- */
@@ -4088,6 +4164,18 @@ static int handle_frame(const char *reply)
             get_note(reason);
         } else if (!browse_refused(reply)) {
             send_refused(reply);
+        }
+        return 1;
+    }
+    if (now_json_type_is(reply, "file.progress")) {
+        if (g_send.active
+            && now_json_find_int(reply, "id", -1) == g_send.id) {
+            long received = now_json_find_int(reply, "received", 0);
+
+            if (received >= g_send.received && received <= g_send.total) {
+                g_send.received = received;
+                g_send.receiving_reports = true;
+            }
         }
         return 1;
     }

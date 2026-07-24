@@ -1157,11 +1157,11 @@ components:
       required: [type, id, received]
       additionalProperties: false
       description: >
-        Sent by the guest while it receives a put, carrying the byte
-        count it has actually taken off the wire. Advisory: it is
+        Sent by whichever side is receiving a file, carrying the byte
+        count it has actually written from the wire. Advisory: it is
         dropped rather than queued when the control queue is busy, so a
         receiver must treat it as a floor that may skip, never as a
-        sequence. Absence means an older guest, not a stalled one.
+        sequence. Absence means an older peer, not a stalled one.
       properties:
         type: { const: file.progress }
         id:
@@ -1224,6 +1224,13 @@ components:
         transfer: { type: integer }
         ok: { type: boolean }
         sendMs: { type: integer }
+        crc32:
+          type: integer
+          description: >
+            CRC-32 (IEEE, the zlib polynomial) of the WHOLE file's wire
+            bytes. Optional for compatibility: absent means unchecked,
+            never correct. A mismatch deletes the partial rather than
+            keeping corrupt bytes as a retry candidate.
     FileMove:
       type: object
       required: [type, id, path, toPath]

@@ -520,7 +520,7 @@ static const char *files_error_text(int rc)
     case kFilesNotAFolder:
         return "that is a file, not a folder";
     case kFilesTooBig:
-        return "not enough memory";
+        return "not enough disk space";
     default:
         return "the File Manager refused";
     }

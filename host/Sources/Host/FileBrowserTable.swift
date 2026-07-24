@@ -375,15 +375,10 @@ struct FileBrowserTable: NSViewRepresentable {
                     return
                 }
                 self.promised[key] = nil
-                self.parent.model.fetchForPromise(row) { result in
+                self.parent.model.fetchForPromise(row, to: url) { result in
                     switch result {
-                    case .success(let converted):
-                        do {
-                            try converted.data.write(to: url)
-                            completionHandler(nil)
-                        } catch {
-                            completionHandler(error)
-                        }
+                    case .success:
+                        completionHandler(nil)
                     case .failure(let error):
                         completionHandler(error)
                     }

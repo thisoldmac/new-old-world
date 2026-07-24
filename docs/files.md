@@ -161,13 +161,14 @@ which is inside the guest's share because that is all the browser can
 show. A menu-driven send with no drop target defaults to the share
 root rather than inventing an inbox.
 
-**Receiving is not the mirror of sending.** The send path stages a
-whole file in a temp-mem handle, which the 6 MB app partition caps.
-Receiving streams straight to disk as chunks arrive: no ceiling, and
-cancel is just deleting what exists so far. MacBinary therefore decodes
-INCREMENTALLY — a state machine over header (128 bytes) → data fork →
-padding → resource fork — because there is no buffer to parse from.
-(The send side's ceiling stays a known limit, not this slice's work.)
+**Receiving and sending are both streams now.** The receive path writes
+chunks straight to disk. The send path opens the source forks only after
+the receiver accepts and fills one protocol frame at a time; MacBinary
+is emitted as header → data fork → padding → resource fork without a
+whole-artifact handle. The 6 MB application partition therefore no
+longer caps either direction. The host mirrors this with a same-folder
+temporary sink and running CRC. These reverse-path changes are tested
+locally but not yet metal-verified.
 
 **Bytes land under a temp name** in the destination folder and are
 renamed on `file.end ok:true`. A truncated file never appears under the

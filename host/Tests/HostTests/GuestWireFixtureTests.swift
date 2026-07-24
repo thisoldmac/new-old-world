@@ -74,12 +74,14 @@ final class GuestWireFixtureTests: XCTestCase {
     /// xfer_finish(): how any transfer from the guest ends.
     func testFileEndAsTheGuestWritesIt() throws {
         let json = """
-        {"type":"file.end","id":1,"transfer":3,"ok":true,"sendMs":412}
+        {"type":"file.end","id":1,"transfer":3,"ok":true,"sendMs":412,\
+        "crc32":305419896}
         """
         guard case .fileEnd(let end) = try decode(json) else {
             return XCTFail("not an end")
         }
         XCTAssertTrue(end.ok)
+        XCTAssertEqual(end.crc32, 0x1234_5678)
     }
 
     /// serve_file_list(): a listing, with the share label the browser

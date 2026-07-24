@@ -285,7 +285,7 @@ final class GuestListener: ObservableObject {
                 overwrite: offer.overwrite ?? false)
             note("#\(offer.id) accepting \(offer.name), "
                  + "\(offer.bytes) bytes, into the share", area: "files")
-            session?.beginReceiving(offer: offer, to: url)
+            try session?.beginReceiving(offer: offer, to: url)
         } catch {
             session?.refuseFile(id: offer.id, error: error)
         }
@@ -379,16 +379,16 @@ final class GuestListener: ObservableObject {
         var message: String
     }
 
-    /// One pulled file, still in guest form: `container` says whether the
-    /// bytes are a plain data fork or MacBinary. Conversion is the
-    /// caller's job (see FileConverter).
+    /// One pulled file, still in guest form. The bytes remain in a
+    /// same-folder temporary file until the caller converts or moves it;
+    /// delivery itself never reconstructs the artifact in memory.
     struct FileDelivery {
         var name: String
         var container: String
         var fileType: String?
         var creator: String?
         var modified: Int?
-        var bytes: Data
+        var staged: InboundFileSink.StagedFile
         var transferMs: Int
     }
 
@@ -540,6 +540,7 @@ final class GuestListener: ObservableObject {
 
     /// Pulls a file. `container` nil = the guest's fork rule decides.
     func getFile(path: String, container: String? = nil,
+                 stagingDirectory: URL? = nil,
                  completion: @escaping (Result<FileDelivery,
                                                FileFailure>) -> Void) {
         guard let session, case .connected = state else {
@@ -555,7 +556,10 @@ final class GuestListener: ObservableObject {
             self?.deliverFile(.failure(.init(code: "timeout",
                                              message: reason)))
         }
-        session.sendFileGet(id: id, path: path, container: container)
+        session.sendFileGet(
+            id: id, path: path, container: container,
+            stagingDirectory: stagingDirectory
+                ?? FileManager.default.temporaryDirectory)
     }
 
     /// Sends a file into the guest's share. `path` is the destination
@@ -1259,9 +1263,11 @@ final class Session {
     /// that begins without it is a guest-initiated push.
     private var solicitedId: Int?
     private var acceptedOfferId: Int?
-    /// In-flight file pull: the begin that announced it, and its bytes.
+    /// In-flight file pull: the begin that announced it and the bounded
+    /// disk sink receiving its bulk frames.
     private var fileBegin: FileBegin?
-    private var fileBuffer: [UInt8] = []
+    private var fileSink: InboundFileSink?
+    private var fileStagingDirectory = FileManager.default.temporaryDirectory
     private var fileStart = Date()
     /// A transfer the host has abandoned. The guest drains to its frame
     /// boundary before stopping, so bytes keep arriving for a transfer
@@ -1412,14 +1418,36 @@ final class Session {
                    Int(frame.header.transfer) == discarding {
                     break
                 }
-                if inbound != nil {
-                    inbound?.bytes.append(frame.payload)
+                if let inbound {
+                    do {
+                        try inbound.sink.append(frame.payload)
+                        if let received = inbound.sink.takeProgressReport() {
+                            send(.fileProgress(FileProgress(
+                                id: inbound.id, received: received)))
+                        }
+                    } catch {
+                        failInboundStream(
+                            transfer: Int(frame.header.transfer),
+                            error: error)
+                    }
                     break
                 }
                 if let begin = fileBegin {
-                    fileBuffer.append(contentsOf: frame.payload)
-                    onCaptureProgress(.init(received: fileBuffer.count,
-                                            expected: begin.bytes))
+                    do {
+                        try fileSink?.append(frame.payload)
+                        let received = fileSink?.receivedBytes ?? 0
+                        if fileSink?.takeProgressReport() != nil {
+                            send(.fileProgress(FileProgress(
+                                id: begin.id, received: received)))
+                            onCaptureProgress(.init(
+                                received: received,
+                                expected: begin.bytes))
+                        }
+                    } catch {
+                        failPulledStream(
+                            transfer: Int(frame.header.transfer),
+                            error: error)
+                    }
                     break
                 }
                 guard captureBegin != nil else {
@@ -1513,17 +1541,23 @@ final class Session {
             onFileProgress(progress)
         case .fileRefuse(let refuse):
             fileBegin = nil
-            fileBuffer = []
+            fileSink?.abort()
+            fileSink = nil
             onFileRefuse(refuse)
         case .fileBegin(let begin):
             if inbound?.id == begin.id {
                 break                 // a push we already accepted
             }
-            fileBegin = begin
-            fileBuffer = []
-            fileBuffer.reserveCapacity(begin.bytes)
-            fileStart = Date()
-            onCaptureProgress(.init(received: 0, expected: begin.bytes))
+            do {
+                fileSink = try InboundFileSink(
+                    directory: fileStagingDirectory,
+                    expectedBytes: begin.bytes)
+                fileBegin = begin
+                fileStart = Date()
+                onCaptureProgress(.init(received: 0, expected: begin.bytes))
+            } catch {
+                failPulledStream(transfer: begin.transfer, error: error)
+            }
         case .fileEnd(let end):
             if inbound?.id == end.id {
                 finishInbound(end)
@@ -1619,9 +1653,12 @@ final class Session {
     func sendFileRestore(_ m: FileRestore) { send(.fileRestore(m)) }
     func sendFileMkdir(_ m: FileMkdir) { send(.fileMkdir(m)) }
 
-    func sendFileGet(id: Int, path: String, container: String?) {
+    func sendFileGet(id: Int, path: String, container: String?,
+                     stagingDirectory: URL) {
         fileBegin = nil
-        fileBuffer = []
+        fileSink?.abort()
+        fileSink = nil
+        fileStagingDirectory = stagingDirectory
         fileStart = Date()
         send(.fileGet(FileGet(id: id, path: path, container: container)))
     }
@@ -1629,6 +1666,9 @@ final class Session {
     func cancelFile() {
         guard let begin = fileBegin else { return }
         discardingTransfer = begin.transfer
+        fileBegin = nil
+        fileSink?.abort()
+        fileSink = nil
         send(.fileCancel(FileCancel(transfer: begin.transfer)))
     }
 
@@ -1708,13 +1748,18 @@ final class Session {
         sendNextOutboundChunk()
     }
 
-    /// An inbound push: accept, then collect the bulk that follows and
-    /// write it when the sender says it is done.
-    func beginReceiving(offer: FileOffer, to url: URL) {
+    /// An inbound push: open its same-folder temporary file before
+    /// accepting, so an unwritable or full destination is refused before
+    /// the sender spends time on bytes we cannot keep.
+    func beginReceiving(offer: FileOffer, to url: URL) throws {
+        let sink = try InboundFileSink(
+            directory: url.deletingLastPathComponent(),
+            expectedBytes: offer.bytes)
         inbound = Inbound(id: offer.id, url: url, name: offer.name,
                           container: offer.container,
                           expected: offer.bytes,
-                          modified: offer.modified, bytes: Data())
+                          fileType: offer.fileType,
+                          modified: offer.modified, sink: sink)
         send(.fileAccept(FileAccept(id: offer.id)))
     }
 
@@ -1724,8 +1769,9 @@ final class Session {
         var name: String
         var container: String
         var expected: Int
+        var fileType: String?
         var modified: Int?
-        var bytes: Data
+        var sink: InboundFileSink
     }
 
     private var inbound: Inbound?
@@ -1736,23 +1782,22 @@ final class Session {
     private func finishInbound(_ end: FileEnd) {
         guard let file = inbound, file.id == end.id else { return }
         inbound = nil
-        guard end.ok, file.bytes.count == file.expected else {
+        guard end.ok else {
+            file.sink.abort()
             send(.fileDone(FileDone(
                 id: end.id, ok: false, code: "io-error",
-                reason: end.ok ? "the file arrived truncated"
-                               : "the sender stopped")))
+                reason: "the sender stopped")))
             return
         }
-        let converted = FileConverter.convert(
-            name: file.name, container: file.container,
-            fileType: nil, bytes: file.bytes)
-        var url = file.url
-        if converted.name != file.name {
-            url = url.deletingLastPathComponent()
-                .appendingPathComponent(converted.name)
-        }
         do {
-            try converted.data.write(to: url)
+            let staged = try file.sink.finish(expectedCRC32: end.crc32)
+            let outputName = FileConverter.outputName(
+                name: file.name, container: file.container)
+            let url = file.url.deletingLastPathComponent()
+                .appendingPathComponent(outputName)
+            try FileConverter.materialize(
+                name: file.name, container: file.container,
+                fileType: file.fileType, staged: staged, to: url)
             if let seconds = file.modified,
                let date = ClassicDate.date(from: seconds) {
                 try? FileManager.default.setAttributes(
@@ -1760,7 +1805,7 @@ final class Session {
             }
             onReceived(url)
             onLog("#\(end.id) received \(url.lastPathComponent), "
-                  + "\(file.bytes.count) bytes", "files", .info)
+                  + "\(file.expected) bytes", "files", .info)
             send(.fileDone(FileDone(id: end.id, ok: true, code: nil,
                                     reason: nil)))
         } catch {
@@ -2069,34 +2114,58 @@ final class Session {
                                               format: base)
     }
 
+    private func failPulledStream(transfer: Int, error: Error) {
+        discardingTransfer = transfer
+        fileBegin = nil
+        fileSink?.abort()
+        fileSink = nil
+        send(.fileCancel(FileCancel(transfer: transfer)))
+        onFileDelivery(.failure(.init(
+            code: "io-error", message: error.localizedDescription)))
+    }
+
+    private func failInboundStream(transfer: Int, error: Error) {
+        guard let inbound else { return }
+        discardingTransfer = transfer
+        self.inbound = nil
+        inbound.sink.abort()
+        send(.fileCancel(FileCancel(transfer: transfer)))
+        send(.fileDone(FileDone(
+            id: inbound.id, ok: false, code: "io-error",
+            reason: error.localizedDescription)))
+    }
+
     private func finishFile(_ end: FileEnd) {
         if discardingTransfer == end.transfer {
             discardingTransfer = nil
             fileBegin = nil
-            fileBuffer = []
+            fileSink?.abort()
+            fileSink = nil
             return                    /* the host already gave up on it */
         }
-        guard let begin = fileBegin else { return }
+        guard let begin = fileBegin, let sink = fileSink else { return }
         fileBegin = nil
-        let bytes = fileBuffer
-        fileBuffer = []
+        fileSink = nil
         guard end.ok else {
+            sink.abort()
             onFileDelivery(.failure(.init(
                 code: "io-error",
                 message: "the guest could not send \(begin.name)")))
             return
         }
-        guard bytes.count == begin.bytes else {
+        let staged: InboundFileSink.StagedFile
+        do {
+            staged = try sink.finish(expectedCRC32: end.crc32)
+        } catch {
             onFileDelivery(.failure(.init(
                 code: "io-error",
-                message: "\(begin.name) arrived truncated "
-                    + "(\(bytes.count) of \(begin.bytes) bytes)")))
+                message: error.localizedDescription)))
             return
         }
         onFileDelivery(.success(.init(
             name: begin.name, container: begin.container,
             fileType: begin.fileType, creator: begin.creator,
-            modified: begin.modified, bytes: Data(bytes),
+            modified: begin.modified, staged: staged,
             transferMs: Int(Date().timeIntervalSince(fileStart) * 1000))))
     }
 
@@ -2334,6 +2403,10 @@ final class Session {
     private func finish(reason: String, sending farewell: ControlMessage? = nil) {
         guard !closed else { return }
         closed = true
+        fileSink?.abort()
+        fileSink = nil
+        inbound?.sink.abort()
+        inbound = nil
         if helloed {
             onLog(reason, "wire", .info)
         }

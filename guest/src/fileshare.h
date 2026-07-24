@@ -19,7 +19,7 @@ enum {
     kFilesNotFound = -2,
     kFilesNotAFolder = -3,
     kFilesIOError = -4,
-    kFilesTooBig = -5,                /* could not stage the file in RAM */
+    kFilesTooBig = -5,                /* insufficient disk or work buffer */
     kFilesExists = -6                 /* would overwrite; caller must ask */
 };
 
@@ -37,10 +37,17 @@ typedef enum {
     kContainerMacBinary
 } FileContainer;
 
-/* A file staged for the wire. blob is a temp-mem handle the caller owns
-   (DisposeHandle); container says what the bytes are. */
+/* A file prepared for the wire. Preparation records identity and fork
+   lengths but does not read the payload. Once opened, reads advance
+   sequentially through data or through a MacBinary header/forks/padding,
+   so memory stays bounded by the caller's one protocol frame. */
 typedef struct {
-    Handle blob;
+    FSSpec spec;
+    short data_ref, rsrc_ref;         /* -1 until opened */
+    Boolean opened;
+    unsigned char mb_header[128];
+    long position;
+    unsigned long crc;
     long total_bytes;
     FileContainer container;          /* kContainerData or kContainerMacBinary */
     char name[32];
@@ -65,6 +72,9 @@ int now_files_stage(const char *rel_path, FileContainer container,
                     FileStage *stage);
 int now_files_stage_spec(const FSSpec *from, FileContainer container,
                          FileStage *stage);
+int now_files_stage_open(FileStage *stage);
+int now_files_stage_read(FileStage *stage, Ptr dst, long cap, long *got);
+Boolean now_files_stage_unchanged(const FileStage *stage);
 void now_files_stage_dispose(FileStage *stage);
 
 /* One-line description of an entry as both consoles show it: "folder",

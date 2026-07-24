@@ -246,10 +246,19 @@ final class FileWireTests: XCTestCase {
                                         sendMs: 12)))
 
         try await waitUntil("delivery") { delivered != nil }
+        try await waitUntil("receiver progress") {
+            guest.received.contains {
+                if case .fileProgress(let progress) = $0 {
+                    return progress.id == id
+                        && progress.received == payload.count
+                }
+                return false
+            }
+        }
         let file = try XCTUnwrap(delivered)
         XCTAssertEqual(file.name, "Read Me")
         XCTAssertEqual(file.container, "data")
-        XCTAssertEqual(file.bytes, payload)
+        XCTAssertEqual(try Data(contentsOf: file.staged.url), payload)
         XCTAssertNil(listener.captureProgress,
                      "progress must clear when the file lands")
     }
@@ -620,6 +629,85 @@ final class FileWireTests: XCTestCase {
                                         sendMs: 1)))
         try await waitUntil("truncation refused") { failure != nil }
         XCTAssertTrue(failure?.message.contains("truncated") == true)
+    }
+
+    func testPullWithTheWrongChecksumIsRejected() async throws {
+        let guest = try await connectedGuest()
+        var failure: GuestListener.FileFailure?
+        listener.getFile(path: "Wrong") { result in
+            if case .failure(let f) = result { failure = f }
+        }
+        var getId: Int?
+        try await waitUntil("file.get") {
+            for message in guest.received {
+                if case .fileGet(let get) = message {
+                    getId = get.id
+                    return true
+                }
+            }
+            return false
+        }
+        let id = try XCTUnwrap(getId)
+        let payload = Data("complete but corrupt".utf8)
+        try guest.send(.fileBegin(FileBegin(
+            id: id, transfer: 10, name: "Wrong", container: "data",
+            bytes: payload.count, dataBytes: payload.count, rsrcBytes: 0,
+            fileType: "BINA", creator: "????", modified: nil)))
+        guest.sendRaw(try FrameCodec.encode(
+            channel: .bulk, flags: [.end], transfer: 10,
+            payload: payload))
+        try guest.send(.fileEnd(FileEnd(
+            id: id, transfer: 10, ok: true, sendMs: 1,
+            crc32: 0x1234_5678)))
+
+        try await waitUntil("checksum refused") { failure != nil }
+        XCTAssertTrue(failure?.message.contains("checksum") == true)
+    }
+
+    func testCancellingAPullDeletesItsSameFolderPartial() async throws {
+        let guest = try await connectedGuest()
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("now-cancel-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var failure: GuestListener.FileFailure?
+
+        listener.getFile(path: "Interrupted", stagingDirectory: directory) {
+            result in
+            if case .failure(let value) = result { failure = value }
+        }
+        var getId: Int?
+        try await waitUntil("file.get") {
+            for message in guest.received {
+                if case .fileGet(let get) = message {
+                    getId = get.id
+                    return true
+                }
+            }
+            return false
+        }
+        let id = try XCTUnwrap(getId)
+        try guest.send(.fileBegin(FileBegin(
+            id: id, transfer: 11, name: "Interrupted", container: "data",
+            bytes: 1_000_000, dataBytes: 1_000_000, rsrcBytes: 0,
+            fileType: "BINA", creator: "????", modified: nil)))
+        guest.sendRaw(try FrameCodec.encode(
+            channel: .bulk, flags: [], transfer: 11,
+            payload: Data(repeating: 0xA5, count: 32 * 1024)))
+        try await waitUntil("partial written") {
+            let names = (try? FileManager.default
+                .contentsOfDirectory(atPath: directory.path)) ?? []
+            return names.contains { $0.hasSuffix(".part") }
+        }
+
+        listener.cancelFile()
+
+        try await waitUntil("cancelled") { failure?.code == "cancelled" }
+        XCTAssertEqual(
+            try FileManager.default.contentsOfDirectory(
+                atPath: directory.path),
+            [])
     }
 }
 
@@ -996,32 +1084,6 @@ final class OutboundFileTests: XCTestCase {
 }
 
 final class FileConverterTests: XCTestCase {
-    func testClassicTextBecomesUTF8WithUnixEndings() {
-        // "café" in MacRoman: é is 0x8E.
-        let bytes = Data([0x63, 0x61, 0x66, 0x8E, 0x0D, 0x6F, 0x6B, 0x0D])
-        let out = FileConverter.convert(name: "Read Me", container: "data",
-                                        fileType: "TEXT", bytes: bytes)
-        XCTAssertEqual(String(data: out.data, encoding: .utf8), "café\nok\n")
-        XCTAssertNotNil(out.note)
-    }
-
-    func testBinaryFilesArePassedThroughUntouched() {
-        let bytes = Data([0x00, 0x0D, 0xFF, 0x0D])
-        let out = FileConverter.convert(name: "thing.dat", container: "data",
-                                        fileType: "BINA", bytes: bytes)
-        XCTAssertEqual(out.data, bytes)
-        XCTAssertNil(out.note)
-    }
-
-    func testMacBinaryKeepsItsBytesAndGainsTheExtension() {
-        let bytes = Data(repeating: 7, count: 128)
-        let out = FileConverter.convert(name: "SimpleText",
-                                        container: "macbinary",
-                                        fileType: "APPL", bytes: bytes)
-        XCTAssertEqual(out.data, bytes)
-        XCTAssertEqual(out.name, "SimpleText.bin")
-    }
-
     func testTextDetectionUsesTypeThenExtension() {
         XCTAssertTrue(FileConverter.isText(fileType: "TEXT", name: "x"))
         XCTAssertTrue(FileConverter.isText(fileType: nil, name: "notes.md"))

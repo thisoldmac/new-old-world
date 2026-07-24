@@ -837,42 +837,31 @@ working on the PowerBook.
   scroll bar rather than shorter rows; it lands with the extension
   "witness" tier that adds the next probes.
 
-## The host's receiving half is sender-only
+## Reverse file streaming is unverified on the machine
 
-Found by an altitude review 2026-07-20; the largest thing on this list.
+The 2026-07-24 reverse-path pass removed both whole-artifact buffers.
+The guest now opens the source forks only after acceptance and emits one
+bounded frame at a time, including MacBinary header/fork/padding
+segments. The host writes each frame to a same-folder temporary file,
+preflights free space, computes CRC-32 incrementally, sends batched
+`file.progress`, verifies count and optional checksum, and only then
+moves or stream-converts the result into place. Cancel, truncation,
+checksum failure, write failure, and disconnect all delete the partial.
 
-The host as a SENDER got the full treatment: a resume token on the
-offer, honouring `have`, an offset on `file.begin`, a CRC on `file.end`,
-and a send window clocked on the guest's `file.progress`. The host as a
-RECEIVER got none of it. It accumulates the whole file in memory,
-writes once at the end, and checks only that the byte count matches. It
-never sends `file.progress`, never offers a resume point, and never
-verifies the CRC the sender may have sent.
+This is **tested, not metal-verified**. The native host suite exercises
+256 KiB, 2 MiB, and 16 MiB payloads with a fixed 32 KiB append bound,
+CRC/truncation/overrun/cancel cleanup, atomic materialization, and text
+conversion across a chunk boundary. Both guest send entry points have a
+source gate against whole-file allocation, and the Retro68 guest build
+passes. No separately configured experimental guest was available to
+exercise the path without disturbing the normal NOW pairing.
 
-The guest does all three. So the same `file.offer` behaves differently
-depending on which machine receives it, which is exactly what the
-contract says must not happen.
-
-The consequence is not only symmetry. **A sender needs the receiver's
-count to clock against**, and that clock is what stops the send buffer
-backlogging into the 340 KB/s → 5 KB/s collapse that
-`docs/large-transfers.md` explains. The host does not send progress, so
-in the guest → host direction nothing bounds the guest's sending. The
-fix for that pathology landed on one side of a symmetric protocol.
-
-The shape of the fix is one job, not three: make the inbound side a
-streaming sink — a file handle, a running CRC, a received count — and
-progress, CRC verification, and eventually resume all fall out of it.
-Two other things point at the same refactor: the bulk branch keeps THREE
-parallel accumulators (a push, a pull, a capture) for a wire that
-carries one transfer at a time, and `TransferIdentity.CRC32` is a
-streaming checksum with no streaming caller, written for exactly this
-and left when it was not built.
-
-One contract edit goes with it: `FileProgress` says "sent by the guest
-while it receives a put", which contradicts the symmetry the same
-document asserts and is probably how this drifted. It should say
-"sent by the receiver".
+Reverse resume remains deliberately absent. A deployed guest supplies
+no source identity before the receiver chooses an offset, so the host
+cannot prove a retained partial belongs to the current source. An
+interruption therefore deletes the partial and retries from zero. Adding
+resume safely needs an additive guest-issued source token (and fixtures
+for old peers), not an offset guessed from a filename and size.
 
 ## Structural work deferred on the host
 
@@ -899,11 +888,11 @@ with it.
 
 ## Rough edges
 
-**A send stages the whole file in RAM.** Pulling streams to disk, but
-sending does not: `now_files_stage` builds the whole artifact in a
-handle, so a large send fails on memory where a large receive succeeds.
-It fails cleanly ("Not enough memory to send that file") rather than
-crashing.
+**Reverse streaming still needs metal evidence.** The whole-file guest
+handle and host buffer are gone, but no broad guest-to-host size ladder
+has run on the PowerBook yet. Keep the feature at Tested until direct
+data-fork and MacBinary transfers, cancellation, and a source mutation
+have been watched there.
 
 **The build stamp can read a few minutes early.** CMake touches
 `build_stamp.c` at the END of a build, so the stamp reflects when that

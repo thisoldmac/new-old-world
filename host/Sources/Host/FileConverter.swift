@@ -8,16 +8,6 @@ import Foundation
 /// resource-only ships MacBinary); the host's job is what happens to
 /// the bytes afterwards — today, text.
 enum FileConverter {
-    struct Converted {
-        var name: String
-        var data: Data
-        /// What happened, for the browser's badge and the transfer log.
-        var note: String?
-        /// The file's own date, so a dragged-out file does not arrive
-        /// stamped with the moment it happened to cross.
-        var modified: Date?
-    }
-
     /// Classic type codes that are text regardless of extension.
     private static let textTypes: Set<String> = ["TEXT", "ttro", "utxt"]
     private static let textExtensions: Set<String> = [
@@ -47,33 +37,121 @@ enum FileConverter {
         return nil
     }
 
-    /// Converts a delivered file. MacBinary passes through untouched (it
-    /// is the honest container for a forked artifact); text gets
-    /// MacRoman→UTF-8 and CR→LF; everything else is the raw data fork.
-    static func convert(name: String, container: String,
-                        fileType: String?, bytes: Data) -> Converted {
-        if container == "macbinary" {
-            let base = (name as NSString).deletingPathExtension
-            let suffixed = name.lowercased().hasSuffix(".bin")
-                ? name : "\(base).bin"
-            return Converted(name: suffixed, data: bytes,
-                             note: "MacBinary (both forks)")
-        }
-        guard isText(fileType: fileType, name: name),
-              let text = String(data: bytes, encoding: .macOSRoman) else {
-            return Converted(name: name, data: bytes, note: nil)
-        }
-        let converted = normalizeLineEndings(text)
-        return Converted(name: text.isEmpty ? name : name,
-                         data: Data(converted.utf8),
-                         note: "MacRoman → UTF-8, CR → LF")
+    static func outputName(name: String, container: String) -> String {
+        guard container == "macbinary",
+              !name.lowercased().hasSuffix(".bin") else { return name }
+        let base = (name as NSString).deletingPathExtension
+        return "\(base).bin"
     }
 
-    /// Classic Mac text uses CR line endings; normalize CRLF first so a
-    /// file that already came from a modern editor is not doubled.
-    static func normalizeLineEndings(_ text: String) -> String {
-        text.replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
+    /// Writes a staged inbound transfer without reconstructing the whole
+    /// file in memory. The destination appears only after the complete
+    /// source has been copied or converted and synchronized.
+    @discardableResult
+    static func materialize(
+        name: String, container: String, fileType: String?,
+        staged: InboundFileSink.StagedFile, to destination: URL
+    ) throws -> String? {
+        let source = staged.url
+        let parent = destination.deletingLastPathComponent()
+        let isTextFile = container != "macbinary"
+            && isText(fileType: fileType, name: name)
+
+        /* The common binary case is already a same-folder temp, so a
+           rename is the whole finalization and is atomic on this volume. */
+        if !isTextFile,
+           source.deletingLastPathComponent().standardizedFileURL
+            == parent.standardizedFileURL {
+            try FileManager.default.moveItem(at: source, to: destination)
+            staged.relinquish()
+            return container == "macbinary"
+                ? "MacBinary (both forks)" : nil
+        }
+
+        let multiplier = isTextFile ? 3 : 1
+        let required = staged.byteCount.multipliedReportingOverflow(
+            by: multiplier)
+        guard !required.overflow else {
+            throw InboundFileSink.SinkError.invalidLength
+        }
+        try InboundFileSink.requireAvailableSpace(
+            in: parent, bytes: required.partialValue)
+
+        let temporary = parent.appendingPathComponent(
+            ".now-\(UUID().uuidString).convert")
+        guard FileManager.default.createFile(
+            atPath: temporary.path, contents: nil) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        var keepTemporary = true
+        defer {
+            if keepTemporary {
+                try? FileManager.default.removeItem(at: temporary)
+            }
+        }
+
+        let input = try FileHandle(forReadingFrom: source)
+        let output = try FileHandle(forWritingTo: temporary)
+        do {
+            if isTextFile {
+                try streamClassicText(from: input, to: output)
+            } else {
+                while true {
+                    let chunk = try input.read(upToCount: 64 * 1024) ?? Data()
+                    if chunk.isEmpty { break }
+                    try output.write(contentsOf: chunk)
+                }
+            }
+            try output.synchronize()
+            try input.close()
+            try output.close()
+            try FileManager.default.moveItem(at: temporary, to: destination)
+            keepTemporary = false
+        } catch {
+            try? input.close()
+            try? output.close()
+            throw error
+        }
+        return isTextFile ? "MacRoman → UTF-8, CR → LF"
+            : (container == "macbinary" ? "MacBinary (both forks)" : nil)
+    }
+
+    /// MacRoman is single-byte, so conversion can split anywhere except
+    /// the CRLF pair. Normalize one bounded chunk in memory and write it
+    /// once; line-dense files must not turn into one syscall per line.
+    private static func streamClassicText(
+        from input: FileHandle, to output: FileHandle
+    ) throws {
+        var pendingCR = false
+
+        while true {
+            let chunk = try input.read(upToCount: 64 * 1024) ?? Data()
+            if chunk.isEmpty { break }
+            var normalized = Data()
+            normalized.reserveCapacity(chunk.count + 1)
+            for byte in chunk {
+                if pendingCR {
+                    normalized.append(0x0A)
+                    pendingCR = false
+                    if byte == 0x0A {
+                        continue       // CRLF is one line ending
+                    }
+                }
+                if byte == 0x0D {
+                    pendingCR = true
+                    continue
+                }
+                normalized.append(byte)
+            }
+            guard let text = String(data: normalized,
+                                    encoding: .macOSRoman) else {
+                throw CocoaError(.fileReadInapplicableStringEncoding)
+            }
+            try output.write(contentsOf: Data(text.utf8))
+        }
+        if pendingCR {
+            try output.write(contentsOf: Data([0x0A]))
+        }
     }
 
     /// The other direction, for slice 2: LF/CRLF → CR, UTF-8 → MacRoman
