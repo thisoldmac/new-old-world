@@ -479,7 +479,7 @@ final class FilesModuleModel: ObservableObject {
         // makes a transferred folder useless for telling what changed.
         let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
             .contentModificationDate
-            .flatMap(ClassicDate.macSeconds(from:))
+            .flatMap(ClassicDate.guestWireSeconds(from:))
         lastError = nil
         queueDone += 1
         transfer = TransferState(

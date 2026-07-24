@@ -143,7 +143,7 @@ final class HostShare {
                 dataBytes: isDir ? nil : (values?.fileSize ?? 0),
                 rsrcBytes: isDir ? nil : 0,
                 modified: values?.contentModificationDate
-                    .flatMap(ClassicDate.macSeconds(from:)))
+                    .flatMap(ClassicDate.guestWireSeconds(from:)))
         }
         /* A page is bounded by BYTES as well as by count: sixteen long
            names plus their types and dates can exceed the control-frame
@@ -311,7 +311,7 @@ final class HostShare {
         plan.modified = (try? url.resourceValues(
             forKeys: [.contentModificationDateKey]))?
             .contentModificationDate
-            .flatMap(ClassicDate.macSeconds(from:))
+            .flatMap(ClassicDate.guestWireSeconds(from:))
         return plan
     }
 

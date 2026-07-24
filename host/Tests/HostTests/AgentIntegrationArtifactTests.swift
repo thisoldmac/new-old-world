@@ -221,6 +221,7 @@ final class AgentIntegrationArtifactTests: XCTestCase {
                     offerID = offer.id
                     return offer.name == "Agent Note.txt"
                         && offer.path == ""
+                        && offer.modified == nil
                         && offer.overwrite != true
                 }
             }

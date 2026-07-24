@@ -263,7 +263,7 @@ final class AgentIntegrationArtifactApprovalStore {
             throw AgentIntegrationArtifactApprovalError.refused(
                 "The selected artifact changed while it was being approved")
         }
-        let modified = ClassicDate.macSeconds(from: Date(
+        let modified = ClassicDate.guestWireSeconds(from: Date(
             timeIntervalSince1970: TimeInterval(before.st_mtimespec.tv_sec)
                 + TimeInterval(before.st_mtimespec.tv_nsec) / 1_000_000_000))
         return (data, modified)

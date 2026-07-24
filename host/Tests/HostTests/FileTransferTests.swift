@@ -1058,6 +1058,17 @@ final class FileConverterTests: XCTestCase {
             from: Date(timeIntervalSince1970: 9_000_000_000)))
     }
 
+    func testGuestWireDatesRefuseValuesItsSignedParserCannotRepresent() {
+        let modern = Date(timeIntervalSince1970: 1_784_000_000)
+        XCTAssertNotNil(ClassicDate.macSeconds(from: modern))
+        XCTAssertNil(ClassicDate.guestWireSeconds(from: modern))
+
+        let representable = Date(timeIntervalSince1970: 1_000_000)
+        XCTAssertEqual(
+            ClassicDate.guestWireSeconds(from: representable),
+            ClassicDate.macSeconds(from: representable))
+    }
+
     func testClassicEpochConverts() throws {
         // 1904-01-01 + 3_400_000_000s lands in 2011.
         let date = try XCTUnwrap(ClassicDate.date(from: 3_400_000_000))

@@ -259,4 +259,15 @@ enum ClassicDate {
         guard seconds > 0, seconds < 4_294_967_295 else { return nil }
         return Int(seconds)
     }
+
+    /// The deployed classic guest reads optional file dates through
+    /// `strtol` into a signed 32-bit `long`. Omit newer values rather
+    /// than letting them saturate to January 1972 on receipt.
+    static func guestWireSeconds(from date: Date) -> Int? {
+        guard let seconds = macSeconds(from: date),
+              seconds <= Int(Int32.max) else {
+            return nil
+        }
+        return seconds
+    }
 }
