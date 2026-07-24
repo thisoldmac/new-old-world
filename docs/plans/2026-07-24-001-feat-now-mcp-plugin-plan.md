@@ -111,7 +111,7 @@ This mapping is the first implementation deliverable. It must be checked against
 
 ### Current verification rung
 
-The host-owned `session_health` and `list_processes` projections, private host-local socket, and stdio MCP companion are **tested**; they are not a replacement transport. A built companion has returned typed host-unavailable and has reported the live connected PowerBook session through the existing NOW pairing. The new MCP process projection is tested against the existing wire path with a fake guest but has not yet been watched against the real guest. Broader paired human workflows were not re-run for these read-only observations.
+The host-owned `session_health` and `list_processes` projections, private host-local socket, and stdio MCP companion are **tested** and metal-verified for the bounded read-only acceptance receipt in [`agent-integration.md`](../agent-integration.md); they are not a replacement transport. The pass covered typed host absence, normal reconnect with a new session/reference scope, paced reads, and modest concurrency against the paired PowerBook. It did not exercise broader paired human workflows, transfers, sustained load, or any unimplemented tool.
 
 - The persistent connection and ordinary bidirectional file workflows are metal-verified, subject to the broken resume path and intermittent large-transfer slowdown recorded in [`open-issues.md`](../open-issues.md).
 - Guest process listing and cooperative quit are metal-verified. Host stale-list clearing across reconnect is tested but still listed as not metal-verified in [`open-issues.md`](../open-issues.md).

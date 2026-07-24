@@ -40,4 +40,17 @@ Build the host app normally and build the companion with `swift build --package-
 
 ## Current verification
 
-Both projections, the local socket, and the stdio wrapper are **tested** here. Focused tests cover missing host, missing or disconnected guest, populated and empty process tables, opaque-reference stability, legacy entries without PSNs, bounded fields and output, stale-data refusal, malformed and oversized requests, endpoint permissions, real peer-UID comparison, forced peer rejection, duplicate and concurrent reads, available and unavailable socket round trips, typed MCP schemas, and unchanged host module inventory/listener state with the socket absent or present. The session-health tool previously returned typed unavailable while the host process was absent, then reported a live `connected` session with the PowerBook 1400c after the host was launched. The underlying NOW process listing is metal-verified, but this new MCP process projection has not yet been watched against the real guest.
+Both projections, the local socket, and the stdio wrapper are **tested** here. Focused tests cover missing host, missing or disconnected guest, populated and empty process tables, opaque-reference stability, legacy entries without PSNs, bounded fields and output, stale-data refusal, malformed and oversized requests, endpoint permissions, real peer-UID comparison, forced peer rejection, duplicate and concurrent reads, available and unavailable socket round trips, typed MCP schemas, and unchanged host module inventory/listener state with the socket absent or present.
+
+The exact read-only companion path is also **metal-verified** by the bounded 2026-07-24 acceptance pass below. This does not qualify unimplemented tools, sustained load, guest UI interaction, transfers, or a future listener/transport.
+
+| Check | Observed result |
+| --- | --- |
+| Build identity | Commit `f0b5845`; freshly built companion SHA-256 `6979908604db310473d91bb92a306b726c1802ab382ae975b4d943450eea9840` advertised exactly `now_session_health` and `now_list_processes`. |
+| Host absence and recovery | Both tools returned `now-host-unavailable` with no snapshot while the host was normally quit. The PowerBook redialed a freshly built host in about four seconds; each host launch minted a new session ID. |
+| Paced health reads | 20 calls at 250 ms spacing plus 4 concurrent calls: 7.6 ms minimum, 10.0 ms median, 14.0 ms p95, 14.4 ms maximum. Guest ping and frame counts advanced. |
+| Paced process reads | 8 calls at 1 s spacing plus 2 concurrent calls: 51.8 ms minimum, 61.8 ms median, 116.9 ms p95/maximum. Every snapshot held the same 6 bounded rows with point-in-time freshness and stable opaque references. |
+| Reconnect scope | Neither tool returned rows during host absence. After reconnect, a fresh snapshot used the new session ID and newly minted opaque references rather than the prior scope. |
+| Host impact | The host stayed at roughly 44 MB, 6 baseline threads with a transient peak of 8, and 0.0-0.7% CPU during the measured window. No timeout, unavailable result, protocol error, guest disconnect, or stopped ping was observed under load. |
+
+The guest remained paired and NOW remained the reported front process throughout the measured reads. No guest UI control was exercised or visually qualified during this pass.

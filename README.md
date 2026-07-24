@@ -90,9 +90,10 @@ on either side.
   a private same-user socket. Process references are opaque and
   observation-only; no implemented tool can act on one. The companion
   exposes no lifecycle controls and changes neither app's module
-  inventory. Both tools are tested here; session health also reported
-  the live PowerBook 1400c pairing through this path, while the MCP
-  process projection has not yet been watched on metal.
+  inventory. Both tools are tested here and metal-verified for a bounded
+  read-only acceptance pass against the PowerBook 1400c, including
+  paced and modest concurrent reads, typed host absence, and clean
+  reconnect. This is not a broader transport or endurance qualification.
 
 Measured on the real PB1400c: ~4.9 fps at 8-bit with predictive +
 interlace over 802.11b, and file transfers byte-exact at ~227 KB/s.
