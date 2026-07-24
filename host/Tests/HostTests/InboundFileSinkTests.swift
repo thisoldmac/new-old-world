@@ -110,6 +110,7 @@ final class InboundFileSinkTests: XCTestCase {
                                        expectedBytes: payload.count)
         try sink.append(payload)
         let staged = try sink.finish(expectedCRC32: nil)
+        let source = staged.url
         let destination = directory.appendingPathComponent("Read Me")
 
         let note = try FileConverter.materialize(
@@ -117,6 +118,9 @@ final class InboundFileSinkTests: XCTestCase {
             staged: staged, to: destination)
 
         XCTAssertEqual(note, "MacRoman → UTF-8, CR → LF")
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: source.path),
+            "conversion consumed the staged source even while its owner lives")
         let result = try Data(contentsOf: destination)
         XCTAssertEqual(result.count, 64 * 1024 + 2)
         XCTAssertEqual(result.suffix(3), Data([UInt8(ascii: "\n"),

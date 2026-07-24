@@ -52,6 +52,19 @@ final class InboundFileSink {
             owned = false
         }
 
+        /// Consumes a staged source after a converter has produced its final
+        /// destination. Keep ownership on a transient remove failure so deinit
+        /// gets one last cleanup attempt.
+        func discard() {
+            guard owned else { return }
+            do {
+                try FileManager.default.removeItem(at: url)
+                owned = false
+            } catch {
+                // deinit retries while ownership remains true
+            }
+        }
+
         deinit {
             if owned {
                 try? FileManager.default.removeItem(at: url)
@@ -164,8 +177,16 @@ final class InboundFileSink {
         try? handle?.close()
         handle = nil
         if ownsTemporaryFile {
-            try? FileManager.default.removeItem(at: temporaryURL)
-            ownsTemporaryFile = false
+            do {
+                try FileManager.default.removeItem(at: temporaryURL)
+                ownsTemporaryFile = false
+            } catch {
+                /* Keep ownership if close/remove ordering produced a
+                   transient refusal. Clearing it here made deinit believe
+                   cleanup had succeeded and metal left a .part behind.
+                   Deinit calls abort again after the last FileHandle
+                   reference is gone. */
+            }
         }
     }
 

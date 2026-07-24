@@ -65,31 +65,42 @@ final class FrameDecoder {
     func feed(_ data: Data) throws -> [Frame] {
         buffer.append(data)
         var frames: [Frame] = []
-        while buffer.count >= FrameHeader.byteCount {
-            let rawChannel = buffer[buffer.startIndex]
+        var consumed = 0
+        while buffer.count - consumed >= FrameHeader.byteCount {
+            let start = buffer.startIndex + consumed
+            let rawChannel = buffer[start]
             guard let channel = FrameHeader.Channel(rawValue: rawChannel) else {
                 throw FrameCodecError.unknownChannel(rawChannel)
             }
             let flags = FrameHeader.Flags(
-                rawValue: buffer[buffer.startIndex + 1])
-            let transfer = UInt16(buffer[buffer.startIndex + 2]) << 8
-                | UInt16(buffer[buffer.startIndex + 3])
-            let length = UInt32(buffer[buffer.startIndex + 4]) << 24
-                | UInt32(buffer[buffer.startIndex + 5]) << 16
-                | UInt32(buffer[buffer.startIndex + 6]) << 8
-                | UInt32(buffer[buffer.startIndex + 7])
+                rawValue: buffer[start + 1])
+            let transfer = UInt16(buffer[start + 2]) << 8
+                | UInt16(buffer[start + 3])
+            let length = UInt32(buffer[start + 4]) << 24
+                | UInt32(buffer[start + 5]) << 16
+                | UInt32(buffer[start + 6]) << 8
+                | UInt32(buffer[start + 7])
             guard length <= UInt32(FrameHeader.maxPayloadLength) else {
                 throw FrameCodecError.oversizedFrame(declared: length)
             }
             let total = FrameHeader.byteCount + Int(length)
-            guard buffer.count >= total else { break }
-            let payload = Data(buffer[(buffer.startIndex + FrameHeader.byteCount)
-                ..< (buffer.startIndex + total)])
+            guard buffer.count - consumed >= total else { break }
+            let payload = Data(buffer[(start + FrameHeader.byteCount)
+                ..< (start + total)])
             frames.append(Frame(
                 header: FrameHeader(channel: channel, flags: flags,
                                     transfer: transfer, length: length),
                 payload: payload))
-            buffer.removeFirst(total)
+            consumed += total
+        }
+        /* Removing every frame from the front makes Data retain/grow its
+           consumed prefix on a long stream. Metal showed live heap climbing
+           with the file even though the receiver wrote each frame to disk.
+           Parse with a cursor, then compact once per <=64 KiB network read. */
+        if consumed == buffer.count {
+            buffer.removeAll(keepingCapacity: true)
+        } else if consumed > 0 {
+            buffer = Data(buffer.dropFirst(consumed))
         }
         return frames
     }

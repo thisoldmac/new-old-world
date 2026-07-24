@@ -107,6 +107,7 @@ enum FileConverter {
             try output.close()
             try FileManager.default.moveItem(at: temporary, to: destination)
             keepTemporary = false
+            staged.discard()
         } catch {
             try? input.close()
             try? output.close()
