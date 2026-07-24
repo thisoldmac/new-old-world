@@ -2,6 +2,14 @@
 
 The optional NOW agent-integration companion is host-side only. It projects a narrow typed view of capabilities already owned by a running NOW host, but it does not own the host app, guest connection, transport, transfer lane, or any human-facing operation.
 
+The completed five-tool V0 surface remains the current implementation. The
+approved follow-on is the
+[NOW MCP V0.5 guest-files command roadmap](plans/2026-07-24-003-feat-now-mcp-v0-5-files-command-roadmap-plan.md).
+V0.5 widens guest filesystem authority only through typed, logged NOW commands
+under a persisted root-relative `guestRoot`; it does not turn this companion
+into a direct file transport, grant modern-host filesystem access, or add
+CodeKitten project semantics.
+
 ## Implemented slices
 
 The implemented V0 surface exposes only five host-owned projections.

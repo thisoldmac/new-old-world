@@ -939,6 +939,28 @@ information architecture, pairing-conflict UX, thumbnail and history
 retention, inventory analyses, local-browser defaults, and remembered
 module-state policies remain intentionally open.
 
+## MCP V0.5 guest Files commands are planned, not implemented
+
+The approved
+[NOW MCP V0.5 guest-files roadmap](plans/2026-07-24-003-feat-now-mcp-v0-5-files-command-roadmap-plan.md)
+puts a typed, logged NOW command layer in front of generic guest filesystem
+access before MCP projection. Its first slice is read-only capability, listing,
+and stat beneath a persisted root-relative `guestRoot`.
+
+Arbitrary download and broader deployment are gated on two current facts, not
+merely planned polish: the guest sender stages a whole artifact in a temporary
+memory handle, and the host receiver appends the whole file to `fileBuffer`.
+Guest-bound receiving is already the stronger direction: a 32 KB disk buffer,
+preflight free-space check, temporary same-folder file, progress, running CRC,
+eligible partial resume, and rename only after validation. V0.5 must make both
+directions bounded and receipt-backed before exposing arbitrary transfer.
+
+Mutation is gated separately on guest-side revalidation of an opaque file
+observation. The current move/Trash/restore/mkdir messages act by path alone;
+host-only precondition checks would still permit a changed item to be acted on
+between check and use. Tree deployment and mandatory-preview manifest prune
+follow only after that contract-first identity boundary exists.
+
 ## Rough edges
 
 **A send stages the whole file in RAM.** Pulling streams to disk, but
