@@ -45,26 +45,31 @@ Artifact transfer is deliberately two-step. In NOW's Files page, navigate to the
 
 ## Current verification
 
-All five projections, the local socket, and the stdio wrapper are **tested** here. Focused tests cover missing host or guest; populated and empty process tables; opaque-reference stability; legacy entries without PSNs; exact launch, zero and multiple matches, paged catalogs, empty paths, redacted guest refusal, reference-cap rollover, an unacknowledged command and blocked retry, stale and reconnect-invalidated software references, and concurrent launch refusal; cooperative quit after a fresh full-identity re-list; vanished, expired, mismatched, and reconnect-invalidated process references; bounded guest refusal; concurrent quit refusal; explicit artifact approval, private mode-`0400` staging, expiry, replay, reconnect, source links/directories/oversize, symlink and hard-link swaps, changed bytes, concurrent redemption, collision refusal, matching `file.done`, separate digests, and no destination hash claim; bounded fields and output; malformed and oversized requests; endpoint permissions; real peer-UID comparison; forced peer rejection; duplicate and concurrent reads; discriminated MCP schemas; and unchanged host module inventory/listener state with the socket absent or present. The launch ambiguity guard, quit pre-action revalidation, and staging hard-link guard were introduced proof-first.
+All five projections, the local socket, and the stdio wrapper are **tested** here. Focused tests cover missing host or guest; populated and empty process tables; opaque-reference stability; legacy entries without PSNs; exact launch, zero and multiple matches, paged catalogs, empty paths, redacted guest refusal, reference-cap rollover, an unacknowledged command and blocked retry, stale and reconnect-invalidated software references, and concurrent launch refusal; cooperative quit after a fresh full-identity re-list; vanished, expired, mismatched, and reconnect-invalidated process references; bounded guest refusal; concurrent quit refusal; explicit artifact approval, private mode-`0400` staging, expiry, replay, reconnect, source links/directories/oversize, symlink and hard-link swaps, changed bytes, concurrent redemption, collision refusal, matching `file.done`, separate digests, no destination hash claim, and omission of a modern date the deployed guest cannot represent; bounded fields and output; malformed and oversized requests; endpoint permissions; real peer-UID comparison; forced peer rejection; duplicate and concurrent reads; discriminated MCP schemas; and unchanged host module inventory/listener state with the socket absent or present. The launch ambiguity guard, quit pre-action revalidation, staging hard-link guard, and signed-date guard were introduced proof-first.
 
-The exact read-only companion path is also **metal-verified** by the bounded 2026-07-24 acceptance pass below. Safe launch, cooperative quit, and approved artifact transfer remain **tested**, not metal-verified, until connected companion calls are separately observed. The read-only pass does not qualify those actions, sustained load, guest UI interaction, transfers, or a future listener/transport.
+The complete V0 companion path also has a bounded **metal-verified**
+acceptance receipt from 2026-07-24. This qualifies only the calls and
+receipts below against the paired PowerBook 1400c. It does not qualify
+sustained load, destination-byte identity, arbitrary applications or
+artifacts, guest UI automation, or a future listener/transport.
 
 | Check | Observed result |
 | --- | --- |
-| Build identity | Commit `f0b5845`; freshly built companion SHA-256 `6979908604db310473d91bb92a306b726c1802ab382ae975b4d943450eea9840` advertised exactly `now_session_health` and `now_list_processes`. |
-| Host absence and recovery | Both tools returned `now-host-unavailable` with no snapshot while the host was normally quit. The PowerBook redialed a freshly built host in about four seconds; each host launch minted a new session ID. |
-| Paced health reads | 20 calls at 250 ms spacing plus 4 concurrent calls: 7.6 ms minimum, 10.0 ms median, 14.0 ms p95, 14.4 ms maximum. Guest ping and frame counts advanced. |
-| Paced process reads | 8 calls at 1 s spacing plus 2 concurrent calls: 51.8 ms minimum, 61.8 ms median, 116.9 ms p95/maximum. Every snapshot held the same 6 bounded rows with point-in-time freshness and stable opaque references. |
-| Reconnect scope | Neither tool returned rows during host absence. After reconnect, a fresh snapshot used the new session ID and newly minted opaque references rather than the prior scope. |
-| Host impact | The host stayed at roughly 44 MB, 6 baseline threads with a transient peak of 8, and 0.0-0.7% CPU during the measured window. No timeout, unavailable result, protocol error, guest disconnect, or stopped ping was observed under load. |
+| Build identity | Commit `1a6057b`; current host debug dylib SHA-256 `3a2bcaf8ca356070075d83038975180f5285e6bd52754941a87cde2a07712f75`; current companion SHA-256 `5bc3a13dc4d0c02764c9c56c717519bbfe5b9417d9a3d57e81de77cd71915cb2`. |
+| Prior read-only load | 20 health calls at 250 ms spacing plus 4 concurrent calls measured 7.6-14.4 ms. Eight process calls at 1 s spacing plus 2 concurrent calls measured 51.8-116.9 ms. All snapshots stayed bounded and stable; host use stayed about 44 MB, 6 baseline threads, and 0.0-0.7% CPU. |
+| Health and reconnect | The current companion reported connected PowerBook health, then `now-host-unavailable` in 10 ms while the stopped host was absent and did not launch it. After relaunch, the PowerBook redialed automatically and health returned connected under a new session ID, `4BE83248-72B3-4A73-AB6E-EA9E3A0B476B`. |
+| Process observation | Fresh snapshots took 50-90 ms, contained six bounded rows before and after the action, and exposed no PSN or path. A reference from the prior session returned `now-process-reference-stale` after reconnect and acted on nothing. |
+| Exact safe launch | `SimpleText` returned seven exact candidates and launched nothing in 17.89 s. Selecting the current opaque SimpleText 1.4 candidate returned `launched` in 17.66 s; a fresh process snapshot separately showed SimpleText as the front application. |
+| Cooperative quit | The fresh SimpleText process reference was revalidated and returned `requestSent` in 230 ms. A later point-in-time process snapshot showed SimpleText absent and NOW front; the quit receipt itself did not claim exit. |
+| Approved artifact | The native Files action approved one private staged 69-byte text file for guest `Lab`; the MCP received only the one-use receipt. Redemption returned `delivered` in 180 ms after matching `file.done` (transfer `CD3F6B4E-ADDE-4823-A2F8-F3107FF33372`), with source SHA-256 `d98dac6e6cb591a19084d2400b7d2031abdb5fbb711e6d0aab33c01daddf41c4` and handed-to-NOW SHA-256 `b49e50f1c82f1caea7e34090d3da83de64128bc629be38cacd1bcbfce77e0a65`; it correctly reported `destinationBytesVerified: false`. |
+| Compatibility finding | The first 61-byte artifact exposed an existing host→guest date overflow: the deployed guest's signed parser saturated a modern optional date to January 1972. Commit `1a6057b` now omits unrepresentable dates across every host→guest file lane. The mutation test failed when that guard was removed, and a second live artifact appeared with the guest's honest creation time rather than 1972. See [Files compatibility](files.md#classic-date-compatibility-boundary). |
+| Final host state | The freshly built host was left listening and paired to `Powerbook 1400c`; its final sampled process state was 113,360 KB RSS and 1.1% CPU. The companion exited after each stdio call and no extra guest process, listener, module, port, or protocol message was introduced. |
 
-The guest remained paired and NOW remained the reported front process throughout the measured reads. No guest UI control was exercised or visually qualified during this pass.
-
-A separate safe-launch acceptance attempt later on 2026-07-24 did not
-advance the launch rung. The PowerBook was visibly paired to an
-Xcode-derived host, but the freshly built companion received typed
-`now-host-unavailable` because that running host did not expose the local
-adapter. The host did not exit through normal application controls, so
-the pass stopped rather than force-terminate the user's session. No
-guest application was launched; safe launch remains **tested**, not
-metal-verified.
+The acceptance used SimpleText as a harmless user-visible application and
+two disposable text files in `Lab`. The first remains as the evidence that
+found the timestamp defect; the second is the corrected 69-byte receipt.
+No deletion, overwrite, shell, raw path, guest configuration, or
+CodeKitten project-tree access was attempted. The agent observed the live
+host UI, paired guest responses, process transitions, and Files listings;
+it did not independently inspect the physical guest display or read back
+the destination bytes.

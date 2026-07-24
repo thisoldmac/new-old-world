@@ -118,6 +118,29 @@ Decision table (chosen with Michelle, 2026-07-20):
   `text`, `macbinary-passthrough`, `identity` now; PICT→PNG and
   PNG→PICT are future registrants, not special cases.
 
+### Classic date compatibility boundary
+
+Every host→guest file lane shares one deployed-guest constraint: the
+wire's optional `modified` value is classic Mac seconds since 1904 and
+can describe an unsigned 32-bit value, but the current guest reads that
+JSON number through `strtol` into a signed 32-bit `long`. Values above
+`2,147,483,647` therefore saturate before the File Manager sees them.
+A contemporary host date can otherwise arrive as January 1972.
+
+The canonical safe behavior is to omit `modified` when the converted
+classic value is not in `1...2,147,483,647`. The guest then preserves
+the honest date of the file it created instead of stamping fabricated
+metadata. Host decoding may still accept the full classic unsigned range
+`1...4,294,967,294`; this narrower bound applies only when encoding a
+date for the deployed guest.
+
+This is one compatibility rule for every host→guest path: Files drag or
+picker sends, host-share pulls served to the guest, and agent-approved
+artifact delivery. Any new lane must call the same bounded conversion,
+and its regression test must watch a modern date become an absent
+`modified` field. `FileConverterTests` owns the numeric boundary and the
+approved-artifact integration test proves the wire offer omits it.
+
 ## Guest surface
 
 - `files.c`: list/resolve/read/write under the root, MacBinary

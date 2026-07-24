@@ -9,7 +9,7 @@ date: 2026-07-24
 ## Goal Capsule
 
 - **Objective:** Evolve the current macOS host from a one-connection view into a polished target catalog and switcher, then improve the existing Files, Processes, Software, Capture, and Console experiences around one clearly active classic Mac.
-- **Entry gate:** Finish the optional host-side MCP companion V0 before beginning V1 implementation. All five V0 projections are implemented and tested; the bounded combined action acceptance and V0 closeout remain.
+- **Entry gate:** Finish the optional host-side MCP companion V0 before beginning V1 implementation. V0 is complete: all five projections are implemented, tested, and covered by the bounded combined PowerBook receipt. This opens the gate but does not start V1 runtime work.
 - **Transport invariant:** The classic guest continues to dial the modern host on one host-wide listener port. V1 adds no guest listener, parallel protocol, per-target port, mobile transport, shared protocol service, or multi-session runtime.
 - **Product boundary:** NOW remains a paired, human-facing host/guest product. The MCP companion projects capabilities owned by the running host and never owns guest transport, pairing, lifecycle, or UI.
 - **Verification posture:** This roadmap commits product direction, sequencing, and acceptance criteria. It does not claim that V1 behavior is implemented or verified.
@@ -110,9 +110,12 @@ CodeKitten remains the proving ground for a guest-listener design, pairing and s
 
 ### U0. Finish and close V0
 
-- Complete cooperative quit and approved artifact transfer using the existing NOW commands and current private host adapter.
-- Revalidate every action at execution time and keep verification-rung claims honest.
-- Close V0 docs and outstanding issues before V1 runtime work begins.
+- **Complete 2026-07-24.** Cooperative quit and approved artifact
+  transfer use the existing NOW commands and private host adapter.
+- Every action revalidates at execution time, and the bounded PowerBook
+  receipt records exact outcomes and limits.
+- V0 docs and its open-issues entry are closed. No V1 runtime work was
+  included in the closeout.
 
 ### U1. Target catalog and pairing model
 

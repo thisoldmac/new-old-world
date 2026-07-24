@@ -100,10 +100,12 @@ on either side.
   never receives the source or guest path, and the receipt does not claim
   destination-byte verification. The companion exposes no lifecycle
   controls and changes neither app's module inventory. All five tools are
-  tested here; the two read-only tools are metal-verified for a bounded
-  acceptance pass against the PowerBook 1400c. The three action tools have
-  not yet had their combined connected companion pass. This is not a
-  broader transport or endurance qualification.
+  tested here and have a bounded connected acceptance receipt against the
+  PowerBook 1400c, including exact launch, separately observed exit after
+  cooperative quit, and one native-approved 69-byte artifact. This is not
+  a broader transport, endurance, or destination-byte qualification; the
+  exact evidence and limits are in
+  [docs/agent-integration.md](docs/agent-integration.md).
 
 Measured on the real PB1400c: ~4.9 fps at 8-bit with predictive +
 interlace over 802.11b, and file transfers byte-exact at ~227 KB/s.

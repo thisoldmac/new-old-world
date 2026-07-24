@@ -111,7 +111,16 @@ This mapping is the first implementation deliverable. It must be checked against
 
 ### Current verification rung
 
-All five host-owned projections, the private host-local socket, and the stdio MCP companion are **tested**; the two read-only projections are also metal-verified for the bounded acceptance receipt in [`agent-integration.md`](../agent-integration.md). Safe launch, cooperative quit, and approved artifact transfer remain no higher than **tested** until their connected runs. None is a replacement transport. The read-only pass covered typed host absence, normal reconnect with a new session/reference scope, paced reads, and modest concurrency against the paired PowerBook. It did not exercise broader paired human workflows, action tools, transfers, or sustained load.
+All five host-owned projections, the private host-local socket, and the
+stdio MCP companion are **tested** and have the bounded connected
+PowerBook acceptance receipt in
+[`agent-integration.md`](../agent-integration.md). The receipt covers
+typed host absence, automatic redial with new session/reference scope,
+paced and modest concurrent reads, exact ambiguity-safe launch,
+separately observed exit after cooperative quit, and one native-approved
+artifact with matching `file.done`. None is a replacement transport.
+The pass does not qualify sustained load, arbitrary applications or
+artifacts, guest UI automation, or destination-byte identity.
 
 - The persistent connection and ordinary bidirectional file workflows are metal-verified, subject to the broken resume path and intermittent large-transfer slowdown recorded in [`open-issues.md`](../open-issues.md).
 - Guest process listing and cooperative quit are metal-verified. Host stale-list clearing across reconnect is tested but still listed as not metal-verified in [`open-issues.md`](../open-issues.md).
@@ -136,7 +145,7 @@ All five host-owned projections, the private host-local socket, and the stdio MC
 4. Add safe launch and cooperative quit with at-act-time revalidation. This slice is complete.
 5. Add the approval provider boundary and receipt-backed transfer. This slice is complete.
 6. Keep the current dial-out connection unchanged throughout V0. After CodeKitten's listener is proven and stress-tested, evaluate a shared-service extraction in a separate worktree; do not mix that migration track into the MCP tool sequence.
-7. Run the bounded combined connected acceptance pass and record only the action lanes safely observed.
+7. Run the bounded combined connected acceptance pass and record only the action lanes safely observed. This is complete; the receipt and limits are in [`agent-integration.md`](../agent-integration.md).
 
 ---
 

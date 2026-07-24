@@ -11,17 +11,30 @@ several of tonight's bugs lived in code that looked obviously correct.
 
 ## Deferred by decision
 
-**NOW agent-integration V0 implementation is complete; combined action
-acceptance remains** (2026-07-24). All five bounded projections are
-implemented and tested through the optional host-side companion:
-`now_session_health`, `now_list_processes`, exact safe launch,
-revalidated cooperative quit, and receipt-only approved artifact
-transfer through the existing put lane. The read-only pair has a bounded
-PowerBook acceptance receipt; launch, quit, and artifact transfer still
-need connected companion observation. The companion still has no guest
-component, lifecycle control, raw-path input, shell or general
-filesystem surface, force-quit surface, or CodeKitten/shared-transport
-dependency.
+**NOW agent-integration V0 is complete** (2026-07-24). All five bounded
+projections are implemented, tested, and covered by one combined
+PowerBook acceptance receipt: `now_session_health`,
+`now_list_processes`, exact safe launch, revalidated cooperative quit,
+and receipt-only approved artifact transfer through the existing put
+lane. The pass also observed typed host absence, automatic guest redial,
+new session identity, stale-reference refusal, and unchanged ordinary
+Files/Connection UI. Exact evidence and limits live in
+[`agent-integration.md`](agent-integration.md).
+
+The artifact pass found one compatibility defect and closed it before
+V0 closeout: modern classic-epoch dates saturated the deployed guest's
+signed 32-bit JSON reader and stamped January 1972. Host→guest lanes now
+omit an optional date outside the deployed reader's range; the numeric
+guard, wire omission, mutation failure, and corrected live listing are
+recorded in [`files.md`](files.md#classic-date-compatibility-boundary).
+The first disposable evidence file retains its bad stamp; no destructive
+cleanup was attempted.
+
+The companion still has no guest component, lifecycle control, raw-path
+input, shell or general filesystem surface, force-quit surface, or
+CodeKitten/shared-transport dependency. Sustained load,
+destination-byte read-back, and any shared-transport extraction remain
+outside V0 rather than hidden completion claims.
 
 **Guest-initiated change controls.** The browser on the classic side can
 list, navigate and pull, but offers no rename, delete, new folder or
