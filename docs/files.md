@@ -64,13 +64,13 @@ non-control frames).
 | Message | Direction | Purpose |
 |---|---|---|
 | `file.list {id, path, cursor?}` | host→guest | List a folder. |
-| `file.listing {id, path, entries[], more, cursor}` | guest→host | One page (≤16 entries — control frames cap at 4 KB). Entry: `name, kind(folder\|file), type, creator, dataBytes, rsrcBytes, modified`. |
+| `file.listing {id, path, entries[], more, cursor}` | guest→host | One page (≤16 entries — control frames cap at 4 KB). Entry: `name, kind(folder\|file), type, creator, dataBytes, rsrcBytes, modified, identity?`; identity is an opaque observation precondition, not authority. |
 | `file.get {id, path, container?}` | host→guest | Pull. `container`: `auto` (default) \| `data` \| `macbinary`. |
-| `file.offer {id, name, path?, container, dataBytes, rsrcBytes, type?, creator?, overwrite?}` | either | Announce an incoming file. Host→guest: `path` = destination folder in the share. Guest→host: no `path`; it lands in the host's share folder. |
-| `file.accept {id}` / `file.refuse {id, code, reason}` | answer | Codes: `busy`, `exists`, `bad-path`, `not-found`, `io-error`, `too-big`. `exists` invites a retry with `overwrite: true` after the human confirms. |
+| `file.offer {id, name, path?, container, dataBytes, rsrcBytes, type?, creator?, overwrite?, createParents?}` | either | Announce an incoming file. Host→guest: `path` = destination folder in the share. Guest→host: no `path`; it lands in the host's share folder. `createParents` defaults true for the existing human Files flow; V0.5 create-only upload sets it false so a missing destination folder refuses rather than quietly implementing `mkdir`. |
+| `file.accept {id, have?, freeBytes?, reservedBytes?, staging?}` / `file.refuse {id, code, reason}` | answer | An accept may report resume offset plus observed free space, successfully reserved stream bytes, and `same-folder-temp` staging. Codes: `busy`, `exists`, `bad-path`, `not-found`, `io-error`, `too-big`. Existing Files UI may offer a human-confirmed overwrite retry; V0.5 generic upload never does. |
 | `file.begin {id, transfer, container, bytes, ...metadata}` | sender | Announces the bulk stream (same shape family as capture.begin). |
 | `file.end {id, transfer, ok, sendMs?}` | sender | Transfer complete. |
-| `file.done {id, ok, code?, reason?}` | receiver of a put | The guest confirms the file is written and stamped (type/creator/dates) — a put isn't done until the File Manager says so. |
+| `file.done {id, ok, code?, reason?, received?, crc32?, finalization?, cleanup?}` | receiver of a put | The guest confirms the receiver outcome. Success can name receiver-confirmed bytes, CRC, same-folder rename, and temp cleanup; failure can name confirmed bytes and retained/discarded staging. A put is not done until the File Manager says so. |
 | `file.progress {id, received}` | receiver of a put | What the guest has actually taken off the wire, sent as each 32 KB write batch flushes. Advisory: dropped rather than queued when the control queue is busy, so it is a floor that may skip. |
 | `file.cancel {transfer}` | either | Mirror of capture.cancel, same drain rule. |
 
@@ -97,6 +97,31 @@ receipt means the matching guest write was acknowledged. It records hashes
 of the selected source bytes and the bytes handed to NOW, which can differ
 after text conversion, but explicitly does not claim a destination
 read-back hash.
+
+## V0.5 root-scoped staged upload
+
+The generic V0.5 upload is a NOW command, not a generic host filesystem API.
+Its caller declares one canonical destination below the persisted
+`guestRoot`, size, SHA-256, container, and optional classic metadata. NOW
+reserves private host disk while retaining five percent of currently available
+important-usage capacity, accepts ordered chunks of at most 8 KiB, verifies
+the complete digest, seals the stage read-only, then streams it through the
+existing one-at-a-time put state machine. No command accepts a host path.
+
+The guest checks free space and the `SetEOF` reservation result before
+accepting, writes through its existing 32 KiB buffer to a same-folder
+temporary item, and renames only after length/CRC/fork/metadata finalization.
+Receipts separate local send progress from receiver-confirmed bytes and report
+reservation, elapsed/rate/stall, integrity, finalization, and cleanup evidence.
+Stages expire after ten minutes and are one-attempt; duplicate or concurrent
+commit conflicts rather than issuing a second offer. V0.5 upload is
+create-only: its parent must already exist, a late collision cannot replace or
+delete that item, and success requires matching guest-reported length, CRC,
+same-folder rename, and temp cleanup. A host staging cleanup failure is reported
+as `cleanup-needed` and retained for recovery rather than claimed as removed.
+Host stage writes and outbound file reads run off the UI actor in bounded
+chunks. Update, mkdir, delete, move, deployment, and prune remain separate
+future commands behind observation preconditions.
 
 ## Containers and conversion
 

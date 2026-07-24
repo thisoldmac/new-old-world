@@ -182,7 +182,18 @@ enum OutboundFile {
     /// file. II and III also carry a CRC, which is checked when present.
     static func looksLikeMacBinary(_ data: Data) -> Bool {
         guard data.count >= 128 else { return false }
-        let b = [UInt8](data.prefix(128))
+        return validMacBinaryHeader(
+            Data(data.prefix(128)), totalBytes: data.count)
+    }
+
+    /// File-backed upload validation uses the same arithmetic without
+    /// materializing the staged artifact on the main actor.
+    static func validMacBinaryHeader(
+        _ header: Data,
+        totalBytes: Int
+    ) -> Bool {
+        guard header.count == 128 else { return false }
+        let b = [UInt8](header)
         // Reserved bytes are zero in every version.
         guard b[0] == 0, b[74] == 0, b[82] == 0,
               b[1] >= 1, b[1] <= 63 else { return false }
@@ -200,7 +211,7 @@ enum OutboundFile {
         func padded(_ n: Int) -> Int { (n + 127) / 128 * 128 }
         let expected = 128 + padded(dataLen) + padded(rsrcLen)
         // Some encoders append a little; none truncate.
-        guard data.count >= expected, data.count - expected < 256 else {
+        guard totalBytes >= expected, totalBytes - expected < 256 else {
             return false
         }
         if b[122] == 129 || b[122] == 130 {

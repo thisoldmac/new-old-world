@@ -68,6 +68,9 @@ final class NOWAgentCompanionTests: XCTestCase {
             "now_guest_files_capabilities",
             "now_guest_files_list",
             "now_guest_files_stat",
+            "now_guest_files_upload_begin",
+            "now_guest_files_upload_append",
+            "now_guest_files_upload_commit",
         ])
         let processTool = try XCTUnwrap(tools.first {
             $0["name"] as? String == "now_list_processes"
@@ -144,10 +147,24 @@ final class NOWAgentCompanionTests: XCTestCase {
             ($0["name"] as? String)?.hasPrefix(
                 "now_guest_files_") == true
         }
-        XCTAssertEqual(guestFileTools.count, 3)
-        XCTAssertTrue(guestFileTools.allSatisfy {
+        XCTAssertEqual(guestFileTools.count, 6)
+        let guestFileReadTools = guestFileTools.filter {
+            !($0["name"] as? String ?? "").contains("_upload_")
+        }
+        let guestFileUploadTools = guestFileTools.filter {
+            ($0["name"] as? String ?? "").contains("_upload_")
+        }
+        XCTAssertEqual(guestFileReadTools.count, 3)
+        XCTAssertEqual(guestFileUploadTools.count, 3)
+        XCTAssertTrue(guestFileReadTools.allSatisfy {
             let annotations = $0["annotations"] as? [String: Any]
             return annotations?["readOnlyHint"] as? Bool == true
+                && annotations?["destructiveHint"] as? Bool == false
+                && annotations?["openWorldHint"] as? Bool == false
+        })
+        XCTAssertTrue(guestFileUploadTools.allSatisfy {
+            let annotations = $0["annotations"] as? [String: Any]
+            return annotations?["readOnlyHint"] as? Bool == false
                 && annotations?["destructiveHint"] as? Bool == false
                 && annotations?["openWorldHint"] as? Bool == false
         })
@@ -373,6 +390,10 @@ final class NOWAgentCompanionTests: XCTestCase {
                     return .guestFilesList(.hostUnavailable(.guest))
                 case .guestFilesStat:
                     return .guestFilesStat(.hostUnavailable(.guest))
+                case .guestFilesUploadBegin, .guestFilesUploadAppend:
+                    return .guestFilesUploadStage(.hostUnavailable(.guest))
+                case .guestFilesUploadCommit:
+                    return .guestFilesUploadCommit(.hostUnavailable(.guest))
                 }
             })
         try localServer.start()

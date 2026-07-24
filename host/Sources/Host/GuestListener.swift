@@ -282,6 +282,7 @@ final class GuestListener: ObservableObject {
         do {
             let url = try share.destination(
                 name: offer.name, path: offer.path,
+                createParents: offer.createParents ?? true,
                 overwrite: offer.overwrite ?? false)
             note("#\(offer.id) accepting \(offer.name), "
                  + "\(offer.bytes) bytes, into the share", area: "files")
@@ -377,12 +378,49 @@ final class GuestListener: ObservableObject {
     struct FileFailure: Error {
         var code: String
         var message: String
+        var putEvidence: PutFailureEvidence?
+
+        init(
+            code: String,
+            message: String,
+            putEvidence: PutFailureEvidence? = nil
+        ) {
+            self.code = code
+            self.message = message
+            self.putEvidence = putEvidence
+        }
+    }
+
+    struct PutFailureEvidence {
+        var totalBytes: Int
+        var acceptedOffset: Int
+        var receiverConfirmedBytes: Int?
+        var elapsedMs: Int
+        var progressEvidence: String
+        var maximumProgressGapMs: Int?
+        var guestFreeBytesBefore: Int?
+        var guestReservedBytes: Int?
+        var guestStaging: String?
+        var guestCleanup: String
     }
 
     /// Host-side evidence that the matching `file.done ok:true` arrived.
     struct PutReceipt {
         var requestID: Int
         var acknowledgedAt: Date
+        var totalBytes: Int
+        var receiverConfirmedBytes: Int
+        var acceptedOffset: Int
+        var elapsedMs: Int
+        var averageBytesPerSecond: Int
+        var progressEvidence: String
+        var maximumProgressGapMs: Int?
+        var guestFreeBytesBefore: Int?
+        var guestReservedBytes: Int?
+        var guestStaging: String?
+        var finalization: String
+        var cleanup: String
+        var integrity: String
     }
 
     /// One pulled file, still in guest form: `container` says whether the
@@ -596,7 +634,56 @@ final class GuestListener: ObservableObject {
         overwrite: Bool = false,
         completion: @escaping (Result<PutReceipt, FileFailure>) -> Void
     ) {
-        guard let session, case .connected = state else {
+        let checksum = TransferIdentity.crc32(bytes)
+        startPut(
+            name: name, into: path, container: container,
+            byteCount: bytes.count, crc32: checksum,
+            fileType: fileType, creator: creator, modified: modified,
+            createParents: true, overwrite: overwrite, completion: completion
+        ) { [weak session] offer in
+            session?.sendFileOffer(
+                offer, bytes: bytes, crc32: checksum)
+        }
+    }
+
+    /// V0.5's upload lane uses the same wire state machine, but bytes stay in
+    /// the private staged file and are read one bulk frame at a time.
+    func putStagedFileWithReceipt(
+        name: String,
+        into path: String,
+        container: String,
+        source: OutboundFileSource,
+        fileType: String? = nil,
+        creator: String? = nil,
+        modified: Int? = nil,
+        overwrite: Bool = false,
+        completion: @escaping (Result<PutReceipt, FileFailure>) -> Void
+    ) {
+        startPut(
+            name: name, into: path, container: container,
+            byteCount: source.byteCount, crc32: source.crc32,
+            fileType: fileType, creator: creator, modified: modified,
+            createParents: false, overwrite: overwrite, completion: completion
+        ) { [weak session] offer in
+            session?.sendFileOffer(offer, source: source)
+        }
+    }
+
+    private func startPut(
+        name: String,
+        into path: String,
+        container: String,
+        byteCount: Int,
+        crc32: UInt32,
+        fileType: String?,
+        creator: String?,
+        modified: Int?,
+        createParents: Bool,
+        overwrite: Bool,
+        completion: @escaping (Result<PutReceipt, FileFailure>) -> Void,
+        offer: (FileOffer) -> Void
+    ) {
+        guard session != nil, case .connected = state else {
             completion(.failure(.init(code: "disconnected",
                                       message: "No Mac is connected")))
             return
@@ -612,35 +699,34 @@ final class GuestListener: ObservableObject {
         pendingPut = completion
         putId = id
         putGuestReports = false
-        putExpected = bytes.count
+        putExpected = byteCount
+        putExpectedCRC32 = crc32
+        putRequiresCompletionEvidence = !createParents
+        putStartedAt = Date()
+        putLastProgressAt = nil
+        putMaximumProgressGap = 0
+        putAccepted = nil
         // Scaled to the work: a megabyte legitimately takes minutes on
         // hardware this old, and a fixed timeout would call a healthy
         // transfer dead. Progress feeds this watchdog, so the clock only
         // runs while nothing is moving.
-        let grace = 20.0 + Double(bytes.count) / 2048.0
+        let grace = 20.0 + Double(byteCount) / 2048.0
         armWatchdog(id: id, seconds: grace,
                     tracksTraffic: false) { [weak self] reason in
             guard let self, self.pendingPut != nil else { return }
             self.session?.cancelOutbound()
-            self.settlePut(.failure(.init(code: "timeout", message: reason)))
+            self.settlePut(.failure(self.putFailure(
+                code: "timeout",
+                message: reason,
+                guestCleanup: "unknown-after-timeout")))
         }
-        // Named by content, so an interrupted attempt can be continued and
-        // an edited one cannot be mistaken for it. Computed once here; the
-        // same checksum rides file.end.
-        /* One pass over the file, not two. The token and file.end's
-           checksum are the same number, and computing it twice put a
-           full CRC of the whole file in front of the first byte AND
-           another one at the moment the person is watching for the
-           transfer to finish. */
-        let checksum = TransferIdentity.crc32(bytes)
-        session.sendFileOffer(
-            FileOffer(id: id, name: name, path: path, container: container,
-                      bytes: bytes.count, fileType: fileType,
-                      creator: creator, modified: modified,
-                      overwrite: overwrite,
-                      resumeToken: TransferIdentity.token(bytes: bytes.count,
-                                                          crc32: checksum)),
-            bytes: bytes, crc32: checksum)
+        offer(FileOffer(
+            id: id, name: name, path: path, container: container,
+            bytes: byteCount, fileType: fileType, creator: creator,
+            modified: modified, createParents: createParents,
+            overwrite: overwrite,
+            resumeToken: TransferIdentity.token(
+                bytes: byteCount, crc32: crc32)))
     }
 
     private var pendingPut: ((Result<PutReceipt, FileFailure>) -> Void)?
@@ -651,16 +737,71 @@ final class GuestListener: ObservableObject {
     /// The offered size, so a guest report (which carries only what it
     /// has taken) can be turned into a fraction.
     private var putExpected = 0
+    private var putExpectedCRC32: UInt32?
+    private var putRequiresCompletionEvidence = false
+    private var putStartedAt: Date?
+    private var putLastProgressAt: Date?
+    private var putMaximumProgressGap: TimeInterval = 0
+    private var putAccepted: FileAccept?
 
     fileprivate func settlePut(_ result: Result<PutReceipt, FileFailure>) {
         let completion = pendingPut
-        if let id = putId { clearWatchdog(id) }
+        if let id = putId {
+            clearWatchdog(id)
+            session?.clearOutboundRequest(id: id)
+        }
         pendingPut = nil
         putId = nil
         putGuestReports = false
         putExpected = 0
+        putExpectedCRC32 = nil
+        putRequiresCompletionEvidence = false
+        putStartedAt = nil
+        putLastProgressAt = nil
+        putMaximumProgressGap = 0
+        putAccepted = nil
         captureProgress = nil
         completion?(result)
+    }
+
+    private func putFailure(
+        code: String,
+        message: String,
+        receiverConfirmedBytes: Int? = nil,
+        guestCleanup: String
+    ) -> FileFailure {
+        let now = Date()
+        let elapsed = max(
+            0, now.timeIntervalSince(putStartedAt ?? now))
+        let confirmed = receiverConfirmedBytes
+            ?? (putGuestReports ? captureProgress?.received : nil)
+        return .init(
+            code: code,
+            message: message,
+            putEvidence: .init(
+                totalBytes: putExpected,
+                acceptedOffset: putAccepted?.have ?? 0,
+                receiverConfirmedBytes: confirmed,
+                elapsedMs: Int((elapsed * 1_000).rounded()),
+                progressEvidence: putGuestReports
+                    ? "guest-progress-before-failure"
+                    : "no-guest-progress",
+                maximumProgressGapMs: maximumPutGapMs(at: now),
+                guestFreeBytesBefore: putAccepted?.freeBytes,
+                guestReservedBytes: putAccepted?.reservedBytes,
+                guestStaging: putAccepted?.staging,
+                guestCleanup: guestCleanup))
+    }
+
+    private func maximumPutGapMs(at outcome: Date) -> Int? {
+        guard putGuestReports,
+              let lastActivity = putLastProgressAt ?? putStartedAt else {
+            return nil
+        }
+        let gap = max(
+            putMaximumProgressGap,
+            max(0, outcome.timeIntervalSince(lastActivity)))
+        return Int((gap * 1_000).rounded())
     }
 
     /// Abandons the file transfer; settles locally for the same reason
@@ -671,8 +812,10 @@ final class GuestListener: ObservableObject {
         // cancellation is exactly the one that is not completing.
         if pendingPut != nil {
             session?.cancelOutbound()
-            settlePut(.failure(.init(code: "cancelled",
-                                     message: "Cancelled")))
+            settlePut(.failure(putFailure(
+                code: "cancelled",
+                message: "Cancelled",
+                guestCleanup: "unknown-after-cancel")))
             return
         }
         guard pendingFile != nil else { return }
@@ -829,7 +972,10 @@ final class GuestListener: ObservableObject {
             return
         }
         if pendingPut != nil {
-            settlePut(.failure(failure))
+            settlePut(.failure(putFailure(
+                code: failure.code,
+                message: failure.message,
+                guestCleanup: "unknown-before-accept")))
             return
         }
         let completion = pendingFile
@@ -1077,8 +1223,10 @@ final class GuestListener: ObservableObject {
             file(.failure(.init(code: "disconnected", message: reason)))
         }
         if pendingPut != nil {
-            settlePut(.failure(.init(code: "disconnected",
-                                     message: reason)))
+            settlePut(.failure(putFailure(
+                code: "disconnected",
+                message: reason,
+                guestCleanup: "unknown-after-disconnect")))
         }
         deliverCapture(.failure(.init(message: reason)))
     }
@@ -1160,13 +1308,54 @@ final class GuestListener: ObservableObject {
                 guard self.putId == done.id else { return }
                 self.clearWatchdog(done.id)
                 if done.ok {
+                    let acknowledgedAt = Date()
+                    if self.putRequiresCompletionEvidence,
+                       (done.received != self.putExpected
+                        || done.crc32 != self.putExpectedCRC32
+                        || done.finalization != "same-folder-rename"
+                        || done.cleanup != "temp-renamed") {
+                        self.settlePut(.failure(self.putFailure(
+                            code: "corrupt",
+                            message:
+                                "Guest completion evidence did not match the staged upload",
+                            receiverConfirmedBytes: done.received,
+                            guestCleanup: done.cleanup ?? "unknown")))
+                        return
+                    }
+                    let startedAt = self.putStartedAt ?? acknowledgedAt
+                    let elapsed = max(
+                        0, acknowledgedAt.timeIntervalSince(startedAt))
+                    let received = done.received ?? self.putExpected
                     self.settlePut(.success(.init(
                         requestID: done.id,
-                        acknowledgedAt: Date())))
+                        acknowledgedAt: acknowledgedAt,
+                        totalBytes: self.putExpected,
+                        receiverConfirmedBytes: received,
+                        acceptedOffset: self.putAccepted?.have ?? 0,
+                        elapsedMs: Int((elapsed * 1_000).rounded()),
+                        averageBytesPerSecond: elapsed > 0
+                            ? Int(Double(received) / elapsed) : received,
+                        progressEvidence: self.putGuestReports
+                            ? "guest-progress" : "file-done-only",
+                        maximumProgressGapMs:
+                            self.maximumPutGapMs(at: acknowledgedAt),
+                        guestFreeBytesBefore:
+                            self.putAccepted?.freeBytes,
+                        guestReservedBytes:
+                            self.putAccepted?.reservedBytes,
+                        guestStaging: self.putAccepted?.staging,
+                        finalization: done.finalization
+                            ?? "file-done",
+                        cleanup: done.cleanup ?? "unknown",
+                        integrity: done.crc32 != nil
+                            ? "guest-crc32-confirmed"
+                            : "file-done-after-crc32")))
                 } else {
-                    self.settlePut(.failure(.init(
+                    self.settlePut(.failure(self.putFailure(
                         code: done.code ?? "io-error",
-                        message: done.reason ?? "the file was not written")))
+                        message: done.reason ?? "the file was not written",
+                        receiverConfirmedBytes: done.received,
+                        guestCleanup: done.cleanup ?? "unknown")))
                 }
             },
             onFileProgress: { [weak self] progress in
@@ -1175,9 +1364,23 @@ final class GuestListener: ObservableObject {
                 // counter for the rest of this put, for the bar and for
                 // the watchdog alike.
                 self.putGuestReports = true
+                let now = Date()
+                if let prior = self.putLastProgressAt {
+                    self.putMaximumProgressGap = max(
+                        self.putMaximumProgressGap,
+                        now.timeIntervalSince(prior))
+                } else if let started = self.putStartedAt {
+                    self.putMaximumProgressGap =
+                        now.timeIntervalSince(started)
+                }
+                self.putLastProgressAt = now
                 self.captureProgress = .init(received: progress.received,
                                              expected: self.putExpected)
                 self.touchWatchdog(progress.id)
+            },
+            onFileAccept: { [weak self] accept in
+                guard let self, self.putId == accept.id else { return }
+                self.putAccepted = accept
             },
             onServeList: { [weak self] request in
                 self?.serveList(request)
@@ -1215,8 +1418,11 @@ final class GuestListener: ObservableObject {
                 if let id = self.putId { self.touchWatchdog(id) }
             },
             onOutboundFailed: { [weak self] message in
-                self?.settlePut(.failure(.init(code: "io-error",
-                                               message: message)))
+                guard let self else { return }
+                self.settlePut(.failure(self.putFailure(
+                    code: "io-error",
+                    message: message,
+                    guestCleanup: "unknown-after-local-read-failure")))
             },
             onClosed: { [weak self] closedSession, reason in
                 guard let self else { return }
@@ -1268,6 +1474,7 @@ final class Session {
         (Result<GuestListener.FileDelivery, GuestListener.FileFailure>) -> Void
     private let onFileDone: (FileDone) -> Void
     private let onFileProgress: (FileProgress) -> Void
+    private let onFileAccept: (FileAccept) -> Void
     private let onServeList: (FileList) -> Void
     private let onServeGet: (FileGet) -> Void
     private let onAcceptOffer: (FileOffer) -> Void
@@ -1337,6 +1544,7 @@ final class Session {
              -> Void,
          onFileDone: @escaping (FileDone) -> Void,
          onFileProgress: @escaping (FileProgress) -> Void,
+         onFileAccept: @escaping (FileAccept) -> Void,
          onServeList: @escaping (FileList) -> Void,
          onServeGet: @escaping (FileGet) -> Void,
          onAcceptOffer: @escaping (FileOffer) -> Void,
@@ -1370,6 +1578,7 @@ final class Session {
         self.onFileDelivery = onFileDelivery
         self.onFileDone = onFileDone
         self.onFileProgress = onFileProgress
+        self.onFileAccept = onFileAccept
         self.onServeList = onServeList
         self.onServeGet = onServeGet
         self.onAcceptOffer = onAcceptOffer
@@ -1541,6 +1750,7 @@ final class Session {
         case .fileMkdir(let request):
             onServeChange(.mkdir(request))
         case .fileAccept(let accept):
+            onFileAccept(accept)
             sendAcceptedFile(accept)
         case .fileDone(let done):
             onFileDone(done)
@@ -1671,12 +1881,21 @@ final class Session {
     /// Holds an offered file until the guest accepts it. The bytes wait
     /// here rather than riding with the offer: a refusal (busy, a name
     /// collision) must cost nothing but the message.
-    private var pendingOffer: (offer: FileOffer, bytes: Data,
-                               crc32: UInt32?)?
+    private enum OfferedSource {
+        case memory(Data, crc32: UInt32?)
+        case staged(OutboundFileSource)
+    }
+
+    private var pendingOffer: (offer: FileOffer, source: OfferedSource)?
     private var transferSeq: UInt16 = 0
 
     func sendFileOffer(_ offer: FileOffer, bytes: Data, crc32: UInt32?) {
-        pendingOffer = (offer, bytes, crc32)
+        pendingOffer = (offer, .memory(bytes, crc32: crc32))
+        send(.fileOffer(offer))
+    }
+
+    func sendFileOffer(_ offer: FileOffer, source: OutboundFileSource) {
+        pendingOffer = (offer, .staged(source))
         send(.fileOffer(offer))
     }
 
@@ -1693,7 +1912,7 @@ final class Session {
     private struct Outbound {
         var id: Int
         var transfer: UInt16
-        var bytes: Data
+        var source: Source
         var sent: Int
         var cancelled: Bool
         /// Over the WHOLE file, computed once when the transfer was
@@ -1709,6 +1928,31 @@ final class Session {
         var acking: Bool = false
         /// True while a frame is being withheld for want of window.
         var parked: Bool = false
+        /// Prevents an ACK callback from scheduling a second file read while
+        /// the dedicated staging executor is servicing the current chunk.
+        var reading: Bool = false
+
+        enum Source {
+            case memory(Data)
+            case staged(OutboundFileSource.Reader)
+
+            var byteCount: Int {
+                switch self {
+                case .memory(let bytes): bytes.count
+                case .staged(let reader): reader.byteCount
+                }
+            }
+
+            func read(offset: Int, count: Int) async throws -> Data {
+                switch self {
+                case .memory(let bytes):
+                    return Data(bytes[offset..<(offset + count)])
+                case .staged(let reader):
+                    return try await reader.readAsync(
+                        offset: offset, count: count)
+                }
+            }
+        }
     }
 
     private var outbound: Outbound?
@@ -1737,7 +1981,9 @@ final class Session {
             bytes: plan.bytes.count, dataBytes: nil, rsrcBytes: nil,
             fileType: plan.fileType, creator: plan.creator,
             modified: modified)))
-        outbound = Outbound(id: id, transfer: transfer, bytes: plan.bytes,
+        outbound = Outbound(
+                            id: id, transfer: transfer,
+                            source: .memory(plan.bytes),
                             sent: 0, cancelled: false,
                             crc32: TransferIdentity.crc32(plan.bytes))
         onOutboundProgress(0, plan.bytes.count)
@@ -1883,42 +2129,61 @@ final class Session {
     }
 
     private func sendAcceptedFile(_ accept: FileAccept) {
-        guard let (offer, bytes, checksum) = pendingOffer,
-              offer.id == accept.id else { return }
+        guard let pending = pendingOffer,
+              pending.offer.id == accept.id else { return }
         pendingOffer = nil
+        let offer = pending.offer
+        let source: Outbound.Source
+        let checksum: UInt32?
+        do {
+            switch pending.source {
+            case .memory(let bytes, let crc32):
+                source = .memory(bytes)
+                checksum = crc32
+            case .staged(let staged):
+                source = .staged(try staged.openReader())
+                checksum = staged.crc32
+            }
+        } catch {
+            onOutboundFailed(
+                "the private staged upload changed before transfer")
+            return
+        }
         let transfer = nextTransfer()
         // Resume where the guest says it already is. Trust but bound it:
         // a `have` past the end of the file, or one offered without our
         // token, would silently skip bytes that were never sent.
         var start = 0
-        if let have = accept.have, have > 0, have < bytes.count,
+        if let have = accept.have, have > 0, have < source.byteCount,
            offer.resumeToken != nil {
             start = have
-            onLog("Resuming at \(have) of \(bytes.count) bytes", "wire", .info)
+            onLog("Resuming at \(have) of \(source.byteCount) bytes",
+                  "wire", .info)
         }
         send(.fileBegin(FileBegin(
             id: offer.id, transfer: Int(transfer), name: offer.name,
-            container: offer.container, bytes: bytes.count,
+            container: offer.container, bytes: source.byteCount,
             dataBytes: nil, rsrcBytes: nil, fileType: offer.fileType,
             creator: offer.creator, modified: offer.modified,
             offset: start > 0 ? start : nil,
             resumeToken: offer.resumeToken)))
-        outbound = Outbound(id: offer.id, transfer: transfer, bytes: bytes,
+        outbound = Outbound(id: offer.id, transfer: transfer, source: source,
                             sent: start, cancelled: false, crc32: checksum,
                             acked: start)
-        onOutboundProgress(start, bytes.count)
+        onOutboundProgress(start, source.byteCount)
         sendNextOutboundChunk()
     }
 
     private func sendNextOutboundChunk() {
         guard var out = outbound else { return }
+        guard !out.reading else { return }
         if out.cancelled {
             outbound = nil
             send(.fileEnd(FileEnd(id: out.id, transfer: Int(out.transfer),
                                   ok: false, sendMs: nil)))
             return
         }
-        guard out.sent < out.bytes.count else {
+        guard out.sent < out.source.byteCount else {
             outbound = nil
             // Over the WHOLE file, not the bytes this session sent: a
             // resumed file is stitched from two attempts and the seam is
@@ -1938,34 +2203,57 @@ final class Session {
             return
         }
         let end = min(out.sent + Self.outboundFrameBytes,
-                      out.bytes.count)
-        let last = end == out.bytes.count
-        guard let frame = try? FrameCodec.encode(
-            channel: .bulk, flags: last ? [.end] : [],
-            transfer: out.transfer,
-            payload: Data(out.bytes[out.sent..<end])) else {
-            outbound = nil
-            send(.fileEnd(FileEnd(id: out.id, transfer: Int(out.transfer),
-                                  ok: false, sendMs: nil)))
-            return
-        }
-        out.sent = end
+                      out.source.byteCount)
+        let last = end == out.source.byteCount
+        let readOffset = out.sent
+        out.reading = true
         outbound = out
-        let progress = out.sent
-        let total = out.bytes.count
-        sendMetered(frame) { [weak self] error in
-            guard let self else { return }
-            if let error {
-                // Swallowing this reported a full progress bar for
-                // bytes that never left: the transfer looked
-                // complete while a third of the file had arrived.
+        Task { @MainActor [weak self] in
+            let payload: Data
+            do {
+                payload = try await out.source.read(
+                    offset: readOffset, count: end - readOffset)
+            } catch {
+                guard let self, self.outbound?.id == out.id else { return }
                 self.outbound = nil
-                self.onOutboundFailed("the connection refused the "
-                                      + "data: \(error)")
+                self.onOutboundFailed(
+                    "the private staged upload could not be read completely")
                 return
             }
-            self.onOutboundProgress(progress, total)
-            self.sendNextOutboundChunk()
+            guard let self, var current = self.outbound,
+                  current.id == out.id,
+                  current.transfer == out.transfer,
+                  current.sent == readOffset else {
+                return
+            }
+            current.reading = false
+            guard let frame = try? FrameCodec.encode(
+                channel: .bulk, flags: last ? [.end] : [],
+                transfer: current.transfer, payload: payload) else {
+                self.outbound = nil
+                self.send(.fileEnd(FileEnd(
+                    id: current.id, transfer: Int(current.transfer),
+                    ok: false, sendMs: nil)))
+                return
+            }
+            current.sent = end
+            self.outbound = current
+            let progress = current.sent
+            let total = current.source.byteCount
+            self.sendMetered(frame) { [weak self] error in
+                guard let self else { return }
+                if let error {
+                    // Swallowing this reported a full progress bar for
+                    // bytes that never left: the transfer looked
+                    // complete while a third of the file had arrived.
+                    self.outbound = nil
+                    self.onOutboundFailed("the connection refused the "
+                                          + "data: \(error)")
+                    return
+                }
+                self.onOutboundProgress(progress, total)
+                self.sendNextOutboundChunk()
+            }
         }
     }
 
@@ -2036,7 +2324,19 @@ final class Session {
     /// Stops an outbound file at the next chunk boundary — never
     /// mid-frame, which would desync the peer's decoder.
     func cancelOutbound() {
+        if pendingOffer != nil {
+            pendingOffer = nil
+        }
         outbound?.cancelled = true
+    }
+
+    func clearOutboundRequest(id: Int) {
+        if pendingOffer?.offer.id == id {
+            pendingOffer = nil
+        }
+        if outbound?.id == id {
+            outbound?.cancelled = true
+        }
     }
 
     func requestStreamStop(id: Int) {

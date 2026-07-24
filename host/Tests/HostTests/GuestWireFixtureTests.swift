@@ -87,9 +87,11 @@ final class GuestWireFixtureTests: XCTestCase {
     func testFileListingAsTheGuestWritesIt() throws {
         let json = """
         {"type":"file.listing","id":2,"path":"","entries":[\
-        {"name":"Docs","kind":"folder","modified":3300000000},\
+        {"name":"Docs","kind":"folder","modified":3300000000,\
+        "identity":"0123456789abcdef"},\
         {"name":"Notes","kind":"file","fileType":"TEXT","creator":"ttxt",\
-        "dataBytes":66,"rsrcBytes":0,"modified":3300000000}],\
+        "dataBytes":66,"rsrcBytes":0,"modified":3300000000,\
+        "identity":"fedcba9876543210"}],\
         "more":false,"cursor":3,"root":"Macintosh HD:Lab:"}
         """
         guard case .fileListing(let listing) = try decode(json) else {
@@ -97,7 +99,30 @@ final class GuestWireFixtureTests: XCTestCase {
         }
         XCTAssertEqual(listing.entries.count, 2)
         XCTAssertEqual(listing.entries.first?.isFolder, true)
+        XCTAssertEqual(listing.entries.first?.identity,
+                       "0123456789abcdef")
         XCTAssertEqual(listing.root, "Macintosh HD:Lab:")
+    }
+
+    func testGuestReservationAndFinalizationEvidenceDecodes() throws {
+        guard case .fileAccept(let accept) = try decode(
+            #"{"type":"file.accept","id":5,"freeBytes":5000000,"reservedBytes":4096,"staging":"same-folder-temp"}"#
+        ) else {
+            return XCTFail("not an accept")
+        }
+        XCTAssertEqual(accept.freeBytes, 5_000_000)
+        XCTAssertEqual(accept.reservedBytes, 4_096)
+        XCTAssertEqual(accept.staging, "same-folder-temp")
+
+        guard case .fileDone(let done) = try decode(
+            #"{"type":"file.done","id":5,"ok":true,"received":4096,"crc32":305419896,"finalization":"same-folder-rename","cleanup":"temp-renamed"}"#
+        ) else {
+            return XCTFail("not done")
+        }
+        XCTAssertEqual(done.received, 4_096)
+        XCTAssertEqual(done.crc32, 0x12345678)
+        XCTAssertEqual(done.finalization, "same-folder-rename")
+        XCTAssertEqual(done.cleanup, "temp-renamed")
     }
 
     /// A listing without the root, which is what a subfolder gets and

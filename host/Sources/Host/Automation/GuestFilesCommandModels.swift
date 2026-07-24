@@ -22,6 +22,9 @@ enum GuestFileCommandOutcome: String, Equatable, Sendable {
     case notFound
     case scanLimit
     case refused
+    case expired
+    case conflict
+    case failed
 }
 
 struct GuestFileCommandReceipt: Equatable, Sendable {
@@ -33,11 +36,60 @@ struct GuestFileCommandReceipt: Equatable, Sendable {
     let completedAt: Date
     let outcome: GuestFileCommandOutcome
     let wireRequestCount: Int
+    let affectedPaths: [String]
+
+    init(
+        commandID: UUID,
+        sessionID: UUID?,
+        policyVersion: Int,
+        operation: GuestFileCommandKind,
+        startedAt: Date,
+        completedAt: Date,
+        outcome: GuestFileCommandOutcome,
+        wireRequestCount: Int,
+        affectedPaths: [String] = []
+    ) {
+        self.commandID = commandID
+        self.sessionID = sessionID
+        self.policyVersion = policyVersion
+        self.operation = operation
+        self.startedAt = startedAt
+        self.completedAt = completedAt
+        self.outcome = outcome
+        self.wireRequestCount = wireRequestCount
+        self.affectedPaths = affectedPaths
+    }
 }
 
 struct GuestFileCommandFailure: Equatable, Sendable {
     let code: String
     let message: String
+    let transferEvidence: GuestFileTransferFailureEvidence?
+
+    init(
+        code: String,
+        message: String,
+        transferEvidence: GuestFileTransferFailureEvidence? = nil
+    ) {
+        self.code = code
+        self.message = message
+        self.transferEvidence = transferEvidence
+    }
+}
+
+struct GuestFileTransferFailureEvidence: Equatable, Sendable {
+    let totalBytes: Int
+    let acceptedOffset: Int
+    let receiverConfirmedBytes: Int?
+    let elapsedMs: Int
+    let stalledState: String
+    let maximumProgressGapMs: Int?
+    let progressEvidence: String
+    let guestFreeBytesBefore: Int?
+    let guestReservedBytes: Int?
+    let guestStaging: String?
+    let hostStagingCleanup: String
+    let guestCleanup: String
 }
 
 struct GuestFileCommandResponse<Value> {
@@ -68,6 +120,16 @@ struct GuestFileObservedEntry: Equatable, Sendable {
     let dataBytes: Int?
     let resourceBytes: Int?
     let modified: Int?
+    /// Host-minted handle for this exact guest observation. The guest's
+    /// catalog token stays private to the command layer.
+    let observationReference: String?
+}
+
+struct GuestFileMutationPrecondition: Equatable, Sendable {
+    let sessionID: UUID
+    let policyVersion: Int
+    let path: String
+    let guestIdentity: String
 }
 
 struct GuestFileListingSnapshot: Equatable, Sendable {
@@ -77,4 +139,49 @@ struct GuestFileListingSnapshot: Equatable, Sendable {
     let nextCursor: Int?
     let rootLabel: String?
     let observedAt: Date
+}
+
+struct GuestFileUploadBeginRequest: Equatable, Sendable {
+    let destinationPath: String
+    let bytes: Int
+    let sha256: String
+    let container: String
+    let fileType: String?
+    let creator: String?
+    let modified: Int?
+}
+
+struct GuestFileUploadStageStatus: Equatable, Sendable {
+    let uploadID: UUID
+    let destinationPath: String
+    let expectedBytes: Int
+    let receivedBytes: Int
+    let maximumChunkBytes: Int
+    let expiresAt: Date
+    let hostAvailableBytesAtStart: Int64
+    let hostReservedBytes: Int
+    let sealed: Bool
+}
+
+struct GuestFileUploadTransferReceipt: Equatable, Sendable {
+    let uploadID: UUID
+    let destinationPath: String
+    let container: String
+    let sha256: String
+    let totalBytes: Int
+    let acceptedOffset: Int
+    let receiverConfirmedBytes: Int
+    let elapsedMs: Int
+    let averageBytesPerSecond: Int
+    let stalledState: String
+    let maximumProgressGapMs: Int?
+    let progressEvidence: String
+    let guestFreeBytesBefore: Int?
+    let guestReservedBytes: Int?
+    let guestStaging: String?
+    let finalization: String
+    let destinationAcknowledged: Bool
+    let integrity: String
+    let hostStagingCleanup: String
+    let guestCleanup: String
 }

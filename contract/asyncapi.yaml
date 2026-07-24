@@ -866,6 +866,15 @@ components:
               modified:
                 type: integer
                 description: Classic Mac seconds since 1904.
+              identity:
+                type: string
+                maxLength: 16
+                pattern: "^[0-9a-f]{16}$"
+                description: >
+                  Opaque responder-generated catalog identity for this exact
+                  observation. It is not a path or an authorization token.
+                  A mutation may carry it back only as a guest-side
+                  precondition recomputed immediately before acting.
         more: { type: boolean }
         cursor: { type: integer }
         root:
@@ -1103,7 +1112,13 @@ components:
           type: string
           description: >
             Destination FOLDER, relative to the share root; "" is the
-            root itself. Missing parents are created inside the share.
+            root itself.
+        createParents:
+          type: boolean
+          description: >
+            Absent or true preserves the human Files lane: missing parent
+            folders are created inside the share. False requires the exact
+            destination folder to exist and refuses before mutation.
         container: { enum: [data, macbinary] }
         bytes:
           type: integer
@@ -1141,6 +1156,23 @@ components:
             should begin at. Absent or 0 means start from the beginning.
             Only ever non-zero when the offer carried a resumeToken
             matching a partial the receiver still has.
+        freeBytes:
+          type: integer
+          minimum: 0
+          description: >
+            Receiver-observed free bytes before reserving this transfer.
+            Optional for older receivers and when the volume cannot report it.
+        reservedBytes:
+          type: integer
+          minimum: 0
+          description: >
+            Remaining stream bytes for which the receiver successfully
+            reserved disk space before accepting.
+        staging:
+          enum: [same-folder-temp]
+          description: >
+            Accepted bytes land under a temporary name in the destination
+            folder and cannot appear under the final name before validation.
     FileDone:
       type: object
       required: [type, id, ok]
@@ -1152,6 +1184,19 @@ components:
         code:
           enum: [exists, bad-path, io-error, too-big, cancelled, corrupt]
         reason: { type: string }
+        received:
+          type: integer
+          minimum: 0
+          description: Receiver-confirmed stream bytes at this outcome.
+        crc32:
+          type: integer
+          description: Receiver-computed CRC-32 of the complete stream.
+        finalization:
+          enum: [same-folder-rename]
+          description: Present only after the temporary item took its final name.
+        cleanup:
+          enum: [temp-renamed, temp-discarded, partial-retained, unknown]
+          description: What happened to the receiver's staging artifact.
     FileProgress:
       type: object
       required: [type, id, received]

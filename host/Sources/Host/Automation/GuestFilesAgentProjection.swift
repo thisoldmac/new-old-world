@@ -1,3 +1,4 @@
+import Foundation
 import NOWAgentIntegration
 
 @MainActor
@@ -23,6 +24,41 @@ extension GuestFilesCommandService {
     func agentStat(path: String)
         async -> AgentIntegrationGuestFileStatResult {
         let response = await stat(path: path)
+        return .completed(
+            receipt: response.receipt.agentValue,
+            value: response.value.map(\.agentValue),
+            failure: response.failure.map(\.agentValue))
+    }
+
+    func agentBeginUpload(_ request: AgentIntegrationGuestFileUploadBegin)
+        async -> AgentIntegrationGuestFileUploadStageResult {
+        let response = await beginUpload(.init(
+            destinationPath: request.destinationPath,
+            bytes: request.bytes,
+            sha256: request.sha256,
+            container: request.container,
+            fileType: request.fileType,
+            creator: request.creator,
+            modified: request.modified))
+        return .completed(
+            receipt: response.receipt.agentValue,
+            value: response.value.map(\.agentValue),
+            failure: response.failure.map(\.agentValue))
+    }
+
+    func agentAppendUpload(uploadID: UUID, offset: Int, bytes: Data)
+        async -> AgentIntegrationGuestFileUploadStageResult {
+        let response = await appendUpload(
+            uploadID: uploadID, offset: offset, bytes: bytes)
+        return .completed(
+            receipt: response.receipt.agentValue,
+            value: response.value.map(\.agentValue),
+            failure: response.failure.map(\.agentValue))
+    }
+
+    func agentCommitUpload(uploadID: UUID) async
+        -> AgentIntegrationGuestFileUploadCommitResult {
+        let response = await commitUpload(uploadID: uploadID)
         return .completed(
             receipt: response.receipt.agentValue,
             value: response.value.map(\.agentValue),
@@ -58,6 +94,9 @@ private extension GuestFileCommandOutcome {
         case .notFound: .notFound
         case .scanLimit: .scanLimit
         case .refused: .refused
+        case .expired: .expired
+        case .conflict: .conflict
+        case .failed: .failed
         }
     }
 }
@@ -72,13 +111,76 @@ private extension GuestFileCommandReceipt {
             startedAt: startedAt,
             completedAt: completedAt,
             outcome: outcome.agentValue,
-            wireRequestCount: wireRequestCount)
+            wireRequestCount: wireRequestCount,
+            affectedPaths: affectedPaths)
+    }
+}
+
+private extension GuestFileUploadStageStatus {
+    var agentValue: AgentIntegrationGuestFileUploadStage {
+        .init(
+            uploadID: uploadID,
+            destinationPath: destinationPath,
+            expectedBytes: expectedBytes,
+            receivedBytes: receivedBytes,
+            maximumChunkBytes: maximumChunkBytes,
+            expiresAt: expiresAt,
+            hostAvailableBytesAtStart: hostAvailableBytesAtStart,
+            hostReservedBytes: hostReservedBytes,
+            sealed: sealed)
+    }
+}
+
+private extension GuestFileUploadTransferReceipt {
+    var agentValue: AgentIntegrationGuestFileUploadReceipt {
+        .init(
+            uploadID: uploadID,
+            destinationPath: destinationPath,
+            container: container,
+            sha256: sha256,
+            totalBytes: totalBytes,
+            acceptedOffset: acceptedOffset,
+            receiverConfirmedBytes: receiverConfirmedBytes,
+            elapsedMs: elapsedMs,
+            averageBytesPerSecond: averageBytesPerSecond,
+            stalledState: stalledState,
+            maximumProgressGapMs: maximumProgressGapMs,
+            progressEvidence: progressEvidence,
+            guestFreeBytesBefore: guestFreeBytesBefore,
+            guestReservedBytes: guestReservedBytes,
+            guestStaging: guestStaging,
+            finalization: finalization,
+            destinationAcknowledged: destinationAcknowledged,
+            integrity: integrity,
+            hostStagingCleanup: hostStagingCleanup,
+            guestCleanup: guestCleanup)
     }
 }
 
 private extension GuestFileCommandFailure {
     var agentValue: AgentIntegrationGuestFileFailure {
-        .init(code: code, message: message)
+        .init(
+            code: code,
+            message: message,
+            transferEvidence: transferEvidence.map(\.agentValue))
+    }
+}
+
+private extension GuestFileTransferFailureEvidence {
+    var agentValue: AgentIntegrationGuestFileTransferFailureEvidence {
+        .init(
+            totalBytes: totalBytes,
+            acceptedOffset: acceptedOffset,
+            receiverConfirmedBytes: receiverConfirmedBytes,
+            elapsedMs: elapsedMs,
+            stalledState: stalledState,
+            maximumProgressGapMs: maximumProgressGapMs,
+            progressEvidence: progressEvidence,
+            guestFreeBytesBefore: guestFreeBytesBefore,
+            guestReservedBytes: guestReservedBytes,
+            guestStaging: guestStaging,
+            hostStagingCleanup: hostStagingCleanup,
+            guestCleanup: guestCleanup)
     }
 }
 
@@ -109,7 +211,8 @@ private extension GuestFileObservedEntry {
             creator: creator,
             dataBytes: dataBytes,
             resourceBytes: resourceBytes,
-            modified: modified)
+            modified: modified,
+            observationReference: observationReference)
     }
 }
 

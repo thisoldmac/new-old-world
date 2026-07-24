@@ -42,6 +42,10 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .guestFilesList(.hostUnavailable(.guest))
                 case .guestFilesStat:
                     return .guestFilesStat(.hostUnavailable(.guest))
+                case .guestFilesUploadBegin, .guestFilesUploadAppend:
+                    return .guestFilesUploadStage(.hostUnavailable(.guest))
+                case .guestFilesUploadCommit:
+                    return .guestFilesUploadCommit(.hostUnavailable(.guest))
                 }
             })
         try server.start()
@@ -174,6 +178,10 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .guestFilesList(.hostUnavailable(.guest))
                 case .guestFilesStat:
                     return .guestFilesStat(.hostUnavailable(.guest))
+                case .guestFilesUploadBegin, .guestFilesUploadAppend:
+                    return .guestFilesUploadStage(.hostUnavailable(.guest))
+                case .guestFilesUploadCommit:
+                    return .guestFilesUploadCommit(.hostUnavailable(.guest))
                 }
             })
         try server.start()
@@ -232,6 +240,10 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .guestFilesList(.hostUnavailable(.guest))
                 case .guestFilesStat:
                     return .guestFilesStat(.hostUnavailable(.guest))
+                case .guestFilesUploadBegin, .guestFilesUploadAppend:
+                    return .guestFilesUploadStage(.hostUnavailable(.guest))
+                case .guestFilesUploadCommit:
+                    return .guestFilesUploadCommit(.hostUnavailable(.guest))
                 }
             })
 
@@ -269,6 +281,10 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .guestFilesList(.hostUnavailable(.guest))
                 case .guestFilesStat:
                     return .guestFilesStat(.hostUnavailable(.guest))
+                case .guestFilesUploadBegin, .guestFilesUploadAppend:
+                    return .guestFilesUploadStage(.hostUnavailable(.guest))
+                case .guestFilesUploadCommit:
+                    return .guestFilesUploadCommit(.hostUnavailable(.guest))
                 }
             })
         try server.start()
@@ -407,6 +423,10 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .guestFilesList(.hostUnavailable(.guest))
                 case .guestFilesStat:
                     return .guestFilesStat(.hostUnavailable(.guest))
+                case .guestFilesUploadBegin, .guestFilesUploadAppend:
+                    return .guestFilesUploadStage(.hostUnavailable(.guest))
+                case .guestFilesUploadCommit:
+                    return .guestFilesUploadCommit(.hostUnavailable(.guest))
                 }
             })
         try server.start()
@@ -472,6 +492,10 @@ final class AgentIntegrationSocketTests: XCTestCase {
                         .hostUnavailable(.guest))
                 case .guestFilesStat:
                     return .guestFilesStat(.hostUnavailable(.guest))
+                case .guestFilesUploadBegin, .guestFilesUploadAppend:
+                    return .guestFilesUploadStage(.hostUnavailable(.guest))
+                case .guestFilesUploadCommit:
+                    return .guestFilesUploadCommit(.hostUnavailable(.guest))
                 }
             })
         try server.start()
@@ -499,7 +523,7 @@ final class AgentIntegrationSocketTests: XCTestCase {
         let requestID = UUID().uuidString
         let invalid = Data(
             """
-            {"version":4,"requestID":"\(requestID)","operation":"guest_files_list","guestFilePath":"","guestFileCursor":0}
+            {"version":5,"requestID":"\(requestID)","operation":"guest_files_list","guestFilePath":"","guestFileCursor":0}
             """.utf8)
 
         let response = try await AgentIntegrationLocalClient(
@@ -509,6 +533,110 @@ final class AgentIntegrationSocketTests: XCTestCase {
         XCTAssertEqual(decoded.error?.code, "invalid-request")
         let handled = await invocation.wasHandled
         XCTAssertFalse(handled)
+    }
+
+    func testLocalSchemaRejectsMalformedUploadChunkBeforeHandler()
+        async throws {
+        let (endpoint, root) = try temporaryEndpoint()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let invocation = InvocationFlag()
+        let server = try AgentIntegrationLocalServer(
+            endpoint: endpoint,
+            handler: { _ in
+                await invocation.mark()
+                return .guestFilesUploadStage(.hostUnavailable(.guest))
+            })
+        try server.start()
+        defer { server.stop() }
+        let requestID = UUID().uuidString
+        let uploadID = UUID().uuidString
+        let invalid = Data(
+            """
+            {"version":5,"requestID":"\(requestID)","operation":"guest_files_upload_append","guestFileUploadID":"\(uploadID)","guestFileUploadOffset":0,"guestFileUploadChunk":"not base64!"}
+            """.utf8)
+
+        let response = try await AgentIntegrationLocalClient(
+            endpoint: endpoint).sendRaw(invalid)
+        let decoded = try AgentIntegrationLocalCodec.decodeResponse(response)
+
+        XCTAssertEqual(decoded.error?.code, "invalid-request")
+        let handled = await invocation.wasHandled
+        XCTAssertFalse(handled)
+    }
+
+    func testLocalSchemaRejectsUploadMetadataOutsidePublicBounds()
+        async throws {
+        let (endpoint, root) = try temporaryEndpoint()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let invocation = InvocationFlag()
+        let server = try AgentIntegrationLocalServer(
+            endpoint: endpoint,
+            handler: { _ in
+                await invocation.mark()
+                return .guestFilesUploadStage(.hostUnavailable(.guest))
+            })
+        try server.start()
+        defer { server.stop() }
+        let requestID = UUID().uuidString
+        let invalid = Data(
+            """
+            {"version":5,"requestID":"\(requestID)","operation":"guest_files_upload_begin","guestFileUpload":{"destinationPath":"Drops:x","bytes":1,"sha256":"\(String(repeating: "١", count: 64))","container":"data","fileType":"TOO-LONG","modified":-1}}
+            """.utf8)
+
+        let response = try await AgentIntegrationLocalClient(
+            endpoint: endpoint).sendRaw(invalid)
+        let decoded = try AgentIntegrationLocalCodec.decodeResponse(response)
+
+        XCTAssertEqual(decoded.error?.code, "invalid-request")
+        let handled = await invocation.wasHandled
+        XCTAssertFalse(handled)
+    }
+
+    func testUploadRequestsRoundTripThroughThePrivateSocket()
+        async throws {
+        let (endpoint, root) = try temporaryEndpoint()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recorder = UploadOperationRecorder()
+        let server = try AgentIntegrationLocalServer(
+            endpoint: endpoint,
+            handler: { request in
+                await recorder.record(request.operation)
+                switch request.operation {
+                case .guestFilesUploadBegin, .guestFilesUploadAppend:
+                    return .guestFilesUploadStage(.hostUnavailable(.guest))
+                case .guestFilesUploadCommit:
+                    return .guestFilesUploadCommit(.hostUnavailable(.guest))
+                default:
+                    return .sessionHealth(.hostUnavailable)
+                }
+            })
+        try server.start()
+        defer { server.stop() }
+        let client = try AgentIntegrationLocalClient(endpoint: endpoint)
+        let uploadID = UUID()
+        let begin = try await client.beginGuestFileUpload(.init(
+            destinationPath: "Drops:x",
+            bytes: 3,
+            sha256: String(repeating: "a", count: 64),
+            container: "data",
+            fileType: "TEXT",
+            creator: "ttxt",
+            modified: 1))
+        let append = try await client.appendGuestFileUpload(
+            uploadID: uploadID, offset: 0, bytes: Data("abc".utf8))
+        let commit = try await client.commitGuestFileUpload(
+            uploadID: uploadID)
+
+        guard case .hostUnavailable = begin,
+              case .hostUnavailable = append,
+              case .hostUnavailable = commit else {
+            return XCTFail("all three typed socket responses must decode")
+        }
+        let operations = await recorder.operations
+        XCTAssertEqual(
+            operations,
+            [.guestFilesUploadBegin, .guestFilesUploadAppend,
+             .guestFilesUploadCommit])
     }
 
     func testSocketRoundTripsOnlyAnOpaqueLaunchSelection() async throws {
@@ -761,5 +889,13 @@ private actor InvocationFlag {
 
     func mark() {
         wasHandled = true
+    }
+}
+
+private actor UploadOperationRecorder {
+    private(set) var operations: [AgentIntegrationLocalRequest.Operation] = []
+
+    func record(_ operation: AgentIntegrationLocalRequest.Operation) {
+        operations.append(operation)
     }
 }

@@ -69,6 +69,14 @@ final class HostShareTests: XCTestCase {
         XCTAssertEqual(byName["Docs"]?.isFolder, true)
         XCTAssertEqual(byName["Notes.txt"]?.isFolder, false)
         XCTAssertEqual(byName["Notes.txt"]?.dataBytes, 5)
+        XCTAssertTrue(
+            byName["Notes.txt"]?.identity?.range(
+                of: "^[0-9a-f]{16}$",
+                options: .regularExpression) != nil)
+        XCTAssertEqual(
+            byName["Notes.txt"]?.identity,
+            try share.list(path: "", cursor: 1, limit: 16)
+                .entries.first(where: { $0.name == "Notes.txt" })?.identity)
         XCTAssertFalse(page.more)
     }
 

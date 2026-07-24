@@ -277,6 +277,22 @@ final class GuestWireConformanceTests: XCTestCase {
         XCTAssertGreaterThan(checked, 0, "no guest sources scanned")
     }
 
+    /// The guest must not advertise disk reservation after merely asking
+    /// SetEOF to reserve it. Classic File Manager failures are ordinary
+    /// return values; ignoring one turns a full disk into a late, misleading
+    /// transfer failure.
+    func testGuestChecksDiskReservationBeforeAcceptingUpload()
+        throws {
+        let fileshare = try XCTUnwrap(
+            try guestSources().first { $0.name == "fileshare.c" }?.text)
+        XCTAssertTrue(fileshare.contains(
+            "err = SetEOF(rx->data_ref, bytes);"))
+        XCTAssertTrue(fileshare.contains(
+            "return err == dskFulErr ? kFilesTooBig : kFilesIOError;"))
+        XCTAssertTrue(fileshare.contains(
+            "rx->reserved_bytes = need;"))
+    }
+
     /// Messages built up across several calls cannot be checked this
     /// way. Naming them keeps the gap visible instead of letting a green
     /// suite imply coverage it does not have.

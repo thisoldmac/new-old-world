@@ -1,8 +1,8 @@
 import Foundation
 
 public enum AgentIntegrationLocalProtocol {
-    /// Version 4 adds root-scoped guest Files observation.
-    public static let version = 4
+    /// Version 5 adds private staged guest upload commands.
+    public static let version = 5
     public static let maximumMessageBytes = 16 * 1024
 }
 
@@ -16,6 +16,9 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         case guestFilesCapabilities = "guest_files_capabilities"
         case guestFilesList = "guest_files_list"
         case guestFilesStat = "guest_files_stat"
+        case guestFilesUploadBegin = "guest_files_upload_begin"
+        case guestFilesUploadAppend = "guest_files_upload_append"
+        case guestFilesUploadCommit = "guest_files_upload_commit"
     }
 
     public let version: Int
@@ -26,6 +29,10 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
     public let approvalReceipt: String?
     public let guestFilePath: String?
     public let guestFileCursor: Int?
+    public let guestFileUpload: AgentIntegrationGuestFileUploadBegin?
+    public let guestFileUploadID: UUID?
+    public let guestFileUploadOffset: Int?
+    public let guestFileUploadChunk: String?
 
     private init(requestID: UUID,
                  operation: Operation,
@@ -33,7 +40,12 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
                  processReference: String?,
                  approvalReceipt: String?,
                  guestFilePath: String?,
-                 guestFileCursor: Int?) {
+                 guestFileCursor: Int?,
+                 guestFileUpload:
+                    AgentIntegrationGuestFileUploadBegin? = nil,
+                 guestFileUploadID: UUID? = nil,
+                 guestFileUploadOffset: Int? = nil,
+                 guestFileUploadChunk: String? = nil) {
         version = AgentIntegrationLocalProtocol.version
         self.requestID = requestID
         self.operation = operation
@@ -42,6 +54,10 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         self.approvalReceipt = approvalReceipt
         self.guestFilePath = guestFilePath
         self.guestFileCursor = guestFileCursor
+        self.guestFileUpload = guestFileUpload
+        self.guestFileUploadID = guestFileUploadID
+        self.guestFileUploadOffset = guestFileUploadOffset
+        self.guestFileUploadChunk = guestFileUploadChunk
     }
 
     public static func sessionHealth(requestID: UUID = UUID()) -> Self {
@@ -133,6 +149,55 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
             guestFilePath: path,
             guestFileCursor: nil)
     }
+
+    public static func guestFilesUploadBegin(
+        _ upload: AgentIntegrationGuestFileUploadBegin,
+        requestID: UUID = UUID()
+    ) -> Self {
+        .init(
+            requestID: requestID,
+            operation: .guestFilesUploadBegin,
+            launchSelection: nil,
+            processReference: nil,
+            approvalReceipt: nil,
+            guestFilePath: nil,
+            guestFileCursor: nil,
+            guestFileUpload: upload)
+    }
+
+    public static func guestFilesUploadAppend(
+        uploadID: UUID,
+        offset: Int,
+        base64: String,
+        requestID: UUID = UUID()
+    ) -> Self {
+        .init(
+            requestID: requestID,
+            operation: .guestFilesUploadAppend,
+            launchSelection: nil,
+            processReference: nil,
+            approvalReceipt: nil,
+            guestFilePath: nil,
+            guestFileCursor: nil,
+            guestFileUploadID: uploadID,
+            guestFileUploadOffset: offset,
+            guestFileUploadChunk: base64)
+    }
+
+    public static func guestFilesUploadCommit(
+        uploadID: UUID,
+        requestID: UUID = UUID()
+    ) -> Self {
+        .init(
+            requestID: requestID,
+            operation: .guestFilesUploadCommit,
+            launchSelection: nil,
+            processReference: nil,
+            approvalReceipt: nil,
+            guestFilePath: nil,
+            guestFileCursor: nil,
+            guestFileUploadID: uploadID)
+    }
 }
 
 public enum AgentIntegrationLocalResult: Equatable, Sendable {
@@ -145,6 +210,10 @@ public enum AgentIntegrationLocalResult: Equatable, Sendable {
         AgentIntegrationGuestFileCapabilitiesResult)
     case guestFilesList(AgentIntegrationGuestFileListResult)
     case guestFilesStat(AgentIntegrationGuestFileStatResult)
+    case guestFilesUploadStage(
+        AgentIntegrationGuestFileUploadStageResult)
+    case guestFilesUploadCommit(
+        AgentIntegrationGuestFileUploadCommitResult)
 }
 
 public struct AgentIntegrationLocalError: Codable, Equatable, Sendable {
@@ -169,6 +238,10 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         AgentIntegrationGuestFileCapabilitiesResult?
     public let guestFilesListResult: AgentIntegrationGuestFileListResult?
     public let guestFilesStatResult: AgentIntegrationGuestFileStatResult?
+    public var guestFilesUploadStageResult:
+        AgentIntegrationGuestFileUploadStageResult? = nil
+    public var guestFilesUploadCommitResult:
+        AgentIntegrationGuestFileUploadCommitResult? = nil
     public let error: AgentIntegrationLocalError?
 
     public init(requestID: UUID,
@@ -301,6 +374,46 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         error = nil
     }
 
+    public init(
+        requestID: UUID,
+        guestFilesUploadStageResult:
+            AgentIntegrationGuestFileUploadStageResult
+    ) {
+        version = AgentIntegrationLocalProtocol.version
+        self.requestID = requestID
+        result = nil
+        processListResult = nil
+        launchResult = nil
+        quitResult = nil
+        artifactTransferResult = nil
+        guestFilesCapabilitiesResult = nil
+        guestFilesListResult = nil
+        guestFilesStatResult = nil
+        self.guestFilesUploadStageResult =
+            guestFilesUploadStageResult
+        error = nil
+    }
+
+    public init(
+        requestID: UUID,
+        guestFilesUploadCommitResult:
+            AgentIntegrationGuestFileUploadCommitResult
+    ) {
+        version = AgentIntegrationLocalProtocol.version
+        self.requestID = requestID
+        result = nil
+        processListResult = nil
+        launchResult = nil
+        quitResult = nil
+        artifactTransferResult = nil
+        guestFilesCapabilitiesResult = nil
+        guestFilesListResult = nil
+        guestFilesStatResult = nil
+        self.guestFilesUploadCommitResult =
+            guestFilesUploadCommitResult
+        error = nil
+    }
+
     public init(requestID: UUID? = nil,
                 error: AgentIntegrationLocalError) {
         version = AgentIntegrationLocalProtocol.version
@@ -346,7 +459,8 @@ public enum AgentIntegrationLocalCodec {
         let object = try strictObject(data, allowedKeys: [
             "version", "requestID", "operation", "launchSelection",
             "processReference", "approvalReceipt", "guestFilePath",
-            "guestFileCursor",
+            "guestFileCursor", "guestFileUpload", "guestFileUploadID",
+            "guestFileUploadOffset", "guestFileUploadChunk",
         ])
         guard object["version"] as? Int ==
                 AgentIntegrationLocalProtocol.version else {
@@ -444,6 +558,86 @@ public enum AgentIntegrationLocalCodec {
                 throw AgentIntegrationLocalTransportError.invalidMessage(
                     "Guest Files stat request does not match the schema")
             }
+        case .guestFilesUploadBegin:
+            expectedKeys = [
+                "version", "requestID", "operation", "guestFileUpload",
+            ]
+            guard let upload = request.guestFileUpload,
+                  request.guestFileUploadID == nil,
+                  request.guestFileUploadOffset == nil,
+                  request.guestFileUploadChunk == nil,
+                  request.launchSelection == nil,
+                  request.processReference == nil,
+                  request.approvalReceipt == nil,
+                  request.guestFilePath == nil,
+                  request.guestFileCursor == nil,
+                  AgentIntegrationGuestFilePolicy.isBoundedPath(
+                    upload.destinationPath),
+                  !upload.destinationPath.isEmpty,
+                  upload.bytes >= 0,
+                  upload.bytes <= Int(Int32.max),
+                  AgentIntegrationGuestFilePolicy.isCanonicalSHA256(
+                    upload.sha256),
+                  AgentIntegrationGuestFilePolicy.isClassicOSType(
+                    upload.fileType),
+                  AgentIntegrationGuestFilePolicy.isClassicOSType(
+                    upload.creator),
+                  upload.modified.map({ $0 >= 0 }) ?? true,
+                  upload.container == "data"
+                    || upload.container == "macbinary",
+                  let raw = object["guestFileUpload"] as? [String: Any],
+                  Set(raw.keys).isSuperset(of: [
+                    "destinationPath", "bytes", "sha256", "container",
+                  ]),
+                  Set(raw.keys).isSubset(of: [
+                    "destinationPath", "bytes", "sha256", "container",
+                    "fileType", "creator", "modified",
+                  ]) else {
+                throw AgentIntegrationLocalTransportError.invalidMessage(
+                    "Guest Files upload begin does not match the schema")
+            }
+        case .guestFilesUploadAppend:
+            expectedKeys = [
+                "version", "requestID", "operation", "guestFileUploadID",
+                "guestFileUploadOffset", "guestFileUploadChunk",
+            ]
+            guard request.guestFileUpload == nil,
+                  request.launchSelection == nil,
+                  request.processReference == nil,
+                  request.approvalReceipt == nil,
+                  request.guestFilePath == nil,
+                  request.guestFileCursor == nil,
+                  request.guestFileUploadID != nil,
+                  let offset = request.guestFileUploadOffset,
+                  offset >= 0,
+                  let chunk = request.guestFileUploadChunk,
+                  chunk.count
+                    <= AgentIntegrationGuestFilePolicy
+                        .maximumUploadChunkBase64Scalars,
+                  let bytes = Data(base64Encoded: chunk),
+                  !bytes.isEmpty,
+                  bytes.count
+                    <= AgentIntegrationGuestFilePolicy
+                        .maximumUploadChunkBytes else {
+                throw AgentIntegrationLocalTransportError.invalidMessage(
+                    "Guest Files upload chunk does not match the schema")
+            }
+        case .guestFilesUploadCommit:
+            expectedKeys = [
+                "version", "requestID", "operation", "guestFileUploadID",
+            ]
+            guard request.guestFileUpload == nil,
+                  request.launchSelection == nil,
+                  request.processReference == nil,
+                  request.approvalReceipt == nil,
+                  request.guestFilePath == nil,
+                  request.guestFileCursor == nil,
+                  request.guestFileUploadID != nil,
+                  request.guestFileUploadOffset == nil,
+                  request.guestFileUploadChunk == nil else {
+                throw AgentIntegrationLocalTransportError.invalidMessage(
+                    "Guest Files upload commit does not match the schema")
+            }
         }
         guard Set(object.keys) == expectedKeys else {
             throw AgentIntegrationLocalTransportError.invalidMessage(
@@ -461,7 +655,8 @@ public enum AgentIntegrationLocalCodec {
                 "processListResult", "launchResult", "quitResult",
                 "artifactTransferResult",
                 "guestFilesCapabilitiesResult", "guestFilesListResult",
-                "guestFilesStatResult",
+                "guestFilesStatResult", "guestFilesUploadStageResult",
+                "guestFilesUploadCommitResult",
             ])
         guard object["version"] as? Int ==
                 AgentIntegrationLocalProtocol.version else {
@@ -477,11 +672,16 @@ public enum AgentIntegrationLocalCodec {
             object["guestFilesCapabilitiesResult"] != nil
         let hasGuestFilesList = object["guestFilesListResult"] != nil
         let hasGuestFilesStat = object["guestFilesStatResult"] != nil
+        let hasGuestFilesUploadStage =
+            object["guestFilesUploadStageResult"] != nil
+        let hasGuestFilesUploadCommit =
+            object["guestFilesUploadCommitResult"] != nil
         let hasError = object["error"] != nil
         guard [
             hasResult, hasProcessList, hasLaunch, hasQuit,
             hasArtifactTransfer, hasGuestFilesCapabilities,
-            hasGuestFilesList, hasGuestFilesStat, hasError,
+            hasGuestFilesList, hasGuestFilesStat,
+            hasGuestFilesUploadStage, hasGuestFilesUploadCommit, hasError,
         ]
                 .filter({ $0 }).count == 1 else {
             throw AgentIntegrationLocalTransportError.invalidMessage(

@@ -9,13 +9,15 @@ under a persisted root-relative `guestRoot`; it does not turn this companion
 into a direct file transport, grant modern-host filesystem access, or add
 CodeKitten project semantics.
 
-The first V0.5 slice is implemented through the host boundary:
+The first two V0.5 slices are implemented through the host boundary:
 capability discovery, one bounded listing page, and bounded exact stat. It
 persists the approved share-root default explicitly, validates every caller
 path before composing it beneath policy, returns typed command receipts, and
 logs command start/outcome. Invalid stored policy is rejected and reset
-audibly. The private local schema and stdio companion project only these three
-completed commands; all transfer and mutation commands remain deferred.
+audibly. A create-only staged upload now reserves private host disk, accepts
+ordered bounded bytes rather than a host path, seals them by declared SHA-256,
+and enters the existing one-at-a-time guest put lane through a file-backed
+source. Download and every broader mutation/deployment command remain deferred.
 
 ## Implemented slices
 
@@ -37,7 +39,15 @@ The V0.5 read-only additions are:
 | `now_guest_files_list` | `guestFiles.list` over `file.list` / `file.listing` | Accepts only a bounded canonical path relative to `guestRoot` plus an optional positive cursor. Returns at most one 16-entry page, both fork sizes, type/creator, classic modified time when present, freshness, continuation, and a command receipt. |
 | `now_guest_files_stat` | `guestFiles.stat` over bounded parent listing pages | Accepts one exact root-relative item path. Returns its bounded metadata or typed not-found, scan-limit, stale-session, unavailable, or refusal evidence. |
 
-The client-launched `NOWAgentCompanion` executable speaks newline-delimited JSON-RPC over stdio and advertises these eight tools. It opens one bounded local request to the running host for each call. Session health sends no guest message; the other tools ask the host to use the existing paired connection. Launch accepts exactly one bounded name or generated opaque reference; quit accepts exactly one generated process reference; transfer accepts exactly one host-minted receipt. The V0.5 browse tools accept only a canonical path relative to host-owned `guestRoot`, never an absolute guest path or a modern-host path. No tool accepts a PSN, shell text, arbitrary host filesystem operation, or unimplemented guest Files mutation. Every tool exposes typed unavailability and no host or listener lifecycle operation. If the host is absent, the result is `now-host-unavailable`; the companion never launches it. If the host is present without a paired guest, guest-dependent tools return `now-guest-unavailable` and never use cached state.
+The V0.5 upload additions are:
+
+| Tool contract | NOW command owner | Implemented projection |
+| --- | --- | --- |
+| `now_guest_files_upload_begin` | `guestFiles.put` staging policy | Validates one canonical create-only destination beneath `guestRoot`, declared wire size/container/classic metadata, and SHA-256; requires an existing parent and reserves private disk capacity while preserving five percent of currently available important-usage capacity. |
+| `now_guest_files_upload_append` | Private NOW upload stage | Accepts one ordered base64 chunk of at most 8 KiB at the exact receipt offset. It never accepts or resolves a modern-host path and sends no guest message. |
+| `now_guest_files_upload_commit` | `guestFiles.put` over existing `file.offer` / bulk / `file.done` | Seals and revalidates the stage, validates MacBinary structure when selected, streams one frame at a time from its immutable file, never creates parents or overwrites, and returns guest reservation, progress, integrity, finalization, and cleanup evidence. Success requires matching guest length, CRC, same-folder rename, and temp cleanup. The stage is one-attempt and replay conflicts. |
+
+The client-launched `NOWAgentCompanion` executable speaks newline-delimited JSON-RPC over stdio and advertises these eleven tools. It opens one bounded local request to the running host for each call. Session health and upload staging send no guest message; commit and the other guest-dependent tools ask the host to use the existing paired connection. Launch accepts exactly one bounded name or generated opaque reference; quit accepts exactly one generated process reference; approved-artifact transfer accepts exactly one host-minted receipt. The V0.5 Files tools accept only canonical paths relative to host-owned `guestRoot`, never an absolute guest path or a modern-host path. No tool accepts a PSN, shell text, arbitrary host filesystem operation, or unimplemented guest Files mutation. Every tool exposes typed unavailability and no host or listener lifecycle operation. If the host is absent, the result is `now-host-unavailable`; the companion never launches it. If the host is present without a paired guest, guest-dependent tools return `now-guest-unavailable` and never use cached state.
 
 ## Connection posture
 
@@ -54,7 +64,8 @@ V0 deliberately trusts processes running as the same macOS user. This protects a
 - The host creates `dev.newoldworld.now-agent-<uid>/host.sock` beneath the user's private temporary directory. The directory is mode `0700`; the socket is mode `0600`.
 - The host checks every accepted peer with `getpeereid` and serves it only when the effective UID matches.
 - The companion checks that the directory and socket are owned by its effective UID, have no group/other permission bits, and are a directory and socket rather than links or other file types.
-- Local schema v4 adds only `guest_files_capabilities`, `guest_files_list`, and `guest_files_stat` to the V0 operations, permits one request per connection, and caps each request and response at 16 KiB. The version changes when authority or action shape changes so an older companion cannot silently misread it. Browse selection is one bounded root-relative path and optional positive cursor; the NOW command layer performs canonical MacRoman/HFS validation and policy composition. Launch selection is exactly one bounded name or opaque reference; quit selection is exactly one current opaque process reference; artifact selection is exactly one syntactically valid receipt. MCP stdio input is separately capped at 64 KiB per line.
+- Local schema v5 adds the three staged-upload lifecycle operations to the v4 browse operations, permits one request per connection, and caps each request and response at 16 KiB. The version changes when authority or action shape changes so an older companion cannot silently misread it. Browse selection is one bounded root-relative path and optional positive cursor; upload selection is one bounded root-relative destination plus declared metadata, followed only by an opaque upload ID, exact offset, and bounded bytes. The NOW command layer performs canonical MacRoman/HFS validation and policy composition. Launch selection is exactly one bounded name or opaque reference; quit selection is exactly one current opaque process reference; artifact selection is exactly one syntactically valid receipt. MCP stdio input is separately capped at 64 KiB per line.
+- V0.5 upload staging lives in a private mode-`0700` per-process directory; each stage is preallocated mode `0600`, becomes mode `0400` only after size and SHA-256 match, expires after ten minutes, and is consumed after one transfer attempt. Capacity is derived from current host disk availability and outstanding reservations, not an arbitrary whole-file cap. On startup NOW removes only well-formed private stages owned by a demonstrably dead process and emits an audit event. Live-process or structurally unfamiliar directories are retained.
 - Approval staging lives in a per-host-launch mode-`0700` directory. A selected source must be one directly opened, single-link regular file no larger than 4 MiB. The sealed copy is mode `0400`, expires after ten minutes, is bound to the current guest session and approved Files destination, and is consumed on its first redemption attempt. Final open follows no links and rechecks owner, inode, device, link count, size, timestamps, mode, and digest.
 - The MCP cannot mint an approval, list staging, choose a destination, or recover the original path. A user may deliberately select a file from anywhere the native picker can reach, but that grants only the staged copy; it does not expose or make the MCP a side door into a CodeKitten project tree. Same-user malicious code remains outside V0's stated protection.
 
@@ -66,9 +77,27 @@ Build the host app normally and build the companion with `swift build --package-
 
 Artifact transfer is deliberately two-step. In NOW's Files page, navigate to the intended guest folder, choose **Add File… > Approve One-Time Agent Transfer…**, select one file, and hand the copied receipt to `now_transfer_approved_artifact` within ten minutes. Approval does not start a transfer. Redemption is one attempt, never overwrites, cannot be retried with the same receipt, and may wait up to one hour locally for the existing size-scaled guest transfer watchdog. A delivery receipt carries the source and handed-to-NOW digests separately and says `guestAcknowledgedWrite: true`, but always says `destinationBytesVerified: false`: current `file.done` proves the guest reported a successful write and stamp, not a read-back hash. The companion does not start, stop, configure, or keep either side alive.
 
+Generic V0.5 upload is a separate three-call command lifecycle. Begin declares
+one root-relative destination, byte count, SHA-256, container, and optional
+classic metadata; append supplies ordered bounded bytes; commit consumes the
+stage and attempts one create through the current guest session. There is no
+host-path form, overwrite mode, automatic retry, or resume API for callers.
+An unrepresentable optional classic modified date is omitted rather than
+saturated or fabricated. A commit receipt distinguishes receiver-confirmed
+bytes from local sends and reports unknown cleanup or stalled state honestly.
+Host staging and outbound reads use bounded off-UI-actor disk I/O. A failed
+local cleanup remains recoverable and is reported as `cleanup-needed`.
+
 ## Current verification
 
-All eight projections, the local socket, and the stdio wrapper are **tested** here. V0 coverage remains as previously recorded: missing host or guest; bounded process snapshots and references; exact launch/refusal/revalidation; cooperative quit; receipt-backed artifact approval, staging, replay and delivery; malformed and oversized requests; endpoint permissions and peer UID; concurrency; discriminated schemas; and unchanged host module inventory/listener state. V0.5 coverage adds explicit/default/invalid `guestRoot` policy, canonical path and root-escape rejection, empty/populated/paged list behavior, fork/type/creator/date projection, exact stat/not-found/scan-limit, stale sessions, bounded guest refusal and malformed listing rejection, concurrent reads, prior local schema v3 rejection, maximum-page response size, host absence without launch, strict MCP arguments, and private-socket round-trip.
+All eleven projections, the local socket, and the stdio wrapper are **tested** here. V0 coverage remains as previously recorded: missing host or guest; bounded process snapshots and references; exact launch/refusal/revalidation; cooperative quit; receipt-backed artifact approval, staging, replay and delivery; malformed and oversized requests; endpoint permissions and peer UID; concurrency; discriminated schemas; and unchanged host module inventory/listener state. V0.5 browse coverage adds explicit/default/invalid `guestRoot` policy, canonical path and root-escape rejection, empty/populated/paged list behavior, fork/type/creator/date projection, exact stat/not-found/scan-limit, stale sessions, bounded guest refusal and malformed listing rejection, concurrent reads, prior local schema v4 rejection, maximum-page response size, host absence without launch, strict MCP arguments, and private-socket round-trip. Upload coverage adds disk-reservation refusal, ordered bounded chunks, digest mismatch cleanup, orphan-stage recovery, create-only collision policy, stale/unavailable handling, one-attempt replay and concurrent-commit refusal, file-backed framing, strict guest completion evidence, late-collision preservation, malformed MacBinary refusal, stale-accept invalidation, cleanup-failure recovery, host/guest observation identities, modified-date omission, strict local/MCP decoding, host build, and a clean Retro68 guest build.
+
+Staged upload remains **not metal-verified**. The current automated fixtures
+exercise the existing transfer state machine and the classic build proves the
+guest changes compile, but no disposable file from this slice has yet been
+observed landing on the PowerBook. Its reservation metrics, final Finder
+identity, classic metadata/fork fidelity, interruption cleanup, and performance
+therefore remain open metal gates.
 
 The three V0.5 read-only tools also have a bounded **metal-verified** receipt
 from 2026-07-24 against the paired PowerBook 1400c. The current host build

@@ -564,6 +564,60 @@ final class FileWireTests: XCTestCase {
         XCTAssertEqual(failure?.code, "exists")
     }
 
+    func testLateAcceptAfterTimeoutCannotDisruptTheNextPut() async throws {
+        let guest = try await connectedGuest()
+        var first: Result<Void, GuestListener.FileFailure>?
+        listener.putFile(
+            name: "First", into: "", container: "data",
+            bytes: Data([1])) { first = $0 }
+        var firstID: Int?
+        try await waitUntil("first file.offer") {
+            for message in guest.received {
+                if case .fileOffer(let offer) = message,
+                   offer.name == "First" {
+                    firstID = offer.id
+                    return true
+                }
+            }
+            return false
+        }
+        listener.expireWatchdogsForTesting()
+        try await waitUntil("first timeout") { first != nil }
+
+        var second: Result<Void, GuestListener.FileFailure>?
+        listener.putFile(
+            name: "Second", into: "", container: "data",
+            bytes: Data([2])) { second = $0 }
+        var secondID: Int?
+        try await waitUntil("second file.offer") {
+            for message in guest.received {
+                if case .fileOffer(let offer) = message,
+                   offer.name == "Second" {
+                    secondID = offer.id
+                    return true
+                }
+            }
+            return false
+        }
+        try guest.send(.fileAccept(FileAccept(id: try XCTUnwrap(firstID))))
+        try await Task.sleep(nanoseconds: 20_000_000)
+        XCTAssertFalse(guest.received.contains {
+            if case .fileBegin(let begin) = $0 {
+                return begin.id == firstID
+            }
+            return false
+        })
+        XCTAssertNil(second)
+
+        try guest.send(.fileAccept(FileAccept(id: try XCTUnwrap(secondID))))
+        try await waitUntil("second bulk") {
+            guest.bulkReceived == Data([2])
+        }
+        try guest.send(.fileDone(FileDone(
+            id: try XCTUnwrap(secondID), ok: true)))
+        try await waitUntil("second settled") { second != nil }
+    }
+
     func testPutThatTheGuestCouldNotWriteFailsWithItsReason() async throws {
         let guest = try await connectedGuest()
         var failure: GuestListener.FileFailure?
@@ -582,14 +636,26 @@ final class FileWireTests: XCTestCase {
             return false
         }
         let id = try XCTUnwrap(offerId)
-        try guest.send(.fileAccept(FileAccept(id: id)))
+        try guest.send(.fileAccept(FileAccept(
+            id: id,
+            freeBytes: 4096,
+            reservedBytes: 3,
+            staging: "same-folder-temp")))
         try await waitUntil("bulk sent") { guest.bulkReceived.count == 3 }
         try guest.send(.fileDone(FileDone(
             id: id, ok: false, code: "io-error",
-            reason: "the disk is full")))
+            reason: "the disk is full",
+            received: 3,
+            cleanup: "temp-removed")))
         try await waitUntil("failure") { failure != nil }
         XCTAssertEqual(failure?.code, "io-error")
         XCTAssertEqual(failure?.message, "the disk is full")
+        XCTAssertEqual(failure?.putEvidence?.totalBytes, 3)
+        XCTAssertEqual(
+            failure?.putEvidence?.receiverConfirmedBytes, 3)
+        XCTAssertEqual(failure?.putEvidence?.guestReservedBytes, 3)
+        XCTAssertEqual(
+            failure?.putEvidence?.guestCleanup, "temp-removed")
     }
 
     func testTruncatedPullIsRejected() async throws {

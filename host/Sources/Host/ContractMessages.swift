@@ -160,6 +160,8 @@ struct FileEntry: Codable, Equatable, Sendable, Identifiable {
     var rsrcBytes: Int?
     /// Classic Mac epoch: seconds since 1904-01-01.
     var modified: Int?
+    /// Opaque responder-owned catalog identity for mutation preconditions.
+    var identity: String? = nil
 
     var id: String { name }
     var isFolder: Bool { kind == "folder" }
@@ -308,6 +310,7 @@ struct FileOffer: Codable, Equatable, Sendable {
     var fileType: String?
     var creator: String?
     var modified: Int?
+    var createParents: Bool? = nil
     var overwrite: Bool?
     /// Stable identity of the SOURCE file. The receiver never interprets
     /// it — it stores the token beside a partial and compares it later,
@@ -322,6 +325,9 @@ struct FileAccept: Codable, Equatable, Sendable {
     /// attempt, and so the offset to begin at. Only ever non-zero when
     /// the offer carried a resumeToken the receiver recognises.
     var have: Int?
+    var freeBytes: Int? = nil
+    var reservedBytes: Int? = nil
+    var staging: String? = nil
 }
 
 struct FileDone: Codable, Equatable, Sendable {
@@ -329,6 +335,10 @@ struct FileDone: Codable, Equatable, Sendable {
     var ok: Bool
     var code: String?
     var reason: String?
+    var received: Int? = nil
+    var crc32: UInt32? = nil
+    var finalization: String? = nil
+    var cleanup: String? = nil
 }
 
 /// What the guest has actually taken off the wire during a put. Advisory:

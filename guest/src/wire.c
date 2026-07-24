@@ -2402,6 +2402,7 @@ static struct {
     long bytes;
     OSType file_type, creator;
     unsigned long modified;
+    Boolean create_parents;
     Boolean overwrite;
 } g_put;
 
@@ -2500,19 +2501,25 @@ static void put_drop(void)
     }
 }
 
-static void put_done(Boolean ok, const char *code, const char *reason)
+static void put_done(Boolean ok, const char *code, const char *reason,
+                     const char *cleanup)
 {
-    char json[256];
+    char json[320];
 
     if (ok) {
         snprintf(json, sizeof json,
-                 "{\"type\":\"file.done\",\"id\":%ld,\"ok\":true}",
-                 g_put.id);
+                 "{\"type\":\"file.done\",\"id\":%ld,\"ok\":true,"
+                 "\"received\":%ld,\"crc32\":%lu,"
+                 "\"finalization\":\"same-folder-rename\","
+                 "\"cleanup\":\"temp-renamed\"}",
+                 g_put.id, g_put.rx.received, g_put.rx.crc);
     } else {
         snprintf(json, sizeof json,
                  "{\"type\":\"file.done\",\"id\":%ld,\"ok\":false,"
-                 "\"code\":\"%s\",\"reason\":\"%.100s\"}",
-                 g_put.id, code, reason);
+                 "\"code\":\"%s\",\"reason\":\"%.100s\","
+                 "\"received\":%ld,\"cleanup\":\"%s\"}",
+                 g_put.id, code, reason, g_put.rx.received,
+                 cleanup != NULL ? cleanup : "unknown");
     }
     send_control(json);
     g_put.active = false;
@@ -2520,11 +2527,15 @@ static void put_done(Boolean ok, const char *code, const char *reason)
 
 static void put_abort(const char *code, const char *reason)
 {
+    Boolean retained;
+
     if (!g_put.active) {
         return;
     }
+    retained = g_put.rx.keep_partial && g_put.rx.received > 0;
     now_files_receive_abort(&g_put.rx);
-    put_done(false, code, reason);
+    put_done(false, code, reason,
+             retained ? "partial-retained" : "temp-discarded");
 }
 
 /* Called for every inbound bulk frame. */
@@ -2566,7 +2577,7 @@ static void serve_file_offer(const char *request)
     char name[64];
     char path[224];
     char container_arg[16];
-    char json[256];
+    char json[320];
     char note[128];
     long id = now_json_find_int(request, "id", 0);
     long bytes = now_json_find_int(request, "bytes", 0);
@@ -2575,6 +2586,7 @@ static void serve_file_offer(const char *request)
     OSType file_type = 0, creator = 0;
     FileContainer container = kContainerData;
     Boolean overwrite;
+    Boolean create_parents;
     long have;
     int rc;
 
@@ -2605,6 +2617,8 @@ static void serve_file_offer(const char *request)
     }
     overwrite = now_json_value(request, "overwrite") != NULL
         && *now_json_value(request, "overwrite") == 't';
+    create_parents = now_json_value(request, "createParents") == NULL
+        || *now_json_value(request, "createParents") == 't';
 
     memset(&g_put, 0, sizeof g_put);
     g_put.id = id;
@@ -2622,11 +2636,13 @@ static void serve_file_offer(const char *request)
     g_put.file_type = file_type;
     g_put.creator = creator;
     g_put.modified = (unsigned long)modified;
+    g_put.create_parents = create_parents;
     g_put.overwrite = overwrite;
 
     rc = now_files_receive_begin(path, name, container, bytes, file_type,
                                  creator, (unsigned long)modified,
-                                 overwrite, g_put.token, have, &g_put.rx);
+                                 create_parents, overwrite,
+                                 g_put.token, have, &g_put.rx);
     if (rc != kFilesOK && have > 0) {
         /* The partial was there a moment ago and is not usable now.
            Losing it costs time, not correctness — start over rather
@@ -2634,7 +2650,8 @@ static void serve_file_offer(const char *request)
         have = 0;
         rc = now_files_receive_begin(path, name, container, bytes,
                                      file_type, creator,
-                                     (unsigned long)modified, overwrite,
+                                     (unsigned long)modified,
+                                     create_parents, overwrite,
                                      g_put.token, 0, &g_put.rx);
     }
     if (rc != kFilesOK) {
@@ -2659,13 +2676,30 @@ static void serve_file_offer(const char *request)
             name, bytes);
     /* `have` is omitted rather than sent as 0, so an accept to an old
        host looks exactly as it always did. */
-    if (have > 0) {
+    if (have > 0 && g_put.rx.free_before >= 0) {
         snprintf(json, sizeof json,
-                 "{\"type\":\"file.accept\",\"id\":%ld,\"have\":%ld}",
-                 id, have);
+                 "{\"type\":\"file.accept\",\"id\":%ld,\"have\":%ld,"
+                 "\"freeBytes\":%ld,\"reservedBytes\":%ld,"
+                 "\"staging\":\"same-folder-temp\"}",
+                 id, have, g_put.rx.free_before, g_put.rx.reserved_bytes);
+    } else if (have > 0) {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"file.accept\",\"id\":%ld,\"have\":%ld,"
+                 "\"reservedBytes\":%ld,"
+                 "\"staging\":\"same-folder-temp\"}",
+                 id, have, g_put.rx.reserved_bytes);
+    } else if (g_put.rx.free_before >= 0) {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"file.accept\",\"id\":%ld,"
+                 "\"freeBytes\":%ld,\"reservedBytes\":%ld,"
+                 "\"staging\":\"same-folder-temp\"}",
+                 id, g_put.rx.free_before, g_put.rx.reserved_bytes);
     } else {
         snprintf(json, sizeof json,
-                 "{\"type\":\"file.accept\",\"id\":%ld}", id);
+                 "{\"type\":\"file.accept\",\"id\":%ld,"
+                 "\"reservedBytes\":%ld,"
+                 "\"staging\":\"same-folder-temp\"}",
+                 id, g_put.rx.reserved_bytes);
     }
     if (!send_control(json)) {
         now_files_receive_abort(&g_put.rx);
@@ -2690,6 +2724,7 @@ static void put_begin(const char *request)
 {
     long offset;
     int rc;
+    Boolean retained;
 
     if (!g_put.active) {
         return;
@@ -2702,14 +2737,17 @@ static void put_begin(const char *request)
         put_abort("io-error", "the sender named an impossible offset");
         return;
     }
-    now_files_receive_abort(&g_put.rx);   /* keeps a resumable partial */
+    retained = g_put.rx.keep_partial && g_put.rx.received > 0;
+    now_files_receive_abort(&g_put.rx);   /* may keep a resumable partial */
     rc = now_files_receive_begin(g_put.path, g_put.name, g_put.container,
                                  g_put.bytes, g_put.file_type,
                                  g_put.creator, g_put.modified,
-                                 g_put.overwrite, g_put.token, offset,
+                                 g_put.create_parents, g_put.overwrite,
+                                 g_put.token, offset,
                                  &g_put.rx);
     if (rc != kFilesOK) {
-        put_done(false, "io-error", "could not start at that offset");
+        put_done(false, "io-error", "could not start at that offset",
+                 retained ? "partial-retained" : "temp-discarded");
         note_shot("Incoming file failed");
     }
 }
@@ -2748,7 +2786,8 @@ static void finish_put(const char *reply)
                 "got %08lX, %ld bytes discarded", g_put.id, want_crc,
                 g_put.rx.crc, g_put.rx.received);
         now_files_receive_discard(&g_put.rx);
-        put_done(false, "corrupt", "the checksum did not match");
+        put_done(false, "corrupt", "the checksum did not match",
+                 "temp-discarded");
         note_shot("Incoming file was corrupt");
         return;
     }
@@ -2759,13 +2798,17 @@ static void finish_put(const char *reply)
     put_report_progress(true);
     rc = now_files_receive_finish(&g_put.rx);
     if (rc != kFilesOK) {
-        put_done(false, "io-error", "could not finish writing the file");
+        put_done(false, rc == kFilesExists ? "exists" : "io-error",
+                 rc == kFilesExists
+                    ? "a file of that name appeared during the transfer"
+                    : "could not finish writing the file",
+                 "temp-discarded");
         note_shot("Incoming file failed");
         return;
     }
     now_log(kLogInfo, "put", "#%ld complete, %ld bytes%s", g_put.id,
             g_put.rx.received, has_crc ? ", checksum ok" : ", unchecked");
-    put_done(true, NULL, NULL);
+    put_done(true, NULL, NULL, "temp-renamed");
     snprintf(note, sizeof note, "Received %.31s",
              g_put.rx.final.name + 1);
     note_shot(note);
@@ -2826,7 +2869,7 @@ static void serve_file_list(const char *request)
     enum { kPage = 16 };              /* control frames cap at 4 KB */
     FileEntry entries[kPage];
     char path[224];
-    char json[3072];
+    char json[3584];
     char esc[200];
     long id = now_json_find_int(request, "id", 0);
     long cursor = now_json_find_int(request, "cursor", 1);
@@ -2872,7 +2915,8 @@ static void serve_file_list(const char *request)
                             entries[i].rsrc_bytes);
         }
         pos += snprintf(json + pos, sizeof json - (size_t)pos,
-                        ",\"modified\":%lu}", entries[i].modified);
+                        ",\"modified\":%lu,\"identity\":\"%s\"}",
+                        entries[i].modified, entries[i].identity);
     }
     pos += snprintf(json + pos, sizeof json - (size_t)pos,
                     "],\"more\":%s,\"cursor\":%d",

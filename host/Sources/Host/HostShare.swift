@@ -130,6 +130,8 @@ final class HostShare {
             let values = try? entry.resourceValues(
                 forKeys: [.isDirectoryKey, .fileSizeKey,
                           .contentModificationDateKey])
+            let attributes = try? FileManager.default.attributesOfItem(
+                atPath: entry.path)
             let isDir = values?.isDirectory ?? false
             // The classic side names files in 31 MacRoman characters;
             // send what it can actually hold rather than a name it will
@@ -143,7 +145,11 @@ final class HostShare {
                 dataBytes: isDir ? nil : (values?.fileSize ?? 0),
                 rsrcBytes: isDir ? nil : 0,
                 modified: values?.contentModificationDate
-                    .flatMap(ClassicDate.guestWireSeconds(from:)))
+                    .flatMap(ClassicDate.guestWireSeconds(from:)),
+                identity: Self.observationIdentity(
+                    name: entry.lastPathComponent,
+                    isDirectory: isDir,
+                    attributes: attributes))
         }
         /* A page is bounded by BYTES as well as by count: sixteen long
            names plus their types and dates can exceed the control-frame
@@ -166,6 +172,35 @@ final class HostShare {
         }
         let served = start + page.count
         return (page, served < contents.count, served + 1)
+    }
+
+    /// The host half of FileEntry.identity. It is opaque on the wire and
+    /// intentionally binds both file-system identity and this exact catalog
+    /// observation, so a future mutation can recompute rather than trust a
+    /// path-only snapshot.
+    private static func observationIdentity(
+        name: String,
+        isDirectory: Bool,
+        attributes: [FileAttributeKey: Any]?
+    ) -> String? {
+        guard let attributes,
+              let fileNumber =
+                (attributes[.systemFileNumber] as? NSNumber)?.uint64Value
+        else { return nil }
+        let size = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
+        let modified = (attributes[.modificationDate] as? Date)?
+            .timeIntervalSinceReferenceDate.bitPattern ?? 0
+        let created = (attributes[.creationDate] as? Date)?
+            .timeIntervalSinceReferenceDate.bitPattern ?? 0
+        let material =
+            "\(fileNumber)|\(size)|\(modified)|\(created)|"
+                + "\(isDirectory ? 1 : 0)|\(name)"
+        var hash: UInt64 = 0xcbf29ce484222325
+        for byte in material.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 0x100000001b3
+        }
+        return String(format: "%016llx", hash)
     }
 
     // MARK: - Changing what we share
@@ -319,13 +354,24 @@ final class HostShare {
     /// MacRoman from a machine that allows characters this one uses for
     /// paths, so it is decoded and made safe before it touches disk.
     func destination(name: String, path: String,
+                     createParents: Bool = true,
                      overwrite: Bool) throws -> URL {
         let folder = try resolve(path)
         var isDirectory: ObjCBool = false
         if !FileManager.default.fileExists(atPath: folder.path,
                                            isDirectory: &isDirectory) {
-            try? FileManager.default.createDirectory(
-                at: folder, withIntermediateDirectories: true)
+            guard createParents else { throw ShareError.notFound }
+            do {
+                try FileManager.default.createDirectory(
+                    at: folder, withIntermediateDirectories: true)
+            } catch {
+                throw ShareError.io(error.localizedDescription)
+            }
+        }
+        guard FileManager.default.fileExists(
+                atPath: folder.path, isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            throw ShareError.notADirectory
         }
         /* The name arrives from the other machine, where "/" is an
            ordinary character and ":" is the separator — exactly

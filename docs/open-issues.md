@@ -939,17 +939,22 @@ information architecture, pairing-conflict UX, thumbnail and history
 retention, inventory analyses, local-browser defaults, and remembered
 module-state policies remain intentionally open.
 
-## MCP V0.5 guest Files command seam has begun
+## MCP V0.5 guest Files command seam has a tested staged-upload slice
 
 The approved
 [NOW MCP V0.5 guest-files roadmap](plans/2026-07-24-003-feat-now-mcp-v0-5-files-command-roadmap-plan.md)
-now has its first host-owned command slice: an explicit, persisted and versioned
+now has its first host-owned command slices: an explicit, persisted and versioned
 root-relative `guestRoot` policy; canonical HFS path validation; capability,
 one-page listing, and bounded exact-stat commands; typed receipts; and normal
-host audit lines. The host registers that command layer without adding UI or
-starting a listener. The existing private local socket and client-launched
-stdio companion now project only these three read-only commands; download and
-all mutation/deployment commands remain unavailable.
+host audit lines. It also has a create-only staged upload command: private
+disk-aware reservation, ordered 8 KiB-or-smaller chunks, SHA-256 sealing, a
+file-backed sender through the existing transfer lane, and bounded progress,
+reservation, finalization, integrity, and cleanup evidence. No host path crosses
+the API. The destination parent must already exist: this slice does not
+implicitly implement `mkdir`. The existing private local socket and
+client-launched stdio companion
+project those completed commands; download, mkdir, overwrite, move, delete,
+tree deployment, and prune remain unavailable.
 
 The read-only slice composes the existing `file.list` exchange and therefore
 adds no guest message or guest code. It is **tested** against fake paired
@@ -960,8 +965,21 @@ noninterference, plus local-schema and stdio validation. A bounded
 16-entry root pages with cursors 17 and 33, and exact stat. The first live
 page exposed one legal HFS name containing control bytes; path validation now
 keeps those exact MacRoman names addressable, rejects only untransportable
-NUL, and escapes them in audit text. Download and every mutation remain
+NUL, and escapes them in audit text. Download and every broader mutation remain
 unverified and unavailable.
+
+The staged-upload slice is **tested**, including host-space refusal, ordered
+offsets, integrity failure cleanup, dead-process orphan recovery, root escape,
+unavailable/stale sessions, replay, concurrent commit, malformed local/MCP
+requests and MacBinary, strict guest completion evidence, late-collision
+preservation, stale-accept invalidation, cleanup-needed recovery, guest refusal
+evidence, and unchanged one-at-a-time transfer ownership. Host staging and
+outbound reads use bounded off-UI-actor disk I/O. The host builds and the
+Retro68 guest cross-builds cleanly. It is
+**not metal-verified**: no new disposable upload was sent to the PowerBook in
+this slice, so real-volume reservation values, Finder-visible finalization,
+fork/type/creator fidelity, interruption cleanup, and live throughput remain
+open.
 
 Arbitrary download and broader deployment are gated on two current facts, not
 merely planned polish: the guest sender stages a whole artifact in a temporary
@@ -972,10 +990,13 @@ eligible partial resume, and rename only after validation. V0.5 must make both
 directions bounded and receipt-backed before exposing arbitrary transfer.
 
 Mutation is gated separately on guest-side revalidation of an opaque file
-observation. The current move/Trash/restore/mkdir messages act by path alone;
-host-only precondition checks would still permit a changed item to be acted on
-between check and use. Tree deployment and mandatory-preview manifest prune
-follow only after that contract-first identity boundary exists.
+observation. Listings now carry a responder-generated opaque catalog identity,
+and the host mints short-lived session/root-bound observation references, but
+no mutation accepts them yet. The current move/Trash/restore/mkdir messages
+still act by path alone; host-only precondition checks would permit a changed
+item to be acted on between check and use. The exact guest-side revalidation
+field and command behavior remain the next contract-first mutation gate. Tree
+deployment and mandatory-preview manifest prune follow only after it.
 
 ## Rough edges
 

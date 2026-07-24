@@ -25,6 +25,12 @@ date: 2026-07-24
 - **Verification posture:** This plan is approved scope, not implementation
   evidence. Each slice moves through Builds, Tested, and attended
   Metal-verified independently.
+- **Implementation status, 2026-07-24:** V05-U1 is tested and has bounded
+  PowerBook acceptance. The create-only staged-upload half of V05-U3 is tested:
+  private disk reservation, ordered bounded staging, file-backed host send,
+  guest reservation/finalization evidence, cleanup/recovery, and three strict
+  MCP projections. It is not metal-verified. Download, mkdir, update,
+  move/delete, tree deployment, and prune remain unavailable.
 
 ## Grounded audit
 
@@ -38,7 +44,7 @@ agent file service.
 | Guest-bound receive | `now_files_receive_*` writes to a temporary file in the destination directory with one 32 KB buffer, checks free space before starting, reserves with `SetEOF`, reports progress, maintains a running CRC, keeps only eligible data-fork partials, sweeps week-old orphan temps when the clock is trustworthy, and renames only after final validation and metadata stamping. | This is the proven starting sink for deployment. V0.5 must expose its progress, free-space, finalization, and cleanup evidence rather than replace it with an in-memory path. Reservation and cleanup outcomes need typed command receipts. |
 | Guest send | `now_files_stage` allocates one temporary-memory handle for the complete data or MacBinary artifact before sending. | Arbitrary download is gated on a streaming guest sender. V0.5 must not raise a size limit and pretend this whole-file allocation is disk-aware. |
 | Host receive | `GuestListener.Session` appends an entire pulled file to `fileBuffer`, then constructs `Data` at `file.end`; it sends no receiver progress and verifies no sender CRC. | Download, text read, and tail are gated on a host streaming sink with bounded reads, running CRC, progress, interruption cleanup, and honest resume behavior. |
-| Host send | The host currently sends an in-memory `OutboundFile.Plan`, but the guest sink supplies receiver progress, CRC confirmation, resume, and final `file.done`. The V0 artifact lane is additionally capped at 4 MiB and stages a sealed approval copy. | V0.5 deployment needs a file-backed outbound source and bounded buffer. The V0 approval lane remains unchanged and compatible; it is not silently widened. |
+| Host send | The host's ordinary Files and V0 artifact paths still use an in-memory `OutboundFile.Plan`; the V0 artifact lane remains capped at 4 MiB and stages a sealed approval copy. V0.5 staged upload now uses an immutable file-backed source read one existing bulk frame at a time. | The new path removes whole-file host memory retention for V0.5 upload without silently widening the existing V0 approval contract. Remaining deployment work must reuse this source rather than reintroduce `Data` buffering. |
 | Mutations | Existing `file.move`, `file.trash`, `file.restore`, and `file.mkdir` are root-relative and logged, but act by path and do not accept a precondition identity. | V0.5 mutation tools remain unavailable until a contract-first, guest-revalidated opaque observation identity exists. Delete remains recoverable Trash-backed removal; permanent unlink is excluded. |
 | Logging | Host and guest log Files operations under the `files` / `put` areas with wire IDs; no per-chunk logging is allowed. | Every NOW command adds one bounded start/outcome audit event and a receipt ID while retaining the ordinary wire logs and their correlation IDs. |
 
@@ -144,8 +150,8 @@ that network behavior fixed.
 | `guestFiles.stat` | bounded exact match through parent `file.listing` pages | Slice 1 | Exact metadata observation or explicit scan-limit/not-found. |
 | `guestFiles.download` | `file.get` / begin / bulk / end | Slice 2, after streaming gates | File-backed host staging, integrity and cleanup receipt. |
 | `guestFiles.readText` / `tailText` | bounded view over `download` | Slice 2 | UTF-8/MacRoman conversion evidence, byte/line truncation, never follow mode. |
-| `guestFiles.put` | `file.offer` / accept / begin / bulk / end / done | Slice 3 | File-backed source, disk reservation, delivery and cleanup receipt. |
-| `guestFiles.mkdir` | `file.mkdir` / `file.result` | Slice 3 | Idempotent existing-folder result; collision remains typed. |
+| `guestFiles.put` | `file.offer` / accept / begin / bulk / end / done | Slice 3a, tested; metal pending | Create-only private stage, file-backed source, disk reservation, delivery and cleanup receipt. The parent must already exist; success requires matching guest length, CRC, finalization, and temp cleanup. Update/overwrite remains gated on mutation preconditions. |
+| `guestFiles.mkdir` | `file.mkdir` / `file.result` | Slice 3b, deferred | Idempotent existing-folder result; collision remains typed. |
 | `guestFiles.move` | extended `file.move` / `file.result` | Slice 4 | Fresh observation precondition; recoverable overwrite policy. |
 | `guestFiles.delete` | extended `file.trash` / `file.result` | Slice 4 | Trash-backed recovery receipt; no permanent unlink. |
 | `guestFiles.deployTree` | staged `put` + `mkdir` + finalize command additions as required | Slice 5 | Per-entry and aggregate receipts; interrupted staging is inspectable and cleanable. |
@@ -176,9 +182,12 @@ A listing/stat receipt may mint an opaque observation reference bound to:
 - observation time and expiry.
 
 The raw volume reference, directory ID, catalog node ID, or full HFS path never
-crosses MCP. Before V0.5 mutation work begins, the wire contract must carry a
-guest-verifiable precondition token or equivalent fields. Host-only comparison
-is insufficient because the final lookup and mutation occur on the guest.
+crosses MCP. `file.listing` now carries an opaque responder-generated catalog
+identity, and the host binds it into a short-lived opaque observation
+reference. Before V0.5 mutation work begins, each mutation request must carry
+the precondition back to the guest and the guest must recompute it immediately
+before acting. Host-only comparison remains insufficient because the final
+lookup and mutation occur on the guest.
 
 ### Transfer and deployment receipt
 
@@ -196,9 +205,11 @@ aggregate counts/bytes, and final state: `complete`, `partial`, `refused`,
 - A guest-bound transfer writes only a recognized temporary artifact until
   finalization. An interrupted eligible data-fork transfer may remain
   resumable; MacBinary and integrity-failed transfers restart or are discarded.
-- Host-bound transfer staging uses a private command-owned directory, bounded
-  file handles, and a recovery index. Startup reconciliation reports and
-  removes expired incomplete artifacts according to policy.
+- Guest-bound upload input uses a private per-process host directory and
+  bounded file handles. Normal completion, expiry, integrity failure, and
+  process teardown remove recognized stages. Startup reconciliation removes
+  only well-formed private stage directories owned by a demonstrably dead PID,
+  logs the count, and retains live-process or unfamiliar state.
 - Tree deployment stages under one deployment ID. Final paths change only
   after every staged entry required for that phase is validated. If classic
   HFS cannot provide one atomic tree swap, the receipt names the exact
@@ -247,12 +258,18 @@ adds no daemon or second app.
 - Prove increasing disposable sizes, cancellation, interruption, insufficient
   space, CRC mismatch, cleanup, text truncation, and classic fork fidelity.
 
-### V05-U3 — Disk-backed put and mkdir
+### V05-U3 — Disk-backed put, then mkdir
 
-- Replace the host's in-memory outbound plan for V0.5 with a file-backed source
-  while preserving the V0 approved-artifact lane.
-- Surface guest reservation/progress/finalization evidence and stalled state.
-- Add create/update and mkdir commands with explicit collision policy.
+- **Implemented and tested:** create-only staged put with a file-backed source,
+  host/guest disk reservation evidence, progress/rate/stall evidence, strict
+  finalization/cleanup evidence, late-collision preservation, bounded
+  off-UI-actor disk I/O, replay conflict, and no host-path input or implicit
+  parent creation. The
+  V0 approved-artifact lane remains behaviorally unchanged.
+- **Still gated:** attended PowerBook acceptance for the new path.
+- **Deferred within U3:** update/overwrite and mkdir. Update waits for the
+  mutation precondition boundary; mkdir remains its own typed command rather
+  than being smuggled into upload.
 
 ### V05-U4 — Revalidated move and recoverable delete
 

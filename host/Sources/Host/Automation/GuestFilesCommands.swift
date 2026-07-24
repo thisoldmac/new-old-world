@@ -15,21 +15,48 @@ final class GuestFilesCommandService {
     private let currentSessionID: () -> UUID?
     private let audit: Audit
     private let maximumStatPages: Int
+    private let clock: () -> Date
+    private let uploadCommands: GuestFileUploadCommands
+    private var observations: [String: Observation] = [:]
+
+    static let observationLifetime: TimeInterval = 60
+    private static let maximumObservations = 256
 
     init(
         listener: GuestListener,
         policy: GuestFileAccessPolicy,
         currentSessionID: @escaping () -> UUID?,
         audit: Audit? = nil,
-        maximumStatPages: Int = 8
+        maximumStatPages: Int = 8,
+        clock: @escaping () -> Date = Date.init,
+        uploadStaging: GuestUploadStagingStore? = nil
     ) {
+        let auditSink = audit ?? {
+            HostLog.shared.write($0, "files", $1)
+        }
+        let staging = uploadStaging ?? (try? GuestUploadStagingStore(
+            clock: clock))
         self.listener = listener
         self.policy = policy
         self.currentSessionID = currentSessionID
-        self.audit = audit ?? {
-            HostLog.shared.write($0, "files", $1)
-        }
+        self.audit = auditSink
         self.maximumStatPages = max(1, maximumStatPages)
+        self.clock = clock
+        if let staging, staging.recoveredOrphanCount > 0 {
+            auditSink(
+                .warn,
+                "guestFiles.put recovered "
+                    + "\(staging.recoveredOrphanCount) private orphan "
+                    + "staging director"
+                    + (staging.recoveredOrphanCount == 1 ? "y" : "ies"))
+        }
+        uploadCommands = GuestFileUploadCommands(
+            listener: listener,
+            policy: policy,
+            currentSessionID: currentSessionID,
+            audit: auditSink,
+            staging: staging,
+            clock: clock)
     }
 
     func capabilities() async -> GuestFileCommandResponse<
@@ -55,9 +82,11 @@ final class GuestFilesCommandService {
             let capabilities = GuestFileCapabilities(
                 guestRoot: root.wireValue,
                 rootLabel: validated.rootLabel,
-                availableCommands: [.capabilities, .list, .stat],
+                availableCommands: uploadCommands.isAvailable
+                    ? [.capabilities, .list, .stat, .put]
+                    : [.capabilities, .list, .stat],
                 deferredCommands: [
-                    .download, .readText, .tailText, .put, .mkdir,
+                    .download, .readText, .tailText, .mkdir,
                     .move, .delete, .deployTree, .prune,
                 ],
                 maximumPageEntries: 16,
@@ -110,9 +139,11 @@ final class GuestFilesCommandService {
                 return finishInvalidListing(
                     context, wireRequests: 1)
             }
-            let observedAt = Date()
+            let observedAt = clock()
             let entries = validated.entries.map {
-                observedEntry($0, parent: scoped)
+                observedEntry(
+                    $0, parent: scoped, sessionID: sessionID,
+                    observedAt: observedAt)
             }
             let snapshot = GuestFileListingSnapshot(
                 path: scoped.wireValue,
@@ -177,7 +208,9 @@ final class GuestFilesCommandService {
                 }) {
                     return finish(
                         context, outcome: .success, wireRequests: page,
-                        value: observedEntry(match, parent: scoped.parent))
+                        value: observedEntry(
+                            match, parent: scoped.parent,
+                            sessionID: sessionID, observedAt: clock()))
                 }
                 guard let next = validated.nextCursor else {
                     return finish(
@@ -197,6 +230,22 @@ final class GuestFilesCommandService {
                 code: "now-files-scan-limit",
                 message:
                     "The bounded parent scan ended before that item was observed"))
+    }
+
+    func beginUpload(_ request: GuestFileUploadBeginRequest) async
+        -> GuestFileCommandResponse<GuestFileUploadStageStatus> {
+        await uploadCommands.begin(request)
+    }
+
+    func appendUpload(uploadID: UUID, offset: Int, bytes: Data) async
+        -> GuestFileCommandResponse<GuestFileUploadStageStatus> {
+        await uploadCommands.append(
+            uploadID: uploadID, offset: offset, bytes: bytes)
+    }
+
+    func commitUpload(uploadID: UUID) async
+        -> GuestFileCommandResponse<GuestFileUploadTransferReceipt> {
+        await uploadCommands.commit(uploadID: uploadID)
     }
 
     private var transferLaneState: String {
@@ -232,6 +281,10 @@ final class GuestFilesCommandService {
                   entry.dataBytes.map({ $0 >= 0 }) ?? true,
                   entry.rsrcBytes.map({ $0 >= 0 }) ?? true
             else { return false }
+            if let identity = entry.identity,
+               !Self.isValidGuestIdentity(identity) {
+                return false
+            }
             guard let modified = entry.modified else { return true }
             return modified >= 0 && UInt64(modified) <= UInt64(UInt32.max)
         }
@@ -245,10 +298,20 @@ final class GuestFilesCommandService {
             })
     }
 
-    private func observedEntry(_ entry: FileEntry, parent: GuestFilePath)
+    private func observedEntry(
+        _ entry: FileEntry,
+        parent: GuestFilePath,
+        sessionID: UUID,
+        observedAt: Date
+    )
         -> GuestFileObservedEntry {
         let path = parent.wireValue.isEmpty
             ? entry.name : parent.wireValue + ":" + entry.name
+        let reference = entry.identity.map {
+            rememberObservation(
+                identity: $0, path: path, sessionID: sessionID,
+                observedAt: observedAt)
+        }
         return GuestFileObservedEntry(
             path: path,
             name: entry.name,
@@ -257,7 +320,74 @@ final class GuestFilesCommandService {
             creator: entry.creator,
             dataBytes: entry.dataBytes,
             resourceBytes: entry.rsrcBytes,
-            modified: entry.modified)
+            modified: entry.modified,
+            observationReference: reference)
+    }
+
+    /// Resolves no authority on its own. Future mutations must also carry the
+    /// returned guest token over the wire and have the guest recompute it
+    /// immediately before acting.
+    func resolveObservation(reference: String, path: String)
+        -> GuestFileMutationPrecondition? {
+        pruneObservations()
+        guard let observation = observations[reference],
+              observation.expiresAt >= clock(),
+              observation.sessionID == currentSessionID(),
+              observation.policyVersion == policy.snapshot.version,
+              observation.path == path
+        else { return nil }
+        return .init(
+            sessionID: observation.sessionID,
+            policyVersion: observation.policyVersion,
+            path: observation.path,
+            guestIdentity: observation.guestIdentity)
+    }
+
+    private struct Observation {
+        let sessionID: UUID
+        let policyVersion: Int
+        let path: String
+        let guestIdentity: String
+        let expiresAt: Date
+    }
+
+    private func rememberObservation(
+        identity: String,
+        path: String,
+        sessionID: UUID,
+        observedAt: Date
+    ) -> String {
+        pruneObservations()
+        if observations.count >= Self.maximumObservations,
+           let first = observations.keys.sorted().first {
+            observations.removeValue(forKey: first)
+        }
+        let reference =
+            "now-file-\(UUID().uuidString.lowercased())"
+        observations[reference] = Observation(
+            sessionID: sessionID,
+            policyVersion: policy.snapshot.version,
+            path: path,
+            guestIdentity: identity,
+            expiresAt: observedAt.addingTimeInterval(
+                Self.observationLifetime))
+        return reference
+    }
+
+    private func pruneObservations() {
+        let now = clock()
+        let sessionID = currentSessionID()
+        observations = observations.filter {
+            $0.value.expiresAt >= now
+                && $0.value.sessionID == sessionID
+                && $0.value.policyVersion == policy.snapshot.version
+        }
+    }
+
+    private static func isValidGuestIdentity(_ value: String) -> Bool {
+        value.count == 16 && value.allSatisfy {
+            $0.isNumber || ("a"..."f").contains($0)
+        }
     }
 
     private func listOnce(path: String, cursor: Int?) async
@@ -275,6 +405,7 @@ final class GuestFilesCommandService {
         let policyVersion: Int
         let operation: GuestFileCommandKind
         let startedAt: Date
+        let path: String
     }
 
     private func begin(_ operation: GuestFileCommandKind, path: String)
@@ -284,7 +415,8 @@ final class GuestFilesCommandService {
             sessionID: currentSessionID(),
             policyVersion: policy.snapshot.version,
             operation: operation,
-            startedAt: Date())
+            startedAt: clock(),
+            path: path)
         audit(.info, "\(tag(context)) started path=\(quoted(path)) "
               + "policy=\(context.policyVersion)")
         return context
@@ -297,7 +429,7 @@ final class GuestFilesCommandService {
         value: Value? = nil,
         failure: GuestFileCommandFailure? = nil
     ) -> GuestFileCommandResponse<Value> {
-        let completedAt = Date()
+        let completedAt = clock()
         let receipt = GuestFileCommandReceipt(
             commandID: context.commandID,
             sessionID: context.sessionID,
@@ -306,7 +438,8 @@ final class GuestFilesCommandService {
             startedAt: context.startedAt,
             completedAt: completedAt,
             outcome: outcome,
-            wireRequestCount: wireRequests)
+            wireRequestCount: wireRequests,
+            affectedPaths: context.path.isEmpty ? [] : [context.path])
         let level: HostLog.LogLevel =
             outcome == .success ? .info : .warn
         audit(level, "\(tag(context)) \(outcome.rawValue) "

@@ -193,6 +193,128 @@ final class NOWAgentGuestFilesTests: XCTestCase {
         XCTAssertEqual(statPath, "Missing")
     }
 
+    func testUploadToolsForwardOnlyBoundedTypedArguments() async throws {
+        let client = RecordingGuestFilesClient()
+        let server = try await initializedServer(client: client)
+        let uploadID = UUID()
+        let digest = String(repeating: "a", count: 64)
+
+        _ = await server.handle(try Self.request(
+            id: 2,
+            method: "tools/call",
+            params: [
+                "name": "now_guest_files_upload_begin",
+                "arguments": [
+                    "destinationPath": "Drops:hello.txt",
+                    "bytes": 3,
+                    "sha256": digest,
+                    "container": "data",
+                    "fileType": "TEXT",
+                    "creator": "ttxt",
+                ],
+            ]))
+        _ = await server.handle(try Self.request(
+            id: 3,
+            method: "tools/call",
+            params: [
+                "name": "now_guest_files_upload_append",
+                "arguments": [
+                    "uploadID": uploadID.uuidString,
+                    "offset": 0,
+                    "data": Data("abc".utf8).base64EncodedString(),
+                ],
+            ]))
+        _ = await server.handle(try Self.request(
+            id: 4,
+            method: "tools/call",
+            params: [
+                "name": "now_guest_files_upload_commit",
+                "arguments": ["uploadID": uploadID.uuidString],
+            ]))
+
+        let begin = await client.lastUploadBegin
+        XCTAssertEqual(begin?.destinationPath, "Drops:hello.txt")
+        XCTAssertEqual(begin?.bytes, 3)
+        XCTAssertEqual(begin?.sha256, digest)
+        XCTAssertEqual(begin?.fileType, "TEXT")
+        let append = await client.lastUploadAppend
+        XCTAssertEqual(append?.uploadID, uploadID)
+        XCTAssertEqual(append?.offset, 0)
+        XCTAssertEqual(append?.bytes, Data("abc".utf8))
+        let commit = await client.lastUploadCommit
+        XCTAssertEqual(commit, uploadID)
+    }
+
+    func testUploadToolsRejectMalformedOrUnboundedArguments()
+        async throws {
+        let server = try await initializedServer(
+            client: RecordingGuestFilesClient())
+        let uploadID = UUID().uuidString
+        let digest = String(repeating: "a", count: 64)
+        let cases: [(String, [String: Any])] = [
+            ("now_guest_files_upload_begin", [
+                "destinationPath": "Drops:x",
+                "bytes": -1,
+                "sha256": digest,
+                "container": "data",
+            ]),
+            ("now_guest_files_upload_begin", [
+                "destinationPath": "Drops:x",
+                "bytes": 1,
+                "sha256": "not-a-digest",
+                "container": "data",
+            ]),
+            ("now_guest_files_upload_begin", [
+                "destinationPath": "Drops:x",
+                "bytes": 1,
+                "sha256": String(repeating: "١", count: 64),
+                "container": "data",
+            ]),
+            ("now_guest_files_upload_begin", [
+                "destinationPath": "Drops:x",
+                "bytes": 1,
+                "sha256": digest,
+                "container": "data",
+                "modified": -1,
+            ]),
+            ("now_guest_files_upload_begin", [
+                "destinationPath": "Drops:x",
+                "bytes": 1,
+                "sha256": digest,
+                "container": "data",
+                "fileType": "TOO-LONG",
+            ]),
+            ("now_guest_files_upload_append", [
+                "uploadID": uploadID,
+                "offset": 0,
+                "data": "not base64!",
+            ]),
+            ("now_guest_files_upload_append", [
+                "uploadID": uploadID,
+                "offset": 0,
+                "data": Data(repeating: 1, count: 8_193)
+                    .base64EncodedString(),
+            ]),
+            ("now_guest_files_upload_commit", [
+                "uploadID": "not-a-uuid",
+            ]),
+        ]
+
+        for (index, item) in cases.enumerated() {
+            let response = try Self.object(await server.handle(
+                try Self.request(
+                    id: index + 10,
+                    method: "tools/call",
+                    params: [
+                        "name": item.0,
+                        "arguments": item.1,
+                    ])))
+            let error = try XCTUnwrap(
+                response["error"] as? [String: Any])
+            XCTAssertEqual(error["code"] as? Int, -32602)
+        }
+    }
+
     private func guestFileReceipt(
         _ operation: AgentIntegrationGuestFileOperation,
         outcome: AgentIntegrationGuestFileOutcome = .success,
@@ -218,6 +340,11 @@ private actor RecordingGuestFilesClient: AgentIntegrationClient {
 
     private(set) var lastListCall: ListCall?
     private(set) var lastStatPath: String?
+    private(set) var lastUploadBegin:
+        AgentIntegrationGuestFileUploadBegin?
+    private(set) var lastUploadAppend:
+        (uploadID: UUID, offset: Int, bytes: Data)?
+    private(set) var lastUploadCommit: UUID?
     let listResult: AgentIntegrationGuestFileListResult
     let statResult: AgentIntegrationGuestFileStatResult
 
@@ -269,5 +396,25 @@ private actor RecordingGuestFilesClient: AgentIntegrationClient {
         -> AgentIntegrationGuestFileStatResult {
         lastStatPath = path
         return statResult
+    }
+
+    func beginGuestFileUpload(
+        _ upload: AgentIntegrationGuestFileUploadBegin
+    ) async -> AgentIntegrationGuestFileUploadStageResult {
+        lastUploadBegin = upload
+        return .hostUnavailable(.host)
+    }
+
+    func appendGuestFileUpload(
+        uploadID: UUID, offset: Int, bytes: Data
+    ) async -> AgentIntegrationGuestFileUploadStageResult {
+        lastUploadAppend = (uploadID, offset, bytes)
+        return .hostUnavailable(.host)
+    }
+
+    func commitGuestFileUpload(uploadID: UUID) async
+        -> AgentIntegrationGuestFileUploadCommitResult {
+        lastUploadCommit = uploadID
+        return .hostUnavailable(.host)
     }
 }

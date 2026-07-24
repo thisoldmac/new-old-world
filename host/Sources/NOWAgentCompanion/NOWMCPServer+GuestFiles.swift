@@ -58,6 +58,93 @@ extension NOWMCPServer {
         ]
     }
 
+    func guestFilesUploadBeginTool() -> [String: Any] {
+        [
+            "name": ToolName.guestFilesUploadBegin.rawValue,
+            "title": "Begin a New Old World Guest File Upload",
+            "description":
+                "Reserves private NOW-owned staging for one declared file beneath guestRoot. It accepts no modern-host path and sends nothing to the guest yet.",
+            "inputSchema": [
+                "type": "object",
+                "properties": [
+                    "destinationPath": guestFilePathSchema,
+                    "bytes": [
+                        "type": "integer", "minimum": 0,
+                        "maximum": Int(Int32.max),
+                    ],
+                    "sha256": [
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$",
+                    ],
+                    "container": [
+                        "type": "string",
+                        "enum": ["data", "macbinary"],
+                    ],
+                    "fileType": [
+                        "type": "string", "minLength": 4, "maxLength": 4,
+                    ],
+                    "creator": [
+                        "type": "string", "minLength": 4, "maxLength": 4,
+                    ],
+                    "modified": ["type": "integer", "minimum": 0],
+                ],
+                "required": [
+                    "destinationPath", "bytes", "sha256", "container",
+                ],
+                "additionalProperties": false,
+            ],
+            "outputSchema": guestFileResultSchema(
+                value: guestFileUploadStageSchema),
+            "annotations": uploadAnnotations,
+        ]
+    }
+
+    func guestFilesUploadAppendTool() -> [String: Any] {
+        [
+            "name": ToolName.guestFilesUploadAppend.rawValue,
+            "title": "Append a New Old World Guest File Upload",
+            "description":
+                "Writes one ordered, bounded base64 chunk into an existing private NOW upload stage. It sends nothing to the guest.",
+            "inputSchema": [
+                "type": "object",
+                "properties": [
+                    "uploadID": ["type": "string", "format": "uuid"],
+                    "offset": ["type": "integer", "minimum": 0],
+                    "data": [
+                        "type": "string",
+                        "contentEncoding": "base64",
+                        "maxLength": 11_000,
+                    ],
+                ],
+                "required": ["uploadID", "offset", "data"],
+                "additionalProperties": false,
+            ],
+            "outputSchema": guestFileResultSchema(
+                value: guestFileUploadStageSchema),
+            "annotations": uploadAnnotations,
+        ]
+    }
+
+    func guestFilesUploadCommitTool() -> [String: Any] {
+        [
+            "name": ToolName.guestFilesUploadCommit.rawValue,
+            "title": "Commit a New Old World Guest File Upload",
+            "description":
+                "Verifies and consumes one private stage, then asks the running NOW host to create the exact destination through its existing guest transfer lane. It never overwrites.",
+            "inputSchema": [
+                "type": "object",
+                "properties": [
+                    "uploadID": ["type": "string", "format": "uuid"],
+                ],
+                "required": ["uploadID"],
+                "additionalProperties": false,
+            ],
+            "outputSchema": guestFileResultSchema(
+                value: guestFileUploadReceiptSchema),
+            "annotations": uploadAnnotations,
+        ]
+    }
+
     private var emptyInputSchema: [String: Any] {
         [
             "type": "object",
@@ -85,14 +172,74 @@ extension NOWMCPServer {
         ]
     }
 
+    private var uploadAnnotations: [String: Any] {
+        [
+            "readOnlyHint": false,
+            "destructiveHint": false,
+            "idempotentHint": false,
+            "openWorldHint": false,
+        ]
+    }
+
     private var guestFileFailureSchema: [String: Any] {
         [
             "type": "object",
             "properties": [
                 "code": ["type": "string", "maxLength": 64],
                 "message": ["type": "string", "maxLength": 256],
+                "transferEvidence": [
+                    "oneOf": [
+                        guestFileTransferFailureEvidenceSchema,
+                        ["type": "null"],
+                    ],
+                ],
             ],
             "required": ["code", "message"],
+            "additionalProperties": false,
+        ]
+    }
+
+    private var guestFileTransferFailureEvidenceSchema: [String: Any] {
+        [
+            "type": "object",
+            "properties": [
+                "totalBytes": ["type": "integer", "minimum": 0],
+                "acceptedOffset": ["type": "integer", "minimum": 0],
+                "receiverConfirmedBytes": [
+                    "type": ["integer", "null"], "minimum": 0,
+                ],
+                "elapsedMs": ["type": "integer", "minimum": 0],
+                "stalledState": [
+                    "type": "string",
+                    "enum": ["observed", "not-observed", "unknown"],
+                ],
+                "maximumProgressGapMs": [
+                    "type": ["integer", "null"], "minimum": 0,
+                ],
+                "progressEvidence": [
+                    "type": "string", "maxLength": 32,
+                ],
+                "guestFreeBytesBefore": [
+                    "type": ["integer", "null"], "minimum": 0,
+                ],
+                "guestReservedBytes": [
+                    "type": ["integer", "null"], "minimum": 0,
+                ],
+                "guestStaging": [
+                    "type": ["string", "null"], "maxLength": 32,
+                ],
+                "hostStagingCleanup": [
+                    "type": "string", "maxLength": 32,
+                ],
+                "guestCleanup": [
+                    "type": "string", "maxLength": 32,
+                ],
+            ],
+            "required": [
+                "totalBytes", "acceptedOffset", "elapsedMs",
+                "stalledState", "progressEvidence",
+                "hostStagingCleanup", "guestCleanup",
+            ],
             "additionalProperties": false,
         ]
     }
@@ -124,14 +271,21 @@ extension NOWMCPServer {
                     "type": "string",
                     "enum": [
                         "success", "unavailable", "staleSession",
-                        "notFound", "scanLimit", "refused",
+                        "notFound", "scanLimit", "refused", "expired",
+                        "conflict", "failed",
                     ],
                 ],
                 "wireRequestCount": ["type": "integer", "minimum": 0],
+                "affectedPaths": [
+                    "type": "array",
+                    "maxItems": 1,
+                    "items": guestFilePathSchema,
+                ],
             ],
             "required": [
                 "commandID", "policyVersion", "operation", "startedAt",
                 "completedAt", "outcome", "wireRequestCount",
+                "affectedPaths",
             ],
             "additionalProperties": false,
         ]
@@ -166,6 +320,14 @@ extension NOWMCPServer {
                     "maximum": Int(UInt32.max),
                     "description":
                         "Classic Mac seconds since 1904 when observed.",
+                ],
+                "observationReference": [
+                    "type": ["string", "null"],
+                    "maxLength":
+                        AgentIntegrationGuestFilePolicy
+                            .maximumObservationReferenceScalars,
+                    "description":
+                        "Opaque, short-lived handle for this exact observation. It grants no path-only mutation authority.",
                 ],
             ],
             "required": ["path", "name", "isFolder"],
@@ -242,6 +404,90 @@ extension NOWMCPServer {
                 "maximumPageEntries", "maximumStatPages",
                 "maximumPathBytes", "maximumSegmentBytes",
                 "transferLaneState", "observedAt",
+            ],
+            "additionalProperties": false,
+        ]
+    }
+
+    private var guestFileUploadStageSchema: [String: Any] {
+        [
+            "type": "object",
+            "properties": [
+                "uploadID": ["type": "string", "format": "uuid"],
+                "destinationPath": guestFilePathSchema,
+                "expectedBytes": ["type": "integer", "minimum": 0],
+                "receivedBytes": ["type": "integer", "minimum": 0],
+                "maximumChunkBytes": [
+                    "const": AgentIntegrationGuestFilePolicy
+                        .maximumUploadChunkBytes,
+                ],
+                "expiresAt": ["type": "string", "format": "date-time"],
+                "hostAvailableBytesAtStart": [
+                    "type": "integer", "minimum": 0,
+                ],
+                "hostReservedBytes": ["type": "integer", "minimum": 0],
+                "sealed": ["type": "boolean"],
+            ],
+            "required": [
+                "uploadID", "destinationPath", "expectedBytes",
+                "receivedBytes", "maximumChunkBytes", "expiresAt",
+                "hostAvailableBytesAtStart", "hostReservedBytes", "sealed",
+            ],
+            "additionalProperties": false,
+        ]
+    }
+
+    private var guestFileUploadReceiptSchema: [String: Any] {
+        [
+            "type": "object",
+            "properties": [
+                "uploadID": ["type": "string", "format": "uuid"],
+                "destinationPath": guestFilePathSchema,
+                "container": [
+                    "type": "string", "enum": ["data", "macbinary"],
+                ],
+                "sha256": [
+                    "type": "string", "pattern": "^[0-9a-f]{64}$",
+                ],
+                "totalBytes": ["type": "integer", "minimum": 0],
+                "acceptedOffset": ["type": "integer", "minimum": 0],
+                "receiverConfirmedBytes": [
+                    "type": "integer", "minimum": 0,
+                ],
+                "elapsedMs": ["type": "integer", "minimum": 0],
+                "averageBytesPerSecond": [
+                    "type": "integer", "minimum": 0,
+                ],
+                "stalledState": [
+                    "type": "string",
+                    "enum": ["observed", "not-observed", "unknown"],
+                ],
+                "maximumProgressGapMs": [
+                    "type": ["integer", "null"], "minimum": 0,
+                ],
+                "progressEvidence": ["type": "string", "maxLength": 32],
+                "guestFreeBytesBefore": [
+                    "type": ["integer", "null"], "minimum": 0,
+                ],
+                "guestReservedBytes": [
+                    "type": ["integer", "null"], "minimum": 0,
+                ],
+                "guestStaging": [
+                    "type": ["string", "null"], "maxLength": 32,
+                ],
+                "finalization": ["type": "string", "maxLength": 32],
+                "destinationAcknowledged": ["const": true],
+                "integrity": ["type": "string", "maxLength": 32],
+                "hostStagingCleanup": ["type": "string", "maxLength": 32],
+                "guestCleanup": ["type": "string", "maxLength": 32],
+            ],
+            "required": [
+                "uploadID", "destinationPath", "container", "sha256",
+                "totalBytes", "acceptedOffset", "receiverConfirmedBytes",
+                "elapsedMs", "averageBytesPerSecond", "stalledState",
+                "progressEvidence", "finalization",
+                "destinationAcknowledged", "integrity",
+                "hostStagingCleanup", "guestCleanup",
             ],
             "additionalProperties": false,
         ]

@@ -163,6 +163,53 @@ static int list_dir_id(const char *rel_path, const FSSpec *spec,
     return folder_dir_id(spec, dir_id);
 }
 
+/* Two CRC streams over the catalog tuple make one opaque 64-bit token.
+   This is not authority and it deliberately exposes none of the volume,
+   directory, or file IDs it covers. A mutation can recompute the same
+   tuple immediately before acting and refuse if either half changed. */
+static void catalog_identity(const CInfoPBRec *pb, const Str255 name,
+                             Boolean folder, char out[17])
+{
+    unsigned long a = 0;
+    unsigned long b = 0xA5A5A5A5UL;
+    short vref = pb->hFileInfo.ioVRefNum;
+    long parent = folder ? pb->dirInfo.ioDrParID
+                         : pb->hFileInfo.ioFlParID;
+    long node = folder ? pb->dirInfo.ioDrDirID : 0;
+    unsigned long created = folder ? pb->dirInfo.ioDrCrDat
+                                   : pb->hFileInfo.ioFlCrDat;
+    unsigned long modified = folder ? pb->dirInfo.ioDrMdDat
+                                    : pb->hFileInfo.ioFlMdDat;
+    unsigned short data_block = folder ? 0 : pb->hFileInfo.ioFlStBlk;
+    unsigned short rsrc_block = folder ? 0 : pb->hFileInfo.ioFlRStBlk;
+    long data_bytes = folder ? 0 : pb->hFileInfo.ioFlLgLen;
+    long rsrc_bytes = folder ? 0 : pb->hFileInfo.ioFlRLgLen;
+    OSType file_type = folder ? 0 : pb->hFileInfo.ioFlFndrInfo.fdType;
+    OSType creator = folder ? 0 : pb->hFileInfo.ioFlFndrInfo.fdCreator;
+
+#define IDENTITY_FEED(value) \
+    do { \
+        a = now_crc32(a, &(value), (long)sizeof(value)); \
+        b = now_crc32(b, &(value), (long)sizeof(value)); \
+    } while (0)
+    IDENTITY_FEED(vref);
+    IDENTITY_FEED(parent);
+    IDENTITY_FEED(node);
+    IDENTITY_FEED(folder);
+    IDENTITY_FEED(created);
+    IDENTITY_FEED(modified);
+    IDENTITY_FEED(data_block);
+    IDENTITY_FEED(rsrc_block);
+    IDENTITY_FEED(data_bytes);
+    IDENTITY_FEED(rsrc_bytes);
+    IDENTITY_FEED(file_type);
+    IDENTITY_FEED(creator);
+    a = now_crc32(a, name + 1, name[0]);
+    b = now_crc32(b, name + 1, name[0]);
+#undef IDENTITY_FEED
+    snprintf(out, 17, "%08lx%08lx", a & 0xFFFFFFFFUL, b & 0xFFFFFFFFUL);
+}
+
 int now_files_list(const char *rel_path, short start,
                    FileEntry *out, int max,
                    Boolean *more, short *next_start)
@@ -215,6 +262,7 @@ int now_files_list(const char *rel_path, short start,
             e->rsrc_bytes = pb.hFileInfo.ioFlRLgLen;
             e->modified = pb.hFileInfo.ioFlMdDat;
         }
+        catalog_identity(&pb, name, e->folder, e->identity);
         ++count;
         *next_start = index;
     }
@@ -1364,13 +1412,16 @@ static int reseed_crc_from_disk(FileReceive *rx, long upto)
 int now_files_receive_begin(const char *rel_path, const char *name,
                             FileContainer container, long bytes,
                             OSType file_type, OSType creator,
-                            unsigned long modified, Boolean overwrite,
+                            unsigned long modified, Boolean create_parents,
+                            Boolean overwrite,
                             const char *resume_token, long resume_offset,
                             FileReceive *rx)
 {
     FSSpec folder;
     long dir_id;
-    int rc = resolve_folder_creating(rel_path, &folder, &dir_id);
+    int rc = create_parents
+        ? resolve_folder_creating(rel_path, &folder, &dir_id)
+        : resolve_folder(rel_path, &folder, &dir_id);
 
     if (rc != kFilesOK) {
         memset(rx, 0, sizeof *rx);
@@ -1402,6 +1453,8 @@ int now_files_receive_begin_at(short vref, long dir_id, const char *name,
     Str255 temp_name;
     char temp[40];
     Boolean resumable;
+    long free_bytes;
+    long need;
 
     OSErr err;
 
@@ -1429,13 +1482,10 @@ int now_files_receive_begin_at(short vref, long dir_id, const char *name,
        wire's speed, discovering a full disk at the end of a megabyte is
        minutes wasted. Only the REMAINING bytes need room — the partial
        already occupies what it holds. */
-    {
-        long free_bytes = volume_free_bytes(folder.vRefNum);
-        long need = bytes - resume_offset;
-
-        if (free_bytes >= 0 && need > 0 && free_bytes < need) {
-            return kFilesTooBig;
-        }
+    free_bytes = volume_free_bytes(folder.vRefNum);
+    need = bytes - resume_offset;
+    if (free_bytes >= 0 && need > 0 && free_bytes < need) {
+        return kFilesTooBig;
     }
 
     /* Name the temp before sweeping, so the sweep can be told to spare
@@ -1533,13 +1583,32 @@ int now_files_receive_begin_at(short vref, long dir_id, const char *name,
        difference between 4 KB/s and the wire's speed. On a resume this
        re-claims the tail the previous attempt's truncation gave back. */
     if (bytes > 0) {
-        SetEOF(rx->data_ref, bytes);
+        err = SetEOF(rx->data_ref, bytes);
+        if (err != noErr) {
+            if (resume_offset > 0) {
+                SetEOF(rx->data_ref, resume_offset);
+            }
+            FSClose(rx->data_ref);
+            rx->data_ref = -1;
+            DisposePtr(rx->buf);
+            rx->buf = NULL;
+            if (resume_offset == 0) {
+                FSpDelete(&rx->temp);
+            }
+            return err == dskFulErr ? kFilesTooBig : kFilesIOError;
+        }
     }
     if (SetFPos(rx->data_ref, fsFromStart, resume_offset) != noErr) {
+        if (resume_offset > 0) {
+            SetEOF(rx->data_ref, resume_offset);
+        }
         FSClose(rx->data_ref);
         rx->data_ref = -1;
         DisposePtr(rx->buf);
         rx->buf = NULL;
+        if (resume_offset == 0) {
+            FSpDelete(&rx->temp);
+        }
         return kFilesIOError;
     }
 
@@ -1549,7 +1618,10 @@ int now_files_receive_begin_at(short vref, long dir_id, const char *name,
     rx->file_type = file_type;
     rx->creator = creator;
     rx->modified = modified;
+    rx->overwrite = overwrite;
     rx->keep_partial = resumable;
+    rx->free_before = free_bytes;
+    rx->reserved_bytes = need;
     return kFilesOK;
 }
 
@@ -1641,6 +1713,56 @@ static int write_macbinary(FileReceive *rx, const unsigned char *p, long len)
     return kFilesOK;
 }
 
+static unsigned short macbinary_crc16(const unsigned char *bytes, long len)
+{
+    unsigned short crc = 0;
+    long i;
+
+    for (i = 0; i < len; ++i) {
+        int bit;
+        crc ^= (unsigned short)bytes[i] << 8;
+        for (bit = 0; bit < 8; ++bit) {
+            crc = (crc & 0x8000) != 0
+                ? (unsigned short)((crc << 1) ^ 0x1021)
+                : (unsigned short)(crc << 1);
+        }
+    }
+    return crc;
+}
+
+static int valid_macbinary_receive(const FileReceive *rx)
+{
+    long data_padded, rsrc_padded, envelope;
+
+    if (rx->header_have != 128
+        || rx->header[0] != 0 || rx->header[74] != 0
+        || rx->header[82] != 0
+        || rx->header[1] < 1 || rx->header[1] > 63
+        || rx->mb_data_len < 0 || rx->mb_rsrc_len < 0
+        || rx->mb_data_len > rx->expected
+        || rx->mb_rsrc_len > rx->expected) {
+        return 0;
+    }
+    if (rx->header[122] == 129 || rx->header[122] == 130) {
+        unsigned short stored =
+            ((unsigned short)rx->header[124] << 8) | rx->header[125];
+        if (stored != macbinary_crc16(rx->header, 124)) {
+            return 0;
+        }
+    }
+    data_padded = (rx->mb_data_len + 127) & ~127L;
+    rsrc_padded = (rx->mb_rsrc_len + 127) & ~127L;
+    if (rx->expected < 128
+        || data_padded > rx->expected - 128
+        || rsrc_padded > rx->expected - 128 - data_padded) {
+        return 0;
+    }
+    envelope = 128 + data_padded + rsrc_padded;
+    return rx->expected - envelope < 256
+        && rx->mb_data_done >= data_padded
+        && rx->mb_rsrc_done == rx->mb_rsrc_len;
+}
+
 int now_files_receive_chunk(FileReceive *rx, const void *bytes, long len)
 {
     UnsignedWide t0, t1;
@@ -1679,6 +1801,13 @@ int now_files_receive_finish(FileReceive *rx)
     OSErr err;
 
     if (!rx->active) {
+        return kFilesIOError;
+    }
+    if (rx->container == kContainerMacBinary
+        && !valid_macbinary_receive(rx)) {
+        close_forks(rx);
+        rx->active = false;
+        FSpDelete(&rx->temp);
         return kFilesIOError;
     }
     if (flush_batch(rx, rx->rsrc_ref >= 0 ? rx->rsrc_ref : rx->data_ref)
@@ -1727,14 +1856,18 @@ int now_files_receive_finish(FileReceive *rx)
         PBSetCatInfoSync(&pb);
     }
 
-    /* Replacing: the old file goes only once the new one is whole. */
-    if (FSpDelete(&rx->final) != noErr) {
-        /* fnfErr is the normal case — nothing was there. */
+    /* Replacing: the old file goes only once the new one is whole.
+       Create-only offers never delete a file that appeared while the
+       transfer was in flight. */
+    if (rx->overwrite) {
+        if (FSpDelete(&rx->final) != noErr) {
+            /* fnfErr is the normal case — nothing was there. */
+        }
     }
     err = FSpRename(&rx->temp, rx->final.name);
     if (err != noErr) {
         FSpDelete(&rx->temp);
-        return kFilesIOError;
+        return err == dupFNErr ? kFilesExists : kFilesIOError;
     }
     return kFilesOK;
 }

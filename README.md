@@ -102,15 +102,17 @@ on either side.
   controls and changes neither app's module inventory. V0.5 adds three
   read-only projections over NOW's command layer: active guest-files
   capabilities, one bounded root-scoped listing page, and exact bounded
-  stat. They accept only canonical paths relative to the host-owned
-  `guestRoot`; download and mutations remain unavailable. All eight tools
-  are tested here. All eight also have bounded connected acceptance receipts
-  against the PowerBook 1400c: the original V0 receipt includes exact launch,
-  separately observed exit after cooperative quit, and one native-approved
-  69-byte artifact; the V0.5 receipt covers capability discovery, two bounded
-  listing pages, and exact stat. This is not a broader transport, endurance,
-  mutation, or destination-byte qualification; the exact evidence and limits
-  are in
+  stat. It also adds a create-only staged upload lifecycle: reserve private
+  disk staging, append ordered 8 KiB-or-smaller chunks, then verify and
+  commit through NOW's existing guest transfer lane. These tools accept only
+  canonical paths relative to the host-owned `guestRoot`; the destination's
+  parent must already exist, no host path is an input, and download, mkdir,
+  overwrite, move, delete, tree deployment, and prune remain unavailable. All
+  eleven tools are tested here. The original
+  five V0 tools and the three read-only V0.5 tools have bounded connected
+  acceptance receipts against the PowerBook 1400c; staged upload is not yet
+  metal-verified. This is not a broader transport, endurance, mutation, or
+  destination-byte qualification; the exact evidence and limits are in
   [docs/agent-integration.md](docs/agent-integration.md).
 
 Measured on the real PB1400c: ~4.9 fps at 8-bit with predictive +

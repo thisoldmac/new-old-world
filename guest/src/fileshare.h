@@ -19,7 +19,7 @@ enum {
     kFilesNotFound = -2,
     kFilesNotAFolder = -3,
     kFilesIOError = -4,
-    kFilesTooBig = -5,                /* could not stage the file in RAM */
+    kFilesTooBig = -5,                /* required staging space unavailable */
     kFilesExists = -6                 /* would overwrite; caller must ask */
 };
 
@@ -29,6 +29,7 @@ typedef struct {
     OSType file_type, creator;        /* 0 for folders */
     long data_bytes, rsrc_bytes;
     unsigned long modified;           /* classic seconds since 1904 */
+    char identity[17];                /* opaque 64-bit observation token */
 } FileEntry;
 
 typedef enum {
@@ -130,11 +131,14 @@ typedef struct {
     /* Running CRC-32 of the WHOLE file, seeded on resume from the bytes
        already on disk, so it covers the seam between two sessions. */
     unsigned long crc;
+    long free_before;                 /* -1 when the volume cannot report */
+    long reserved_bytes;              /* remaining stream bytes claimed */
     /* A partial worth resuming from: abort keeps it instead of deleting
        it. Only ever set when the sender named the file with a
        resumeToken, so an old peer's failures still clean up after
        themselves. */
     Boolean keep_partial;
+    Boolean overwrite;
 } FileReceive;
 
 /* Bytes of a resumable partial already held for `resume_token` in the
@@ -167,7 +171,8 @@ long now_files_partial_bytes(const char *rel_path, const char *resume_token,
 int now_files_receive_begin(const char *rel_path, const char *name,
                             FileContainer container, long bytes,
                             OSType file_type, OSType creator,
-                            unsigned long modified, Boolean overwrite,
+                            unsigned long modified, Boolean create_parents,
+                            Boolean overwrite,
                             const char *resume_token, long resume_offset,
                             FileReceive *rx);
 

@@ -218,6 +218,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     return .guestFilesStat(
                         await guestFiles.agentStat(
                             path: request.guestFilePath ?? ""))
+                case .guestFilesUploadBegin:
+                    guard let upload = request.guestFileUpload else {
+                        return .guestFilesUploadStage(.completed(
+                            receipt: AgentIntegrationGuestFileReceipt(
+                                commandID: UUID(),
+                                sessionID: nil,
+                                policyVersion: 1,
+                                operation: .put,
+                                startedAt: Date(),
+                                completedAt: Date(),
+                                outcome: .refused,
+                                wireRequestCount: 0),
+                            value: nil,
+                            failure: .init(
+                                code: "now-files-upload-invalid",
+                                message:
+                                    "Upload begin request is missing")))
+                    }
+                    return .guestFilesUploadStage(
+                        await guestFiles.agentBeginUpload(upload))
+                case .guestFilesUploadAppend:
+                    guard let uploadID = request.guestFileUploadID,
+                          let offset = request.guestFileUploadOffset,
+                          let encoded = request.guestFileUploadChunk,
+                          let bytes = Data(base64Encoded: encoded) else {
+                        return .guestFilesUploadStage(.hostUnavailable(
+                            .init(
+                                code: "now-files-upload-invalid",
+                                message: "Upload chunk is invalid")))
+                    }
+                    return .guestFilesUploadStage(
+                        await guestFiles.agentAppendUpload(
+                            uploadID: uploadID,
+                            offset: offset,
+                            bytes: bytes))
+                case .guestFilesUploadCommit:
+                    guard let uploadID = request.guestFileUploadID else {
+                        return .guestFilesUploadCommit(.hostUnavailable(
+                            .init(
+                                code: "now-files-upload-invalid",
+                                message: "Upload ID is missing")))
+                    }
+                    return .guestFilesUploadCommit(
+                        await guestFiles.agentCommitUpload(
+                            uploadID: uploadID))
                 }
             }
             try server.start()

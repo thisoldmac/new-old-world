@@ -168,6 +168,14 @@ public final class AgentIntegrationLocalServer {
                 response = .init(
                     requestID: request.requestID,
                     guestFilesStatResult: result)
+            case .guestFilesUploadStage(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    guestFilesUploadStageResult: result)
+            case .guestFilesUploadCommit(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    guestFilesUploadCommitResult: result)
             }
             finish(descriptor, response: response)
         }

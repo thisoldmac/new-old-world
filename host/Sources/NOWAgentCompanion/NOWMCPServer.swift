@@ -16,6 +16,33 @@ protocol AgentIntegrationClient: Sendable {
         -> AgentIntegrationGuestFileListResult
     func statGuestFile(path: String) async
         -> AgentIntegrationGuestFileStatResult
+    func beginGuestFileUpload(
+        _ upload: AgentIntegrationGuestFileUploadBegin
+    ) async -> AgentIntegrationGuestFileUploadStageResult
+    func appendGuestFileUpload(
+        uploadID: UUID, offset: Int, bytes: Data
+    ) async -> AgentIntegrationGuestFileUploadStageResult
+    func commitGuestFileUpload(uploadID: UUID) async
+        -> AgentIntegrationGuestFileUploadCommitResult
+}
+
+extension AgentIntegrationClient {
+    func beginGuestFileUpload(
+        _ upload: AgentIntegrationGuestFileUploadBegin
+    ) async -> AgentIntegrationGuestFileUploadStageResult {
+        .hostUnavailable(.host)
+    }
+
+    func appendGuestFileUpload(
+        uploadID: UUID, offset: Int, bytes: Data
+    ) async -> AgentIntegrationGuestFileUploadStageResult {
+        .hostUnavailable(.host)
+    }
+
+    func commitGuestFileUpload(uploadID: UUID) async
+        -> AgentIntegrationGuestFileUploadCommitResult {
+        .hostUnavailable(.host)
+    }
 }
 
 struct SocketAgentIntegrationClient: AgentIntegrationClient {
@@ -126,6 +153,46 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
+    func beginGuestFileUpload(
+        _ upload: AgentIntegrationGuestFileUploadBegin
+    ) async -> AgentIntegrationGuestFileUploadStageResult {
+        guard let client else {
+            return .hostUnavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.beginGuestFileUpload(upload)
+        } catch {
+            return .hostUnavailable(unavailable(for: error))
+        }
+    }
+
+    func appendGuestFileUpload(
+        uploadID: UUID, offset: Int, bytes: Data
+    ) async -> AgentIntegrationGuestFileUploadStageResult {
+        guard let client else {
+            return .hostUnavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.appendGuestFileUpload(
+                uploadID: uploadID, offset: offset, bytes: bytes)
+        } catch {
+            return .hostUnavailable(unavailable(for: error))
+        }
+    }
+
+    func commitGuestFileUpload(uploadID: UUID) async
+        -> AgentIntegrationGuestFileUploadCommitResult {
+        guard let client else {
+            return .hostUnavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.commitGuestFileUpload(
+                uploadID: uploadID)
+        } catch {
+            return .hostUnavailable(unavailable(for: error))
+        }
+    }
+
     private func unavailable(for error: Error?)
         -> AgentIntegrationUnavailable {
         guard let error else { return .host }
@@ -166,6 +233,9 @@ actor NOWMCPServer {
             "now_guest_files_capabilities"
         case guestFilesList = "now_guest_files_list"
         case guestFilesStat = "now_guest_files_stat"
+        case guestFilesUploadBegin = "now_guest_files_upload_begin"
+        case guestFilesUploadAppend = "now_guest_files_upload_append"
+        case guestFilesUploadCommit = "now_guest_files_upload_commit"
     }
 
     static let maximumMessageBytes = 64 * 1024
@@ -315,6 +385,9 @@ actor NOWMCPServer {
                 guestFilesCapabilitiesTool(),
                 guestFilesListTool(),
                 guestFilesStatTool(),
+                guestFilesUploadBeginTool(),
+                guestFilesUploadAppendTool(),
+                guestFilesUploadCommitTool(),
             ],
         ])
     }
@@ -955,7 +1028,108 @@ actor NOWMCPServer {
             }
             let result = await client.statGuestFile(path: path)
             return toolResponse(id: id, result: result)
+        case .guestFilesUploadBegin:
+            guard let arguments = params["arguments"] as? [String: Any],
+                  let upload = guestFileUploadBegin(arguments) else {
+                return errorResponse(
+                    id: id, code: -32602,
+                    message:
+                        "now_guest_files_upload_begin requires one canonical destination, declared size, SHA-256, and data or macbinary container")
+            }
+            return toolResponse(
+                id: id,
+                result: await client.beginGuestFileUpload(upload))
+        case .guestFilesUploadAppend:
+            guard let arguments = params["arguments"] as? [String: Any],
+                  Set(arguments.keys) == ["uploadID", "offset", "data"],
+                  let rawID = arguments["uploadID"] as? String,
+                  let uploadID = UUID(uuidString: rawID),
+                  let offset = arguments["offset"] as? Int,
+                  offset >= 0,
+                  let encoded = arguments["data"] as? String,
+                  encoded.count
+                    <= AgentIntegrationGuestFilePolicy
+                        .maximumUploadChunkBase64Scalars,
+                  let bytes = Data(base64Encoded: encoded),
+                  !bytes.isEmpty,
+                  bytes.count
+                    <= AgentIntegrationGuestFilePolicy
+                        .maximumUploadChunkBytes else {
+                return errorResponse(
+                    id: id, code: -32602,
+                    message:
+                        "now_guest_files_upload_append requires one opaque upload ID, exact offset, and at most 8192 decoded bytes")
+            }
+            return toolResponse(
+                id: id,
+                result: await client.appendGuestFileUpload(
+                    uploadID: uploadID, offset: offset, bytes: bytes))
+        case .guestFilesUploadCommit:
+            guard let arguments = params["arguments"] as? [String: Any],
+                  Set(arguments.keys) == ["uploadID"],
+                  let rawID = arguments["uploadID"] as? String,
+                  let uploadID = UUID(uuidString: rawID) else {
+                return errorResponse(
+                    id: id, code: -32602,
+                    message:
+                        "now_guest_files_upload_commit requires one opaque upload ID")
+            }
+            return toolResponse(
+                id: id,
+                result: await client.commitGuestFileUpload(
+                    uploadID: uploadID))
         }
+    }
+
+    private func guestFileUploadBegin(
+        _ arguments: [String: Any]
+    ) -> AgentIntegrationGuestFileUploadBegin? {
+        let allowed = Set([
+            "destinationPath", "bytes", "sha256", "container",
+            "fileType", "creator", "modified",
+        ])
+        guard Set(arguments.keys).isSubset(of: allowed),
+              let destination = arguments["destinationPath"] as? String,
+              !destination.isEmpty,
+              AgentIntegrationGuestFilePolicy.isBoundedPath(destination),
+              let bytes = arguments["bytes"] as? Int,
+              bytes >= 0, bytes <= Int(Int32.max),
+              let sha256 = arguments["sha256"] as? String,
+              AgentIntegrationGuestFilePolicy.isCanonicalSHA256(sha256),
+              let container = arguments["container"] as? String,
+              container == "data" || container == "macbinary" else {
+            return nil
+        }
+        func optionalString(_ key: String) -> String? {
+            arguments[key] as? String
+        }
+        if arguments["fileType"] != nil
+            && optionalString("fileType") == nil { return nil }
+        if arguments["creator"] != nil
+            && optionalString("creator") == nil { return nil }
+        guard AgentIntegrationGuestFilePolicy.isClassicOSType(
+                optionalString("fileType")),
+              AgentIntegrationGuestFilePolicy.isClassicOSType(
+                optionalString("creator")) else {
+            return nil
+        }
+        let modified: Int?
+        if let value = arguments["modified"] {
+            guard let integer = value as? Int, integer >= 0 else {
+                return nil
+            }
+            modified = integer
+        } else {
+            modified = nil
+        }
+        return .init(
+            destinationPath: destination,
+            bytes: bytes,
+            sha256: sha256,
+            container: container,
+            fileType: optionalString("fileType"),
+            creator: optionalString("creator"),
+            modified: modified)
     }
 
     private func guestFileListSelection(

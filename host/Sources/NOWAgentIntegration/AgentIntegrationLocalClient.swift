@@ -115,6 +115,44 @@ public struct AgentIntegrationLocalClient: Sendable {
         return result
     }
 
+    public func beginGuestFileUpload(
+        _ upload: AgentIntegrationGuestFileUploadBegin
+    ) async throws -> AgentIntegrationGuestFileUploadStageResult {
+        let response = try await send(.guestFilesUploadBegin(upload))
+        guard let result = response.guestFilesUploadStageResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no upload-stage result")
+        }
+        return result
+    }
+
+    public func appendGuestFileUpload(
+        uploadID: UUID,
+        offset: Int,
+        bytes: Data
+    ) async throws -> AgentIntegrationGuestFileUploadStageResult {
+        let response = try await send(.guestFilesUploadAppend(
+            uploadID: uploadID,
+            offset: offset,
+            base64: bytes.base64EncodedString()))
+        guard let result = response.guestFilesUploadStageResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no upload-stage result")
+        }
+        return result
+    }
+
+    public func commitGuestFileUpload(uploadID: UUID) async throws
+        -> AgentIntegrationGuestFileUploadCommitResult {
+        let response = try await send(
+            .guestFilesUploadCommit(uploadID: uploadID))
+        guard let result = response.guestFilesUploadCommitResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no upload-commit result")
+        }
+        return result
+    }
+
     func sendRaw(_ request: Data) async throws -> Data {
         try await Task.detached {
             try sendRaw(
@@ -142,6 +180,9 @@ public struct AgentIntegrationLocalClient: Sendable {
             preconditionFailure("Guest Files list requires a path")
         case .guestFilesStat:
             preconditionFailure("Guest Files stat requires a path")
+        case .guestFilesUploadBegin, .guestFilesUploadAppend,
+             .guestFilesUploadCommit:
+            preconditionFailure("Guest Files upload requires typed input")
         }
     }
 
@@ -152,11 +193,12 @@ public struct AgentIntegrationLocalClient: Sendable {
             switch request.operation {
             case .sessionHealth, .listProcesses,
                  .guestFilesCapabilities, .guestFilesList,
-                 .guestFilesStat:
+                 .guestFilesStat, .guestFilesUploadBegin,
+                 .guestFilesUploadAppend:
                 timeout = readOnlyReceiveTimeout
             case .launchSoftware, .requestQuit:
                 timeout = launchReceiveTimeout
-            case .transferApprovedArtifact:
+            case .transferApprovedArtifact, .guestFilesUploadCommit:
                 timeout = transferReceiveTimeout
             }
             let response = try sendRaw(

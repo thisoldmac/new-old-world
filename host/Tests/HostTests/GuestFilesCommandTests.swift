@@ -152,9 +152,9 @@ final class GuestFilesCommandTests: XCTestCase {
         XCTAssertEqual(capabilities.guestRoot, "")
         XCTAssertEqual(capabilities.rootLabel, "Macintosh HD:")
         XCTAssertEqual(capabilities.availableCommands,
-                       [.capabilities, .list, .stat])
+                       [.capabilities, .list, .stat, .put])
         XCTAssertEqual(capabilities.deferredCommands,
-                       [.download, .readText, .tailText, .put, .mkdir,
+                       [.download, .readText, .tailText, .mkdir,
                         .move, .delete, .deployTree, .prune])
         XCTAssertEqual(capabilities.maximumPageEntries, 16)
         XCTAssertEqual(capabilities.maximumPathBytes, 223)
@@ -183,7 +183,8 @@ final class GuestFilesCommandTests: XCTestCase {
                         name: "today.txt", kind: "file",
                         fileType: "TEXT", creator: "ttxt",
                         dataBytes: 42, rsrcBytes: 3,
-                        modified: 3_500_000_000),
+                        modified: 3_500_000_000,
+                        identity: "0123456789abcdef"),
                 ],
                 more: true,
                 cursor: 2)))
@@ -198,6 +199,7 @@ final class GuestFilesCommandTests: XCTestCase {
         XCTAssertEqual(listing.entries.first?.creator, "ttxt")
         XCTAssertEqual(listing.entries.first?.dataBytes, 42)
         XCTAssertEqual(listing.entries.first?.resourceBytes, 3)
+        XCTAssertNotNil(listing.entries.first?.observationReference)
         XCTAssertEqual(listing.nextCursor, 2)
         XCTAssertTrue(listing.hasMore)
     }
