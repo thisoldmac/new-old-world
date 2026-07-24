@@ -11,9 +11,9 @@ date: 2026-07-24
 - **Objective:** Add an optional host-side NOW agent-integration companion: a separate MCP-facing executable that projects a small set of operations already owned by a running NOW host without becoming a paired NOW feature module.
 - **Authority:** [`contract/asyncapi.yaml`](../../contract/asyncapi.yaml) owns guest-wire meaning. The NOW host remains the sole owner of the guest session, transport, transfer lane, and human-facing operation. The companion may narrow those capabilities but may not widen or own them.
 - **Execution profile:** Start conceptually with a lightweight, client-launched stdio executable. Do not commit client configuration or add a daemon, launch agent, or second desktop app.
-- **Stop conditions:** Stop if implementation requires a new guest message, a guest-side module, dashboard, or protocol mode, imports TimBotTu runtime code, lets the companion speak the guest wire directly, controls NOW's lifecycle or configuration, or exposes an arbitrary path, command, or process-control escape hatch.
+- **Stop conditions:** Stop if implementation requires a new guest message, a guest-side module, dashboard, or protocol mode, imports TimBotTu runtime code, lets the companion speak the guest wire directly, controls NOW's lifecycle or configuration, exposes an arbitrary path, command, or process-control escape hatch, or makes a future shared transport a dependency of current V0 work.
 - **Tail ownership:** With the companion absent, present, starting, or stopping, NOW must launch, connect, transfer files, and serve every paired human workflow with the same host and guest UI/module inventory.
-- **Handoff status:** The first host-only `session_health` projection is implemented and tested. No host-local transport, stdio MCP executable, guest protocol change, or client configuration exists; [`agent-integration.md`](../agent-integration.md) records the unresolved caller-trust decision.
+- **Handoff status:** `now_session_health`, the private same-user host adapter, and the client-launched stdio companion are implemented and tested. NOW still uses its existing guest-dials-host paired connection; no guest protocol change, guest listener, or client configuration was added. [`agent-integration.md`](../agent-integration.md) records the current trust and connection boundaries.
 
 ---
 
@@ -107,10 +107,11 @@ This mapping is the first implementation deliverable. It must be checked against
 - KTD5. **Workspace isolation is structural.** The companion cannot browse, receive, or resolve original workspace paths and cannot mint approvals. It can redeem only one-use staged-artifact receipts, so CodeKitten project discovery is neither required nor exposed.
 - KTD6. **No stdout diagnostics.** Stdio frames are the only stdout bytes. Logs use stderr or the host's existing logging path and redact local source paths from ordinary tool results.
 - KTD7. **Lifecycle stays outside NOW V0.** The lightweight companion is launched on demand by the MCP client and exits with that client relationship. A future host-side Integrations UI may own enablement, logs, and removal, but V0 does not build that UI or introduce a daemon, launch agent, second desktop app, or NOW lifecycle controls.
+- KTD8. **Transport migration follows proof, not speculation.** NOW keeps its functional dial-out transport while V0 tools project over the existing paired host session. CodeKitten owns the guest-listener experiment and must first prove its framing, pairing/security profile, health and latency semantics, lifecycle, recovery, and stress behavior. Only then may a separate worktree extract demonstrably general pieces into a shared network-protocol service compatible with a later NOW migration. That service is not current infrastructure, a NOW MCP dependency, or a reason to add a parallel NOW guest listener.
 
 ### Current verification rung
 
-The host-owned `session_health` projection builds and is **tested**, including the full host regression suite; it is not metal-verified. The external MCP layer and host-local transport do not exist, so absent-host and malformed-local-request behavior is not yet executable or verified.
+The host-owned `session_health` projection, private host-local socket, and stdio MCP companion are **tested**, including the full host regression suite; they are not a replacement transport. A built companion has returned typed host-unavailable and has reported the live connected PowerBook session through the existing NOW pairing. Broader paired human workflows were not re-run for that read-only observation.
 
 - The persistent connection and ordinary bidirectional file workflows are metal-verified, subject to the broken resume path and intermittent large-transfer slowdown recorded in [`open-issues.md`](../open-issues.md).
 - Guest process listing and cooperative quit are metal-verified. Host stale-list clearing across reconnect is tested but still listed as not metal-verified in [`open-issues.md`](../open-issues.md).
@@ -125,15 +126,16 @@ The host-owned `session_health` projection builds and is **tested**, including t
 - [`processes-and-peek.md`](../processes-and-peek.md) owns PSN identity, live revalidation, and cooperative quit.
 - [`software-module.md`](../software-module.md) owns exact-path launch and ambiguity behavior.
 - [`open-issues.md`](../open-issues.md) remains the authority for broken and unverified behavior.
+- The sibling CodeKitten repo's `../codekitten/docs/plans/2026-07-23-002-feat-codekitten-phase-0-1-roadmap-plan.md` defines the intended listener proof campaign. Its presence is planning evidence only, not proof that the listener or a shared service exists.
 
 ### Sequencing
 
 1. Freeze the contract-to-tool map and failure vocabulary.
-2. Resolve and threat-model the narrow local host adapter, then add it with session-generation invalidation. Stop if it cannot preserve the host app as sole guest-session owner without an unsafe local control surface.
-3. Implement read-only health and process-list tools.
-4. Add launch and quit with at-act-time revalidation.
+2. Resolve and threat-model the narrow local host adapter, then expose session health through the client-launched stdio companion. This slice is complete.
+3. Add process listing over the same host-owned session.
+4. Add safe launch and cooperative quit with at-act-time revalidation.
 5. Add the approval provider boundary and receipt-backed transfer.
-6. Add the client-launched stdio companion last, so protocol handlers are thin projections over tested host-owned domain operations.
+6. Keep the current dial-out connection unchanged throughout V0. After CodeKitten's listener is proven and stress-tested, evaluate a shared-service extraction in a separate worktree; do not mix that migration track into the MCP tool sequence.
 
 ---
 
@@ -224,4 +226,5 @@ The host-owned `session_health` projection builds and is **tested**, including t
 - A transfer succeeds only after approval validation and `file.done ok:true`, with receipt claims limited to what was observed.
 - NOW's paired host/guest UI, dashboard/module inventory, and normal operation remain unchanged with the companion absent, present, stopped, crashed, or unconfigured.
 - The companion remains a client-launched NOW-specific adapter: it does not own NOW lifecycle or configuration and is not a generic broker, shared command layer, TBT control plane, or CodeKitten/TBT Chat integration.
+- NOW's current guest-dials-host transport remains authoritative for V0. No NOW guest listener or parallel protocol implementation is added to validate CodeKitten, and no future shared service is assumed before proof and separate-worktree extraction.
 - All builds/tests/metal evidence use the repository's named verification rungs, and abandoned implementation attempts are removed from the final diff.
