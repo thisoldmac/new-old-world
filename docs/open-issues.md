@@ -11,6 +11,16 @@ several of tonight's bugs lived in code that looked obviously correct.
 
 ## Deferred by decision
 
+**The agent-integration companion has no local transport yet.** The first
+host-owned `session_health` projection is tested, but the repository has no
+existing host-local IPC or caller-authentication pattern. Choosing same-user
+trust (for example, a peer-checked UNIX-domain socket) versus signed-client
+identity is a security policy decision, not an implementation detail. The MCP
+executable is therefore deliberately not exposed; no daemon, launch agent,
+second app, guest protocol mode, or guest-side module was added. The evidence
+and rejected unsafe shortcuts are in
+[agent-integration.md](agent-integration.md).
+
 **Guest-initiated change controls.** The browser on the classic side can
 list, navigate and pull, but offers no rename, delete, new folder or
 move. Michelle punted this 2026-07-20: write and overwrite were the

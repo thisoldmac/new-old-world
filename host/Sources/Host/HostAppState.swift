@@ -46,6 +46,7 @@ final class HostAppState: ObservableObject {
     /// to HostLog before the first wire event has a line to write.
     let logs: LogsModel
     let listener: GuestListener
+    let agentIntegration: AgentIntegrationHostAdapter
     private(set) lazy var console = ConsoleModel(listener: listener)
     private(set) lazy var census = CensusModuleModel(listener: listener)
     private(set) lazy var software = SoftwareModel(listener: listener)
@@ -76,6 +77,7 @@ final class HostAppState: ObservableObject {
         listener = GuestListener(identity: .init(
             version: ProductIdentity.version,
             name: Host.current().localizedName ?? "Mac"))
+        agentIntegration = AgentIntegrationHostAdapter(listener: listener)
         let stored = defaults.string(forKey: Self.selectionKey)
         selectedModuleID = stored.flatMap(registry.module(id:))?.id
             ?? registry.modules.first?.id
@@ -142,4 +144,3 @@ final class HostAppState: ObservableObject {
         }
     }
 }
-

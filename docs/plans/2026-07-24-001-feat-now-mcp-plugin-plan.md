@@ -13,7 +13,7 @@ date: 2026-07-24
 - **Execution profile:** Start conceptually with a lightweight, client-launched stdio executable. Do not commit client configuration or add a daemon, launch agent, or second desktop app.
 - **Stop conditions:** Stop if implementation requires a new guest message, a guest-side module, dashboard, or protocol mode, imports TimBotTu runtime code, lets the companion speak the guest wire directly, controls NOW's lifecycle or configuration, or exposes an arbitrary path, command, or process-control escape hatch.
 - **Tail ownership:** With the companion absent, present, starting, or stopping, NOW must launch, connect, transfer files, and serve every paired human workflow with the same host and guest UI/module inventory.
-- **Handoff status:** Documentation only. No MCP tool, runtime, protocol, or configuration exists from this plan.
+- **Handoff status:** The first host-only `session_health` projection is implemented and tested. No host-local transport, stdio MCP executable, guest protocol change, or client configuration exists; [`agent-integration.md`](../agent-integration.md) records the unresolved caller-trust decision.
 
 ---
 
@@ -110,7 +110,7 @@ This mapping is the first implementation deliverable. It must be checked against
 
 ### Current verification rung
 
-The MCP layer itself does not exist, so it is neither built, tested, nor metal-verified.
+The host-owned `session_health` projection builds and is **tested**, including the full host regression suite; it is not metal-verified. The external MCP layer and host-local transport do not exist, so absent-host and malformed-local-request behavior is not yet executable or verified.
 
 - The persistent connection and ordinary bidirectional file workflows are metal-verified, subject to the broken resume path and intermittent large-transfer slowdown recorded in [`open-issues.md`](../open-issues.md).
 - Guest process listing and cooperative quit are metal-verified. Host stale-list clearing across reconnect is tested but still listed as not metal-verified in [`open-issues.md`](../open-issues.md).
@@ -120,6 +120,7 @@ The MCP layer itself does not exist, so it is neither built, tested, nor metal-v
 ### Grounding
 
 - [`README.md`](../../README.md) is the current human-facing behavior and verification summary.
+- [`agent-integration.md`](../agent-integration.md) records the host-only projection and the local adapter threat-model gate.
 - [`files.md`](../files.md) owns the one-lane transfer and share-boundary semantics.
 - [`processes-and-peek.md`](../processes-and-peek.md) owns PSN identity, live revalidation, and cooperative quit.
 - [`software-module.md`](../software-module.md) owns exact-path launch and ambiguity behavior.
