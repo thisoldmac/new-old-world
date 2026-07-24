@@ -1,9 +1,8 @@
 import Foundation
 
 public enum AgentIntegrationLocalProtocol {
-    /// Version 2 adds cooperative quit and marks process references as
-    /// quit-eligible snapshots instead of observation-only values.
-    public static let version = 2
+    /// Version 3 adds redemption of host-minted artifact approvals.
+    public static let version = 3
     public static let maximumMessageBytes = 16 * 1024
 }
 
@@ -13,6 +12,7 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         case listProcesses = "list_processes"
         case launchSoftware = "launch_software"
         case requestQuit = "request_quit"
+        case transferApprovedArtifact = "transfer_approved_artifact"
     }
 
     public let version: Int
@@ -20,26 +20,31 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
     public let operation: Operation
     public let launchSelection: AgentIntegrationLaunchSelection?
     public let processReference: String?
+    public let approvalReceipt: String?
 
     private init(requestID: UUID,
                  operation: Operation,
                  launchSelection: AgentIntegrationLaunchSelection?,
-                 processReference: String?) {
+                 processReference: String?,
+                 approvalReceipt: String?) {
         version = AgentIntegrationLocalProtocol.version
         self.requestID = requestID
         self.operation = operation
         self.launchSelection = launchSelection
         self.processReference = processReference
+        self.approvalReceipt = approvalReceipt
     }
 
     public static func sessionHealth(requestID: UUID = UUID()) -> Self {
         .init(requestID: requestID, operation: .sessionHealth,
-              launchSelection: nil, processReference: nil)
+              launchSelection: nil, processReference: nil,
+              approvalReceipt: nil)
     }
 
     public static func processList(requestID: UUID = UUID()) -> Self {
         .init(requestID: requestID, operation: .listProcesses,
-              launchSelection: nil, processReference: nil)
+              launchSelection: nil, processReference: nil,
+              approvalReceipt: nil)
     }
 
     public static func launchSoftware(
@@ -47,7 +52,8 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         requestID: UUID = UUID()
     ) -> Self {
         .init(requestID: requestID, operation: .launchSoftware,
-              launchSelection: selection, processReference: nil)
+              launchSelection: selection, processReference: nil,
+              approvalReceipt: nil)
     }
 
     public static func requestQuit(
@@ -55,7 +61,20 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         requestID: UUID = UUID()
     ) -> Self {
         .init(requestID: requestID, operation: .requestQuit,
-              launchSelection: nil, processReference: reference)
+              launchSelection: nil, processReference: reference,
+              approvalReceipt: nil)
+    }
+
+    public static func transferApprovedArtifact(
+        receipt: String,
+        requestID: UUID = UUID()
+    ) -> Self {
+        .init(
+            requestID: requestID,
+            operation: .transferApprovedArtifact,
+            launchSelection: nil,
+            processReference: nil,
+            approvalReceipt: receipt)
     }
 }
 
@@ -64,6 +83,7 @@ public enum AgentIntegrationLocalResult: Equatable, Sendable {
     case processList(AgentIntegrationProcessListResult)
     case launchSoftware(AgentIntegrationLaunchSoftwareResult)
     case requestQuit(AgentIntegrationQuitResult)
+    case transferApprovedArtifact(AgentIntegrationArtifactTransferResult)
 }
 
 public struct AgentIntegrationLocalError: Codable, Equatable, Sendable {
@@ -83,6 +103,7 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
     public let processListResult: AgentIntegrationProcessListResult?
     public let launchResult: AgentIntegrationLaunchSoftwareResult?
     public let quitResult: AgentIntegrationQuitResult?
+    public let artifactTransferResult: AgentIntegrationArtifactTransferResult?
     public let error: AgentIntegrationLocalError?
 
     public init(requestID: UUID,
@@ -93,6 +114,7 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         processListResult = nil
         launchResult = nil
         quitResult = nil
+        artifactTransferResult = nil
         error = nil
     }
 
@@ -104,6 +126,7 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         self.processListResult = processListResult
         launchResult = nil
         quitResult = nil
+        artifactTransferResult = nil
         error = nil
     }
 
@@ -115,6 +138,7 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         processListResult = nil
         self.launchResult = launchResult
         quitResult = nil
+        artifactTransferResult = nil
         error = nil
     }
 
@@ -126,6 +150,21 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         processListResult = nil
         launchResult = nil
         self.quitResult = quitResult
+        artifactTransferResult = nil
+        error = nil
+    }
+
+    public init(
+        requestID: UUID,
+        artifactTransferResult: AgentIntegrationArtifactTransferResult
+    ) {
+        version = AgentIntegrationLocalProtocol.version
+        self.requestID = requestID
+        result = nil
+        processListResult = nil
+        launchResult = nil
+        quitResult = nil
+        self.artifactTransferResult = artifactTransferResult
         error = nil
     }
 
@@ -137,6 +176,7 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         processListResult = nil
         launchResult = nil
         quitResult = nil
+        artifactTransferResult = nil
         self.error = error
     }
 }
@@ -169,7 +209,7 @@ public enum AgentIntegrationLocalCodec {
         -> AgentIntegrationLocalRequest {
         let object = try strictObject(data, allowedKeys: [
             "version", "requestID", "operation", "launchSelection",
-            "processReference",
+            "processReference", "approvalReceipt",
         ])
         guard object["version"] as? Int ==
                 AgentIntegrationLocalProtocol.version else {
@@ -183,7 +223,8 @@ public enum AgentIntegrationLocalCodec {
         case .sessionHealth, .listProcesses:
             expectedKeys = ["version", "requestID", "operation"]
             guard request.launchSelection == nil,
-                  request.processReference == nil else {
+                  request.processReference == nil,
+                  request.approvalReceipt == nil else {
                 throw AgentIntegrationLocalTransportError.invalidMessage(
                     "Read-only request contains an action selection")
             }
@@ -193,6 +234,7 @@ public enum AgentIntegrationLocalCodec {
             ]
             guard request.launchSelection != nil,
                   request.processReference == nil,
+                  request.approvalReceipt == nil,
                   let rawSelection =
                     object["launchSelection"] as? [String: Any],
                   Set(rawSelection.keys) == ["name"]
@@ -206,10 +248,23 @@ public enum AgentIntegrationLocalCodec {
             ]
             guard request.launchSelection == nil,
                   let reference = request.processReference,
+                  request.approvalReceipt == nil,
                   AgentIntegrationQuitPolicy.isValidReference(reference)
             else {
                 throw AgentIntegrationLocalTransportError.invalidMessage(
                     "Quit request reference does not match the schema")
+            }
+        case .transferApprovedArtifact:
+            expectedKeys = [
+                "version", "requestID", "operation", "approvalReceipt",
+            ]
+            guard request.launchSelection == nil,
+                  request.processReference == nil,
+                  let receipt = request.approvalReceipt,
+                  AgentIntegrationArtifactPolicy.isValidReceipt(receipt)
+            else {
+                throw AgentIntegrationLocalTransportError.invalidMessage(
+                    "Artifact transfer receipt does not match the schema")
             }
         }
         guard Set(object.keys) == expectedKeys else {
@@ -226,6 +281,7 @@ public enum AgentIntegrationLocalCodec {
             allowedKeys: [
                 "version", "requestID", "result", "error",
                 "processListResult", "launchResult", "quitResult",
+                "artifactTransferResult",
             ])
         guard object["version"] as? Int ==
                 AgentIntegrationLocalProtocol.version else {
@@ -236,8 +292,12 @@ public enum AgentIntegrationLocalCodec {
         let hasProcessList = object["processListResult"] != nil
         let hasLaunch = object["launchResult"] != nil
         let hasQuit = object["quitResult"] != nil
+        let hasArtifactTransfer = object["artifactTransferResult"] != nil
         let hasError = object["error"] != nil
-        guard [hasResult, hasProcessList, hasLaunch, hasQuit, hasError]
+        guard [
+            hasResult, hasProcessList, hasLaunch, hasQuit,
+            hasArtifactTransfer, hasError,
+        ]
                 .filter({ $0 }).count == 1 else {
             throw AgentIntegrationLocalTransportError.invalidMessage(
                 "Response must contain exactly one result or error")

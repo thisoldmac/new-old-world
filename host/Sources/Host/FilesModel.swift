@@ -218,12 +218,18 @@ final class FilesModuleModel: ObservableObject {
 
     internal let listener: GuestListener
     private let defaults: UserDefaults
+    private let artifactApprover: AgentIntegrationHostAdapter?
     private var progressWatch: AnyCancellable?
     private var pageCursor: Int?
 
-    init(listener: GuestListener, defaults: UserDefaults = .standard) {
+    init(
+        listener: GuestListener,
+        defaults: UserDefaults = .standard,
+        artifactApprover: AgentIntegrationHostAdapter? = nil
+    ) {
         self.listener = listener
         self.defaults = defaults
+        self.artifactApprover = artifactApprover
         self.convertText =
             defaults.object(forKey: Keys.convertText) as? Bool ?? true
         self.shareDirectory = listener.share.root
@@ -346,6 +352,19 @@ final class FilesModuleModel: ObservableObject {
     }
 
     // MARK: - Sending
+
+    func approveForAgent(_ url: URL)
+        -> Result<AgentIntegrationArtifactApprovalNotice,
+                  AgentIntegrationArtifactApprovalError> {
+        guard let artifactApprover else {
+            return .failure(.unavailable(
+                "Artifact approval staging is unavailable"))
+        }
+        return artifactApprover.approveArtifact(
+            sourceURL: url,
+            destination: path,
+            convertText: convertText)
+    }
 
     /// Sends a file from anywhere on this Mac into the folder being
     /// browsed. The share bounds what the other machine may reach on its

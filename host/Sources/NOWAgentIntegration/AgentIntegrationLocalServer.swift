@@ -152,6 +152,10 @@ public final class AgentIntegrationLocalServer {
                 response = .init(
                     requestID: request.requestID,
                     quitResult: result)
+            case .transferApprovedArtifact(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    artifactTransferResult: result)
             }
             finish(descriptor, response: response)
         }

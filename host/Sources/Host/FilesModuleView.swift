@@ -195,13 +195,18 @@ struct FilesModuleView: View {
                 .help(title)
             }
 
-            Button {
-                chooseFileToSend()
+            Menu {
+                Button("Approve One-Time Agent Transfer…") {
+                    chooseFileToApprove()
+                }
             } label: {
                 Label("Add File…", systemImage: "plus")
+            } primaryAction: {
+                chooseFileToSend()
             }
+            .menuStyle(.borderlessButton)
             .disabled(!model.canBrowse || model.transfer != nil)
-            .help("Send a file from this Mac into this folder")
+            .help("Send now, or approve one private staged copy for an agent")
 
             if model.isLoading {
                 ProgressView().controlSize(.small)
@@ -404,6 +409,44 @@ struct FilesModuleView: View {
         if panel.runModal() == .OK, let url = panel.url {
             model.send(url)
         }
+    }
+
+    private func chooseFileToApprove() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Approve"
+        panel.message =
+            "Choose one regular file to stage privately for a one-time "
+            + "agent transfer into this guest folder. No transfer starts now."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        let alert = NSAlert()
+        switch model.approveForAgent(url) {
+        case .success(let approval):
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(
+                approval.receipt, forType: .string)
+            alert.messageText = "Artifact Approval Copied"
+            let destination = approval.destination.isEmpty
+                ? "the guest share root" : approval.destination
+            var detail =
+                "A private read-only copy of “\(approval.name)” is approved "
+                + "once for \(destination) for 10 minutes. "
+                + "The receipt contains no source or guest path."
+            if let conversion = approval.conversion {
+                detail += " Transfer will apply: \(conversion)."
+            }
+            alert.informativeText = detail
+            alert.alertStyle = .informational
+        case .failure(.refused(let message)),
+             .failure(.unavailable(let message)):
+            alert.messageText = "Artifact Not Approved"
+            alert.informativeText = message
+            alert.alertStyle = .warning
+        }
+        alert.runModal()
     }
 
     private func byteText(_ bytes: Int) -> String {

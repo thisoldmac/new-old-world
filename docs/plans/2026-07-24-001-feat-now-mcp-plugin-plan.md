@@ -13,7 +13,7 @@ date: 2026-07-24
 - **Execution profile:** Start conceptually with a lightweight, client-launched stdio executable. Do not commit client configuration or add a daemon, launch agent, or second desktop app.
 - **Stop conditions:** Stop if implementation requires a new guest message, a guest-side module, dashboard, or protocol mode, imports TimBotTu runtime code, lets the companion speak the guest wire directly, controls NOW's lifecycle or configuration, exposes an arbitrary path, command, or process-control escape hatch, or makes a future shared transport a dependency of current V0 work.
 - **Tail ownership:** With the companion absent, present, starting, or stopping, NOW must launch, connect, transfer files, and serve every paired human workflow with the same host and guest UI/module inventory.
-- **Handoff status:** `now_session_health`, `now_list_processes`, and `now_launch_software`, the private same-user host adapter, and the client-launched stdio companion are implemented and tested. Launch resolves a fresh `apps` catalog by the guest's exact full-name comparison shape, refuses zero or multiple matches, and keeps listing paths inside the host. Opaque ambiguity references are session-bound and revalidated against a fresh catalog before action. Process references still expose no PSN and grant no action authority. NOW still uses its existing guest-dials-host paired connection; no guest protocol change, guest listener, or client configuration was added. [`agent-integration.md`](../agent-integration.md) records the current trust and connection boundaries.
+- **Handoff status:** All five V0 projections, the private same-user host adapter, and the client-launched stdio companion are implemented and tested. Launch resolves a fresh exact catalog selection; quit requires and revalidates a current opaque process reference; artifact transfer redeems only a native-host-minted, session-bound, one-use receipt for a sealed staged copy and requires matching `file.done` acknowledgement. No MCP input carries a PSN, source path, guest path, shell command, or general filesystem authority. NOW still uses its existing guest-dials-host paired connection; no guest protocol change, guest listener, or client configuration was added. The three action projections still need bounded connected companion acceptance. [`agent-integration.md`](../agent-integration.md) records the current trust, receipt, and verification boundaries.
 
 ---
 
@@ -111,12 +111,12 @@ This mapping is the first implementation deliverable. It must be checked against
 
 ### Current verification rung
 
-The host-owned `session_health`, `list_processes`, and exact safe-launch projections, private host-local socket, and stdio MCP companion are **tested**; the two read-only projections are also metal-verified for the bounded acceptance receipt in [`agent-integration.md`](../agent-integration.md). Safe launch remains no higher than **tested** until its own connected run. None is a replacement transport. The read-only pass covered typed host absence, normal reconnect with a new session/reference scope, paced reads, and modest concurrency against the paired PowerBook. It did not exercise broader paired human workflows, launch, transfers, or sustained load.
+All five host-owned projections, the private host-local socket, and the stdio MCP companion are **tested**; the two read-only projections are also metal-verified for the bounded acceptance receipt in [`agent-integration.md`](../agent-integration.md). Safe launch, cooperative quit, and approved artifact transfer remain no higher than **tested** until their connected runs. None is a replacement transport. The read-only pass covered typed host absence, normal reconnect with a new session/reference scope, paced reads, and modest concurrency against the paired PowerBook. It did not exercise broader paired human workflows, action tools, transfers, or sustained load.
 
 - The persistent connection and ordinary bidirectional file workflows are metal-verified, subject to the broken resume path and intermittent large-transfer slowdown recorded in [`open-issues.md`](../open-issues.md).
 - Guest process listing and cooperative quit are metal-verified. Host stale-list clearing across reconnect is tested but still listed as not metal-verified in [`open-issues.md`](../open-issues.md).
 - `launch -v` has metal evidence. The host's `software.list` exact-path UI flow remains tested/builds but not live end-to-end, so the MCP launch projection begins no higher than **tested** until its own connected run.
-- `file.done` is the existing write acknowledgement. The proposed approval and delivery receipts are new host/companion behavior and begin unverified.
+- `file.done` is the existing write acknowledgement. Approval staging and delivery receipts are tested host/companion behavior; the integrated PowerBook path remains unverified.
 
 ### Grounding
 
@@ -133,9 +133,10 @@ The host-owned `session_health`, `list_processes`, and exact safe-launch project
 1. Freeze the contract-to-tool map and failure vocabulary.
 2. Resolve and threat-model the narrow local host adapter, then expose session health through the client-launched stdio companion. This slice is complete.
 3. Add process listing over the same host-owned session. This slice is complete.
-4. Add safe launch and cooperative quit with at-act-time revalidation. Safe launch is complete; cooperative quit is the next command slice.
-5. Add the approval provider boundary and receipt-backed transfer.
+4. Add safe launch and cooperative quit with at-act-time revalidation. This slice is complete.
+5. Add the approval provider boundary and receipt-backed transfer. This slice is complete.
 6. Keep the current dial-out connection unchanged throughout V0. After CodeKitten's listener is proven and stress-tested, evaluate a shared-service extraction in a separate worktree; do not mix that migration track into the MCP tool sequence.
+7. Run the bounded combined connected acceptance pass and record only the action lanes safely observed.
 
 ---
 

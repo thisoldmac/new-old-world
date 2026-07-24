@@ -77,6 +77,27 @@ non-control frames).
 `file.get` needs no accept — the requester is the receiver. The bulk
 plane's contract prose ("carries capture pixel data only") is amended.
 
+## Agent-approved artifact lane
+
+The optional host-side agent companion reuses this exact host-to-guest
+put path; it is not a file API and adds no wire message. A human first
+uses the Files page's **Approve One-Time Agent Transfer…** action in the
+intended guest folder. NOW opens one regular source file without following
+links, copies at most 4 MiB into private mode-`0400` staging, and copies an
+opaque receipt. The MCP receives only that receipt: never the source path,
+guest path, staging path, or a way to browse any of them.
+
+The receipt is bound to the current session and Files destination, expires
+after ten minutes, and is consumed by its first redemption attempt.
+Redemption rechecks the staged inode, device, owner, link count, size, mode,
+timestamps, and SHA-256 before joining the existing one-at-a-time lane.
+`overwrite` is always false; `busy`, collision, expiry, disconnect, and a
+negative or missing `file.done` return no delivery receipt. A positive
+receipt means the matching guest write was acknowledged. It records hashes
+of the selected source bytes and the bytes handed to NOW, which can differ
+after text conversion, but explicitly does not claim a destination
+read-back hash.
+
 ## Containers and conversion
 
 Decision table (chosen with Michelle, 2026-07-20):

@@ -8,6 +8,8 @@ protocol AgentIntegrationClient: Sendable {
     func launchSoftware(_ selection: AgentIntegrationLaunchSelection) async
         -> AgentIntegrationLaunchSoftwareResult
     func requestQuit(reference: String) async -> AgentIntegrationQuitResult
+    func transferApprovedArtifact(receipt: String) async
+        -> AgentIntegrationArtifactTransferResult
 }
 
 struct SocketAgentIntegrationClient: AgentIntegrationClient {
@@ -69,6 +71,18 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
+    func transferApprovedArtifact(receipt: String) async
+        -> AgentIntegrationArtifactTransferResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.transferApprovedArtifact(receipt: receipt)
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
     private func unavailable(for error: Error?)
         -> AgentIntegrationUnavailable {
         guard let error else { return .host }
@@ -103,6 +117,8 @@ actor NOWMCPServer {
         case listProcesses = "now_list_processes"
         case launchSoftware = "now_launch_software"
         case requestQuit = "now_request_quit"
+        case transferApprovedArtifact =
+            "now_transfer_approved_artifact"
     }
 
     static let maximumMessageBytes = 64 * 1024
@@ -207,7 +223,7 @@ actor NOWMCPServer {
                 "version": "0.1.0",
             ],
             "instructions":
-                "Projects bounded health, process observation, exact application launch, and revalidated cooperative quit already owned by a running New Old World host.",
+                "Projects bounded health, process observation, exact application launch, revalidated cooperative quit, and receipt-backed approved artifact delivery already owned by a running New Old World host.",
         ])
     }
 
@@ -248,6 +264,7 @@ actor NOWMCPServer {
                 processListTool(),
                 launchSoftwareTool(),
                 requestQuitTool(),
+                transferApprovedArtifactTool(),
             ],
         ])
     }
@@ -659,6 +676,144 @@ actor NOWMCPServer {
         ]
     }
 
+    private func transferApprovedArtifactTool() -> [String: Any] {
+        let failureSchema: [String: Any] = [
+            "type": "object",
+            "properties": [
+                "code": [
+                    "type": "string",
+                    "maxLength":
+                        AgentIntegrationArtifactPolicy
+                            .maximumFailureCodeScalars,
+                ],
+                "message": [
+                    "type": "string",
+                    "maxLength":
+                        AgentIntegrationArtifactPolicy.maximumMessageScalars,
+                ],
+            ],
+            "required": ["code", "message"],
+            "additionalProperties": false,
+        ]
+        let evidenceSchema: [String: Any] = [
+            "type": "object",
+            "properties": [
+                "sha256": [
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$",
+                ],
+                "bytes": [
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum":
+                        AgentIntegrationArtifactPolicy.maximumSourceBytes,
+                ],
+            ],
+            "required": ["sha256", "bytes"],
+            "additionalProperties": false,
+        ]
+        let receiptSchema: [String: Any] = [
+            "type": "object",
+            "properties": [
+                "transferID": ["type": "string", "format": "uuid"],
+                "sessionID": ["type": "string", "format": "uuid"],
+                "approvedAt": ["type": "string", "format": "date-time"],
+                "redeemedAt": ["type": "string", "format": "date-time"],
+                "acknowledgedAt": [
+                    "type": "string", "format": "date-time",
+                ],
+                "name": [
+                    "type": "string",
+                    "maxLength":
+                        AgentIntegrationArtifactPolicy.maximumNameScalars,
+                ],
+                "source": evidenceSchema,
+                "handedToNOW": evidenceSchema,
+                "container": [
+                    "type": "string",
+                    "enum": ["data", "macbinary"],
+                ],
+                "conversion": [
+                    "type": ["string", "null"],
+                    "maxLength":
+                        AgentIntegrationArtifactPolicy.maximumMessageScalars,
+                ],
+                "guestAcknowledgedWrite": ["const": true],
+                "destinationBytesVerified": ["const": false],
+                "guestMessage": [
+                    "type": "string",
+                    "maxLength":
+                        AgentIntegrationArtifactPolicy.maximumMessageScalars,
+                ],
+            ],
+            "required": [
+                "transferID", "sessionID", "approvedAt", "redeemedAt",
+                "acknowledgedAt", "name", "source", "handedToNOW",
+                "container", "guestAcknowledgedWrite",
+                "destinationBytesVerified", "guestMessage",
+            ],
+            "additionalProperties": false,
+        ]
+        func resultVariant(
+            _ outcome: String,
+            payload: String,
+            schema: [String: Any]
+        ) -> [String: Any] {
+            [
+                "type": "object",
+                "properties": [
+                    "outcome": ["const": outcome],
+                    payload: schema,
+                ],
+                "required": ["outcome", payload],
+                "additionalProperties": false,
+            ]
+        }
+        return [
+            "name": ToolName.transferApprovedArtifact.rawValue,
+            "title": "Transfer an Approved New Old World Artifact",
+            "description":
+                "Redeems one unexpired, one-use approval minted by a native New Old World host action. The receipt already fixes one private staged file and guest destination. The tool accepts no path, never overwrites, and reports success only after the paired guest acknowledges writing the file.",
+            "inputSchema": [
+                "type": "object",
+                "properties": [
+                    "approvalReceipt": [
+                        "type": "string",
+                        "pattern":
+                            AgentIntegrationArtifactPolicy.receiptPattern,
+                    ],
+                ],
+                "required": ["approvalReceipt"],
+                "additionalProperties": false,
+            ],
+            "outputSchema": [
+                "oneOf": [
+                    resultVariant(
+                        "delivered", payload: "delivered",
+                        schema: receiptSchema),
+                    resultVariant(
+                        "unavailable", payload: "unavailable",
+                        schema: failureSchema),
+                    resultVariant(
+                        "expired", payload: "expired",
+                        schema: failureSchema),
+                    resultVariant(
+                        "refused", payload: "refused",
+                        schema: failureSchema),
+                    resultVariant(
+                        "failed", payload: "failed",
+                        schema: failureSchema),
+                ],
+            ],
+            "annotations": [
+                "readOnlyHint": false,
+                "destructiveHint": true,
+                "idempotentHint": false,
+                "openWorldHint": false,
+            ],
+        ]
+    }
+
     private func callTool(_ request: [String: Any], id: Any) async -> Data {
         guard let params = request["params"] as? [String: Any],
               let name = params["name"] as? String,
@@ -666,7 +821,8 @@ actor NOWMCPServer {
             return errorResponse(id: id, code: -32602,
                                  message: "Unknown tool")
         }
-        if tool != .launchSoftware && tool != .requestQuit,
+        if tool != .launchSoftware && tool != .requestQuit
+            && tool != .transferApprovedArtifact,
            let arguments = params["arguments"] {
             guard let object = arguments as? [String: Any],
                   object.isEmpty else {
@@ -704,6 +860,20 @@ actor NOWMCPServer {
                         "now_request_quit requires one current opaque process reference")
             }
             let result = await client.requestQuit(reference: reference)
+            return toolResponse(id: id, result: result)
+        case .transferApprovedArtifact:
+            guard let arguments = params["arguments"] as? [String: Any],
+                  Set(arguments.keys) == ["approvalReceipt"],
+                  let receipt = arguments["approvalReceipt"] as? String,
+                  AgentIntegrationArtifactPolicy.isValidReceipt(receipt)
+            else {
+                return errorResponse(
+                    id: id, code: -32602,
+                    message:
+                        "now_transfer_approved_artifact requires one host-minted approval receipt")
+            }
+            let result = await client.transferApprovedArtifact(
+                receipt: receipt)
             return toolResponse(id: id, result: result)
         }
     }

@@ -18,7 +18,10 @@ final class HostAppState: ObservableObject {
         listener.announceReceivedFile = { [notifier] guest, url, bytes in
             notifier.announce(fileFrom: guest, url: url, bytes: bytes)
         }
-        return FilesModuleModel(listener: listener, defaults: defaults)
+        return FilesModuleModel(
+            listener: listener,
+            defaults: defaults,
+            artifactApprover: agentIntegration)
     }()
 
     /// The menu-bar "Screenshot Guest" command. Reports through the system
@@ -47,6 +50,7 @@ final class HostAppState: ObservableObject {
     let logs: LogsModel
     let listener: GuestListener
     let agentIntegration: AgentIntegrationHostAdapter
+    private let artifactApprovals: AgentIntegrationArtifactApprovalStore?
     private(set) lazy var console = ConsoleModel(listener: listener)
     private(set) lazy var census = CensusModuleModel(listener: listener)
     private(set) lazy var software = SoftwareModel(listener: listener)
@@ -77,7 +81,10 @@ final class HostAppState: ObservableObject {
         listener = GuestListener(identity: .init(
             version: ProductIdentity.version,
             name: Host.current().localizedName ?? "Mac"))
-        agentIntegration = AgentIntegrationHostAdapter(listener: listener)
+        artifactApprovals = try? AgentIntegrationArtifactApprovalStore()
+        agentIntegration = AgentIntegrationHostAdapter(
+            listener: listener,
+            artifactApprovals: artifactApprovals)
         let stored = defaults.string(forKey: Self.selectionKey)
         selectedModuleID = stored.flatMap(registry.module(id:))?.id
             ?? registry.modules.first?.id

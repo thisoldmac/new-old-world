@@ -9,7 +9,7 @@ date: 2026-07-24
 ## Goal Capsule
 
 - **Objective:** Evolve the current macOS host from a one-connection view into a polished target catalog and switcher, then improve the existing Files, Processes, Software, Capture, and Console experiences around one clearly active classic Mac.
-- **Entry gate:** Finish the optional host-side MCP companion V0 before beginning V1 implementation. Session health, read-only process listing, and exact safe launch are implemented and tested; cooperative quit and receipt-backed approved artifact transfer remain.
+- **Entry gate:** Finish the optional host-side MCP companion V0 before beginning V1 implementation. All five V0 projections are implemented and tested; the bounded combined action acceptance and V0 closeout remain.
 - **Transport invariant:** The classic guest continues to dial the modern host on one host-wide listener port. V1 adds no guest listener, parallel protocol, per-target port, mobile transport, shared protocol service, or multi-session runtime.
 - **Product boundary:** NOW remains a paired, human-facing host/guest product. The MCP companion projects capabilities owned by the running host and never owns guest transport, pairing, lifecycle, or UI.
 - **Verification posture:** This roadmap commits product direction, sequencing, and acceptance criteria. It does not claim that V1 behavior is implemented or verified.

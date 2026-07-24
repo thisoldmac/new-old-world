@@ -6,6 +6,7 @@ public struct AgentIntegrationLocalClient: Sendable {
     private let expectedUID: uid_t
     private let readOnlyReceiveTimeout: TimeInterval
     private let launchReceiveTimeout: TimeInterval
+    private let transferReceiveTimeout: TimeInterval
 
     public init(endpoint: AgentIntegrationEndpoint? = nil,
                 expectedUID: uid_t = geteuid()) throws {
@@ -13,17 +14,22 @@ public struct AgentIntegrationLocalClient: Sendable {
             endpoint: endpoint,
             expectedUID: expectedUID,
             readOnlyReceiveTimeout: 2,
-            launchReceiveTimeout: 35)
+            launchReceiveTimeout: 35,
+            transferReceiveTimeout:
+                AgentIntegrationArtifactPolicy.maximumTransferResponseWait)
     }
 
     init(endpoint: AgentIntegrationEndpoint? = nil,
          expectedUID: uid_t = geteuid(),
          readOnlyReceiveTimeout: TimeInterval,
-         launchReceiveTimeout: TimeInterval) throws {
+         launchReceiveTimeout: TimeInterval,
+         transferReceiveTimeout: TimeInterval =
+            AgentIntegrationArtifactPolicy.maximumTransferResponseWait) throws {
         self.endpoint = try endpoint ?? .currentUser(uid: expectedUID)
         self.expectedUID = expectedUID
         self.readOnlyReceiveTimeout = readOnlyReceiveTimeout
         self.launchReceiveTimeout = launchReceiveTimeout
+        self.transferReceiveTimeout = transferReceiveTimeout
     }
 
     public func sessionHealth() async throws
@@ -67,6 +73,17 @@ public struct AgentIntegrationLocalClient: Sendable {
         return result
     }
 
+    public func transferApprovedArtifact(receipt: String) async throws
+        -> AgentIntegrationArtifactTransferResult {
+        let response = try await send(
+            .transferApprovedArtifact(receipt: receipt))
+        guard let result = response.artifactTransferResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no artifact-transfer result")
+        }
+        return result
+    }
+
     func sendRaw(_ request: Data) async throws -> Data {
         try await Task.detached {
             try sendRaw(
@@ -85,18 +102,27 @@ public struct AgentIntegrationLocalClient: Sendable {
             preconditionFailure("Launch requests require a selection")
         case .requestQuit:
             preconditionFailure("Quit requests require a process reference")
+        case .transferApprovedArtifact:
+            preconditionFailure(
+                "Artifact transfers require an approval receipt")
         }
     }
 
     private func send(_ request: AgentIntegrationLocalRequest) async throws
         -> AgentIntegrationLocalResponse {
         try await Task.detached {
+            let timeout: TimeInterval
+            switch request.operation {
+            case .sessionHealth, .listProcesses:
+                timeout = readOnlyReceiveTimeout
+            case .launchSoftware, .requestQuit:
+                timeout = launchReceiveTimeout
+            case .transferApprovedArtifact:
+                timeout = transferReceiveTimeout
+            }
             let response = try sendRaw(
                 AgentIntegrationLocalCodec.encode(request),
-                receiveTimeoutSeconds:
-                    request.operation == .launchSoftware
-                        || request.operation == .requestQuit
-                        ? launchReceiveTimeout : readOnlyReceiveTimeout)
+                receiveTimeoutSeconds: timeout)
             let decoded = try AgentIntegrationLocalCodec.decodeResponse(
                 response)
             guard decoded.requestID == request.requestID else {

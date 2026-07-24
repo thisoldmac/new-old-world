@@ -143,7 +143,15 @@ enum OutboundFile {
     /// forks from it, so the name sheds the extension it only ever wore
     /// to survive the trip out.
     static func plan(url: URL, data: Data, convertText: Bool) -> Plan {
-        let original = url.lastPathComponent
+        plan(name: url.lastPathComponent, data: data,
+             convertText: convertText)
+    }
+
+    /// The approval lane has deliberately forgotten the original path by
+    /// redemption time. Conversion needs only the approved leaf name and
+    /// immutable bytes, so keep that narrower input shape explicit.
+    static func plan(name original: String, data: Data,
+                     convertText: Bool) -> Plan {
         if original.lowercased().hasSuffix(".bin"),
            looksLikeMacBinary(data) {
             let inner = (original as NSString).deletingPathExtension

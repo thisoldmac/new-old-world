@@ -11,13 +11,14 @@ several of tonight's bugs lived in code that looked obviously correct.
 
 ## Deferred by decision
 
-**NOW agent-integration V0 has one slice left** (2026-07-24).
-`now_session_health`, `now_list_processes`, exact safe launch, and
-revalidated cooperative quit are implemented and tested through the
-optional host-side companion. The read-only pair also has a bounded
-PowerBook acceptance receipt; launch and quit still need connected
-companion observation. Approved immutable-staging artifact transfer
-remains deliberately unimplemented. The companion still has no guest
+**NOW agent-integration V0 implementation is complete; combined action
+acceptance remains** (2026-07-24). All five bounded projections are
+implemented and tested through the optional host-side companion:
+`now_session_health`, `now_list_processes`, exact safe launch,
+revalidated cooperative quit, and receipt-only approved artifact
+transfer through the existing put lane. The read-only pair has a bounded
+PowerBook acceptance receipt; launch, quit, and artifact transfer still
+need connected companion observation. The companion still has no guest
 component, lifecycle control, raw-path input, shell or general
 filesystem surface, force-quit surface, or CodeKitten/shared-transport
 dependency.

@@ -64,6 +64,7 @@ final class NOWAgentCompanionTests: XCTestCase {
             "now_list_processes",
             "now_launch_software",
             "now_request_quit",
+            "now_transfer_approved_artifact",
         ])
         let processTool = try XCTUnwrap(tools.first {
             $0["name"] as? String == "now_list_processes"
@@ -125,6 +126,17 @@ final class NOWAgentCompanionTests: XCTestCase {
         XCTAssertEqual(Set(quitOutcomes), Set([
             "requestSent", "unavailable", "stale", "notFound", "refused",
         ]))
+        let artifactTool = try XCTUnwrap(tools.first {
+            $0["name"] as? String == "now_transfer_approved_artifact"
+        })
+        let artifactInput = try XCTUnwrap(
+            artifactTool["inputSchema"] as? [String: Any])
+        let artifactProperties = try XCTUnwrap(
+            artifactInput["properties"] as? [String: Any])
+        XCTAssertEqual(Set(artifactProperties.keys), ["approvalReceipt"])
+        let artifactAnnotations = try XCTUnwrap(
+            artifactTool["annotations"] as? [String: Any])
+        XCTAssertEqual(artifactAnnotations["destructiveHint"] as? Bool, true)
     }
 
     func testHostAbsentReturnsTypedUnavailableWithoutLaunchingIt()
@@ -227,6 +239,34 @@ final class NOWAgentCompanionTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
     }
 
+    func testArtifactTransferReturnsHostUnavailableWithoutLaunchingNOW()
+        async throws {
+        let (endpoint, root) = temporaryEndpoint()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let server = try await initializedServer(
+            client: SocketAgentIntegrationClient(endpoint: endpoint))
+        let receipt =
+            "now-artifact-00000000-0000-0000-0000-000000000000"
+
+        let response = try Self.object(await server.handle(try Self.request(
+            id: 2,
+            method: "tools/call",
+            params: [
+                "name": "now_transfer_approved_artifact",
+                "arguments": ["approvalReceipt": receipt],
+            ])))
+        let result = try XCTUnwrap(response["result"] as? [String: Any])
+        let structured = try XCTUnwrap(
+            result["structuredContent"] as? [String: Any])
+        let unavailable = try XCTUnwrap(
+            structured["unavailable"] as? [String: Any])
+
+        XCTAssertEqual(structured["outcome"] as? String, "unavailable")
+        XCTAssertEqual(unavailable["code"] as? String,
+                       "now-host-unavailable")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+    }
+
     func testMalformedJSONReturnsParseError() async throws {
         let server = NOWMCPServer(
             client: StubAgentIntegrationClient())
@@ -295,6 +335,8 @@ final class NOWAgentCompanionTests: XCTestCase {
                     return .launchSoftware(.unavailable(.guest))
                 case .requestQuit:
                     return .requestQuit(.unavailable(.guest))
+                case .transferApprovedArtifact:
+                    return .transferApprovedArtifact(.unavailable(.guest))
                 }
             })
         try localServer.start()
@@ -539,6 +581,82 @@ final class NOWAgentCompanionTests: XCTestCase {
         XCTAssertFalse(encoded.contains("exited"))
     }
 
+    func testArtifactTransferRequiresOnlyAValidApprovalReceipt()
+        async throws {
+        let server = try await initializedServer(
+            client: StubAgentIntegrationClient())
+        let valid =
+            "now-artifact-00000000-0000-0000-0000-000000000000"
+        let invalidArguments: [[String: Any]] = [
+            [:],
+            ["approvalReceipt": "42"],
+            ["approvalReceipt": valid, "path": "/tmp/secret"],
+            ["path": "/tmp/secret"],
+            ["approvalReceipt": valid, "destination": "Lab:CodeKitten"],
+        ]
+
+        for (offset, arguments) in invalidArguments.enumerated() {
+            let response = try Self.object(await server.handle(
+                try Self.request(
+                    id: 70 + offset,
+                    method: "tools/call",
+                    params: [
+                        "name": "now_transfer_approved_artifact",
+                        "arguments": arguments,
+                    ])))
+            let error = try XCTUnwrap(response["error"] as? [String: Any])
+            XCTAssertEqual(error["code"] as? Int, -32602)
+        }
+    }
+
+    func testArtifactDeliveryReceiptIsBoundedAndClaimsNoHashProof()
+        async throws {
+        let approvalReceipt =
+            "now-artifact-00000000-0000-0000-0000-000000000000"
+        let digest = String(repeating: "a", count: 64)
+        let delivery = AgentIntegrationArtifactDeliveryReceipt(
+            transferID: UUID(),
+            sessionID: UUID(),
+            approvedAt: Date(timeIntervalSince1970: 1_000),
+            redeemedAt: Date(timeIntervalSince1970: 1_001),
+            acknowledgedAt: Date(timeIntervalSince1970: 1_002),
+            name: "Agent Note.txt",
+            source: .init(sha256: digest, bytes: 12),
+            handedToNOW: .init(sha256: digest, bytes: 12),
+            container: "data",
+            conversion: nil,
+            guestAcknowledgedWrite: true,
+            destinationBytesVerified: false,
+            guestMessage:
+                "The paired guest acknowledged writing the approved artifact")
+        let server = try await initializedServer(
+            client: StubAgentIntegrationClient(
+                artifactResult: .delivered(delivery)))
+
+        let encodedResponse = await server.handle(try Self.request(
+            id: 2,
+            method: "tools/call",
+            params: [
+                "name": "now_transfer_approved_artifact",
+                "arguments": ["approvalReceipt": approvalReceipt],
+            ]))
+        let response = try Self.object(encodedResponse)
+        let result = try XCTUnwrap(response["result"] as? [String: Any])
+        let structured = try XCTUnwrap(
+            result["structuredContent"] as? [String: Any])
+        let returned = try XCTUnwrap(
+            structured["delivered"] as? [String: Any])
+        let encoded = String(
+            decoding: try XCTUnwrap(encodedResponse), as: UTF8.self)
+
+        XCTAssertEqual(structured["outcome"] as? String, "delivered")
+        XCTAssertEqual(returned["guestAcknowledgedWrite"] as? Bool, true)
+        XCTAssertEqual(returned["destinationBytesVerified"] as? Bool, false)
+        XCTAssertFalse(encoded.contains("\"path\""))
+        XCTAssertFalse(encoded.contains("CodeKitten"))
+        XCTAssertFalse(encoded.contains(approvalReceipt))
+    }
+
     func testConcurrentProcessListCallsAllReturn() async throws {
         let server = try await initializedServer(
             client: StubAgentIntegrationClient())
@@ -587,6 +705,8 @@ private struct StubAgentIntegrationClient: AgentIntegrationClient {
     var processResult: AgentIntegrationProcessListResult = .guestUnavailable
     var launchResult: AgentIntegrationLaunchSoftwareResult = .unavailable(.host)
     var quitResult: AgentIntegrationQuitResult = .unavailable(.host)
+    var artifactResult: AgentIntegrationArtifactTransferResult =
+        .unavailable(.host)
 
     func sessionHealth() async -> AgentIntegrationSessionHealthResult {
         healthResult
@@ -604,5 +724,10 @@ private struct StubAgentIntegrationClient: AgentIntegrationClient {
     func requestQuit(reference: String) async
         -> AgentIntegrationQuitResult {
         quitResult
+    }
+
+    func transferApprovedArtifact(receipt: String) async
+        -> AgentIntegrationArtifactTransferResult {
+        artifactResult
     }
 }

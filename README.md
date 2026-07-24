@@ -93,12 +93,17 @@ on either side.
   adapter. A recent opaque process reference can request cooperative
   quit only after a fresh full-identity re-list and the guest's existing
   live-PSN check. Acknowledgement does not claim the process exited. The
-  companion exposes no lifecycle controls and changes neither app's module
-  inventory. All four tools are tested here; the two read-only tools
-  are metal-verified for a bounded acceptance pass against the
-  PowerBook 1400c. Safe launch and cooperative quit have not yet had
-  their own connected companion passes. This is not a broader transport
-  or endurance qualification.
+  fifth tool can redeem only a one-use receipt copied from NOW's native
+  Files approval action: NOW privately stages one selected regular file,
+  revalidates that copy, never overwrites a collision, and reports success
+  only after the guest's existing `file.done` acknowledgement. The MCP
+  never receives the source or guest path, and the receipt does not claim
+  destination-byte verification. The companion exposes no lifecycle
+  controls and changes neither app's module inventory. All five tools are
+  tested here; the two read-only tools are metal-verified for a bounded
+  acceptance pass against the PowerBook 1400c. The three action tools have
+  not yet had their combined connected companion pass. This is not a
+  broader transport or endurance qualification.
 
 Measured on the real PB1400c: ~4.9 fps at 8-bit with predictive +
 interlace over 802.11b, and file transfers byte-exact at ~227 KB/s.

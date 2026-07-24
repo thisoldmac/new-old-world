@@ -12,6 +12,7 @@ import NOWAgentIntegration
 final class AgentIntegrationHostAdapter {
     private let listener: GuestListener
     private let launchCommandTimeout: TimeInterval
+    private let artifactApprovals: AgentIntegrationArtifactApprovalStore?
     private lazy var processControl = AgentIntegrationProcessControl(
         listener: listener,
         currentSessionID: { [unowned self] in connectedSessionID() })
@@ -19,12 +20,21 @@ final class AgentIntegrationHostAdapter {
         listener: listener,
         commandTimeout: launchCommandTimeout,
         currentSessionID: { [unowned self] in connectedSessionID() })
+    private lazy var artifactTransfer = AgentIntegrationArtifactTransfer(
+        listener: listener,
+        approvals: artifactApprovals,
+        currentSessionID: { [unowned self] in connectedSessionID() })
     private var sessionID: UUID?
     private var sessionConnectedAt: Date?
 
-    init(listener: GuestListener, launchCommandTimeout: TimeInterval = 32) {
+    init(
+        listener: GuestListener,
+        launchCommandTimeout: TimeInterval = 32,
+        artifactApprovals: AgentIntegrationArtifactApprovalStore? = nil
+    ) {
         self.listener = listener
         self.launchCommandTimeout = launchCommandTimeout
+        self.artifactApprovals = artifactApprovals
     }
 
     func sessionHealth(observedAt: Date = Date())
@@ -103,6 +113,32 @@ final class AgentIntegrationHostAdapter {
                         observedAt: Date = Date()) async
         -> AgentIntegrationLaunchSoftwareResult {
         await softwareLaunch.launch(selection, observedAt: observedAt)
+    }
+
+    func approveArtifact(
+        sourceURL: URL,
+        destination: String,
+        convertText: Bool
+    ) -> Result<AgentIntegrationArtifactApprovalNotice,
+                AgentIntegrationArtifactApprovalError> {
+        guard let sessionID = connectedSessionID() else {
+            return .failure(.unavailable(
+                "A paired New Old World guest is required for approval"))
+        }
+        guard let artifactApprovals else {
+            return .failure(.unavailable(
+                "Artifact approval staging is unavailable"))
+        }
+        return artifactApprovals.approve(
+            sourceURL: sourceURL,
+            destination: destination,
+            convertText: convertText,
+            sessionID: sessionID)
+    }
+
+    func transferApprovedArtifact(receipt: String) async
+        -> AgentIntegrationArtifactTransferResult {
+        await artifactTransfer.transfer(receipt: receipt)
     }
 
     private func refreshSession(connectedAt: Date?) {

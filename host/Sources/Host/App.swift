@@ -195,6 +195,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     return .requestQuit(
                         await agentIntegration.requestQuit(
                             reference: reference))
+                case .transferApprovedArtifact:
+                    guard let receipt = request.approvalReceipt else {
+                        return .transferApprovedArtifact(.refused(.init(
+                            code: "now-artifact-approval-invalid",
+                            message:
+                                "The artifact approval receipt is invalid")))
+                    }
+                    return .transferApprovedArtifact(
+                        await agentIntegration.transferApprovedArtifact(
+                            receipt: receipt))
                 }
             }
             try server.start()

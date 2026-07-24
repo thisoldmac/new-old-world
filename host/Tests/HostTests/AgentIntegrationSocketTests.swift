@@ -34,6 +34,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .launchSoftware(.unavailable(.guest))
                 case .requestQuit:
                     return .requestQuit(.unavailable(.guest))
+                case .transferApprovedArtifact:
+                    return .transferApprovedArtifact(.unavailable(.guest))
                 }
             })
         try server.start()
@@ -158,6 +160,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .launchSoftware(.unavailable(.guest))
                 case .requestQuit:
                     return .requestQuit(.unavailable(.guest))
+                case .transferApprovedArtifact:
+                    return .transferApprovedArtifact(.unavailable(.guest))
                 }
             })
         try server.start()
@@ -208,6 +212,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .launchSoftware(.unavailable(.guest))
                 case .requestQuit:
                     return .requestQuit(.unavailable(.guest))
+                case .transferApprovedArtifact:
+                    return .transferApprovedArtifact(.unavailable(.guest))
                 }
             })
 
@@ -237,6 +243,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .launchSoftware(.unavailable(.guest))
                 case .requestQuit:
                     return .requestQuit(.unavailable(.guest))
+                case .transferApprovedArtifact:
+                    return .transferApprovedArtifact(.unavailable(.guest))
                 }
             })
         try server.start()
@@ -302,6 +310,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .launchSoftware(.unavailable(.guest))
                 case .requestQuit:
                     return .requestQuit(.unavailable(.guest))
+                case .transferApprovedArtifact:
+                    return .transferApprovedArtifact(.unavailable(.guest))
                 }
             })
         try server.start()
@@ -478,10 +488,10 @@ final class AgentIntegrationSocketTests: XCTestCase {
         XCTAssertFalse(wasHandled)
     }
 
-    func testVersionOneRequestIsRejectedAfterQuitAuthorityChange()
+    func testPriorSchemaRequestIsRejectedAfterArtifactCapabilityChange()
         throws {
         let raw = try JSONSerialization.data(withJSONObject: [
-            "version": 1,
+            "version": 2,
             "requestID": UUID().uuidString,
             "operation": "list_processes",
         ])
@@ -493,6 +503,68 @@ final class AgentIntegrationSocketTests: XCTestCase {
                 error as? AgentIntegrationLocalTransportError,
                 .invalidMessage("Unsupported local protocol version"))
         }
+    }
+
+    func testSocketRoundTripsOnlyAnArtifactApprovalReceipt()
+        async throws {
+        let (endpoint, root) = try temporaryEndpoint()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let receipt =
+            "now-artifact-00000000-0000-0000-0000-000000000000"
+        let expected = AgentIntegrationArtifactTransferResult.expired(.init(
+            code: "now-artifact-approval-expired",
+            message: "The artifact approval receipt has expired"))
+        var captured: String?
+        let server = try AgentIntegrationLocalServer(
+            endpoint: endpoint,
+            handler: { request in
+                guard request.operation == .transferApprovedArtifact else {
+                    return .sessionHealth(.hostUnavailable)
+                }
+                captured = request.approvalReceipt
+                return .transferApprovedArtifact(expected)
+            })
+        try server.start()
+        defer { server.stop() }
+
+        let result = try await AgentIntegrationLocalClient(
+            endpoint: endpoint).transferApprovedArtifact(receipt: receipt)
+
+        XCTAssertEqual(result, expected)
+        XCTAssertEqual(captured, receipt)
+        let encoded = try AgentIntegrationLocalCodec.encode(
+            .transferApprovedArtifact(receipt: receipt))
+        let text = String(decoding: encoded, as: UTF8.self)
+        XCTAssertFalse(text.contains("\"path\""))
+        XCTAssertFalse(text.contains("\"destination\""))
+    }
+
+    func testMalformedArtifactReceiptNeverReachesLocalHandler()
+        async throws {
+        let (endpoint, root) = try temporaryEndpoint()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let invocation = InvocationFlag()
+        let server = try AgentIntegrationLocalServer(
+            endpoint: endpoint,
+            handler: { _ in
+                await invocation.mark()
+                return .transferApprovedArtifact(.unavailable(.guest))
+            })
+        try server.start()
+        defer { server.stop() }
+        let raw = try JSONSerialization.data(withJSONObject: [
+            "version": AgentIntegrationLocalProtocol.version,
+            "requestID": UUID().uuidString,
+            "operation": "transfer_approved_artifact",
+            "approvalReceipt": "/tmp/project/file",
+        ])
+
+        let response = try await AgentIntegrationLocalClient(
+            endpoint: endpoint).sendRaw(raw)
+        let decoded = try AgentIntegrationLocalCodec.decodeResponse(response)
+        let wasHandled = await invocation.wasHandled
+        XCTAssertEqual(decoded.error?.code, "invalid-request")
+        XCTAssertFalse(wasHandled)
     }
 }
 

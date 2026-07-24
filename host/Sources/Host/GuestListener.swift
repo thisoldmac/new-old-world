@@ -379,6 +379,12 @@ final class GuestListener: ObservableObject {
         var message: String
     }
 
+    /// Host-side evidence that the matching `file.done ok:true` arrived.
+    struct PutReceipt {
+        var requestID: Int
+        var acknowledgedAt: Date
+    }
+
     /// One pulled file, still in guest form: `container` says whether the
     /// bytes are a plain data fork or MacBinary. Conversion is the
     /// caller's job (see FileConverter).
@@ -568,9 +574,37 @@ final class GuestListener: ObservableObject {
                  creator: String? = nil, modified: Int? = nil,
                  overwrite: Bool = false,
                  completion: @escaping (Result<Void, FileFailure>) -> Void) {
+        putFileWithReceipt(
+            name: name, into: path, container: container, bytes: bytes,
+            fileType: fileType, creator: creator, modified: modified,
+            overwrite: overwrite
+        ) { result in
+            completion(result.map { _ in () })
+        }
+    }
+
+    /// The approval lane needs the same completion boundary plus the local
+    /// request identity and time that back its delivery receipt.
+    func putFileWithReceipt(
+        name: String,
+        into path: String,
+        container: String,
+        bytes: Data,
+        fileType: String? = nil,
+        creator: String? = nil,
+        modified: Int? = nil,
+        overwrite: Bool = false,
+        completion: @escaping (Result<PutReceipt, FileFailure>) -> Void
+    ) {
         guard let session, case .connected = state else {
             completion(.failure(.init(code: "disconnected",
                                       message: "No Mac is connected")))
+            return
+        }
+        guard pendingPut == nil else {
+            completion(.failure(.init(
+                code: "busy",
+                message: "Another file transfer is already in progress")))
             return
         }
         let id = nextCommandId
@@ -609,7 +643,7 @@ final class GuestListener: ObservableObject {
             bytes: bytes, crc32: checksum)
     }
 
-    private var pendingPut: ((Result<Void, FileFailure>) -> Void)?
+    private var pendingPut: ((Result<PutReceipt, FileFailure>) -> Void)?
     private var putId: Int?
     /// Set once the guest has reported its own received count for the
     /// put in flight. Until then the send counter is all there is.
@@ -618,7 +652,7 @@ final class GuestListener: ObservableObject {
     /// has taken) can be turned into a fraction.
     private var putExpected = 0
 
-    fileprivate func settlePut(_ result: Result<Void, FileFailure>) {
+    fileprivate func settlePut(_ result: Result<PutReceipt, FileFailure>) {
         let completion = pendingPut
         if let id = putId { clearWatchdog(id) }
         pendingPut = nil
@@ -1126,7 +1160,9 @@ final class GuestListener: ObservableObject {
                 guard self.putId == done.id else { return }
                 self.clearWatchdog(done.id)
                 if done.ok {
-                    self.settlePut(.success(()))
+                    self.settlePut(.success(.init(
+                        requestID: done.id,
+                        acknowledgedAt: Date())))
                 } else {
                     self.settlePut(.failure(.init(
                         code: done.code ?? "io-error",
