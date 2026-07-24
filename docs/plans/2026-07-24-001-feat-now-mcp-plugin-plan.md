@@ -1,18 +1,18 @@
 ---
-title: Optional NOW MCP Plugin - Plan
+title: NOW Host Agent-Integration Companion - Plan
 type: feat
 date: 2026-07-24
 ---
 
-# Optional NOW MCP Plugin - Plan
+# NOW Host Agent-Integration Companion - Plan
 
 ## Goal Capsule
 
-- **Objective:** Add an optional MCP projection over a small set of operations the NOW host already performs, without changing NOW from a human-facing product.
-- **Authority:** [`contract/asyncapi.yaml`](../../contract/asyncapi.yaml) owns guest-wire meaning. The host app remains the sole owner of the guest session and transfer lane. The MCP may narrow those capabilities but may not widen them.
-- **Execution profile:** Start with a local stdio MCP server conceptually. Do not commit client configuration until the server and its safety tests exist.
-- **Stop conditions:** Stop if implementation requires a new guest message, imports TimBotTu runtime code, lets the MCP speak the guest wire directly, or exposes an arbitrary path, command, or process-control escape hatch.
-- **Tail ownership:** NOW must launch, connect, transfer files, and serve every human workflow exactly as it does when the plugin is absent.
+- **Objective:** Add an optional host-side NOW agent-integration companion: a separate MCP-facing executable that projects a small set of operations already owned by a running NOW host without becoming a paired NOW feature module.
+- **Authority:** [`contract/asyncapi.yaml`](../../contract/asyncapi.yaml) owns guest-wire meaning. The NOW host remains the sole owner of the guest session, transport, transfer lane, and human-facing operation. The companion may narrow those capabilities but may not widen or own them.
+- **Execution profile:** Start conceptually with a lightweight, client-launched stdio executable. Do not commit client configuration or add a daemon, launch agent, or second desktop app.
+- **Stop conditions:** Stop if implementation requires a new guest message, a guest-side module, dashboard, or protocol mode, imports TimBotTu runtime code, lets the companion speak the guest wire directly, controls NOW's lifecycle or configuration, or exposes an arbitrary path, command, or process-control escape hatch.
+- **Tail ownership:** With the companion absent, present, starting, or stopping, NOW must launch, connect, transfer files, and serve every paired human workflow with the same host and guest UI/module inventory.
 - **Handoff status:** Documentation only. No MCP tool, runtime, protocol, or configuration exists from this plan.
 
 ---
@@ -21,24 +21,24 @@ date: 2026-07-24
 
 ### Summary
 
-V0 is a narrow automation companion for an already-running NOW host app. It reports session health, lists the connected classic Mac's processes, launches an application through NOW's existing exact-selection semantics, asks a currently identified process to quit, and transfers a separately approved artifact through NOW's existing file-transfer lane. The plugin is not a second shell, file browser, or remote-control product.
+V0 is a narrow, optional host-side agent-integration companion for an already-running NOW host app. It is a separate MCP-facing executable/adapter that reports session health, lists the connected classic Mac's processes, launches an application through NOW's existing exact-selection semantics, asks a currently identified process to quit, and transfers a separately approved artifact through NOW's existing file-transfer lane. It is not a standard NOW plugin or paired feature module: it adds no guest-side module, dashboard, protocol mode, or paired dashboard inventory. It is not a second shell, file browser, remote-control product, or owner of NOW.
 
 ### Problem Frame
 
-NOW already has useful, tested host APIs behind native UI, but an agent cannot safely use a bounded subset of them. Exposing `GuestListener` or `command.request` wholesale would erase the product's current safety boundaries: names could become commands, a stale PSN could target a later process, and "send any file the human picked" could become unattended access to a working tree.
+NOW already has useful, tested host APIs behind native UI, but an agent cannot safely use a bounded subset of them. A separate companion can project only that bounded host-owned surface without changing the paired product. Exposing `GuestListener` or `command.request` wholesale would erase the product's current safety boundaries: names could become commands, a stale PSN could target a later process, and "send any file the human picked" could become unattended access to a working tree.
 
 ### Requirements
 
 **Product boundary**
 
-- R1. NOW remains human-facing, and every existing workflow works with no MCP plugin installed or running.
-- R2. The host app remains the sole owner of the guest connection, request correlation, and one-at-a-time transfer lane.
+- R1. NOW remains a paired, human-facing host/guest product, and every existing workflow and dashboard/module inventory works unchanged whether the companion is absent, present, starting, or stopping.
+- R2. The host app remains the sole owner of the guest session, transport, request correlation, one-at-a-time transfer lane, and human-facing product operation.
 - R3. V0 uses only behaviors already described by the current contract; it adds no guest protocol messages or fields.
-- R4. The initial MCP transport is stdio, with protocol output isolated from diagnostics, but this plan creates no MCP client configuration.
+- R4. V0 is a separate, NOW-specific executable launched on demand by its MCP client over stdio, with protocol output isolated from diagnostics. It introduces no checked-in client configuration, daemon, launch agent, second desktop app, or independent NOW runtime.
 
 **Read-only tools**
 
-- R5. Session health reports the host's current connection state and live health fields without starting, stopping, or reconfiguring the listener.
+- R5. Session health reports the running host's current connection state and live health fields without launching, stopping, claiming, or configuring NOW or its listener. If the NOW host is unavailable, every tool returns a typed unavailable result.
 - R6. Process listing uses `process.list` / `process.listing` and returns a snapshot plus an opaque, session-bound process reference for each live PSN.
 
 **Bounded actions**
@@ -65,18 +65,22 @@ V0 excludes:
 - `KillProcess`, force quit, signals, or any escalation beyond the existing cooperative quit Apple Event;
 - transfer-lane preemption, parallel transfers, hidden retry loops, or bypasses around `busy`;
 - MCP resources that mirror a share or CodeKitten workspace;
-- guest protocol changes, resident-component changes, runtime installation, launch agents, and checked-in MCP configuration.
+- a guest-side module, dashboard, protocol mode, or any change to the paired NOW dashboard/module inventory;
+- a shared command layer, generic broker, generic control runtime, future TBT control plane, or integration point for CodeKitten or TBT Chat;
+- guest protocol changes, resident-component changes, runtime installation, daemons, launch agents, a second desktop app, and checked-in MCP configuration.
 
 ### Acceptance Examples
 
-- AE1. With no guest connected, health returns `disconnected`; process, launch, quit, and transfer actions return a typed unavailable result without changing listener state.
+- AE1. With the NOW host unavailable, every tool returns a typed unavailable result and the companion does not launch, stop, configure, or claim ownership of NOW.
 - AE2. An ambiguous application name returns bounded candidates and launches nothing. Repeating with one current opaque candidate launches its exact full path.
 - AE3. A process reference from before a reconnect, or one whose PSN now belongs to a different identifying tuple, is rejected before `process.quit`.
 - AE4. A cooperative quit accepted by the guest returns "request sent"; refusal, timeout, and still-running outcomes remain distinct from "exited".
 - AE5. An expired, replayed, altered, or out-of-scope artifact receipt transfers no bytes.
 - AE6. A harmless staged copy swapped for a symlink, hard link, directory, or different inode after approval is rejected at final open.
 - AE7. A transfer that sent all local bytes but never received `file.done ok:true` returns no success receipt.
-- AE8. Starting or stopping the stdio server leaves the NOW host app and its native UI unchanged.
+- AE8. Starting, stopping, or crashing the companion leaves the NOW host app, its native UI, the guest UI, and both halves' dashboard/module inventory unchanged.
+- AE9. With the companion absent or uninstalled, the paired NOW host and guest start, connect, browse, launch software, request quits, and transfer through their existing human workflows unchanged.
+- AE10. With the companion present, a disconnected guest still yields the host-owned `disconnected` health state, while guest-dependent actions return typed unavailable results without changing listener state.
 
 ---
 
@@ -88,7 +92,7 @@ This mapping is the first implementation deliverable. It must be checked against
 
 | MCP tool | Existing owner | V0 projection |
 | --- | --- | --- |
-| `now_session_health` | `GuestListener.State` and `SessionHealth` | Read-only snapshot with a plugin-minted session generation; no listener controls. |
+| `now_session_health` | `GuestListener.State` and `SessionHealth` | Read-only snapshot with a companion-minted session generation; no listener controls. |
 | `now_list_processes` | `process.list` / `process.listing`, `GuestListener.listProcesses` | Page the current table and mint opaque process references bound to session generation, PSN, and identifying fields. |
 | `now_launch_software` | `software.list` / `software.listing`, then declared `launch` with `target` | Resolve a query without action; launch only one current reference by the listing's full HFS path. Empty paths are never launchable. |
 | `now_request_quit` | `process.quit` / `process.result`, `GuestListener.driveProcess` | Revalidate the current-session reference against a fresh listing, then request cooperative quit. |
@@ -96,12 +100,13 @@ This mapping is the first implementation deliverable. It must be checked against
 
 ### Key Technical Decisions
 
-- KTD1. **Projection, not alternate runtime.** The stdio process talks to a narrow host-owned local control adapter; it does not create another `GuestListener`, bind the NOW port, or decode guest frames.
+- KTD1. **Separate projection, not alternate runtime or paired module.** The client-launched stdio executable talks to a narrow host-owned local control adapter; it does not create another `GuestListener`, bind the NOW port, decode guest frames, or add a guest-side or dashboard module.
 - KTD2. **Capability references are session-scoped.** Process and software references are opaque, expire on disconnect/reconnect, and contain enough signed or server-held state to prevent caller fabrication.
 - KTD3. **Actions revalidate at act time.** A successful earlier list is evidence for selection, not authority to act later. Quit and launch re-resolve against the current session before sending.
-- KTD4. **Approval and delivery are separate receipts.** A native NOW host action copies one human-selected regular file into dedicated staging and authorizes that immutable copy plus a destination scope. The MCP cannot invoke this action. A delivery receipt records the resulting NOW request and `file.done` outcome; neither substitutes for the other.
-- KTD5. **Workspace isolation is structural.** The MCP cannot browse, receive, or resolve original workspace paths and cannot mint approvals. It can redeem only one-use staged-artifact receipts, so CodeKitten project discovery is neither required nor exposed.
+- KTD4. **Approval and delivery are separate receipts.** A native NOW host action copies one human-selected regular file into dedicated staging and authorizes that immutable copy plus a destination scope. The companion cannot invoke this action. A delivery receipt records the resulting NOW request and `file.done` outcome; neither substitutes for the other.
+- KTD5. **Workspace isolation is structural.** The companion cannot browse, receive, or resolve original workspace paths and cannot mint approvals. It can redeem only one-use staged-artifact receipts, so CodeKitten project discovery is neither required nor exposed.
 - KTD6. **No stdout diagnostics.** Stdio frames are the only stdout bytes. Logs use stderr or the host's existing logging path and redact local source paths from ordinary tool results.
+- KTD7. **Lifecycle stays outside NOW V0.** The lightweight companion is launched on demand by the MCP client and exits with that client relationship. A future host-side Integrations UI may own enablement, logs, and removal, but V0 does not build that UI or introduce a daemon, launch agent, second desktop app, or NOW lifecycle controls.
 
 ### Current verification rung
 
@@ -110,7 +115,7 @@ The MCP layer itself does not exist, so it is neither built, tested, nor metal-v
 - The persistent connection and ordinary bidirectional file workflows are metal-verified, subject to the broken resume path and intermittent large-transfer slowdown recorded in [`open-issues.md`](../open-issues.md).
 - Guest process listing and cooperative quit are metal-verified. Host stale-list clearing across reconnect is tested but still listed as not metal-verified in [`open-issues.md`](../open-issues.md).
 - `launch -v` has metal evidence. The host's `software.list` exact-path UI flow remains tested/builds but not live end-to-end, so the MCP launch projection begins no higher than **tested** until its own connected run.
-- `file.done` is the existing write acknowledgement. The proposed approval and delivery receipts are new host/plugin behavior and begin unverified.
+- `file.done` is the existing write acknowledgement. The proposed approval and delivery receipts are new host/companion behavior and begin unverified.
 
 ### Grounding
 
@@ -127,7 +132,7 @@ The MCP layer itself does not exist, so it is neither built, tested, nor metal-v
 3. Implement read-only health and process-list tools.
 4. Add launch and quit with at-act-time revalidation.
 5. Add the approval provider boundary and receipt-backed transfer.
-6. Add the stdio server last, so protocol handlers are thin projections over tested domain operations.
+6. Add the client-launched stdio companion last, so protocol handlers are thin projections over tested host-owned domain operations.
 
 ---
 
@@ -150,7 +155,7 @@ The MCP layer itself does not exist, so it is neither built, tested, nor metal-v
 - **Dependencies:** U1
 - **Files:** `host/Sources/Host/GuestListener.swift`, new focused files under `host/Sources/Host/Automation/`, tests under `host/Tests/HostTests/`
 - **Approach:** Extract domain operations, not the listener. Define session generation, opaque references, bounded result types, and a user-local adapter whose lifecycle cannot start or stop NOW. Choose its concrete IPC and caller-authentication mechanism in the contract-map review before executable work.
-- **Test scenarios:** Plugin absent; adapter client disconnect; guest reconnect invalidates all references; concurrent calls preserve the one-lane invariant; app UI and adapter observe the same session.
+- **Test scenarios:** Companion absent; adapter client disconnect; guest reconnect invalidates all references; concurrent calls preserve the one-lane invariant; app UI and adapter observe the same host-owned session.
 - **Verification:** Host tests prove no adapter call changes listener configuration and existing host suites remain green.
 
 ### U3. Read-only MCP tools
@@ -183,15 +188,15 @@ The MCP layer itself does not exist, so it is neither built, tested, nor metal-v
 - **Test scenarios:** explicit host approval; MCP cannot mint approval; valid receipt; expiry; replay; changed bytes; symlink swap; hard-link alias; directory or special file; leaked original CodeKitten path; destination traversal; busy lane; disconnect; timeout after all bytes sent; `file.done ok:false`; no destination hash proof.
 - **Verification:** Integration tests use the existing fake guest and assert that rejected cases emit no `file.offer`.
 
-### U6. Stdio packaging and regression proof
+### U6. Companion packaging, lifecycle, and regression proof
 
-- **Goal:** Package the optional server without changing normal NOW startup or committing client configuration.
-- **Requirements:** R1-R4
+- **Goal:** Package the lightweight optional companion without changing normal NOW startup, paired host/guest UI, or client configuration.
+- **Requirements:** R1-R5
 - **Dependencies:** U3-U5
 - **Files:** `mcp/` package/build files, packaging documentation, host and MCP regression tests
-- **Approach:** The MCP executable starts only when an MCP client launches it. NOW does not discover, install, or depend on it.
-- **Test scenarios:** absent executable; stdio EOF; malformed request; cancellation; host app unavailable; client crash mid-action; clean restart; no config present.
-- **Verification:** Host suite passes with the plugin absent, MCP suite passes in isolation, then connected emulator and attended PowerBook runs are recorded by rung.
+- **Approach:** The companion starts only when an MCP client launches it and does not manage NOW. In V0, NOW does not discover, install, launch, stop, configure, or depend on the companion. V0 adds no daemon, launch agent, or second desktop app. A future host-side Integrations UI may own enablement, logs, and removal, but is explicitly deferred.
+- **Test scenarios:** absent executable leaves normal paired operation unchanged; present companion leaves host and guest UI/module inventory unchanged; stdio EOF; malformed request; cancellation; host app unavailable returns typed unavailable without starting NOW; client crash mid-action; clean restart; no config present.
+- **Verification:** Host and guest regression evidence is unchanged with the companion absent and present, the MCP suite passes in isolation, then connected emulator and attended PowerBook runs are recorded by rung.
 
 ---
 
@@ -216,5 +221,6 @@ The MCP layer itself does not exist, so it is neither built, tested, nor metal-v
 - CodeKitten project trees remain undiscoverable and unreachable; only immutable staged copies with valid one-use receipts can enter the transfer path.
 - Launch and quit act only on current, revalidated identities.
 - A transfer succeeds only after approval validation and `file.done ok:true`, with receipt claims limited to what was observed.
-- NOW works normally with the plugin absent, stopped, crashed, or unconfigured.
+- NOW's paired host/guest UI, dashboard/module inventory, and normal operation remain unchanged with the companion absent, present, stopped, crashed, or unconfigured.
+- The companion remains a client-launched NOW-specific adapter: it does not own NOW lifecycle or configuration and is not a generic broker, shared command layer, TBT control plane, or CodeKitten/TBT Chat integration.
 - All builds/tests/metal evidence use the repository's named verification rungs, and abandoned implementation attempts are removed from the final diff.
