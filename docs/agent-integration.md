@@ -10,6 +10,14 @@ under a persisted root-relative `guestRoot`; it does not turn this companion
 into a direct file transport, grant modern-host filesystem access, or add
 CodeKitten project semantics.
 
+The first V0.5 command-layer slice is implemented behind the host boundary:
+capability discovery, one bounded listing page, and bounded exact stat. It
+persists the approved share-root default explicitly, validates every caller
+path before composing it beneath policy, returns typed command receipts, and
+logs command start/outcome. Invalid stored policy is rejected and reset
+audibly. This is deliberately not an MCP surface yet; the existing companion
+still advertises only the five V0 tools below.
+
 ## Implemented slices
 
 The implemented V0 surface exposes only five host-owned projections.

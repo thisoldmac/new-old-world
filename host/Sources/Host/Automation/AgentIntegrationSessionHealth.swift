@@ -162,7 +162,7 @@ final class AgentIntegrationHostAdapter {
         sessionConnectedAt = nil
     }
 
-    private func connectedSessionID() -> UUID? {
+    func connectedSessionID() -> UUID? {
         guard case .connected = listener.state else {
             clearSession()
             return nil

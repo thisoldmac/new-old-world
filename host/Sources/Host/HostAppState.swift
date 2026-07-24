@@ -50,6 +50,7 @@ final class HostAppState: ObservableObject {
     let logs: LogsModel
     let listener: GuestListener
     let agentIntegration: AgentIntegrationHostAdapter
+    let guestFiles: GuestFilesCommandService
     private let artifactApprovals: AgentIntegrationArtifactApprovalStore?
     private(set) lazy var console = ConsoleModel(listener: listener)
     private(set) lazy var census = CensusModuleModel(listener: listener)
@@ -82,9 +83,16 @@ final class HostAppState: ObservableObject {
             version: ProductIdentity.version,
             name: Host.current().localizedName ?? "Mac"))
         artifactApprovals = try? AgentIntegrationArtifactApprovalStore()
-        agentIntegration = AgentIntegrationHostAdapter(
+        let integration = AgentIntegrationHostAdapter(
             listener: listener,
             artifactApprovals: artifactApprovals)
+        agentIntegration = integration
+        guestFiles = GuestFilesCommandService(
+            listener: listener,
+            policy: GuestFileAccessPolicy(defaults: defaults),
+            currentSessionID: {
+                integration.connectedSessionID()
+            })
         let stored = defaults.string(forKey: Self.selectionKey)
         selectedModuleID = stored.flatMap(registry.module(id:))?.id
             ?? registry.modules.first?.id

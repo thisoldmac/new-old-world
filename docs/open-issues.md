@@ -939,13 +939,21 @@ information architecture, pairing-conflict UX, thumbnail and history
 retention, inventory analyses, local-browser defaults, and remembered
 module-state policies remain intentionally open.
 
-## MCP V0.5 guest Files commands are planned, not implemented
+## MCP V0.5 guest Files command seam has begun
 
 The approved
 [NOW MCP V0.5 guest-files roadmap](plans/2026-07-24-003-feat-now-mcp-v0-5-files-command-roadmap-plan.md)
-puts a typed, logged NOW command layer in front of generic guest filesystem
-access before MCP projection. Its first slice is read-only capability, listing,
-and stat beneath a persisted root-relative `guestRoot`.
+now has its first host-owned command slice: an explicit, persisted and versioned
+root-relative `guestRoot` policy; canonical HFS path validation; capability,
+one-page listing, and bounded exact-stat commands; typed receipts; and normal
+host audit lines. The host registers that command layer without adding UI or
+starting a listener. No V0.5 MCP tools are exposed yet.
+
+The read-only slice composes the existing `file.list` exchange and therefore
+adds no guest message or guest code. It is **tested** against fake paired
+sessions, including root escape, invalid policy recovery, empty and populated
+listings, paging bounds, stale sessions, concurrency, and host-product
+noninterference. It is not yet metal-verified.
 
 Arbitrary download and broader deployment are gated on two current facts, not
 merely planned polish: the guest sender stages a whole artifact in a temporary
