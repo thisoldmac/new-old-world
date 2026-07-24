@@ -24,12 +24,14 @@ final class AgentIntegrationSocketTests: XCTestCase {
         let adapter = AgentIntegrationHostAdapter(listener: listener)
         let server = try AgentIntegrationLocalServer(
             endpoint: endpoint,
-            handler: { operation in
-                switch operation {
+            handler: { request in
+                switch request.operation {
                 case .sessionHealth:
                     return .sessionHealth(adapter.sessionHealth())
                 case .listProcesses:
                     return .processList(await adapter.processList())
+                case .launchSoftware:
+                    return .launchSoftware(.unavailable(.guest))
                 }
             })
         try server.start()
@@ -144,12 +146,14 @@ final class AgentIntegrationSocketTests: XCTestCase {
         let adapter = AgentIntegrationHostAdapter(listener: listener)
         let server = try AgentIntegrationLocalServer(
             endpoint: endpoint,
-            handler: { operation in
-                switch operation {
+            handler: { request in
+                switch request.operation {
                 case .sessionHealth:
                     return .sessionHealth(adapter.sessionHealth())
                 case .listProcesses:
                     return .processList(await adapter.processList())
+                case .launchSoftware:
+                    return .launchSoftware(.unavailable(.guest))
                 }
             })
         try server.start()
@@ -188,14 +192,16 @@ final class AgentIntegrationSocketTests: XCTestCase {
         let modules = ModuleRegistry.standard.modules
         let server = try AgentIntegrationLocalServer(
             endpoint: endpoint,
-            handler: { operation in
-                switch operation {
+            handler: { request in
+                switch request.operation {
                 case .sessionHealth:
                     return .sessionHealth(
                         state.agentIntegration.sessionHealth())
                 case .listProcesses:
                     return .processList(
                         await state.agentIntegration.processList())
+                case .launchSoftware:
+                    return .launchSoftware(.unavailable(.guest))
                 }
             })
 
@@ -215,12 +221,14 @@ final class AgentIntegrationSocketTests: XCTestCase {
         let adapter = AgentIntegrationHostAdapter(listener: listener)
         let server = try AgentIntegrationLocalServer(
             endpoint: endpoint,
-            handler: { operation in
-                switch operation {
+            handler: { request in
+                switch request.operation {
                 case .sessionHealth:
                     return .sessionHealth(adapter.sessionHealth())
                 case .listProcesses:
                     return .processList(await adapter.processList())
+                case .launchSoftware:
+                    return .launchSoftware(.unavailable(.guest))
                 }
             })
         try server.start()
@@ -276,12 +284,14 @@ final class AgentIntegrationSocketTests: XCTestCase {
                 front: true)])
         let server = try AgentIntegrationLocalServer(
             endpoint: endpoint,
-            handler: { operation in
-                switch operation {
+            handler: { request in
+                switch request.operation {
                 case .sessionHealth:
                     return .sessionHealth(.hostUnavailable)
                 case .listProcesses:
                     return .processList(.available(snapshot))
+                case .launchSoftware:
+                    return .launchSoftware(.unavailable(.guest))
                 }
             })
         try server.start()
@@ -291,6 +301,108 @@ final class AgentIntegrationSocketTests: XCTestCase {
             endpoint: endpoint).listProcesses()
 
         XCTAssertEqual(result, .available(snapshot))
+    }
+
+    func testSocketRoundTripsOnlyAnOpaqueLaunchSelection() async throws {
+        let (endpoint, root) = try temporaryEndpoint()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let sessionID = UUID()
+        let expected = AgentIntegrationLaunchSoftwareResult.launched(.init(
+            sessionID: sessionID,
+            catalogObservedAt: Date(timeIntervalSince1970: 1_000),
+            acknowledgedAt: Date(timeIntervalSince1970: 1_001),
+            software: .init(
+                reference: "now-software-opaque",
+                name: "SimpleText",
+                version: "1.4",
+                type: "APPL",
+                creator: "ttxt",
+                running: false),
+            guestMessage: "launched SimpleText"))
+        var captured: AgentIntegrationLaunchSelection?
+        let server = try AgentIntegrationLocalServer(
+            endpoint: endpoint,
+            handler: { request in
+                if case .launchSoftware = request.operation {
+                    captured = request.launchSelection
+                    return .launchSoftware(expected)
+                }
+                return .sessionHealth(.hostUnavailable)
+            })
+        try server.start()
+        defer { server.stop() }
+
+        let result = try await AgentIntegrationLocalClient(
+            endpoint: endpoint).launchSoftware(.name("SimpleText"))
+
+        XCTAssertEqual(result, expected)
+        XCTAssertEqual(captured, .name("SimpleText"))
+        let encoded = try AgentIntegrationLocalCodec.encode(
+            .launchSoftware(.reference(
+                "now-software-00000000-0000-0000-0000-000000000000")))
+        XCTAssertFalse(String(decoding: encoded, as: UTF8.self)
+            .contains("\"path\""))
+    }
+
+    func testMalformedLocalLaunchSelectionNeverReachesHandler()
+        async throws {
+        let (endpoint, root) = try temporaryEndpoint()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let invocation = InvocationFlag()
+        let server = try AgentIntegrationLocalServer(
+            endpoint: endpoint,
+            handler: { _ in
+                await invocation.mark()
+                return .launchSoftware(.unavailable(.guest))
+            })
+        try server.start()
+        defer { server.stop() }
+        let requestID = UUID()
+        let raw = try JSONSerialization.data(withJSONObject: [
+            "version": AgentIntegrationLocalProtocol.version,
+            "requestID": requestID.uuidString,
+            "operation": "launch_software",
+            "launchSelection": [
+                "name": "SimpleText",
+                "path": "HD:Apps:SimpleText",
+            ],
+        ])
+
+        let response = try await AgentIntegrationLocalClient(
+            endpoint: endpoint).sendRaw(raw)
+        let decoded = try AgentIntegrationLocalCodec.decodeResponse(response)
+        let wasHandled = await invocation.wasHandled
+
+        XCTAssertEqual(decoded.error?.code, "invalid-request")
+        XCTAssertFalse(wasHandled)
+    }
+
+    func testLaunchSocketWaitsPastTheReadOnlyTimeoutForCatalogWork()
+        async throws {
+        let (endpoint, root) = try temporaryEndpoint()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let expected = AgentIntegrationLaunchSoftwareResult.notFound(.init(
+            code: "now-software-not-found",
+            message: "No exact application name is current"))
+        let server = try AgentIntegrationLocalServer(
+            endpoint: endpoint,
+            handler: { request in
+                guard request.operation == .launchSoftware else {
+                    return .sessionHealth(.hostUnavailable)
+                }
+                try? await Task.sleep(nanoseconds: 120_000_000)
+                return .launchSoftware(expected)
+            })
+        try server.start()
+        defer { server.stop() }
+
+        let result = try await AgentIntegrationLocalClient(
+            endpoint: endpoint,
+            readOnlyReceiveTimeout: 0.05,
+            launchReceiveTimeout: 0.5
+        ).launchSoftware(.name("Missing"))
+
+        XCTAssertEqual(result, expected)
     }
 }
 

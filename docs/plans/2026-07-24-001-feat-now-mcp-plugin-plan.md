@@ -13,7 +13,7 @@ date: 2026-07-24
 - **Execution profile:** Start conceptually with a lightweight, client-launched stdio executable. Do not commit client configuration or add a daemon, launch agent, or second desktop app.
 - **Stop conditions:** Stop if implementation requires a new guest message, a guest-side module, dashboard, or protocol mode, imports TimBotTu runtime code, lets the companion speak the guest wire directly, controls NOW's lifecycle or configuration, exposes an arbitrary path, command, or process-control escape hatch, or makes a future shared transport a dependency of current V0 work.
 - **Tail ownership:** With the companion absent, present, starting, or stopping, NOW must launch, connect, transfer files, and serve every paired human workflow with the same host and guest UI/module inventory.
-- **Handoff status:** `now_session_health` and `now_list_processes`, the private same-user host adapter, and the client-launched stdio companion are implemented and tested. Process results are bounded point-in-time snapshots; their opaque references expose no PSN and grant no action authority. NOW still uses its existing guest-dials-host paired connection; no guest protocol change, guest listener, or client configuration was added. [`agent-integration.md`](../agent-integration.md) records the current trust and connection boundaries.
+- **Handoff status:** `now_session_health`, `now_list_processes`, and `now_launch_software`, the private same-user host adapter, and the client-launched stdio companion are implemented and tested. Launch resolves a fresh `apps` catalog by the guest's exact full-name comparison shape, refuses zero or multiple matches, and keeps listing paths inside the host. Opaque ambiguity references are session-bound and revalidated against a fresh catalog before action. Process references still expose no PSN and grant no action authority. NOW still uses its existing guest-dials-host paired connection; no guest protocol change, guest listener, or client configuration was added. [`agent-integration.md`](../agent-integration.md) records the current trust and connection boundaries.
 
 ---
 
@@ -111,7 +111,7 @@ This mapping is the first implementation deliverable. It must be checked against
 
 ### Current verification rung
 
-The host-owned `session_health` and `list_processes` projections, private host-local socket, and stdio MCP companion are **tested** and metal-verified for the bounded read-only acceptance receipt in [`agent-integration.md`](../agent-integration.md); they are not a replacement transport. The pass covered typed host absence, normal reconnect with a new session/reference scope, paced reads, and modest concurrency against the paired PowerBook. It did not exercise broader paired human workflows, transfers, sustained load, or any unimplemented tool.
+The host-owned `session_health`, `list_processes`, and exact safe-launch projections, private host-local socket, and stdio MCP companion are **tested**; the two read-only projections are also metal-verified for the bounded acceptance receipt in [`agent-integration.md`](../agent-integration.md). Safe launch remains no higher than **tested** until its own connected run. None is a replacement transport. The read-only pass covered typed host absence, normal reconnect with a new session/reference scope, paced reads, and modest concurrency against the paired PowerBook. It did not exercise broader paired human workflows, launch, transfers, or sustained load.
 
 - The persistent connection and ordinary bidirectional file workflows are metal-verified, subject to the broken resume path and intermittent large-transfer slowdown recorded in [`open-issues.md`](../open-issues.md).
 - Guest process listing and cooperative quit are metal-verified. Host stale-list clearing across reconnect is tested but still listed as not metal-verified in [`open-issues.md`](../open-issues.md).
@@ -126,14 +126,14 @@ The host-owned `session_health` and `list_processes` projections, private host-l
 - [`processes-and-peek.md`](../processes-and-peek.md) owns PSN identity, live revalidation, and cooperative quit.
 - [`software-module.md`](../software-module.md) owns exact-path launch and ambiguity behavior.
 - [`open-issues.md`](../open-issues.md) remains the authority for broken and unverified behavior.
-- The sibling CodeKitten repo's `../codekitten/docs/plans/2026-07-23-002-feat-codekitten-phase-0-1-roadmap-plan.md` defines the intended listener proof campaign. Its presence is planning evidence only, not proof that the listener or a shared service exists.
+- The [sibling CodeKitten roadmap](../../../codekitten/docs/plans/2026-07-23-002-feat-codekitten-phase-0-1-roadmap-plan.md) defines the intended listener proof campaign. Its presence is planning evidence only, not proof that the listener or a shared service exists.
 
 ### Sequencing
 
 1. Freeze the contract-to-tool map and failure vocabulary.
 2. Resolve and threat-model the narrow local host adapter, then expose session health through the client-launched stdio companion. This slice is complete.
 3. Add process listing over the same host-owned session. This slice is complete.
-4. Add safe launch and cooperative quit with at-act-time revalidation.
+4. Add safe launch and cooperative quit with at-act-time revalidation. Safe launch is complete; cooperative quit is the next command slice.
 5. Add the approval provider boundary and receipt-backed transfer.
 6. Keep the current dial-out connection unchanged throughout V0. After CodeKitten's listener is proven and stress-tested, evaluate a shared-service extraction in a separate worktree; do not mix that migration track into the MCP tool sequence.
 

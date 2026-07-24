@@ -4,11 +4,26 @@ import Foundation
 public struct AgentIntegrationLocalClient: Sendable {
     public let endpoint: AgentIntegrationEndpoint
     private let expectedUID: uid_t
+    private let readOnlyReceiveTimeout: TimeInterval
+    private let launchReceiveTimeout: TimeInterval
 
     public init(endpoint: AgentIntegrationEndpoint? = nil,
                 expectedUID: uid_t = geteuid()) throws {
+        try self.init(
+            endpoint: endpoint,
+            expectedUID: expectedUID,
+            readOnlyReceiveTimeout: 2,
+            launchReceiveTimeout: 35)
+    }
+
+    init(endpoint: AgentIntegrationEndpoint? = nil,
+         expectedUID: uid_t = geteuid(),
+         readOnlyReceiveTimeout: TimeInterval,
+         launchReceiveTimeout: TimeInterval) throws {
         self.endpoint = try endpoint ?? .currentUser(uid: expectedUID)
         self.expectedUID = expectedUID
+        self.readOnlyReceiveTimeout = readOnlyReceiveTimeout
+        self.launchReceiveTimeout = launchReceiveTimeout
     }
 
     public func sessionHealth() async throws
@@ -31,16 +46,44 @@ public struct AgentIntegrationLocalClient: Sendable {
         return result
     }
 
+    public func launchSoftware(_ selection: AgentIntegrationLaunchSelection)
+        async throws -> AgentIntegrationLaunchSoftwareResult {
+        let response = try await send(
+            .launchSoftware(selection))
+        guard let result = response.launchResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no software-launch result")
+        }
+        return result
+    }
+
     func sendRaw(_ request: Data) async throws -> Data {
-        try await Task.detached { try sendRaw(request) }.value
+        try await Task.detached {
+            try sendRaw(
+                request, receiveTimeoutSeconds: readOnlyReceiveTimeout)
+        }.value
     }
 
     private func send(operation: AgentIntegrationLocalRequest.Operation)
         async throws -> AgentIntegrationLocalResponse {
+        switch operation {
+        case .sessionHealth:
+            return try await send(.sessionHealth())
+        case .listProcesses:
+            return try await send(.processList())
+        case .launchSoftware:
+            preconditionFailure("Launch requests require a selection")
+        }
+    }
+
+    private func send(_ request: AgentIntegrationLocalRequest) async throws
+        -> AgentIntegrationLocalResponse {
         try await Task.detached {
-            let request = AgentIntegrationLocalRequest(operation: operation)
             let response = try sendRaw(
-                AgentIntegrationLocalCodec.encode(request))
+                AgentIntegrationLocalCodec.encode(request),
+                receiveTimeoutSeconds:
+                    request.operation == .launchSoftware
+                        ? launchReceiveTimeout : readOnlyReceiveTimeout)
             let decoded = try AgentIntegrationLocalCodec.decodeResponse(
                 response)
             guard decoded.requestID == request.requestID else {
@@ -55,14 +98,16 @@ public struct AgentIntegrationLocalClient: Sendable {
         }.value
     }
 
-    private func sendRaw(_ request: Data) throws -> Data {
+    private func sendRaw(_ request: Data,
+                         receiveTimeoutSeconds: TimeInterval) throws -> Data {
         try AgentIntegrationUnixSocket.validateDirectory(
             endpoint.directoryURL, uid: expectedUID)
         try AgentIntegrationUnixSocket.validateSocket(
             endpoint.socketURL, uid: expectedUID)
         let descriptor = try AgentIntegrationUnixSocket.makeSocket()
         defer { close(descriptor) }
-        AgentIntegrationUnixSocket.setTimeouts(descriptor)
+        AgentIntegrationUnixSocket.setTimeouts(
+            descriptor, seconds: receiveTimeoutSeconds)
         try AgentIntegrationUnixSocket.withAddress(
             path: endpoint.socketURL.path) { address, length in
             if connect(descriptor, address, length) != 0 {

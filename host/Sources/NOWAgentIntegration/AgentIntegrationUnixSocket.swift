@@ -116,8 +116,11 @@ enum AgentIntegrationUnixSocket {
         }
     }
 
-    static func setTimeouts(_ descriptor: Int32) {
-        var timeout = timeval(tv_sec: 2, tv_usec: 0)
+    static func setTimeouts(_ descriptor: Int32, seconds: TimeInterval = 2) {
+        let wholeSeconds = floor(seconds)
+        var timeout = timeval(
+            tv_sec: Int(wholeSeconds),
+            tv_usec: Int32((seconds - wholeSeconds) * 1_000_000))
         withUnsafePointer(to: &timeout) {
             _ = setsockopt(
                 descriptor, SOL_SOCKET, SO_RCVTIMEO, $0,

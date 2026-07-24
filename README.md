@@ -84,16 +84,19 @@ on either side.
   is metal-verified; the host one is built and tested.
 - **Menu-bar capture** — one command grabs the connected machine's
   screen straight to the clipboard, no window needed.
-- **Optional agent observation** — a separate, client-launched stdio
+- **Optional agent integration** — a separate, client-launched stdio
   MCP companion can report the already-running host and guest session
   state and read a bounded point-in-time guest process snapshot through
-  a private same-user socket. Process references are opaque and
-  observation-only; no implemented tool can act on one. The companion
+  a private same-user socket. It can also launch one exact application
+  selected from the current guest catalog; ambiguity launches nothing,
+  opaque candidates are revalidated, and guest paths never cross the
+  adapter. Process references remain observation-only. The companion
   exposes no lifecycle controls and changes neither app's module
-  inventory. Both tools are tested here and metal-verified for a bounded
-  read-only acceptance pass against the PowerBook 1400c, including
-  paced and modest concurrent reads, typed host absence, and clean
-  reconnect. This is not a broader transport or endurance qualification.
+  inventory. All three tools are tested here; the two read-only tools
+  are metal-verified for a bounded acceptance pass against the
+  PowerBook 1400c. Safe launch has not yet had its own connected
+  companion pass. This is not a broader transport or endurance
+  qualification.
 
 Measured on the real PB1400c: ~4.9 fps at 8-bit with predictive +
 interlace over 802.11b, and file transfers byte-exact at ~227 KB/s.

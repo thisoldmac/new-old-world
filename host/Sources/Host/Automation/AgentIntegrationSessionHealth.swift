@@ -3,7 +3,7 @@ import Foundation
 import NOWAgentIntegration
 #endif
 
-/// The in-process, read-only boundary exposed by the optional local adapter.
+/// The in-process, narrow boundary exposed by the optional local adapter.
 ///
 /// This owns no listener lifecycle and sends nothing to the guest. Keeping
 /// the projection beside the live listener prevents a companion process from
@@ -20,12 +20,18 @@ final class AgentIntegrationHostAdapter {
     private static let maximumNameScalars = 32
 
     private let listener: GuestListener
+    private let launchCommandTimeout: TimeInterval
+    private lazy var softwareLaunch = AgentIntegrationSoftwareLaunch(
+        listener: listener,
+        commandTimeout: launchCommandTimeout,
+        currentSessionID: { [unowned self] in connectedSessionID() })
     private var sessionID: UUID?
     private var sessionConnectedAt: Date?
     private var processReferences: [ProcessIdentity: UUID] = [:]
 
-    init(listener: GuestListener) {
+    init(listener: GuestListener, launchCommandTimeout: TimeInterval = 32) {
         self.listener = listener
+        self.launchCommandTimeout = launchCommandTimeout
     }
 
     func sessionHealth(observedAt: Date = Date())
@@ -132,6 +138,12 @@ final class AgentIntegrationHostAdapter {
         }
     }
 
+    func launchSoftware(_ selection: AgentIntegrationLaunchSelection,
+                        observedAt: Date = Date()) async
+        -> AgentIntegrationLaunchSoftwareResult {
+        await softwareLaunch.launch(selection, observedAt: observedAt)
+    }
+
     private func refreshSession(connectedAt: Date?) {
         guard sessionID != nil else {
             self.sessionID = UUID()
@@ -187,8 +199,8 @@ final class AgentIntegrationHostAdapter {
                 reference: processReference(for: entry),
                 name: boundedName(entry.name),
                 kind: processKind(entry.kind),
-                code: boundedFourCC(entry.code),
-                creator: boundedFourCC(entry.creator),
+                code: AgentIntegrationBoundedText.fourCC(entry.code),
+                creator: AgentIntegrationBoundedText.fourCC(entry.creator),
                 sizeKB: entry.sizeKB.flatMap { $0 >= 0 ? $0 : nil },
                 front: entry.front ?? false)
         }
@@ -217,10 +229,6 @@ final class AgentIntegrationHostAdapter {
 
     private func boundedName(_ value: String) -> String {
         String(value.unicodeScalars.prefix(Self.maximumNameScalars))
-    }
-
-    private func boundedFourCC(_ value: String?) -> String? {
-        value.map { String($0.unicodeScalars.prefix(4)) }
     }
 
     private func processKind(_ value: String)

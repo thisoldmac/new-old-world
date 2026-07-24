@@ -9,23 +9,46 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
     public enum Operation: String, Codable, Sendable {
         case sessionHealth = "session_health"
         case listProcesses = "list_processes"
+        case launchSoftware = "launch_software"
     }
 
     public let version: Int
     public let requestID: UUID
     public let operation: Operation
+    public let launchSelection: AgentIntegrationLaunchSelection?
 
-    public init(requestID: UUID = UUID(),
-                operation: Operation = .sessionHealth) {
+    private init(requestID: UUID,
+                 operation: Operation,
+                 launchSelection: AgentIntegrationLaunchSelection?) {
         version = AgentIntegrationLocalProtocol.version
         self.requestID = requestID
         self.operation = operation
+        self.launchSelection = launchSelection
+    }
+
+    public static func sessionHealth(requestID: UUID = UUID()) -> Self {
+        .init(requestID: requestID, operation: .sessionHealth,
+              launchSelection: nil)
+    }
+
+    public static func processList(requestID: UUID = UUID()) -> Self {
+        .init(requestID: requestID, operation: .listProcesses,
+              launchSelection: nil)
+    }
+
+    public static func launchSoftware(
+        _ selection: AgentIntegrationLaunchSelection,
+        requestID: UUID = UUID()
+    ) -> Self {
+        .init(requestID: requestID, operation: .launchSoftware,
+              launchSelection: selection)
     }
 }
 
 public enum AgentIntegrationLocalResult: Equatable, Sendable {
     case sessionHealth(AgentIntegrationSessionHealthResult)
     case processList(AgentIntegrationProcessListResult)
+    case launchSoftware(AgentIntegrationLaunchSoftwareResult)
 }
 
 public struct AgentIntegrationLocalError: Codable, Equatable, Sendable {
@@ -43,6 +66,7 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
     public let requestID: UUID?
     public let result: AgentIntegrationSessionHealthResult?
     public let processListResult: AgentIntegrationProcessListResult?
+    public let launchResult: AgentIntegrationLaunchSoftwareResult?
     public let error: AgentIntegrationLocalError?
 
     public init(requestID: UUID,
@@ -51,6 +75,7 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         self.requestID = requestID
         self.result = result
         processListResult = nil
+        launchResult = nil
         error = nil
     }
 
@@ -60,6 +85,17 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         self.requestID = requestID
         result = nil
         self.processListResult = processListResult
+        launchResult = nil
+        error = nil
+    }
+
+    public init(requestID: UUID,
+                launchResult: AgentIntegrationLaunchSoftwareResult) {
+        version = AgentIntegrationLocalProtocol.version
+        self.requestID = requestID
+        result = nil
+        processListResult = nil
+        self.launchResult = launchResult
         error = nil
     }
 
@@ -69,6 +105,7 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         self.requestID = requestID
         result = nil
         processListResult = nil
+        launchResult = nil
         self.error = error
     }
 }
@@ -99,16 +136,42 @@ public enum AgentIntegrationLocalCodec {
 
     public static func decodeRequest(_ data: Data) throws
         -> AgentIntegrationLocalRequest {
-        let object = try strictObject(data, keys: [
-            "version", "requestID", "operation",
+        let object = try strictObject(data, allowedKeys: [
+            "version", "requestID", "operation", "launchSelection",
         ])
         guard object["version"] as? Int ==
                 AgentIntegrationLocalProtocol.version else {
             throw AgentIntegrationLocalTransportError.invalidMessage(
                 "Unsupported local protocol version")
         }
-        return try makeDecoder().decode(
+        let request = try makeDecoder().decode(
             AgentIntegrationLocalRequest.self, from: bounded(data))
+        let expectedKeys: Set<String>
+        switch request.operation {
+        case .sessionHealth, .listProcesses:
+            expectedKeys = ["version", "requestID", "operation"]
+            guard request.launchSelection == nil else {
+                throw AgentIntegrationLocalTransportError.invalidMessage(
+                    "Read-only request contains a launch selection")
+            }
+        case .launchSoftware:
+            expectedKeys = [
+                "version", "requestID", "operation", "launchSelection",
+            ]
+            guard request.launchSelection != nil,
+                  let rawSelection =
+                    object["launchSelection"] as? [String: Any],
+                  Set(rawSelection.keys) == ["name"]
+                    || Set(rawSelection.keys) == ["reference"] else {
+                throw AgentIntegrationLocalTransportError.invalidMessage(
+                    "Launch request selection does not match the schema")
+            }
+        }
+        guard Set(object.keys) == expectedKeys else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local request fields do not match the operation schema")
+        }
+        return request
     }
 
     public static func decodeResponse(_ data: Data) throws
@@ -117,7 +180,7 @@ public enum AgentIntegrationLocalCodec {
             data,
             allowedKeys: [
                 "version", "requestID", "result", "error",
-                "processListResult",
+                "processListResult", "launchResult",
             ])
         guard object["version"] as? Int ==
                 AgentIntegrationLocalProtocol.version else {
@@ -126,8 +189,9 @@ public enum AgentIntegrationLocalCodec {
         }
         let hasResult = object["result"] != nil
         let hasProcessList = object["processListResult"] != nil
+        let hasLaunch = object["launchResult"] != nil
         let hasError = object["error"] != nil
-        guard [hasResult, hasProcessList, hasError]
+        guard [hasResult, hasProcessList, hasLaunch, hasError]
                 .filter({ $0 }).count == 1 else {
             throw AgentIntegrationLocalTransportError.invalidMessage(
                 "Response must contain exactly one result or error")

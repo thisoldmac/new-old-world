@@ -5,6 +5,8 @@ import NOWAgentIntegration
 protocol AgentIntegrationClient: Sendable {
     func sessionHealth() async -> AgentIntegrationSessionHealthResult
     func listProcesses() async -> AgentIntegrationProcessListResult
+    func launchSoftware(_ selection: AgentIntegrationLaunchSelection) async
+        -> AgentIntegrationLaunchSoftwareResult
 }
 
 struct SocketAgentIntegrationClient: AgentIntegrationClient {
@@ -43,6 +45,18 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
+    func launchSoftware(_ selection: AgentIntegrationLaunchSelection) async
+        -> AgentIntegrationLaunchSoftwareResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.launchSoftware(selection)
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
     private func unavailable(for error: Error?)
         -> AgentIntegrationUnavailable {
         guard let error else { return .host }
@@ -72,6 +86,12 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
 }
 
 actor NOWMCPServer {
+    private enum ToolName: String {
+        case sessionHealth = "now_session_health"
+        case listProcesses = "now_list_processes"
+        case launchSoftware = "now_launch_software"
+    }
+
     static let maximumMessageBytes = 64 * 1024
     private static let supportedVersions = [
         "2025-11-25",
@@ -174,7 +194,7 @@ actor NOWMCPServer {
                 "version": "0.1.0",
             ],
             "instructions":
-                "Reports health and a bounded process snapshot already owned by a running New Old World host.",
+                "Projects bounded health, process observation, and exact application launch already owned by a running New Old World host.",
         ])
     }
 
@@ -187,7 +207,7 @@ actor NOWMCPServer {
         return successResponse(id: id, result: [
             "tools": [
                 [
-                    "name": "now_session_health",
+                    "name": ToolName.sessionHealth.rawValue,
                     "title": "New Old World Session Health",
                     "description":
                         "Reports the running NOW host and paired guest session state without changing either application.",
@@ -213,13 +233,14 @@ actor NOWMCPServer {
                     ],
                 ],
                 processListTool(),
+                launchSoftwareTool(),
             ],
         ])
     }
 
     private func processListTool() -> [String: Any] {
         [
-            "name": "now_list_processes",
+            "name": ToolName.listProcesses.rawValue,
             "title": "List New Old World Guest Processes",
             "description":
                 "Reads a bounded point-in-time snapshot of processes already observed through the running NOW host's paired guest session. Opaque references identify observations only and grant no control authority.",
@@ -322,15 +343,188 @@ actor NOWMCPServer {
         ]
     }
 
+    private func launchSoftwareTool() -> [String: Any] {
+        let failureSchema: [String: Any] = [
+            "type": "object",
+            "properties": [
+                "code": [
+                    "type": "string",
+                    "maxLength":
+                        AgentIntegrationLaunchPolicy
+                            .maximumFailureCodeScalars,
+                ],
+                "message": [
+                    "type": "string",
+                    "maxLength":
+                        AgentIntegrationLaunchPolicy.maximumMessageScalars,
+                ],
+            ],
+            "required": ["code", "message"],
+            "additionalProperties": false,
+        ]
+        let candidateSchema: [String: Any] = [
+            "type": "object",
+            "properties": [
+                "reference": ["type": "string", "maxLength": 49],
+                "name": [
+                    "type": "string",
+                    "maxLength":
+                        AgentIntegrationLaunchPolicy.maximumNameScalars,
+                ],
+                "version": [
+                    "type": "string",
+                    "maxLength":
+                        AgentIntegrationLaunchPolicy.maximumVersionScalars,
+                ],
+                "type": ["type": "string", "maxLength": 4],
+                "creator": ["type": "string", "maxLength": 4],
+                "running": [
+                    "type": "boolean",
+                    "description":
+                        "State observed in the catalog before any launch",
+                ],
+            ],
+            "required": ["reference", "name", "running"],
+            "additionalProperties": false,
+        ]
+        let receiptSchema: [String: Any] = [
+            "type": "object",
+            "properties": [
+                "sessionID": [
+                    "type": "string",
+                    "format": "uuid",
+                ],
+                "catalogObservedAt": [
+                    "type": "string",
+                    "format": "date-time",
+                ],
+                "acknowledgedAt": [
+                    "type": "string",
+                    "format": "date-time",
+                ],
+                "software": candidateSchema,
+                "guestMessage": [
+                    "type": "string",
+                    "maxLength":
+                        AgentIntegrationLaunchPolicy.maximumMessageScalars,
+                ],
+            ],
+            "required": [
+                "sessionID", "catalogObservedAt", "acknowledgedAt",
+                "software", "guestMessage",
+            ],
+            "additionalProperties": false,
+        ]
+        let ambiguitySchema: [String: Any] = [
+            "type": "object",
+            "properties": [
+                "code": [
+                    "type": "string",
+                    "maxLength":
+                        AgentIntegrationLaunchPolicy
+                            .maximumFailureCodeScalars,
+                ],
+                "message": [
+                    "type": "string",
+                    "maxLength":
+                        AgentIntegrationLaunchPolicy.maximumMessageScalars,
+                ],
+                "matchCount": [
+                    "type": "integer",
+                    "minimum": 2,
+                    "maximum":
+                        AgentIntegrationLaunchPolicy.maximumCatalogEntries,
+                ],
+                "candidates": [
+                    "type": "array",
+                    "maxItems":
+                        AgentIntegrationLaunchPolicy.maximumCandidates,
+                    "items": candidateSchema,
+                ],
+            ],
+            "required": [
+                "code", "message", "matchCount", "candidates",
+            ],
+            "additionalProperties": false,
+        ]
+        func resultVariant(
+            _ outcome: String,
+            payload: String,
+            schema: [String: Any]
+        ) -> [String: Any] {
+            [
+                "type": "object",
+                "properties": [
+                    "outcome": ["const": outcome],
+                    payload: schema,
+                ],
+                "required": ["outcome", payload],
+                "additionalProperties": false,
+            ]
+        }
+        return [
+            "name": ToolName.launchSoftware.rawValue,
+            "title": "Launch New Old World Guest Application",
+            "description":
+                "Launches only an exact, current application selected from the running NOW host's paired guest catalog. A name with zero or multiple exact matches does not launch; an opaque candidate reference is revalidated before use. Guest paths are never accepted or returned.",
+            "inputSchema": [
+                "type": "object",
+                "properties": [
+                    "name": [
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength":
+                            AgentIntegrationLaunchPolicy.maximumNameScalars,
+                    ],
+                    "reference": [
+                        "type": "string",
+                        "pattern":
+                            AgentIntegrationLaunchPolicy.referencePattern,
+                    ],
+                ],
+                "oneOf": [
+                    ["required": ["name"], "not": ["required": ["reference"]]],
+                    ["required": ["reference"], "not": ["required": ["name"]]],
+                ],
+                "additionalProperties": false,
+            ],
+            "outputSchema": [
+                "oneOf": [
+                    resultVariant(
+                        "launched", payload: "launched",
+                        schema: receiptSchema),
+                    resultVariant(
+                        "unavailable", payload: "unavailable",
+                        schema: failureSchema),
+                    resultVariant(
+                        "ambiguous", payload: "ambiguous",
+                        schema: ambiguitySchema),
+                    resultVariant(
+                        "notFound", payload: "notFound",
+                        schema: failureSchema),
+                    resultVariant(
+                        "refused", payload: "refused",
+                        schema: failureSchema),
+                ],
+            ],
+            "annotations": [
+                "readOnlyHint": false,
+                "destructiveHint": false,
+                "idempotentHint": false,
+                "openWorldHint": false,
+            ],
+        ]
+    }
+
     private func callTool(_ request: [String: Any], id: Any) async -> Data {
         guard let params = request["params"] as? [String: Any],
               let name = params["name"] as? String,
-              name == "now_session_health"
-                || name == "now_list_processes" else {
+              let tool = ToolName(rawValue: name) else {
             return errorResponse(id: id, code: -32602,
                                  message: "Unknown tool")
         }
-        if let arguments = params["arguments"] {
+        if tool != .launchSoftware,
+           let arguments = params["arguments"] {
             guard let object = arguments as? [String: Any],
                   object.isEmpty else {
                 return errorResponse(
@@ -338,16 +532,46 @@ actor NOWMCPServer {
                     message: "\(name) accepts no arguments")
             }
         }
-        switch name {
-        case "now_session_health":
+        switch tool {
+        case .sessionHealth:
             let result = await client.sessionHealth()
             return toolResponse(id: id, result: result)
-        case "now_list_processes":
+        case .listProcesses:
             let result = await client.listProcesses()
             return toolResponse(id: id, result: result)
+        case .launchSoftware:
+            guard let arguments = params["arguments"] as? [String: Any],
+                  let selection = launchSelection(arguments) else {
+                return errorResponse(
+                    id: id, code: -32602,
+                    message:
+                        "now_launch_software requires exactly one bounded name or opaque reference")
+            }
+            let result = await client.launchSoftware(selection)
+            return toolResponse(id: id, result: result)
+        }
+    }
+
+    private func launchSelection(_ arguments: [String: Any])
+        -> AgentIntegrationLaunchSelection? {
+        switch Set(arguments.keys) {
+        case ["name"]:
+            guard let name = arguments["name"] as? String,
+                  !name.isEmpty,
+                  name.unicodeScalars.count <=
+                    AgentIntegrationLaunchPolicy.maximumNameScalars else {
+                return nil
+            }
+            return .name(name)
+        case ["reference"]:
+            guard let reference = arguments["reference"] as? String,
+                  AgentIntegrationLaunchPolicy
+                    .isValidReference(reference) else {
+                return nil
+            }
+            return .reference(reference)
         default:
-            return errorResponse(id: id, code: -32602,
-                                 message: "Unknown tool")
+            return nil
         }
     }
 

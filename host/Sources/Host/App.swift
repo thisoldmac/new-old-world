@@ -169,14 +169,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private func startAgentIntegrationServer() {
         do {
             let server = try AgentIntegrationLocalServer {
-                [agentIntegration = state.agentIntegration] operation in
-                switch operation {
+                [agentIntegration = state.agentIntegration] request in
+                switch request.operation {
                 case .sessionHealth:
                     return .sessionHealth(
                         agentIntegration.sessionHealth())
                 case .listProcesses:
                     return .processList(
                         await agentIntegration.processList())
+                case .launchSoftware:
+                    guard let selection = request.launchSelection else {
+                        return .launchSoftware(.refused(.init(
+                            code: "now-software-selection-invalid",
+                            message: "Software launch selection is missing")))
+                    }
+                    return .launchSoftware(
+                        await agentIntegration.launchSoftware(selection))
                 }
             }
             try server.start()

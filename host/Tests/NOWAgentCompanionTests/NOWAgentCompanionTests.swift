@@ -50,7 +50,7 @@ final class NOWAgentCompanionTests: XCTestCase {
         return server
     }
 
-    func testListsOnlyApprovedReadOnlyObservationTools() async throws {
+    func testListsOnlyApprovedBoundedTools() async throws {
         let server = try await initializedServer(
             client: StubAgentIntegrationClient())
 
@@ -62,8 +62,9 @@ final class NOWAgentCompanionTests: XCTestCase {
         XCTAssertEqual(tools.compactMap { $0["name"] as? String }, [
             "now_session_health",
             "now_list_processes",
+            "now_launch_software",
         ])
-        let processTool = try XCTUnwrap(tools.last)
+        let processTool = try XCTUnwrap(tools.dropLast().last)
         let output = try XCTUnwrap(
             processTool["outputSchema"] as? [String: Any])
         let properties = try XCTUnwrap(
@@ -78,6 +79,28 @@ final class NOWAgentCompanionTests: XCTestCase {
         XCTAssertEqual(processes["maxItems"] as? Int, 48)
         XCTAssertNotNil(snapshotProperties["freshness"])
         XCTAssertNotNil(snapshotProperties["referenceAuthority"])
+        let launchTool = try XCTUnwrap(tools.last)
+        let launchAnnotations = try XCTUnwrap(
+            launchTool["annotations"] as? [String: Any])
+        XCTAssertEqual(launchAnnotations["readOnlyHint"] as? Bool, false)
+        XCTAssertEqual(launchAnnotations["destructiveHint"] as? Bool, false)
+        let launchOutput = try XCTUnwrap(
+            launchTool["outputSchema"] as? [String: Any])
+        let variants = try XCTUnwrap(
+            launchOutput["oneOf"] as? [[String: Any]])
+        XCTAssertEqual(variants.count, 5)
+        let outcomes = variants.compactMap { variant -> String? in
+            let properties = variant["properties"] as? [String: Any]
+            let outcome = properties?["outcome"] as? [String: Any]
+            return outcome?["const"] as? String
+        }
+        XCTAssertEqual(Set(outcomes), Set([
+            "launched", "unavailable", "ambiguous", "notFound", "refused",
+        ]))
+        XCTAssertTrue(variants.allSatisfy {
+            ($0["required"] as? [String])?.count == 2
+                && ($0["additionalProperties"] as? Bool) == false
+        })
     }
 
     func testHostAbsentReturnsTypedUnavailableWithoutLaunchingIt()
@@ -121,6 +144,32 @@ final class NOWAgentCompanionTests: XCTestCase {
             structured["unavailable"] as? [String: Any])
 
         XCTAssertEqual(structured["available"] as? Bool, false)
+        XCTAssertEqual(unavailable["code"] as? String,
+                       "now-host-unavailable")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+    }
+
+    func testLaunchReturnsTypedHostUnavailableWithoutLaunchingNOW()
+        async throws {
+        let (endpoint, root) = temporaryEndpoint()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let server = try await initializedServer(
+            client: SocketAgentIntegrationClient(endpoint: endpoint))
+
+        let response = try Self.object(await server.handle(try Self.request(
+            id: 2,
+            method: "tools/call",
+            params: [
+                "name": "now_launch_software",
+                "arguments": ["name": "SimpleText"],
+            ])))
+        let result = try XCTUnwrap(response["result"] as? [String: Any])
+        let structured = try XCTUnwrap(
+            result["structuredContent"] as? [String: Any])
+        let unavailable = try XCTUnwrap(
+            structured["unavailable"] as? [String: Any])
+
+        XCTAssertEqual(structured["outcome"] as? String, "unavailable")
         XCTAssertEqual(unavailable["code"] as? String,
                        "now-host-unavailable")
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
@@ -184,12 +233,14 @@ final class NOWAgentCompanionTests: XCTestCase {
             failure: nil)
         let localServer = try AgentIntegrationLocalServer(
             endpoint: endpoint,
-            handler: { operation in
-                switch operation {
+            handler: { request in
+                switch request.operation {
                 case .sessionHealth:
                     return .sessionHealth(.available(health))
                 case .listProcesses:
                     return .processList(.guestUnavailable)
+                case .launchSoftware:
+                    return .launchSoftware(.unavailable(.guest))
                 }
             })
         try localServer.start()
@@ -299,6 +350,73 @@ final class NOWAgentCompanionTests: XCTestCase {
         XCTAssertEqual(error["code"] as? Int, -32602)
     }
 
+    func testLaunchRequiresExactlyOneBoundedOpaqueSelection()
+        async throws {
+        let server = try await initializedServer(
+            client: StubAgentIntegrationClient())
+        let invalidArguments: [[String: Any]] = [
+            [:],
+            ["name": "SimpleText", "reference": "now-software-opaque"],
+            ["path": "HD:Apps:SimpleText"],
+            ["name": String(repeating: "x", count: 32)],
+        ]
+
+        for (offset, arguments) in invalidArguments.enumerated() {
+            let response = try Self.object(await server.handle(
+                try Self.request(
+                    id: 20 + offset,
+                    method: "tools/call",
+                    params: [
+                        "name": "now_launch_software",
+                        "arguments": arguments,
+                    ])))
+            let error = try XCTUnwrap(response["error"] as? [String: Any])
+            XCTAssertEqual(error["code"] as? Int, -32602)
+        }
+    }
+
+    func testLaunchReturnsStructuredAmbiguityWithoutPaths() async throws {
+        let result = AgentIntegrationLaunchSoftwareResult.ambiguous(.init(
+            code: "now-software-ambiguous",
+            message: "More than one exact application match is current",
+            matchCount: 2,
+            candidates: [
+                .init(reference: "now-software-one",
+                      name: "SimpleText", version: "1.4",
+                      type: "APPL", creator: "ttxt", running: false),
+                .init(reference: "now-software-two",
+                      name: "SimpleText", version: "1.3",
+                      type: "APPL", creator: "ttxt", running: false),
+            ]))
+        let server = try await initializedServer(
+            client: StubAgentIntegrationClient(launchResult: result))
+
+        let response = try Self.object(await server.handle(try Self.request(
+            id: 2,
+            method: "tools/call",
+            params: [
+                "name": "now_launch_software",
+                "arguments": ["name": "SimpleText"],
+            ])))
+        let encodedResponse = await server.handle(try Self.request(
+                id: 3,
+                method: "tools/call",
+                params: [
+                    "name": "now_launch_software",
+                    "arguments": ["name": "SimpleText"],
+                ]))
+        let encoded = String(
+            decoding: try XCTUnwrap(encodedResponse), as: UTF8.self)
+        let resultObject = try XCTUnwrap(
+            response["result"] as? [String: Any])
+        let structured = try XCTUnwrap(
+            resultObject["structuredContent"] as? [String: Any])
+
+        XCTAssertEqual(structured["outcome"] as? String, "ambiguous")
+        XCTAssertFalse(encoded.contains("\"path\""))
+        XCTAssertFalse(encoded.contains("HD:"))
+    }
+
     func testConcurrentProcessListCallsAllReturn() async throws {
         let server = try await initializedServer(
             client: StubAgentIntegrationClient())
@@ -345,6 +463,7 @@ final class NOWAgentCompanionTests: XCTestCase {
 private struct StubAgentIntegrationClient: AgentIntegrationClient {
     var healthResult: AgentIntegrationSessionHealthResult = .hostUnavailable
     var processResult: AgentIntegrationProcessListResult = .guestUnavailable
+    var launchResult: AgentIntegrationLaunchSoftwareResult = .unavailable(.host)
 
     func sessionHealth() async -> AgentIntegrationSessionHealthResult {
         healthResult
@@ -352,5 +471,10 @@ private struct StubAgentIntegrationClient: AgentIntegrationClient {
 
     func listProcesses() async -> AgentIntegrationProcessListResult {
         processResult
+    }
+
+    func launchSoftware(_ selection: AgentIntegrationLaunchSelection) async
+        -> AgentIntegrationLaunchSoftwareResult {
+        launchResult
     }
 }

@@ -3,7 +3,7 @@ import Foundation
 
 public final class AgentIntegrationLocalServer {
     public typealias Handler = @MainActor @Sendable (
-        AgentIntegrationLocalRequest.Operation
+        AgentIntegrationLocalRequest
     ) async -> AgentIntegrationLocalResult
     typealias PeerAuthorizer = @Sendable (Int32, uid_t) -> Bool
 
@@ -23,7 +23,7 @@ public final class AgentIntegrationLocalServer {
         endpoint: AgentIntegrationEndpoint? = nil,
         expectedUID: uid_t = geteuid(),
         handler: @escaping @MainActor @Sendable (
-            AgentIntegrationLocalRequest.Operation
+            AgentIntegrationLocalRequest
         ) async -> AgentIntegrationLocalResult
     ) throws {
         try self.init(
@@ -136,7 +136,7 @@ public final class AgentIntegrationLocalServer {
                 return
             }
             let response: AgentIntegrationLocalResponse
-            switch await handler(request.operation) {
+            switch await handler(request) {
             case .sessionHealth(let result):
                 response = .init(
                     requestID: request.requestID, result: result)
@@ -144,6 +144,10 @@ public final class AgentIntegrationLocalServer {
                 response = .init(
                     requestID: request.requestID,
                     processListResult: result)
+            case .launchSoftware(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    launchResult: result)
             }
             finish(descriptor, response: response)
         }
