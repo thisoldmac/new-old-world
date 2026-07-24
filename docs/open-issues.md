@@ -837,7 +837,7 @@ working on the PowerBook.
   scroll bar rather than shorter rows; it lands with the extension
   "witness" tier that adds the next probes.
 
-## Reverse file streaming is unverified on the machine
+## Reverse file streaming is bounded and verified on the machine
 
 The 2026-07-24 reverse-path pass removed both whole-artifact buffers.
 The guest now opens the source forks only after acceptance and emits one
@@ -848,13 +848,26 @@ preflights free space, computes CRC-32 incrementally, sends batched
 moves or stream-converts the result into place. Cancel, truncation,
 checksum failure, write failure, and disconnect all delete the partial.
 
-This is **tested, not metal-verified**. The native host suite exercises
-256 KiB, 2 MiB, and 16 MiB payloads with a fixed 32 KiB append bound,
-CRC/truncation/overrun/cancel cleanup, atomic materialization, and text
-conversion across a chunk boundary. Both guest send entry points have a
-source gate against whole-file allocation, and the Retro68 guest build
-passes. No separately configured experimental guest was available to
-exercise the path without disturbing the normal NOW pairing.
+The native host suite exercises 256 KiB, 2 MiB, and 16 MiB payloads with
+a fixed 32 KiB append bound, CRC/truncation/overrun/cancel cleanup,
+atomic materialization, and text conversion across a chunk boundary.
+Both guest send entry points have a source gate against whole-file
+allocation, and the Retro68 guest build passes.
+
+The bounded path is **metal-verified** on the PowerBook 1400c
+(2026-07-24). A separately named guest on port 5252 preserved the
+canonical pairing and persistent preferences. Data-fork pulls at 32767,
+32768, 32769, 256 KiB, 1 MiB, and 4 MiB matched their generated content
+and independent CRC-32. MacRoman/CR conversion and explicit MacBinary
+data/resource-fork fidelity passed. Cancelling a 4 MiB pull removed its
+host partial and left the session responsive. The guest process
+partition was 6506 KB before and after; the 4 MiB pull added 2.23 MiB
+peak host RSS and 1.94 MiB live malloc bytes.
+
+Those numbers are bounded observations, not a transfer-rate guarantee.
+The metal pass did not exceed 4 MiB, run longer than two minutes, mutate
+a source during transfer, or measure guest free heap. It does not prove
+rate hardening.
 
 Reverse resume remains deliberately absent. A deployed guest supplies
 no source identity before the receiver chooses an offset, so the host
@@ -888,11 +901,11 @@ with it.
 
 ## Rough edges
 
-**Reverse streaming still needs metal evidence.** The whole-file guest
-handle and host buffer are gone, but no broad guest-to-host size ladder
-has run on the PowerBook yet. Keep the feature at Tested until direct
-data-fork and MacBinary transfers, cancellation, and a source mutation
-have been watched there.
+**Reverse streaming still needs longer and adversarial metal evidence.**
+The PowerBook ladder now covers direct data-fork and MacBinary pulls
+through 4 MiB plus cancellation. It does not yet cover a transfer longer
+than two minutes, a file larger than 4 MiB, source mutation during a
+pull, or direct guest free-heap measurement.
 
 **The build stamp can read a few minutes early.** CMake touches
 `build_stamp.c` at the END of a build, so the stamp reflects when that

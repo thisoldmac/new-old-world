@@ -102,10 +102,12 @@ category, since most of the surprises so far came from code that looked
 obviously correct and had never run on the real machine. The headlines:
 resume-by-offset hangs, one large transfer in about six degrades badly,
 and an unreachable host still presents as a hang rather than saying
-which address it cannot reach. Guest-to-host transfers now stream with
-bounded memory, progress, and an end-to-end CRC in automated tests, but
-that direction is not yet metal-verified and an interrupted reverse
-transfer safely restarts from zero rather than resuming.
+which address it cannot reach. Guest-to-host transfers stream with
+bounded memory, progress, and an end-to-end CRC; the path is
+metal-verified through 4 MiB including MacBinary fork fidelity and
+cancellation cleanup. That is bounded evidence, not transfer-rate
+hardening, and an interrupted reverse transfer safely restarts from zero
+rather than resuming.
 
 ## Layout
 
