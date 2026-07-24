@@ -27,7 +27,9 @@ struct GuestFilePath: Equatable, Hashable, Sendable {
         for part in parts {
             guard !part.isEmpty, part != ".", part != "..",
                   !part.unicodeScalars.contains(where: {
-                      $0.value < 0x20 || $0.value == 0x7F
+                      // HFS permits control bytes in names. NUL alone
+                      // cannot survive the guest's C-string wire boundary.
+                      $0.value == 0
                   }),
                   let bytes = part.data(
                     using: .macOSRoman, allowLossyConversion: false),

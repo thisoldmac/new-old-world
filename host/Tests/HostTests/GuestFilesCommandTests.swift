@@ -1,5 +1,6 @@
 import XCTest
 @testable import Host
+import NOWAgentIntegration
 
 @MainActor
 final class GuestFilePathTests: XCTestCase {
@@ -15,11 +16,17 @@ final class GuestFilePathTests: XCTestCase {
     func testTraversalAbsoluteAndUnrepresentablePathsAreRejected() {
         for path in [
             ":Lab", "Lab:", "Lab::Code", ".", "..", "Lab:..:Code",
-            "/etc", "Lab:\nsecret", "Lab:🐈",
+            "/etc", "Lab:\0secret", "Lab:🐈",
             String(repeating: "a", count: 32),
         ] {
             XCTAssertThrowsError(try GuestFilePath(path), path)
         }
+    }
+
+    func testClassicControlByteNamesRemainExactlyAddressable() throws {
+        let path = "\u{3}\u{2}\u{1}Move&Rename"
+
+        XCTAssertEqual(try GuestFilePath(path).wireValue, path)
     }
 
     func testCompleteWirePathIsBounded() {
@@ -193,6 +200,44 @@ final class GuestFilesCommandTests: XCTestCase {
         XCTAssertEqual(listing.entries.first?.resourceBytes, 3)
         XCTAssertEqual(listing.nextCursor, 2)
         XCTAssertTrue(listing.hasMore)
+    }
+
+    func testListAcceptsClassicControlByteNamesWithoutInjectingAudit()
+        async throws {
+        let (listener, guest) = try await connectedListener()
+        defer {
+            guest.connection.cancel()
+            listener.stop()
+        }
+        let name = "\u{3}\u{2}\u{1}Move&Rename"
+        let sessionID = UUID()
+        var audit: [String] = []
+        let commands = GuestFilesCommandService(
+            listener: listener,
+            policy: makePolicy(),
+            currentSessionID: { sessionID },
+            audit: { _, line in audit.append(line) })
+        guest.onMessage = { message in
+            guard case .fileList(let request) = message else { return }
+            try? guest.send(.fileListing(FileListing(
+                id: request.id,
+                path: request.path,
+                entries: [
+                    FileEntry(
+                        name: name, kind: "folder",
+                        fileType: nil, creator: nil,
+                        dataBytes: nil, rsrcBytes: nil, modified: 0),
+                ],
+                more: false,
+                cursor: 2)))
+        }
+
+        let response = await commands.list(path: "")
+        let listing = try XCTUnwrap(response.value)
+
+        XCTAssertEqual(listing.entries.first?.name, name)
+        XCTAssertEqual(listing.entries.first?.path, name)
+        XCTAssertFalse(audit.joined(separator: "\n").contains(name))
     }
 
     func testStatPagesToAnExactEntryWithoutReturningSiblingPaths()
@@ -419,6 +464,36 @@ final class GuestFilesCommandTests: XCTestCase {
         XCTAssertNil(response.value)
     }
 
+    func testGuestRefusalIsBoundedBeforeItReachesAProjection()
+        async throws {
+        let (listener, guest) = try await connectedListener()
+        defer {
+            guest.connection.cancel()
+            listener.stop()
+        }
+        let sessionID = UUID()
+        let commands = GuestFilesCommandService(
+            listener: listener,
+            policy: makePolicy(),
+            currentSessionID: { sessionID })
+        guest.onMessage = { message in
+            guard case .fileList(let request) = message else { return }
+            try? guest.send(.fileRefuse(FileRefuse(
+                id: request.id,
+                code: String(repeating: "c", count: 200),
+                reason: String(repeating: "m", count: 1_000))))
+        }
+
+        let response = await commands.list(path: "")
+
+        XCTAssertEqual(response.receipt.outcome, .refused)
+        XCTAssertLessThanOrEqual(
+            response.failure?.code.unicodeScalars.count ?? .max, 64)
+        XCTAssertLessThanOrEqual(
+            response.failure?.message.unicodeScalars.count ?? .max, 256)
+        XCTAssertNil(response.value)
+    }
+
     func testHostCommandRegistrationDoesNotAddUIOrStartTheListener()
         throws {
         let suite = "GuestFilesHostState.\(UUID().uuidString)"
@@ -435,6 +510,49 @@ final class GuestFilesCommandTests: XCTestCase {
             forKey: GuestFileAccessPolicy.rootKey), "")
         XCTAssertEqual(defaults.integer(
             forKey: GuestFileAccessPolicy.versionKey), 1)
+    }
+
+    func testAgentProjectionPreservesReceiptScopeAndForkMetadata()
+        async throws {
+        let (listener, guest) = try await connectedListener()
+        defer {
+            guest.connection.cancel()
+            listener.stop()
+        }
+        let sessionID = UUID()
+        let commands = GuestFilesCommandService(
+            listener: listener,
+            policy: makePolicy(root: "Lab"),
+            currentSessionID: { sessionID })
+        guest.onMessage = { message in
+            guard case .fileList(let request) = message else { return }
+            try? guest.send(.fileListing(FileListing(
+                id: request.id,
+                path: request.path,
+                entries: [
+                    FileEntry(
+                        name: "Resource", kind: "file",
+                        fileType: "APPL", creator: "TEST",
+                        dataBytes: 12, rsrcBytes: 34,
+                        modified: 3_500_000_000),
+                ],
+                more: false,
+                cursor: 1)))
+        }
+
+        let result = await commands.agentList(path: "", cursor: nil)
+
+        guard case .completed(let receipt, let value, let failure) = result
+        else {
+            return XCTFail("host command result must cross the projection")
+        }
+        XCTAssertEqual(receipt.sessionID, sessionID)
+        XCTAssertEqual(receipt.operation, .list)
+        XCTAssertEqual(receipt.outcome, .success)
+        XCTAssertEqual(receipt.policyVersion, 1)
+        XCTAssertNil(failure)
+        XCTAssertEqual(value?.entries.first?.path, "Resource")
+        XCTAssertEqual(value?.entries.first?.resourceBytes, 34)
     }
 
     private func makePolicy(root: String = "") -> GuestFileAccessPolicy {

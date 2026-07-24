@@ -84,6 +84,37 @@ public struct AgentIntegrationLocalClient: Sendable {
         return result
     }
 
+    public func guestFilesCapabilities() async throws
+        -> AgentIntegrationGuestFileCapabilitiesResult {
+        let response = try await send(operation: .guestFilesCapabilities)
+        guard let result = response.guestFilesCapabilitiesResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no guest-files capabilities result")
+        }
+        return result
+    }
+
+    public func listGuestFiles(path: String, cursor: Int?) async throws
+        -> AgentIntegrationGuestFileListResult {
+        let response = try await send(
+            .guestFilesList(path: path, cursor: cursor))
+        guard let result = response.guestFilesListResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no guest-files list result")
+        }
+        return result
+    }
+
+    public func statGuestFile(path: String) async throws
+        -> AgentIntegrationGuestFileStatResult {
+        let response = try await send(.guestFilesStat(path: path))
+        guard let result = response.guestFilesStatResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no guest-files stat result")
+        }
+        return result
+    }
+
     func sendRaw(_ request: Data) async throws -> Data {
         try await Task.detached {
             try sendRaw(
@@ -98,6 +129,8 @@ public struct AgentIntegrationLocalClient: Sendable {
             return try await send(.sessionHealth())
         case .listProcesses:
             return try await send(.processList())
+        case .guestFilesCapabilities:
+            return try await send(.guestFilesCapabilities())
         case .launchSoftware:
             preconditionFailure("Launch requests require a selection")
         case .requestQuit:
@@ -105,6 +138,10 @@ public struct AgentIntegrationLocalClient: Sendable {
         case .transferApprovedArtifact:
             preconditionFailure(
                 "Artifact transfers require an approval receipt")
+        case .guestFilesList:
+            preconditionFailure("Guest Files list requires a path")
+        case .guestFilesStat:
+            preconditionFailure("Guest Files stat requires a path")
         }
     }
 
@@ -113,7 +150,9 @@ public struct AgentIntegrationLocalClient: Sendable {
         try await Task.detached {
             let timeout: TimeInterval
             switch request.operation {
-            case .sessionHealth, .listProcesses:
+            case .sessionHealth, .listProcesses,
+                 .guestFilesCapabilities, .guestFilesList,
+                 .guestFilesStat:
                 timeout = readOnlyReceiveTimeout
             case .launchSoftware, .requestQuit:
                 timeout = launchReceiveTimeout

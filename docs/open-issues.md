@@ -947,13 +947,21 @@ now has its first host-owned command slice: an explicit, persisted and versioned
 root-relative `guestRoot` policy; canonical HFS path validation; capability,
 one-page listing, and bounded exact-stat commands; typed receipts; and normal
 host audit lines. The host registers that command layer without adding UI or
-starting a listener. No V0.5 MCP tools are exposed yet.
+starting a listener. The existing private local socket and client-launched
+stdio companion now project only these three read-only commands; download and
+all mutation/deployment commands remain unavailable.
 
 The read-only slice composes the existing `file.list` exchange and therefore
 adds no guest message or guest code. It is **tested** against fake paired
 sessions, including root escape, invalid policy recovery, empty and populated
 listings, paging bounds, stale sessions, concurrency, and host-product
-noninterference. It is not yet metal-verified.
+noninterference, plus local-schema and stdio validation. A bounded
+2026-07-24 PowerBook 1400c acceptance verified capability discovery, two
+16-entry root pages with cursors 17 and 33, and exact stat. The first live
+page exposed one legal HFS name containing control bytes; path validation now
+keeps those exact MacRoman names addressable, rejects only untransportable
+NUL, and escapes them in audit text. Download and every mutation remain
+unverified and unavailable.
 
 Arbitrary download and broader deployment are gated on two current facts, not
 merely planned polish: the guest sender stages a whole artifact in a temporary

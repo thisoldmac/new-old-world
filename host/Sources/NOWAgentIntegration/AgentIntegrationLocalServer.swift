@@ -156,6 +156,18 @@ public final class AgentIntegrationLocalServer {
                 response = .init(
                     requestID: request.requestID,
                     artifactTransferResult: result)
+            case .guestFilesCapabilities(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    guestFilesCapabilitiesResult: result)
+            case .guestFilesList(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    guestFilesListResult: result)
+            case .guestFilesStat(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    guestFilesStatResult: result)
             }
             finish(descriptor, response: response)
         }

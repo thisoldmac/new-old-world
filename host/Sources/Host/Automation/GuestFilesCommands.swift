@@ -332,11 +332,14 @@ final class GuestFilesCommandService {
             code = "now-files-not-found"
         default:
             outcome = .refused
-            code = "now-files-\(failure.code)"
+            let suffix = bounded(failure.code, scalars: 48)
+            code = "now-files-\(suffix)"
         }
         return finish(
             context, outcome: outcome, wireRequests: wireRequests,
-            failure: .init(code: code, message: failure.message))
+            failure: .init(
+                code: bounded(code, scalars: 64),
+                message: bounded(failure.message, scalars: 256)))
     }
 
     private func finishUnavailable<Value>(_ context: Context)
@@ -395,6 +398,10 @@ final class GuestFilesCommandService {
     }
 
     private func quoted(_ value: String) -> String {
-        value.isEmpty ? "\"\"" : "\"\(value)\""
+        value.debugDescription
+    }
+
+    private func bounded(_ value: String, scalars: Int) -> String {
+        String(value.unicodeScalars.prefix(scalars))
     }
 }

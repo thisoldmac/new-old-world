@@ -65,6 +65,9 @@ final class NOWAgentCompanionTests: XCTestCase {
             "now_launch_software",
             "now_request_quit",
             "now_transfer_approved_artifact",
+            "now_guest_files_capabilities",
+            "now_guest_files_list",
+            "now_guest_files_stat",
         ])
         let processTool = try XCTUnwrap(tools.first {
             $0["name"] as? String == "now_list_processes"
@@ -137,6 +140,33 @@ final class NOWAgentCompanionTests: XCTestCase {
         let artifactAnnotations = try XCTUnwrap(
             artifactTool["annotations"] as? [String: Any])
         XCTAssertEqual(artifactAnnotations["destructiveHint"] as? Bool, true)
+        let guestFileTools = tools.filter {
+            ($0["name"] as? String)?.hasPrefix(
+                "now_guest_files_") == true
+        }
+        XCTAssertEqual(guestFileTools.count, 3)
+        XCTAssertTrue(guestFileTools.allSatisfy {
+            let annotations = $0["annotations"] as? [String: Any]
+            return annotations?["readOnlyHint"] as? Bool == true
+                && annotations?["destructiveHint"] as? Bool == false
+                && annotations?["openWorldHint"] as? Bool == false
+        })
+        let guestFileList = try XCTUnwrap(guestFileTools.first {
+            $0["name"] as? String == "now_guest_files_list"
+        })
+        let guestFileInput = try XCTUnwrap(
+            guestFileList["inputSchema"] as? [String: Any])
+        let guestFileProperties = try XCTUnwrap(
+            guestFileInput["properties"] as? [String: Any])
+        let guestPath = try XCTUnwrap(
+            guestFileProperties["path"] as? [String: Any])
+        XCTAssertEqual(
+            guestPath["maxLength"] as? Int,
+            AgentIntegrationGuestFilePolicy.maximumPathScalars)
+        let guestFileOutput = try XCTUnwrap(
+            guestFileList["outputSchema"] as? [String: Any])
+        XCTAssertEqual(
+            (guestFileOutput["oneOf"] as? [[String: Any]])?.count, 2)
     }
 
     func testHostAbsentReturnsTypedUnavailableWithoutLaunchingIt()
@@ -337,6 +367,12 @@ final class NOWAgentCompanionTests: XCTestCase {
                     return .requestQuit(.unavailable(.guest))
                 case .transferApprovedArtifact:
                     return .transferApprovedArtifact(.unavailable(.guest))
+                case .guestFilesCapabilities:
+                    return .guestFilesCapabilities(.hostUnavailable(.guest))
+                case .guestFilesList:
+                    return .guestFilesList(.hostUnavailable(.guest))
+                case .guestFilesStat:
+                    return .guestFilesStat(.hostUnavailable(.guest))
                 }
             })
         try localServer.start()
@@ -698,6 +734,7 @@ final class NOWAgentCompanionTests: XCTestCase {
             return XCTFail("expected one bounded oversized event")
         }
     }
+
 }
 
 private struct StubAgentIntegrationClient: AgentIntegrationClient {
@@ -707,6 +744,13 @@ private struct StubAgentIntegrationClient: AgentIntegrationClient {
     var quitResult: AgentIntegrationQuitResult = .unavailable(.host)
     var artifactResult: AgentIntegrationArtifactTransferResult =
         .unavailable(.host)
+    var guestFileCapabilitiesResult:
+        AgentIntegrationGuestFileCapabilitiesResult =
+            .hostUnavailable(.host)
+    var guestFileListResult: AgentIntegrationGuestFileListResult =
+        .hostUnavailable(.host)
+    var guestFileStatResult: AgentIntegrationGuestFileStatResult =
+        .hostUnavailable(.host)
 
     func sessionHealth() async -> AgentIntegrationSessionHealthResult {
         healthResult
@@ -729,5 +773,20 @@ private struct StubAgentIntegrationClient: AgentIntegrationClient {
     func transferApprovedArtifact(receipt: String) async
         -> AgentIntegrationArtifactTransferResult {
         artifactResult
+    }
+
+    func guestFilesCapabilities() async
+        -> AgentIntegrationGuestFileCapabilitiesResult {
+        guestFileCapabilitiesResult
+    }
+
+    func listGuestFiles(path: String, cursor: Int?) async
+        -> AgentIntegrationGuestFileListResult {
+        guestFileListResult
+    }
+
+    func statGuestFile(path: String) async
+        -> AgentIntegrationGuestFileStatResult {
+        guestFileStatResult
     }
 }

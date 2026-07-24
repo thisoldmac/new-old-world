@@ -99,12 +99,18 @@ on either side.
   only after the guest's existing `file.done` acknowledgement. The MCP
   never receives the source or guest path, and the receipt does not claim
   destination-byte verification. The companion exposes no lifecycle
-  controls and changes neither app's module inventory. All five tools are
-  tested here and have a bounded connected acceptance receipt against the
-  PowerBook 1400c, including exact launch, separately observed exit after
-  cooperative quit, and one native-approved 69-byte artifact. This is not
-  a broader transport, endurance, or destination-byte qualification; the
-  exact evidence and limits are in
+  controls and changes neither app's module inventory. V0.5 adds three
+  read-only projections over NOW's command layer: active guest-files
+  capabilities, one bounded root-scoped listing page, and exact bounded
+  stat. They accept only canonical paths relative to the host-owned
+  `guestRoot`; download and mutations remain unavailable. All eight tools
+  are tested here. All eight also have bounded connected acceptance receipts
+  against the PowerBook 1400c: the original V0 receipt includes exact launch,
+  separately observed exit after cooperative quit, and one native-approved
+  69-byte artifact; the V0.5 receipt covers capability discovery, two bounded
+  listing pages, and exact stat. This is not a broader transport, endurance,
+  mutation, or destination-byte qualification; the exact evidence and limits
+  are in
   [docs/agent-integration.md](docs/agent-integration.md).
 
 Measured on the real PB1400c: ~4.9 fps at 8-bit with predictive +

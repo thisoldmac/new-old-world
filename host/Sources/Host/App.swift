@@ -169,7 +169,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private func startAgentIntegrationServer() {
         do {
             let server = try AgentIntegrationLocalServer {
-                [agentIntegration = state.agentIntegration] request in
+                [agentIntegration = state.agentIntegration,
+                 guestFiles = state.guestFiles] request in
                 switch request.operation {
                 case .sessionHealth:
                     return .sessionHealth(
@@ -205,6 +206,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     return .transferApprovedArtifact(
                         await agentIntegration.transferApprovedArtifact(
                             receipt: receipt))
+                case .guestFilesCapabilities:
+                    return .guestFilesCapabilities(
+                        await guestFiles.agentCapabilities())
+                case .guestFilesList:
+                    return .guestFilesList(
+                        await guestFiles.agentList(
+                            path: request.guestFilePath ?? "",
+                            cursor: request.guestFileCursor))
+                case .guestFilesStat:
+                    return .guestFilesStat(
+                        await guestFiles.agentStat(
+                            path: request.guestFilePath ?? ""))
                 }
             }
             try server.start()

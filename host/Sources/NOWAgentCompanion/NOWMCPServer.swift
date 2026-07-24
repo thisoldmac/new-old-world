@@ -10,6 +10,12 @@ protocol AgentIntegrationClient: Sendable {
     func requestQuit(reference: String) async -> AgentIntegrationQuitResult
     func transferApprovedArtifact(receipt: String) async
         -> AgentIntegrationArtifactTransferResult
+    func guestFilesCapabilities() async
+        -> AgentIntegrationGuestFileCapabilitiesResult
+    func listGuestFiles(path: String, cursor: Int?) async
+        -> AgentIntegrationGuestFileListResult
+    func statGuestFile(path: String) async
+        -> AgentIntegrationGuestFileStatResult
 }
 
 struct SocketAgentIntegrationClient: AgentIntegrationClient {
@@ -83,6 +89,43 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
+    func guestFilesCapabilities() async
+        -> AgentIntegrationGuestFileCapabilitiesResult {
+        guard let client else {
+            return .hostUnavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.guestFilesCapabilities()
+        } catch {
+            return .hostUnavailable(unavailable(for: error))
+        }
+    }
+
+    func listGuestFiles(path: String, cursor: Int?) async
+        -> AgentIntegrationGuestFileListResult {
+        guard let client else {
+            return .hostUnavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.listGuestFiles(
+                path: path, cursor: cursor)
+        } catch {
+            return .hostUnavailable(unavailable(for: error))
+        }
+    }
+
+    func statGuestFile(path: String) async
+        -> AgentIntegrationGuestFileStatResult {
+        guard let client else {
+            return .hostUnavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.statGuestFile(path: path)
+        } catch {
+            return .hostUnavailable(unavailable(for: error))
+        }
+    }
+
     private func unavailable(for error: Error?)
         -> AgentIntegrationUnavailable {
         guard let error else { return .host }
@@ -112,13 +155,17 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
 }
 
 actor NOWMCPServer {
-    private enum ToolName: String {
+    enum ToolName: String {
         case sessionHealth = "now_session_health"
         case listProcesses = "now_list_processes"
         case launchSoftware = "now_launch_software"
         case requestQuit = "now_request_quit"
         case transferApprovedArtifact =
             "now_transfer_approved_artifact"
+        case guestFilesCapabilities =
+            "now_guest_files_capabilities"
+        case guestFilesList = "now_guest_files_list"
+        case guestFilesStat = "now_guest_files_stat"
     }
 
     static let maximumMessageBytes = 64 * 1024
@@ -223,7 +270,7 @@ actor NOWMCPServer {
                 "version": "0.1.0",
             ],
             "instructions":
-                "Projects bounded health, process observation, exact application launch, revalidated cooperative quit, and receipt-backed approved artifact delivery already owned by a running New Old World host.",
+                "Projects bounded health, process observation, exact application launch, revalidated cooperative quit, approved artifact delivery, and root-scoped guest Files observation already owned by a running New Old World host.",
         ])
     }
 
@@ -265,6 +312,9 @@ actor NOWMCPServer {
                 launchSoftwareTool(),
                 requestQuitTool(),
                 transferApprovedArtifactTool(),
+                guestFilesCapabilitiesTool(),
+                guestFilesListTool(),
+                guestFilesStatTool(),
             ],
         ])
     }
@@ -821,8 +871,8 @@ actor NOWMCPServer {
             return errorResponse(id: id, code: -32602,
                                  message: "Unknown tool")
         }
-        if tool != .launchSoftware && tool != .requestQuit
-            && tool != .transferApprovedArtifact,
+        if tool == .sessionHealth || tool == .listProcesses
+            || tool == .guestFilesCapabilities,
            let arguments = params["arguments"] {
             guard let object = arguments as? [String: Any],
                   object.isEmpty else {
@@ -875,7 +925,62 @@ actor NOWMCPServer {
             let result = await client.transferApprovedArtifact(
                 receipt: receipt)
             return toolResponse(id: id, result: result)
+        case .guestFilesCapabilities:
+            let result = await client.guestFilesCapabilities()
+            return toolResponse(id: id, result: result)
+        case .guestFilesList:
+            let arguments =
+                (params["arguments"] as? [String: Any]) ?? [:]
+            guard let selection = guestFileListSelection(arguments)
+            else {
+                return errorResponse(
+                    id: id, code: -32602,
+                    message:
+                        "now_guest_files_list accepts one bounded root-relative path and optional positive cursor")
+            }
+            let result = await client.listGuestFiles(
+                path: selection.path, cursor: selection.cursor)
+            return toolResponse(id: id, result: result)
+        case .guestFilesStat:
+            guard let arguments = params["arguments"] as? [String: Any],
+                  Set(arguments.keys) == ["path"],
+                  let path = arguments["path"] as? String,
+                  !path.isEmpty,
+                  AgentIntegrationGuestFilePolicy.isBoundedPath(path)
+            else {
+                return errorResponse(
+                    id: id, code: -32602,
+                    message:
+                        "now_guest_files_stat requires one bounded root-relative path")
+            }
+            let result = await client.statGuestFile(path: path)
+            return toolResponse(id: id, result: result)
         }
+    }
+
+    private func guestFileListSelection(
+        _ arguments: [String: Any]
+    ) -> (path: String, cursor: Int?)? {
+        guard Set(arguments.keys).isSubset(of: ["path", "cursor"])
+        else { return nil }
+        let path: String
+        if let value = arguments["path"] {
+            guard let bounded = value as? String else { return nil }
+            path = bounded
+        } else {
+            path = ""
+        }
+        guard AgentIntegrationGuestFilePolicy.isBoundedPath(path)
+        else { return nil }
+        let cursor: Int?
+        if let value = arguments["cursor"] {
+            guard let positive = value as? Int, positive >= 1
+            else { return nil }
+            cursor = positive
+        } else {
+            cursor = nil
+        }
+        return (path, cursor)
     }
 
     private func launchSelection(_ arguments: [String: Any])

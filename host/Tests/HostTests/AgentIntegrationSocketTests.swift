@@ -36,6 +36,12 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .requestQuit(.unavailable(.guest))
                 case .transferApprovedArtifact:
                     return .transferApprovedArtifact(.unavailable(.guest))
+                case .guestFilesCapabilities:
+                    return .guestFilesCapabilities(.hostUnavailable(.guest))
+                case .guestFilesList:
+                    return .guestFilesList(.hostUnavailable(.guest))
+                case .guestFilesStat:
+                    return .guestFilesStat(.hostUnavailable(.guest))
                 }
             })
         try server.start()
@@ -162,6 +168,12 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .requestQuit(.unavailable(.guest))
                 case .transferApprovedArtifact:
                     return .transferApprovedArtifact(.unavailable(.guest))
+                case .guestFilesCapabilities:
+                    return .guestFilesCapabilities(.hostUnavailable(.guest))
+                case .guestFilesList:
+                    return .guestFilesList(.hostUnavailable(.guest))
+                case .guestFilesStat:
+                    return .guestFilesStat(.hostUnavailable(.guest))
                 }
             })
         try server.start()
@@ -214,6 +226,12 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .requestQuit(.unavailable(.guest))
                 case .transferApprovedArtifact:
                     return .transferApprovedArtifact(.unavailable(.guest))
+                case .guestFilesCapabilities:
+                    return .guestFilesCapabilities(.hostUnavailable(.guest))
+                case .guestFilesList:
+                    return .guestFilesList(.hostUnavailable(.guest))
+                case .guestFilesStat:
+                    return .guestFilesStat(.hostUnavailable(.guest))
                 }
             })
 
@@ -245,6 +263,12 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .requestQuit(.unavailable(.guest))
                 case .transferApprovedArtifact:
                     return .transferApprovedArtifact(.unavailable(.guest))
+                case .guestFilesCapabilities:
+                    return .guestFilesCapabilities(.hostUnavailable(.guest))
+                case .guestFilesList:
+                    return .guestFilesList(.hostUnavailable(.guest))
+                case .guestFilesStat:
+                    return .guestFilesStat(.hostUnavailable(.guest))
                 }
             })
         try server.start()
@@ -284,6 +308,71 @@ final class AgentIntegrationSocketTests: XCTestCase {
                           AgentIntegrationLocalProtocol.maximumMessageBytes)
     }
 
+    func testMaximumGuestFilePageFitsTheLocalProtocol() throws {
+        let observedAt = Date(timeIntervalSince1970: 1_000)
+        let entries = (0..<16).map { index in
+            AgentIntegrationGuestFileEntry(
+                path: String(repeating: "p", count: 223),
+                name: String(repeating: "n", count: 31),
+                isFolder: false,
+                fileType: "APPL",
+                creator: "TEST",
+                dataBytes: index,
+                resourceBytes: index,
+                modified: Int(UInt32.max))
+        }
+        let result = AgentIntegrationGuestFileListResult.completed(
+            receipt: .init(
+                commandID: UUID(),
+                sessionID: UUID(),
+                policyVersion: 1,
+                operation: .list,
+                startedAt: observedAt,
+                completedAt: observedAt,
+                outcome: .success,
+                wireRequestCount: 1),
+            value: .init(
+                path: String(repeating: "p", count: 223),
+                entries: entries,
+                hasMore: true,
+                nextCursor: Int.max,
+                rootLabel: String(repeating: "r", count: 128),
+                observedAt: observedAt),
+            failure: nil)
+        let response = AgentIntegrationLocalResponse(
+            requestID: UUID(),
+            guestFilesListResult: result)
+
+        let encoded = try AgentIntegrationLocalCodec.encode(response)
+
+        XCTAssertLessThan(
+            encoded.count,
+            AgentIntegrationLocalProtocol.maximumMessageBytes)
+    }
+
+    func testGuestFileResultMustMatchItsReceiptOutcome() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let receipt = AgentIntegrationGuestFileReceipt(
+            commandID: UUID(),
+            sessionID: UUID(),
+            policyVersion: 1,
+            operation: .list,
+            startedAt: now,
+            completedAt: now,
+            outcome: .success,
+            wireRequestCount: 1)
+        let invalid = AgentIntegrationGuestFileListResult.completed(
+            receipt: receipt,
+            value: nil,
+            failure: .init(code: "wrong", message: "wrong"))
+        let response = AgentIntegrationLocalResponse(
+            requestID: UUID(),
+            guestFilesListResult: invalid)
+
+        XCTAssertThrowsError(
+            try AgentIntegrationLocalCodec.encode(response))
+    }
+
     func testSocketRoundTripsAnAvailableProcessSnapshot() async throws {
         let (endpoint, root) = try temporaryEndpoint()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -312,6 +401,12 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .requestQuit(.unavailable(.guest))
                 case .transferApprovedArtifact:
                     return .transferApprovedArtifact(.unavailable(.guest))
+                case .guestFilesCapabilities:
+                    return .guestFilesCapabilities(.hostUnavailable(.guest))
+                case .guestFilesList:
+                    return .guestFilesList(.hostUnavailable(.guest))
+                case .guestFilesStat:
+                    return .guestFilesStat(.hostUnavailable(.guest))
                 }
             })
         try server.start()
@@ -321,6 +416,99 @@ final class AgentIntegrationSocketTests: XCTestCase {
             endpoint: endpoint).listProcesses()
 
         XCTAssertEqual(result, .available(snapshot))
+    }
+
+    func testSocketRoundTripsRootScopedGuestFileListing() async throws {
+        let (endpoint, root) = try temporaryEndpoint()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let observedAt = Date(timeIntervalSince1970: 1_000)
+        let receipt = AgentIntegrationGuestFileReceipt(
+            commandID: UUID(),
+            sessionID: UUID(),
+            policyVersion: 3,
+            operation: .list,
+            startedAt: observedAt,
+            completedAt: observedAt,
+            outcome: .success,
+            wireRequestCount: 1)
+        let expected = AgentIntegrationGuestFileListResult.completed(
+            receipt: receipt,
+            value: .init(
+                path: "Logs",
+                entries: [.init(
+                    path: "Logs:today.txt",
+                    name: "today.txt",
+                    isFolder: false,
+                    fileType: "TEXT",
+                    creator: "ttxt",
+                    dataBytes: 42,
+                    resourceBytes: 3,
+                    modified: 3_500_000_000)],
+                hasMore: false,
+                nextCursor: nil,
+                rootLabel: "Macintosh HD:",
+                observedAt: observedAt),
+            failure: nil)
+        let server = try AgentIntegrationLocalServer(
+            endpoint: endpoint,
+            handler: { request in
+                switch request.operation {
+                case .guestFilesList:
+                    XCTAssertEqual(request.guestFilePath, "Logs")
+                    XCTAssertEqual(request.guestFileCursor, 2)
+                    return .guestFilesList(expected)
+                case .sessionHealth:
+                    return .sessionHealth(.hostUnavailable)
+                case .listProcesses:
+                    return .processList(.guestUnavailable)
+                case .launchSoftware:
+                    return .launchSoftware(.unavailable(.guest))
+                case .requestQuit:
+                    return .requestQuit(.unavailable(.guest))
+                case .transferApprovedArtifact:
+                    return .transferApprovedArtifact(.unavailable(.guest))
+                case .guestFilesCapabilities:
+                    return .guestFilesCapabilities(
+                        .hostUnavailable(.guest))
+                case .guestFilesStat:
+                    return .guestFilesStat(.hostUnavailable(.guest))
+                }
+            })
+        try server.start()
+        defer { server.stop() }
+
+        let result = try await AgentIntegrationLocalClient(
+            endpoint: endpoint).listGuestFiles(path: "Logs", cursor: 2)
+
+        XCTAssertEqual(result, expected)
+    }
+
+    func testLocalSchemaRejectsInvalidGuestFileSelectionsBeforeHandler()
+        async throws {
+        let (endpoint, root) = try temporaryEndpoint()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let invocation = InvocationFlag()
+        let server = try AgentIntegrationLocalServer(
+            endpoint: endpoint,
+            handler: { _ in
+                await invocation.mark()
+                return .guestFilesList(.hostUnavailable(.guest))
+            })
+        try server.start()
+        defer { server.stop() }
+        let requestID = UUID().uuidString
+        let invalid = Data(
+            """
+            {"version":4,"requestID":"\(requestID)","operation":"guest_files_list","guestFilePath":"","guestFileCursor":0}
+            """.utf8)
+
+        let response = try await AgentIntegrationLocalClient(
+            endpoint: endpoint).sendRaw(invalid)
+        let decoded = try AgentIntegrationLocalCodec.decodeResponse(response)
+
+        XCTAssertEqual(decoded.error?.code, "invalid-request")
+        let handled = await invocation.wasHandled
+        XCTAssertFalse(handled)
     }
 
     func testSocketRoundTripsOnlyAnOpaqueLaunchSelection() async throws {
@@ -488,10 +676,10 @@ final class AgentIntegrationSocketTests: XCTestCase {
         XCTAssertFalse(wasHandled)
     }
 
-    func testPriorSchemaRequestIsRejectedAfterArtifactCapabilityChange()
+    func testPriorSchemaRequestIsRejectedAfterGuestFilesCapabilityChange()
         throws {
         let raw = try JSONSerialization.data(withJSONObject: [
-            "version": 2,
+            "version": 3,
             "requestID": UUID().uuidString,
             "operation": "list_processes",
         ])
