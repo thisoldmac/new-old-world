@@ -7,6 +7,7 @@ protocol AgentIntegrationClient: Sendable {
     func listProcesses() async -> AgentIntegrationProcessListResult
     func launchSoftware(_ selection: AgentIntegrationLaunchSelection) async
         -> AgentIntegrationLaunchSoftwareResult
+    func requestQuit(reference: String) async -> AgentIntegrationQuitResult
 }
 
 struct SocketAgentIntegrationClient: AgentIntegrationClient {
@@ -57,6 +58,17 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
+    func requestQuit(reference: String) async -> AgentIntegrationQuitResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.requestQuit(reference: reference)
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
     private func unavailable(for error: Error?)
         -> AgentIntegrationUnavailable {
         guard let error else { return .host }
@@ -90,6 +102,7 @@ actor NOWMCPServer {
         case sessionHealth = "now_session_health"
         case listProcesses = "now_list_processes"
         case launchSoftware = "now_launch_software"
+        case requestQuit = "now_request_quit"
     }
 
     static let maximumMessageBytes = 64 * 1024
@@ -194,7 +207,7 @@ actor NOWMCPServer {
                 "version": "0.1.0",
             ],
             "instructions":
-                "Projects bounded health, process observation, and exact application launch already owned by a running New Old World host.",
+                "Projects bounded health, process observation, exact application launch, and revalidated cooperative quit already owned by a running New Old World host.",
         ])
     }
 
@@ -234,6 +247,7 @@ actor NOWMCPServer {
                 ],
                 processListTool(),
                 launchSoftwareTool(),
+                requestQuitTool(),
             ],
         ])
     }
@@ -270,7 +284,7 @@ actor NOWMCPServer {
                             ],
                             "referenceAuthority": [
                                 "type": "string",
-                                "enum": ["observationOnly"],
+                                "enum": ["cooperativeQuit"],
                             ],
                             "processes": [
                                 "type": "array",
@@ -516,6 +530,135 @@ actor NOWMCPServer {
         ]
     }
 
+    private func requestQuitTool() -> [String: Any] {
+        let failureSchema: [String: Any] = [
+            "type": "object",
+            "properties": [
+                "code": [
+                    "type": "string",
+                    "maxLength":
+                        AgentIntegrationQuitPolicy
+                            .maximumFailureCodeScalars,
+                ],
+                "message": [
+                    "type": "string",
+                    "maxLength":
+                        AgentIntegrationQuitPolicy.maximumMessageScalars,
+                ],
+            ],
+            "required": ["code", "message"],
+            "additionalProperties": false,
+        ]
+        let processSchema: [String: Any] = [
+            "type": "object",
+            "properties": [
+                "reference": [
+                    "type": "string",
+                    "pattern": AgentIntegrationQuitPolicy.referencePattern,
+                ],
+                "name": [
+                    "type": "string",
+                    "maxLength":
+                        AgentIntegrationQuitPolicy.maximumNameScalars,
+                ],
+                "kind": [
+                    "type": "string",
+                    "enum": [
+                        "application", "background", "finder", "unknown",
+                    ],
+                ],
+                "code": ["type": "string", "maxLength": 4],
+                "creator": ["type": "string", "maxLength": 4],
+            ],
+            "required": ["reference", "name", "kind"],
+            "additionalProperties": false,
+        ]
+        let receiptSchema: [String: Any] = [
+            "type": "object",
+            "properties": [
+                "sessionID": ["type": "string", "format": "uuid"],
+                "snapshotObservedAt": [
+                    "type": "string", "format": "date-time",
+                ],
+                "revalidatedAt": [
+                    "type": "string", "format": "date-time",
+                ],
+                "acknowledgedAt": [
+                    "type": "string", "format": "date-time",
+                ],
+                "process": processSchema,
+                "guestMessage": [
+                    "type": "string",
+                    "maxLength":
+                        AgentIntegrationQuitPolicy.maximumMessageScalars,
+                ],
+            ],
+            "required": [
+                "sessionID", "snapshotObservedAt", "revalidatedAt",
+                "acknowledgedAt", "process", "guestMessage",
+            ],
+            "additionalProperties": false,
+        ]
+        func resultVariant(
+            _ outcome: String,
+            payload: String,
+            schema: [String: Any]
+        ) -> [String: Any] {
+            [
+                "type": "object",
+                "properties": [
+                    "outcome": ["const": outcome],
+                    payload: schema,
+                ],
+                "required": ["outcome", payload],
+                "additionalProperties": false,
+            ]
+        }
+        return [
+            "name": ToolName.requestQuit.rawValue,
+            "title": "Request New Old World Guest Application Quit",
+            "description":
+                "Asks one recently observed guest process to quit cooperatively. The running NOW host freshly re-lists and matches the full observed identity before the guest revalidates the live process reference. Success means only that the quit request was sent, not that the application exited.",
+            "inputSchema": [
+                "type": "object",
+                "properties": [
+                    "reference": [
+                        "type": "string",
+                        "pattern":
+                            AgentIntegrationQuitPolicy.referencePattern,
+                    ],
+                ],
+                "required": ["reference"],
+                "additionalProperties": false,
+            ],
+            "outputSchema": [
+                "oneOf": [
+                    resultVariant(
+                        "requestSent", payload: "requestSent",
+                        schema: receiptSchema),
+                    resultVariant(
+                        "unavailable", payload: "unavailable",
+                        schema: failureSchema),
+                    resultVariant(
+                        "stale", payload: "stale",
+                        schema: failureSchema),
+                    resultVariant(
+                        "notFound", payload: "notFound",
+                        schema: failureSchema),
+                    resultVariant(
+                        "refused", payload: "refused",
+                        schema: failureSchema),
+                ],
+            ],
+            "annotations": [
+                "readOnlyHint": false,
+                "destructiveHint": true,
+                "idempotentHint": false,
+                "openWorldHint": false,
+            ],
+        ]
+    }
+
     private func callTool(_ request: [String: Any], id: Any) async -> Data {
         guard let params = request["params"] as? [String: Any],
               let name = params["name"] as? String,
@@ -523,7 +666,7 @@ actor NOWMCPServer {
             return errorResponse(id: id, code: -32602,
                                  message: "Unknown tool")
         }
-        if tool != .launchSoftware,
+        if tool != .launchSoftware && tool != .requestQuit,
            let arguments = params["arguments"] {
             guard let object = arguments as? [String: Any],
                   object.isEmpty else {
@@ -548,6 +691,19 @@ actor NOWMCPServer {
                         "now_launch_software requires exactly one bounded name or opaque reference")
             }
             let result = await client.launchSoftware(selection)
+            return toolResponse(id: id, result: result)
+        case .requestQuit:
+            guard let arguments = params["arguments"] as? [String: Any],
+                  Set(arguments.keys) == ["reference"],
+                  let reference = arguments["reference"] as? String,
+                  AgentIntegrationQuitPolicy.isValidReference(reference)
+            else {
+                return errorResponse(
+                    id: id, code: -32602,
+                    message:
+                        "now_request_quit requires one current opaque process reference")
+            }
+            let result = await client.requestQuit(reference: reference)
             return toolResponse(id: id, result: result)
         }
     }

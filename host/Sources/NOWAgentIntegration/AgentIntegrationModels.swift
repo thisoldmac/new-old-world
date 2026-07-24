@@ -155,8 +155,9 @@ public struct AgentIntegrationProcessSnapshot:
 
     public enum ReferenceAuthority:
         String, Codable, Equatable, Sendable {
-        /// References identify observations; no V0 action accepts them yet.
-        case observationOnly
+        /// References remain snapshots but may be offered to the cooperative
+        /// quit tool, which revalidates identity before acting.
+        case cooperativeQuit
     }
 
     public let sessionID: UUID
@@ -167,7 +168,7 @@ public struct AgentIntegrationProcessSnapshot:
 
     public init(sessionID: UUID, observedAt: Date,
                 freshness: Freshness = .pointInTime,
-                referenceAuthority: ReferenceAuthority = .observationOnly,
+                referenceAuthority: ReferenceAuthority = .cooperativeQuit,
                 processes: [AgentIntegrationObservedProcess]) {
         self.sessionID = sessionID
         self.observedAt = observedAt
@@ -187,7 +188,8 @@ public struct AgentIntegrationObservedProcess:
     }
 
     /// Present only when the paired guest supplied a live Process Serial
-    /// Number. The token discloses none of that identity and grants no action.
+    /// Number. The token discloses none of that identity and grants only the
+    /// right to request a separately revalidated cooperative quit.
     public let reference: String?
     public let name: String
     public let kind: Kind

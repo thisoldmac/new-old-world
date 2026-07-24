@@ -57,6 +57,16 @@ public struct AgentIntegrationLocalClient: Sendable {
         return result
     }
 
+    public func requestQuit(reference: String) async throws
+        -> AgentIntegrationQuitResult {
+        let response = try await send(.requestQuit(reference: reference))
+        guard let result = response.quitResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no cooperative-quit result")
+        }
+        return result
+    }
+
     func sendRaw(_ request: Data) async throws -> Data {
         try await Task.detached {
             try sendRaw(
@@ -73,6 +83,8 @@ public struct AgentIntegrationLocalClient: Sendable {
             return try await send(.processList())
         case .launchSoftware:
             preconditionFailure("Launch requests require a selection")
+        case .requestQuit:
+            preconditionFailure("Quit requests require a process reference")
         }
     }
 
@@ -83,6 +95,7 @@ public struct AgentIntegrationLocalClient: Sendable {
                 AgentIntegrationLocalCodec.encode(request),
                 receiveTimeoutSeconds:
                     request.operation == .launchSoftware
+                        || request.operation == .requestQuit
                         ? launchReceiveTimeout : readOnlyReceiveTimeout)
             let decoded = try AgentIntegrationLocalCodec.decodeResponse(
                 response)

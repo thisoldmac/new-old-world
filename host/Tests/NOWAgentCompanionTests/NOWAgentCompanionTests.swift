@@ -63,8 +63,11 @@ final class NOWAgentCompanionTests: XCTestCase {
             "now_session_health",
             "now_list_processes",
             "now_launch_software",
+            "now_request_quit",
         ])
-        let processTool = try XCTUnwrap(tools.dropLast().last)
+        let processTool = try XCTUnwrap(tools.first {
+            $0["name"] as? String == "now_list_processes"
+        })
         let output = try XCTUnwrap(
             processTool["outputSchema"] as? [String: Any])
         let properties = try XCTUnwrap(
@@ -79,7 +82,9 @@ final class NOWAgentCompanionTests: XCTestCase {
         XCTAssertEqual(processes["maxItems"] as? Int, 48)
         XCTAssertNotNil(snapshotProperties["freshness"])
         XCTAssertNotNil(snapshotProperties["referenceAuthority"])
-        let launchTool = try XCTUnwrap(tools.last)
+        let launchTool = try XCTUnwrap(tools.first {
+            $0["name"] as? String == "now_launch_software"
+        })
         let launchAnnotations = try XCTUnwrap(
             launchTool["annotations"] as? [String: Any])
         XCTAssertEqual(launchAnnotations["readOnlyHint"] as? Bool, false)
@@ -101,6 +106,25 @@ final class NOWAgentCompanionTests: XCTestCase {
             ($0["required"] as? [String])?.count == 2
                 && ($0["additionalProperties"] as? Bool) == false
         })
+        let quitTool = try XCTUnwrap(tools.first {
+            $0["name"] as? String == "now_request_quit"
+        })
+        let quitAnnotations = try XCTUnwrap(
+            quitTool["annotations"] as? [String: Any])
+        XCTAssertEqual(quitAnnotations["readOnlyHint"] as? Bool, false)
+        XCTAssertEqual(quitAnnotations["destructiveHint"] as? Bool, true)
+        let quitOutput = try XCTUnwrap(
+            quitTool["outputSchema"] as? [String: Any])
+        let quitVariants = try XCTUnwrap(
+            quitOutput["oneOf"] as? [[String: Any]])
+        let quitOutcomes = quitVariants.compactMap { variant -> String? in
+            let properties = variant["properties"] as? [String: Any]
+            let outcome = properties?["outcome"] as? [String: Any]
+            return outcome?["const"] as? String
+        }
+        XCTAssertEqual(Set(quitOutcomes), Set([
+            "requestSent", "unavailable", "stale", "notFound", "refused",
+        ]))
     }
 
     func testHostAbsentReturnsTypedUnavailableWithoutLaunchingIt()
@@ -162,6 +186,34 @@ final class NOWAgentCompanionTests: XCTestCase {
             params: [
                 "name": "now_launch_software",
                 "arguments": ["name": "SimpleText"],
+            ])))
+        let result = try XCTUnwrap(response["result"] as? [String: Any])
+        let structured = try XCTUnwrap(
+            result["structuredContent"] as? [String: Any])
+        let unavailable = try XCTUnwrap(
+            structured["unavailable"] as? [String: Any])
+
+        XCTAssertEqual(structured["outcome"] as? String, "unavailable")
+        XCTAssertEqual(unavailable["code"] as? String,
+                       "now-host-unavailable")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+    }
+
+    func testQuitReturnsTypedHostUnavailableWithoutLaunchingNOW()
+        async throws {
+        let (endpoint, root) = temporaryEndpoint()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let server = try await initializedServer(
+            client: SocketAgentIntegrationClient(endpoint: endpoint))
+        let reference =
+            "now-process-00000000-0000-0000-0000-000000000000"
+
+        let response = try Self.object(await server.handle(try Self.request(
+            id: 2,
+            method: "tools/call",
+            params: [
+                "name": "now_request_quit",
+                "arguments": ["reference": reference],
             ])))
         let result = try XCTUnwrap(response["result"] as? [String: Any])
         let structured = try XCTUnwrap(
@@ -241,6 +293,8 @@ final class NOWAgentCompanionTests: XCTestCase {
                     return .processList(.guestUnavailable)
                 case .launchSoftware:
                     return .launchSoftware(.unavailable(.guest))
+                case .requestQuit:
+                    return .requestQuit(.unavailable(.guest))
                 }
             })
         try localServer.start()
@@ -290,7 +344,7 @@ final class NOWAgentCompanionTests: XCTestCase {
         XCTAssertTrue(responses.allSatisfy { $0["result"] != nil })
     }
 
-    func testProcessListReturnsBoundedObservationOnlySnapshot()
+    func testProcessListReturnsBoundedQuitEligibleSnapshot()
         async throws {
         let process = AgentIntegrationObservedProcess(
             reference: "now-process-opaque",
@@ -304,7 +358,7 @@ final class NOWAgentCompanionTests: XCTestCase {
             sessionID: UUID(),
             observedAt: Date(timeIntervalSince1970: 1_000),
             freshness: .pointInTime,
-            referenceAuthority: .observationOnly,
+            referenceAuthority: .cooperativeQuit,
             processes: [process])
         let server = try await initializedServer(
             client: StubAgentIntegrationClient(
@@ -326,7 +380,7 @@ final class NOWAgentCompanionTests: XCTestCase {
         XCTAssertEqual(structured["available"] as? Bool, true)
         XCTAssertEqual(returned["freshness"] as? String, "pointInTime")
         XCTAssertEqual(returned["referenceAuthority"] as? String,
-                       "observationOnly")
+                       "cooperativeQuit")
         XCTAssertEqual(first["reference"] as? String,
                        "now-process-opaque")
         XCTAssertNil(first["psnHigh"])
@@ -417,6 +471,74 @@ final class NOWAgentCompanionTests: XCTestCase {
         XCTAssertFalse(encoded.contains("HD:"))
     }
 
+    func testQuitRequiresOneValidOpaqueProcessReference() async throws {
+        let server = try await initializedServer(
+            client: StubAgentIntegrationClient())
+        let invalidArguments: [[String: Any]] = [
+            [:],
+            ["reference": "42"],
+            ["reference":
+                "now-process-00000000-0000-0000-0000-000000000000",
+             "psnLow": 42],
+            ["psnHigh": 0, "psnLow": 42],
+            ["path": "HD:Apps:SimpleText"],
+        ]
+
+        for (offset, arguments) in invalidArguments.enumerated() {
+            let response = try Self.object(await server.handle(
+                try Self.request(
+                    id: 40 + offset,
+                    method: "tools/call",
+                    params: [
+                        "name": "now_request_quit",
+                        "arguments": arguments,
+                    ])))
+            let error = try XCTUnwrap(response["error"] as? [String: Any])
+            XCTAssertEqual(error["code"] as? Int, -32602)
+        }
+    }
+
+    func testQuitReceiptClaimsRequestSentWithoutPSNPathOrExit()
+        async throws {
+        let reference =
+            "now-process-00000000-0000-0000-0000-000000000000"
+        let receipt = AgentIntegrationQuitReceipt(
+            sessionID: UUID(),
+            snapshotObservedAt: Date(timeIntervalSince1970: 1_000),
+            revalidatedAt: Date(timeIntervalSince1970: 1_001),
+            acknowledgedAt: Date(timeIntervalSince1970: 1_002),
+            process: .init(
+                reference: reference,
+                name: "SimpleText",
+                kind: .application,
+                code: "APPL",
+                creator: "ttxt"),
+            guestMessage:
+                "Cooperative quit request acknowledged by the paired guest")
+        let server = try await initializedServer(
+            client: StubAgentIntegrationClient(
+                quitResult: .requestSent(receipt)))
+
+        let encodedResponse = await server.handle(try Self.request(
+            id: 2,
+            method: "tools/call",
+            params: [
+                "name": "now_request_quit",
+                "arguments": ["reference": reference],
+            ]))
+        let response = try Self.object(encodedResponse)
+        let result = try XCTUnwrap(response["result"] as? [String: Any])
+        let structured = try XCTUnwrap(
+            result["structuredContent"] as? [String: Any])
+        let encoded = String(
+            decoding: try XCTUnwrap(encodedResponse), as: UTF8.self)
+
+        XCTAssertEqual(structured["outcome"] as? String, "requestSent")
+        XCTAssertFalse(encoded.contains("\"psn"))
+        XCTAssertFalse(encoded.contains("\"path\""))
+        XCTAssertFalse(encoded.contains("exited"))
+    }
+
     func testConcurrentProcessListCallsAllReturn() async throws {
         let server = try await initializedServer(
             client: StubAgentIntegrationClient())
@@ -464,6 +586,7 @@ private struct StubAgentIntegrationClient: AgentIntegrationClient {
     var healthResult: AgentIntegrationSessionHealthResult = .hostUnavailable
     var processResult: AgentIntegrationProcessListResult = .guestUnavailable
     var launchResult: AgentIntegrationLaunchSoftwareResult = .unavailable(.host)
+    var quitResult: AgentIntegrationQuitResult = .unavailable(.host)
 
     func sessionHealth() async -> AgentIntegrationSessionHealthResult {
         healthResult
@@ -476,5 +599,10 @@ private struct StubAgentIntegrationClient: AgentIntegrationClient {
     func launchSoftware(_ selection: AgentIntegrationLaunchSelection) async
         -> AgentIntegrationLaunchSoftwareResult {
         launchResult
+    }
+
+    func requestQuit(reference: String) async
+        -> AgentIntegrationQuitResult {
+        quitResult
     }
 }

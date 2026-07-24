@@ -148,6 +148,10 @@ public final class AgentIntegrationLocalServer {
                 response = .init(
                     requestID: request.requestID,
                     launchResult: result)
+            case .requestQuit(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    quitResult: result)
             }
             finish(descriptor, response: response)
         }

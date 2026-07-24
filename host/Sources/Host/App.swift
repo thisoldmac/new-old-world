@@ -185,6 +185,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     }
                     return .launchSoftware(
                         await agentIntegration.launchSoftware(selection))
+                case .requestQuit:
+                    guard let reference = request.processReference else {
+                        return .requestQuit(.stale(.init(
+                            code: "now-process-reference-stale",
+                            message:
+                                "The process reference is not current for this session")))
+                    }
+                    return .requestQuit(
+                        await agentIntegration.requestQuit(
+                            reference: reference))
                 }
             }
             try server.start()

@@ -11,15 +11,16 @@ several of tonight's bugs lived in code that looked obviously correct.
 
 ## Deferred by decision
 
-**NOW agent-integration V0 has two slices left** (2026-07-24).
-`now_session_health`, `now_list_processes`, and exact safe launch are
-implemented and tested through the optional host-side companion. The
-read-only pair also has a bounded PowerBook acceptance receipt; launch
-still needs its own connected companion observation. Cooperative quit
-and approved immutable-staging artifact transfer remain deliberately
-unimplemented. The companion still has no guest component, lifecycle
-control, raw-path input, shell or general filesystem surface, or
-CodeKitten/shared-transport dependency.
+**NOW agent-integration V0 has one slice left** (2026-07-24).
+`now_session_health`, `now_list_processes`, exact safe launch, and
+revalidated cooperative quit are implemented and tested through the
+optional host-side companion. The read-only pair also has a bounded
+PowerBook acceptance receipt; launch and quit still need connected
+companion observation. Approved immutable-staging artifact transfer
+remains deliberately unimplemented. The companion still has no guest
+component, lifecycle control, raw-path input, shell or general
+filesystem surface, force-quit surface, or CodeKitten/shared-transport
+dependency.
 
 **Guest-initiated change controls.** The browser on the classic side can
 list, navigate and pull, but offers no rename, delete, new folder or

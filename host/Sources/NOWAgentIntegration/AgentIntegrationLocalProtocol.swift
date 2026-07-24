@@ -1,7 +1,9 @@
 import Foundation
 
 public enum AgentIntegrationLocalProtocol {
-    public static let version = 1
+    /// Version 2 adds cooperative quit and marks process references as
+    /// quit-eligible snapshots instead of observation-only values.
+    public static let version = 2
     public static let maximumMessageBytes = 16 * 1024
 }
 
@@ -10,30 +12,34 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         case sessionHealth = "session_health"
         case listProcesses = "list_processes"
         case launchSoftware = "launch_software"
+        case requestQuit = "request_quit"
     }
 
     public let version: Int
     public let requestID: UUID
     public let operation: Operation
     public let launchSelection: AgentIntegrationLaunchSelection?
+    public let processReference: String?
 
     private init(requestID: UUID,
                  operation: Operation,
-                 launchSelection: AgentIntegrationLaunchSelection?) {
+                 launchSelection: AgentIntegrationLaunchSelection?,
+                 processReference: String?) {
         version = AgentIntegrationLocalProtocol.version
         self.requestID = requestID
         self.operation = operation
         self.launchSelection = launchSelection
+        self.processReference = processReference
     }
 
     public static func sessionHealth(requestID: UUID = UUID()) -> Self {
         .init(requestID: requestID, operation: .sessionHealth,
-              launchSelection: nil)
+              launchSelection: nil, processReference: nil)
     }
 
     public static func processList(requestID: UUID = UUID()) -> Self {
         .init(requestID: requestID, operation: .listProcesses,
-              launchSelection: nil)
+              launchSelection: nil, processReference: nil)
     }
 
     public static func launchSoftware(
@@ -41,7 +47,15 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         requestID: UUID = UUID()
     ) -> Self {
         .init(requestID: requestID, operation: .launchSoftware,
-              launchSelection: selection)
+              launchSelection: selection, processReference: nil)
+    }
+
+    public static func requestQuit(
+        reference: String,
+        requestID: UUID = UUID()
+    ) -> Self {
+        .init(requestID: requestID, operation: .requestQuit,
+              launchSelection: nil, processReference: reference)
     }
 }
 
@@ -49,6 +63,7 @@ public enum AgentIntegrationLocalResult: Equatable, Sendable {
     case sessionHealth(AgentIntegrationSessionHealthResult)
     case processList(AgentIntegrationProcessListResult)
     case launchSoftware(AgentIntegrationLaunchSoftwareResult)
+    case requestQuit(AgentIntegrationQuitResult)
 }
 
 public struct AgentIntegrationLocalError: Codable, Equatable, Sendable {
@@ -67,6 +82,7 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
     public let result: AgentIntegrationSessionHealthResult?
     public let processListResult: AgentIntegrationProcessListResult?
     public let launchResult: AgentIntegrationLaunchSoftwareResult?
+    public let quitResult: AgentIntegrationQuitResult?
     public let error: AgentIntegrationLocalError?
 
     public init(requestID: UUID,
@@ -76,6 +92,7 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         self.result = result
         processListResult = nil
         launchResult = nil
+        quitResult = nil
         error = nil
     }
 
@@ -86,6 +103,7 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         result = nil
         self.processListResult = processListResult
         launchResult = nil
+        quitResult = nil
         error = nil
     }
 
@@ -96,6 +114,18 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         result = nil
         processListResult = nil
         self.launchResult = launchResult
+        quitResult = nil
+        error = nil
+    }
+
+    public init(requestID: UUID,
+                quitResult: AgentIntegrationQuitResult) {
+        version = AgentIntegrationLocalProtocol.version
+        self.requestID = requestID
+        result = nil
+        processListResult = nil
+        launchResult = nil
+        self.quitResult = quitResult
         error = nil
     }
 
@@ -106,6 +136,7 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         result = nil
         processListResult = nil
         launchResult = nil
+        quitResult = nil
         self.error = error
     }
 }
@@ -138,6 +169,7 @@ public enum AgentIntegrationLocalCodec {
         -> AgentIntegrationLocalRequest {
         let object = try strictObject(data, allowedKeys: [
             "version", "requestID", "operation", "launchSelection",
+            "processReference",
         ])
         guard object["version"] as? Int ==
                 AgentIntegrationLocalProtocol.version else {
@@ -150,21 +182,34 @@ public enum AgentIntegrationLocalCodec {
         switch request.operation {
         case .sessionHealth, .listProcesses:
             expectedKeys = ["version", "requestID", "operation"]
-            guard request.launchSelection == nil else {
+            guard request.launchSelection == nil,
+                  request.processReference == nil else {
                 throw AgentIntegrationLocalTransportError.invalidMessage(
-                    "Read-only request contains a launch selection")
+                    "Read-only request contains an action selection")
             }
         case .launchSoftware:
             expectedKeys = [
                 "version", "requestID", "operation", "launchSelection",
             ]
             guard request.launchSelection != nil,
+                  request.processReference == nil,
                   let rawSelection =
                     object["launchSelection"] as? [String: Any],
                   Set(rawSelection.keys) == ["name"]
                     || Set(rawSelection.keys) == ["reference"] else {
                 throw AgentIntegrationLocalTransportError.invalidMessage(
                     "Launch request selection does not match the schema")
+            }
+        case .requestQuit:
+            expectedKeys = [
+                "version", "requestID", "operation", "processReference",
+            ]
+            guard request.launchSelection == nil,
+                  let reference = request.processReference,
+                  AgentIntegrationQuitPolicy.isValidReference(reference)
+            else {
+                throw AgentIntegrationLocalTransportError.invalidMessage(
+                    "Quit request reference does not match the schema")
             }
         }
         guard Set(object.keys) == expectedKeys else {
@@ -180,7 +225,7 @@ public enum AgentIntegrationLocalCodec {
             data,
             allowedKeys: [
                 "version", "requestID", "result", "error",
-                "processListResult", "launchResult",
+                "processListResult", "launchResult", "quitResult",
             ])
         guard object["version"] as? Int ==
                 AgentIntegrationLocalProtocol.version else {
@@ -190,8 +235,9 @@ public enum AgentIntegrationLocalCodec {
         let hasResult = object["result"] != nil
         let hasProcessList = object["processListResult"] != nil
         let hasLaunch = object["launchResult"] != nil
+        let hasQuit = object["quitResult"] != nil
         let hasError = object["error"] != nil
-        guard [hasResult, hasProcessList, hasLaunch, hasError]
+        guard [hasResult, hasProcessList, hasLaunch, hasQuit, hasError]
                 .filter({ $0 }).count == 1 else {
             throw AgentIntegrationLocalTransportError.invalidMessage(
                 "Response must contain exactly one result or error")

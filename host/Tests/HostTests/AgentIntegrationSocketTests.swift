@@ -32,6 +32,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .processList(await adapter.processList())
                 case .launchSoftware:
                     return .launchSoftware(.unavailable(.guest))
+                case .requestQuit:
+                    return .requestQuit(.unavailable(.guest))
                 }
             })
         try server.start()
@@ -154,6 +156,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .processList(await adapter.processList())
                 case .launchSoftware:
                     return .launchSoftware(.unavailable(.guest))
+                case .requestQuit:
+                    return .requestQuit(.unavailable(.guest))
                 }
             })
         try server.start()
@@ -202,6 +206,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                         await state.agentIntegration.processList())
                 case .launchSoftware:
                     return .launchSoftware(.unavailable(.guest))
+                case .requestQuit:
+                    return .requestQuit(.unavailable(.guest))
                 }
             })
 
@@ -229,6 +235,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .processList(await adapter.processList())
                 case .launchSoftware:
                     return .launchSoftware(.unavailable(.guest))
+                case .requestQuit:
+                    return .requestQuit(.unavailable(.guest))
                 }
             })
         try server.start()
@@ -292,6 +300,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .processList(.available(snapshot))
                 case .launchSoftware:
                     return .launchSoftware(.unavailable(.guest))
+                case .requestQuit:
+                    return .requestQuit(.unavailable(.guest))
                 }
             })
         try server.start()
@@ -403,6 +413,86 @@ final class AgentIntegrationSocketTests: XCTestCase {
         ).launchSoftware(.name("Missing"))
 
         XCTAssertEqual(result, expected)
+    }
+
+    func testSocketRoundTripsOnlyAnOpaqueQuitReference() async throws {
+        let (endpoint, root) = try temporaryEndpoint()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let reference =
+            "now-process-00000000-0000-0000-0000-000000000000"
+        let expected = AgentIntegrationQuitResult.notFound(.init(
+            code: "now-process-not-found",
+            message: "The selected process is no longer running"))
+        var captured: String?
+        let server = try AgentIntegrationLocalServer(
+            endpoint: endpoint,
+            handler: { request in
+                guard case .requestQuit = request.operation else {
+                    return .sessionHealth(.hostUnavailable)
+                }
+                captured = request.processReference
+                return .requestQuit(expected)
+            })
+        try server.start()
+        defer { server.stop() }
+
+        let result = try await AgentIntegrationLocalClient(
+            endpoint: endpoint).requestQuit(reference: reference)
+
+        XCTAssertEqual(result, expected)
+        XCTAssertEqual(captured, reference)
+        let encoded = try AgentIntegrationLocalCodec.encode(
+            .requestQuit(reference: reference))
+        XCTAssertFalse(String(decoding: encoded, as: UTF8.self)
+            .contains("psn"))
+        XCTAssertFalse(String(decoding: encoded, as: UTF8.self)
+            .contains("path"))
+    }
+
+    func testMalformedLocalQuitReferenceNeverReachesHandler()
+        async throws {
+        let (endpoint, root) = try temporaryEndpoint()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let invocation = InvocationFlag()
+        let server = try AgentIntegrationLocalServer(
+            endpoint: endpoint,
+            handler: { _ in
+                await invocation.mark()
+                return .requestQuit(.unavailable(.guest))
+            })
+        try server.start()
+        defer { server.stop() }
+        let raw = try JSONSerialization.data(withJSONObject: [
+            "version": AgentIntegrationLocalProtocol.version,
+            "requestID": UUID().uuidString,
+            "operation": "request_quit",
+            "processReference": "42",
+        ])
+
+        let response = try await AgentIntegrationLocalClient(
+            endpoint: endpoint).sendRaw(raw)
+        let decoded = try AgentIntegrationLocalCodec.decodeResponse(response)
+        let wasHandled = await invocation.wasHandled
+
+        XCTAssertEqual(decoded.error?.code, "invalid-request")
+        XCTAssertFalse(wasHandled)
+    }
+
+    func testVersionOneRequestIsRejectedAfterQuitAuthorityChange()
+        throws {
+        let raw = try JSONSerialization.data(withJSONObject: [
+            "version": 1,
+            "requestID": UUID().uuidString,
+            "operation": "list_processes",
+        ])
+
+        XCTAssertThrowsError(
+            try AgentIntegrationLocalCodec.decodeRequest(raw)
+        ) { error in
+            XCTAssertEqual(
+                error as? AgentIntegrationLocalTransportError,
+                .invalidMessage("Unsupported local protocol version"))
+        }
     }
 }
 

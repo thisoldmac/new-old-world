@@ -55,7 +55,7 @@ final class AgentIntegrationProcessTests: XCTestCase {
         }
         XCTAssertEqual(populated.observedAt, observedAt)
         XCTAssertEqual(populated.freshness, .pointInTime)
-        XCTAssertEqual(populated.referenceAuthority, .observationOnly)
+        XCTAssertEqual(populated.referenceAuthority, .cooperativeQuit)
         XCTAssertEqual(populated.processes.map(\.name), ["Finder"])
         XCTAssertNotNil(populated.processes.first?.reference)
         XCTAssertEqual(populated.processes.first?.kind, .finder)
