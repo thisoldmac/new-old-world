@@ -42,15 +42,18 @@ agent file service.
 | Guest root | The guest persists a volume name plus directory ID; an explicit boot-volume toggle makes the boot volume root active. Every wire path is colon-separated and relative, and `""` means that active share root. | V0.5 stores an additional host-owned `guestRoot` policy as a canonical path relative to the active guest share. Its approved default is `""`. The host persists and logs that value; an MCP caller never supplies or changes it. |
 | Listing | `file.list` / `file.listing` pages at most 16 entries inside the 4 KB control-frame cap and reports type, creator, both fork sizes, and modified time. | Capability, list, and initial stat commands can compose the existing read-only exchange without a new guest command. Results remain paged and byte/count bounded. |
 | Guest-bound receive | `now_files_receive_*` writes to a temporary file in the destination directory with one 32 KB buffer, checks free space before starting, reserves with `SetEOF`, reports progress, maintains a running CRC, keeps only eligible data-fork partials, sweeps week-old orphan temps when the clock is trustworthy, and renames only after final validation and metadata stamping. | This is the proven starting sink for deployment. V0.5 must expose its progress, free-space, finalization, and cleanup evidence rather than replace it with an in-memory path. Reservation and cleanup outcomes need typed command receipts. |
-| Guest send | `now_files_stage` allocates one temporary-memory handle for the complete data or MacBinary artifact before sending. | Arbitrary download is gated on a streaming guest sender. V0.5 must not raise a size limit and pretend this whole-file allocation is disk-aware. |
-| Host receive | `GuestListener.Session` appends an entire pulled file to `fileBuffer`, then constructs `Data` at `file.end`; it sends no receiver progress and verifies no sender CRC. | Download, text read, and tail are gated on a host streaming sink with bounded reads, running CRC, progress, interruption cleanup, and honest resume behavior. |
+| Guest send | The integrated reverse-streaming lane records file identity and fork lengths, then reads one protocol frame at a time from the File Manager. It emits a whole-wire CRC without retaining the artifact in a temporary-memory handle. | The memory-bound source gate is closed. Arbitrary download still needs its own NOW command, scope/size policy, receipts, audit, and MCP projection; reverse resume remains separately deferred. |
+| Host receive | `GuestListener.Session` now writes pulled frames into a private disk sink, reports progress, validates length and optional sender CRC, cleans interrupted partials, and finalizes atomically. | The memory-bound sink gate is closed. Download, text read, and tail remain unexposed until their typed command and policy/receipt design is implemented and tested. |
 | Host send | The host's ordinary Files and V0 artifact paths still use an in-memory `OutboundFile.Plan`; the V0 artifact lane remains capped at 4 MiB and stages a sealed approval copy. V0.5 staged upload now uses an immutable file-backed source read one existing bulk frame at a time. | The new path removes whole-file host memory retention for V0.5 upload without silently widening the existing V0 approval contract. Remaining deployment work must reuse this source rather than reintroduce `Data` buffering. |
 | Mutations | Existing `file.move`, `file.trash`, `file.restore`, and `file.mkdir` are root-relative and logged, but act by path and do not accept a precondition identity. | V0.5 mutation tools remain unavailable until a contract-first, guest-revalidated opaque observation identity exists. Delete remains recoverable Trash-backed removal; permanent unlink is excluded. |
 | Logging | Host and guest log Files operations under the `files` / `put` areas with wire IDs; no per-chunk logging is allowed. | Every NOW command adds one bounded start/outcome audit event and a receipt ID while retaining the ordinary wire logs and their correlation IDs. |
 
-This audit proves that guest-bound receiving is disk-streamed today. It also
-proves two gaps: guest-originated sends stage the whole artifact in RAM, and
-host-originated downloads accumulate the whole artifact in host memory.
+This audit originally proved that guest-bound receiving was disk-streamed while
+the reverse direction retained whole artifacts. The independently accepted
+reverse-streaming work is now integrated: guest sends and host receives are
+bounded, disk-backed where appropriate, CRC-aware, and covered by compatibility
+fixtures. That closes the transport-memory prerequisite only; it does not
+authorize or expose an agent download command.
 [`large-transfers.md`](../large-transfers.md) and
 [`open-issues.md`](../open-issues.md) remain authoritative for the intermittent
 low-rate/backoff problem. V0.5 detects and reports a stall; it does not claim
@@ -248,13 +251,15 @@ adds no daemon or second app.
 
 ### V05-U2 — Streaming download and bounded text views
 
-- Replace guest whole-file send staging with a bounded disk reader and
-  incremental MacBinary encoder.
-- Replace the host `fileBuffer` with a private streaming sink, running CRC,
-  receiver progress, timeout/stall observation, cleanup, and file-backed
-  delivery.
-- Correct the symmetric `file.progress` contract prose and implement both
-  sides before exposing download/read/tail.
+- **Integrated prerequisite:** guest whole-file send staging is replaced by a
+  bounded fork reader with incremental MacBinary encoding and running CRC.
+- **Integrated prerequisite:** host `fileBuffer` is replaced by a private
+  streaming sink with running CRC, receiver progress, interruption cleanup,
+  and file-backed delivery.
+- **Integrated prerequisite:** symmetric `file.progress` contract prose and
+  receiver behavior are implemented on both sides.
+- Design the typed NOW download/read/tail commands, root/size policy, receipts,
+  and audit before adding any MCP projection.
 - Prove increasing disposable sizes, cancellation, interruption, insufficient
   space, CRC mismatch, cleanup, text truncation, and classic fork fidelity.
 

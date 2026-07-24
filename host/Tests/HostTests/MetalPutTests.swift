@@ -218,7 +218,8 @@ final class MetalPutTests: XCTestCase {
         var failure: String?
         listener.getFile(path: "mp roundtrip.bin") { result in
             switch result {
-            case .success(let file): got = file.bytes
+            case .success(let file):
+                got = try? Data(contentsOf: file.staged.url)
             case .failure(let f): failure = f.message
             }
         }

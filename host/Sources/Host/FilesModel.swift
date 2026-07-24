@@ -334,8 +334,9 @@ final class FilesModuleModel: ObservableObject {
         lastError = nil
         transfer = TransferState(name: row.name, direction: .incoming,
                                  received: 0, expected: row.sizeBytes)
-        listener.getFile(path: row.path,
-                         container: container) { [weak self] result in
+        listener.getFile(path: row.path, container: container,
+                         stagingDirectory: downloadDirectory) {
+            [weak self] result in
             guard let self else { return }
             self.transfer = nil
             switch result {
@@ -549,9 +550,9 @@ final class FilesModuleModel: ObservableObject {
     /// actually crosses — and the one transfer lane still applies, so a
     /// promise asked for mid-transfer is refused rather than queued
     /// behind something the Finder is not waiting for.
-    func fetchForPromise(_ row: FileRow, container: String? = nil,
-                         completion: @escaping (Result<FileConverter.Converted,
-                                                       Error>) -> Void) {
+    func fetchForPromise(_ row: FileRow, to destination: URL,
+                         container: String? = nil,
+                         completion: @escaping (Result<Void, Error>) -> Void) {
         guard transfer == nil else {
             completion(.failure(FilesError.busy))
             return
@@ -559,18 +560,20 @@ final class FilesModuleModel: ObservableObject {
         transfer = TransferState(name: row.name, direction: .incoming,
                                  received: 0, expected: row.sizeBytes,
                                  index: nil, total: nil)
-        listener.getFile(path: row.path,
-                         container: container) { [weak self] result in
+        listener.getFile(
+            path: row.path, container: container,
+            stagingDirectory: destination.deletingLastPathComponent()) {
+            [weak self] result in
             guard let self else { return }
             self.transfer = nil
             switch result {
             case .success(let file):
-                var converted = FileConverter.convert(
-                    name: file.name, container: file.container,
-                    fileType: file.fileType, bytes: file.bytes)
-                converted.modified = file.modified
-                    .flatMap(ClassicDate.date(from:))
-                completion(.success(converted))
+                do {
+                    try self.materialize(file, to: destination)
+                    completion(.success(()))
+                } catch {
+                    completion(.failure(error))
+                }
             case .failure(let failure):
                 self.lastError = failure.message
                 completion(.failure(FilesError.wire(failure.message)))
@@ -594,32 +597,38 @@ final class FilesModuleModel: ObservableObject {
 
     @discardableResult
     func write(_ file: GuestListener.FileDelivery) -> URL? {
-        let converted = FileConverter.convert(
-            name: file.name, container: file.container,
-            fileType: file.fileType, bytes: file.bytes)
+        let outputName = FileConverter.outputName(
+            name: file.name, container: file.container)
         var url = downloadDirectory
-            .appendingPathComponent(sanitized(converted.name))
+            .appendingPathComponent(sanitized(outputName))
         var bump = 2
         while FileManager.default.fileExists(atPath: url.path) {
-            let base = (converted.name as NSString).deletingPathExtension
-            let ext = (converted.name as NSString).pathExtension
+            let base = (outputName as NSString).deletingPathExtension
+            let ext = (outputName as NSString).pathExtension
             let name = ext.isEmpty ? "\(base) (\(bump))"
                                    : "\(base) (\(bump)).\(ext)"
             url = downloadDirectory.appendingPathComponent(sanitized(name))
             bump += 1
         }
         do {
-            try converted.data.write(to: url)
-            if let modified = file.modified,
-               let date = ClassicDate.date(from: modified) {
-                try? FileManager.default.setAttributes(
-                    [.modificationDate: date], ofItemAtPath: url.path)
-            }
+            try materialize(file, to: url)
             return url
         } catch {
-            lastError = "Could not save \(converted.name): "
+            lastError = "Could not save \(outputName): "
                 + error.localizedDescription
             return nil
+        }
+    }
+
+    private func materialize(_ file: GuestListener.FileDelivery,
+                             to destination: URL) throws {
+        try FileConverter.materialize(
+            name: file.name, container: file.container,
+            fileType: file.fileType, staged: file.staged, to: destination)
+        if let modified = file.modified,
+           let date = ClassicDate.date(from: modified) {
+            try? FileManager.default.setAttributes(
+                [.modificationDate: date], ofItemAtPath: destination.path)
         }
     }
 

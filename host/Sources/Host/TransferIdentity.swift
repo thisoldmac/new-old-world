@@ -20,13 +20,8 @@ enum TransferIdentity {
 
     /// A checksum taken in pieces.
     ///
-    /// The guest necessarily computes it in arrival-sized chunks, so
-    /// this side must be able to do the same and agree. Nothing in the
-    /// host streams yet — it accumulates a whole file in memory and
-    /// checksums it at the end — which is a gap rather than a reason to
-    /// delete this: see docs/open-issues.md, "the host's receiving half
-    /// is sender-only". Its equality with the one-shot form is tested
-    /// across arbitrary splits.
+    /// Both receivers compute it in arrival-sized chunks. Its equality
+    /// with the one-shot form is tested across arbitrary splits.
     struct CRC32 {
         private var value: UInt32 = 0xFFFF_FFFF
 

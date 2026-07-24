@@ -862,42 +862,44 @@ working on the PowerBook.
   scroll bar rather than shorter rows; it lands with the extension
   "witness" tier that adds the next probes.
 
-## The host's receiving half is sender-only
+## Reverse file streaming is bounded and verified on the machine
 
-Found by an altitude review 2026-07-20; the largest thing on this list.
+The 2026-07-24 reverse-path pass removed both whole-artifact buffers.
+The guest now opens the source forks only after acceptance and emits one
+bounded frame at a time, including MacBinary header/fork/padding
+segments. The host writes each frame to a same-folder temporary file,
+preflights free space, computes CRC-32 incrementally, sends batched
+`file.progress`, verifies count and optional checksum, and only then
+moves or stream-converts the result into place. Cancel, truncation,
+checksum failure, write failure, and disconnect all delete the partial.
 
-The host as a SENDER got the full treatment: a resume token on the
-offer, honouring `have`, an offset on `file.begin`, a CRC on `file.end`,
-and a send window clocked on the guest's `file.progress`. The host as a
-RECEIVER got none of it. It accumulates the whole file in memory,
-writes once at the end, and checks only that the byte count matches. It
-never sends `file.progress`, never offers a resume point, and never
-verifies the CRC the sender may have sent.
+The native host suite exercises 256 KiB, 2 MiB, and 16 MiB payloads with
+a fixed 32 KiB append bound, CRC/truncation/overrun/cancel cleanup,
+atomic materialization, and text conversion across a chunk boundary.
+Both guest send entry points have a source gate against whole-file
+allocation, and the Retro68 guest build passes.
 
-The guest does all three. So the same `file.offer` behaves differently
-depending on which machine receives it, which is exactly what the
-contract says must not happen.
+The bounded path is **metal-verified** on the PowerBook 1400c
+(2026-07-24). A separately named guest on port 5252 preserved the
+canonical pairing and persistent preferences. Data-fork pulls at 32767,
+32768, 32769, 256 KiB, 1 MiB, and 4 MiB matched their generated content
+and independent CRC-32. MacRoman/CR conversion and explicit MacBinary
+data/resource-fork fidelity passed. Cancelling a 4 MiB pull removed its
+host partial and left the session responsive. The guest process
+partition was 6506 KB before and after; the 4 MiB pull added 2.23 MiB
+peak host RSS and 1.94 MiB live malloc bytes.
 
-The consequence is not only symmetry. **A sender needs the receiver's
-count to clock against**, and that clock is what stops the send buffer
-backlogging into the 340 KB/s → 5 KB/s collapse that
-`docs/large-transfers.md` explains. The host does not send progress, so
-in the guest → host direction nothing bounds the guest's sending. The
-fix for that pathology landed on one side of a symmetric protocol.
+Those numbers are bounded observations, not a transfer-rate guarantee.
+The metal pass did not exceed 4 MiB, run longer than two minutes, mutate
+a source during transfer, or measure guest free heap. It does not prove
+rate hardening.
 
-The shape of the fix is one job, not three: make the inbound side a
-streaming sink — a file handle, a running CRC, a received count — and
-progress, CRC verification, and eventually resume all fall out of it.
-Two other things point at the same refactor: the bulk branch keeps THREE
-parallel accumulators (a push, a pull, a capture) for a wire that
-carries one transfer at a time, and `TransferIdentity.CRC32` is a
-streaming checksum with no streaming caller, written for exactly this
-and left when it was not built.
-
-One contract edit goes with it: `FileProgress` says "sent by the guest
-while it receives a put", which contradicts the symmetry the same
-document asserts and is probably how this drifted. It should say
-"sent by the receiver".
+Reverse resume remains deliberately absent. A deployed guest supplies
+no source identity before the receiver chooses an offset, so the host
+cannot prove a retained partial belongs to the current source. An
+interruption therefore deletes the partial and retries from zero. Adding
+resume safely needs an additive guest-issued source token (and fixtures
+for old peers), not an offset guessed from a filename and size.
 
 ## Structural work deferred on the host
 
@@ -981,13 +983,13 @@ this slice, so real-volume reservation values, Finder-visible finalization,
 fork/type/creator fidelity, interruption cleanup, and live throughput remain
 open.
 
-Arbitrary download and broader deployment are gated on two current facts, not
-merely planned polish: the guest sender stages a whole artifact in a temporary
-memory handle, and the host receiver appends the whole file to `fileBuffer`.
-Guest-bound receiving is already the stronger direction: a 32 KB disk buffer,
-preflight free-space check, temporary same-folder file, progress, running CRC,
-eligible partial resume, and rename only after validation. V0.5 must make both
-directions bounded and receipt-backed before exposing arbitrary transfer.
+The reverse-streaming prerequisite is now integrated: the guest reads outbound
+forks one bounded frame at a time, and the host receives into a private disk
+sink with progress, length/CRC validation, interruption cleanup, and atomic
+finalization. This does not expose arbitrary download. That capability remains
+gated on a typed NOW command, root/size policy, deterministic receipts and
+audit, and an explicit MCP projection. Reverse resume also remains separately
+deferred pending a contract-first guest source-identity rule.
 
 Mutation is gated separately on guest-side revalidation of an opaque file
 observation. Listings now carry a responder-generated opaque catalog identity,
@@ -1000,11 +1002,11 @@ deployment and mandatory-preview manifest prune follow only after it.
 
 ## Rough edges
 
-**A send stages the whole file in RAM.** Pulling streams to disk, but
-sending does not: `now_files_stage` builds the whole artifact in a
-handle, so a large send fails on memory where a large receive succeeds.
-It fails cleanly ("Not enough memory to send that file") rather than
-crashing.
+**Reverse streaming still needs longer and adversarial metal evidence.**
+The PowerBook ladder now covers direct data-fork and MacBinary pulls
+through 4 MiB plus cancellation. It does not yet cover a transfer longer
+than two minutes, a file larger than 4 MiB, source mutation during a
+pull, or direct guest free-heap measurement.
 
 **The build stamp can read a few minutes early.** CMake touches
 `build_stamp.c` at the END of a build, so the stamp reflects when that

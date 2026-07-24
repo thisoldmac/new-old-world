@@ -131,9 +131,13 @@ around **broken** versus **unverified** — the second is not the lesser
 category, since most of the surprises so far came from code that looked
 obviously correct and had never run on the real machine. The headlines:
 resume-by-offset hangs, one large transfer in about six degrades badly,
-an unreachable host still presents as a hang rather than saying which
-address it cannot reach, and the host's receiving half does not report
-progress or verify checksums the way the classic side does.
+and an unreachable host still presents as a hang rather than saying
+which address it cannot reach. Guest-to-host transfers stream with
+bounded memory, progress, and an end-to-end CRC; the path is
+metal-verified through 4 MiB including MacBinary fork fidelity and
+cancellation cleanup. That is bounded evidence, not transfer-rate
+hardening, and an interrupted reverse transfer safely restarts from zero
+rather than resuming.
 
 Future host-product work is bounded by the
 [NOW V1 host roadmap](docs/plans/2026-07-24-002-feat-now-v1-host-product-roadmap-plan.md).

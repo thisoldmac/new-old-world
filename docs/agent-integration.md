@@ -88,6 +88,13 @@ bytes from local sends and reports unknown cleanup or stalled state honestly.
 Host staging and outbound reads use bounded off-UI-actor disk I/O. A failed
 local cleanup remains recoverable and is reported as `cleanup-needed`.
 
+The separately proven reverse-streaming prerequisite is now integrated into
+NOW: guest-originated files use bounded fork reads and the host receives into a
+private disk sink with progress, CRC, interruption cleanup, and atomic
+finalization. This changes no MCP authority. Arbitrary download remains absent
+until a typed NOW command, root/size policy, receipts, audit, and explicit tool
+projection are designed and verified; reverse resume remains deferred.
+
 ## Current verification
 
 All eleven projections, the local socket, and the stdio wrapper are **tested** here. V0 coverage remains as previously recorded: missing host or guest; bounded process snapshots and references; exact launch/refusal/revalidation; cooperative quit; receipt-backed artifact approval, staging, replay and delivery; malformed and oversized requests; endpoint permissions and peer UID; concurrency; discriminated schemas; and unchanged host module inventory/listener state. V0.5 browse coverage adds explicit/default/invalid `guestRoot` policy, canonical path and root-escape rejection, empty/populated/paged list behavior, fork/type/creator/date projection, exact stat/not-found/scan-limit, stale sessions, bounded guest refusal and malformed listing rejection, concurrent reads, prior local schema v4 rejection, maximum-page response size, host absence without launch, strict MCP arguments, and private-socket round-trip. Upload coverage adds disk-reservation refusal, ordered bounded chunks, digest mismatch cleanup, orphan-stage recovery, create-only collision policy, stale/unavailable handling, one-attempt replay and concurrent-commit refusal, file-backed framing, strict guest completion evidence, late-collision preservation, malformed MacBinary refusal, stale-accept invalidation, cleanup-failure recovery, host/guest observation identities, modified-date omission, strict local/MCP decoding, host build, and a clean Retro68 guest build.

@@ -307,25 +307,6 @@ static long mb_pad(long n)
     return (n + 127) & ~127L;
 }
 
-static OSErr read_fork(const FSSpec *spec, Boolean rsrc, Ptr dst, long len)
-{
-    short ref;
-    long count = len;
-    OSErr err;
-
-    err = rsrc ? FSpOpenRF(spec, fsRdPerm, &ref)
-               : FSpOpenDF(spec, fsRdPerm, &ref);
-    if (err != noErr) {
-        return err;
-    }
-    err = FSRead(ref, &count, dst);
-    FSClose(ref);
-    if (err != noErr && err != eofErr) {
-        return err;
-    }
-    return count == len ? noErr : ioErr;
-}
-
 int now_files_stage(const char *rel_path, FileContainer container,
                     FileStage *stage)
 {
@@ -350,10 +331,10 @@ int now_files_stage_spec(const FSSpec *from, FileContainer container,
     Str255 name;
     long data_len, rsrc_len, total;
     Boolean as_macbinary;
-    Handle blob;
-    OSErr err;
 
     memset(stage, 0, sizeof *stage);
+    stage->data_ref = -1;
+    stage->rsrc_ref = -1;
     spec = *from;
     memset(&pb, 0, sizeof pb);
     memcpy(name, spec.name, spec.name[0] + 1);
@@ -386,17 +367,11 @@ int now_files_stage_spec(const FSSpec *from, FileContainer container,
 
     total = as_macbinary ? 128 + mb_pad(data_len) + mb_pad(rsrc_len)
                          : data_len;
-    blob = TempNewHandle(total, &err);
-    if (blob == NULL || err != noErr) {
-        return kFilesTooBig;
-    }
-    HLock(blob);
-    memset(*blob, 0, (size_t)total);
-
     if (as_macbinary) {
-        unsigned char *h = (unsigned char *)*blob;
+        unsigned char *h = stage->mb_header;
         unsigned short crc;
 
+        memset(h, 0, 128);
         h[1] = spec.name[0];
         memcpy(h + 2, spec.name + 1, spec.name[0]);
         memcpy(h + 65, &pb.hFileInfo.ioFlFndrInfo.fdType, 4);
@@ -418,24 +393,9 @@ int now_files_stage_spec(const FSSpec *from, FileContainer container,
         crc = mb_crc(h, 124);
         h[124] = (unsigned char)(crc >> 8);
         h[125] = (unsigned char)(crc & 0xFF);
-
-        if (data_len > 0
-            && read_fork(&spec, false, *blob + 128, data_len) != noErr) {
-            goto io_fail;
-        }
-        if (rsrc_len > 0
-            && read_fork(&spec, true, *blob + 128 + mb_pad(data_len),
-                         rsrc_len) != noErr) {
-            goto io_fail;
-        }
-    } else if (data_len > 0) {
-        if (read_fork(&spec, false, *blob, data_len) != noErr) {
-            goto io_fail;
-        }
     }
-    HUnlock(blob);
 
-    stage->blob = blob;
+    stage->spec = spec;
     stage->total_bytes = total;
     stage->container = as_macbinary ? kContainerMacBinary : kContainerData;
     memcpy(stage->name, spec.name + 1, spec.name[0]);
@@ -446,18 +406,142 @@ int now_files_stage_spec(const FSSpec *from, FileContainer container,
     stage->rsrc_bytes = rsrc_len;
     stage->modified = pb.hFileInfo.ioFlMdDat;
     return kFilesOK;
+}
 
-io_fail:
-    HUnlock(blob);
-    DisposeHandle(blob);
-    return kFilesIOError;
+/* Opens the forks only after the receiver has accepted. Recheck every
+   field that shaped the offer first: a person may have edited the file
+   while an overwrite question was on screen, and silently sending a
+   different file under the old size/metadata would defeat both bounds
+   and integrity. */
+int now_files_stage_open(FileStage *stage)
+{
+    if (stage == NULL || stage->opened
+        || !now_files_stage_unchanged(stage)) {
+        return kFilesIOError;
+    }
+    if (stage->data_bytes > 0
+        && FSpOpenDF(&stage->spec, fsRdPerm, &stage->data_ref) != noErr) {
+        return kFilesIOError;
+    }
+    if (stage->container == kContainerMacBinary && stage->rsrc_bytes > 0
+        && FSpOpenRF(&stage->spec, fsRdPerm, &stage->rsrc_ref) != noErr) {
+        now_files_stage_dispose(stage);
+        return kFilesIOError;
+    }
+    stage->position = 0;
+    stage->crc = 0;
+    stage->opened = true;
+    return kFilesOK;
+}
+
+static int stage_read_fork(short ref, Ptr dst, long count)
+{
+    long actual = count;
+    OSErr err;
+
+    if (count == 0) {
+        return kFilesOK;
+    }
+    if (ref < 0) {
+        return kFilesIOError;
+    }
+    err = FSRead(ref, &actual, dst);
+    return (err == noErr || err == eofErr) && actual == count
+        ? kFilesOK : kFilesIOError;
+}
+
+/* Produces the next run of wire bytes. The mapping is monotonic, so open
+   fork positions are enough — no seek and no whole-file allocation. */
+int now_files_stage_read(FileStage *stage, Ptr dst, long cap, long *got)
+{
+    long out = 0;
+
+    if (got != NULL) {
+        *got = 0;
+    }
+    if (stage == NULL || !stage->opened || dst == NULL || cap <= 0) {
+        return kFilesIOError;
+    }
+    while (out < cap && stage->position < stage->total_bytes) {
+        long pos = stage->position;
+        long n = cap - out;
+        int rc = kFilesOK;
+
+        if (stage->container == kContainerData) {
+            long left = stage->data_bytes - pos;
+            if (n > left) n = left;
+            rc = stage_read_fork(stage->data_ref, dst + out, n);
+        } else if (pos < 128) {
+            long left = 128 - pos;
+            if (n > left) n = left;
+            memcpy(dst + out, stage->mb_header + pos, (size_t)n);
+        } else if (pos < 128 + stage->data_bytes) {
+            long left = 128 + stage->data_bytes - pos;
+            if (n > left) n = left;
+            rc = stage_read_fork(stage->data_ref, dst + out, n);
+        } else if (pos < 128 + mb_pad(stage->data_bytes)) {
+            long left = 128 + mb_pad(stage->data_bytes) - pos;
+            if (n > left) n = left;
+            memset(dst + out, 0, (size_t)n);
+        } else if (pos < 128 + mb_pad(stage->data_bytes)
+                             + stage->rsrc_bytes) {
+            long left = 128 + mb_pad(stage->data_bytes)
+                      + stage->rsrc_bytes - pos;
+            if (n > left) n = left;
+            rc = stage_read_fork(stage->rsrc_ref, dst + out, n);
+        } else {
+            long left = stage->total_bytes - pos;
+            if (n > left) n = left;
+            memset(dst + out, 0, (size_t)n);
+        }
+        if (rc != kFilesOK || n <= 0) {
+            return kFilesIOError;
+        }
+        stage->crc = now_crc32(stage->crc, dst + out, n);
+        stage->position += n;
+        out += n;
+    }
+    if (got != NULL) {
+        *got = out;
+    }
+    return kFilesOK;
+}
+
+Boolean now_files_stage_unchanged(const FileStage *stage)
+{
+    CInfoPBRec pb;
+    Str255 name;
+
+    if (stage == NULL) {
+        return false;
+    }
+    memset(&pb, 0, sizeof pb);
+    memcpy(name, stage->spec.name, stage->spec.name[0] + 1);
+    pb.hFileInfo.ioNamePtr = name;
+    pb.hFileInfo.ioVRefNum = stage->spec.vRefNum;
+    pb.hFileInfo.ioDirID = stage->spec.parID;
+    pb.hFileInfo.ioFDirIndex = 0;
+    return PBGetCatInfoSync(&pb) == noErr
+        && (pb.hFileInfo.ioFlAttrib & ioDirMask) == 0
+        && pb.hFileInfo.ioFlLgLen == stage->data_bytes
+        && pb.hFileInfo.ioFlRLgLen == stage->rsrc_bytes
+        && pb.hFileInfo.ioFlMdDat == stage->modified
+        && pb.hFileInfo.ioFlFndrInfo.fdType == stage->file_type
+        && pb.hFileInfo.ioFlFndrInfo.fdCreator == stage->creator;
 }
 
 void now_files_stage_dispose(FileStage *stage)
 {
-    if (stage != NULL && stage->blob != NULL) {
-        DisposeHandle(stage->blob);
-        stage->blob = NULL;
+    if (stage != NULL) {
+        if (stage->data_ref >= 0) {
+            FSClose(stage->data_ref);
+            stage->data_ref = -1;
+        }
+        if (stage->rsrc_ref >= 0) {
+            FSClose(stage->rsrc_ref);
+            stage->rsrc_ref = -1;
+        }
+        stage->opened = false;
     }
 }
 
