@@ -1,0 +1,143 @@
+#!/bin/sh
+# Compile and run every native (host-compiler) test both guests carry.
+#
+# The guests cannot run their own test suites - one is a PowerPC Carbon
+# application and the other a 68K application, and neither machine is where
+# anyone iterates. So the pure-C halves of each are compiled by the HOST cc
+# and run here, which is the only automated feedback either guest has short
+# of a real Macintosh. Until this script existed, running them meant copying
+# a cc line out of each test's header comment by hand, which meant in
+# practice that nobody ran the ones they were not already editing.
+#
+#     scripts/test-native            # everything
+#     scripts/test-native frame      # only tests whose name matches "frame"
+#
+# Binaries are written OUTSIDE the repository (TMPDIR), because a build
+# artifact that lands in a worktree eventually lands in a commit.
+#
+# THE MANIFEST IS THE POINT. Each test names its own sources below, and the
+# last check in this file fails if a test file exists that the manifest does
+# not list. A test nobody runs is worse than no test - it reads as coverage
+# in a directory listing and proves nothing - so a new one cannot be added
+# silently. If you add a test, add its line here and watch it run.
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_root=$(dirname "$script_dir")
+filter=${1:-}
+
+out_root=${TMPDIR:-/tmp}/now-native-tests.$$
+mkdir -p "$out_root"
+trap 'rm -rf "$out_root"' EXIT INT TERM
+
+# The gate the guests were developed under. -Werror is not decoration here:
+# guest68k's CMakeLists records that one of its real bugs was caught by
+# -Werror alone, so a runner that dropped it would be a weaker gate than the
+# comment lines it replaced.
+CFLAGS="-Wall -Wextra -Werror"
+
+passed=0
+failed=0
+skipped=0
+failures=""
+
+# run_c <dir> <test.c> <extra-cc-flags> <sources...>
+run_c() {
+    dir=$1; test_src=$2; extra=$3
+    shift 3
+    name=$(basename "$test_src" .c)
+
+    case "$name" in
+        *"$filter"*) ;;
+        *) skipped=$((skipped + 1)); return 0 ;;
+    esac
+
+    srcs=""
+    for s in "$@"; do
+        srcs="$srcs $repo_root/$dir/$s"
+    done
+
+    printf '%-28s ' "$name"
+    # shellcheck disable=SC2086 - extra and srcs are deliberately word-split
+    if ! cc $CFLAGS $extra -I "$repo_root/$dir/src" \
+            "$repo_root/$dir/tests/$test_src" $srcs \
+            -o "$out_root/$name" > "$out_root/$name.build" 2>&1; then
+        echo "BUILD FAILED"
+        cat "$out_root/$name.build"
+        failed=$((failed + 1)); failures="$failures $name(build)"
+        return 0
+    fi
+    if ! "$out_root/$name" > "$out_root/$name.run" 2>&1; then
+        echo "FAILED"
+        cat "$out_root/$name.run"
+        failed=$((failed + 1)); failures="$failures $name"
+        return 0
+    fi
+    echo "ok"
+    passed=$((passed + 1))
+}
+
+run_py() {
+    dir=$1; test_src=$2
+    name=$(basename "$test_src" .py)
+    case "$name" in
+        *"$filter"*) ;;
+        *) skipped=$((skipped + 1)); return 0 ;;
+    esac
+    printf '%-28s ' "$name"
+    if ! (cd "$repo_root/$dir/tests" && python3 "$test_src") \
+            > "$out_root/$name.run" 2>&1; then
+        echo "FAILED"
+        cat "$out_root/$name.run"
+        failed=$((failed + 1)); failures="$failures $name"
+        return 0
+    fi
+    echo "ok"
+    passed=$((passed + 1))
+}
+
+echo "== guest (PowerPC Carbon) =="
+run_c guest census_decode_test.c     ""  src/census_decode.c
+run_c guest census_report_test.c     ""  src/census_report.c src/json.c
+run_c guest conn_fields_test.c       ""  src/conn_fields.c
+run_c guest json_native_test.c       ""  src/json.c
+run_c guest peek_table_test.c \
+      "-DNOW_PEEK_TABLE_HOST -I $repo_root/contract"
+run_c guest peek_validate_test.c     ""  src/peek_validate.c
+run_c guest proc_quit_args_test.c    ""  src/proc_quit_args.c
+run_c guest processes_layout_test.c  ""  src/processes_layout.c
+run_c guest software_layout_test.c   ""  src/software_layout.c
+run_c guest sw_vers_parse_test.c     ""  src/sw_vers_parse.c
+run_c guest workshop_layout_test.c   ""  src/workshop_layout.c
+run_py guest ot_connect_source_test.py
+
+echo "== guest68k (68K, System 7.1) =="
+run_c guest68k connfields_test.c  "-std=c99 -pedantic"  src/connfields.c
+run_c guest68k test_console_ring.c "" src/n68_console_ring.c src/n68_linesplit.c
+run_c guest68k test_framecodec.c   "" src/frame.c src/hello.c src/ping.c \
+      src/json_scan.c src/numfmt.c
+
+# Every test file must be in the manifest above. Grepping this script for the
+# filename is crude and deliberate: it is the check that cannot itself go
+# stale, because it reads the same text a human reads.
+echo "== manifest =="
+unlisted=""
+for f in "$repo_root"/guest/tests/* "$repo_root"/guest68k/tests/*; do
+    case "$f" in *.c|*.py) ;; *) continue ;; esac
+    base=$(basename "$f")
+    grep -q -- "$base" "$0" || unlisted="$unlisted $base"
+done
+if [ -n "$unlisted" ]; then
+    echo "test files not in the manifest:$unlisted"
+    echo "add them to scripts/test-native and watch them run."
+    failed=$((failed + 1)); failures="$failures manifest"
+else
+    echo "every test file is listed"
+fi
+
+echo
+echo "$passed passed, $failed failed, $skipped not selected"
+if [ "$failed" -ne 0 ]; then
+    echo "failed:$failures"
+    exit 1
+fi
