@@ -126,4 +126,55 @@ long n68_proclist_build(long id, long cursor,
                         char *out, long cap,
                         long *next_cursor, int *more);
 
+/* ---- the same rows, as the `ps` command -------------------------------- */
+
+/* Worst cases of the `ps` reply's parts, the same way the three above
+ * bound process.listing's. test_proclist.c builds the true worst case and
+ * fails if it grows past these.
+ *
+ *   head  {"type":"command.result","id":<11>,"ok":true,"output":{"ps":[  = 68
+ *   row   ,["<31>","application, <10> KB, front"]                        = 72
+ *   note  ,["...","<10> more not shown"]                                 = 36
+ *   tail  ]}} + NUL                                                      =  4
+ */
+#define NOW68K_PS_HEAD_MAX 72
+#define NOW68K_PS_ROW_MAX  80
+#define NOW68K_PS_NOTE_MAX 40
+#define NOW68K_PS_TAIL_MAX  8
+
+/* The smallest buffer that can carry a row AND still say that it dropped
+ * the rest. Below this the reply would have to choose between a row and
+ * the truth about what it left out, and it must never have to. */
+#define NOW68K_PS_MIN_CAP                                                  \
+    (NOW68K_PS_HEAD_MAX + NOW68K_PS_ROW_MAX + NOW68K_PS_NOTE_MAX           \
+     + NOW68K_PS_TAIL_MAX)
+
+/* Renders the SAME rows as one `ps` command.result into out[0, cap).
+ *
+ * The second renderer over one implementation (docs/command-parity.md):
+ * proc68.c walks the Process Manager once, n68_proclist_build() renders
+ * that walk as process.listing for the host's Processes module, this
+ * renders it as the contract's [label, value] rows for anyone typing at a
+ * console - the host's, which is a dumb shell and reaches this guest only
+ * through command.request, or NOW-68K's own, which renders the rows as
+ * text instead (conwin.c).
+ *
+ * id       - echoed from the request.
+ * rows     - the snapshot; row_count says how many are valid.
+ * out/cap  - destination; cap must be >= NOW68K_PS_MIN_CAP.
+ *
+ * `ps` does NOT paginate - the contract says so, because a console has no
+ * cursor to send back. So a list too long for one control frame is
+ * truncated, and truncation is STATED: the last row is ["...", "N more
+ * not shown"]. A short list that silently claimed to be the whole machine
+ * is the failure mode this row exists to prevent; the Processes module
+ * pages the full list.
+ *
+ * Returns the bytes written before the NUL, or 0 if cap cannot hold even
+ * the envelope. Names are sanitized exactly as process.listing sanitizes
+ * them, and for the same reason.
+ */
+long n68_proclist_render_ps(long id, const N68ProcRow *rows, long row_count,
+                            char *out, long cap);
+
 #endif /* NOW68K_N68_PROCLIST_H */

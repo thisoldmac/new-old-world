@@ -61,7 +61,18 @@
  * the additivity contract below still holds verbatim. Adding a command means
  * adding one case to now68k_commands_run and NOTHING else: it appears on the
  * wire and in the console at the same moment, which is the property this
- * split exists to buy. */
+ * split exists to buy.
+ *
+ * TWO commands do not fit that seam and answer inside dispatch instead:
+ * `help` (a row per command) and `ps` (a row per process). An N68CmdResult
+ * holds ONE row, so neither could pass through it, and widening the struct
+ * to a row array to preserve the shape would cost this guest's 384 KB
+ * partition more than the property is worth here. What makes the exception
+ * safe is that neither owns an implementation: help renders k_docs, which
+ * the console renders too, and ps renders proc_list_rows(), which the
+ * console and process.listing also render. Anything with a SINGLE row's
+ * worth to say goes through now68k_commands_run, and a third exception
+ * should be argued for, not assumed (docs/command-parity.md). */
 
 /* THE size of a command.result on this guest, stated once, here, for both
  * the code that BUILDS one and the code that SENDS it.

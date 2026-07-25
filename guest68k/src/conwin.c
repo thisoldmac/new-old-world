@@ -222,8 +222,10 @@ static void show_help(void)
     }
 
     /* Console-only, and deliberately not in that list: the wire's help must
-     * not advertise verbs the wire cannot serve. */
-    con_out("  ps                       what is running on this Mac");
+     * not advertise verbs the wire cannot serve. `ps` used to be here; it
+     * is in the table now, because the host's console is a dumb shell and
+     * could not reach a capability the wire served only as a message
+     * family. */
     con_out("  clear                    clear this pane");
     con_out("Return runs. Up/Down walk history.");
     con_out("Option-Up/Down (or Page Up/Down) scroll this pane.");
@@ -259,14 +261,18 @@ static const char *split_command(const char *line, char *name, int name_cap)
     return line;
 }
 
-/* `ps`, rendered for a human from the SAME rows wire68.c sends as
- * process.listing.
+/* `ps`, rendered for a human from the SAME rows the wire sends as
+ * process.listing and as the ps command's reply.
  *
- * Not a second process walk, and deliberately not a second command table
- * entry either: proc_list_rows() is the one implementation, n68_proclist.c
- * renders it as contract JSON, and this renders it as text. Anything that
- * drifts between the two faces has to drift inside one function that both
- * call, which is the only arrangement that makes drift visible.
+ * Not a second process walk: proc_list_rows() is the one implementation,
+ * n68_proclist.c renders it as contract JSON both ways, and this renders
+ * it as text for a 58-column pane. Anything that drifts between the faces
+ * has to drift inside one function that all of them call, which is the
+ * only arrangement that makes drift visible.
+ *
+ * Dispatched here rather than delegated to now68k_commands_run for the
+ * reason `help` is: a row per process cannot pass through an N68CmdResult,
+ * which holds one (commands68.h). This is the exception, not the pattern.
  *
  * It exists because the console must be able to answer every question the
  * wire can. process.list shipped wire-only earlier the same day this was

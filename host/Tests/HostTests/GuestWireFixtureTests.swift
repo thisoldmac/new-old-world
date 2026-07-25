@@ -559,6 +559,46 @@ final class GuestWireFixtureTests: XCTestCase {
         }
         XCTAssertEqual(negative.id, -1)
     }
+
+    /// `ps` on NOW-68K, which is the verb this whole seam was rebuilt for:
+    /// the host console is a dumb shell, so a capability the 68K guest
+    /// served only as the `process.list` message family was reachable from
+    /// its own keyboard and nowhere else. The reply is a command.result
+    /// like any other — which is the point, because it means the host
+    /// console renders it with no knowledge of what `ps` is.
+    ///
+    /// The detail column is the same sentence the PowerPC guest builds
+    /// (guest/src/commands.c, now_process_gather), pinned here because one
+    /// console renders both machines and a person should not have to know
+    /// which one they are reading.
+    func test68KPsReplyAsTheGuestWritesIt() throws {
+        guard case .commandResult(let result) =
+            try decode(Guest68KWire.psReply) else {
+            return XCTFail("not a command.result")
+        }
+        XCTAssertTrue(result.ok)
+        XCTAssertEqual(result.id, 4, "echoes the request id")
+        let rows = try XCTUnwrap(result.output?["ps"],
+                                 "the contract names the group `ps`")
+        XCTAssertEqual(rows.count, 2)
+        XCTAssertEqual(rows[0], ["NOW-68K", "application, 384 KB, front"])
+        XCTAssertEqual(rows[1], ["Finder", "finder, 250 KB"])
+    }
+
+    /// Truncation is STATED. `ps` has no cursor to page with, so a machine
+    /// running more processes than one control frame carries ends its list
+    /// with the count it dropped. A silently short list would read as the
+    /// whole machine, and someone would go looking for an application that
+    /// was running the entire time.
+    func test68KPsReplySaysWhatItDropped() throws {
+        guard case .commandResult(let result) =
+            try decode(Guest68KWire.psReplyTruncated) else {
+            return XCTFail("not a command.result")
+        }
+        let rows = try XCTUnwrap(result.output?["ps"])
+        XCTAssertEqual(rows.last, ["...", "6 more not shown"],
+                       "the last row names the processes not shown")
+    }
 }
 
 /// The exact payload bytes NOW-68K puts on the control channel, derived
@@ -617,9 +657,22 @@ enum Guest68KWire {
         + #""code":"not-implemented","#
         + #""message":"unsupported message type"}"#
 
+    /// n68_proclist_render_ps() — guest68k/src/n68_proclist.c. Two shapes,
+    /// because the one conditional part of the reply is the truncation
+    /// note: `ps` carries no cursor, so a machine with more processes than
+    /// a control frame holds says how many it dropped, in a final row.
+    static let psReply = #"{"type":"command.result","id":4,"ok":true,"#
+        + #""output":{"ps":[["NOW-68K","application, 384 KB, front"],"#
+        + #"["Finder","finder, 250 KB"]]}}"#
+    static let psReplyTruncated = #"{"type":"command.result","id":5,"#
+        + #""ok":true,"output":{"ps":["#
+        + #"["NOW-68K","application, 384 KB, front"],"#
+        + #"["...","6 more not shown"]]}}"#
+
     /// Every fixture string above, for the contract check next door.
     static let all: [String] = [
         hello, pingFirst, pingLater,
         errorWithID, errorWithoutID, errorNegativeID,
+        psReply, psReplyTruncated,
     ]
 }

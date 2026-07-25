@@ -379,6 +379,31 @@ Not load-bearing; parked as a known gap rather than chased.
 Everything here builds and passes its tests. None of it has been watched
 working on the PowerBook.
 
+- **`ps` on NOW-68K's wire** (2026-07-25, branch
+  `claude/host-console-remote-shell`). The dumb-shell console landed and
+  `ps` still came back `unknown-command` from a 68K guest that ran it
+  perfectly at its own keyboard: it had been added to `conwin.c` alone,
+  reading the `process.list` family the wire already served. A message
+  family serves a module, not a person — the host console sends commands
+  and nothing else — so `ps` is now in `commands68.c`'s table and its
+  reply is built by `n68_proclist_render_ps()` from the same
+  `proc_list_rows()` walk that feeds `process.listing` and the guest's
+  own console text.
+
+  Tested here: the new renderer's shape, its empty case, its refusal at a
+  hopeless cap and its worst-case row bound (`test_proclist.c`, and the
+  truncation guard watched failing by mutation); two host fixtures for
+  the reply as the guest writes it; and a new parity test,
+  `testEveryVerbTheSixtyEightKConsoleAnswersIsAlsoOnItsWire`, watched
+  naming exactly this bug when `ps` is pulled back out. The 68K guest
+  cross-compiles clean. **Unverified:** nobody has typed `ps` into the
+  host console against a real 68K Mac. Two things to watch when someone
+  does — the truncation row (`["...", "N more not shown"]`) appears only
+  on a machine running more processes than a 1 KB control frame holds,
+  which is roughly a dozen and may never happen on a 7.1 machine; and the
+  detail column is meant to read identically to the PowerPC guest's, which
+  no run has yet compared side by side.
+
 - **The dumb-shell console, both guests** (2026-07-25, branch
   `thread/host-menu-dumb-console`). The host console no longer knows what
   commands the guest has: it sends `command.request` with `line` — the raw
