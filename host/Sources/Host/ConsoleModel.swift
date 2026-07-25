@@ -25,7 +25,7 @@ final class ConsoleModel: ObservableObject {
     /// Declared commands (contract x-commands) plus console built-ins.
     static let commands = ["gestalt", "screenshot", "vprobe", "ls",
                            "putstat", "tail", "ps", "census", "catsearch",
-                           "sw", "launch", "reveal", "vers"]
+                           "sw", "launch", "quit", "reveal", "vers"]
 
     /// Per-command docs, mirroring the contract's x-commands descriptions.
     /// help and --help render from here — documentation never hits the wire.
@@ -131,6 +131,19 @@ final class ConsoleModel: ObservableObject {
                    "  names its version — force one with -v",
                    "  (\"launch -v 1.1.1 SimpleText\"), a full path, or",
                    "  \"vers <name>\" then \"launch #2\"."]),
+        "quit": .init(
+            summary: "ask an application on the other Mac to quit",
+            help: ["quit — ask a running application on that Mac to quit",
+                   "  Usage: quit [--all] [--wait N | --no-wait] <name>",
+                   "  The name is the whole rest of the line — the name",
+                   "  \"ps\" shows — so any flag comes FIRST.",
+                   "  A 'quit' Apple Event is a request the application may",
+                   "  decline: one holding an unsaved document stops to ask",
+                   "  and keeps running. So that Mac waits (6 s, --wait N up",
+                   "  to 20) and re-reads its process list before answering,",
+                   "  and a still-running process comes back as a failure —",
+                   "  never as success. --no-wait sends without confirming.",
+                   "  Several processes of one name refuse unless --all."]),
         "reveal": .init(
             summary: "show an item in the other Mac's Finder",
             help: ["reveal — show an item in the connected Mac's Finder",
@@ -226,6 +239,10 @@ final class ConsoleModel: ObservableObject {
         }
         if name == "launch" {
             runLaunch(rest)
+            return
+        }
+        if name == "quit" {
+            runQuit(rest)
             return
         }
         if name == "reveal" {
@@ -413,6 +430,21 @@ final class ConsoleModel: ObservableObject {
                                                          : ["target": name]) {
             [weak self] result in
             self?.renderRows(result, command: "launch")
+        }
+    }
+
+    /// quit takes the rest of the line whole, same reason as launch, and
+    /// parses nothing here for the same reason: the --all/--wait grammar
+    /// lives once, guest-side in proc_quit_args.c. A declined quit arrives
+    /// as ok:false, so it renders through the failure path — which is the
+    /// point of the verb, not a wart on it.
+    private func runQuit(_ rest: [String]) {
+        let name = rest.joined(separator: " ")
+            .trimmingCharacters(in: .whitespaces)
+        listener.runCommand("quit", args: name.isEmpty ? nil
+                                                       : ["target": name]) {
+            [weak self] result in
+            self?.renderRows(result, command: "quit")
         }
     }
 

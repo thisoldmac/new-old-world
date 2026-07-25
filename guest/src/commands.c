@@ -18,6 +18,7 @@
 #include "vprobe.h"
 #include "catsearch.h"
 #include "software.h"
+#include "proc_actions.h"
 
 const char *const kGestaltFullGroups[] = {
     "cpu", "memory", "os", "network", "hw", NULL
@@ -922,6 +923,66 @@ static void run_launch(const char *request_json, long id, char *out,
              "\"output\":{\"launch\":[[\"Launch\",\"%s\"]]}}", id, esc);
 }
 
+/* quit: launch's opposite number, and the harder half. launch either
+   opened something or did not; quit has to distinguish "gone" from
+   "asked, and it said no" — so the outcome travels as its own machine-
+   readable row beside the sentence, and only the two states that mean
+   "the process is not running" answer ok:true.
+   ok:false for a DECLINED quit is deliberate. The command did exactly
+   what the platform allows and the reply is still a failure, because the
+   caller's purpose — usually "the port is free now, go probe" — was not
+   served. A measurement loop that reads ok:true and proceeds is the
+   defect this row exists to prevent. */
+static void run_quit(const char *request_json, long id, char *out, long cap)
+{
+    char arg[256];
+    char msg[240];
+    char esc[480];
+    NowProcQuitOutcome outcome;
+    const char *state;
+    const char *code = NULL;
+
+    arg[0] = '\0';
+    if (request_json != NULL) {
+        /* "target", never "name" — see run_vers. */
+        now_json_find_text(request_json, "target", arg, sizeof arg);
+    }
+    outcome = now_proc_quit_by_name(arg, msg, sizeof msg);
+    switch (outcome) {
+    case kProcQuitGone:         state = "gone"; break;
+    case kProcQuitNotRunning:   state = "not-running"; break;
+    case kProcQuitSent:         state = "sent-unconfirmed"; break;
+    case kProcQuitStillRunning: state = "still-running";
+                                code = "quit-declined"; break;
+    case kProcQuitAmbiguous:    state = "ambiguous";
+                                code = "quit-ambiguous"; break;
+    case kProcQuitRefusedSelf:  state = "refused-self";
+                                code = "quit-refused"; break;
+    case kProcQuitSendFailed:   state = "undeliverable";
+                                code = "quit-undeliverable"; break;
+    case kProcQuitBadArgs:
+    default:                    state = "bad-args";
+                                code = "quit-bad-args"; break;
+    }
+
+    now_json_escape(msg, esc, sizeof esc);
+    /* Mutations log both outcomes; a declined quit that is only ever seen
+       in a window nobody kept is the one worth having on the platter. */
+    now_log(code == NULL ? kLogInfo : kLogWarn, "proc",
+            "#%ld quit [%s] %.80s", id, state, msg);
+    if (code != NULL) {
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+                 "\"error\":{\"code\":\"%s\",\"message\":\"%s\"}}",
+                 id, code, esc);
+        return;
+    }
+    snprintf(out, (size_t)cap,
+             "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+             "\"output\":{\"quit\":[[\"Quit\",\"%s\"],"
+             "[\"Outcome\",\"%s\"]]}}", id, esc, state);
+}
+
 /* reveal: launch's read-only twin — it shows a selection in this Mac's
    Finder and mutates nothing, so it logs at info either way. */
 static void run_reveal(const char *request_json, long id, char *out,
@@ -1048,6 +1109,10 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "launch") == 0) {
         run_launch(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "quit") == 0) {
+        run_quit(request_json, id, out, cap);
         return;
     }
     if (strcmp(name, "reveal") == 0) {

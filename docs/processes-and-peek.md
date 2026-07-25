@@ -125,6 +125,69 @@ flow, carried from the runner's reap ladder:
 Guard: the row for our own PSN (`GetCurrentProcess`) disables Ask to
 Quit. Everything else is the user's machine and the user's call.
 
+### `quit <name>` — the same action, named the way a person names it
+
+The page acts on a selected row and the wire verb acts on a PSN. Neither
+is usable from a loop that only knows *"NetPresenz"*, and that loop — 
+deploy, quit the server, probe, relaunch — is the reason `launch` exists
+without its opposite number being a gap anyone could live with.
+
+`quit` is therefore a **composition**, not a new capability:
+`process.list` → match by name → re-validate → `process.quit` →
+**`process.list` again**. It is a console command and an x-command
+(`contract/asyncapi.yaml`), it shares `now_proc_ask_quit` with the page
+and the wire verb, and its argument grammar lives once in
+`proc_quit_args.c` (Toolbox-free, unit-tested on the host) so the console
+path and the wire path cannot drift — and so the planned 68K client
+mirrors a file rather than re-deriving a grammar.
+
+**The re-list is the feature.** `now_proc_ask_quit` returning `noErr`
+means the Apple Event was *delivered*, and nothing more. Every outcome the
+composition can produce is reported distinctly, as its own machine-
+readable `Outcome` row beside the sentence:
+
+| Outcome | means | `ok` |
+|---|---|---|
+| `gone` | asked, and a re-list confirms it is not there | true |
+| `not-running` | nothing of that name was running to ask | true |
+| `sent-unconfirmed` | `--no-wait`: delivered, deliberately unverified | true |
+| `still-running` | asked, and STILL THERE at the deadline | **false** (`quit-declined`) |
+| `ambiguous` | several processes share the name, no `--all` | false |
+| `refused-self` | the only match was our own process | false |
+| `undeliverable` | the Apple Event Manager would not send it | false |
+| `bad-args` | the argument line did not parse | false |
+
+`still-running` answering **`ok:false`** is the load-bearing decision. A
+`quit` is a request; an application holding an unsaved document stops to
+ask about it and keeps running (watched on the emulator: SimpleText with
+one typed character sits on "Save changes to the document 'untitled'
+before closing?" and the verb answers `quit-declined`). A caller whose
+next step assumes a freed port must not read that as success — a `quit`
+that reported success while the process was still up would poison every
+measurement built on it, silently, from the first iteration.
+
+The cases the composition creates, and what each does:
+
+- **No match** — `not-running`, and *not* an error: the asked-for state
+  already holds, which is exactly what a redeploy loop wants to hear on
+  the pass after the last one worked.
+- **Several matches** — refused with a count. Quitting an arbitrary copy
+  is worse than doing nothing; `--all` quits every match.
+- **A race** — the listing is already in the past, so each target is
+  re-validated (`GetProcessInformation`) immediately before the send, and
+  one that died in the gap is simply not asked. Liveness also compares the
+  *name*, because a PSN can be reused: "live but differently named" counts
+  as gone. Wrong only in the safe direction — never `gone` for a live one.
+- **Ourselves** — refused. Quitting NOW while it is composing the reply
+  severs the reply. A second, separate *copy* of NOW is a legitimate
+  target, so the walk skips only its own PSN rather than the name.
+- **The Finder** — not special-cased. The verb is honest, not paternal.
+
+Names match by `EqualString` (case-insensitive, diacritic-sensitive), and
+the name is the whole rest of the line so flags are **leading** — a
+trailing token cannot be told apart from the last word of a process name,
+and process names have spaces in them.
+
 ### The six edits, instantiated
 
 1. `workshop_module.h` — `kWorkshopProcesses` inserted before

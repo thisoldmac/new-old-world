@@ -26,6 +26,14 @@ on either side.
 - **Console** — the same command table runs locally on the guest and as a
   remote shell from the host (`gestalt`, `screenshot`, `vprobe`, unix-style
   flags, history).
+- **`launch` and `quit`, by name** — open an application on the classic Mac,
+  and ask a running one to quit, naming it the way `ps` names it. `quit`
+  composes list → match → quit → **re-list**, and reports `gone` apart from
+  `still-running`: a 'quit' Apple Event is a request, and an application
+  with an unsaved document stops to ask and stays running, which comes back
+  as a failure rather than a success. Emulator-verified end to end
+  (console and wire); **the PowerBook run is pending** — see
+  [docs/open-issues.md](docs/open-issues.md).
 - **Screenshots** — one-shot captures in either direction: host-requested
   (progress, cancel), or guest-pushed via offer/accept with a system
   notification on arrival. Contemporary file naming both sides.

@@ -379,6 +379,44 @@ Not load-bearing; parked as a known gap rather than chased.
 Everything here builds and passes its tests. None of it has been watched
 working on the PowerBook.
 
+- **`quit <name>` — the deploy loop's missing half** (2026-07-25,
+  branch `thread/guest-quit-command`). A console command and x-command
+  that composes `process.list` → match by name → re-validate →
+  `process.quit` → **re-list**, so it can report `gone` apart from
+  `still-running`. Design, outcome table and the decisions behind each
+  case: [`processes-and-peek.md`](processes-and-peek.md#quit-name--the-same-action-named-the-way-a-person-names-it).
+
+  **Emulator-verified, end to end, on mac99 / OS 9.1 / CarbonLib 1.6** —
+  both invocation paths, and every outcome the composition can produce:
+
+  | Watched | Result |
+  |---|---|
+  | Guest console `quit SimpleText` | `"SimpleText" is gone (0.3 s)` |
+  | Guest console `quit --no-wait SimpleText` | `asked "SimpleText" to quit; NOT confirmed (--no-wait)` |
+  | Guest console `help quit` | renders |
+  | Wire `quit SimpleText` | `gone (0.1 s)`, and confirmed absent by an independent `process.list` |
+  | Wire, dirty document | `[quit-declined] … is STILL RUNNING after 4 s`, with SimpleText visibly sitting on its Save dialog |
+  | Wire, nothing of that name | `not-running`, `ok:true` |
+  | Wire, its own name | `[quit-refused]`, and still there afterwards |
+  | Wire, no target / unknown flag | `[quit-bad-args]` |
+
+  The acceptance driver is committed: `MetalQuitTests` (`NOW_METAL=1`,
+  plus `NOW_QUIT_DIRTY=1` for the human-in-the-loop declined case).
+
+  **What the PowerBook still has to settle.** The emulator says nothing
+  about *timing* on a 117 MHz 603e: SimpleText answered in 0.1–0.3 s
+  there, and the 6 s default was chosen for a slower machine, not
+  measured on one. Nor has the deliberate stall been felt on metal — for
+  up to `--wait N` the guest's window does not repaint (it keeps
+  servicing the wire; see [`nested-loops.md`](nested-loops.md)), and
+  "does that read as a hang?" is a question about a real screen. An
+  isolated copy is staged at `Lab:now-quit` on the 1400c (its own name,
+  so its own preferences; fork sizes verified against the local
+  MacBinary, 565127 / 2439). Being non-canonical it starts with no
+  preferences and dials 10.0.2.2, so the **console** path needs no host
+  at all — that is the one to run first. The real target is NetPresenz
+  on a 180c, which is a different machine and a different client.
+
 - **`catsearch` — the Software module's feasibility probe** (2026-07-22).
   Times a whole-volume `PBCatSearch` sweep for APPL files on the startup
   volume, in 15-tick slices, cold then warm. Console verb on both sides

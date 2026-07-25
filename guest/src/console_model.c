@@ -18,6 +18,7 @@
 #include "vprobe.h"
 #include "catsearch.h"
 #include "software.h"
+#include "proc_actions.h"
 #include "wire.h"
 
 enum {
@@ -201,6 +202,18 @@ static void help_for(const char *name)
         console_model_append("  first launches and the reply names its version.");
         console_model_append("  To force one: -v (\"launch -v 1.1.1 SimpleText\"),");
         console_model_append("  a full path, or \"vers <name>\" then \"launch #2\".");
+    } else if (strcmp(name, "quit") == 0) {
+        console_model_append("quit - ask an application on this Mac to quit");
+        console_model_append("  Usage: quit [--all] [--wait N | --no-wait] <name>");
+        console_model_append("  The name is the whole rest of the line, so any");
+        console_model_append("  flag comes FIRST. Names it by what \"ps\" shows.");
+        console_model_append("  A 'quit' Apple Event is a REQUEST: an app with an");
+        console_model_append("  unsaved document stops to ask and stays running.");
+        console_model_append("  So this waits (6 s, --wait N up to 20) and re-reads");
+        console_model_append("  the process list, then says \"is gone\" or \"is STILL");
+        console_model_append("  RUNNING\" - never the first when it means the second.");
+        console_model_append("  Several processes of one name refuse unless --all.");
+        console_model_append("  --no-wait sends and reports it unconfirmed.");
     } else if (strcmp(name, "reveal") == 0) {
         console_model_append("reveal - show an item in this Mac's Finder");
         console_model_append("  Usage: reveal <name | full path | #n>");
@@ -262,6 +275,7 @@ static void help_list(void)
     console_model_append("  census      run a hardware probe (census [probe])");
     console_model_append("  sw          installed software (sw [domain])");
     console_model_append("  launch      open an application (launch <name>)");
+    console_model_append("  quit        ask one to quit (quit <name>)");
     console_model_append("  reveal      show an item in the Finder (reveal <name|path>)");
     console_model_append("  vers        one file's version (vers <name|path>)");
     console_model_append("  catsearch   time a whole-disk application search");
@@ -580,6 +594,20 @@ void console_model_run(const char *input)
             ++raw_args;
         }
         now_software_launch(raw_args, msg, sizeof msg);
+        snprintf(line, sizeof line, "%.120s", msg);
+        console_model_append(line);
+        return;
+    }
+    if (strcmp(name, "quit") == 0) {
+        char msg[240];
+
+        /* Same whole-rest-of-the-line argument as launch, and the same
+           reason: process names have spaces. The parse lives once, in
+           proc_quit_args.c, so this path and the wire's cannot drift. */
+        while (*raw_args == ' ') {
+            ++raw_args;
+        }
+        (void)now_proc_quit_by_name(raw_args, msg, sizeof msg);
         snprintf(line, sizeof line, "%.120s", msg);
         console_model_append(line);
         return;
