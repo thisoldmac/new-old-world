@@ -387,7 +387,7 @@ final class GuestWireFixtureTests: XCTestCase {
     /// Field order is the order of the appends, and nothing in between:
     /// `type`, `contract` (an integer through now68k_fmt_append_long),
     /// `side` fixed to "guest", `version` (the caller's string — wire68.c
-    /// passes NOW68K_APP_VERSION, "0.9", wire68.c:68), then `name`, `os`
+    /// passes NOW68K_APP_VERSION, read from wire68.c by this file), then
     /// and `chunk` frozen into the format literal itself from
     /// NOW68K_HELLO_NAME / _OS / _CHUNK (guest68k/src/hello.h:16-18).
     ///
@@ -409,7 +409,8 @@ final class GuestWireFixtureTests: XCTestCase {
         }
         XCTAssertEqual(hello.contract, Contract.revision)
         XCTAssertEqual(hello.side, "guest")
-        XCTAssertEqual(hello.version, "0.9", "NOW68K_APP_VERSION")
+        XCTAssertEqual(hello.version, Guest68KWire.appVersion,
+                       "NOW68K_APP_VERSION, read from wire68.c")
         XCTAssertEqual(hello.name, "now-68k",
                        "the name that tells the two guests apart in the UI")
         XCTAssertEqual(hello.os, "7.1")
@@ -501,8 +502,38 @@ final class GuestWireFixtureTests: XCTestCase {
 /// way guest/tests exercises Toolbox-free guest code. The two error shapes
 /// are transcribed from the literals in send_error_reply().
 enum Guest68KWire {
+    /// NOW68K_APP_VERSION, read from wire68.c rather than transcribed.
+    ///
+    /// It was transcribed once, and every deploy then broke this file: the
+    /// version has to be bumped on every build that goes to a machine
+    /// (it is the only way to tell two builds apart on the wire), so a
+    /// pinned copy here turned a one-line release step into a two-line one
+    /// and made the fixture look like it was guarding something it was
+    /// not. The version is the one field of hello that is SUPPOSED to
+    /// vary; everything around it is what this fixture exists to pin.
+    static let appVersion: String = {
+        let source = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()   // …/host/Tests/HostTests
+            .deletingLastPathComponent()   // …/host/Tests
+            .deletingLastPathComponent()   // …/host
+            .deletingLastPathComponent()   // …/
+            .appendingPathComponent("guest68k/src/wire68.c")
+        guard let text = try? String(contentsOf: source, encoding: .utf8),
+              let range = text.range(
+                of: #"#define\s+NOW68K_APP_VERSION\s+"([^"]+)""#,
+                options: .regularExpression),
+              let quoted = text[range].split(separator: "\"").dropFirst().first
+        else {
+            // Not a fallback to a guess: a version we cannot read is a
+            // fixture that would silently pass against the wrong bytes.
+            fatalError("no NOW68K_APP_VERSION in guest68k/src/wire68.c")
+        }
+        return String(quoted)
+    }()
+
     static let hello = #"{"type":"hello","contract":1,"side":"guest","#
-        + #""version":"0.9","name":"now-68k","os":"7.1","chunk":4096}"#
+        + #""version":"\#(appVersion)","name":"now-68k","os":"7.1","#
+        + #""chunk":4096}"#
 
     static let pingFirst = #"{"type":"ping","id":1}"#
     static let pingLater = #"{"type":"ping","id":7}"#
