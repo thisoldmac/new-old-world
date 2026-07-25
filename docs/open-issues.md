@@ -1074,11 +1074,20 @@ the useful half.
   that stops to ask about an unsaved document answers `ok:false` /
   `quit-declined` rather than claiming success. Only the `gone` path has
   been seen. Until the declined path is watched on the machine, the one
-  behaviour that command was written for is unverified.
-- **The farewell.** `bye` and `net_close`'s orderly TCPClose have never
-  been exercised; every close observed so far was the abortive path.
-- **The redial.** Fixed-interval reconnect after a failed dial, and the
-  human start/stop that gates it, have not been driven to failure.
+  behaviour that command was written for is unverified. Still unrun as of
+  2026-07-25 for a dull reason: the 180c's TeachText and SimpleText are
+  both still `.hqx`, so there was no editor to leave a document dirty in.
+- **The farewell — METAL-VERIFIED 2026-07-25.** A menu quit on the 180c
+  produced `now-68k is shutting down` on the host, which is the bye path;
+  the abortive one reads `Connection lost`. `Metal68KTests
+  :: testTheFarewellIsOrderly` (`NOW_68K_BYE=1`, human at the keyboard,
+  because the guest refuses to quit itself).
+- **The redial — METAL-VERIFIED 2026-07-25.** Host dropped mid-session
+  and restarted; the guest redialled and re-helloed in 15.5 s.
+  `Metal68KTests :: testTheGuestComesBackAfterTheHostGoesAway`
+  (`NOW_68K_REDIAL=1`; the cadence is human-armed by design, so the
+  checkbox is part of the test's precondition). The reconnect
+  re-handshakes, as the contract requires.
 - **Oversized control frames — now tested, still never sent.** The
   skip-not-fatal path (a frame larger than our 4 KB buffer but inside the
   protocol's 32 KB) is covered off-metal since 2026-07-25: the reader
@@ -1090,11 +1099,48 @@ the useful half.
   has ever sent one.** The host does not produce a control frame over
   4 KB, so the reader's contract is proven and the host's honouring of it
   is not.
+- **BROKEN: `launch` of a name that is not on the disk never answers**
+  (2026-07-25, watched on the 180c, three times — at 60 s, 150 s and
+  300 s). The contract is explicit that one `command.request` produces
+  exactly one `command.result`; this produces none, and the host waits
+  forever because nothing tells it otherwise.
+
+  What the guest's own log says: `cmd: launch refused -50`, then
+  `command.result dropped, outbound queue full`. So the search RAN and
+  RETURNED — `launch` is not hanging — and the reply was built and then
+  thrown away on the way to the wire.
+
+  Two theories died on the way to that, both worth keeping because each
+  cost a metal run. **(1) The guest goes deaf inside `PBCatSearchSync`
+  and writes its reply to a socket the host's idle timeout already
+  killed.** Refuted: the metal test now watches the wire during the
+  search, and it stayed up for the whole 150 s with keepalives answered —
+  `yield_ticks(0)` pumps between slices exactly as intended. **(2) The
+  reply is too long for the 160-byte outbound slot.** Refuted by reading
+  `commands68.c`: it has a compact-fallback path that shortens a reply
+  rather than failing to build one.
+
+  What is actually established is narrower: `enqueue_control_send`
+  refused the payload, and its 0 return covers **two** different failures
+  — payload too big for a slot, and both slots busy
+  (`kWireOutQueueDepth` is 2) — which every caller logged with the same
+  sentence. That is why the log could not settle it. 0.5 logs them apart
+  and is deployed; the next run names the cause.
+
+  Standing regardless of which it turns out to be:
+  `kWireOutPayloadCap`'s comment sizes it for "hello, ping, or an error
+  reply", which was true when this guest had no commands at all and was
+  never revisited when `launch` and `quit` arrived — while
+  `commands68.h` documents a **320-byte floor** for the buffer its caller
+  must supply and `wire68.c` hands it 160. Same limit, stated three
+  times, in two units, with the smallest one winning.
+
 - **`launch` at scale.** The catalog search is double-bounded on purpose —
   a whole-volume Finder search has hard-wedged this fleet before — but it
-  has only resolved an application sitting in an obvious place. A
-  truncated search is supposed to say so rather than report a clean
-  "not found"; that branch is untested.
+  has only resolved an application sitting in an obvious place. The
+  truncation branch is still unproven: the one metal attempt at it never
+  got its answer back (above), so whether the bound reports honestly is
+  exactly as unknown as it was this morning.
 - **The confirm wait under load.** It yields with an event mask of zero and
   pumps the wire each pass, with a re-entrancy guard so a command arriving
   mid-wait cannot recurse into it. Neither the pump nor the guard has been
@@ -1137,13 +1183,14 @@ the useful half.
   "frames received" — probably intended, but the stat's name does not say
   so.
 
-- **The extraction itself is argued-faithful, not observed-faithful.**
-  Dial, handshake, keepalive, `launch` and `quit`/`gone` are the paths
-  NOW-68K is metal-proven on, and every one of them runs through the code
-  that moved. Structure, call order and a clean `-O2 -Werror` build are
-  the only evidence that the move changed nothing. A 180c smoke test —
-  connect, handshake, one ping cycle — is what would settle it, and it is
-  the first thing to run when that machine is next up.
+- **The extraction is METAL-VERIFIED (2026-07-25).** It was
+  argued-faithful only — structure, call order and a clean `-O2 -Werror`
+  build — until `NOW-68K 0.4` ran on the 180c: handshake, one
+  guest-driven keepalive answered after the 30 s silence, and a control
+  frame round trip afterwards. `Metal68KTests
+  :: testTheWireStillWorksAfterTheReaderExtraction`. The version bump is
+  what makes it attributable — 0.3 predates the extraction and the wire
+  carries no other way to tell two builds apart.
 
 Both of the things that were known-wrong here are fixed (2026-07-25):
 

@@ -163,6 +163,14 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
 
 ## What does not work
 
+- **NOW-68K's `launch` never answers when the name is not on the disk.**
+  Watched on the 180c three times (2026-07-25). The search runs and
+  returns; the reply is built and then dropped on the way to the wire, so
+  the host waits forever for a `command.result` the contract promises
+  will always come. `quit` is unaffected — its messages are short and its
+  replies have always arrived. Cause narrowed but not yet proven; the
+  diagnosis so far, including two theories that were refuted on the
+  machine, is in [docs/open-issues.md](docs/open-issues.md).
 - **NOW-68K implements almost none of the contract.** Two commands
   (`launch`, `quit`) and the keepalive; everything else — `ps`, capture,
   files, census, streams, processes — answers `unknown-command` or
