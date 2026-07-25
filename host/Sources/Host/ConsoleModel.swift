@@ -1,8 +1,33 @@
 import Foundation
 
-/// The host console: a shell into the connected guest. Every line typed is
-/// one command.request; the guest's command.result renders as output. The
-/// command set is the contract's x-commands registry — closed and typed.
+/// The host console: a **dumb shell** into the connected Mac.
+///
+/// It does not know what commands the other machine has, and must not. There
+/// are two guests now — the PowerPC Carbon guest serves fifteen commands, and
+/// NOW-68K serves three — so any list kept here would be wrong for one of
+/// them, and wrong again the next time either grows a verb. So: the line a
+/// human types is relayed as it was typed (`command.request` with `line`), and
+/// whatever comes back is rendered, including the guest's own
+/// `unknown-command` for something it does not have. Every argument grammar
+/// lives on the machine that serves the command; see CommandRequest.line and
+/// each command's `x-line` in contract/asyncapi.yaml.
+///
+/// What that leaves host-side, deliberately small and explicit:
+///
+/// - **`/`-verbs**, and the test for belonging there is that **no guest could
+///   answer them**: `/clear`, `/save` and `/help` act on this console;
+///   `/swpage` drives the `software.list` family, which is a wire family this
+///   side implements rather than a command anyone serves. The prefix is the
+///   whole rule — a bare word is always the far machine's, so a command added
+///   to either guest tomorrow needs no edit here and can never be shadowed by
+///   something local.
+/// - **History** is this console's own (↑ / ↓). It needs no command set.
+/// - **Completion** (Tab) comes from the guest, at runtime, by asking it
+///   `help` — the same command a human can type. It is fetched on the first
+///   Tab rather than on connect, so the console sends nothing nobody asked
+///   for, and a guest that answers `unknown-command` to `help` simply has no
+///   completion. Discovery being a wire request is the point: a machine that
+///   serves three commands says three.
 @MainActor
 final class ConsoleModel: ObservableObject {
     struct Line: Identifiable, Equatable {
@@ -22,158 +47,64 @@ final class ConsoleModel: ObservableObject {
         }
     }
 
-    /// Declared commands (contract x-commands) plus console built-ins.
-    static let commands = ["gestalt", "screenshot", "vprobe", "ls",
-                           "putstat", "tail", "ps", "census", "catsearch",
-                           "sw", "launch", "reveal", "vers"]
+    /// The only verbs this side implements. Each one acts on this console or
+    /// this Mac and has no meaning on the wire; anything a guest could serve
+    /// is absent by design. Kept as data so `/help` cannot drift from it.
+    enum LocalVerb: String, CaseIterable {
+        case clear
+        case save
+        case help
+        case swpage
 
-    /// Per-command docs, mirroring the contract's x-commands descriptions.
-    /// help and --help render from here — documentation never hits the wire.
-    struct CommandInfo {
-        let summary: String
-        let help: [String]
+        var summary: String {
+            switch self {
+            case .clear: return "clear this console's scrollback"
+            case .save:
+                return "write this scrollback to a file (/save [path])"
+            case .help:
+                return "these local verbs; type \"help\" for the guest's"
+            case .swpage:
+                return "page software.list directly (/swpage [domain] [cursor])"
+            }
+        }
     }
 
-    static let catalog: [String: CommandInfo] = [
-        "gestalt": .init(
-            summary: "report the Mac: system, model, RAM, CarbonLib",
-            help: ["gestalt — report the connected Mac's identity",
-                   "  Usage: gestalt",
-                   "  Reports the running system version, the Gestalt",
-                   "  machine type, physical RAM, and the installed",
-                   "  CarbonLib version."]),
-        "screenshot": .init(
-            summary: "capture the guest's screen to its desktop",
-            help: ["screenshot — capture the connected Mac's screen",
-                   "  Usage: screenshot [--depth {1,2,4,8,16,32}] [--no-save]",
-                   "  The other Mac captures and saves a packed PICT to its own",
-                   "  desktop (pixels do not cross the wire yet) and returns",
-                   "  size / compression / timing measurements.",
-                   "  --no-save measures without writing a file."]),
-        "vprobe": .init(
-            summary: "measure the guest's VRAM read cost by method",
-            help: ["vprobe — measure VRAM read cost on the guest",
-                   "  Usage: vprobe",
-                   "  Times raw framebuffer reads (8/16/32/64-bit) against",
-                   "  the CopyBits baseline, checks reread caching,",
-                   "  partial-read scaling, and pixel fidelity. Takes ~3 s;",
-                   "  keep its screen still during the run."]),
-        "ls": .init(
-            summary: "list a folder in the guest's shared files",
-            help: ["ls — list a folder the classic Mac shares",
-                   "  Usage: ls [path]",
-                   "  Paths are relative to the shared folder's root, with",
-                   "  colons between folders: \"Lab:Code\". No path lists",
-                   "  the root. The root is chosen on that Mac in",
-                   "  File > File Sharing...; nothing outside it is",
-                   "  reachable. The Files module browses the same share."]),
-        "putstat": .init(
-            summary: "where the last received file spent its time",
-            help: ["putstat — timings from the last file received",
-                   "  Usage: putstat",
-                   "  Reports bytes, chunk and write counts, and the",
-                   "  milliseconds spent inside FSWrite versus the whole",
-                   "  receive path. Measured on that Mac, so it tells",
-                   "  the disk apart from the wire."]),
-        "tail": .init(
-            summary: "the last lines of the other Mac's log",
-            help: ["tail — the last lines of the classic Mac's log",
-                   "  Usage: tail [lines]   (default 20, most 40)",
-                   "  That Mac keeps a file per launch in a \"now-logs\"",
-                   "  folder beside the application, so what happened",
-                   "  survives a crash that takes everything else with",
-                   "  it. This reads it from here, which is the point:",
-                   "  that machine is the harder one to look at."]),
-        "ps": .init(
-            summary: "the processes running on the other Mac",
-            help: ["ps — the processes running on the connected Mac",
-                   "  Usage: ps",
-                   "  One line per process: its name, then kind",
-                   "  (application / background / finder), size, and",
-                   "  whether it is frontmost. A reading only — the",
-                   "  Processes module is where they are driven."]),
-        "census": .init(
-            summary: "run one hardware-census probe on the other Mac",
-            help: ["census — run one hardware probe on the connected Mac",
-                   "  Usage: census [probe]   (no probe = overview)",
-                   "  Probes: overview identity selectors video volumes",
-                   "          drives drivers adb ata pccard pram power",
-                   "          pci scsi",
-                   "  Passive reads of tables that Mac's OS keeps. Absence",
-                   "  is an answer, not an error. The Hardware module pages",
-                   "  the same census through its own view."]),
-        "catsearch": .init(
-            summary: "time a whole-disk application search on the other Mac",
-            help: ["catsearch — time a whole-disk search for applications",
-                   "  Usage: catsearch",
-                   "  The other Mac sweeps its startup volume's catalog for",
-                   "  applications with PBCatSearch, in short slices, cold",
-                   "  then warm. Groundwork for the Software module: is a",
-                   "  full application index affordable on that disk?",
-                   "  Seconds-long; read-only."]),
-        "sw": .init(
-            summary: "what is installed on the other Mac (sw [domain])",
-            help: ["sw — the software installed on the connected Mac",
-                   "  Usage: sw [domain]",
-                   "  Domains: apps extensions cdevs startup apple",
-                   "  No domain shows per-domain counts. Items the",
-                   "  Extensions Manager disabled are listed too, tagged",
-                   "  (off). \"sw apps\" sweeps that Mac's whole startup",
-                   "  disk (a few seconds) and shows one page."]),
-        "launch": .init(
-            summary: "open an application on the other Mac",
-            help: ["launch — open an application on the connected Mac",
-                   "  Usage: launch [-v VERSION] <name | path | #n>",
-                   "  The name is the whole rest of the line — spaces need",
-                   "  no quotes. The app comes to that Mac's front, so a",
-                   "  screenshot or ps right after shows it. If several",
-                   "  apps share the name the first launches and the reply",
-                   "  names its version — force one with -v",
-                   "  (\"launch -v 1.1.1 SimpleText\"), a full path, or",
-                   "  \"vers <name>\" then \"launch #2\"."]),
-        "reveal": .init(
-            summary: "show an item in the other Mac's Finder",
-            help: ["reveal — show an item in the connected Mac's Finder",
-                   "  Usage: reveal <name | full path | #n>",
-                   "  Selects the item in its Finder window and brings that",
-                   "  Mac's Finder forward. Opens nothing, so any item",
-                   "  reveals — an extension or control panel by path, an",
-                   "  app by name (the first copy if several share it), or",
-                   "  \"#n\" from the last vers/launch list."]),
-        "vers": .init(
-            summary: "one file's version resources on the other Mac",
-            help: ["vers — one file's version, read on the connected Mac",
-                   "  Usage: vers <name | full path | #n>",
-                   "  Reads that file's 'vers' resources. A bare name",
-                   "  searches that Mac's applications and shows every",
-                   "  match as a numbered list, full paths and all —",
-                   "  \"vers #2\" or \"launch #2\" then picks one. A full",
-                   "  HFS path reads any file (extensions want their",
-                   "  path). No version is an answer, not an error."]),
-        "help": .init(
-            summary: "show this list (\"help <cmd>\" for details)",
-            help: ["help — list commands, or \"help <cmd>\" for one"]),
-        "clear": .init(
-            summary: "clear the console scrollback",
-            help: ["clear — clear the console scrollback"])
-    ]
+    /// The prefix that marks a verb as this side's. Anything without it is
+    /// the other machine's, whatever it is.
+    static let localPrefix = "/"
 
     @Published private(set) var lines: [Line] = []
     @Published var input = ""
+
+    /// Command names the guest told us it serves, for Tab completion. Empty
+    /// until asked, and emptied when the guest goes — a stale list is a list
+    /// from a different machine.
+    @Published private(set) var completions: [String] = []
+    private var completionsRequested = false
+
+    /// Newest last. Host-local: recalling a line needs no notion of what the
+    /// line means.
+    private(set) var history: [String] = []
+    private var historyPos = 0
+    private static let historyLimit = 64
 
     private let listener: GuestListener
     private static let scrollbackLimit = 400
 
     init(listener: GuestListener) {
         self.listener = listener
-        append(.notice, "Console — commands run on the connected Mac. "
-            + "Type \"help\" for the list.")
+        append(.notice, "Console — every line runs on the connected Mac. "
+            + "Type \"help\" to ask it what it serves; \"/help\" for what "
+            + "this side does.")
     }
+
+    // MARK: - Submitting
 
     func submit() {
         let command = input.trimmingCharacters(in: .whitespaces)
         input = ""
         guard !command.isEmpty else { return }
+        historyAdd(command)
 
         let guestName: String
         if case .connected(let name) = listener.state {
@@ -183,276 +114,124 @@ final class ConsoleModel: ObservableObject {
         }
         append(.input(guest: guestName), command)
 
-        let tokens = command.split(separator: " ").map(String.init)
-        let name = tokens[0]
-        let rest = Array(tokens.dropFirst())
-        let wantsHelp = rest.contains("-h") || rest.contains("--help")
+        if command.hasPrefix(Self.localPrefix) {
+            runLocal(String(command.dropFirst()))
+            return
+        }
+        send(command)
+    }
 
-        if name == "help" {
-            if let target = rest.first(where: { !$0.hasPrefix("-") }) {
-                showHelp(for: target)
-            } else {
-                showHelpList()
-            }
+    /// Splits at the first run of spaces and sends the rest verbatim. This is
+    /// the whole of the host's parsing, and it stops here on purpose: the
+    /// remainder may be a path with spaces, a flag, a quoted name or nothing,
+    /// and only the machine that serves the command knows which.
+    private func send(_ command: String) {
+        let name = String(command.prefix { $0 != " " })
+        let line = String(command.dropFirst(name.count))
+            .trimmingCharacters(in: .whitespaces)
+        listener.runCommand(name, line: line) { [weak self] result in
+            self?.render(name, result)
+        }
+    }
+
+    /// The menu's "Ask the Guest What It Serves", and the console's own way
+    /// in. Shown in the scrollback exactly as if typed, because a reply that
+    /// appears with no request above it reads like an error.
+    func runHelp() {
+        append(.input(guest: connectedName), "help")
+        listener.runCommand("help", line: "") { [weak self] result in
+            self?.render("help", result)
+            self?.absorbCompletions(result)
+        }
+    }
+
+    private var connectedName: String {
+        if case .connected(let name) = listener.state { return name }
+        return "—"
+    }
+
+    // MARK: - Host-local verbs
+
+    private func runLocal(_ command: String) {
+        let name = String(command.prefix { $0 != " " })
+        let rest = String(command.dropFirst(name.count))
+            .trimmingCharacters(in: .whitespaces)
+
+        guard let verb = LocalVerb(rawValue: name) else {
+            append(.failure, "/\(name): not a local verb (try \"/help\"). "
+                + "Without the slash it would run on the other Mac.")
             return
         }
-        if wantsHelp {
-            showHelp(for: name)
-            return
-        }
-        if name == "clear" {
+        switch verb {
+        case .clear:
             lines = []
-            return
-        }
-        if name == "gestalt" {
-            runGestalt(rest)
-            return
-        }
-        if name == "screenshot" {
-            runScreenshot(rest)
-            return
-        }
-        if name == "ls" {
-            runLs(rest)
-            return
-        }
-        if name == "census" {
-            runCensus(rest)
-            return
-        }
-        if name == "sw" {
-            runSw(rest)
-            return
-        }
-        if name == "launch" {
-            runLaunch(rest)
-            return
-        }
-        if name == "reveal" {
-            runReveal(rest)
-            return
-        }
-        if name == "vers" {
-            runVers(rest)
-            return
-        }
-        if name == "swpage" {
+        case .save:
+            save(to: rest)
+        case .help:
+            showLocalHelp()
+        case .swpage:
             runSwPage(rest)
+        }
+    }
+
+    private func showLocalHelp() {
+        append(.notice, "This side, and only this side:")
+        for verb in LocalVerb.allCases {
+            let name = "/\(verb.rawValue)"
+            append(.notice,
+                   "  \(name.padding(toLength: 8, withPad: " ", startingAt: 0)) "
+                   + verb.summary)
+        }
+        append(.notice, "Everything else is sent to the connected Mac as "
+            + "typed — this console keeps no list of its commands, because "
+            + "the two guests do not serve the same ones. \"help\" asks it; "
+            + "Tab completes from that answer.")
+    }
+
+    /// Replaces `gestalt --save`, which only worked because the host used to
+    /// know what gestalt returns. Command-agnostic instead: it writes what is
+    /// on screen, which is the thing a human actually wanted to keep.
+    private func save(to path: String) {
+        let url: URL
+        if path.isEmpty {
+            url = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Desktop/NOW console.txt")
+        } else if path.hasPrefix("/") || path.hasPrefix("~") {
+            url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        } else {
+            url = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Desktop").appendingPathComponent(path)
+        }
+        guard !lines.isEmpty else {
+            append(.failure, "Nothing to save: the scrollback is empty")
             return
         }
-        run(name)
-    }
-
-    private func runScreenshot(_ rest: [String]) {
-        var args: [String: String] = [:]
-        if let i = rest.firstIndex(of: "--depth"), i + 1 < rest.count {
-            args["depth"] = rest[i + 1]
-        }
-        if rest.contains("--no-save") {
-            args["save"] = "false"
-        }
-        listener.runCommand("screenshot",
-                            args: args.isEmpty ? nil : args) { [weak self] result in
-            self?.renderRows(result, command: "screenshot")
-        }
-    }
-
-    /// Generic grouped-rows renderer for commands whose output is
-    /// group -> [[label, value]] (everything except gestalt's sliced view).
-    private func renderRows(_ result: CommandResult, command: String) {
-        guard result.ok, let output = result.output else {
-            let error = result.error
-            append(.failure, "\(command): \(error?.message ?? "failed") "
-                + "[\(error?.code ?? "error")]")
-            return
-        }
-        for group in output.keys.sorted() {
-            guard let rows = output[group] else { continue }
-            let width = rows.map { $0.first?.count ?? 0 }.max() ?? 0
-            for row in rows where row.count >= 2 {
-                let label = row[0].padding(toLength: width, withPad: " ",
-                                           startingAt: 0)
-                append(.output, "  \(label)  \(row[1])")
-            }
-        }
-    }
-
-    private static let fullGroups = ["cpu", "memory", "os", "network", "hw"]
-
-    private static func flagToGroup(_ flag: String) -> String? {
-        switch flag {
-        case "--cpu": return "cpu"
-        case "--memory": return "memory"
-        case "--os": return "os"
-        case "--network": return "network"
-        case "--hardware": return "hw"
-        default: return nil
-        }
-    }
-
-    private func runGestalt(_ rest: [String]) {
-        let full = rest.contains("--full")
-        let save = rest.contains("--save")
-        let group = rest.compactMap(Self.flagToGroup).first
-        // The command always returns every group; the console shows a slice.
-        listener.runCommand("gestalt") { [weak self] result in
-            self?.renderGestalt(result, group: group, full: full, save: save)
-        }
-    }
-
-    private func renderGestalt(_ result: CommandResult, group: String?,
-                               full: Bool, save: Bool) {
-        guard result.ok, let output = result.output else {
-            let error = result.error
-            append(.failure, "gestalt: \(error?.message ?? "failed") "
-                + "[\(error?.code ?? "error")]")
-            return
-        }
-        var rendered: [String] = []
-        func emit(_ rows: [[String]]) {
-            let width = rows.map { $0.first?.count ?? 0 }.max() ?? 0
-            for row in rows where row.count >= 2 {
-                let label = row[0].padding(toLength: width, withPad: " ",
-                                           startingAt: 0)
-                rendered.append("  \(label)  \(row[1])")
-            }
-        }
-        if full {
-            for name in Self.fullGroups {
-                guard let rows = output[name] else { continue }
-                rendered.append("[\(name)]")
-                emit(rows)
-            }
-        } else if let group {
-            if let rows = output[group] {
-                emit(rows)
-            } else {
-                rendered.append("no such group: \(group)")
-            }
-        } else if let rows = output["snapshot"] {
-            emit(rows)
-        }
-        for line in rendered { append(.output, line) }
-        if save {
-            saveToDisk(rendered)
-        }
-    }
-
-    private func saveToDisk(_ lines: [String]) {
-        let url = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Desktop/NOW gestalt.txt")
-        let body = lines.map { $0.trimmingCharacters(in: .whitespaces) }
-            .joined(separator: "\n") + "\n"
+        let body = lines.map(\.text).joined(separator: "\n") + "\n"
         do {
             try body.write(to: url, atomically: true, encoding: .utf8)
-            append(.notice, "Saved to \(url.path)")
+            append(.notice, "Saved \(lines.count) lines to \(url.path)")
         } catch {
             append(.failure, "Save failed: \(error.localizedDescription)")
         }
     }
 
-    private func showHelpList() {
-        append(.notice, "Commands on the connected Mac:")
-        for key in (Self.commands + ["help", "clear"]).sorted() {
-            let summary = Self.catalog[key]?.summary ?? ""
-            append(.notice,
-                   "  \(key.padding(toLength: 8, withPad: " ", startingAt: 0)) \(summary)")
-        }
-        append(.notice, "Add --help or -h to any command for details.")
-    }
-
-    private func showHelp(for name: String) {
-        if let info = Self.catalog[name] {
-            for line in info.help { append(.notice, line) }
-        } else {
-            append(.failure, "No help for \"\(name)\"")
-        }
-    }
-
-    /// ls carries a positional path: "ls Lab:Code".
-    private func runLs(_ rest: [String]) {
-        let path = rest.first ?? ""
-        listener.runCommand("ls", args: path.isEmpty ? nil
-                                                     : ["path": path]) {
-            [weak self] result in
-            self?.renderRows(result, command: "ls")
-        }
-    }
-
-    /// census carries a positional probe name: "census pci". No name runs
-    /// "overview" on the guest, so an empty arg is passed as absent.
-    private func runCensus(_ rest: [String]) {
-        let probe = rest.first { !$0.hasPrefix("-") } ?? ""
-        listener.runCommand("census", args: probe.isEmpty ? nil
-                                                          : ["probe": probe]) {
-            [weak self] result in
-            self?.renderRows(result, command: "census")
-        }
-    }
-
-    /// sw carries a positional domain: "sw extensions". No domain runs
-    /// the overview on the guest, so an empty arg is passed as absent.
-    private func runSw(_ rest: [String]) {
-        let domain = rest.first { !$0.hasPrefix("-") } ?? ""
-        listener.runCommand("sw", args: domain.isEmpty ? nil
-                                                       : ["domain": domain]) {
-            [weak self] result in
-            self?.renderRows(result, command: "sw")
-        }
-    }
-
-    /// launch forwards the whole line as one target string and parses
-    /// nothing: the -v flag, quotes, #n and paths are all read guest-side
-    /// in now_software_launch, so there is one parser, not two dialects.
-    private func runLaunch(_ rest: [String]) {
-        let name = rest.joined(separator: " ")
-            .trimmingCharacters(in: .whitespaces)
-        // "target", never "name": the guest scans the frame flat, and an
-        // arg key shadowing an envelope key is read as the command name.
-        listener.runCommand("launch", args: name.isEmpty ? nil
-                                                         : ["target": name]) {
-            [weak self] result in
-            self?.renderRows(result, command: "launch")
-        }
-    }
-
-    /// reveal takes the rest of the line whole, same reason as launch.
-    private func runReveal(_ rest: [String]) {
-        let name = rest.joined(separator: " ")
-            .trimmingCharacters(in: .whitespaces)
-        listener.runCommand("reveal", args: name.isEmpty ? nil
-                                                         : ["target": name]) {
-            [weak self] result in
-            self?.renderRows(result, command: "reveal")
-        }
-    }
-
-    /// vers takes the rest of the line whole, same reason as launch.
-    private func runVers(_ rest: [String]) {
-        let name = rest.joined(separator: " ")
-            .trimmingCharacters(in: .whitespaces)
-        listener.runCommand("vers", args: name.isEmpty ? nil
-                                                       : ["target": name]) {
-            [weak self] result in
-            self?.renderRows(result, command: "vers")
-        }
-    }
-
-    /// swpage is a host-local driver for the software.list wire family,
-    /// not an x-command: it pages the same listing the Software module's
-    /// page will render, so the family can be watched working before
-    /// that page exists. "swpage [domain] [cursor]".
-    private func runSwPage(_ rest: [String]) {
-        let domain = rest.first { Int($0) == nil && !$0.hasPrefix("-") }
+    /// Not a command — a driver for the `software.list` family, which the
+    /// host implements itself. It stays because it is the only way to watch
+    /// that family page without the Software module's view in the way, and it
+    /// is local for the same reason `/clear` is: no guest can serve it, so it
+    /// cannot collide with one. `swpage [domain] [cursor]`.
+    private func runSwPage(_ rest: String) {
+        let words = rest.split(separator: " ").map(String.init)
+        let domain = words.first { Int($0) == nil && !$0.hasPrefix("-") }
             ?? "apps"
-        let cursor = rest.compactMap { Int($0) }.first
+        let cursor = words.compactMap { Int($0) }.first
         listener.listSoftware(domain: domain, cursor: cursor) {
             [weak self] result in
             guard let self else { return }
             switch result {
             case .failure(let failure):
                 self.append(.failure,
-                            "swpage: \(failure.message) [\(failure.code)]")
+                            "/swpage: \(failure.message) [\(failure.code)]")
             case .success(let listing):
                 if let note = listing.note {
                     self.append(.notice, "  (\(note))")
@@ -471,27 +250,108 @@ final class ConsoleModel: ObservableObject {
                 self.append(.notice,
                             "  \(listing.entries.count) entries"
                             + (listing.more
-                               ? "; more (swpage \(listing.domain) "
+                               ? "; more (/swpage \(listing.domain) "
                                  + "\(listing.cursor ?? 0))"
                                : "; end"))
             }
         }
     }
 
-    private func run(_ command: String) {
-        guard Self.commands.contains(command) else {
-            append(.failure,
-                   "\(command): not a declared command (try \"help\")")
+    // MARK: - History
+
+    private func historyAdd(_ command: String) {
+        if history.last != command {
+            history.append(command)
+            if history.count > Self.historyLimit {
+                history.removeFirst(history.count - Self.historyLimit)
+            }
+        }
+        historyPos = history.count
+    }
+
+    /// -1 walks back, +1 forward. Past the newest is the empty line being
+    /// edited, which is how every shell behaves.
+    func recallHistory(_ delta: Int) -> String? {
+        guard !history.isEmpty else { return nil }
+        let position = min(max(historyPos + delta, 0), history.count)
+        historyPos = position
+        return position == history.count ? "" : history[position]
+    }
+
+    // MARK: - Completion, from the guest
+
+    /// The completion for what is typed so far, or nil. Fetches the guest's
+    /// command list the first time it is asked and returns nil for that press
+    /// — the answer crosses a wire that measures in tens of milliseconds at
+    /// best, and blocking the field on it would feel like a hang.
+    func complete(_ prefix: String) -> String? {
+        guard !prefix.contains(" "), !prefix.hasPrefix(Self.localPrefix) else {
+            // Only the command name completes. Arguments are the guest's
+            // grammar, which this side does not know and will not guess.
+            return nil
+        }
+        if completions.isEmpty {
+            requestCompletions()
+            return nil
+        }
+        let matches = completions.filter { $0.hasPrefix(prefix) }
+        if matches.count == 1 {
+            return matches[0]
+        }
+        guard !matches.isEmpty else { return nil }
+        append(.notice, "  " + matches.joined(separator: "  "))
+        return commonPrefix(of: matches)
+    }
+
+    private func commonPrefix(of names: [String]) -> String? {
+        guard var shared = names.first else { return nil }
+        for name in names.dropFirst() {
+            shared = String(shared.commonPrefix(with: name))
+        }
+        return shared.isEmpty ? nil : shared
+    }
+
+    /// Discovery is a request, not a constant. Quiet on the way out and on
+    /// the way back: nothing is printed, because nobody typed it.
+    private func requestCompletions() {
+        guard !completionsRequested, case .connected = listener.state else {
             return
         }
-        listener.runCommand(command) { [weak self] result in
-            self?.render(command, result)
+        completionsRequested = true
+        listener.runCommand("help", line: "") { [weak self] result in
+            self?.absorbCompletions(result)
         }
     }
 
+    /// The first column of `help`'s list form is the command names — the one
+    /// structural promise that output makes (see the contract's `help`
+    /// entry). Anything else in there is prose for a human.
+    private func absorbCompletions(_ result: CommandResult) {
+        guard result.ok, let rows = result.output?["help"] else { return }
+        let names = rows.compactMap { $0.first }
+            .filter { name in
+                !name.isEmpty && name != "..."
+                    && name.allSatisfy { $0.isLetter || $0.isNumber }
+            }
+        guard !names.isEmpty else { return }
+        completions = names.sorted()
+    }
+
+    /// A new machine has its own commands, so the old list goes. Called by
+    /// HostAppState when the wire changes.
+    func forgetGuest() {
+        completions = []
+        completionsRequested = false
+    }
+
+    // MARK: - Rendering
+
+    /// One renderer for every command, which is what a dumb shell can have:
+    /// the contract's command output is grouped [label, value] rows for all
+    /// of them, so a command added to either guest renders here with no host
+    /// change at all. A failure — including `unknown-command` — is the
+    /// guest's own words, not a local guess at them.
     private func render(_ command: String, _ result: CommandResult) {
-        // Generic path for non-gestalt commands: any grouped [label, value]
-        // rows render aligned, so a new guest command needs no host code.
         if let error = result.error {
             append(.failure, "\(command): \(error.message) [\(error.code)]")
             return
@@ -500,12 +360,19 @@ final class ConsoleModel: ObservableObject {
             append(.output, "(ok)")
             return
         }
-        let width = output.values.joined()
-            .compactMap(\.first?.count).max() ?? 0
         for key in output.keys.sorted() {
-            for row in output[key] ?? [] where row.count >= 2 {
-                let label = row[0].padding(toLength: max(width, row[0].count),
-                                           withPad: " ", startingAt: 0)
+            let rows = output[key] ?? []
+            // Aligned per group, not across the whole reply: gestalt --full
+            // returns several groups whose labels have nothing to do with
+            // each other, and one shared width indents the short ones off
+            // the page.
+            let width = rows.map { $0.first?.count ?? 0 }.max() ?? 0
+            if output.count > 1 {
+                append(.notice, "[\(key)]")
+            }
+            for row in rows where row.count >= 2 {
+                let label = row[0].padding(toLength: width, withPad: " ",
+                                           startingAt: 0)
                 append(.output, "  \(label)  \(row[1])")
             }
         }

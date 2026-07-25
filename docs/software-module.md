@@ -273,8 +273,9 @@ source, so no `NSTableView` — with the domain picker, the same columns,
 and a Launch button sending `launch` with the entry's path. Model tests
 mirror `ProcessesModelTests` (paging, entry decode, running/off
 rendering); the listing decode is pinned by the rung-2 fixtures. Until
-this rung exists, the host console's local `swpage [domain] [cursor]`
-drives the family live.
+this rung exists, the host console's local `/swpage [domain] [cursor]`
+drove the family live; it is still there, now behind the `/` that marks
+every host-local verb (see [architecture.md](architecture.md#the-console-is-a-dumb-shell)).
 
 ## Failure honesty
 

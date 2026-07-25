@@ -8,7 +8,12 @@ this one.
 ## What this is
 
 Two applications and one contract between them: a PowerPC Carbon app for
-Mac OS 8.6–9.2.2 (the CarbonLib 1.6 range), and a native macOS app. No
+Mac OS 8.6–9.2.2 (the CarbonLib 1.6 range), and a native macOS app. A
+third, **NOW-68K** (`guest68k/`), speaks a subset of the same contract
+from a 68K Mac under System 7.1 over MacTCP — non-Carbon Toolbox C via
+Retro68, for machines Carbon cannot reach. It is a sibling of the Carbon
+guest, not a port of it: load `classic-mac-toolbox-ui` and
+`classic-mac-toolbox-platform` for that tree, not the Carbon skills. No
 TimBotTu runtime code is imported on either side. `now/` is a **nested
 repository with its own history**, gitignored by the parent exactly like
 `qemu/`.

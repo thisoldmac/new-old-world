@@ -10,6 +10,8 @@
 #include "machine_names.h"
 #include "capture.h"
 #include "census.h"
+#include "cmd_help.h"
+#include "cmd_line.h"
 #include "json.h"
 #include "prefs.h"
 #include "fileshare.h"
@@ -18,6 +20,7 @@
 #include "vprobe.h"
 #include "catsearch.h"
 #include "software.h"
+#include "proc_actions.h"
 
 const char *const kGestaltFullGroups[] = {
     "cpu", "memory", "os", "network", "hw", NULL
@@ -361,18 +364,70 @@ static void append_escaped(char *out, long cap, long *pos, const char *s)
     }
 }
 
-static void run_gestalt(long id, char *out, long cap)
+/* The group a gestalt console flag selects, or NULL. The guest's own
+   console reads the same mapping (console_model.c's flag_to_group); this is
+   the wire's copy of one grammar, and the reason the host has none. */
+static const char *gestalt_flag_group(const char *flag)
+{
+    if (strcmp(flag, "--cpu") == 0) { return "cpu"; }
+    if (strcmp(flag, "--memory") == 0) { return "memory"; }
+    if (strcmp(flag, "--os") == 0) { return "os"; }
+    if (strcmp(flag, "--network") == 0) { return "network"; }
+    if (strcmp(flag, "--hardware") == 0) { return "hw"; }
+    return NULL;
+}
+
+static void run_gestalt(const char *request_json, long id, char *out, long cap)
 {
     GestaltRow rows[kGestaltMaxRows];
     int count = now_gestalt_gather(rows, kGestaltMaxRows);
     long pos = 0;
     int i;
     /* every group, in a stable order, snapshot first */
-    static const char *const groups[] = {
+    static const char *const all_groups[] = {
         "snapshot", "cpu", "memory", "os", "network", "hw", NULL
     };
+    static const char *const snapshot_only[] = { "snapshot", NULL };
+    const char *const *groups = all_groups;
+    const char *one[2];
+    char line[128];
+    char word[32];
     int g;
     Boolean first_group = true;
+
+    /* No line: a typed caller, which gets every group as it always has.
+       A line: a human, who asked for a slice — and the slice is chosen HERE,
+       because the console that sent the line cannot read this output's
+       shape. */
+    if (now_cmd_line(request_json, line, sizeof line)) {
+        if (line[0] == '\0') {
+            groups = snapshot_only;
+        } else if (now_cmd_line_word(line, "--full")) {
+            groups = kGestaltFullGroups;
+        } else {
+            const char *group = NULL;
+
+            /* The group IS a flag, so this reads the line's first word
+               rather than going through now_cmd_arg_word, which skips
+               flags. */
+            now_cmd_first_word(line, word, sizeof word);
+            group = gestalt_flag_group(word);
+            if (group == NULL) {
+                char esc[64];
+
+                now_json_escape(word, esc, sizeof esc);
+                snprintf(out, (size_t)cap,
+                         "{\"type\":\"command.result\",\"id\":%ld,"
+                         "\"ok\":false,\"error\":{\"code\":\"unknown-group\","
+                         "\"message\":\"no gestalt group \\\"%s\\\" - see "
+                         "help gestalt\"}}", id, esc);
+                return;
+            }
+            one[0] = group;
+            one[1] = NULL;
+            groups = one;
+        }
+    }
 
     pos += snprintf(out, cap,
                     "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
@@ -423,6 +478,7 @@ static void run_screenshot(const char *request_json, long id,
     ShotStats stats;
     char err[96];
     char value[16];
+    char line[128];
     short depth;
     short bands = 1;
     Boolean save = true;
@@ -430,6 +486,26 @@ static void run_screenshot(const char *request_json, long id,
 
     now_prefs_load(&prefs);
     depth = prefs.shot_depth;
+    /* A console's flags, then the typed args, which win. An unrecognised
+       flag is ignored rather than refused: a typo must not cost a capture
+       on a machine where one takes a tenth of a second of VRAM reads. */
+    if (now_cmd_line(request_json, line, sizeof line)) {
+        if (now_cmd_line_flag_value(line, "--depth", value, sizeof value)) {
+            long d = strtol(value, NULL, 10);
+            if (capture_depth_is_supported((short)d)) {
+                depth = (short)d;
+            }
+        }
+        if (now_cmd_line_flag_value(line, "--bands", value, sizeof value)) {
+            long b = strtol(value, NULL, 10);
+            if (b >= 1 && b <= kCaptureMaxBands) {
+                bands = (short)b;
+            }
+        }
+        if (now_cmd_line_word(line, "--no-save")) {
+            save = false;
+        }
+    }
     if (now_json_find_string(request_json, "depth", value, sizeof value)) {
         long d = strtol(value, NULL, 10);
         if (capture_depth_is_supported((short)d)) {
@@ -541,11 +617,10 @@ static void run_ls(const char *request_json, long id, char *out, long cap)
     int n, i;
     long pos;
 
-    path[0] = '\0';
-    if (request_json != NULL) {
-        /* HFS path fed to the File Manager: decode UTF-8 to MacRoman. */
-        now_json_find_text(request_json, "path", path, sizeof path);
-    }
+    /* The whole line is the path: an HFS name has spaces and quoting them
+       would be a second grammar. Decoded, not raw — the File Manager wants
+       MacRoman, and "ls Café:Notes" arrives as UTF-8. */
+    now_cmd_arg_rest(request_json, "path", path, sizeof path);
     n = now_files_list(path, 1, entries, kConsolePage, &more, &next);
     if (n < 0) {
         snprintf(out, cap,
@@ -629,12 +704,23 @@ static void run_tail(const char *request_json, long id, char *out, long cap)
     /* tail never returns more than 40 lines (the cap below); size the
        index to that, not to the whole ring, which is now thousands. */
     const char *starts[kLogTailMax];
+    char line[128];
     long want = now_json_find_int(request_json, "lines", 20);
     long pos;
     long budget;
     int got, first, i;
     char *p;
 
+    /* "tail 40": the count is the first integer on the line. The typed
+       arg wins, so a module asking for 20 still gets 20. */
+    if (now_json_value(request_json, "lines") == NULL
+        && now_cmd_line(request_json, line, sizeof line)) {
+        long typed;
+
+        if (now_cmd_line_int(line, &typed)) {
+            want = typed;
+        }
+    }
     if (want < 1) {
         want = 1;
     }
@@ -731,10 +817,7 @@ static void run_census(const char *request_json, long id, char *out, long cap)
     long pos;
     int i;
 
-    probe[0] = '\0';
-    if (request_json != NULL) {
-        now_json_find_string(request_json, "probe", probe, sizeof probe);
-    }
+    now_cmd_arg_word(request_json, "probe", probe, sizeof probe);
     if (probe[0] == '\0') {
         strcpy(probe, "overview");
     }
@@ -854,10 +937,7 @@ static void run_sw(const char *request_json, long id, char *out, long cap)
     long pos;
     int n, i;
 
-    domain[0] = '\0';
-    if (request_json != NULL) {
-        now_json_find_string(request_json, "domain", domain, sizeof domain);
-    }
+    now_cmd_arg_word(request_json, "domain", domain, sizeof domain);
     if (domain[0] == '\0') {
         n = now_software_overview(rows, kSoftwareRowMax);
     } else {
@@ -901,11 +981,10 @@ static void run_launch(const char *request_json, long id, char *out,
     char msg[240];
     char esc[480];
 
-    arg[0] = '\0';
-    if (request_json != NULL) {
-        /* "target", never "name" — see run_vers. */
-        now_json_find_text(request_json, "target", arg, sizeof arg);
-    }
+    /* "target", never "name" — see run_vers. The whole console line is the
+       target, flags and all: the grammar is proc_quit_args.c's and
+       now_software_launch's, parsed here, once. */
+    now_cmd_arg_rest(request_json, "target", arg, sizeof arg);
     if (now_software_launch(arg, msg, sizeof msg) < 0) {
         now_log(kLogWarn, "sw", "#%ld launch refused: %.80s", id, msg);
         now_json_escape(msg, esc, sizeof esc);
@@ -922,6 +1001,65 @@ static void run_launch(const char *request_json, long id, char *out,
              "\"output\":{\"launch\":[[\"Launch\",\"%s\"]]}}", id, esc);
 }
 
+/* quit: launch's opposite number, and the harder half. launch either
+   opened something or did not; quit has to distinguish "gone" from
+   "asked, and it said no" — so the outcome travels as its own machine-
+   readable row beside the sentence, and only the two states that mean
+   "the process is not running" answer ok:true.
+   ok:false for a DECLINED quit is deliberate. The command did exactly
+   what the platform allows and the reply is still a failure, because the
+   caller's purpose — usually "the port is free now, go probe" — was not
+   served. A measurement loop that reads ok:true and proceeds is the
+   defect this row exists to prevent. */
+static void run_quit(const char *request_json, long id, char *out, long cap)
+{
+    char arg[256];
+    char msg[240];
+    char esc[480];
+    NowProcQuitOutcome outcome;
+    const char *state;
+    const char *code = NULL;
+
+    /* "target", never "name" — see run_vers. The whole console line is the
+       target, flags and all: the grammar is proc_quit_args.c's and
+       now_software_launch's, parsed here, once. */
+    now_cmd_arg_rest(request_json, "target", arg, sizeof arg);
+    outcome = now_proc_quit_by_name(arg, msg, sizeof msg);
+    switch (outcome) {
+    case kProcQuitGone:         state = "gone"; break;
+    case kProcQuitNotRunning:   state = "not-running"; break;
+    case kProcQuitSent:         state = "sent-unconfirmed"; break;
+    case kProcQuitStillRunning: state = "still-running";
+                                code = "quit-declined"; break;
+    case kProcQuitAmbiguous:    state = "ambiguous";
+                                code = "quit-ambiguous"; break;
+    case kProcQuitRefusedSelf:  state = "refused-self";
+                                code = "quit-refused"; break;
+    case kProcQuitSendFailed:   state = "undeliverable";
+                                code = "quit-undeliverable"; break;
+    case kProcQuitBadArgs:
+    default:                    state = "bad-args";
+                                code = "quit-bad-args"; break;
+    }
+
+    now_json_escape(msg, esc, sizeof esc);
+    /* Mutations log both outcomes; a declined quit that is only ever seen
+       in a window nobody kept is the one worth having on the platter. */
+    now_log(code == NULL ? kLogInfo : kLogWarn, "proc",
+            "#%ld quit [%s] %.80s", id, state, msg);
+    if (code != NULL) {
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+                 "\"error\":{\"code\":\"%s\",\"message\":\"%s\"}}",
+                 id, code, esc);
+        return;
+    }
+    snprintf(out, (size_t)cap,
+             "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+             "\"output\":{\"quit\":[[\"Quit\",\"%s\"],"
+             "[\"Outcome\",\"%s\"]]}}", id, esc, state);
+}
+
 /* reveal: launch's read-only twin — it shows a selection in this Mac's
    Finder and mutates nothing, so it logs at info either way. */
 static void run_reveal(const char *request_json, long id, char *out,
@@ -931,11 +1069,10 @@ static void run_reveal(const char *request_json, long id, char *out,
     char msg[240];
     char esc[480];
 
-    arg[0] = '\0';
-    if (request_json != NULL) {
-        /* "target", never "name" — see run_vers. */
-        now_json_find_text(request_json, "target", arg, sizeof arg);
-    }
+    /* "target", never "name" — see run_vers. The whole console line is the
+       target, flags and all: the grammar is proc_quit_args.c's and
+       now_software_launch's, parsed here, once. */
+    now_cmd_arg_rest(request_json, "target", arg, sizeof arg);
     if (now_software_reveal_target(arg, msg, sizeof msg) < 0) {
         now_log(kLogInfo, "sw", "#%ld reveal declined: %.80s", id, msg);
         now_json_escape(msg, esc, sizeof esc);
@@ -963,21 +1100,18 @@ static void run_vers(const char *request_json, long id, char *out,
     long pos;
     int n, i;
 
-    arg[0] = '\0';
-    if (request_json != NULL) {
-        /* "target", never "name": the frame is scanned FLAT, and an arg
-           key that shadows an envelope key (type/id/name/args) is read
-           as the command name — launch shipped that bug to metal. The
-           rule lives in the contract's x-commands preamble.
+    /* "target", never "name": the frame is scanned FLAT, and an arg key
+       that shadows an envelope key (type/id/name/args/line) is read as the
+       command name — launch shipped that bug to metal. The rule lives in
+       the contract's x-commands preamble.
 
-           find_TEXT, never find_string: the host sends an HFS name as
-           UTF-8 (® is 0xC2 0xAE), and FSMakeFSSpec wants the MacRoman
-           byte (0xA8). find_text is the inbound half of now_json_escape
-           — it decodes \u and raw UTF-8 back to MacRoman. Without it a
-           non-ASCII name round-trips to "no such file" and the echoed
-           path double-mangles (® -> ¬Æ). */
-        now_json_find_text(request_json, "target", arg, sizeof arg);
-    }
+       find_TEXT, never find_string, for both the typed arg and the console
+       line: the host sends an HFS name as UTF-8 (® is 0xC2 0xAE), and
+       FSMakeFSSpec wants the MacRoman byte (0xA8). find_text is the inbound
+       half of now_json_escape — it decodes \u and raw UTF-8 back to
+       MacRoman. Without it a non-ASCII name round-trips to "no such file"
+       and the echoed path double-mangles (® -> ¬Æ). */
+    now_cmd_arg_rest(request_json, "target", arg, sizeof arg);
     n = now_software_vers(arg, rows, 40, msg, sizeof msg);
     if (n < 0) {
         char esc[480];
@@ -1003,11 +1137,92 @@ static void run_vers(const char *request_json, long id, char *out,
     snprintf(out + pos, (size_t)(cap - pos), "]}}");
 }
 
+/* help: what THIS machine serves, asked of the machine that serves it.
+   The rows come from cmd_help.c, the one table this Mac's own console reads
+   too — so the answer cannot drift from the help a human sees here.
+
+   Only the WIRE rows: the console-local verbs (put, mv, trash, ...) are not
+   command.requests, and offering one to the other side would send something
+   this dispatch answers "unknown-command".
+
+   Bounded by BYTES against the control-frame cap, oldest-first: a list that
+   silently loses its tail is a list that lies about what is installed, so
+   the truncation says so in a row of its own. */
+static void run_help(const char *request_json, long id, char *out, long cap)
+{
+    char topic[32];
+    const NowCommandDoc *doc;
+    long pos;
+    int i;
+
+    now_cmd_arg_word(request_json, "topic", topic, sizeof topic);
+
+    if (topic[0] != '\0') {
+        char esc[240];
+
+        doc = now_command_doc(topic);
+        if (doc == NULL || !doc->wire) {
+            now_json_escape(topic, esc, sizeof esc);
+            snprintf(out, (size_t)cap,
+                     "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+                     "\"error\":{\"code\":\"unknown-command\","
+                     "\"message\":\"%s is not a command this Mac knows\"}}",
+                     id, esc);
+            return;
+        }
+        pos = snprintf(out, (size_t)cap,
+                       "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                       "\"output\":{\"help\":[", id);
+        now_json_escape(doc->summary, esc, sizeof esc);
+        pos += snprintf(out + pos, (size_t)(cap - pos), "[\"%s\",\"%s\"]",
+                        doc->name, esc);
+        now_json_escape(doc->usage, esc, sizeof esc);
+        pos += snprintf(out + pos, (size_t)(cap - pos),
+                        ",[\"Usage\",\"%s\"]", esc);
+        for (i = 0; doc->detail != NULL && doc->detail[i] != NULL; ++i) {
+            if (pos > cap - 320) {
+                break;
+            }
+            now_json_escape(doc->detail[i], esc, sizeof esc);
+            pos += snprintf(out + pos, (size_t)(cap - pos),
+                            ",[\"\",\"%s\"]", esc);
+        }
+        snprintf(out + pos, (size_t)(cap - pos), "]}}");
+        return;
+    }
+
+    pos = snprintf(out, (size_t)cap,
+                   "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                   "\"output\":{\"help\":[", id);
+    for (i = 0; kNowCommandDocs[i].name != NULL; ++i) {
+        char esc[160];
+
+        if (!kNowCommandDocs[i].wire) {
+            continue;
+        }
+        if (pos > cap - 320) {
+            pos += snprintf(out + pos, (size_t)(cap - pos),
+                            "%s[\"...\",\"more commands than fit one frame\"]",
+                            out[pos - 1] != '[' ? "," : "");
+            break;
+        }
+        now_json_escape(kNowCommandDocs[i].summary, esc, sizeof esc);
+        pos += snprintf(out + pos, (size_t)(cap - pos), "%s[\"%s\",\"%s\"]",
+                        pos > 0 && out[pos - 1] != '[' ? "," : "",
+                        kNowCommandDocs[i].name, esc);
+    }
+    snprintf(out + pos, (size_t)(cap - pos), "]}}");
+}
+
 void now_command_run(const char *name, const char *request_json, long id,
                      char *out, long cap)
 {
+    if (strcmp(name, "help") == 0) {
+        run_help(request_json, id, out, cap);
+        return;
+    }
     if (strcmp(name, "gestalt") == 0) {
-        run_gestalt(id, out, cap);
+        run_gestalt(request_json, id, out, cap);
         return;
     }
     if (strcmp(name, "screenshot") == 0) {
@@ -1048,6 +1263,10 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "launch") == 0) {
         run_launch(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "quit") == 0) {
+        run_quit(request_json, id, out, cap);
         return;
     }
     if (strcmp(name, "reveal") == 0) {

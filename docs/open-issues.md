@@ -379,6 +379,85 @@ Not load-bearing; parked as a known gap rather than chased.
 Everything here builds and passes its tests. None of it has been watched
 working on the PowerBook.
 
+- **The dumb-shell console, both guests** (2026-07-25, branch
+  `thread/host-menu-dumb-console`). The host console no longer knows what
+  commands the guest has: it sends `command.request` with `line` — the raw
+  text a human typed — and renders whatever comes back. Every argument
+  grammar moved to the machine that serves the verb
+  (`guest/src/cmd_line.c`, natively tested by mutation), `help` became an
+  x-command answered from the one doc table each guest already showed its
+  own console (`guest/src/cmd_help.c`,
+  `guest68k/src/commands68.c`), and the host's Tab completion is that
+  answer at runtime.
+
+  Tested here: 459 host tests, the two new native guest tests, and both
+  guests cross-compile clean at `-Wall -Wextra -Werror`. **Nothing has
+  been typed into a console on either machine.** What that leaves
+  specifically unverified:
+
+  - `gestalt` slicing now happens guest-side from the line (`--full`,
+    `--cpu`, …). Absent-`line` behaviour is unchanged for modules, but no
+    human has typed `gestalt --memory` at a PowerBook.
+  - `screenshot --depth 8 --no-save` and `tail 40` parse from the line
+    for the first time; the old host-side parsers are gone.
+  - `help` on the PowerPC guest builds a ~1.2 KB reply against a 4 KB
+    control frame with a byte-budget truncation row. The budget is
+    reasoned, not measured on the wire.
+  - `help` on NOW-68K builds into a 512-byte payload buffer and measures
+    ~260 by hand-count. It has never been sent.
+  - The MacRoman decode of an accented path typed as a console line
+    (`ls Café:Notes`) is covered by a native test on the decoder, not by
+    a file with that name on a real HFS volume.
+
+- **⌘Q's farewell, on metal** (2026-07-25, same branch). The host now
+  returns `terminateLater` and waits for `bye shutting-down` to reach the
+  socket before the process ends, bounded at 0.5 s. Tested here by
+  sequencing (mutation-verified: a shutDown that reports synchronously
+  fails), and the menu bar and its Quit item were driven live through
+  accessibility on this Mac. **Not verified:** that the ⌘Q *keystroke*
+  dispatches (script-driven activation is refused in this environment, so
+  the item was clicked rather than typed), and that a PowerBook watching
+  the wire draws the right conclusion — the guest's own "host went away"
+  handling has not been observed against a real quit.
+
+- **`quit <name>` — the deploy loop's missing half** (2026-07-25,
+  branch `thread/guest-quit-command`). A console command and x-command
+  that composes `process.list` → match by name → re-validate →
+  `process.quit` → **re-list**, so it can report `gone` apart from
+  `still-running`. Design, outcome table and the decisions behind each
+  case: [`processes-and-peek.md`](processes-and-peek.md#quit-name--the-same-action-named-the-way-a-person-names-it).
+
+  **Emulator-verified, end to end, on mac99 / OS 9.1 / CarbonLib 1.6** —
+  both invocation paths, and every outcome the composition can produce:
+
+  | Watched | Result |
+  |---|---|
+  | Guest console `quit SimpleText` | `"SimpleText" is gone (0.3 s)` |
+  | Guest console `quit --no-wait SimpleText` | `asked "SimpleText" to quit; NOT confirmed (--no-wait)` |
+  | Guest console `help quit` | renders |
+  | Wire `quit SimpleText` | `gone (0.1 s)`, and confirmed absent by an independent `process.list` |
+  | Wire, dirty document | `[quit-declined] … is STILL RUNNING after 4 s`, with SimpleText visibly sitting on its Save dialog |
+  | Wire, nothing of that name | `not-running`, `ok:true` |
+  | Wire, its own name | `[quit-refused]`, and still there afterwards |
+  | Wire, no target / unknown flag | `[quit-bad-args]` |
+
+  The acceptance driver is committed: `MetalQuitTests` (`NOW_METAL=1`,
+  plus `NOW_QUIT_DIRTY=1` for the human-in-the-loop declined case).
+
+  **What the PowerBook still has to settle.** The emulator says nothing
+  about *timing* on a 117 MHz 603e: SimpleText answered in 0.1–0.3 s
+  there, and the 6 s default was chosen for a slower machine, not
+  measured on one. Nor has the deliberate stall been felt on metal — for
+  up to `--wait N` the guest's window does not repaint (it keeps
+  servicing the wire; see [`nested-loops.md`](nested-loops.md)), and
+  "does that read as a hang?" is a question about a real screen. An
+  isolated copy is staged at `Lab:now-quit` on the 1400c (its own name,
+  so its own preferences; fork sizes verified against the local
+  MacBinary, 565127 / 2439). Being non-canonical it starts with no
+  preferences and dials 10.0.2.2, so the **console** path needs no host
+  at all — that is the one to run first. The real target is NetPresenz
+  on a 180c, which is a different machine and a different client.
+
 - **`catsearch` — the Software module's feasibility probe** (2026-07-22).
   Times a whole-volume `PBCatSearch` sweep for APPL files on the startup
   volume, in 15-tick slices, cold then warm. Console verb on both sides
@@ -1022,7 +1101,80 @@ item to be acted on between check and use. The exact guest-side revalidation
 field and command behavior remain the next contract-first mutation gate. Tree
 deployment and mandatory-preview manifest prune follow only after it.
 
+## NOW-68K: what has not been on the machine
+
+The 68K guest for the PowerBook 180c is metal-proven for dial, handshake,
+keepalive, health, logging, clean quit, `launch` and the `gone` path of
+`quit`. Everything below has been built and cross-compiled and has never
+run, on metal or in an emulator. Listed because "we shipped it and here is
+what we still do not know" is the useful half.
+
+- **The declined quit.** The whole re-list composition exists so a target
+  that stops to ask about an unsaved document answers `ok:false` /
+  `quit-declined` rather than claiming success. Only the `gone` path has
+  been seen. Until the declined path is watched on the machine, the one
+  behaviour that command was written for is unverified.
+- **The farewell.** `bye` and `net_close`'s orderly TCPClose have never
+  been exercised; every close observed so far was the abortive path.
+- **The redial.** Fixed-interval reconnect after a failed dial, and the
+  human start/stop that gates it, have not been driven to failure.
+- **Oversized control frames.** The skip-not-fatal path (a frame larger
+  than our 4 KB buffer but inside the protocol's 32 KB) is implemented and
+  untriggered; nothing has yet sent one.
+- **`launch` at scale.** The catalog search is double-bounded on purpose —
+  a whole-volume Finder search has hard-wedged this fleet before — but it
+  has only resolved an application sitting in an obvious place. A
+  truncated search is supposed to say so rather than report a clean
+  "not found"; that branch is untested.
+- **The confirm wait under load.** It yields with an event mask of zero and
+  pumps the wire each pass, with a re-entrancy guard so a command arriving
+  mid-wait cannot recurse into it. Neither the pump nor the guard has been
+  observed under a second concurrent request.
+
+- **NOW-68K's `hello`, `ping` and `error` are not conformance-checked.**
+  `GuestWireConformanceTests` proves every message it can assemble from
+  guest source against the host decoder and the contract, but it cannot
+  read a message built across several calls — and the 68K guest builds all
+  of them that way, because it has no printf family (newlib's float tail
+  costs ~42 KB of a 384 KB partition). They are named in the
+  cannot-check set so the gap is visible; they want hand-written fixtures
+  in `GuestWireFixtureTests`. `hello` and `ping` have at least been
+  exercised live against a real host; `error` has not.
+
+Two things that are known-wrong rather than merely unverified:
+
+- **A skipped metal test reports as passed.** `MetalQuitTests` ran three
+  cases against the 68K guest, skipped all three ("no Mac dialled in within
+  120s" — the port was held), and the suite reported `passed`. A metal gate
+  that reads green when it never ran is worse than no gate. It also assumes
+  the PowerPC guest: it confirms `gone` a second time via `process.list`,
+  which NOW-68K does not implement.
+- **The contract's reconnect clause is inaccurate to both guests.** It
+  mandates "capped backoff (2s doubling to 30s)", but the PowerPC guest has
+  shipped a fixed-interval option all along (`prefs.h` `retry_secs`,
+  chosen in `wire.c::enter_backoff` because "predictable reconnects beat
+  adaptive politeness on a private LAN"), and NOW-68K is fixed-interval by
+  design. An amendment is drafted — cadence becomes guest policy with a
+  1 s floor, backoff demoted to a reference default — and not yet applied.
+
 ## Rough edges
+
+**A console line reaching a guest older than `line` is misread, not
+refused.** Such a guest ignores the field and runs the command bare, so
+`ls Lab:Code` lists the share root and says nothing about the path it
+dropped. The field is additive by the contract's own rules — an unknown
+field is ignored — and this is the one place that politeness costs
+honesty. Both guests in this tree read it; the exposure is an older
+binary still sitting on a machine, which is a realistic state for the
+PowerBook. Stated beside the field in `contract/asyncapi.yaml` rather
+than only here.
+
+**No `help`, no completion.** Tab completion is the guest's own answer,
+so a guest that does not serve `help` has none — deliberately, because a
+host-side fallback list is exactly what was removed. It does mean a shell
+that offers nothing until the guest is updated, and `help` there answers
+`unknown-command`, which reads as an error rather than as "this build is
+old".
 
 **Reverse streaming still needs longer and adversarial metal evidence.**
 The PowerBook ladder now covers direct data-fork and MacBinary pulls

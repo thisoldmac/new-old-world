@@ -66,6 +66,25 @@ everywhere.
 | `connection_module.c` — text fields | `HandleControlClick` | No | Selection-drag duration |
 | `files_browser_view.c` — the list | `HandleControlClick` | No | Selection/sort-drag duration |
 | `main.c` | `MenuSelect`, `DragWindow`, `TrackGoAway`, `GrowWindow`, `TrackBox` | No | Mouse-down / drag duration |
+| `proc_actions.c` — `quit`'s confirmation wait | own `WaitNextEvent(0, …)` yield loop | **Yes** — `now_wire_pump()` every pass | ≤ `--wait N` (6 s default, 20 s ceiling) |
+
+The `quit` row is the one deliberate stall we *added*, so it is worth
+stating why it cannot be avoided and what it does and does not cost. A
+`kAEQuitApplication` event sits in the target's queue until the Process
+Manager schedules it, and on a cooperatively scheduled machine that only
+happens while somebody else is inside `WaitNextEvent`. Confirming the
+outcome — the whole point of the verb — therefore requires yielding.
+
+The loop yields with an event mask of **0**: it dequeues nothing, so no
+click or keystroke is lost (they stay queued for the main loop), and it
+does not re-enter event dispatch from inside a command. What it does cost
+is a redraw: the guest's own window does not repaint for the duration. It
+services the connection throughout, and when the WIRE is the caller,
+`now_wire_pump`'s reentrancy guard makes the pump a correct no-op because
+`conn_service` is already on the stack. Bounded by construction, and well
+inside the host's 75 s idle timeout — `runCommand` arms no watchdog of its
+own, so that timeout is the only backstop and the 20 s ceiling exists to
+stay far from it.
 
 The remaining non-pumping sites are all **human-scale** — seconds — so
 they stall a stream and delay a heartbeat but do not reach the 65 s

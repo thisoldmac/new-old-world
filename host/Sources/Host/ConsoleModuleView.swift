@@ -3,7 +3,6 @@ import SwiftUI
 struct ConsoleModuleView: View {
     @ObservedObject var model: ConsoleModel
     @ObservedObject var listener: GuestListener
-    @FocusState private var inputFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -23,7 +22,8 @@ struct ConsoleModuleView: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text("Console")
                     .font(.largeTitle.weight(.semibold))
-                Text("A shell into the connected Mac — declared commands only.")
+                Text("A shell into the connected Mac. Lines go across as "
+                     + "typed; \"help\" asks it what it serves.")
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -90,17 +90,16 @@ struct ConsoleModuleView: View {
             Text(promptLabel)
                 .font(.system(.body, design: .monospaced))
                 .foregroundStyle(.secondary)
-            TextField("command", text: $model.input)
-                .textFieldStyle(.plain)
-                .font(.system(.body, design: .monospaced))
-                .focused($inputFocused)
-                .onSubmit {
-                    model.submit()
-                    inputFocused = true
-                }
-                .disabled(!isConnected)
+            // AppKit, for ↑/↓ history and Tab completion — see
+            // ConsoleInputField for why SwiftUI cannot serve them here.
+            ConsoleInputField(
+                text: $model.input,
+                isEnabled: isConnected,
+                placeholder: "command",
+                onSubmit: { model.submit() },
+                onRecall: { model.recallHistory($0) },
+                onComplete: { model.complete($0) })
         }
-        .onAppear { inputFocused = true }
     }
 
     private var isConnected: Bool {
