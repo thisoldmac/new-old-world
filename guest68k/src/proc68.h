@@ -78,6 +78,31 @@ ProcOutcome proc_quit_named(const char *name, long wait_ticks,
  * Bound the search and say so in detail if it was truncated. */
 short proc_launch_named(const char *name, char *detail, long detail_cap);
 
+/* The bare-name search's TOTAL wall-clock budget, in seconds, for the dev
+ * settings file to shorten (n68_devsettings.h :: launch-search-seconds).
+ *
+ * This exists for one reason: the truncation report - the branch that says a
+ * search ran out of time rather than pretending a clean "not found" - has
+ * never executed on any machine, because the catalog on the machine we have
+ * finishes in about two seconds against a twenty-second budget. A branch
+ * nobody has watched is a branch nobody knows the behaviour of, and the way
+ * to watch this one is to make the budget expire on purpose.
+ *
+ * The compiled-in default is the SHIPPED behaviour and is what these return
+ * when no settings file says otherwise; a value outside
+ * kN68DevLaunchSearchMin/MaxSecs is ignored, leaving the default in place,
+ * because a settings file must never leave the application worse off than
+ * having none. The per-call slice bound is NOT settable and does not move:
+ * the double bound is what keeps a whole-volume search from wedging the
+ * machine, and only the outer one is being made adjustable.
+ *
+ * A caller that shortens this MUST make the value visible to the human
+ * (window.c prints it in the console and the log). A one-second budget makes
+ * `launch` fail to find applications that are really there, and the only
+ * thing worse than that in the lab is that happening unannounced. */
+void           proc_set_launch_search_seconds(unsigned short seconds);
+unsigned short proc_launch_search_seconds(void);
+
 /* Running processes, newest first, for the human and for the quit matcher.
  * Fills up to cap entries and returns the count. Names are Pascal strings
  * converted to C, truncated to 31 characters (the HFS limit they came from). */

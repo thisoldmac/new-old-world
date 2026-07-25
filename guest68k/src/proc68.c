@@ -35,6 +35,10 @@
 #include <string.h>
 
 #include "wire68.h"
+/* For the launch-search budget's bounds and its ONE statement of the default,
+ * in seconds. This header is Toolbox-free, so including it here costs
+ * nothing but the constants. */
+#include "n68_devsettings.h"
 
 /* HFS's own name limit (31 characters + NUL), matching ProcEntry.name's
  * size in proc68.h. Not proc_quit_args.h's kProcQuitNameMax - this file
@@ -112,6 +116,31 @@ static int append_ascii(char *buf, long cap, long *pos, const char *s)
         }
         buf[(*pos)++] = ((unsigned char)*s >= 0x80) ? '?' : *s;
         ++s;
+    }
+    return 1;
+}
+
+/* Appends a small unsigned decimal. Not numfmt.h for the same reason the
+ * rest of this file is not: one append helper family, one set of bounds
+ * conventions. Digits are ASCII by construction, so this does not go
+ * through append_ascii's high-bit mapping. Only used for the launch-search
+ * budget, which is bounded to three digits by proc68.h; the buffer is sized
+ * for a full unsigned long anyway rather than for today's caller. */
+static int append_uint(char *buf, long cap, long *pos, unsigned long value)
+{
+    char digits[12];
+    int  n = 0;
+
+    do {
+        digits[n++] = (char)('0' + (value % 10));
+        value /= 10;
+    } while (value != 0 && n < (int)sizeof digits);
+
+    while (n > 0) {
+        if (*pos < 0 || *pos >= cap) {
+            return 0;
+        }
+        buf[(*pos)++] = digits[--n];
     }
     return 1;
 }
@@ -524,12 +553,50 @@ ProcOutcome proc_quit_named(const char *name, long wait_ticks,
  * serviced between slices (via yield_ticks/wire_idle) rather than
  * blocking the whole budget in one Toolbox call. */
 enum {
+    /* commands68.c has its own identical kTicksPerSecond. Not lifted into a
+     * shared header in this pass because that means editing a file this
+     * thread does not own, and 60 ticks to the second is a fixed property of
+     * the machine rather than a limit anyone may change - the failure mode
+     * AGENTS.md's "state a limit once" warns about (two copies drifting)
+     * cannot occur here. Worth folding together the next time both files are
+     * open anyway. */
+    kTicksPerSecond           = 60,
     kLaunchSearchSliceTicks   = 60,     /* ~1 s per PBCatSearchSync call */
-    kLaunchSearchBudgetTicks  = 1200,   /* ~20 s total, catsearch's bound */
+    /* ~20 s total, catsearch's bound. DERIVED, not typed: the number lives
+     * once, in n68_devsettings.h, because the settings file's default when
+     * the key is absent and the constant compiled in here must be the same
+     * twenty seconds or the file's "absent means unchanged" promise is a
+     * lie. */
+    kLaunchSearchBudgetTicks  = kN68DevLaunchSearchDefaultSecs * kTicksPerSecond,
     kLaunchSearchMaxRetries   = 3,      /* catChangedErr: restart, bounded */
     kLaunchRootWalkMaxIndex   = 512     /* fallback: root-level entries only,
                                          * see the comment on root_walk() */
 };
+
+/* The budget actually in force: the compiled-in default until the dev
+ * settings file overrides it (proc68.h). Four bytes of file-static, and the
+ * only mutable state in this file. The per-call slice above is NOT settable
+ * - see proc68.h on why only the outer bound moves. */
+static unsigned long gLaunchSearchBudgetTicks = kLaunchSearchBudgetTicks;
+
+void proc_set_launch_search_seconds(unsigned short seconds)
+{
+    /* Re-validated here rather than trusted from the parser. The parser is
+     * the only caller today, but a bound that lives only in the caller is a
+     * bound that disappears the first time someone adds a second caller -
+     * and the value this one guards is the one that stops a whole-volume
+     * search from running unbounded. */
+    if (seconds < kN68DevLaunchSearchMinSecs
+        || seconds > kN68DevLaunchSearchMaxSecs) {
+        return;                         /* leave the shipped default alone */
+    }
+    gLaunchSearchBudgetTicks = (unsigned long)seconds * kTicksPerSecond;
+}
+
+unsigned short proc_launch_search_seconds(void)
+{
+    return (unsigned short)(gLaunchSearchBudgetTicks / kTicksPerSecond);
+}
 
 /* True if spec names a real file whose Finder type is 'APPL' (the literal
  * multi-char constant, matching log.c's 'ttxt'/'TEXT' precedent - this
@@ -667,7 +734,7 @@ static Boolean root_walk_find(short vol, const char *name, FSSpec *out)
 }
 
 /* Primary path for a bare name: PBCatSearchSync over the whole startup
- * volume, bounded to kLaunchSearchBudgetTicks total wall-clock time
+ * volume, bounded to gLaunchSearchBudgetTicks total wall-clock time
  * regardless of what its return codes turn out to mean at the boundary -
  * see the comment above kLaunchSearchBudgetTicks. Returns true and fills
  * *out on a match; false with *truncated set if the budget ran out before
@@ -768,7 +835,7 @@ static Boolean cat_search_find(short vol, const char *name, FSSpec *out,
          * which PBCatSearchSync updates in place, as long as the overall
          * budget allows. */
         if ((unsigned long)TickCount() - budget_start
-            >= (unsigned long)kLaunchSearchBudgetTicks) {
+            >= gLaunchSearchBudgetTicks) {
             *truncated = true;
             return false;
         }
@@ -837,9 +904,30 @@ static short launch_bare_name(const char *name, char *detail, long cap)
     }
 
     if (truncated) {
-        set_detail(detail, cap, "launch: search of ", name,
-                   " truncated at the time budget - not found so far, "
-                   "may exist deeper in the catalog");
+        /* The budget is NAMED in the sentence, not just alluded to. Once it
+         * is settable from a file, "the time budget" could be twenty
+         * seconds or one, and those are two entirely different pieces of
+         * news: the first says the volume is enormous or the disk is sick,
+         * the second says someone left a lab settings file in place. The
+         * number is the difference between them, and this line is where a
+         * human is looking when they need it. */
+        char tail[96];
+        long pos = 0;
+
+        if (append_ascii(tail, (long)sizeof tail, &pos, " truncated at the ")
+            && append_uint(tail, (long)sizeof tail, &pos,
+                           (unsigned long)proc_launch_search_seconds())
+            && append_ascii(tail, (long)sizeof tail, &pos,
+                            "s search budget - not found so far, may exist "
+                            "deeper in the catalog")
+            && pos < (long)sizeof tail) {
+            tail[pos] = '\0';
+            set_detail(detail, cap, "launch: search of ", name, tail);
+        } else {
+            set_detail(detail, cap, "launch: search of ", name,
+                       " truncated at the time budget - not found so far, "
+                       "may exist deeper in the catalog");
+        }
         return paramErr;
     }
 

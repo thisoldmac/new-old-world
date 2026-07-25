@@ -38,6 +38,7 @@
  *     retry = on
  *     retry-interval = 5
  *     autoconnect = off
+ *     launch-search-seconds = 20
  *
  * Rules, and why each one is this way:
  *
@@ -69,8 +70,9 @@
  * file still takes effect. "Malformed" covers a line with no separator, an
  * unknown key, an over-long key or value, and a value the matching
  * validator rejects (a host that is not a dotted quad, a port outside
- * 1..65535, a retry interval outside its range, a boolean that is not one
- * of the accepted spellings). Host and port go through connfields.c's own
+ * 1..65535, a retry interval or launch-search budget outside its range, a
+ * boolean that is not one of the accepted spellings). Host and port go
+ * through connfields.c's own
  * validators - the same ones the window applies to typed text - so a
  * settings file can never install an address or port the human could not
  * have typed themselves.
@@ -100,6 +102,44 @@
  * hardcoded "Retry every 5s" checkbox. */
 #define kN68DevRetryDefaultSecs 5
 
+/* The whole-volume budget `launch <bare name>` gives its catalog search
+ * (proc68.c :: cat_search_find). Stated HERE, in seconds, and not in
+ * proc68.c, for two reasons:
+ *
+ *   - proc68.c's own bound is kLaunchSearchBudgetTicks - TICKS, 60 to the
+ *     second - which is the right unit for a TickCount() comparison and the
+ *     wrong one for a human editing a text file on a PowerBook at midnight.
+ *     Nobody types 1200. The file's unit is seconds and says so in the key
+ *     name, so there is no unit to remember or get wrong.
+ *   - The number appears in two places that must agree (the compiled-in
+ *     default and the file's default-when-absent), so it is written once
+ *     here and proc68.c derives its tick count from it. The control-frame
+ *     cap taught this project what happens when a limit is stated three
+ *     times (AGENTS.md).
+ *
+ * Why the key exists at all: the truncation branch - the one that reports a
+ * search that ran out of time rather than a clean "not found" - has never
+ * executed anywhere, because the 180c's catalog completes in about two
+ * seconds and the shipped budget is twenty. Shortening the budget from the
+ * lab's file is the only way to watch that branch on real hardware without
+ * editing the shipped constant.
+ *
+ * The bounds:
+ *   - 1 s minimum, not 0. A budget of zero is not a lab tool, it is a
+ *     `launch` that can never find anything and gives no hint why; and one
+ *     second is already the finest value that changes behaviour, since
+ *     kLaunchSearchSliceTicks makes the FIRST PBCatSearchSync call a full
+ *     second regardless. A shorter number would buy nothing and cost the
+ *     reader an explanation.
+ *   - 600 s maximum. This is a sanity limit on a hand-typed number, in the
+ *     same spirit as the retry interval's - a mistyped 12000 must not turn
+ *     the bounded search back into the unbounded one that wedged a machine
+ *     in this fleet. The double bound in proc68.c (per-call slice AND total
+ *     budget) is untouched by this key; only the total moves. */
+#define kN68DevLaunchSearchMinSecs     1
+#define kN68DevLaunchSearchMaxSecs     600
+#define kN68DevLaunchSearchDefaultSecs 20
+
 typedef struct N68DevSettings {
     /* Each `have_*` says the file supplied that key AND the value passed
      * validation. A caller applies only the fields with have_* set and
@@ -120,6 +160,12 @@ typedef struct N68DevSettings {
 
     int            have_autoconnect;
     int            autoconnect;
+
+    /* Seconds, as written. proc68.c converts to ticks - the file never
+     * carries a tick count, and nothing outside proc68.c should have to
+     * know that 60 of anything make a second. */
+    int            have_launch_search_secs;
+    unsigned short launch_search_secs;
 
     /* Diagnostics, so the caller can say one honest sentence about the
      * file instead of either lying about it or staying silent. */

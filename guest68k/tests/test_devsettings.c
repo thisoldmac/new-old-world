@@ -123,6 +123,39 @@ static void expect_no_retry_secs(const char *text)
     }
 }
 
+static void expect_launch_secs(const char *text, unsigned short secs)
+{
+    N68DevSettings s = parse(text);
+
+    g_checks++;
+    if (!s.have_launch_search_secs || s.launch_search_secs != secs) {
+        fprintf(stderr,
+                "FAIL launch-search-seconds from <<%s>>: have=%d secs=%u"
+                " (want %u)\n",
+                text, s.have_launch_search_secs, s.launch_search_secs, secs);
+        assert(0);
+    }
+}
+
+/* The one that matters most for this key: not "the value is wrong" but "the
+ * caller must be unable to tell the file said anything at all", because the
+ * caller's response to have_* being clear is to leave the compiled-in 20 s
+ * budget alone. A rejected value that still set have_* would hand proc68.c
+ * a zero-second budget and break `launch` outright. */
+static void expect_no_launch_secs(const char *text)
+{
+    N68DevSettings s = parse(text);
+
+    g_checks++;
+    if (s.have_launch_search_secs || s.launch_search_secs != 0) {
+        fprintf(stderr,
+                "FAIL expected no launch-search-seconds from <<%s>>:"
+                " have=%d secs=%u\n",
+                text, s.have_launch_search_secs, s.launch_search_secs);
+        assert(0);
+    }
+}
+
 static void expect_autoconnect(const char *text, int on)
 {
     N68DevSettings s = parse(text);
@@ -159,11 +192,13 @@ static void expect_nothing_set(const char *label, const N68DevSettings *s)
 {
     g_checks++;
     if (s->have_host || s->have_port || s->have_retry || s->have_retry_secs
-        || s->have_autoconnect || s->keys_set != 0) {
+        || s->have_autoconnect || s->have_launch_search_secs
+        || s->keys_set != 0) {
         fprintf(stderr, "FAIL %s: something was set (host=%d port=%d retry=%d"
-                " secs=%d auto=%d keys=%u)\n",
+                " secs=%d auto=%d launch=%d keys=%u)\n",
                 label, s->have_host, s->have_port, s->have_retry,
-                s->have_retry_secs, s->have_autoconnect, s->keys_set);
+                s->have_retry_secs, s->have_autoconnect,
+                s->have_launch_search_secs, s->keys_set);
         assert(0);
     }
 }
@@ -178,7 +213,8 @@ int main(void)
             "port = 5250\n"
             "retry = on\n"
             "retry-interval = 5\n"
-            "autoconnect = off\n";
+            "autoconnect = off\n"
+            "launch-search-seconds = 1\n";
         N68DevSettings s = parse(kFile);
 
         g_checks++;
@@ -188,7 +224,8 @@ int main(void)
             || !s.have_retry || !s.retry_on
             || !s.have_retry_secs || s.retry_secs != 5
             || !s.have_autoconnect || s.autoconnect
-            || s.keys_set != 5 || s.bad_lines != 0) {
+            || !s.have_launch_search_secs || s.launch_search_secs != 1
+            || s.keys_set != 6 || s.bad_lines != 0) {
             fprintf(stderr, "FAIL whole-file parse\n");
             assert(0);
         }
@@ -200,7 +237,8 @@ int main(void)
 
         g_checks++;
         if (!s.have_host || s.have_port || s.have_retry || s.have_retry_secs
-            || s.have_autoconnect || s.keys_set != 1) {
+            || s.have_autoconnect || s.have_launch_search_secs
+            || s.keys_set != 1) {
             fprintf(stderr, "FAIL host-only file set something else\n");
             assert(0);
         }
@@ -302,6 +340,85 @@ int main(void)
     expect_no_retry_secs("retry-interval = 0\n");
     expect_no_retry_secs("retry-interval = 3601\n");
     expect_no_retry_secs("retry-interval = five\n");
+
+    /* ---- the launch search budget --------------------------------------
+     *
+     * The key exists so the lab can force proc68.c's truncation report to
+     * fire on a volume whose catalog would otherwise finish well inside the
+     * shipped 20 s. Everything below therefore matters in one direction more
+     * than the other: a value that is accepted when it should not be hands
+     * proc68.c a budget that makes `launch` useless, and the file's own
+     * design rule says it must never leave the application worse than having
+     * no file at all. */
+    expect_launch_secs("launch-search-seconds = 1\n", kN68DevLaunchSearchMinSecs);
+    expect_launch_secs("launch-search-seconds = 2\n", 2);
+    expect_launch_secs("launch-search-seconds = 20\n",
+                       kN68DevLaunchSearchDefaultSecs);
+    expect_launch_secs("launch-search-seconds = 600\n",
+                       kN68DevLaunchSearchMaxSecs);
+
+    /* Same key conventions as every other key, spelled the three ways a
+     * human actually types one. */
+    expect_launch_secs("launch_search_seconds = 3\n", 3);
+    expect_launch_secs("LAUNCH-SEARCH-SECONDS: 3\n", 3);
+    expect_launch_secs("  Launch_Search-Seconds   4  \n", 4);
+    expect_launch_secs("launch-search-seconds = 5\n"
+                       "launch-search-seconds = 6\n", 6);   /* last wins */
+
+    /* Out of range. 0 is the one that would hurt: a zero-tick budget is a
+     * `launch` that can never find anything, with no hint as to why, so it
+     * is refused as a typo rather than clamped - exactly as retry-interval
+     * refuses its own 0. */
+    expect_no_launch_secs("launch-search-seconds = 0\n");
+    expect_no_launch_secs("launch-search-seconds = 601\n");
+    expect_no_launch_secs("launch-search-seconds = 999999999\n");
+    expect_no_launch_secs("launch-search-seconds = -1\n");
+
+    /* Malformed. "1200" IS in range and legal - it is 20 minutes, which the
+     * bounds permit - so the ticks-vs-seconds confusion this key's name
+     * exists to prevent cannot be caught by the parser; that is the name's
+     * job, not the validator's, and nothing below pretends otherwise. */
+    expect_no_launch_secs("launch-search-seconds = 20s\n");
+    expect_no_launch_secs("launch-search-seconds = twenty\n");
+    expect_no_launch_secs("launch-search-seconds =\n");
+    expect_no_launch_secs("launch-search-seconds\n");
+    expect_no_launch_secs("launch-search-seconds = 1 2\n");   /* interior space */
+    expect_no_launch_secs("launch-search-seconds = 1 # short\n");
+    expect_no_launch_secs("launch-search = 1200\n");          /* unknown key */
+    expect_no_launch_secs("launch-search-ticks = 1200\n");    /* unknown key */
+
+    /* Absent means the compiled-in 20 s, untouched - the property the whole
+     * shipped fleet depends on, since no shipped machine has this file. A
+     * settings file that sets other keys must still leave this one alone. */
+    expect_no_launch_secs("host = 10.0.2.2\nport = 5250\nretry = on\n");
+
+    /* A rejected value must not sink the good lines around it, and must
+     * itself be counted so the human is told which line to look at. */
+    {
+        static const char kFile[] =
+            "host = 10.0.2.2\n"
+            "launch-search-seconds = 0\n"
+            "port = 5250\n";
+        N68DevSettings s = parse(kFile);
+
+        g_checks++;
+        if (!s.have_host || !s.have_port || s.have_launch_search_secs
+            || s.keys_set != 2 || s.bad_lines != 1 || s.first_bad_line != 2) {
+            fprintf(stderr, "FAIL launch-search bad line: keys=%u bad=%u"
+                    " first=%u have=%d\n",
+                    s.keys_set, s.bad_lines, s.first_bad_line,
+                    s.have_launch_search_secs);
+            assert(0);
+        }
+    }
+
+    /* No separator whitespace at all, the way a key gets typed when the line
+     * is being edited in a hurry. Worth its own case here because this key
+     * is 21 characters against kKeyMax's 24 - a longer name would be
+     * rejected as an over-long KEY rather than parsed, and the assertions
+     * above are what fails if anyone renames it without moving that cap
+     * (watched: renaming the key in the parser fails "whole-file parse"). */
+    expect_launch_secs("launch-search-seconds=1\n", 1);
 
     /* ---- the empty file, and the byte-count contract ------------------- */
     {

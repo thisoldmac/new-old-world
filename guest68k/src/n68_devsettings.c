@@ -6,9 +6,12 @@
 
 #include <stddef.h>   /* NULL */
 
-/* Longest key this file knows is "autoconnect" (11); the cap is generous so
- * a typo'd key is rejected as an unknown key with its own count, not as an
- * over-long one, which is a less useful thing to be told. */
+/* Longest key this file knows is "launch-search-seconds" (21); the cap is
+ * generous so a typo'd key is rejected as an unknown key with its own count,
+ * not as an over-long one, which is a less useful thing to be told. Note how
+ * little headroom is left: a key longer than 23 characters needs this number
+ * raised in the same edit, or it will be rejected as over-long and the
+ * report will blame the wrong thing. */
 #define kKeyMax   24
 /* Longest value is a dotted quad (15). Anything past this is malformed:
  * truncating a value would risk turning nonsense into something that
@@ -135,6 +138,8 @@ void n68_devsettings_init(N68DevSettings *s)
     s->retry_secs = 0;
     s->have_autoconnect = 0;
     s->autoconnect = 0;
+    s->have_launch_search_secs = 0;
+    s->launch_search_secs = 0;
     s->keys_set = 0;
     s->bad_lines = 0;
     s->first_bad_line = 0;
@@ -214,6 +219,26 @@ static int apply_pair(N68DevSettings *s, const char *key, const char *value)
         }
         s->have_retry_secs = 1;
         s->retry_secs = (unsigned short)secs;
+        return 1;
+    }
+
+    /* Seconds, and the key says so - the thing it overrides is counted in
+     * ticks, and a file that asked for "launch-search = 1200" meaning twenty
+     * seconds (or meaning twenty minutes) is a mistake with no symptom
+     * except a `launch` that behaves oddly much later. The unit is in the
+     * name so the file cannot be read two ways. */
+    if (str_eq(key, "launch-search-seconds")) {
+        unsigned long secs;
+
+        if (!parse_uint(value, &secs)) {
+            return 0;
+        }
+        if (secs < (unsigned long)kN68DevLaunchSearchMinSecs
+            || secs > (unsigned long)kN68DevLaunchSearchMaxSecs) {
+            return 0;
+        }
+        s->have_launch_search_secs = 1;
+        s->launch_search_secs = (unsigned short)secs;
         return 1;
     }
 

@@ -13,7 +13,11 @@
  *   3 field-text extraction buffers  40 + 24 + 24          =   88  bytes
  *   gStatusShown (kStatusShownCap)                         =  128  bytes
  *   ConnHost/Port/TimeoutResult x2 (live + shown)           ~  200  bytes
- *   gDev (N68DevSettings) + gDevLoaded + gRetrySecs          ~   50  bytes
+ *   gDev (N68DevSettings) + gDevLoaded + gRetrySecs          ~   70  bytes
+ *                                        (68K: int 4, short 2, align 2;
+ *                                         grew by 6 with the launch-search
+ *                                         budget key, and the old ~50 here
+ *                                         was already an undercount)
  *   misc scalars (focus, rects, handles, UPP)                ~  150  bytes
  *   ---------------------------------------------------------------------
  *   file-static total                                       ~  8.9 KB
@@ -44,6 +48,7 @@
 #include "numfmt.h"
 #include "health.h"
 #include "n68_devsettings_file.h"
+#include "proc68.h"   /* proc_set_launch_search_seconds - see dev_settings_apply_wire */
 
 #include <MacWindows.h>
 #include <Quickdraw.h>
@@ -729,11 +734,59 @@ static void console_note_dev_settings(void)
     }
 }
 
+/* The launch-search budget, and the one line that stops it costing someone
+ * an hour. A shortened budget makes `launch` report truncated searches for
+ * applications that are really there - which is the entire point of the key
+ * (proc68.h), and indistinguishable from a broken `launch` if the value is
+ * not stated anywhere. So it goes in the console, where a human already
+ * reads, AND in the log, which is what gets quoted back after the fact. The
+ * default is printed beside it because "1s" only reads as alarming next to
+ * the twenty it replaced. */
+static void dev_settings_apply_launch_search(void)
+{
+    /* 96, not the 64 the other note uses: this sentence is ~72 characters
+     * with a three-digit budget, and a console line that silently fails to
+     * format is exactly the announcement this function exists to make. The
+     * console pane is 496 px of Monaco 9 (~80 characters), so it fits on
+     * screen too - a line that formats and then draws off the right edge
+     * would be the same failure one step later. */
+    char text[96];
+    long pos = 0;
+
+    if (!gDev.have_launch_search_secs) {
+        return;   /* absent: the compiled-in budget, silently, as shipped */
+    }
+
+    proc_set_launch_search_seconds(gDev.launch_search_secs);
+
+    /* proc_launch_search_seconds(), not gDev.launch_search_secs: this line
+     * must report what is IN FORCE, not what the file asked for. They agree
+     * today; if a future bound made them disagree, the honest number is the
+     * one the search will actually use. */
+    if (now68k_fmt_append_str(text, (long)sizeof text, &pos,
+                              "dev settings: launch search ")
+        && now68k_fmt_append_long(text, (long)sizeof text, &pos,
+                                  (long)proc_launch_search_seconds())
+        && now68k_fmt_append_str(text, (long)sizeof text, &pos, "s not ")
+        && now68k_fmt_append_long(text, (long)sizeof text, &pos,
+                                  (long)kN68DevLaunchSearchDefaultSecs)
+        && now68k_fmt_append_str(text, (long)sizeof text, &pos,
+                                 "s - launch may say truncated")
+        && pos < (long)sizeof text) {
+        text[pos] = '\0';
+        console_note(text);
+    }
+    now68k_log_num("devsettings: launch search seconds",
+                    (long)proc_launch_search_seconds());
+}
+
 static void dev_settings_apply_wire(void)
 {
     if (!gDevLoaded) {
         return;
     }
+
+    dev_settings_apply_launch_search();
 
     if (gDev.have_retry || gDev.have_retry_secs) {
         short on = gDev.have_retry
