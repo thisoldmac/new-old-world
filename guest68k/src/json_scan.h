@@ -54,10 +54,28 @@
 const char *now68k_json_value(const char *json, size_t json_len,
                                const char *key);
 
-/* Copies the "type" string value into out (NUL-terminated, truncated to
- * fit cap). Returns 1 on a well-formed string that both opens and closes
- * within json[0, json_len); 0 if "type" is absent, not a string, or
- * never closes before cap or json_len runs out. */
+/* Copies the string value of `key` into out (NUL-terminated, truncated
+ * to fit cap). Returns 1 on a well-formed string that both opens and
+ * closes within json[0, json_len); 0 if `key` is absent, is not a
+ * string, or never closes before cap or json_len runs out.
+ *
+ * NO ESCAPE HANDLING, deliberately, and the callers are why it is safe:
+ * every string this guest reads off the wire is an identifier the
+ * contract already constrains - a message type, a container token, a
+ * four-character file type, or an HFS leaf name the SENDER has already
+ * sanitized ("<= 31 characters, no colons, MacRoman-encodable",
+ * FileOffer). A backslash in any of those is a malformed message, and
+ * the truncation-or-reject behaviour above turns it into a refusal
+ * rather than a wrong file name. If a field ever arrives that can
+ * legitimately carry one, this is the function that has to grow, and
+ * this paragraph is the thing to delete. */
+int now68k_json_find_string(const char *json, size_t json_len,
+                             const char *key, char *out, long cap);
+
+/* The same for "type", which every control payload carries. Kept as its
+ * own name because every caller reads it and the call site says what it
+ * is doing; it is now68k_json_find_string with the key filled in, not a
+ * second implementation. */
 int now68k_json_read_type(const char *json, size_t json_len, char *out,
                            long cap);
 

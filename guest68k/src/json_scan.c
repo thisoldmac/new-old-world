@@ -76,11 +76,11 @@ const char *now68k_json_value(const char *json, size_t json_len,
     return NULL;
 }
 
-int now68k_json_read_type(const char *json, size_t json_len, char *out,
-                           long cap)
+int now68k_json_find_string(const char *json, size_t json_len,
+                             const char *key, char *out, long cap)
 {
     const char *end = json + json_len;
-    const char *p = now68k_json_value(json, json_len, "type");
+    const char *p = now68k_json_value(json, json_len, key);
     long n = 0;
 
     if (p == NULL || p >= end || *p != '"' || out == NULL || cap < 1) {
@@ -92,6 +92,12 @@ int now68k_json_read_type(const char *json, size_t json_len, char *out,
     }
     out[n] = '\0';
     return (p < end && *p == '"');
+}
+
+int now68k_json_read_type(const char *json, size_t json_len, char *out,
+                           long cap)
+{
+    return now68k_json_find_string(json, json_len, "type", out, cap);
 }
 
 int now68k_json_find_int(const char *json, size_t json_len, const char *key,

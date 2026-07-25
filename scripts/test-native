@@ -125,6 +125,9 @@ run_c guest68k test_devsettings.c  "-std=c99 -pedantic"  src/n68_devsettings.c \
       src/connfields.c
 run_c guest68k test_history.c      "-std=c99 -pedantic"  src/n68_history.c
 run_c guest68k test_cmdresult.c    "" src/n68_cmdresult.c src/numfmt.c
+run_c guest68k test_crc32.c        "" src/n68_crc32.c
+run_c guest68k test_putrx.c        "" src/n68_putrx.c src/n68_crc32.c \
+      src/json_scan.c
 
 # Every test file must be in the manifest above. Grepping this script for the
 # filename is crude and deliberate: it is the check that cannot itself go
