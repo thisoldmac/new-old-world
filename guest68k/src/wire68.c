@@ -725,9 +725,10 @@ static void handle_command_request(const char *json, long len)
     long id = 0;
     int have_id = now68k_json_find_int(json, (size_t)len, "id", &id);
 
-    /* Two commands are implemented (launch, quit); everything else still
-     * falls through to unknown-command below. The dispatcher writes nothing
-     * unless it recognises the name, so the fallback can reuse this buffer. */
+    /* Three commands are implemented (help, launch, quit); everything else
+     * still falls through to unknown-command below. The dispatcher writes
+     * nothing unless it recognises the name, so the fallback can reuse this
+     * buffer. */
     if (!read_string_field(json, (size_t)len, "name", name, sizeof name)) {
         name[0] = '\0';
     }
@@ -735,10 +736,18 @@ static void handle_command_request(const char *json, long len)
      * OBJECT ({"target":"TeachText"}), so reading "args" as a string always
      * came back empty and every launch/quit answered bad-args. The scanner is
      * flat and first-occurrence-wins, which is safe here precisely because the
-     * contract forbids an arg key from shadowing type/id/name/args - "target"
-     * appears only inside the args object. */
+     * contract forbids an arg key from shadowing type/id/name/args/line -
+     * "target" appears only inside the args object. */
     if (!read_string_field(json, (size_t)len, "target", args, sizeof args)) {
-        args[0] = '\0';
+        /* No typed arg: a CONSOLE sent this, and a console sends the raw
+         * line a human typed instead (CommandRequest.line) because it knows
+         * no command's grammar. For every command this build serves the
+         * argument is the whole rest of the line, so the line IS the target
+         * and needs no reshaping here - the grammar inside it is parsed by
+         * commands68.c, the side that serves the verb. */
+        if (!read_string_field(json, (size_t)len, "line", args, sizeof args)) {
+            args[0] = '\0';
+        }
     }
     if (name[0] != '\0') {
         long built = 0;

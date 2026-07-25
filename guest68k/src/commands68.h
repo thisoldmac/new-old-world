@@ -1,5 +1,5 @@
 /*
- * commands68.h - the command.request dispatcher: launch and quit.
+ * commands68.h - the command.request dispatcher: help, launch and quit.
  *
  * wire68.c owns the wire: framing (frame.h), the outbound queue, and
  * scanning a control payload's envelope (json_scan.h's "type"/"id"
@@ -20,7 +20,17 @@
  * command wire68.c has not wired in yet (or a name from a future contract
  * revision this build predates) falls through exactly as it does today.
  *
- * The two commands implemented are a composition over proc68.h, not a
+ * The one command that is not a composition over proc68.h is `help`, and
+ * it is here because the OTHER side has no command list. The contract's
+ * consoles are dumb shells (CommandRequest.line): they relay the line a
+ * human typed and know nothing about which commands exist, because there
+ * are now two guests with different tables and a console-side list would be
+ * wrong for both. So this Mac answers for itself - three commands, and it
+ * says three - and the reply carries a note that everything else answers
+ * unknown-command, so a short list reads as a short list rather than as a
+ * broken one.
+ *
+ * The two commands over proc68.h are a composition, not a
  * second copy of its logic: launch is a thin argument-shape check in
  * front of proc_launch_named(); quit mirrors the PowerPC guest's
  * proc_quit_args.c grammar (leading flags, name-is-the-rest-of-the-line)
@@ -39,7 +49,14 @@
  *           always unrecognized).
  * target  - the request's args.target string, already extracted and
  *           NUL-terminated by the caller; NULL or "" when the request
- *           carried no target. This module does no JSON scanning of its
+ *           carried no target. A CONSOLE sends no args at all: it sends
+ *           the envelope's `line` (the raw text a human typed after the
+ *           command name), and wire68.c hands that over in this same
+ *           parameter, because for every command this module serves the
+ *           argument IS the whole rest of the line - launch's and quit's
+ *           target, help's topic. The grammar inside it is parsed here,
+ *           which is the point of the contract's two-callers rule: the
+ *           machine that serves the verb owns its grammar. This module does no JSON scanning of its
  *           own - it takes one plain string in, the same shape
  *           proc_quit_args.c takes on the PowerPC side (now/guest/src/
  *           proc_quit_args.c, branch thread/guest-quit-command), which is
@@ -50,9 +67,10 @@
  * out/cap - buffer for the complete, NUL-terminated command.result JSON
  *           object. Sized for the widest reply this module ever builds:
  *           envelope (~40 bytes) + the longest error/output text this
- *           module emits (a proc68.h `detail` sentence, budgeted at 160
- *           bytes in commands68.c) + JSON punctuation, worst case just
- *           under 260 bytes. 320 bytes is a comfortable floor; anything
+ *           module emits - a proc68.h `detail` sentence budgeted at 160
+ *           bytes in commands68.c, or help's whole command list, which
+ *           measures ~260 - plus JSON punctuation, worst case just
+ *           under 300 bytes. 320 bytes is a comfortable floor; anything
  *           at or above ~120 bytes still gets a complete, truthful reply
  *           via this module's compact-fallback path (see commands68.c),
  *           just with a shorter message. Below that floor a build can
@@ -74,7 +92,7 @@
  *           already treat a failed now68k_fmt_append_* chain. When this
  *           function returns 0, `*out_len` is left untouched.
  *
- * Returns 1 if `name` is one of "launch" or "quit" - `out` is then always
+ * Returns 1 if `name` is one of "help", "launch" or "quit" - `out` is then always
  * NUL-terminated JSON, and `*out_len` (if `out_len` is not NULL) is its
  * length. The ok/error TRUTH of a reply is never sacrificed to make it
  * fit smaller - a shortened reply still says what actually happened, and
@@ -82,7 +100,7 @@
  * always fit if the envelope itself fits, rather than gradually racing
  * the buffer with a longer and longer fallback chain.
  *
- * Returns 0 if `name` names neither command - `out` is left untouched, so
+ * Returns 0 if `name` names none of them - `out` is left untouched, so
  * the caller's own unknown-command builder can write into the same
  * buffer without this module having partially filled it with something
  * whose "id" or shape might not match what the caller is about to send.

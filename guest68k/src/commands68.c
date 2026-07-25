@@ -689,6 +689,126 @@ static long run_quit(const char *target, long id, char *out, long cap)
                            state);
 }
 
+/* ---- help ------------------------------------------------------------------- */
+
+/* What THIS Mac serves - three commands, and it says three.
+ *
+ * The other side keeps no command list: there are two guests with different
+ * tables (the PowerPC Carbon guest implements fifteen commands, this one
+ * implements two plus this), so a console-side list would be wrong for both.
+ * Discovery is therefore a request like any other, and the honest answer
+ * from here is a short one. The PowerPC guest answers the same command from
+ * its own table (guest/src/cmd_help.c); this table is deliberately separate
+ * rather than shared, because the two applications share no source - they
+ * meet only on the wire, and the contract is the thing they hold in common.
+ *
+ * The trailing note row is not decoration. A human reading three commands
+ * needs to know whether that is all this machine HAS or all it would admit
+ * to; saying "everything else answers unknown-command" is the difference
+ * between a short list and a suspicious one. */
+typedef struct {
+    const char *name;
+    const char *summary;
+    const char *usage;
+} N68CommandDoc;
+
+static const N68CommandDoc k_docs[] = {
+    { "launch", "open an application on this Mac",
+      "launch <name | full path>" },
+    { "quit", "ask an application on this Mac to quit",
+      "quit [--all] [--wait N | --no-wait] <name>" },
+    { "help", "list the commands this Mac serves",
+      "help [command]" },
+    { NULL, NULL, NULL }
+};
+
+static const char kHelpNote[] =
+    "every other command answers unknown-command";
+
+/* Appends ["label","value"], with the separating comma when something is
+ * already in the array. Returns 0 if it did not fit, leaving `pos` where it
+ * was so the caller can close the array on what did. */
+static int append_row(char *out, long cap, long *pos, int first,
+                      const char *label, const char *value)
+{
+    long saved = *pos;
+    int ok = 1;
+
+    if (!first) {
+        ok = ok && now68k_fmt_append_str(out, cap, pos, ",");
+    }
+    ok = ok && now68k_fmt_append_str(out, cap, pos, "[\"");
+    ok = ok && append_json_escaped(out, cap, pos, label);
+    ok = ok && now68k_fmt_append_str(out, cap, pos, "\",\"");
+    ok = ok && append_json_escaped(out, cap, pos, value);
+    ok = ok && now68k_fmt_append_str(out, cap, pos, "\"]");
+    if (!ok) {
+        *pos = saved;
+        return 0;
+    }
+    return 1;
+}
+
+static long run_help(const char *target, long id, char *out, long cap)
+{
+    long avail = cap > 0 ? cap - 1 : 0;
+    long pos = 0;
+    int first = 1;
+    int ok = 1;
+    int i;
+    char topic[32];
+
+    topic[0] = '\0';
+    if (target != NULL && !trim_and_unquote(target, topic, (long)sizeof topic)) {
+        /* Too long to be any command's name, so it is not one. */
+        return finish_error(out, cap, id, "unknown-command",
+                            "that is not a command this Mac knows");
+    }
+
+    if (topic[0] != '\0') {
+        for (i = 0; k_docs[i].name != NULL; ++i) {
+            if (strcmp(k_docs[i].name, topic) == 0) {
+                return finish_ok_row2(out, cap, id, "help",
+                                       k_docs[i].name, k_docs[i].summary,
+                                       "Usage", k_docs[i].usage);
+            }
+        }
+        return finish_error(out, cap, id, "unknown-command",
+                            "that is not a command this Mac knows");
+    }
+
+    ok = ok && append_envelope(out, avail, &pos, id);
+    ok = ok && now68k_fmt_append_str(out, avail, &pos,
+                                      ",\"ok\":true,\"output\":{\"help\":[");
+    if (!ok) {
+        now68k_log("cmd: help reply did not fit its envelope");
+        if (cap > 0) {
+            out[0] = '\0';
+        }
+        return 0;
+    }
+    for (i = 0; k_docs[i].name != NULL; ++i) {
+        if (!append_row(out, avail, &pos, first, k_docs[i].name,
+                        k_docs[i].summary)) {
+            break;
+        }
+        first = 0;
+    }
+    /* The note is dropped before any command row is: a truncated list with
+     * the note still attached would claim completeness it does not have. */
+    (void)append_row(out, avail, &pos, first, "", kHelpNote);
+    ok = now68k_fmt_append_str(out, avail, &pos, "]}}");
+    if (!ok || pos <= 0) {
+        now68k_log("cmd: help reply did not fit");
+        if (cap > 0) {
+            out[0] = '\0';
+        }
+        return 0;
+    }
+    out[pos] = '\0';
+    return pos;
+}
+
 /* ---- dispatch --------------------------------------------------------------- */
 
 int now68k_commands_dispatch(const char *name, const char *target, long id,
@@ -698,6 +818,13 @@ int now68k_commands_dispatch(const char *name, const char *target, long id,
 
     if (name == NULL) {
         return 0;
+    }
+    if (strcmp(name, "help") == 0) {
+        len = run_help(target, id, out, cap);
+        if (out_len != NULL) {
+            *out_len = len;
+        }
+        return 1;
     }
     if (strcmp(name, "launch") == 0) {
         len = run_launch(target, id, out, cap);
