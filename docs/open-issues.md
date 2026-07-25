@@ -1237,8 +1237,8 @@ the useful half.
   never previously exercised — and a test that manufactured the very
   ambiguity it then failed on. Hence `NOW_QUIT_NO_LAUNCH`.
 
-  **The 68K re-check is weaker than the sentence "still running"
-  suggests.** With no `process.list`, confirmation is a second `quit`
+  **The 68K re-check WAS weaker than the sentence "still running"
+  suggests** — true when written, and fixed since by `process.list`. With no `process.list`, confirmation is a second `quit`
   through the same subsystem, and it came back "asked TeachText; not
   confirmed (wait_ticks <= 0)". The assertion that holds is only that the
   target did not answer `not-running`. That is real evidence and it is
@@ -1396,6 +1396,40 @@ Both of the things that were known-wrong here are fixed (2026-07-25):
   nothing changes shape and an older peer cannot tell. NOW-68K already
   clamped to the floor; the PowerPC guest reached it only incidentally
   through a prefs range check and now enforces it at the wire.
+
+## The 180c, 2026-07-25 evening: everything automated is green
+
+The display came back (a via that wiggled against its pad, found by
+beeping continuity, reflowed). `NOW-68K 0.14` landed itself by handoff and
+every automated gate passed against it: the reader extraction, `ps`, the
+bounded `launch` search, the redial, the `error` refusal, the
+oversized-frame skip with frame sync surviving, two overlapping requests,
+and `quit`'s whole outcome table including the self-refusal.
+
+**`quit`'s confirmation on this guest is now STRONG.** With
+`process.list` served, a disappearance is re-checked against a different
+code path instead of by re-asking `quit`. `MetalQuitTests` probes for the
+capability rather than deriving it from the hello name, because deriving
+it meant the file kept understating its own evidence the moment the guest
+grew.
+
+**Three defects were in the GATES, not the guest**, and the worst of them
+had been reading green:
+
+- The self-refusal case quit `now68k-guest` — the CMake target name —
+  while a deployed build runs as `NOW-68K 0.14`, its MacBinary name. It
+  asked to quit a process that does not exist, got "nothing named that is
+  running", asserted nothing, and passed. It had never once tested the
+  behaviour it is named for.
+- The harness raced its own teardown: `stop()` reports `.idle` while
+  `NWListener` cancels asynchronously, so the next test in a suite bound a
+  port its predecessor still held. Two of five failing while three passed
+  against the same live guest is a race, not a busy port.
+- The strength banner was printed before the capability probe ran, so it
+  announced the strength assumed rather than the one measured.
+
+Understating evidence is the same species of dishonesty as overstating it,
+and it is harder to catch because nothing fails.
 
 ## The console, and what it is not verified to do
 

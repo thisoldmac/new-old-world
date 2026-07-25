@@ -166,7 +166,9 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   answers **`quit-declined`**, not success. So are the orderly `bye`, the
   redial after the host goes away, and — with no independent
   `process.list` on this guest — the fact that its confirmation of `gone`
-  is weaker than the PowerPC guest's, which every run says out loud.
+  was weaker than the PowerPC guest's until this guest gained
+  `process.list`; the metal gate now PROBES that capability rather than
+  assuming it from the hello name, and reports STRONG on the 180c.
   It is deliberately smaller than the Carbon guest: one page, no tabs, no
   preferences at all (the human types host and port each launch), dial-out
   only with a human-controlled fixed-interval redial, and no bulk features
