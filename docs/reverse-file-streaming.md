@@ -13,7 +13,7 @@ bounded to 32 KiB. It was in both adapters around the wire:
 That made guest-to-host transfer capacity a function of the classic
 application partition and host heap rather than disk capacity.
 
-The prototype replaces those adapters without changing the framing or
+The integrated path replaces those adapters without changing the framing or
 message revision. The guest records fork metadata at offer time, checks
 it again after acceptance, opens the forks, and fills one outbound frame
 at a time. MacBinary is generated sequentially as header, data fork,
@@ -139,9 +139,10 @@ exist.
 ## Integration status
 
 The isolated commits were verified on a clean main-based integration branch,
-fast-forwarded to local `main`, and merged into the V0.5 branch. Both the
-main-based and combined host suites and Retro68 builds must remain green.
-Reverse resume stays a separate contract-first change after selecting the
-source identity rule. No MCP download command was added by this integration:
-V0.5 may design a fresh bounded-download command and its policy/receipts
-explicitly, without depending on resume.
+fast-forwarded to local `main`, and merged with the implemented V0.5 command
+slices. That combined tree was then verified and promoted to local `main`
+without a protocol revision. Reverse resume stays a separate contract-first
+change after selecting the source identity rule. No MCP download command was
+added by this integration: V0.5 must design a fresh bounded-download command
+and its root/size policy, receipts, audit, tests, and explicit MCP projection
+without depending on resume.

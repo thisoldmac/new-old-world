@@ -983,6 +983,20 @@ this slice, so real-volume reservation values, Finder-visible finalization,
 fork/type/creator fidelity, interruption cleanup, and live throughput remain
 open.
 
+The reconciliation also exposed two pre-metal hardening gaps. Host byte
+reservation does not yet cap the number of active stages, so repeated
+zero-byte or tiny begins can retain bounded-lifetime records without consuming
+meaningful byte quota. A stage is bound to session and policy version but not
+to an opaque active-share identity, so a human share change between begin and
+commit is not yet a typed stale condition. Both must be resolved and tested
+before staged upload advances to attended PowerBook acceptance.
+
+Invalid persisted `guestRoot` recovery currently rejects the malformed value,
+logs the event, and restores the approved share-root default. That is the
+implemented and tested behavior, but it can broaden a future narrowed policy.
+Fail-closed recovery versus explicit rebinding remains a policy decision before
+an Integrations UI can configure narrower roots.
+
 The reverse-streaming prerequisite is now integrated: the guest reads outbound
 forks one bounded frame at a time, and the host receives into a private disk
 sink with progress, length/CRC validation, interruption cleanup, and atomic
@@ -990,6 +1004,14 @@ finalization. This does not expose arbitrary download. That capability remains
 gated on a typed NOW command, root/size policy, deterministic receipts and
 audit, and an explicit MCP projection. Reverse resume also remains separately
 deferred pending a contract-first guest source-identity rule.
+
+The combined V0.5 tree—root-scoped capability/list/stat, create-only staged
+upload, and reverse streaming—has been reconciled and promoted to local
+`main`. The read-only commands and reverse transport carry the bounded metal
+evidence stated above; staged upload is implemented and tested but remains
+unrun on the PowerBook. This integration did not add download, mkdir,
+overwrite, move, delete, tree deployment, prune, broad host filesystem access,
+plugin infrastructure, resume, or transfer-rate hardening.
 
 Mutation is gated separately on guest-side revalidation of an opaque file
 observation. Listings now carry a responder-generated opaque catalog identity,

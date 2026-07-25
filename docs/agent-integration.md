@@ -99,12 +99,23 @@ projection are designed and verified; reverse resume remains deferred.
 
 All eleven projections, the local socket, and the stdio wrapper are **tested** here. V0 coverage remains as previously recorded: missing host or guest; bounded process snapshots and references; exact launch/refusal/revalidation; cooperative quit; receipt-backed artifact approval, staging, replay and delivery; malformed and oversized requests; endpoint permissions and peer UID; concurrency; discriminated schemas; and unchanged host module inventory/listener state. V0.5 browse coverage adds explicit/default/invalid `guestRoot` policy, canonical path and root-escape rejection, empty/populated/paged list behavior, fork/type/creator/date projection, exact stat/not-found/scan-limit, stale sessions, bounded guest refusal and malformed listing rejection, concurrent reads, prior local schema v4 rejection, maximum-page response size, host absence without launch, strict MCP arguments, and private-socket round-trip. Upload coverage adds disk-reservation refusal, ordered bounded chunks, digest mismatch cleanup, orphan-stage recovery, create-only collision policy, stale/unavailable handling, one-attempt replay and concurrent-commit refusal, file-backed framing, strict guest completion evidence, late-collision preservation, malformed MacBinary refusal, stale-accept invalidation, cleanup-failure recovery, host/guest observation identities, modified-date omission, strict local/MCP decoding, host build, and a clean Retro68 guest build.
 
+As of the 2026-07-25 reconciliation, the combined V0.5 tree containing these
+eleven projections plus the independently verified reverse-streaming
+prerequisite is integrated into local `main`. This is an integration status,
+not a new verification rung: the read-only Files tools and reverse transport
+have the bounded PowerBook receipts below, while staged upload remains tested
+but not metal-verified. The reconciled combined tree passed 419 host tests with
+13 opt-in metal tests skipped, produced the host app, and completed the Retro68
+guest build. No generic download tool was introduced.
+
 Staged upload remains **not metal-verified**. The current automated fixtures
 exercise the existing transfer state machine and the classic build proves the
 guest changes compile, but no disposable file from this slice has yet been
 observed landing on the PowerBook. Its reservation metrics, final Finder
 identity, classic metadata/fork fidelity, interruption cleanup, and performance
-therefore remain open metal gates.
+therefore remain open metal gates. Before that pass, the command also needs a
+count quota for active stages—including zero-byte stages—and a stale result
+when the human changes the active guest share between begin and commit.
 
 The three V0.5 read-only tools also have a bounded **metal-verified** receipt
 from 2026-07-24 against the paired PowerBook 1400c. The current host build

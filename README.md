@@ -148,10 +148,13 @@ transport. It is not a protocol migration or a multi-machine runtime.
 The separately sequenced
 [NOW MCP V0.5 guest-files roadmap](docs/plans/2026-07-24-003-feat-now-mcp-v0-5-files-command-roadmap-plan.md)
 adds generic, root-scoped guest filesystem commands before projecting them
-through MCP. It records the current streaming asymmetry as a gate: guest-bound
-receives are disk-streamed, while guest sends and host receives still buffer
-whole files. CodeKitten may later consume the generic commands but owns all
-project meaning; V0.5 adds no project-specific or host-filesystem access.
+through MCP. Its implemented slices cover bounded capability/list/stat and a
+create-only disk-backed staged upload; the upload still awaits attended
+PowerBook verification. The reverse streaming prerequisite is integrated and
+metal-verified through 4 MiB, but generic download remains a separate,
+unimplemented command/policy/receipt/MCP design. CodeKitten may later consume
+the generic commands but owns all project meaning; V0.5 adds no
+project-specific or host-filesystem access.
 
 ## Layout
 

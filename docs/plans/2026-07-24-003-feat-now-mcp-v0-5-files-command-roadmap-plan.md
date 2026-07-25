@@ -25,12 +25,16 @@ date: 2026-07-24
 - **Verification posture:** This plan is approved scope, not implementation
   evidence. Each slice moves through Builds, Tested, and attended
   Metal-verified independently.
-- **Implementation status, 2026-07-24:** V05-U1 is tested and has bounded
+- **Implementation status, reconciled 2026-07-25:** V05-U1 is tested and has bounded
   PowerBook acceptance. The create-only staged-upload half of V05-U3 is tested:
   private disk reservation, ordered bounded staging, file-backed host send,
   guest reservation/finalization evidence, cleanup/recovery, and three strict
-  MCP projections. It is not metal-verified. Download, mkdir, update,
-  move/delete, tree deployment, and prune remain unavailable.
+  MCP projections. It is not metal-verified. The independently metal-tested
+  reverse-streaming prerequisite is integrated in the combined V0.5 tree and
+  local `main`; it adds no download authority. Download, mkdir, update,
+  move/delete, tree deployment, and prune remain unavailable. Before staged
+  upload advances to metal acceptance, active-stage count and active-share
+  retargeting need explicit hardening.
 
 ## Grounded audit
 
@@ -101,7 +105,9 @@ that network behavior fixed.
 - V05-R9. Download is arbitrary only within `guestRoot`, with an explicit
   policy size limit and receipt. Text reads and tails are capped convenience
   views over that same download command, never shell commands or a second file
-  path. They cannot ship until both sender and receiver are streaming.
+  path. Both transfer adapters now stream with bounded memory, satisfying that
+  prerequisite only; these commands cannot ship until their own typed NOW
+  command, policy, receipt, audit, tests, and explicit MCP projection exist.
 
 **Mutation and deployment**
 
@@ -113,10 +119,13 @@ that network behavior fixed.
   use bounded buffers, finalize atomically where the filesystem permits, and
   leave interrupted work visible through typed recovery state. No transfer
   success exists without the current completion evidence, including
-  `file.done`.
+  `file.done`. Active stage count is capped separately from byte reservation,
+  and a zero-byte stage consumes that count quota.
 - V05-R12. Tree deployment consumes a generic desired-state manifest of
   root-relative entries and fidelity metadata. It knows nothing about source
-  control, ignore rules, projects, builds, tests, or releases.
+  control, ignore rules, projects, builds, tests, or releases. Entry count,
+  encoded manifest bytes, aggregate payload bytes, and worst-case receipt
+  bytes are bounded and exposed through capability discovery.
 - V05-R13. Prune is limited to one named deployment subtree and one explicit
   desired-state manifest. Apply requires an unexpired dry-run receipt bound to
   the current session, root policy version, subtree, manifest digest, and
@@ -138,8 +147,10 @@ that network behavior fixed.
   destination acknowledgement, integrity evidence, and cleanup/recovery
   disposition. Sending all local bytes is not delivery.
 - V05-R17. Commands are idempotent only when their contract says so. Duplicate
-  or replayed mutation/deployment requests return the prior receipt or a typed
-  conflict; they do not apply twice.
+  or replayed mutation/deployment requests carry a caller-stable opaque
+  operation ID and return the retained prior receipt or a typed conflict; they
+  do not apply twice. Each command defines a bounded receipt-retention window,
+  and an expired or unknown replay refuses rather than executing ambiguously.
 - V05-R18. No operation exposes shell execution, arbitrary host filesystem
   access, permanent recursive deletion, streaming output through MCP, raw
   guest paths, transfer-lane preemption, or hidden automatic retry.
@@ -151,7 +162,7 @@ that network behavior fixed.
 | `guestFiles.capabilities` | host policy + bounded root `file.list` | Slice 1 | Read-only observation with session, policy version, root label, limits, and supported-command flags. |
 | `guestFiles.list` | `file.list` / `file.listing` | Slice 1 | Bounded page(s), freshness, continuation, and no stale fallback. |
 | `guestFiles.stat` | bounded exact match through parent `file.listing` pages | Slice 1 | Exact metadata observation or explicit scan-limit/not-found. |
-| `guestFiles.download` | `file.get` / begin / bulk / end | Slice 2, after streaming gates | File-backed host staging, integrity and cleanup receipt. |
+| `guestFiles.download` | `file.get` / begin / bulk / end | Slice 2, command/policy design pending | The bounded reverse transport prerequisite is integrated, but no download authority exists until a typed root/size policy, file-backed staging, integrity/cleanup receipt, audit, tests, and explicit MCP projection are complete. |
 | `guestFiles.readText` / `tailText` | bounded view over `download` | Slice 2 | UTF-8/MacRoman conversion evidence, byte/line truncation, never follow mode. |
 | `guestFiles.put` | `file.offer` / accept / begin / bulk / end / done | Slice 3a, tested; metal pending | Create-only private stage, file-backed source, disk reservation, delivery and cleanup receipt. The parent must already exist; success requires matching guest length, CRC, finalization, and temp cleanup. Update/overwrite remains gated on mutation preconditions. |
 | `guestFiles.mkdir` | `file.mkdir` / `file.result` | Slice 3b, deferred | Idempotent existing-folder result; collision remains typed. |
@@ -196,18 +207,22 @@ lookup and mutation occur on the guest.
 
 A transfer entry records requested bytes, accepted offset, receiver-confirmed
 bytes, integrity algorithm/value when present, final `file.done` result,
-staging cleanup disposition, and any retained resumable partial. A deployment
-receipt contains a deterministic manifest digest, ordered entry receipts,
-aggregate counts/bytes, and final state: `complete`, `partial`, `refused`,
-`interrupted`, or `cleanup-needed`.
+staging cleanup disposition, and any retained guest partial as recovery
+evidence. The current V0.5 MCP upload lifecycle exposes no resume operation:
+caller retry begins a fresh NOW command attempt, and reverse resume is also
+separately deferred. A deployment receipt contains a deterministic manifest
+digest, ordered entry receipts, aggregate counts/bytes, and final state:
+`complete`, `partial`, `refused`, `interrupted`, or `cleanup-needed`.
 
 ## Recovery model
 
 - Read-only commands hold no durable state and never return cached rows after a
   disconnect or session change.
 - A guest-bound transfer writes only a recognized temporary artifact until
-  finalization. An interrupted eligible data-fork transfer may remain
-  resumable; MacBinary and integrity-failed transfers restart or are discarded.
+  finalization. The existing transfer lane may retain an interrupted eligible
+  data-fork partial, but V0.5 reports it only as recovery state and exposes no
+  resume command; a caller retry is a fresh command attempt. MacBinary and
+  integrity-failed transfers restart or are discarded.
 - Guest-bound upload input uses a private per-process host directory and
   bounded file handles. Normal completion, expiry, integrity failure, and
   process teardown remove recognized stages. Startup reconciliation removes
@@ -231,11 +246,13 @@ boundary protects against other local users and accidental clients, not
 malicious code running as the same macOS user. V0.5 logs the effective policy
 when the adapter starts and every command names its policy version.
 
-The existing V0 one-time artifact approval remains the only transfer available
-until V0.5 upload policy and staging are complete. A future Agent Integration
-UI may enable, narrow, inspect, or revoke V0.5 access and show logs/recovery,
-but it is not part of this roadmap. The companion remains client-launched and
-adds no daemon or second app.
+The existing V0 one-time artifact approval remains available and unchanged.
+The implemented V0.5 create-only staged upload is an additional bounded NOW
+command lifecycle beneath `guestRoot`; it grants neither download nor broader
+mutation authority. A future Agent Integration UI may enable, narrow, inspect,
+or revoke V0.5 access and show logs/recovery, but it is not part of this
+roadmap. The companion remains client-launched and adds no daemon or second
+app.
 
 ## Implementation units
 
@@ -260,6 +277,10 @@ adds no daemon or second app.
   receiver behavior are implemented on both sides.
 - Design the typed NOW download/read/tail commands, root/size policy, receipts,
   and audit before adding any MCP projection.
+- Select and document how bounded staged bytes reach the caller without
+  exposing a modern-host path or adding MCP streaming, including expiry,
+  repeated-read, and cleanup behavior. No projection begins while that
+  delivery model remains undecided.
 - Prove increasing disposable sizes, cancellation, interruption, insufficient
   space, CRC mismatch, cleanup, text truncation, and classic fork fidelity.
 
@@ -271,22 +292,32 @@ adds no daemon or second app.
   off-UI-actor disk I/O, replay conflict, and no host-path input or implicit
   parent creation. The
   V0 approved-artifact lane remains behaviorally unchanged.
-- **Still gated:** attended PowerBook acceptance for the new path.
+- **Still gated before attended PowerBook acceptance:** cap active stage count
+  including zero-byte stages, and invalidate a staged authority if the human
+  changes the active guest share before commit. The exact share-root identity
+  evidence is contract-first if existing host observations cannot prove it.
 - **Deferred within U3:** update/overwrite and mkdir. Update waits for the
   mutation precondition boundary; mkdir remains its own typed command rather
   than being smuggled into upload.
 
-### V05-U4 — Revalidated move and recoverable delete
+### V05-U4 — Revalidated update, move, and recoverable delete
 
 - Add the guest-verifiable precondition contract first.
 - Implement opaque observation storage, expiry, session/root invalidation, and
   guest-side identity comparison immediately before the operation.
+- Resume update/overwrite only through that revalidated identity, with explicit
+  collision, replay, displaced-content recovery, and receipt behavior.
 - Preserve recovery receipts for Trash or displaced content.
 
 ### V05-U5 — Tree deployment
 
+- Define the contract-first guest deployment state machine before coding:
+  versioned operation identity, same-volume staging, per-entry validation,
+  deterministic commit order, reconnect/expiry behavior, and exact partial
+  state when classic HFS cannot provide an atomic tree swap.
 - Define a generic manifest with canonical paths, kinds, sizes, digests, and
-  optional classic metadata.
+  optional classic metadata, bounded by entry count, encoded bytes, aggregate
+  payload, and worst-case receipt size.
 - Stage, validate, and finalize deterministically with per-entry and aggregate
   receipts. Report partial commit boundaries honestly.
 
@@ -303,7 +334,7 @@ adds no daemon or second app.
 | Scope | absolute/traversal/empty/overlong/non-MacRoman paths; root policy cannot be supplied over MCP; host paths never appear | List the approved root and reject one escape without touching disk. |
 | Browse | empty/populated/paged/oversized directory, stat exact/not-found/scan-limit, reconnect invalidation, concurrent reads | Browse and stat disposable entries; compare type/creator/fork sizes in Finder/Get Info. |
 | Download | increasing sizes, bounded resident memory, CRC, cancel, disconnect, insufficient host space, cleanup, stall report | Pull increasing disposable files and one forked/MacBinary file; verify receipts and integrity. |
-| Put | free-space refusal, reservation, progress/rate/elapsed/stall, collision, `file.done`, interruption/resume/discard, date bounds | Send increasing disposable files to a safe location; inspect final names, forks, metadata, and cleanup. |
+| Put | free-space refusal, reservation, progress/rate/elapsed/stall, collision, `file.done`, interruption/discard, fresh-attempt replay policy, date bounds | Send increasing disposable files to a safe location; inspect final names, forks, metadata, and cleanup. |
 | Mutation | stale/reused identity, collision policies, reconnect, replay, Trash recovery | Rename/delete/restore only disposable entries and confirm the expected Finder-visible result. |
 | Tree/prune | deterministic manifest digest/order, partial finalize, dry-run required, preview expiry, drift, unknown extras, per-entry receipts | Deploy and prune a disposable subtree only; never a working project. |
 | Noninterference | companion absent/present, no module inventory change, one transfer lane, host unavailable | Leave normal paired NOW usable and the host running where practical. |

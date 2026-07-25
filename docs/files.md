@@ -369,12 +369,19 @@ conversion point cuts both ways: a mounted volume never gets line-ending
 or type/creator handling, which is most of what makes a file usable
 across these two machines.
 
-### Known blocker
+### Closed memory blocker and remaining boundary
 
-The guest stages an entire file in RAM before sending, so **Send to
-*name*** is capped by the app partition (6 MB) until the send path
-streams from disk the way the receive path already streams to it. Small
-files work today; the fix is being pursued with the large-transfer work.
+The guest no longer stages an entire outbound file in RAM. The integrated
+reverse path reads bounded frames from disk, and the host receives them into a
+private disk sink with progress, CRC, interruption cleanup, and atomic
+finalization. That path is metal-verified through 4 MiB; it has not been
+qualified for longer-than-two-minute transfers, larger files, source mutation,
+resume, or transfer-rate hardening. See
+[reverse-file-streaming.md](reverse-file-streaming.md).
+
+This transport prerequisite does not itself expose generic agent download.
+That remains gated on a separate typed NOW command, `guestRoot` and size
+policy, receipts, audit, tests, and an explicit MCP projection.
 
 ### Phases
 
@@ -391,9 +398,10 @@ dates, MacBinary decoded on arrival). Guest: *Send to name…* in the File
 Sharing panel, the boot-volume toggle, a downloads folder defaulting to
 the Desktop, and `put <path>` in the console. No new windows on either
 side. Done when a file picked on the classic Mac lands in the host's
-share with its name, type and date intact. Capped at small files until
-the staging fix lands — say so in the UI rather than failing
-mysteriously.
+share with its name, type and date intact. This phase originally shipped with
+the documented small-file cap; the later reverse-streaming integration removed
+that memory-bound staging cap subject to the bounded verification limits
+above.
 
 What Phase 1 cost, and what it bought
 -------------------------------------
