@@ -25,9 +25,16 @@ runtime code is imported on any side.
   saturated wire can never silently eat a protocol word. Connecting on
   launch is now a checkbox — off means the Connection page is the only
   dialer, and a Save never dials by surprise.
-- **Console** — the same command table runs locally on the guest and as a
-  remote shell from the host (`gestalt`, `screenshot`, `vprobe`, unix-style
-  flags, history).
+- **Console** — one command table on the guest, reachable from its own
+  window and as a shell from this side. The host console is a **dumb
+  shell**: it relays the line as typed and knows no command's grammar,
+  because the two guests do not serve the same commands — so `help` is a
+  wire request (a machine that serves three commands says three), Tab
+  completes from that answer, and an unknown command comes back refused
+  by the machine that would have run it. Host-side there are four verbs,
+  all behind a `/`: `/clear`, `/save`, `/help`, and `/swpage` (which
+  drives a wire family, not a command). Tested here, and the
+  PowerPC and 68K guests both build; **the PowerBook run is pending**.
 - **`launch` and `quit`, by name** — open an application on the classic Mac,
   and ask a running one to quit, naming it the way `ps` names it. `quit`
   composes list → match → quit → **re-list**, and reports `gone` apart from
@@ -36,6 +43,16 @@ runtime code is imported on any side.
   as a failure rather than a success. Emulator-verified end to end
   (console and wire); **the PowerBook run is pending** — see
   [docs/open-issues.md](docs/open-issues.md).
+- **A real menu bar on the host** — App / File / Edit / View / Guest /
+  Window / Help, populated with what NOW does: the View menu is the module
+  registry (⌘1…), the Guest menu carries the verbs that act on the other
+  machine, and Edit carries the editing commands the console's field needs
+  to have ⌘C at all. The status item stays the small surface for when no
+  window is open. ⌘Q quits and tells the guest first — `bye shutting-down`
+  goes out and is waited for (bounded) before the process ends, instead of
+  the wire being dropped abortively. Verified live via accessibility: the
+  menu bar is there and Quit ends the app; the ⌘Q **keystroke** itself is
+  not keypress-verified here.
 - **Screenshots** — one-shot captures in either direction: host-requested
   (progress, cancel), or guest-pushed via offer/accept with a system
   notification on arrival. Contemporary file naming both sides.
@@ -157,6 +174,17 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   `proc_list` is written and bounded but unreachable from the host, so a
   human must read the Application menu on the machine to know what is
   running. That is the next gap worth closing.
+- **The host console's Tab completion depends on the guest answering
+  `help`.** Both guests in this tree do; a guest built before this change
+  answers `unknown-command`, and then there is no completion at all. That
+  is deliberate — a fallback list would be the thing this change removed —
+  but it means an old binary on the PowerBook has a shell with no
+  discovery, and `help` there says so rather than listing anything.
+- **A console line reaching a guest that predates `line` is misread, not
+  refused.** That guest ignores the field and runs the command bare, so
+  `ls Lab:Code` lists the root. The field is additive by the contract's
+  rules and this is its one dishonest edge; it is stated in the contract
+  next to the field.
 - **NOW-68K is not safe under Virtual Memory.** Its MacTCP parameter block
   and buffers are ordinary application BSS, and the Device Manager writes
   `ioResult` — and the driver copies inbound bytes — at interrupt time

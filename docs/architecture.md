@@ -66,6 +66,73 @@ half of OS 9 networking, so every listener stays on the modern side.
   else. Advisory by design — dropped rather than queued when the control
   queue is busy, so its absence means an old peer, not a stalled one.
 
+## The console is a dumb shell
+
+The host console does not know what commands the guest has, and must not.
+There are **two guests**: the PowerPC Carbon guest serves fifteen
+commands, NOW-68K serves three. A command list on the host would be
+wrong for one of them and wrong again the next time either grows a verb —
+and wrong quietly, because a command the guest had and the console did
+not was refused locally, without ever reaching the wire.
+
+So the line a human types is relayed as typed. `command.request` carries
+either shape:
+
+- **`args`** — typed, for a caller that knows the command: a host module,
+  an agent, a test.
+- **`line`** — the raw text after the command name, for a console.
+  Presence is the signal and `""` is present, so `gestalt` typed by a
+  person (snapshot) is a different request from `gestalt` called by a
+  module (every group). Each command's grammar is stated once in the
+  contract as `x-line` and implemented once, by the machine that serves
+  the verb — `guest/src/cmd_line.c` for the Carbon guest.
+
+**Where the line runs.** Host-side there are four verbs, all behind a `/`
+prefix so a bare word is always the far machine's and a command added to
+either guest can never be shadowed. Three act on this console: `/clear`,
+`/save` (write the scrollback to a file — the command-agnostic
+replacement for `gestalt --save`, which only worked because the host knew
+what gestalt returned) and `/help`. The fourth, `/swpage`, drives the
+`software.list` family, which is a wire family the host implements rather
+than a command any guest serves. That is the whole test for belonging
+here: **no guest could answer it.** Everything else, including a typo,
+crosses the wire and comes back answered — `unknown-command` is the
+guest's word, not a local guess at it.
+
+**Discovery is a request.** `help` is an x-command: a bare one lists what
+that machine serves, a topic returns one command's usage. Both guests
+answer it from their own table (`guest/src/cmd_help.c`,
+`guest68k/src/commands68.c`), which is also the table their own consoles
+read, so help cannot drift from the commands. The host console's Tab
+completion is that answer, fetched on the first Tab and dropped when the
+wire drops; a guest too old to serve `help` has no completion, which is
+the honest outcome rather than a fallback list. History is host-local —
+recalling a line needs no notion of what the line means.
+
+## Menus on the host
+
+Two surfaces, one rule for which is which.
+
+The **status item** is what exists when there is no window: the
+connection glyph and status line, Open, Screenshot Guest, Quit. The
+**main menu** (`MainMenu.swift`) is everything, and duplicates exactly
+those three verbs — a status item that mirrored the whole menu would be
+two surfaces to keep honest. Its View menu is the module registry,
+derived rather than retyped; the verbs that act on the other machine sit
+in a Guest menu, because none of them touches anything on this side.
+
+The app shipped without a main menu for a while, which is worth stating
+plainly because the symptom was elsewhere: **`NSApp.mainMenu` dispatches
+key equivalents**, so there was no ⌘Q, no ⌘W and no ⌘C/⌘V in the console,
+while a Quit item plainly existed in the status item — where its ⌘Q only
+fires with that menu open.
+
+⌘Q tells the guest first. `bye` is a write and a write needs a turn of
+the run loop, so `applicationShouldTerminate` returns `terminateLater`
+and `GuestListener.shutDown` reports once the socket has taken the
+farewell — bounded at half a second, because a guest wedged badly enough
+to need telling is exactly the one that will not read.
+
 ## Logging
 
 Each side keeps a log: one file per launch in a `now-logs` folder, plus
@@ -151,8 +218,11 @@ than trusting the guest to answer.
 - `capture.c` — span/decimation GWorld capture, pumped in bounded steps.
 - `pixels.c` — wire pixel export (palette + per-row PackBits), diff.
 - `json.c` — the one tolerant JSON scanner (natively unit-tested).
-- `commands.c` — one command table serving both consoles;
-  `console_model.c` the guest console's scrollback and history.
+- `commands.c` — one command table serving both consoles, over
+  `cmd_line.c` (the console-line grammar, natively tested) and
+  `cmd_help.c` (the command doc table, which `help` answers from and the
+  guest's own console renders); `console_model.c` the guest console's
+  scrollback and history.
 - `workshop_window.c` / `workshop_sidebar.c` / `workshop_layout.c` — the
   one window, its rail, and the pure geometry both read.
 - `screenshots_module.c` / `files_module.c` (+ `files_browser_view.c`,
@@ -172,6 +242,10 @@ than trusting the guest to answer.
 - `StreamRecorder` — live VFR H.264 encoding.
 - `ScreenshotModuleModel` / `ConsoleModel` / `SettingsModel` — module
   state; `ModuleRegistry` the composition root; `HostAppState` wiring.
+- `MainMenu` — the menu bar, as a pure function over the registry;
+  `App.swift` installs it, owns the status item, and holds the quit
+  sequence. `ConsoleInputField` is AppKit because ↑/↓ and Tab are out of
+  SwiftUI's reach on macOS 13.
 
 ## Naming seam
 
