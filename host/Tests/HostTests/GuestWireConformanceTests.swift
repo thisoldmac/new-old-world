@@ -322,6 +322,28 @@ final class GuestWireConformanceTests: XCTestCase {
     /// Messages built up across several calls cannot be checked this
     /// way. Naming them keeps the gap visible instead of letting a green
     /// suite imply coverage it does not have.
+    ///
+    /// Each one maps to the fixture test that stands in for it, or to nil
+    /// where nothing does. Both halves of that matter: a new piecemeal
+    /// message fails the set comparison until someone lists it, and listing
+    /// it with a fixture name fails the second check until that fixture
+    /// actually exists. A `nil` is an honest, still-open gap — leave it.
+    ///
+    /// hello, ping and error are here from guest68k/src, which assembles
+    /// every message through numfmt appends because the 68K build has no
+    /// printf family (its float tail costs ~42 KB of a 384 KB partition).
+    private static let piecemealCoverage: [String: String?] = [
+        "file.listing": "testFileListingAsTheGuestWritesIt",
+        "file.result": "testFileResultAsTheGuestWritesIt",
+        "census.report": "testCensusReportAsTheGuestWritesIt",
+        "process.listing": "testProcessListingAsTheGuestWritesIt",
+        "software.listing": "testSoftwareListingAsTheGuestWritesIt",
+        "command.result": nil,
+        "hello": "test68KHelloAsTheGuestWritesIt",
+        "ping": "test68KPingAsTheGuestWritesIt",
+        "error": "test68KErrorReplyAsTheGuestWritesIt",
+    ]
+
     func testMessagesThisCannotCheckAreKnown() throws {
         var found: Set<String> = []
         for (_, text) in try guestSources() {
@@ -331,20 +353,96 @@ final class GuestWireConformanceTests: XCTestCase {
                 found.insert(String(type))
             }
         }
-        // hello, ping and error join this set from guest68k/src, which
-        // assembles every message through numfmt appends because the 68K
-        // build has no printf family (its float tail costs ~42 KB of a
-        // 384 KB partition). They are named here so the gap stays visible;
-        // they still want hand-written fixtures.
-        XCTAssertEqual(found,
-                       ["file.listing", "file.result", "command.result",
-                        "census.report", "process.listing",
-                        "hello", "ping", "error",
-                        "software.listing"], """
+        XCTAssertEqual(found, Set(Self.piecemealCoverage.keys), """
             The set of messages assembled piecemeal changed. Those are \
             NOT covered by the conformance checks above — either give the \
-            new one a hand-written fixture in GuestWireFixtureTests, or \
-            build it in one call so it can be checked here.
+            new one a hand-written fixture in GuestWireFixtureTests and \
+            name it in piecemealCoverage, or build it in one call so it \
+            can be checked here.
             """)
+    }
+
+    /// A fixture name in the table above has to name a test that exists.
+    /// Without this, the table degrades into a list of good intentions the
+    /// moment someone renames or deletes a fixture, and the cannot-check
+    /// set would go on claiming coverage that is gone.
+    func testNamedFixturesForPiecemealMessagesExist() throws {
+        let url = Self.repoRoot
+            .appendingPathComponent("host/Tests/HostTests")
+            .appendingPathComponent("GuestWireFixtureTests.swift")
+        let text = try String(contentsOf: url, encoding: .utf8)
+
+        for (type, fixture) in Self.piecemealCoverage {
+            guard let fixture else { continue }
+            XCTAssertTrue(text.contains("func \(fixture)("), """
+                \(type) is recorded as covered by \(fixture), but \
+                GuestWireFixtureTests has no such test — either restore it \
+                or set the entry back to nil so the gap is visible again.
+                """)
+        }
+    }
+
+    /// The 68K guest's piecemeal frames, put through the same contract
+    /// required-field check the whole-message scan gives everything else.
+    /// Decoding is proved next door; this is the other half — a frame the
+    /// host happens to decode can still be missing a field the contract
+    /// demands, which is the exact defect this file was written for.
+    func test68KFixturesCarryTheirRequiredFields() throws {
+        let required = try requiredFields()
+        for json in Guest68KWire.all {
+            guard let object = try JSONSerialization.jsonObject(
+                with: Data(json.utf8)) as? [String: Any],
+                  let type = object["type"] as? String else {
+                XCTFail("not a JSON object: \(json)")
+                continue
+            }
+            let want = try XCTUnwrap(required[schemaName(forType: type)],
+                                     "the contract does not name \(type)")
+            let have = Set(object.keys)
+            XCTAssertTrue(want.isSubset(of: have), """
+                guest68k: \(type) is missing \
+                \(want.subtracting(have).sorted().joined(separator: ", ")) \
+                — the host will not be able to decode it
+                """)
+            // additionalProperties is false on all three schemas, so a
+            // field the contract does not name is as fatal as a missing
+            // one, and the 68K writer emits fixed literals: a stray key
+            // there would ship silently.
+            let known = try contractProperties(
+                of: schemaName(forType: type))
+            XCTAssertTrue(have.isSubset(of: known), """
+                guest68k: \(type) carries \
+                \(have.subtracting(known).sorted().joined(separator: ", ")) \
+                — not named by the contract schema
+                """)
+        }
+    }
+
+    /// The property names a schema declares, read the same shallow way
+    /// `requiredFields()` reads its required list.
+    private func contractProperties(of schema: String) throws -> Set<String> {
+        let url = Self.repoRoot
+            .appendingPathComponent("contract/asyncapi.yaml")
+        let text = try String(contentsOf: url, encoding: .utf8)
+        var out: Set<String> = []
+        var inSchema = false, inProperties = false
+
+        for line in text.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("    ") && !line.hasPrefix("     "),
+               trimmed.hasSuffix(":"), !trimmed.contains(" ") {
+                if inSchema { break }              // the next schema begins
+                inSchema = String(trimmed.dropLast()) == schema
+                continue
+            }
+            guard inSchema else { continue }
+            if line.hasPrefix("      properties:") { inProperties = true; continue }
+            // A property name sits at exactly 8 spaces under properties:.
+            guard inProperties, line.hasPrefix("        "),
+                  !line.hasPrefix("         ") else { continue }
+            out.insert(String(trimmed.prefix { $0 != ":" }))
+        }
+        XCTAssertFalse(out.isEmpty, "no properties read for \(schema)")
+        return out
     }
 }

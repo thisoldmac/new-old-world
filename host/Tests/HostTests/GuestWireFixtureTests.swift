@@ -13,6 +13,14 @@ import XCTest
 /// The strings below are copied from the snprintf calls in
 /// guest/src/wire.c. When one changes there, it changes here, and that
 /// is the point: this is the only place the two halves are compared.
+///
+/// There are two guests now, and their emitters do not resemble each
+/// other. The PowerPC Carbon client (`guest/src`) writes messages with
+/// snprintf; NOW-68K (`guest68k/src`) has no printf family at all — the
+/// float tail newlib drags in costs ~42 KB of a 384 KB partition — so it
+/// appends literals and hand-formatted integers through `numfmt.c`.
+/// Every fixture below is named for the guest it was derived from:
+/// `…AsTheGuestWritesIt` is the PowerPC client, `test68K…` is NOW-68K.
 final class GuestWireFixtureTests: XCTestCase {
     private func decode(_ json: String,
                         file: StaticString = #filePath,
@@ -369,4 +377,149 @@ final class GuestWireFixtureTests: XCTestCase {
         XCTAssertEqual(more.cursor, 16, "pass back to continue the walk")
         XCTAssertEqual(more.total, 203)
     }
+
+    // MARK: - NOW-68K (guest68k/src)
+
+    /// now68k_hello_build() — guest68k/src/hello.c:15-29. Seven appends,
+    /// so the source scanner sees seven fragments and no message; this is
+    /// the whole thing.
+    ///
+    /// Field order is the order of the appends, and nothing in between:
+    /// `type`, `contract` (an integer through now68k_fmt_append_long),
+    /// `side` fixed to "guest", `version` (the caller's string — wire68.c
+    /// passes NOW68K_APP_VERSION, "0.3", wire68.c:59), then `name`, `os`
+    /// and `chunk` frozen into the format literal itself from
+    /// NOW68K_HELLO_NAME / _OS / _CHUNK (guest68k/src/hello.h:16-18).
+    ///
+    /// chunk is 4096 rather than the contract's 8192 default, deliberately:
+    /// MacTCP advertises a ~8K receive window whatever rcvBuff says, and an
+    /// 8 KB chunk stalls on delayed-ACK window updates. The connection uses
+    /// the smaller of the two sides' preferences, so this number is the one
+    /// that governs — which is the reason to pin it.
+    ///
+    /// There is no truncated hello: hello.c returns 0 rather than a short
+    /// buffer when anything would not fit (the `|| pos >= cap` arm), and
+    /// wire68.c:1023 tears the connection down instead of sending. So this
+    /// one string, with only `version` free to vary, is the entire set of
+    /// bytes this message can ever be.
+    func test68KHelloAsTheGuestWritesIt() throws {
+        guard case .hello(let hello) =
+            try decode(Guest68KWire.hello) else {
+            return XCTFail("not a hello")
+        }
+        XCTAssertEqual(hello.contract, Contract.revision)
+        XCTAssertEqual(hello.side, "guest")
+        XCTAssertEqual(hello.version, "0.3", "NOW68K_APP_VERSION")
+        XCTAssertEqual(hello.name, "now-68k",
+                       "the name that tells the two guests apart in the UI")
+        XCTAssertEqual(hello.os, "7.1")
+        XCTAssertEqual(hello.chunk, 4096)
+        XCTAssertLessThan(hello.chunk ?? Contract.defaultChunk,
+                          Contract.defaultChunk,
+                          "MacTCP's ~8K window: 68K asks for less than default")
+    }
+
+    /// now68k_ping_build() — guest68k/src/ping.c:16-18. Three appends,
+    /// hence invisible to the source scanner.
+    ///
+    /// The id is g_ping_id, pre-incremented at wire68.c:1044 and reset to 0
+    /// at the start of every session (wire68.c:638, 1193), so the first ping
+    /// of any connection is exactly `1`. now68k_fmt_append_long
+    /// (numfmt.c:17-45) writes plain decimal: no padding, no grouping, no
+    /// leading `+`, and a `-` only for a negative value, which g_ping_id
+    /// never is.
+    func test68KPingAsTheGuestWritesIt() throws {
+        guard case .ping(let id) = try decode(Guest68KWire.pingFirst) else {
+            return XCTFail("not a ping")
+        }
+        XCTAssertEqual(id, 1, "the first ping of a session")
+
+        guard case .ping(let later) = try decode(Guest68KWire.pingLater) else {
+            return XCTFail("not a ping")
+        }
+        XCTAssertEqual(later, 7, "multi-digit ids are plain decimal")
+    }
+
+    /// send_error_reply() — guest68k/src/wire68.c:461-494, the 68K guest's
+    /// only emitter of a top-level `error`. Reached from the live-state
+    /// dispatcher's fall-through (wire68.c:894-899) for any message type
+    /// that is not pong / bye / error / hello / refuse / command.request /
+    /// census.request.
+    ///
+    /// Two shapes, and only two, because `id` is the one conditional
+    /// append: present when now68k_json_find_int found an `id` on the
+    /// failed request, absent when it did not. `code` and `message` are a
+    /// single fixed literal — the request's own `type` is deliberately NOT
+    /// echoed, because this writer never escapes anything and a
+    /// peer-controlled type could carry a quote or backslash that breaks
+    /// the JSON around it. That is why there is no escaping edge to pin
+    /// here: nothing peer-controlled reaches the payload except the
+    /// integer id.
+    ///
+    /// NOTE: unlike hello and ping, this frame has never been exercised
+    /// against a real host. It is a claim about the emitter read off the C,
+    /// not evidence from a run.
+    func test68KErrorReplyAsTheGuestWritesIt() throws {
+        guard case .error(let withID) =
+            try decode(Guest68KWire.errorWithID) else {
+            return XCTFail("not an error")
+        }
+        XCTAssertEqual(withID.id, 7, "echoes the failed request's id")
+        XCTAssertEqual(withID.code, "not-implemented")
+        XCTAssertEqual(withID.message, "unsupported message type")
+
+        guard case .error(let anonymous) =
+            try decode(Guest68KWire.errorWithoutID) else {
+            return XCTFail("not an error")
+        }
+        XCTAssertNil(anonymous.id,
+                     "no id on the request means no id field, not id:0")
+        XCTAssertEqual(anonymous.code, "not-implemented")
+    }
+
+    /// The id the 68K guest echoes is whatever the host's request carried,
+    /// and now68k_json_find_int (json_scan.c:109-121) accepts a leading `-`.
+    /// numfmt.c:34 then writes the sign back out, so a negative id is a
+    /// shape the host must be able to read — it is the host's own number
+    /// coming home.
+    func test68KErrorEchoesANegativeIdBack() throws {
+        guard case .error(let negative) =
+            try decode(Guest68KWire.errorNegativeID) else {
+            return XCTFail("not an error")
+        }
+        XCTAssertEqual(negative.id, -1)
+    }
+}
+
+/// The exact payload bytes NOW-68K puts on the control channel, derived
+/// from guest68k/src and kept in one place so GuestWireConformanceTests can
+/// put the same strings through the contract's required-field check that
+/// the whole-message scan gives every other frame.
+///
+/// hello and ping were produced by compiling guest68k/src/hello.c,
+/// ping.c and numfmt.c with the host cc and printing the buffer, the same
+/// way guest/tests exercises Toolbox-free guest code. The two error shapes
+/// are transcribed from the literals in send_error_reply().
+enum Guest68KWire {
+    static let hello = #"{"type":"hello","contract":1,"side":"guest","#
+        + #""version":"0.3","name":"now-68k","os":"7.1","chunk":4096}"#
+
+    static let pingFirst = #"{"type":"ping","id":1}"#
+    static let pingLater = #"{"type":"ping","id":7}"#
+
+    static let errorWithID = #"{"type":"error","id":7,"#
+        + #""code":"not-implemented","#
+        + #""message":"unsupported message type"}"#
+    static let errorWithoutID = #"{"type":"error","#
+        + #""code":"not-implemented","#
+        + #""message":"unsupported message type"}"#
+    static let errorNegativeID = #"{"type":"error","id":-1,"#
+        + #""code":"not-implemented","#
+        + #""message":"unsupported message type"}"#
+
+    /// Every fixture string above, for the contract check next door.
+    static let all: [String] = [
+        hello, pingFirst, pingLater,
+        errorWithID, errorWithoutID, errorNegativeID,
+    ]
 }
