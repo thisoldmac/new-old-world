@@ -153,11 +153,26 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   It is deliberately smaller than the Carbon guest: one page, no tabs, no
   preferences at all (the human types host and port each launch), dial-out
   only with a human-controlled fixed-interval redial, and no bulk features
-  — bulk frames are consumed and discarded to stay in frame sync.
+  — bulk frames are consumed and discarded to stay in frame sync. The one
+  exception to "one page" is the interactive console below, which is a
+  second window by decision and is not yet metal-verified.
+
+- **One command table, two readers.** `launch` and `quit` are implemented
+  once. A command fills an `N68CmdResult` — what happened, no formatting
+  — and `guest68k/src/n68_cmdresult.c` renders that either as the
+  contract's `command.result` JSON for the host or as text for a human
+  typing at the machine. Adding a command means one case in
+  `now68k_commands_run()` and nothing else; it reaches the wire and the
+  console in the same commit. Tested off-metal both ways, including six
+  outcomes walked through both renderers asserting they never disagree
+  about success or the error code — the failure mode the corpus finding
+  `two-halves-never-met-in-a-test` names. The move itself was checked
+  differentially against the pre-refactor builders over 1,092 shape ×
+  message × code × capacity combinations: the host sees the same bytes.
 
 - **A dev loop that does not need a Macintosh.** Neither guest can run its
   own suite, so the pure-C halves compile under the host `cc`:
-  `scripts/test-native` runs all 16 across both guests in one command, and
+  `scripts/test-native` runs all 18 across both guests in one command, and
   a test file missing from its manifest fails the run — a test nobody runs
   reads as coverage in a directory listing and proves nothing. The metal
   gates now **fail rather than skip** once a human has opted into a metal
@@ -180,6 +195,25 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   than against the PowerPC one: with no independent listing, "gone" is the
   guest's own word checked twice, and every run that degrades that way
   says so in its output rather than quietly reporting the same green.
+- **NOW-68K's interactive console has never run on a Macintosh.** It is a
+  second window (Windows > Console, Command-K) with an input line, an
+  output pane, Return to run, Up/Down history and Option-Up/Down
+  scrollback, and it builds under the 68K toolchain at
+  `-O2 -Wall -Wextra -Werror` with its Toolbox-free halves — the history
+  ring and both result renderers — covered by native tests. **Nothing
+  about the window itself is verified.** The arrow-key interception, the
+  cursor movement TextEdit is trusted with, the Option-arrow scrollback
+  (the 180c has no page keys) and the new two-window event routing in
+  `main.c` are all reasoned from headers, not watched. It costs a measured
+  +15,382 bytes (text +4,428, bss +10,954) — 4.0% of the 384 KB partition
+  — plus a `WindowRecord` and a `TERec` out of the heap that nobody has
+  sized. It also cannot copy text out, and its scrollback holds 32 lines.
+
+  It is also a **deliberate exception** to this guest's own one-page rule
+  and to the Carbon guest's harder "a feature is a module, never a
+  window". The reason is written down in `conwin.h` and in
+  [docs/open-issues.md](docs/open-issues.md); the next feature is still a
+  page unless someone writes down a reason as good.
 - **Nothing verified against `tools/fakeguest.py` is evidence about a
   guest.** It is hand-written from `guest68k/src` and the contract, so it
   can only show that the harness reacts correctly to a peer that behaves a

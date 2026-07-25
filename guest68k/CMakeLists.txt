@@ -24,6 +24,9 @@ add_application(now68k-guest
     CREATOR "NW68"
     src/main.c
     src/window.c
+    src/conwin.c
+    src/n68_history.c
+    src/n68_cmdresult.c
     src/log.c
     src/frame.c
     src/json_scan.c

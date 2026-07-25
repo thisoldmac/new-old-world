@@ -33,6 +33,26 @@
 #ifndef NOW68K_COMMANDS68_H
 #define NOW68K_COMMANDS68_H
 
+#include "n68_cmdresult.h"
+
+/* TWO READERS, ONE TABLE.
+ *
+ * When this header was written the only consumer of a command was the wire,
+ * so "dispatch" meant run-and-render-JSON in one call. There is now a second
+ * consumer - the interactive console window (conwin.h), where a human at the
+ * PowerBook types `launch SimpleText` and wants a sentence, not a JSON
+ * object. The seam that keeps them one implementation is now68k_commands_run
+ * below: it RUNS a command and hands back what happened (N68CmdResult), and
+ * the two renderers in n68_cmdresult.c turn that into either contract bytes
+ * or console text.
+ *
+ * now68k_commands_dispatch is unchanged for its callers - it is now exactly
+ * run + n68_cmdresult_render_json - so wire68.c did not have to move, and
+ * the additivity contract below still holds verbatim. Adding a command means
+ * adding one case to now68k_commands_run and NOTHING else: it appears on the
+ * wire and in the console at the same moment, which is the property this
+ * split exists to buy. */
+
 /* THE size of a command.result on this guest, stated once, here, for both
  * the code that BUILDS one and the code that SENDS it.
  *
@@ -124,5 +144,28 @@ _Static_assert(NOW68K_COMMAND_RESULT_CAP >= NOW68K_COMMAND_RESULT_FLOOR,
  */
 int now68k_commands_dispatch(const char *name, const char *target, long id,
                               char *out, long cap, long *out_len);
+
+/* Runs one command by name and fills `res` with what happened - no
+ * formatting, no `id`, nothing wire-shaped.
+ *
+ * Same additivity seam as now68k_commands_dispatch above, and the same
+ * meaning for the return value: 1 if `name` is one of "launch" or "quit"
+ * (then `res` is fully populated, ok or not), 0 if it is neither - and 0 is
+ * NOT an error, it is "not mine". Each caller answers an unrecognized name
+ * in its own vocabulary: wire68.c builds the contract's
+ * ok=false/"unknown-command" reply, and conwin.c prints one line saying so.
+ * Neither has to know about the other.
+ *
+ * `res` is zeroed before the command runs, so a partially-filled result can
+ * never survive from a previous call. It may not be NULL; `name` may be
+ * (then always unrecognized). `target` follows now68k_commands_dispatch's
+ * rules exactly - the args.target string, already extracted, or NULL/"".
+ *
+ * NOT free of side effects and not free of TIME: `launch` walks the catalog
+ * for up to proc68.h's launch-search budget, and `quit` waits out its
+ * confirmation window. A caller inside an event loop must pump the wire
+ * around this call the way main.c pumps around MenuSelect - see conwin.c. */
+int now68k_commands_run(const char *name, const char *target,
+                         N68CmdResult *res);
 
 #endif /* NOW68K_COMMANDS68_H */

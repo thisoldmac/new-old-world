@@ -1,0 +1,701 @@
+/*
+ * conwin.c - the interactive console window (see conwin.h, which carries
+ * the reason this guest has a second window at all).
+ *
+ * STATIC MEMORY BUDGET (no malloc/NewPtr/NewHandle anywhere in this file;
+ * the Toolbox objects below are the Toolbox's own allocations, not ours):
+ *   gOut (N68ConsoleRing)   8192 + 128 + ~16     = ~8.2 KB (its own
+ *                                                   documented budget,
+ *                                                   n68_console_ring.h)
+ *   gHistory (N68History)   2048 + 256 + ~12     = ~2.3 KB (n68_history.h)
+ *   misc scalars (window/TE handles, rects,
+ *   scrollback offset, prompt width)             = ~ 120  bytes
+ *   ---------------------------------------------------------------------
+ *   file-static total                            = 10,954 bytes MEASURED
+ *
+ * Measured, not estimated - the arithmetic above is what it should be and
+ * the number is what it is:
+ *
+ *   m68k-apple-macos-size <builddir>/CMakeFiles/now68k-guest.dir/src/\
+ *     conwin.c.obj        ->  text 3534  data 0  bss 10954
+ *
+ * Whole-application cost of this window and the seam it needed, against
+ * 4a7703f built the same way: text +4,428 and bss +10,954, so +15,382
+ * bytes = +4.0% of the 384 KB partition. Re-measure rather than trust this
+ * paragraph if you change either buffer.
+ *
+ * It is paid whether or not the window is ever opened, because BSS is BSS.
+ * It buys the two things this window cannot fake: a scrollback the human
+ * can page back through, and a history the arrow keys can walk. window.c's
+ * own globals are 9,186 bytes by the same measurement, so the pair costs
+ * ~20 KB - the CODE resource and the MacTCP buffers (17,696 bytes in
+ * net_mactcp.c) remain the large items.
+ *
+ * Deepest transient stack, inside submit_line():
+ *   line[kInputCap 256] + name[32] + N68CmdResult(256) + rendered[192]
+ *   + draw-time lines[24]*8                      = ~ 930 bytes
+ * draw_all() is never on the stack under submit_line() - submit_line
+ * invalidates and returns, it does not draw. No recursion, no VLA.
+ *
+ * REDRAW OWNERSHIP: exactly one painter, draw_all(), and it runs only
+ * inside the updateEvt BeginUpdate/EndUpdate bracket. Every other function
+ * here mutates state and calls InvalRect. The two exceptions are TextEdit's
+ * own (TEKey/TEClick/TEIdle/TEActivate draw the field and its insertion
+ * point immediately, which is TextEdit's contract, not this file's
+ * drawing) - the same exception window.c already documents.
+ */
+#include "conwin.h"
+
+#include "commands68.h"
+#include "log.h"
+#include "n68_cmdresult.h"
+#include "n68_console_ring.h"
+#include "n68_history.h"
+#include "wire68.h"
+
+#include <Quickdraw.h>
+#include <Fonts.h>
+#include <TextEdit.h>
+#include <TextUtils.h>
+#include <Memory.h>
+
+#include <stddef.h>
+#include <string.h>
+
+/* Same reason as window.c's: a "\p" literal is a char*, every Toolbox
+ * string argument is a ConstStr255Param, and the two differ in signedness.
+ * With the -Werror gate every call site needs the cast, so it lives here
+ * once. */
+#define PSTR(s) ((ConstStr255Param)(s))
+
+/* Offset from the main window (40,60 at 512x300) so both are reachable
+ * without dragging either: this one sits below and right of it and still
+ * fits the 180c's 640x480 panel (60+268 = 328 bottom, 60+460 = 520 right). */
+#define kCWinLeft    60
+#define kCWinTop     92
+#define kCWinWidth   460
+#define kCWinHeight  268
+
+#define kCMargin       6
+#define kCRight      454        /* kCWinWidth - kCMargin */
+
+#define kCOutTop       6
+#define kCOutBot     216
+#define kCInTop      222
+#define kCInBot      244
+#define kCHintTop    248
+#define kCHintBot    262
+
+/* Must equal kN68HistoryLineCap - see n68_history.h's WHY 256 WIDE. A line
+ * the field can hold but the history cannot store would come back from an
+ * Up arrow silently shortened. */
+enum { kInputCap = kN68HistoryLineCap };
+
+/* One rendered command result: two lines of kN68CmdTextCap-ish text plus
+ * their labels and the CR between them. 512 is comfortably past the widest
+ * n68_cmdresult_render_text can produce (label 12 + ": " + text 160, twice)
+ * so the console never shows a result the wire would have shown in full. */
+enum { kRenderCap = 512 };
+
+/* Widest row array any single draw uses - a ~208px output pane at Monaco 9
+ * is about 17 rows; see the row math in draw_output, which never indexes
+ * past `shown`. */
+enum { kMaxRows = 24 };
+
+static WindowPtr gWindow  = NULL;
+static TEHandle  gInputTE = NULL;
+static Boolean   gActive  = false;
+
+static Rect gOutRect, gInRect, gHintRect;
+static short gPromptWidth = 0;   /* pixels taken by the "> " prompt */
+
+static N68ConsoleRing gOut;
+static N68History     gHistory;
+static int            gInited = 0;
+
+/* How many lines the view is scrolled UP from the newest. 0 = following the
+ * bottom, which is where it snaps back on any new output. */
+static short gScrollBack = 0;
+
+/* ---- output ---------------------------------------------------------------- */
+
+/* Appends one line to the scrollback and marks the pane dirty. Every caller
+ * is a genuine content change (an echoed command, a result, a help line),
+ * never a per-pass poll, so the unconditional InvalRect is the
+ * invalidate-on-real-change rule rather than a violation of it. */
+static void con_out(const char *s)
+{
+    n68_console_feed(&gOut, s, strlen(s));
+    n68_console_feed(&gOut, "\r", 1);
+
+    /* New output snaps the view back to the bottom. The alternative -
+     * holding position while scrolled up - only makes sense for output that
+     * arrives on its own; everything here arrives because the human just
+     * pressed Return, and hiding their own result would read as a hang. */
+    gScrollBack = 0;
+
+    if (gWindow != NULL) {
+        InvalRect(&gOutRect);
+    }
+}
+
+/* Feeds a multi-line block (n68_cmdresult_render_text separates rows with
+ * CR) as-is: the ring's splitter already turns CR into line breaks, so this
+ * is one call, not a loop this file has to write. */
+static void con_out_block(const char *s, long length)
+{
+    if (length <= 0) {
+        return;
+    }
+    n68_console_feed(&gOut, s, (size_t)length);
+    n68_console_feed(&gOut, "\r", 1);
+    gScrollBack = 0;
+    if (gWindow != NULL) {
+        InvalRect(&gOutRect);
+    }
+}
+
+/* ---- input field ----------------------------------------------------------- */
+
+static void input_get_text(char *out, int cap)
+{
+    Handle h;
+    short  len;
+    short  n;
+
+    out[0] = '\0';
+    if (gInputTE == NULL || cap <= 0) {
+        return;
+    }
+    len = (**gInputTE).teLength;
+    h = (**gInputTE).hText;
+    if (h == NULL || len <= 0) {
+        return;
+    }
+    n = len < (short)(cap - 1) ? len : (short)(cap - 1);
+    /* No call that can move memory between the deref and the copy - the
+     * standing Handle rule (AGENTS.md / managers-memory-callbacks). */
+    memcpy(out, *h, (size_t)n);
+    out[n] = '\0';
+}
+
+static void input_set_text(const char *s)
+{
+    if (gInputTE == NULL) {
+        return;
+    }
+    TESetText(s, (long)strlen(s), gInputTE);
+    TESetSelect(32767, 32767, gInputTE);   /* caret to end, the shell idiom */
+    TESelView(gInputTE);
+    InvalRect(&gInRect);
+}
+
+/* ---- running a line -------------------------------------------------------- */
+
+static void show_help(void)
+{
+    con_out("NOW-68K console. Commands run on THIS machine.");
+    con_out("  launch <name|HD:path>    open an application");
+    con_out("  quit [--wait N|--no-wait] <name>");
+    con_out("  help, clear              (console only, not wire commands)");
+    con_out("Return runs. Up/Down walk history.");
+    con_out("Option-Up/Down (or Page Up/Down) scroll this pane.");
+}
+
+/* Splits "name rest of the line" into a command name and everything after
+ * it. The rest is handed on untouched: commands68.c owns the grammar of a
+ * target (leading flags for quit, trim-and-unquote for launch), and
+ * re-deriving any of it here would be exactly the second implementation
+ * this whole design exists to prevent. Returns a pointer into `line`. */
+static const char *split_command(const char *line, char *name, int name_cap)
+{
+    int n = 0;
+
+    while (*line == ' ' || *line == '\t') {
+        ++line;
+    }
+    while (*line != '\0' && *line != ' ' && *line != '\t'
+           && n < name_cap - 1) {
+        name[n++] = *line++;
+    }
+    name[n] = '\0';
+    /* A name longer than name_cap runs off into the target, which would
+     * silently turn a typo into a different command with a strange
+     * argument. Consume the rest of the token instead, so the name is
+     * simply unrecognized and says so. */
+    while (*line != '\0' && *line != ' ' && *line != '\t') {
+        ++line;
+    }
+    while (*line == ' ' || *line == '\t') {
+        ++line;
+    }
+    return line;
+}
+
+static void submit_line(void)
+{
+    char line[kInputCap];
+    char name[kN68CmdCodeCap];
+    char echo[kInputCap + 4];
+    const char *target;
+    N68CmdResult res;
+    long pos;
+
+    input_get_text(line, (int)sizeof line);
+    input_set_text("");
+    n68_history_push(&gHistory, line);
+
+    /* An empty Return is a no-op, not a blank echoed line: on a 17-row pane
+     * a stray Return would push real output off the top. */
+    if (line[0] == '\0') {
+        return;
+    }
+
+    echo[0] = '>';
+    echo[1] = ' ';
+    {
+        size_t len = strlen(line);
+        memcpy(echo + 2, line, len + 1);
+    }
+    con_out(echo);
+
+    target = split_command(line, name, (int)sizeof name);
+
+    /* Console-local, deliberately NOT in commands68.c's table: `help` and
+     * `clear` act on this window and mean nothing on the wire. Keeping them
+     * out of the table is the same discipline as keeping launch/quit out of
+     * this file - each verb has exactly one home. */
+    if (strcmp(name, "help") == 0 || strcmp(name, "?") == 0) {
+        show_help();
+        return;
+    }
+    if (strcmp(name, "clear") == 0) {
+        n68_console_init(&gOut);
+        gScrollBack = 0;
+        if (gWindow != NULL) {
+            InvalRect(&gOutRect);
+        }
+        return;
+    }
+
+    /* proc68.h's catalog walk and quit-confirmation wait are both
+     * synchronous and take no callback, exactly as they do when the same
+     * command arrives over the wire. Pumping immediately before and after
+     * bounds the stall to the command itself rather than letting it
+     * compound with whatever else was pending - the same treatment main.c
+     * gives MenuSelect and TrackGoAway, and for the same reason. It does
+     * NOT make the command itself pump; nothing here can. */
+    wire_idle();
+    if (!now68k_commands_run(name, target, &res)) {
+        /* Answered here in this window's own vocabulary, while wire68.c
+         * answers the same 0 with the contract's ok=false/"unknown-command"
+         * reply. Neither knows about the other - that is the additivity
+         * seam working (commands68.h). */
+        static const char kPrefix[] = "! unknown-command: ";
+        char msg[sizeof kPrefix + kN68CmdCodeCap];
+        size_t nameLen = strlen(name);   /* < kN68CmdCodeCap by split_command */
+
+        memcpy(msg, kPrefix, sizeof kPrefix - 1);
+        memcpy(msg + sizeof kPrefix - 1, name, nameLen + 1);
+        con_out(msg);
+        wire_idle();
+        return;
+    }
+    wire_idle();
+
+    {
+        char rendered[kRenderCap];
+
+        pos = n68_cmdresult_render_text(&res, rendered, (long)sizeof rendered);
+        if (pos > 0) {
+            con_out_block(rendered, pos);
+        } else {
+            /* n68_cmdresult.c does not log - it does not know which command
+             * this was. Same division as commands68.c's dispatch. */
+            now68k_log("conwin: result did not render");
+            con_out("! render-failed: the result did not fit this console");
+        }
+    }
+}
+
+/* ---- drawing --------------------------------------------------------------- */
+
+static void draw_output(void)
+{
+    FontInfo fi;
+    short    lineHeight, rows, i;
+    size_t   retained, maxBack, first, shown;
+    N68ConsoleLine lines[kMaxRows];
+    Rect     inner;
+
+    FrameRect(&gOutRect);
+    inner = gOutRect;
+    InsetRect(&inner, 2, 2);
+
+    TextFont(kFontIDMonaco);
+    TextSize(9);
+    GetFontInfo(&fi);
+    lineHeight = (short)(fi.ascent + fi.descent + fi.leading);
+    if (lineHeight <= 0) {
+        return;   /* pathological font metrics - nothing sane to draw */
+    }
+
+    rows = (short)((inner.bottom - inner.top) / lineHeight);
+    if (rows > kMaxRows) {
+        rows = kMaxRows;
+    }
+    if (rows <= 0) {
+        return;
+    }
+
+    retained = n68_console_retained_count(&gOut);
+    maxBack = retained > (size_t)rows ? retained - (size_t)rows : 0;
+    if ((size_t)gScrollBack > maxBack) {
+        /* The pane grew, or lines aged out from under a scrolled-up view.
+         * Clamped here, in the one place that knows both numbers, rather
+         * than at each key that changes either. */
+        gScrollBack = (short)maxBack;
+    }
+    first = maxBack - (size_t)gScrollBack;
+
+    shown = n68_console_visible_slice(&gOut, first, lines, (size_t)rows);
+    for (i = 0; i < (short)shown; i++) {
+        MoveTo(inner.left, (short)(inner.top + fi.ascent + i * lineHeight));
+        DrawText(lines[i].text, 0, (short)lines[i].length);
+    }
+}
+
+static void draw_input(void)
+{
+    FontInfo fi;
+
+    FrameRect(&gInRect);
+    TextFont(kFontIDMonaco);
+    TextSize(9);
+    GetFontInfo(&fi);
+    MoveTo((short)(gInRect.left + 3),
+           (short)(gInRect.top + 3 + fi.ascent));
+    DrawString(PSTR("\p> "));
+
+    if (gInputTE != NULL) {
+        Rect view = (**gInputTE).viewRect;
+        TEUpdate(&view, gInputTE);
+    }
+}
+
+static void draw_hint(void)
+{
+    FontInfo fi;
+
+    TextFont(kFontIDGeneva);
+    TextSize(9);
+    GetFontInfo(&fi);
+    MoveTo(gHintRect.left, (short)(gHintRect.top + fi.ascent));
+    DrawString(PSTR("\pReturn runs  -  Up/Down history  -  Option-Up/Down "
+                     "scrolls  -  type help"));
+}
+
+/* The one painter. Nothing else in this file draws outside the updateEvt
+ * bracket that calls it - see this file's header comment. */
+static void draw_all(void)
+{
+    draw_output();
+    draw_input();
+    draw_hint();
+}
+
+/* ---- lifecycle -------------------------------------------------------------- */
+
+static void ensure_buffers(void)
+{
+    if (gInited) {
+        return;
+    }
+    n68_console_init(&gOut);
+    n68_history_init(&gHistory);
+    gInited = 1;
+
+    con_out("NOW-68K console - type help.");
+}
+
+void conwin_show(void)
+{
+    Rect bounds, dest, view;
+
+    ensure_buffers();
+
+    if (gWindow != NULL) {
+        SelectWindow(gWindow);
+        return;
+    }
+
+    SetRect(&bounds, kCWinLeft, kCWinTop,
+            kCWinLeft + kCWinWidth, kCWinTop + kCWinHeight);
+
+    /* noGrowDocProc for the same reason window.c gives: documentProc
+     * reserves a grow box this file neither draws nor handles, and a
+     * control that is drawn but inert reads as a bug. */
+    gWindow = NewCWindow(NULL, &bounds, PSTR("\pConsole"), true,
+                          noGrowDocProc, (WindowPtr)-1L, true, 0);
+    if (gWindow == NULL) {
+        now68k_log("conwin: NewCWindow failed");
+        return;
+    }
+    SetPort(gWindow);
+    gActive = true;
+
+    SetRect(&gOutRect,  kCMargin, kCOutTop,  kCRight, kCOutBot);
+    SetRect(&gInRect,   kCMargin, kCInTop,   kCRight, kCInBot);
+    SetRect(&gHintRect, kCMargin, kCHintTop, kCRight, kCHintBot);
+
+    /* Set the port's font/size BEFORE TENew: TENew captures the port's
+     * txFont/txSize into the TERec permanently, and TEUpdate/TESetText draw
+     * with the TERec's own pair, not whatever a later draw sets. window.c
+     * records this as DEFECT 16 - a freshly made port is Chicago 12, whose
+     * ~16px line height clips inside an 18px field. Monaco 9 here so typed
+     * text matches the output pane above it character for character, which
+     * is the whole point of a console. */
+    TextFont(kFontIDMonaco);
+    TextSize(9);
+    gPromptWidth = StringWidth(PSTR("\p> "));
+
+    view = gInRect;
+    InsetRect(&view, 3, 3);
+    view.left = (short)(view.left + gPromptWidth);
+    dest = view;
+    /* destRect far wider than viewRect so TE never word-wraps (there is no
+     * second line to wrap into); TESelView after every edit keeps the caret
+     * in view - the standard classic-Mac one-line scrolling field recipe
+     * (Inside Macintosh: Text), same as window.c's three fields. */
+    dest.right = (short)(dest.left + 2000);
+    gInputTE = TENew(&dest, &view);
+    if (gInputTE == NULL) {
+        /* Keep the window: the scrollback is still readable and still
+         * scrollable, which is more useful than a window that refuses to
+         * open. A dead field reads as inert, not as a crash. */
+        now68k_log("conwin: TENew failed - output only, no input");
+    } else {
+        TEActivate(gInputTE);
+    }
+}
+
+int conwin_owns(WindowPtr w)
+{
+    return (w != NULL && w == gWindow);
+}
+
+void conwin_close(void)
+{
+    if (gInputTE != NULL) {
+        TEDispose(gInputTE);
+        gInputTE = NULL;
+    }
+    if (gWindow != NULL) {
+        DisposeWindow(gWindow);
+        gWindow = NULL;
+    }
+    gActive = false;
+    /* gOut and gHistory deliberately survive: closing a console should not
+     * silently erase what it said, and both are BSS that costs the same
+     * either way. */
+}
+
+void conwin_dispose(void)
+{
+    conwin_close();
+}
+
+/* ---- events ----------------------------------------------------------------- */
+
+static void handle_key(EventRecord *event)
+{
+    char c = (char)(event->message & charCodeMask);
+    const char *recalled;
+    char current[kInputCap];
+
+    /* Option-Up/Down scrolls the pane, as well as Page Up/Down below.
+     * BOTH bindings exist because of the machine: kPageUpCharCode /
+     * kPageDownCharCode (Events.h, 11 and 12) come from an extended
+     * keyboard's dedicated page keys, and the PowerBook 180c's built-in
+     * keyboard has no such keys - a console whose only way to see older
+     * output needed hardware the target does not have would be scrollback
+     * in name only. Option is chosen over Command because Command-anything
+     * is consumed by MenuKey in main.c before this file ever sees it. */
+    if ((event->modifiers & optionKey) != 0
+        && (c == kUpArrowCharCode || c == kDownArrowCharCode)) {
+        if (c == kUpArrowCharCode) {
+            gScrollBack = (short)(gScrollBack + 1);
+        } else {
+            gScrollBack = (short)(gScrollBack > 0 ? gScrollBack - 1 : 0);
+        }
+        InvalRect(&gOutRect);
+        return;
+    }
+
+    switch (c) {
+    case kUpArrowCharCode:
+    case kDownArrowCharCode:
+        /* INTERCEPTED BEFORE TEKey, and that ordering is the feature. Given
+         * these two codes TextEdit moves the insertion point between
+         * display lines; in a one-line field that is a no-op, so handing
+         * them to TEKey would make the arrows do nothing at all rather than
+         * walk history. Left and right arrows (kLeftArrowCharCode /
+         * kRightArrowCharCode, Events.h) deliberately fall through to TEKey
+         * below, which is where ordinary cursor movement belongs and where
+         * shift-extend already works.
+         *
+         * n68_history returns NULL for "there is nothing further that way",
+         * which means LEAVE THE FIELD ALONE - never clear it. Pressing Up
+         * past the oldest entry must not wipe what is showing. */
+        if (c == kUpArrowCharCode) {
+            input_get_text(current, (int)sizeof current);
+            recalled = n68_history_prev(&gHistory, current);
+        } else {
+            recalled = n68_history_next(&gHistory);
+        }
+        if (recalled != NULL) {
+            input_set_text(recalled);
+        }
+        break;
+
+    case kReturnCharCode:
+    case kEnterCharCode:
+        submit_line();
+        break;
+
+    case kPageUpCharCode:
+        gScrollBack = (short)(gScrollBack + 4);
+        /* The upper clamp lives in draw_output, which is the only code that
+         * knows how many rows fit and how many lines are retained. */
+        InvalRect(&gOutRect);
+        break;
+
+    case kPageDownCharCode:
+        gScrollBack = (short)(gScrollBack >= 4 ? gScrollBack - 4 : 0);
+        InvalRect(&gOutRect);
+        break;
+
+    default:
+        if (gInputTE != NULL) {
+            /* Everything else is TextEdit's: printable characters, Delete/
+             * Backspace, and left/right cursor movement with or without
+             * shift. Reimplementing any of it here would be a second, worse
+             * line editor. */
+            TEKey((CharParameter)c, gInputTE);
+            TESelView(gInputTE);
+        }
+        break;
+    }
+}
+
+void conwin_handle_event(EventRecord *event)
+{
+    GrafPtr save;
+    WindowPtr w;
+
+    if (gWindow == NULL) {
+        return;
+    }
+
+    switch (event->what) {
+    case updateEvt:
+        w = (WindowPtr)event->message;
+        GetPort(&save);
+        SetPort(w);
+        BeginUpdate(w);
+        draw_all();
+        EndUpdate(w);
+        SetPort(save);
+        break;
+
+    case activateEvt:
+    {
+        Boolean newActive = (event->modifiers & activeFlag) != 0;
+
+        if (newActive != gActive) {
+            gActive = newActive;
+            GetPort(&save);
+            SetPort(gWindow);
+            if (gInputTE != NULL) {
+                if (gActive) {
+                    TEActivate(gInputTE);
+                } else {
+                    TEDeactivate(gInputTE);
+                }
+            }
+            SetPort(save);
+        }
+        break;
+    }
+
+    case osEvt:
+        if (((event->message >> 24) & 0xFF) == suspendResumeMessage) {
+            Boolean newActive = (event->message & resumeFlag) != 0;
+
+            if (newActive != gActive) {
+                gActive = newActive;
+                GetPort(&save);
+                SetPort(gWindow);
+                if (gInputTE != NULL) {
+                    if (gActive) {
+                        TEActivate(gInputTE);
+                    } else {
+                        TEDeactivate(gInputTE);
+                    }
+                }
+                SetPort(save);
+            }
+        }
+        break;
+
+    case mouseDown:
+    {
+        Point pt;
+
+        GetPort(&save);
+        SetPort(gWindow);
+        pt = event->where;
+        GlobalToLocal(&pt);
+        if (gInputTE != NULL && PtInRect(pt, &gInRect)) {
+            TEClick(pt, (event->modifiers & shiftKey) != 0, gInputTE);
+            TESelView(gInputTE);
+        }
+        /* A click in the output pane does nothing on purpose: the pane is
+         * drawn text, not a TERec, so there is nothing to select. Noted
+         * rather than silently ignored - copy-out of the scrollback is a
+         * real gap, and docs/open-issues.md carries it. */
+        SetPort(save);
+        break;
+    }
+
+    case keyDown:
+    case autoKey:
+        /* One port bracket around the whole key path, not per-branch:
+         * input_set_text and the Page keys call InvalRect, which writes
+         * into WindowPeek(thePort)->updateRgn - whatever port is current,
+         * not necessarily this one, once a desk accessory has changed it.
+         * window.c records the per-branch version of this as DEFECT 8. */
+        GetPort(&save);
+        SetPort(gWindow);
+        handle_key(event);
+        SetPort(save);
+        break;
+
+    default:
+        break;
+    }
+}
+
+void conwin_idle(void)
+{
+    GrafPtr save;
+
+    if (gWindow == NULL || gInputTE == NULL || !gActive) {
+        return;   /* costs nothing while the window is closed or behind */
+    }
+    GetPort(&save);
+    SetPort(gWindow);
+    TEIdle(gInputTE);   /* insertion-point blink - the standard TE idiom for
+                            this, not "our" redraw */
+    SetPort(save);
+}

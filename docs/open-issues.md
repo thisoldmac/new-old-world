@@ -1070,6 +1070,114 @@ tests, which is a different and lesser thing, and each entry says which.
 Listed because "we shipped it and here is what we still do not know" is
 the useful half.
 
+- **The interactive console is a SECOND WINDOW, by decision, and that is
+  a standing exception rather than drift** (2026-07-25). Every other
+  statement this project makes about guest UI says the opposite: the
+  Carbon guest's rule is that a new feature is a Workshop module and
+  never a window (`docs/adding-a-workshop-module.md`), `window.h` and
+  this README both describe NOW-68K as one page with no tabs, and
+  `guest68k.r`'s `SIZE` comment agrees. Michelle asked for the console
+  in its own window on this guest, and it is implemented that way.
+
+  The reason it is defensible: the main window's console pane is a **log
+  viewer** — it shows what the wire and the status line said, it takes no
+  input, and this change leaves it exactly as it was. An interactive
+  console needs a keyboard focus, an edit field, an insertion point and a
+  key-by-key event path, and the one 512×300 page already carries three
+  connection fields, two controls, a status line and a health readout.
+  Making it carry both would mean shrinking the log viewer to a few rows
+  or growing the window past the 180c's 640×480 panel.
+
+  **The next feature is still a page on the main window** unless someone
+  writes down a reason this good. `conwin.h`'s header comment carries the
+  same paragraph so it is read by whoever edits the code, not only by
+  whoever reads the ledger.
+
+- **The console runs the command table, not a copy of it — and only the
+  seam is tested** (2026-07-25). `commands68.c` used to run a command and
+  emit its `command.result` JSON in one pass, which is fine with one
+  reader and impossible with two. It now fills an `N68CmdResult` (the
+  facts, no formatting) via `now68k_commands_run()`, and
+  `guest68k/src/n68_cmdresult.c` holds **both** renderers side by side:
+  JSON for the wire, text for the console. Adding a command means one
+  case in `now68k_commands_run` and nothing else — it appears in both
+  places in the same commit. This is deliberately aimed at the parent
+  corpus finding `two-halves-never-met-in-a-test`.
+
+  What is proven: `guest68k/tests/test_cmdresult.c` (50 checks) pins the
+  JSON bytes for all three reply shapes against literals written out in
+  full — not assembled from the renderer's own pieces — and walks six
+  outcomes through both renderers asserting they never disagree about the
+  `ok` bit or the error code. `guest68k/tests/test_history.c` (37 checks)
+  covers the arrow-key history, including the two cases that are wrong in
+  most first attempts: "nothing further that way" must leave the field
+  alone rather than clear it, and a walk must not re-capture a recalled
+  entry as the half-typed line.
+
+  **The wire did not change, and that was checked differentially rather
+  than assumed.** A scratch harness ran the *old* `finish_error` /
+  `finish_ok_row1` / `finish_ok_row2`, extracted verbatim from `4a7703f`,
+  beside the new renderer over 1,092 combinations of reply shape ×
+  message × error code × output capacity (512 down to 0, including the
+  caps where the compact fallback fires): **0 differences**, in both the
+  bytes and the returned length. The harness first reported 37, which was
+  a real finding — the new `N68CmdResult` copies the message into a fixed
+  160-byte member where the old builders took an unbounded pointer, so a
+  message longer than 159 bytes now truncates instead of falling back.
+  That case is structurally unreachable (`kDetailCap` is *defined as*
+  `kN68CmdTextCap`, and every message source is one of those buffers),
+  and it is written down in `n68_cmdresult.h` rather than left for
+  someone to rediscover.
+
+  What is **not** proven anywhere: that `launch` and `quit` behave the
+  same when driven from the console as from the wire. Both paths call the
+  same `now68k_commands_run`, which is the point of the design, but no
+  test drives the console path (it needs a Toolbox) and no metal run has
+  done it by hand. That is the first thing to check on the machine.
+
+- **The console has never run on the PowerBook.** It builds under the 68K
+  toolchain at `-O2 -Wall -Wextra -Werror` and its Toolbox-free halves
+  pass their native tests; nothing more. Specifically unproven on metal:
+
+  - **Up/Down history.** The interception happens before `TEKey` because
+    TextEdit given `kUpArrowCharCode`/`kDownArrowCharCode` moves the
+    insertion point between display lines, which is a no-op in a one-line
+    field. That reading is verified-document (Events.h constants read
+    from the installed Universal Interfaces: up 30, down 31), not
+    verified-target.
+  - **Left/right cursor movement**, which is deliberately handed to
+    `TEKey` rather than reimplemented. Same evidence level.
+  - **Option-Up/Option-Down scrollback.** `kPageUpCharCode` /
+    `kPageDownCharCode` (11, 12) are also accepted, but the 180c's
+    built-in keyboard has no dedicated page keys, so Option-arrow is the
+    binding that has to work on the target and it has never been pressed
+    there. Command-arrow was not available: `MenuKey` in `main.c`
+    consumes every Command chord first.
+  - **The two-window event routing.** `main.c` now routes update,
+    activate, click and key events by the window they name rather than
+    assuming one exists. A mistake here does not crash — it draws the
+    wrong window or types into the wrong field — and nothing off-metal
+    catches that.
+  - **The memory cost — measured at link time, not on the machine.**
+    Against `4a7703f` built the same way, the console and the seam it
+    needed cost **text +4,428 and bss +10,954 = +15,382 bytes, +4.0% of
+    the 384 KB partition** (`m68k-apple-macos-size` over the object
+    files). The BSS is an 8.2 KB scrollback ring plus a 2.3 KB history,
+    beside `window.c`'s existing 9,186 bytes. What that does NOT include,
+    and what nobody has sized: the `WindowRecord` and the `TERec` plus
+    its text Handle that the Toolbox allocates out of the application
+    heap when the window is opened. With ~231 KB free that is very
+    probably fine and it has not been watched.
+
+- **The console cannot copy text out, and its scrollback is 32 lines.**
+  The output pane is drawn text, not a `TERec`, so a click in it does
+  nothing and there is no way to get a result off the machine except by
+  reading it. The 32-line ring is `n68_console_ring.h`'s compile-time
+  capacity, shared with the main window's log viewer; Option-arrow paging
+  makes all 32 reachable, but a long `quit` transcript still ages out.
+  Both are deliberate: a selectable output pane means a second `TERec`
+  and its text Handle, and a deeper ring is 256 bytes a line.
+
 - **The declined quit — METAL-VERIFIED 2026-07-25.** The whole re-list
   composition exists so a target that stops to ask about an unsaved
   document answers `ok:false` / `quit-declined` rather than claiming
