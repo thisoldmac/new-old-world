@@ -49,6 +49,9 @@
 #include "commands68.h"
 #include "log.h"
 #include "n68_cmdresult.h"
+#include "numfmt.h"
+#include "n68_proclist.h"
+#include "proc68.h"
 #include "n68_console_ring.h"
 #include "n68_history.h"
 #include "wire68.h"
@@ -197,6 +200,7 @@ static void show_help(void)
     con_out("NOW-68K console. Commands run on THIS machine.");
     con_out("  launch <name|HD:path>    open an application");
     con_out("  quit [--wait N|--no-wait] <name>");
+    con_out("  ps                       what is running on this Mac");
     con_out("  help, clear              (console only, not wire commands)");
     con_out("Return runs. Up/Down walk history.");
     con_out("Option-Up/Down (or Page Up/Down) scroll this pane.");
@@ -230,6 +234,49 @@ static const char *split_command(const char *line, char *name, int name_cap)
         ++line;
     }
     return line;
+}
+
+/* `ps`, rendered for a human from the SAME rows wire68.c sends as
+ * process.listing.
+ *
+ * Not a second process walk, and deliberately not a second command table
+ * entry either: proc_list_rows() is the one implementation, n68_proclist.c
+ * renders it as contract JSON, and this renders it as text. Anything that
+ * drifts between the two faces has to drift inside one function that both
+ * call, which is the only arrangement that makes drift visible.
+ *
+ * It exists because the console must be able to answer every question the
+ * wire can. process.list shipped wire-only earlier the same day this was
+ * written, and the gap was invisible until someone asked what the console
+ * could do - see docs/command-parity.md. */
+static void show_processes(void)
+{
+    N68ProcRow rows[NOW68K_PROCLIST_MAX_ROWS];
+    long count, i;
+
+    count = proc_list_rows(rows, (long)NOW68K_PROCLIST_MAX_ROWS);
+    if (count <= 0) {
+        con_out("ps: no processes (the Process Manager returned none)");
+        return;
+    }
+
+    for (i = 0; i < count; ++i) {
+        char line[80];
+        long pos = 0;
+        const char *kind = (rows[i].kind == kN68ProcKindApplication)
+                               ? "app" : "bg ";
+
+        /* Fixed columns rather than a table: a 17-row pane at Monaco 9 is
+         * about 58 characters wide, and a name is up to 31 of them. */
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                    rows[i].front ? "* " : "  ");
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, kind);
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, " ");
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                    rows[i].name[0] != '\0'
+                                        ? rows[i].name : "(unnamed)");
+        con_out(line);
+    }
 }
 
 static void submit_line(void)
@@ -267,6 +314,10 @@ static void submit_line(void)
      * this file - each verb has exactly one home. */
     if (strcmp(name, "help") == 0 || strcmp(name, "?") == 0) {
         show_help();
+        return;
+    }
+    if (strcmp(name, "ps") == 0) {
+        show_processes();
         return;
     }
     if (strcmp(name, "clear") == 0) {
@@ -331,6 +382,15 @@ static void draw_output(void)
     FrameRect(&gOutRect);
     inner = gOutRect;
     InsetRect(&inner, 2, 2);
+    /* ERASE BEFORE DRAWING, and this is not decoration. The Window
+     * Manager erases only what it newly exposes; a rectangle WE
+     * invalidated arrives with its old pixels intact, and this pane draws
+     * a variable number of lines. Without this, `clear` emptied the
+     * buffer and drew nothing over the old text, so the pane looked
+     * untouched and the command looked broken - watched in the q800
+     * emulator, 2026-07-25, where it cost a bug report against `clear`
+     * that was really a bug here. */
+    EraseRect(&inner);
 
     TextFont(kFontIDMonaco);
     TextSize(9);
@@ -370,6 +430,18 @@ static void draw_input(void)
     FontInfo fi;
 
     FrameRect(&gInRect);
+    {
+        /* Same reason as draw_output, and the same watched symptom: after
+         * Return the field is emptied and invalidated, but TEUpdate draws
+         * only the text it HAS - it does not clear what was there. The
+         * command a human just ran stayed on screen looking unrun, and
+         * pressing Return again would have repeated it. For `quit` or
+         * `launch` that is a real action on a real machine. */
+        Rect inner = gInRect;
+
+        InsetRect(&inner, 1, 1);
+        EraseRect(&inner);
+    }
     TextFont(kFontIDMonaco);
     TextSize(9);
     GetFontInfo(&fi);

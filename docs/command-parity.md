@@ -1,0 +1,94 @@
+# Two faces, one implementation
+
+Every guest has two faces. The **console** is what a person types into
+standing at the machine; the **wire** is what the host drives it over.
+Both must reach every capability, and each capability must have exactly
+one implementation behind them.
+
+That is the whole rule. The rest of this file is why it is worth a file,
+where the seam is in each guest, and what is deliberately asymmetric.
+
+## Why
+
+The two faces fail at different times, which is exactly when you need the
+other one.
+
+On 2026-07-25 the PowerBook 180c's display failed mid-session — a
+marginal joint, probably from a recap. Everything automated kept working,
+because the wire does not care about a panel. Two hours earlier the
+situation had been the reverse: MacTCP had wedged silently and the
+machine was reachable only by someone standing in front of it. A
+capability that exists on one face and not the other is unavailable in
+whichever half of that pair you happen to be living in.
+
+The drift is also *invisible*, which is the part that bit. `process.list`
+shipped on NOW-68K's wire that same day. Its console could not list
+processes at all. Nothing failed, no test noticed, no reviewer caught it,
+and the gap surfaced only because someone asked out loud what the console
+could do. Nobody decided that; it simply never came up.
+
+## The rule
+
+1. **A capability is reachable from both faces**, or the asymmetry is
+   written down with its reason.
+2. **One implementation, two renderers.** The faces format; they never
+   decide. Two code paths that answer the same question will eventually
+   answer it differently, and the machine they disagree about is in
+   another room.
+3. **The contract declares every wire verb.** A guest inventing one is a
+   verb the host can only learn about by accident.
+
+[`host/Tests/HostTests/CommandParityTests.swift`](../host/Tests/HostTests/CommandParityTests.swift)
+enforces all three by reading the guests' own source. Prose goes stale;
+that test fails.
+
+## Where the seam is
+
+**NOW-68K (`guest68k/`)** — two mechanisms, because it has two kinds of
+capability:
+
+- *Commands* (`launch`, `quit`). `commands68.c` runs one and fills an
+  `N68CmdResult` — the facts, no formatting. `n68_cmdresult.c` holds both
+  renderers side by side: contract JSON for the wire, text for the
+  console. The console **delegates** to `now68k_commands_run()` rather
+  than dispatching its own copy, so a verb added to the table reaches the
+  console the moment it exists, with nobody having to remember. That
+  delegation is what the parity test asserts.
+- *Message families* (`process.list`). Not commands, so no table compares
+  them — this is the one that drifted. `proc_list_rows()` is the single
+  implementation; `n68_proclist.c` renders it as `process.listing` and
+  `conwin.c`'s `ps` renders the same rows as text.
+
+**The PowerPC guest (`guest/`)** — `commands.c` answers the wire and
+`console_model.c` answers the Console page. Two dispatch lists, so two
+chances to drift, and the parity test compares them directly. The
+implementations live below both.
+
+## Deliberate asymmetries
+
+Kept in the test as data, not prose, so they cannot rot:
+
+| Verb | Face | Why |
+|---|---|---|
+| `putstat` | wire only | a diagnostic the host reads to size a transfer; nothing for a person at the guest to do with it |
+| `help`, `clear`, `?` | console only | act on the console window itself and mean nothing on a wire |
+| `put`, `mv`, `trash`, `untrash`, `mkdir` | console only (PPC) | the host reaches the same capability through the `file.*` message families, not through x-commands |
+
+Adding a row here should feel like a small act of documentation. It is a
+decision with a justification, not a to-do — anything not listed fails
+the build.
+
+## Adding a capability
+
+1. Contract first, if it goes on the wire (`AGENTS.md`).
+2. Implement it **once**, below both faces.
+3. Wire renderer, console renderer.
+4. Run `swift test --filter CommandParity`. If it fails, you have either
+   a gap to close or an asymmetry to justify — and writing the
+   justification is usually what reveals it was a gap.
+
+If the capability is a message family rather than a command, step 4 will
+**not** catch a missing console verb on its own: comparing command tables
+cannot see something that is not in a table. Add a case to the parity
+test the way `testTheSixtyEightKConsoleCanListProcesses` does. That test
+exists because this exact footnote was learned the expensive way.

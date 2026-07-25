@@ -170,6 +170,16 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   differentially against the pre-refactor builders over 1,092 shape ×
   message × code × capacity combinations: the host sees the same bytes.
 
+- **An interactive console on NOW-68K** — its own window (⌘K, and it
+  toggles), with an edit field, up/down history and a scrollback pane.
+  The main window's console pane stays what it always was: a log viewer.
+  It runs the same command table the wire does rather than a copy —
+  `launch`, `quit`, `ps` — because the two faces failing at different
+  times is the normal case here, and the day the 180c's display died the
+  wire was all that still worked. Emulator-verified on a Quadra 800 under
+  OS 8.1; the second window is a deliberate exception to this guest's
+  one-page shape, recorded in the ledger.
+
 - **A dev loop that does not need a Macintosh.** Neither guest can run its
   own suite, so the pure-C halves compile under the host `cc`:
   `scripts/test-native` runs all 18 across both guests in one command, and

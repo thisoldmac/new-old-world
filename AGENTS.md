@@ -63,6 +63,15 @@ the `classic-mac-carbon-ui` skill. Non-negotiables live there; the two
 that bite hardest are that a UPP is never a cast on this runtime, and
 that every nested Toolbox loop must pump the wire (`pump.h`).
 
+Both guests have **two faces** — the console a person types into at the
+machine, and the wire the host drives them over — and every capability
+must be reachable from both, with one implementation behind them.
+[docs/command-parity.md](docs/command-parity.md) is the rule, the seam in
+each guest, and the asymmetries that are deliberate;
+`CommandParityTests` fails the build when a verb appears on one face
+only. It exists because `process.list` shipped wire-only and nothing
+noticed until someone asked out loud what the console could do.
+
 The guest is **one window** — the Workshop — and every human-facing
 feature is a page inside it behind `WorkshopModuleOps`. There are no
 other windows, and a new feature does not get one: it gets a module.
