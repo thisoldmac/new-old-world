@@ -1070,13 +1070,30 @@ tests, which is a different and lesser thing, and each entry says which.
 Listed because "we shipped it and here is what we still do not know" is
 the useful half.
 
-- **The declined quit.** The whole re-list composition exists so a target
-  that stops to ask about an unsaved document answers `ok:false` /
-  `quit-declined` rather than claiming success. Only the `gone` path has
-  been seen. Until the declined path is watched on the machine, the one
-  behaviour that command was written for is unverified. Still unrun as of
-  2026-07-25 for a dull reason: the 180c's TeachText and SimpleText are
-  both still `.hqx`, so there was no editor to leave a document dirty in.
+- **The declined quit — METAL-VERIFIED 2026-07-25.** The whole re-list
+  composition exists so a target that stops to ask about an unsaved
+  document answers `ok:false` / `quit-declined` rather than claiming
+  success, and it had never run anywhere. On the 180c, against a
+  TeachText holding typed-but-unsaved text:
+  `[quit-declined] quit: TeachText is still running - declined, or busy`.
+  `MetalQuitTests :: testADirtyDocumentDeclinesAndSaysSo`
+  (`NOW_QUIT_DIRTY=1 NOW_QUIT_NO_LAUNCH=1 NOW_QUIT_APP=TeachText`).
+
+  Two things the run taught that the design had not:
+
+  **`quit-ambiguous` also ran, by accident, and was right.** The test
+  launches its victim before quitting it; against a TeachText a human had
+  already opened, that produced a second copy, and `quit` refused the
+  whole request rather than guess which one was meant. Correct behaviour,
+  never previously exercised — and a test that manufactured the very
+  ambiguity it then failed on. Hence `NOW_QUIT_NO_LAUNCH`.
+
+  **The 68K re-check is weaker than the sentence "still running"
+  suggests.** With no `process.list`, confirmation is a second `quit`
+  through the same subsystem, and it came back "asked TeachText; not
+  confirmed (wait_ticks <= 0)". The assertion that holds is only that the
+  target did not answer `not-running`. That is real evidence and it is
+  not corroboration; the run says so in its own output.
 - **The farewell — METAL-VERIFIED 2026-07-25.** A menu quit on the 180c
   produced `now-68k is shutting down` on the host, which is the bye path;
   the abortive one reads `Connection lost`. `Metal68KTests
@@ -1099,11 +1116,24 @@ the useful half.
   has ever sent one.** The host does not produce a control frame over
   4 KB, so the reader's contract is proven and the host's honouring of it
   is not.
-- **BROKEN: `launch` of a name that is not on the disk never answers**
-  (2026-07-25, watched on the 180c, three times — at 60 s, 150 s and
-  300 s). The contract is explicit that one `command.request` produces
-  exactly one `command.result`; this produces none, and the host waits
-  forever because nothing tells it otherwise.
+- **FIXED 2026-07-25 — `launch` of a name not on the disk never answered.**
+  Watched broken on the 180c three times (60 s, 150 s, 300 s), then
+  watched fixed on the same machine: `NOW-68K 0.6` answers in **2.5 s**
+  with "nothing named X is on the startup volume". Kept in full below
+  because the diagnosis was wrong twice before it was right, and the
+  wrong turns are the reusable part.
+
+  The cause was one limit stated three times in two units, smallest
+  winning: the builder's buffer 512 (a literal in `wire68.c`), the
+  module's documented floor 320 (`commands68.h` prose), the outbound slot
+  160 (sized by a comment reading "hello (~110), ping (~30), or an error
+  reply (~95)" — true when this guest had no commands, never revisited
+  when `launch` and `quit` arrived). The reply built correctly at 166
+  bytes; `commands68.c`'s compact fallback never fired, because from the
+  builder's side nothing was wrong; the slot dropped it. Both numbers now
+  come from `commands68.h` (`NOW68K_COMMAND_RESULT_CAP`), +704 bytes BSS.
+
+  The original diagnosis, retained:
 
   What the guest's own log says: `cmd: launch refused -50`, then
   `command.result dropped, outbound queue full`. So the search RAN and
@@ -1116,24 +1146,27 @@ the useful half.
   killed.** Refuted: the metal test now watches the wire during the
   search, and it stayed up for the whole 150 s with keepalives answered —
   `yield_ticks(0)` pumps between slices exactly as intended. **(2) The
-  reply is too long for the 160-byte outbound slot.** Refuted by reading
-  `commands68.c`: it has a compact-fallback path that shortens a reply
-  rather than failing to build one.
+  reply is too long for the 160-byte outbound slot.** "Refuted" by
+  reading `commands68.c`'s compact fallback — and this refutation was
+  itself wrong, which is the lesson worth keeping. The fallback exists
+  and would have fitted; it never ran, because the builder had 512 bytes
+  and succeeded. Reading one half of a size mismatch and concluding the
+  other half is fine is how the mismatch survived in the first place.
 
   What is actually established is narrower: `enqueue_control_send`
   refused the payload, and its 0 return covers **two** different failures
   — payload too big for a slot, and both slots busy
   (`kWireOutQueueDepth` is 2) — which every caller logged with the same
-  sentence. That is why the log could not settle it. 0.5 logs them apart
-  and is deployed; the next run names the cause.
+  sentence. That is why the log could not settle it. 0.5 logged them
+  apart, and the very next run on the machine said it outright:
+  `wire: send dropped - payload too big for a slot, bytes 166`.
 
-  Standing regardless of which it turns out to be:
-  `kWireOutPayloadCap`'s comment sizes it for "hello, ping, or an error
-  reply", which was true when this guest had no commands at all and was
-  never revisited when `launch` and `quit` arrived — while
-  `commands68.h` documents a **320-byte floor** for the buffer its caller
-  must supply and `wire68.c` hands it 160. Same limit, stated three
-  times, in two units, with the smallest one winning.
+  **The method note, which is the transferable part.** Two theories, two
+  metal runs, both wrong, and the thing that ended it was not a better
+  theory — it was making the log able to tell two causes apart. One
+  message covering two failures is what turned a five-minute question
+  into an hour, and the fix for that was three lines. When a log cannot
+  distinguish the candidates, instrument before theorising again.
 
 - **`launch` at scale.** The catalog search is double-bounded on purpose —
   a whole-volume Finder search has hard-wedged this fleet before — but it

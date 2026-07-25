@@ -144,6 +144,12 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   one timestamped log per launch into `logs:`, quits cleanly, and serves
   two commands — `launch` and `quit`, the latter answering `gone` after
   confirming by re-listing rather than trusting the Apple Event's return.
+  Since 2026-07-25 the rest of `quit`'s outcome table is metal-proven too,
+  including the one it was written for: a TeachText holding unsaved text
+  answers **`quit-declined`**, not success. So are the orderly `bye`, the
+  redial after the host goes away, and — with no independent
+  `process.list` on this guest — the fact that its confirmation of `gone`
+  is weaker than the PowerPC guest's, which every run says out loud.
   It is deliberately smaller than the Carbon guest: one page, no tabs, no
   preferences at all (the human types host and port each launch), dial-out
   only with a human-controlled fixed-interval redial, and no bulk features
@@ -163,14 +169,6 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
 
 ## What does not work
 
-- **NOW-68K's `launch` never answers when the name is not on the disk.**
-  Watched on the 180c three times (2026-07-25). The search runs and
-  returns; the reply is built and then dropped on the way to the wire, so
-  the host waits forever for a `command.result` the contract promises
-  will always come. `quit` is unaffected — its messages are short and its
-  replies have always arrived. Cause narrowed but not yet proven; the
-  diagnosis so far, including two theories that were refuted on the
-  machine, is in [docs/open-issues.md](docs/open-issues.md).
 - **NOW-68K implements almost none of the contract.** Two commands
   (`launch`, `quit`) and the keepalive; everything else — `ps`, capture,
   files, census, streams, processes — answers `unknown-command` or
