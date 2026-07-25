@@ -63,7 +63,7 @@
  * than overwriting, that string is the only reliable answer to "which build
  * am I actually running" - AGENTS.md: check the build stamp before believing
  * a test result. */
-#define NOW68K_APP_VERSION "0.4"
+#define NOW68K_APP_VERSION "0.5"
 
 enum {
     /* contract/asyncapi.yaml: "the guest sends ping after 30s of wire
@@ -360,12 +360,22 @@ static int enqueue_control_send(const void *payload, long payload_len)
     OutSlot *s;
     int slot;
 
+    /* Two different failures used to return 0 here and every caller
+     * logged the same "outbound queue full" for both. On the 180c that
+     * cost an hour: a launch reply vanished, the log said the queue was
+     * full, and the queue was one of two suspects the log could not tell
+     * apart. Name them where they happen - the caller's message stays,
+     * but it is no longer the only thing written down. */
     if (payload_len < 0
         || (NOW68K_FRAME_HEADER_BYTES + payload_len)
                > (long)sizeof(g_out[0].buf)) {
+        now68k_log_num("wire: send dropped - payload too big for a slot, "
+                        "bytes", payload_len);
         return 0;
     }
     if (g_out_count >= kWireOutQueueDepth) {
+        now68k_log_num("wire: send dropped - all slots busy, queued",
+                        (long)g_out_count);
         return 0;
     }
 

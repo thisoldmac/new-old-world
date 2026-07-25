@@ -387,7 +387,7 @@ final class GuestWireFixtureTests: XCTestCase {
     /// Field order is the order of the appends, and nothing in between:
     /// `type`, `contract` (an integer through now68k_fmt_append_long),
     /// `side` fixed to "guest", `version` (the caller's string — wire68.c
-    /// passes NOW68K_APP_VERSION, "0.4", wire68.c:66), then `name`, `os`
+    /// passes NOW68K_APP_VERSION, "0.5", wire68.c:66), then `name`, `os`
     /// and `chunk` frozen into the format literal itself from
     /// NOW68K_HELLO_NAME / _OS / _CHUNK (guest68k/src/hello.h:16-18).
     ///
@@ -409,7 +409,7 @@ final class GuestWireFixtureTests: XCTestCase {
         }
         XCTAssertEqual(hello.contract, Contract.revision)
         XCTAssertEqual(hello.side, "guest")
-        XCTAssertEqual(hello.version, "0.4", "NOW68K_APP_VERSION")
+        XCTAssertEqual(hello.version, "0.5", "NOW68K_APP_VERSION")
         XCTAssertEqual(hello.name, "now-68k",
                        "the name that tells the two guests apart in the UI")
         XCTAssertEqual(hello.os, "7.1")
@@ -502,7 +502,7 @@ final class GuestWireFixtureTests: XCTestCase {
 /// are transcribed from the literals in send_error_reply().
 enum Guest68KWire {
     static let hello = #"{"type":"hello","contract":1,"side":"guest","#
-        + #""version":"0.4","name":"now-68k","os":"7.1","chunk":4096}"#
+        + #""version":"0.5","name":"now-68k","os":"7.1","chunk":4096}"#
 
     static let pingFirst = #"{"type":"ping","id":1}"#
     static let pingLater = #"{"type":"ping","id":7}"#

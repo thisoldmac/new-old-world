@@ -210,10 +210,44 @@ final class Metal68KTests: XCTestCase {
         let absent = "ZzNoSuchApplicationOnThisDisk"
         let started = Date()
         // Longer than the guest's own budget, so the harness timeout
-        // cannot be mistaken for the guest's bound.
-        let result = await run("launch", target: absent, timeout: 60)
+        // cannot be mistaken for the guest's bound. Overridable because
+        // "~20s" is a tick count on a machine nobody has timed: the 180c
+        // reads its catalog off a BlueSCSI-emulated disk, and the first
+        // metal run of this blew straight through 60s.
+        let budget = ProcessInfo.processInfo.environment[
+            "NOW_68K_LAUNCH_TIMEOUT"].flatMap(TimeInterval.init) ?? 60
+        // Watch the WIRE while the search runs, not just the reply. The
+        // search is supposed to pump between slices (yield_ticks(0)); if
+        // instead the guest goes deaf, the host's idle timeout kills the
+        // session and the reply is written to a dead socket — which
+        // looks identical to "no answer" from the reply's side alone,
+        // and is a completely different bug.
+        let watcher = Task { @MainActor [listener] in
+            var wentAway: TimeInterval?
+            let from = Date()
+            while !Task.isCancelled {
+                if case .connected = listener!.state {} else if wentAway == nil {
+                    wentAway = Date().timeIntervalSince(from)
+                }
+                try? await Task.sleep(nanoseconds: 500_000_000)
+            }
+            return (wentAway, listener!.lastDisconnect)
+        }
+        let result = await run("launch", target: absent, timeout: budget)
         let elapsed = Date().timeIntervalSince(started)
+        watcher.cancel()
+        let (wentAway, why) = await watcher.value
+        if let wentAway {
+            print("  the wire DIED \(String(format: "%.0f", wentAway))s "
+                  + "into the search: \(why ?? "(no reason)"). The guest "
+                  + "stopped servicing it — so the search does not pump "
+                  + "the wire the way its yield_ticks(0) intends, and any "
+                  + "reply it later writes goes to a closed socket.")
+        } else {
+            print("  the wire stayed up for the whole search")
+        }
         let text = message(result)
+        let timedOut = result.error?.code == "harness-timeout"
         print("  launch \(absent) -> \(text) (\(String(format: "%.1f", elapsed))s)")
 
         XCTAssertFalse(result.ok,
@@ -244,6 +278,12 @@ final class Metal68KTests: XCTestCase {
         }
         if saidBounded {
             print("=== the truncation branch has now run on metal")
+        } else if timedOut {
+            print("  NOTE: no answer at all within "
+                  + "\(String(format: "%.0f", budget))s. That is not the "
+                  + "truncation branch failing to SAY it was bounded — it "
+                  + "is the whole command failing to answer, which is a "
+                  + "worse thing and a different bug.")
         } else {
             print("  NOTE: the search completed within its budget "
                   + "(\(String(format: "%.1f", elapsed))s), so the "
