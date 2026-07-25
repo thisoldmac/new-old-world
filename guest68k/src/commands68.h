@@ -33,6 +33,41 @@
 #ifndef NOW68K_COMMANDS68_H
 #define NOW68K_COMMANDS68_H
 
+/* THE size of a command.result on this guest, stated once, here, for both
+ * the code that BUILDS one and the code that SENDS it.
+ *
+ * It was stated three times instead, in two different units, and the
+ * smallest won. This module's doc below documented a 320-byte floor for
+ * the caller's buffer; wire68.c's handle_command_request gave it 512, so
+ * every reply built correctly; and the outbound slot that reply then had
+ * to fit was 160, sized by a comment reading "hello (~110), ping (~30),
+ * or an error reply (~95)" - true when this guest had no commands at all
+ * and never revisited when launch and quit arrived.
+ *
+ * On the 180c (2026-07-25) `launch` of a name not on the disk built a
+ * perfectly good 166-byte reply and had it dropped by the 160-byte slot.
+ * The host waits forever for a command.result the contract promises will
+ * always come, and the guest logged only "outbound queue full", which was
+ * not even the right reason. Both numbers now come from here, and
+ * wire68.c static-asserts that its slot can hold one.
+ *
+ * 512 rather than 320: the floor is what still produces a TRUTHFUL reply
+ * via the compact fallback, not what fits a whole one. Sized for the
+ * longest sentence proc68.h can hand back (kDetailCap, 160) inside its
+ * JSON envelope, with room left so the next command's message is not
+ * silently shortened the day it is added. */
+#define NOW68K_COMMAND_RESULT_CAP 512
+
+/* Below this, a reply still comes back and is still true, but the compact
+ * fallback starts eating the message - the caller learns THAT something
+ * failed and not what. The doc below calls this "a comfortable floor";
+ * this is that sentence as a number a compiler can check. */
+#define NOW68K_COMMAND_RESULT_FLOOR 320
+
+_Static_assert(NOW68K_COMMAND_RESULT_CAP >= NOW68K_COMMAND_RESULT_FLOOR,
+               "a command.result buffer below the floor silently shortens "
+               "every message it cannot fit");
+
 /* Dispatches one command.request by name.
  *
  * name    - the request's "name" field, NUL-terminated. May be NULL (then

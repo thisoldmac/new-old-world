@@ -18,8 +18,10 @@
  * STATIC BUDGET (all file-scope, zero-initialized BSS - no allocation):
  *   g_ctrl_buf           4096  bytes  (NOW68K_CONTROL_BUFFER_CAP, frame.h)
  *   g_sink                256  bytes  (bulk / oversized-control discard sink)
- *   g_out[2] slots          2 * (8 header + 160 payload + 4 len + 4 off)
- *                         2 *  176 =  352  bytes
+ *   g_out[2] slots          2 * (8 header + 512 payload + 4 len + 4 off)
+ *                         2 *  528 = 1056  bytes  (was 352 at a 160-byte
+ *                                                 payload cap - see
+ *                                                 commands68.h)
  *   g_read (N68Reader)                      48  bytes  (state+hdr+4 counters
  *                                                       + 2 buffer ptrs and
  *                                                       a cap + ops/ctx ptrs)
@@ -63,7 +65,7 @@
  * than overwriting, that string is the only reliable answer to "which build
  * am I actually running" - AGENTS.md: check the build stamp before believing
  * a test result. */
-#define NOW68K_APP_VERSION "0.5"
+#define NOW68K_APP_VERSION "0.6"
 
 enum {
     /* contract/asyncapi.yaml: "the guest sends ping after 30s of wire
@@ -110,11 +112,22 @@ enum {
     kWireByeDrainTicks = 60 * 3
 };
 
-/* Payload cap for anything THIS guest sends: hello (~110 bytes with a short
- * machine name), ping (~30), or an error reply (~95). 160 leaves headroom
- * without the outbound slot budget above tracking every byte of it. */
-#define kWireOutPayloadCap 160
+/* Payload cap for anything THIS guest sends. It used to be 160, chosen for
+ * "hello (~110), ping (~30), or an error reply (~95)" - accurate when this
+ * guest had no commands, and never revisited when launch and quit arrived
+ * with replies twice that size. A 166-byte launch reply died here on the
+ * 180c while the log blamed the queue. The size of a command.result is now
+ * stated once, in commands68.h, and this is that number. */
+#define kWireOutPayloadCap NOW68K_COMMAND_RESULT_CAP
 #define kWireOutQueueDepth 2
+
+/* No assert here on purpose. The slot and the builder now take their size
+ * from the same macro, so any comparison between them is a tautology that
+ * would look like a guard and check nothing. The invariant that CAN fail
+ * is in commands68.h (cap against the floor); the one that bit us -
+ * "somebody wrote a different literal here" - is not expressible as an
+ * assert at all, which is exactly why the number has to live in one place
+ * rather than be checked in two. */
 
 /* Two slots, not one: a ping can come due in the same wire_idle() pass that
  * an unimplemented request needs an error reply, and rule 4 ("never
@@ -791,7 +804,7 @@ static void sanitize_json_string(char *s)
 
 static void handle_command_request(const char *json, long len)
 {
-    char payload[512];
+    char payload[NOW68K_COMMAND_RESULT_CAP];
     char name[32];
     char args[224];
     long pos = 0;

@@ -479,15 +479,32 @@ final class MetalQuitTests: XCTestCase {
         let kind = try await waitForGuest()
         let victim = victimName(kind)
 
-        var result = await run("launch", target: victim)
-        try require(result.ok,
-                    "NOW_QUIT_DIRTY=1 asked for the declined path, but "
-                    + "\(victim) would not launch on \(kind.label): "
-                    + "\(sentence(result)). There is nothing to dirty.")
+        var result: CommandResult
 
-        let pause = env["NOW_QUIT_DIRTY_PAUSE"].flatMap { Double($0) } ?? 20
-        print("=== type a character into \(victim) now — \(Int(pause))s ===")
-        try await Task.sleep(nanoseconds: UInt64(pause * 1e9))
+        // Launching the victim ourselves is convenience, not the subject —
+        // and on a machine where the human has ALREADY staged one with an
+        // unsaved document it is actively wrong: classic Mac OS will hand
+        // back a second copy from a different folder, and `quit` then
+        // correctly refuses the whole thing as quit-ambiguous rather than
+        // guessing which TeachText was meant. Watched on the 180c,
+        // 2026-07-25 — the test manufactured the ambiguity it then failed
+        // on. So when the scene is already set, use it.
+        if env["NOW_QUIT_NO_LAUNCH"] == nil {
+            result = await run("launch", target: victim)
+            try require(result.ok,
+                        "NOW_QUIT_DIRTY=1 asked for the declined path, but "
+                        + "\(victim) would not launch on \(kind.label): "
+                        + "\(sentence(result)). There is nothing to dirty.")
+
+            let pause = env["NOW_QUIT_DIRTY_PAUSE"]
+                .flatMap { Double($0) } ?? 20
+            print("=== type a character into \(victim) now — "
+                  + "\(Int(pause))s ===")
+            try await Task.sleep(nanoseconds: UInt64(pause * 1e9))
+        } else {
+            print("=== using the \(victim) already running, with the "
+                  + "document you dirtied (NOW_QUIT_NO_LAUNCH) ===")
+        }
 
         result = await run("quit", target: "--wait 4 \(victim)")
         print("quit \(victim) (dirty): \(sentence(result))")

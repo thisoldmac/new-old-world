@@ -254,9 +254,16 @@ final class Metal68KTests: XCTestCase {
                        "launching a name that is not on the disk cannot "
                        + "succeed, and it answered: \(text)")
 
-        let saidBounded = text.contains("truncated")
-            || text.contains("may exist deeper")
-        let saidNotFound = text.contains("not found")
+        // The exact sentences proc68.c :: launch_bare_name emits. Matched
+        // literally rather than by a guessed keyword: the first version of
+        // this looked for "not found" and failed a perfectly good run,
+        // because the plain-miss sentence is "nothing named X is on the
+        // startup volume" and never contains that phrase.
+        let saidBounded = text.contains("truncated at the time budget")
+            || text.contains("may exist deeper in the catalog")
+        let saidNotFound = text.contains("is on the startup volume")
+            || text.contains("ROOT folder only")   // PBCatSearch unusable
+            || text.contains("not found")          // the full-path path
 
         XCTAssertTrue(saidBounded || saidNotFound, """
             neither documented outcome: \(text). launch_bare_name answers \
