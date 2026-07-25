@@ -700,6 +700,13 @@ components:
             group (what a module asks for), `line: ""` returns the
             snapshot a human wants to read.
 
+            SYMMETRY: command.request has only ever travelled host to guest.
+            The guest's own console runs its commands in-process and never
+            asks the host to run one, and the host serves no commands — so
+            this field adds no asymmetry, because the other direction does
+            not exist yet. If it ever does, `line` means the same thing
+            there: the raw text a human typed, parsed by the receiver.
+
             `args` wins if both arrive: a caller that filled in the typed
             field asked for something specific. A receiver that predates
             this field ignores it and sees a bare command — so a console

@@ -87,6 +87,11 @@ either shape:
   contract as `x-line` and implemented once, by the machine that serves
   the verb — `guest/src/cmd_line.c` for the Carbon guest.
 
+`command.request` has only ever run host to guest: the guest's console
+runs its own commands in-process, and the host serves none. So `line`
+adds no asymmetry — the other direction does not exist. If it ever does,
+the field means the same thing there.
+
 **Where the line runs.** Host-side there are four verbs, all behind a `/`
 prefix so a bare word is always the far machine's and a command added to
 either guest can never be shadowed. Three act on this console: `/clear`,
