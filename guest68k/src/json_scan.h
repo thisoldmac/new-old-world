@@ -85,4 +85,20 @@ int now68k_json_read_type(const char *json, size_t json_len, char *out,
 int now68k_json_find_int(const char *json, size_t json_len, const char *key,
                           long *out);
 
+/* The same for an UNSIGNED 32-bit value, which is what a CRC-32 is.
+ *
+ * find_int cannot carry one: `long` is 32 bits signed here, so every
+ * checksum above 0x7FFFFFFF - half of them - would come back negative
+ * and compare unequal to a correctly computed CRC. The PowerPC guest
+ * carries its own json_find_u32 (now/guest/src/wire.c) for exactly this,
+ * and for exactly this field.
+ *
+ * Returns 1 if `key` was found and was a non-negative number, 0
+ * otherwise (out untouched). A value past 32 bits is taken modulo 2^32
+ * rather than refused: it cannot be a CRC either way, and the checksum
+ * comparison is what rejects it - with a message about the checksum,
+ * which is the true one. */
+int now68k_json_find_u32(const char *json, size_t json_len, const char *key,
+                          unsigned long *out);
+
 #endif

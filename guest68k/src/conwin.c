@@ -224,6 +224,7 @@ static void show_help(void)
     /* Console-only, and deliberately not in that list: the wire's help must
      * not advertise verbs the wire cannot serve. */
     con_out("  ps                       what is running on this Mac");
+    con_out("  xfer                     an incoming file: where, how far");
     con_out("  clear                    clear this pane");
     con_out("Return runs. Up/Down walk history.");
     con_out("Option-Up/Down (or Page Up/Down) scroll this pane.");
@@ -302,6 +303,89 @@ static void show_processes(void)
     }
 }
 
+/* The console's face on receiving a file.
+ *
+ * A push is a MESSAGE FAMILY, not a command: no command table reaches
+ * it, so nothing would have compared the two faces and the gap would
+ * have been invisible - which is exactly how process.list shipped
+ * wire-only (docs/command-parity.md). The wire face is
+ * handle_file_offer and friends in wire68.c; this is the other one, and
+ * both read the same receiver rather than each keeping a count.
+ *
+ * What a person standing at the machine actually wants to know, in
+ * order: is something arriving, how far has it got, and where will it
+ * be. The last two are the ones that are otherwise unanswerable - a
+ * transfer in flight shows no window, and a finished one has landed
+ * somewhere the app never mentioned. */
+static void show_transfer(void)
+{
+    N68PutStatus st;
+    char line[80];
+    char where[64];
+    long pos;
+
+    now68k_wire_put_status(&st);
+    now68k_wire_put_where(where, (long)sizeof where);
+
+    if (st.active) {
+        pos = 0;
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                    "receiving ");
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, st.name);
+        con_out(line);
+
+        pos = 0;
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, "  ");
+        (void)now68k_fmt_append_long(line, (long)sizeof line, &pos,
+                                     st.received);
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, " of ");
+        (void)now68k_fmt_append_long(line, (long)sizeof line, &pos, st.bytes);
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                    " bytes, ");
+        (void)now68k_fmt_append_long(line, (long)sizeof line, &pos,
+                                     st.writes);
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, " writes");
+        con_out(line);
+    } else if (!st.had_one) {
+        con_out("no file has arrived this session");
+    }
+
+    if (st.had_one) {
+        pos = 0;
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                    st.last_ok ? "last: " : "last FAILED: ");
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                    st.last_name);
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, ", ");
+        (void)now68k_fmt_append_long(line, (long)sizeof line, &pos,
+                                     st.last_bytes);
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, " bytes");
+        if (!st.last_ok) {
+            (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, " (");
+            (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                        st.last_code);
+            /* The OSErr, when there is one. "The File Manager refused"
+             * names no cause; the number does, and on this machine the
+             * number is often the whole diagnosis. */
+            if (st.last_error != 0) {
+                (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                            " ");
+                (void)now68k_fmt_append_long(line, (long)sizeof line, &pos,
+                                             (long)st.last_error);
+            }
+            (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, ")");
+        }
+        con_out(line);
+    }
+
+    pos = 0;
+    (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, "files land in ");
+    (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                where[0] != '\0' ? where
+                                                 : "(cannot resolve the folder)");
+    con_out(line);
+}
+
 static void submit_line(void)
 {
     char line[kInputCap];
@@ -341,6 +425,10 @@ static void submit_line(void)
     }
     if (strcmp(name, "ps") == 0) {
         show_processes();
+        return;
+    }
+    if (strcmp(name, "xfer") == 0) {
+        show_transfer();
         return;
     }
     if (strcmp(name, "clear") == 0) {

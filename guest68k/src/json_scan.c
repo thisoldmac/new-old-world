@@ -127,3 +127,32 @@ int now68k_json_find_int(const char *json, size_t json_len, const char *key,
     *out = neg ? -v : v;
     return 1;
 }
+
+int now68k_json_find_u32(const char *json, size_t json_len, const char *key,
+                          unsigned long *out)
+{
+    const char *end = json + json_len;
+    const char *p = now68k_json_value(json, json_len, key);
+    unsigned long v = 0;
+    int any = 0;
+
+    if (p == NULL || out == NULL) {
+        return 0;
+    }
+    if (p < end && *p == '+') {
+        ++p;
+    }
+    if (p < end && *p == '-') {
+        return 0;   /* a CRC is never negative; refuse rather than wrap */
+    }
+    while (p < end && *p >= '0' && *p <= '9') {
+        v = (v * 10UL + (unsigned long)(*p - '0')) & 0xFFFFFFFFUL;
+        ++p;
+        any = 1;
+    }
+    if (!any) {
+        return 0;
+    }
+    *out = v;
+    return 1;
+}
