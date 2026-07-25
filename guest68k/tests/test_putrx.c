@@ -710,6 +710,68 @@ static void test_the_batch_size_is_independent_of_the_progress_step(void)
     disk_free(&disk);
 }
 
+/* The share boundary. An empty HFS path segment means "parent", so every
+ * case below is an attempt to name a folder outside the share - and a
+ * share that can be walked upward out of is not a share. These are
+ * refused before the disk is asked anything at all. */
+static void test_a_path_cannot_walk_out_of_the_share(void)
+{
+    FakeDisk disk;
+    N68PutRx rx;
+    N68PutOffer offer;
+    static const char *escapes[] = {
+        ":",            /* the parent */
+        ":Lab",         /* the parent's Lab */
+        "::",
+        "Lab::Secrets", /* down, then back up */
+        ":Lab:Notes",
+        NULL
+    };
+    /* "Lab:" is NOT a traversal: a trailing colon is HFS's ordinary way
+     * of saying "this names a directory", and the segment walk simply
+     * runs out of path after "Lab". It resolves to the same folder as
+     * "Lab", which is also what the PowerPC guest's rel_path_ok does -
+     * and the two guests agreeing matters more here than either one's
+     * taste, because one host drives both. */
+    static const char *fine[] = { "", "Lab", "Lab:Notes", "Lab:", NULL };
+    int i;
+
+    for (i = 0; escapes[i] != NULL; ++i) {
+        if (n68_putrx_path_ok(escapes[i])) {
+            printf("FAIL path \"%s\" was accepted and walks out of the "
+                   "share\n", escapes[i]);
+            ++failures;
+        }
+    }
+    for (i = 0; fine[i] != NULL; ++i) {
+        if (!n68_putrx_path_ok(fine[i])) {
+            printf("FAIL ordinary path \"%s\" was refused\n", fine[i]);
+            ++failures;
+        }
+    }
+    check("a NULL path is not a path", !n68_putrx_path_ok(NULL));
+
+    /* A segment longer than HFS can name. */
+    {
+        char longseg[64];
+
+        memset(longseg, 'x', 40);
+        longseg[40] = '\0';
+        check("an over-long segment is refused", !n68_putrx_path_ok(longseg));
+    }
+
+    /* And the refusal has to happen at the offer, before the disk is
+     * touched - not later, when a resolve fails for some other reason. */
+    disk_init(&disk, 1024);
+    n68_putrx_init(&rx, g_batch, (long)sizeof g_batch, &kFakeOps, &disk);
+    offer_init(&offer, 16);
+    strcpy(offer.path, "Lab::Secrets");
+    check_code("a traversal path refuses bad-path",
+               n68_putrx_offer(&rx, &offer), kN68PutBadPath);
+    check("a traversal path never reached the disk", !disk.created);
+    disk_free(&disk);
+}
+
 /* ---- parsing an offer ------------------------------------------------- */
 
 static void test_parsing_a_file_offer(void)
@@ -805,6 +867,7 @@ int main(void)
     test_parsing_a_file_offer();
     test_an_offer_is_refused_before_anything_is_created();
     test_a_second_offer_is_refused_busy();
+    test_a_path_cannot_walk_out_of_the_share();
     test_bulk_with_no_transfer_is_harmless();
     test_an_empty_file_completes();
     test_the_batch_size_is_independent_of_the_progress_step();

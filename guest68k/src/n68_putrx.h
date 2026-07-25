@@ -105,6 +105,24 @@ typedef struct {
     int  create_parents;           /* absent or true per the schema */
 } N68PutOffer;
 
+/* 1 if `rel` is a destination folder this guest will resolve: colon
+ * separated segments, each 1..31 characters, relative to the share root.
+ * "" is the root itself and is fine.
+ *
+ * A LEADING OR DOUBLED COLON IS THE WHOLE POINT. On HFS an empty path
+ * segment means "parent", so ":Lab" and "Lab::Secrets" are traversal out
+ * of the share, and a share that can be escaped upward is not a share.
+ * This is the same rule the PowerPC guest applies in rel_path_ok
+ * (now/guest/src/fileshare.c) and it is stated in both places because
+ * both guests are reached by the same host over the same verb - a guest
+ * that resolved one of these would be the one that leaked.
+ *
+ * Published rather than static so guest68k/tests/test_putrx.c can walk
+ * the traversal cases directly: this is the check that must not be
+ * quietly relaxed, and a test that could only reach it through a File
+ * Manager call could not run here at all. */
+int n68_putrx_path_ok(const char *rel);
+
 /* Everything this module needs from a disk. All of them are required;
  * like n68_reader.h's ops table, nothing is tested for NULL before being
  * called - a half-wired receiver that silently drops half its writes is

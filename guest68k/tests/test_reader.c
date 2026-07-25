@@ -41,6 +41,9 @@ static int g_checks = 0;
 /* Longest control payload we record for inspection. */
 #define SEEN_CAP 256
 
+/* Longest bulk payload we record. */
+#define BULK_CAP 8192
+
 typedef struct {
     unsigned char feed[FEED_CAP];
     long feed_len;
@@ -69,6 +72,17 @@ typedef struct {
     int  msg_count;
     char last_msg[SEEN_CAP];
     long last_msg_len;
+
+    int  want_bulk;              /* what bulk_wanted answers */
+    int  bulk_offers;            /* bulk_wanted calls */
+    unsigned long bulk_offered_len;
+    int  bulk_runs;              /* bulk_data calls */
+    /* Sized for the whole bulk payload a case feeds, not SEEN_CAP: the
+       point of recording it is to compare EVERY byte, and a recorder
+       that quietly stopped at 256 would make a reader that dropped the
+       rest look correct. */
+    unsigned char bulk[BULK_CAP];
+    long bulk_len;
 } Fake;
 
 static long fake_take(void *ctx, void *dst, long cap)
@@ -143,6 +157,26 @@ static int fake_still_reading(void *ctx)
     return ((Fake *)ctx)->connected;
 }
 
+static int fake_bulk_wanted(void *ctx, unsigned long length)
+{
+    Fake *f = (Fake *)ctx;
+
+    f->bulk_offers++;
+    f->bulk_offered_len = length;
+    return f->want_bulk;
+}
+
+static void fake_bulk_data(void *ctx, const unsigned char *bytes, long len)
+{
+    Fake *f = (Fake *)ctx;
+    long i;
+
+    f->bulk_runs++;
+    for (i = 0; i < len && f->bulk_len < BULK_CAP; ++i) {
+        f->bulk[f->bulk_len++] = bytes[i];
+    }
+}
+
 static const N68ReaderOps kFakeOps = {
     fake_take,
     fake_took,
@@ -150,6 +184,8 @@ static const N68ReaderOps kFakeOps = {
     fake_oversized_frame,
     fake_oversized_control,
     fake_empty_control,
+    fake_bulk_wanted,
+    fake_bulk_data,
     fake_control_message,
     fake_still_reading
 };
@@ -391,6 +427,93 @@ static void test_bulk_consumed_and_discarded(void)
 /* 3. Zero-length frames on both channels. A zero-length body must not put
  * the reader into a body/skip state it can never leave - the whole frame is
  * its header. */
+/* The same frames, WANTED. Everything the discard test asserts about
+ * frame sync still has to hold, and on top of it every payload byte must
+ * arrive exactly once and in order - across every chunking, because the
+ * transport decides where the runs fall and it never picks the tidy
+ * ones. This is the path a file push takes. */
+static void test_bulk_delivered_when_wanted(void)
+{
+    unsigned i;
+
+    for (i = 0; i < CHUNKINGS; ++i) {
+        Fake f;
+        N68Reader r;
+        char label[128];
+        long n;
+        int ok = 1;
+
+        fake_reset(&f, &r);
+        f.want_bulk = 1;
+        f.chunk = kChunkings[i];
+        /* Well past the 256-byte sink, so the bulk state loops over its
+         * own buffer many times inside one frame. */
+        feed_frame(&f, NOW68K_CHANNEL_BULK, 1000, NULL);
+        feed_json(&f, kMsgA);
+        feed_frame(&f, NOW68K_CHANNEL_BULK, 5000, NULL);
+        feed_json(&f, kMsgB);
+        drain_until_idle(&r, &f);
+
+        label_for(label, sizeof label, "bulk wanted: never fatal",
+                   kChunkings[i]);
+        CHECK(f.fatal_calls == 0 && f.oversize_calls == 0, label);
+        label_for(label, sizeof label,
+                   "bulk wanted: control frames still parsed",
+                   kChunkings[i]);
+        CHECK(f.msg_count == 2 && strcmp(f.last_msg, kMsgB) == 0, label);
+        label_for(label, sizeof label, "bulk wanted: every frame counted",
+                   kChunkings[i]);
+        CHECK(f.frames_started == 4, label);
+        CHECK(f.feed_pos == f.feed_len && f.bytes_taken == f.feed_len, label);
+
+        label_for(label, sizeof label,
+                   "bulk wanted: asked once per bulk frame, with its length",
+                   kChunkings[i]);
+        CHECK(f.bulk_offers == 2 && f.bulk_offered_len == 5000, label);
+
+        /* 6000 payload bytes, in order, no duplicates and no gaps. The
+         * filler feed_frame writes is 'a' + (i % 26) per frame, so the
+         * expected stream is that pattern twice - and a reader that
+         * replayed a run or dropped one lands off the pattern rather
+         * than merely off the count. */
+        label_for(label, sizeof label, "bulk wanted: 6000 bytes delivered",
+                   kChunkings[i]);
+        CHECK(f.bulk_len == 6000, label);
+        for (n = 0; n < f.bulk_len && n < 6000; ++n) {
+            long within = (n < 1000) ? n : n - 1000;
+
+            if (f.bulk[n] != (unsigned char)('a' + (within % 26))) {
+                ok = 0;
+                break;
+            }
+        }
+        label_for(label, sizeof label,
+                   "bulk wanted: bytes arrive in order, exactly once",
+                   kChunkings[i]);
+        CHECK(ok, label);
+    }
+}
+
+/* A frame the callee declines mid-stream is still drained. Nothing about
+ * frame sync may depend on whether anyone wanted the bytes. */
+static void test_declining_one_bulk_frame_keeps_sync(void)
+{
+    Fake f;
+    N68Reader r;
+
+    fake_reset(&f, &r);
+    f.want_bulk = 0;              /* nothing is expecting bytes */
+    feed_frame(&f, NOW68K_CHANNEL_BULK, 3000, NULL);
+    feed_json(&f, kMsgA);
+    drain_until_idle(&r, &f);
+
+    CHECK(f.bulk_offers == 1, "declined bulk: still offered");
+    CHECK(f.bulk_runs == 0, "declined bulk: nothing delivered");
+    CHECK(f.msg_count == 1 && strcmp(f.last_msg, kMsgA) == 0,
+          "declined bulk: the next control frame still parses");
+    CHECK(f.feed_pos == f.feed_len, "declined bulk: fully drained");
+}
+
 static void test_zero_length_frames(void)
 {
     unsigned i;
@@ -562,6 +685,8 @@ int main(void)
     test_control_buffer_boundary();
     test_oversized_frame_is_fatal();
     test_bulk_consumed_and_discarded();
+    test_bulk_delivered_when_wanted();
+    test_declining_one_bulk_frame_keeps_sync();
     test_zero_length_frames();
     test_back_to_back_in_one_read();
     test_stall_at_every_offset();

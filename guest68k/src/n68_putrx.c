@@ -112,6 +112,29 @@ int n68_putrx_parse_offer(const char *json, long len, N68PutOffer *out)
     return 1;
 }
 
+int n68_putrx_path_ok(const char *rel)
+{
+    long seg = 0;
+
+    if (rel == NULL) {
+        return 0;
+    }
+    if (rel[0] == ':') {
+        return 0;             /* leading colon = "start at the parent" */
+    }
+    for (; *rel != '\0'; ++rel) {
+        if (*rel == ':') {
+            if (seg == 0) {
+                return 0;     /* empty segment = traversal */
+            }
+            seg = 0;
+        } else if (++seg > 31) {
+            return 0;         /* longer than HFS can name */
+        }
+    }
+    return 1;
+}
+
 N68PutCode n68_putrx_offer(N68PutRx *rx, const N68PutOffer *offer)
 {
     long free_bytes;
@@ -137,6 +160,12 @@ N68PutCode n68_putrx_offer(N68PutRx *rx, const N68PutOffer *offer)
      * worth a refusal rather than a silent truncation onto a file
      * nobody asked for. */
     if (strlen(offer->name) > 31 || strchr(offer->name, ':') != NULL) {
+        return kN68PutBadPath;
+    }
+    /* Refused BEFORE the disk is asked anything, so a path that walks
+     * out of the share is never resolved even far enough to learn
+     * whether it exists. */
+    if (!n68_putrx_path_ok(offer->path)) {
         return kN68PutBadPath;
     }
 

@@ -27,11 +27,13 @@
 
 typedef enum {
     N68_RS_HEADER = 0,  /* accumulating the 8-byte frame header */
-    N68_RS_SKIP,        /* discarding a bulk frame, or a control frame too
-                           big for the control buffer - both are "throw
-                           away N bytes, then read the next header", so one
-                           state serves both */
-    N68_RS_BODY         /* accumulating a control payload into ctrl_buf */
+    N68_RS_SKIP,        /* discarding a control frame too big for the
+                           control buffer - and, when nothing is willing
+                           to take it, a bulk frame too: "throw away N
+                           bytes, then read the next header" */
+    N68_RS_BODY,        /* accumulating a control payload into ctrl_buf */
+    N68_RS_BULK         /* handing a bulk frame's payload to bulk_data in
+                           whatever runs the transport produces */
 } N68ReaderState;
 
 /* Every dependency the state machine has on the rest of the guest. All of
@@ -64,6 +66,23 @@ typedef struct N68ReaderOps {
 
     /* A control frame with a zero-length payload arrived. */
     void (*empty_control)(void *ctx);
+
+    /* A bulk frame is starting. Return 1 to have its payload delivered
+       to bulk_data below, 0 to have it DISCARDED - which is what this
+       reader did with every bulk frame before there was anything to
+       receive one, and still does when a frame arrives with no transfer
+       expecting it.
+       Either way the reader stays in frame sync: consuming and dropping
+       is not an error and never costs the connection. */
+    int (*bulk_wanted)(void *ctx, unsigned long length);
+
+    /* One run of a wanted bulk frame's payload, in whatever sizes the
+       transport happens to produce - never a whole frame, and never
+       aligned to anything. Called repeatedly until the frame is
+       consumed. The callee may fail internally; it does not tell the
+       reader, because a failed WRITE is not a failed FRAME and the
+       stream must still be drained to stay in sync. */
+    void (*bulk_data)(void *ctx, const unsigned char *bytes, long len);
 
     /* One fully-received control payload, in ctrl_buf. May tear the
        connection down, which is what still_reading() is asked about
