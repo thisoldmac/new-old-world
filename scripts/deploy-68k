@@ -1,0 +1,314 @@
+#!/usr/bin/env python3
+"""Build NOW-68K, name it honestly, put it on the PowerBook, and prove it
+arrived intact.
+
+    scripts/deploy-68k                 # build, stamp, upload, verify
+    scripts/deploy-68k --test          # ...then run the metal suite
+    scripts/deploy-68k --test-only     # skip the build; just run the suite
+
+Every step of this was being done by hand, and each one has a way of going
+quietly wrong that this project has already paid for at least once:
+
+  * DEPLOYING UNDER A DISHONEST NAME. A build named for what it was meant
+    to be rather than what it is cost an evening of diagnosis aimed at the
+    wrong half of the system (AGENTS.md). The MacBinary's internal name is
+    stamped from the version in the source, so the name on the Mac and the
+    version on the wire cannot disagree.
+
+  * NOT BUMPING THE VERSION. The host shows "now-68k v<X>" and that string
+    is the only way to tell two builds apart - nothing else on the wire
+    differs. So this REFUSES to deploy a version that is already on the
+    machine. 0.3 and 0.4 differed by an entire rewrite of the frame reader
+    and were otherwise indistinguishable; had they shared a version, every
+    metal result that day would have been unattributable.
+
+  * BELIEVING AN UPLOAD. NetPresenz appends "#2" rather than overwriting,
+    so a failed upload leaves the OLD build in place under the right name
+    and the next test run silently measures yesterday's code. Fork sizes
+    are compared against the local MacBinary header, which is what
+    AGENTS.md means by "verify by comparing fork sizes, not by
+    re-downloading".
+
+What it deliberately does NOT do: launch the thing. No Macintosh can be
+told to open an application over FTP, so a human still double-clicks the
+new build. With a dev settings file beside it (n68_devsettings.h) that is
+the only manual step left in the loop.
+"""
+import argparse
+import os
+import re
+import struct
+import subprocess
+import sys
+import tempfile
+from ftplib import FTP
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+VERSION_SRC = REPO / "guest68k" / "src" / "wire68.c"
+STAMPER = REPO / "guest" / "tools" / "name_macbinary.py"
+
+# The 180c, and the folder NOW-68K builds live in on it. Overridable, but
+# named here so the common case is one word on the command line.
+HOST = os.environ.get("NOW68K_FTP_HOST", "10.91.5.180")
+USER = os.environ.get("NOW68K_FTP_USER", "claude")
+PASSWORD = os.environ.get("NOW68K_FTP_PASS", "claude")
+REMOTE_DIR = os.environ.get("NOW68K_FTP_DIR", "Lab/now-68k")
+
+TOOLCHAIN = Path(os.environ.get(
+    "NOW68K_TOOLCHAIN",
+    "/Users/michelle/Lab/Tools/Retro68-build-68k/toolchain/"
+    "m68k-apple-macos/cmake/retro68.toolchain.cmake"))
+
+
+def fail(message: str) -> "NoReturn":  # noqa: F821
+    print("deploy-68k: " + message, file=sys.stderr)
+    raise SystemExit(1)
+
+
+def source_version() -> str:
+    """The version the BUILD will report, read from the one place that
+    decides it. Reading it back out of the source rather than taking it as
+    an argument is the point: a version passed on the command line can
+    disagree with the binary, and then the name on the Mac is a lie."""
+    text = VERSION_SRC.read_text(encoding="utf-8")
+    found = re.search(r'#define\s+NOW68K_APP_VERSION\s+"([^"]+)"', text)
+    if not found:
+        fail("no NOW68K_APP_VERSION in %s" % VERSION_SRC)
+    return found.group(1)
+
+
+def macbinary_forks(path: Path):
+    """(internal name, data fork bytes, resource fork bytes) from the
+    MacBinary header - the numbers the server's listing is checked
+    against."""
+    blob = path.read_bytes()
+    name = blob[2:2 + blob[1]].decode("mac-roman")
+    data = struct.unpack(">I", blob[83:87])[0]
+    rsrc = struct.unpack(">I", blob[87:91])[0]
+    return name, data, rsrc
+
+
+def build(build_dir: Path) -> Path:
+    if not (build_dir / "CMakeCache.txt").exists():
+        if not TOOLCHAIN.exists():
+            fail("no 68K toolchain at %s (set NOW68K_TOOLCHAIN)" % TOOLCHAIN)
+        print("== configuring %s" % build_dir)
+        subprocess.run(
+            ["cmake", "-S", str(REPO / "guest68k"), "-B", str(build_dir),
+             "-DCMAKE_TOOLCHAIN_FILE=" + str(TOOLCHAIN)],
+            check=True, stdout=subprocess.DEVNULL)
+    print("== building")
+    subprocess.run(["cmake", "--build", str(build_dir), "-j4"],
+                   check=True, stdout=subprocess.DEVNULL)
+    built = build_dir / "now68k-guest.bin"
+    if not built.exists():
+        fail("build produced no %s" % built)
+    return built
+
+
+def listing(ftp: FTP):
+    """{name: (data fork, resource fork)} for the deploy folder.
+
+    NetPresenz's LIST gives "<rsrc> <data> <total>" and appends .hqx to
+    the names of files it would BinHex on the way out - neither is a fact
+    about the file on the Mac, so both are undone here."""
+    rows = []
+    ftp.retrlines("LIST", rows.append)
+    out = {}
+    for row in rows:
+        # ----rw----   <rsrc>  <data>  <total>  <mon> <day> <yr|time>  <name>
+        # The name is the only field that can contain spaces ("NOW-68K
+        # 0.6"), so it has to be the ONE field the split does not cut.
+        # Getting this wrong is not cosmetic: a listing that parses to
+        # nothing makes the "already deployed" guard silently pass and the
+        # fork check silently fail, which is how this script stacked its
+        # first stray copy on the machine.
+        parts = row.split(None, 7)
+        if row.startswith("d") or len(parts) < 8:
+            continue
+        try:
+            rsrc, data = int(parts[1]), int(parts[2])
+        except ValueError:
+            continue
+        name = parts[7]
+        # NetPresenz shows a forked file as "<name>.hqx" because that is
+        # what it would send you; the file on the Mac has no such suffix.
+        if name.endswith(".hqx"):
+            name = name[:-4]
+        out[name] = (data, rsrc)
+    return out
+
+
+SETTINGS_NAME = "NOW-68K Dev Settings"
+# The two ports the loop alternates between. They exist because both
+# builds read the SAME settings file beside them: the incoming build must
+# be pointed somewhere its predecessor is not already holding, or the host
+# refuses the second dial as busy.
+PORTS = ("5252", "5253")
+
+
+def read_settings(ftp: FTP) -> str:
+    chunks = []
+    try:
+        ftp.retrbinary("RETR " + SETTINGS_NAME, chunks.append)
+    except Exception:
+        return ""
+    return b"".join(chunks).replace(b"\r", b"\n").decode("mac-roman")
+
+
+def write_settings(ftp: FTP, port: str) -> None:
+    """Point the NEXT launch at `port`.
+
+    NetPresenz appends "#2" rather than overwriting, so the old file has to
+    go first - otherwise the application finds two and reads the one it
+    already had. This is the only file this script deletes, and it is one
+    the lab put there."""
+    body = (
+        "# NOW-68K dev settings - lab only, never shipped.\n"
+        "# Rewritten by scripts/deploy-68k on every handoff: the incoming\n"
+        "# build must not dial the port its predecessor still holds.\n"
+        "host = %s\n"
+        "port = %s\n"
+        "retry = on\n"
+        "retry-interval = 5\n"
+        "autoconnect = on\n" % (os.environ.get("NOW68K_HARNESS_HOST",
+                                               "10.91.5.15"), port))
+    try:
+        ftp.delete(SETTINGS_NAME)
+    except Exception:
+        pass            # absent is the normal case on a first run
+    import io
+    ftp.storbinary("STOR " + SETTINGS_NAME, io.BytesIO(body.encode("ascii")))
+
+
+def current_port(text: str) -> str:
+    found = re.search(r"(?mi)^\s*port\s*[=:\s]\s*(\d+)", text)
+    return found.group(1) if found else PORTS[0]
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--test", action="store_true",
+                    help="run the metal suite after deploying")
+    ap.add_argument("--test-only", action="store_true",
+                    help="do not build or deploy; only run the suite")
+    ap.add_argument("--port", default=os.environ.get("NOW_METAL_PORT", "5252"),
+                    help="harness port the guest should dial (default 5252)")
+    ap.add_argument("--filter", default="Metal68KTests",
+                    help="swift test --filter for --test")
+    ap.add_argument("--force", action="store_true",
+                    help="deploy a version that is already on the machine")
+    ap.add_argument("--handoff", action="store_true",
+                    help="have the running build launch this one, then be "
+                         "retired by it (no double-click needed)")
+    ap.add_argument("--build-dir",
+                    default=os.environ.get("NOW68K_BUILD",
+                                           str(Path(tempfile.gettempdir())
+                                               / "now68k-build")))
+    args = ap.parse_args()
+
+    if not args.test_only:
+        version = source_version()
+        product = "NOW-68K %s" % version
+        print("== version %s (from wire68.c)" % version)
+
+        built = build(Path(args.build_dir))
+        stamped = Path(args.build_dir) / (product + ".bin")
+        subprocess.run([sys.executable, str(STAMPER), str(built),
+                        str(stamped), product], check=True)
+        name, data, rsrc = macbinary_forks(stamped)
+        if name != product:
+            fail("stamped name is %r, expected %r" % (name, product))
+        print("== stamped %r  data=%d rsrc=%d" % (name, data, rsrc))
+
+        ftp = FTP(HOST, timeout=120)
+        ftp.login(USER, PASSWORD)
+        ftp.cwd(REMOTE_DIR)
+        before = listing(ftp)
+
+        if product in before and not args.force:
+            fail("%r is already on %s.\n"
+                 "  Bump NOW68K_APP_VERSION in guest68k/src/wire68.c first: "
+                 "the host shows that string as \"now-68k v<X>\" and it is "
+                 "the ONLY way to tell two builds apart on the wire. "
+                 "Deploying over it makes every result today "
+                 "unattributable.\n"
+                 "  (--force if you really mean it; the server will append "
+                 "#2 rather than overwrite, which is its own trap.)"
+                 % (product, HOST))
+
+        print("== uploading to ftp://%s/%s/" % (HOST, REMOTE_DIR))
+        with stamped.open("rb") as handle:
+            ftp.storbinary("STOR " + product + ".bin", handle)
+
+        after = listing(ftp)
+
+        old_port = new_port = None
+        if args.handoff:
+            # The running build read its port at ITS launch, so rewriting
+            # the file now cannot disturb it - it only decides where the
+            # build we just uploaded will dial.
+            old_port = current_port(read_settings(ftp))
+            new_port = PORTS[1] if old_port == PORTS[0] else PORTS[0]
+            write_settings(ftp, new_port)
+            print("== handoff: running build on %s, %r will dial %s"
+                  % (old_port, product, new_port))
+        ftp.quit()
+
+        if product not in after:
+            fail("uploaded, but %r is not in the listing afterwards. "
+                 "NetPresenz may have decoded it under another name - look "
+                 "before deploying again, or you will stack copies." % product)
+        got_data, got_rsrc = after[product]
+        if (got_data, got_rsrc) != (data, rsrc):
+            fail("FORK MISMATCH for %r: the Mac has data=%d rsrc=%d, the "
+                 "MacBinary says data=%d rsrc=%d. Do not test this build."
+                 % (product, got_data, got_rsrc, data, rsrc))
+        print("== verified on the Mac: data=%d rsrc=%d — forks match"
+              % (got_data, got_rsrc))
+
+        if args.handoff:
+            scratch = os.environ.get(
+                "NOW_SWIFT_SCRATCH",
+                str(Path(tempfile.gettempdir()) / "now-swiftbuild"))
+            env = dict(os.environ, NOW_METAL="1",
+                       NOW_68K_NEW_APP=product,
+                       NOW_68K_OLD_PORT=old_port,
+                       NOW_68K_NEW_PORT=new_port)
+            print("\n== handing off (no double-click needed)")
+            code = subprocess.run(
+                ["swift", "test", "--package-path", str(REPO / "host"),
+                 "--scratch-path", scratch,
+                 "--filter", "Metal68KHandoffTests"], env=env).returncode
+            if code != 0:
+                fail("the handoff did not complete. The OLD build is only "
+                     "asked to quit after the new one handshakes, so the "
+                     "machine should still be reachable on port %s - check "
+                     "there before walking to it." % old_port)
+            args.port = new_port
+        else:
+            print()
+            print("Launch %r on the 180c." % product)
+            print("  With a dev settings file beside it, it dials on its "
+                  "own.")
+            print("  Without one, type this host and port %s by hand."
+                  % args.port)
+
+    if args.test or args.test_only:
+        scratch = os.environ.get(
+            "NOW_SWIFT_SCRATCH",
+            str(Path(tempfile.gettempdir()) / "now-swiftbuild"))
+        env = dict(os.environ, NOW_METAL="1", NOW_METAL_PORT=args.port)
+        print("\n== metal suite (%s), port %s" % (args.filter, args.port))
+        # Not check=True: a metal gate FAILING is a result, not a crash,
+        # and its own output says more than a traceback would.
+        return subprocess.run(
+            ["swift", "test", "--package-path", str(REPO / "host"),
+             "--scratch-path", scratch, "--filter", args.filter],
+            env=env).returncode
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
