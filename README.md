@@ -221,14 +221,13 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   both its faces (the console and the wire), which
   [docs/command-parity.md](docs/command-parity.md) explains and
   `CommandParityTests` enforces.
-- **NOW-68K's interactive console is emulator-verified, not
-  metal-verified.** A second window (Windows > Console, Command-K, and it
+- **NOW-68K's interactive console is metal-verified.** A second window (Windows > Console, Command-K, and it
   toggles) with an input line, history and scrollback. Watched working on a
   Quadra 800 under Mac OS 8.1 — including two redraw bugs found there and
   fixed, because a self-invalidated rectangle keeps its old pixels unless
   something erases it. The real target is a 68030 under System 7.1 with
-  4 MB, so nothing about timing or memory pressure carries over, **and
-  up/down history has never been watched working at all**. It costs
+  4 MB; `ps`, `help` and up/down history were all watched working there
+  after the display was repaired. It costs
   ~15 KB (4.0% of the 384 KB partition) plus a `WindowRecord` and a `TERec`
   nobody has sized, it cannot copy text out, and its scrollback holds 32
   lines.

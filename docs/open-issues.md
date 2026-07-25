@@ -1433,33 +1433,21 @@ and it is harder to catch because nothing fails.
 
 ## The console, and what it is not verified to do
 
-- **NOW-68K's interactive console is EMULATOR-VERIFIED, not
-  metal-verified** (2026-07-25). Watched working on a Quadra 800 under
-  Mac OS 8.1: ⌘K opens it (and toggles — that cost half an hour of
-  believing the shortcut was broken), typing works, `help` renders, and
-  after the fix below the input line clears and `clear` empties the pane.
-  The real target is a 68030 under System 7.1 with 4 MB, not a 68040
-  under 8.1 with 128 MB. Redraw behaviour should carry over; nothing
-  about timing or memory pressure does.
+- **NOW-68K's interactive console is METAL-VERIFIED** (2026-07-25,
+  evening). Watched by a human at the 180c after its display was
+  repaired: `ps`, `help` (rendering the shared command table plus the
+  console-local verbs), and **up/down history** — the last of which had
+  never been observed anywhere, on metal or in an emulator, and was the
+  feature the console was asked for.
 
-- **Two console bugs, one cause, found only by looking at a screen.**
-  `draw_output` and `draw_input` drew without erasing first. The Window
-  Manager erases only what it newly exposes, so a rectangle the app
-  invalidates itself arrives with its old pixels intact. Symptoms: the
-  command stayed on screen after Return looking unrun — which invites
-  pressing Return twice, and for `quit` or `launch` that repeats a real
-  action — and `clear` appeared completely broken when it had been
-  working all along, emptying the buffer and drawing nothing over the old
-  text. No native test could have caught either; they are pixels.
-
-- **Up/down history is UNVERIFIED.** It is implemented
-  (`n68_history.c`, with native tests for the ring itself) and it is the
-  thing the console was asked for, but nobody has watched an arrow recall
-  a command. The emulator session that would have shown it stopped
-  delivering synthetic keystrokes partway through — most likely ADB
-  confusion after a synthetic mouse button was left held down — and the
-  180c's display failed the same afternoon. First thing to check when
-  either is available.
+  The two redraw bugs found in the q800 emulator earlier the same day
+  were one cause: `draw_output` and `draw_input` drew without erasing
+  first, and the Window Manager erases only what it newly exposes, so a
+  rectangle the app invalidates itself keeps its old pixels. The command
+  stayed on screen after Return looking unrun — inviting a second Return,
+  which for `quit` or `launch` repeats a real action — and `clear`
+  appeared broken while working perfectly. Neither was reachable by a
+  native test; they are pixels.
 
 - **The console pane cannot be copied out.** A click in the output pane
   does nothing on purpose: it is drawn text, not a TERec. Reading a long
