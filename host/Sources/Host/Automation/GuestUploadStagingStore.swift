@@ -1,7 +1,9 @@
 import CryptoKit
 import Darwin
 import Foundation
+#if canImport(NOWAgentIntegration)
 import NOWAgentIntegration
+#endif
 
 /// Private disk staging for caller-supplied upload bytes.
 ///
