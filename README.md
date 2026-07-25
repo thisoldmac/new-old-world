@@ -4,8 +4,10 @@ New Old World joins a classic Mac and a modern Mac around human-facing
 tasks: one polished app on each side, one versioned contract over one
 multiplexed wire between them. The guest is a PowerPC Carbon application
 for Mac OS 9.1–9.2.2; the host is a native macOS menu-bar and window
-application with a module registry. No TimBotTu runtime code is imported
-on either side.
+application with a module registry. A second, much smaller guest —
+**NOW-68K** — speaks the same contract from a 68K Macintosh under System
+7.1 over MacTCP, for machines the Carbon guest cannot reach. No TimBotTu
+runtime code is imported on any side.
 
 ## What works today
 
@@ -131,7 +133,36 @@ Each side calls the other by the name it sent during the handshake:
 it, and "the Mac" identifies nothing when both machines are Macs. The measurement story behind the design lives in
 [docs/vram-readout.md](docs/vram-readout.md) and the TimBotTu corpus.
 
+- **NOW-68K** — a second guest for pre-PowerPC machines, built and
+  metal-proven on a PowerBook 180c (33 MHz 68030, 4 MB RAM, System 7.1,
+  MacTCP over a BlueSCSI-emulated DaynaPORT). Retro68 68K, non-Carbon
+  Toolbox C, a 384 KB partition with ~231 KB of free application heap.
+  Metal-verified: it dials out, completes the hello handshake, holds a
+  keepalive at a **33 ms** round trip, reports the machine honestly
+  (`mach=71 68030 sys=7.1.0 VM=off 640x480x8 row=640 RAM=4MB`), writes
+  one timestamped log per launch into `logs:`, quits cleanly, and serves
+  two commands — `launch` and `quit`, the latter answering `gone` after
+  confirming by re-listing rather than trusting the Apple Event's return.
+  It is deliberately smaller than the Carbon guest: one page, no tabs, no
+  preferences at all (the human types host and port each launch), dial-out
+  only with a human-controlled fixed-interval redial, and no bulk features
+  — bulk frames are consumed and discarded to stay in frame sync.
+
 ## What does not work
+
+- **NOW-68K implements almost none of the contract.** Two commands
+  (`launch`, `quit`) and the keepalive; everything else — `ps`, capture,
+  files, census, streams, processes — answers `unknown-command` or
+  `refused`, which is the contract's own additive answer, not a failure.
+  `proc_list` is written and bounded but unreachable from the host, so a
+  human must read the Application menu on the machine to know what is
+  running. That is the next gap worth closing.
+- **NOW-68K is not safe under Virtual Memory.** Its MacTCP parameter block
+  and buffers are ordinary application BSS, and the Device Manager writes
+  `ioResult` — and the driver copies inbound bytes — at interrupt time
+  regardless of a NULL `ioCompletion`. Nothing in this tree calls
+  `HoldMemory`, so the guest is safe only because VM is off on the test
+  machine. That is a standing precondition, not a property of the design.
 
 A "what works" list without its companion is a sales pitch.
 [docs/open-issues.md](docs/open-issues.md) is the ledger, organised

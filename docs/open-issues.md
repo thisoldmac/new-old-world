@@ -1060,6 +1060,62 @@ item to be acted on between check and use. The exact guest-side revalidation
 field and command behavior remain the next contract-first mutation gate. Tree
 deployment and mandatory-preview manifest prune follow only after it.
 
+## NOW-68K: what has not been on the machine
+
+The 68K guest for the PowerBook 180c is metal-proven for dial, handshake,
+keepalive, health, logging, clean quit, `launch` and the `gone` path of
+`quit`. Everything below has been built and cross-compiled and has never
+run, on metal or in an emulator. Listed because "we shipped it and here is
+what we still do not know" is the useful half.
+
+- **The declined quit.** The whole re-list composition exists so a target
+  that stops to ask about an unsaved document answers `ok:false` /
+  `quit-declined` rather than claiming success. Only the `gone` path has
+  been seen. Until the declined path is watched on the machine, the one
+  behaviour that command was written for is unverified.
+- **The farewell.** `bye` and `net_close`'s orderly TCPClose have never
+  been exercised; every close observed so far was the abortive path.
+- **The redial.** Fixed-interval reconnect after a failed dial, and the
+  human start/stop that gates it, have not been driven to failure.
+- **Oversized control frames.** The skip-not-fatal path (a frame larger
+  than our 4 KB buffer but inside the protocol's 32 KB) is implemented and
+  untriggered; nothing has yet sent one.
+- **`launch` at scale.** The catalog search is double-bounded on purpose —
+  a whole-volume Finder search has hard-wedged this fleet before — but it
+  has only resolved an application sitting in an obvious place. A
+  truncated search is supposed to say so rather than report a clean
+  "not found"; that branch is untested.
+- **The confirm wait under load.** It yields with an event mask of zero and
+  pumps the wire each pass, with a re-entrancy guard so a command arriving
+  mid-wait cannot recurse into it. Neither the pump nor the guard has been
+  observed under a second concurrent request.
+
+- **NOW-68K's `hello`, `ping` and `error` are not conformance-checked.**
+  `GuestWireConformanceTests` proves every message it can assemble from
+  guest source against the host decoder and the contract, but it cannot
+  read a message built across several calls — and the 68K guest builds all
+  of them that way, because it has no printf family (newlib's float tail
+  costs ~42 KB of a 384 KB partition). They are named in the
+  cannot-check set so the gap is visible; they want hand-written fixtures
+  in `GuestWireFixtureTests`. `hello` and `ping` have at least been
+  exercised live against a real host; `error` has not.
+
+Two things that are known-wrong rather than merely unverified:
+
+- **A skipped metal test reports as passed.** `MetalQuitTests` ran three
+  cases against the 68K guest, skipped all three ("no Mac dialled in within
+  120s" — the port was held), and the suite reported `passed`. A metal gate
+  that reads green when it never ran is worse than no gate. It also assumes
+  the PowerPC guest: it confirms `gone` a second time via `process.list`,
+  which NOW-68K does not implement.
+- **The contract's reconnect clause is inaccurate to both guests.** It
+  mandates "capped backoff (2s doubling to 30s)", but the PowerPC guest has
+  shipped a fixed-interval option all along (`prefs.h` `retry_secs`,
+  chosen in `wire.c::enter_backoff` because "predictable reconnects beat
+  adaptive politeness on a private LAN"), and NOW-68K is fixed-interval by
+  design. An amendment is drafted — cadence becomes guest policy with a
+  1 s floor, backoff demoted to a reference default — and not yet applied.
+
 ## Rough edges
 
 **Reverse streaming still needs longer and adversarial metal evidence.**

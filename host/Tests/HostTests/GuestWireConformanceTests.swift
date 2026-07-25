@@ -27,15 +27,41 @@ final class GuestWireConformanceTests: XCTestCase {
             .deletingLastPathComponent()          // …/
     }
 
+    /// Both guests, not one. `guest/src` is the PowerPC Carbon client;
+    /// `guest68k/src` is the 68K MacTCP client for the PowerBook 180c.
+    /// They are separate applications built by separate toolchains that
+    /// meet the host only on the wire, so a check that reads just one of
+    /// them lets the other drift — which is the same "two halves never met
+    /// in a test" failure this file exists to prevent, one half further on.
+    ///
+    /// `guest68k/src` is optional: branches that predate it must still run
+    /// these tests. A missing directory is skipped, an empty one is not —
+    /// silently checking nothing is the outcome worth failing on.
     private func guestSources() throws -> [(name: String, text: String)] {
-        let dir = Self.repoRoot.appendingPathComponent("guest/src")
-        let names = try FileManager.default.contentsOfDirectory(atPath: dir.path)
-            .filter { $0.hasSuffix(".c") }.sorted()
-        XCTAssertFalse(names.isEmpty, "no guest sources at \(dir.path)")
-        return try names.map {
-            ($0, try String(contentsOf: dir.appendingPathComponent($0),
-                            encoding: .utf8))
+        var out: [(name: String, text: String)] = []
+
+        for half in ["guest/src", "guest68k/src"] {
+            let dir = Self.repoRoot.appendingPathComponent(half)
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: dir.path,
+                                                 isDirectory: &isDir),
+                  isDir.boolValue else {
+                continue
+            }
+            let names = try FileManager.default
+                .contentsOfDirectory(atPath: dir.path)
+                .filter { $0.hasSuffix(".c") }.sorted()
+            XCTAssertFalse(names.isEmpty, "no guest sources at \(dir.path)")
+            // Names carry their half so a failure says which client is wrong.
+            for n in names {
+                out.append(("\(half)/\(n)",
+                            try String(contentsOf: dir.appendingPathComponent(n),
+                                       encoding: .utf8)))
+            }
         }
+
+        XCTAssertFalse(out.isEmpty, "no guest sources under \(Self.repoRoot.path)")
+        return out
     }
 
     // MARK: - Reading templates out of C
@@ -284,7 +310,7 @@ final class GuestWireConformanceTests: XCTestCase {
     func testGuestChecksDiskReservationBeforeAcceptingUpload()
         throws {
         let fileshare = try XCTUnwrap(
-            try guestSources().first { $0.name == "fileshare.c" }?.text)
+            try guestSources().first { $0.name.hasSuffix("/fileshare.c") }?.text)
         XCTAssertTrue(fileshare.contains(
             "err = SetEOF(rx->data_ref, bytes);"))
         XCTAssertTrue(fileshare.contains(
@@ -305,9 +331,15 @@ final class GuestWireConformanceTests: XCTestCase {
                 found.insert(String(type))
             }
         }
+        // hello, ping and error join this set from guest68k/src, which
+        // assembles every message through numfmt appends because the 68K
+        // build has no printf family (its float tail costs ~42 KB of a
+        // 384 KB partition). They are named here so the gap stays visible;
+        // they still want hand-written fixtures.
         XCTAssertEqual(found,
                        ["file.listing", "file.result", "command.result",
                         "census.report", "process.listing",
+                        "hello", "ping", "error",
                         "software.listing"], """
             The set of messages assembled piecemeal changed. Those are \
             NOT covered by the conformance checks above — either give the \
