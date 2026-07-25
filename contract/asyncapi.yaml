@@ -78,10 +78,19 @@
 #   unknown-command cleanly); changing a command's shape is breaking and
 #   bumps the revision. The wire is never a TTY: no raw keystrokes, no
 #   byte-streams — shell face, typed spine.
+#   TWO CALLERS, TWO SHAPES. A typed caller (a host module, an agent) knows
+#   the command it is calling and sends `args`. A CONSOLE does not: it is a
+#   dumb shell that relays the line a human typed and knows no command's
+#   grammar, so it sends `line` — the raw text after the command name —
+#   and the grammar is parsed by the side that SERVES the command. This is
+#   deliberate: there are now two guests with different command tables, and
+#   a console that carried a command list would be wrong for both. It also
+#   means every argument grammar has exactly one implementation, on the
+#   machine that owns the verb.
 #   RULE: an arg key must not shadow an envelope key (type, id, name,
-#   args). The classic guest scans a frame FLAT — first occurrence wins —
-#   so a shadowed key is read as the command name. launch shipped that
-#   bug to metal with an arg named "name"; the family uses "target".
+#   args, line). The classic guest scans a frame FLAT — first occurrence
+#   wins — so a shadowed key is read as the command name. launch shipped
+#   that bug to metal with an arg named "name"; the family uses "target".
 
 asyncapi: 3.0.0
 
@@ -684,7 +693,40 @@ components:
             protocol error; that is what keeps commands additive.
         args:
           type: object
-          description: Per-command arguments; schema in x-commands.
+          description: >
+            Per-command arguments, typed; schema in x-commands. What a
+            caller that KNOWS the command sends.
+        line:
+          type: string
+          description: >
+            The raw text after the command name, exactly as a human typed
+            it — what a CONSOLE sends, because a console knows no
+            command's grammar (see the two-callers rule in the preamble).
+            The receiver parses it with that command's own grammar, which
+            is therefore implemented once, on the machine that serves the
+            verb.
+
+            PRESENCE IS THE SIGNAL, and an empty string is present: it
+            says "a human typed this command with no arguments", which is
+            not the same request as a typed call with no args. gestalt is
+            the command where the two differ — absent `line` returns every
+            group (what a module asks for), `line: ""` returns the
+            snapshot a human wants to read.
+
+            SYMMETRY: command.request has only ever travelled host to guest.
+            The guest's own console runs its commands in-process and never
+            asks the host to run one, and the host serves no commands — so
+            this field adds no asymmetry, because the other direction does
+            not exist yet. If it ever does, `line` means the same thing
+            there: the raw text a human typed, parsed by the receiver.
+
+            `args` wins if both arrive: a caller that filled in the typed
+            field asked for something specific. A receiver that predates
+            this field ignores it and sees a bare command — so a console
+            line reaching such a guest runs that command's no-argument
+            behaviour instead of failing. Stated plainly because it is the
+            one dishonest edge in an otherwise additive field: on a guest
+            older than this revision's date, `ls Lab:Code` lists the root.
     CommandResult:
       type: object
       required: [type, id, ok]
@@ -1511,16 +1553,56 @@ components:
           description: Guest-side time spent streaming the bulk chunks.
 
   # The console command registry: the CLOSED set of commands a guest serves.
-  # Every entry declares its args and output; the consoles on both sides and
-  # the guest's dispatch table are all views of this list.
+  # Every entry declares its args and output; the guest's dispatch table and
+  # its own console are views of this list. The HOST console is not: it is a
+  # dumb shell (see the two-callers rule in the preamble) and learns this set
+  # at runtime, from the `help` command below.
+  #
+  # Each entry's `x-line` says what that command does with a console's raw
+  # `line`. It is the whole of the argument grammar a human types, stated
+  # where both halves read it — the receiver implements it, and the sender
+  # is forbidden from knowing it. No x-line means the command takes no
+  # console arguments and ignores the line.
   x-commands:
+    help:
+      description: >
+        What commands THIS machine serves, asked of the machine that
+        serves them. The host console carries no command list — there are
+        two guests with different tables, and a hardcoded union would be
+        wrong for both — so discovery is a request like any other, and a
+        guest that implements three commands says three.
+
+        A bare help lists every command with its one-line summary; a
+        topic names one and returns its usage and detail. A guest too old
+        to serve help answers unknown-command, which is itself the honest
+        answer: that machine offers no discovery.
+      args:
+        type: object
+        properties:
+          topic:
+            type: string
+            description: One command name; absent lists them all.
+      x-line: The topic, or empty for the list.
+      output:
+        type: object
+        description: >
+          Rows for a human to read, not a machine to parse. The list form
+          is [name, summary] per command; the topic form is [label, text]
+          with the usage first. A caller that needs the command NAMES can
+          read the first column of the list form — that is the one
+          structural promise here.
+        properties:
+          help: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
     gestalt:
       description: >
-        The guest's own account of itself, via the Gestalt Manager. Always
-        returns every group; the console shows a slice (default = snapshot,
-        or one of the domain groups, or --full for all). --save and --help
-        are console affordances and never reach the wire.
+        The guest's own account of itself, via the Gestalt Manager. A
+        typed call (no `line`) always returns every group; a console line
+        selects the slice a human asked for, guest-side — the host cannot
+        slice what it does not understand.
       args: {}
+      x-line: >
+        Empty = the snapshot group alone. --full = every domain group.
+        --cpu / --memory / --os / --network / --hardware = that one group.
       output:
         type: object
         description: >
@@ -1547,6 +1629,9 @@ components:
         capped for the console; the Files module uses file.list.
       args:
         path: { type: string }
+      x-line: >
+        The whole line is the path — HFS names contain spaces and need no
+        quoting. Empty lists the share root.
       output:
         type: object
         properties:
@@ -1576,6 +1661,9 @@ components:
         lines:
           type: integer
           description: How many, newest last. Default 20, most 40.
+      x-line: >
+        The first integer on the line is the count; anything else is
+        ignored. Empty means the default.
       output:
         type: object
         properties:
@@ -1609,6 +1697,10 @@ components:
             type: string
             enum: ["true", "false"]
             description: false = measure only, write nothing.
+      x-line: >
+        --depth N sets the depth; --no-save measures without writing.
+        Unrecognised flags are ignored, never refused — a console
+        typo must not cost a capture.
       output:
         type: object
         properties:
@@ -1641,6 +1733,9 @@ components:
           probe:
             type: string
             description: A probe name from x-census; empty runs "overview".
+      x-line: >
+        The first word that is not a flag is the probe; empty runs
+        "overview".
       output:
         type: object
         properties:
@@ -1679,6 +1774,9 @@ components:
             type: string
             enum: ["apps", "extensions", "cdevs", "startup", "apple"]
             description: Empty or absent runs the overview.
+      x-line: >
+        The first word that is not a flag is the domain; empty shows the
+        per-domain counts.
       output:
         type: object
         properties:
@@ -1710,6 +1808,10 @@ components:
               (spaces need no quotes); or a full HFS path; or "#n" from
               the stored match list. "target" and not "name" — see the
               arg-key rule in the preamble above.
+      x-line: >
+        The whole line is the target, flags and all — the -v grammar is
+        parsed here, by the machine that does the launching, so there is
+        one parser and not two dialects.
       output:
         type: object
         properties:
@@ -1775,6 +1877,10 @@ components:
               spaces, so flags are LEADING and quotes are unnecessary
               (a fully quoted name is accepted). "target" and not
               "name" — see the arg-key rule in the preamble above.
+      x-line: >
+        The whole line, flags first: the name is the rest of it and may
+        contain spaces, so --all / --wait N / --no-wait must precede it.
+        Parsed here for the same reason as launch.
       output:
         type: object
         properties:
@@ -1803,6 +1909,7 @@ components:
               path — the launch key doubles as the reveal key), or "#n"
               from the stored match list. "target" and not "name" — see
               the arg-key rule in the preamble above.
+      x-line: The whole line is the target. Same reason as launch.
       output:
         type: object
         properties:
@@ -1832,6 +1939,7 @@ components:
               An application name, a full HFS path, or "#n" picking
               from the responder's stored match list. "target" and not
               "name" — see the arg-key rule in the preamble above.
+      x-line: The whole line is the target. Same reason as launch.
       output:
         type: object
         properties:

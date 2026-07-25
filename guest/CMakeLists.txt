@@ -4,6 +4,8 @@ project(NowGuest C)
 add_application(now-guest
     CREATOR "NOWo"
     src/main.c
+    src/cmd_help.c
+    src/cmd_line.c
     src/commands.c
     src/console_model.c
     src/console_module.c

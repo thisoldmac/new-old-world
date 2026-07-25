@@ -116,9 +116,23 @@ final class CommandParityTests: XCTestCase {
             most for — see two-halves-never-met-in-a-test.
             """)
 
-        // ...and it must not have grown its own copy of a table verb.
+        // `help` is dispatched on BOTH faces on purpose, and it is the
+        // one case where that is right: the wire answers a row per
+        // command as JSON, the console prints text and adds its own
+        // console-local verbs, and no single result struct holds both
+        // shapes. What makes it safe is that both render the SAME list.
+        XCTAssertTrue(consoleText.contains("now68k_commands_docs"), """
+            conwin.c prints a help list it wrote itself instead of \
+            rendering commands68.h's published table. A hand-written list \
+            agrees with the wire's until someone adds a command, and then \
+            the machine has two different answers to "what can you do" — \
+            which is the whole reason that table is published.
+            """)
+
+        // Any OTHER verb on both faces is two implementations of one verb.
         let table = dispatched(in: try source("guest68k/src/commands68.c"))
         let duplicated = table.intersection(dispatched(in: consoleText))
+            .subtracting(["help"])
         XCTAssertTrue(duplicated.isEmpty, """
             conwin.c dispatches \(duplicated.sorted()) itself while \
             commands68.c also does. Two implementations of one verb is how \

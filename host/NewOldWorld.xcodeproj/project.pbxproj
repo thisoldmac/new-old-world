@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A1000220 /* NOWAgentIntegration in Frameworks */ = {isa = PBXBuildFile; productRef = A1000210 /* NOWAgentIntegration */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		A1000010 /* New Old World.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "New Old World.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -16,11 +20,6 @@
 			path = Sources/Host;
 			sourceTree = "<group>";
 		};
-		A1000021 /* Sources/NOWAgentIntegration */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Sources/NOWAgentIntegration;
-			sourceTree = "<group>";
-		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -28,6 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1000220 /* NOWAgentIntegration in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -38,7 +38,6 @@
 			isa = PBXGroup;
 			children = (
 				A1000020 /* Sources/Host */,
-				A1000021 /* Sources/NOWAgentIntegration */,
 				A1000050 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -68,9 +67,11 @@
 			);
 			fileSystemSynchronizedGroups = (
 				A1000020 /* Sources/Host */,
-				A1000021 /* Sources/NOWAgentIntegration */,
 			);
 			name = "New Old World";
+			packageProductDependencies = (
+				A1000210 /* NOWAgentIntegration */,
+			);
 			productName = "New Old World";
 			productReference = A1000010 /* New Old World.app */;
 			productType = "com.apple.product-type.application";
@@ -93,6 +94,9 @@
 			);
 			mainGroup = A1000040;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				A1000200 /* XCLocalSwiftPackageReference "NewOldWorld" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A1000050 /* Products */;
 			projectDirPath = "";
@@ -230,6 +234,20 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		A1000200 /* XCLocalSwiftPackageReference "NewOldWorld" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = .;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A1000210 /* NOWAgentIntegration */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = NOWAgentIntegration;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = A1000090 /* Project object */;
 }

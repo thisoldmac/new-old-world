@@ -379,6 +379,47 @@ Not load-bearing; parked as a known gap rather than chased.
 Everything here builds and passes its tests. None of it has been watched
 working on the PowerBook.
 
+- **The dumb-shell console, both guests** (2026-07-25, branch
+  `thread/host-menu-dumb-console`). The host console no longer knows what
+  commands the guest has: it sends `command.request` with `line` — the raw
+  text a human typed — and renders whatever comes back. Every argument
+  grammar moved to the machine that serves the verb
+  (`guest/src/cmd_line.c`, natively tested by mutation), `help` became an
+  x-command answered from the one doc table each guest already showed its
+  own console (`guest/src/cmd_help.c`,
+  `guest68k/src/commands68.c`), and the host's Tab completion is that
+  answer at runtime.
+
+  Tested here: 459 host tests, the two new native guest tests, and both
+  guests cross-compile clean at `-Wall -Wextra -Werror`. **Nothing has
+  been typed into a console on either machine.** What that leaves
+  specifically unverified:
+
+  - `gestalt` slicing now happens guest-side from the line (`--full`,
+    `--cpu`, …). Absent-`line` behaviour is unchanged for modules, but no
+    human has typed `gestalt --memory` at a PowerBook.
+  - `screenshot --depth 8 --no-save` and `tail 40` parse from the line
+    for the first time; the old host-side parsers are gone.
+  - `help` on the PowerPC guest builds a ~1.2 KB reply against a 4 KB
+    control frame with a byte-budget truncation row. The budget is
+    reasoned, not measured on the wire.
+  - `help` on NOW-68K builds into a 512-byte payload buffer and measures
+    ~260 by hand-count. It has never been sent.
+  - The MacRoman decode of an accented path typed as a console line
+    (`ls Café:Notes`) is covered by a native test on the decoder, not by
+    a file with that name on a real HFS volume.
+
+- **⌘Q's farewell, on metal** (2026-07-25, same branch). The host now
+  returns `terminateLater` and waits for `bye shutting-down` to reach the
+  socket before the process ends, bounded at 0.5 s. Tested here by
+  sequencing (mutation-verified: a shutDown that reports synchronously
+  fails), and the menu bar and its Quit item were driven live through
+  accessibility on this Mac. **Not verified:** that the ⌘Q *keystroke*
+  dispatches (script-driven activation is refused in this environment, so
+  the item was clicked rather than typed), and that a PowerBook watching
+  the wire draws the right conclusion — the guest's own "host went away"
+  handling has not been observed against a real quit.
+
 - **`quit <name>` — the deploy loop's missing half** (2026-07-25,
   branch `thread/guest-quit-command`). A console command and x-command
   that composes `process.list` → match by name → re-validate →
@@ -1392,6 +1433,23 @@ Both of the things that were known-wrong here are fixed (2026-07-25):
   on its merits.
 
 ## Rough edges
+
+**A console line reaching a guest older than `line` is misread, not
+refused.** Such a guest ignores the field and runs the command bare, so
+`ls Lab:Code` lists the share root and says nothing about the path it
+dropped. The field is additive by the contract's own rules — an unknown
+field is ignored — and this is the one place that politeness costs
+honesty. Both guests in this tree read it; the exposure is an older
+binary still sitting on a machine, which is a realistic state for the
+PowerBook. Stated beside the field in `contract/asyncapi.yaml` rather
+than only here.
+
+**No `help`, no completion.** Tab completion is the guest's own answer,
+so a guest that does not serve `help` has none — deliberately, because a
+host-side fallback list is exactly what was removed. It does mean a shell
+that offers nothing until the guest is updated, and `help` there answers
+`unknown-command`, which reads as an error rather than as "this build is
+old".
 
 **Reverse streaming still needs longer and adversarial metal evidence.**
 The PowerBook ladder now covers direct data-fork and MacBinary pulls

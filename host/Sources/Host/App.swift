@@ -1,8 +1,6 @@
 import AppKit
 import Combine
-#if canImport(NOWAgentIntegration)
 import NOWAgentIntegration
-#endif
 import SwiftUI
 
 extension String {
@@ -22,8 +20,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private var flash: StatusItemFlash?
     private var statusWatch: AnyCancellable?
     private var agentIntegrationServer: AgentIntegrationLocalServer?
+    private var isTerminating = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        installMainMenu()
         installStatusItem()
         openMainWindow()
         startAgentIntegrationServer()
@@ -33,10 +33,116 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         agentIntegrationServer?.stop()
     }
 
+    /// ⌘Q, and every other route to quitting.
+    ///
+    /// A live guest is told before the process goes: `bye` is a write, and a
+    /// write needs a turn of the run loop to leave, so terminating in the same
+    /// turn drops the wire abortively — the guest then sits reconnecting to a
+    /// host that no longer exists until its keepalive gives up. `terminateLater`
+    /// buys the farewell that turn; `GuestListener.shutDown` bounds the wait,
+    /// because a guest wedged badly enough to need telling is exactly the one
+    /// that will not read.
+    func applicationShouldTerminate(_ sender: NSApplication)
+        -> NSApplication.TerminateReply {
+        guard !isTerminating else { return .terminateNow }
+        isTerminating = true
+        state.listener.shutDown { [weak sender] in
+            sender?.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication,
                                        hasVisibleWindows flag: Bool) -> Bool {
         openMainWindow()
         return false
+    }
+
+    /// Test seam, like makeStatusMenu below: the same menu a real launch
+    /// installs, assembled without a menu bar to put it in.
+    func makeMainMenu() -> NSMenu {
+        MainMenu.make(
+            appName: ProductIdentity.displayName,
+            registry: registry,
+            target: self,
+            actions: .init(about: #selector(showAbout),
+                           openWindow: #selector(openMainWindow),
+                           showSettings: #selector(showSettings),
+                           screenshotGuest: #selector(screenshotGuest),
+                           askGuestForHelp: #selector(askGuestForHelp),
+                           toggleListening: #selector(toggleListening),
+                           revealSharedFolder: #selector(revealSharedFolder),
+                           revealLogFolder: #selector(revealLogFolder),
+                           quit: #selector(quit)))
+    }
+
+    private func installMainMenu() {
+        let menu = makeMainMenu()
+        menu.delegate = self
+        for item in menu.items {
+            item.submenu?.delegate = self
+        }
+        NSApp.mainMenu = menu
+        // Handed over by identity so NSApplication keeps the window list in
+        // it current; it also puts the standard window items in the right
+        // order relative to ours.
+        NSApp.windowsMenu = MainMenu.windowsMenu(in: menu)
+    }
+
+    @objc func showAbout() {
+        NSApp.orderFrontStandardAboutPanel(nil)
+    }
+
+    /// Settings are a page in the window, not a separate panel: the wire's
+    /// port and state belong beside the modules that run over it. ⌘, opens
+    /// the window on that page, which is what the standard item promises.
+    @objc func showSettings() {
+        show(moduleID: "settings")
+    }
+
+    @objc func showModule(_ sender: NSMenuItem) {
+        let index = sender.tag - MainMenu.Tag.moduleFirst.rawValue
+        guard registry.modules.indices.contains(index) else { return }
+        show(moduleID: registry.modules[index].id)
+    }
+
+    private func show(moduleID: String) {
+        guard registry.module(id: moduleID) != nil else { return }
+        state.selectedModuleID = moduleID
+        openMainWindow()
+    }
+
+    /// Discovery comes from the guest, at runtime: the console has no command
+    /// list of its own, so this is the same `help` request a human types.
+    @objc func askGuestForHelp() {
+        show(moduleID: "console")
+        state.console.runHelp()
+    }
+
+    @objc func toggleListening() {
+        switch state.listener.state {
+        case .idle, .failed:
+            state.startListening()
+        case .listening, .connected:
+            state.stopListening()
+        }
+    }
+
+    @objc func revealSharedFolder() {
+        NSWorkspace.shared.activateFileViewerSelecting(
+            [state.listener.share.root])
+    }
+
+    /// The log folder, not the log file: one file per launch lives there, and
+    /// the interesting one after a crash is rarely the current one.
+    @objc func revealLogFolder() {
+        guard let file = HostLog.shared.url else {
+            state.listener.note("No log file: writing to disk is off",
+                                area: "host")
+            show(moduleID: "logs")
+            return
+        }
+        NSWorkspace.shared.activateFileViewerSelecting([file])
     }
 
     private func installStatusItem() {
@@ -129,6 +235,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         menu.item(withTag: Self.statusLineTag)?.title =
             statusHeaderLine(status: state.guestStatus.status,
                              readiness: state.quickCapture.readiness)
+        if let toggle = menu.item(withTag: MainMenu.Tag.listenToggle.rawValue) {
+            toggle.title = Self.listenToggleTitle(state.listener.state)
+        }
+    }
+
+    /// One item, two truths — and the truth is read as the menu opens rather
+    /// than tracked, so a connection that dropped a moment ago cannot leave
+    /// the menu offering to stop a listener that is already gone.
+    static func listenToggleTitle(_ state: GuestListener.State) -> String {
+        switch state {
+        case .idle, .failed: return "Start Listening"
+        case .listening, .connected: return "Stop Listening"
+        }
     }
 
     /// The header carries the connection, and — when Screenshot Guest is
@@ -144,7 +263,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         return "\(status.menuLine) — \(reason.lowercasedFirst)"
     }
 
-    @objc private func openMainWindow() {
+    @objc func openMainWindow() {
         if window == nil {
             let root = HostRootView(registry: registry, state: state)
             let controller = NSHostingController(rootView: root)
@@ -160,7 +279,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         window?.makeKeyAndOrderFront(nil)
     }
 
-    @objc private func quit() {
+    @objc func quit() {
         NSApp.terminate(nil)
     }
 

@@ -34,6 +34,75 @@ final class GuestWireFixtureTests: XCTestCase {
         }
     }
 
+    /// run_help() in guest/src/commands.c, listing what that Mac serves.
+    ///
+    /// This reply is discovery: the host console keeps no command list, so
+    /// these rows are the only account of the far machine's command set there
+    /// is. The names are read out of the first column — that is the one
+    /// structural promise the contract makes about this output — so a change
+    /// to the row shape here silently costs Tab completion on both guests.
+    func testHelpAsTheGuestWritesIt() throws {
+        let json = """
+        {"type":"command.result","id":7,"ok":true,"output":{"help":[\
+        ["gestalt","report this Mac: system, model, RAM, CarbonLib"],\
+        ["ls","list a folder in the shared files"],\
+        ["help","list commands (\\"help <cmd>\\" for one)"]]}}
+        """
+        // The summary in cmd_help.c really does contain quotes, so this is
+        // also a check that now_json_escape ran over it.
+        guard case .commandResult(let result) = try decode(json) else {
+            return XCTFail("not a command result")
+        }
+        XCTAssertTrue(result.ok)
+        let rows = try XCTUnwrap(result.output?["help"])
+        XCTAssertEqual(rows.compactMap(\.first),
+                       ["gestalt", "ls", "help"],
+                       "the first column is the command names")
+        XCTAssertEqual(rows.last?.last,
+                       #"list commands ("help <cmd>" for one)"#,
+                       "an escaped quote inside a summary survives the trip")
+    }
+
+    /// run_help() on NOW-68K (guest68k/src/commands68.c), which serves three
+    /// commands and says three — plus the note row that keeps a short list
+    /// from reading as a broken one. Its empty label is deliberate: rows are
+    /// [label, value] and this one is prose, not a command.
+    func testHelpAsTheSixtyEightKGuestWritesIt() throws {
+        let json = """
+        {"type":"command.result","id":3,"ok":true,"output":{"help":[\
+        ["launch","open an application on this Mac"],\
+        ["quit","ask an application on this Mac to quit"],\
+        ["help","list the commands this Mac serves"],\
+        ["","every other command answers unknown-command"]]}}
+        """
+        guard case .commandResult(let result) = try decode(json) else {
+            return XCTFail("not a command result")
+        }
+        let rows = try XCTUnwrap(result.output?["help"])
+        XCTAssertEqual(rows.count, 4)
+        XCTAssertEqual(rows.last?.first, "",
+                       "the note carries no command name, and the host must "
+                       + "not offer \"\" as a completion")
+    }
+
+    /// The contract's answer for a command a machine does not have. NOW-68K
+    /// gives this for twelve of the fifteen the Carbon guest serves, and the
+    /// host console renders it verbatim rather than pre-empting it — which is
+    /// the whole of being a dumb shell.
+    func testUnknownCommandAsTheGuestWritesIt() throws {
+        let json = """
+        {"type":"command.result","id":9,"ok":false,"error":\
+        {"code":"unknown-command","message":"ls is not a command this Mac \
+        knows"}}
+        """
+        guard case .commandResult(let result) = try decode(json) else {
+            return XCTFail("not a command result")
+        }
+        XCTAssertFalse(result.ok)
+        XCTAssertEqual(result.error?.code, "unknown-command")
+        XCTAssertNil(result.output)
+    }
+
     /// now_wire_send_file(): the guest offering a file to the host.
     func testFileOfferAsTheGuestWritesIt() throws {
         let json = """

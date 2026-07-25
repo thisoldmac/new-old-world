@@ -9,6 +9,7 @@
 #include "build_stamp.h"
 #include "capture.h"
 #include "census.h"
+#include "cmd_help.h"
 #include "commands.h"
 #include "fileshare.h"
 #include "json.h"
@@ -106,181 +107,39 @@ static const char *next_token(const char *p, char *out, long cap)
 
 static void help_for(const char *name)
 {
+    const NowCommandDoc *doc = now_command_doc(name);
     char line[kMaxCols];
+    int i;
 
-    if (strcmp(name, "screenshot") == 0) {
-        console_model_append("screenshot - capture the screen to the desktop");
-        console_model_append("  Usage: screenshot [--depth {1,2,4,8,16,32}]");
-        console_model_append("         [--bands N] [--no-save]");
-        console_model_append("  Captures the whole screen as a packed PICT. Depth");
-        console_model_append("  defaults to the Screenshots panel setting; --no-save");
-        console_model_append("  measures capture+encode without writing a file.");
-        console_model_append("  --bands N (2..32) captures in N banded CopyBits");
-        console_model_append("  calls and reports the per-band cost spread.");
-    } else if (strcmp(name, "vprobe") == 0) {
-        console_model_append("vprobe - measure VRAM read cost by method");
-        console_model_append("  Usage: vprobe");
-        console_model_append("  Times raw framebuffer reads (8/16/32/64-bit) against");
-        console_model_append("  the CopyBits baseline, checks reread caching, partial-");
-        console_model_append("  read scaling, and pixel fidelity. Takes ~3 seconds;");
-        console_model_append("  the screen should be still during the run.");
-    } else if (strcmp(name, "ls") == 0) {
-        console_model_append("ls - list a folder in the shared files");
-        console_model_append("  Usage: ls [path]");
-        console_model_append("  Paths are relative to the share root, with");
-        console_model_append("  colons between folders: \"Lab:Code\". No path");
-        console_model_append("  lists the root itself. The root is chosen in");
-        console_model_append("  File > File Sharing... and defaults to the");
-        console_model_append("  startup volume; nothing outside it is reachable.");
-    } else if (strcmp(name, "tail") == 0) {
-        console_model_append("tail - the last lines of this launch's log");
-        console_model_append("  Usage: tail [lines]   (default 20, most 40)");
-        console_model_append("  The log is a file per launch in a \"now-logs\"");
-        console_model_append("  folder beside this application, so what happened");
-        console_model_append("  survives a crash that takes everything else. The");
-        console_model_append("  same command works from the other Mac's console.");
-    } else if (strcmp(name, "put") == 0) {
-        console_model_append("put - send a file to the host");
-        console_model_append("  Usage: put <full path>");
-        console_model_append("  \"Macintosh HD:Notes:Read Me\". The path is a full");
-        console_model_append("  HFS path, not a share-relative one: sending is not");
-        console_model_append("  browsing, so the file need not be in the share. The");
-        console_model_append("  host saves it in whatever folder it shares.");
-    } else if (strcmp(name, "mv") == 0) {
-        console_model_append("mv - move or rename something in the shared files");
-        console_model_append("  Usage: mv <path> <new path>");
-        console_model_append("  Both paths are relative to the share root. The");
-        console_model_append("  second is the whole destination including the new");
-        console_model_append("  name, so a rename is \"mv Notes Notes Old\". The");
-        console_model_append("  destination folder must already exist, and an");
-        console_model_append("  existing item is never replaced.");
-    } else if (strcmp(name, "trash") == 0) {
-        console_model_append("trash - move something to the Trash");
-        console_model_append("  Usage: trash <path>");
-        console_model_append("  The item goes to this volume's Trash, so it can be");
-        console_model_append("  dragged back out until the Trash is emptied. It is");
-        console_model_append("  not erased. Reports the name it landed under, which");
-        console_model_append("  differs if the Trash already held that name.");
-    } else if (strcmp(name, "untrash") == 0) {
-        console_model_append("untrash - put something back from the Trash");
-        console_model_append("  Usage: untrash <trash name> <path>");
-        console_model_append("  The first is what trash reported the item is");
-        console_model_append("  called in the Trash; the second is where in the");
-        console_model_append("  share to put it back, including its name.");
-    } else if (strcmp(name, "mkdir") == 0) {
-        console_model_append("mkdir - make a folder in the shared files");
-        console_model_append("  Usage: mkdir <path>");
-        console_model_append("  The enclosing folder must already exist. Names are");
-        console_model_append("  at most 31 characters and cannot contain a colon.");
-    } else if (strcmp(name, "gestalt") == 0) {
-        console_model_append("gestalt - report this Mac's identity");
-        console_model_append("  Usage: gestalt [group] [--save]");
-        console_model_append("  With no group, prints a short snapshot. Groups:");
-        console_model_append("    --cpu --memory --os --network --hardware");
-        console_model_append("    --full        every group");
-        console_model_append("    --save        also write the output to the desktop");
-    } else if (strcmp(name, "ps") == 0) {
-        console_model_append("ps - the processes running on this Mac");
-        console_model_append("  Usage: ps");
-        console_model_append("  One line per process: its name, then kind");
-        console_model_append("  (application / background / finder), size, and");
-        console_model_append("  whether it is frontmost. A reading only; the");
-        console_model_append("  Processes page is where they are driven.");
-    } else if (strcmp(name, "sw") == 0) {
-        console_model_append("sw - what is installed on this Mac");
-        console_model_append("  Usage: sw [domain]");
-        console_model_append("  Domains: apps extensions cdevs startup apple");
-        console_model_append("  No domain shows counts. Items disabled by the");
-        console_model_append("  Extensions Manager are listed too, tagged (off).");
-        console_model_append("  \"sw apps\" sweeps the whole startup disk (a few");
-        console_model_append("  seconds) and shows one page of applications.");
-    } else if (strcmp(name, "launch") == 0) {
-        console_model_append("launch - open an application on this Mac");
-        console_model_append("  Usage: launch [-v VERSION] <name | path | #n>");
-        console_model_append("  The name is the whole rest of the line - spaces");
-        console_model_append("  need no quotes. If several apps share it, the");
-        console_model_append("  first launches and the reply names its version.");
-        console_model_append("  To force one: -v (\"launch -v 1.1.1 SimpleText\"),");
-        console_model_append("  a full path, or \"vers <name>\" then \"launch #2\".");
-    } else if (strcmp(name, "quit") == 0) {
-        console_model_append("quit - ask an application on this Mac to quit");
-        console_model_append("  Usage: quit [--all] [--wait N | --no-wait] <name>");
-        console_model_append("  The name is the whole rest of the line, so any");
-        console_model_append("  flag comes FIRST. Names it by what \"ps\" shows.");
-        console_model_append("  A 'quit' Apple Event is a REQUEST: an app with an");
-        console_model_append("  unsaved document stops to ask and stays running.");
-        console_model_append("  So this waits (6 s, --wait N up to 20) and re-reads");
-        console_model_append("  the process list, then says \"is gone\" or \"is STILL");
-        console_model_append("  RUNNING\" - never the first when it means the second.");
-        console_model_append("  Several processes of one name refuse unless --all.");
-        console_model_append("  --no-wait sends and reports it unconfirmed.");
-    } else if (strcmp(name, "reveal") == 0) {
-        console_model_append("reveal - show an item in this Mac's Finder");
-        console_model_append("  Usage: reveal <name | full path | #n>");
-        console_model_append("  Selects the item in its Finder window and brings");
-        console_model_append("  the Finder forward. Opens nothing, so any item");
-        console_model_append("  reveals - an extension or control panel by path,");
-        console_model_append("  an app by name (the first copy if several share");
-        console_model_append("  it), or \"#n\" from the last vers/launch list.");
-    } else if (strcmp(name, "vers") == 0) {
-        console_model_append("vers - one file's version resources");
-        console_model_append("  Usage: vers <name | full path | #n>");
-        console_model_append("  Reads that file's 'vers' resources. A bare name");
-        console_model_append("  searches applications and shows EVERY match as");
-        console_model_append("  a numbered list, full paths and all - then");
-        console_model_append("  \"vers #2\" or \"launch #2\" picks one. A full");
-        console_model_append("  path reads any file, so extensions want their");
-        console_model_append("  path. Never loops a whole folder.");
-    } else if (strcmp(name, "catsearch") == 0) {
-        console_model_append("catsearch - time a whole-disk application search");
-        console_model_append("  Usage: catsearch");
-        console_model_append("  Sweeps the startup volume's catalog for applications");
-        console_model_append("  with PBCatSearch, in short slices, cold then warm.");
-        console_model_append("  Measures whether a full application index is");
-        console_model_append("  affordable on this disk. Seconds-long; read-only.");
-    } else if (strcmp(name, "census") == 0) {
-        console_model_append("census - run one hardware-census probe");
-        console_model_append("  Usage: census [probe]   (no probe = overview)");
-        console_model_append("  Probes:");
-        console_model_append("    overview identity selectors video volumes");
-        console_model_append("    drives drivers adb ata pccard pram power");
-        console_model_append("    pci scsi");
-        console_model_append("  Passive reads of tables the OS keeps. Absence is");
-        console_model_append("  an answer, not an error (no PCI slots = absent).");
-    } else if (strcmp(name, "help") == 0) {
-        console_model_append("help - list commands; \"help <cmd>\" for one command");
-    } else if (strcmp(name, "clear") == 0) {
-        console_model_append("clear - clear the console scrollback");
-    } else {
+    if (doc == NULL) {
         snprintf(line, sizeof line, "No help for \"%s\"", name);
         console_model_append(line);
+        return;
+    }
+    snprintf(line, sizeof line, "%s - %s", doc->name, doc->summary);
+    console_model_append(line);
+    snprintf(line, sizeof line, "  Usage: %s", doc->usage);
+    console_model_append(line);
+    for (i = 0; doc->detail != NULL && doc->detail[i] != NULL; ++i) {
+        console_model_append(doc->detail[i]);
     }
 }
 
+/* Both halves of help read cmd_help.c's table, which is also what the wire's
+   `help` command answers — the other Mac's console keeps no command list of
+   its own and asks instead, so a command documented in one place is
+   documented in all three. */
 static void help_list(void)
 {
+    char line[kMaxCols];
+    int i;
+
     console_model_append("Commands on this Mac:");
-    console_model_append("  gestalt     report this Mac (add a group or --full)");
-    console_model_append("  screenshot  capture the screen (--depth N, --bands N,");
-    console_model_append("              --no-save)");
-    console_model_append("  ls          list a shared folder (ls [path])");
-    console_model_append("  put         send a file to the host (put <full path>)");
-    console_model_append("  tail        the last lines of this launch's log");
-    console_model_append("  mv          move or rename (mv <path> <new path>)");
-    console_model_append("  trash       move to the Trash (trash <path>)");
-    console_model_append("  untrash     put back (untrash <trash name> <path>)");
-    console_model_append("  mkdir       make a folder (mkdir <path>)");
-    console_model_append("  vprobe      measure VRAM read cost by method");
-    console_model_append("  ps          the processes running on this Mac");
-    console_model_append("  census      run a hardware probe (census [probe])");
-    console_model_append("  sw          installed software (sw [domain])");
-    console_model_append("  launch      open an application (launch <name>)");
-    console_model_append("  quit        ask one to quit (quit <name>)");
-    console_model_append("  reveal      show an item in the Finder (reveal <name|path>)");
-    console_model_append("  vers        one file's version (vers <name|path>)");
-    console_model_append("  catsearch   time a whole-disk application search");
-    console_model_append("  help        show this list (\"help <cmd>\" for details)");
-    console_model_append("  clear       clear the console scrollback");
+    for (i = 0; kNowCommandDocs[i].name != NULL; ++i) {
+        snprintf(line, sizeof line, "  %-11s %s",
+                 kNowCommandDocs[i].name, kNowCommandDocs[i].summary);
+        console_model_append(line);
+    }
     console_model_append("Add --help or -h to any command for details.");
 }
 

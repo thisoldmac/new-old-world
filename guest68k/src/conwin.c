@@ -197,11 +197,34 @@ static void input_set_text(const char *s)
 
 static void show_help(void)
 {
+    const N68CommandDoc *docs = now68k_commands_docs();
+    int i;
+
     con_out("NOW-68K console. Commands run on THIS machine.");
-    con_out("  launch <name|HD:path>    open an application");
-    con_out("  quit [--wait N|--no-wait] <name>");
+
+    /* The SAME list the wire's `help` answers from (commands68.h), not a
+     * second copy. A hand-written list here agreed with that one right up
+     * until someone added a command, and then this machine had two
+     * different answers to "what can you do". */
+    for (i = 0; docs[i].name != NULL; ++i) {
+        char line[80];
+        long pos = 0;
+
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, "  ");
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                    docs[i].usage);
+        while (pos < 28) {
+            (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, " ");
+        }
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                    docs[i].summary);
+        con_out(line);
+    }
+
+    /* Console-only, and deliberately not in that list: the wire's help must
+     * not advertise verbs the wire cannot serve. */
     con_out("  ps                       what is running on this Mac");
-    con_out("  help, clear              (console only, not wire commands)");
+    con_out("  clear                    clear this pane");
     con_out("Return runs. Up/Down walk history.");
     con_out("Option-Up/Down (or Page Up/Down) scroll this pane.");
 }

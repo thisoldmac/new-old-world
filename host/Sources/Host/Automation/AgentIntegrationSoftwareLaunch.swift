@@ -1,7 +1,5 @@
 import Foundation
-#if canImport(NOWAgentIntegration)
 import NOWAgentIntegration
-#endif
 
 /// Projects the existing software.list -> exact listing path -> launch flow.
 ///

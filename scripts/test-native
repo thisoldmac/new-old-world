@@ -109,6 +109,8 @@ run_c guest processes_layout_test.c  ""  src/processes_layout.c
 run_c guest software_layout_test.c   ""  src/software_layout.c
 run_c guest sw_vers_parse_test.c     ""  src/sw_vers_parse.c
 run_c guest workshop_layout_test.c   ""  src/workshop_layout.c
+run_c guest cmd_help_test.c         ""  src/cmd_help.c
+run_c guest cmd_line_test.c         ""  src/cmd_line.c src/json.c
 run_py guest ot_connect_source_test.py
 
 echo "== guest68k (68K, System 7.1) =="

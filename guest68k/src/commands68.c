@@ -422,6 +422,118 @@ static void run_quit(const char *target, N68CmdResult *res)
     n68_cmdresult_set_ok2(res, "quit", "Quit", detail, "Outcome", state);
 }
 
+/* ---- help ------------------------------------------------------------------- */
+
+/* What THIS Mac serves - three commands, and it says three.
+ *
+ * The other side keeps no command list: there are two guests with different
+ * tables (the PowerPC Carbon guest implements fifteen commands, this one
+ * implements two plus this), so a console-side list would be wrong for both.
+ * Discovery is therefore a request like any other, and the honest answer
+ * from here is a short one. The PowerPC guest answers the same command from
+ * its own table (guest/src/cmd_help.c); this table is deliberately separate
+ * rather than shared, because the two applications share no source - they
+ * meet only on the wire, and the contract is the thing they hold in common.
+ *
+ * The trailing note row is not decoration. A human reading three commands
+ * needs to know whether that is all this machine HAS or all it would admit
+ * to; saying "everything else answers unknown-command" is the difference
+ * between a short list and a suspicious one. */
+static const N68CommandDoc k_docs[] = {
+    { "launch", "open an application on this Mac",
+      "launch <name | full path>" },
+    { "quit", "ask an application on this Mac to quit",
+      "quit [--all] [--wait N | --no-wait] <name>" },
+    { "help", "list the commands this Mac serves",
+      "help [command]" },
+    { NULL, NULL, NULL }
+};
+
+const N68CommandDoc *now68k_commands_docs(void)
+{
+    return k_docs;
+}
+
+static const char kHelpNote[] =
+    "every other command answers unknown-command";
+
+
+static long run_help(const char *target, long id, char *out, long cap)
+{
+    long avail = cap > 0 ? cap - 1 : 0;
+    long pos = 0;
+    int ok = 1;
+    int i;
+    char topic[32];
+
+    topic[0] = '\0';
+    if (target != NULL
+        && !trim_and_unquote(target, topic, (int)sizeof topic)) {
+        topic[0] = '\0';   /* too long to be any command's name */
+    }
+
+    /* One command asked about by name: a single row pair, which is exactly
+     * what an N68CmdResult holds - so it goes through the same renderer
+     * every other reply uses rather than building JSON by hand. */
+    if (topic[0] != '\0') {
+        N68CmdResult res;
+
+        n68_cmdresult_init(&res);
+        for (i = 0; k_docs[i].name != NULL; ++i) {
+            if (strcmp(k_docs[i].name, topic) == 0) {
+                res.ok = 1;
+                bounded_strcpy(res.key, sizeof res.key, "help");
+                bounded_strcpy(res.label, sizeof res.label,
+                               k_docs[i].name);
+                bounded_strcpy(res.text, sizeof res.text,
+                               k_docs[i].summary);
+                bounded_strcpy(res.label2, sizeof res.label2, "Usage");
+                bounded_strcpy(res.state, sizeof res.state,
+                               k_docs[i].usage);
+                return n68_cmdresult_render_json(&res, id, out, cap);
+            }
+        }
+        res.ok = 0;
+        bounded_strcpy(res.code, sizeof res.code, "unknown-command");
+        bounded_strcpy(res.text, sizeof res.text,
+                       "that is not a command this Mac knows");
+        return n68_cmdresult_render_json(&res, id, out, cap);
+    }
+
+    /* The whole list: a row PER COMMAND, which no single N68CmdResult can
+     * hold, so this one builder stays. Every string below is one of this
+     * file's own literals (k_docs, kHelpNote), so nothing here needs JSON
+     * escaping - the moment that stops being true, it does. */
+    ok = ok && now68k_fmt_append_str(out, avail, &pos,
+                                      "{\"type\":\"command.result\",\"id\":");
+    ok = ok && now68k_fmt_append_long(out, avail, &pos, id);
+    ok = ok && now68k_fmt_append_str(out, avail, &pos,
+                                      ",\"ok\":true,\"output\":{\"help\":[");
+    for (i = 0; ok && k_docs[i].name != NULL; ++i) {
+        if (i > 0) {
+            ok = ok && now68k_fmt_append_str(out, avail, &pos, ",");
+        }
+        ok = ok && now68k_fmt_append_str(out, avail, &pos, "[\"");
+        ok = ok && now68k_fmt_append_str(out, avail, &pos, k_docs[i].name);
+        ok = ok && now68k_fmt_append_str(out, avail, &pos, "\",\"");
+        ok = ok && now68k_fmt_append_str(out, avail, &pos,
+                                          k_docs[i].summary);
+        ok = ok && now68k_fmt_append_str(out, avail, &pos, "\"]");
+    }
+    ok = ok && now68k_fmt_append_str(out, avail, &pos, ",[\"note\",\"");
+    ok = ok && now68k_fmt_append_str(out, avail, &pos, kHelpNote);
+    ok = ok && now68k_fmt_append_str(out, avail, &pos, "\"]]}}");
+    if (!ok || pos <= 0) {
+        now68k_log("cmd: help reply did not fit its envelope");
+        if (cap > 0) {
+            out[0] = '\0';
+        }
+        return 0;
+    }
+    out[pos] = '\0';
+    return pos;
+}
+
 /* ---- dispatch --------------------------------------------------------------- */
 
 int now68k_commands_run(const char *name, const char *target,
@@ -448,6 +560,18 @@ int now68k_commands_dispatch(const char *name, const char *target, long id,
 {
     N68CmdResult res;
     long len;
+
+    /* help answers here rather than through now68k_commands_run: its reply
+     * is a ROW PER COMMAND, and an N68CmdResult holds one row. The console
+     * renders the same k_docs list itself (conwin.c), so the two faces
+     * still share the list even though they do not share this builder. */
+    if (strcmp(name, "help") == 0) {
+        len = run_help(target, id, out, cap);
+        if (out_len != NULL) {
+            *out_len = len;
+        }
+        return 1;
+    }
 
     if (!now68k_commands_run(name, target, &res)) {
         return 0;

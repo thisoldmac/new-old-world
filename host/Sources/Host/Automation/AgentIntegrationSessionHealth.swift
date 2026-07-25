@@ -1,7 +1,5 @@
 import Foundation
-#if canImport(NOWAgentIntegration)
 import NOWAgentIntegration
-#endif
 
 /// The in-process, narrow boundary exposed by the optional local adapter.
 ///

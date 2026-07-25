@@ -103,6 +103,14 @@ final class HostAppState: ObservableObject {
             self?.census.connection = Self.guestState(from: state)
             self?.processes.connection = Self.guestState(from: state)
             self?.software.connection = Self.guestState(from: state)
+            // The console's completions came from THIS guest's `help`, and
+            // the next one may serve a different set — NOW-68K serves three
+            // commands where the Carbon guest serves fifteen. So they go
+            // with the connection rather than lingering as a list from a
+            // machine that is no longer there.
+            if case .connected = state {} else {
+                self?.console.forgetGuest()
+            }
             self?.captureSmokeIfRequested(state)
         }
         if settings.listenAtLaunch {

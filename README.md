@@ -26,9 +26,16 @@ runtime code is imported on any side.
   saturated wire can never silently eat a protocol word. Connecting on
   launch is now a checkbox — off means the Connection page is the only
   dialer, and a Save never dials by surprise.
-- **Console** — the same command table runs locally on the guest and as a
-  remote shell from the host (`gestalt`, `screenshot`, `vprobe`, unix-style
-  flags, history).
+- **Console** — one command table on the guest, reachable from its own
+  window and as a shell from this side. The host console is a **dumb
+  shell**: it relays the line as typed and knows no command's grammar,
+  because the two guests do not serve the same commands — so `help` is a
+  wire request (a machine that serves three commands says three), Tab
+  completes from that answer, and an unknown command comes back refused
+  by the machine that would have run it. Host-side there are four verbs,
+  all behind a `/`: `/clear`, `/save`, `/help`, and `/swpage` (which
+  drives a wire family, not a command). Tested here, and the
+  PowerPC and 68K guests both build; **the PowerBook run is pending**.
 - **`launch` and `quit`, by name** — open an application on the classic Mac,
   and ask a running one to quit, naming it the way `ps` names it. `quit`
   composes list → match → quit → **re-list**, and reports `gone` apart from
@@ -37,6 +44,16 @@ runtime code is imported on any side.
   as a failure rather than a success. Emulator-verified end to end
   (console and wire); **the PowerBook run is pending** — see
   [docs/open-issues.md](docs/open-issues.md).
+- **A real menu bar on the host** — App / File / Edit / View / Guest /
+  Window / Help, populated with what NOW does: the View menu is the module
+  registry (⌘1…), the Guest menu carries the verbs that act on the other
+  machine, and Edit carries the editing commands the console's field needs
+  to have ⌘C at all. The status item stays the small surface for when no
+  window is open. ⌘Q quits and tells the guest first — `bye shutting-down`
+  goes out and is waited for (bounded) before the process ends, instead of
+  the wire being dropped abortively. Verified live via accessibility: the
+  menu bar is there and Quit ends the app; the ⌘Q **keystroke** itself is
+  not keypress-verified here.
 - **Screenshots** — one-shot captures in either direction: host-requested
   (progress, cancel), or guest-pushed via offer/accept with a system
   notification on arrival. Contemporary file naming both sides.
@@ -194,36 +211,41 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
 
 ## What does not work
 
-- **NOW-68K implements almost none of the contract.** Two commands
-  (`launch`, `quit`) and the keepalive; everything else — `ps`, capture,
-  files, census, streams, processes — answers `unknown-command` or
-  `refused`, which is the contract's own additive answer, not a failure.
-  `proc_list` is written and bounded but unreachable from the host, so a
-  human must read the Application menu on the machine to know what is
-  running. That is the next gap worth closing — and it is also why the
-  metal gate's confirmation of `gone` is **weaker** against this guest
-  than against the PowerPC one: with no independent listing, "gone" is the
-  guest's own word checked twice, and every run that degrades that way
-  says so in its output rather than quietly reporting the same green.
-- **NOW-68K's interactive console has never run on a Macintosh.** It is a
-  second window (Windows > Console, Command-K) with an input line, an
-  output pane, Return to run, Up/Down history and Option-Up/Down
-  scrollback, and it builds under the 68K toolchain at
-  `-O2 -Wall -Wextra -Werror` with its Toolbox-free halves — the history
-  ring and both result renderers — covered by native tests. **Nothing
-  about the window itself is verified.** The arrow-key interception, the
-  cursor movement TextEdit is trusted with, the Option-arrow scrollback
-  (the 180c has no page keys) and the new two-window event routing in
-  `main.c` are all reasoned from headers, not watched. It costs a measured
-  +15,382 bytes (text +4,428, bss +10,954) — 4.0% of the 384 KB partition
-  — plus a `WindowRecord` and a `TERec` out of the heap that nobody has
-  sized. It also cannot copy text out, and its scrollback holds 32 lines.
+- **NOW-68K implements a small part of the contract.** `launch`, `quit`,
+  `help` and `process.list`, plus the keepalive; everything else — capture,
+  files, census, streams, the process drive verbs — answers
+  `unknown-command` or `refused`, which is the contract's own additive
+  answer, not a failure. Every one of those it does serve is reachable from
+  both its faces (the console and the wire), which
+  [docs/command-parity.md](docs/command-parity.md) explains and
+  `CommandParityTests` enforces.
+- **NOW-68K's interactive console is emulator-verified, not
+  metal-verified.** A second window (Windows > Console, Command-K, and it
+  toggles) with an input line, history and scrollback. Watched working on a
+  Quadra 800 under Mac OS 8.1 — including two redraw bugs found there and
+  fixed, because a self-invalidated rectangle keeps its old pixels unless
+  something erases it. The real target is a 68030 under System 7.1 with
+  4 MB, so nothing about timing or memory pressure carries over, **and
+  up/down history has never been watched working at all**. It costs
+  ~15 KB (4.0% of the 384 KB partition) plus a `WindowRecord` and a `TERec`
+  nobody has sized, it cannot copy text out, and its scrollback holds 32
+  lines.
 
-  It is also a **deliberate exception** to this guest's own one-page rule
-  and to the Carbon guest's harder "a feature is a module, never a
-  window". The reason is written down in `conwin.h` and in
-  [docs/open-issues.md](docs/open-issues.md); the next feature is still a
-  page unless someone writes down a reason as good.
+  It is a **deliberate exception** to this guest's one-page rule and to the
+  Carbon guest's harder "a feature is a module, never a window". The reason
+  is in `conwin.h` and the ledger; the next feature is still a page unless
+  someone writes down a reason as good.
+- **The host console's Tab completion depends on the guest answering
+  `help`.** Both guests in this tree do; a guest built before this change
+  answers `unknown-command`, and then there is no completion at all. That
+  is deliberate — a fallback list would be the thing this change removed —
+  but it means an old binary on the PowerBook has a shell with no
+  discovery, and `help` there says so rather than listing anything.
+- **A console line reaching a guest that predates `line` is misread, not
+  refused.** That guest ignores the field and runs the command bare, so
+  `ls Lab:Code` lists the root. The field is additive by the contract's
+  rules and this is its one dishonest edge; it is stated in the contract
+  next to the field.
 - **Nothing verified against `tools/fakeguest.py` is evidence about a
   guest.** It is hand-written from `guest68k/src` and the contract, so it
   can only show that the harness reacts correctly to a peer that behaves a

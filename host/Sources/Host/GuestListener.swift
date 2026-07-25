@@ -171,6 +171,53 @@ final class GuestListener: ObservableObject {
         state = .idle
     }
 
+    /// `stop()`, but it waits for the farewell to leave.
+    ///
+    /// This exists for ⌘Q. `stop()` hands `bye` to the connection and returns
+    /// immediately; the write completes on a callback. Terminating the process
+    /// in the same turn of the run loop therefore kills the socket with the
+    /// farewell still queued, and the guest learns nothing until its keepalive
+    /// gives up ~65 s later — an unannounced close, which on OS 9 also leaks a
+    /// T_DISCONNECT indication (see the contract's connection rules). The
+    /// guest is auto-reconnecting the whole time, against a host that is gone.
+    ///
+    /// So: send, wait for the socket to accept it, then report. Bounded,
+    /// because the reason a guest needs telling is often that it has stopped
+    /// reading — a quit that hangs on a wedged classic Mac is worse than a
+    /// quit that gives up on the farewell. `completion` fires exactly once,
+    /// on the main actor, whichever comes first.
+    func shutDown(timeout: TimeInterval = 0.5,
+                  completion: @escaping () -> Void) {
+        let live = session
+        session = nil
+        listener?.cancel()
+        listener = nil
+        state = .idle
+
+        guard let live else {
+            completion()
+            return
+        }
+        var reported = false
+        func report() {
+            guard !reported else { return }
+            reported = true
+            completion()
+        }
+        live.close(sending: Bye(code: .shuttingDown, reason: nil)) {
+            report()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
+            MainActor.assumeIsolated {
+                if !reported {
+                    self.note("Quit without confirming the farewell reached "
+                              + "the other Mac")
+                }
+                report()
+            }
+        }
+    }
+
     /// The port actually bound (differs from the requested one when 0 was
     /// passed for an ephemeral port — used by tests).
     var boundPort: UInt16? { listener?.port?.rawValue }
@@ -178,7 +225,17 @@ final class GuestListener: ObservableObject {
     /// Runs one declared command on the connected guest. Completion fires on
     /// the main actor with the guest's result, or a synthesized failure when
     /// no guest is connected / the session dies first.
+    /// - Parameters:
+    ///   - args: the typed form, for a caller that knows the command — a
+    ///     module, an agent.
+    ///   - line: the raw form, for the console, which does not: the text a
+    ///     human typed after the command name, parsed by the guest with that
+    ///     command's own grammar. An EMPTY string is not nil here — its
+    ///     presence is what tells the guest a human is asking (see
+    ///     CommandRequest.line in the contract), so the console passes "" for
+    ///     a bare command and never omits the field.
     func runCommand(_ name: String, args: [String: String]? = nil,
+                    line: String? = nil,
                     completion: @escaping (CommandResult) -> Void) {
         guard let session, case .connected = state else {
             completion(CommandResult(
@@ -190,7 +247,8 @@ final class GuestListener: ObservableObject {
         let id = nextCommandId
         nextCommandId += 1
         pendingCommands[id] = completion
-        session.sendCommand(CommandRequest(id: id, name: name, args: args))
+        session.sendCommand(CommandRequest(id: id, name: name, args: args,
+                                           line: line))
     }
 
     /// Ask the connected guest for one page of a census probe. The dossier
@@ -1662,6 +1720,13 @@ final class Session {
         finish(reason: "Closed", sending: .bye(bye))
     }
 
+    /// `close(sending:)` with a receipt: `flushed` fires once the socket has
+    /// taken the farewell (or immediately if there was nothing to send).
+    /// ⌘Q waits on this — see GuestListener.shutDown.
+    func close(sending bye: Bye, flushed: @escaping () -> Void) {
+        finish(reason: "Closed", sending: .bye(bye), flushed: flushed)
+    }
+
     private func receiveLoop() {
         connection.receive(minimumIncompleteLength: 1,
                            maximumLength: 65536) { [weak self] data, _, done, error in
@@ -2792,8 +2857,12 @@ final class Session {
     /// Ends the session. When a farewell message is given it is flushed
     /// before the connection is cancelled — cancel() drops unsent data,
     /// which would eat the very refuse/bye the peer needs to see.
-    private func finish(reason: String, sending farewell: ControlMessage? = nil) {
-        guard !closed else { return }
+    private func finish(reason: String, sending farewell: ControlMessage? = nil,
+                        flushed: (() -> Void)? = nil) {
+        guard !closed else {
+            flushed?()
+            return
+        }
         closed = true
         fileSink?.abort()
         fileSink = nil
@@ -2811,9 +2880,13 @@ final class Session {
             connection.send(content: frame,
                             completion: .contentProcessed { _ in
                 connection.cancel()
+                if let flushed {
+                    Task { @MainActor in flushed() }
+                }
             })
         } else {
             connection.cancel()
+            flushed?()
         }
         onClosed(self, reason)
     }
