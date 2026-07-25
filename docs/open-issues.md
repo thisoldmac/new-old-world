@@ -1065,8 +1065,10 @@ deployment and mandatory-preview manifest prune follow only after it.
 The 68K guest for the PowerBook 180c is metal-proven for dial, handshake,
 keepalive, health, logging, clean quit, `launch` and the `gone` path of
 `quit`. Everything below has been built and cross-compiled and has never
-run, on metal or in an emulator. Listed because "we shipped it and here is
-what we still do not know" is the useful half.
+run **on a Macintosh** — some of it now runs under host-compiled native
+tests, which is a different and lesser thing, and each entry says which.
+Listed because "we shipped it and here is what we still do not know" is
+the useful half.
 
 - **The declined quit.** The whole re-list composition exists so a target
   that stops to ask about an unsaved document answers `ok:false` /
@@ -1077,9 +1079,17 @@ what we still do not know" is the useful half.
   been exercised; every close observed so far was the abortive path.
 - **The redial.** Fixed-interval reconnect after a failed dial, and the
   human start/stop that gates it, have not been driven to failure.
-- **Oversized control frames.** The skip-not-fatal path (a frame larger
-  than our 4 KB buffer but inside the protocol's 32 KB) is implemented and
-  untriggered; nothing has yet sent one.
+- **Oversized control frames — now tested, still never sent.** The
+  skip-not-fatal path (a frame larger than our 4 KB buffer but inside the
+  protocol's 32 KB) is covered off-metal since 2026-07-25: the reader
+  moved to `guest68k/src/n68_reader.c` behind an ops table, and
+  `guest68k/tests/test_reader.c` drives it through a scripted transport —
+  the oversized frame is skipped **and the next frame still parses**,
+  which is the actual claim, under four chunkings plus a stall at every
+  one of ~380 byte offsets. What that does not prove: **nothing in NOW
+  has ever sent one.** The host does not produce a control frame over
+  4 KB, so the reader's contract is proven and the host's honouring of it
+  is not.
 - **`launch` at scale.** The catalog search is double-bounded on purpose —
   a whole-volume Finder search has hard-wedged this fleet before — but it
   has only resolved an application sitting in an obvious place. A
@@ -1090,31 +1100,73 @@ what we still do not know" is the useful half.
   mid-wait cannot recurse into it. Neither the pump nor the guard has been
   observed under a second concurrent request.
 
-- **NOW-68K's `hello`, `ping` and `error` are not conformance-checked.**
-  `GuestWireConformanceTests` proves every message it can assemble from
-  guest source against the host decoder and the contract, but it cannot
-  read a message built across several calls — and the 68K guest builds all
-  of them that way, because it has no printf family (newlib's float tail
-  costs ~42 KB of a 384 KB partition). They are named in the
-  cannot-check set so the gap is visible; they want hand-written fixtures
-  in `GuestWireFixtureTests`. `hello` and `ping` have at least been
-  exercised live against a real host; `error` has not.
+- **`error` has a fixture and has still never been emitted.** (2026-07-25,
+  closing the old "`hello`, `ping` and `error` are not conformance-checked"
+  entry.) All three now have hand-written fixtures in
+  `GuestWireFixtureTests`, derived by compiling the guest's own emitters
+  with the host `cc` rather than by reading the C — a fixture written from
+  the decoder's side would test one half twice. `hello` and `ping` have
+  also run live against a real host. `error` has not, anywhere: reaching
+  it needs the host to send a live-state message type NOW-68K does not
+  handle, which nothing does today. The fixture is a claim about
+  `send_error_reply`, not evidence from a capture. Its negative-id echo is
+  reachable in principle and has never been observed.
 
-Two things that are known-wrong rather than merely unverified:
+  Worth correcting in the same breath, because it was written down wrong
+  here: `unknown-command` and `refused` are **not** `error` shapes on this
+  guest. `unknown-command` is a `command.result` error object and
+  `refused` a `census.report` outcome; `wire68.c` routes both away from
+  `send_error_reply` on purpose, because the wrong envelope leaves a
+  different waiter blocked. The `error` emitter has one code,
+  `not-implemented`, in two shapes. `command.result` is the one message
+  still in the cannot-check set with no fixture at all.
 
-- **A skipped metal test reports as passed.** `MetalQuitTests` ran three
-  cases against the 68K guest, skipped all three ("no Mac dialled in within
-  120s" — the port was held), and the suite reported `passed`. A metal gate
-  that reads green when it never ran is worse than no gate. It also assumes
-  the PowerPC guest: it confirms `gone` a second time via `process.list`,
-  which NOW-68K does not implement.
-- **The contract's reconnect clause is inaccurate to both guests.** It
-  mandates "capped backoff (2s doubling to 30s)", but the PowerPC guest has
-  shipped a fixed-interval option all along (`prefs.h` `retry_secs`,
-  chosen in `wire.c::enter_backoff` because "predictable reconnects beat
-  adaptive politeness on a private LAN"), and NOW-68K is fixed-interval by
-  design. An amendment is drafted — cadence becomes guest policy with a
-  1 s floor, backoff demoted to a reference default — and not yet applied.
+- **Three oddities in the 68K frame reader, found and deliberately not
+  fixed** (2026-07-25, during the extraction to `n68_reader.c`). The
+  extraction was kept pure because the code is metal-proven and no
+  PowerBook was on the LAN to re-verify a behaviour change against; these
+  are the things a fix would have quietly changed. (1) `RS_HEADER` and
+  `RS_BODY` return on a short read while `RS_SKIP` loops and calls `take`
+  once more — harmless, one no-op call per drained bulk frame, and it is
+  why `n68_reader_drain()` means "one event-loop pass" rather than "read
+  everything available". (2) `handle_control_message`'s empty-frame branch
+  is dead: the reader short-circuits zero-length control frames before
+  dispatch, so there are two copies of that log string and one cannot
+  fire. (3) `frames_in` counts skipped frames but not the fatal
+  oversized one, so it means "frames whose header we accepted" rather than
+  "frames received" — probably intended, but the stat's name does not say
+  so.
+
+- **The extraction itself is argued-faithful, not observed-faithful.**
+  Dial, handshake, keepalive, `launch` and `quit`/`gone` are the paths
+  NOW-68K is metal-proven on, and every one of them runs through the code
+  that moved. Structure, call order and a clean `-O2 -Werror` build are
+  the only evidence that the move changed nothing. A 180c smoke test —
+  connect, handshake, one ping cycle — is what would settle it, and it is
+  the first thing to run when that machine is next up.
+
+Both of the things that were known-wrong here are fixed (2026-07-25):
+
+- **The metal gate no longer reads green when it never ran.** Under
+  `NOW_METAL=1`, the port being held and no Mac dialling in are two
+  distinct failures with distinct messages rather than skips; the only
+  skips left are the opt-ins themselves (`NOW_METAL`, and `NOW_QUIT_DIRTY`
+  for the case that needs a human at the keyboard). Guest identity now
+  comes from the hello handshake, and where NOW-68K cannot serve the
+  independent `process.list` confirmation the run says **WEAKER** out loud
+  in its output and in every failure string. Watched directly: unset skips
+  3 clean, `NOW_METAL=1` with nothing dialling in fails at 120.1 s, and a
+  deliberately lying guest is caught on both the strong and the weak path.
+  It is **tested**, not metal-verified — the guests were simulated by
+  `tools/fakeguest.py`, which is a claim about the harness and never about
+  a guest.
+
+- **The contract's reconnect clause is amended.** Cadence is guest policy,
+  capped backoff is the reference default, and the one surviving
+  obligation is a ≥1 s floor between dial attempts. No revision bump:
+  nothing changes shape and an older peer cannot tell. NOW-68K already
+  clamped to the floor; the PowerPC guest reached it only incidentally
+  through a prefs range check and now enforces it at the wire.
 
 ## Rough edges
 

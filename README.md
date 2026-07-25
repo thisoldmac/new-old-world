@@ -149,6 +149,18 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   only with a human-controlled fixed-interval redial, and no bulk features
   — bulk frames are consumed and discarded to stay in frame sync.
 
+- **A dev loop that does not need a Macintosh.** Neither guest can run its
+  own suite, so the pure-C halves compile under the host `cc`:
+  `scripts/test-native` runs all 16 across both guests in one command, and
+  a test file missing from its manifest fails the run — a test nobody runs
+  reads as coverage in a directory listing and proves nothing. The metal
+  gates now **fail rather than skip** once a human has opted into a metal
+  run, so a suite cannot go green having never reached a machine, and
+  `tools/fakeguest.py` impersonates either guest so the harness itself can
+  be exercised — including a guest that lies about `gone`, which is the
+  one failure `quit` exists to catch and the one no real guest will
+  perform on request.
+
 ## What does not work
 
 - **NOW-68K implements almost none of the contract.** Two commands
@@ -157,7 +169,16 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   `refused`, which is the contract's own additive answer, not a failure.
   `proc_list` is written and bounded but unreachable from the host, so a
   human must read the Application menu on the machine to know what is
-  running. That is the next gap worth closing.
+  running. That is the next gap worth closing — and it is also why the
+  metal gate's confirmation of `gone` is **weaker** against this guest
+  than against the PowerPC one: with no independent listing, "gone" is the
+  guest's own word checked twice, and every run that degrades that way
+  says so in its output rather than quietly reporting the same green.
+- **Nothing verified against `tools/fakeguest.py` is evidence about a
+  guest.** It is hand-written from `guest68k/src` and the contract, so it
+  can only show that the harness reacts correctly to a peer that behaves a
+  stated way. A test that construes it otherwise is testing one half
+  twice, which is the defect class that has cost this project the most.
 - **NOW-68K is not safe under Virtual Memory.** Its MacTCP parameter block
   and buffers are ordinary application BSS, and the Device Manager writes
   `ioResult` — and the driver copies inbound bytes — at interrupt time

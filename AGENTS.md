@@ -79,9 +79,18 @@ Both: comments say **why**, not what. Match the surrounding density.
 ## Testing
 
 - Host: `swift test --package-path host --scratch-path <outside the repo>`.
-- Guest: the native tests under `guest/tests` compile with the host `cc`
-  and run here — `json_native_test.c` is the pattern for anything with
-  no Toolbox dependency.
+- Guests: `scripts/test-native` — both guests' native tests, compiled with
+  the host `cc` and run here, in one command (`scripts/test-native frame`
+  filters). `json_native_test.c` is the pattern for anything with no
+  Toolbox dependency. **A new test must be added to that script's
+  manifest**, which fails the run if a test file is not listed: a test
+  nobody runs reads as coverage in a directory listing and proves nothing.
+- Metal gates (`Metal*Tests`) are opt-in and, once opted in, **fail rather
+  than skip**. `NOW_METAL` unset skips; with it set, a held port or a Mac
+  that never dialled in is a failure, because a gate that reads green
+  having never reached a machine is worse than no gate.
+  `tools/fakeguest.py` exercises the harness without hardware — and proves
+  nothing about a guest; read its header before quoting a result from it.
 - `GuestWireConformanceTests` reads `guest/src/*.c` and checks every
   message the guest can emit against this side's decoder and the
   contract's required fields. **If you add a message built across
