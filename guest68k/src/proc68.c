@@ -225,6 +225,121 @@ long proc_list(ProcEntry *out, long cap)
     return take;
 }
 
+/* ---- proc_list_rows -----------------------------------------------------
+ *
+ * proc_list's walk with a full ProcessInfoRec read per process, for the
+ * wire's process.listing. Everything it produces is plain C (see
+ * n68_proclist.h) - no PSN, no Str31, nothing this file's caller would
+ * need the Toolbox to interpret.
+ */
+
+/* Spelled out rather than written 'FNDR': a multi-character constant warns
+ * under -Werror, which this build treats as fatal. Same two the PowerPC
+ * guest's serve_process_list classifies on, so both guests answer "finder"
+ * for the same process. */
+#define PROC68_4CC(a, b, c, d)                                        \
+    (((unsigned long)(a) << 24) | ((unsigned long)(b) << 16)          \
+     | ((unsigned long)(c) << 8) | (unsigned long)(d))
+
+enum {
+    kProcTypeFinder = PROC68_4CC('F', 'N', 'D', 'R'),
+    kProcSigFinder  = PROC68_4CC('M', 'A', 'C', 'S')
+};
+
+/* A 4CC to four printable characters. An unprintable byte becomes '.'
+ * here rather than being dropped, so the field keeps its width and a
+ * human can still see that the process HAS a type; n68_proclist.c
+ * sanitizes again on the way into JSON, which is where the promise that
+ * matters (valid UTF-8 for the host's decoder) is actually kept. */
+static void fourcc_to_text(unsigned long code, char out[5])
+{
+    int i;
+
+    for (i = 0; i < 4; ++i) {
+        char c = (char)((code >> (24 - i * 8)) & 0xFFUL);
+
+        out[i] = (c >= 0x20 && c <= 0x7E) ? c : '.';
+    }
+    out[4] = '\0';
+}
+
+long proc_list_rows(N68ProcRow *out, long cap)
+{
+    ProcessSerialNumber psn;
+    ProcessSerialNumber front;
+    Boolean have_front;
+    Str255 name;
+    long count = 0;
+    long i;
+
+    if (out == NULL || cap <= 0) {
+        return 0;
+    }
+    have_front = (GetFrontProcess(&front) == noErr);
+
+    psn.highLongOfPSN = 0;
+    psn.lowLongOfPSN = kNoProcess;
+    while (GetNextProcess(&psn) == noErr) {
+        ProcessInfoRec info;
+        N68ProcRow *row;
+
+        memset(&info, 0, sizeof info);
+        info.processInfoLength = sizeof info;
+        info.processName = name;
+        info.processAppSpec = NULL;
+        name[0] = 0;
+        if (GetProcessInformation(&psn, &info) != noErr) {
+            continue;       /* gone mid-walk; the next list will agree */
+        }
+
+        if (count < cap) {
+            row = &out[count++];
+        } else {
+            /* Full. Drop the OLDEST rather than the newest - see the
+             * header. GetNextProcess runs oldest-to-newest, so out[0] is
+             * the oldest we still hold. */
+            for (i = 1; i < cap; ++i) {
+                out[i - 1] = out[i];
+            }
+            row = &out[cap - 1];
+        }
+
+        memset(row, 0, sizeof *row);
+        pstr_to_c(name, row->name, (long)sizeof row->name);
+        fourcc_to_text((unsigned long)info.processType, row->code);
+        fourcc_to_text((unsigned long)info.processSignature, row->creator);
+        if ((unsigned long)info.processType == kProcTypeFinder
+            || (unsigned long)info.processSignature == kProcSigFinder) {
+            row->kind = kN68ProcKindFinder;
+        } else if ((info.processMode & modeOnlyBackground) != 0) {
+            row->kind = kN68ProcKindBackground;
+        } else {
+            row->kind = kN68ProcKindApplication;
+        }
+        row->size_kb = (long)(info.processSize / 1024);
+        row->psn_high = (unsigned long)psn.highLongOfPSN;
+        row->psn_low = (unsigned long)psn.lowLongOfPSN;
+        if (have_front) {
+            Boolean is_front = false;
+
+            (void)SameProcess(&psn, &front, &is_front);
+            row->front = (unsigned char)(is_front ? 1 : 0);
+        }
+    }
+
+    /* Native order is oldest-first; proc68.h promises newest-first, and
+     * this reverses in place with one row of scratch rather than the
+     * second full-size array proc_list needs (that one must ALSO drop the
+     * overflow from the wrong end, which this loop already did above). */
+    for (i = 0; i < count / 2; ++i) {
+        N68ProcRow tmp = out[i];
+
+        out[i] = out[count - 1 - i];
+        out[count - 1 - i] = tmp;
+    }
+    return count;
+}
+
 /* ---- proc_quit_named ----------------------------------------------------
  *
  * The composition proc68.h specifies: list, match by name, re-validate

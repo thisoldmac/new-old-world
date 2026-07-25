@@ -117,6 +117,8 @@ run_c guest68k test_console_ring.c "" src/n68_console_ring.c src/n68_linesplit.c
 run_c guest68k test_framecodec.c   "" src/frame.c src/hello.c src/ping.c \
       src/json_scan.c src/numfmt.c
 run_c guest68k test_reader.c       "" src/n68_reader.c src/frame.c
+run_c guest68k test_proclist.c     "" src/n68_proclist.c src/numfmt.c
+run_c guest68k test_backpressure.c "" src/n68_reader.c src/frame.c
 run_c guest68k test_devsettings.c  "-std=c99 -pedantic"  src/n68_devsettings.c \
       src/connfields.c
 

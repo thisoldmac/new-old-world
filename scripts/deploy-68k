@@ -292,8 +292,18 @@ def main() -> int:
             old_port = current_port(read_settings(ftp))
             new_port = PORTS[1] if old_port == PORTS[0] else PORTS[0]
             write_settings(ftp, new_port)
+            # The EXACT path, not the name. proc_launch_named treats a
+            # colon-bearing string as a full HFS path and uses it
+            # directly, skipping the catalog search altogether - so the
+            # handoff neither pays for a whole-volume sweep nor depends
+            # on the search budget. It cost a failed handoff to notice:
+            # a lab settings file had shortened that budget to one
+            # second, and the running build could not find a file whose
+            # exact location we knew all along.
+            hfs_path = ftp.pwd().strip("/").replace("/", ":") + ":" + product
             print("== handoff: running build on %s, %r will dial %s"
                   % (old_port, product, new_port))
+            print("== launching by path: %s" % hfs_path)
         ftp.quit()
 
         if product not in after:
@@ -314,6 +324,7 @@ def main() -> int:
                 str(Path(tempfile.gettempdir()) / "now-swiftbuild"))
             env = dict(os.environ, NOW_METAL="1",
                        NOW_68K_NEW_APP=product,
+                       NOW_68K_NEW_PATH=hfs_path,
                        NOW_68K_OLD_PORT=old_port,
                        NOW_68K_NEW_PORT=new_port)
             print("\n== handing off (no double-click needed)")

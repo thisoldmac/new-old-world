@@ -31,6 +31,8 @@
 
 #include <Processes.h>
 
+#include "n68_proclist.h"
+
 /* What actually happened. The distinction between kProcGone and
  * kProcStillRunning is the whole point of the header - both mean the Apple
  * Event was delivered without error. */
@@ -112,5 +114,24 @@ typedef struct {
 } ProcEntry;
 
 long proc_list(ProcEntry *out, long cap);
+
+/* The same walk, but carrying everything ProcessListing wants: kind, the
+ * two 4CCs, the partition size, which one is frontmost, and the PSN halves
+ * the contract's drive verbs name a process by. Newest first, exactly like
+ * proc_list - the two differ only in how much of each process they read,
+ * and they are separate calls because the quit matcher wants none of this
+ * and pays for a ProcessInfoRec per process either way.
+ *
+ * Fills up to cap rows and returns the count. If more than cap processes
+ * are running, the NEWEST cap are reported and the older ones fall off the
+ * end: a truncated list that hides the machine's oldest system processes
+ * is far less misleading than one that hides the application the human
+ * just launched. (A 68K System 7.1 machine runs a handful; the callers
+ * here pass a cap of 48.)
+ *
+ * Nothing here is a wire format - n68_proclist.h turns these rows into
+ * JSON, and it is the half with no Toolbox in it, so it is the half the
+ * native tests can reach. */
+long proc_list_rows(N68ProcRow *out, long cap);
 
 #endif /* NOW68K_PROC68_H */

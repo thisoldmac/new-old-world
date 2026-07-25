@@ -18,14 +18,23 @@
  * STATIC BUDGET (all file-scope, zero-initialized BSS - no allocation):
  *   g_ctrl_buf           4096  bytes  (NOW68K_CONTROL_BUFFER_CAP, frame.h)
  *   g_sink                256  bytes  (bulk / oversized-control discard sink)
- *   g_out[2] slots          2 * (8 header + 512 payload + 4 len + 4 off)
- *                         2 *  528 = 1056  bytes  (was 352 at a 160-byte
- *                                                 payload cap - see
- *                                                 commands68.h)
+ *   g_out[4] slots          4 * (8 header + 1024 payload + 4 len + 4 off)
+ *                         4 * 1040 = 4160  bytes  (was 1056 at depth 2 and
+ *                                                 a 512-byte payload cap,
+ *                                                 and 352 at 160 - see
+ *                                                 NOW68K_CONTROL_SEND_CAP
+ *                                                 in wire68.h and the
+ *                                                 kWireOutQueueDepth
+ *                                                 comment below for the
+ *                                                 arithmetic behind both)
+ *   g_proc_rows[48]        48 * ~56       = 2688  bytes  (one process.list
+ *                                                 snapshot; see its own
+ *                                                 comment for why it is
+ *                                                 not on the stack)
  *   g_read (N68Reader)                      48  bytes  (state+hdr+4 counters
  *                                                       + 2 buffer ptrs and
  *                                                       a cap + ops/ctx ptrs)
- *   g_stats (WireStats)                     28  bytes  (7 longs)
+ *   g_stats (WireStats)                     32  bytes  (8 longs)
  *   g_peer_name                             32  bytes
  *   g_status                                96  bytes
  *   scalars (state/target/retry/timers/ids) 62  bytes  (approx, no padding
@@ -33,7 +42,11 @@
  *                                                        natural alignment)
  *   kReadOps (const, 8 fn ptrs)             32  bytes  (.data, not BSS)
  *   -----------------------------------------------------------------
- *   total                                 ~5000  bytes  (~4.9 KB)
+ *   total                                ~11500  bytes  (~11.2 KB)
+ * Measured whole-application delta for the process.list pass (the deeper
+ * and wider send queue, the snapshot buffer, n68_proclist.c and
+ * proc_list_rows), m68k-apple-macos-size, -O2: text +2948, data +292,
+ * bss +5784 bytes - 97180/7136/33764 to 100128/7428/39548.
  * Measured cost of moving the state machine into n68_reader.c behind that
  * ops table (m68k-apple-macos-size, -O2, whole application): text +472,
  * data +40, bss +32 bytes.
@@ -49,9 +62,11 @@
 #include "hello.h"
 #include "json_scan.h"
 #include "log.h"
+#include "n68_proclist.h"
 #include "n68_reader.h"
 #include "numfmt.h"
 #include "ping.h"
+#include "proc68.h"
 
 #include <OSUtils.h>    /* TickCount */
 #include <string.h>     /* strcmp, strlen (via numfmt callers) */
@@ -65,7 +80,7 @@
  * than overwriting, that string is the only reliable answer to "which build
  * am I actually running" - AGENTS.md: check the build stamp before believing
  * a test result. */
-#define NOW68K_APP_VERSION "0.10"
+#define NOW68K_APP_VERSION "0.11"
 
 enum {
     /* contract/asyncapi.yaml: "the guest sends ping after 30s of wire
@@ -116,23 +131,55 @@ enum {
  * "hello (~110), ping (~30), or an error reply (~95)" - accurate when this
  * guest had no commands, and never revisited when launch and quit arrived
  * with replies twice that size. A 166-byte launch reply died here on the
- * 180c while the log blamed the queue. The size of a command.result is now
- * stated once, in commands68.h, and this is that number. */
-#define kWireOutPayloadCap NOW68K_COMMAND_RESULT_CAP
-#define kWireOutQueueDepth 2
+ * 180c while the log blamed the queue. It is now stated once, in wire68.h,
+ * as the wire's own limit rather than borrowed from one message family. */
+#define kWireOutPayloadCap NOW68K_CONTROL_SEND_CAP
 
-/* No assert here on purpose. The slot and the builder now take their size
- * from the same macro, so any comparison between them is a tautology that
- * would look like a guard and check nothing. The invariant that CAN fail
- * is in commands68.h (cap against the floor); the one that bit us -
- * "somebody wrote a different literal here" - is not expressible as an
- * assert at all, which is exactly why the number has to live in one place
- * rather than be checked in two. */
+/* These two are the asserts the old comment here said could not exist. It
+ * was right that comparing the slot to the builder was a tautology while
+ * both read the same macro - but now there are three message families with
+ * their OWN size statements (command.result in commands68.h, the
+ * process.listing parts in n68_proclist.h), and "the slot can carry what
+ * that family says it builds" is a real invariant that a future edit can
+ * break. Failing at compile time is the whole point: the 160-vs-512 bug
+ * was invisible until a reply of the wrong size reached real hardware. */
+_Static_assert(NOW68K_CONTROL_SEND_CAP >= NOW68K_COMMAND_RESULT_CAP,
+               "the outbound slot cannot carry a full command.result");
+_Static_assert(NOW68K_CONTROL_SEND_CAP >= NOW68K_PROCLIST_MIN_CAP,
+               "the outbound slot cannot carry a process.listing page with "
+               "a row in it - every page would be empty with more:true, and "
+               "the host would page forever");
 
-/* Two slots, not one: a ping can come due in the same wire_idle() pass that
- * an unimplemented request needs an error reply, and rule 4 ("never
- * silence") means the reply must not be the one that gets dropped because
- * the ping got the only slot first. */
+/* Four slots, not two.
+ *
+ * Two existed because a ping can come due in the same wire_idle() pass
+ * that an unimplemented request needs an error reply, and rule 4 ("never
+ * silence") means the reply must not be the one dropped because the ping
+ * took the only slot. That reasoning still holds and is now enforced
+ * directly (send_ping keeps its hands off the last slot) rather than
+ * left to emerge from the depth.
+ *
+ * What changed is that ONE wire_idle() pass can now answer several
+ * requests: drain_frames() keeps pulling frames while the transport has
+ * bytes, so a host that pipelines - a process.list page request behind a
+ * command.request, which is exactly what paging looks like - produces
+ * several replies before anything is flushed. Depth is what that pass can
+ * answer before it has to stop reading and wait.
+ *
+ * The arithmetic: a slot is NOW68K_FRAME_HEADER_BYTES + the payload cap,
+ * plus the two longs that track it = 8 + 1024 + 8 = 1040 bytes, so four
+ * slots are 4160 bytes of BSS, up from 2 * (8 + 512 + 8) = 1056. That is
+ * +3104 bytes: 0.8% of the 384 KB partition and 1.3% of the ~231 KB free
+ * heap this application runs with. Eight slots would be 8320 and buy
+ * nothing measurable - MacTCP's own staging
+ * buffer, not this queue, is what paces the wire, and past the point where
+ * a pass can answer everything in front of it, a deeper queue only defers
+ * an honest stop. Two is the floor (ping + reply); four is the smallest
+ * depth that keeps a listing page, a command result and a ping all moving
+ * without a stop-and-wait round trip between them. */
+#define kWireOutQueueDepth 4
+
+/* One slot per queued frame. */
 typedef struct {
     unsigned char buf[NOW68K_FRAME_HEADER_BYTES + kWireOutPayloadCap];
     long len;   /* total bytes (header+payload) once queued, 0 = empty */
@@ -275,6 +322,7 @@ static void bounded_strcpy(char *dst, long dst_cap, const char *src)
 
 static void teardown_and_retry(const char *log_reason, const char *bye_code);
 static void handle_control_message(const char *json, long len);
+static void refresh_live_status(void);
 
 static long read_take(void *ctx, void *dst, long cap)
 {
@@ -323,10 +371,28 @@ static void read_control_message(void *ctx, const char *json, long len)
     handle_control_message(json, len);
 }
 
+/* Asked after every control message the reader hands up. Two reasons to
+ * stop, and they are different in kind:
+ *
+ *  - the handler tore the connection down (the original reason), or
+ *  - the outbound queue is full, so the NEXT request we read is one we
+ *    could not answer.
+ *
+ * The second is back-pressure, and it is the smallest honest fix for a
+ * queue that can fill: reading a request we cannot answer converts a
+ * temporary shortage of slots into a permanent contract violation, and the
+ * only evidence is a log line. Not reading it leaves the bytes in MacTCP's
+ * receive buffer and eventually in the host's TCP window, which is what
+ * back-pressure is for; wire_idle() flushes before it drains, so the next
+ * pass picks the request up with room to answer it. There is no deadlock
+ * to fear: sends drain from net_idle() whether or not we are reading. */
 static int read_still_reading(void *ctx)
 {
     (void)ctx;
-    return (g_state == kWireGreeting || g_state == kWireLive);
+    if (g_state != kWireGreeting && g_state != kWireLive) {
+        return 0;
+    }
+    return g_out_count < kWireOutQueueDepth;
 }
 
 static const N68ReaderOps kReadOps = {
@@ -359,6 +425,20 @@ static void reset_outbound_queue(void)
 
 /* ---- outbound: queue, then flush through net_queue_send ---------------- */
 
+/* A frame this guest built and could not send. Counted (wire68.h ::
+ * WireStats.sends_dropped) and folded into the status line, because the
+ * log is on a machine nobody is watching and the message that vanished is
+ * usually a reply somebody is waiting for. Once non-zero it stays visible
+ * for the rest of the launch - a drop that scrolled away is a drop nobody
+ * finds out about. */
+static void note_send_dropped(void)
+{
+    ++g_stats.sends_dropped;
+    if (g_state == kWireLive) {
+        refresh_live_status();
+    }
+}
+
 /* Builds one 8-byte control-frame header plus payload into the next free
  * slot as a SINGLE contiguous buffer, so flush_outbound() always hands
  * net_queue_send a whole frame's bytes at once rather than the header and
@@ -384,11 +464,13 @@ static int enqueue_control_send(const void *payload, long payload_len)
                > (long)sizeof(g_out[0].buf)) {
         now68k_log_num("wire: send dropped - payload too big for a slot, "
                         "bytes", payload_len);
+        note_send_dropped();
         return 0;
     }
     if (g_out_count >= kWireOutQueueDepth) {
         now68k_log_num("wire: send dropped - all slots busy, queued",
                         (long)g_out_count);
+        note_send_dropped();
         return 0;
     }
 
@@ -596,6 +678,13 @@ static void refresh_live_status(void)
         status_append(&pos, " - ");
         status_append_long(&pos, g_last_rtt_ms);
         status_append(&pos, " ms");
+    }
+    /* A dropped frame is almost always a reply somebody is blocked on.
+     * It belongs where the human already looks, not only in the log. */
+    if (g_stats.sends_dropped > 0) {
+        status_append(&pos, " - ");
+        status_append_long(&pos, g_stats.sends_dropped);
+        status_append(&pos, " dropped");
     }
     status_end(pos);
 }
@@ -906,10 +995,69 @@ static void handle_census_request(const char *json, long len)
     }
 }
 
+/* ---- process.list: this guest's share of the symmetric family --------- */
+
+/* The snapshot one process.list page is cut from. Static rather than a
+ * local because it is 48 rows of ~56 bytes and proc_list_rows() is called
+ * from inside the frame reader's callback chain - proc68.c already spends
+ * 1920 bytes of stack on proc_list's own scratch, and stacking another
+ * 2.6 KB underneath it is the kind of thing that shows up as a crash on
+ * metal and nowhere else. Single-threaded, one caller, rebuilt on every
+ * request. 48 is proc68.c's kProcListScratchMax, deliberately the same
+ * number: two different ceilings on "how many processes exist" would
+ * disagree the day one of them mattered.
+ *
+ * Rebuilt per PAGE, not per walk: a listing that pages sees a fresh
+ * snapshot for each page, so a process that quits mid-listing can shift
+ * the rows after it by one. The PowerPC guest's serve_process_list has
+ * exactly the same property (it re-walks the Process Manager per page),
+ * and the contract's cursor is an index, not a stable handle. Worth
+ * knowing; not worth a snapshot cache that can go stale in the other
+ * direction. */
+static N68ProcRow g_proc_rows[48];
+
+/* Serve process.list from our OWN Process Manager. The contract's rule is
+ * that whoever RECEIVES the message serves its own list; NOW implements
+ * the host->guest direction only, and this is that direction's guest half.
+ *
+ * Read-only and needs no share - a process list reveals nothing a person
+ * standing at the machine could not read off the Application menu. It is
+ * also what makes `quit` independently checkable on this guest: until now
+ * the only way to ask "is it gone?" was to ask `quit` again, the same
+ * subsystem that just answered. */
+static void handle_process_list(const char *json, long len)
+{
+    char payload[NOW68K_CONTROL_SEND_CAP];
+    long id = 0;
+    long cursor = 0;
+    long count;
+    long n;
+    int have_id = now68k_json_find_int(json, (size_t)len, "id", &id);
+
+    if (!now68k_json_find_int(json, (size_t)len, "cursor", &cursor)) {
+        cursor = 1;   /* absent cursor means the first page */
+    }
+    count = proc_list_rows(g_proc_rows,
+                            (long)(sizeof g_proc_rows / sizeof g_proc_rows[0]));
+    n = n68_proclist_build(have_id ? id : 0, cursor, g_proc_rows, count,
+                            payload, (long)sizeof payload, NULL, NULL);
+    if (n <= 0) {
+        /* Unreachable at the shipping cap - the static asserts at the top
+         * of this file are what make it so - but a host waiting on a
+         * process.listing must never wait forever, so say something. */
+        now68k_log("wire: process.listing build failed");
+        send_error_reply(have_id ? id : 0, have_id);
+        return;
+    }
+    if (!enqueue_control_send(payload, n)) {
+        now68k_log("wire: process.listing dropped, outbound queue full");
+    }
+}
+
 /* Dispatch for one fully-received control payload. Everything the guest
- * does not implement (commands, census, capture, files, streams, processes,
- * and process/software listings) falls through to the generic error reply -
- * see wire68.h and the send_error_reply comment for why that is the generic
+ * does not implement (capture, files, streams, the process drive verbs and
+ * the software listing) falls through to the generic error reply - see
+ * wire68.h and the send_error_reply comment for why that is the generic
  * shape rather than each family's own bespoke refusal message. */
 static void handle_control_message(const char *json, long len)
 {
@@ -977,6 +1125,10 @@ static void handle_control_message(const char *json, long len)
         handle_census_request(json, len);
         return;
     }
+    if (strcmp(type, "process.list") == 0) {
+        handle_process_list(json, len);
+        return;
+    }
 
     {
         long id;
@@ -993,6 +1145,14 @@ static void handle_control_message(const char *json, long len)
  * so the same header/skip/body machinery serves the whole connection. */
 static void drain_frames(void)
 {
+    /* The entry half of read_still_reading()'s back-pressure. That hook is
+     * only asked AFTER a message, so without this check a pass that begins
+     * with a full queue (flush_outbound made no progress) would still read
+     * and fail to answer one more request. Same reasoning, other end of
+     * the loop: do not read what we cannot answer. */
+    if (g_out_count >= kWireOutQueueDepth) {
+        return;
+    }
     n68_reader_drain(&g_read);
 }
 
@@ -1021,23 +1181,44 @@ static void queue_hello(void)
     }
 }
 
-static void send_ping(void)
+/* Returns 1 if a ping went into the queue. The caller must not advance the
+ * ping deadline on a 0 - a keepalive that never left counts the next 30 s
+ * from a message that does not exist.
+ *
+ * The last slot is reserved for replies. That was the original reason for
+ * having two slots at all ("the reply must not be the one that gets
+ * dropped because the ping got the only slot first"), left to emerge from
+ * the depth; with a deeper queue and paged listings it has to be stated,
+ * because a listing walking the queue down to its last slot is exactly
+ * when a ping would take it. A deferred ping is not a drop and is not
+ * logged: nothing is lost, the deadline does not move, and the next pass
+ * sends it as soon as there is room. If there is never room for 65 s the
+ * keepalive watchdog fires, which is the correct answer to a wire that
+ * cannot absorb thirty bytes. */
+static int send_ping(void)
 {
     char payload[40];
     long n;
 
-    ++g_ping_id;
-    n = now68k_ping_build(payload, (long)sizeof payload, g_ping_id);
+    if (g_out_count >= kWireOutQueueDepth - 1) {
+        return 0;
+    }
+    n = now68k_ping_build(payload, (long)sizeof payload, g_ping_id + 1);
     if (n <= 0) {
         now68k_log("wire: ping build failed");
-        return;
+        return 0;
     }
-    if (enqueue_control_send(payload, n)) {
-        g_ping_sent_tick = TickCount();
-        ++g_stats.pings_sent;
-    } else {
+    if (!enqueue_control_send(payload, n)) {
         now68k_log("wire: ping dropped, outbound queue full");
+        return 0;
     }
+    /* The id advances only once the ping is really queued: handle_pong
+     * matches on g_ping_id, so bumping it for a ping that never went out
+     * would leave the guest waiting on an answer to nothing. */
+    ++g_ping_id;
+    g_ping_sent_tick = TickCount();
+    ++g_stats.pings_sent;
+    return 1;
 }
 
 /* ---- dial / redial ------------------------------------------------------- */
@@ -1144,8 +1325,7 @@ static void service_live(void)
     if (g_last_rx_tick + (unsigned long)kWirePingIntervalTicks > g_next_ping_tick) {
         g_next_ping_tick = g_last_rx_tick + (unsigned long)kWirePingIntervalTicks;
     }
-    if (now >= g_next_ping_tick) {
-        send_ping();
+    if (now >= g_next_ping_tick && send_ping()) {
         g_next_ping_tick = now + (unsigned long)kWirePingIntervalTicks;
     }
 }
