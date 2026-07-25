@@ -75,7 +75,13 @@ final class MetalQuitTests: XCTestCase {
 
         /// Does this guest serve `process.list`? That is the whole of the
         /// difference this file cares about.
-        var servesProcessList: Bool { self == .powerPC }
+        /// NO LONGER DERIVED FROM IDENTITY. NOW-68K gained process.list
+        /// on 2026-07-25, and a file that keeps deciding this from the
+        /// hello name would go on printing WEAKER against a guest that
+        /// can now be corroborated independently — understating its own
+        /// evidence, which is the same species of dishonesty as
+        /// overstating it. `probeProcessList()` asks the guest.
+        var probablyServesProcessList: Bool { self == .powerPC }
 
         var label: String {
             self == .now68k ? "NOW-68K" : "the PowerPC guest"
@@ -95,6 +101,40 @@ final class MetalQuitTests: XCTestCase {
         /// it in struct-dump form.
         var debugDescription: String {
             "metal gate not met — see the failure above"
+        }
+    }
+
+    /// Whether THIS guest can corroborate a disappearance independently,
+    /// established by asking it rather than by recognising it.
+    private var strongConfirmation = false
+
+    /// One `process.list` against the live guest. A guest that does not
+    /// implement it answers `not-implemented` (routed now, so this comes
+    /// back promptly rather than on a watchdog) and the run degrades to
+    /// the weaker re-ask through `quit` — saying so out loud, as before.
+    private func probeProcessList() async -> Bool {
+        await withCheckedContinuation { cont in
+            var done = false
+            listener.listProcesses { result in
+                guard !done else { return }
+                done = true
+                switch result {
+                case .success(let listing):
+                    print("  [probe] process.list ok, "
+                          + "\(listing.processes.count) row(s)")
+                    cont.resume(returning: true)
+                case .failure(let why):
+                    print("  [probe] process.list failed: "
+                          + "[\(why.code)] \(why.message)")
+                    cont.resume(returning: false)
+                }
+            }
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 20_000_000_000)
+                guard !done else { return }
+                done = true
+                cont.resume(returning: false)
+            }
         }
     }
 
@@ -121,6 +161,18 @@ final class MetalQuitTests: XCTestCase {
         if let named = ProcessInfo.processInfo.environment["NOW_GUEST_NAME"] {
             return named
         }
+        // A DEPLOYED 68K build runs under its MacBinary name — "NOW-68K
+        // 0.14" — not under the CMake target name. Guessing the target
+        // name meant the self-refusal case quietly asked to quit a process
+        // that does not exist, got "nothing named that is running", and
+        // asserted nothing at all. It read green on metal while never
+        // testing the thing it is named for.
+        //
+        // So take it from the hello, the way the handoff test does: the
+        // name to use is whatever actually answered.
+        if kind == .now68k, let version = listener.health?.guestVersion {
+            return "NOW-68K \(version)"
+        }
         return kind == .now68k ? "now68k-guest" : "now-guest"
     }
 
@@ -133,7 +185,24 @@ final class MetalQuitTests: XCTestCase {
         port = env["NOW_METAL_PORT"].flatMap { UInt16($0) } ?? 5250
         listener = GuestListener(identity: .init(
             version: "0.1-metal", name: "Metal Harness"))
-        listener.start(port: port)
+        await startListening()
+    }
+
+    /// Binds the harness port, retrying briefly on "address already in
+    /// use" — the harness racing its own teardown, not a busy port. See
+    /// Metal68KTests for the full note; a port genuinely held by something
+    /// else still fails with the same message.
+    private func startListening() async {
+        let deadline = Date().addingTimeInterval(6)
+        while true {
+            listener.start(port: port)
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard case .failed = listener.state, Date() < deadline else {
+                return
+            }
+            listener.stop()
+            try? await Task.sleep(nanoseconds: 500_000_000)
+        }
     }
 
     override func tearDown() async throws {
@@ -167,7 +236,15 @@ final class MetalQuitTests: XCTestCase {
             case .connected:
                 // Let the hello settle into `health` before reading it.
                 try await Task.sleep(nanoseconds: 500_000_000)
-                return try identifyGuest()
+                let kind = try identifyGuest()
+                // Ask, then announce. The banner used to be printed inside
+                // identifyGuest, which runs BEFORE the probe — so it
+                // reported the strength this file assumed rather than the
+                // one it had just measured, and said WEAKER about a guest
+                // that had answered process.list seconds earlier.
+                strongConfirmation = await probeProcessList()
+                print("=== \(describeStrength(kind)) ===")
+                return kind
             case .idle, .listening:
                 break
             }
@@ -213,14 +290,13 @@ final class MetalQuitTests: XCTestCase {
         print("=== \(health.guestName) (v\(health.guestVersion ?? "?"), "
               + "OS \(health.guestOS ?? "?")) connected — read as "
               + "\(kind.label) ===")
-        print("=== \(describeStrength(kind)) ===")
         return kind
     }
 
     /// Said out loud on every run, so a result is never read as stronger
     /// than it is.
     private func describeStrength(_ kind: GuestKind) -> String {
-        kind.servesProcessList
+        strongConfirmation
             ? "confirmation: STRONG — every disappearance is re-checked "
               + "against process.list, a different code path from quit"
             : "confirmation: WEAKER — \(kind.label) serves no process.list "
@@ -271,7 +347,7 @@ final class MetalQuitTests: XCTestCase {
     }
 
     /// Every live process name, paged the way the agent projection pages
-    /// it. PowerPC only — call it behind `kind.servesProcessList`.
+    /// it. PowerPC only — call it behind `strongConfirmation`.
     ///
     /// A failure here used to skip. Under NOW_METAL=1 it is a failure:
     /// this is the independent confirmation the file exists to make, and
@@ -320,7 +396,7 @@ final class MetalQuitTests: XCTestCase {
     /// as "it is fine" is the bug this whole file is about.
     private func isRunning(_ name: String, _ kind: GuestKind) async throws
         -> Bool? {
-        guard kind.servesProcessList else { return nil }
+        guard strongConfirmation else { return nil }
         let live = try await processNames(kind)
         return live.contains {
             $0.caseInsensitiveCompare(name) == .orderedSame
@@ -431,7 +507,7 @@ final class MetalQuitTests: XCTestCase {
         XCTAssertEqual(outcome(result), "gone",
                        "quit must confirm by re-listing, not assume: "
                        + sentence(result)
-                       + (kind.servesProcessList ? "" :
+                       + (strongConfirmation ? "" :
                           " — and on \(kind.label) this is also the only "
                           + "evidence the launch above took effect, since "
                           + "a process that never started would answer "
@@ -451,7 +527,7 @@ final class MetalQuitTests: XCTestCase {
         result = await run("quit", target: victim)
         print("quit \(victim) (again): \(sentence(result))")
         XCTAssertEqual(outcome(result), "not-running",
-                       kind.servesProcessList ? ""
+                       strongConfirmation ? ""
                        : "\(victim) was reported gone and then answered as "
                        + "something other than not-running \(weakNote)")
     }

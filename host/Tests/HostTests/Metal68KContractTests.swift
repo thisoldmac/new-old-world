@@ -37,7 +37,32 @@ final class Metal68KContractTests: XCTestCase {
         port = env["NOW_METAL_PORT"].flatMap { UInt16($0) } ?? 5252
         listener = GuestListener(identity: .init(version: "0.1-metal",
                                                  name: "Metal Harness"))
-        listener.start(port: port)
+        await startListening()
+    }
+
+    /// Binds the harness port, retrying briefly on "address already in
+    /// use".
+    ///
+    /// Not papering over a real conflict: a port genuinely held by
+    /// something else (the NOW app itself lives on 5250) still fails, with
+    /// the same message as before. What this absorbs is the harness racing
+    /// ITSELF — `stop()` sets state to .idle at once while NWListener
+    /// cancels asynchronously, so the next test in the same suite can ask
+    /// for a port its predecessor has not finished releasing. That failed
+    /// two of five tests here on the 180c while the other three passed
+    /// against the same live guest, which is the signature of a race
+    /// rather than a busy port.
+    private func startListening() async {
+        let deadline = Date().addingTimeInterval(6)
+        while true {
+            listener.start(port: port)
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard case .failed = listener.state, Date() < deadline else {
+                return
+            }
+            listener.stop()
+            try? await Task.sleep(nanoseconds: 500_000_000)
+        }
     }
 
     override func tearDown() async throws {
