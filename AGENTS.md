@@ -133,18 +133,35 @@ This checkout is **shared**. Other sessions have worktrees off it, and
 agents branch in their own worktrees — so the shared checkout stays on
 `main`, at the head of the work.
 
+- **Work on a branch, never on `main`.** Before your first edit, cut one
+  — `git checkout -b <ns>/<slug>`, forked off the parent branch you are
+  continuing, not off main. `main` receives finished work by
+  fast-forward or merge; it is never where work is typed. This is
+  enforced (`.githooks/pre-commit`, plus a PreToolUse hook on
+  `Write`/`Edit`/`Bash`), and the enforcement is the floor, not the
+  rule: don't reach for `TBT_ALLOW_MAIN=1` to get past a block you
+  should have avoided by branching. The namespaces in use are
+  `claude/`, `codex/`, `thread/` and `fork/` — pick the one that says
+  who is working.
 - **`main` is the head — keep the shared checkout on it.** Land a
   finished thread by fast-forward or merge (`git -C <path> merge
   --ff-only <branch>`), or move the ref without disturbing a working
   tree with `git fetch . <branch>:main`. Don't leave the shared checkout
   parked on a side branch; that is how it drifted onto a stale one and
   looked like the app had regressed.
+- **Moving the ref leaves the files behind — re-sync after.** `git fetch
+  . <branch>:main` advances the *ref* only; the shared checkout's index
+  and working tree stay at the old commit. `git status` then reports the
+  newly-landed files as **staged deletions**, which reads exactly like a
+  session that ripped them out, and committing it would revert the work
+  that just landed. When a clean checkout shows a large staged `D` diff,
+  diff the index against main's ancestors before believing it — if the
+  index matches an ancestor of `main`, nothing was deleted and the cure
+  is `git reset --hard main`, not a commit.
 - Use `git -C <absolute path>` rather than `cd`. A bare `cd` into the
   wrong repository root has put commits on another session's branch.
 - Stage explicit paths. Never `git add -A` — it is the difference
   between a stray commit and a destroyed afternoon.
-- Branch per thread; land onto `main` by fast-forward or merge, not by
-  committing work-in-progress on it directly.
 
 ## Docs
 
