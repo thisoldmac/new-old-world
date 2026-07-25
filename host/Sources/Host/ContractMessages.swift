@@ -91,7 +91,13 @@ struct ErrorMessage: Codable, Equatable, Sendable {
 struct CommandRequest: Codable, Equatable, Sendable {
     var id: Int
     var name: String
+    /// The typed form: what a caller that knows the command sends.
     var args: [String: String]?
+    /// The raw form: the text a human typed after the command name, for a
+    /// console — which knows no command's grammar and must not, because the
+    /// two guests do not serve the same commands. Presence is the signal, and
+    /// "" is present. See CommandRequest.line in contract/asyncapi.yaml.
+    var line: String?
 }
 
 struct CommandResult: Codable, Equatable, Sendable {
