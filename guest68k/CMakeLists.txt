@@ -34,6 +34,8 @@ add_application(now68k-guest
     src/n68_console_ring.c
     src/n68_reader.c
     src/connfields.c
+    src/n68_devsettings.c
+    src/n68_devsettings_file.c
     src/net_mactcp.c
     src/wire68.c
     src/health.c

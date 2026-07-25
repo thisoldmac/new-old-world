@@ -13,9 +13,10 @@
  *   3 field-text extraction buffers  40 + 24 + 24          =   88  bytes
  *   gStatusShown (kStatusShownCap)                         =  128  bytes
  *   ConnHost/Port/TimeoutResult x2 (live + shown)           ~  200  bytes
+ *   gDev (N68DevSettings) + gDevLoaded + gRetrySecs          ~   50  bytes
  *   misc scalars (focus, rects, handles, UPP)                ~  150  bytes
  *   ---------------------------------------------------------------------
- *   file-static total                                       ~  8.8 KB
+ *   file-static total                                       ~  8.9 KB
  * Transient stack use inside a single draw call: draw_console's
  * buf[48] + lines[24]*sizeof(N68ConsoleLine)(8) = 240 bytes, or
  * draw_health's line[160] + a stack-local HealthDynamic (two ~24-byte
@@ -42,6 +43,7 @@
 #include "n68_console_ring.h"
 #include "numfmt.h"
 #include "health.h"
+#include "n68_devsettings_file.h"
 
 #include <MacWindows.h>
 #include <Quickdraw.h>
@@ -155,6 +157,21 @@ static ConnTimeoutResult gTimeoutResult, gTimeoutShown;
 static ControlHandle gConnectBtn = NULL;
 static ControlHandle gRetryChk   = NULL;
 static ControlActionUPP gPumpActionUPP = NULL;
+
+/* The redial cadence the checkbox stands for. It used to be the literal 5
+ * in toggle_retry and the literal "5s" in the control's title, which agreed
+ * only by inspection; the dev settings file can now name a different one,
+ * and a checkbox whose label says 5 while the wire redials every 30 is
+ * worse than either number - so both read from here. With no settings file
+ * this is 5 and nothing about the control changes. */
+static unsigned short gRetrySecs = kN68DevRetryDefaultSecs;
+
+/* The dev-only settings file, read once in window_init. gDevLoaded is 0 on
+ * every machine that does not have one - which is every machine but a lab
+ * bench - and in that state nothing below runs and the window behaves
+ * exactly as it did before this file existed (n68_devsettings.h). */
+static N68DevSettings gDev;
+static int            gDevLoaded = 0;
 
 /* DEFECT 2 (fixed): this used to be gStatusShown[64]. wire_status() reads
  * from wire68.c's g_status[96] (that file's own STATIC BUDGET comment), so
@@ -410,13 +427,58 @@ static void handle_connect_toggle(void)
     }
 }
 
+/* "Retry every Ns" for the current cadence. Only called when a settings
+ * file moved the cadence off 5, so with no file the control keeps the exact
+ * title NewControl gave it. SetControlTitle redraws immediately - the same
+ * Toolbox-owned exception update_connect_button above relies on. */
+static void set_retry_title(unsigned short secs)
+{
+    Str255 title;
+    char   text[32];
+    long   pos = 0;
+
+    if (gRetryChk == NULL) {
+        return;
+    }
+    if (!now68k_fmt_append_str(text, (long)sizeof text, &pos, "Retry every ")
+        || !now68k_fmt_append_long(text, (long)sizeof text, &pos, (long)secs)
+        || !now68k_fmt_append_str(text, (long)sizeof text, &pos, "s")
+        || pos > 255) {
+        return;   /* numfmt refuses rather than truncates; so do we */
+    }
+    title[0] = (unsigned char)pos;
+    BlockMoveData(text, &title[1], pos);
+    SetControlTitle(gRetryChk, title);
+}
+
+static void console_note_retry(short on)
+{
+    char text[40];
+    long pos = 0;
+
+    if (!on) {
+        console_note("retry: off");
+        return;
+    }
+    if (now68k_fmt_append_str(text, (long)sizeof text, &pos, "retry: every ")
+        && now68k_fmt_append_long(text, (long)sizeof text, &pos, (long)gRetrySecs)
+        && now68k_fmt_append_str(text, (long)sizeof text, &pos, "s")
+        && pos < (long)sizeof text) {
+        text[pos] = '\0';
+        console_note(text);
+    }
+}
+
 static void toggle_retry(void)
 {
     short newVal = (short)(GetControlValue(gRetryChk) ? 0 : 1);
 
     SetControlValue(gRetryChk, newVal);
-    wire_set_retry(newVal, 5);
-    console_note(newVal ? "retry: every 5s" : "retry: off");
+    /* gRetrySecs, not a literal 5: the cadence and the label it is drawn
+     * from have to be the same number. wire_set_retry still owns the >= 1 s
+     * floor (wire68.h) - nothing here clamps or bypasses it. */
+    wire_set_retry(newVal, gRetrySecs);
+    console_note_retry(newVal);
 }
 
 /* Pumps the wire while a finger holds a control down (TrackControl, Connect
@@ -609,6 +671,110 @@ static void draw_page(void)
     UpdateControls(gWindow, gWindow->visRgn);
 }
 
+/* ---- the dev-only settings file ---------------------------------------
+ *
+ * Two halves, because the values land at two different moments in
+ * window_init: the field text must be in the TERecs BEFORE the first
+ * revalidate_* runs, and the retry/autoconnect settings must be applied
+ * AFTER wire_init(), which resets the wire's retry state to its defaults
+ * (wire68.c). Applying either at the wrong moment silently does nothing,
+ * which is the kind of bug that reads as "the file was ignored".
+ */
+
+static void dev_settings_apply_fields(void)
+{
+    gDevLoaded = now68k_devsettings_load(&gDev);
+    if (!gDevLoaded) {
+        return;   /* the shipping case, and the silent one */
+    }
+
+    if (gDev.have_host && gHostTE != NULL) {
+        TESetText(gDev.host_text, (long)strlen(gDev.host_text), gHostTE);
+    }
+    if (gDev.have_port && gPortTE != NULL) {
+        char text[8];
+        long pos = 0;
+
+        if (now68k_fmt_append_long(text, (long)sizeof text, &pos,
+                                   (long)gDev.port)) {
+            TESetText(text, pos, gPortTE);
+        }
+    }
+    /* Timeout is deliberately not a settings key: it is the one field whose
+     * right value depends on the network in front of the machine, not on
+     * which build is being tested, and connfields.h already gives it a
+     * defensible default. */
+    if (gDev.have_retry_secs) {
+        gRetrySecs = gDev.retry_secs;
+    }
+}
+
+static void console_note_dev_settings(void)
+{
+    char text[64];
+    long pos = 0;
+
+    if (now68k_fmt_append_str(text, (long)sizeof text, &pos, "dev settings: ")
+        && now68k_fmt_append_long(text, (long)sizeof text, &pos,
+                                  (long)gDev.keys_set)
+        && now68k_fmt_append_str(text, (long)sizeof text, &pos,
+                                 " applied, ")
+        && now68k_fmt_append_long(text, (long)sizeof text, &pos,
+                                  (long)gDev.bad_lines)
+        && now68k_fmt_append_str(text, (long)sizeof text, &pos,
+                                 " line(s) ignored")
+        && pos < (long)sizeof text) {
+        text[pos] = '\0';
+        console_note(text);
+    }
+}
+
+static void dev_settings_apply_wire(void)
+{
+    if (!gDevLoaded) {
+        return;
+    }
+
+    if (gDev.have_retry || gDev.have_retry_secs) {
+        short on = gDev.have_retry
+                     ? (short)(gDev.retry_on != 0)
+                     : (short)(gRetryChk != NULL ? GetControlValue(gRetryChk) : 0);
+
+        if (gRetryChk != NULL) {
+            SetControlValue(gRetryChk, on);
+        }
+        if (gRetrySecs != kN68DevRetryDefaultSecs) {
+            set_retry_title(gRetrySecs);
+        }
+        wire_set_retry(on, gRetrySecs);
+    }
+
+    /* One console line saying what the file did, always - including "0
+     * applied, 3 line(s) ignored", which is the sentence a human needs when
+     * they mistyped a key and are about to blame the build. */
+    console_note_dev_settings();
+    now68k_log_num("devsettings: keys applied", (long)gDev.keys_set);
+    if (gDev.bad_lines != 0) {
+        now68k_log_num("devsettings: first ignored line",
+                        (long)gDev.first_bad_line);
+    }
+
+    if (gDev.have_autoconnect && gDev.autoconnect) {
+        /* Exactly what a Connect click does, gated on exactly the same
+         * validation - autoconnect must not be a second, laxer path to the
+         * wire. If the file gave no host, the fields are in their no-file
+         * state and this refuses for the same reason a click would. */
+        if (gHostResult.ok && gPortResult.ok && gTimeoutResult.ok) {
+            wire_set_target(gHostResult.addr, gPortResult.port,
+                             (unsigned short)gTimeoutResult.seconds);
+            wire_start();
+            console_note("autoconnect: connecting");
+        } else {
+            console_note("autoconnect skipped: check field(s) above");
+        }
+    }
+}
+
 /* ---- public seam (window.h) -------------------------------------------- */
 
 void window_init(void)
@@ -709,6 +875,10 @@ void window_init(void)
      * health.h), so re-running it from draw_health would be pure jank. */
     health_init();
 
+    /* Before the first revalidate, so the fields validate what the file
+     * actually put in them. No file = no change to anything above. */
+    dev_settings_apply_fields();
+
     revalidate_host();
     revalidate_port();
     revalidate_timeout();
@@ -718,6 +888,11 @@ void window_init(void)
      * natural "once at startup, before any connection work" call site
      * wire68.h asks for - main.c never touches net.h/wire68.h directly. */
     wire_init();
+
+    /* After wire_init, which resets retry state - and before the status
+     * snapshot below, so an autoconnected dial is the first state this
+     * window ever shows rather than a stale "Not connected". */
+    dev_settings_apply_wire();
 
     gWireStateShown = wire_state();
     update_connect_button(gWireStateShown);
