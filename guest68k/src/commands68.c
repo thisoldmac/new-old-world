@@ -7,8 +7,10 @@
  * STATIC BUDGET (all stack, per call - this file owns no BSS):
  *   run_launch    name[200] + detail[160]                        = 360 B
  *   run_quit      QuitArgs(~40) + msg[80] + detail[160]           = 280 B
- * Neither runs while the other is on the stack (dispatch calls exactly
- * one), and both are well inside a 68K stack frame's normal headroom on a
+ *   dispatch      one N68CmdResult                               = 256 B
+ * Neither run_* runs while the other is on the stack (dispatch calls
+ * exactly one), so the deepest frame is dispatch's 256 plus run_launch's
+ * 360 = ~616 B - well inside a 68K stack frame's normal headroom on a
  * machine with ~1.7 MB free. No recursion, no VLA.
  *
  * No printf family (numfmt.h's now68k_fmt_append_str/long only, matching
@@ -18,6 +20,7 @@
 #include "commands68.h"
 
 #include "log.h"
+#include "n68_cmdresult.h"
 #include "numfmt.h"
 #include "proc68.h"
 
@@ -28,9 +31,13 @@ enum {
     kQuitNameMax = 32,  /* proc68.h's ProcEntry.name[32] - the Str31 domain
                           * quit matches against; a longer argument cannot
                           * match any process. */
-    kDetailCap   = 160, /* proc68.h: "a short ASCII sentence for the
+    kDetailCap   = kN68CmdTextCap,
+                        /* proc68.h: "a short ASCII sentence for the
                           * human" - both proc_launch_named and
-                          * proc_quit_named are handed a buffer this size. */
+                          * proc_quit_named are handed a buffer this size.
+                          * It is n68_cmdresult.h's number now, not a
+                          * second 160 that could drift from the one the
+                          * renderers size their text field to. */
     kFlagMax     = 16,  /* one leading "--wait"/"--no-wait" token */
     kMsgMax      = 80   /* a quit_parse() failure sentence, fixed text plus
                           * at most one echoed flag or number token */
@@ -44,118 +51,28 @@ enum {
     kTicksPerSecond      = 60
 };
 
-/* ---- JSON string safety ------------------------------------------------- */
-
-/* MacRoman 0x80..0xFF to Unicode, read the other way from the PowerPC
- * guest's own copy (now/guest/src/json.c, branch thread/guest-quit-
- * command, static k_macroman_high[]) - reproduced verbatim rather than
- * shared because that file lives in a different repo/build this client
- * cannot include. Used by append_json_escaped() below for bytes >= 0x80:
- * a process or HFS name on this platform routinely carries one of these
- * (an accented letter, a trademark sign), and it is ordinary text here,
- * not corruption. */
-static const unsigned short k_macroman_high[128] = {
-    0x00C4, 0x00C5, 0x00C7, 0x00C9, 0x00D1, 0x00D6, 0x00DC, 0x00E1,
-    0x00E0, 0x00E2, 0x00E4, 0x00E3, 0x00E5, 0x00E7, 0x00E9, 0x00E8,
-    0x00EA, 0x00EB, 0x00ED, 0x00EC, 0x00EE, 0x00EF, 0x00F1, 0x00F3,
-    0x00F2, 0x00F4, 0x00F6, 0x00F5, 0x00FA, 0x00F9, 0x00FB, 0x00FC,
-    0x2020, 0x00B0, 0x00A2, 0x00A3, 0x00A7, 0x2022, 0x00B6, 0x00DF,
-    0x00AE, 0x00A9, 0x2122, 0x00B4, 0x00A8, 0x2260, 0x00C6, 0x00D8,
-    0x221E, 0x00B1, 0x2264, 0x2265, 0x00A5, 0x00B5, 0x2202, 0x2211,
-    0x220F, 0x03C0, 0x222B, 0x00AA, 0x00BA, 0x03A9, 0x00E6, 0x00F8,
-    0x00BF, 0x00A1, 0x00AC, 0x221A, 0x0192, 0x2248, 0x2206, 0x00AB,
-    0x00BB, 0x2026, 0x00A0, 0x00C0, 0x00C3, 0x00D5, 0x0152, 0x0153,
-    0x2013, 0x2014, 0x201C, 0x201D, 0x2018, 0x2019, 0x00F7, 0x25CA,
-    0x00FF, 0x0178, 0x2044, 0x20AC, 0x2039, 0x203A, 0xFB01, 0xFB02,
-    0x2021, 0x00B7, 0x201A, 0x201E, 0x2030, 0x00C2, 0x00CA, 0x00C1,
-    0x00CB, 0x00C8, 0x00CD, 0x00CE, 0x00CF, 0x00CC, 0x00D3, 0x00D4,
-    0xF8FF, 0x00D2, 0x00DA, 0x00DB, 0x00D9, 0x0131, 0x02C6, 0x02DC,
-    0x00AF, 0x02D8, 0x02D9, 0x02DA, 0x00B8, 0x02DD, 0x02DB, 0x02C7
-};
-
-/* Appends `s` into buf[*pos, cap) as the BODY of a JSON string (the
- * caller writes the surrounding quotes) - real escaping, replacing the
- * previous sanitize_json_string() which mangled '"'/'\\'/control bytes to
- * '?' and let bytes >= 0x80 through raw. Both were real defects: '?'
- * corrupts a message that legitimately quoted a name ("nothing named
- * ?NetPresenz? is running"), and a raw high-bit byte inside a JSON string
- * is invalid UTF-8, which a spec-correct host parser rejects outright -
- * the whole frame is discarded and the caller's command blocks until the
- * 75 s idle timeout, not just that one field.
+/* ---- everything that BUILT a reply has MOVED ------------------------------ */
+/* The MacRoman escape table, append_json_escaped(), append_envelope and the
+ * three finish_* builders (finish_error, finish_ok_row1, finish_ok_row2 -
+ * now one function with a row count) are all n68_cmdresult.c.
  *
- * The escaping mirrors the PowerPC guest's now_json_escape() (now/guest/
- * src/json.c, branch thread/guest-quit-command) rather than inventing a
- * weaker rule:
- *   - '"' and '\\'      -> backslash-escaped, so the literal cannot reopen
- *                          or corrupt.
- *   - < 0x20, or 0x7F    -> \u00XX. A raw control byte would corrupt the
- *                          control FRAME (text, newline-sensitive), not
- *                          just the JSON.
- *   - >= 0x80            -> \u escaped from its Unicode code point via
- *                          k_macroman_high, e.g. 0x87 (e-acute) becomes
- *                          \u00E9. DELIBERATE CHOICE: transliterating to
- *                          '?' (as the old sanitizer did for the low
- *                          range) would make an accented name and its
- *                          plain-ASCII near-miss collide, which is worse
- *                          for a caller matching launch/quit replies
- *                          against what it asked for than a few extra
- *                          bytes on the wire; escaping keeps the reply
- *                          both valid UTF-8-safe JSON and lossless.
+ * They left because this file gained a SECOND reader: the interactive
+ * console window renders the same commands as text for a human (conwin.h),
+ * and a command that runs and formats in one pass can only serve a second
+ * reader by being implemented twice. See n68_cmdresult.h - the whole point
+ * of that file is that the second implementation does not get written. What
+ * is left below is what a command DOES; what a result LOOKS LIKE now lives
+ * in exactly one other place, with both renderings side by side so they
+ * cannot drift.
  *
- * Bounded exactly like now68k_fmt_append_str: stops and returns 0 the
- * moment the next escaped piece would not fit, so no half-escaped
- * sequence is ever left in `buf`; no NUL is written here, matching
- * numfmt.h's append contract (the caller terminates once the whole chain
- * succeeds). No snprintf - hex digits are built by hand (standing rule:
- * no printf family in this file). */
-static int append_json_escaped(char *buf, long cap, long *pos, const char *s)
-{
-    static const char kHex[] = "0123456789ABCDEF";
-
-    if (*pos < 0) {
-        return 0;
-    }
-    for (; *s != '\0'; ++s) {
-        unsigned char c = (unsigned char)*s;
-        char piece[6];
-        long len;
-
-        if (c == '"' || c == '\\') {
-            piece[0] = '\\';
-            piece[1] = (char)c;
-            len = 2;
-        } else if (c < 0x20 || c == 0x7F) {
-            piece[0] = '\\';
-            piece[1] = 'u';
-            piece[2] = '0';
-            piece[3] = '0';
-            piece[4] = kHex[(c >> 4) & 0xF];
-            piece[5] = kHex[c & 0xF];
-            len = 6;
-        } else if (c >= 0x80) {
-            unsigned short code = k_macroman_high[c - 0x80];
-
-            piece[0] = '\\';
-            piece[1] = 'u';
-            piece[2] = kHex[(code >> 12) & 0xF];
-            piece[3] = kHex[(code >> 8) & 0xF];
-            piece[4] = kHex[(code >> 4) & 0xF];
-            piece[5] = kHex[code & 0xF];
-            len = 6;
-        } else {
-            piece[0] = (char)c;
-            len = 1;
-        }
-
-        if (len > cap - *pos) {
-            return 0;
-        }
-        memcpy(buf + *pos, piece, (size_t)len);
-        *pos += len;
-    }
-    return 1;
-}
-
+ * The wire did not change, and that is checked rather than asserted: the
+ * old builders and the new renderer were run side by side over 1,092
+ * combinations of reply shape, message, error code and output capacity and
+ * agreed on every byte and every returned length (see docs/open-issues.md,
+ * and n68_cmdresult.h for the one input class - a message over 159 bytes -
+ * where they would not, which no caller here can produce).
+ * now68k_commands_dispatch below still has the signature and return-value
+ * contract commands68.h documents. */
 static void bounded_strcpy(char *dst, long dst_cap, const char *src)
 {
     long i = 0;
@@ -187,195 +104,6 @@ static void bounded_copy_n(char *dst, long dst_cap, const char *src, long n)
         dst[i] = src[i];
     }
     dst[i] = '\0';
-}
-
-/* ---- command.result envelope -------------------------------------------- */
-/* Every reply this module builds shares this shape - CommandResult's own
- * required fields (type, id, ok), then either output.<name> or
- * error{code,message} - so the envelope bytes the contract requires
- * verbatim are written in exactly one place each. */
-
-static int append_envelope(char *out, long cap, long *pos, long id)
-{
-    int ok = 1;
-
-    ok = ok && now68k_fmt_append_str(out, cap, pos,
-                                      "{\"type\":\"command.result\",\"id\":");
-    ok = ok && now68k_fmt_append_long(out, cap, pos, id);
-    return ok;
-}
-
-/* A fixed fallback used only when the full reply would not fit `out`
- * within `cap`. It never echoes anything peer- or proc68.h-sourced, so it
- * carries no sanitize burden and - being short and constant - always fits
- * once the envelope itself does; this is the one and only fallback this
- * module reaches for, rather than a chain of ever-shorter attempts. */
-static const char kOverflowNote[] = "(reply did not fit)";
-
-/* Builds {"type":"command.result","id":id,"ok":false,"error":{"code":
- * code,"message":message}}, NUL-terminates it, and returns the number of
- * content bytes written (excluding the terminator) - `pos` is the only
- * truth here (compare wire68.c's own send path, which sends
- * (payload, pos), not strlen(payload)). Returns 0, with out[0] left as
- * '\0' (guarded on cap > 0 - a 0-byte `out` cannot even hold that), if
- * even the compact fallback did not fit `cap`; the caller must treat that
- * as nothing-to-send.
- *
- * `message` is escaped by append_json_escaped, not mutated - callers may
- * pass proc68.h's `detail` buffer or a locally-built sentence as-is.
- * `code` is always a fixed C string literal from this file, never peer
- * data, so it is appended verbatim, unescaped and unchecked.
- *
- * One byte of `cap` is reserved for the NUL terminator (`avail` below):
- * now68k_fmt_append_str/long and append_json_escaped are willing to fill
- * a buffer right up to the capacity they are given, so building against
- * `cap` itself and then writing out[pos] = '\0' could write one byte past
- * the caller's buffer. */
-static long finish_error(char *out, long cap, long id, const char *code,
-                          const char *message)
-{
-    long avail = cap > 0 ? cap - 1 : 0;
-    long pos = 0;
-    int ok = 1;
-
-    ok = ok && append_envelope(out, avail, &pos, id);
-    ok = ok && now68k_fmt_append_str(out, avail, &pos,
-                                      ",\"ok\":false,\"error\":{\"code\":\"");
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, code);
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, "\",\"message\":\"");
-    ok = ok && append_json_escaped(out, avail, &pos, message);
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, "\"}}");
-    if (ok && pos > 0) {
-        out[pos] = '\0';
-        return pos;
-    }
-
-    /* Compact fallback: same code (still a true statement), fixed text
-     * instead of `message` - kOverflowNote is this file's own literal, so
-     * it needs no escaping. ok stays false either way - shortening a
-     * reply must never change what it claims happened. */
-    pos = 0;
-    ok = 1;
-    ok = ok && append_envelope(out, avail, &pos, id);
-    ok = ok && now68k_fmt_append_str(out, avail, &pos,
-                                      ",\"ok\":false,\"error\":{\"code\":\"");
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, code);
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, "\",\"message\":\"");
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, kOverflowNote);
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, "\"}}");
-    if (ok && pos > 0) {
-        out[pos] = '\0';
-        return pos;
-    }
-
-    now68k_log("cmd: error reply did not fit even the compact fallback");
-    if (cap > 0) {
-        out[0] = '\0';
-    }
-    return 0;
-}
-
-/* Builds a one-row ok:true reply: output.<key> = [[label,value]]. Used by
- * launch. NUL-terminates and returns the byte count, same contract as
- * finish_error above. `value` is escaped by append_json_escaped, not
- * mutated. */
-static long finish_ok_row1(char *out, long cap, long id, const char *key,
-                            const char *label, const char *value)
-{
-    long avail = cap > 0 ? cap - 1 : 0;
-    long pos = 0;
-    int ok = 1;
-
-    ok = ok && append_envelope(out, avail, &pos, id);
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, ",\"ok\":true,\"output\":{\"");
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, key);
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, "\":[[\"");
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, label);
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, "\",\"");
-    ok = ok && append_json_escaped(out, avail, &pos, value);
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, "\"]]}}");
-    if (ok && pos > 0) {
-        out[pos] = '\0';
-        return pos;
-    }
-
-    pos = 0;
-    ok = 1;
-    ok = ok && append_envelope(out, avail, &pos, id);
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, ",\"ok\":true,\"output\":{\"");
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, key);
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, "\":[[\"");
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, label);
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, "\",\"");
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, kOverflowNote);
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, "\"]]}}");
-    if (ok && pos > 0) {
-        out[pos] = '\0';
-        return pos;
-    }
-
-    now68k_log("cmd: ok reply did not fit even the compact fallback");
-    if (cap > 0) {
-        out[0] = '\0';
-    }
-    return 0;
-}
-
-/* Builds the two-row ok:true reply quit uses: output.quit =
- * [["Quit",value1],["Outcome",value2]]. NUL-terminates and returns the
- * byte count, same contract as finish_error above. value2 (the outcome
- * state word) is a fixed literal from this file's own table and needs no
- * escaping; value1 (proc68.h's `detail`) is escaped by
- * append_json_escaped, not mutated. */
-static long finish_ok_row2(char *out, long cap, long id, const char *key,
-                            const char *label1, const char *value1,
-                            const char *label2, const char *value2)
-{
-    long avail = cap > 0 ? cap - 1 : 0;
-    long pos = 0;
-    int ok = 1;
-
-    ok = ok && append_envelope(out, avail, &pos, id);
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, ",\"ok\":true,\"output\":{\"");
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, key);
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, "\":[[\"");
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, label1);
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, "\",\"");
-    ok = ok && append_json_escaped(out, avail, &pos, value1);
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, "\"],[\"");
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, label2);
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, "\",\"");
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, value2);
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, "\"]]}}");
-    if (ok && pos > 0) {
-        out[pos] = '\0';
-        return pos;
-    }
-
-    pos = 0;
-    ok = 1;
-    ok = ok && append_envelope(out, avail, &pos, id);
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, ",\"ok\":true,\"output\":{\"");
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, key);
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, "\":[[\"");
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, label1);
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, "\",\"");
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, kOverflowNote);
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, "\"],[\"");
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, label2);
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, "\",\"");
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, value2);
-    ok = ok && now68k_fmt_append_str(out, avail, &pos, "\"]]}}");
-    if (ok && pos > 0) {
-        out[pos] = '\0';
-        return pos;
-    }
-
-    now68k_log("cmd: ok reply did not fit even the compact fallback");
-    if (cap > 0) {
-        out[0] = '\0';
-    }
-    return 0;
 }
 
 /* ---- launch --------------------------------------------------------------- */
@@ -417,7 +145,7 @@ static int trim_and_unquote(const char *in, char *out, long out_cap)
     return 1;
 }
 
-static long run_launch(const char *target, long id, char *out, long cap)
+static void run_launch(const char *target, N68CmdResult *res)
 {
     char name[kNameMax];
     char detail[kDetailCap];
@@ -427,14 +155,16 @@ static long run_launch(const char *target, long id, char *out, long cap)
         bounded_strcpy(detail, sizeof detail,
                        "launch: target name is too long (199 chars max) "
                        "- refused, not truncated");
-        return finish_error(out, cap, id, "launch-bad-args", detail);
+        n68_cmdresult_set_error(res, "launch-bad-args", detail);
+        return;
     }
 
     if (name[0] == '\0') {
         bounded_strcpy(detail, sizeof detail,
                        "launch: what? (an application name or a colon "
                        "path)");
-        return finish_error(out, cap, id, "launch-bad-args", detail);
+        n68_cmdresult_set_error(res, "launch-bad-args", detail);
+        return;
     }
     /* proc_launch_named (proc68.h) resolves a bare name by exact-name
      * catalog search, or a colon-containing string as a full HFS path
@@ -453,16 +183,18 @@ static long run_launch(const char *target, long id, char *out, long cap)
         bounded_strcpy(detail, sizeof detail,
                        "launch: -v and #n are not implemented on this "
                        "client (name or a colon path only)");
-        return finish_error(out, cap, id, "launch-bad-args", detail);
+        n68_cmdresult_set_error(res, "launch-bad-args", detail);
+        return;
     }
 
     err = proc_launch_named(name, detail, sizeof detail);
     if (err != 0) {
         now68k_log_num("cmd: launch refused", (long)err);
-        return finish_error(out, cap, id, "launch-refused", detail);
+        n68_cmdresult_set_error(res, "launch-refused", detail);
+        return;
     }
     now68k_log("cmd: launch ok");
-    return finish_ok_row1(out, cap, id, "launch", "Launch", detail);
+    n68_cmdresult_set_ok1(res, "launch", "Launch", detail);
 }
 
 /* ---- quit ------------------------------------------------------------------ */
@@ -608,7 +340,7 @@ static int quit_parse(const char *arg, QuitArgs *out, char *msg, long cap)
     return 1;
 }
 
-static long run_quit(const char *target, long id, char *out, long cap)
+static void run_quit(const char *target, N68CmdResult *res)
 {
     QuitArgs args;
     char msg[kMsgMax];
@@ -618,7 +350,8 @@ static long run_quit(const char *target, long id, char *out, long cap)
     const char *code;
 
     if (!quit_parse(target != NULL ? target : "", &args, msg, sizeof msg)) {
-        return finish_error(out, cap, id, "quit-bad-args", msg);
+        n68_cmdresult_set_error(res, "quit-bad-args", msg);
+        return;
     }
 
     outcome = proc_quit_named(args.name, args.wait_ticks, detail,
@@ -683,35 +416,52 @@ static long run_quit(const char *target, long id, char *out, long cap)
                     (long)outcome);
 
     if (code != NULL) {
-        return finish_error(out, cap, id, code, detail);
+        n68_cmdresult_set_error(res, code, detail);
+        return;
     }
-    return finish_ok_row2(out, cap, id, "quit", "Quit", detail, "Outcome",
-                           state);
+    n68_cmdresult_set_ok2(res, "quit", "Quit", detail, "Outcome", state);
 }
 
 /* ---- dispatch --------------------------------------------------------------- */
 
-int now68k_commands_dispatch(const char *name, const char *target, long id,
-                              char *out, long cap, long *out_len)
+int now68k_commands_run(const char *name, const char *target,
+                         N68CmdResult *res)
 {
-    long len;
-
-    if (name == NULL) {
+    if (name == NULL || res == NULL) {
         return 0;
     }
+    n68_cmdresult_init(res);
+
     if (strcmp(name, "launch") == 0) {
-        len = run_launch(target, id, out, cap);
-        if (out_len != NULL) {
-            *out_len = len;
-        }
+        run_launch(target, res);
         return 1;
     }
     if (strcmp(name, "quit") == 0) {
-        len = run_quit(target, id, out, cap);
-        if (out_len != NULL) {
-            *out_len = len;
-        }
+        run_quit(target, res);
         return 1;
     }
     return 0;
+}
+
+int now68k_commands_dispatch(const char *name, const char *target, long id,
+                              char *out, long cap, long *out_len)
+{
+    N68CmdResult res;
+    long len;
+
+    if (!now68k_commands_run(name, target, &res)) {
+        return 0;
+    }
+
+    len = n68_cmdresult_render_json(&res, id, out, cap);
+    if (len == 0) {
+        /* n68_cmdresult.c deliberately does not log - it has no idea which
+         * command this was. This is the one place that does, so the line
+         * the old finish_* builders wrote is not lost. */
+        now68k_log("cmd: reply did not fit even the compact fallback");
+    }
+    if (out_len != NULL) {
+        *out_len = len;
+    }
+    return 1;
 }

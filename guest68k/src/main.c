@@ -26,6 +26,7 @@
 #include <string.h>
 
 #include "window.h"
+#include "conwin.h"
 #include "log.h"
 #include "wire68.h"
 
@@ -34,10 +35,29 @@
 #define kMenuBarID      128
 #define kAppleMenuID    128
 #define kFileMenuID     129
+#define kWindowsMenuID  130
 #define kAboutItem      1
 #define kQuitItem       1
+#define kConsoleItem    1
 
 static int g_quit = 0;
+
+/* THERE ARE TWO WINDOWS NOW, so nothing below may assume which one an event
+ * is for. Until the interactive console landed (conwin.h - a deliberate,
+ * argued exception to this guest's one-window rule) every event went
+ * straight to window.c, and an update or a keystroke meant for the console
+ * would have been drawn or typed into the connection panel instead. Every
+ * routed event goes through here, and the window it names comes from the
+ * event itself: (WindowPtr)message for update/activate, FindWindow's
+ * `which` for a click, FrontWindow() for a key. */
+static void route_event(EventRecord *event, WindowPtr target)
+{
+    if (conwin_owns(target)) {
+        conwin_handle_event(event);
+    } else {
+        window_handle_event(event);
+    }
+}
 
 static void init_toolbox(void)
 {
@@ -123,6 +143,11 @@ static void do_menu(long choice)
             g_quit = 1;
         }
         break;
+    case kWindowsMenuID:
+        if (item == kConsoleItem) {
+            conwin_show();
+        }
+        break;
     default:
         break;
     }
@@ -171,7 +196,15 @@ static void dispatch_mouse_down(EventRecord *event)
          * has no action proc either. Defect 14. */
         wire_idle();
         if (TrackGoAway(which, event->where)) {
-            g_quit = 1;
+            /* Closing the CONSOLE closes a window; closing the main panel
+             * is still how a human ends the run. Getting this backwards
+             * would make the console's close box quit the application,
+             * dropping a live connection to dismiss a text window. */
+            if (conwin_owns(which)) {
+                conwin_close();
+            } else {
+                g_quit = 1;
+            }
         }
         wire_idle();
         break;
@@ -185,7 +218,7 @@ static void dispatch_mouse_down(EventRecord *event)
         if (which != FrontWindow()) {
             SelectWindow(which);
         } else {
-            window_handle_event(event);
+            route_event(event, which);
         }
         break;
     default:
@@ -243,20 +276,43 @@ int main(void)
                 if ((event.modifiers & cmdKey) != 0) {
                     do_menu(MenuKey((short)(event.message & charCodeMask)));
                 } else {
-                    window_handle_event(&event);
+                    /* A key belongs to whoever has the focus, which on this
+                     * Toolbox is the front window - there is no other
+                     * keyboard-focus notion to consult. */
+                    route_event(&event, FrontWindow());
                 }
                 break;
+            case updateEvt:
+            case activateEvt:
+                /* Both name their window in event.message, and BOTH must be
+                 * routed by it rather than by the front window: an update
+                 * for the window BEHIND is exactly the case that arrives
+                 * when the front one moves, and an activate for the window
+                 * losing focus names the loser, not the winner.
+                 *
+                 * main.c does NOT open an update cycle of its own: each
+                 * window module owns exactly one balanced BeginUpdate/
+                 * EndUpdate around its single painter (window.c's
+                 * draw_page, conwin.c's draw_all). The UI skill's lexical
+                 * redraw audit flags this line because it cannot follow
+                 * the delegation; the delegation is the design. */
+                route_event(&event, (WindowPtr)event.message);
+                break;
             default:
-                /* updateEvt, activateEvt and osEvt (suspend/resume) all land
-                 * here; the SIZE resource claims activation handling, so the
-                 * window must actually implement it or a backgrounded window
-                 * keeps a highlighted title bar. */
+                /* osEvt (suspend/resume) lands here and names no window -
+                 * it is the whole application changing layer, so both
+                 * windows need it. The SIZE resource claims activation
+                 * handling, so this must actually reach them or a
+                 * backgrounded window keeps a highlighted title bar. */
                 window_handle_event(&event);
+                conwin_handle_event(&event);
                 break;
             }
         }
         wire_idle();
         window_idle();
+        conwin_idle();   /* returns immediately while the console is closed
+                             or behind - see conwin.c */
     }
 
     now68k_log("main: quit");
@@ -269,6 +325,9 @@ int main(void)
      * writing into memory the Process Manager has since handed to another
      * application. Defect 3. */
     wire_shutdown();
+    conwin_dispose();   /* before window_dispose only for symmetry with the
+                            order they were created in; neither depends on
+                            the other */
     window_dispose();
     now68k_log_close();
     return 0;

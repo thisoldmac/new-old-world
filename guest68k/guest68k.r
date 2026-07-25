@@ -19,7 +19,7 @@
  * cycle would cost a reboot of the machine under test.
  */
 resource 'MBAR' (128) {
-    { 128, 129 }
+    { 128, 129, 130 }
 };
 
 resource 'MENU' (128) {
@@ -34,6 +34,26 @@ resource 'MENU' (129) {
     129, textMenuProc, allEnabled, enabled, "File",
     {
         "Quit", noIcon, "Q", noMark, plain
+    }
+};
+
+/*
+ * The console window's only door. NOW-68K is otherwise a one-window
+ * application on purpose (window.h, README) - conwin.h states at length why
+ * the interactive console is a deliberate exception rather than the start
+ * of a habit, and docs/open-issues.md carries it as a standing entry.
+ *
+ * A "Windows" menu with one item rather than a File-menu entry: it names
+ * what the item does (shows a window) instead of implying the console is a
+ * document, and it is where a Mac OS user looks for a window that is open
+ * but buried. Command-K because Command-C is Copy's by convention even in
+ * an application that has no Edit menu yet, and taking it would poison that
+ * reflex the day one is added.
+ */
+resource 'MENU' (130) {
+    130, textMenuProc, allEnabled, enabled, "Windows",
+    {
+        "Console", noIcon, "K", noMark, plain
     }
 };
 
