@@ -28,6 +28,7 @@ enum {
     kDeadTicks = 60 * 65,             /* no traffic for 65s => dead */
     kBackoffMinTicks = 60 * 2,        /* 2s, doubling... */
     kBackoffMaxTicks = 60 * 30,       /* ...to 30s */
+    kRetryFloorTicks = 60 * 1,        /* the contract's only cadence rule */
     /* Big enough for the largest legal control frame (the contract caps
        control JSON at 4096). Bulk is never buffered whole — see
        next_frame — because one bulk frame is larger than anything this
@@ -281,6 +282,13 @@ static void enter_backoff(void)
             if (g.backoff_ticks > kBackoffMaxTicks) {
                 g.backoff_ticks = kBackoffMaxTicks;
             }
+        }
+        /* The contract's one cadence obligation: >= 1s between dials, so a
+           bad prefs record cannot make this a connect flood. Enforced here
+           rather than trusted from the loader, because the loader's range
+           check is about a plausible record and this is about the wire. */
+        if (g.backoff_ticks < kRetryFloorTicks) {
+            g.backoff_ticks = kRetryFloorTicks;
         }
     }
     g.backoff_until = TickCount() + g.backoff_ticks;

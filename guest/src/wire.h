@@ -7,7 +7,9 @@
 
 /* The persistent connection to the host. The guest holds one TCP connection
    open for its whole run: dial the saved host, hello, then keep it alive with
-   a guest-driven ping/pong heartbeat, reconnecting on a capped backoff. All
+   a guest-driven ping/pong heartbeat, reconnecting on a cadence this guest
+   chooses (the contract's reference backoff, or a fixed interval from the
+   Connection page; either way never faster than the 1s floor). All
    of this is serviced NON-BLOCKING from the event loop (conn_service) — no
    call here ever waits, so the app stays responsive and never wedges. */
 

@@ -55,8 +55,21 @@
 #   closes never send it, so it complements the keepalive, never replaces
 #   it. Codes (WS-close-code discipline, small and stable): "normal",
 #   "shutting-down", "protocol-error".
-# - The guest auto-reconnects with capped backoff (2s doubling to 30s)
-#   while its app is running.
+# - The guest auto-reconnects while its app is running. The CADENCE is
+#   guest policy, not a wire obligation, and the host must never infer
+#   anything from it — not liveness, not health, not which guest it is.
+#   The one rule the contract keeps is a FLOOR: at least 1s between dial
+#   attempts, so a misconfigured or wedged guest cannot turn into a
+#   connect flood against a host that is merely down.
+#   Capped backoff (2s doubling to 30s) is the REFERENCE DEFAULT and what
+#   a guest should do absent a reason. Both shipping guests also offer a
+#   fixed interval, because predictable reconnects beat adaptive
+#   politeness on a private LAN: the PowerPC guest through prefs
+#   `retry_secs` (0 = the reference backoff, else every N seconds) since
+#   its first release, and NOW-68K only that way, human-started and
+#   human-stopped. The clause used to mandate backoff and was accurate to
+#   neither guest — a contract stating a rule that no implementation
+#   follows teaches everyone to skim it.
 # - Commands: the host console is a shell into the guest — every command a
 #   human types there becomes one command.request and exactly one
 #   command.result. The command set is CLOSED and DECLARED: every command's

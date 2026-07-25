@@ -17,10 +17,11 @@
  * The PowerPC guest already supports exactly this (prefs.h retry_secs: "0 =
  * adaptive backoff, else a fixed retry every N seconds", chosen in
  * wire.c::enter_backoff with the note that predictable reconnects beat
- * adaptive politeness on a private LAN). The contract clause naming capped
- * backoff is being amended to match what both guests actually do; the one
- * obligation that survives is a floor of >= 1 s between dial attempts so a
- * misconfigured loop cannot become a connect flood.
+ * adaptive politeness on a private LAN). The contract clause that named
+ * capped backoff as a mandate has been amended to match what both guests
+ * actually do: cadence is guest policy, backoff is the reference default,
+ * and the one surviving obligation is a floor of >= 1 s between dial
+ * attempts so a misconfigured loop cannot become a connect flood.
  */
 #ifndef NOW68K_WIRE68_H
 #define NOW68K_WIRE68_H

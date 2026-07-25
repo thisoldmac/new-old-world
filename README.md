@@ -19,8 +19,9 @@ runtime code is imported on any side.
   all four pages, including a live listing, a pull, a capture with its
   preview, streaming start/stop, and the in-canvas Console prompt.
 - **Persistent connection** — the guest dials the host and holds one TCP
-  connection with a guest-driven heartbeat, capped-backoff reconnect
-  (adaptive or a fixed cadence from the Connection page), and orderly
+  connection with a guest-driven heartbeat, reconnect on a cadence the
+  guest picks (capped backoff, or a fixed interval from the Connection
+  page — the contract asks only for a 1s floor), and orderly
   goodbyes. Control messages ride a retry queue so flow control on a
   saturated wire can never silently eat a protocol word. Connecting on
   launch is now a checkbox — off means the Connection page is the only
