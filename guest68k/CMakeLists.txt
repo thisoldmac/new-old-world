@@ -32,6 +32,7 @@ add_application(now68k-guest
     src/ping.c
     src/n68_linesplit.c
     src/n68_console_ring.c
+    src/n68_reader.c
     src/connfields.c
     src/net_mactcp.c
     src/wire68.c

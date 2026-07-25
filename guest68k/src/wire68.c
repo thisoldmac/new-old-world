@@ -20,15 +20,21 @@
  *   g_sink                256  bytes  (bulk / oversized-control discard sink)
  *   g_out[2] slots          2 * (8 header + 160 payload + 4 len + 4 off)
  *                         2 *  176 =  352  bytes
- *   g_read (ReadCtx)                        28  bytes  (state+hdr+3 longs)
+ *   g_read (N68Reader)                      48  bytes  (state+hdr+4 counters
+ *                                                       + 2 buffer ptrs and
+ *                                                       a cap + ops/ctx ptrs)
  *   g_stats (WireStats)                     28  bytes  (7 longs)
  *   g_peer_name                             32  bytes
  *   g_status                                96  bytes
  *   scalars (state/target/retry/timers/ids) 62  bytes  (approx, no padding
  *                                                        assumed beyond
  *                                                        natural alignment)
+ *   kReadOps (const, 8 fn ptrs)             32  bytes  (.data, not BSS)
  *   -----------------------------------------------------------------
- *   total                                 ~4950  bytes  (~4.8 KB)
+ *   total                                 ~5000  bytes  (~4.9 KB)
+ * Measured cost of moving the state machine into n68_reader.c behind that
+ * ops table (m68k-apple-macos-size, -O2, whole application): text +472,
+ * data +40, bss +32 bytes.
  * Under 1% of the 1 MB free-memory design target, dominated entirely by the
  * 4 KB control receive buffer that frame.h's NOW68K_CONTROL_BUFFER_CAP
  * requires us to carry.
@@ -41,6 +47,7 @@
 #include "hello.h"
 #include "json_scan.h"
 #include "log.h"
+#include "n68_reader.h"
 #include "numfmt.h"
 #include "ping.h"
 
@@ -119,23 +126,6 @@ typedef struct {
     long off;   /* bytes already handed to net_queue_send */
 } OutSlot;
 
-typedef enum {
-    RS_HEADER = 0,  /* accumulating the 8-byte frame header */
-    RS_SKIP,        /* discarding a bulk frame, or a control frame too big
-                       for g_ctrl_buf - both are "throw away N bytes, then
-                       read the next header", so one state serves both */
-    RS_BODY         /* accumulating a control payload into g_ctrl_buf */
-} ReadState;
-
-typedef struct {
-    ReadState state;
-    unsigned char hdr[NOW68K_FRAME_HEADER_BYTES];
-    long have;               /* header bytes buffered so far (RS_HEADER) */
-    unsigned long remaining; /* bytes left to discard (RS_SKIP) */
-    long body_len;           /* control payload length (RS_BODY) */
-    long body_have;          /* control payload bytes buffered so far */
-} ReadCtx;
-
 static WireState      g_state = kWireIdle;
 static short          g_want = 0;         /* human wants a connection */
 static short          g_net_ready = 0;    /* net_init() succeeded */
@@ -161,9 +151,9 @@ static char           g_status[96];
 
 static WireStats      g_stats;
 
-static ReadCtx         g_read;
+static N68Reader       g_read;
 static char            g_ctrl_buf[NOW68K_CONTROL_BUFFER_CAP];
-static unsigned char   g_sink[256];   /* scratch sink for RS_SKIP draining */
+static unsigned char   g_sink[256];   /* scratch sink for skip-state draining */
 
 static OutSlot         g_out[kWireOutQueueDepth];
 static int             g_out_head = 0;   /* next slot to flush */
@@ -263,15 +253,89 @@ static void bounded_strcpy(char *dst, long dst_cap, const char *src)
     dst[i] = '\0';
 }
 
+/* ---- the frame reader's world ------------------------------------------ */
+
+/* n68_reader.c holds the state machine itself; these are the real net.h,
+ * Toolbox and teardown calls it used to make directly. Nothing here decides
+ * anything - a wrapper that grew a condition would be behaviour the tests
+ * across the seam can no longer see. */
+
+static void teardown_and_retry(const char *log_reason, const char *bye_code);
+static void handle_control_message(const char *json, long len);
+
+static long read_take(void *ctx, void *dst, long cap)
+{
+    (void)ctx;
+    return net_take(dst, cap);
+}
+
+static void read_took(void *ctx, long got)
+{
+    (void)ctx;
+    g_stats.bytes_in += got;
+    g_last_rx_tick = TickCount();
+}
+
+static void read_frame_started(void *ctx)
+{
+    (void)ctx;
+    ++g_stats.frames_in;
+}
+
+static void read_oversized_frame(void *ctx, unsigned long length)
+{
+    (void)ctx;
+    now68k_log_num("wire: frame exceeds the protocol maximum, dropping "
+                    "connection", (long)length);
+    set_status_str("Protocol error: oversized frame");
+    teardown_and_retry(NULL, "protocol-error");
+}
+
+static void read_oversized_control(void *ctx, unsigned long length)
+{
+    (void)ctx;
+    now68k_log_num("wire: control frame too large for our buffer, skipped",
+                    (long)length);
+}
+
+static void read_empty_control(void *ctx)
+{
+    (void)ctx;
+    now68k_log("wire: empty control frame");
+}
+
+static void read_control_message(void *ctx, const char *json, long len)
+{
+    (void)ctx;
+    handle_control_message(json, len);
+}
+
+static int read_still_reading(void *ctx)
+{
+    (void)ctx;
+    return (g_state == kWireGreeting || g_state == kWireLive);
+}
+
+static const N68ReaderOps kReadOps = {
+    read_take,
+    read_took,
+    read_frame_started,
+    read_oversized_frame,
+    read_oversized_control,
+    read_empty_control,
+    read_control_message,
+    read_still_reading
+};
+
 /* ---- read/write state resets ------------------------------------------- */
 
+/* Re-binding the ops on every reset rather than once at startup keeps the
+ * reader's wiring impossible to get half-done: there is no window in which
+ * g_read is reset but not connected to anything. */
 static void reset_read_state(void)
 {
-    g_read.state = RS_HEADER;
-    g_read.have = 0;
-    g_read.remaining = 0;
-    g_read.body_len = 0;
-    g_read.body_have = 0;
+    n68_reader_init(&g_read, g_ctrl_buf, g_sink, (long)sizeof g_sink,
+                     &kReadOps, NULL);
 }
 
 static void reset_outbound_queue(void)
@@ -901,114 +965,12 @@ static void handle_control_message(const char *json, long len)
 
 /* ---- frame read state machine ------------------------------------------- */
 
-/* Drains whatever net.h has already buffered, one frame step at a time,
- * until nothing more is available right now (net_take never blocks) or the
- * connection has been torn down by something handle_control_message did.
- * Called from both kWireGreeting (to receive the host's hello) and kWireLive
+/* The machine itself is n68_reader.c, driven through kReadOps above. It is
+ * called from both kWireGreeting (to receive the host's hello) and kWireLive
  * so the same header/skip/body machinery serves the whole connection. */
 static void drain_frames(void)
 {
-    for (;;) {
-        switch (g_read.state) {
-        case RS_HEADER: {
-            long need = (long)NOW68K_FRAME_HEADER_BYTES - g_read.have;
-            long got = net_take(g_read.hdr + g_read.have, need);
-
-            if (got <= 0) {
-                return;
-            }
-            g_read.have += got;
-            g_stats.bytes_in += got;
-            g_last_rx_tick = TickCount();
-            if (g_read.have < (long)NOW68K_FRAME_HEADER_BYTES) {
-                return;
-            }
-            {
-                Now68kFrameHeader hdr;
-
-                now68k_frame_unpack(g_read.hdr, &hdr);
-                g_read.have = 0;
-
-                if (!now68k_frame_length_ok(hdr.length)) {
-                    /* The ONE fatal case: the sender broke the wire format
-                     * itself, so the connection cannot be trusted past this
-                     * point (frame.h). */
-                    now68k_log_num("wire: frame exceeds the protocol "
-                                    "maximum, dropping connection",
-                                    (long)hdr.length);
-                    set_status_str("Protocol error: oversized frame");
-                    teardown_and_retry(NULL, "protocol-error");
-                    return;
-                }
-                ++g_stats.frames_in;
-
-                if (hdr.channel != NOW68K_CHANNEL_CONTROL) {
-                    /* Bulk: no bulk features implemented yet. Consume and
-                     * discard to stay in frame sync, per the deliverable
-                     * brief - never fatal. */
-                    g_read.remaining = hdr.length;
-                    g_read.state = (hdr.length == 0) ? RS_HEADER : RS_SKIP;
-                    continue;
-                }
-                if (!now68k_control_frame_fits(hdr.length)) {
-                    /* Legal on the wire, too big for g_ctrl_buf. Skipping it
-                     * costs one message, not the connection (frame.h). */
-                    now68k_log_num("wire: control frame too large for our "
-                                    "buffer, skipped", (long)hdr.length);
-                    g_read.remaining = hdr.length;
-                    g_read.state = (hdr.length == 0) ? RS_HEADER : RS_SKIP;
-                    continue;
-                }
-                g_read.body_len = (long)hdr.length;
-                g_read.body_have = 0;
-                if (g_read.body_len == 0) {
-                    now68k_log("wire: empty control frame");
-                    g_read.state = RS_HEADER;
-                    continue;
-                }
-                g_read.state = RS_BODY;
-                continue;
-            }
-        }
-        case RS_SKIP: {
-            long cap = (g_read.remaining > (unsigned long)sizeof g_sink)
-                           ? (long)sizeof g_sink
-                           : (long)g_read.remaining;
-            long got = net_take(g_sink, cap);
-
-            if (got <= 0) {
-                return;
-            }
-            g_read.remaining -= (unsigned long)got;
-            g_stats.bytes_in += got;
-            g_last_rx_tick = TickCount();
-            if (g_read.remaining == 0) {
-                g_read.state = RS_HEADER;
-            }
-            continue;
-        }
-        case RS_BODY: {
-            long need = g_read.body_len - g_read.body_have;
-            long got = net_take(g_ctrl_buf + g_read.body_have, need);
-
-            if (got <= 0) {
-                return;
-            }
-            g_read.body_have += got;
-            g_stats.bytes_in += got;
-            g_last_rx_tick = TickCount();
-            if (g_read.body_have < g_read.body_len) {
-                return;
-            }
-            handle_control_message(g_ctrl_buf, g_read.body_len);
-            g_read.state = RS_HEADER;
-            if (g_state != kWireGreeting && g_state != kWireLive) {
-                return;   /* handler tore the connection down */
-            }
-            continue;
-        }
-        }
-    }
+    n68_reader_drain(&g_read);
 }
 
 /* ---- outbound protocol messages ----------------------------------------- */
