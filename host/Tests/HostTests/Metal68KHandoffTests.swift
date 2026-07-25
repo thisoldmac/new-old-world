@@ -144,10 +144,18 @@ final class Metal68KHandoffTests: XCTestCase {
                              + "NOW68K_APP_VERSION and deploy first.")
         }
 
-        let launched = await run(oldHost, "launch", target: newApp)
+        // Launch the EXACT path when the deploy script knows it. A bare
+        // name makes the guest sweep its whole catalog to find a file
+        // whose location we already know, which is slower, and hostage to
+        // the search budget: a lab settings file that had shortened that
+        // budget to one second failed a handoff outright. A colon-bearing
+        // target skips the search (proc68.h).
+        let target = ProcessInfo.processInfo
+            .environment["NOW_68K_NEW_PATH"] ?? newApp
+        let launched = await run(oldHost, "launch", target: target)
         print("  launch: \(text(launched))")
         guard launched.ok else {
-            throw gateFailed("\(oldApp) could not launch \(newApp): "
+            throw gateFailed("\(oldApp) could not launch \(target): "
                              + "\(text(launched)). Nothing was changed on "
                              + "the machine and the old build is still up.")
         }

@@ -190,6 +190,70 @@ final class Metal68KTests: XCTestCase {
         print("=== the reader extraction is metal-verified on this machine")
     }
 
+    // MARK: - process.list
+
+    /// The gap the ledger called "the next gap worth closing" from the day
+    /// this guest shipped: `proc_list` existed, was bounded, and was used
+    /// internally by `quit` — but nothing on the wire could reach it, so a
+    /// human had to read the Application menu on the machine to know what
+    /// was running.
+    ///
+    /// It is not a convenience. Without an independent listing, `quit`'s
+    /// confirmation of "gone" is weaker BY CONSTRUCTION: it re-asks
+    /// through `quit`, the same subsystem that just answered. Every
+    /// measurement built on this machine inherited that. What this asserts
+    /// is that the listing arrives, that it is a genuinely different code
+    /// path from `quit` (it can see a process `quit` was never asked
+    /// about), and that paging terminates.
+    func testTheGuestCanFinallySayWhatIsRunning() async throws {
+        try await waitFor68K()
+
+        var names: [String] = []
+        var cursor: Int? = nil
+        var pages = 0
+        while pages < 10 {
+            pages += 1
+            let listing: ProcessListing? = await withCheckedContinuation {
+                cont in
+                var done = false
+                listener.listProcesses(cursor: cursor) { result in
+                    guard !done else { return }
+                    done = true
+                    cont.resume(returning: try? result.get())
+                }
+            }
+            guard let listing else {
+                throw gateFailed("process.list page \(pages) failed. If the "
+                                 + "guest answered not-implemented, this is "
+                                 + "a build older than the one that serves "
+                                 + "it — check the version in the banner "
+                                 + "above.")
+            }
+            names.append(contentsOf: listing.processes.map(\.name))
+            print("  page \(pages): \(listing.processes.map(\.name))")
+            guard listing.more, let next = listing.cursor else { break }
+            cursor = next
+        }
+
+        XCTAssertLessThan(pages, 10, """
+            paging never terminated. A cursor that does not advance past \
+            the last row makes the host page forever, which is worse than \
+            no listing at all.
+            """)
+        XCTAssertFalse(names.isEmpty, "something is running on that Mac")
+        XCTAssertTrue(names.contains { $0.hasPrefix("NOW-68K") }, """
+            the listing does not include NOW-68K itself, and it is \
+            demonstrably running — it just answered this request. A \
+            listing that cannot see the process asking is not a listing.
+            """)
+
+        // The independence check. `quit` of a name that is not running
+        // reports not-running; the listing sees processes nobody asked
+        // quit about. Those are different code paths, which is the whole
+        // point of having this one.
+        print("=== \(names.count) process(es): \(names.joined(separator: ", "))")
+    }
+
     // MARK: - the bounded launch search
 
     /// `launch` of a bare name searches the startup volume, and the
