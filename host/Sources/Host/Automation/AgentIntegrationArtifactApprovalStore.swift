@@ -1,9 +1,7 @@
 import CryptoKit
 import Darwin
 import Foundation
-#if canImport(NOWAgentIntegration)
 import NOWAgentIntegration
-#endif
 
 struct AgentIntegrationArtifactApprovalNotice: Equatable {
     let receipt: String

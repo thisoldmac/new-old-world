@@ -1,8 +1,6 @@
 import AppKit
 import Combine
-#if canImport(NOWAgentIntegration)
 import NOWAgentIntegration
-#endif
 import SwiftUI
 
 extension String {

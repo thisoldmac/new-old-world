@@ -1,7 +1,5 @@
 import Foundation
-#if canImport(NOWAgentIntegration)
 import NOWAgentIntegration
-#endif
 
 @MainActor
 extension GuestFilesCommandService {

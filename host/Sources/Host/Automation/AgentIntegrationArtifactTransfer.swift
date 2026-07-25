@@ -1,7 +1,5 @@
 import Foundation
-#if canImport(NOWAgentIntegration)
 import NOWAgentIntegration
-#endif
 
 /// Redeems one host-minted approval into the existing file put lane.
 @MainActor

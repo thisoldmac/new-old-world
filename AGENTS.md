@@ -78,7 +78,10 @@ Both: comments say **why**, not what. Match the surrounding density.
 
 ## Testing
 
-- Host: `swift test --package-path host --scratch-path <outside the repo>`.
+- Host: `scripts/test-host` — the suites *and* the Xcode app target, Debug
+  and Release. `swift test` alone is not the gate: the two build systems
+  have diverged before, and a broken app build passed 459 green tests for
+  a day because nothing built the thing a human launches.
 - Guest: the native tests under `guest/tests` compile with the host `cc`
   and run here — `json_native_test.c` is the pattern for anything with
   no Toolbox dependency.

@@ -1,7 +1,5 @@
 import Foundation
-#if canImport(NOWAgentIntegration)
 import NOWAgentIntegration
-#endif
 
 /// Owns the bounded process observation and cooperative-quit projection.
 ///
