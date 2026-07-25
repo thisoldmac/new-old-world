@@ -96,6 +96,11 @@ final class GuestListener: ObservableObject {
         }
     }
     @Published private(set) var lastDisconnect: String?
+    /// The last `error` the guest sent, kept because with two guests of
+    /// very different completeness "the peer does not implement that" is
+    /// ordinary traffic, not an incident — and a caller needs to be able
+    /// to tell it apart from a request that simply never came back.
+    @Published private(set) var lastGuestError: ErrorMessage?
     @Published private(set) var log: [LogEntry] = []
     @Published private(set) var health: SessionHealth?
 
@@ -1186,6 +1191,39 @@ final class GuestListener: ObservableObject {
     /// Settles everything outstanding. The invariant: a stored completion
     /// is resolved or failed, never dropped — a dropped completion is a
     /// UI that stays busy forever.
+    /// An `error` from the guest, surfaced rather than swallowed.
+    ///
+    /// With two guests of very different completeness, "I do not
+    /// implement that" is ordinary traffic and not an incident. What it
+    /// must never be is indistinguishable from silence: if the error
+    /// carries the id of something a caller is waiting on, that caller is
+    /// owed the refusal now, with its reason, instead of a timeout later
+    /// with none.
+    private func recordGuestError(_ problem: ErrorMessage) {
+        lastGuestError = problem
+        guard let id = problem.id else { return }
+        // EVERY waiter, not just command waiters. The ids are drawn from
+        // one sequence and an `error` is the contract's answer to any
+        // request the peer does not implement, so whichever kind of
+        // request is holding this id is the one owed the refusal. Routing
+        // only commands would leave a file or process listing sitting on
+        // its 15s watchdog for a question that was already answered.
+        if let waiting = pendingCommands.removeValue(forKey: id) {
+            waiting(CommandResult(id: id, ok: false, output: nil,
+                                  error: .init(code: problem.code,
+                                               message: problem.message)))
+        }
+        if let waiting = pendingListings.removeValue(forKey: id) {
+            waiting(.failure(.init(code: problem.code,
+                                   message: problem.message)))
+        }
+        if let waiting = pendingCensus.removeValue(forKey: id) {
+            waiting(CensusReport(id: id, probe: "", outcome: "failed",
+                                 rows: [], more: false,
+                                 note: "[\(problem.code)] \(problem.message)"))
+        }
+    }
+
     private func failAllPending(_ reason: String) {
         let commands = pendingCommands
         pendingCommands = [:]
@@ -1269,6 +1307,9 @@ final class GuestListener: ObservableObject {
             onHealth: { [weak self] health in self?.health = health },
             onCommandResult: { [weak self] result in
                 self?.resolveCommand(result)
+            },
+            onGuestError: { [weak self] problem in
+                self?.recordGuestError(problem)
             },
             onCensusReport: { [weak self] report in
                 self?.resolveCensus(report)
@@ -1462,6 +1503,7 @@ final class Session {
     private let onLog: (String, String, HostLog.LogLevel) -> Void
     private let onHealth: (GuestListener.SessionHealth?) -> Void
     private let onCommandResult: (CommandResult) -> Void
+    private let onGuestError: (ErrorMessage) -> Void
     private let onCensusReport: (CensusReport) -> Void
     private let onCapture:
         (Result<GuestListener.CaptureDelivery, GuestListener.CaptureFailure>)
@@ -1534,6 +1576,7 @@ final class Session {
          onLog: @escaping (String, String, HostLog.LogLevel) -> Void,
          onHealth: @escaping (GuestListener.SessionHealth?) -> Void,
          onCommandResult: @escaping (CommandResult) -> Void,
+         onGuestError: @escaping (ErrorMessage) -> Void,
          onCensusReport: @escaping (CensusReport) -> Void,
          onCapture: @escaping (Result<GuestListener.CaptureDelivery,
                                       GuestListener.CaptureFailure>) -> Void,
@@ -1571,6 +1614,7 @@ final class Session {
         self.onLog = onLog
         self.onHealth = onHealth
         self.onCommandResult = onCommandResult
+        self.onGuestError = onGuestError
         self.onCensusReport = onCensusReport
         self.onCapture = onCapture
         self.onCaptureProgress = onCaptureProgress
@@ -1837,6 +1881,18 @@ final class Session {
             finish(reason: byeDescription(bye, guest: name))
         case .hello:
             protocolError("duplicate hello")
+        case .error(let problem):
+            // The contract's answer to a message a peer does not
+            // implement, and the host used to drop it here. NOW-68K
+            // implements almost none of the contract, so it sends these
+            // routinely — and because nothing routed them, a request that
+            // had been REFUSED, instantly and explicitly, reached the
+            // caller as a 15s timeout carrying no reason at all. Silence
+            // and refusal are different answers; only one of them means
+            // "ask again later".
+            onLog("guest error: [\(problem.code)] \(problem.message)",
+                  "wire", .warn)
+            onGuestError(problem)
         default:
             // capture flow arrives with the screenshots slice
             break

@@ -204,6 +204,13 @@ def write_settings(ftp: FTP, port: str) -> None:
         "retry-interval = 5\n"
         "autoconnect = on\n" % (os.environ.get("NOW68K_HARNESS_HOST",
                                                "10.91.5.15"), port))
+    # Extra keys for a particular experiment - e.g. shortening the launch
+    # search budget so the truncation branch can be watched firing on a
+    # volume whose catalog finishes well inside the real one.
+    extra = os.environ.get("NOW68K_EXTRA_SETTINGS", "").strip()
+    if extra:
+        body += extra.replace("\\n", "\n") + "\n"
+        print("== extra settings: %s" % extra)
     try:
         ftp.delete(SETTINGS_NAME)
     except Exception:
