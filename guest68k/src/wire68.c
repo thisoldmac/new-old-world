@@ -63,7 +63,7 @@
  * than overwriting, that string is the only reliable answer to "which build
  * am I actually running" - AGENTS.md: check the build stamp before believing
  * a test result. */
-#define NOW68K_APP_VERSION "0.3"
+#define NOW68K_APP_VERSION "0.4"
 
 enum {
     /* contract/asyncapi.yaml: "the guest sends ping after 30s of wire
