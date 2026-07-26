@@ -39,66 +39,37 @@ round-tripped in 0.05 s during a 1 MB transfer against 0.06 s idle.
 
 ## MacBinary on NOW-68K: the fork corruption, found and fenced (2026-07-26)
 
-MacBinary transfers now complete with both forks byte-identical on the
-Mac OS 8.1 emulator, including a 200 KB resource fork - because the
-guest catches the corruption and undoes it, not because the corruption
-stopped. The mechanism is pinned to an operation; the code responsible
-is not ours.
+Full record: **[68k-file-receive.md](68k-file-receive.md)**. In short.
 
-**What actually happens.** At `FSClose` of a WRITTEN resource fork, 77
-bytes of File Manager catalog state land at offset 48 of the fork's
-first block: a record for the staging file in an IN-MEMORY layout -
-Str31-padded name, unified 32-byte Finder info, adjacent logical fork
-lengths - that matches no on-disk HFS structure (the real on-disk
-record, recovered from catalog slack, differs field by field). The
-splice is sub-sector, which rules out the SCSI/disk layer entirely:
-disks write 512-byte units, so the damage happens in the File Manager's
-block cache before writeout. A stale cache-buffer reference in the
-close-time catalog update is the shape that fits everything.
+`FSClose` of a written resource fork on Mac OS 8.1 splices 77 bytes of
+File Manager catalog state into the fork's first block at offset 48 - an
+in-memory record layout that matches nothing on disk. Deterministic:
+every resource-carrying MacBinary file, every run; data forks never; a
+MacBinary file with an empty data fork never affected.
 
-**How it was pinned.** Read-back probes in `pf_finish`: before the
-close the fork reads CLEAN through the open refnum; after the close a
-fresh open reads the splice - 5/5 resource-carrying files, every run.
-Data forks and rsrc-only probes never fire. Deterministic both ways.
+Pinned by three structural facts, in this order: the splice is
+sub-sector, so the bytes were wrong in RAM and no allocation-level
+theory survives; the spliced content carries the staging name and
+`BINA` but both FINAL fork lengths, which brackets the write to the
+close window and explains why disabling `Allocate`, `SetEOF`,
+`FSpRename`, `FSpSetFInfo` and `PBSetCatInfo` each missed; and read-back
+probes read clean before the close and spliced after it, 5/5.
 
-**The false trail, kept because it will tempt someone again.** An
-instrumented build that LOGGED after each probe produced 5/5 clean
-forks, which read as "the reads prevent it". They do not: the log line
-between the last fork write and the close made the LOG's cache block
-the hot one, and the stray record landed there instead - the same
-build's log file showed exactly the mangled-tail anomaly that implies.
-Interleaved I/O relocates the corruption; nothing prevents it.
+The guest keeps the fork's first 512 bytes as written, re-reads them
+after the close and after the rename, rewrites them when they diverge,
+and re-verifies through a fresh open. Unrepairable before rename fails
+the transfer; after rename it deletes the file rather than leave a
+corrupt application to be double-clicked. Detected 5/5, repaired in one
+round 5/5, raw disk clean, both forks byte-identical.
 
-**The fix that ships** (n68_putfile.c): the receiver keeps the resource
-fork's first 512 bytes as written (+516 bytes of BSS, noted in wire68's
-static budget), and after the close - and again after the rename, which
-is also a catalog update - re-reads the head through a fresh open,
-memcmps against what was written, REWRITES it if it was scribbled, and
-re-verifies through another fresh open, bounded at three rounds. A head
-that cannot be made right fails the transfer before the rename, or
-deletes the renamed file rather than leave a corrupt application for a
-double-click. Measured: detected at close 5/5, repaired in one round
-5/5, raw disk clean, both forks byte-identical on extraction. The
-memcmp guards the whole head, not the known splice; past 512 bytes it
-is blind, and every observed splice sat at offset 48.
+**Still open, and the first is the one that matters:**
 
-**What is still not established.**
-
-1. **Whether System 7.1 on the real 180c does this.** The in-memory
-   record layout smells like Mac OS 8.1's rewritten HFS+-capable
-   catalog code, which 7.x predates - but the lab's 7.5.3 image has no
-   MacTCP, so the OS discriminator is unrun. The probes double as the
-   experiment: deploy to the 180c, push one MacBinary, and the log
-   either says "rsrc head scribbled at close" or stays silent. Either
-   answer is safe; the repair is already in the path.
-2. **Whether QEMU contributes.** The cache logic is guest code and the
-   behaviour is deterministic, which points at the OS, but nothing here
-   separates 8.1-on-metal from 8.1-on-QEMU.
-3. **The PPC guest on OS 9.1 has never had a resource fork
-   byte-verified.** Its acceptance test launches a deployed application,
-   which is strong evidence and not proof. 9.1's File Manager descends
-   from 8.1's; three years of fixes is a plausible reason it does not
-   show, not an established one.
+1. **System 7.1 on the real 180c is untested** - the 7.5.3 image in the
+   lab has no MacTCP, so the OS discriminator is blocked. The shipped
+   probes double as the experiment: push one MacBinary file and the log
+   either names the scribble or stays silent. Either answer is safe.
+2. QEMU's contribution is not separated from 8.1 itself.
+3. The PowerPC guest's resource forks have never been byte-verified.
 
 ### What is deliberately not there
 

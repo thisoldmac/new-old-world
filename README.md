@@ -212,13 +212,25 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
 ## What does not work
 
 - **NOW-68K implements a small part of the contract.** `launch`, `quit`,
-  `help` and `process.list`, plus the keepalive; everything else — capture,
-  files, census, streams, the process drive verbs — answers
-  `unknown-command` or `refused`, which is the contract's own additive
-  answer, not a failure. Every one of those it does serve is reachable from
+  `help`, `process.list` and the receive half of `file.*`, plus the
+  keepalive; everything else — capture, census, streams, the process
+  drive verbs, and the rest of the file family (`file.list`,
+  `file.move`, the pull direction) — answers `unknown-command` or
+  `refused`, which is the contract's own additive answer, not a failure. Every one of those it does serve is reachable from
   both its faces (the console and the wire), which
   [docs/command-parity.md](docs/command-parity.md) explains and
   `CommandParityTests` enforces.
+- **Receiving a file on NOW-68K is emulator-verified, not
+  metal-verified.** A host can push into the Desktop, `data` or
+  MacBinary, and 4 MB arrives byte-identical at ~350 KB/s on a Quadra
+  800 under Mac OS 8.1. Nothing has run on the PowerBook 180c, which is
+  the machine this is for — a 68030 with 4 MB against a 68040 with 128.
+  There is also a live File Manager defect underneath it: on 8.1,
+  `FSClose` of a written resource fork scribbles 77 bytes of catalog
+  state into the fork, and the guest detects and repairs that rather
+  than being able to prevent it. Whether System 7.1 does the same is
+  **unknown and untested**; the shipped check is also the experiment.
+  [docs/68k-file-receive.md](docs/68k-file-receive.md) is the record.
 - **NOW-68K's interactive console is emulator-verified, not
   metal-verified.** A second window (Windows > Console, Command-K, and it
   toggles) with an input line, history and scrollback. Watched working on a
