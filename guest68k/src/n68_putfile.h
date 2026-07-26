@@ -31,8 +31,8 @@
  * for now - the browse/ls verbs that would make choosing a destination
  * meaningful do not exist yet, and a boundary drawn before there is
  * anything to browse would be a guess dressed as a policy. When they
- * land, desktop_folder() in the .c is the single place the root is
- * decided.
+ * land, now68k_desktop_folder() is the single place the root is
+ * decided, for both directions.
  *
  * ---- Bytes land under a temporary name -------------------------------
  *
@@ -103,13 +103,14 @@ typedef struct {
  * the launch default directory - which is NOT the same place, because
  * Rumpus deposits builds on the Desktop. Returns 1 and fills both, or 0.
  *
- * Published because the file SOURCE (n68_filesrc.h) is the fourth caller
- * of it, and the comment at its definition already said that a third
- * caller was the moment to stop writing it out again. Two older copies
- * (log.c, n68_devsettings_file.c) are still their own: folding them in
- * means editing the code that reports failures, which is not a thing to
- * do in the same change as a feature whose failures it would report. */
-int now68k_app_folder(short *vref, long *dir);
+ * Published because BOTH directions of the file family must agree on
+ * one root. Receiving lands here; sending reads from here. They were
+ * briefly different roots - receive on the Desktop, send in the
+ * application's own folder - which every native test passed and no
+ * conflict marked, because only a real file system can notice that a
+ * file put down in one place is looked for in another. The round-trip
+ * ladder found it on the emulator as fnfErr on every rung. */
+int now68k_desktop_folder(short *vref, long *dir);
 
 /* The ops table to hand n68_putrx_init, with a N68PutFile as its ctx. */
 const N68PutFileOps *now68k_putfile_ops(void);

@@ -8,7 +8,6 @@
 #include <Files.h>
 #include <Folders.h>
 #include <OSUtils.h>
-#include <Processes.h>
 #include <string.h>
 
 /* Neither constant is declared in these Universal Interfaces - the
@@ -21,35 +20,6 @@
 #define kOnSystemDiskVRef   ((short)0x8000)
 #define kDoCreateFolder     true
 
-/* The application's own folder, resolved through the Process Manager
- * rather than the launch default directory - which is NOT the same
- * place, because Rumpus deposits builds on the Desktop. This is the
- * third caller of this eight-line function (log.c keeps its own inside
- * now68k_log_open, n68_devsettings_file.c duplicated it with a comment
- * saying a third caller would be the moment to lift one out). It is
- * lifted here rather than written a third time, and the other two are
- * left alone: moving log.c's copy means touching the code that reports
- * failures, which is not something to do in the same change as the
- * feature whose failures it would be reporting. */
-int now68k_app_folder(short *vref, long *dir)
-{
-    ProcessSerialNumber psn;
-    ProcessInfoRec      info;
-    FSSpec              spec;
-
-    if (GetCurrentProcess(&psn) != noErr) {
-        return 0;
-    }
-    memset(&info, 0, sizeof info);
-    info.processInfoLength = sizeof info;
-    info.processAppSpec    = &spec;
-    if (GetProcessInformation(&psn, &info) != noErr) {
-        return 0;
-    }
-    *vref = spec.vRefNum;
-    *dir  = spec.parID;
-    return 1;
-}
 
 /* Where an incoming file lands: the DESKTOP.
  *
@@ -72,7 +42,7 @@ int now68k_app_folder(short *vref, long *dir)
  * exist yet is an ordinary state on a freshly formatted volume, and
  * failing a transfer over it would be refusing a file because nobody
  * had ever put anything on the desktop. */
-static int desktop_folder(short *vref, long *dir)
+int now68k_desktop_folder(short *vref, long *dir)
 {
     int32_t found_dir = 0;
     int16_t found_vref = 0;
@@ -106,7 +76,7 @@ static N68PutCode resolve_folder(const char *rel, int create,
     const char *p = rel;
 
     *err = noErr;
-    if (!desktop_folder(vref, dir)) {
+    if (!now68k_desktop_folder(vref, dir)) {
         return kN68PutIOError;
     }
     while (p != NULL && *p != '\0') {
@@ -200,7 +170,7 @@ static long pf_free_bytes(void *ctx, const N68PutOffer *offer)
      * only ever names folders inside it. Resolved WITHOUT creating, so
      * asking how much room there is never has a side effect. */
     if (resolve_folder(offer->path, 0, &vref, &dir, &err) != kN68PutOK) {
-        if (!desktop_folder(&vref, &dir)) {
+        if (!now68k_desktop_folder(&vref, &dir)) {
             return -1;
         }
     }
@@ -693,7 +663,7 @@ void now68k_putfile_where(char *out, long cap)
         return;
     }
     out[0] = '\0';
-    if (!desktop_folder(&vref, &dir)) {
+    if (!now68k_desktop_folder(&vref, &dir)) {
         return;
     }
     memset(&pb, 0, sizeof pb);

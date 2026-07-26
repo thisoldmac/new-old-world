@@ -2,7 +2,7 @@
  * judgement lives in n68_puttx.c. */
 
 #include "n68_filesrc.h"
-#include "n68_putfile.h"   /* now68k_app_folder */
+#include "n68_putfile.h"   /* now68k_desktop_folder - ONE root, both ways */
 
 #include <Files.h>
 #include <string.h>
@@ -103,7 +103,7 @@ int now68k_filesrc_open(N68FileSrc *fs, const char *leaf,
     memset(fs, 0, sizeof *fs);
     fs->err = noErr;
 
-    if (leaf == NULL || leaf[0] == '\0' || !now68k_app_folder(&vref, &dir)) {
+    if (leaf == NULL || leaf[0] == '\0' || !now68k_desktop_folder(&vref, &dir)) {
         fs->err = fnfErr;
         return 0;
     }
