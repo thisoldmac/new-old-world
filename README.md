@@ -59,6 +59,19 @@ runtime code is imported on any side.
   an answer that is read rather than guessed. Both guests answer both
   routes, over one implementation. **Built and tested here; the PowerBook
   run of the PSN route is pending.**
+- **`front`, both faces, both guests** — bring an application on the
+  classic Mac forward, named the way `ps` names it, from either guest's
+  own console or from the host's. It existed as a button in the
+  Processes module and as nothing a person could type, on either
+  machine; a capability reachable only by clicking is the same gap `ps`
+  had. NOW-68K also answers the `process.front` drive verb now, which it
+  did not. The switch is cooperative, so both guests yield briefly and
+  then re-read which process is frontmost — `front` says "is frontmost"
+  or "is NOT frontmost", never the first when it means the second.
+  Unlike `quit`, nothing by that name is a **failure**: you cannot front
+  what is not running. **Built and tested; the PowerBook run is
+  pending**, and the confirm branch in particular has never executed —
+  see [docs/open-issues.md](docs/open-issues.md).
 - **A real menu bar on the host** — App / File / Edit / View / Guest /
   Window / Help, populated with what NOW does: the View menu is the module
   registry (⌘1…), the Guest menu carries the verbs that act on the other
@@ -376,8 +389,8 @@ A "what works" list without its companion is a sales pitch.
 [docs/contract-coverage.md](docs/contract-coverage.md) answers the other
 half — **who serves what**, per guest, message by message and verb by
 verb, with what is served kept separate from what has been proven. The
-short version: the PowerPC guest serves 15 of the 16 command verbs and
-14 hardware probes; NOW-68K serves 6 verbs and no probes at all, so it
+short version: the PowerPC guest serves 16 of the 17 command verbs and
+14 hardware probes; NOW-68K serves 7 verbs and no probes at all, so it
 cannot yet report its own CPU, RAM or ROM.
 [docs/open-issues.md](docs/open-issues.md) is the ledger, organised
 around **broken** versus **unverified** — the second is not the lesser

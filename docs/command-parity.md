@@ -47,8 +47,8 @@ that test fails.
 **NOW-68K (`guest68k/`)** — two mechanisms, because it has two kinds of
 capability:
 
-- *Commands* (`launch`, `quit`). `commands68.c` runs one and fills an
-  `N68CmdResult` — the facts, no formatting. `n68_cmdresult.c` holds both
+- *Commands* (`launch`, `quit`, `front`). `commands68.c` runs one and
+  fills an `N68CmdResult` — the facts, no formatting. `n68_cmdresult.c` holds both
   renderers side by side: contract JSON for the wire, text for the
   console. The console **delegates** to `now68k_commands_run()` rather
   than dispatching its own copy, so a verb added to the table reaches the
@@ -146,6 +146,24 @@ honestly, and left two NOW-68Ks on a 4 MB machine.
 So the rule is not "one identifier" but **one implementation**:
 `proc_quit_named` turns a name into a PSN and then does exactly what
 `proc_quit_psn` does. Neither face invented a second matcher.
+
+`front` arrived with both routes from the start, and with both faces on
+both guests, which is the shape this file argues for rather than the one
+it usually has to correct after the fact. It is also the answer to a
+question `quit` never had to ask: `process.front` had been on the
+PowerPC guest's wire since the Processes module was built, and there was
+no way to type it — not at either guest's own keyboard, and not from the
+host console, which is a dumb shell that knows no message families. A
+capability reachable only by clicking a button in one module is exactly
+the `ps` shape.
+
+Its outcomes are NOT `quit`'s with the words changed, and the difference
+is worth stating because it is easy to copy wrongly: `quit`'s
+`not-running` is ok:true, since "not running" is the state it was asked
+to produce and it already holds. `front`'s is ok:FALSE — nothing can
+bring forward a process that is not there. And `quit` refuses its own
+process while `front` accepts it, because one would sever the reply
+mid-send and the other severs nothing.
 
 The listing carries `isSelf` for the same reason — a caller that needs to
 name the process it is *talking to* now reads the answer instead of

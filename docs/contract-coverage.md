@@ -52,9 +52,9 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 | `command.request` | ✅ | ✅ | verb sets differ — see below |
 | `census.request` | ✅ | ⚠️ | 68K answers, with **zero probes** — always `refused` |
 | `process.list` | ✅ | ✅ | |
-| `process.front` | ✅ | ❌ | bring to front |
-| `process.quit` | ✅ | ❌ | 68K quits via the `quit` COMMAND, not this family |
-| `process.shot` | ✅ | ❌ | per-window capture |
+| `process.front` | ✅ | ✅ | bring to front; both guests also serve a `front` VERB |
+| `process.quit` | ✅ | ✅ | both guests also serve a `quit` VERB — PSN for a machine, name for a person |
+| `process.shot` | ✅ | ❌ | per-window capture; 68K has no capture at all |
 | `software.list` | ✅ | ❌ | whole-volume sweep |
 | `file.offer` / `file.begin` / `file.end` | ✅ | ✅ | receiving a push |
 | `file.accept` / `file.refuse` / `file.done` | ✅ | ✅ | the reply half, both directions |
@@ -66,9 +66,12 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 | `capture.request` / `capture.accept` / `capture.refuse` / `capture.cancel` | ✅ | ❌ | **no screenshots on 68K at all** |
 | `stream.start` / `stream.stop` / `stream.refresh` | ✅ | ❌ | |
 
-PPC handles 33 types; NOW-68K handles 14. **That count understates the
-difference** — see the next two sections, where two of these rows open
-into 16 verbs and 14 hardware probes.
+PPC handles 34 types; NOW-68K handles 16. (The first version of this
+file said 33 for the PowerPC guest. Nothing changed on that side — the
+number was hand-counted rather than derived, which is the failure mode
+the two `grep`s at the top exist to prevent. Run them.) **That count
+understates the difference** — see the next two sections, where two of
+these rows open into 17 verbs and 14 hardware probes.
 
 ### `command.request` verbs
 
@@ -77,7 +80,7 @@ hides most of what a machine can be asked — the hardware, network, RAM
 and ROM facts do not have message types of their own. They live behind
 `gestalt` and `census`, one row each above and a whole subsystem below.
 
-The registry is `x-commands` in the contract: **16 verbs.**
+The registry is `x-commands` in the contract: **17 verbs.**
 
 | Verb | What it asks the machine | PPC | 68K |
 |---|---|:--:|:--:|
@@ -95,12 +98,13 @@ The registry is `x-commands` in the contract: **16 verbs.**
 | `ps` | running processes | ✅ | ✅ |
 | `launch` | open an application | ✅ | ✅ |
 | `quit` | ask an application to quit | ✅ | ✅ |
+| `front` | bring an application forward | ✅ | ✅ |
 | `put` | send a file from the guest | console only | ✅ |
 | `putstat` | transfer diagnostics | ✅ | ❌ |
 
-**PPC serves 15 of 16** (`put` is console-only there, deliberately —
+**PPC serves 16 of 17** (`put` is console-only there, deliberately —
 the host reaches that capability through the `file.*` families).
-**NOW-68K serves 6 of 16.** Both asymmetries are argued in
+**NOW-68K serves 7 of 17.** Both asymmetries are argued in
 [command-parity.md](command-parity.md).
 
 ### `gestalt` — the machine's account of itself
@@ -171,8 +175,12 @@ the same way.
   that abandons a 4 MB push has no way to tell the guest. Worth
   confirming what the guest actually does with the abandoned transfer
   before designing the fix.
-- **No software listing, no streams, no process drive** beyond `launch`
-  and `quit`.
+- **No software listing and no streams.** The process family is no
+  longer on this list: `process.list`, `process.quit` and
+  `process.front` are all served, and the two drive verbs have `quit`
+  and `front` COMMANDS beside them so a person can type what the
+  Processes module clicks. `process.shot` is the one that remains, and
+  it is blocked on capture, not on the process family.
 
 None of these are failures in the contract's terms — an unimplemented
 message answers `unknown-command` or `refused`, which is the additive
@@ -197,6 +205,7 @@ specific paths.
 | **receive a file** (incl. MacBinary, Desktop landing) | emulator-verified only |
 | **send a file** (byte source, CRC, control lane) | emulator-verified only |
 | `put` on the console | tested only |
+| `process.quit` / `process.front`, `isSelf`, the `front` verb | tested only |
 
 The whole file family — both directions, the largest thing NOW-68K
 serves — has never moved a byte on the 180c. A Quadra 800 under 8.1
@@ -211,7 +220,8 @@ here: parse both dispatches, compare against this table, fail on drift.
 Until that exists, this document is a snapshot and the two `grep`
 commands at the top are the source of truth.
 
-Last derived: 2026-07-26, at `bb54ab3`. The command registry came from
+Last derived: 2026-07-26, on the `claude/sleepy-wozniak-660add` branch
+(parent `9773395`). The command registry came from
 `x-commands` in `contract/asyncapi.yaml`, the PPC verb set from
 `strcmp(name, ...)` in `guest/src/commands.c`, and the probe list from
 `k_probes` in `guest/src/census_probes.c`.

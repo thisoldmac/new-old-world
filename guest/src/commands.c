@@ -1071,6 +1071,56 @@ static void run_quit(const char *request_json, long id, char *out, long cap)
              "[\"Outcome\",\"%s\"]]}}", id, esc, state);
 }
 
+/* front: quit's gentler sibling, over the same composition. The one
+   difference worth reading twice is that not-running is ok:FALSE here.
+   quit's is ok:true because "not running" is the state it was asked to
+   produce; front cannot produce anything from a process that is not
+   there, and a caller whose next step assumes a window is up would be
+   poisoned by a true. See proc_actions.h. */
+static void run_front(const char *request_json, long id, char *out, long cap)
+{
+    char arg[256];
+    char msg[240];
+    char esc[480];
+    NowProcFrontOutcome outcome;
+    const char *state;
+    const char *code = NULL;
+
+    /* "target", never "name" — see run_vers. The whole line is the name;
+       front has no flags, so nothing has to lead. */
+    now_cmd_arg_rest(request_json, "target", arg, sizeof arg);
+    outcome = now_proc_front_by_name(arg, msg, sizeof msg);
+    switch (outcome) {
+    case kProcFrontDone:        state = "fronted"; break;
+    case kProcFrontUnconfirmed: state = "unconfirmed";
+                                code = "front-unconfirmed"; break;
+    case kProcFrontNotRunning:  state = "not-running";
+                                code = "front-not-running"; break;
+    case kProcFrontAmbiguous:   state = "ambiguous";
+                                code = "front-ambiguous"; break;
+    case kProcFrontRefused:     state = "refused";
+                                code = "front-refused"; break;
+    case kProcFrontBadArgs:
+    default:                    state = "bad-args";
+                                code = "front-bad-args"; break;
+    }
+
+    now_json_escape(msg, esc, sizeof esc);
+    now_log(code == NULL ? kLogInfo : kLogWarn, "proc",
+            "#%ld front [%s] %.80s", id, state, msg);
+    if (code != NULL) {
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+                 "\"error\":{\"code\":\"%s\",\"message\":\"%s\"}}",
+                 id, code, esc);
+        return;
+    }
+    snprintf(out, (size_t)cap,
+             "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+             "\"output\":{\"front\":[[\"Front\",\"%s\"],"
+             "[\"Outcome\",\"%s\"]]}}", id, esc, state);
+}
+
 /* reveal: launch's read-only twin — it shows a selection in this Mac's
    Finder and mutates nothing, so it logs at info either way. */
 static void run_reveal(const char *request_json, long id, char *out,
@@ -1278,6 +1328,10 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "quit") == 0) {
         run_quit(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "front") == 0) {
+        run_front(request_json, id, out, cap);
         return;
     }
     if (strcmp(name, "reveal") == 0) {

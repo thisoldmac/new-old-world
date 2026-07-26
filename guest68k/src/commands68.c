@@ -1,5 +1,5 @@
 /*
- * commands68.c - implementation of commands68.h: launch and quit.
+ * commands68.c - implementation of commands68.h: launch, quit and front.
  *
  * No malloc/NewPtr/NewHandle anywhere in this file - every buffer below is
  * a fixed, file-scope-sized local, matching the rest of guest68k/src.
@@ -7,6 +7,7 @@
  * STATIC BUDGET (stack per call, plus one BSS block):
  *   run_launch    name[200] + detail[160]                        = 360 B
  *   run_quit      QuitArgs(~40) + msg[80] + detail[160]           = 280 B
+ *   run_front     name[32] + msg[80] + detail[160]               = 272 B
  *   run_vprobe    why[160]                                       = 160 B
  *   dispatch      one N68CmdResult                               = 256 B
  *   g_vprobe      one N68VProbeTable, BSS                        = ~820 B
@@ -439,6 +440,111 @@ static void run_quit(const char *target, N68CmdResult *res)
     n68_cmdresult_set_ok2(res, "quit", "Quit", detail, "Outcome", state);
 }
 
+/* ---- front ------------------------------------------------------------------
+ *
+ * quit's gentler sibling, and a much smaller parser: `front` has no flags,
+ * so the whole rest of the line is the name and there is nothing that
+ * could be mistaken for one. (That is the entire reason quit's grammar
+ * puts flags FIRST - a trailing --all is indistinguishable from the last
+ * word of "Apple File Security". With no flags there is no such hazard.)
+ */
+
+/* The name, trimmed and unquoted. Returns 0 with a sentence in `msg`. */
+static int front_parse(const char *arg, char *out, long cap, char *msg,
+                       long msg_cap)
+{
+    const char *p = arg != NULL ? arg : "";
+    long len;
+
+    while (*p == ' ' || *p == '\t') {
+        ++p;
+    }
+    len = (long)strlen(p);
+    while (len > 0 && (p[len - 1] == ' ' || p[len - 1] == '\t')) {
+        --len;   /* a trailing space is typing, not part of the name */
+    }
+    if (len >= 2 && p[0] == '"' && p[len - 1] == '"') {
+        ++p;
+        len -= 2;
+    }
+    if (len == 0) {
+        bounded_strcpy(msg, msg_cap,
+                       "front: what? (the name of a running process)");
+        return 0;
+    }
+    if (len >= cap) {
+        bounded_strcpy(msg, msg_cap,
+                       "front: no process name is longer than 31 "
+                       "characters");
+        return 0;
+    }
+    bounded_copy_n(out, cap, p, len);
+    return 1;
+}
+
+static void run_front(const char *target, N68CmdResult *res)
+{
+    char name[kQuitNameMax];
+    char msg[kMsgMax];
+    char detail[kDetailCap];
+    ProcFrontOutcome outcome;
+    const char *state;
+    const char *code;
+
+    if (!front_parse(target, name, (long)sizeof name, msg, sizeof msg)) {
+        n68_cmdresult_set_error(res, "front-bad-args", msg);
+        return;
+    }
+
+    outcome = proc_front_named(name, kProcFrontWaitSecs * 60L, detail,
+                                sizeof detail);
+
+    /* ok:true for kProcFrontDone ALONE. The three that follow each mean
+     * the caller cannot rely on that window being in front, and this
+     * reply's ok bit promises exactly that one thing - the same discipline
+     * run_quit applies to "is it gone". Note kProcFrontNotRunning is
+     * ok:FALSE where quit's kProcNotRunning is ok:true: quit was asked to
+     * produce "not running" and it already held; nothing can front a
+     * process that is not there (proc68.h). Each case breaks, so nothing
+     * depends on enum ordering. */
+    switch (outcome) {
+    case kProcFrontDone:
+        state = "fronted";
+        code = NULL;
+        break;
+    case kProcFrontUnconfirmed:
+        state = "unconfirmed";
+        code = "front-unconfirmed";
+        break;
+    case kProcFrontNotRunning:
+        state = "not-running";
+        code = "front-not-running";
+        break;
+    case kProcFrontAmbiguous:
+        state = "ambiguous";
+        code = "front-ambiguous";
+        break;
+    case kProcFrontRefused:
+        state = "refused";
+        code = "front-refused";
+        break;
+    case kProcFrontBadArgs:
+    default:
+        state = "bad-args";
+        code = "front-bad-args";
+        break;
+    }
+
+    now68k_log_num(code == NULL ? "cmd: front ok" : "cmd: front not-front",
+                    (long)outcome);
+
+    if (code != NULL) {
+        n68_cmdresult_set_error(res, code, detail);
+        return;
+    }
+    n68_cmdresult_set_ok2(res, "front", "Front", detail, "Outcome", state);
+}
+
 /* ---- vprobe ----------------------------------------------------------------- */
 
 /* THE TABLE LIVES HERE, IN BSS, AND THERE IS EXACTLY ONE.
@@ -495,13 +601,13 @@ static VProbe68Status run_vprobe(N68CmdResult *res)
 
 /* ---- help ------------------------------------------------------------------- */
 
-/* What THIS Mac serves - four commands, and it says four.
+/* What THIS Mac serves - and it says exactly what it serves.
  *
  * The other side keeps no command list: there are two guests with different
- * tables (the PowerPC Carbon guest implements fifteen commands, this one
- * implements two through now68k_commands_run plus help, ps and vprobe,
- * which each build a row per item and so answer at dispatch), so a
- * console-side list would be wrong for both. Discovery is therefore a
+ * tables (the PowerPC Carbon guest implements sixteen commands, this one
+ * implements four through now68k_commands_run - launch, quit, front, put -
+ * plus help, ps and vprobe, which each build a row per item and so answer
+ * at dispatch), so a console-side list would be wrong for both. Discovery is therefore a
  * request like any other, and the honest answer from here is a short one.
  * It is also the ONLY thing the host console's Tab completion has to go on,
  * which is the second reason a command missing from this table is a command
@@ -510,7 +616,7 @@ static VProbe68Status run_vprobe(N68CmdResult *res)
  * rather than shared, because the two applications share no source - they
  * meet only on the wire, and the contract is the thing they hold in common.
  *
- * The trailing note row is not decoration. A human reading four commands
+ * The trailing note row is not decoration. A human reading a short list
  * needs to know whether that is all this machine HAS or all it would admit
  * to; saying "everything else answers unknown-command" is the difference
  * between a short list and a suspicious one. */
@@ -519,6 +625,8 @@ static const N68CommandDoc k_docs[] = {
       "launch <name | full path>" },
     { "quit", "ask an application on this Mac to quit",
       "quit [--all] [--wait N | --no-wait] <name>" },
+    { "front", "bring an application on this Mac forward",
+      "front <name>" },
     { "help", "list the commands this Mac serves",
       "help [command]" },
     { "ps", "the processes running on this Mac", "ps" },
@@ -707,6 +815,10 @@ int now68k_commands_run(const char *name, const char *target,
     }
     if (strcmp(name, "quit") == 0) {
         run_quit(target, res);
+        return 1;
+    }
+    if (strcmp(name, "front") == 0) {
+        run_front(target, res);
         return 1;
     }
     /* vprobe reaches the CONSOLE through here - that is the whole point of

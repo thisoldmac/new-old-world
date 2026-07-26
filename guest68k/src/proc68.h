@@ -104,6 +104,55 @@ ProcOutcome proc_quit_named(const char *name, long wait_ticks,
 ProcOutcome proc_quit_psn(unsigned long psn_high, unsigned long psn_low,
                           char *detail, long detail_cap);
 
+/* ---- front: quit's gentler sibling --------------------------------------
+ *
+ * The same composition (list -> match -> re-validate -> act -> RE-CHECK)
+ * over the same Process Manager walk, and the same two routes in: a NAME
+ * for a person, a PSN for a machine. Two things differ from quit, and
+ * both are decisions:
+ *
+ *   NOT RUNNING IS A FAILURE HERE. quit's kProcNotRunning is ok:true,
+ *   because "not running" is the state it was asked to produce. Nothing
+ *   can front a process that is not there, and a caller whose next step
+ *   assumes a window is up must not read it as done.
+ *
+ *   NOW ITSELF IS A FAIR TARGET. quit refuses this instance because the
+ *   reply would be severed mid-send; bringing NOW forward severs
+ *   nothing, and it is a reasonable thing to ask for.
+ *
+ * SetFrontProcess returning noErr means the switch was SCHEDULED. On a
+ * cooperatively scheduled machine it happens when we yield, so
+ * proc_front_named yields (event mask zero, pumping the wire, exactly as
+ * proc_quit_named's confirm wait does) and then re-reads
+ * GetFrontProcess - the only thing that can tell a completed switch from
+ * an accepted request. kProcFrontUnconfirmed is that difference, reported
+ * rather than assumed away.
+ *
+ * proc_front_psn does NOT wait, and that is the contract's decision, the
+ * same one process.quit makes: process.result.ok means the verb was
+ * APPLIED, and the message has no field for "and it landed". A wire
+ * caller that needs to know re-reads process.list, where `front` marks
+ * the frontmost row. */
+typedef enum {
+    kProcFrontDone = 0,       /* asked, and confirmed frontmost */
+    kProcFrontUnconfirmed,    /* accepted, not frontmost at the deadline */
+    kProcFrontNotRunning,     /* nothing of that name is running */
+    kProcFrontAmbiguous,      /* several matches; refused rather than guess */
+    kProcFrontRefused,        /* SetFrontProcess itself failed */
+    kProcFrontBadArgs
+} ProcFrontOutcome;
+
+/* Seconds proc_front_named waits for the switch to land. Short on
+ * purpose: a switch that has not happened in two seconds of yielded time
+ * is not going to, where a quit may legitimately sit on a Save dialog for
+ * much longer. Mirrors the PowerPC guest's kProcFrontWaitSecs. */
+#define kProcFrontWaitSecs 2
+
+ProcFrontOutcome proc_front_named(const char *name, long wait_ticks,
+                                  char *detail, long detail_cap);
+ProcFrontOutcome proc_front_psn(unsigned long psn_high, unsigned long psn_low,
+                                char *detail, long detail_cap);
+
 /* Launch an application by name. A bare name is resolved by an exact-name
  * search of the startup volume; a value containing a colon is treated as a
  * full HFS path and used directly. Non-APPL targets are refused rather than

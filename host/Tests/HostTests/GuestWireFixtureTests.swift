@@ -63,10 +63,15 @@ final class GuestWireFixtureTests: XCTestCase {
                        "an escaped quote inside a summary survives the trip")
     }
 
-    /// run_help() on NOW-68K (guest68k/src/commands68.c), which serves three
-    /// commands and says three — plus the note row that keeps a short list
-    /// from reading as a broken one. Its empty label is deliberate: rows are
-    /// [label, value] and this one is prose, not a command.
+    /// run_help() on NOW-68K (guest68k/src/commands68.c): the rows it
+    /// builds from its own doc table, plus the note row that keeps a short
+    /// list from reading as a broken one. Its empty label is deliberate:
+    /// rows are [label, value] and this one is prose, not a command.
+    ///
+    /// The sample below is a SHAPE, not this guest's current command set —
+    /// docs/contract-coverage.md carries that, derived rather than
+    /// remembered, and CommandRegistryTests fails when the guest's table
+    /// and the contract disagree.
     func testHelpAsTheSixtyEightKGuestWritesIt() throws {
         let json = """
         {"type":"command.result","id":3,"ok":true,"output":{"help":[\
@@ -86,9 +91,10 @@ final class GuestWireFixtureTests: XCTestCase {
     }
 
     /// The contract's answer for a command a machine does not have. NOW-68K
-    /// gives this for twelve of the fifteen the Carbon guest serves, and the
-    /// host console renders it verbatim rather than pre-empting it — which is
-    /// the whole of being a dumb shell.
+    /// gives this for most of the registry (the counts live in
+    /// docs/contract-coverage.md), and the host console renders it verbatim
+    /// rather than pre-empting it — which is the whole of being a dumb
+    /// shell.
     func testUnknownCommandAsTheGuestWritesIt() throws {
         let json = """
         {"type":"command.result","id":9,"ok":false,"error":\
@@ -631,6 +637,27 @@ final class GuestWireFixtureTests: XCTestCase {
         XCTAssertEqual(itself.reason, "quit: NOW will not ask itself to quit")
     }
 
+    /// The front half of the same reply shape. Worth its own fixture
+    /// because the two verbs' `ok` means two different things — delivered
+    /// for quit, accepted for front — and both are weaker than the words
+    /// a reader supplies for free ("it quit", "it is in front").
+    func test68KProcessFrontResultAsTheGuestWritesIt() throws {
+        guard case .processResult(let sent) =
+            try decode(Guest68KWire.processFrontSent) else {
+            return XCTFail("not a process.result")
+        }
+        XCTAssertEqual(sent.id, 15)
+        XCTAssertTrue(sent.ok)
+
+        guard case .processResult(let stale) =
+            try decode(Guest68KWire.processFrontStale) else {
+            return XCTFail("not a process.result")
+        }
+        XCTAssertFalse(stale.ok)
+        XCTAssertEqual(stale.reason,
+                       "front: that process is no longer running")
+    }
+
     /// Truncation is STATED. `ps` has no cursor to page with, so a machine
     /// running more processes than one control frame carries ends its list
     /// with the count it dropped. A silently short list would read as the
@@ -999,6 +1026,19 @@ enum Guest68KWire {
     static let processQuitSelf = #"{"type":"process.result","id":14,"#
         + #""ok":false,"reason":"quit: NOW will not ask itself to quit"}"#
 
+    /// process.front's answer, from the same handle_process_drive. The
+    /// contract's ok means the verb was APPLIED and no more: here that is
+    /// "SetFrontProcess accepted it", not "it is frontmost". The switch is
+    /// cooperative and lands when the guest yields, and process.result has
+    /// no field that could say which happened — so the guest does not
+    /// claim to know, and a caller that needs to re-reads process.list,
+    /// where `front` marks the row.
+    static let processFrontSent =
+        #"{"type":"process.result","id":15,"ok":true}"#
+
+    static let processFrontStale = #"{"type":"process.result","id":16,"#
+        + #""ok":false,"reason":"front: that process is no longer running"}"#
+
     static let byeNormal = #"{"type":"bye","code":"normal"}"#
     static let byeProtocolError = #"{"type":"bye","code":"protocol-error"}"#
     static let byeShuttingDown = #"{"type":"bye","code":"shutting-down"}"#
@@ -1039,5 +1079,6 @@ enum Guest68KWire {
         errorWithID, errorWithoutID, errorNegativeID,
         psReply, psReplyTruncated,
         processQuitSent, processQuitStale, processQuitSelf,
+        processFrontSent, processFrontStale,
     ]
 }

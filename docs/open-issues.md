@@ -9,6 +9,47 @@ wrong thing) versus **unverified** (it may well be right, but no one has
 watched it work on the PowerBook). Unverified is not a lesser problem —
 several of tonight's bugs lived in code that looked obviously correct.
 
+## `front`, on both faces of both guests (2026-07-26)
+
+`process.front` had been on the PowerPC guest's wire since the Processes
+module was built, and there was no way to **type** it — not at either
+guest's own keyboard, and not from the host console, which is a dumb
+shell that knows no message families. A capability reachable only by
+clicking a button in one module is the `ps` shape exactly
+([command-parity.md](command-parity.md)).
+
+So `front` is now a contract `x-command` served by both guests, over the
+same list → match → re-validate → act → re-check composition `quit`
+uses, and NOW-68K additionally answers the `process.front` drive verb it
+did not before. Its outcomes are deliberately not `quit`'s with the
+words changed: `not-running` is ok:**false** here (nothing can bring
+forward a process that is not there, where quit was asked to produce
+exactly that state), and NOW itself is a fair target (fronting severs
+nothing; quitting would cut the reply mid-send).
+
+### Unverified
+
+- **The confirm branch has never run.** `SetFrontProcess` returning
+  noErr means the switch was *scheduled*; it lands when the guest
+  yields, and both guests yield with an event mask of zero. Whether a
+  process switch completes inside that yield is **unproven on either
+  machine** — if it does not, `front` will report `unconfirmed` every
+  time while the screen plainly shows the switch happened. That is
+  visible and diagnosable rather than a silent lie, which is why it is
+  written this way, but it is the first thing to watch on metal.
+- Nothing else here has been on a machine either: both guests build
+  clean, the host suite is green, and no PowerBook has run it.
+
+### Open
+
+- **`front`'s argument parser is not natively testable.** `quit`'s
+  grammar lives Toolbox-free in `proc_quit_args.c` and has its own
+  native test; `front`'s is four lines of trim-and-unquote, static in
+  each guest's command file, and duplicated across the two. It is small
+  enough that a shared module would be more moving parts than it saves —
+  but it is the second copy of a grammar, which is how the first one
+  started.
+
 ## `quit` targets a process identity, not a file name (2026-07-26)
 
 The handoff's retire step named the outgoing build `"NOW-68K " + <the

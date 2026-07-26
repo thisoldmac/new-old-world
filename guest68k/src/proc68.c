@@ -475,7 +475,8 @@ static OSErr ask_quit(const ProcessSerialNumber *psn)
  * named X is running" with count 0 - the caller could not tell that case
  * apart from a genuinely empty walk. Now it can. */
 static long gather_targets(const char *name, QuitTarget *out,
-                           Boolean *self_seen, long *unreadable_out)
+                           Boolean *self_seen, long *unreadable_out,
+                           Boolean skip_self)
 {
     ProcessSerialNumber psn;
     ProcessSerialNumber self;
@@ -512,7 +513,11 @@ static long gather_targets(const char *name, QuitTarget *out,
         if (is_self) {
             *self_seen = true;         /* a SECOND copy of NOW is a fair
                                          * target; THIS instance is not */
-            continue;
+            if (skip_self) {
+                continue;
+            }
+            /* ...unless the verb is `front`, which severs nothing by
+             * acting on us. See proc68.h. */
         }
         if (count < kProcQuitMaxTargets) {
             out[count].psn = psn;
@@ -562,7 +567,8 @@ ProcOutcome proc_quit_named(const char *name, long wait_ticks,
         }
     }
 
-    found = gather_targets(name, targets, &self_seen, &unreadable);
+    found = gather_targets(name, targets, &self_seen, &unreadable,
+                           true);
 
     if (found == 0) {
         if (self_seen) {
@@ -718,6 +724,170 @@ ProcOutcome proc_quit_psn(unsigned long psn_high, unsigned long psn_low,
     set_detail(detail, detail_cap, "quit: asked ", cname,
                " to quit; confirm with process.list");
     return kProcSentUnconfirmed;
+}
+
+/* ---- front ---------------------------------------------------------------
+ *
+ * proc_quit_named's shape with the ask changed and the confirm inverted:
+ * quit waits for the target to LEAVE, this waits for it to ARRIVE. See
+ * proc68.h for the two places the semantics deliberately differ (a
+ * missing process is a failure here, and NOW itself is a fair target).
+ */
+
+/* Is this PSN the frontmost process right now? The only thing that can
+ * tell a completed switch from an accepted request. */
+static Boolean psn_is_frontmost(const ProcessSerialNumber *psn)
+{
+    ProcessSerialNumber front;
+    Boolean same = false;
+
+    if (GetFrontProcess(&front) != noErr) {
+        return false;
+    }
+    (void)SameProcess(psn, &front, &same);
+    return same ? true : false;
+}
+
+/* The high-bit refusal proc_quit_named makes, for the same reason: the
+ * comparison below is IUEqualString against a MacRoman Str255, a host's
+ * UTF-8 arrives as high-bit bytes, and a comparison that can never
+ * truthfully match would report "nothing of that name" for a process
+ * that is running. Refuse rather than compare something we cannot
+ * represent. */
+static Boolean name_is_comparable(const char *name)
+{
+    long i;
+
+    for (i = 0; name[i] != '\0'; ++i) {
+        if ((unsigned char)name[i] >= 0x80) {
+            return false;
+        }
+    }
+    return true;
+}
+
+ProcFrontOutcome proc_front_named(const char *name, long wait_ticks,
+                                  char *detail, long detail_cap)
+{
+    QuitTarget targets[kProcQuitMaxTargets];
+    Boolean    self_seen = false;
+    long       found;
+    long       unreadable = 0;
+    unsigned long started;
+
+    if (name == NULL || name[0] == '\0' || strlen(name) >= kProcNameMax) {
+        set_detail(detail, detail_cap,
+                   "front: bad process name (empty, or over 31 characters)",
+                   NULL, NULL);
+        return kProcFrontBadArgs;
+    }
+    if (!name_is_comparable(name)) {
+        set_detail(detail, detail_cap,
+                   "front: process name has a non-ASCII byte - refusing "
+                   "an unsafe MacRoman comparison", NULL, NULL);
+        return kProcFrontBadArgs;
+    }
+
+    /* skip_self false: fronting NOW is legitimate (proc68.h). */
+    found = gather_targets(name, targets, &self_seen, &unreadable, false);
+
+    if (found == 0) {
+        if (unreadable > 0) {
+            /* A row could not be read while walking, so "nothing of that
+             * name" has not been established - the same refusal-rather-
+             * than-guess proc_quit_named makes, for the same reason. */
+            set_detail(detail, detail_cap,
+                       "front: could not read every running process while "
+                       "looking for ", name,
+                       " - can't confirm it isn't one of them");
+            return kProcFrontAmbiguous;
+        }
+        /* NOT the asked-for state, unlike quit's equivalent: nothing can
+         * be brought forward. */
+        set_detail(detail, detail_cap,
+                   "front: nothing named ", name, " is running");
+        return kProcFrontNotRunning;
+    }
+    if (found > 1) {
+        /* No --all, and there could not be one: "bring them all to the
+         * front" is not something one screen can do. */
+        set_detail(detail, detail_cap,
+                   "front: several processes are named ", name,
+                   " - refusing to guess which one");
+        return kProcFrontAmbiguous;
+    }
+
+    if (!target_still_live(&targets[0])) {
+        set_detail(detail, detail_cap, "front: ", name,
+                   " went away before it could be fronted");
+        return kProcFrontNotRunning;
+    }
+
+    if (SetFrontProcess(&targets[0].psn) != noErr) {
+        set_detail(detail, detail_cap,
+                   "front: the Mac would not bring ", name, " forward");
+        return kProcFrontRefused;
+    }
+
+    if (wait_ticks <= 0) {
+        set_detail(detail, detail_cap, "front: asked for ", name,
+                   "; not confirmed (wait_ticks <= 0)");
+        return kProcFrontUnconfirmed;
+    }
+
+    /* Unsigned throughout, for the reason proc_quit_named's confirm loop
+     * spells out: TickCount() wraps, and modular arithmetic stays correct
+     * across the wrap where a signed deadline comparison would not. */
+    started = (unsigned long)TickCount();
+    for (;;) {
+        if (psn_is_frontmost(&targets[0].psn)) {
+            set_detail(detail, detail_cap, "front: ", name, " is frontmost");
+            return kProcFrontDone;
+        }
+        if ((unsigned long)TickCount() - started >= (unsigned long)wait_ticks) {
+            break;
+        }
+        yield_ticks(2);
+    }
+
+    /* The outcome that must never read as success: accepted, and some
+     * other process is still in front. */
+    set_detail(detail, detail_cap, "front: ", name,
+               " is not frontmost - the switch did not land");
+    return kProcFrontUnconfirmed;
+}
+
+ProcFrontOutcome proc_front_psn(unsigned long psn_high, unsigned long psn_low,
+                                char *detail, long detail_cap)
+{
+    ProcessSerialNumber psn;
+    Str255              name;
+    char                cname[kProcNameMax];
+
+    psn.highLongOfPSN = psn_high;
+    psn.lowLongOfPSN = psn_low;
+
+    /* Re-validation IS the liveness check: a PSN the Process Manager will
+     * not read is not a live process. */
+    if (!read_process_name(&psn, name)) {
+        set_detail(detail, detail_cap,
+                   "front: that process is no longer running", NULL, NULL);
+        return kProcFrontNotRunning;
+    }
+    pstr_to_c(name, cname, (long)sizeof cname);
+
+    if (SetFrontProcess(&psn) != noErr) {
+        set_detail(detail, detail_cap,
+                   "front: the Mac would not bring ", cname, " forward");
+        return kProcFrontRefused;
+    }
+
+    /* Accepted. Not necessarily landed - and the wire has nowhere to say
+     * so, which is why this one does not wait (proc68.h). A caller that
+     * needs to know re-reads process.list and looks at `front`. */
+    set_detail(detail, detail_cap, "front: asked for ", cname,
+               "; confirm with process.list");
+    return kProcFrontUnconfirmed;
 }
 
 /* ---- proc_launch_named ---------------------------------------------------

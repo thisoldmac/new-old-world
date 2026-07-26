@@ -115,12 +115,17 @@ static void yield_ticks(UInt32 ticks)
     (void)WaitNextEvent(0, &event, ticks, NULL);
 }
 
-/* Collects every live process named `want`, skipping NOW itself. Returns
-   the count, or -1 if there are more matches than kMaxTargets.
-   `skipped_self` says whether the walk passed over us, which is what
-   tells "no such process" apart from "you asked us to quit ourselves". */
+/* Collects every live process named `want`. Returns the count, or -1 if
+   there are more matches than kMaxTargets. `skipped_self` says whether
+   the walk passed over us, which is what tells "no such process" apart
+   from "you asked us to quit ourselves".
+
+   `skip_self` is false for `front`: quitting this process would sever
+   the reply mid-send, and bringing it forward severs nothing, so NOW is
+   a fair target for one verb and not the other. It is a parameter rather
+   than two walks because the walk is the part that must not drift. */
 static int gather_targets(const char *want, QuitTarget *out,
-                          Boolean *skipped_self)
+                          Boolean *skipped_self, Boolean skip_self)
 {
     ProcessSerialNumber psn;
     ProcessSerialNumber self;
@@ -153,7 +158,7 @@ static int gather_targets(const char *want, QuitTarget *out,
             continue;
         }
         (void)SameProcess(&psn, &self, &is_self);
-        if (is_self) {
+        if (is_self && skip_self) {
             /* Deliberate, not incidental: a second COPY of NOW is a
                legitimate target, but this one is the one holding the
                reply. */
@@ -184,7 +189,7 @@ NowProcQuitOutcome now_proc_quit_by_name(const char *arg, char *msg, long cap)
         return kProcQuitBadArgs;
     }
 
-    found = gather_targets(args.name, targets, &skipped_self);
+    found = gather_targets(args.name, targets, &skipped_self, true);
     if (found < 0) {
         snprintf(msg, (size_t)cap,
                  "quit: more than %d processes are named \"%.31s\"",
@@ -282,4 +287,136 @@ NowProcQuitOutcome now_proc_quit_by_name(const char *arg, char *msg, long cap)
                  "asking about unsaved work", shown, args.wait_secs);
         return kProcQuitStillRunning;
     }
+}
+
+/* --- front by name ------------------------------------------------------- */
+
+/* The name, trimmed and unquoted. `front` has no flags, so this is the
+   whole grammar and it does not need proc_quit_args.c: that parser exists
+   to keep --all / --wait / --no-wait from being read as the last word of
+   a process name, and there is nothing here to confuse. It still enforces
+   the same 31-character ceiling, because a longer argument cannot match
+   any process and saying so beats comparing a truncation. */
+static Boolean front_name(const char *arg, char *out, long cap, char *msg,
+                          long msg_cap)
+{
+    long len;
+
+    while (*arg == ' ' || *arg == '\t') {
+        ++arg;
+    }
+    len = (long)strlen(arg);
+    while (len > 0 && (arg[len - 1] == ' ' || arg[len - 1] == '\t')) {
+        --len;
+    }
+    if (len >= 2 && arg[0] == '"' && arg[len - 1] == '"') {
+        ++arg;
+        len -= 2;
+    }
+    if (len == 0) {
+        snprintf(msg, (size_t)msg_cap,
+                 "front: what? (the name of a running process, as \"ps\" "
+                 "shows it)");
+        return false;
+    }
+    if (len >= cap) {
+        snprintf(msg, (size_t)msg_cap,
+                 "front: no process name is longer than %ld characters",
+                 cap - 1);
+        return false;
+    }
+    memcpy(out, arg, (size_t)len);
+    out[len] = '\0';
+    return true;
+}
+
+static Boolean is_frontmost(const ProcessSerialNumber *psn)
+{
+    ProcessSerialNumber front;
+    Boolean same = false;
+
+    if (GetFrontProcess(&front) != noErr) {
+        return false;
+    }
+    (void)SameProcess(psn, &front, &same);
+    return same;
+}
+
+NowProcFrontOutcome now_proc_front_by_name(const char *arg, char *msg,
+                                           long cap)
+{
+    QuitTarget targets[kMaxTargets];
+    char name[kProcQuitNameMax];
+    char shown[kProcQuitNameMax];
+    Boolean skipped_self = false;
+    int found;
+
+    if (!front_name(arg != NULL ? arg : "", name, (long)sizeof name, msg,
+                    cap)) {
+        return kProcFrontBadArgs;
+    }
+
+    /* skip_self false: see proc_actions.h. NOW is a fair target here. */
+    found = gather_targets(name, targets, &skipped_self, false);
+    if (found < 0) {
+        snprintf(msg, (size_t)cap,
+                 "front: more than %d processes are named \"%.31s\"",
+                 kMaxTargets, name);
+        return kProcFrontAmbiguous;
+    }
+    if (found == 0) {
+        /* NOT ok, where quit's equivalent is: the asked-for state does
+           not hold and cannot be made to. */
+        snprintf(msg, (size_t)cap,
+                 "front: nothing named \"%.31s\" is running (see \"ps\")",
+                 name);
+        return kProcFrontNotRunning;
+    }
+    if (found > 1) {
+        /* No --all: "bring them all to the front" is not a thing one
+           screen can do, so several matches is a refusal with no flag to
+           override it. */
+        snprintf(msg, (size_t)cap,
+                 "front: %d processes are named \"%.24s\" - narrow it down",
+                 found, name);
+        return kProcFrontAmbiguous;
+    }
+
+    pascal_to_c(targets[0].name, shown, sizeof shown);
+
+    /* The same race the contract warns about: the walk above is already
+       in the past. */
+    if (!target_is_live(&targets[0])) {
+        snprintf(msg, (size_t)cap,
+                 "front: \"%.31s\" went away before it could be fronted",
+                 shown);
+        return kProcFrontNotRunning;
+    }
+    if (now_proc_bring_to_front(&targets[0].psn) != noErr) {
+        snprintf(msg, (size_t)cap,
+                 "front: the Mac would not bring \"%.31s\" forward", shown);
+        return kProcFrontRefused;
+    }
+
+    /* noErr means the switch was SCHEDULED. It happens when we yield, and
+       GetFrontProcess is the only thing that can tell the two apart. */
+    {
+        UInt32 deadline = TickCount() + (UInt32)kProcFrontWaitSecs * 60;
+
+        for (;;) {
+            if (is_frontmost(&targets[0].psn)) {
+                snprintf(msg, (size_t)cap, "front: \"%.31s\" is frontmost",
+                         shown);
+                return kProcFrontDone;
+            }
+            if (TickCount() >= deadline) {
+                break;
+            }
+            yield_ticks(2);
+        }
+    }
+    snprintf(msg, (size_t)cap,
+             "front: asked for \"%.24s\"; it is NOT frontmost after %d s",
+             shown, kProcFrontWaitSecs);
+    return kProcFrontUnconfirmed;
 }
