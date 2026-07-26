@@ -162,6 +162,139 @@ long n68_cmdresult_render_json(const N68CmdResult *r, long id,
  */
 long n68_cmdresult_render_text(const N68CmdResult *r, char *out, long cap);
 
+/* ---- the same thing, for a command whose answer is a TABLE ------------- */
+
+/*
+ * N68CmdResult holds ONE row, and three commands answer inside
+ * now68k_commands_dispatch rather than through the run/render seam because
+ * of it - `help`, `ps` and `vprobe`, each a row per item. Each bought its
+ * exemption by borrowing an implementation the other face renders too, and
+ * docs/command-parity.md ends with the ruling that a FOURTH should not be
+ * another arm: "three row-array commands is no longer a special case, it is
+ * a shape: the fix is a result type that holds rows".
+ *
+ * This is that type. `ls` is the fourth, and it goes through here instead
+ * of into the exemption list - so the console reaches it by delegating the
+ * way it already delegates a one-row command, and nothing in conwin.c has
+ * to know the verb exists. The three that predate it are unchanged in this
+ * pass: moving them is a refactor of working code with its own risk, and
+ * doing it in the same change as a new message family would make both
+ * harder to review. The shape now exists for them to move into, which is
+ * the part that was missing.
+ *
+ * Rows are [label, value] pairs - the contract's x-rowArray, which is what
+ * every table-shaped x-command output in asyncapi.yaml already is.
+ */
+enum {
+    /* An HFS leaf name is 31 characters, and a row label is one in the
+     * only table this currently carries. */
+    kN68CmdRowLabelCap = 32,
+    kN68CmdRowValueCap = 48,
+    /* Sixteen entries (the FileListing maxItems this mirrors), the two
+     * heading rows `ls` puts in front of them, a trailing "more entries
+     * follow", and one spare. Not a wire limit - the wire limit is the
+     * render below running out of buffer, which is a different truth and
+     * is reported separately. */
+    kN68CmdRowsMax = 20
+};
+
+typedef struct {
+    char label[kN68CmdRowLabelCap];
+    char value[kN68CmdRowValueCap];
+} N68CmdRow;
+
+/*
+ * STATIC BUDGET: 20 * (32 + 48) + 4 + 32 + 12 + 160 + 4 = 1812 bytes, which
+ * is why the one that exists lives at file scope in commands68.c next to
+ * g_vprobe rather than on a stack. proc68.c's `pumping` guard bounds nested
+ * dispatch depth, but ~1.8 KB per level is still the kind of thing that
+ * shows up as heap corruption on metal and nowhere else (see the DEFECT 3
+ * note in proc68.c for the measurement that established that).
+ */
+typedef struct {
+    int  ok;
+    char code[kN68CmdCodeCap];   /* ok == 0: names the failure */
+    char key[kN68CmdKeyCap];     /* ok != 0: output.<key> */
+    char text[kN68CmdTextCap];   /* ok == 0: the human sentence */
+    N68CmdRow rows[kN68CmdRowsMax];
+    int  count;                  /* how many of `rows` are filled */
+} N68CmdRows;
+
+/* Worst cases of the parts of a rows reply, the same way n68_proclist.h
+ * bounds `ps`. A row's two strings are MacRoman and escape to \uXXXX at six
+ * bytes each, so the bound is six times the stored size - the same
+ * arithmetic n68_vprobe.h calls out.
+ *
+ *   head  {"type":"command.result","id":<11>,"ok":true,"output":{"<key>":[
+ *   row   ,["<31 escaped>","<47 escaped>"]
+ *   note  ,["...","<10> more not shown"]
+ *   tail  ]}} + NUL
+ */
+#define NOW68K_CMDROWS_HEAD_MAX  72
+#define NOW68K_CMDROWS_ROW_MAX  480
+#define NOW68K_CMDROWS_NOTE_MAX  40
+#define NOW68K_CMDROWS_TAIL_MAX   8
+
+/* The smallest buffer that can carry one row AND still say what it left
+ * out. Below this the reply would have to choose between a row and the
+ * truth about the rest, and it must never have to - the same floor
+ * NOW68K_PS_MIN_CAP states for `ps`, for the same reason. */
+#define NOW68K_CMDROWS_MIN_CAP                                             \
+    (NOW68K_CMDROWS_HEAD_MAX + NOW68K_CMDROWS_ROW_MAX                      \
+     + NOW68K_CMDROWS_NOTE_MAX + NOW68K_CMDROWS_TAIL_MAX)
+
+/* Zeroes every field. Call before filling. */
+void n68_cmdrows_init(N68CmdRows *r);
+
+/* Appends one [label, value] row, truncating each at its member's capacity
+ * and doing nothing at all once kN68CmdRowsMax rows are in. Returns 1 if
+ * the row was stored, 0 if the table was already full - a caller that
+ * cares whether it lost a row can say so, and `ls` does. */
+int n68_cmdrows_add(N68CmdRows *r, const char *label, const char *value);
+
+/* Marks the reply a failure. Clears any rows already added: a table and an
+ * error are two different answers and a reply must not look like both. */
+void n68_cmdrows_set_error(N68CmdRows *r, const char *code,
+                            const char *message);
+
+/*
+ * Renders `r` as one complete command.result for the wire, echoing `id`.
+ * Returns bytes written before the NUL, or 0 with out[0] = '\0'.
+ *
+ * TRUNCATION IS STATED, never silent. A table has no cursor - the contract
+ * gives command.result none - so a table too long for one control frame
+ * loses rows, and the last row becomes ["...", "N more not shown"]. That is
+ * `ps`'s rule (n68_proclist.h) applied to every table: a short list that
+ * claimed to be the whole answer is the failure this row prevents, and on
+ * this guest the full answer is a message family away (file.list for `ls`,
+ * process.list for `ps`).
+ *
+ * A row goes in whole or not at all. Half a row is a frame that stops
+ * mid-JSON, which decodes to nothing on the host and costs the WHOLE reply
+ * rather than one row.
+ */
+long n68_cmdrows_render_json(const N68CmdRows *r, long id,
+                              char *out, long cap);
+
+/*
+ * The same table as console text, CR-separated so the caller can hand the
+ * whole buffer to an N68ConsoleRing in one call - exactly what
+ * n68_cmdresult_render_text does, and for the same reason.
+ *
+ *   ok       "Share: Macintosh HD:Desktop Folder" CR "SimpleText: APPL ..."
+ *   not ok   "! bad-path: no such folder in this Mac's share"
+ *
+ * The label is padded to a fixed column so a listing reads as a table on a
+ * 1-bit panel in Monaco 9, where there is no other way to line anything up.
+ * A label longer than the column simply pushes its value along rather than
+ * being cut: a truncated file name is a lie about what is on the disk.
+ *
+ * Truncation here is by LINE, not by row: what fits is shown whole. The
+ * caller renders one page and the pane scrolls, so unlike the wire there is
+ * no frame to overrun.
+ */
+long n68_cmdrows_render_text(const N68CmdRows *r, char *out, long cap);
+
 /* Appends `s` into buf[*pos, cap) as the BODY of a JSON string - the
  * caller writes the surrounding quotes. See the definition in
  * n68_cmdresult.c for what each byte class becomes and why '?' is not an

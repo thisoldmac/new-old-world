@@ -293,6 +293,59 @@ final class CommandParityTests: XCTestCase {
             """)
     }
 
+    /// The fourth capability that is not a command: BROWSING. `file.list`
+    /// is a message family, so — like `process.list` and the two transfer
+    /// directions above — no command table compares the two faces on its
+    /// own, and a wire-only implementation would look complete from every
+    /// angle except a person standing at the machine.
+    ///
+    /// Three things are asserted and they are different. That `ls` is in
+    /// commands68.c, so the host console — a dumb shell with no knowledge
+    /// of message families — can type it. That the console does NOT also
+    /// dispatch it, because the whole point of the rows result type is
+    /// that conwin.c reaches this verb by delegating. And that both faces
+    /// read one enumeration.
+    func testTheSixtyEightKConsoleCanListFiles() throws {
+        let wire = try source("guest68k/src/wire68.c")
+        let console = try source("guest68k/src/conwin.c")
+        let table = dispatched(in: try source("guest68k/src/commands68.c"))
+
+        guard wire.contains("\"file.list\"") else {
+            return   // if the guest ever stops serving it, this is moot
+        }
+        XCTAssertTrue(table.contains("ls"), """
+            NOW-68K serves file.list on the wire, so the host can see \
+            what is on the machine — but `ls` is not in commands68.c's \
+            table, so the host console gets unknown-command for it. That \
+            is the `ps` failure exactly: a capability that is a family on \
+            the wire is not something anyone can type.
+            """)
+        XCTAssertTrue(console.contains("now68k_commands_run_rows"), """
+            conwin.c does not reach the table-shaped commands, so `ls` is \
+            a verb the host can type and a person at the PowerBook cannot \
+            — the same gap as `ps`, facing the other way.
+            """)
+        XCTAssertFalse(dispatched(in: console).contains("ls"), """
+            conwin.c dispatches `ls` itself. It must not: \
+            docs/command-parity.md's ruling on the third row-array command \
+            was that a fourth should be a result type that holds rows, not \
+            another exemption — and a strcmp here is exactly the fourth \
+            arm that ruling forbids.
+            """)
+        XCTAssertTrue(
+            try source("guest68k/src/commands68.c")
+                .contains("n68_fileenum_page"), """
+            `ls` lists files without going through n68_fileenum_page(), so \
+            there are now two catalog walks that can disagree. One \
+            implementation, two renderers — see docs/command-parity.md.
+            """)
+        XCTAssertTrue(wire.contains("n68_fileenum_page"), """
+            the wire serves file.list from something other than \
+            n68_fileenum_page(), which is the same drift from the other \
+            side.
+            """)
+    }
+
     /// Both guests must only claim verbs the contract declares. The
     /// contract's registry is the source of truth; a guest inventing one
     /// is how a host learns to ask for something no schema describes.

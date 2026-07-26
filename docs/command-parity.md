@@ -71,6 +71,13 @@ capability:
   `unknown-command` to the same word from the host. A message family
   serves a MODULE; a person needs a verb.
 
+  `file.list` was written to that rule from the start rather than into
+  it: `n68_fileenum.c` walks the catalog once, `n68_filelist.c` renders
+  that walk as `file.listing` for the Files module and as `ls`'s rows for
+  anyone typing, and `n68_cmdresult.c` turns those rows into contract
+  JSON or console text. Four faces on the wire and the pane, one
+  enumeration.
+
 **The PowerPC guest (`guest/`)** — `commands.c` answers the wire and
 `console_model.c` answers the Console page. Two dispatch lists, so two
 chances to drift, and the parity test compares them directly. The
@@ -198,3 +205,29 @@ The one thing it did cost was **twenty-four bytes of `kN68CmdStateCap`** (24 to 
 two is the only field a caller cannot spill into row one, and the cost
 line did not fit 24. Widening a field is the cheap answer; a fourth
 dispatch arm was the expensive one.
+
+### The fourth arrived, and it is not an arm
+
+`ls` landed with `file.list` (2026-07-26) and took the ruling above rather
+than the pattern. `N68CmdRows` (`n68_cmdresult.h`) is the result type that
+holds rows; `now68k_commands_run_rows()` is the seam beside
+`now68k_commands_run()`; `n68_cmdresult.c` holds both renderers side by
+side exactly as it does for the one-row shape. `conwin.c` has **no**
+`strcmp(name, "ls")` — it asks the seam whether the word is claimed and
+renders whatever comes back, which is the same delegation that makes
+`launch` reach the console for free.
+
+`testTheSixtyEightKConsoleCanListFiles` asserts all three halves of that:
+that `ls` is in `commands68.c` so the host console can type it, that
+`conwin.c` reaches the rows seam, and that `conwin.c` does **not**
+dispatch `ls` itself. The last one is the interesting assertion — it is a
+test that fails when someone re-adds the exemption this paragraph argued
+out of existence.
+
+The three that predate it — `help`, `ps`, `vprobe` — were **not** moved in
+that pass, and that is a deliberate deferral rather than an oversight:
+migrating three working commands in the same change as a new message
+family would make both harder to review. The shape now exists for them to
+move into, which is the part that was missing. Until they do, the
+exemption list is three, not zero, and this paragraph is the honest
+statement of that.

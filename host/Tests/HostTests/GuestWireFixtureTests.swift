@@ -86,13 +86,17 @@ final class GuestWireFixtureTests: XCTestCase {
     }
 
     /// The contract's answer for a command a machine does not have. NOW-68K
-    /// gives this for twelve of the fifteen the Carbon guest serves, and the
-    /// host console renders it verbatim rather than pre-empting it — which is
+    /// gives this for most of what the Carbon guest serves, and the host
+    /// console renders it verbatim rather than pre-empting it — which is
     /// the whole of being a dumb shell.
+    ///
+    /// The example used to be `ls`, which NOW-68K now answers. Swapped for
+    /// one it still does not, because a fixture whose premise has quietly
+    /// become false is a test that passes while proving something else.
     func testUnknownCommandAsTheGuestWritesIt() throws {
         let json = """
         {"type":"command.result","id":9,"ok":false,"error":\
-        {"code":"unknown-command","message":"ls is not a command this Mac \
+        {"code":"unknown-command","message":"tail is not a command this Mac \
         knows"}}
         """
         guard case .commandResult(let result) = try decode(json) else {
@@ -600,6 +604,125 @@ final class GuestWireFixtureTests: XCTestCase {
                        "the last row names the processes not shown")
     }
 
+    // MARK: - NOW-68K's file family (the browse half)
+
+    /// `file.listing` from NOW-68K — the half of the family that lets a
+    /// host SEE the machine rather than only write to it. Until this
+    /// landed, the host's Files module had nothing to show against a 68K
+    /// guest, so the one thing a person most wants from an old Mac on a
+    /// network was the one thing this guest could not answer.
+    ///
+    /// The page is small on purpose. This guest's outbound payload cap is
+    /// 1024 bytes against the PowerPC guest's 4 KB, so where that one
+    /// sends sixteen entries a page this one sends what fits and pages.
+    /// A host must not assume a full page means a full folder — `more`
+    /// and `cursor` are the only things that say.
+    func test68KFileListingAsTheGuestWritesIt() throws {
+        guard case .fileListing(let listing) =
+            try decode(Guest68KWire.fileListingRoot) else {
+            return XCTFail("not a file.listing")
+        }
+        XCTAssertEqual(listing.id, 11, "echoes the request id")
+        XCTAssertEqual(listing.path, "", "the root is the empty path")
+        XCTAssertEqual(listing.entries.count, 3)
+        XCTAssertTrue(listing.more, "the folder goes on past this page")
+        XCTAssertEqual(listing.cursor, 4, "and says where to continue")
+        XCTAssertEqual(listing.root, "Macintosh HD:Desktop Folder:", """
+            the root listing names the place it is looking at. On this \
+            guest that is not configurable and therefore not guessable \
+            from anything else the host has.
+            """)
+
+        // A folder carries no type, creator or fork sizes. The host has to
+        // be happy with their absence — a renderer that force-unwrapped
+        // dataBytes would crash on the first folder either guest sent.
+        XCTAssertEqual(listing.entries[0].name, "Projects")
+        XCTAssertTrue(listing.entries[0].isFolder)
+        XCTAssertNil(listing.entries[0].fileType)
+        XCTAssertNil(listing.entries[0].dataBytes)
+
+        XCTAssertEqual(listing.entries[1].name, "Read Me")
+        XCTAssertEqual(listing.entries[1].fileType, "TEXT")
+        XCTAssertEqual(listing.entries[1].creator, "ttxt")
+        XCTAssertEqual(listing.entries[1].dataBytes, 4096)
+        XCTAssertEqual(listing.entries[1].rsrcBytes, 0)
+
+        // A two-fork application, which is what most of this machine's
+        // disk actually is.
+        XCTAssertEqual(listing.entries[2].rsrcBytes, 262144)
+
+        // 3000000000 is past 2^31, where this toolchain's signed `long`
+        // wraps negative — and a negative Mac date decodes perfectly well
+        // into 1904, so a lost unsigned append is a listing that looks
+        // right and dates every file to the epoch.
+        XCTAssertEqual(listing.entries[2].modified, 3_000_000_000)
+
+        for entry in listing.entries {
+            XCTAssertNil(entry.identity, """
+                NOW-68K sends no identity: it is a precondition token for \
+                mutations this guest does not serve. If that ever changes, \
+                this assertion is the thing to delete — deliberately, not \
+                by accident.
+                """)
+        }
+    }
+
+    /// The page that ENDS a walk, and the one asymmetry with the root
+    /// page: no caption, because a subfolder listing already knows where
+    /// it is, and more:false with the cursor parked past the last entry.
+    func test68KFileListingSubfolderAsTheGuestWritesIt() throws {
+        guard case .fileListing(let listing) =
+            try decode(Guest68KWire.fileListingSubfolder) else {
+            return XCTFail("not a file.listing")
+        }
+        XCTAssertEqual(listing.path, "Projects")
+        XCTAssertFalse(listing.more)
+        XCTAssertEqual(listing.cursor, 5)
+        XCTAssertNil(listing.root, "only the root listing carries a caption")
+    }
+
+    /// `ls` — the console face on the same enumeration, and the reason it
+    /// exists at all: the host console is a dumb shell that knows no
+    /// message families, so a capability served only as `file.list` is one
+    /// nobody can type. `ps` cost a day teaching that (2026-07-25).
+    func test68KLsReplyAsTheGuestWritesIt() throws {
+        guard case .commandResult(let result) =
+            try decode(Guest68KWire.lsReply) else {
+            return XCTFail("not a command.result")
+        }
+        XCTAssertTrue(result.ok)
+        XCTAssertEqual(result.id, 13, "echoes the request id")
+        let rows = try XCTUnwrap(result.output?["ls"],
+                                 "the contract names the group `ls`")
+        XCTAssertEqual(rows[0], ["Share", "Macintosh HD:Desktop Folder:"])
+        XCTAssertEqual(rows[1], ["Folder", "(root)"])
+        XCTAssertEqual(rows[2], ["Projects", "folder"])
+        // The same vocabulary the PowerPC guest's now_files_describe uses,
+        // pinned because one console renders both machines and a person
+        // should not have to know which one they are reading.
+        XCTAssertEqual(rows[3], ["Read Me", "TEXT  4 KB"])
+        XCTAssertEqual(rows[4], ["NOW-68K", "APPL  128 KB + 256 KB rsrc"])
+        XCTAssertEqual(rows.last, ["...", "more entries follow"], """
+            `ls` has no cursor — the contract gives command.result none — \
+            so a folder longer than one page says so in a final row. A \
+            silently short listing would read as the whole folder.
+            """)
+    }
+
+    /// A folder this guest will not list. The refusal reuses the family's
+    /// own `file.refuse`, not a generic protocol error: a host blocked on
+    /// a file.listing needs the answer in the envelope it is waiting on.
+    func test68KFileListRefusalAsTheGuestWritesIt() throws {
+        guard case .fileRefuse(let refuse) =
+            try decode(Guest68KWire.fileListRefuseBadPath) else {
+            return XCTFail("not a file.refuse")
+        }
+        XCTAssertEqual(refuse.id, 14)
+        XCTAssertEqual(refuse.code, "bad-path")
+        XCTAssertFalse(refuse.reason?.isEmpty ?? true,
+                       "a refusal says why in words a person can read")
+    }
+
     // MARK: - NOW-68K's file family (the receive half)
 
     /// handle_file_offer() - guest68k/src/wire68.c. The acceptance.
@@ -957,10 +1080,60 @@ enum Guest68KWire {
         + #"["NOW-68K","application, 384 KB, front"],"#
         + #"["...","6 more not shown"]]}}"#
 
+    // ---- the BROWSE half (n68_filelist.c) ------------------------------
+    //
+    // Transcribed from guest68k/tests/test_filelist.c's pinned strings, the
+    // same way the send half's three are: that test proves the guest builds
+    // these bytes, these tests prove this side decodes them and that they
+    // carry the fields the contract demands.
+    //
+    // Note what is NOT here: `identity`. It is optional in the schema and
+    // it is a precondition token for mutations NOW-68K does not serve, so
+    // this guest omits it (n68_filelist.h). A host that needed it to render
+    // a listing would be broken against this guest — and nothing in
+    // host/Sources reads it.
+    static let fileListingRoot =
+        #"{"type":"file.listing","id":11,"path":"","entries":["#
+        + #"{"name":"Projects","kind":"folder","modified":3000000000},"#
+        + #"{"name":"Read Me","kind":"file","fileType":"TEXT","#
+        + #""creator":"ttxt","dataBytes":4096,"rsrcBytes":0,"#
+        + #""modified":3000000000},"#
+        + #"{"name":"NOW-68K","kind":"file","fileType":"APPL","#
+        + #""creator":"NW68","dataBytes":131072,"rsrcBytes":262144,"#
+        + #""modified":3000000000}"#
+        + #"],"more":true,"cursor":4,"#
+        + #""root":"Macintosh HD:Desktop Folder:"}"#
+
+    // A subfolder listing: no `root` (the caption belongs to the root
+    // listing alone) and more:false, which is the page that ENDS a walk.
+    static let fileListingSubfolder =
+        #"{"type":"file.listing","id":12,"path":"Projects","entries":["#
+        + #"{"name":"Read Me","kind":"file","fileType":"TEXT","#
+        + #""creator":"ttxt","dataBytes":4096,"rsrcBytes":0,"#
+        + #""modified":3000000000}],"more":false,"cursor":5}"#
+
+    // n68_filelist_rows() rendered through n68_cmdrows_render_json() —
+    // `ls`, which is to file.list what `ps` is to process.list.
+    static let lsReply =
+        #"{"type":"command.result","id":13,"ok":true,"output":{"ls":["#
+        + #"["Share","Macintosh HD:Desktop Folder:"],"#
+        + #"["Folder","(root)"],"#
+        + #"["Projects","folder"],"#
+        + #"["Read Me","TEXT  4 KB"],"#
+        + #"["NOW-68K","APPL  128 KB + 256 KB rsrc"],"#
+        + #"["...","more entries follow"]]}}"#
+
+    // send_file_refuse() answering a file.list this guest will not serve.
+    static let fileListRefuseBadPath = #"{"type":"file.refuse","id":14,"#
+        + #""code":"bad-path","#
+        + #""reason":"that path is not one this Mac will list"}"#
+
     /// Every fixture string above, for the contract check next door.
     static let all: [String] = [
         hello, pingFirst, pingLater,
         errorWithID, errorWithoutID, errorNegativeID,
         psReply, psReplyTruncated,
+        fileListingRoot, fileListingSubfolder, lsReply,
+        fileListRefuseBadPath,
     ]
 }

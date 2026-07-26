@@ -9,18 +9,21 @@
  *   run_quit      QuitArgs(~40) + msg[80] + detail[160]           = 280 B
  *   run_vprobe    why[160]                                       = 160 B
  *   run_shot      N68ShotStats(~60) + N68ShotArgs(8) + why[160]    = 228 B
+ *   run_ls        16 N68FileRow + path + root                    = ~1030 B
  *   dispatch      one N68CmdResult                               = 256 B
  *   g_vprobe      one N68VProbeTable, BSS                        = ~820 B
+ *   g_rows        one N68CmdRows, BSS                            = ~1810 B
  * No two run_* are on the stack at once (dispatch calls exactly one), so
- * the deepest frame is dispatch's 256 plus run_launch's 360 = ~616 B -
- * well inside a 68K stack frame's normal headroom on a machine with
- * ~1.7 MB free. No recursion, no VLA.
+ * the deepest frame is dispatch's 256 plus run_ls's ~1030 = ~1290 B -
+ * inside a 68K stack frame's normal headroom on a machine with ~1.7 MB
+ * free. No recursion, no VLA.
  *
- * The one BSS block is the vprobe row table, and it is BSS rather than a
- * local precisely because this file's callers can be several levels deep
- * by the time a command runs (wire68.c -> dispatch, and a pumped nested
- * dispatch on top of that - proc68.c measured ~3.7 KB per level). See its
- * comment for why one instance is also the right number.
+ * The two BSS blocks are the vprobe row table and the one N68CmdRows a
+ * table-shaped command fills. Both are BSS rather than locals precisely
+ * because this file's callers can be several levels deep by the time a
+ * command runs (wire68.c -> dispatch, and a pumped nested dispatch on top
+ * of that - proc68.c measured ~3.7 KB per level). See each one's comment
+ * for why one instance is also the right number.
  *
  * No printf family (numfmt.h's now68k_fmt_append_str/long only, matching
  * wire68.c) - snprintf drags newlib's float formatting into a 384 KB
@@ -30,6 +33,8 @@
 
 #include "log.h"
 #include "n68_cmdresult.h"
+#include "n68_fileenum.h"
+#include "n68_filelist.h"
 #include "n68_proclist.h"
 #include "n68_vprobe.h"
 #include "numfmt.h"
@@ -572,6 +577,7 @@ static const N68CommandDoc k_docs[] = {
     { "screenshot", "capture this Mac's screen to its desktop",
       "screenshot [--depth 8] [--no-save]" },
     { "put", "send a file from this Mac to the host", "put <file name>" },
+    { "ls", "list a folder in this Mac's share", "ls [folder]" },
     { NULL, NULL, NULL }
 };
 
@@ -738,7 +744,102 @@ static void run_put(const char *target, N68CmdResult *res)
     bounded_strcpy(res->text, sizeof res->text, "offered to the host");
 }
 
+/* ---- `ls`: the fourth row-array command, and the first that is not an
+ * exemption -----------------------------------------------------------------
+ *
+ * docs/command-parity.md ends with the ruling this obeys: three commands
+ * answer inside now68k_commands_dispatch because an N68CmdResult holds one
+ * row, and "a fourth should not be another arm... the fix is a result type
+ * that holds rows". N68CmdRows (n68_cmdresult.h) is that type, and `ls`
+ * goes through it - so conwin.c reaches this verb by DELEGATING, exactly
+ * the way it reaches `launch`, and there is no fourth strcmp in the
+ * console's dispatch to drift from this one.
+ *
+ * `ls` is to file.list what `ps` is to process.list, and the contract says
+ * so in the verb's own description. One enumeration underneath both:
+ * n68_fileenum.c walks the catalog, n68_filelist.c renders that walk as
+ * file.listing for the host's Files module and as these rows for anyone
+ * typing - the host's console (a dumb shell that knows no message families
+ * and can only type) or the PowerBook's own.
+ *
+ * One page, and it says when there is more. The contract gives
+ * command.result no cursor and a console has none to send back, so the
+ * full folder is a file.list away - which is the same trade `ps` makes
+ * against process.list. */
+static N68CmdRows g_rows;
+
+/* This module PROMISES its callers NOW68K_COMMAND_RESULT_CAP (commands68.h)
+ * and the shipping caller hands over the larger NOW68K_CONTROL_SEND_CAP, so
+ * this is the number that has to hold a table with a row in it and still be
+ * able to say what it dropped. The 160-vs-512 command.result bug was
+ * exactly a build where two limits disagreed and only the bigger one was
+ * ever exercised. */
+_Static_assert(NOW68K_COMMAND_RESULT_CAP >= NOW68K_CMDROWS_MIN_CAP,
+               "a table reply must fit a command.result buffer with at "
+               "least one row in it and still be able to say what it "
+               "left out");
+
+static void run_ls(const char *target, N68CmdRows *out)
+{
+    N68FileRow rows[NOW68K_FILELIST_MAX_ROWS];
+    /* +2, not +1: bounded_strcpy truncates to fit, so a buffer of exactly
+     * cap+1 makes strlen() top out AT the cap and the over-long check
+     * below could never fire - a person's long path would list the wrong
+     * folder rather than be refused. Same reasoning as the wire's
+     * handle_file_list. */
+    char path[NOW68K_FILELIST_PATH_MAX + 2];
+    char root[NOW68K_FILELIST_ROOT_MAX + 1];
+    long count;
+    int more = 0;
+
+    /* The whole line is the path: an HFS name has spaces in it and quoting
+     * them would be a second grammar for a console to get wrong. The
+     * PowerPC guest's run_ls reads it the same way. */
+    path[0] = '\0';
+    if (target != NULL) {
+        bounded_strcpy(path, (long)sizeof path, target);
+    }
+    if (strlen(path) > NOW68K_FILELIST_PATH_MAX) {
+        n68_cmdrows_set_error(out, n68_fileenum_code_word(kN68EnumBadPath),
+                              n68_fileenum_code_reason(kN68EnumBadPath));
+        return;
+    }
+
+    count = n68_fileenum_page(path, 1, rows,
+                              (long)NOW68K_FILELIST_MAX_ROWS, &more);
+    if (count < 0) {
+        N68EnumCode rc = (N68EnumCode)(-count);
+
+        /* The same code and the same sentence the wire's file.refuse
+         * carries for this failure. A person typing `ls Foo` and a host
+         * sending file.list should not be told two different stories about
+         * one folder. */
+        n68_cmdrows_set_error(out, n68_fileenum_code_word(rc),
+                              n68_fileenum_code_reason(rc));
+        return;
+    }
+
+    root[0] = '\0';
+    n68_fileenum_root_name(root, (long)sizeof root);
+    n68_filelist_rows(path, root[0] != '\0' ? root : NULL, rows, count,
+                      more, out);
+}
+
 /* ---- dispatch --------------------------------------------------------------- */
+
+const N68CmdRows *now68k_commands_run_rows(const char *name,
+                                            const char *target)
+{
+    if (name == NULL) {
+        return NULL;
+    }
+    if (strcmp(name, "ls") == 0) {
+        n68_cmdrows_init(&g_rows);
+        run_ls(target, &g_rows);
+        return &g_rows;
+    }
+    return NULL;
+}
 
 int now68k_commands_run(const char *name, const char *target,
                          N68CmdResult *res)
@@ -841,6 +942,33 @@ int now68k_commands_dispatch(const char *name, const char *target, long id,
             *out_len = len;
         }
         return 1;
+    }
+
+    /* The table-shaped commands, which are NOT an exemption: they run
+     * through a published seam the console reaches too, so this is the
+     * same run-then-render arrangement as the one-row case below with a
+     * different renderer, not a fourth arm. See run_ls above. */
+    {
+        const N68CmdRows *rows = now68k_commands_run_rows(name, target);
+
+        if (rows != NULL) {
+            len = n68_cmdrows_render_json(rows, id, out, cap);
+            if (len == 0) {
+                /* Unreachable at NOW68K_COMMAND_RESULT_CAP (the static
+                 * assert above), but a caller blocked on a command.result
+                 * the contract promises always comes must never be left
+                 * with silence. */
+                now68k_log("cmd: table reply did not fit");
+                n68_cmdresult_set_error(&res, "reply-too-big",
+                                        "the table did not fit one "
+                                        "command.result");
+                len = n68_cmdresult_render_json(&res, id, out, cap);
+            }
+            if (out_len != NULL) {
+                *out_len = len;
+            }
+            return 1;
+        }
     }
 
     if (!now68k_commands_run(name, target, &res)) {

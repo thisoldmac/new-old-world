@@ -9,6 +9,66 @@ wrong thing) versus **unverified** (it may well be right, but no one has
 watched it work on the PowerBook). Unverified is not a lesser problem —
 several of tonight's bugs lived in code that looked obviously correct.
 
+## The 68K file family's browse half (2026-07-26)
+
+`file.list` / `file.listing` and the `ls` command. Additive: both messages
+were already in `contract/asyncapi.yaml`, already decoded by the host, and
+already served by the PowerPC guest — checked before designing, and
+nothing in the contract changed. NOW-68K now serves 15 inbound message
+types.
+
+### Broken
+
+Nothing found in this pass. What the pass DID find is below, under
+unverified — most of it is about what a small frame costs.
+
+### Unverified
+
+- **Indexed catalog cost at a deep cursor is unmeasured.** `PBGetCatInfo`
+  at index N on a large folder is not O(1), so a host paging into a
+  thousand-entry folder pays more per page the further in it goes. Never
+  measured, on either machine. If it ever needs bounding, the bound
+  belongs in `n68_fileenum.c` as a wall-clock budget with an honest
+  "truncated at the budget" answer — `proc68.c`'s
+  `kLaunchSearchBudgetTicks` is the local pattern — and NOT as a silently
+  short page. Nothing pages a large folder today, which is the only
+  reason this is parked.
+- **Nothing has browsed the 180c.** Emulator-verified only, on a Quadra
+  800 under Mac OS 8.1: a host lists files it just pushed, walks a
+  twelve-file folder across several pages losing nothing and duplicating
+  nothing, gets a `file.refuse` (not a timeout) for a folder that is not
+  there, and sees the same entries through `ls`. That rig is a 68040 with
+  128 MB and a cached disk; the 180c is a 68030 with 4 MB and a real one.
+  `Metal68KBrowseTests` is the gate to point at it.
+- **A worst-case page carries ONE entry.** This guest's outbound payload
+  cap is 1024 bytes against the PowerPC guest's 4 KB, and an HFS name of
+  31 accented characters escapes to 186 bytes of `\uXXXX`. The
+  arithmetic is pinned by static asserts and by
+  `test_filelist.c`, so this is correct behaviour rather than a defect —
+  but a host that assumed a page means a folder would be wrong here in a
+  way it is not against the other guest. Never observed: no folder on
+  either test machine has names like that.
+- **A UTF-8 path does not resolve.** NOW-68K has no UTF-8-to-MacRoman
+  decoder, so a host asking for `Café:Notes` sends bytes this guest
+  cannot turn into an HFS name and gets `not-found`. Truthful, and the
+  same property the receive half already has (`n68_putrx.c`), so the two
+  halves at least agree — but a folder a person can see in the Finder is
+  a folder the Files module cannot open. The PowerPC guest decodes
+  (`now_json_find_text`); this one needs the same table before it can.
+  `GuestWireConformanceTests.testHfsPathArgumentsAreTextDecoded` does not
+  catch it, because it checks for the wrong FUNCTION and this guest's
+  scanner has a different name.
+- **`identity` is absent from every entry.** Deliberate — it is a
+  precondition token for mutations this guest does not serve, and nothing
+  in `host/Sources` reads it. It is the first field to add if
+  `file.move`, `file.trash` or `file.get` ever land here, and adding it
+  costs ~30 bytes of a 1024-byte page, which is roughly one entry.
+- **Three row-array commands still answer inside
+  `now68k_commands_dispatch`.** `help`, `ps` and `vprobe`. The result
+  type `docs/command-parity.md` called for now exists (`N68CmdRows`) and
+  `ls` uses it; moving the other three is a refactor of working code that
+  was deliberately not done in the same change as a new message family.
+
 ## The 68K file family, both directions in one tree (2026-07-25 night)
 
 Three branches merged and verified together: the receive half (MacBinary,
