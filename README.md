@@ -305,6 +305,19 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   rather than a file, so a screen capture can feed the pipe in bands
   instead of buffering 300 KB against a 384 KB partition; a file is
   simply its first implementation.
+- **A transfer on NOW-68K can now be abandoned**, which until 2026-07-26
+  it could not. `file.cancel` was in the contract and in the host and in
+  the PowerPC guest, and nowhere in NOW-68K's dispatch: the guest
+  answered `not-implemented` and went on holding the transfer. Because
+  the lane is one transfer wide across both directions, and because
+  nothing near a transfer carries a timer — the only clock is a 65 s
+  no-traffic watchdog that the guest's own keepalive keeps from ever
+  firing — a host that changed its mind left a guest that refused every
+  later transfer for the life of the connection, while answering pings
+  normally. Both directions now honour a cancel within one 4 KB chunk of
+  its arrival, release the lane, and delete the staging file; that last
+  claim is checked against the disk image rather than the guest's own
+  report. Emulator-verified, not metal-verified.
 - **The two directions briefly disagreed about where files live**, and
   that is worth knowing because of what missed it. Receiving landed on
   the Desktop while sending read from the application's own folder — a

@@ -9,6 +9,113 @@ wrong thing) versus **unverified** (it may well be right, but no one has
 watched it work on the PowerBook). Unverified is not a lesser problem —
 several of tonight's bugs lived in code that looked obviously correct.
 
+## An abandoned transfer wedged NOW-68K against all future ones (2026-07-26)
+
+`file.cancel` appeared nowhere in `wire68.c`'s dispatch. The guest sent
+`file.progress` and handled no cancel inbound, so the question nobody had
+answered was what it actually did when a host walked away mid-transfer.
+The answer was worse than "it leaks a staging file", and the ledger
+entry is the finding rather than the fix.
+
+### What it did, measured before anything was changed
+
+A fake host (a probe, not a fixture — it speaks just enough of the
+contract to arm a transfer and then abandon it) against `0.19` on the
+Quadra 800 emulator, all on ONE connection that stayed up throughout:
+
+```
+-> file.begin transfer 11 ... 8 KB of bulk ... file.cancel {transfer:11}
+<- {"type":"error","code":"not-implemented","message":"unsupported message type"}
+-> file.offer id 2
+<- {"type":"file.refuse","id":2,"code":"busy","reason":"a transfer is already in flight"}
+-> command.request put
+<- {"ok":false,"error":{"code":"put-refused","message":"a file is arriving right now"}}
+```
+
+The guest **answered the cancel with `not-implemented` and kept
+holding the transfer**. Every later transfer, in either direction, was
+refused for the life of the connection — the lane is one transfer wide
+and shared across both — and pings were answered normally the whole
+time, so from the host's side the guest looked healthy and simply
+refused to move a byte ever again.
+
+### Why nothing rescued it
+
+- **There is no transfer timeout, and there is no message for "I have
+  lost interest".** An abandoned transfer is indistinguishable from a
+  slow one, and neither `n68_putrx` nor `n68_puttx` carries a clock.
+- **The only clock in reach is `service_live()`'s 65 s no-traffic
+  watchdog, and it is the wrong one.** It is a property of the
+  CONNECTION — `kWireDeadTicks` since the last inbound byte — and the
+  guest's own 30 s keepalive ping keeps being answered, so on a live
+  connection it never fires. A DROPPED connection was always fine
+  (`reset_read_state` cancels both directions, which closes the
+  outbound fork and deletes the staging file); the case nobody had
+  established is a host that stays connected and stops caring.
+- The receive half held its staging file (`NOW incoming <hex>`) open
+  for a transfer that would never end. Observed as the wedge; the
+  orphan on the Desktop follows from the staging file never being
+  discarded and was not separately confirmed on the baseline disk.
+
+### The send half had a second door into the same wedge
+
+Found on the way. The host sends `file.cancel` **and** `file.done`
+together the moment its sink fails (`GuestListener.swift ::
+failInboundStream`), and `n68_puttx_done()` acted only in
+`kN68SendEnded` — so a `file.done` arriving while bytes were still going
+out was dropped, the guest streamed the rest of the file at a host that
+had already discarded it, and then parked in `kN68SendEnded` waiting for
+a reply that had already been and gone. The host does not send a second
+one: `finishFile` returns early for a transfer it is discarding. **A
+receiver's `file.done` is final whenever it arrives**; requiring our own
+`file.end` first is what made the park permanent.
+
+### Fixed, and what the fix is verified to do
+
+No contract change was needed — `FileCancel` and `file.done`'s
+`cancelled` code were already there, which is worth recording because
+the gap was entirely on the implementing side. `file.begin`'s `transfer`
+is now remembered, because `file.cancel` names a transfer and carries no
+id, so nothing else could tell a live cancel from a late one.
+
+Same probe, same emulator, `0.20`:
+
+| Probe step | Result |
+|---|---|
+| cancel a push after 8 KB | `file.done ok:false code:cancelled received:8192 cleanup:temp-discarded` |
+| offer again immediately | accepted, completed, CRC-confirmed |
+| cancel the guest's own send mid-stream | `file.end ok:false`, **0 bulk frames after the cancel** |
+| ask for that send again | offered again — the lane is free |
+
+`cleanup:temp-discarded` was checked against the disk rather than
+believed: `hls` on the session image afterwards shows the completed
+`After Cancel` and **no `NOW incoming`** staging file. (`xfer_tmp_1` in
+that listing predates this work by weeks and is base-image debris.)
+
+The deliverability claim in `n68_puttx.h` rule 3 held up under the one
+case it exists for: the cancel was acted on one chunk after it arrived,
+not at the end of the transfer. A staged bulk frame nobody has seen is
+dropped; one already part-way out finishes, because a frame cut short is
+a desynchronised wire rather than a cancelled transfer.
+
+### Still open
+
+- **Not on the 180c.** Emulator-verified only, and the emulator is a
+  68040 with 128 MB. The behaviour under test is a state machine rather
+  than a rate, so it should carry — but nobody has watched it.
+- **A cancel still has no console face.** `put` is on both faces
+  ([docs/command-parity.md](command-parity.md)); abandoning a transfer
+  in flight is reachable from the wire only. A human at the machine
+  whose host has gone away still has nothing to press.
+- **The other 65 s window is unexamined.** A host that abandons a
+  transfer AND stops answering pings is cleaned up by the watchdog, but
+  no one has watched that path either, and it is the only path in which
+  a transfer's cleanup depends on a timer.
+- The probe lives in a scratchpad, not the repository. Turning it into
+  a metal gate belongs with whoever is working on that harness; it
+  needs `requireTheBuildUnderTest()` before anything it reports can be
+  believed.
+
 ## The 68K file family, both directions in one tree (2026-07-25 night)
 
 Three branches merged and verified together: the receive half (MacBinary,
