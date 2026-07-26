@@ -44,6 +44,8 @@ add_application(now68k-guest
     src/wire68.c
     src/health.c
     src/commands68.c
+    src/n68_vprobe.c
+    src/vprobe68.c
     src/proc_quit_args.c
     src/proc68.c
     guest68k.r
@@ -61,6 +63,22 @@ target_include_directories(now68k-guest PRIVATE
 # by -Werror alone; moving those files in-tree without the same gate would
 # silently drop it. It already has something to say about this shell.
 target_compile_options(now68k-guest PRIVATE -O2 -Wall -Wextra -Werror)
+
+# vprobe68.c is the one file with inline assembly, and two of the three
+# idioms it measures (fmove.d through the 68882) do not exist for the
+# 68000 this application is otherwise built for - gas refuses the mnemonic
+# outright. This raises the ASSEMBLER's architecture for that one file
+# only; the compiler still emits 68000 code for it (there is no
+# -mcpu=68030 in the compile options, deliberately), so nothing but the
+# hand-written instructions depends on the 030. Those instructions are in
+# turn gated at runtime on Gestalt reporting an FPU, because on System 7.1
+# an F-line trap with no FPU and no emulator is a crash, not a slow path.
+#
+# The whole file rather than a fragment because gas's .arch/.cpu
+# directives must precede the first instruction in a translation unit and
+# so cannot be scoped inside an asm block - checked, not assumed.
+set_source_files_properties(src/vprobe68.c PROPERTIES
+    COMPILE_OPTIONS "-Wa,-mcpu=68030")
 
 # 68K resolves everything from InterfaceLib traps (Event/Window/Menu/TextEdit/
 # Dialog/AppleEvent Managers, File Manager via libc's stdio shim, Device

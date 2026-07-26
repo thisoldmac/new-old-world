@@ -4,14 +4,22 @@
  * No malloc/NewPtr/NewHandle anywhere in this file - every buffer below is
  * a fixed, file-scope-sized local, matching the rest of guest68k/src.
  *
- * STATIC BUDGET (all stack, per call - this file owns no BSS):
+ * STATIC BUDGET (stack per call, plus one BSS block):
  *   run_launch    name[200] + detail[160]                        = 360 B
  *   run_quit      QuitArgs(~40) + msg[80] + detail[160]           = 280 B
+ *   run_vprobe    why[160]                                       = 160 B
  *   dispatch      one N68CmdResult                               = 256 B
- * Neither run_* runs while the other is on the stack (dispatch calls
- * exactly one), so the deepest frame is dispatch's 256 plus run_launch's
- * 360 = ~616 B - well inside a 68K stack frame's normal headroom on a
- * machine with ~1.7 MB free. No recursion, no VLA.
+ *   g_vprobe      one N68VProbeTable, BSS                        = ~820 B
+ * No two run_* are on the stack at once (dispatch calls exactly one), so
+ * the deepest frame is dispatch's 256 plus run_launch's 360 = ~616 B -
+ * well inside a 68K stack frame's normal headroom on a machine with
+ * ~1.7 MB free. No recursion, no VLA.
+ *
+ * The one BSS block is the vprobe row table, and it is BSS rather than a
+ * local precisely because this file's callers can be several levels deep
+ * by the time a command runs (wire68.c -> dispatch, and a pumped nested
+ * dispatch on top of that - proc68.c measured ~3.7 KB per level). See its
+ * comment for why one instance is also the right number.
  *
  * No printf family (numfmt.h's now68k_fmt_append_str/long only, matching
  * wire68.c) - snprintf drags newlib's float formatting into a 384 KB
@@ -21,8 +29,10 @@
 
 #include "log.h"
 #include "n68_cmdresult.h"
+#include "n68_vprobe.h"
 #include "numfmt.h"
 #include "proc68.h"
+#include "vprobe68.h"
 
 #include <string.h>
 
@@ -422,13 +432,56 @@ static void run_quit(const char *target, N68CmdResult *res)
     n68_cmdresult_set_ok2(res, "quit", "Quit", detail, "Outcome", state);
 }
 
+/* ---- vprobe ----------------------------------------------------------------- */
+
+/* THE TABLE LIVES HERE, IN BSS, AND THERE IS EXACTLY ONE.
+ *
+ * 17 rows x 48 bytes + 4 = ~820 bytes, which is too much to put on a stack
+ * frame that wire68.c's command path can already re-enter (proc68.c
+ * measured ~3.7 KB per nested level before its `pumping` guard). One
+ * instance rather than one per face is also what makes the two faces
+ * render the SAME measurement: run_vprobe() fills it, the wire renders it
+ * as a row array and the console renders the two-row summary of it. It is
+ * never read after the call that filled it returns, so nothing depends on
+ * it surviving - it is here for the stack, not for the lifetime.
+ *
+ * vprobe68_run refuses re-entry (kVProbe68Busy), so two probes can never
+ * be writing this table at once. */
+static N68VProbeTable g_vprobe;
+
+static VProbe68Status run_vprobe(N68CmdResult *res)
+{
+    char why[kDetailCap];
+    VProbe68Status status;
+
+    why[0] = '\0';
+    status = vprobe68_run(&g_vprobe, why, (long)sizeof why);
+    if (status != kVProbe68OK) {
+        now68k_log_num("cmd: vprobe refused", (long)status);
+        /* One code for "did not run", the sentence for which of the ways.
+         * A caller that asked for a measurement and got none needs to know
+         * whether the machine refused (no screen, geometry that did not
+         * check out) or was busy - and both are ok:false, because an empty
+         * table dressed as a success is the one answer a measurement
+         * command must never give. */
+        n68_cmdresult_set_error(res, status == kVProbe68Busy
+                                         ? "vprobe-busy" : "vprobe-refused",
+                                why[0] != '\0' ? why
+                                               : "vprobe could not measure "
+                                                 "this Mac");
+        return status;
+    }
+    now68k_log_num("cmd: vprobe ok", (long)g_vprobe.count);
+    return kVProbe68OK;
+}
+
 /* ---- help ------------------------------------------------------------------- */
 
-/* What THIS Mac serves - three commands, and it says three.
+/* What THIS Mac serves - four commands, and it says four.
  *
  * The other side keeps no command list: there are two guests with different
  * tables (the PowerPC Carbon guest implements fifteen commands, this one
- * implements two plus this), so a console-side list would be wrong for both.
+ * implements three plus this), so a console-side list would be wrong for both.
  * Discovery is therefore a request like any other, and the honest answer
  * from here is a short one. The PowerPC guest answers the same command from
  * its own table (guest/src/cmd_help.c); this table is deliberately separate
@@ -446,6 +499,8 @@ static const N68CommandDoc k_docs[] = {
       "quit [--all] [--wait N | --no-wait] <name>" },
     { "help", "list the commands this Mac serves",
       "help [command]" },
+    { "vprobe", "measure this Mac's VRAM read cost",
+      "vprobe (no arguments; wants a still screen)" },
     { NULL, NULL, NULL }
 };
 
@@ -552,6 +607,22 @@ int now68k_commands_run(const char *name, const char *target,
         run_quit(target, res);
         return 1;
     }
+    /* vprobe reaches the CONSOLE through here - that is the whole point of
+     * this seam (docs/command-parity.md): a verb in this function is a verb
+     * conwin.c can run without knowing it exists. What the console gets is
+     * the two-row summary, because an N68CmdResult holds two rows and the
+     * probe produces sixteen; the wire gets all sixteen through
+     * now68k_commands_dispatch below. Both render ONE table filled by one
+     * implementation, which is the property that matters - but the console
+     * seeing less of it than the host is a real asymmetry, written down at
+     * n68_vprobe_render_text (the renderer that closes it) rather than left
+     * to be discovered. */
+    if (strcmp(name, "vprobe") == 0) {
+        if (run_vprobe(res) == kVProbe68OK) {
+            n68_vprobe_summary(&g_vprobe, res);
+        }
+        return 1;
+    }
     return 0;
 }
 
@@ -567,6 +638,39 @@ int now68k_commands_dispatch(const char *name, const char *target, long id,
      * still share the list even though they do not share this builder. */
     if (strcmp(name, "help") == 0) {
         len = run_help(target, id, out, cap);
+        if (out_len != NULL) {
+            *out_len = len;
+        }
+        return 1;
+    }
+
+    /* vprobe answers here for the same reason help does: its reply is a row
+     * per measurement and an N68CmdResult holds one row (two with a state).
+     * It is NOT a second implementation - run_vprobe() is the same call
+     * now68k_commands_run makes, filling the same table; only the renderer
+     * differs, which is exactly the arrangement n68_cmdresult.h exists to
+     * preserve.
+     *
+     * A render that does not fit is answered, not swallowed: the caller is
+     * blocked on a command.result the contract promises always comes, and
+     * "the reply did not fit" is a true thing to say where silence is not.
+     * The static assert in commands68.h is what makes that path
+     * unreachable in this build. */
+    if (strcmp(name, "vprobe") == 0) {
+        n68_cmdresult_init(&res);
+        if (run_vprobe(&res) == kVProbe68OK) {
+            len = n68_vprobe_render_json(&g_vprobe, id, out, cap);
+            if (len == 0) {
+                now68k_log_num("cmd: vprobe table did not fit",
+                                (long)g_vprobe.count);
+                n68_cmdresult_set_error(&res, "vprobe-too-big",
+                                        "the vprobe table did not fit one "
+                                        "command.result");
+                len = n68_cmdresult_render_json(&res, id, out, cap);
+            }
+        } else {
+            len = n68_cmdresult_render_json(&res, id, out, cap);
+        }
         if (out_len != NULL) {
             *out_len = len;
         }

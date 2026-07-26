@@ -1,5 +1,16 @@
 /*
- * commands68.h - the command.request dispatcher: help, launch and quit.
+ * commands68.h - the command.request dispatcher: help, launch, quit and
+ * vprobe.
+ *
+ * `vprobe` is the odd one and its shape is documented where it is
+ * implemented (vprobe68.h). Two things about it belong here: its reply is
+ * a row ARRAY rather than a sentence, which is why
+ * NOW68K_COMMAND_RESULT_CAP grew below; and like `help` it answers from
+ * now68k_commands_dispatch directly, because an N68CmdResult holds two
+ * rows and a probe produces sixteen. The console still reaches it through
+ * now68k_commands_run (the delegation this file's whole design is for),
+ * which hands back the two-row summary - see n68_vprobe_summary and the
+ * gap noted at n68_vprobe_render_text.
  *
  * wire68.c owns the wire: framing (frame.h), the outbound queue, and
  * scanning a control payload's envelope (json_scan.h's "type"/"id"
@@ -44,6 +55,7 @@
 #define NOW68K_COMMANDS68_H
 
 #include "n68_cmdresult.h"
+#include "n68_vprobe.h"
 
 /* TWO READERS, ONE TABLE.
  *
@@ -85,8 +97,25 @@
  * via the compact fallback, not what fits a whole one. Sized for the
  * longest sentence proc68.h can hand back (kDetailCap, 160) inside its
  * JSON envelope, with room left so the next command's message is not
- * silently shortened the day it is added. */
-#define NOW68K_COMMAND_RESULT_CAP 512
+ * silently shortened the day it is added.
+ *
+ * 1024 RATHER THAN 512, since `vprobe`. A command.result carrying a row
+ * ARRAY is a different size class from one carrying a sentence, and it
+ * cannot page: the contract gives command.result no cursor, so a table
+ * either fits one frame or is not sent. vprobe's worst case is
+ * NOW68K_VPROBE_JSON_MAX (n68_vprobe.h), asserted against this number
+ * below and pinned there by seventeen rows of eighteen and thirty bytes -
+ * so growing the table past what the wire can carry fails the build here
+ * rather than vanishing on the 180c the way the 166-byte launch reply
+ * did. 1024 is also exactly NOW68K_CONTROL_SEND_CAP, which is the ceiling
+ * this can reach without widening the wire's own slots; wire68.c asserts
+ * that relationship in the other direction.
+ *
+ * The cost is one 512-byte stack frame: wire68.c's handle_command_request
+ * declares its reply buffer at this size, and that function is reachable
+ * from a pumped nested dispatch (see proc68.c's `pumping` guard, which
+ * bounds that depth). */
+#define NOW68K_COMMAND_RESULT_CAP 1024
 
 /* Below this, a reply still comes back and is still true, but the compact
  * fallback starts eating the message - the caller learns THAT something
@@ -97,6 +126,15 @@
 _Static_assert(NOW68K_COMMAND_RESULT_CAP >= NOW68K_COMMAND_RESULT_FLOOR,
                "a command.result buffer below the floor silently shortens "
                "every message it cannot fit");
+
+/* vprobe's table has no compact fallback and no page after it: if the
+ * whole row array does not fit, n68_vprobe_render_json returns nothing and
+ * the command answers ok:false instead of measuring. This is the assert
+ * that keeps that unreachable. */
+_Static_assert(NOW68K_COMMAND_RESULT_CAP >= NOW68K_VPROBE_JSON_MAX,
+               "a command.result buffer too small for a full vprobe table - "
+               "raise this cap and NOW68K_CONTROL_SEND_CAP together, or "
+               "take a row out of the probe");
 
 /* Dispatches one command.request by name.
  *
@@ -147,7 +185,8 @@ _Static_assert(NOW68K_COMMAND_RESULT_CAP >= NOW68K_COMMAND_RESULT_FLOOR,
  *           already treat a failed now68k_fmt_append_* chain. When this
  *           function returns 0, `*out_len` is left untouched.
  *
- * Returns 1 if `name` is one of "help", "launch" or "quit" - `out` is then always
+ * Returns 1 if `name` is one of "help", "launch", "quit" or "vprobe" -
+ * `out` is then always
  * NUL-terminated JSON, and `*out_len` (if `out_len` is not NULL) is its
  * length. The ok/error TRUTH of a reply is never sacrificed to make it
  * fit smaller - a shortened reply still says what actually happened, and
