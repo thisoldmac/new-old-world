@@ -70,4 +70,50 @@ typedef enum {
    kProcQuitSent and kProcQuitStillRunning as NOT that. */
 NowProcQuitOutcome now_proc_quit_by_name(const char *arg, char *msg, long cap);
 
+/* --- front by name: the same composition, one verb gentler --------------
+
+   process.front takes a PSN for the same reason process.quit does, and a
+   person has the same NAME they had before, so the bridge is the same
+   one: list, match, re-validate, act, re-check.
+
+   Two things differ from quit, and both are decisions rather than
+   omissions:
+
+     NOT RUNNING IS A FAILURE HERE. quit's "nothing by that name" is
+     ok:true, because the asked-for state (not running) already holds.
+     You cannot front what is not there, and a caller whose next step
+     assumes a window is up must not read it as done.
+
+     NOW ITSELF IS A FAIR TARGET. quit refuses its own process because
+     the reply would be severed mid-send; bringing NOW forward severs
+     nothing, and "front NOW" is a reasonable thing for a person at a
+     host console to type.
+
+   The confirm is the same cooperative wait: SetFrontProcess returning
+   noErr means the switch was SCHEDULED, and on this platform it happens
+   when we yield. So this yields, briefly and boundedly, and then re-reads
+   GetFrontProcess — the only thing that can tell a completed switch from
+   an accepted request. */
+typedef enum {
+    kProcFrontDone = 0,       /* asked, and confirmed frontmost */
+    kProcFrontUnconfirmed,    /* accepted, and not frontmost at the deadline */
+    kProcFrontNotRunning,     /* nothing by that name is running */
+    kProcFrontAmbiguous,      /* several matches; refused rather than guess */
+    kProcFrontRefused,        /* SetFrontProcess itself failed */
+    kProcFrontBadArgs
+} NowProcFrontOutcome;
+
+/* The seconds this waits for the switch to land before reporting
+   kProcFrontUnconfirmed. Short on purpose: a process switch that has not
+   happened in two seconds of yielded time is not going to, where a quit
+   may legitimately sit on a Save dialog for much longer. */
+#define kProcFrontWaitSecs 2
+
+/* Runs the composition for `arg` — the whole rest of the line, which is
+   the name; there are no flags. Writes one line of plain language into
+   `msg` for EVERY outcome, good ones included, because the caller renders
+   that line and nothing else. */
+NowProcFrontOutcome now_proc_front_by_name(const char *arg, char *msg,
+                                           long cap);
+
 #endif /* NOW_PROC_ACTIONS_H */

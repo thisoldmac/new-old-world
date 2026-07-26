@@ -471,6 +471,21 @@ void console_model_run(const char *input)
         console_model_append(line);
         return;
     }
+    if (strcmp(name, "front") == 0) {
+        char msg[240];
+
+        /* Whole rest of the line, like launch and quit, and for the same
+           reason: process names have spaces. front has no flags, so
+           there is nothing else to parse — proc_actions.c owns what
+           little grammar there is, once, for this face and the wire's. */
+        while (*raw_args == ' ') {
+            ++raw_args;
+        }
+        (void)now_proc_front_by_name(raw_args, msg, sizeof msg);
+        snprintf(line, sizeof line, "%.120s", msg);
+        console_model_append(line);
+        return;
+    }
     if (strcmp(name, "reveal") == 0) {
         char msg[240];
 

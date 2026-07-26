@@ -167,6 +167,82 @@ final class CommandRegistryTests: XCTestCase {
             """)
     }
 
+    /// Verbs NOW-68K's dispatch answers — `now68k_commands_run` and the
+    /// row-array cases in `now68k_commands_dispatch`, which is the union a
+    /// person can actually type at either of its faces.
+    private func answered68K() throws -> Set<String> {
+        let text = try read("guest68k/src/commands68.c")
+        var names: Set<String> = []
+        let regex = try NSRegularExpression(
+            pattern: #"strcmp\(name, "([a-z]+)"\) == 0"#)
+        for match in regex.matches(
+            in: text, range: NSRange(text.startIndex..., in: text)) {
+            if let r = Range(match.range(at: 1), in: text) {
+                names.insert(String(text[r]))
+            }
+        }
+        XCTAssertFalse(names.isEmpty, "could not read NOW-68K's dispatch")
+        return names
+    }
+
+    /// Its doc table — `k_docs` in the same file, which BOTH of its faces
+    /// render: the wire's `help` builds JSON rows from it and `conwin.c`
+    /// prints it.
+    private func documented68K() throws -> Set<String> {
+        let text = try read("guest68k/src/commands68.c")
+        guard let table = text.range(of: "static const N68CommandDoc k_docs[]")
+        else {
+            XCTFail("no doc table in commands68.c")
+            return []
+        }
+        var names: Set<String> = []
+        let regex = try NSRegularExpression(pattern: #"\{\s*"([a-z]+)",\s*""#)
+        let tail = String(text[table.lowerBound...])
+        for match in regex.matches(
+            in: tail, range: NSRange(tail.startIndex..., in: tail)) {
+            if let r = Range(match.range(at: 1), in: tail) {
+                names.insert(String(tail[r]))
+            }
+        }
+        XCTAssertFalse(names.isEmpty, "could not read NOW-68K's doc table")
+        return names
+    }
+
+    /// The same three-halves check, for the other guest.
+    ///
+    /// It did not exist until `front` was added, and its absence was
+    /// provable: deleting `front`'s row from `k_docs` while leaving the
+    /// dispatch case in place kept every test in this suite green. That is
+    /// a working command nobody can discover — `help` IS discovery here,
+    /// on both faces, and it is the only thing the host console's Tab
+    /// completion has to go on. The PowerPC half of this has been checked
+    /// since `tail` proved the same point from the other direction.
+    ///
+    /// NOW-68K serves a strict SUBSET of the registry, so the contract
+    /// check is containment rather than equality — the reverse would fail
+    /// on every verb the PowerPC guest has and this one does not.
+    func testTheSixtyEightKGuestsThreeHalvesAgree() throws {
+        let answered = try answered68K()
+        let documented = try documented68K()
+        let declared = try declared()
+
+        XCTAssertEqual(answered, documented, """
+            NOW-68K's dispatch and its doc table disagree. Answered but \
+            undocumented is a command that works and cannot be found — \
+            `help` is the only discovery surface on either of this \
+            guest's faces, and the host console's Tab completion reads \
+            nothing else. Documented but unanswered is a command that is \
+            offered and then refused.
+            """)
+        XCTAssertTrue(documented.isSubset(of: declared), """
+            NOW-68K documents \
+            \(documented.subtracting(declared).sorted().joined(separator: ", ")) \
+            which the contract's x-commands does not declare. A guest \
+            inventing a verb is a verb the host can only learn about by \
+            accident — the contract changes first (AGENTS.md).
+            """)
+    }
+
     /// The dumb-shell invariant, and the thing most likely to be undone by
     /// someone adding a convenience: this side must not name a command the
     /// guest serves. It knew fifteen of them, which was wrong for the Carbon

@@ -63,10 +63,15 @@ final class GuestWireFixtureTests: XCTestCase {
                        "an escaped quote inside a summary survives the trip")
     }
 
-    /// run_help() on NOW-68K (guest68k/src/commands68.c), which serves three
-    /// commands and says three — plus the note row that keeps a short list
-    /// from reading as a broken one. Its empty label is deliberate: rows are
-    /// [label, value] and this one is prose, not a command.
+    /// run_help() on NOW-68K (guest68k/src/commands68.c): the rows it
+    /// builds from its own doc table, plus the note row that keeps a short
+    /// list from reading as a broken one. Its empty label is deliberate:
+    /// rows are [label, value] and this one is prose, not a command.
+    ///
+    /// The sample below is a SHAPE, not this guest's current command set —
+    /// docs/contract-coverage.md carries that, derived rather than
+    /// remembered, and CommandRegistryTests fails when the guest's table
+    /// and the contract disagree.
     func testHelpAsTheSixtyEightKGuestWritesIt() throws {
         let json = """
         {"type":"command.result","id":3,"ok":true,"output":{"help":[\
@@ -286,7 +291,8 @@ final class GuestWireFixtureTests: XCTestCase {
         {"name":"Finder","kind":"finder","code":"FNDR","creator":"MACS",\
         "sizeKB":2048,"front":false,"psnHigh":0,"psnLow":8386},\
         {"name":"NOW","kind":"application","code":"APPL","creator":"NwWs",\
-        "sizeKB":3072,"front":true,"psnHigh":0,"psnLow":16519},\
+        "sizeKB":3072,"front":true,"psnHigh":0,"psnLow":16519,\
+        "isSelf":true},\
         {"name":"File Sharing Extension","kind":"background","code":"appe",\
         "creator":"fsee","sizeKB":512,"front":false,"psnHigh":0,\
         "psnLow":24601}],\
@@ -303,6 +309,17 @@ final class GuestWireFixtureTests: XCTestCase {
         // The PSN is what the drive verbs echo back to name a process.
         XCTAssertEqual(listing.processes[1].psnLow, 16519)
         XCTAssertTrue(listing.processes[1].isDrivable)
+        // isSelf is the guest naming ITSELF in its own list — the only
+        // trustworthy answer to "which of these is the process on the
+        // other end of this connection", and emitted only where true.
+        XCTAssertEqual(listing.processes[1].isSelf, true)
+        XCTAssertNil(listing.processes[0].isSelf,
+                     "absent means not-self; the contract does not make "
+                     + "every row pay for a false")
+        XCTAssertFalse(listing.processes[1].isQuittable,
+                       "the guest refuses to quit itself, so the host "
+                       + "should never offer it")
+        XCTAssertTrue(listing.processes[0].isQuittable)
     }
 
     /// serve_software_list(): the guest's installed software, assembled
@@ -585,8 +602,63 @@ final class GuestWireFixtureTests: XCTestCase {
         let rows = try XCTUnwrap(result.output?["ps"],
                                  "the contract names the group `ps`")
         XCTAssertEqual(rows.count, 2)
-        XCTAssertEqual(rows[0], ["NOW-68K", "application, 384 KB, front"])
+        XCTAssertEqual(rows[0],
+                       ["NOW-68K", "application, 384 KB, front, self"],
+                       "the guest names its own row, so a reader never has "
+                       + "to infer which process is answering them")
         XCTAssertEqual(rows[1], ["Finder", "finder, 250 KB"])
+    }
+
+    /// process.result, as NOW-68K's handle_process_quit appends it. The
+    /// three shapes are the three answers the guest can give, and the
+    /// distinction that matters is between the first and the other two:
+    /// `ok` says the Apple Event was DELIVERED, never that the process
+    /// has gone. A caller that reads ok:true as "it quit" is the failure
+    /// proc68.h exists to prevent, one message family over.
+    func test68KProcessResultAsTheGuestWritesIt() throws {
+        guard case .processResult(let sent) =
+            try decode(Guest68KWire.processQuitSent) else {
+            return XCTFail("not a process.result")
+        }
+        XCTAssertEqual(sent.id, 12, "echoes the request id")
+        XCTAssertTrue(sent.ok)
+        XCTAssertNil(sent.reason, "a reason belongs to a refusal")
+
+        guard case .processResult(let stale) =
+            try decode(Guest68KWire.processQuitStale) else {
+            return XCTFail("not a process.result")
+        }
+        XCTAssertFalse(stale.ok)
+        XCTAssertEqual(stale.reason,
+                       "quit: that process is no longer running")
+
+        guard case .processResult(let itself) =
+            try decode(Guest68KWire.processQuitSelf) else {
+            return XCTFail("not a process.result")
+        }
+        XCTAssertFalse(itself.ok)
+        XCTAssertEqual(itself.reason, "quit: NOW will not ask itself to quit")
+    }
+
+    /// The front half of the same reply shape. Worth its own fixture
+    /// because the two verbs' `ok` means two different things — delivered
+    /// for quit, accepted for front — and both are weaker than the words
+    /// a reader supplies for free ("it quit", "it is in front").
+    func test68KProcessFrontResultAsTheGuestWritesIt() throws {
+        guard case .processResult(let sent) =
+            try decode(Guest68KWire.processFrontSent) else {
+            return XCTFail("not a process.result")
+        }
+        XCTAssertEqual(sent.id, 15)
+        XCTAssertTrue(sent.ok)
+
+        guard case .processResult(let stale) =
+            try decode(Guest68KWire.processFrontStale) else {
+            return XCTFail("not a process.result")
+        }
+        XCTAssertFalse(stale.ok)
+        XCTAssertEqual(stale.reason,
+                       "front: that process is no longer running")
     }
 
     /// Truncation is STATED. `ps` has no cursor to page with, so a machine
@@ -1051,6 +1123,44 @@ enum Guest68KWire {
     static let sendEndFailed =
         #"{"type":"file.end","id":7,"transfer":9,"ok":false}"#
 
+    /// handle_process_quit() — guest68k/src/wire68.c. The drive verb's
+    /// reply, and the reason this guest answers process.quit at all: a
+    /// PSN names exactly one process, where the name the `quit` command
+    /// takes is capped at 31 characters, need not be unique, and cannot
+    /// be derived from the version a guest reports in `hello`.
+    ///
+    /// ok:true means DELIVERED, per the contract — not gone. There is no
+    /// field here that could tell a granted quit from a declined one, so
+    /// the guest does not pretend to know; a caller confirms by asking
+    /// process.list again.
+    static let processQuitSent =
+        #"{"type":"process.result","id":12,"ok":true}"#
+
+    /// A PSN no live process answers to. Not an error: the asked-for
+    /// state already holds, and the reason says which of the refusals
+    /// this was.
+    static let processQuitStale = #"{"type":"process.result","id":13,"#
+        + #""ok":false,"reason":"quit: that process is no longer running"}"#
+
+    /// The refusal that protects the connection: quitting this instance
+    /// would sever the reply mid-send. The host knows it before asking
+    /// (isSelf on the listing) and should not have offered the button.
+    static let processQuitSelf = #"{"type":"process.result","id":14,"#
+        + #""ok":false,"reason":"quit: NOW will not ask itself to quit"}"#
+
+    /// process.front's answer, from the same handle_process_drive. The
+    /// contract's ok means the verb was APPLIED and no more: here that is
+    /// "SetFrontProcess accepted it", not "it is frontmost". The switch is
+    /// cooperative and lands when the guest yields, and process.result has
+    /// no field that could say which happened — so the guest does not
+    /// claim to know, and a caller that needs to re-reads process.list,
+    /// where `front` marks the row.
+    static let processFrontSent =
+        #"{"type":"process.result","id":15,"ok":true}"#
+
+    static let processFrontStale = #"{"type":"process.result","id":16,"#
+        + #""ok":false,"reason":"front: that process is no longer running"}"#
+
     static let byeNormal = #"{"type":"bye","code":"normal"}"#
     static let byeProtocolError = #"{"type":"bye","code":"protocol-error"}"#
     static let byeShuttingDown = #"{"type":"bye","code":"shutting-down"}"#
@@ -1072,12 +1182,17 @@ enum Guest68KWire {
     /// because the one conditional part of the reply is the truncation
     /// note: `ps` carries no cursor, so a machine with more processes than
     /// a control frame holds says how many it dropped, in a final row.
+    ///
+    /// The first row ends ", self" — the same fact process.listing's
+    /// isSelf carries, in the sentence a person reads. NOW-68K's own row
+    /// always has it, because the guest is always one of the processes it
+    /// is listing, and a person (or a handoff) needs to know which.
     static let psReply = #"{"type":"command.result","id":4,"ok":true,"#
-        + #""output":{"ps":[["NOW-68K","application, 384 KB, front"],"#
+        + #""output":{"ps":[["NOW-68K","application, 384 KB, front, self"],"#
         + #"["Finder","finder, 250 KB"]]}}"#
     static let psReplyTruncated = #"{"type":"command.result","id":5,"#
         + #""ok":true,"output":{"ps":["#
-        + #"["NOW-68K","application, 384 KB, front"],"#
+        + #"["NOW-68K","application, 384 KB, front, self"],"#
         + #"["...","6 more not shown"]]}}"#
 
     // ---- the BROWSE half (n68_filelist.c) ------------------------------
@@ -1135,5 +1250,7 @@ enum Guest68KWire {
         psReply, psReplyTruncated,
         fileListingRoot, fileListingSubfolder, lsReply,
         fileListRefuseBadPath,
+        processQuitSent, processQuitStale, processQuitSelf,
+        processFrontSent, processFrontStale,
     ]
 }

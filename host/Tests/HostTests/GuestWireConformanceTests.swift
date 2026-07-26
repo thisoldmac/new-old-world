@@ -370,6 +370,7 @@ final class GuestWireConformanceTests: XCTestCase {
         "ping": "test68KPingAsTheGuestWritesIt",
         "error": "test68KErrorReplyAsTheGuestWritesIt",
         "bye": "test68KByeAsTheGuestWritesIt",
+        "process.result": "test68KProcessResultAsTheGuestWritesIt",
         "file.accept": "test68KFileAcceptAsTheGuestWritesIt",
         "file.refuse": "test68KFileRefuseAsTheGuestWritesIt",
         "file.progress": "test68KFileProgressAsTheGuestWritesIt",

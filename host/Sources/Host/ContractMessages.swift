@@ -212,12 +212,25 @@ struct ProcessEntry: Codable, Equatable, Sendable, Identifiable {
     /// process to the drive verbs. Absent if the responder predates them.
     var psnHigh: Int?
     var psnLow: Int?
+    /// True on the ONE row that is the responder itself — the process on
+    /// the other end of this connection. It is the only trustworthy
+    /// answer to "which of these is the guest I am talking to": a name
+    /// built from the version in `hello` agrees with the deployed file
+    /// name only by convention, and when that convention lapsed a
+    /// handoff asked a guest to quit a process that did not exist.
+    /// Absent from a responder that predates the field.
+    var isSelf: Bool?
 
     var id: String { "\(name)#\(code ?? "")#\(creator ?? "")" }
     var isBackground: Bool { kind == "background" }
 
     /// A process can only be driven if it named itself with a PSN.
     var isDrivable: Bool { psnHigh != nil && psnLow != nil }
+
+    /// The responder will refuse process.quit here — quitting itself
+    /// would sever the reply mid-send. Known before asking, so a UI can
+    /// say so rather than discover it.
+    var isQuittable: Bool { isDrivable && !(isSelf ?? false) }
 }
 
 struct ProcessListing: Codable, Equatable, Sendable {

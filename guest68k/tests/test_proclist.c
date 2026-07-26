@@ -325,11 +325,13 @@ static void test_refuses_rather_than_looping(void)
     long cap;
     long n;
 
-    /* The worst case the bounds are written for: a full-length name and
-       maximal numbers everywhere. */
+    /* The worst case the bounds are written for: a full-length name,
+       maximal numbers everywhere, and isSelf present - the field is
+       emitted only when true, so the widest row is a self row. */
     set_row(&rows[0], "123456789012345678901234567890X",
             kN68ProcKindApplication, "APPL", "MACS", 2147483647L, 0,
             4294967295UL, 4294967295UL);
+    rows[0].is_self = 1;
 
     for (cap = 0; cap < NOW68K_PROCLIST_MIN_CAP; ++cap) {
         n = n68_proclist_build(2147483647L, 1, rows, 1, out, cap, &next,
@@ -375,6 +377,10 @@ static void test_tail_is_reserved_at_every_cap(void)
         set_row(&rows[i], "123456789012345678901234567890X",
                 kN68ProcKindApplication, "APPL", "MACS", 2147483647L, 0,
                 4294967295UL, 4294967295UL);
+        /* Not a realistic list - only one process can be self - but this
+           is a BYTE bound, and the widest row is the one to walk caps
+           against. */
+        rows[i].is_self = 1;
     }
 
     for (cap = NOW68K_PROCLIST_MIN_CAP; cap < 1100; ++cap) {
@@ -413,6 +419,7 @@ static void test_worst_case_row_bound(void)
     set_row(&rows[0], "123456789012345678901234567890X",
             kN68ProcKindApplication, "APPL", "MACS", 2147483647L, 0,
             4294967295UL, 4294967295UL);
+    rows[0].is_self = 1;      /* the field is emitted only when true */
     rows[1] = rows[0];
 
     n_one = n68_proclist_build(2147483647L, 1, rows, 1, one,
@@ -438,6 +445,70 @@ static void test_worst_case_row_bound(void)
            n_two - n_one, NOW68K_PROCLIST_ROW_MAX,
            n_one - (n_two - n_one),
            NOW68K_PROCLIST_HEAD_MAX + NOW68K_PROCLIST_TAIL_MAX);
+}
+
+/* ---- isSelf ------------------------------------------------------------ */
+
+/* The field that answers "which of these is the process you are talking
+   to" - and it has to be ONE row, in both renderers.
+
+   It exists because the answer was previously derived from a name, and a
+   name is not derivable from anything the wire reports: on 2026-07-25 a
+   build deployed as "NOW-68K 0.18" reported version 0.16 in its hello, a
+   retire step asked for "NOW-68K 0.16", the guest honestly answered that
+   nothing of that name was running, and a 4 MB machine was left with two
+   NOW-68Ks. A PSN read off the isSelf row cannot go wrong that way.
+
+   Absent-means-false is asserted, not assumed: the field is emitted only
+   when true, and a host reading a listing must be able to tell "not me"
+   from "an old guest that never said". */
+static void test_marks_only_itself(void)
+{
+    N68ProcRow rows[3];
+    char out[kAmpleCap];
+    long n;
+
+    set_row(&rows[0], "Finder", kN68ProcKindFinder, "FNDR", "MACS",
+            250, 1, 0, 0x2);
+    set_row(&rows[1], "New Old World", kN68ProcKindApplication, "APPL",
+            "NW68", 384, 0, 0, 0x1234);
+    set_row(&rows[2], "New Old World", kN68ProcKindApplication, "APPL",
+            "NW68", 384, 0, 0, 0x5678);
+    /* Two rows share a name on purpose: that is the case a name cannot
+       resolve and a PSN can, and it is the shape of a handoff - the
+       outgoing build and the incoming one, both called NOW. */
+    rows[2].is_self = 1;
+
+    n = n68_proclist_build(11, 1, rows, 3, out, (long)sizeof out, NULL, NULL);
+    CHECK(n > 0, "isSelf: the page builds");
+    check_well_formed(out, n, "isSelf page");
+    CHECK(count_of(out, "\"isSelf\":true") == 1,
+          "exactly one row is marked as the responder itself");
+    CHECK(!has(out, "\"isSelf\":false"),
+          "and the others say nothing rather than false - the contract "
+          "makes absence mean false, and 24 rows should not each pay for "
+          "it");
+    /* The mark has to be on the RIGHT row: same name, different PSN, so
+       nothing but the PSN can tell them apart. */
+    CHECK(has(out, "\"psnLow\":22136,\"isSelf\":true"),
+          "the mark rides the self row's own PSN, not a namesake's");
+
+    /* A listing with no self row at all - the host's own mirror
+       direction, or a guest too old to say - carries the field nowhere. */
+    rows[2].is_self = 0;
+    n = n68_proclist_build(12, 1, rows, 3, out, (long)sizeof out, NULL, NULL);
+    CHECK(n > 0, "isSelf: a page with no self row builds");
+    CHECK(!has(out, "isSelf"),
+          "a listing that names no self says so by absence");
+
+    /* And the console/host-console face of the same fact. */
+    rows[2].is_self = 1;
+    n = n68_proclist_render_ps(13, rows, 3, out, (long)sizeof out);
+    CHECK(n > 0, "ps builds with a self row");
+    CHECK(count_of(out, ", self") == 1,
+          "ps marks exactly one row as this application");
+    CHECK(has(out, "[\"Finder\",\"finder, 250 KB, front\"]"),
+          "ps leaves every other row's sentence alone");
 }
 
 /* ---- sanitizing -------------------------------------------------------- */
@@ -606,7 +677,7 @@ static void test_ps_refuses_a_hopeless_cap(void)
 /* NOW68K_PS_ROW_MAX is what the static assert in commands68.c reasons
    against. A bound nobody re-measures stops being one, so build the true
    worst case: the longest name, the longest kind, a ten-digit size and
-   the front marker. */
+   BOTH markers, front and self. */
 static void test_ps_worst_case_row_bound(void)
 {
     N68ProcRow rows[1];
@@ -619,6 +690,7 @@ static void test_ps_worst_case_row_bound(void)
     rows[0].name[sizeof rows[0].name - 1] = '\0';
     rows[0].kind = kN68ProcKindApplication;   /* the longest kind text */
     rows[0].front = 1;
+    rows[0].is_self = 1;                      /* both markers, the widest */
     rows[0].size_kb = 2147483647L;            /* ten digits */
 
     n = n68_proclist_render_ps(2147483647L, rows, 1, out, (long)sizeof out);
@@ -641,6 +713,7 @@ int main(void)
     test_refuses_rather_than_looping();
     test_tail_is_reserved_at_every_cap();
     test_worst_case_row_bound();
+    test_marks_only_itself();
     test_sanitizing();
     test_ps_shape();
     test_ps_empty();

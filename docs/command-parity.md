@@ -47,8 +47,8 @@ that test fails.
 **NOW-68K (`guest68k/`)** — two mechanisms, because it has two kinds of
 capability:
 
-- *Commands* (`launch`, `quit`). `commands68.c` runs one and fills an
-  `N68CmdResult` — the facts, no formatting. `n68_cmdresult.c` holds both
+- *Commands* (`launch`, `quit`, `front`). `commands68.c` runs one and
+  fills an `N68CmdResult` — the facts, no formatting. `n68_cmdresult.c` holds both
   renderers side by side: contract JSON for the wire, text for the
   console. The console **delegates** to `now68k_commands_run()` rather
   than dispatching its own copy, so a verb added to the table reaches the
@@ -157,6 +157,51 @@ both directions from `now68k_wire_send_status()` and
 `testTheSixtyEightKConsoleCanSeeAnOutgoingFile` is the guard. It was
 written before the gap could cost anything, which is the first time that
 has been true in this file.
+
+### Two ways to name a target is not two faces
+
+`quit` (the x-command) and `process.quit` (the drive verb) are the same
+capability with two identifiers, and that is deliberate, not drift.
+
+A **name** is what a person has. They read `ps`, they type what they see,
+and the parser takes the whole rest of the line because process names
+have spaces in them. A **PSN** is what a machine has: it names exactly
+one live process, where a name is capped at 31 characters, need not be
+unique, needs a MacRoman comparison the guest refuses for non-ASCII —
+and is not derivable from anything on the wire. That last one is why
+this section exists. The handoff used to build the outgoing build's name
+as `"NOW-68K " + <the version from its hello>`, a file name guessed from
+a compiled constant; on 2026-07-25 a build deployed as 0.18 reported
+0.16, the guest was asked to quit a process that did not exist, said so
+honestly, and left two NOW-68Ks on a 4 MB machine.
+
+So the rule is not "one identifier" but **one implementation**:
+`proc_quit_named` turns a name into a PSN and then does exactly what
+`proc_quit_psn` does. Neither face invented a second matcher.
+
+`front` arrived with both routes from the start, and with both faces on
+both guests, which is the shape this file argues for rather than the one
+it usually has to correct after the fact. It is also the answer to a
+question `quit` never had to ask: `process.front` had been on the
+PowerPC guest's wire since the Processes module was built, and there was
+no way to type it — not at either guest's own keyboard, and not from the
+host console, which is a dumb shell that knows no message families. A
+capability reachable only by clicking a button in one module is exactly
+the `ps` shape.
+
+Its outcomes are NOT `quit`'s with the words changed, and the difference
+is worth stating because it is easy to copy wrongly: `quit`'s
+`not-running` is ok:true, since "not running" is the state it was asked
+to produce and it already holds. `front`'s is ok:FALSE — nothing can
+bring forward a process that is not there. And `quit` refuses its own
+process while `front` accepts it, because one would sever the reply
+mid-send and the other severs nothing.
+
+The listing carries `isSelf` for the same reason — a caller that needs to
+name the process it is *talking to* now reads the answer instead of
+constructing it. `ps` says `self` on that row on both guests, so a person
+at either keyboard can see it too: a fact the wire carries and the
+console cannot show is the drift this file is about.
 
 ## The MCP is a client, not a face
 

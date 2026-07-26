@@ -119,6 +119,20 @@ static const char *const d_quit[] = {
     NULL
 };
 
+static const char *const d_front[] = {
+    "  The name is the whole rest of the line and there",
+    "  are no flags. Names it by what \"ps\" shows.",
+    "  The switch is cooperative, so this yields for 2 s",
+    "  and re-reads which process is frontmost - it says",
+    "  \"is frontmost\" or \"is NOT frontmost\", never the",
+    "  first when it means the second.",
+    "  Nothing by that name is a FAILURE here, unlike",
+    "  \"quit\": you cannot front what is not running.",
+    "  NOW itself is a fair target - fronting it severs",
+    "  nothing, where quitting it would cut the reply.",
+    NULL
+};
+
 static const char *const d_reveal[] = {
     "  Selects the item in its Finder window and brings",
     "  the Finder forward. Opens nothing, so any item",
@@ -215,6 +229,8 @@ const NowCommandDoc kNowCommandDocs[] = {
       "launch [-v VERSION] <name | path | #n>", d_launch },
     { "quit", 1, "ask an application on this Mac to quit",
       "quit [--all] [--wait N | --no-wait] <name>", d_quit },
+    { "front", 1, "bring an application on this Mac forward",
+      "front <name>", d_front },
     { "reveal", 1, "show an item in this Mac's Finder",
       "reveal <name | full path | #n>", d_reveal },
     { "vers", 1, "one file's version resources",

@@ -184,6 +184,98 @@ a desynchronised wire rather than a cancelled transfer.
   a metal gate belongs with whoever is working on that harness; it
   needs `requireTheBuildUnderTest()` before anything it reports can be
   believed.
+## `front`, on both faces of both guests (2026-07-26)
+
+`process.front` had been on the PowerPC guest's wire since the Processes
+module was built, and there was no way to **type** it — not at either
+guest's own keyboard, and not from the host console, which is a dumb
+shell that knows no message families. A capability reachable only by
+clicking a button in one module is the `ps` shape exactly
+([command-parity.md](command-parity.md)).
+
+So `front` is now a contract `x-command` served by both guests, over the
+same list → match → re-validate → act → re-check composition `quit`
+uses, and NOW-68K additionally answers the `process.front` drive verb it
+did not before. Its outcomes are deliberately not `quit`'s with the
+words changed: `not-running` is ok:**false** here (nothing can bring
+forward a process that is not there, where quit was asked to produce
+exactly that state), and NOW itself is a fair target (fronting severs
+nothing; quitting would cut the reply mid-send).
+
+### Unverified
+
+- **The confirm branch has never run.** `SetFrontProcess` returning
+  noErr means the switch was *scheduled*; it lands when the guest
+  yields, and both guests yield with an event mask of zero. Whether a
+  process switch completes inside that yield is **unproven on either
+  machine** — if it does not, `front` will report `unconfirmed` every
+  time while the screen plainly shows the switch happened. That is
+  visible and diagnosable rather than a silent lie, which is why it is
+  written this way, but it is the first thing to watch on metal.
+- Nothing else here has been on a machine either: both guests build
+  clean, the host suite is green, and no PowerBook has run it.
+
+### Open
+
+- **`front`'s argument parser is not natively testable.** `quit`'s
+  grammar lives Toolbox-free in `proc_quit_args.c` and has its own
+  native test; `front`'s is four lines of trim-and-unquote, static in
+  each guest's command file, and duplicated across the two. It is small
+  enough that a shared module would be more moving parts than it saves —
+  but it is the second copy of a grammar, which is how the first one
+  started.
+
+## `quit` targets a process identity, not a file name (2026-07-26)
+
+The handoff's retire step named the outgoing build `"NOW-68K " + <the
+version it reported in hello>` — a FILE NAME derived from a compiled
+constant. They agree by convention only. On 2026-07-25 a build deployed
+as `NOW-68K 0.18` reported `0.16`, so the retire sent
+`quit NOW-68K 0.16`, the guest answered honestly that nothing of that
+name was running, the old build kept running, and a 4 MB machine was
+left with two NOW-68Ks. Nothing was broken on the guest; the identifier
+was invented on the host.
+
+Fixed by naming the target the way a machine should:
+
+- `process.listing` gained **`isSelf`** (contract first), set by both
+  guests on their own row. It is the only trustworthy answer to "which
+  process is on the other end of this connection".
+- NOW-68K now answers the contract's **`process.quit`** drive verb —
+  re-validate the PSN, refuse self, send — over `proc_quit_psn`, the
+  same three steps `proc_quit_named` ends with. It does not confirm, and
+  that is the contract's decision: `process.result.ok` means DELIVERED,
+  and there is no field that could tell a granted quit from a declined
+  one. A caller confirms by re-reading `process.list`.
+- The `quit` command still takes a name, because a person types what
+  `ps` shows them. `ps` now says `self` on that row, on both guests.
+
+### Unverified
+
+- **None of it has been on a machine.** Both guests build clean and the
+  host suite is green (511 tests), but `isSelf`, `process.quit` on
+  NOW-68K, and the PSN-targeted handoff have not run on the 180c. The
+  loopback test `HandoffIdentityTests` reproduces the version/name
+  disagreement over scripted guests and watches the old derivation fail
+  — that proves this side never invents an identifier, and proves
+  nothing about the Toolbox code.
+- **The first handoff has to be launched by hand.** The build currently
+  on the 180c is 0.19: it serves `process.list` without `isSelf` and
+  does not answer `process.quit` at all. `Handoff68K.identifySelf` fails
+  with a message saying so rather than falling back to a name — a
+  fallback would be the defect, reintroduced. From 0.20 onward the
+  handoff is automatic again.
+- **`process.front` and `process.shot` are still unimplemented on
+  NOW-68K.** They fall through to `send_error_reply`, visibly. Only the
+  verb the handoff needed was added; the family is deliberately partial
+  rather than quietly half-served.
+
+### Open
+
+- The host's `ProcessEntry.id` is `name#code#creator`, so two processes
+  of the same name collide in the table's identity — exactly the case
+  `isSelf` and the PSN exist to handle, one layer up. Not hit by
+  anything today; worth the PSN when it is.
 
 ## The 68K file family, both directions in one tree (2026-07-25 night)
 
