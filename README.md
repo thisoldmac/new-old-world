@@ -279,12 +279,28 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   SERVES a host (`file.list`, `file.get`, `file.move`, `file.trash`) —
   answers `unknown-command` or `refused`, which is the contract's own
   additive answer, not a failure. It can be told to send a file and can be
-  sent one; it cannot yet be browsed. Neither direction does MacBinary, so
-  **no application and no resource fork crosses either way**. Every one of
+  sent one; it cannot yet be browsed. **Receiving** decodes MacBinary, so
+  an application and its resource fork can cross inbound; **sending** does
+  not, so outbound is the data fork only. Every one of
   those it does serve is reachable from
   both its faces (the console and the wire), which
   [docs/command-parity.md](docs/command-parity.md) explains and
   `CommandParityTests` enforces.
+- **Receiving a file on NOW-68K is emulator-verified, not
+  metal-verified.** A host can push into the Desktop, `data` or
+  MacBinary, and 4 MB arrives byte-identical at ~350 KB/s on a Quadra
+  800 under Mac OS 8.1. Nothing has run on the PowerBook 180c, which is
+  the machine this is for — a 68030 with 4 MB against a 68040 with 128.
+  There is also a live File Manager defect underneath it: on 8.1,
+  `FSClose` of a written resource fork scribbles 77 bytes of catalog
+  state into the fork, and the guest detects and repairs that rather
+  than being able to prevent it. Whether System 7.1 does the same is
+  **unknown and untested**; the shipped check is also the experiment.
+  [docs/68k-file-receive.md](docs/68k-file-receive.md) is the record.
+- **Sending a file from NOW-68K is emulator-verified, not
+  metal-verified.** Round-tripped byte-identical to 4 MB on the same
+  Quadra 800, with the control lane proved to survive a transfer.
+  Nothing has sent a byte on the 180c.
 - **NOW-68K's interactive console is metal-verified.** A second window (Windows > Console, Command-K, and it
   toggles) with an input line, history and scrollback. Watched working on a
   Quadra 800 under Mac OS 8.1 — including two redraw bugs found there and

@@ -37,11 +37,42 @@ works, and no `NOW incoming ...` staging file was left behind.
 The guest's event loop is not starved by the receive path: `help`
 round-tripped in 0.05 s during a 1 MB transfer against 0.06 s idle.
 
+## MacBinary on NOW-68K: the fork corruption, found and fenced (2026-07-26)
+
+Full record: **[68k-file-receive.md](68k-file-receive.md)**. In short.
+
+`FSClose` of a written resource fork on Mac OS 8.1 splices 77 bytes of
+File Manager catalog state into the fork's first block at offset 48 - an
+in-memory record layout that matches nothing on disk. Deterministic:
+every resource-carrying MacBinary file, every run; data forks never; a
+MacBinary file with an empty data fork never affected.
+
+Pinned by three structural facts, in this order: the splice is
+sub-sector, so the bytes were wrong in RAM and no allocation-level
+theory survives; the spliced content carries the staging name and
+`BINA` but both FINAL fork lengths, which brackets the write to the
+close window and explains why disabling `Allocate`, `SetEOF`,
+`FSpRename`, `FSpSetFInfo` and `PBSetCatInfo` each missed; and read-back
+probes read clean before the close and spliced after it, 5/5.
+
+The guest keeps the fork's first 512 bytes as written, re-reads them
+after the close and after the rename, rewrites them when they diverge,
+and re-verifies through a fresh open. Unrepairable before rename fails
+the transfer; after rename it deletes the file rather than leave a
+corrupt application to be double-clicked. Detected 5/5, repaired in one
+round 5/5, raw disk clean, both forks byte-identical.
+
+**Still open, and the first is the one that matters:**
+
+1. **System 7.1 on the real 180c is untested** - the 7.5.3 image in the
+   lab has no MacTCP, so the OS discriminator is blocked. The shipped
+   probes double as the experiment: push one MacBinary file and the log
+   either names the scribble or stays silent. Either answer is safe.
+2. QEMU's contribution is not separated from 8.1 itself.
+3. The PowerPC guest's resource forks have never been byte-verified.
+
 ### What is deliberately not there
 
-- **No MacBinary.** Data fork only; a MacBinary offer is refused. This
-  is the biggest functional gap - it means no application, and no file
-  with a resource fork, can be pushed to NOW-68K yet.
 - **No resume.** The guest never reports `have`, which the contract
   reads as "start from the beginning". Partials are always discarded.
   Deliberate: resume is an open hang on the PowerPC side (see the large
@@ -52,11 +83,18 @@ round-tripped in 0.05 s during a 1 MB transfer against 0.06 s idle.
   `file.trash` and the host-initiated PULL (`file.get`) still answer the
   generic not-implemented error, so the guest can push a file it is told
   to push but cannot serve a host that wants to browse or fetch.
-- **The destination is the application's own folder.** NOW-68K has no
-  preferences and no share root, so there was nothing to read one from.
-  This is the spike's weakest decision and the first thing a real
-  feature has to settle: it currently means a host can write into the
-  folder the application lives in.
+- **~~The destination is the application's own folder.~~** Superseded —
+  **files land on the Desktop, and nothing is gated.** NOW-68K has no
+  preferences and no share root, so there is nothing to read a
+  destination out of. The Desktop needs no state to name and is where a
+  person looks for something that arrived. `path` from the offer still
+  resolves relative to it and a host may reach a subfolder — deliberate
+  until the browse/ls verbs exist, because a boundary drawn before
+  there is anything to browse is a guess dressed as a policy. It was
+  briefly the application's own folder, which meant a host could write
+  into the System Folder. The send half still reads its SOURCE from the
+  application's own folder (`now68k_app_folder`), which is a different
+  root for a different direction and deliberately so.
 
 ### Open
 
@@ -66,11 +104,14 @@ round-tripped in 0.05 s during a 1 MB transfer against 0.06 s idle.
    wedge silently on that machine. A 4 MB transfer into a 384 KB
    partition is exactly the shape that behaves differently there.
 2. **A contract gap: `FileRefuse.code` has no value for "this receiver
-   cannot handle that".** An unsupported container is reported as
+   cannot handle that".** An unrecognized container is reported as
    `io-error` with the truth only in `reason`, which is a lie of
    category - nothing failed, the request was never serviceable. The
    honest fix is an additive enum value in the contract, which touches
-   both halves and was out of scope for a spike.
+   both halves and was out of scope for a spike. (Unknown containers are
+   now REFUSED rather than treated as `data`; writing an unknown
+   envelope out as a raw fork produces a file of the wrong length and
+   the wrong shape and blames the disk.)
 3. **`FileOffer.modified` has no stated units in the contract.** Both
    guests treat it as Mac-epoch seconds (it goes straight into
    `ioFlMdDat`), and the two agreeing is the only reason it works. It

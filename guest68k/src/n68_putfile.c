@@ -3,10 +3,23 @@
 
 #include "n68_putfile.h"
 
+#include "log.h"
+
 #include <Files.h>
+#include <Folders.h>
 #include <OSUtils.h>
 #include <Processes.h>
 #include <string.h>
+
+/* Neither constant is declared in these Universal Interfaces - the
+ * PowerPC guest gets them from Carbon's Folders.h, which this side does
+ * not have (the same gap as DirCreate vs FSpDirCreate below). Both are
+ * fixed by the Folder Manager and safe to state here. kOnSystemDisk is
+ * a vRefNum meaning "the startup disk": 0x8000, which as the int16_t
+ * FindFolder takes is -32768. Written as the hex cast rather than the
+ * decimal so it reads as the flag word it is. */
+#define kOnSystemDiskVRef   ((short)0x8000)
+#define kDoCreateFolder     true
 
 /* The application's own folder, resolved through the Process Manager
  * rather than the launch default directory - which is NOT the same
@@ -38,6 +51,41 @@ int now68k_app_folder(short *vref, long *dir)
     return 1;
 }
 
+/* Where an incoming file lands: the DESKTOP.
+ *
+ * It was the application's own folder, which was a spike decision with
+ * an obvious hazard - a host could write into the folder the
+ * application lives in, and on this machine that is frequently the
+ * System Folder. The Desktop is where a person looks for something that
+ * just arrived, the Folder Manager already knows where it is, and
+ * nothing on the system cares what appears there.
+ *
+ * NOT a share, and deliberately not gated. The contract's `path` still
+ * resolves relative to this root, so a host may name a subfolder and
+ * nothing stops it reaching one. That is the right amount of structure
+ * for now: the browse/ls verbs that would make choosing a destination
+ * meaningful do not exist yet, and a boundary drawn before there is
+ * anything to browse would be a guess dressed as a policy. When they
+ * land, this function is the single place the root is decided.
+ *
+ * kDoCreateFolder rather than "don't": a Desktop Folder that does not
+ * exist yet is an ordinary state on a freshly formatted volume, and
+ * failing a transfer over it would be refusing a file because nobody
+ * had ever put anything on the desktop. */
+static int desktop_folder(short *vref, long *dir)
+{
+    int32_t found_dir = 0;
+    int16_t found_vref = 0;
+
+    if (FindFolder(kOnSystemDiskVRef, kDesktopFolderType, kDoCreateFolder,
+                   &found_vref, &found_dir) != noErr) {
+        return 0;
+    }
+    *vref = (short)found_vref;
+    *dir  = (long)found_dir;
+    return 1;
+}
+
 static void c_to_pascal(const char *s, Str255 out)
 {
     long n = (long)strlen(s);
@@ -58,7 +106,7 @@ static N68PutCode resolve_folder(const char *rel, int create,
     const char *p = rel;
 
     *err = noErr;
-    if (!now68k_app_folder(vref, dir)) {
+    if (!desktop_folder(vref, dir)) {
         return kN68PutIOError;
     }
     while (p != NULL && *p != '\0') {
@@ -117,7 +165,9 @@ static N68PutCode resolve_folder(const char *rel, int create,
     return kN68PutOK;
 }
 
-/* "NOW incoming " plus 8 hex digits of the tick count: 21 characters,
+#define kTempPrefix "NOW incoming "
+
+/* kTempPrefix plus 8 hex digits of the tick count: 21 characters,
  * well inside HFS's 31. The tick count is enough to keep two transfers
  * in one folder apart; it is deliberately NOT derived from the offer,
  * because this guest does not implement resume and a name that promised
@@ -129,7 +179,7 @@ static void temp_name(Str255 out)
     unsigned long t = (unsigned long)TickCount();
     int i;
 
-    memcpy(out + 1, "NOW incoming ", 13);
+    memcpy(out + 1, kTempPrefix, 13);
     for (i = 0; i < 8; ++i) {
         out[1 + 13 + i] = (unsigned char)hex[(t >> (28 - 4 * i)) & 0xF];
     }
@@ -150,7 +200,7 @@ static long pf_free_bytes(void *ctx, const N68PutOffer *offer)
      * only ever names folders inside it. Resolved WITHOUT creating, so
      * asking how much room there is never has a side effect. */
     if (resolve_folder(offer->path, 0, &vref, &dir, &err) != kN68PutOK) {
-        if (!now68k_app_folder(&vref, &dir)) {
+        if (!desktop_folder(&vref, &dir)) {
             return -1;
         }
     }
@@ -179,7 +229,6 @@ static N68PutCode pf_create(void *ctx, const N68PutOffer *offer)
     Str255 tname;
     N68PutCode rc;
     OSErr err;
-    long want;
 
     pf->err = noErr;
     rc = resolve_folder(offer->path, offer->create_parents,
@@ -227,27 +276,51 @@ static N68PutCode pf_create(void *ctx, const N68PutOffer *offer)
         pf->have_temp = 0;
         return kN68PutIOError;
     }
+    pf->rsrc_ref = 0;
+    pf->rsrc_written = 0;
 
     /* Claim the space up front. Two reasons, and the second is the one
      * that matters on this machine: a disk-full failure arrives NOW, as
      * a refusal costing one message, rather than at 3.9 MB of 4 MB; and
      * a 4 MB file grown 8 KB at a time on a 1993 laptop's drive is a
      * fragmented 4 MB file, with every extend paying for its own
-     * allocation and catalog update. A refusal here is advisory - the
-     * offer is still accepted if the File Manager simply declines to
-     * pre-allocate - because Allocate failing is not the same as the
-     * write failing later, and refusing a transfer that would have
-     * worked is worse than a slow one. */
+     * allocation and catalog update.
+     *
+     * SetEOF, NOT Allocate, and the difference is not cosmetic.
+     * Allocate/PBAllocate extend only the PHYSICAL end-of-file; moving
+     * the LOGICAL end-of-file past the physical one is the idiom Inside
+     * Macintosh actually recommends for a file whose size is known in
+     * advance, and it is what the PowerPC guest does
+     * (now/guest/src/fileshare.c: `SetEOF(rx->data_ref, bytes)`).
+     *
+     * This started as a cosmetic difference between the two guests and
+     * became a suspect: MacBinary transfers here land 77 bytes of the
+     * file's own catalog record inside its resource fork, and the PPC
+     * guest - which reserves this way - shows no such thing. Whether
+     * that is the cause is exactly what this change tests; see
+     * docs/open-issues.md. Matching the shipping guest is the right
+     * default regardless of the outcome. */
     if (offer->bytes > 0) {
-        want = offer->bytes;
-        if (Allocate(pf->ref, &want) == dskFulErr) {
-            pf->err = dskFulErr;
+        err = SetEOF(pf->ref, offer->bytes);
+        if (err != noErr) {
+            pf->err = err;
             (void)FSClose(pf->ref);
             pf->ref = 0;
             (void)FSpDelete(&pf->temp);
             pf->have_temp = 0;
-            return kN68PutTooBig;
+            return (err == dskFulErr) ? kN68PutTooBig : kN68PutIOError;
         }
+        /* The logical EOF STAYS at the reserved size. Setting it back
+         * to 0 here - which an earlier version of this did - hands the
+         * blocks straight back: the File Manager deallocates blocks
+         * when the logical EOF moves more than one allocation block
+         * below the physical one, so the "reservation" would reserve
+         * nothing and a full disk would once again be discovered at
+         * 3.9 MB of 4 MB. The file is trimmed to what was actually
+         * written in finish(), which is where the PowerPC guest does it
+         * too. Between here and there the temp carries a logical EOF
+         * larger than its contents, which is invisible: it never leaves
+         * the staging name until finish has trimmed it. */
     }
 
     /* memcpy rather than a cast through OSType*. offer->file_type is a
@@ -269,16 +342,43 @@ static N68PutCode pf_create(void *ctx, const N68PutOffer *offer)
     return kN68PutOK;
 }
 
-static N68PutCode pf_write(void *ctx, const void *bytes, long len)
+static N68PutCode pf_write(void *ctx, N68PutFork fork,
+                           const void *bytes, long len)
 {
     N68PutFile *pf = (N68PutFile *)ctx;
     long count = len;
+    short ref;
     OSErr err;
 
-    if (pf->ref == 0) {
+    if (fork == kN68ForkRsrc) {
+        /* Opened on first use, not at create: a data-only file must not
+         * acquire an empty resource fork it never had. Only a MacBinary
+         * transfer ever reaches here, and only after its data fork is
+         * complete. */
+        if (pf->rsrc_ref == 0) {
+            err = FSpOpenRF(&pf->temp, fsWrPerm, &pf->rsrc_ref);
+            if (err != noErr) {
+                pf->err = err;
+                pf->rsrc_ref = 0;
+                return kN68PutIOError;
+            }
+        }
+        ref = pf->rsrc_ref;
+        /* Stash the head as written, for the post-close verify. */
+        if (pf->rsrc_written < (long)sizeof pf->rsrc_head) {
+            long room = (long)sizeof pf->rsrc_head - pf->rsrc_written;
+            long take = (len < room) ? len : room;
+
+            memcpy(pf->rsrc_head + pf->rsrc_written, bytes, (size_t)take);
+        }
+        pf->rsrc_written += len;
+    } else {
+        ref = pf->ref;
+    }
+    if (ref == 0) {
         return kN68PutIOError;
     }
-    err = FSWrite(pf->ref, &count, bytes);
+    err = FSWrite(ref, &count, bytes);
     if (err != noErr) {
         pf->err = err;
         return (err == dskFulErr) ? kN68PutTooBig : kN68PutIOError;
@@ -293,18 +393,144 @@ static N68PutCode pf_write(void *ctx, const void *bytes, long len)
     return kN68PutOK;
 }
 
+
+/* ---- resource-fork head: verify after close, rewrite if scribbled ----
+ *
+ * On the Mac OS 8.1 emulator, FSCLOSE OF A WRITTEN RESOURCE FORK
+ * splices 77 bytes of the File Manager's own catalog state into the
+ * fork's first block, at offset 48: a record for the staging file in an
+ * IN-MEMORY layout (Str31-padded name, unified 32-byte Finder info,
+ * adjacent logical fork lengths) that matches no on-disk structure. The
+ * write goes through a stale cache-buffer reference in the close-time
+ * catalog update, so it lands in whichever block is hot: normally the
+ * fork's own first block - and when a log line happened to be written
+ * between the last fork write and the close, the LOG took the damage
+ * instead, which is how this was first mistaken for a bug that a
+ * read-back could prevent. It cannot be prevented from here; it can be
+ * caught and undone, which is what this does.
+ *
+ * Measured, per transfer, deterministic: probe A (before close) reads
+ * clean, probe B (fresh open after close) reads the splice, 5/5 files,
+ * across repeated runs. Whether System 7.1 on the real 180c does this
+ * is UNTESTED - the lab's 7.5.3 image has no MacTCP - and these checks
+ * cost three 512-byte reads when nothing is wrong, so they stay on
+ * everywhere. docs/open-issues.md is the full ledger.
+ *
+ * The verify is a memcmp against the bytes as WRITTEN, not a scan for
+ * the known splice, so any divergence in the head is caught - this
+ * guards the file, not one signature. Beyond the first 512 bytes it is
+ * blind, stated plainly; every observed splice sat at offset 48. */
+
+/* 1 = the head on disk matches what was written. */
+static int head_ok(N68PutFile *pf, short ref)
+{
+    unsigned char buf[512];
+    long want = pf->rsrc_written < (long)sizeof buf
+                    ? pf->rsrc_written : (long)sizeof buf;
+    long count = want;
+    OSErr err;
+
+    if (want <= 0) {
+        return 1;
+    }
+    if (SetFPos(ref, fsFromStart, 0) != noErr) {
+        return 1;             /* cannot look = cannot condemn */
+    }
+    err = FSRead(ref, &count, buf);
+    if ((err != noErr && err != eofErr) || count < want) {
+        return 1;
+    }
+    return memcmp(buf, pf->rsrc_head, (size_t)want) == 0;
+}
+
+/* Puts the written bytes back and re-verifies. `ref` must be open with
+ * write permission. */
+static int head_repair(N68PutFile *pf, short ref)
+{
+    long count = pf->rsrc_written < (long)sizeof pf->rsrc_head
+                     ? pf->rsrc_written : (long)sizeof pf->rsrc_head;
+
+    if (SetFPos(ref, fsFromStart, 0) != noErr) {
+        return 0;
+    }
+    if (FSWrite(ref, &count, pf->rsrc_head) != noErr) {
+        return 0;
+    }
+    (void)FlushVol(NULL, pf->vref);
+    return head_ok(pf, ref);
+}
+
+/* Opens `spec`'s resource fork, verifies the head, rewrites it if it
+ * was scribbled, and re-verifies through a FRESH open - because the
+ * close of the repair refnum runs the very code path that scribbles,
+ * a head that read clean through one refnum is not proven until the
+ * next one agrees. Bounded: three rounds, then honest failure. */
+static int head_verify_spec(N68PutFile *pf, FSSpec *spec, const char *what)
+{
+    int attempt;
+
+    for (attempt = 0; attempt < 3; ++attempt) {
+        short ref = 0;
+        short again = 0;
+        int ok;
+        int still;
+
+        if (FSpOpenRF(spec, fsRdWrPerm, &ref) != noErr) {
+            return 1;         /* cannot look = cannot condemn */
+        }
+        ok = head_ok(pf, ref);
+        if (!ok) {
+            now68k_log_num(what, attempt);
+            ok = head_repair(pf, ref);
+        }
+        (void)FSClose(ref);
+        (void)FlushVol(NULL, pf->vref);
+        if (!ok) {
+            return 0;         /* the rewrite itself did not take */
+        }
+        /* The look that counts: a fresh, read-only open. Closing a fork
+         * that was only read is inert, so this one can be trusted. */
+        if (FSpOpenRF(spec, fsRdPerm, &again) != noErr) {
+            return 1;
+        }
+        still = head_ok(pf, again);
+        (void)FSClose(again);
+        if (still) {
+            return 1;
+        }
+        /* The close above put the splice back; go around again. */
+    }
+    return 0;
+}
+
 static N68PutCode pf_finish(void *ctx)
 {
     N68PutFile *pf = (N68PutFile *)ctx;
     FInfo info;
     OSErr err;
+    int had_rsrc = (pf->rsrc_ref != 0);
+
+    /* Before the close: never yet seen dirty here, but the refnum is
+     * open with write permission, so a repair costs nothing to offer. */
+    if (had_rsrc && !head_ok(pf, pf->rsrc_ref)) {
+        now68k_log("put: rsrc head bad before close, rewriting");
+        if (!head_repair(pf, pf->rsrc_ref)) {
+            return kN68PutIOError;
+        }
+    }
 
     if (pf->ref != 0) {
         /* The logical EOF is where the writes left it, which is short of
          * the physical EOF that Allocate claimed. Trimming it is what
          * makes the file's size the file's size rather than the space it
          * was given - without this a 4 MB file reports as whatever the
-         * allocation rounded up to. */
+         * allocation rounded up to.
+         *
+         * It matters more for MacBinary than for a raw data fork: there
+         * the whole ENVELOPE was pre-allocated on the data fork, so the
+         * data fork would otherwise report the size of the envelope
+         * rather than of the file inside it - a Finder size that is
+         * wrong by the resource fork plus the padding. */
         long here = 0;
 
         if (GetFPos(pf->ref, &here) == noErr) {
@@ -317,7 +543,24 @@ static N68PutCode pf_finish(void *ctx)
             return kN68PutIOError;
         }
     }
+    if (pf->rsrc_ref != 0) {
+        err = FSClose(pf->rsrc_ref);
+        pf->rsrc_ref = 0;
+        if (err != noErr) {
+            pf->err = err;
+            return kN68PutIOError;
+        }
+    }
     (void)FlushVol(NULL, pf->vref);
+    /* After the close: this is where the splice lands, every time it
+     * lands at all. Verified and repaired BEFORE the rename, so a fork
+     * that cannot be made right fails while it is still staging debris. */
+    if (had_rsrc
+        && !head_verify_spec(pf, &pf->temp,
+                             "put: rsrc head scribbled at close, round")) {
+        now68k_log("put: rsrc head unrepairable, refusing");
+        return kN68PutIOError;
+    }
 
     /* Stamp before the rename, so nothing ever exists under the final
      * name without its type and creator - a file that appears as
@@ -367,13 +610,47 @@ static N68PutCode pf_finish(void *ctx)
         }
     }
     (void)FlushVol(NULL, pf->vref);
+    /* After the rename, because the rename is itself a catalog update.
+     * Late, so the remedy is harsher: a file that cannot be made right
+     * under its final name is deleted rather than left for a
+     * double-click. */
+    if (had_rsrc
+        && !head_verify_spec(pf, &pf->final,
+                             "put: rsrc head scribbled at rename, round")) {
+        now68k_log("put: rsrc head unrepairable after rename, deleted");
+        (void)FSpDelete(&pf->final);
+        return kN68PutIOError;
+    }
     return kN68PutOK;
+}
+
+static void pf_set_info(void *ctx, unsigned long file_type,
+                        unsigned long creator, unsigned long modified)
+{
+    N68PutFile *pf = (N68PutFile *)ctx;
+
+    /* Zero means "the sender did not say", and leaves whatever create()
+     * took from the offer in place - a MacBinary header with no type is
+     * not a reason to forget the one the offer carried. */
+    if (file_type != 0) {
+        pf->file_type = (OSType)file_type;
+    }
+    if (creator != 0) {
+        pf->creator = (OSType)creator;
+    }
+    if (modified != 0) {
+        pf->modified = modified;
+    }
 }
 
 static void pf_discard(void *ctx)
 {
     N68PutFile *pf = (N68PutFile *)ctx;
 
+    if (pf->rsrc_ref != 0) {
+        (void)FSClose(pf->rsrc_ref);
+        pf->rsrc_ref = 0;
+    }
     if (pf->ref != 0) {
         (void)FSClose(pf->ref);
         pf->ref = 0;
@@ -386,7 +663,7 @@ static void pf_discard(void *ctx)
 }
 
 static const N68PutFileOps kOps = {
-    pf_free_bytes, pf_create, pf_write, pf_finish, pf_discard
+    pf_free_bytes, pf_create, pf_write, pf_set_info, pf_finish, pf_discard
 };
 
 const N68PutFileOps *now68k_putfile_ops(void)
@@ -416,7 +693,7 @@ void now68k_putfile_where(char *out, long cap)
         return;
     }
     out[0] = '\0';
-    if (!now68k_app_folder(&vref, &dir)) {
+    if (!desktop_folder(&vref, &dir)) {
         return;
     }
     memset(&pb, 0, sizeof pb);

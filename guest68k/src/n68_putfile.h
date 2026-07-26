@@ -11,21 +11,28 @@
  * where they can be tested off-metal. This file is the part that cannot
  * be, so it is kept as small and as dull as it can be made.
  *
- * ---- Where files land, and why it is the application's own folder ----
+ * ---- Where files land: the Desktop -----------------------------------
  *
- * NOW-68K has no preferences and no share root. That is a product
- * property rather than an omission (main.c's header, and the README say
- * so), so there is nothing to read a destination out of and no dialog
- * this thing is allowed to put up. The application's own folder is the
- * one place a person can find without being told, it is where the dev
- * settings file and the logs already are (n68_devsettings_file.c,
- * log.c), and it needs no new state to remember.
+ * NOW-68K has no preferences and no share root - a product property
+ * rather than an omission (main.c's header and the README both say so)
+ * - so there is nothing to read a destination out of and no dialog this
+ * thing is allowed to put up. The Desktop needs none of that: the
+ * Folder Manager knows where it is, it is where a person looks for
+ * something that just arrived, and nothing on the system cares what
+ * appears there.
  *
- * That is a SPIKE decision, not a product one. A real share is a real
- * decision - which volume, which folder, who chooses it, what stops a
- * host writing over the application - and none of that is settled here.
- * The contract's `path` is honoured relative to this folder, so the
- * shape is already the shape a share would have; only the root moves.
+ * It was the application's own folder, briefly, and that had an obvious
+ * hazard: a host could write into the folder the application lives in,
+ * which on this machine is frequently the System Folder.
+ *
+ * NOT A SHARE, and deliberately not gated. The contract's `path` still
+ * resolves relative to this root, so a host may name a subfolder and
+ * nothing stops it reaching one. That is the right amount of structure
+ * for now - the browse/ls verbs that would make choosing a destination
+ * meaningful do not exist yet, and a boundary drawn before there is
+ * anything to browse would be a guess dressed as a policy. When they
+ * land, desktop_folder() in the .c is the single place the root is
+ * decided.
  *
  * ---- Bytes land under a temporary name -------------------------------
  *
@@ -34,6 +41,15 @@
  * double-clicks, and on this machine the real name is often an
  * application. The PowerPC guest stages the same way and for the same
  * reason (now/guest/src/fileshare.h).
+ *
+ * ---- MacBinary: two forks, one staging file ---------------------------
+ *
+ * n68_putrx.c decodes the envelope and says which fork each run belongs
+ * to; this file opens the second one when first asked. The forks are
+ * written in order - data, then resource - because that is the order
+ * MacBinary stores them, and nothing here seeks: each fork is appended
+ * to through its own refNum, and the File Manager keeps a separate mark
+ * per refNum.
  *
  * ---- No completion routines, no interrupt time ------------------------
  *
@@ -60,11 +76,27 @@ typedef struct {
     FSSpec temp;             /* what is being written */
     FSSpec final;            /* what it becomes on success */
     short  ref;              /* open data fork; 0 when closed */
+    short  rsrc_ref;         /* open resource fork; 0 when closed.
+                                Opened lazily, on the first resource-fork
+                                write a MacBinary transfer asks for - a
+                                data-only file never opens one, and a
+                                resource fork created and left empty is
+                                not the same file as one never created. */
     int    have_temp;        /* a staging file exists on disk */
     OSType file_type, creator;
     unsigned long modified;  /* Mac epoch seconds, straight from the offer */
     int    overwrite;
     OSErr  err;              /* the OSErr behind the last failure */
+
+    /* The resource fork's first 512 bytes, kept as they were WRITTEN so
+       the head can be verified - and rewritten - after close. On the
+       Mac OS 8.1 emulator, FSClose of a written resource fork splices
+       77 bytes of File Manager catalog state into the fork's first
+       block; see the read-back block in the .c for the evidence and
+       docs/open-issues.md for the investigation. 512 bytes of BSS
+       against a corruption that is otherwise silent. */
+    unsigned char rsrc_head[512];
+    long   rsrc_written;     /* total resource-fork bytes written */
 } N68PutFile;
 
 /* The application's own folder, through the Process Manager rather than

@@ -69,6 +69,15 @@ static void check_code(const char *what, N68PutCode got, N68PutCode want)
 typedef struct {
     unsigned char *bytes;
     long len, cap;
+    /* The resource fork, kept separately so a test can assert that the
+       right bytes went to the right fork - which is the whole question a
+       MacBinary decode has to answer. */
+    unsigned char *rsrc;
+    long rsrc_len;
+    int  rsrc_opened;          /* write() was asked for it at all */
+
+    unsigned long info_type, info_creator, info_modified;
+    int  info_calls;
 
     int created;
     int finished;          /* took its final name */
@@ -102,12 +111,24 @@ static N68PutCode fake_create(void *ctx, const N68PutOffer *offer)
     return kN68PutOK;
 }
 
-static N68PutCode fake_write(void *ctx, const void *bytes, long len)
+static N68PutCode fake_write(void *ctx, N68PutFork fork,
+                             const void *bytes, long len)
 {
     FakeDisk *d = (FakeDisk *)ctx;
 
     if (d->write_rc != kN68PutOK && d->len >= d->fail_write_after) {
         return d->write_rc;
+    }
+    if (fork == kN68ForkRsrc) {
+        d->rsrc_opened = 1;
+        if (d->rsrc_len + len > d->cap) {
+            fail_msg("the fake resource fork overflowed - test bug");
+            return kN68PutIOError;
+        }
+        memcpy(d->rsrc + d->rsrc_len, bytes, (size_t)len);
+        d->rsrc_len += len;
+        d->writes++;
+        return kN68PutOK;
     }
     if (d->len + len > d->cap) {
         fail_msg("the fake disk overflowed - test bug, not a code bug");
@@ -117,6 +138,17 @@ static N68PutCode fake_write(void *ctx, const void *bytes, long len)
     d->len += len;
     d->writes++;
     return kN68PutOK;
+}
+
+static void fake_set_info(void *ctx, unsigned long file_type,
+                          unsigned long creator, unsigned long modified)
+{
+    FakeDisk *d = (FakeDisk *)ctx;
+
+    d->info_calls++;
+    d->info_type = file_type;
+    d->info_creator = creator;
+    d->info_modified = modified;
 }
 
 static N68PutCode fake_finish(void *ctx)
@@ -139,7 +171,8 @@ static void fake_discard(void *ctx)
 }
 
 static const N68PutFileOps kFakeOps = {
-    fake_free, fake_create, fake_write, fake_finish, fake_discard
+    fake_free, fake_create, fake_write, fake_set_info,
+    fake_finish, fake_discard
 };
 
 /* ---- fixtures --------------------------------------------------------- */
@@ -150,9 +183,10 @@ static void disk_init(FakeDisk *d, long cap)
 {
     memset(d, 0, sizeof *d);
     d->bytes = (unsigned char *)malloc((size_t)cap);
+    d->rsrc = (unsigned char *)malloc((size_t)cap);
     d->cap = cap;
     d->free_bytes = -1;   /* "cannot say" unless a test sets it */
-    if (d->bytes == NULL) {
+    if (d->bytes == NULL || d->rsrc == NULL) {
         fail_msg("out of memory setting up the fake disk");
         exit(1);
     }
@@ -161,7 +195,9 @@ static void disk_init(FakeDisk *d, long cap)
 static void disk_free(FakeDisk *d)
 {
     free(d->bytes);
+    free(d->rsrc);
     d->bytes = NULL;
+    d->rsrc = NULL;
 }
 
 static void offer_init(N68PutOffer *o, long bytes)
@@ -171,6 +207,7 @@ static void offer_init(N68PutOffer *o, long bytes)
     o->bytes = bytes;
     strcpy(o->name, "Report");
     o->create_parents = 1;
+    o->container_known = 1;
 }
 
 /* A pattern with no period that divides any frame or batch size, so a
@@ -420,21 +457,16 @@ static void test_an_offer_is_refused_before_anything_is_created(void)
     N68PutRx rx;
     N68PutOffer offer;
 
-    /* MacBinary: not decoded yet, and writing it out verbatim would
-     * produce a file that looks right and opens wrong. */
-    disk_init(&disk, 1024);
-    n68_putrx_init(&rx, g_batch, (long)sizeof g_batch, &kFakeOps, &disk);
-    offer_init(&offer, 512);
-    offer.macbinary = 1;
-    check_code("macbinary refused",
-               n68_putrx_offer(&rx, &offer), kN68PutUnsupported);
-    check("macbinary created nothing", !disk.created);
+    /* The contract gap this code still stands for. MacBinary is decoded
+     * now, so kN68PutUnsupported answers an unrecognized container
+     * instead - but FileRefuse.code still has no value meaning "this
+     * receiver cannot handle that", so it is still reported as io-error
+     * with the truth only in `reason`. */
     check("the refusal borrows io-error, per the contract gap",
           strcmp(n68_putrx_code_word(kN68PutUnsupported), "io-error") == 0);
     check("...and says what actually happened",
           strstr(n68_putrx_code_reason(kN68PutUnsupported),
-                 "MacBinary") != NULL);
-    disk_free(&disk);
+                 "container") != NULL);
 
     /* Not enough room. Asked before creating, so a 4 MB offer onto a
      * full disk costs one message rather than a partial. */
@@ -772,6 +804,430 @@ static void test_a_path_cannot_walk_out_of_the_share(void)
     disk_free(&disk);
 }
 
+/* ---- MacBinary --------------------------------------------------------
+ *
+ * The envelope is a 128-byte header, the data fork padded up to a
+ * multiple of 128, then the resource fork padded the same way. Building
+ * one here rather than checking in a binary fixture is deliberate: the
+ * sizes have to vary across the cases below (the padding boundary is the
+ * interesting part), and a builder makes the header's field offsets
+ * visible in the test rather than hidden in a blob nobody can read.
+ */
+
+static long mb_padded(long n) { return (n + 127L) & ~127L; }
+
+static unsigned short mb_crc16(const unsigned char *b, long len)
+{
+    unsigned short crc = 0;
+    long i;
+    int bit;
+
+    for (i = 0; i < len; ++i) {
+        crc ^= (unsigned short)((unsigned short)b[i] << 8);
+        for (bit = 0; bit < 8; ++bit) {
+            crc = (crc & 0x8000) != 0
+                ? (unsigned short)((unsigned short)(crc << 1) ^ 0x1021)
+                : (unsigned short)(crc << 1);
+        }
+    }
+    return crc;
+}
+
+static void mb_put32(unsigned char *p, unsigned long v)
+{
+    p[0] = (unsigned char)(v >> 24); p[1] = (unsigned char)(v >> 16);
+    p[2] = (unsigned char)(v >> 8);  p[3] = (unsigned char)v;
+}
+
+/* Returns the envelope length. `out` must hold
+ * 128 + padded(data) + padded(rsrc). Data fork bytes are the standard
+ * pattern; resource fork bytes are the pattern INVERTED, so a decode
+ * that put a run in the wrong fork fails on content and not merely on
+ * length. */
+static long mb_build(unsigned char *out, long data_len, long rsrc_len,
+                     unsigned long type, unsigned long creator,
+                     unsigned long modified, int version)
+{
+    long pos, i;
+    unsigned short crc;
+
+    memset(out, 0, (size_t)(128 + mb_padded(data_len) + mb_padded(rsrc_len)));
+    out[0] = 0;                       /* old version, must be zero */
+    out[1] = 6;                       /* filename length */
+    memcpy(out + 2, "AnApp!", 6);
+    mb_put32(out + 65, type);
+    mb_put32(out + 69, creator);
+    mb_put32(out + 83, (unsigned long)data_len);
+    mb_put32(out + 87, (unsigned long)rsrc_len);
+    mb_put32(out + 95, modified);
+    out[122] = (unsigned char)version;   /* 129 = MB II, 130 = MB III */
+    out[123] = 129;
+    if (version == 129 || version == 130) {
+        crc = mb_crc16(out, 124);
+        out[124] = (unsigned char)(crc >> 8);
+        out[125] = (unsigned char)crc;
+    }
+
+    pos = 128;
+    for (i = 0; i < data_len; ++i) {
+        out[pos + i] = pattern_byte(i);
+    }
+    pos += mb_padded(data_len);
+    for (i = 0; i < rsrc_len; ++i) {
+        out[pos + i] = (unsigned char)(pattern_byte(i) ^ 0xFF);
+    }
+    return 128 + mb_padded(data_len) + mb_padded(rsrc_len);
+}
+
+/* Feeds an envelope in runs of `run` bytes (0 = all at once). */
+static N68PutCode mb_feed(N68PutRx *rx, const unsigned char *env, long n,
+                          long run)
+{
+    long at = 0;
+
+    if (run <= 0) {
+        return n68_putrx_data(rx, env, n);
+    }
+    while (at < n) {
+        long take = (run < n - at) ? run : n - at;
+        N68PutCode rc = n68_putrx_data(rx, env + at, take);
+
+        if (rc != kN68PutOK) {
+            return rc;
+        }
+        at += take;
+    }
+    return kN68PutOK;
+}
+
+/* Feeds an envelope and closes it, returning the FIRST code that was not
+ * OK - from the stream or from the end.
+ *
+ * A failure mid-stream leaves the receiver inactive, and n68_putrx_end
+ * on an inactive receiver is a no-op that returns OK (the caller has
+ * already reported; wire68.c's read_bulk_data sends the file.done there
+ * and handle_file_end then finds nothing in flight). So a test that only
+ * looked at end()'s return would read a mid-stream refusal as success -
+ * which is exactly what the first draft of these tests did. */
+static N68PutCode mb_run(N68PutRx *rx, const unsigned char *env, long n,
+                         long run, int has_crc, unsigned long crc)
+{
+    N68PutCode rc = mb_feed(rx, env, n, run);
+
+    if (rc != kN68PutOK) {
+        return rc;
+    }
+    return n68_putrx_end(rx, 1, has_crc, crc);
+}
+
+/* THE case this decoder lives or dies on: every section boundary can
+ * land mid-run, including inside the 128-byte header itself. A decoder
+ * that only works when the header arrives whole works on a loopback and
+ * nowhere else, and the failure it produces on a real link is a file
+ * with its forks silently swapped or offset.
+ *
+ * So the same envelope is replayed at every awkward run length, and one
+ * byte at a time is not an edge case here - it is what MacTCP does when
+ * the link is busy.
+ */
+static void test_macbinary_decodes_at_every_arrival_split(void)
+{
+    static const long runs[] = { 0, 1, 3, 7, 127, 128, 129, 1000, 8192 };
+    unsigned i;
+
+    for (i = 0; i < sizeof runs / sizeof runs[0]; ++i) {
+        enum { kData = 5000, kRsrc = 3000 };
+        static unsigned char env[128 + 5120 + 3072];
+        FakeDisk disk;
+        N68PutRx rx;
+        N68PutOffer offer;
+        long n;
+        long j;
+        int ok = 1;
+
+        n = mb_build(env, kData, kRsrc, 0x4150504CUL /* 'APPL' */,
+                     0x4D505320UL /* 'MPS ' */, 3300000000UL, 129);
+
+        disk_init(&disk, 65536);
+        n68_putrx_init(&rx, g_batch, (long)sizeof g_batch, &kFakeOps, &disk);
+        offer_init(&offer, n);
+        offer.macbinary = 1;
+        /* The offer says TEXT/ttxt and the header says APPL/MPS. The
+           header has to win: it describes the file, the offer describes
+           the envelope around it, and a file that landed as the
+           envelope's type would not open. */
+        strcpy(offer.file_type, "TEXT");
+        strcpy(offer.creator, "ttxt");
+
+        check_code("macbinary offer accepted",
+                   n68_putrx_offer(&rx, &offer), kN68PutOK);
+        check_code("macbinary stream accepted",
+                   mb_feed(&rx, env, n, runs[i]), kN68PutOK);
+        check_code("macbinary completes",
+                   n68_putrx_end(&rx, 1, 1, now68k_crc32(0, env, n)),
+                   kN68PutOK);
+
+        if (disk.len != kData || disk.rsrc_len != kRsrc) {
+            printf("FAIL macbinary at run %ld: data %ld (want %d), "
+                   "rsrc %ld (want %d)\n",
+                   runs[i], disk.len, kData, disk.rsrc_len, kRsrc);
+            ++failures;
+            disk_free(&disk);
+            continue;
+        }
+        for (j = 0; j < kData; ++j) {
+            if (disk.bytes[j] != pattern_byte(j)) { ok = 0; break; }
+        }
+        for (j = 0; j < kRsrc && ok; ++j) {
+            if (disk.rsrc[j] != (unsigned char)(pattern_byte(j) ^ 0xFF)) {
+                ok = 0;
+            }
+        }
+        if (!ok) {
+            printf("FAIL macbinary at run %ld: fork contents wrong "
+                   "(a run landed in the wrong fork)\n", runs[i]);
+            ++failures;
+        }
+        check("the header's type/creator/date won over the offer's",
+              disk.info_type == 0x4150504CUL
+              && disk.info_creator == 0x4D505320UL
+              && disk.info_modified == 3300000000UL);
+        check("the file took its final name", disk.finished != 0);
+        disk_free(&disk);
+    }
+}
+
+/* The CRC is over the WIRE bytes, envelope and padding included - not
+ * over what reached the forks. This is the check that would have caught
+ * the accumulate-at-flush-time version, which was correct for `data` and
+ * silently wrong for every MacBinary file. */
+static void test_the_checksum_covers_the_whole_envelope(void)
+{
+    enum { kData = 300, kRsrc = 100 };
+    static unsigned char env[128 + 384 + 128];
+    FakeDisk disk;
+    N68PutRx rx;
+    N68PutOffer offer;
+    long n = mb_build(env, kData, kRsrc, 0, 0, 0, 130);
+
+    /* The forks together are 400 bytes; the envelope is 640. A CRC taken
+       where the writes happen would be a CRC of those 400 and would
+       disagree with the sender on every file. */
+    check("the envelope really is larger than its forks",
+          n > kData + kRsrc);
+
+    disk_init(&disk, 4096);
+    n68_putrx_init(&rx, g_batch, (long)sizeof g_batch, &kFakeOps, &disk);
+    offer_init(&offer, n);
+    offer.macbinary = 1;
+    (void)n68_putrx_offer(&rx, &offer);
+    (void)mb_feed(&rx, env, n, 64);
+    check("the running CRC is over the wire bytes",
+          rx.crc == now68k_crc32(0, env, n));
+    check_code("...and the sender's matching value completes it",
+               n68_putrx_end(&rx, 1, 1, now68k_crc32(0, env, n)),
+               kN68PutOK);
+    disk_free(&disk);
+
+    /* And the fork-only CRC must NOT be accepted, or the check above is
+       satisfied by a receiver that computes either one. */
+    {
+        unsigned long forks_only;
+
+        forks_only = now68k_crc32(0, env + 128, kData);
+        disk_init(&disk, 4096);
+        n68_putrx_init(&rx, g_batch, (long)sizeof g_batch, &kFakeOps, &disk);
+        offer_init(&offer, n);
+        offer.macbinary = 1;
+        (void)n68_putrx_offer(&rx, &offer);
+        (void)mb_feed(&rx, env, n, 64);
+        check_code("a fork-only checksum is rejected",
+                   n68_putrx_end(&rx, 1, 1, forks_only), kN68PutCorrupt);
+        disk_free(&disk);
+    }
+}
+
+/* A data fork that is an exact multiple of 128 has NO padding, so the
+ * resource fork starts immediately. Off-by-one country. */
+static void test_macbinary_fork_boundaries(void)
+{
+    static const long data_sizes[] = { 0, 1, 127, 128, 129, 256 };
+    static const long rsrc_sizes[] = { 0, 1, 127, 128, 129 };
+    unsigned a, b;
+
+    for (a = 0; a < sizeof data_sizes / sizeof data_sizes[0]; ++a) {
+        for (b = 0; b < sizeof rsrc_sizes / sizeof rsrc_sizes[0]; ++b) {
+            static unsigned char env[128 + 256 + 256];
+            FakeDisk disk;
+            N68PutRx rx;
+            N68PutOffer offer;
+            long d = data_sizes[a], r = rsrc_sizes[b];
+            long n = mb_build(env, d, r, 0, 0, 0, 130);
+
+            disk_init(&disk, 2048);
+            n68_putrx_init(&rx, g_batch, (long)sizeof g_batch,
+                           &kFakeOps, &disk);
+            offer_init(&offer, n);
+            offer.macbinary = 1;
+            (void)n68_putrx_offer(&rx, &offer);
+            (void)mb_feed(&rx, env, n, 13);
+            if (n68_putrx_end(&rx, 1, 0, 0) != kN68PutOK
+                || disk.len != d || disk.rsrc_len != r) {
+                printf("FAIL macbinary %ld/%ld: got data %ld, rsrc %ld\n",
+                       d, r, disk.len, disk.rsrc_len);
+                ++failures;
+            }
+            /* An empty resource fork must not be CREATED. A data-only
+               file that acquires a zero-length resource fork is not the
+               same file, and on this machine the difference shows up in
+               the Finder. */
+            if (r == 0 && disk.rsrc_opened) {
+                printf("FAIL macbinary %ld/0: opened a resource fork for "
+                       "a file that has none\n", d);
+                ++failures;
+            }
+            disk_free(&disk);
+        }
+    }
+}
+
+/* Envelopes that must be refused, and refused without leaving a file
+ * that looks plausible. Every one of these would otherwise produce
+ * something a human could double-click. */
+static void test_a_bad_envelope_is_refused(void)
+{
+    enum { kData = 300, kRsrc = 100 };
+    static unsigned char env[128 + 384 + 128];
+    FakeDisk disk;
+    N68PutRx rx;
+    N68PutOffer offer;
+    long n;
+
+    /* Byte 0 non-zero: not a MacBinary header at all. */
+    n = mb_build(env, kData, kRsrc, 0, 0, 0, 130);
+    env[0] = 1;
+    disk_init(&disk, 4096);
+    n68_putrx_init(&rx, g_batch, (long)sizeof g_batch, &kFakeOps, &disk);
+    offer_init(&offer, n);
+    offer.macbinary = 1;
+    (void)n68_putrx_offer(&rx, &offer);
+    check_code("a non-zero version byte is refused",
+               mb_run(&rx, env, n, 0, 0, 0), kN68PutCorrupt);
+    check("...and nothing is left behind", disk.discarded != 0);
+    check("...and it never took the final name", !disk.finished);
+    disk_free(&disk);
+
+    /* A corrupted header CRC, with the version claiming there is one. */
+    n = mb_build(env, kData, kRsrc, 0, 0, 0, 129);
+    env[124] ^= 0xFF;
+    disk_init(&disk, 4096);
+    n68_putrx_init(&rx, g_batch, (long)sizeof g_batch, &kFakeOps, &disk);
+    offer_init(&offer, n);
+    offer.macbinary = 1;
+    (void)n68_putrx_offer(&rx, &offer);
+    check_code("a bad header CRC is refused",
+               mb_run(&rx, env, n, 0, 0, 0), kN68PutCorrupt);
+    disk_free(&disk);
+
+    /* Fork lengths that do not fit the stream the sender offered. This
+       is the one that matters most: the lengths decide where the
+       resource fork STARTS, so a header claiming a huge data fork would
+       otherwise send the rest of the stream to the wrong place. */
+    n = mb_build(env, kData, kRsrc, 0, 0, 0, 130);
+    mb_put32(env + 83, 0x00FFFFFFUL);      /* 16 MB of data fork */
+    {
+        unsigned short crc = mb_crc16(env, 124);
+        env[124] = (unsigned char)(crc >> 8);
+        env[125] = (unsigned char)crc;
+    }
+    disk_init(&disk, 4096);
+    n68_putrx_init(&rx, g_batch, (long)sizeof g_batch, &kFakeOps, &disk);
+    offer_init(&offer, n);
+    offer.macbinary = 1;
+    (void)n68_putrx_offer(&rx, &offer);
+    check_code("a fork longer than the stream is refused",
+               mb_run(&rx, env, n, 0, 0, 0), kN68PutCorrupt);
+    check("...and nothing is left behind", disk.discarded != 0);
+    disk_free(&disk);
+
+    /* A truncated envelope: the sender offers exactly what it sends, so
+       the byte count agrees and only the header reveals that the forks
+       it describes do not fit. An application whose resource fork stops
+       early launches and then crashes.
+
+       Worth naming where this is caught: at the HEADER, not at the end.
+       The header's two lengths are validated against the offered size
+       the moment the 128 bytes are in hand, because those lengths decide
+       where the resource fork starts - so a bad one has to be refused
+       before the rest of the stream is routed by it, not after. That
+       makes the completeness check at end-of-stream defensive rather
+       than load-bearing; see the comment on it in n68_putrx.c. */
+    n = mb_build(env, kData, kRsrc, 0, 0, 0, 130);
+    disk_init(&disk, 4096);
+    n68_putrx_init(&rx, g_batch, (long)sizeof g_batch, &kFakeOps, &disk);
+    offer_init(&offer, n - 64);        /* the offer agrees with the truncation */
+    offer.macbinary = 1;
+    (void)n68_putrx_offer(&rx, &offer);
+    check_code("a truncated envelope is refused",
+               mb_run(&rx, env, n - 64, 0, 0, 0), kN68PutCorrupt);
+    check("...and nothing is left behind", disk.discarded != 0);
+    check("...and it never took the final name", !disk.finished);
+    disk_free(&disk);
+
+    /* A stream that ends inside the header. */
+    n = mb_build(env, kData, kRsrc, 0, 0, 0, 130);
+    disk_init(&disk, 4096);
+    n68_putrx_init(&rx, g_batch, (long)sizeof g_batch, &kFakeOps, &disk);
+    offer_init(&offer, 64);
+    offer.macbinary = 1;
+    (void)n68_putrx_offer(&rx, &offer);
+    check_code("an envelope that ends inside the header is refused",
+               mb_run(&rx, env, 64, 0, 0, 0), kN68PutCorrupt);
+    disk_free(&disk);
+}
+
+/* A container this build has never heard of. NOT treated as `data`:
+ * writing an unknown envelope out as if it were a raw fork produces a
+ * file of the wrong length and the wrong shape, and blames the disk. */
+static void test_an_unknown_container_is_refused(void)
+{
+    FakeDisk disk;
+    N68PutRx rx;
+    N68PutOffer offer;
+    static const char json[] =
+        "{\"id\":9,\"name\":\"x\",\"bytes\":16,\"container\":\"applesingle\"}";
+    N68PutOffer parsed;
+
+    check("an unknown container still parses",
+          n68_putrx_parse_offer(json, (long)strlen(json), &parsed) == 1);
+    check("...and is marked unknown rather than data",
+          parsed.container_known == 0 && parsed.macbinary == 0);
+
+    disk_init(&disk, 1024);
+    n68_putrx_init(&rx, g_batch, (long)sizeof g_batch, &kFakeOps, &disk);
+    offer_init(&offer, 16);
+    offer.container_known = 0;
+    check_code("an unknown container is refused",
+               n68_putrx_offer(&rx, &offer), kN68PutUnsupported);
+    check("...before anything is created", !disk.created);
+    disk_free(&disk);
+
+    /* Both declared containers stay known. */
+    {
+        static const char d[] =
+            "{\"id\":1,\"name\":\"x\",\"bytes\":1,\"container\":\"data\"}";
+        static const char m[] =
+            "{\"id\":1,\"name\":\"x\",\"bytes\":1,\"container\":\"macbinary\"}";
+
+        check("data is known",
+              n68_putrx_parse_offer(d, (long)strlen(d), &parsed)
+              && parsed.container_known && !parsed.macbinary);
+        check("macbinary is known",
+              n68_putrx_parse_offer(m, (long)strlen(m), &parsed)
+              && parsed.container_known && parsed.macbinary);
+    }
+}
+
 /* ---- parsing an offer ------------------------------------------------- */
 
 static void test_parsing_a_file_offer(void)
@@ -871,6 +1327,11 @@ int main(void)
     test_bulk_with_no_transfer_is_harmless();
     test_an_empty_file_completes();
     test_the_batch_size_is_independent_of_the_progress_step();
+    test_an_unknown_container_is_refused();
+    test_macbinary_decodes_at_every_arrival_split();
+    test_macbinary_fork_boundaries();
+    test_the_checksum_covers_the_whole_envelope();
+    test_a_bad_envelope_is_refused();
     test_a_failed_transfer_leaves_nothing_behind();
     test_progress_is_never_coarser_than_a_host_frame();
     test_the_hosts_sender_never_parks_forever();

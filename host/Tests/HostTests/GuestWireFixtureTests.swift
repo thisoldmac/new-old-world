@@ -632,13 +632,19 @@ final class GuestWireFixtureTests: XCTestCase {
 
     /// put_refuse() - guest68k/src/wire68.c, rendering an N68PutCode.
     ///
-    /// The MacBinary case pins a CONTRACT GAP rather than a behaviour:
-    /// FileRefuse.code has no value meaning "this receiver cannot handle
-    /// that", so an unsupported container is reported as `io-error` with
-    /// the truth in `reason`. Nothing failed and nothing was attempted,
-    /// so the code is a lie of category - an honest one, because every
+    /// The unknown-container case pins a CONTRACT GAP rather than a
+    /// behaviour: FileRefuse.code has no value meaning "this receiver
+    /// cannot handle that", so it is reported as `io-error` with the
+    /// truth in `reason`. Nothing failed and nothing was attempted, so
+    /// the code is a lie of category - an honest one, because every
     /// alternative in the enum is worse, but the day the contract grows
     /// a value for it this fixture is where the change lands.
+    ///
+    /// This used to be the MacBinary refusal. MacBinary is decoded now;
+    /// what reaches this path is a container from a contract revision
+    /// this build predates, which must NOT be quietly treated as `data` -
+    /// an unknown envelope written out as a raw fork is a file of the
+    /// wrong length and the wrong shape, blamed on the disk.
     func test68KFileRefuseAsTheGuestWritesIt() throws {
         guard case .fileRefuse(let r) =
                 try decode(Guest68KWire.fileRefuseExists) else {
@@ -647,15 +653,14 @@ final class GuestWireFixtureTests: XCTestCase {
         XCTAssertEqual(r.id, 4)
         XCTAssertEqual(r.code, "exists")
 
-        guard case .fileRefuse(let mb) =
-                try decode(Guest68KWire.fileRefuseMacBinary) else {
+        guard case .fileRefuse(let unknown) =
+                try decode(Guest68KWire.fileRefuseContainer) else {
             return XCTFail("not a file.refuse")
         }
-        XCTAssertEqual(mb.code, "io-error",
+        XCTAssertEqual(unknown.code, "io-error",
                        "the contract has no code for `unsupported`")
-        XCTAssertEqual(mb.reason,
-                       "this guest receives data-fork files only, "
-                       + "not MacBinary",
+        XCTAssertEqual(unknown.reason,
+                       "that container is not one this guest knows",
                        "so `reason` is the only place the truth lives")
     }
 
@@ -867,10 +872,9 @@ enum Guest68KWire {
         + #""code":"exists","#
         + #""reason":"a file of that name is already there"}"#
 
-    static let fileRefuseMacBinary = #"{"type":"file.refuse","id":5,"#
+    static let fileRefuseContainer = #"{"type":"file.refuse","id":5,"#
         + #""code":"io-error","#
-        + #""reason":"this guest receives data-fork files only, "#
-        + #"not MacBinary"}"#
+        + #""reason":"that container is not one this guest knows"}"#
 
     static let fileProgress =
         #"{"type":"file.progress","id":3,"received":8192}"#

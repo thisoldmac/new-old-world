@@ -26,7 +26,10 @@
  *                                     what it does. See n68_putrx.h for
  *                                     why it is this size and not larger)
  *   g_putrx (N68PutRx)    ~340  bytes  (offer + counters + buffer ptrs)
- *   g_putfile             ~170  bytes  (two FSSpecs and the open fork)
+ *   g_putfile             ~690  bytes  (two FSSpecs, the open forks, and
+ *                                     512 bytes of resource-fork head
+ *                                     kept for the close-time verify -
+ *                                     n68_putfile.h says why that exists)
  *   g_put_last_* etc.      ~90  bytes  (what `xfer` reports after the fact)
  *   g_out[4] slots          4 * (8 header + 1024 payload + 4 len + 4 off)
  *                         4 * 1040 = 4160  bytes  (was 1056 at depth 2 and

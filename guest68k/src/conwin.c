@@ -479,7 +479,8 @@ static void show_transfer(void)
     }
 
     pos = 0;
-    (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, "files land in ");
+    (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                "files land in ");
     (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
                                 where[0] != '\0' ? where
                                                  : "(cannot resolve the folder)");

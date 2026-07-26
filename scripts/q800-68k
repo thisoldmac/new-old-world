@@ -47,6 +47,25 @@ case "${1:-}" in
         # QMP `quit`, never pkill/SIGKILL: a hard kill trips the macOS
         # crash health-check dialog that then needs dismissing by hand
         # (parent AGENTS.md).
+        #
+        # Reports what actually happened. It used to `|| true` the nc and
+        # print "stopped" unconditionally, which is how a VM whose socket
+        # had been unlinked by a later launch went on running for an hour
+        # while every teardown claimed success. A stop that cannot reach
+        # its VM has to say so, because the alternative is an orphan
+        # nobody is looking for.
+        if [ ! -S "$RUN/qmp.sock" ]; then
+            echo "q800-68k: no qmp socket at $RUN/qmp.sock" >&2
+            if pgrep -f "qemu-system-m68k.*$RUN/session.img" >/dev/null; then
+                echo "q800-68k: a VM on this session's disk IS still running;" >&2
+                echo "  its socket is gone, so QMP cannot reach it. Send it" >&2
+                echo "  SIGTERM (which QEMU handles cleanly - not SIGKILL):" >&2
+                echo "  kill -TERM \$(pgrep -f \"qemu-system-m68k.*$RUN/session.img\")" >&2
+                exit 1
+            fi
+            echo "q800-68k: nothing running"
+            exit 0
+        fi
         printf '{"execute":"qmp_capabilities"}\n{"execute":"quit"}\n' \
             | nc -U "$RUN/qmp.sock" >/dev/null 2>&1 || true
         echo "q800-68k: stopped"
