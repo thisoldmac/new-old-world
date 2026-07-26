@@ -194,7 +194,6 @@ static N68PutCode pf_create(void *ctx, const N68PutOffer *offer)
     Str255 tname;
     N68PutCode rc;
     OSErr err;
-    long want;
 
     pf->err = noErr;
     rc = resolve_folder(offer->path, offer->create_parents,
@@ -249,21 +248,43 @@ static N68PutCode pf_create(void *ctx, const N68PutOffer *offer)
      * a refusal costing one message, rather than at 3.9 MB of 4 MB; and
      * a 4 MB file grown 8 KB at a time on a 1993 laptop's drive is a
      * fragmented 4 MB file, with every extend paying for its own
-     * allocation and catalog update. A refusal here is advisory - the
-     * offer is still accepted if the File Manager simply declines to
-     * pre-allocate - because Allocate failing is not the same as the
-     * write failing later, and refusing a transfer that would have
-     * worked is worse than a slow one. */
+     * allocation and catalog update.
+     *
+     * SetEOF, NOT Allocate, and the difference is not cosmetic.
+     * Allocate/PBAllocate extend only the PHYSICAL end-of-file; moving
+     * the LOGICAL end-of-file past the physical one is the idiom Inside
+     * Macintosh actually recommends for a file whose size is known in
+     * advance, and it is what the PowerPC guest does
+     * (now/guest/src/fileshare.c: `SetEOF(rx->data_ref, bytes)`).
+     *
+     * This started as a cosmetic difference between the two guests and
+     * became a suspect: MacBinary transfers here land 77 bytes of the
+     * file's own catalog record inside its resource fork, and the PPC
+     * guest - which reserves this way - shows no such thing. Whether
+     * that is the cause is exactly what this change tests; see
+     * docs/open-issues.md. Matching the shipping guest is the right
+     * default regardless of the outcome. */
     if (offer->bytes > 0) {
-        want = offer->bytes;
-        if (Allocate(pf->ref, &want) == dskFulErr) {
-            pf->err = dskFulErr;
+        err = SetEOF(pf->ref, offer->bytes);
+        if (err != noErr) {
+            pf->err = err;
             (void)FSClose(pf->ref);
             pf->ref = 0;
             (void)FSpDelete(&pf->temp);
             pf->have_temp = 0;
-            return kN68PutTooBig;
+            return (err == dskFulErr) ? kN68PutTooBig : kN68PutIOError;
         }
+        /* The logical EOF STAYS at the reserved size. Setting it back
+         * to 0 here - which an earlier version of this did - hands the
+         * blocks straight back: the File Manager deallocates blocks
+         * when the logical EOF moves more than one allocation block
+         * below the physical one, so the "reservation" would reserve
+         * nothing and a full disk would once again be discovered at
+         * 3.9 MB of 4 MB. The file is trimmed to what was actually
+         * written in finish(), which is where the PowerPC guest does it
+         * too. Between here and there the temp carries a logical EOF
+         * larger than its contents, which is invisible: it never leaves
+         * the staging name until finish has trimmed it. */
     }
 
     /* memcpy rather than a cast through OSType*. offer->file_type is a

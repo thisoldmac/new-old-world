@@ -82,27 +82,78 @@ EMPTY data fork (0 data + 2000 resource) is **intact on disk**. Every
 corrupted case has content in both forks. So it is not "resource forks
 are broken" - it is something about a file that has had both.
 
-**Eliminated, each by disabling it and re-running on metal-equivalent:**
-`Allocate()` pre-allocation, `FSpSetFInfo`, `FSpRename`, the
-`PBSetCatInfoSync` that stamps the date, and closing the data fork
-before opening the resource fork (the hypothesis the asymmetry above
-suggested - it did not help and was reverted rather than kept as an
-unverified change). The spliced record predates all of them anyway: it
+**Eliminated, each by changing it and re-running on the emulator:**
+
+| Suspect | Result |
+|---|---|
+| `Allocate()` pre-allocation | disabled - unchanged |
+| `FSpSetFInfo` | disabled - unchanged |
+| `FSpRename` | disabled - unchanged |
+| `PBSetCatInfoSync` (the date stamp) | disabled - unchanged |
+| Closing the data fork before opening the resource fork | implemented - unchanged, reverted |
+| **`SetEOF` reservation instead of `Allocate`** | **implemented - unchanged, KEPT** (see below) |
+| Destination folder | moved Startup Items -> Desktop - unchanged |
+
+The spliced record predates all of the catalog writers anyway: it
 carries the staging name and `BINA`, not the final name and `APPL`.
+
+**It is not a torn unmount.** The corruption is present on the disk
+**while the VM is still running**, read immediately after the guest's
+own `FlushVol`. Every previous check had been made after a QMP
+power-off, which left that open; it is now closed. The wrong bytes hit
+the platter during normal operation.
+
+**The `SetEOF` change was kept even though it fixed nothing**, because
+it is right on its own terms: `Allocate`/`PBAllocate` extend only the
+PHYSICAL end-of-file, while moving the LOGICAL end-of-file past the
+physical one is the idiom Inside Macintosh recommends when the size is
+known ahead of time, and it is what the PowerPC guest already does. It
+also caught a bug of its own on the way in - an intermediate version set
+the logical EOF back to 0 after reserving, which hands the blocks
+straight back (the File Manager deallocates when the logical EOF drops
+more than an allocation block below the physical one), so the
+reservation reserved nothing.
 
 **Not the catalog file.** The corrupted fork sits in allocation block
 332; the catalog's only extent is blocks 64-127. So this is a stray
 copy of a catalog record written outside catalog space, not a fork
 overlapping the B-tree - which was the leading theory and is now dead.
 
-**Mechanism: UNKNOWN.** That is the honest state. What is left to try,
-roughly in order: a transfer onto a freshly formatted volume (to rule
-the shared `os81-target.img` in or out - it has been hard-powered-off
-many times, by this work among others); the same envelope through the
-PowerPC guest, whose MacBinary receive is older and differently
-structured; and a read-back on the guest itself, which would say whether
-the bytes are wrong at write time or become wrong afterwards. The first
-needs a configurable destination, which the browse/ls work will bring.
+**Mechanism: UNKNOWN**, and the cheap explanations are now used up.
+
+Web research found no documented File Manager hazard about writing a
+resource fork while the data fork is open, and no known QEMU q800
+SCSI/HFS write bug. It did turn up one thing worth keeping: HFS
+explicitly forbids extending the extents overflow file "to avoid the
+possibility of an extent descriptor ending up in the part of the file it
+describes" (ciderpress2.com/formatdoc/HFS-notes.html) - which is exactly
+the shape of this symptom, for a different B-tree. The catalog file has
+no such rule.
+
+What is left to try, in order:
+
+1. **A freshly formatted volume.** The shared `os81-target.img` has been
+   hard-powered-off many times, by this work among others, so a stale
+   allocation bitmap is live. This is now cheap: the destination is the
+   Desktop of the startup disk, so it wants either a fresh base image or
+   the destination made configurable (which the browse/ls work brings).
+2. **The same envelope through the PowerPC guest, byte-verified.**
+   Nobody has ever checked a resource fork there - the acceptance test
+   launches a deployed application, which is strong evidence and not
+   proof. If PPC is clean on HFS+, that implicates the filesystem; if it
+   is clean on an HFS volume, it implicates this guest's call sequence.
+3. **A read-back on the guest**, which would say whether the bytes are
+   wrong when written or become wrong afterwards. Needs a read path this
+   guest does not have - the browse/ls work again.
+
+**HFS vs HFS+ is the leading candidate and it is bad news for metal.**
+The emulator volume is HFS Standard (MDB signature `BD`, 65513
+allocation blocks of 16 KB - near the 65535 ceiling, so allocation is
+coarse). The PowerPC guest runs against OS 9.1, where HFS+ is the norm
+and the allocation machinery is entirely different. The PowerBook 180c
+is System 7.1, which is HFS-only - so if the filesystem is the
+difference, metal has this too, and the "it is only the emulator image"
+hope is weaker rather than stronger.
 
 **What this does NOT tell us about the 180c.** Nothing. If the cause is
 the emulator image, metal may be clean; if it is the File Manager call
