@@ -353,6 +353,12 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   machine. That is a standing precondition, not a property of the design.
 
 A "what works" list without its companion is a sales pitch.
+[docs/contract-coverage.md](docs/contract-coverage.md) answers the other
+half — **who serves what**, per guest, message by message and verb by
+verb, with what is served kept separate from what has been proven. The
+short version: the PowerPC guest serves 15 of the 16 command verbs and
+14 hardware probes; NOW-68K serves 6 verbs and no probes at all, so it
+cannot yet report its own CPU, RAM or ROM.
 [docs/open-issues.md](docs/open-issues.md) is the ledger, organised
 around **broken** versus **unverified** — the second is not the lesser
 category, since most of the surprises so far came from code that looked
