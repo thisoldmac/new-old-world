@@ -3,6 +3,8 @@
 
 #include "n68_putfile.h"
 
+#include "log.h"
+
 #include <Files.h>
 #include <Folders.h>
 #include <OSUtils.h>
@@ -132,7 +134,9 @@ static N68PutCode resolve_folder(const char *rel, int create,
     return kN68PutOK;
 }
 
-/* "NOW incoming " plus 8 hex digits of the tick count: 21 characters,
+#define kTempPrefix "NOW incoming "
+
+/* kTempPrefix plus 8 hex digits of the tick count: 21 characters,
  * well inside HFS's 31. The tick count is enough to keep two transfers
  * in one folder apart; it is deliberately NOT derived from the offer,
  * because this guest does not implement resume and a name that promised
@@ -144,7 +148,7 @@ static void temp_name(Str255 out)
     unsigned long t = (unsigned long)TickCount();
     int i;
 
-    memcpy(out + 1, "NOW incoming ", 13);
+    memcpy(out + 1, kTempPrefix, 13);
     for (i = 0; i < 8; ++i) {
         out[1 + 13 + i] = (unsigned char)hex[(t >> (28 - 4 * i)) & 0xF];
     }
@@ -242,6 +246,7 @@ static N68PutCode pf_create(void *ctx, const N68PutOffer *offer)
         return kN68PutIOError;
     }
     pf->rsrc_ref = 0;
+    pf->rsrc_written = 0;
 
     /* Claim the space up front. Two reasons, and the second is the one
      * that matters on this machine: a disk-full failure arrives NOW, as
@@ -328,6 +333,14 @@ static N68PutCode pf_write(void *ctx, N68PutFork fork,
             }
         }
         ref = pf->rsrc_ref;
+        /* Stash the head as written, for the post-close verify. */
+        if (pf->rsrc_written < (long)sizeof pf->rsrc_head) {
+            long room = (long)sizeof pf->rsrc_head - pf->rsrc_written;
+            long take = (len < room) ? len : room;
+
+            memcpy(pf->rsrc_head + pf->rsrc_written, bytes, (size_t)take);
+        }
+        pf->rsrc_written += len;
     } else {
         ref = pf->ref;
     }
@@ -349,11 +362,131 @@ static N68PutCode pf_write(void *ctx, N68PutFork fork,
     return kN68PutOK;
 }
 
+
+/* ---- resource-fork head: verify after close, rewrite if scribbled ----
+ *
+ * On the Mac OS 8.1 emulator, FSCLOSE OF A WRITTEN RESOURCE FORK
+ * splices 77 bytes of the File Manager's own catalog state into the
+ * fork's first block, at offset 48: a record for the staging file in an
+ * IN-MEMORY layout (Str31-padded name, unified 32-byte Finder info,
+ * adjacent logical fork lengths) that matches no on-disk structure. The
+ * write goes through a stale cache-buffer reference in the close-time
+ * catalog update, so it lands in whichever block is hot: normally the
+ * fork's own first block - and when a log line happened to be written
+ * between the last fork write and the close, the LOG took the damage
+ * instead, which is how this was first mistaken for a bug that a
+ * read-back could prevent. It cannot be prevented from here; it can be
+ * caught and undone, which is what this does.
+ *
+ * Measured, per transfer, deterministic: probe A (before close) reads
+ * clean, probe B (fresh open after close) reads the splice, 5/5 files,
+ * across repeated runs. Whether System 7.1 on the real 180c does this
+ * is UNTESTED - the lab's 7.5.3 image has no MacTCP - and these checks
+ * cost three 512-byte reads when nothing is wrong, so they stay on
+ * everywhere. docs/open-issues.md is the full ledger.
+ *
+ * The verify is a memcmp against the bytes as WRITTEN, not a scan for
+ * the known splice, so any divergence in the head is caught - this
+ * guards the file, not one signature. Beyond the first 512 bytes it is
+ * blind, stated plainly; every observed splice sat at offset 48. */
+
+/* 1 = the head on disk matches what was written. */
+static int head_ok(N68PutFile *pf, short ref)
+{
+    unsigned char buf[512];
+    long want = pf->rsrc_written < (long)sizeof buf
+                    ? pf->rsrc_written : (long)sizeof buf;
+    long count = want;
+    OSErr err;
+
+    if (want <= 0) {
+        return 1;
+    }
+    if (SetFPos(ref, fsFromStart, 0) != noErr) {
+        return 1;             /* cannot look = cannot condemn */
+    }
+    err = FSRead(ref, &count, buf);
+    if ((err != noErr && err != eofErr) || count < want) {
+        return 1;
+    }
+    return memcmp(buf, pf->rsrc_head, (size_t)want) == 0;
+}
+
+/* Puts the written bytes back and re-verifies. `ref` must be open with
+ * write permission. */
+static int head_repair(N68PutFile *pf, short ref)
+{
+    long count = pf->rsrc_written < (long)sizeof pf->rsrc_head
+                     ? pf->rsrc_written : (long)sizeof pf->rsrc_head;
+
+    if (SetFPos(ref, fsFromStart, 0) != noErr) {
+        return 0;
+    }
+    if (FSWrite(ref, &count, pf->rsrc_head) != noErr) {
+        return 0;
+    }
+    (void)FlushVol(NULL, pf->vref);
+    return head_ok(pf, ref);
+}
+
+/* Opens `spec`'s resource fork, verifies the head, rewrites it if it
+ * was scribbled, and re-verifies through a FRESH open - because the
+ * close of the repair refnum runs the very code path that scribbles,
+ * a head that read clean through one refnum is not proven until the
+ * next one agrees. Bounded: three rounds, then honest failure. */
+static int head_verify_spec(N68PutFile *pf, FSSpec *spec, const char *what)
+{
+    int attempt;
+
+    for (attempt = 0; attempt < 3; ++attempt) {
+        short ref = 0;
+        short again = 0;
+        int ok;
+        int still;
+
+        if (FSpOpenRF(spec, fsRdWrPerm, &ref) != noErr) {
+            return 1;         /* cannot look = cannot condemn */
+        }
+        ok = head_ok(pf, ref);
+        if (!ok) {
+            now68k_log_num(what, attempt);
+            ok = head_repair(pf, ref);
+        }
+        (void)FSClose(ref);
+        (void)FlushVol(NULL, pf->vref);
+        if (!ok) {
+            return 0;         /* the rewrite itself did not take */
+        }
+        /* The look that counts: a fresh, read-only open. Closing a fork
+         * that was only read is inert, so this one can be trusted. */
+        if (FSpOpenRF(spec, fsRdPerm, &again) != noErr) {
+            return 1;
+        }
+        still = head_ok(pf, again);
+        (void)FSClose(again);
+        if (still) {
+            return 1;
+        }
+        /* The close above put the splice back; go around again. */
+    }
+    return 0;
+}
+
 static N68PutCode pf_finish(void *ctx)
 {
     N68PutFile *pf = (N68PutFile *)ctx;
     FInfo info;
     OSErr err;
+    int had_rsrc = (pf->rsrc_ref != 0);
+
+    /* Before the close: never yet seen dirty here, but the refnum is
+     * open with write permission, so a repair costs nothing to offer. */
+    if (had_rsrc && !head_ok(pf, pf->rsrc_ref)) {
+        now68k_log("put: rsrc head bad before close, rewriting");
+        if (!head_repair(pf, pf->rsrc_ref)) {
+            return kN68PutIOError;
+        }
+    }
 
     if (pf->ref != 0) {
         /* The logical EOF is where the writes left it, which is short of
@@ -388,6 +521,15 @@ static N68PutCode pf_finish(void *ctx)
         }
     }
     (void)FlushVol(NULL, pf->vref);
+    /* After the close: this is where the splice lands, every time it
+     * lands at all. Verified and repaired BEFORE the rename, so a fork
+     * that cannot be made right fails while it is still staging debris. */
+    if (had_rsrc
+        && !head_verify_spec(pf, &pf->temp,
+                             "put: rsrc head scribbled at close, round")) {
+        now68k_log("put: rsrc head unrepairable, refusing");
+        return kN68PutIOError;
+    }
 
     /* Stamp before the rename, so nothing ever exists under the final
      * name without its type and creator - a file that appears as
@@ -437,6 +579,17 @@ static N68PutCode pf_finish(void *ctx)
         }
     }
     (void)FlushVol(NULL, pf->vref);
+    /* After the rename, because the rename is itself a catalog update.
+     * Late, so the remedy is harsher: a file that cannot be made right
+     * under its final name is deleted rather than left for a
+     * double-click. */
+    if (had_rsrc
+        && !head_verify_spec(pf, &pf->final,
+                             "put: rsrc head scribbled at rename, round")) {
+        now68k_log("put: rsrc head unrepairable after rename, deleted");
+        (void)FSpDelete(&pf->final);
+        return kN68PutIOError;
+    }
     return kN68PutOK;
 }
 

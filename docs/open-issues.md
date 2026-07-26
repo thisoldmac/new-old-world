@@ -37,137 +37,71 @@ works, and no `NOW incoming ...` staging file was left behind.
 The guest's event loop is not starved by the receive path: `help`
 round-tripped in 0.05 s during a 1 MB transfer against 0.06 s idle.
 
-## MacBinary on NOW-68K: decoded correctly, stored wrongly (2026-07-25)
+## MacBinary on NOW-68K: the fork corruption, found and fenced (2026-07-26)
 
-**Do not deploy this to the PowerBook yet, and do not read it as
-working.** The decode is right and the storage is not.
+MacBinary transfers now complete with both forks byte-identical on the
+Mac OS 8.1 emulator, including a 200 KB resource fork - because the
+guest catches the corruption and undoes it, not because the corruption
+stopped. The mechanism is pinned to an operation; the code responsible
+is not ours.
 
-MacBinary is now decoded in flight - 128-byte header, data fork padded
-to 128, resource fork padded the same way, with every section boundary
-able to land mid-run. `test_putrx.c` replays one envelope at nine
-arrival splits including one byte at a time, walks 30 fork-size
-combinations around the padding boundary, and refuses five malformed
-envelopes. Mutating the fork-flush or the padding skip makes it name the
-fork-swap signature exactly.
+**What actually happens.** At `FSClose` of a WRITTEN resource fork, 77
+bytes of File Manager catalog state land at offset 48 of the fork's
+first block: a record for the staging file in an IN-MEMORY layout -
+Str31-padded name, unified 32-byte Finder info, adjacent logical fork
+lengths - that matches no on-disk HFS structure (the real on-disk
+record, recovered from catalog slack, differs field by field). The
+splice is sub-sector, which rules out the SCSI/disk layer entirely:
+disks write 512-byte units, so the damage happens in the File Manager's
+block cache before writeout. A stale cache-buffer reference in the
+close-time catalog update is the shape that fits everything.
 
-**What the emulator confirms is right.** Six envelopes up to 212 KB
-(12 KB data + 200 KB resource, an application's shape) all complete with
-the checksum confirmed, and on the HFS volume every one has EXACTLY the
-right fork sizes, `APPL`/`MPS ` from the HEADER rather than the offer,
-and a modification date that resolves through the Mac epoch to 2008 as
-sent. A file with no resource fork does not acquire an empty one.
+**How it was pinned.** Read-back probes in `pf_finish`: before the
+close the fork reads CLEAN through the open refnum; after the close a
+fresh open reads the splice - 5/5 resource-carrying files, every run.
+Data forks and rsrc-only probes never fire. Deterministic both ways.
 
-**What is wrong.** **The resource fork has 77 bytes overwritten at fork
-offset 48** by a copy of that file's own catalog record - its `NOW
-incoming <hex>` staging name, the `BINA`/`NW68` type and creator
-`FSpCreate` gave it, and both fork lengths. The data fork is always
-perfect.
+**The false trail, kept because it will tempt someone again.** An
+instrumented build that LOGGED after each probe produced 5/5 clean
+forks, which read as "the reads prevent it". They do not: the log line
+between the last fork write and the close made the LOG's cache block
+the hot one, and the stray record landed there instead - the same
+build's log file showed exactly the mangled-tail anomaly that implies.
+Interleaved I/O relocates the corruption; nothing prevents it.
 
-Verified **against the raw disk image**, byte-searched directly rather
-than through any HFS tool - an earlier round of this used hfsutils'
-MacBinary and BinHex writers and called them "two independent
-extractors", which they are not: both are hfsutils and share its fork
-reader. They turned out to be reading correctly, but the reasoning was
-unsound and is recorded here so it is not repeated.
+**The fix that ships** (n68_putfile.c): the receiver keeps the resource
+fork's first 512 bytes as written (+516 bytes of BSS, noted in wire68's
+static budget), and after the close - and again after the rename, which
+is also a catalog update - re-reads the head through a fresh open,
+memcmps against what was written, REWRITES it if it was scribbled, and
+re-verifies through another fresh open, bounded at three rounds. A head
+that cannot be made right fails the transfer before the rename, or
+deletes the renamed file rather than leave a corrupt application for a
+double-click. Measured: detected at close 5/5, repaired in one round
+5/5, raw disk clean, both forks byte-identical on extraction. The
+memcmp guards the whole head, not the known splice; past 512 bytes it
+is blind, and every observed splice sat at offset 48.
 
-- Reproducible with a SINGLE transfer on a freshly cloned image.
-- Same 77 bytes at offset 48 for a 3000-byte and a 200000-byte
-  resource fork, across separate runs, and in two different
-  destination folders (Startup Items and the Desktop).
-- Data-container files are byte-identical on the raw disk at 8191,
-  8192, 8193, 65536, 262144, 1048576 and 4194304 bytes.
+**What is still not established.**
 
-**The one asymmetry that constrains it:** a MacBinary file with an
-EMPTY data fork (0 data + 2000 resource) is **intact on disk**. Every
-corrupted case has content in both forks. So it is not "resource forks
-are broken" - it is something about a file that has had both.
-
-**Eliminated, each by changing it and re-running on the emulator:**
-
-| Suspect | Result |
-|---|---|
-| `Allocate()` pre-allocation | disabled - unchanged |
-| `FSpSetFInfo` | disabled - unchanged |
-| `FSpRename` | disabled - unchanged |
-| `PBSetCatInfoSync` (the date stamp) | disabled - unchanged |
-| Closing the data fork before opening the resource fork | implemented - unchanged, reverted |
-| **`SetEOF` reservation instead of `Allocate`** | **implemented - unchanged, KEPT** (see below) |
-| Destination folder | moved Startup Items -> Desktop - unchanged |
-
-The spliced record predates all of the catalog writers anyway: it
-carries the staging name and `BINA`, not the final name and `APPL`.
-
-**It is not a torn unmount.** The corruption is present on the disk
-**while the VM is still running**, read immediately after the guest's
-own `FlushVol`. Every previous check had been made after a QMP
-power-off, which left that open; it is now closed. The wrong bytes hit
-the platter during normal operation.
-
-**The `SetEOF` change was kept even though it fixed nothing**, because
-it is right on its own terms: `Allocate`/`PBAllocate` extend only the
-PHYSICAL end-of-file, while moving the LOGICAL end-of-file past the
-physical one is the idiom Inside Macintosh recommends when the size is
-known ahead of time, and it is what the PowerPC guest already does. It
-also caught a bug of its own on the way in - an intermediate version set
-the logical EOF back to 0 after reserving, which hands the blocks
-straight back (the File Manager deallocates when the logical EOF drops
-more than an allocation block below the physical one), so the
-reservation reserved nothing.
-
-**Not the catalog file.** The corrupted fork sits in allocation block
-332; the catalog's only extent is blocks 64-127. So this is a stray
-copy of a catalog record written outside catalog space, not a fork
-overlapping the B-tree - which was the leading theory and is now dead.
-
-**Mechanism: UNKNOWN**, and the cheap explanations are now used up.
-
-Web research found no documented File Manager hazard about writing a
-resource fork while the data fork is open, and no known QEMU q800
-SCSI/HFS write bug. It did turn up one thing worth keeping: HFS
-explicitly forbids extending the extents overflow file "to avoid the
-possibility of an extent descriptor ending up in the part of the file it
-describes" (ciderpress2.com/formatdoc/HFS-notes.html) - which is exactly
-the shape of this symptom, for a different B-tree. The catalog file has
-no such rule.
-
-What is left to try, in order:
-
-1. **A freshly formatted volume.** The shared `os81-target.img` has been
-   hard-powered-off many times, by this work among others, so a stale
-   allocation bitmap is live. This is now cheap: the destination is the
-   Desktop of the startup disk, so it wants either a fresh base image or
-   the destination made configurable (which the browse/ls work brings).
-2. **The same envelope through the PowerPC guest, byte-verified.**
-   Nobody has ever checked a resource fork there - the acceptance test
-   launches a deployed application, which is strong evidence and not
-   proof. If PPC is clean on HFS+, that implicates the filesystem; if it
-   is clean on an HFS volume, it implicates this guest's call sequence.
-3. **A read-back on the guest**, which would say whether the bytes are
-   wrong when written or become wrong afterwards. Needs a read path this
-   guest does not have - the browse/ls work again.
-
-**HFS vs HFS+ is the leading candidate and it is bad news for metal.**
-The emulator volume is HFS Standard (MDB signature `BD`, 65513
-allocation blocks of 16 KB - near the 65535 ceiling, so allocation is
-coarse). The PowerPC guest runs against OS 9.1, where HFS+ is the norm
-and the allocation machinery is entirely different. The PowerBook 180c
-is System 7.1, which is HFS-only - so if the filesystem is the
-difference, metal has this too, and the "it is only the emulator image"
-hope is weaker rather than stronger.
-
-**What this does NOT tell us about the 180c.** Nothing. If the cause is
-the emulator image, metal may be clean; if it is the File Manager call
-sequence, metal will be worse, because that is a 4 MB machine with a
-real disk. Either way an application whose resource fork has 77 bytes
-of catalog record in it is an application that will not launch, so this
-must be resolved before MacBinary is used for anything.
+1. **Whether System 7.1 on the real 180c does this.** The in-memory
+   record layout smells like Mac OS 8.1's rewritten HFS+-capable
+   catalog code, which 7.x predates - but the lab's 7.5.3 image has no
+   MacTCP, so the OS discriminator is unrun. The probes double as the
+   experiment: deploy to the 180c, push one MacBinary, and the log
+   either says "rsrc head scribbled at close" or stays silent. Either
+   answer is safe; the repair is already in the path.
+2. **Whether QEMU contributes.** The cache logic is guest code and the
+   behaviour is deterministic, which points at the OS, but nothing here
+   separates 8.1-on-metal from 8.1-on-QEMU.
+3. **The PPC guest on OS 9.1 has never had a resource fork
+   byte-verified.** Its acceptance test launches a deployed application,
+   which is strong evidence and not proof. 9.1's File Manager descends
+   from 8.1's; three years of fixes is a plausible reason it does not
+   show, not an established one.
 
 ### What is deliberately not there
 
-- **MacBinary decodes but does not yet STORE correctly** - see above.
-  The container is accepted rather than refused, which is a deliberate
-  choice to make the defect visible and testable rather than hidden
-  behind a refusal; it is also why this must not go to the PowerBook.
 - **No resume.** The guest never reports `have`, which the contract
   reads as "start from the beginning". Partials are always discarded.
   Deliberate: resume is an open hang on the PowerPC side (see the large

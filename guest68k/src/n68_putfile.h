@@ -87,6 +87,16 @@ typedef struct {
     unsigned long modified;  /* Mac epoch seconds, straight from the offer */
     int    overwrite;
     OSErr  err;              /* the OSErr behind the last failure */
+
+    /* The resource fork's first 512 bytes, kept as they were WRITTEN so
+       the head can be verified - and rewritten - after close. On the
+       Mac OS 8.1 emulator, FSClose of a written resource fork splices
+       77 bytes of File Manager catalog state into the fork's first
+       block; see the read-back block in the .c for the evidence and
+       docs/open-issues.md for the investigation. 512 bytes of BSS
+       against a corruption that is otherwise silent. */
+    unsigned char rsrc_head[512];
+    long   rsrc_written;     /* total resource-fork bytes written */
 } N68PutFile;
 
 /* The ops table to hand n68_putrx_init, with a N68PutFile as its ctx. */
