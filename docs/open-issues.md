@@ -1536,7 +1536,7 @@ Unverified, and worth naming because the numbers will get quoted:
   carry a 17th row; the honest next step if the `fmove.d` number ever
   looks wrong.
 
-## `screenshot` on NOW-68K: it works on the emulator, and no 68030 has seen it
+## `screenshot` on NOW-68K: metal-verified, and what it measured
 
 `screenshot` slice one is implemented on NOW-68K
 (`shot68.c` / `n68_shot.c`, contract-declared already — nothing in
@@ -1546,7 +1546,44 @@ encodes a packed 8-bit PICT, writes it to the guest's own desktop as
 returns the measurement rows. No pixels cross the wire; that is slice
 two and belongs to the bulk-send work.
 
-**Verified on the Quadra 800 emulator** (OS 8.1, 640x480x8, 2026-07-25):
+**Metal-verified on the PowerBook 180c** (System 7.1, 640x480x8, 4 MB,
+2026-07-26) — deployed as a spike (`NOW-68K shot 0.14+shot`, its own
+folder and its own dev-settings file so the current build's 5252 was never
+touched), launched by asking the running build to `launch` it by path, and
+driven over the wire on 5050. Three captures: one `--no-save` and two
+saves. Both files landed on the guest's desktop with distinct names, and
+one was pulled back over FTP and **decoded here** — 640x480, `pixelSize`
+8, 256-entry colour table, and the 180c's own screen, correctly. The
+capture ran inside the partition with room to spare (the guest reported
+`free=489K max=179K` at the time; the capture's ceiling is ~21 KB).
+
+**The numbers, which are the point of the slice:**
+
+| | 180c (metal) | notes |
+|---|---|---|
+| read | 187–227 ms | matches vprobe's ~200 ms banded CopyBits |
+| pack | 431–542 ms | **the unknown this slice existed to measure** |
+| write | ~800 ms | 65 KB to the internal disk |
+| output | 65,648–65,692 B | full 640x480x8 frame |
+| ratio | **4.7:1** | |
+
+**Packing costs about 2.4x the read, not 10x.** The worst case in
+`shot68.c` was written assuming up to 10x and is therefore conservative by
+a wide margin: a whole capture is ~1.5 s wall clock, against a ~65 s
+death timer. And **4.7:1 on a real desktop means a frame is 65 KB**, not
+300 — which is the number slice two turns on, and it is a far friendlier
+number than the emulator's 2.2:1 suggested (the emulator's desktop was
+busier; a real 180c desktop packs better).
+
+**The 180c's clock is not set.** Both captures were named
+`Screenshot 1904-01-01 23.49.0x` — the Mac epoch, which is what `GetTime`
+returned. The naming code is doing the right thing with the wrong input,
+and the per-second collision guard is carrying more weight than expected
+on this machine: every session after a restart starts near the same
+instant, so the tick-stamped fallback is the thing keeping shots from
+overwriting each other. Setting the PowerBook's clock is the real fix.
+
+**Also verified on the Quadra 800 emulator** (OS 8.1, 640x480x8, 2026-07-25):
 run from the guest's own console, three captures in one session
 (`--no-save`, then two saves), the app survived all three, both files
 landed with distinct names, and one of them was pulled off the disk image
@@ -1556,22 +1593,18 @@ the command with the cursor shielded out of it. That is the strongest
 statement available short of hardware: the picture is not merely a file,
 it is the right picture.
 
-**What the emulator settles nothing about is TIME.** It reported `read 0
-ms, pack 23 ms, write 8 ms` for a full frame — a 68040 with a
-host-memory framebuffer, so every number is meaningless as a prediction
-for a 33 MHz 68030 reading real VRAM. The compression ratio is the one
-number that should carry over, and it came out **2.2:1** on a desktop
-with two windows open (307,200 raw → ~142 KB written). If that holds on
-the 180c it is the number slice two's viability over MacTCP turns on, and
-it is not encouraging: 142 KB is a large thing to push down that wire.
+**The emulator settled nothing about TIME, and said so at the time.** It
+reported `read 0 ms, pack 23 ms, write 8 ms` — a 68040 with a
+host-memory framebuffer. Its 2.2:1 ratio also did not carry: the 180c's
+own desktop packs to 4.7:1. Both were correctly labelled as proving the
+code RUNS and produces the right picture, and nothing more; the metal run
+is what produced numbers.
 
-Unverified, and named because these are the ones that will bite:
+Still unverified, and named because these are the ones that will bite:
 
-- **Nothing has run on a 68030 under System 7.1.** The Window Manager
-  port, `SetStdCProcs`, the replaced `putPicProc` and `ShieldCursor` are
-  all documented back to 7.0 and were checked against the Universal
-  Interfaces headers, but "declared and works on 8.1" is not "works on
-  7.1". First thing to run on the 180c.
+- **Only one screen has been captured, and it was quiet.** 4.7:1 is a
+  desktop with two windows on it. A screen full of dithered photographic
+  content will pack far worse, and nothing here establishes a floor.
 - **The timing split is a difference of two passes.** `read_ms` is a real
   banded-CopyBits measurement (vprobe's, on vprobe's band); `encode_ms`
   is the recording pass minus the read minus the write, so it carries
@@ -1583,7 +1616,8 @@ Unverified, and named because these are the ones that will bite:
   the 1400c showed a non-native path eats the whole margin
   (`vram-readout.md`), and nobody has measured that here.
 - **The capture does not pump the wire.** Bounded by arithmetic at ~10 s
-  worst case against the host's ~65 s death timer (`kShotWorstCaseMs`),
+  worst case against the host's ~65 s death timer (`kShotWorstCaseMs`) —
+  measured at ~1.5 s, so the bound is conservative by ~7x,
   deliberately, because a pumped event can move a window mid-recording
   and tear the picture. If a real 180c ever exceeds that bound the fix is
   to band the PUMP, not the picture.

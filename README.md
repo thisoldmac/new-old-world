@@ -238,12 +238,14 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   destination is the Window Manager's own port and the opcodes stream
   through a replaced `putPicProc` into a 1 KB buffer. The whole capture's
   ceiling is ~21 KB against a 384 KB partition, whatever the screen size.
-  Emulator-verified on a Quadra 800 under OS 8.1: three captures in one
-  session, two files with distinct names, and one of them pulled off the
-  disk image and decoded on the host — pixel-for-pixel the screen, at
-  8-bit, cursor shielded out. It packed **2.2:1**, which is the number
-  slice two's viability over MacTCP turns on. On a 68030 it has never
-  run.
+  **Metal-verified on the PowerBook 180c** (System 7.1, 4 MB): three
+  captures, two files on its desktop with distinct names, one pulled back
+  over FTP and decoded here — pixel-for-pixel the 180c's screen, 8-bit,
+  cursor shielded out. It reads in ~200 ms, **packs in ~480 ms** — the one
+  cost nobody had measured, and 2.4x the read rather than the 10x the
+  budget assumed — writes 65 KB in ~800 ms, and packs **4.7:1**. A frame
+  is 65 KB, not 300, which is what slice two's viability over MacTCP turns
+  on.
 
 - **A dev loop that does not need a Macintosh.** Neither guest can run its
   own suite, so the pure-C halves compile under the host `cc`:
@@ -268,15 +270,18 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   both its faces (the console and the wire), which
   [docs/command-parity.md](docs/command-parity.md) explains and
   `CommandParityTests` enforces.
-- **NOW-68K's `screenshot` has never run on a 68030.** Everything about it
-  is verified on a Quadra 800 under OS 8.1 — including that the file it
-  writes decodes to the right pixels — and nothing about it is verified on
-  the PowerBook 180c it was written for. Its timing numbers from the
-  emulator are meaningless (a 68040 with a host-memory framebuffer), and
-  the one number expected to carry over, the 2.2:1 compression, has not
-  been taken on real VRAM. It also captures **8-bit screens only**, by
-  refusal rather than conversion, and its pixels do not cross the wire —
-  that is slice two.
+- **NOW-68K's `screenshot` has captured exactly one kind of screen.** It is
+  metal-verified on the 180c, but 4.7:1 is a quiet desktop with two windows
+  on it; a screen full of dithered photographic content will pack far
+  worse and nothing establishes a floor. It captures **8-bit screens
+  only**, by refusal rather than conversion, and **its pixels do not cross
+  the wire** — that is slice two. Its `encode` figure is a difference of
+  two passes rather than a direct reading, so it carries both passes'
+  noise.
+- **The 180c's clock is not set.** Its screenshots are named
+  `Screenshot 1904-01-01 23.49.05` — the Mac epoch, which is what the
+  machine believes the time is. The same-instant collision guard is what
+  keeps a second shot from overwriting the first there.
 - **NOW-68K's interactive console is metal-verified.** A second window (Windows > Console, Command-K, and it
   toggles) with an input line, history and scrollback. Watched working on a
   Quadra 800 under Mac OS 8.1 — including two redraw bugs found there and
