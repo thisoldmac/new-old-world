@@ -4,6 +4,8 @@ import NOWAgentIntegration
 
 protocol AgentIntegrationClient: Sendable {
     func sessionHealth() async -> AgentIntegrationSessionHealthResult
+    func sessionCapabilities(probeCostly: Bool) async
+        -> AgentIntegrationSessionCapabilitiesResult
     func listProcesses() async -> AgentIntegrationProcessListResult
     func launchSoftware(_ selection: AgentIntegrationLaunchSelection) async
         -> AgentIntegrationLaunchSoftwareResult
@@ -65,6 +67,19 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
         do {
             return try await client.sessionHealth()
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
+    func sessionCapabilities(probeCostly: Bool) async
+        -> AgentIntegrationSessionCapabilitiesResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.sessionCapabilities(
+                probeCostly: probeCostly)
         } catch {
             return .unavailable(unavailable(for: error))
         }
@@ -224,6 +239,7 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
 actor NOWMCPServer {
     enum ToolName: String {
         case sessionHealth = "now_session_health"
+        case sessionCapabilities = "now_session_capabilities"
         case listProcesses = "now_list_processes"
         case launchSoftware = "now_launch_software"
         case requestQuit = "now_request_quit"
@@ -378,6 +394,7 @@ actor NOWMCPServer {
                         "openWorldHint": false,
                     ],
                 ],
+                sessionCapabilitiesTool(),
                 processListTool(),
                 launchSoftwareTool(),
                 requestQuitTool(),
@@ -390,6 +407,109 @@ actor NOWMCPServer {
                 guestFilesUploadCommitTool(),
             ],
         ])
+    }
+
+    /// The tool that makes the other eleven honest against a guest that
+    /// implements only part of the contract. It reports what the CONNECTED
+    /// guest can do, derived from its own `help` table and from observed
+    /// message-family traffic — never from which guest it is.
+    private func sessionCapabilitiesTool() -> [String: Any] {
+        let capabilityState = [
+            "type": "string",
+            "enum": ["available", "unavailable", "unproven"],
+        ] as [String: Any]
+        return [
+            "name": ToolName.sessionCapabilities.rawValue,
+            "title": "New Old World Session Capabilities",
+            "description":
+                "Reports what the currently paired NOW guest can actually do, and therefore which of these tools are available against it. NOW has guests of different completeness; a tool listed as unavailable here cannot be made to work by calling it anyway. Command availability comes from the guest's own help table and message-family availability from observed traffic plus bounded read-only probes; nothing is inferred from the guest's identity. State 'unproven' means nobody has asked this guest yet and is not a synonym for 'unavailable'.",
+            "inputSchema": [
+                "type": "object",
+                "properties": [
+                    "probeCostly": [
+                        "type": "boolean",
+                        "description":
+                            "Settle software.list by asking. Its first page is a whole-volume sweep costing about four seconds on a guest that implements it; a guest that does not refuses instantly. Defaults to false, which leaves software.list unproven.",
+                    ],
+                ],
+                "additionalProperties": false,
+            ],
+            "outputSchema": [
+                "type": "object",
+                "properties": [
+                    "available": ["type": "boolean"],
+                    "capabilities": [
+                        "type": "object",
+                        "properties": [
+                            "sessionID": [
+                                "type": "string", "format": "uuid",
+                            ],
+                            "observedAt": [
+                                "type": "string", "format": "date-time",
+                            ],
+                            "commandTable": [
+                                "type": "array",
+                                "items": ["type": "string"],
+                            ],
+                            "commandTableEvidence": ["type": "string"],
+                            "probedCostly": ["type": "boolean"],
+                            "families": [
+                                "type": "array",
+                                "items": [
+                                    "type": "object",
+                                    "properties": [
+                                        "family": ["type": "string"],
+                                        "state": capabilityState,
+                                        "evidence": ["type": "string"],
+                                        "refusalCode": ["type": "string"],
+                                        "refusalMessage": [
+                                            "type": "string",
+                                        ],
+                                    ],
+                                    "required": [
+                                        "family", "state", "evidence",
+                                    ],
+                                ],
+                            ],
+                            "tools": [
+                                "type": "array",
+                                "items": [
+                                    "type": "object",
+                                    "properties": [
+                                        "tool": ["type": "string"],
+                                        "state": capabilityState,
+                                        "requires": [
+                                            "type": "array",
+                                            "items": ["type": "string"],
+                                        ],
+                                        "missing": [
+                                            "type": "array",
+                                            "items": ["type": "string"],
+                                        ],
+                                        "reason": ["type": "string"],
+                                    ],
+                                    "required": [
+                                        "tool", "state", "requires",
+                                        "missing", "reason",
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                    "unavailable": ["type": "object"],
+                ],
+                "required": ["available"],
+            ],
+            // Not idempotent: a probe settles a family, so a second call
+            // can legitimately report more than the first. Saying
+            // otherwise would invite a client to cache the weaker answer.
+            "annotations": [
+                "readOnlyHint": true,
+                "destructiveHint": false,
+                "idempotentHint": false,
+                "openWorldHint": false,
+            ],
+        ]
     }
 
     private func processListTool() -> [String: Any] {
@@ -957,6 +1077,30 @@ actor NOWMCPServer {
         switch tool {
         case .sessionHealth:
             let result = await client.sessionHealth()
+            return toolResponse(id: id, result: result)
+        case .sessionCapabilities:
+            let arguments =
+                (params["arguments"] as? [String: Any]) ?? [:]
+            let probeCostly: Bool
+            switch arguments["probeCostly"] {
+            case nil:
+                probeCostly = false
+            case let flag as Bool:
+                probeCostly = flag
+            default:
+                return errorResponse(
+                    id: id, code: -32602,
+                    message:
+                        "now_session_capabilities accepts only an optional boolean probeCostly")
+            }
+            guard Set(arguments.keys).isSubset(of: ["probeCostly"]) else {
+                return errorResponse(
+                    id: id, code: -32602,
+                    message:
+                        "now_session_capabilities accepts only an optional boolean probeCostly")
+            }
+            let result = await client.sessionCapabilities(
+                probeCostly: probeCostly)
             return toolResponse(id: id, result: result)
         case .listProcesses:
             let result = await client.listProcesses()

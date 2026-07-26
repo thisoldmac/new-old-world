@@ -18,6 +18,9 @@ final class AgentIntegrationHostAdapter {
         listener: listener,
         commandTimeout: launchCommandTimeout,
         currentSessionID: { [unowned self] in connectedSessionID() })
+    private lazy var capabilityLedger = AgentIntegrationCapabilityLedger(
+        listener: listener,
+        currentSessionID: { [unowned self] in connectedSessionID() })
     private lazy var artifactTransfer = AgentIntegrationArtifactTransfer(
         listener: listener,
         approvals: artifactApprovals,
@@ -101,6 +104,13 @@ final class AgentIntegrationHostAdapter {
         await processControl.list(observedAt: observedAt ?? Date())
     }
 
+    /// What the CONNECTED guest can do — never who it is. The derivation
+    /// and its probing policy live in the ledger.
+    func sessionCapabilities(probeCostly: Bool = false) async
+        -> AgentIntegrationSessionCapabilitiesResult {
+        await capabilityLedger.report(probeCostly: probeCostly)
+    }
+
     func requestQuit(reference: String, requestedAt: Date = Date()) async
         -> AgentIntegrationQuitResult {
         await processControl.requestQuit(
@@ -156,8 +166,10 @@ final class AgentIntegrationHostAdapter {
     }
 
     private func clearSession() {
+        guard sessionID != nil else { return }
         sessionID = nil
         sessionConnectedAt = nil
+        capabilityLedger.forgetGuest()
     }
 
     func connectedSessionID() -> UUID? {

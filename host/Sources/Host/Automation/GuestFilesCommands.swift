@@ -1,4 +1,5 @@
 import Foundation
+import NOWAgentIntegration
 
 /// The NOW-owned command seam for root-scoped guest file observation.
 ///
@@ -79,28 +80,70 @@ final class GuestFilesCommandService {
                 return finishInvalidListing(
                     context, wireRequests: 1)
             }
-            let capabilities = GuestFileCapabilities(
-                guestRoot: root.wireValue,
-                rootLabel: validated.rootLabel,
-                availableCommands: uploadCommands.isAvailable
-                    ? [.capabilities, .list, .stat, .put]
-                    : [.capabilities, .list, .stat],
-                deferredCommands: [
-                    .download, .readText, .tailText, .mkdir,
-                    .move, .delete, .deployTree, .prune,
-                ],
-                maximumPageEntries: 16,
-                maximumStatPages: maximumStatPages,
-                maximumPathBytes: GuestFilePath.maximumWireBytes,
-                maximumSegmentBytes: GuestFilePath.maximumSegmentBytes,
-                transferLaneState: transferLaneState,
-                observedAt: Date())
             return finish(
                 context, outcome: .success, wireRequests: 1,
-                value: capabilities)
+                value: makeCapabilities(
+                    root: root.wireValue,
+                    rootLabel: validated.rootLabel,
+                    listServed: true))
         case .failure(let failure):
-            return finish(context, failure: failure, wireRequests: 1)
+            // A guest that REFUSES the root listing has answered the
+            // question this command was asked. It is not a failed
+            // capability report; it is a capability report saying list
+            // and stat are not available here, which is exactly the
+            // shape a caller needs against a guest implementing part of
+            // the contract. Anything else — a timeout, a Toolbox error —
+            // still fails, because it says nothing about what the guest
+            // implements and reporting it as "deferred" would turn one
+            // wedged MacTCP stack into a missing feature.
+            guard AgentIntegrationCapabilityNames.isRefusal(failure.code)
+            else {
+                return finish(context, failure: failure, wireRequests: 1)
+            }
+            return finish(
+                context, outcome: .success, wireRequests: 1,
+                value: makeCapabilities(
+                    root: root.wireValue,
+                    rootLabel: nil,
+                    listServed: false))
         }
+    }
+
+    /// One place decides which Files commands this guest offers, so the
+    /// served and refused cases cannot drift into two different lists.
+    private func makeCapabilities(root: String,
+                                  rootLabel: String?,
+                                  listServed: Bool) -> GuestFileCapabilities {
+        var available: [GuestFileCommandKind] = [.capabilities]
+        var deferred: [GuestFileCommandKind] = [
+            .download, .readText, .tailText, .mkdir,
+            .move, .delete, .deployTree, .prune,
+        ]
+        if listServed {
+            available.append(contentsOf: [.list, .stat])
+        } else {
+            deferred.append(contentsOf: [.list, .stat])
+        }
+        // The put lane is a host-side condition AND a guest one: staging
+        // can be ready while the guest cannot receive. Only the commit
+        // finds that out, so this stays the host's answer and the session
+        // report carries the guest's.
+        if uploadCommands.isAvailable {
+            available.append(.put)
+        } else {
+            deferred.append(.put)
+        }
+        return GuestFileCapabilities(
+            guestRoot: root,
+            rootLabel: rootLabel,
+            availableCommands: available,
+            deferredCommands: deferred,
+            maximumPageEntries: 16,
+            maximumStatPages: maximumStatPages,
+            maximumPathBytes: GuestFilePath.maximumWireBytes,
+            maximumSegmentBytes: GuestFilePath.maximumSegmentBytes,
+            transferLaneState: transferLaneState,
+            observedAt: Date())
     }
 
     func list(path: String, cursor: Int? = nil) async

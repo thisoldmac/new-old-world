@@ -362,6 +362,11 @@ private actor RecordingGuestFilesClient: AgentIntegrationClient {
         .hostUnavailable
     }
 
+    func sessionCapabilities(probeCostly: Bool) async
+        -> AgentIntegrationSessionCapabilitiesResult {
+        .unavailable(.host)
+    }
+
     func listProcesses() async -> AgentIntegrationProcessListResult {
         .guestUnavailable
     }

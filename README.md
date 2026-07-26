@@ -140,11 +140,20 @@ runtime code is imported on any side.
   commit through NOW's existing guest transfer lane. These tools accept only
   canonical paths relative to the host-owned `guestRoot`; the destination's
   parent must already exist, no host path is an input, and download, mkdir,
-  overwrite, move, delete, tree deployment, and prune remain unavailable. All
-  eleven tools are tested here. The original
+  overwrite, move, delete, tree deployment, and prune remain unavailable.
+  A twelfth tool reports what the **currently connected** guest can do, and
+  therefore which of the other eleven are available against it. NOW now has
+  two guests of very different completeness, and that answer is derived from
+  the guest's own `help` table plus observed and bounded-probed message
+  families — **never from which guest it is**. A tool whose safety model
+  cannot stand up against a guest is unavailable there in typed form, which
+  is a complete answer; `unproven` is a third state meaning nobody has asked
+  yet, and does not mean "no". All twelve tools are tested here. The original
   five V0 tools and the three read-only V0.5 tools have bounded connected
-  acceptance receipts against the PowerBook 1400c; staged upload is not yet
-  metal-verified. This is not a broader transport, endurance, mutation, or
+  acceptance receipts against the PowerBook 1400c; staged upload and the
+  whole capability projection are **not** metal-verified — nothing in this
+  paragraph about a partial guest has been watched against the PowerBook
+  180c. This is not a broader transport, endurance, mutation, or
   destination-byte qualification; the exact evidence and limits are in
   [docs/agent-integration.md](docs/agent-integration.md).
 

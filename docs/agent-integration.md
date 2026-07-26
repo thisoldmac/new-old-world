@@ -2,7 +2,40 @@
 
 The optional NOW agent-integration companion is host-side only. It projects a narrow typed view of capabilities already owned by a running NOW host, but it does not own the host app, guest connection, transport, transfer lane, or any human-facing operation.
 
-The completed five-tool V0 surface remains intact. The approved follow-on is the
+It is also **not a third face**. It is a client of the wire, reaching a guest through the same commands and message families a human does; the rule and the reason it needs writing down are in [command-parity.md](command-parity.md#the-mcp-is-a-client-not-a-face). A tool projects a capability, it never implements one.
+
+## Availability is decided by capability, never by identity
+
+NOW has two guests of very different completeness. The PowerPC Carbon guest implements most of the contract; NOW-68K implements a small part of it and answers `unknown-command` or a `not-implemented` error to the rest — which is the contract's own additive answer, not a failure. Every tool here must therefore work against whichever guest is connected, and its availability must follow from what that guest can actually do.
+
+Nothing in the companion reads the guest's identity to decide anything. The hello carries a name, a version and an OS string, and the session-health projection reports all three to its caller — but no file that decides what a tool may do is allowed to read them. `AgentIntegrationCapabilityTests.testNoCompanionCodeBranchesOnGuestIdentity` fails the build otherwise. That guard is not hypothetical caution: `MetalQuitTests` derived a guest's abilities from its hello name and went stale the same afternoon that guest grew `process.list`, quietly understating its own evidence. Nothing failed, because a test that expects less always passes.
+
+Two sources, matching the two kinds of capability a guest has.
+
+**Commands** come from `help`, a wire command on both guests that returns that machine's own table. It is fetched once per connection and is the same live source the host console's Tab completion uses, which means a guest that grows a verb becomes usable here with no companion release.
+
+**Message families** (`process.list`, `file.list`, `process.quit`, `software.list`, `file.put`) are not in any command table. `help` cannot see them, and that gap is exactly how `ps` shipped wire-only on NOW-68K and went unnoticed for a day. A family's availability is therefore established by asking, under a stated probing policy:
+
+| Family | How it is established | Why |
+| --- | --- | --- |
+| `process.list` | probed by the report, and by ordinary use | read-only, and the same request the tool sends; 50-90 ms on the 1400c |
+| `file.list` | probed by the report, and by ordinary use | read-only; `now_guest_files_capabilities` already spends one |
+| `software.list` | probed only when the caller passes `probeCostly` | its first page is a whole-volume sweep, ~4 s on the PowerBook. A guest that does not implement it refuses instantly, so the cost falls only on the guest that does — but that is still four seconds of someone's machine, so a caller asks for it on purpose |
+| `process.quit` | ordinary use only | the smallest request in this family quits a process. "I would have to quit something to find out whether I can quit things" is not an acceptable way to answer a question |
+| `file.put` | ordinary use only | same: the smallest request writes a file to the guest |
+
+A family therefore has three states, not two. `unproven` means nobody has asked this guest yet, and is a different fact from `unavailable`. Collapsing them would make the report understate a machine it never questioned — the same failure the hello-name table produced. Only the contract's typed refusals (`not-implemented`, `unknown-command` and their siblings) move a family to `unavailable`; a timeout or a Toolbox error leaves it `unproven`, because silence proves nothing about what a guest implements and one wedged MacTCP stack must not be recorded as a permanently missing feature.
+
+Because ordinary use feeds the same ledger, tools switch on as capabilities appear: a family another session lands on a guest becomes visible here the first time anything asks for it, with no release on this side.
+
+**A tool that cannot be safe against a guest is unavailable against it, in typed form, and that is a complete answer.** It is never a weaker version of the tool with the unsafe part skipped. Two consequences worth stating because they look like gaps:
+
+- `now_request_quit` needs the `process.quit` **family**, not the `quit` **command**. NOW-68K has the command; it does not have the family, so the opaque-reference and PSN-revalidation model this tool is built on has nothing to stand on. The model is not relaxed to make the tool "work".
+- `now_launch_software` needs `software.list` as well as the `launch` command, because "launch exactly one exact match from the current catalog" is the entire safety story and there is no catalog without the listing.
+
+And a refusal must arrive as a refusal. `GuestListener.recordGuestError` routes a guest `error` to every waiter kind — command, file listing, process listing, software listing, process result, file change and census — because the ids come from one sequence. It previously routed three of those six, so exactly the requests a partial guest refuses reached their caller as a 15- or 30-second timeout carrying no reason. Against a guest that implements part of the contract, refusal is ordinary traffic rather than an edge case, and routing it is what makes the companion usable at all.
+
+The completed five-tool V0 surface remains intact; the surface is now twelve tools. The approved follow-on is the
 [NOW MCP V0.5 guest-files command roadmap](plans/2026-07-24-003-feat-now-mcp-v0-5-files-command-roadmap-plan.md).
 V0.5 widens guest filesystem authority only through typed, logged NOW commands
 under a persisted root-relative `guestRoot`; it does not turn this companion
@@ -25,6 +58,7 @@ The implemented V0 surface exposes only five host-owned projections.
 
 | Tool contract | Existing NOW owner | Implemented projection |
 | --- | --- | --- |
+| `now_session_capabilities` | `help` over `GuestListener.runCommand`, plus `GuestListener.familyObservations` | Reports the connected guest's own command table, each depended-on message family's state and the evidence for it, and a per-tool availability derived from those. Sends `help` once per connection and bounded read-only probes for `process.list` and `file.list`; `software.list` only on request; never a mutating family. Reads no guest identity. |
 | `now_session_health` | `GuestListener.State` and `GuestListener.SessionHealth` | `AgentIntegrationHostAdapter.sessionHealth` returns a side-effect-free snapshot of not-listening, listening, connected, or failed host state. Connected snapshots carry only existing guest health fields plus an opaque adapter-owned session ID. |
 | `now_list_processes` | `process.list` / `process.listing` and `GuestListener.listProcesses` | Reads a fresh, complete snapshot from the current paired guest. It returns at most 48 bounded entries, a point-in-time observation timestamp, and opaque references only for entries with a live PSN. PSNs and paths never leave the host adapter. A reference may be offered only to cooperative quit, which revalidates it before use. |
 | `now_launch_software` | `software.list` / `software.listing`, then the existing declared `launch` command | Reads the current `apps` catalog and launches only one exact full-name match, using the listing path internally. Zero matches return `notFound`; multiple matches return at most eight bounded candidates and launch nothing. An opaque candidate reference is session-bound and revalidated against a fresh catalog before launch. No path or raw guest result text crosses the host adapter. |
@@ -47,7 +81,7 @@ The V0.5 upload additions are:
 | `now_guest_files_upload_append` | Private NOW upload stage | Accepts one ordered base64 chunk of at most 8 KiB at the exact receipt offset. It never accepts or resolves a modern-host path and sends no guest message. |
 | `now_guest_files_upload_commit` | `guestFiles.put` over existing `file.offer` / bulk / `file.done` | Seals and revalidates the stage, validates MacBinary structure when selected, streams one frame at a time from its immutable file, never creates parents or overwrites, and returns guest reservation, progress, integrity, finalization, and cleanup evidence. Success requires matching guest length, CRC, same-folder rename, and temp cleanup. The stage is one-attempt and replay conflicts. |
 
-The client-launched `NOWAgentCompanion` executable speaks newline-delimited JSON-RPC over stdio and advertises these eleven tools. It opens one bounded local request to the running host for each call. Session health and upload staging send no guest message; commit and the other guest-dependent tools ask the host to use the existing paired connection. Launch accepts exactly one bounded name or generated opaque reference; quit accepts exactly one generated process reference; approved-artifact transfer accepts exactly one host-minted receipt. The V0.5 Files tools accept only canonical paths relative to host-owned `guestRoot`, never an absolute guest path or a modern-host path. No tool accepts a PSN, shell text, arbitrary host filesystem operation, or unimplemented guest Files mutation. Every tool exposes typed unavailability and no host or listener lifecycle operation. If the host is absent, the result is `now-host-unavailable`; the companion never launches it. If the host is present without a paired guest, guest-dependent tools return `now-guest-unavailable` and never use cached state.
+The client-launched `NOWAgentCompanion` executable speaks newline-delimited JSON-RPC over stdio and advertises these twelve tools. It opens one bounded local request to the running host for each call. Session health and upload staging send no guest message; the capability report sends only `help` and the bounded read-only probes named above; commit and the other guest-dependent tools ask the host to use the existing paired connection. Launch accepts exactly one bounded name or generated opaque reference; quit accepts exactly one generated process reference; approved-artifact transfer accepts exactly one host-minted receipt. The V0.5 Files tools accept only canonical paths relative to host-owned `guestRoot`, never an absolute guest path or a modern-host path. No tool accepts a PSN, shell text, arbitrary host filesystem operation, or unimplemented guest Files mutation. Every tool exposes typed unavailability and no host or listener lifecycle operation. If the host is absent, the result is `now-host-unavailable`; the companion never launches it. If the host is present without a paired guest, guest-dependent tools return `now-guest-unavailable` and never use cached state.
 
 ## Connection posture
 
@@ -64,7 +98,7 @@ V0 deliberately trusts processes running as the same macOS user. This protects a
 - The host creates `dev.newoldworld.now-agent-<uid>/host.sock` beneath the user's private temporary directory. The directory is mode `0700`; the socket is mode `0600`.
 - The host checks every accepted peer with `getpeereid` and serves it only when the effective UID matches.
 - The companion checks that the directory and socket are owned by its effective UID, have no group/other permission bits, and are a directory and socket rather than links or other file types.
-- Local schema v5 adds the three staged-upload lifecycle operations to the v4 browse operations, permits one request per connection, and caps each request and response at 16 KiB. The version changes when authority or action shape changes so an older companion cannot silently misread it. Browse selection is one bounded root-relative path and optional positive cursor; upload selection is one bounded root-relative destination plus declared metadata, followed only by an opaque upload ID, exact offset, and bounded bytes. The NOW command layer performs canonical MacRoman/HFS validation and policy composition. Launch selection is exactly one bounded name or opaque reference; quit selection is exactly one current opaque process reference; artifact selection is exactly one syntactically valid receipt. MCP stdio input is separately capped at 64 KiB per line.
+- Local schema v6 adds the read-only session capability report to v5's staged-upload and browse operations, permits one request per connection, and caps each request and response at 16 KiB. The version changes when authority or action shape changes so an older companion cannot silently misread it. Browse selection is one bounded root-relative path and optional positive cursor; upload selection is one bounded root-relative destination plus declared metadata, followed only by an opaque upload ID, exact offset, and bounded bytes. The NOW command layer performs canonical MacRoman/HFS validation and policy composition. Launch selection is exactly one bounded name or opaque reference; quit selection is exactly one current opaque process reference; artifact selection is exactly one syntactically valid receipt; the capability report's only input is a required boolean `probeCostly`, required rather than defaulted because it decides whether the call spends a guest's whole-volume sweep. The version moved because the shape of the surface changed: a v5 companion cannot ask what the connected guest implements and would present every tool as unconditionally available. MCP stdio input is separately capped at 64 KiB per line.
 - V0.5 upload staging lives in a private mode-`0700` per-process directory; each stage is preallocated mode `0600`, becomes mode `0400` only after size and SHA-256 match, expires after ten minutes, and is consumed after one transfer attempt. Capacity is derived from current host disk availability and outstanding reservations, not an arbitrary whole-file cap. On startup NOW removes only well-formed private stages owned by a demonstrably dead process and emits an audit event. Live-process or structurally unfamiliar directories are retained.
 - Approval staging lives in a per-host-launch mode-`0700` directory. A selected source must be one directly opened, single-link regular file no larger than 4 MiB. The sealed copy is mode `0400`, expires after ten minutes, is bound to the current guest session and approved Files destination, and is consumed on its first redemption attempt. Final open follows no links and rechecks owner, inode, device, link count, size, timestamps, mode, and digest.
 - The MCP cannot mint an approval, list staging, choose a destination, or recover the original path. A user may deliberately select a file from anywhere the native picker can reach, but that grants only the staged copy; it does not expose or make the MCP a side door into a CodeKitten project tree. Same-user malicious code remains outside V0's stated protection.
@@ -101,7 +135,34 @@ projection are designed and verified; reverse resume remains deferred.
 
 ## Current verification
 
-All eleven projections, the local socket, and the stdio wrapper are **tested** here. V0 coverage remains as previously recorded: missing host or guest; bounded process snapshots and references; exact launch/refusal/revalidation; cooperative quit; receipt-backed artifact approval, staging, replay and delivery; malformed and oversized requests; endpoint permissions and peer UID; concurrency; discriminated schemas; and unchanged host module inventory/listener state. V0.5 browse coverage adds explicit/default/invalid `guestRoot` policy, canonical path and root-escape rejection, empty/populated/paged list behavior, fork/type/creator/date projection, exact stat/not-found/scan-limit, stale sessions, bounded guest refusal and malformed listing rejection, concurrent reads, prior local schema v4 rejection, maximum-page response size, host absence without launch, strict MCP arguments, and private-socket round-trip. Upload coverage adds disk-reservation refusal, ordered bounded chunks, digest mismatch cleanup, orphan-stage recovery, create-only collision policy, stale/unavailable handling, one-attempt replay and concurrent-commit refusal, file-backed framing, strict guest completion evidence, late-collision preservation, malformed MacBinary refusal, stale-accept invalidation, cleanup-failure recovery, host/guest observation identities, modified-date omission, strict local/MCP decoding, host build, and a clean Retro68 guest build.
+The capability projection is **tested** and **not metal-verified**. Its
+coverage: a partial guest serving only `process.list` gets per-tool
+availability derived from what it answers; the same code against a guest
+serving `file.list` and `software.list` gets the opposite answer, which is
+what makes it a derivation rather than a table; an unprobed costly family
+reports `unproven` rather than `unavailable`; mutating families are never
+probed, asserted by counting `process.quit` requests during a report; a
+refusal observed in ordinary use settles a family the report will not probe;
+a non-refusal failure leaves the family `unproven` while still carrying the
+guest's own code; every family waiter receives a guest `error` promptly
+rather than on its watchdog; and no deciding file in the companion surface
+mentions a guest name or hello field.
+
+Two of those guards were proven by mutation. Removing three of the six
+waiter routings reproduced the original defect exactly — 15 s, 30 s and 15 s
+waits, each arriving as `timeout` instead of `not-implemented`. It also
+found a hazard in the first version of the fix, which cleared the watchdog
+before routing: a waiter kind the function forgot would then have hung
+forever rather than merely slowly, so the watchdog is now cleared only when
+a waiter was actually answered. Reading a hello name in the ledger failed
+the identity guard by name and file.
+
+The fake partial guest answers `not-implemented` the way
+`guest68k/src/wire68.c` does, which means the host's half is tested twice
+and the guest's half not at all. Nothing here has been run against the
+PowerBook 180c; `open-issues.md` lists exactly what that leaves open.
+
+All twelve projections, the local socket, and the stdio wrapper are **tested** here. V0 coverage remains as previously recorded: missing host or guest; bounded process snapshots and references; exact launch/refusal/revalidation; cooperative quit; receipt-backed artifact approval, staging, replay and delivery; malformed and oversized requests; endpoint permissions and peer UID; concurrency; discriminated schemas; and unchanged host module inventory/listener state. V0.5 browse coverage adds explicit/default/invalid `guestRoot` policy, canonical path and root-escape rejection, empty/populated/paged list behavior, fork/type/creator/date projection, exact stat/not-found/scan-limit, stale sessions, bounded guest refusal and malformed listing rejection, concurrent reads, prior local schema v4 rejection, maximum-page response size, host absence without launch, strict MCP arguments, and private-socket round-trip. Upload coverage adds disk-reservation refusal, ordered bounded chunks, digest mismatch cleanup, orphan-stage recovery, create-only collision policy, stale/unavailable handling, one-attempt replay and concurrent-commit refusal, file-backed framing, strict guest completion evidence, late-collision preservation, malformed MacBinary refusal, stale-accept invalidation, cleanup-failure recovery, host/guest observation identities, modified-date omission, strict local/MCP decoding, host build, and a clean Retro68 guest build.
 
 As of the 2026-07-25 reconciliation, the combined V0.5 tree containing these
 eleven projections plus the independently verified reverse-streaming

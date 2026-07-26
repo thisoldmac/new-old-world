@@ -294,6 +294,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                 case .sessionHealth:
                     return .sessionHealth(
                         agentIntegration.sessionHealth())
+                case .sessionCapabilities:
+                    return .sessionCapabilities(
+                        await agentIntegration.sessionCapabilities(
+                            probeCostly: request.probeCostly ?? false))
                 case .listProcesses:
                     return .processList(
                         await agentIntegration.processList())

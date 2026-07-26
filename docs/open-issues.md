@@ -1126,6 +1126,84 @@ item to be acted on between check and use. The exact guest-side revalidation
 field and command behavior remain the next contract-first mutation gate. Tree
 deployment and mandatory-preview manifest prune follow only after it.
 
+## The companion against a partial guest: capability-derived, unverified on metal
+
+NOW has two guests now, and the agent-integration companion was written
+against one of them. It is now guest-agnostic — but only two of its
+projections have ever been watched against a guest that implements part of
+the contract, and neither of those was the new one.
+
+**What changed.** A twelfth tool, `now_session_capabilities`, reports what
+the connected guest can do and therefore which tools are available against
+it. The derivation has exactly two sources and neither is identity:
+
+- **Commands** come from `help`, which both guests serve on the wire, one
+  fetch per connection. It is the same live source the host console's Tab
+  completion already uses, so a guest that grows a verb becomes usable
+  without a companion release.
+- **Message families** are not in any command table — that gap is how `ps`
+  shipped wire-only here — so they are established by asking. Every family
+  request the host makes records its own outcome as it settles, and the
+  report additionally probes the read-only families it can settle cheaply
+  (`process.list`, `file.list`). It never probes a family whose smallest
+  request changes the guest (`process.quit`, `file.put`), and it probes
+  `software.list` only on request because that first page is a whole-volume
+  sweep. Those stay **`unproven`**, a third state that explicitly does not
+  mean "no" — collapsing it into "no" is how a report would start
+  understating a machine it never asked.
+
+`AgentIntegrationCapabilityTests` fails the build if any deciding file in
+the companion surface reads a hello field or names a guest. That guard
+exists because the same mistake already happened in the other direction:
+`MetalQuitTests` derived a guest's abilities from its hello name and went
+stale the same afternoon that guest grew `process.list`, understating its
+own evidence with nothing failing.
+
+**The refusal path, which was half-built.** `GuestListener.recordGuestError`
+claimed to route a guest `error` to "every waiter" and routed three of the
+six maps. Process listings, software listings and process results — exactly
+what a partial guest refuses — still sat on their 15 s and 30 s watchdogs
+and arrived with `timeout` instead of the guest's reason. All six are routed
+now. The mutation that removed three of them reproduced the original
+symptom: 15 s, 30 s and 15 s waits, each arriving as `timeout`.
+
+That mutation also exposed a hazard in the first version of the fix: it
+cleared the watchdog before routing, so a waiter kind the function forgot
+would have had neither an answer nor a timeout and would have hung forever
+rather than merely slowly. The watchdog is now cleared only when a waiter
+was actually answered.
+
+**What this does NOT change.** No safety property moved. Opaque
+session-bound references, revalidation before use, one-use receipts,
+create-only uploads, and the rule that no guest path or PSN crosses the
+adapter are all as they were. In particular `now_request_quit` was **not**
+made to work against a guest without `process.quit`: the opaque-reference
+and PSN-revalidation model has nothing to stand on there, so the tool is
+unavailable in typed form and that is the whole answer.
+
+**Unverified.** All of it is **tested** here — twelve projections, 490 host
+tests, both xcodebuild configurations — and none of it is
+**metal-verified**. Specifically open:
+
+- No capability report has been taken against the PowerBook 180c. The
+  fake partial guest in the tests answers `not-implemented` the way
+  `guest68k/src/wire68.c` does, but a fake guest proves the host's half
+  twice and the guest's half not at all.
+- `now_list_processes` against NOW-68K is the tool this arc claims is newly
+  possible, and it has not been called against that machine. The 68K's
+  `process.listing` does carry PSNs, so references will be minted there —
+  what happens when one is offered to `now_request_quit` and the guest
+  refuses `process.quit` is tested against a fake and unobserved for real.
+- The `help` command table parse is exercised against a synthetic table.
+  Neither guest's real `help` output has been fed to the ledger.
+- `software.list` probing is opt-in on the stated grounds that a guest which
+  does not implement it refuses instantly. That asymmetry is reasoning, not
+  a measurement; the ~4 s figure for a guest that does implement it comes
+  from the earlier 1400c catalog sweeps, not from this code path.
+- The local protocol moved to v6 and the capabilities call gets a 90 s
+  response window because it may wait on several guest-side watchdogs in
+  turn. That number is a sum of the existing bounds, not an observed one.
+
 ## NOW-68K: what has not been on the machine
 
 The 68K guest for the PowerBook 180c is metal-proven for dial, handshake,

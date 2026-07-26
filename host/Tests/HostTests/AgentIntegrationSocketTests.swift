@@ -28,6 +28,10 @@ final class AgentIntegrationSocketTests: XCTestCase {
                 switch request.operation {
                 case .sessionHealth:
                     return .sessionHealth(adapter.sessionHealth())
+                case .sessionCapabilities:
+                    return .sessionCapabilities(
+                        await adapter.sessionCapabilities(
+                            probeCostly: request.probeCostly ?? false))
                 case .listProcesses:
                     return .processList(await adapter.processList())
                 case .launchSoftware:
@@ -164,6 +168,10 @@ final class AgentIntegrationSocketTests: XCTestCase {
                 switch request.operation {
                 case .sessionHealth:
                     return .sessionHealth(adapter.sessionHealth())
+                case .sessionCapabilities:
+                    return .sessionCapabilities(
+                        await adapter.sessionCapabilities(
+                            probeCostly: request.probeCostly ?? false))
                 case .listProcesses:
                     return .processList(await adapter.processList())
                 case .launchSoftware:
@@ -225,6 +233,10 @@ final class AgentIntegrationSocketTests: XCTestCase {
                 case .sessionHealth:
                     return .sessionHealth(
                         state.agentIntegration.sessionHealth())
+                case .sessionCapabilities:
+                    return .sessionCapabilities(
+                        await state.agentIntegration.sessionCapabilities(
+                            probeCostly: request.probeCostly ?? false))
                 case .listProcesses:
                     return .processList(
                         await state.agentIntegration.processList())
@@ -267,6 +279,10 @@ final class AgentIntegrationSocketTests: XCTestCase {
                 switch request.operation {
                 case .sessionHealth:
                     return .sessionHealth(adapter.sessionHealth())
+                case .sessionCapabilities:
+                    return .sessionCapabilities(
+                        await adapter.sessionCapabilities(
+                            probeCostly: request.probeCostly ?? false))
                 case .listProcesses:
                     return .processList(await adapter.processList())
                 case .launchSoftware:
@@ -409,6 +425,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                 switch request.operation {
                 case .sessionHealth:
                     return .sessionHealth(.hostUnavailable)
+                case .sessionCapabilities:
+                    return .sessionCapabilities(.guestUnavailable)
                 case .listProcesses:
                     return .processList(.available(snapshot))
                 case .launchSoftware:
@@ -479,6 +497,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .guestFilesList(expected)
                 case .sessionHealth:
                     return .sessionHealth(.hostUnavailable)
+                case .sessionCapabilities:
+                    return .sessionCapabilities(.guestUnavailable)
                 case .listProcesses:
                     return .processList(.guestUnavailable)
                 case .launchSoftware:

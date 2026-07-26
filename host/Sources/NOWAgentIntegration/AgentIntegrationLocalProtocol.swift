@@ -1,14 +1,18 @@
 import Foundation
 
 public enum AgentIntegrationLocalProtocol {
-    /// Version 5 adds private staged guest upload commands.
-    public static let version = 5
+    /// Version 6 adds the read-only session capability report. The version
+    /// moves because the SHAPE of the surface changed: a v5 companion has
+    /// no way to ask what the connected guest implements and would present
+    /// twelve tools as unconditionally available.
+    public static let version = 6
     public static let maximumMessageBytes = 16 * 1024
 }
 
 public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
     public enum Operation: String, Codable, Sendable {
         case sessionHealth = "session_health"
+        case sessionCapabilities = "session_capabilities"
         case listProcesses = "list_processes"
         case launchSoftware = "launch_software"
         case requestQuit = "request_quit"
@@ -33,6 +37,8 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
     public let guestFileUploadID: UUID?
     public let guestFileUploadOffset: Int?
     public let guestFileUploadChunk: String?
+    /// Opt in to the one read-only probe that costs the guest real work.
+    public let probeCostly: Bool?
 
     private init(requestID: UUID,
                  operation: Operation,
@@ -45,8 +51,10 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
                     AgentIntegrationGuestFileUploadBegin? = nil,
                  guestFileUploadID: UUID? = nil,
                  guestFileUploadOffset: Int? = nil,
-                 guestFileUploadChunk: String? = nil) {
+                 guestFileUploadChunk: String? = nil,
+                 probeCostly: Bool? = nil) {
         version = AgentIntegrationLocalProtocol.version
+        self.probeCostly = probeCostly
         self.requestID = requestID
         self.operation = operation
         self.launchSelection = launchSelection
@@ -65,6 +73,16 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
               launchSelection: nil, processReference: nil,
               approvalReceipt: nil, guestFilePath: nil,
               guestFileCursor: nil)
+    }
+
+    public static func sessionCapabilities(
+        probeCostly: Bool,
+        requestID: UUID = UUID()
+    ) -> Self {
+        .init(requestID: requestID, operation: .sessionCapabilities,
+              launchSelection: nil, processReference: nil,
+              approvalReceipt: nil, guestFilePath: nil,
+              guestFileCursor: nil, probeCostly: probeCostly)
     }
 
     public static func processList(requestID: UUID = UUID()) -> Self {
@@ -202,6 +220,7 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
 
 public enum AgentIntegrationLocalResult: Equatable, Sendable {
     case sessionHealth(AgentIntegrationSessionHealthResult)
+    case sessionCapabilities(AgentIntegrationSessionCapabilitiesResult)
     case processList(AgentIntegrationProcessListResult)
     case launchSoftware(AgentIntegrationLaunchSoftwareResult)
     case requestQuit(AgentIntegrationQuitResult)
@@ -230,6 +249,8 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
     public let version: Int
     public let requestID: UUID?
     public let result: AgentIntegrationSessionHealthResult?
+    public var sessionCapabilitiesResult:
+        AgentIntegrationSessionCapabilitiesResult? = nil
     public let processListResult: AgentIntegrationProcessListResult?
     public let launchResult: AgentIntegrationLaunchSoftwareResult?
     public let quitResult: AgentIntegrationQuitResult?
@@ -249,6 +270,25 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         version = AgentIntegrationLocalProtocol.version
         self.requestID = requestID
         self.result = result
+        processListResult = nil
+        launchResult = nil
+        quitResult = nil
+        artifactTransferResult = nil
+        guestFilesCapabilitiesResult = nil
+        guestFilesListResult = nil
+        guestFilesStatResult = nil
+        error = nil
+    }
+
+    public init(
+        requestID: UUID,
+        sessionCapabilitiesResult:
+            AgentIntegrationSessionCapabilitiesResult
+    ) {
+        version = AgentIntegrationLocalProtocol.version
+        self.requestID = requestID
+        result = nil
+        self.sessionCapabilitiesResult = sessionCapabilitiesResult
         processListResult = nil
         launchResult = nil
         quitResult = nil
@@ -460,7 +500,7 @@ public enum AgentIntegrationLocalCodec {
             "version", "requestID", "operation", "launchSelection",
             "processReference", "approvalReceipt", "guestFilePath",
             "guestFileCursor", "guestFileUpload", "guestFileUploadID",
-            "guestFileUploadOffset", "guestFileUploadChunk",
+            "guestFileUploadOffset", "guestFileUploadChunk", "probeCostly",
         ])
         guard object["version"] as? Int ==
                 AgentIntegrationLocalProtocol.version else {
@@ -477,9 +517,26 @@ public enum AgentIntegrationLocalCodec {
                   request.processReference == nil,
                   request.approvalReceipt == nil,
                   request.guestFilePath == nil,
+                  request.probeCostly == nil,
                   request.guestFileCursor == nil else {
                 throw AgentIntegrationLocalTransportError.invalidMessage(
                     "Read-only request contains an action selection")
+            }
+        case .sessionCapabilities:
+            // The one flag is REQUIRED rather than defaulted, because it
+            // decides whether this call spends four seconds of a
+            // PowerBook's volume sweep. A caller says so on purpose.
+            expectedKeys = [
+                "version", "requestID", "operation", "probeCostly",
+            ]
+            guard request.launchSelection == nil,
+                  request.processReference == nil,
+                  request.approvalReceipt == nil,
+                  request.guestFilePath == nil,
+                  request.guestFileCursor == nil,
+                  request.probeCostly != nil else {
+                throw AgentIntegrationLocalTransportError.invalidMessage(
+                    "Session capabilities request does not match the schema")
             }
         case .launchSoftware:
             expectedKeys = [
@@ -652,6 +709,7 @@ public enum AgentIntegrationLocalCodec {
             data,
             allowedKeys: [
                 "version", "requestID", "result", "error",
+                "sessionCapabilitiesResult",
                 "processListResult", "launchResult", "quitResult",
                 "artifactTransferResult",
                 "guestFilesCapabilitiesResult", "guestFilesListResult",
@@ -664,6 +722,8 @@ public enum AgentIntegrationLocalCodec {
                 "Unsupported local protocol version")
         }
         let hasResult = object["result"] != nil
+        let hasSessionCapabilities =
+            object["sessionCapabilitiesResult"] != nil
         let hasProcessList = object["processListResult"] != nil
         let hasLaunch = object["launchResult"] != nil
         let hasQuit = object["quitResult"] != nil
@@ -678,7 +738,8 @@ public enum AgentIntegrationLocalCodec {
             object["guestFilesUploadCommitResult"] != nil
         let hasError = object["error"] != nil
         guard [
-            hasResult, hasProcessList, hasLaunch, hasQuit,
+            hasResult, hasSessionCapabilities,
+            hasProcessList, hasLaunch, hasQuit,
             hasArtifactTransfer, hasGuestFilesCapabilities,
             hasGuestFilesList, hasGuestFilesStat,
             hasGuestFilesUploadStage, hasGuestFilesUploadCommit, hasError,

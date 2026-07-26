@@ -2,6 +2,7 @@ import Foundation
 import Network
 import CoreGraphics
 import Combine
+import NOWAgentIntegration
 
 /// The host side of the wire: listens, gates on hello, serves exactly one
 /// guest at a time, answers pings, and declares death passively after
@@ -108,6 +109,65 @@ final class GuestListener: ObservableObject {
     private var pendingCommands: [Int: (CommandResult) -> Void] = [:]
     private var nextCensusId = 1
     private var pendingCensus: [Int: (CensusReport) -> Void] = [:]
+
+    /// What this connection has been observed to implement.
+    ///
+    /// Two guests of very different completeness share this wire, and the
+    /// only truthful way to know which message families the one currently
+    /// connected serves is to have asked it: the families are not in
+    /// `help`, and nothing in the handshake declares them. So every
+    /// family request records its own outcome here as it settles, and the
+    /// agent companion reads the accumulated record rather than deciding
+    /// anything from the guest's name. Cleared when the connection goes,
+    /// because the next guest is not this one.
+    private(set) var familyObservations:
+        [String: GuestFamilyObservation] = [:]
+
+    /// One family's most recent settled outcome on this connection.
+    struct GuestFamilyObservation: Equatable, Sendable {
+        var served: Bool
+        /// The guest's own refusal code, when it refused.
+        var code: String?
+        var message: String?
+        var observedAt: Date
+    }
+
+    /// Records a settled family request. A TIMEOUT is deliberately not
+    /// recorded at all: silence proves nothing about what a guest
+    /// implements, and writing it down as a refusal would let one wedged
+    /// MacTCP stack read as a permanently missing feature.
+    private func observeFamily(_ family: String,
+                               served: Bool,
+                               code: String? = nil,
+                               message: String? = nil) {
+        if !served, let code, code == "timeout" || code == "disconnected" {
+            return
+        }
+        familyObservations[family] = .init(
+            served: served, code: code, message: message,
+            observedAt: Date())
+    }
+
+    /// Wraps a family request's completion so its outcome is recorded no
+    /// matter which way it settles — success, the guest's refusal, or the
+    /// watchdog. Recording at the REQUEST site rather than at each of the
+    /// several resolution sites is what keeps the record complete.
+    private func observing<Value>(
+        _ family: String,
+        _ completion: @escaping (Result<Value, FileFailure>) -> Void
+    ) -> (Result<Value, FileFailure>) -> Void {
+        { [weak self] result in
+            switch result {
+            case .success:
+                self?.observeFamily(family, served: true)
+            case .failure(let failure):
+                self?.observeFamily(
+                    family, served: false,
+                    code: failure.code, message: failure.message)
+            }
+            completion(result)
+        }
+    }
 
     private let identity: HostIdentity
     private let timing: Timing
@@ -511,7 +571,8 @@ final class GuestListener: ObservableObject {
         }
         let id = nextCommandId
         nextCommandId += 1
-        pendingListings[id] = completion
+        pendingListings[id] = observing(
+            AgentIntegrationCapabilityNames.fileList, completion)
         armWatchdog(id: id, seconds: 15) { [weak self] reason in
             self?.pendingListings.removeValue(forKey: id)?(
                 .failure(.init(code: "timeout", message: reason)))
@@ -532,7 +593,8 @@ final class GuestListener: ObservableObject {
         }
         let id = nextCommandId
         nextCommandId += 1
-        pendingProcessListings[id] = completion
+        pendingProcessListings[id] = observing(
+            AgentIntegrationCapabilityNames.processList, completion)
         armWatchdog(id: id, seconds: 15) { [weak self] reason in
             self?.pendingProcessListings.removeValue(forKey: id)?(
                 .failure(.init(code: "timeout", message: reason)))
@@ -554,7 +616,8 @@ final class GuestListener: ObservableObject {
         }
         let id = nextCommandId
         nextCommandId += 1
-        pendingSoftwareListings[id] = completion
+        pendingSoftwareListings[id] = observing(
+            AgentIntegrationCapabilityNames.softwareList, completion)
         armWatchdog(id: id, seconds: 30) { [weak self] reason in
             self?.pendingSoftwareListings.removeValue(forKey: id)?(
                 .failure(.init(code: "timeout", message: reason)))
@@ -580,7 +643,15 @@ final class GuestListener: ObservableObject {
         }
         let id = nextCommandId
         nextCommandId += 1
-        pendingProcessResults[id] = completion
+        // A guest that answers ok:false has still SERVED the family — it
+        // understood the request and refused this particular process. Only
+        // a .failure carrying a refusal code says the family is absent,
+        // which is why the observation reads the Result and not `ok`.
+        pendingProcessResults[id] = observing(
+            verb == .quit
+                ? AgentIntegrationCapabilityNames.processQuit
+                : "process.front",
+            completion)
         armWatchdog(id: id, seconds: 15) { [weak self] reason in
             self?.pendingProcessResults.removeValue(forKey: id)?(
                 .failure(.init(code: "timeout", message: reason)))
@@ -1266,23 +1337,63 @@ final class GuestListener: ObservableObject {
         // request is holding this id is the one owed the refusal. Routing
         // only commands would leave a file or process listing sitting on
         // its 15s watchdog for a question that was already answered.
+        //
+        // The first version of this routed three of the six maps, which
+        // read as "every waiter" until a guest that implements neither
+        // `software.list` nor `process.quit` dialled in: those refusals
+        // still cost their full watchdog and arrived with no reason, so a
+        // companion tool could not tell "not implemented" from "the
+        // PowerBook is wedged". Any pending map added later belongs here
+        // too — that is what makes an incomplete guest workable.
+        let failure = FileFailure(code: problem.code,
+                                  message: problem.message)
+        var routed = false
         if let waiting = pendingCommands.removeValue(forKey: id) {
+            routed = true
             waiting(CommandResult(id: id, ok: false, output: nil,
                                   error: .init(code: problem.code,
                                                message: problem.message)))
         }
         if let waiting = pendingListings.removeValue(forKey: id) {
-            waiting(.failure(.init(code: problem.code,
-                                   message: problem.message)))
+            routed = true
+            waiting(.failure(failure))
+        }
+        if let waiting = pendingProcessListings.removeValue(forKey: id) {
+            routed = true
+            waiting(.failure(failure))
+        }
+        if let waiting = pendingProcessResults.removeValue(forKey: id) {
+            routed = true
+            waiting(.failure(failure))
+        }
+        if let waiting = pendingSoftwareListings.removeValue(forKey: id) {
+            routed = true
+            waiting(.failure(failure))
+        }
+        if let waiting = pendingChanges.removeValue(forKey: id) {
+            routed = true
+            waiting(.failure(failure))
         }
         if let waiting = pendingCensus.removeValue(forKey: id) {
+            routed = true
             waiting(CensusReport(id: id, probe: "", outcome: "failed",
                                  rows: [], more: false,
                                  note: "[\(problem.code)] \(problem.message)"))
         }
+        // Only now, and only if somebody was actually answered. Clearing
+        // the watchdog first looked tidier and was a trap: a waiter this
+        // function forgets to route would then have neither an answer nor
+        // a timeout, and would hang forever rather than merely slowly.
+        // The mutation that removed three of these lines proved it by
+        // hanging the suite instead of failing it.
+        if routed { clearWatchdog(id) }
     }
 
     private func failAllPending(_ reason: String) {
+        // The next guest is not this one. A capability record that
+        // outlived its connection would be the same stale-by-inheritance
+        // mistake as reading abilities off a hello name.
+        familyObservations = [:]
         let commands = pendingCommands
         pendingCommands = [:]
         for (id, completion) in commands {

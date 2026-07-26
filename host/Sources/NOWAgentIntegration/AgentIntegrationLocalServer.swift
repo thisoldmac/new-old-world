@@ -140,6 +140,10 @@ public final class AgentIntegrationLocalServer {
             case .sessionHealth(let result):
                 response = .init(
                     requestID: request.requestID, result: result)
+            case .sessionCapabilities(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    sessionCapabilitiesResult: result)
             case .processList(let result):
                 response = .init(
                     requestID: request.requestID,

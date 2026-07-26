@@ -90,6 +90,30 @@ Adding a row here should feel like a small act of documentation. It is a
 decision with a justification, not a to-do — anything not listed fails
 the build.
 
+## The MCP is a client, not a face
+
+The agent-integration companion (`agent-integration.md`) is **not** a third
+face. It is a client of the wire: it reaches a guest through the same
+commands and message families a human does, and owns none of them. The two
+faces stay two.
+
+That is only worth writing down because there is an obvious way to lose it.
+When a tool needs something a guest does not implement — and NOW-68K does
+not implement most of the contract — the tempting fix is to do the work *in
+the companion*: compose it from smaller calls, cache what the guest cannot
+list, or special-case a guest that answers `unknown-command`. Each of those
+makes it a face, with its own implementation of a capability, drifting from
+the two that exist and answering for a machine it cannot see.
+
+So: a companion tool **projects** a capability, it never implements one — if
+a guest cannot do the thing, the tool is unavailable against that guest and
+says so in typed form, and that is a complete answer. Availability is decided
+by **capability, never by guest identity**. And a refusal must arrive as a
+refusal: the host used to drop guest `error` frames, so an unimplemented
+request reached its caller as a 15-second timeout carrying no reason —
+routing those is what makes a companion usable against an incomplete guest
+at all.
+
 ## Adding a capability
 
 1. Contract first, if it goes on the wire (`AGENTS.md`).

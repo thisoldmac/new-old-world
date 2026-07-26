@@ -7,6 +7,7 @@ public struct AgentIntegrationLocalClient: Sendable {
     private let readOnlyReceiveTimeout: TimeInterval
     private let launchReceiveTimeout: TimeInterval
     private let transferReceiveTimeout: TimeInterval
+    private let capabilitiesReceiveTimeout: TimeInterval
 
     public init(endpoint: AgentIntegrationEndpoint? = nil,
                 expectedUID: uid_t = geteuid()) throws {
@@ -24,12 +25,31 @@ public struct AgentIntegrationLocalClient: Sendable {
          readOnlyReceiveTimeout: TimeInterval,
          launchReceiveTimeout: TimeInterval,
          transferReceiveTimeout: TimeInterval =
-            AgentIntegrationArtifactPolicy.maximumTransferResponseWait) throws {
+            AgentIntegrationArtifactPolicy.maximumTransferResponseWait,
+         // Read-only, but not quick: this call may wait on the guest-side
+         // watchdogs of every family it probes in turn (help, then
+         // process.list at 15 s, file.list at 15 s, and with probeCostly
+         // software.list at 30 s). The window is their sum plus slack, not
+         // the two seconds a single bounded read gets — a capability
+         // report that times out locally teaches its caller nothing.
+         capabilitiesReceiveTimeout: TimeInterval = 90) throws {
         self.endpoint = try endpoint ?? .currentUser(uid: expectedUID)
         self.expectedUID = expectedUID
         self.readOnlyReceiveTimeout = readOnlyReceiveTimeout
         self.launchReceiveTimeout = launchReceiveTimeout
         self.transferReceiveTimeout = transferReceiveTimeout
+        self.capabilitiesReceiveTimeout = capabilitiesReceiveTimeout
+    }
+
+    public func sessionCapabilities(probeCostly: Bool) async throws
+        -> AgentIntegrationSessionCapabilitiesResult {
+        let response = try await send(
+            .sessionCapabilities(probeCostly: probeCostly))
+        guard let result = response.sessionCapabilitiesResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no session-capabilities result")
+        }
+        return result
     }
 
     public func sessionHealth() async throws
@@ -169,6 +189,9 @@ public struct AgentIntegrationLocalClient: Sendable {
             return try await send(.processList())
         case .guestFilesCapabilities:
             return try await send(.guestFilesCapabilities())
+        case .sessionCapabilities:
+            preconditionFailure(
+                "Session capabilities requires an explicit probe choice")
         case .launchSoftware:
             preconditionFailure("Launch requests require a selection")
         case .requestQuit:
@@ -196,6 +219,8 @@ public struct AgentIntegrationLocalClient: Sendable {
                  .guestFilesStat, .guestFilesUploadBegin,
                  .guestFilesUploadAppend:
                 timeout = readOnlyReceiveTimeout
+            case .sessionCapabilities:
+                timeout = capabilitiesReceiveTimeout
             case .launchSoftware, .requestQuit:
                 timeout = launchReceiveTimeout
             case .transferApprovedArtifact, .guestFilesUploadCommit:

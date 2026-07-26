@@ -61,6 +61,7 @@ final class NOWAgentCompanionTests: XCTestCase {
 
         XCTAssertEqual(tools.compactMap { $0["name"] as? String }, [
             "now_session_health",
+            "now_session_capabilities",
             "now_list_processes",
             "now_launch_software",
             "now_request_quit",
@@ -376,6 +377,8 @@ final class NOWAgentCompanionTests: XCTestCase {
                 switch request.operation {
                 case .sessionHealth:
                     return .sessionHealth(.available(health))
+                case .sessionCapabilities:
+                    return .sessionCapabilities(.guestUnavailable)
                 case .listProcesses:
                     return .processList(.guestUnavailable)
                 case .launchSoftware:
@@ -773,8 +776,16 @@ private struct StubAgentIntegrationClient: AgentIntegrationClient {
     var guestFileStatResult: AgentIntegrationGuestFileStatResult =
         .hostUnavailable(.host)
 
+    var sessionCapabilitiesResult:
+        AgentIntegrationSessionCapabilitiesResult = .unavailable(.host)
+
     func sessionHealth() async -> AgentIntegrationSessionHealthResult {
         healthResult
+    }
+
+    func sessionCapabilities(probeCostly: Bool) async
+        -> AgentIntegrationSessionCapabilitiesResult {
+        sessionCapabilitiesResult
     }
 
     func listProcesses() async -> AgentIntegrationProcessListResult {
