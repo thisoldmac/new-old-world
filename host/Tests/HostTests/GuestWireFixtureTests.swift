@@ -1012,6 +1012,58 @@ final class GuestWireFixtureTests: XCTestCase {
                      + "means unchecked, and a number here would be read "
                      + "as corruption rather than truncation")
     }
+
+    func test68KCaptureBeginAsTheGuestWritesIt() throws {
+        guard case .captureBegin(let begin) =
+            try decode(Guest68KWire.captureBegin68K) else {
+            return XCTFail("not a capture.begin")
+        }
+        XCTAssertEqual(begin.id, 7)
+        XCTAssertEqual(begin.transfer, 3)
+        XCTAssertEqual(begin.width, 640)
+        XCTAssertEqual(begin.height, 480)
+        XCTAssertEqual(begin.depth, 8)
+        XCTAssertEqual(begin.rowBytes, 640)
+        XCTAssertEqual(begin.bytes, 307_968)
+        XCTAssertEqual(begin.paletteBytes, 768)
+        XCTAssertEqual(begin.encoding, "raw")
+        XCTAssertEqual(begin.captureMs, 213)
+        XCTAssertNil(begin.frame,
+                     "a one-shot capture carries no frame kind; a stream "
+                     + "field appearing here would make this side read a "
+                     + "single capture as the first frame of a stream")
+    }
+
+    // The number and the word have to agree. A packed payload announced as
+    // raw is not a decode error anywhere - it is 137,794 bytes read as the
+    // first 137,794 of an expected 307,968, which presents as a torn image
+    // rather than as a failure.
+    func test68KCaptureBeginSaysPackbitsWhenItPacked() throws {
+        guard case .captureBegin(let begin) =
+            try decode(Guest68KWire.captureBeginPacked68K) else {
+            return XCTFail("not a capture.begin")
+        }
+        XCTAssertEqual(begin.encoding, "packbits")
+        XCTAssertEqual(begin.bytes, 137_794,
+                       "the byte count is the PACKED length, because that "
+                       + "is what the bulk lane will actually carry")
+        XCTAssertEqual(begin.encodeMs, 512)
+    }
+
+    func test68KCaptureEndAsTheGuestWritesIt() throws {
+        guard case .captureEnd(let end) =
+            try decode(Guest68KWire.captureEndOK68K) else {
+            return XCTFail("not a capture.end")
+        }
+        XCTAssertTrue(end.ok)
+        XCTAssertEqual(end.transfer, 3)
+
+        guard case .captureEnd(let failed) =
+            try decode(Guest68KWire.captureEndFailed68K) else {
+            return XCTFail("not a capture.end")
+        }
+        XCTAssertFalse(failed.ok)
+    }
 }
 
 /// The exact payload bytes NOW-68K puts on the control channel, derived
@@ -1113,6 +1165,31 @@ enum Guest68KWire {
     // 3419628326 is 0xCBF43926, above the signed-long boundary for the
     // same reason fileDoneOK uses it: a lost unsigned append is a
     // checksum mismatch reported against a file that arrived perfectly.
+    // NOW-68K's capture envelopes (n68_shotwire.c), transcribed from the
+    // pinned strings in guest68k/tests/test_shotwire.c. That test proves
+    // the guest writes these bytes; this one proves this side reads them.
+    // Neither proves anything alone, which is the whole point of the pair.
+    static let captureBegin68K =
+        #"{"type":"capture.begin","id":7,"transfer":3,"# +
+        #""width":640,"height":480,"depth":8,"# +
+        #""rowBytes":640,"bytes":307968,"paletteBytes":768,"# +
+        #""encoding":"raw","captureMs":213,"encodeMs":0}"#
+
+    // The staged lane packs, and says so. This field was hardcoded "raw"
+    // until a real receiver decoded 137,794 packed bytes as though they
+    // were 307,968 unpacked ones.
+    static let captureBeginPacked68K =
+        #"{"type":"capture.begin","id":7,"transfer":3,"# +
+        #""width":640,"height":480,"depth":8,"# +
+        #""rowBytes":640,"bytes":137794,"paletteBytes":768,"# +
+        #""encoding":"packbits","captureMs":213,"encodeMs":512}"#
+
+    static let captureEndOK68K =
+        #"{"type":"capture.end","id":7,"transfer":3,"ok":true}"#
+
+    static let captureEndFailed68K =
+        #"{"type":"capture.end","id":7,"transfer":3,"ok":false}"#
+
     static let sendEndOK = #"{"type":"file.end","id":7,"transfer":9,"#
         + #""ok":true,"sendMs":42,"crc32":3419628326}"#
 

@@ -381,6 +381,11 @@ final class GuestWireConformanceTests: XCTestCase {
         "file.offer": "test68KFileOfferAsTheGuestWritesIt",
         "file.begin": "test68KFileBeginAsTheGuestWritesIt",
         "file.end": "test68KFileEndAsTheGuestWritesIt",
+        // NOW-68K's capture envelopes (n68_shotwire.c). Same reason as the
+        // send half above: built from append calls, so the scanner cannot
+        // read them and a hand-written fixture is the only check there is.
+        "capture.begin": "test68KCaptureBeginAsTheGuestWritesIt",
+        "capture.end": "test68KCaptureEndAsTheGuestWritesIt",
     ]
 
     func testMessagesThisCannotCheckAreKnown() throws {
