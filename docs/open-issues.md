@@ -57,40 +57,52 @@ right fork sizes, `APPL`/`MPS ` from the HEADER rather than the offer,
 and a modification date that resolves through the Mac epoch to 2008 as
 sent. A file with no resource fork does not acquire an empty one.
 
-**What is wrong.** Reading the files back off the disk image, **the
-resource fork has 77 bytes overwritten at fork offset 48** - and the
-overwriting bytes are that file's own create-time HFS catalog record
-(its `NOW incoming <hex>` staging name, and the `BINA`/`NW68` type and
-creator `FSpCreate` gave it). The data fork is always perfect. Verified:
+**What is wrong.** **The resource fork has 77 bytes overwritten at fork
+offset 48** by a copy of that file's own catalog record - its `NOW
+incoming <hex>` staging name, the `BINA`/`NW68` type and creator
+`FSpCreate` gave it, and both fork lengths. The data fork is always
+perfect.
+
+Verified **against the raw disk image**, byte-searched directly rather
+than through any HFS tool - an earlier round of this used hfsutils'
+MacBinary and BinHex writers and called them "two independent
+extractors", which they are not: both are hfsutils and share its fork
+reader. They turned out to be reading correctly, but the reasoning was
+unsound and is recorded here so it is not repeated.
 
 - Reproducible with a SINGLE transfer on a freshly cloned image.
-- Same 77 bytes at the same offset 48 for a 3000-byte and a
-  200000-byte resource fork, and across separate runs.
-- Confirmed by two independent extractors (hfsutils MacBinary and
-  BinHex), so it is on the disk and not an artifact of reading.
-- Data-container files are byte-identical at 8191, 8192, 8193, 65536,
-  262144 and 4194304 bytes. **Only resource forks are affected.**
+- Same 77 bytes at offset 48 for a 3000-byte and a 200000-byte
+  resource fork, across separate runs, and in two different
+  destination folders (Startup Items and the Desktop).
+- Data-container files are byte-identical on the raw disk at 8191,
+  8192, 8193, 65536, 262144, 1048576 and 4194304 bytes.
 
-**Eliminated, each by disabling it and re-running:** `Allocate()`
-pre-allocation, `FSpSetFInfo`, `FSpRename`, and the `PBSetCatInfoSync`
-that stamps the date. The corruption survives all four, so none of this
-guest's catalog writes causes it - and the record that lands in the fork
-predates them anyway (it carries the staging name and `BINA`, not the
-final name and `APPL`).
+**The one asymmetry that constrains it:** a MacBinary file with an
+EMPTY data fork (0 data + 2000 resource) is **intact on disk**. Every
+corrupted case has content in both forks. So it is not "resource forks
+are broken" - it is something about a file that has had both.
 
-**Leading hypothesis, NOT established:** the resource fork is allocated
-a block that HFS has also given to the catalog, i.e. an allocation
-bitmap that disagrees with the catalog file's extents. That would
-explain why it is resource-fork-only (data forks are allocated at a
-different point in the sequence), why each file gets its OWN catalog
-record spliced in, and why it is deterministic (every run replays the
-same operations from the same base image clone). Whether the fault is in
-the shared `os81-target.img` - which has been hard-powered-off many
-times, by this work among others - in Mac OS 8.1, or in QEMU's q800 SCSI
-path, is **not established**, and separating those needs a transfer onto
-a freshly formatted volume. NOW-68K writes into its own application
-folder, so arranging that means giving it a configurable destination
-first.
+**Eliminated, each by disabling it and re-running on metal-equivalent:**
+`Allocate()` pre-allocation, `FSpSetFInfo`, `FSpRename`, the
+`PBSetCatInfoSync` that stamps the date, and closing the data fork
+before opening the resource fork (the hypothesis the asymmetry above
+suggested - it did not help and was reverted rather than kept as an
+unverified change). The spliced record predates all of them anyway: it
+carries the staging name and `BINA`, not the final name and `APPL`.
+
+**Not the catalog file.** The corrupted fork sits in allocation block
+332; the catalog's only extent is blocks 64-127. So this is a stray
+copy of a catalog record written outside catalog space, not a fork
+overlapping the B-tree - which was the leading theory and is now dead.
+
+**Mechanism: UNKNOWN.** That is the honest state. What is left to try,
+roughly in order: a transfer onto a freshly formatted volume (to rule
+the shared `os81-target.img` in or out - it has been hard-powered-off
+many times, by this work among others); the same envelope through the
+PowerPC guest, whose MacBinary receive is older and differently
+structured; and a read-back on the guest itself, which would say whether
+the bytes are wrong at write time or become wrong afterwards. The first
+needs a configurable destination, which the browse/ls work will bring.
 
 **What this does NOT tell us about the 180c.** Nothing. If the cause is
 the emulator image, metal may be clean; if it is the File Manager call
@@ -113,11 +125,15 @@ must be resolved before MacBinary is used for anything.
 - **Receive only.** `file.list`, `file.move`, `file.trash` and the pull
   direction still answer the generic not-implemented error. NOW-68K has
   no share to serve.
-- **The destination is the application's own folder.** NOW-68K has no
-  preferences and no share root, so there was nothing to read one from.
-  This is the spike's weakest decision and the first thing a real
-  feature has to settle: it currently means a host can write into the
-  folder the application lives in.
+- **Files land on the Desktop, and nothing is gated.** NOW-68K has no
+  preferences and no share root, so there is nothing to read a
+  destination out of. The Desktop needs no state to name and is where a
+  person looks for something that arrived. `path` from the offer still
+  resolves relative to it and a host may reach a subfolder - deliberate
+  until the browse/ls verbs exist, because a boundary drawn before
+  there is anything to browse is a guess dressed as a policy. It was
+  briefly the application's own folder, which meant a host could write
+  into the System Folder.
 
 ### Open
 

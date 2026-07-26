@@ -4,37 +4,52 @@
 #include "n68_putfile.h"
 
 #include <Files.h>
+#include <Folders.h>
 #include <OSUtils.h>
-#include <Processes.h>
 #include <string.h>
 
-/* The application's own folder, resolved through the Process Manager
- * rather than the launch default directory - which is NOT the same
- * place, because Rumpus deposits builds on the Desktop. This is the
- * third caller of this eight-line function (log.c keeps its own inside
- * now68k_log_open, n68_devsettings_file.c duplicated it with a comment
- * saying a third caller would be the moment to lift one out). It is
- * lifted here rather than written a third time, and the other two are
- * left alone: moving log.c's copy means touching the code that reports
- * failures, which is not something to do in the same change as the
- * feature whose failures it would be reporting. */
-static int app_folder(short *vref, long *dir)
-{
-    ProcessSerialNumber psn;
-    ProcessInfoRec      info;
-    FSSpec              spec;
+/* Neither constant is declared in these Universal Interfaces - the
+ * PowerPC guest gets them from Carbon's Folders.h, which this side does
+ * not have (the same gap as DirCreate vs FSpDirCreate below). Both are
+ * fixed by the Folder Manager and safe to state here. kOnSystemDisk is
+ * a vRefNum meaning "the startup disk": 0x8000, which as the int16_t
+ * FindFolder takes is -32768. Written as the hex cast rather than the
+ * decimal so it reads as the flag word it is. */
+#define kOnSystemDiskVRef   ((short)0x8000)
+#define kDoCreateFolder     true
 
-    if (GetCurrentProcess(&psn) != noErr) {
+/* Where an incoming file lands: the DESKTOP.
+ *
+ * It was the application's own folder, which was a spike decision with
+ * an obvious hazard - a host could write into the folder the
+ * application lives in, and on this machine that is frequently the
+ * System Folder. The Desktop is where a person looks for something that
+ * just arrived, the Folder Manager already knows where it is, and
+ * nothing on the system cares what appears there.
+ *
+ * NOT a share, and deliberately not gated. The contract's `path` still
+ * resolves relative to this root, so a host may name a subfolder and
+ * nothing stops it reaching one. That is the right amount of structure
+ * for now: the browse/ls verbs that would make choosing a destination
+ * meaningful do not exist yet, and a boundary drawn before there is
+ * anything to browse would be a guess dressed as a policy. When they
+ * land, this function is the single place the root is decided.
+ *
+ * kDoCreateFolder rather than "don't": a Desktop Folder that does not
+ * exist yet is an ordinary state on a freshly formatted volume, and
+ * failing a transfer over it would be refusing a file because nobody
+ * had ever put anything on the desktop. */
+static int desktop_folder(short *vref, long *dir)
+{
+    int32_t found_dir = 0;
+    int16_t found_vref = 0;
+
+    if (FindFolder(kOnSystemDiskVRef, kDesktopFolderType, kDoCreateFolder,
+                   &found_vref, &found_dir) != noErr) {
         return 0;
     }
-    memset(&info, 0, sizeof info);
-    info.processInfoLength = sizeof info;
-    info.processAppSpec    = &spec;
-    if (GetProcessInformation(&psn, &info) != noErr) {
-        return 0;
-    }
-    *vref = spec.vRefNum;
-    *dir  = spec.parID;
+    *vref = (short)found_vref;
+    *dir  = (long)found_dir;
     return 1;
 }
 
@@ -58,7 +73,7 @@ static N68PutCode resolve_folder(const char *rel, int create,
     const char *p = rel;
 
     *err = noErr;
-    if (!app_folder(vref, dir)) {
+    if (!desktop_folder(vref, dir)) {
         return kN68PutIOError;
     }
     while (p != NULL && *p != '\0') {
@@ -150,7 +165,7 @@ static long pf_free_bytes(void *ctx, const N68PutOffer *offer)
      * only ever names folders inside it. Resolved WITHOUT creating, so
      * asking how much room there is never has a side effect. */
     if (resolve_folder(offer->path, 0, &vref, &dir, &err) != kN68PutOK) {
-        if (!app_folder(&vref, &dir)) {
+        if (!desktop_folder(&vref, &dir)) {
             return -1;
         }
     }
@@ -473,7 +488,7 @@ void now68k_putfile_where(char *out, long cap)
         return;
     }
     out[0] = '\0';
-    if (!app_folder(&vref, &dir)) {
+    if (!desktop_folder(&vref, &dir)) {
         return;
     }
     memset(&pb, 0, sizeof pb);

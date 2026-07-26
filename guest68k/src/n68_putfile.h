@@ -11,21 +11,28 @@
  * where they can be tested off-metal. This file is the part that cannot
  * be, so it is kept as small and as dull as it can be made.
  *
- * ---- Where files land, and why it is the application's own folder ----
+ * ---- Where files land: the Desktop -----------------------------------
  *
- * NOW-68K has no preferences and no share root. That is a product
- * property rather than an omission (main.c's header, and the README say
- * so), so there is nothing to read a destination out of and no dialog
- * this thing is allowed to put up. The application's own folder is the
- * one place a person can find without being told, it is where the dev
- * settings file and the logs already are (n68_devsettings_file.c,
- * log.c), and it needs no new state to remember.
+ * NOW-68K has no preferences and no share root - a product property
+ * rather than an omission (main.c's header and the README both say so)
+ * - so there is nothing to read a destination out of and no dialog this
+ * thing is allowed to put up. The Desktop needs none of that: the
+ * Folder Manager knows where it is, it is where a person looks for
+ * something that just arrived, and nothing on the system cares what
+ * appears there.
  *
- * That is a SPIKE decision, not a product one. A real share is a real
- * decision - which volume, which folder, who chooses it, what stops a
- * host writing over the application - and none of that is settled here.
- * The contract's `path` is honoured relative to this folder, so the
- * shape is already the shape a share would have; only the root moves.
+ * It was the application's own folder, briefly, and that had an obvious
+ * hazard: a host could write into the folder the application lives in,
+ * which on this machine is frequently the System Folder.
+ *
+ * NOT A SHARE, and deliberately not gated. The contract's `path` still
+ * resolves relative to this root, so a host may name a subfolder and
+ * nothing stops it reaching one. That is the right amount of structure
+ * for now - the browse/ls verbs that would make choosing a destination
+ * meaningful do not exist yet, and a boundary drawn before there is
+ * anything to browse would be a guess dressed as a policy. When they
+ * land, desktop_folder() in the .c is the single place the root is
+ * decided.
  *
  * ---- Bytes land under a temporary name -------------------------------
  *
