@@ -50,7 +50,7 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 |---|:--:|:--:|---|
 | `hello`, `bye`, `pong`, `refuse`, `error` | ✅ | ✅ | the handshake and keepalive floor |
 | `command.request` | ✅ | ✅ | verb sets differ — see below |
-| `census.request` | ✅ | ✅ | |
+| `census.request` | ✅ | ⚠️ | 68K answers, with **zero probes** — always `refused` |
 | `process.list` | ✅ | ✅ | |
 | `process.front` | ✅ | ❌ | bring to front |
 | `process.quit` | ✅ | ❌ | 68K quits via the `quit` COMMAND, not this family |
@@ -66,21 +66,93 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 | `capture.request` / `capture.accept` / `capture.refuse` / `capture.cancel` | ✅ | ❌ | **no screenshots on 68K at all** |
 | `stream.start` / `stream.stop` / `stream.refresh` | ✅ | ❌ | |
 
-PPC handles 33 types; NOW-68K handles 14.
+PPC handles 33 types; NOW-68K handles 14. **That count understates the
+difference** — see the next two sections, where two of these rows open
+into 16 verbs and 14 hardware probes.
 
 ### `command.request` verbs
 
-| | Verbs |
-|---|---|
-| PPC | the full registry (`CommandRegistryTests` is the list) |
-| 68K | `help` `launch` `ps` `put` `quit` `vprobe` |
+"The full registry" is not an answer, and the message-type table above
+hides most of what a machine can be asked — the hardware, network, RAM
+and ROM facts do not have message types of their own. They live behind
+`gestalt` and `census`, one row each above and a whole subsystem below.
 
-`put` is the one verb NOW-68K serves that the PowerPC guest does not,
-and that asymmetry is deliberate and argued in
+The registry is `x-commands` in the contract: **16 verbs.**
+
+| Verb | What it asks the machine | PPC | 68K |
+|---|---|:--:|:--:|
+| `help` | what commands this machine serves | ✅ | ✅ |
+| `vers` | build identity | ✅ | ❌ |
+| `gestalt` | **CPU, memory, OS, network, hardware** — see below | ✅ | ❌ |
+| `census` | the hardware census, probe by probe — see below | ✅ | ❌ |
+| `catsearch` | catalog search across a volume | ✅ | ❌ |
+| `sw` | installed software | ✅ | ❌ |
+| `ls` | list a folder | ✅ | ❌ |
+| `tail` | the end of a file | ✅ | ❌ |
+| `reveal` | show an item in the Finder | ✅ | ❌ |
+| `screenshot` | capture the screen | ✅ | ❌ |
+| `vprobe` | framebuffer read cost | ✅ | ✅ |
+| `ps` | running processes | ✅ | ✅ |
+| `launch` | open an application | ✅ | ✅ |
+| `quit` | ask an application to quit | ✅ | ✅ |
+| `put` | send a file from the guest | console only | ✅ |
+| `putstat` | transfer diagnostics | ✅ | ❌ |
+
+**PPC serves 15 of 16** (`put` is console-only there, deliberately —
+the host reaches that capability through the `file.*` families).
+**NOW-68K serves 6 of 16.** Both asymmetries are argued in
 [command-parity.md](command-parity.md).
+
+### `gestalt` — the machine's account of itself
+
+Five groups, all PPC-only: **cpu**, **memory**, **os**, **network**,
+**hw**, plus a `snapshot` summary. This is where "what CPU, how much
+RAM, what ROM, what networking" is answered, and it is the single
+biggest thing NOW-68K does not serve.
+
+**The data already exists on the 68K side.** `guest68k/src/health.c`
+samples machine identity, CPU type, System version, Virtual Memory,
+MacTCP version, screen geometry and physical RAM once at startup, plus
+free memory and largest free block on every panel redraw — all of it
+cached, in fixed buffers, with the strings pre-built. It is drawn on the
+guest's own panel and **no verb exposes it**. A `gestalt` on NOW-68K is
+therefore closer to a rendering job than a measurement one, which makes
+it the cheapest large gap on this list to close.
+
+### `census` — the hardware census, probe by probe
+
+The PowerPC guest implements **14 probes** (`k_probes` in
+`guest/src/census_probes.c`):
+
+`overview` `identity` `selectors` `video` `volumes` `drives` `drivers`
+`adb` `ata` `pccard` `pram` `power` `pci` `scsi`
+
+**NOW-68K implements none.** It serves `census.request` and answers
+every one with `outcome: "refused"` and the note "no probes
+implemented" — deliberately `refused` rather than `absent`, because
+absent would mean the machine was asked and said no, which is not what
+happened. That is honest and it is still zero coverage: **read the ✅
+for `census.request` in the message table as "answers the message", not
+as "has a census".**
+
+### A message-type table is not a coverage table
+
+Worth stating, because the first version of this file made the mistake.
+Counting inbound message types put `census.request` and `command.request`
+at one row each, which read as two ticks and hid 16 verbs and 14 hardware
+probes behind them. **Two of the rows above are subsystems.** Any future
+version of this document has to expand them or it will understate the gap
+the same way.
 
 ## What NOW-68K's gaps mean in practice
 
+- **No account of the machine.** No `gestalt`, no census probes, no
+  `vers`. A host talking to NOW-68K cannot ask what CPU it is, how much
+  RAM it has, what ROM, what is on the SCSI bus, or what its networking
+  looks like — and the PowerBook 180c is precisely the machine where
+  someone would want to know. The health data is already sampled locally
+  (above), so `gestalt` is mostly a renderer; the census probes are real
+  Toolbox work and would need doing per probe.
 - **No capture.** The 68K guest cannot be asked for a screenshot. This
   is the largest single gap and it is blocked on a measurement, not on
   code: the framebuffer read is 159 ms for a 300 KB frame
@@ -139,4 +211,7 @@ here: parse both dispatches, compare against this table, fail on drift.
 Until that exists, this document is a snapshot and the two `grep`
 commands at the top are the source of truth.
 
-Last derived: 2026-07-26, at `bb54ab3`.
+Last derived: 2026-07-26, at `bb54ab3`. The command registry came from
+`x-commands` in `contract/asyncapi.yaml`, the PPC verb set from
+`strcmp(name, ...)` in `guest/src/commands.c`, and the probe list from
+`k_probes` in `guest/src/census_probes.c`.
