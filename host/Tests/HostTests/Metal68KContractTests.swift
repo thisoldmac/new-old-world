@@ -138,11 +138,20 @@ final class Metal68KContractTests: XCTestCase {
     /// on metal or in an emulator. Its fixture in GuestWireFixtureTests is
     /// a claim read off `send_error_reply`, not evidence from a wire.
     ///
-    /// `file.list` provokes it: NOW-68K implements no file features, so
-    /// the request falls through to the generic reply. What this asserts
-    /// is that the refusal ARRIVES and the session survives it — for a
-    /// guest this incomplete, refusals are ordinary traffic, and a guest
-    /// that refuses cleanly must not be confusable with one that died.
+    /// `file.move` provokes it: NOW-68K will say what is on its disk and
+    /// carry bytes both ways, but does not change the shape of that disk
+    /// on request, so the mutations fall through to the generic reply.
+    /// What this asserts is that the refusal ARRIVES and the session
+    /// survives it — for a partial guest, refusals are ordinary traffic,
+    /// and a guest that refuses cleanly must not be confusable with one
+    /// that died.
+    ///
+    /// This canary was `file.list` until 2026-07-26, when that message
+    /// was implemented and the test began failing by SUCCEEDING. A test
+    /// whose subject is "something not implemented" has to be repointed
+    /// every time the gap it names gets closed — which is a good problem,
+    /// and worth the two lines of maintenance rather than picking a
+    /// message nobody will ever implement.
     func testAnUnimplementedMessageIsRefusedAndSaysSo() async throws {
         try await waitFor68K()
 
@@ -152,7 +161,8 @@ final class Metal68KContractTests: XCTestCase {
         let failure: GuestListener.FileFailure? =
             await withCheckedContinuation { cont in
                 var done = false
-                listener.listFiles(path: "") { result in
+                listener.moveFile(from: "NOW no such file",
+                              to: "NOW no such file 2") { result in
                     guard !done else { return }
                     done = true
                     switch result {
@@ -165,7 +175,7 @@ final class Metal68KContractTests: XCTestCase {
         let seen = listener.lastGuestError
 
         XCTAssertEqual(failure?.code, "not-implemented", """
-            file.list came back as \(failure?.code ?? "success") after \
+            file.move came back as \(failure?.code ?? "success") after \
             \(String(format: "%.1f", waited))s. A refusal the guest sent \
             immediately must reach the caller as that refusal — if this \
             says "timeout", the host is still dropping guest errors and \
@@ -178,7 +188,7 @@ final class Metal68KContractTests: XCTestCase {
 
         guard let seen else {
             throw gateFailed("""
-                file.list drew no error at all. Either the guest \
+                file.move drew no error at all. Either the guest \
                 answered something else, or it answered nothing — and \
                 silence is the one thing the contract does not allow here: \
                 "never a protocol error; that is what keeps commands \

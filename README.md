@@ -396,6 +396,19 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   `Screenshot 1904-01-01 23.49.05` — the Mac epoch, which is what the
   machine believes the time is. The same-instant collision guard is what
   keeps a second shot from overwriting the first there.
+- **NOW-68K 0.22 on the PowerBook 180c: the control plane is
+  metal-verified, the file family is not.** Dial, handshake, keepalive,
+  the bounded catalog search, farewell and redial all pass on the real
+  machine (50.8 s), as does the contract suite — refusals, a second
+  request during a confirm wait, an oversized control frame costing one
+  message rather than the wire (72.7 s). **No transfer ladder has
+  completed on that machine in either direction**, so every transfer
+  number in this file is an emulator's. A serial multi-megabyte push
+  wedged its MacTCP after 606 KB and, later the same evening, the
+  display began to flicker: this is 33-year-old hardware with no thermal
+  protection of any kind, and sustained bulk load is what it dislikes.
+  Ladders belong on the emulator; the metal answers what an emulator
+  cannot. See [docs/open-issues.md](docs/open-issues.md).
 - **Receiving a file on NOW-68K is emulator-verified, not
   metal-verified.** A host can push into the Desktop, `data` or
   MacBinary, and 4 MB arrives byte-identical at ~350 KB/s on a Quadra

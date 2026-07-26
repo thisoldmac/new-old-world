@@ -9,6 +9,81 @@ wrong thing) versus **unverified** (it may well be right, but no one has
 watched it work on the PowerBook). Unverified is not a lesser problem —
 several of tonight's bugs lived in code that looked obviously correct.
 
+## The 180c, 2026-07-26: two suites metal-verified, the ladder not (0.22)
+
+Five branches merged, deployed as `NOW-68K 0.22`, and run against the
+PowerBook. What is now metal-verified, what is not, and three defects
+the attempt found.
+
+### Metal-verified on 0.22
+
+- `Metal68KTests` — dial, handshake, keepalive, bounded catalog search,
+  farewell, redial. 3 run, 2 skipped, 0 failures, **50.8 s**.
+- `Metal68KContractTests` — 3 run, 0 failures, **72.7 s**. Individually:
+  an unimplemented message refused in 6.4 s, a second request during a
+  confirm wait handled in 15.6 s, an oversized control frame costing one
+  message rather than the wire in 67.3 s.
+
+**The control plane is healthy on this machine.** That is the whole of
+what tonight added to the metal column.
+
+### Still NOT metal-verified
+
+**The file family, both directions.** `Metal68KPutTests` never produced
+a usable result: contended the first time (below), killed the second
+when the machine was rested. Receive and send remain emulator-verified
+only, and the emulator's ~350 KB/s receive is a 68040's number that
+predicts nothing here. No `NOWBASE` baseline lines were captured either
+— neither run reached the point of emitting any.
+
+### Broken
+
+- **The handoff cannot retire a build older than `isSelf`.** The
+  identity gate correctly refuses to name a process the guest has not
+  marked as itself, and 0.19 predates `ProcessListing.isSelf` — so it
+  declined to guess, and could not proceed. A one-time migration cliff
+  created by the fix itself: the first build carrying the field has to
+  be launched some other way. Worth deciding whether the gate should
+  accept an explicitly-named outgoing build for this case, or whether
+  the answer is simply "a human double-clicks once".
+- **`launch` with a colon-bearing HFS path did not launch.** Asked over
+  the wire to launch `Macintosh HD:Lab:now-68k:NOW-68K 0.22`, the
+  running 0.19 returned no reply within 40 s and the application did not
+  start; a human launched it by hand. `proc_launch_named` is documented
+  to treat a colon-bearing string as a full path and skip the catalog
+  search — which is also the step `deploy-68k --handoff` depends on, so
+  this is very likely the root of both failures rather than two.
+  **Not diagnosed**; the machine is resting.
+- **`Metal68KContractTests` was failing by SUCCEEDING.** Its canary for
+  "an unimplemented message is refused and says so" was `file.list`,
+  which the browse branch implemented — so the guest answered success
+  and the test reported a defect that was really a feature. Repointed to
+  `file.move`. A test whose subject is a GAP has to be repointed every
+  time that gap closes; picking a message nobody will ever implement is
+  the worse alternative.
+
+### The machine set its own limits
+
+A 1 MB push moved **606208 of 1048576 bytes** with 77 progress reports
+at a healthy cadence, then stopped; every rung after it got **0 of N**,
+including the empty and one-byte cases. Round-trip went from
+14.4/21.4/28.4 ms idle to 39.3/266.7/439.5 ms. That run was contended by
+another session deploying into the same folder mid-ladder, so it is not
+cleanly attributable — but the shape is a silent MacTCP wedge, not a
+throughput limit, and a machine that is merely slow does not fail a
+zero-byte transfer.
+
+Later that evening the display began to flicker and the machine was
+rested. The same panel failed mid-session days earlier.
+
+The 4 MB rung exists to find protocol bugs at scale and the emulator
+finds those for free, while on this machine a serial multi-megabyte push
+is what wedged the stack. The parent corpus carries the envelope as
+`vintage-laptop-sustained-load-envelope`: **ladders on the emulator,
+character on the metal, sessions in minutes.** If the boundary is ever
+worth finding, the experiment holds total bytes constant and varies
+burst size and rest between bursts rather than climbing a size ladder.
+
 ## The 68K file family's browse half (2026-07-26)
 
 `file.list` / `file.listing` and the `ls` command. Additive: both messages
