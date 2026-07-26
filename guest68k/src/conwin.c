@@ -195,6 +195,39 @@ static void input_set_text(const char *s)
 
 /* ---- running a line -------------------------------------------------------- */
 
+/* Emits a line built with now68k_fmt_append_* .
+ *
+ * THE APPEND HELPERS DO NOT TERMINATE. They copy strlen(s) bytes and
+ * advance pos, which is right for building a wire payload of a known
+ * length (numfmt.h exists so this guest can avoid snprintf entirely),
+ * and wrong for anything handed to a function that takes a C string.
+ * con_out takes a C string.
+ *
+ * Every builder here declares `char line[80]` INSIDE its loop, so each
+ * iteration gets the same stack bytes the previous one left behind. A
+ * line shorter than the one before it therefore trails that one's tail:
+ * "files land in Startup Items" came out as "files land in Startup
+ * Itemsbytes", picking up the end of "...1048576 bytes" above it. Caught
+ * on a screen, because no native test can see a pixel.
+ *
+ * Terminating at each call site is the fix that had already been
+ * forgotten twice (show_help and show_processes both had it latent, and
+ * only avoided showing it because their lines happen to grow rather than
+ * shrink). This is the one that cannot be forgotten: there is no way to
+ * emit a built line except through here. */
+static void con_out_built(char *line, long cap, long pos)
+{
+    /* A failed append leaves pos unspecified (numfmt.h), so it is
+       clamped rather than trusted - the alternative is a NUL written
+       past the end of the buffer on exactly the path that was already
+       going wrong. */
+    if (pos < 0 || pos > cap - 1) {
+        pos = cap - 1;
+    }
+    line[pos] = '\0';
+    con_out(line);
+}
+
 static void show_help(void)
 {
     const N68CommandDoc *docs = now68k_commands_docs();
@@ -218,7 +251,7 @@ static void show_help(void)
         }
         (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
                                     docs[i].summary);
-        con_out(line);
+        con_out_built(line, (long)sizeof line, pos);
     }
 
     /* Console-only, and deliberately not in that list: the wire's help must
@@ -299,7 +332,7 @@ static void show_processes(void)
         (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
                                     rows[i].name[0] != '\0'
                                         ? rows[i].name : "(unnamed)");
-        con_out(line);
+        con_out_built(line, (long)sizeof line, pos);
     }
 }
 
@@ -332,7 +365,7 @@ static void show_transfer(void)
         (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
                                     "receiving ");
         (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, st.name);
-        con_out(line);
+        con_out_built(line, (long)sizeof line, pos);
 
         pos = 0;
         (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, "  ");
@@ -345,7 +378,7 @@ static void show_transfer(void)
         (void)now68k_fmt_append_long(line, (long)sizeof line, &pos,
                                      st.writes);
         (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, " writes");
-        con_out(line);
+        con_out_built(line, (long)sizeof line, pos);
     } else if (!st.had_one) {
         con_out("no file has arrived this session");
     }
@@ -375,7 +408,7 @@ static void show_transfer(void)
             }
             (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, ")");
         }
-        con_out(line);
+        con_out_built(line, (long)sizeof line, pos);
     }
 
     pos = 0;
@@ -383,7 +416,7 @@ static void show_transfer(void)
     (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
                                 where[0] != '\0' ? where
                                                  : "(cannot resolve the folder)");
-    con_out(line);
+    con_out_built(line, (long)sizeof line, pos);
 }
 
 static void submit_line(void)

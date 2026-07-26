@@ -9,6 +9,107 @@ wrong thing) versus **unverified** (it may well be right, but no one has
 watched it work on the PowerBook). Unverified is not a lesser problem —
 several of tonight's bugs lived in code that looked obviously correct.
 
+## Host -> guest file transfer on NOW-68K (2026-07-25)
+
+NOW-68K receives a pushed file. Offer, accept, stream, checksum, done -
+the contract's `hostPutsFiles` sequence, served by the guest that
+previously discarded every bulk frame to stay in frame sync.
+
+**Emulator-verified, NOT metal-verified.** Everything below was measured
+on a Quadra 800 under Mac OS 8.1 with 128 MB (`scripts/q800-68k`). The
+real target is a 68030 under System 7.1 with 4 MB. What carries over is
+correctness; what does not is every number in the table.
+
+| Size | Result (emulator) |
+|---|---|
+| 0, 1, 8191, 8192, 8193 B | ok - the boundaries either side of one frame |
+| 64 KB | ok, 299 KB/s |
+| 256 KB | ok, 348 KB/s |
+| 1 MB | ok, 357 KB/s |
+| **4 MB** | **ok, 11.6 s, 352 KB/s, 512 progress reports** |
+
+The 4 MB file was pulled back off the disk image with hfsutils and is
+**byte-identical** to what was sent (CRC-32 `A627E416`, agreeing with
+zlib and with the guest's own). The catalog shows exact sizes rather
+than allocation-block-rounded ones, so the `Allocate` + EOF-trim pair
+works, and no `NOW incoming ...` staging file was left behind.
+
+The guest's event loop is not starved by the receive path: `help`
+round-tripped in 0.05 s during a 1 MB transfer against 0.06 s idle.
+
+### What is deliberately not there
+
+- **No MacBinary.** Data fork only; a MacBinary offer is refused. This
+  is the biggest functional gap - it means no application, and no file
+  with a resource fork, can be pushed to NOW-68K yet.
+- **No resume.** The guest never reports `have`, which the contract
+  reads as "start from the beginning". Partials are always discarded.
+  Deliberate: resume is an open hang on the PowerPC side (see the large
+  transfer notes) and a 4 MB transfer is not long enough to make
+  restarting a hardship.
+- **Receive only.** `file.list`, `file.move`, `file.trash` and the pull
+  direction still answer the generic not-implemented error. NOW-68K has
+  no share to serve.
+- **The destination is the application's own folder.** NOW-68K has no
+  preferences and no share root, so there was nothing to read one from.
+  This is the spike's weakest decision and the first thing a real
+  feature has to settle: it currently means a host can write into the
+  folder the application lives in.
+
+### Open
+
+1. **Nothing has run on the PowerBook 180c.** Everything above is an
+   emulator result. The 180c has 4 MB against the emulator's 128, a
+   68030 against a 68040, and MacTCP that has already been observed to
+   wedge silently on that machine. A 4 MB transfer into a 384 KB
+   partition is exactly the shape that behaves differently there.
+2. **A contract gap: `FileRefuse.code` has no value for "this receiver
+   cannot handle that".** An unsupported container is reported as
+   `io-error` with the truth only in `reason`, which is a lie of
+   category - nothing failed, the request was never serviceable. The
+   honest fix is an additive enum value in the contract, which touches
+   both halves and was out of scope for a spike.
+3. **`FileOffer.modified` has no stated units in the contract.** Both
+   guests treat it as Mac-epoch seconds (it goes straight into
+   `ioFlMdDat`), and the two agreeing is the only reason it works. It
+   should be written down.
+4. **The host never uses the `chunk` it negotiates.** `hello.chunk` is
+   computed and echoed (`GuestListener.swift`), but the file sender's
+   frame size is a hardcoded 8192. NOW-68K advertises 4096 for a stated
+   MacTCP reason and is sent 8 KB frames regardless. Harmless today - the
+   guest streams and needs no frame-sized buffer - but the negotiation
+   is decorative, and a guest that genuinely could not take 8 KB would
+   have no way to say so.
+5. **The application partition is getting tight.** This pass cost
+   +19408 bytes (~5% of 384 KB), leaving roughly 184 KB of image before
+   stack and heap. Preferred == minimum on a 4 MB machine, so there is
+   nothing to borrow. The next addition this size needs the budget
+   looked at rather than assumed.
+6. **`g_sink` is still 256 bytes**, inherited from when it was a pure
+   discard sink. A 4 MB transfer therefore makes ~32 passes per 8 KB
+   frame. Cheap memcpys, but it is a knob nobody has measured on the
+   180c, where BSS is the scarcer resource.
+
+### Two defects found by this pass, in code that predates it
+
+- **`GuestWireConformanceTests` could not see `bye`.** Its C-literal
+  scanner did not understand character literals, so the three `'"'` in
+  wire68.c's `read_string_field` inverted its quote parity and every
+  literal after them was read inside-out. `bye` had been piecemeal since
+  the day it was written and never appeared in the cannot-check set -
+  the set read complete and was not, inside the mechanism built to
+  prevent exactly that. Fixed, and `bye` has the fixture it should
+  always have had.
+- **The console printed one line's tail on the end of the next.**
+  `now68k_fmt_append_*` do not NUL-terminate, and every builder in
+  `conwin.c` declares `char line[80]` inside its loop, so a line shorter
+  than the one before it trailed that one's tail: "files land in Startup
+  Items" rendered as "files land in Startup Itemsbytes". `show_help` and
+  `show_processes` had it latent and only escaped because their lines
+  happen to grow rather than shrink. All emission now goes through
+  `con_out_built`, which terminates. **No native test could have caught
+  this** - it is pixels, and it was found by looking at a screen.
+
 ## Deferred by decision
 
 **NOW agent-integration V0 is complete** (2026-07-24). All five bounded
