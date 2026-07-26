@@ -23,12 +23,23 @@ import XCTest
 /// settings file to the alternate port before launching, and the two
 /// alternate on every cycle.
 ///
-/// WHY THIS IS NOT SELF-QUITTING. `quit` refuses to quit the instance it
-/// is running in — `kProcRefusedSelf` — and that refusal is deliberate.
-/// But `proc68.h` says in the same breath that "a second copy is a fair
-/// target", and here the copies are different files with different names,
-/// so `quit "NOW-68K 0.7"` from inside 0.8 names exactly one process and
-/// no guessing is involved.
+/// WHY THIS IS NOT SELF-QUITTING. `proc68.h` refuses to quit the instance
+/// the request arrived in — `kProcRefusedSelf` — and that refusal is
+/// deliberate. But it says in the same breath that "a second copy is a
+/// fair target", and here the copies are two different processes, which
+/// the new build's Process Manager can tell apart perfectly.
+///
+/// WHY A PSN AND NOT A NAME. The retire step used to name the outgoing
+/// build `"NOW-68K " + <the version it reported in hello>` — a file name
+/// derived from a compiled constant. They agree by convention only, and
+/// on 2026-07-25 they did not: a build deployed as 0.18 reported 0.16,
+/// the guest was asked to quit a process that did not exist, said so
+/// honestly, and a 4 MB machine was left running two NOW-68Ks. The
+/// identity now comes off the old build's own `process.listing` (the
+/// `isSelf` row) and the retire is `process.quit` against that PSN.
+/// `Handoff68K` holds that logic; `HandoffIdentityTests` reproduces the
+/// disagreement over loopback, so the fix is checkable without a
+/// PowerBook.
 ///
 /// THE ORDER IS THE SAFETY. The old build is only asked to quit AFTER the
 /// new one has dialled in and completed its handshake. A build that
@@ -131,17 +142,31 @@ final class Metal68KHandoffTests: XCTestCase {
 
     func testTheOldBuildLaunchesTheNewOneAndIsRetiredByIt() async throws {
         let old = try await waitFor(oldHost, oldPort, "the running build", 120)
-        // The old build's own hello names it, so the name to retire is
-        // never a stale argument someone forgot to update — it is whatever
-        // actually answered.
-        let oldApp = "NOW-68K \(old.guestVersion ?? "?")"
-        print("=== running: \(oldApp) on port \(oldPort) ===")
+        // WHO IS ON THE OTHER END, asked of the machine that knows. Not
+        // "NOW-68K " + the version from its hello: that is a file name
+        // guessed from a compiled constant, the two agree only by
+        // convention, and on 2026-07-25 they did not — see Handoff68K.
+        // The version is still read, but only to REPORT it and to refuse
+        // a pointless handoff; nothing is driven by it.
+        let retiree: Handoff68K.Retiree
+        do {
+            retiree = try await Handoff68K.identifySelf(of: oldHost)
+        } catch {
+            throw gateFailed("could not name the running build: \(error)")
+        }
+        let oldVersion = old.guestVersion ?? "?"
+        print("=== running: \(retiree) reporting v\(oldVersion) "
+              + "on port \(oldPort) ===")
         print("=== launching: \(newApp), expected on port \(newPort) ===")
 
-        guard oldApp != newApp else {
-            throw gateFailed("the running build is already \(newApp). There "
-                             + "is nothing to hand off to — bump "
-                             + "NOW68K_APP_VERSION and deploy first.")
+        // A version match is a real "nothing to do"; a NAME match is not
+        // necessarily anything, which is the whole lesson here — so the
+        // gate reads the version, and the retire step reads the PSN.
+        guard "NOW-68K \(oldVersion)" != newApp else {
+            throw gateFailed("the running build already reports the version "
+                             + "of \(newApp). There is nothing to hand off "
+                             + "to — bump NOW68K_APP_VERSION and deploy "
+                             + "first.")
         }
 
         // Launch the EXACT path when the deploy script knows it. A bare
@@ -155,7 +180,7 @@ final class Metal68KHandoffTests: XCTestCase {
         let launched = await run(oldHost, "launch", target: target)
         print("  launch: \(text(launched))")
         guard launched.ok else {
-            throw gateFailed("\(oldApp) could not launch \(target): "
+            throw gateFailed("\(retiree.name) could not launch \(target): "
                              + "\(text(launched)). Nothing was changed on "
                              + "the machine and the old build is still up.")
         }
@@ -175,17 +200,28 @@ final class Metal68KHandoffTests: XCTestCase {
 
         // Now, and only now, retire the old one — from inside the new one,
         // which is allowed precisely because it is a different process.
-        let retired = await run(newHost, "quit", target: oldApp)
-        print("  quit \(oldApp): \(text(retired))")
-        XCTAssertTrue(retired.ok, """
-            \(newApp) is up, but \(oldApp) would not quit: \
-            \(text(retired)). Both builds are now running on a 4 MB \
-            machine — quit one by hand before the next cycle.
-            """)
+        // By PSN, read off the old build's own listing: the new build is
+        // being told WHICH PROCESS, not which name, so a build whose file
+        // name disagrees with its version is retired exactly as one whose
+        // name agrees. HandoffIdentityTests proves that without hardware.
+        do {
+            try await Handoff68K.retire(retiree, using: newHost)
+        } catch {
+            XCTFail("""
+                \(newApp) is up, but \(retiree) would not quit: \(error). \
+                Both builds are now running on a 4 MB machine — quit one \
+                by hand before the next cycle.
+                """)
+            throw GateFailure()
+        }
+        print("  quit \(retiree): delivered")
 
-        // The host's own view is the independent half here: NOW-68K serves
-        // no process.list, but the old build held a TCP session, and a
-        // process that has quit cannot still be holding one.
+        // Delivered is not gone — the contract says so, and this is where
+        // that gets checked. Two independent confirmations, because they
+        // fail differently: the session drop is the host's own view (a
+        // process that quit cannot still hold a TCP session), and the
+        // re-list asks the NEW build about the Process Manager, which is
+        // the only thing that can tell a granted quit from a declined one.
         let deadline = Date().addingTimeInterval(30)
         var wentAway = false
         while Date() < deadline {
@@ -193,9 +229,18 @@ final class Metal68KHandoffTests: XCTestCase {
             try await Task.sleep(nanoseconds: 500_000_000)
         }
         XCTAssertTrue(wentAway, """
-            \(oldApp) reported that it quit, but its session on port \
+            the quit for \(retiree) was delivered, but its session on port \
             \(oldPort) is still up 30s later. Something is still running \
-            and answering, so the quit did not do what it said.
+            and answering, so the quit was declined or is sitting on a \
+            dialog.
+            """)
+
+        let gone = try await Handoff68K.hasGone(retiree, accordingTo: newHost)
+        XCTAssertTrue(gone, """
+            \(retiree) dropped its session, but \(newApp) still lists that \
+            PSN as a running process. A guest that closed its connection \
+            without quitting is worse than one that never quit: the \
+            machine looks clean from here and is not.
             """)
         print("=== handoff complete: \(newApp) is the running build ===")
     }

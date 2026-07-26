@@ -49,6 +49,16 @@ runtime code is imported on any side.
   as a failure rather than a success. Emulator-verified end to end
   (console and wire); **the PowerBook run is pending** — see
   [docs/open-issues.md](docs/open-issues.md).
+
+  A name is a *person's* identifier, and a machine should not use one: it
+  is capped at 31 characters, need not be unique, and — the way this bit —
+  is not derivable from anything a guest reports on the wire. So a caller
+  that already holds a process listing sends `process.quit` with that
+  row's PSN instead, and every listing marks the responder's own row
+  (`isSelf`) so "which process is on the other end of this connection" has
+  an answer that is read rather than guessed. Both guests answer both
+  routes, over one implementation. **Built and tested here; the PowerBook
+  run of the PSN route is pending.**
 - **A real menu bar on the host** — App / File / Edit / View / Guest /
   Window / Help, populated with what NOW does: the View menu is the module
   registry (⌘1…), the Guest menu carries the verbs that act on the other
@@ -103,7 +113,10 @@ runtime code is imported on any side.
   its front window, which lands in the Screenshots module. Each action
   names its target by the process serial number the listing carries, and
   the classic Mac re-checks that the process still exists before acting;
-  it also refuses to quit NOW itself. Front and Quit are metal-verified;
+  it also refuses to quit NOW itself — and now says which row that is
+  (`isSelf`), so the row wears a **NOW** badge and Ask to Quit is not
+  offered for it rather than refused after the fact. Front and Quit are
+  metal-verified;
   the window-cropped screenshot is tested and builds but not yet
   metal-verified. It runs one way by design: NOW is for driving old Macs
   from new ones, so the host sees and drives the guest, never the reverse.
@@ -183,6 +196,13 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   was weaker than the PowerPC guest's until this guest gained
   `process.list`; the metal gate now PROBES that capability rather than
   assuming it from the hello name, and reports STRONG on the 180c.
+  It also answers the contract's `process.quit` drive verb, so a host
+  holding a listing can name a target by PSN instead of by name — the
+  same three steps (`re-validate → refuse self → ask`) with the name
+  matching gone, since a PSN has already done that job. Built and tested;
+  **not yet metal-verified**, and the first handoff onto a build that has
+  it has to be launched by hand, because the outgoing 0.19 answers
+  neither `isSelf` nor `process.quit`.
   It is deliberately smaller than the Carbon guest: one page, no tabs, no
   preferences at all (the human types host and port each launch), dial-out
   only with a human-controlled fixed-interval redial, and no bulk features

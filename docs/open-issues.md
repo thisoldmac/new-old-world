@@ -9,6 +9,58 @@ wrong thing) versus **unverified** (it may well be right, but no one has
 watched it work on the PowerBook). Unverified is not a lesser problem —
 several of tonight's bugs lived in code that looked obviously correct.
 
+## `quit` targets a process identity, not a file name (2026-07-26)
+
+The handoff's retire step named the outgoing build `"NOW-68K " + <the
+version it reported in hello>` — a FILE NAME derived from a compiled
+constant. They agree by convention only. On 2026-07-25 a build deployed
+as `NOW-68K 0.18` reported `0.16`, so the retire sent
+`quit NOW-68K 0.16`, the guest answered honestly that nothing of that
+name was running, the old build kept running, and a 4 MB machine was
+left with two NOW-68Ks. Nothing was broken on the guest; the identifier
+was invented on the host.
+
+Fixed by naming the target the way a machine should:
+
+- `process.listing` gained **`isSelf`** (contract first), set by both
+  guests on their own row. It is the only trustworthy answer to "which
+  process is on the other end of this connection".
+- NOW-68K now answers the contract's **`process.quit`** drive verb —
+  re-validate the PSN, refuse self, send — over `proc_quit_psn`, the
+  same three steps `proc_quit_named` ends with. It does not confirm, and
+  that is the contract's decision: `process.result.ok` means DELIVERED,
+  and there is no field that could tell a granted quit from a declined
+  one. A caller confirms by re-reading `process.list`.
+- The `quit` command still takes a name, because a person types what
+  `ps` shows them. `ps` now says `self` on that row, on both guests.
+
+### Unverified
+
+- **None of it has been on a machine.** Both guests build clean and the
+  host suite is green (511 tests), but `isSelf`, `process.quit` on
+  NOW-68K, and the PSN-targeted handoff have not run on the 180c. The
+  loopback test `HandoffIdentityTests` reproduces the version/name
+  disagreement over scripted guests and watches the old derivation fail
+  — that proves this side never invents an identifier, and proves
+  nothing about the Toolbox code.
+- **The first handoff has to be launched by hand.** The build currently
+  on the 180c is 0.19: it serves `process.list` without `isSelf` and
+  does not answer `process.quit` at all. `Handoff68K.identifySelf` fails
+  with a message saying so rather than falling back to a name — a
+  fallback would be the defect, reintroduced. From 0.20 onward the
+  handoff is automatic again.
+- **`process.front` and `process.shot` are still unimplemented on
+  NOW-68K.** They fall through to `send_error_reply`, visibly. Only the
+  verb the handoff needed was added; the family is deliberately partial
+  rather than quietly half-served.
+
+### Open
+
+- The host's `ProcessEntry.id` is `name#code#creator`, so two processes
+  of the same name collide in the table's identity — exactly the case
+  `isSelf` and the PSN exist to handle, one layer up. Not hit by
+  anything today; worth the PSN when it is.
+
 ## The 68K file family, both directions in one tree (2026-07-25 night)
 
 Three branches merged and verified together: the receive half (MacBinary,

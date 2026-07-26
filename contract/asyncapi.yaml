@@ -392,8 +392,11 @@ operations:
     description: >
       The answer to process.list: one entry per running process, the
       guest's own. kind classifies each (application / background /
-      finder); front marks the frontmost; psnHigh/psnLow name the process
-      to the drive verbs. Paginates when the list outgrows a 4 KB frame.
+      finder); front marks the frontmost; isSelf marks the responder's
+      own process, which is how a caller names the process on the other
+      end of a connection without guessing at its file name; psnHigh/
+      psnLow name the process to the drive verbs. Paginates when the
+      list outgrows a 4 KB frame.
   hostBrowsesSoftware:
     action: receive
     channel: { $ref: "#/channels/control" }
@@ -447,6 +450,15 @@ operations:
       failure - it reuses the capture transport rather than inventing one.
       Like the listing, the reverse direction is a non-goal - the guest
       issues no drive verbs at the host.
+
+      A PSN is the identity a MACHINE names a process by; the `quit`
+      x-command's name is the identity a PERSON names one by. Both reach
+      the same implementation, and a caller that has a listing should use
+      the PSN: it names exactly one process, where a name is capped at 31
+      characters, need not be unique, and cannot be derived from anything
+      else the wire reports (see isSelf on process.listing). process.quit
+      on the responder's OWN process is refused for the same reason the
+      command refuses it - the reply would be severed mid-send.
   guestAnswersDrive:
     action: send
     channel: { $ref: "#/channels/control" }
@@ -997,6 +1009,31 @@ components:
               psnLow:
                 type: integer
                 description: Low half of the process serial number.
+              isSelf:
+                type: boolean
+                description: >
+                  True on the ONE row that is the responder itself — the
+                  process serving this listing, and so the process on the
+                  other end of this connection. Absent or false on every
+                  other row.
+
+                  This is how a caller learns WHICH process a connection
+                  belongs to, and it is the only honest answer: a name is
+                  not it. An application's file name and the version it
+                  reports in `hello` are two independent strings that
+                  agree only by convention, so a name derived from a
+                  hello ("NOW-68K " + version) names the running process
+                  only while nobody has renamed a build — and on
+                  2026-07-25 a build deployed as 0.18 whose binary said
+                  0.16 made a retire step ask a guest to quit a process
+                  that did not exist. It answered honestly, the old build
+                  kept running, and a 4 MB machine was left with two.
+
+                  So: read the PSN off the isSelf row of a connection's
+                  own listing, and drive THAT. The responder also refuses
+                  process.quit for this row (it would sever the reply
+                  mid-send), which a UI can say up front instead of
+                  discovering.
         more: { type: boolean }
         cursor: { type: integer }
     ProcessFront:
@@ -1883,6 +1920,15 @@ components:
         and stays running, and a caller whose next step assumes a freed
         port must not read that as success. Reporting a declined quit as
         ok would poison every measurement loop built on this verb.
+
+        A NAME IS A HUMAN'S IDENTIFIER, and this verb is where it
+        belongs — a person at a console types what `ps` shows them. A
+        caller holding a process.listing should send process.quit with
+        that row's PSN instead: the name it would pass here is capped at
+        31 characters, is not unique, and is not derivable from the
+        version a guest reports in `hello`. The two routes share one
+        implementation below the seam; they differ only in how the
+        target is named.
 
         Matching is by exact process name, case-insensitive (EqualString,
         diacritic-sensitive), against live processes only. Several

@@ -3052,7 +3052,15 @@ static void serve_process_list(const char *request)
     long cursor = now_json_find_int(request, "cursor", 1);
     ProcessSerialNumber psn = { 0, kNoProcess };
     ProcessSerialNumber front;
+    ProcessSerialNumber me;
     Boolean have_front = GetFrontProcess(&front) == noErr;
+    /* isSelf marks the one row that is NOW - the only identity a caller
+       can trust for "the process on the other end of this connection".
+       serve_process_act already computes it to refuse a self-quit; this
+       reports the same fact instead of only acting on it, so a caller can
+       name this process without deriving a file name from a version
+       string (contract: ProcessListing.isSelf). */
+    Boolean have_self = GetCurrentProcess(&me) == noErr;
     long pos;
     long index = 0;                   /* readable-process position, 1-based */
     int emitted = 0;
@@ -3072,6 +3080,7 @@ static void serve_process_list(const char *request)
         char esc_name[64], esc_code[40], esc_creator[40];
         const char *kind;
         Boolean is_front = false;
+        Boolean is_self = false;
 
         memset(&info, 0, sizeof info);
         info.processInfoLength = sizeof info;
@@ -3107,18 +3116,25 @@ static void serve_process_list(const char *request)
         if (have_front) {
             (void)SameProcess(&psn, &front, &is_front);
         }
+        if (have_self) {
+            (void)SameProcess(&psn, &me, &is_self);
+        }
         now_json_escape(cname, esc_name, sizeof esc_name);
         now_json_escape(code, esc_code, sizeof esc_code);
         now_json_escape(creator, esc_creator, sizeof esc_creator);
+        /* isSelf only when true: the contract makes it optional and
+           absence means false, so 24 rows do not each pay 15 bytes of a
+           frame whose page size is derived from its size. */
         pos += snprintf(json + pos, sizeof json - (size_t)pos,
                         "%s{\"name\":\"%s\",\"kind\":\"%s\",\"code\":\"%s\","
                         "\"creator\":\"%s\",\"sizeKB\":%ld,\"front\":%s,"
-                        "\"psnHigh\":%lu,\"psnLow\":%lu}",
+                        "\"psnHigh\":%lu,\"psnLow\":%lu%s}",
                         emitted > 0 ? "," : "", esc_name, kind, esc_code,
                         esc_creator, (long)(info.processSize / 1024),
                         is_front ? "true" : "false",
                         (unsigned long)psn.highLongOfPSN,
-                        (unsigned long)psn.lowLongOfPSN);
+                        (unsigned long)psn.lowLongOfPSN,
+                        is_self ? ",\"isSelf\":true" : "");
         ++emitted;
     }
     snprintf(json + pos, sizeof json - (size_t)pos,

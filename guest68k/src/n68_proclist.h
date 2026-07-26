@@ -53,6 +53,15 @@ typedef struct {
     char          creator[5];
     unsigned char kind;           /* kN68ProcKind* */
     unsigned char front;          /* the one frontmost process */
+    /* The one row that is NOW-68K itself. It is the only identity a
+     * caller can trust for "the process on the other end of this
+     * connection": a build's FILE NAME and the version it puts in hello
+     * are independent strings, so a name built from the version names
+     * the running process only by convention - and on 2026-07-25 the
+     * convention had lapsed and a retire step asked this guest to quit a
+     * process that did not exist. See n68_proclist.h's header and the
+     * contract's isSelf. */
+    unsigned char is_self;
     long          size_kb;        /* partition size in KB, never negative */
     unsigned long psn_high;
     unsigned long psn_low;
@@ -71,11 +80,11 @@ typedef struct {
  *   head  {"type":"process.listing","id":<11>,"processes":[      = 56
  *   row   ,{"name":"<31>","kind":"application","code":"<4>",
  *          "creator":"<4>","sizeKB":<10>,"front":false,
- *          "psnHigh":<10>,"psnLow":<10>}                         = 170
+ *          "psnHigh":<10>,"psnLow":<10>,"isSelf":true}           = 185
  *   tail  ],"more":false,"cursor":<10>} + NUL                    = 36
  */
 #define NOW68K_PROCLIST_HEAD_MAX 60
-#define NOW68K_PROCLIST_ROW_MAX  176
+#define NOW68K_PROCLIST_ROW_MAX  192
 #define NOW68K_PROCLIST_TAIL_MAX 40
 
 /* The smallest buffer that can carry a page with a row in it. Anything
@@ -133,12 +142,12 @@ long n68_proclist_build(long id, long cursor,
  * fails if it grows past these.
  *
  *   head  {"type":"command.result","id":<11>,"ok":true,"output":{"ps":[  = 68
- *   row   ,["<31>","application, <10> KB, front"]                        = 72
+ *   row   ,["<31>","application, <10> KB, front, self"]                  = 78
  *   note  ,["...","<10> more not shown"]                                 = 36
  *   tail  ]}} + NUL                                                      =  4
  */
 #define NOW68K_PS_HEAD_MAX 72
-#define NOW68K_PS_ROW_MAX  80
+#define NOW68K_PS_ROW_MAX  88
 #define NOW68K_PS_NOTE_MAX 40
 #define NOW68K_PS_TAIL_MAX  8
 

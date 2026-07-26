@@ -338,6 +338,16 @@ static void show_processes(void)
         (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
                                     rows[i].name[0] != '\0'
                                         ? rows[i].name : "(unnamed)");
+        /* The third face of isSelf. A person at this keyboard has the
+         * same question a host does - which of these is the application
+         * I am talking to - and the answer is not derivable from the
+         * name, because the file was deployed under whatever name
+         * somebody typed. "* app New Old World" and "  app New Old
+         * World" is exactly the pair that cost an evening. */
+        if (rows[i].is_self) {
+            (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                        " (self)");
+        }
         con_out_built(line, (long)sizeof line, pos);
     }
 }

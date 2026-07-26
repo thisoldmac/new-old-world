@@ -313,7 +313,13 @@ int now_process_gather(ProcRow *rows, int max)
     const unsigned long kSigFinder = 0x4D414353UL;    /* 'MACS' */
     ProcessSerialNumber psn = { 0, kNoProcess };
     ProcessSerialNumber front;
+    ProcessSerialNumber me;
     Boolean have_front = GetFrontProcess(&front) == noErr;
+    /* The same fact the wire's isSelf carries, in the sentence a person
+       reads: which of these rows is the application answering you. Both
+       guests' ps say "self", because the host console renders both with
+       one renderer. */
+    Boolean have_self = GetCurrentProcess(&me) == noErr;
     int n = 0;
 
     while (n < max && GetNextProcess(&psn) == noErr) {
@@ -321,6 +327,7 @@ int now_process_gather(ProcRow *rows, int max)
         Str31 name;
         const char *kind;
         Boolean is_front = false;
+        Boolean is_self = false;
         long sz;
 
         memset(&info, 0, sizeof info);
@@ -342,11 +349,15 @@ int now_process_gather(ProcRow *rows, int max)
         if (have_front) {
             (void)SameProcess(&psn, &front, &is_front);
         }
+        if (have_self) {
+            (void)SameProcess(&psn, &me, &is_self);
+        }
         memcpy(rows[n].name, name + 1, name[0]);
         rows[n].name[name[0]] = '\0';
         sz = (long)(info.processSize / 1024);
-        snprintf(rows[n].detail, sizeof rows[n].detail, "%s, %ld KB%s",
-                 kind, sz, is_front ? ", front" : "");
+        snprintf(rows[n].detail, sizeof rows[n].detail, "%s, %ld KB%s%s",
+                 kind, sz, is_front ? ", front" : "",
+                 is_self ? ", self" : "");
         ++n;
     }
     return n;

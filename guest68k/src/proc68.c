@@ -267,7 +267,9 @@ long proc_list_rows(N68ProcRow *out, long cap)
 {
     ProcessSerialNumber psn;
     ProcessSerialNumber front;
+    ProcessSerialNumber self;
     Boolean have_front;
+    Boolean have_self;
     Str255 name;
     long count = 0;
     long i;
@@ -276,6 +278,12 @@ long proc_list_rows(N68ProcRow *out, long cap)
         return 0;
     }
     have_front = (GetFrontProcess(&front) == noErr);
+    /* Marking our own row is what lets a caller name THIS process without
+     * guessing at the file name it was deployed under - see n68_proclist.h
+     * on is_self. gather_targets already does the same SameProcess check
+     * for the quit refusal; this is the same fact, reported instead of
+     * only acted on. */
+    have_self = (GetCurrentProcess(&self) == noErr);
 
     psn.highLongOfPSN = 0;
     psn.lowLongOfPSN = kNoProcess;
@@ -324,6 +332,12 @@ long proc_list_rows(N68ProcRow *out, long cap)
 
             (void)SameProcess(&psn, &front, &is_front);
             row->front = (unsigned char)(is_front ? 1 : 0);
+        }
+        if (have_self) {
+            Boolean is_self = false;
+
+            (void)SameProcess(&psn, &self, &is_self);
+            row->is_self = (unsigned char)(is_self ? 1 : 0);
         }
     }
 
@@ -640,6 +654,70 @@ ProcOutcome proc_quit_named(const char *name, long wait_ticks,
     set_detail(detail, detail_cap, "quit: ", name,
                " is still running - declined, or busy");
     return kProcStillRunning;
+}
+
+/* ---- proc_quit_psn -------------------------------------------------------
+ *
+ * The same three steps proc_quit_named ends with - re-validate, refuse
+ * self, ask - with the first half (walk, match a name, refuse ambiguity)
+ * gone, because a PSN has already done that job. See proc68.h for why
+ * this one does not confirm.
+ */
+ProcOutcome proc_quit_psn(unsigned long psn_high, unsigned long psn_low,
+                          char *detail, long detail_cap)
+{
+    ProcessSerialNumber psn;
+    ProcessSerialNumber self;
+    Str255              name;
+    char                cname[kProcNameMax];
+    Boolean             is_self = false;
+    OSErr               err;
+
+    psn.highLongOfPSN = psn_high;
+    psn.lowLongOfPSN = psn_low;
+
+    /* Re-validation IS the liveness check here: a PSN the Process Manager
+     * will not read is not a live process. The name comes back with it,
+     * for the sentence a person reads - the caller named a number, and
+     * "asked FTP Server to quit" is what makes the log legible later. */
+    if (!read_process_name(&psn, name)) {
+        set_detail(detail, detail_cap,
+                   "quit: that process is no longer running", NULL, NULL);
+        return kProcNotRunning;
+    }
+    pstr_to_c(name, cname, (long)sizeof cname);
+
+    if (GetCurrentProcess(&self) != noErr) {
+        /* We could not learn our own PSN, so we cannot prove the target
+         * is not us - and asking ourselves to quit would sever the reply
+         * mid-send. Refusing is the only answer that cannot do that. */
+        set_detail(detail, detail_cap,
+                   "quit: could not read this process's own identity - "
+                   "refusing rather than risk quitting NOW itself",
+                   NULL, NULL);
+        return kProcRefusedSelf;
+    }
+    (void)SameProcess(&psn, &self, &is_self);
+    if (is_self) {
+        set_detail(detail, detail_cap,
+                   "quit: NOW will not ask itself to quit", NULL, NULL);
+        return kProcRefusedSelf;
+    }
+
+    err = ask_quit(&psn);
+    if (err != noErr) {
+        set_detail(detail, detail_cap,
+                   "quit: the Mac would not deliver a quit request to ",
+                   cname, NULL);
+        return kProcUndeliverable;
+    }
+
+    /* Delivered. NOT gone - the target sees the event when the
+     * cooperative scheduler next reaches it, and may decline. The caller
+     * confirms with process.list. */
+    set_detail(detail, detail_cap, "quit: asked ", cname,
+               " to quit; confirm with process.list");
+    return kProcSentUnconfirmed;
 }
 
 /* ---- proc_launch_named ---------------------------------------------------

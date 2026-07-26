@@ -88,6 +88,7 @@
 #include "hello.h"
 #include "json_scan.h"
 #include "log.h"
+#include "n68_cmdresult.h"   /* now68k_json_append_escaped */
 #include "n68_filesrc.h"
 #include "n68_proclist.h"
 #include "n68_putfile.h"
@@ -1220,6 +1221,85 @@ static void handle_process_list(const char *json, long len)
     }
 }
 
+/* ---- process.quit: the drive verb, target named by PSN ------------------
+ *
+ * The other half of the identity story process.listing's isSelf starts.
+ * The `quit` command names a process the way a person does, by name; this
+ * names it the way a machine should, by the PSN it read off a listing.
+ * One implementation under both (proc68.c), two ways in - the second face
+ * of the same capability rather than a second capability, and the shape
+ * the PowerPC guest already answers (wire.c :: serve_process_act), not a
+ * second model invented here.
+ *
+ * ok:true means DELIVERED, per the contract - process.result has no field
+ * that could carry "gone" versus "declined", and proc_quit_psn therefore
+ * does not pretend to know. A caller that needs to know asks process.list
+ * again, which is a different subsystem and so a real check.
+ *
+ * NOTE this guest answers process.quit but not process.front or
+ * process.shot: the asymmetry is visible here (they still fall through to
+ * send_error_reply) rather than hidden behind a partial family. */
+static void handle_process_quit(const char *json, long len)
+{
+    char payload[kWireOutPayloadCap];
+    char detail[128];
+    long id = 0;
+    long psn_high = 0;
+    long psn_low = 0;
+    long pos = 0;
+    int  have_id = now68k_json_find_int(json, (size_t)len, "id", &id);
+    int  ok = 1;
+    ProcOutcome outcome;
+
+    /* Both halves are required by the contract. A missing one is a
+     * malformed request, not a request to quit process zero - kNoProcess
+     * is a real value and guessing at it is how a drive verb acts on
+     * something nobody named. */
+    if (!now68k_json_find_int(json, (size_t)len, "psnHigh", &psn_high)
+        || !now68k_json_find_int(json, (size_t)len, "psnLow", &psn_low)) {
+        now68k_log("wire: process.quit without a PSN");
+        send_error_reply(have_id ? id : 0, have_id);
+        return;
+    }
+
+    detail[0] = '\0';
+    outcome = proc_quit_psn((unsigned long)psn_high, (unsigned long)psn_low,
+                            detail, (long)sizeof detail);
+
+    /* A drive verb changes the machine, and its reason lives nowhere else
+     * once the reply is off the wire - the same argument the PowerPC
+     * guest's serve_process_act makes for logging both outcomes. */
+    now68k_log(detail[0] != '\0' ? detail : "wire: process.quit answered");
+
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                     "{\"type\":\"process.result\",\"id\":");
+    ok = ok && now68k_fmt_append_long(payload, (long)sizeof payload, &pos,
+                                      have_id ? id : 0);
+    if (outcome == kProcSentUnconfirmed) {
+        ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                         ",\"ok\":true}");
+    } else {
+        ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                         ",\"ok\":false,\"reason\":\"");
+        /* detail is proc68.c's sentence: ASCII by construction, but it
+         * carries a process NAME, and a name with a quote in it would
+         * reopen the literal. Escaped like every other variable string
+         * that reaches this wire. */
+        ok = ok && now68k_json_append_escaped(payload, (long)sizeof payload,
+                                              &pos, detail);
+        ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                         "\"}");
+    }
+    if (!ok || pos <= 0) {
+        now68k_log("wire: process.result build failed");
+        send_error_reply(have_id ? id : 0, have_id);
+        return;
+    }
+    if (!enqueue_control_send(payload, pos)) {
+        now68k_log("wire: process.result dropped, outbound queue full");
+    }
+}
+
 /* ---- the file family: receiving a push --------------------------------
  *
  * The contract's hostPutsFiles sequence, and this guest's share of a
@@ -1718,6 +1798,10 @@ static void handle_control_message(const char *json, long len)
     }
     if (strcmp(type, "process.list") == 0) {
         handle_process_list(json, len);
+        return;
+    }
+    if (strcmp(type, "process.quit") == 0) {
+        handle_process_quit(json, len);
         return;
     }
     /* The file family, both halves now. file.list / file.move and the

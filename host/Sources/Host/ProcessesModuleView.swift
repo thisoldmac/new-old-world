@@ -162,6 +162,11 @@ struct ProcessesModuleView: View {
             } label: {
                 Label("Ask to Quit", systemImage: "xmark.circle")
             }
+            // The guest refuses to quit itself, and says so in the row
+            // (isSelf) before being asked. Disabling here turns a refusal
+            // the human would have read as an error into a button that
+            // was never offered.
+            .disabled(!enabled || entry?.isQuittable != true)
             Button {
                 if let entry { model.screenshotApp(entry) }
             } label: {
@@ -212,6 +217,18 @@ private struct ProcessRow: View {
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
                             .background(Color.accentColor.opacity(0.18),
+                                        in: Capsule())
+                    }
+                    // The row this connection is talking to. It is also
+                    // the one that cannot be quit, so the badge is what
+                    // explains the disabled button rather than leaving a
+                    // person to click it and read a refusal.
+                    if entry.isSelf == true {
+                        Text("NOW")
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Color.secondary.opacity(0.18),
                                         in: Capsule())
                     }
                 }

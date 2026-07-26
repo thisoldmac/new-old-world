@@ -106,6 +106,13 @@ static long build_row(const N68ProcRow *r, int first, char *buf, long cap)
     ok = ok && append_ulong(buf, cap, &pos, r->psn_high);
     ok = ok && now68k_fmt_append_str(buf, cap, &pos, ",\"psnLow\":");
     ok = ok && append_ulong(buf, cap, &pos, r->psn_low);
+    /* Emitted only when true. The contract makes the field optional and
+     * absence means false, so every row but one saves 15 bytes of a 4 KB
+     * frame - which is rows per page on a machine where the page size is
+     * derived from the frame, not chosen. */
+    if (r->is_self) {
+        ok = ok && now68k_fmt_append_str(buf, cap, &pos, ",\"isSelf\":true");
+    }
     ok = ok && now68k_fmt_append_str(buf, cap, &pos, "}");
 
     if (!ok || pos <= 0 || pos > cap) {
@@ -234,6 +241,13 @@ static long build_ps_row(const N68ProcRow *r, int first, char *buf, long cap)
     ok = ok && now68k_fmt_append_str(buf, cap, &pos, " KB");
     if (r->front) {
         ok = ok && now68k_fmt_append_str(buf, cap, &pos, ", front");
+    }
+    /* The same fact the wire's isSelf carries, in the sentence a person
+     * reads: which of these rows is the application answering you. Both
+     * guests' ps say "self" so the host console's one renderer does not
+     * make a person work out which machine they are looking at. */
+    if (r->is_self) {
+        ok = ok && now68k_fmt_append_str(buf, cap, &pos, ", self");
     }
     ok = ok && now68k_fmt_append_str(buf, cap, &pos, "\"]");
 

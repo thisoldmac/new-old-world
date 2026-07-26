@@ -68,6 +68,42 @@ typedef enum {
 ProcOutcome proc_quit_named(const char *name, long wait_ticks,
                             char *detail, long detail_cap);
 
+/* The same ask, with the target named by PSN instead of by name - the
+ * contract's process.quit drive verb, and the identity a MACHINE should
+ * use. proc_quit_named's whole first half exists to turn a name into one
+ * of these; a caller holding a process.listing already has it, and a name
+ * cannot get it there:
+ *
+ *   - a name is capped at 31 characters and need not be unique, which is
+ *     why proc_quit_named refuses rather than guesses when two match;
+ *   - the comparison is MacRoman, which proc_quit_named refuses outright
+ *     for a non-ASCII argument rather than compare something it cannot
+ *     represent;
+ *   - and a build's FILE NAME is not derivable from anything on the wire.
+ *     "NOW-68K " + the version from hello is a guess that holds only
+ *     while the two agree. On 2026-07-25 they did not - a build deployed
+ *     as 0.18 reported 0.16 - so a handoff asked the guest to quit a
+ *     process that did not exist, got an honest "nothing named that is
+ *     running", and left two NOW-68Ks on a 4 MB machine.
+ *
+ * THIS ONE DOES NOT CONFIRM, and that is the contract's decision, not an
+ * omission: process.result's ok means the Apple Event was DELIVERED. It
+ * has no field that could tell a granted quit from a declined one, so a
+ * confirming version here would have to report one of them wrongly - the
+ * exact lie this header's one rule forbids. proc_quit_named keeps the
+ * confirming composition because its reply (the quit command's Outcome
+ * row) has somewhere honest to put the difference. A wire caller confirms
+ * by re-reading process.list, which is the independent subsystem.
+ *
+ * Refuses our own PSN (kProcRefusedSelf) for the reason the named path
+ * does: quitting this instance would sever the reply mid-send. A stale
+ * PSN - one no live process answers to - is kProcNotRunning, never an
+ * error: the asked-for state already holds.
+ *
+ * detail receives a short ASCII sentence, as proc_quit_named's does. */
+ProcOutcome proc_quit_psn(unsigned long psn_high, unsigned long psn_low,
+                          char *detail, long detail_cap);
+
 /* Launch an application by name. A bare name is resolved by an exact-name
  * search of the startup volume; a value containing a colon is treated as a
  * full HFS path and used directly. Non-APPL targets are refused rather than
