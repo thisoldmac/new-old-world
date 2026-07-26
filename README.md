@@ -30,12 +30,17 @@ runtime code is imported on any side.
   window and as a shell from this side. The host console is a **dumb
   shell**: it relays the line as typed and knows no command's grammar,
   because the two guests do not serve the same commands — so `help` is a
-  wire request (a machine that serves three commands says three), Tab
+  wire request (a machine that serves four commands says four), Tab
   completes from that answer, and an unknown command comes back refused
   by the machine that would have run it. Host-side there are four verbs,
   all behind a `/`: `/clear`, `/save`, `/help`, and `/swpage` (which
-  drives a wire family, not a command). Tested here, and the
-  PowerPC and 68K guests both build; **the PowerBook run is pending**.
+  drives a wire family, not a command). The cost of that shell being
+  dumb is that a guest verb which never reached the wire is unreachable
+  from here: `ps` on NOW-68K was exactly that — served at the guest's own
+  keyboard, `unknown-command` from this side — and is now a wire command
+  like the rest, with a parity test that fails on the next one. Tested
+  here, and the PowerPC and 68K guests both build; **the PowerBook run is
+  pending**.
 - **`launch` and `quit`, by name** — open an application on the classic Mac,
   and ask a running one to quit, naming it the way `ps` names it. `quit`
   composes list → match → quit → **re-list**, and reports `gone` apart from
@@ -195,9 +200,13 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   It runs the same command table the wire does rather than a copy —
   `launch`, `quit`, `ps` — because the two faces failing at different
   times is the normal case here, and the day the 180c's display died the
-  wire was all that still worked. Emulator-verified on a Quadra 800 under
-  OS 8.1; the second window is a deliberate exception to this guest's
-  one-page shape, recorded in the ledger.
+  wire was all that still worked. `ps` reached that table late: it began
+  as a console-only reader of the `process.list` family, which made it
+  look present on both faces while the host console — a dumb shell that
+  can only send commands — got `unknown-command` for it. Emulator-verified
+  on a Quadra 800 under OS 8.1 for the console; the wire `ps` is
+  **untested on any Macintosh**. The second window is a deliberate
+  exception to this guest's one-page shape, recorded in the ledger.
 
 - **A dev loop that does not need a Macintosh.** Neither guest can run its
   own suite, so the pure-C halves compile under the host `cc`:

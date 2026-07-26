@@ -129,15 +129,52 @@ final class CommandParityTests: XCTestCase {
             which is the whole reason that table is published.
             """)
 
+        // `ps` is the second and, so far, last case of the same shape: a
+        // row per PROCESS, which an N68CmdResult cannot hold either. Both
+        // faces render proc_list_rows() — the wire as the contract's
+        // [name, detail] pairs, the console as text for a 58-column pane
+        // — so the walk they describe is one walk. Adding a third name
+        // here should be argued for; the reason is always "one result
+        // struct cannot hold this reply", never "it was easier".
+        //
         // Any OTHER verb on both faces is two implementations of one verb.
         let table = dispatched(in: try source("guest68k/src/commands68.c"))
         let duplicated = table.intersection(dispatched(in: consoleText))
-            .subtracting(["help"])
+            .subtracting(["help", "ps"])
         XCTAssertTrue(duplicated.isEmpty, """
             conwin.c dispatches \(duplicated.sorted()) itself while \
             commands68.c also does. Two implementations of one verb is how \
             the console and the wire start telling a person different \
             things about the same machine.
+            """)
+    }
+
+    /// The direction the first version of this file did not check, and the
+    /// one that broke: a verb NOW-68K's own console answers must also be a
+    /// verb its wire answers. The host console is a **dumb shell** — it
+    /// relays the line a person types and keeps no command list — so a
+    /// capability the guest offers only at its own keyboard is a
+    /// capability the host cannot reach at all.
+    ///
+    /// That is not hypothetical. `ps` lived in conwin.c alone; a person at
+    /// the PowerBook could list processes, and the same guest answered
+    /// `unknown-command` to `ps` from the host's console, while serving
+    /// `process.list` on that same wire the whole time (2026-07-25). The
+    /// message family made the capability LOOK present on both faces —
+    /// and a message family is not something anyone can type.
+    func testEveryVerbTheSixtyEightKConsoleAnswersIsAlsoOnItsWire() throws {
+        let console = dispatched(in: try source("guest68k/src/conwin.c"))
+        let wire = dispatched(in: try source("guest68k/src/commands68.c"))
+
+        let missingFromWire = console.subtracting(wire)
+            .subtracting(Self.consoleOnly.keys)
+        XCTAssertTrue(missingFromWire.isEmpty, """
+            NOW-68K's console answers \(missingFromWire.sorted()) but its \
+            wire does not, so the host console — which sends whatever is \
+            typed and knows no command list — gets unknown-command for a \
+            verb the machine plainly has. Add it to commands68.c and the \
+            contract's x-commands, or name it in consoleOnly with the \
+            reason it cannot cross a wire.
             """)
     }
 

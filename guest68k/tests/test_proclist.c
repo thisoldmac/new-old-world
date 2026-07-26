@@ -487,6 +487,151 @@ static void test_sanitizing(void)
     CHECK(count_of(out, "\"") % 2 == 0, "quotes still pair up");
 }
 
+/* ---- the same rows as `ps` --------------------------------------------- */
+
+/* The command a person types, on either console. It carries no cursor, so
+   the properties that matter are different from the listing's: it must
+   never claim a short list is the whole machine, and it must render the
+   detail column the way the PowerPC guest does, because the host console
+   renders both guests with one renderer. */
+static void test_ps_shape(void)
+{
+    N68ProcRow rows[3];
+    char out[kAmpleCap];
+    long n;
+
+    set_row(&rows[0], "NOW-68K", kN68ProcKindApplication, "APPL", "NW68",
+            384, 1, 0, 0x1234);
+    set_row(&rows[1], "Finder", kN68ProcKindFinder, "FNDR", "MACS",
+            250, 0, 0, 0x2);
+    set_row(&rows[2], "Backgrounder", kN68ProcKindBackground, "APPL", "BKGD",
+            64, 0, 0, 0x9);
+
+    n = n68_proclist_render_ps(7, rows, 3, out, (long)sizeof out);
+    CHECK(n > 0, "ps builds");
+    CHECK((long)strlen(out) == n, "ps: length matches the NUL");
+    CHECK(strncmp(out, "{\"type\":\"command.result\",\"id\":7,\"ok\":true,"
+                       "\"output\":{\"ps\":[", 57) == 0,
+          "ps opens as an ok command.result with an output.ps group");
+    CHECK(out[n - 1] == '}', "ps closes");
+    CHECK(count_of(out, "{") == count_of(out, "}"), "ps braces balance");
+    CHECK(count_of(out, "[") == count_of(out, "]"), "ps brackets balance");
+    CHECK(count_of(out, " KB") == 3, "one [name, detail] pair per row");
+
+    /* The detail column, verbatim - the sentence guest/src/commands.c
+       builds for the same three facts. A drift here shows up as two
+       machines that describe themselves differently in one console. */
+    CHECK(has(out, "[\"NOW-68K\",\"application, 384 KB, front\"]"),
+          "ps renders kind, size and frontmost like the PowerPC guest");
+    CHECK(has(out, "[\"Finder\",\"finder, 250 KB\"]"),
+          "ps omits the front marker for everything else");
+    CHECK(has(out, "[\"Backgrounder\",\"background, 64 KB\"]"),
+          "ps names a faceless process by its kind");
+    CHECK(!has(out, "more not shown"),
+          "a list that fits says nothing about truncation");
+}
+
+static void test_ps_empty(void)
+{
+    char out[kAmpleCap];
+    long n = n68_proclist_render_ps(1, NULL, 0, out, (long)sizeof out);
+
+    CHECK(n > 0, "an empty ps still builds");
+    CHECK(has(out, "\"ok\":true"), "no processes is not an error");
+    CHECK(has(out, "\"ps\":[]"), "an empty group, not a missing one");
+    CHECK(!has(out, "more not shown"), "nothing was dropped");
+}
+
+/* THE property this renderer exists to keep. `ps` does not paginate, so a
+   machine running more processes than one control frame can carry MUST say
+   so - a silently short list reads as the whole machine, and someone would
+   go looking for an application that was running the whole time. */
+static void test_ps_states_its_truncation(void)
+{
+    N68ProcRow rows[NOW68K_PROCLIST_MAX_ROWS];
+    char out[kAmpleCap];
+    long i;
+    long n;
+
+    for (i = 0; i < NOW68K_PROCLIST_MAX_ROWS; ++i) {
+        set_row(&rows[i], "A Process With A Long Enough Name",
+                kN68ProcKindApplication, "APPL", "TEST", 1024, 0, 0,
+                (unsigned long)i);
+    }
+
+    /* Deliberately at the floor this renderer promises its callers, which
+       is the smallest cap the shipping build could ever hand it. */
+    n = n68_proclist_render_ps(1, rows, NOW68K_PROCLIST_MAX_ROWS, out,
+                               NOW68K_PS_MIN_CAP);
+    CHECK(n > 0, "a full list still builds at the minimum cap");
+    CHECK(n < NOW68K_PS_MIN_CAP, "and stays inside it");
+    CHECK((long)strlen(out) == n, "truncated ps: length matches the NUL");
+    CHECK(out[n - 1] == '}', "truncated ps closes");
+    CHECK(count_of(out, "[") == count_of(out, "]"),
+          "truncated ps brackets balance");
+    CHECK(has(out, "more not shown"), "truncation is STATED, never silent");
+    CHECK(has(out, "[\"...\",\""), "and stated as a row the host renders");
+    CHECK(count_of(out, " KB") >= 1,
+          "at least one real process survives beside the note");
+
+    /* The count in the note must be the rows dropped, not the rows kept:
+       an off-by-one here is a process nobody goes looking for. Real rows
+       are counted by their size column, which the note row does not have -
+       counting `","` would also catch the envelope's own punctuation. */
+    {
+        int rendered = count_of(out, " KB");
+        char expect[32];
+
+        snprintf(expect, sizeof expect, "\"%d more not shown\"",
+                 (int)NOW68K_PROCLIST_MAX_ROWS - rendered);
+        CHECK(has(out, expect), "the note counts what was DROPPED");
+    }
+}
+
+/* A cap too small for even the envelope is a refusal, not a half-written
+   object: the host decodes a truncated frame as nothing at all. */
+static void test_ps_refuses_a_hopeless_cap(void)
+{
+    N68ProcRow rows[1];
+    char out[kAmpleCap];
+    long n;
+
+    set_row(&rows[0], "NOW-68K", kN68ProcKindApplication, "APPL", "NW68",
+            384, 1, 0, 1);
+    n = n68_proclist_render_ps(1, rows, 1, out, 20);
+    CHECK(n == 0, "a cap below the envelope refuses");
+    CHECK(out[0] == '\0', "and leaves nothing to send");
+}
+
+/* NOW68K_PS_ROW_MAX is what the static assert in commands68.c reasons
+   against. A bound nobody re-measures stops being one, so build the true
+   worst case: the longest name, the longest kind, a ten-digit size and
+   the front marker. */
+static void test_ps_worst_case_row_bound(void)
+{
+    N68ProcRow rows[1];
+    char out[kAmpleCap];
+    long n;
+    long head_and_tail;
+
+    memset(&rows[0], 0, sizeof rows[0]);
+    memset(rows[0].name, 'W', sizeof rows[0].name - 1);
+    rows[0].name[sizeof rows[0].name - 1] = '\0';
+    rows[0].kind = kN68ProcKindApplication;   /* the longest kind text */
+    rows[0].front = 1;
+    rows[0].size_kb = 2147483647L;            /* ten digits */
+
+    n = n68_proclist_render_ps(2147483647L, rows, 1, out, (long)sizeof out);
+    CHECK(n > 0, "the worst-case ps row builds");
+
+    /* The head is everything before the first row; the tail is "]}}". */
+    head_and_tail = (long)(strstr(out, "[\"") - out) + 3;
+    CHECK((long)(strstr(out, "[\"") - out) <= NOW68K_PS_HEAD_MAX,
+          "NOW68K_PS_HEAD_MAX still bounds the envelope");
+    CHECK(n - head_and_tail <= NOW68K_PS_ROW_MAX,
+          "NOW68K_PS_ROW_MAX still bounds the widest row");
+}
+
 int main(void)
 {
     test_single_page();
@@ -497,6 +642,11 @@ int main(void)
     test_tail_is_reserved_at_every_cap();
     test_worst_case_row_bound();
     test_sanitizing();
+    test_ps_shape();
+    test_ps_empty();
+    test_ps_states_its_truncation();
+    test_ps_refuses_a_hopeless_cap();
+    test_ps_worst_case_row_bound();
 
     printf("%s: %d checks, %d failures\n",
            g_failures == 0 ? "PASS" : "FAIL", g_checks, g_failures);

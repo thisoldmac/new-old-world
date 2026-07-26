@@ -29,6 +29,7 @@
 
 #include "log.h"
 #include "n68_cmdresult.h"
+#include "n68_proclist.h"
 #include "n68_vprobe.h"
 #include "numfmt.h"
 #include "proc68.h"
@@ -481,14 +482,18 @@ static VProbe68Status run_vprobe(N68CmdResult *res)
  *
  * The other side keeps no command list: there are two guests with different
  * tables (the PowerPC Carbon guest implements fifteen commands, this one
- * implements three plus this), so a console-side list would be wrong for both.
- * Discovery is therefore a request like any other, and the honest answer
- * from here is a short one. The PowerPC guest answers the same command from
- * its own table (guest/src/cmd_help.c); this table is deliberately separate
+ * implements two through now68k_commands_run plus help, ps and vprobe,
+ * which each build a row per item and so answer at dispatch), so a
+ * console-side list would be wrong for both. Discovery is therefore a
+ * request like any other, and the honest answer from here is a short one.
+ * It is also the ONLY thing the host console's Tab completion has to go on,
+ * which is the second reason a command missing from this table is a command
+ * a person cannot find. The PowerPC guest answers the same command from its
+ * own table (guest/src/cmd_help.c); this table is deliberately separate
  * rather than shared, because the two applications share no source - they
  * meet only on the wire, and the contract is the thing they hold in common.
  *
- * The trailing note row is not decoration. A human reading three commands
+ * The trailing note row is not decoration. A human reading four commands
  * needs to know whether that is all this machine HAS or all it would admit
  * to; saying "everything else answers unknown-command" is the difference
  * between a short list and a suspicious one. */
@@ -499,6 +504,7 @@ static const N68CommandDoc k_docs[] = {
       "quit [--all] [--wait N | --no-wait] <name>" },
     { "help", "list the commands this Mac serves",
       "help [command]" },
+    { "ps", "the processes running on this Mac", "ps" },
     { "vprobe", "measure this Mac's VRAM read cost",
       "vprobe (no arguments; wants a still screen)" },
     { NULL, NULL, NULL }
@@ -589,6 +595,43 @@ static long run_help(const char *target, long id, char *out, long cap)
     return pos;
 }
 
+/* ps: the running processes as flat [name, detail] rows.
+ *
+ * Like help, it answers below now68k_commands_run rather than through it,
+ * and for the same structural reason: its reply is a ROW PER PROCESS and
+ * an N68CmdResult holds one row. What keeps that safe is that it is not a
+ * second process walk - proc_list_rows() is the one implementation, and
+ * this file only asks n68_proclist.c to render the rows the way the
+ * console renders them as text (conwin.c) and the wire renders them as
+ * process.listing. Three faces, one walk (docs/command-parity.md).
+ *
+ * It exists on the wire because the host console is a DUMB SHELL: it
+ * relays whatever a person types and knows no command list, so a
+ * capability NOW-68K served only as a message family was unreachable from
+ * the host's console even though the guest's own console had it. `ps`
+ * typed there answered unknown-command while the same guest listed
+ * processes happily at its own keyboard - watched 2026-07-25. */
+/* The one caller in the shipping build hands over NOW68K_CONTROL_SEND_CAP,
+ * which is larger, but this is the number this module PROMISES its callers
+ * (commands68.h), so it is the one that has to hold a ps reply with a row
+ * in it. The 160-vs-512 command.result bug was exactly a build where two
+ * limits disagreed and only the smaller one was ever checked. */
+_Static_assert(NOW68K_COMMAND_RESULT_CAP >= NOW68K_PS_MIN_CAP,
+               "a ps reply must fit a command.result buffer with at least "
+               "one process in it and still be able to say what it dropped");
+
+static long run_ps(long id, char *out, long cap)
+{
+    N68ProcRow rows[NOW68K_PROCLIST_MAX_ROWS];
+    long count = proc_list_rows(rows, (long)NOW68K_PROCLIST_MAX_ROWS);
+
+    if (count < 0) {
+        count = 0;   /* the Process Manager gave nothing: an empty list is
+                      * the truthful answer, not an error */
+    }
+    return n68_proclist_render_ps(id, rows, count, out, cap);
+}
+
 /* ---- dispatch --------------------------------------------------------------- */
 
 int now68k_commands_run(const char *name, const char *target,
@@ -644,18 +687,25 @@ int now68k_commands_dispatch(const char *name, const char *target, long id,
         return 1;
     }
 
-    /* vprobe answers here for the same reason help does: its reply is a row
-     * per measurement and an N68CmdResult holds one row (two with a state).
-     * It is NOT a second implementation - run_vprobe() is the same call
-     * now68k_commands_run makes, filling the same table; only the renderer
-     * differs, which is exactly the arrangement n68_cmdresult.h exists to
-     * preserve.
+    /* ps and vprobe answer here for the same reason help does: each
+     * reply is a row per item and an N68CmdResult holds one row (two with
+     * a state). Neither is a second implementation - both call the same
+     * function now68k_commands_run would; only the renderer differs, which
+     * is exactly the arrangement n68_cmdresult.h exists to preserve.
      *
      * A render that does not fit is answered, not swallowed: the caller is
      * blocked on a command.result the contract promises always comes, and
      * "the reply did not fit" is a true thing to say where silence is not.
      * The static assert in commands68.h is what makes that path
      * unreachable in this build. */
+    if (strcmp(name, "ps") == 0) {
+        len = run_ps(id, out, cap);
+        if (out_len != NULL) {
+            *out_len = len;
+        }
+        return 1;
+    }
+
     if (strcmp(name, "vprobe") == 0) {
         n68_cmdresult_init(&res);
         if (run_vprobe(&res) == kVProbe68OK) {

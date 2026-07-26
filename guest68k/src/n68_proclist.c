@@ -208,3 +208,108 @@ long n68_proclist_build(long id, long cursor,
     }
     return pos;
 }
+
+/* ---- the same rows, as the `ps` command -------------------------------- */
+
+/* One [name, detail] pair. `detail` reads "application, 512 KB, front" -
+ * the same sentence the PowerPC guest's ps builds (guest/src/commands.c,
+ * now_process_gather), because the host console renders both guests with
+ * one renderer and a person should not have to know which machine they
+ * are looking at to read a column. */
+static long build_ps_row(const N68ProcRow *r, int first, char *buf, long cap)
+{
+    long pos = 0;
+    int ok = 1;
+    long size_kb = r->size_kb < 0 ? 0 : r->size_kb;
+
+    ok = ok && now68k_fmt_append_str(buf, cap, &pos, first ? "[\"" : ",[\"");
+    /* A process with no name is a row a human cannot act on; saying so
+     * beats an empty cell that reads like a rendering bug. */
+    ok = ok && append_json_text(buf, cap, &pos,
+                                r->name[0] != '\0' ? r->name : "(unnamed)");
+    ok = ok && now68k_fmt_append_str(buf, cap, &pos, "\",\"");
+    ok = ok && now68k_fmt_append_str(buf, cap, &pos, kind_text(r->kind));
+    ok = ok && now68k_fmt_append_str(buf, cap, &pos, ", ");
+    ok = ok && now68k_fmt_append_long(buf, cap, &pos, size_kb);
+    ok = ok && now68k_fmt_append_str(buf, cap, &pos, " KB");
+    if (r->front) {
+        ok = ok && now68k_fmt_append_str(buf, cap, &pos, ", front");
+    }
+    ok = ok && now68k_fmt_append_str(buf, cap, &pos, "\"]");
+
+    if (!ok || pos <= 0 || pos > cap) {
+        return 0;
+    }
+    return pos;
+}
+
+long n68_proclist_render_ps(long id, const N68ProcRow *rows, long row_count,
+                            char *out, long cap)
+{
+    char scratch[NOW68K_PS_ROW_MAX + 1];
+    long pos = 0;
+    long emitted = 0;
+    long index;
+    int ok = 1;
+
+    if (out == NULL || cap <= 0) {
+        return 0;
+    }
+    out[0] = '\0';
+    if (rows == NULL || row_count < 0) {
+        row_count = 0;
+    }
+
+    ok = ok && now68k_fmt_append_str(
+                   out, cap, &pos,
+                   "{\"type\":\"command.result\",\"id\":");
+    ok = ok && now68k_fmt_append_long(out, cap, &pos, id);
+    ok = ok && now68k_fmt_append_str(out, cap, &pos,
+                                     ",\"ok\":true,\"output\":{\"ps\":[");
+    if (!ok) {
+        out[0] = '\0';
+        return 0;   /* cap cannot even hold the envelope */
+    }
+
+    for (index = 0; index < row_count; ++index) {
+        long n = build_ps_row(&rows[index], emitted == 0, scratch,
+                              (long)sizeof scratch);
+
+        if (n <= 0) {
+            /* The row outgrew NOW68K_PS_ROW_MAX, so the bound is no longer
+             * the worst case. Stop here and let the note row below say how
+             * many are missing rather than emit a half-row. */
+            break;
+        }
+        /* Room for this row AND for the note that would have to follow it:
+         * a reply that spends its last bytes on one more process and then
+         * cannot say it truncated is the failure this reserves against. */
+        if (pos + n + NOW68K_PS_NOTE_MAX + NOW68K_PS_TAIL_MAX > cap) {
+            break;
+        }
+        {
+            long i;
+            for (i = 0; i < n; ++i) {
+                out[pos + i] = scratch[i];
+            }
+        }
+        pos += n;
+        ++emitted;
+    }
+
+    if (emitted < row_count) {
+        ok = ok && now68k_fmt_append_str(out, cap, &pos,
+                                         emitted == 0 ? "[\"...\",\""
+                                                      : ",[\"...\",\"");
+        ok = ok && now68k_fmt_append_long(out, cap, &pos, row_count - emitted);
+        ok = ok && now68k_fmt_append_str(out, cap, &pos,
+                                         " more not shown\"]");
+    }
+    ok = ok && now68k_fmt_append_str(out, cap, &pos, "]}}");
+    if (!ok || pos <= 0 || pos >= cap) {
+        out[0] = '\0';
+        return 0;
+    }
+    out[pos] = '\0';
+    return pos;
+}

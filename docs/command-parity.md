@@ -55,9 +55,21 @@ capability:
   console the moment it exists, with nobody having to remember. That
   delegation is what the parity test asserts.
 - *Message families* (`process.list`). Not commands, so no table compares
-  them — this is the one that drifted. `proc_list_rows()` is the single
-  implementation; `n68_proclist.c` renders it as `process.listing` and
-  `conwin.c`'s `ps` renders the same rows as text.
+  them — this is the one that drifted, twice, in opposite directions.
+  `proc_list_rows()` is the single implementation; `n68_proclist.c`
+  renders it as `process.listing` and as the `ps` command's rows, and
+  `conwin.c` renders the same rows as text.
+
+  The second drift is the one worth remembering. `ps` was added to
+  `conwin.c` alone, reading the family the wire already served — which
+  satisfied "reachable from both faces" on paper and was still broken,
+  because the **host console is a dumb shell**. It sends the line a
+  person typed as a `command.request` and knows no message families, so
+  a capability that is a family on the wire and a verb only on the
+  guest's own keyboard is a capability the host cannot type. The guest
+  listed processes happily at the PowerBook while answering
+  `unknown-command` to the same word from the host. A message family
+  serves a MODULE; a person needs a verb.
 
 **The PowerPC guest (`guest/`)** — `commands.c` answers the wire and
 `console_model.c` answers the Console page. Two dispatch lists, so two
@@ -92,3 +104,13 @@ If the capability is a message family rather than a command, step 4 will
 cannot see something that is not in a table. Add a case to the parity
 test the way `testTheSixtyEightKConsoleCanListProcesses` does. That test
 exists because this exact footnote was learned the expensive way.
+
+And if you close such a gap with a console verb, **the verb belongs in
+the command table too**, not only in the console's dispatch. The host
+console reaches a guest through commands and nothing else;
+`testEveryVerbTheSixtyEightKConsoleAnswersIsAlsoOnItsWire` is the guard,
+and it was written after `ps` spent a day reachable from one keyboard.
+Two verbs answer inside `now68k_commands_dispatch` rather than through
+`now68k_commands_run` — `help` and `ps` — because each returns a row per
+item and an `N68CmdResult` holds one row. That is the whole exception,
+and a third one is an argument to have, not a pattern to follow.
