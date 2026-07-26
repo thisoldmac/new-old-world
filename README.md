@@ -299,8 +299,21 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   [docs/68k-file-receive.md](docs/68k-file-receive.md) is the record.
 - **Sending a file from NOW-68K is emulator-verified, not
   metal-verified.** Round-tripped byte-identical to 4 MB on the same
-  Quadra 800, with the control lane proved to survive a transfer.
-  Nothing has sent a byte on the 180c.
+  Quadra 800, with the control lane proved to survive a transfer
+  (`gestalt` 0.05 s idle against 0.10 s during a 1 MB push). Nothing has
+  sent a byte on the 180c. The sender takes an abstract byte source
+  rather than a file, so a screen capture can feed the pipe in bands
+  instead of buffering 300 KB against a 384 KB partition; a file is
+  simply its first implementation.
+- **The two directions briefly disagreed about where files live**, and
+  that is worth knowing because of what missed it. Receiving landed on
+  the Desktop while sending read from the application's own folder — a
+  disagreement no textual conflict marked and that 27 native tests, 508
+  host tests, both Xcode configs and `-Werror` all passed over, because
+  noticing it needs a real file system. The round-trip ladder on the
+  emulator named it on all ten rungs. Both directions now read one
+  published root. A cross-direction test could not exist while the two
+  halves lived on separate branches.
 - **NOW-68K's interactive console is metal-verified.** A second window (Windows > Console, Command-K, and it
   toggles) with an input line, history and scrollback. Watched working on a
   Quadra 800 under Mac OS 8.1 — including two redraw bugs found there and

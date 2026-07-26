@@ -9,6 +9,88 @@ wrong thing) versus **unverified** (it may well be right, but no one has
 watched it work on the PowerBook). Unverified is not a lesser problem —
 several of tonight's bugs lived in code that looked obviously correct.
 
+## The 68K file family, both directions in one tree (2026-07-25 night)
+
+Three branches merged and verified together: the receive half (MacBinary,
+Desktop landing, the `FSClose` fork repair), the send half (the
+byte-source sender), and the version-bump commit that carried them to the
+machine. What that merge found, and what it left open.
+
+### Broken
+
+- **~~The two halves disagreed about where files live.~~** Fixed in this
+  pass, and worth keeping in the ledger for how it hid. Receiving landed
+  on the Desktop, sending read from the application's own folder; each
+  branch was self-consistent, so no reviewer of either could see it. It
+  survived the merge (no textual conflict — two roots in two files), 27
+  native tests, 508 host tests, both Xcode configs, and `-Werror`. The
+  round-trip ladder on the emulator named it as `fnfErr` on all ten
+  rungs. **A cross-direction test is the only kind that could have
+  caught this, and it could not exist while the halves were on separate
+  branches.** `now68k_desktop_folder` is now published from
+  `n68_putfile.h` and both directions read it.
+- **A merge can drop an `#include` with no conflict.** `git` took one
+  side's include block wholesale and `<Processes.h>` went with it. The
+  block was never marked conflicted, so reviewing the conflicted hunks
+  would not have shown it. `-Werror` caught it; nothing else would have
+  until link time.
+- **A conflict region can cut a function mid-body.** The resolution
+  looked complete — every declaration present — and the function simply
+  never closed, which the compiler reported as four *unrelated*
+  functions being "defined but not used" and a fifth reaching the end of
+  a non-void function. The error names never mention the function that
+  is actually broken.
+- **The handoff's retire step may quit the wrong build.** `NOW-68K 0.17`
+  reached the 180c and its log reads `wire: connected` then `cmd: quit
+  ok 0` — the incoming build took a quit and executed it, where the
+  outgoing one was meant to. Not diagnosed, and **not confirmed**: the
+  run it came from was contended (see below), so this is a suspicion
+  with a log line behind it, not a defect with a repro.
+
+### Unverified
+
+- **Neither direction has moved a byte on the 180c.** Both are
+  emulator-verified on a Quadra 800 under Mac OS 8.1 — receive 4 MB in
+  11.7 s (350 KB/s, 512 progress reports, CRC-confirmed), send 4 MB in
+  1.8 s, MacBinary both forks, control lane 0.05 s idle against 0.10 s
+  during a 1 MB push. A 68040 with 128 MB is not a 68030 with 4 MB, and
+  the send rate in particular reads off a disk the emulator caches —
+  read it as "the path works", never as a rate.
+- **The PackBits ratio and encode cost are unmeasured.** `vprobe` has
+  the framebuffer READ at 159 ms for a 300 KB frame
+  ([docs/vram-readout-68k.md](vram-readout-68k.md)); nobody has measured
+  what compressing it costs on a 33 MHz 68030, and **the ratio is what
+  decides whether screenshots are viable over MacTCP at all**. No branch
+  in this repository implements PackBits. The send half was built as a
+  byte source (`n68_bytesrc.h`) precisely so a capture can feed the pipe
+  in bands rather than buffer 300 KB against a 384 KB partition — that
+  shape held through the merge, so a screenshot sender does not need a
+  second send path.
+
+### Two host sessions can contend for one PowerBook, invisibly
+
+A metal run of these suites on 2026-07-25 held port 5252 for the better
+part of an hour while another session deployed a build into the same
+folder mid-ladder. The results were unattributable: a 1 MB push stalled
+at 606208 bytes and every rung after it timed out at `0 of N`. The most
+likely cause is contention rather than a defect — NetPresenz serving an
+FTP upload while NOW-68K received a push, both on MacTCP, on a 68030
+with 4 MB — but nothing proves that either, which is the point.
+
+**`requireTheBuildUnderTest()` would not have caught it.** That guard
+asks whether the connected guest is the right *guest*, and it was. The
+gap is that nothing establishes whether the *machine* is already busy.
+`lsof -iTCP:<port>` before a run answers it in a second. The existing
+rule covers several guests reaching one listener; this is several
+listeners reaching one guest, and it is not written down anywhere else.
+
+Related and unresolved: the name a build has on the disk and the version
+it reports on the wire are established by different means, and a guest
+answering `"version":"0.16"` was found on a machine whose deploy folder
+had just gained a file named `NOW-68K 0.18`. Whether those were the same
+application was never established. `deploy-68k` stamps both from one
+source, so this only arises when something bypasses it.
+
 ## Host -> guest file transfer on NOW-68K (2026-07-25)
 
 NOW-68K receives a pushed file. Offer, accept, stream, checksum, done -
