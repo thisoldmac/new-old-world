@@ -67,6 +67,18 @@ typedef struct {
     OSErr  err;              /* the OSErr behind the last failure */
 } N68PutFile;
 
+/* The application's own folder, through the Process Manager rather than
+ * the launch default directory - which is NOT the same place, because
+ * Rumpus deposits builds on the Desktop. Returns 1 and fills both, or 0.
+ *
+ * Published because the file SOURCE (n68_filesrc.h) is the fourth caller
+ * of it, and the comment at its definition already said that a third
+ * caller was the moment to stop writing it out again. Two older copies
+ * (log.c, n68_devsettings_file.c) are still their own: folding them in
+ * means editing the code that reports failures, which is not a thing to
+ * do in the same change as a feature whose failures it would report. */
+int now68k_app_folder(short *vref, long *dir);
+
 /* The ops table to hand n68_putrx_init, with a N68PutFile as its ctx. */
 const N68PutFileOps *now68k_putfile_ops(void);
 

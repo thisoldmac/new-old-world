@@ -168,4 +168,45 @@ void now68k_wire_put_status(N68PutStatus *out);
  * look in. Empty when it cannot be resolved. */
 void now68k_wire_put_where(char *out, long cap);
 
+/* ---- an outgoing file ------------------------------------------------
+ *
+ * The other direction, same shape. Sending is ALSO a message family
+ * rather than a command on the wire, so the same parity hazard applies
+ * and the same answer is used: one implementation here, two renderers
+ * above it.
+ */
+
+/* Starts sending `leaf` - a file in the application's own folder, which
+ * is the only place this guest has (n68_putfile.h explains why it has no
+ * share root) - to the host.
+ *
+ * Returns 1 when the offer is on its way. On 0, `why` carries a sentence
+ * for a person and nothing was started. Refuses when there is no live
+ * connection, when a transfer is already in flight (the contract's one-
+ * at-a-time rule, and the answer a second request gets), when the file
+ * cannot be opened, or when its name cannot go on a wire.
+ *
+ * The transfer proceeds from wire_idle() afterwards; its outcome shows
+ * up in now68k_wire_send_status(). */
+int now68k_wire_send_file(const char *leaf, char *why, long why_cap);
+
+/* What the console's face on the send half reads. A cheap copy of
+ * bookkeeping this module already keeps, like N68PutStatus above. */
+typedef struct {
+    int  active;              /* a send is in flight right now */
+    int  offered;             /* waiting for the host to answer the offer */
+    long id;
+    char name[64];
+    long bytes;               /* what we offered */
+    long sent;                /* framed so far */
+
+    int  had_one;
+    int  last_ok;
+    long last_bytes;
+    char last_name[64];
+    char last_code[16];       /* the contract's own word; "" when ok */
+} N68SendStatus;
+
+void now68k_wire_send_status(N68SendStatus *out);
+
 #endif /* NOW68K_WIRE68_H */

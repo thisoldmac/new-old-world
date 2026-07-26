@@ -18,7 +18,7 @@
  * left alone: moving log.c's copy means touching the code that reports
  * failures, which is not something to do in the same change as the
  * feature whose failures it would be reporting. */
-static int app_folder(short *vref, long *dir)
+int now68k_app_folder(short *vref, long *dir)
 {
     ProcessSerialNumber psn;
     ProcessInfoRec      info;
@@ -58,7 +58,7 @@ static N68PutCode resolve_folder(const char *rel, int create,
     const char *p = rel;
 
     *err = noErr;
-    if (!app_folder(vref, dir)) {
+    if (!now68k_app_folder(vref, dir)) {
         return kN68PutIOError;
     }
     while (p != NULL && *p != '\0') {
@@ -150,7 +150,7 @@ static long pf_free_bytes(void *ctx, const N68PutOffer *offer)
      * only ever names folders inside it. Resolved WITHOUT creating, so
      * asking how much room there is never has a side effect. */
     if (resolve_folder(offer->path, 0, &vref, &dir, &err) != kN68PutOK) {
-        if (!app_folder(&vref, &dir)) {
+        if (!now68k_app_folder(&vref, &dir)) {
             return -1;
         }
     }
@@ -416,7 +416,7 @@ void now68k_putfile_where(char *out, long cap)
         return;
     }
     out[0] = '\0';
-    if (!app_folder(&vref, &dir)) {
+    if (!now68k_app_folder(&vref, &dir)) {
         return;
     }
     memset(&pb, 0, sizeof pb);

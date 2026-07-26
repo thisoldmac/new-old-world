@@ -1636,6 +1636,39 @@ components:
         type: object
         properties:
           ls: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    put:
+      description: >
+        Send a file from the guest to the host. The argument names a
+        file in the guest's own share; the transfer that follows is the
+        ordinary file.offer -> file.accept -> file.begin -> bulk ->
+        file.end sequence, so this command declares a WAY IN to that
+        family rather than a second mechanism.
+
+        The reply says the offer went out, not that the file arrived —
+        the transfer runs afterwards and its outcome is read from
+        file.done, or from the guest's own `xfer`. A command that
+        blocked until a multi-megabyte file landed would hold a
+        command.result for minutes.
+
+        Declared because NOW-68K answers it on the wire. The PowerPC
+        guest deliberately does not: a host driving that guest reaches
+        the same capability by sending file.list and file.get, and has
+        no need to type a verb. NOW-68K is the machine whose display
+        fails and whose keyboard is sometimes the only face there is,
+        and the host console that talks to it is a dumb shell with no
+        knowledge of message families — so on that guest the capability
+        has to be a verb on both faces or it is missing from one.
+      args:
+        name:
+          type: string
+          description: >
+            The file's leaf name inside the guest's share. Not a path:
+            the same "no colons, <= 31 characters" rule the file family
+            applies everywhere else.
+      output:
+        type: object
+        properties:
+          put: { type: string }
     putstat:
       description: >
         Where the last file the guest RECEIVED spent its time: bytes,

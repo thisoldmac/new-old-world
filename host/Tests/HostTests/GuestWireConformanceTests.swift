@@ -374,6 +374,12 @@ final class GuestWireConformanceTests: XCTestCase {
         "file.refuse": "test68KFileRefuseAsTheGuestWritesIt",
         "file.progress": "test68KFileProgressAsTheGuestWritesIt",
         "file.done": "test68KFileDoneAsTheGuestWritesIt",
+        // NOW-68K's send half (n68_puttx.c). Assembled from append calls
+        // rather than one format string, like everything else this guest
+        // builds, so they need the hand-written fixtures below.
+        "file.offer": "test68KFileOfferAsTheGuestWritesIt",
+        "file.begin": "test68KFileBeginAsTheGuestWritesIt",
+        "file.end": "test68KFileEndAsTheGuestWritesIt",
     ]
 
     func testMessagesThisCannotCheckAreKnown() throws {

@@ -85,9 +85,11 @@
 #include "hello.h"
 #include "json_scan.h"
 #include "log.h"
+#include "n68_filesrc.h"
 #include "n68_proclist.h"
 #include "n68_putfile.h"
 #include "n68_putrx.h"
+#include "n68_puttx.h"
 #include "n68_reader.h"
 #include "numfmt.h"
 #include "ping.h"
@@ -269,6 +271,31 @@ static int             g_put_had_one;
 static OutSlot         g_out[kWireOutQueueDepth];
 static int             g_out_head = 0;   /* next slot to flush */
 static int             g_out_count = 0;  /* occupied slots */
+
+/* ---- the file family's SEND half --------------------------------------
+ *
+ * The rule for how these bytes share the wire with the control queue
+ * above is stated once, in n68_puttx.h. The part of it that lives here
+ * is the slot: ONE bulk frame, its own buffer, never a control slot.
+ * That is rule 1, and it is structural rather than disciplined - there
+ * is no code path by which a transfer of any length can consume a slot
+ * a command.result needs.
+ *
+ * 4104 bytes (8 + 4096). It is the second largest thing this file owns,
+ * after the receive batch, and it is deliberately NOT unioned with that
+ * batch even though the contract's one-transfer-at-a-time rule means the
+ * two can never both be live. The saving would be 4 KB out of a 384 KB
+ * partition - about 1% - and the cost would be two state machines whose
+ * safety depended on an invariant enforced somewhere neither of them can
+ * see. */
+static N68SendTx       g_puttx;
+static N68FileSrc      g_filesrc;
+static unsigned char   g_bulk[kN68SendFrameCap];
+static long            g_bulk_len = 0;   /* frame bytes staged, 0 = empty */
+static long            g_bulk_off = 0;   /* bytes already accepted */
+static long            g_send_next_id = 1;
+static unsigned short  g_send_next_transfer = 1;
+static unsigned long   g_send_start_tick = 0;
 
 /* ---- status line building -------------------------------------------- */
 /* g_status is built once per state transition, never reformatted on a
@@ -501,12 +528,22 @@ static void reset_read_state(void)
      * outlive the connection that was writing it. Sending file.done
      * would be pointless - there is no longer anyone to send it to. */
     n68_putrx_cancel(&g_putrx);
+    /* And the same for a transfer going the other way. This is where the
+     * open data fork of an outbound file gets closed on a dropped
+     * connection - promise (5) in n68_bytesrc.h says close() happens on
+     * EVERY ending, and a link that died mid-chunk is the ending nobody
+     * writes code for. */
+    n68_puttx_cancel(&g_puttx, kN68SendGone);
+    g_send_start_tick = 0;
 }
 
 static void reset_outbound_queue(void)
 {
     g_out_head = 0;
     g_out_count = 0;
+    /* The staged chunk belongs to the connection that was carrying it. */
+    g_bulk_len = 0;
+    g_bulk_off = 0;
 }
 
 /* ---- outbound: queue, then flush through net_queue_send ---------------- */
@@ -576,35 +613,66 @@ static int enqueue_control_send(const void *payload, long payload_len)
     return 1;
 }
 
-/* Drains queued slots in order. A short accept from net_queue_send stops
- * the loop rather than starting the next slot's bytes early, so two queued
- * messages never interleave on the wire even though net.h's own staging
+/* Hands one staged frame's remaining bytes toward net.h. Returns 1 when
+ * the whole frame is away, 0 when the transport took less than all of it
+ * and the rest must wait - which is the ONLY back-pressure signal this
+ * side has and the only one it needs (n68_puttx.h, rule 4). */
+static int flush_one(unsigned char *buf, long *len, long *off)
+{
+    long remaining = *len - *off;
+    long sent;
+
+    if (remaining <= 0) {
+        *len = 0;
+        *off = 0;
+        return 1;
+    }
+    sent = net_queue_send(buf + *off, remaining);
+    if (sent <= 0) {
+        return 0;
+    }
+    *off += sent;
+    g_stats.bytes_out += sent;
+    if (*off < *len) {
+        return 0;       /* short accept: the rest waits for room */
+    }
+    ++g_stats.frames_out;
+    *len = 0;
+    *off = 0;
+    return 1;
+}
+
+/* Drains what is staged, in the order n68_puttx.h states. A short accept
+ * stops the drain rather than starting the next frame's bytes early, so
+ * two frames never interleave on the wire even though net.h's own staging
  * buffer is what actually paces the TCPSend calls. */
 static void flush_outbound(void)
 {
-    while (g_out_count > 0) {
-        OutSlot *s = &g_out[g_out_head];
-        long remaining = s->len - s->off;
-        long sent;
-
-        if (remaining <= 0) {
-            g_out_head = (g_out_head + 1) % kWireOutQueueDepth;
-            --g_out_count;
-            continue;
-        }
-        sent = net_queue_send(s->buf + s->off, remaining);
-        if (sent <= 0) {
+    /* RULE 2. A frame whose bytes have already begun going out finishes
+     * before any other frame's first byte. Only one frame can ever be
+     * part-sent, so this is the single place bulk may go ahead of the
+     * control queue - and it must, because the alternative is a frame
+     * cut in half by a reply. */
+    if (g_bulk_len > 0 && g_bulk_off > 0) {
+        if (!flush_one(g_bulk, &g_bulk_len, &g_bulk_off)) {
             return;
         }
-        s->off += sent;
-        g_stats.bytes_out += sent;
-        if (s->off >= s->len) {
-            ++g_stats.frames_out;
-            g_out_head = (g_out_head + 1) % kWireOutQueueDepth;
-            --g_out_count;
-        } else {
-            return;   /* short accept: wait for more room before continuing */
+    }
+
+    /* RULE 3. Control before bulk. A reply queued during a transfer waits
+     * for the chunk in flight and never for the transfer. */
+    while (g_out_count > 0) {
+        OutSlot *s = &g_out[g_out_head];
+
+        if (!flush_one(s->buf, &s->len, &s->off)) {
+            return;
         }
+        g_out_head = (g_out_head + 1) % kWireOutQueueDepth;
+        --g_out_count;
+    }
+
+    if (g_bulk_len > 0) {
+        (void)flush_one(g_bulk, &g_bulk_len, &g_bulk_off);
     }
 }
 
@@ -1418,6 +1486,162 @@ static void handle_file_end(const char *json, long len)
     put_done(rc == kN68PutOK, rc);
 }
 
+/* ---- the file family's send half ---------------------------------------
+ *
+ * The state machine and every judgement in it are n68_puttx.c; this is
+ * the part that has a wire and a clock. The rule for sharing the wire is
+ * in n68_puttx.h and enforced in flush_outbound() above.
+ */
+
+/* Ends a transfer that cannot continue: tell the host, then let the
+ * sender clean up. file.end ok:false is the contract's way of saying so
+ * once file.begin has been announced - by then a refusal is no longer
+ * available, because the transfer already exists on both sides. */
+static void send_file_end(int ok, N68SendCode why)
+{
+    char payload[kWireOutPayloadCap];
+    long ms = -1;
+    long n;
+
+    if (ok && g_send_start_tick != 0) {
+        /* Ticks are 1/60 s. sendMs is advisory (the contract types it as
+         * an integer with no stated precision), so the rounding is not
+         * worth a divide-and-remainder here. */
+        ms = (long)(((unsigned long)TickCount() - g_send_start_tick)
+                    * 1000UL / 60UL);
+    }
+    n = n68_puttx_build_end(&g_puttx, payload, (long)sizeof payload, ok, ms);
+    if (n > 0) {
+        if (!enqueue_control_send(payload, n)) {
+            now68k_log("wire: file.end could not be queued");
+        }
+    } else {
+        now68k_log("wire: file.end did not fit its buffer");
+    }
+    if (!ok) {
+        char line[96];
+        long pos = 0;
+
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                    "wire: send failed - ");
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                    n68_puttx_code_reason(why));
+        line[pos] = '\0';
+        now68k_log(line);
+    }
+    g_send_start_tick = 0;
+}
+
+/* One step of a transfer, once per wire_idle() pass. Deliberately not a
+ * loop: the event loop that already runs is what advances this, so there
+ * is no stretch of time in which the guest is deaf and nothing to pump
+ * from inside. See n68_puttx.h, "Nothing here loops". */
+static void service_send(void)
+{
+    N68SendCode why = kN68SendOK;
+    long n;
+
+    /* RULE 4: the previous chunk must be entirely away before another is
+     * produced. net_queue_send's short accept is the whole flow control. */
+    if (g_bulk_len > 0) {
+        return;
+    }
+    /* RULE 3, from the producing end: do not build a bulk frame while a
+     * control message is still waiting for the wire. Without this the
+     * bulk slot would refill the instant it drained and a reply would
+     * wait behind a chunk that had not needed to exist yet. */
+    if (g_out_count > 0) {
+        return;
+    }
+
+    if (n68_puttx_all_sent(&g_puttx)) {
+        send_file_end(1, kN68SendOK);
+        return;
+    }
+
+    n = n68_puttx_next_frame(&g_puttx, g_bulk, (long)sizeof g_bulk, &why);
+    if (n > 0) {
+        g_bulk_len = n;
+        g_bulk_off = 0;
+        return;
+    }
+    if (why != kN68SendOK) {
+        /* The sender has already closed the source and gone idle; all
+         * that is left is to tell the host the transfer is over. */
+        send_file_end(0, why);
+    }
+}
+
+/* The host granted the offer. Announce the transfer and start. */
+static void handle_file_accept(const char *json, long len)
+{
+    char payload[kWireOutPayloadCap];
+    long id;
+    long n;
+
+    if (!now68k_json_find_int(json, (size_t)len, "id", &id)) {
+        return;
+    }
+    if (!n68_puttx_accepted(&g_puttx, id, g_send_next_transfer)) {
+        return;   /* stale, or for a transfer that is already over */
+    }
+    ++g_send_next_transfer;
+    if (g_send_next_transfer == 0) {
+        g_send_next_transfer = 1;   /* 0 is reserved for control frames */
+    }
+
+    n = n68_puttx_build_begin(&g_puttx, payload, (long)sizeof payload);
+    if (n <= 0 || !enqueue_control_send(payload, n)) {
+        /* Nothing has been announced, so this ends as a cancellation
+         * rather than a file.end for a transfer the host never saw. */
+        now68k_log("wire: file.begin could not be sent");
+        n68_puttx_cancel(&g_puttx, kN68SendGone);
+        return;
+    }
+    g_send_start_tick = (unsigned long)TickCount();
+}
+
+static void handle_file_refuse(const char *json, long len)
+{
+    long id;
+
+    if (!now68k_json_find_int(json, (size_t)len, "id", &id)
+        || id != g_puttx.id) {
+        return;
+    }
+    now68k_log("wire: the host refused the offer");
+    n68_puttx_cancel(&g_puttx, kN68SendRefused);
+    g_send_start_tick = 0;
+}
+
+/* The host's receipt. Only now is a put finished - a put is not done
+ * until the far side's File Manager says so, which is the same rule this
+ * guest applies in the other direction. */
+static void handle_file_done(const char *json, long len)
+{
+    char code[24];
+    long id;
+    int ok;
+    int have_code;
+    const char *v;
+
+    if (!now68k_json_find_int(json, (size_t)len, "id", &id)) {
+        return;
+    }
+    /* A JSON boolean, so not find_int - the same idiom handle_file_end
+     * uses on the receiving side. An ABSENT `ok` reads as false here,
+     * where file.end's reads as true, and the difference is deliberate:
+     * the contract requires the field in both, so either absence is a
+     * malformed message, but only one of the two guesses can invent a
+     * file that landed safely. */
+    v = now68k_json_value(json, (size_t)len, "ok");
+    ok = (v != NULL && v < json + len && *v == 't');
+    have_code = now68k_json_find_string(json, (size_t)len, "code",
+                                        code, (long)sizeof code);
+    n68_puttx_done(&g_puttx, id, ok, have_code ? code : NULL);
+    g_send_start_tick = 0;
+}
+
 /* Dispatch for one fully-received control payload. Everything the guest
  * does not implement (capture, files, streams, the process drive verbs and
  * the software listing) falls through to the generic error reply - see
@@ -1493,10 +1717,11 @@ static void handle_control_message(const char *json, long len)
         handle_process_list(json, len);
         return;
     }
-    /* The file family, receive half only. file.list / file.move and the
-     * rest of the family still fall through to send_error_reply below -
-     * this guest serves what a host PUSHES to it and nothing else yet,
-     * and that asymmetry is visible here rather than hidden. */
+    /* The file family, both halves now. file.list / file.move and the
+     * rest still fall through to send_error_reply below - this guest
+     * receives a push and makes one, and does not yet SERVE its share
+     * (a host asking to browse or pull), which is the asymmetry left and
+     * it is visible here rather than hidden. */
     if (strcmp(type, "file.offer") == 0) {
         handle_file_offer(json, len);
         return;
@@ -1507,6 +1732,19 @@ static void handle_control_message(const char *json, long len)
     }
     if (strcmp(type, "file.end") == 0) {
         handle_file_end(json, len);
+        return;
+    }
+    /* The answers to an offer THIS side made. */
+    if (strcmp(type, "file.accept") == 0) {
+        handle_file_accept(json, len);
+        return;
+    }
+    if (strcmp(type, "file.refuse") == 0) {
+        handle_file_refuse(json, len);
+        return;
+    }
+    if (strcmp(type, "file.done") == 0) {
+        handle_file_done(json, len);
         return;
     }
 
@@ -1684,6 +1922,11 @@ static void service_live(void)
     if (g_state != kWireLive) {
         return;   /* torn down inside drain_frames (protocol error / bye) */
     }
+    /* After the drain, so a file.accept that arrived this pass starts its
+     * transfer in the same pass rather than a whole idle sleep later; and
+     * before the ping, so a live transfer's chunk is staged ahead of a
+     * keepalive that is not due yet. */
+    service_send();
     now = TickCount();
     if (now - g_last_rx_tick > (unsigned long)kWireDeadTicks) {
         set_status_str("Connection timed out");
@@ -1750,6 +1993,7 @@ void wire_init(void)
     g_put_last_code[0] = '\0';
     g_put_last_bytes = 0;
     g_put_last_ok = 0;
+    n68_puttx_init(&g_puttx);
     reset_read_state();
     reset_outbound_queue();
 
@@ -1956,4 +2200,100 @@ void now68k_wire_put_status(N68PutStatus *out)
 void now68k_wire_put_where(char *out, long cap)
 {
     now68k_putfile_where(out, cap);
+}
+
+int now68k_wire_send_file(const char *leaf, char *why, long why_cap)
+{
+    N68ByteSource src;
+    N68SendCode rc;
+    char name[kN68SendNameCap];
+    char type[8];
+    char creator[8];
+    unsigned long modified = 0;
+    char payload[kWireOutPayloadCap];
+    long n;
+    long pos = 0;
+
+    if (why != NULL && why_cap > 0) {
+        why[0] = '\0';
+    }
+    if (g_state != kWireLive) {
+        (void)now68k_fmt_append_str(why, why_cap, &pos, "not connected");
+        why[pos] = '\0';
+        return 0;
+    }
+    /* Asked BEFORE the file is opened. One transfer at a time is the
+     * contract's rule, and a refusal that has already opened a fork is a
+     * fork that has to be closed on a path nobody tests. */
+    if (g_puttx.state != kN68SendIdle) {
+        (void)now68k_fmt_append_str(why, why_cap, &pos,
+                                    n68_puttx_code_reason(kN68SendBusy));
+        why[pos] = '\0';
+        return 0;
+    }
+    /* And a receive counts too: the lane is one transfer wide in both
+     * directions, so a push arriving while one is going out would have
+     * two streams sharing a bulk channel that correlates by transfer id
+     * but multiplexes by nothing. */
+    if (g_putrx.active) {
+        (void)now68k_fmt_append_str(why, why_cap, &pos,
+                                    "a file is arriving right now");
+        why[pos] = '\0';
+        return 0;
+    }
+
+    if (!now68k_filesrc_open(&g_filesrc, leaf, &src, name, (long)sizeof name,
+                             type, creator, &modified)) {
+        (void)now68k_fmt_append_str(why, why_cap, &pos, "cannot read ");
+        (void)now68k_fmt_append_str(why, why_cap, &pos,
+                                    leaf != NULL ? leaf : "that");
+        (void)now68k_fmt_append_str(why, why_cap, &pos, " (error ");
+        (void)now68k_fmt_append_long(why, why_cap, &pos,
+                                     (long)now68k_filesrc_last_error(
+                                         &g_filesrc));
+        (void)now68k_fmt_append_str(why, why_cap, &pos, ")");
+        why[pos] = '\0';
+        return 0;
+    }
+
+    rc = n68_puttx_begin(&g_puttx, g_send_next_id, name, &src, 0,
+                         type, creator, modified);
+    if (rc != kN68SendOK) {
+        /* begin took nothing, so the fork this function opened is still
+         * this function's to close - see n68_filesrc.h. */
+        src.ops->close(src.ctx);
+        (void)now68k_fmt_append_str(why, why_cap, &pos,
+                                    n68_puttx_code_reason(rc));
+        why[pos] = '\0';
+        return 0;
+    }
+
+    n = n68_puttx_build_offer(&g_puttx, payload, (long)sizeof payload);
+    if (n <= 0 || !enqueue_control_send(payload, n)) {
+        n68_puttx_cancel(&g_puttx, kN68SendGone);
+        (void)now68k_fmt_append_str(why, why_cap, &pos,
+                                    "the offer could not be sent");
+        why[pos] = '\0';
+        return 0;
+    }
+    ++g_send_next_id;
+    return 1;
+}
+
+void now68k_wire_send_status(N68SendStatus *out)
+{
+    memset(out, 0, sizeof *out);
+    out->active = (g_puttx.state != kN68SendIdle);
+    out->offered = (g_puttx.state == kN68SendOffered);
+    out->id = g_puttx.id;
+    out->bytes = g_puttx.total;
+    out->sent = g_puttx.sent;
+    if (out->active) {
+        memcpy(out->name, g_puttx.name, sizeof out->name);
+    }
+    out->had_one = g_puttx.had_one;
+    out->last_ok = g_puttx.last_ok;
+    out->last_bytes = g_puttx.last_bytes;
+    memcpy(out->last_name, g_puttx.last_name, sizeof out->last_name);
+    memcpy(out->last_code, g_puttx.last_code, sizeof out->last_code);
 }

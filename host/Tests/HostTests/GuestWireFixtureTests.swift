@@ -740,6 +740,78 @@ final class GuestWireFixtureTests: XCTestCase {
             XCTAssertEqual(b.code, want)
         }
     }
+
+    // MARK: - NOW-68K's file family (the send half)
+
+    /// The offer this guest makes when a person types `put`. Decoded
+    /// here because the host's answer to it is `onAcceptOffer`, the same
+    /// path the PowerPC guest's offer takes — the two guests must be
+    /// indistinguishable to it, or the host grows a per-guest branch.
+    ///
+    /// `path` present and empty is the field that cost a dropped
+    /// connection when the PowerPC guest omitted it: the host could not
+    /// decode the frame at all, so the failure was not "a bad offer" but
+    /// "the link died".
+    func test68KFileOfferAsTheGuestWritesIt() throws {
+        guard case .fileOffer(let offer) =
+            try decode(Guest68KWire.sendOffer) else {
+            return XCTFail("not a file.offer")
+        }
+        XCTAssertEqual(offer.id, 3)
+        XCTAssertEqual(offer.name, "Notes")
+        XCTAssertEqual(offer.path, "")
+        XCTAssertEqual(offer.container, "data")
+        XCTAssertEqual(offer.bytes, 1000)
+        XCTAssertEqual(offer.fileType, "TEXT")
+        XCTAssertEqual(offer.creator, "ttxt")
+    }
+
+    func test68KFileOfferCarriesAnUnsignedModified() throws {
+        guard case .fileOffer(let offer) =
+            try decode(Guest68KWire.sendOfferMacBinary) else {
+            return XCTFail("not a file.offer")
+        }
+        XCTAssertEqual(offer.container, "macbinary")
+        XCTAssertEqual(offer.modified, 2_952_790_016,
+                       "a Mac date past 2^31 must not arrive negative")
+    }
+
+    /// file.begin is what actually fixes the stream: name and container
+    /// are required here as well as in the offer, because the host sizes
+    /// its InboundFileSink from `bytes` before a byte arrives.
+    func test68KFileBeginAsTheGuestWritesIt() throws {
+        guard case .fileBegin(let begin) =
+            try decode(Guest68KWire.sendBegin) else {
+            return XCTFail("not a file.begin")
+        }
+        XCTAssertEqual(begin.id, 7)
+        XCTAssertEqual(begin.transfer, 9)
+        XCTAssertEqual(begin.name, "Report")
+        XCTAssertEqual(begin.container, "data")
+        XCTAssertEqual(begin.bytes, 300)
+    }
+
+    func test68KFileEndAsTheGuestWritesIt() throws {
+        guard case .fileEnd(let end) =
+            try decode(Guest68KWire.sendEndOK) else {
+            return XCTFail("not a file.end")
+        }
+        XCTAssertTrue(end.ok)
+        XCTAssertEqual(end.transfer, 9)
+        XCTAssertEqual(end.sendMs, 42)
+        XCTAssertEqual(end.crc32, 3_419_628_326,
+                       "the CRC is unsigned; half of them are above 2^31")
+
+        guard case .fileEnd(let failed) =
+            try decode(Guest68KWire.sendEndFailed) else {
+            return XCTFail("not a file.end")
+        }
+        XCTAssertFalse(failed.ok)
+        XCTAssertNil(failed.crc32,
+                     "a failed transfer must not carry a checksum: absent "
+                     + "means unchecked, and a number here would be read "
+                     + "as corruption rather than truncation")
+    }
 }
 
 /// The exact payload bytes NOW-68K puts on the control channel, derived
@@ -814,6 +886,43 @@ enum Guest68KWire {
     static let fileDoneCorrupt = #"{"type":"file.done","id":3,"ok":false,"#
         + #""code":"corrupt","reason":"the bytes did not check out","#
         + #""received":4194304,"cleanup":"temp-discarded"}"#
+
+    // ---- the SEND half (n68_puttx.c) ----------------------------------
+    //
+    // These three are the transcription of guest68k/tests/test_puttx.c's
+    // pinned strings, which is the point of having them here: that test
+    // proves the guest BUILDS these bytes, and these tests prove this
+    // side DECODES them. Neither half proves anything on its own, and a
+    // test that constructs the message it then parses proves less than
+    // either (AGENTS.md).
+    static let sendOffer = #"{"type":"file.offer","id":3,"name":"Notes","#
+        + #""path":"","container":"data","bytes":1000,"#
+        + #""fileType":"TEXT","creator":"ttxt"}"#
+
+    // modified is a Mac epoch second past 2^31. It is here because
+    // `long` is 32 bits signed on that toolchain, so this field is one
+    // of the two that come out NEGATIVE if the unsigned append is ever
+    // lost — and a negative date decodes fine and lands a file in 1904.
+    static let sendOfferMacBinary =
+        #"{"type":"file.offer","id":4,"name":"App","path":"","#
+        + #""container":"macbinary","bytes":4,"fileType":"APPL","#
+        + #""creator":"MACS","modified":2952790016}"#
+
+    static let sendBegin = #"{"type":"file.begin","id":7,"transfer":9,"#
+        + #""name":"Report","container":"data","bytes":300}"#
+
+    // 3419628326 is 0xCBF43926, above the signed-long boundary for the
+    // same reason fileDoneOK uses it: a lost unsigned append is a
+    // checksum mismatch reported against a file that arrived perfectly.
+    static let sendEndOK = #"{"type":"file.end","id":7,"transfer":9,"#
+        + #""ok":true,"sendMs":42,"crc32":3419628326}"#
+
+    // No crc32, and that is the assertion. A checksum over a stream that
+    // stopped early is arithmetically correct about bytes nobody wanted,
+    // and a receiver comparing it reports corruption instead of the
+    // truncation that actually happened.
+    static let sendEndFailed =
+        #"{"type":"file.end","id":7,"transfer":9,"ok":false}"#
 
     static let byeNormal = #"{"type":"bye","code":"normal"}"#
     static let byeProtocolError = #"{"type":"bye","code":"protocol-error"}"#
