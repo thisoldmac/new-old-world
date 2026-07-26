@@ -223,9 +223,17 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   discarded every bulk frame to stay in frame sync. Receiving a push is
   **emulator-verified**: a 4 MB file onto a Quadra 800 at 352 KB/s, pulled
   back off the disk image byte-identical, with the guest's `help` still
-  answering in 0.05 s mid-transfer. Sending is the other direction and is
-  **tested only** — nothing has yet watched a byte leave this guest, on
-  metal or in an emulator, and that is the honest state of it.
+  answering in 0.05 s mid-transfer. Sending is now **emulator-verified**
+  too, as a round trip: a pattern is pushed to the guest, the guest is
+  asked to send that same file back, and the bytes the host still holds
+  are compared against the bytes that came back — 4 MB byte-identical,
+  and nothing in that comparison comes from the guest's own accounting.
+  Neither direction has run on the **PowerBook 180c**, which is the
+  machine that matters and the one whose numbers will differ.
+
+  The wire-sharing rule was checked where only a real socket can check
+  it: during a 4 MB send, 28 control requests were answered, none
+  dropped, worst 0.10 s.
 
   The send half is deliberately **not a file sender**. It streams from a
   byte-source interface — fill this buffer, say how many and whether you

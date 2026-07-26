@@ -102,9 +102,38 @@ existed, is already served by the host (`GuestListener.onAcceptOffer` /
 `finishInbound`) and is already sent by the PowerPC guest; that was
 verified against the schemas rather than assumed.
 
-**Builds and tested. NOT metal-verified, and not emulator-verified
-either** — unlike the receive half, nothing has yet watched a byte
-leave this guest. That is the single biggest thing missing below.
+**Emulator-verified, NOT metal-verified.** Measured on a Quadra 800
+under Mac OS 8.1 with 128 MB (`scripts/q800-68k`), driven by
+`Metal68KSendTests`. The real target is a 68030 under System 7.1 with
+4 MB. What carries over is correctness; what does not is every number.
+
+Each case pushes a known pattern to the guest, asks the guest to send
+that same file back, and compares the bytes **the host still holds**
+against the bytes that came back. Nothing in the comparison comes from
+the guest's own accounting — not its progress, not its CRC, not its
+byte count, because a sender marking its own work proves nothing.
+
+| Size | Result (emulator) |
+|---|---|
+| 0, 1, 4095, 4096, 4097, 8192 B | ok — the boundaries either side of one chunk |
+| 64 KB | ok, 313 KB/s |
+| 256 KB | ok, 1227 KB/s |
+| 1 MB | ok, 2198 KB/s |
+| **4 MB** | **ok, 2.5 s, 1648 KB/s, byte-identical** |
+
+Sending reads from a disk the emulator caches, so these rates are
+several times the receive direction's 352 KB/s and mean nothing about
+the 180c, where the read is a real one off a real disk.
+
+**The wire-sharing rule holds under real back-pressure**, which is the
+claim nothing off-metal can check: during a 4 MB send, 28 `help`
+requests were answered, **none dropped, worst 0.10 s**. That is the
+rule working — control drains before bulk, and a reply waits for the
+chunk in flight rather than for the transfer.
+
+The 0-byte case is worth its row: a zero-length source sends **no bulk
+frame at all**, begin then end, and the receiver closes out correctly
+rather than waiting for a stream that never comes.
 
 ### It is a byte-source sender, not a file sender
 
@@ -158,12 +187,22 @@ reason rather than subtracted silently.
 
 ### Open
 
-1. **Nothing has sent a byte.** Not on the 180c, not on the q800
-   emulator. `scripts/q800-68k` proved the receive half and can prove
-   this one the same way; that is the obvious next step and it was not
-   taken here. Every claim below the framing is therefore "tested",
-   never "works".
-2. **No MacBinary, so no application and no resource fork.** The data
+1. **Nothing has sent a byte on the 180c.** The emulator results above
+   say the code is correct; they say nothing about a 68030 with 4 MB,
+   whose MacTCP has already been observed to wedge silently. Reading a
+   4 MB file off a real disk while streaming it is exactly the shape
+   that behaves differently there.
+2. **Several guests can reach one listener, and one of them is not
+   yours.** Every QEMU guest on this Mac sees the host as `10.0.2.2`
+   under user-mode networking, so any session's VM can answer any
+   session's listener. This cost real time: the first run of
+   `Metal68KSendTests` reported `unknown-command` for `put` from a
+   guest that was simply another branch's build — and the refusal test
+   PASSED against it, because "unknown command" is also a refusal with
+   a reason. `requireTheBuildUnderTest()` now asks the connected guest
+   whether `help` lists `put` before believing anything it says. Run
+   with `NOW_METAL_PORT` set to something nothing else is dialling.
+3. **No MacBinary, so no application and no resource fork.** The data
    fork only — which is the contract's own default for a both-forks
    file, so it is legal rather than a shortcut, but it means a file
    whose content lives in its resource fork (most classic Mac
@@ -171,19 +210,19 @@ reason rather than subtracted silently.
    This is the natural SECOND implementation of `N68ByteSourceOps` —
    header, data fork, padding, resource fork, each in bands — and
    writing it is the real test of whether the interface earns its keep.
-3. **The source is limited to the application's own folder.** Same
+4. **The source is limited to the application's own folder.** Same
    weakness the receive half has and for the same reason: NOW-68K has
    no share root. `put` takes a leaf name, not a path.
-4. **One transfer at a time is enforced across both directions**, and
+5. **One transfer at a time is enforced across both directions**, and
    the answer to a second request is `busy` with a reason. Not
    exercised against a host that offers a push while a send is in
    flight — the check exists and has never been raced.
-5. **A contract gap, the mirror of the receive half's.** `FileEnd` has
+6. **A contract gap, the mirror of the receive half's.** `FileEnd` has
    no way to say "the sender's own source let it down", so
    `kN68SendSourceFailed`, `kN68SendShort` and `kN68SendLong` all
    render as `io-error` with the truth only in the reason. Same honest
    fix: an additive enum value.
-6. **The contract's operations index is asymmetric about this
+7. **The contract's operations index is asymmetric about this
    direction, and was before this change.** `guestServesFiles` lists
    `file.begin`/`end`/`progress`/`refuse`/`listing` but not
    `file.offer`; `file.accept` and `file.done` appear in **no**
@@ -191,7 +230,7 @@ reason rather than subtracted silently.
    The schemas are complete and correct — this is the index above them.
    Left alone rather than fixed in passing: it is a contract edit that
    touches how both halves are described and deserves its own pass.
-7. **`sendMs` is computed from `TickCount` at 1/60 s.** Fine for a
+8. **`sendMs` is computed from `TickCount` at 1/60 s.** Fine for a
    figure the contract types as advisory, but it is not milliseconds
    measured, it is ticks scaled.
 
