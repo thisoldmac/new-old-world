@@ -324,14 +324,15 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
 ## What does not work
 
 - **NOW-68K implements a small part of the contract.** `launch`, `quit`,
-  `help`, `ps`, `vprobe`, `screenshot`, `put`, `ls` and `process.list`,
-  plus receiving a file, sending one, listing a folder, capturing the
-  screen, and the keepalive; everything else — census, streams, the
-  process drive verbs, and the file family's PULL and MUTATIONS
-  (`file.get`, `file.move`, `file.trash`, `file.mkdir`) — answers
-  `unknown-command` or `refused`, which is the contract's own additive
-  answer, not a failure. It can be browsed, told to send a file, sent
-  one, and asked for its screen; it will not change the shape of its own
+  `help`, `ps`, `vprobe`, `screenshot`, `put`, `ls`, `cancel` and
+  `process.list`, plus receiving a file, sending one, listing a folder,
+  capturing the screen, cancelling a transfer in either direction, and
+  the keepalive; everything else — census, streams, the process drive
+  verbs, and the file family's PULL and MUTATIONS (`file.get`,
+  `file.move`, `file.trash`, `file.mkdir`) — answers `unknown-command`
+  or `refused`, which is the contract's own additive answer, not a
+  failure. It can be browsed, told to send a file, sent one, asked for
+  its screen, and told to stop; it will not change the shape of its own
   disk on request. **Receiving** decodes MacBinary, so an application and
   its resource fork can cross inbound; **sending** does not, so outbound
   is the data fork only. Every one of those it does serve is reachable
@@ -378,6 +379,24 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   cost of an indexed catalog read at a deep cursor is **unmeasured** on
   either machine, so a folder of a thousand entries may page slowly in a
   way nothing here has watched.
+- **A transfer on NOW-68K can now be abandoned**, which until 2026-07-26
+  it could not. `file.cancel` was in the contract and in the host and in
+  the PowerPC guest, and nowhere in NOW-68K's dispatch: the guest
+  answered `not-implemented` and went on holding the transfer. Because
+  the lane is one transfer wide across both directions, and because
+  nothing near a transfer carries a timer — the only clock is a 65 s
+  no-traffic watchdog that the guest's own keepalive keeps from ever
+  firing — a host that changed its mind left a guest that refused every
+  later transfer for the life of the connection, while answering pings
+  normally. Both directions now honour a cancel within one 4 KB chunk of
+  its arrival, release the lane, and delete the staging file; that last
+  claim is checked against the disk image rather than the guest's own
+  report. It is also a **`cancel` verb**, on the guest's own console and
+  over the wire from this side's console — one implementation, both
+  faces, listed in `help` — because the person who most needs to end a
+  transfer is standing at a machine whose host has stopped answering,
+  which is exactly when the wire is not the face available.
+  Emulator-verified, not metal-verified.
 - **The two directions briefly disagreed about where files live**, and
   that is worth knowing because of what missed it. Receiving landed on
   the Desktop while sending read from the application's own folder — a

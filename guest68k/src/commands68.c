@@ -578,6 +578,8 @@ static const N68CommandDoc k_docs[] = {
       "screenshot [--depth 8] [--no-save]" },
     { "put", "send a file from this Mac to the host", "put <file name>" },
     { "ls", "list a folder in this Mac's share", "ls [folder]" },
+    { "cancel", "stop the file transfer in flight, either direction",
+      "cancel (no arguments)" },
     { NULL, NULL, NULL }
 };
 
@@ -825,6 +827,34 @@ static void run_ls(const char *target, N68CmdRows *out)
                       more, out);
 }
 
+/* The other end of `put`, and of a push arriving - one verb for both,
+ * because the lane is one transfer wide and there is only ever one thing
+ * to stop. wire68.c owns the doing; this is a renderer.
+ *
+ * It takes no argument on purpose. The wire's file.cancel names a
+ * transfer id, and a person has no way to know one and no second
+ * transfer to confuse it with - asking them for it would be asking for
+ * a number the machine already knows.
+ *
+ * A quiet machine answers ok:false "nothing-to-cancel" rather than
+ * pretending. Typing `cancel` at a machine that is not transferring
+ * anything is a reasonable thing to have done - usually because the
+ * last one already ended - and the useful reply says so. */
+static void run_cancel(N68CmdResult *res)
+{
+    char what[96];
+
+    if (!now68k_wire_cancel_transfer(what, (long)sizeof what)) {
+        n68_cmdresult_set_error(res, "nothing-to-cancel",
+                                "no file is moving in either direction");
+        return;
+    }
+    res->ok = 1;
+    bounded_strcpy(res->key, sizeof res->key, "cancel");
+    bounded_strcpy(res->label, sizeof res->label, "cancel");
+    bounded_strcpy(res->text, sizeof res->text, what);
+}
+
 /* ---- dispatch --------------------------------------------------------------- */
 
 const N68CmdRows *now68k_commands_run_rows(const char *name,
@@ -881,6 +911,10 @@ int now68k_commands_run(const char *name, const char *target,
     }
     if (strcmp(name, "put") == 0) {
         run_put(target, res);
+        return 1;
+    }
+    if (strcmp(name, "cancel") == 0) {
+        run_cancel(res);
         return 1;
     }
     return 0;

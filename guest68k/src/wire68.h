@@ -192,6 +192,26 @@ void now68k_wire_put_where(char *out, long cap);
  * up in now68k_wire_send_status(). */
 int now68k_wire_send_file(const char *leaf, char *why, long why_cap);
 
+/* ---- ending one early ------------------------------------------------
+ *
+ * Abandons whatever transfer is in flight, in EITHER direction: the
+ * receive half discards its staging file and answers file.done
+ * cancelled, the send half stops producing and says file.end ok:false.
+ * Either way the lane is free when this returns.
+ *
+ * Returns 1 if there was something to stop, 0 if the machine was
+ * already quiet - which is a refusal for a caller to report, not an
+ * error. `what` takes a short phrase naming what was stopped, for
+ * rendering; pass NULL and 0 if nobody is going to read it.
+ *
+ * THE SAME BODY serves the wire's file.cancel. It is published here
+ * because a capability reachable only over the wire is half a feature
+ * (docs/command-parity.md), and this is the one where that bites
+ * hardest: the person who most needs to end a transfer is standing at
+ * a machine whose host has stopped answering, and the wire is the face
+ * they do not have. */
+int now68k_wire_cancel_transfer(char *what, long cap);
+
 /* What the console's face on the send half reads. A cheap copy of
  * bookkeeping this module already keeps, like N68PutStatus above. */
 typedef struct {

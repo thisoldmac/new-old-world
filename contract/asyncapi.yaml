@@ -1669,6 +1669,32 @@ components:
         type: object
         properties:
           put: { type: string }
+    cancel:
+      description: >
+        Abandon the transfer in flight, in whichever direction it is
+        going. The same thing file.cancel does over the wire, and it
+        runs the same code — this declares a WAY IN to that message,
+        not a second mechanism, exactly as `put` does for file.offer.
+
+        Declared for the same reason `put` is, and it is the sharper
+        case. The lane is one transfer wide across both directions, so
+        a transfer nobody can end is a machine that will not transfer
+        anything again; and the person most likely to need that is
+        standing at a classic Mac whose host has stopped answering,
+        which is precisely when the wire is not the face available.
+        NOW-68K answers it; the PowerPC guest reaches the same
+        capability from its own UI and from file.cancel, and declares
+        no verb.
+
+        Answers ok:false with code "nothing-to-cancel" when no transfer
+        is in flight. That is a refusal, not a protocol error: asking a
+        quiet machine to stop is a reasonable thing to have done, and
+        the honest answer is that there was nothing to stop.
+      args: {}
+      output:
+        type: object
+        properties:
+          cancel: { type: string }
     putstat:
       description: >
         Where the last file the guest RECEIVED spent its time: bytes,

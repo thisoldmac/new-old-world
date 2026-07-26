@@ -546,6 +546,76 @@ static void test_the_source_is_closed_on_every_ending(void)
     }
 }
 
+/* THE ABANDONMENT CASE, and the one that cost the most to find.
+ *
+ * A receiver that gives up mid-stream says so with file.done - the host
+ * does exactly that (GuestListener.swift, failInboundStream sends
+ * file.cancel AND file.done before a single byte more arrives). Until
+ * this test existed, n68_puttx_done() acted only in kN68SendEnded, so a
+ * file.done that arrived while bytes were still going out was DROPPED,
+ * the sender streamed the rest of the file into a receiver that had
+ * stopped listening, and then parked in kN68SendEnded waiting for a
+ * file.done that had already come and gone. The lane is one transfer
+ * wide, so that park refused every future transfer in BOTH directions
+ * for the life of the connection - and wire68.c's 65 s no-traffic
+ * watchdog never fired to break it, because the guest's own keepalive
+ * ping keeps the connection audibly alive.
+ *
+ * A receiver's file.done is FINAL whenever it arrives. Waiting for our
+ * own file.end first is what wedged the lane. */
+static void test_a_receiver_that_gives_up_midstream_frees_the_lane(void)
+{
+    N68SendTx tx;
+    FakeSrc s;
+    unsigned char frame[kN68SendFrameCap];
+    N68SendCode why = kN68SendOK;
+
+    arm(&tx, &s, 40000, 40000);
+    check_true("a frame goes out before the receiver gives up",
+               n68_puttx_next_frame(&tx, frame, (long)sizeof frame, &why) > 0);
+    check_true("and the sender is mid-stream",
+               tx.state == kN68SendSending);
+
+    n68_puttx_done(&tx, 7, 0, "io-error");
+
+    check_true("a file.done mid-stream ends the transfer",
+               tx.state == kN68SendIdle);
+    check_long("and closes the source", (long)s.closes, 1);
+    check_true("the outcome is remembered as a failure", tx.last_ok == 0);
+    check_str("with the receiver's own word", tx.last_code, "io-error");
+}
+
+/* The other half of the same case: the host cancels rather than reports.
+ * Both have to leave the lane free, and the code has to say which one
+ * happened - "the connection went away" was the only word available for
+ * a cancellation before, and it is a lie in the log when the connection
+ * is fine and the host simply stopped wanting the file. */
+static void test_a_cancel_midstream_frees_the_lane(void)
+{
+    N68SendTx tx;
+    FakeSrc s;
+    unsigned char frame[kN68SendFrameCap];
+    N68SendCode why = kN68SendOK;
+
+    arm(&tx, &s, 40000, 40000);
+    check_true("a frame goes out before the cancel",
+               n68_puttx_next_frame(&tx, frame, (long)sizeof frame, &why) > 0);
+
+    n68_puttx_cancel(&tx, kN68SendCancelled);
+
+    check_true("a cancel mid-stream ends the transfer",
+               tx.state == kN68SendIdle);
+    check_long("and closes the source", (long)s.closes, 1);
+    check_str("the contract's word for it", n68_puttx_code_word(kN68SendCancelled),
+              "cancelled");
+    check_str("and it is remembered as one", tx.last_code, "cancelled");
+    /* Distinct from a dropped connection: same wire word, different
+       reason, and the reason is what a human reads in the log. */
+    check_true("a cancel does not read as a dead link",
+               strcmp(n68_puttx_code_reason(kN68SendCancelled),
+                      n68_puttx_code_reason(kN68SendGone)) != 0);
+}
+
 /* A reply that arrives for a transfer that is over is late, not wrong.
  * Acting on it would start a transfer with no source behind it. */
 static void test_stale_replies_are_ignored(void)
@@ -645,6 +715,8 @@ int main(void)
 
     test_a_second_transfer_is_refused_and_takes_nothing();
     test_the_source_is_closed_on_every_ending();
+    test_a_receiver_that_gives_up_midstream_frees_the_lane();
+    test_a_cancel_midstream_frees_the_lane();
     test_stale_replies_are_ignored();
     test_names_that_cannot_go_on_a_wire();
     test_a_bad_name_takes_no_source();

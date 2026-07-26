@@ -114,7 +114,8 @@ typedef enum {
     kN68SendLong,         /* the source offered more than `total` bytes */
     kN68SendBadName,      /* the leaf name is not one we will put on a wire */
     kN68SendRefused,      /* the host said file.refuse */
-    kN68SendGone          /* the connection went away mid-transfer */
+    kN68SendGone,         /* the connection went away mid-transfer */
+    kN68SendCancelled     /* the host said file.cancel, and meant this one */
 } N68SendCode;
 
 typedef struct {

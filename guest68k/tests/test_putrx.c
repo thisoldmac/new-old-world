@@ -657,6 +657,66 @@ static void test_a_failed_transfer_leaves_nothing_behind(void)
     disk_free(&disk);
 }
 
+/* THE ABANDONED TRANSFER, from the receiving end.
+ *
+ * A sender that stops sending says nothing at all: there is no message
+ * for "I have lost interest", and file.end never arrives. This receiver
+ * has NO timer of its own - the only clock anywhere near it is
+ * wire68.c's 65 s no-traffic watchdog, which is a property of the
+ * CONNECTION and never fires while the guest's own keepalive ping is
+ * being answered. So an abandoned push holds the lane, and its staging
+ * file, until something cancels it.
+ *
+ * That "something" is the point of this test. It is the only exit, and
+ * before file.cancel was dispatched (wire68.c) nothing on a live
+ * connection could reach it - which turned a host that changed its mind
+ * into a guest that refused every transfer in either direction until it
+ * was relaunched. */
+static void test_an_abandoned_transfer_holds_the_lane_until_cancelled(void)
+{
+    FakeDisk disk;
+    N68PutRx rx;
+    N68PutOffer offer;
+    static unsigned char run[4096];
+
+    disk_init(&disk, 65536);
+    n68_putrx_init(&rx, g_batch, (long)sizeof g_batch, &kFakeOps, &disk);
+    offer_init(&offer, 65536);
+    check_code("the offer is accepted", n68_putrx_offer(&rx, &offer),
+               kN68PutOK);
+    fill_pattern(run, 0, 4096);
+    check_code("some bytes arrive", n68_putrx_data(&rx, run, 4096),
+               kN68PutOK);
+
+    /* ...and then nothing. No end, no error, no timer. */
+    check("an abandoned transfer stays active", rx.active != 0);
+    check("its staging file is still there", !disk.discarded);
+    {
+        N68PutOffer second;
+
+        offer_init(&second, 1024);
+        second.id = offer.id + 1;
+        check_code("and it refuses the next transfer, busy",
+                   n68_putrx_offer(&rx, &second), kN68PutBusy);
+    }
+
+    n68_putrx_cancel(&rx);
+
+    check("cancelling discards the staging file", disk.discarded != 0);
+    check("it never took the final name", !disk.finished);
+    check("and the lane is free again", rx.active == 0);
+    {
+        N68PutOffer third;
+
+        offer_init(&third, 1024);
+        third.id = offer.id + 2;
+        check_code("so the next transfer is accepted",
+                   n68_putrx_offer(&rx, &third), kN68PutOK);
+        n68_putrx_cancel(&rx);
+    }
+    disk_free(&disk);
+}
+
 /* Bulk arriving with nothing expecting it is an ordinary event, not an
  * error: a frame already in flight when a transfer was abandoned has to
  * land somewhere, and the reader stays in frame sync regardless. */
@@ -1333,6 +1393,7 @@ int main(void)
     test_the_checksum_covers_the_whole_envelope();
     test_a_bad_envelope_is_refused();
     test_a_failed_transfer_leaves_nothing_behind();
+    test_an_abandoned_transfer_holds_the_lane_until_cancelled();
     test_progress_is_never_coarser_than_a_host_frame();
     test_the_hosts_sender_never_parks_forever();
     test_four_megabytes_arrive_byte_identical();
