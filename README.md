@@ -258,9 +258,41 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   mid-session. No contract schema changed: the whole family already
   existed and the host already served it.
 
+- **A host can see what is on NOW-68K** — `file.list` / `file.listing`,
+  and `ls` at either console. The Files module now has something to show
+  against a 68K guest, which until this landed it did not. No contract
+  schema changed: the messages, the host's decoder and the PowerPC
+  guest's answer all already existed, so this was the guest's share of a
+  family and nothing else.
+
+  **Emulator-verified** on a Quadra 800, and the case worth naming is the
+  one that could not be tested any other way: the test PUSHES two files
+  and then asks the guest what is in its share, so browsing from a
+  different root than receiving fails immediately. That exact bug cost a
+  merge to find one direction earlier, and it is invisible to every test
+  that does not touch a real disk. A twelve-file folder also walks across
+  several pages losing nothing and duplicating nothing, and a folder that
+  is not there comes back as a `file.refuse` with a reason rather than as
+  a fifteen-second timeout.
+
+  Pages are **small** here, deliberately: a 1024-byte control payload
+  against the PowerPC guest's 4 KB, so a listing is assembled one page at
+  a time and never as a buffer a 384 KB partition cannot hold. In the
+  worst case — thirty-one accented characters in a name, each six bytes
+  of `\uXXXX` — a page carries one entry, which is paging working rather
+  than failing. `more` and `cursor` are the only things that say whether
+  a folder ended.
+
+  `ls` is the fourth NOW-68K command whose answer is a table, and the
+  first that is not an exemption:
+  [docs/command-parity.md](docs/command-parity.md) had already ruled that
+  a fourth must be a result type holding rows rather than another special
+  case, so the console reaches it by delegating and has no `ls` of its
+  own. Nothing has browsed the **PowerBook 180c**.
+
 - **A dev loop that does not need a Macintosh.** Neither guest can run its
   own suite, so the pure-C halves compile under the host `cc`:
-  `scripts/test-native` runs all 27 across both guests in one command, and
+  `scripts/test-native` runs all 28 across both guests in one command, and
   a test file missing from its manifest fails the run — a test nobody runs
   reads as coverage in a directory listing and proves nothing. The metal
   gates now **fail rather than skip** once a human has opted into a metal
@@ -273,13 +305,14 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
 ## What does not work
 
 - **NOW-68K implements a small part of the contract.** `launch`, `quit`,
-  `help`, `ps`, `vprobe`, `put` and `process.list`, plus receiving and
-  sending a file and the keepalive; everything else — capture, census,
-  streams, the process drive verbs, and the half of the file family that
-  SERVES a host (`file.list`, `file.get`, `file.move`, `file.trash`) —
-  answers `unknown-command` or `refused`, which is the contract's own
-  additive answer, not a failure. It can be told to send a file and can be
-  sent one; it cannot yet be browsed. **Receiving** decodes MacBinary, so
+  `help`, `ps`, `vprobe`, `put`, `ls` and `process.list`, plus receiving
+  and sending a file, listing one, and the keepalive; everything else —
+  capture, census, streams, the process drive verbs, and the file
+  family's PULL and MUTATIONS (`file.get`, `file.move`, `file.trash`,
+  `file.mkdir`) — answers `unknown-command` or `refused`, which is the
+  contract's own additive answer, not a failure. It can be browsed, told
+  to send a file, and sent one; it will not change the shape of its own
+  disk on request. **Receiving** decodes MacBinary, so
   an application and its resource fork can cross inbound; **sending** does
   not, so outbound is the data fork only. Every one of
   those it does serve is reachable from
@@ -305,6 +338,15 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   rather than a file, so a screen capture can feed the pipe in bands
   instead of buffering 300 KB against a 384 KB partition; a file is
   simply its first implementation.
+- **Browsing NOW-68K is emulator-verified, not metal-verified**, and it
+  has two limits worth knowing before pointing a Files module at it. A
+  path with a non-ASCII character does not resolve: this guest has no
+  UTF-8-to-MacRoman decoder, so a folder a person can see in the Finder
+  answers `not-found` — truthful, and the same property the receive half
+  already has, but a real gap the PowerPC guest does not share. And the
+  cost of an indexed catalog read at a deep cursor is **unmeasured** on
+  either machine, so a folder of a thousand entries may page slowly in a
+  way nothing here has watched.
 - **The two directions briefly disagreed about where files live**, and
   that is worth knowing because of what missed it. Receiving landed on
   the Desktop while sending read from the application's own folder — a

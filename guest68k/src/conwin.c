@@ -100,6 +100,16 @@ enum { kInputCap = kN68HistoryLineCap };
  * so the console never shows a result the wire would have shown in full. */
 enum { kRenderCap = 512 };
 
+/* One rendered TABLE result (N68CmdRows): every row's label and value at
+ * their full capacity, plus the CR that separates them. Derived from the
+ * struct's own caps rather than guessed, so growing the table cannot
+ * quietly start truncating the console's copy of a listing the wire would
+ * have sent in full. The value column is padded to 20, but a longer label
+ * pushes its value right rather than being cut, so the label's own cap is
+ * the bound and not the column. */
+enum { kRowsRenderCap =
+           kN68CmdRowsMax * (kN68CmdRowLabelCap + kN68CmdRowValueCap + 1) };
+
 /* Widest row array any single draw uses - a ~208px output pane at Monaco 9
  * is about 17 rows; see the row math in draw_output, which never indexes
  * past `shown`. */
@@ -602,6 +612,34 @@ static void submit_line(void)
      * gives MenuSelect and TrackGoAway, and for the same reason. It does
      * NOT make the command itself pump; nothing here can. */
     wire_idle();
+
+    /* The table-shaped commands, reached by DELEGATION and not by a fourth
+     * strcmp of this file's own. `ls` is a verb in commands68.c's table
+     * that this window never names: it asks whether the table seam claims
+     * the word, and renders whatever comes back. That is the same
+     * anti-drift property now68k_commands_run buys for `launch` - a verb
+     * added there reaches this console the moment it exists - and it is why
+     * docs/command-parity.md's ruling was a result type rather than a
+     * fourth exemption (commands68.h). */
+    {
+        const N68CmdRows *rows = now68k_commands_run_rows(name, target);
+
+        if (rows != NULL) {
+            char rendered[kRowsRenderCap];
+
+            wire_idle();
+            pos = n68_cmdrows_render_text(rows, rendered,
+                                          (long)sizeof rendered);
+            if (pos > 0) {
+                con_out_block(rendered, pos);
+            } else {
+                now68k_log("conwin: table did not render");
+                con_out("! render-failed: the table did not fit this pane");
+            }
+            return;
+        }
+    }
+
     if (!now68k_commands_run(name, target, &res)) {
         /* Answered here in this window's own vocabulary, while wire68.c
          * answers the same 0 with the contract's ok=false/"unknown-command"

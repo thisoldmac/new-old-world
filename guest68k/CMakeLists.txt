@@ -41,6 +41,8 @@ add_application(now68k-guest
     src/n68_putfile.c
     src/n68_puttx.c
     src/n68_filesrc.c
+    src/n68_fileenum.c
+    src/n68_filelist.c
     src/n68_proclist.c
     src/connfields.c
     src/n68_devsettings.c

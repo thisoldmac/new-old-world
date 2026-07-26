@@ -350,3 +350,200 @@ long n68_cmdresult_render_text(const N68CmdResult *r, char *out, long cap)
     out[pos] = '\0';
     return pos;
 }
+
+/* ---- the table-shaped result ---------------------------------------------
+ *
+ * Everything below renders an N68CmdRows. It shares this file with the
+ * one-row renderers deliberately: the two shapes have to agree on the
+ * envelope bytes, the escaping and the "! code: message" failure line, and
+ * the only arrangement that keeps them agreeing is one where a change to
+ * either is visible while editing the other. */
+
+void n68_cmdrows_init(N68CmdRows *r)
+{
+    if (r == NULL) {
+        return;
+    }
+    memset(r, 0, sizeof *r);
+}
+
+int n68_cmdrows_add(N68CmdRows *r, const char *label, const char *value)
+{
+    N68CmdRow *row;
+
+    if (r == NULL || r->count >= kN68CmdRowsMax) {
+        return 0;
+    }
+    row = &r->rows[r->count];
+    bounded_strcpy(row->label, (long)sizeof row->label, label);
+    bounded_strcpy(row->value, (long)sizeof row->value, value);
+    ++r->count;
+    return 1;
+}
+
+void n68_cmdrows_set_error(N68CmdRows *r, const char *code,
+                            const char *message)
+{
+    if (r == NULL) {
+        return;
+    }
+    /* Rows already added are dropped rather than left behind the error.
+     * A reply carrying both a table and a failure is one a reader has to
+     * guess about, and the guess that reads the table is the wrong one. */
+    n68_cmdrows_init(r);
+    r->ok = 0;
+    bounded_strcpy(r->code, (long)sizeof r->code, code);
+    bounded_strcpy(r->text, (long)sizeof r->text, message);
+}
+
+/* One row's bytes, appended whole or not at all. `pos` is restored by the
+ * caller on a 0 return - numfmt.h leaves it unspecified on failure, so it
+ * cannot be trusted to have stopped anywhere in particular. */
+static int append_row_json(const N68CmdRow *row, int first,
+                            char *out, long avail, long *pos)
+{
+    int ok = 1;
+
+    ok = ok && now68k_fmt_append_str(out, avail, pos, first ? "[\"" : ",[\"");
+    ok = ok && now68k_json_append_escaped(out, avail, pos, row->label);
+    ok = ok && now68k_fmt_append_str(out, avail, pos, "\",\"");
+    ok = ok && now68k_json_append_escaped(out, avail, pos, row->value);
+    ok = ok && now68k_fmt_append_str(out, avail, pos, "\"]");
+    return ok;
+}
+
+long n68_cmdrows_render_json(const N68CmdRows *r, long id,
+                              char *out, long cap)
+{
+    long avail = cap > 0 ? cap - 1 : 0;   /* one byte held for the NUL */
+    long pos = 0;
+    int ok = 1;
+    int i;
+    int emitted = 0;
+
+    if (r == NULL) {
+        if (cap > 0) {
+            out[0] = '\0';
+        }
+        return 0;
+    }
+    if (!r->ok) {
+        /* A failure is one row's worth of information whatever shape the
+         * success would have taken, so it is rendered by the renderer that
+         * already exists rather than by a second copy of the error
+         * envelope. The two shapes cannot disagree about a failure if only
+         * one of them can express one. */
+        N68CmdResult flat;
+
+        n68_cmdresult_set_error(&flat, r->code, r->text);
+        return n68_cmdresult_render_json(&flat, id, out, cap);
+    }
+
+    ok = ok && now68k_fmt_append_str(out, avail, &pos,
+                                      "{\"type\":\"command.result\",\"id\":");
+    ok = ok && now68k_fmt_append_long(out, avail, &pos, id);
+    ok = ok && now68k_fmt_append_str(out, avail, &pos,
+                                      ",\"ok\":true,\"output\":{\"");
+    ok = ok && now68k_json_append_escaped(out, avail, &pos, r->key);
+    ok = ok && now68k_fmt_append_str(out, avail, &pos, "\":[");
+    if (!ok) {
+        if (cap > 0) {
+            out[0] = '\0';
+        }
+        return 0;
+    }
+
+    for (i = 0; i < r->count; ++i) {
+        long saved = pos;
+        /* Room for the tail always, and for the truncation note as well
+         * whenever a row would be left over. Checked BEFORE committing to
+         * this row, because a table that fills the buffer with rows and
+         * then cannot say what it dropped is the silent-truncation failure
+         * this whole shape exists to prevent. */
+        long reserve = NOW68K_CMDROWS_TAIL_MAX
+                       + ((i + 1 < r->count) ? NOW68K_CMDROWS_NOTE_MAX : 0);
+
+        if (!append_row_json(&r->rows[i], emitted == 0, out, avail, &pos)
+            || pos > avail - reserve) {
+            pos = saved;
+            break;
+        }
+        ++emitted;
+    }
+
+    if (emitted < r->count) {
+        ok = ok && now68k_fmt_append_str(out, avail, &pos,
+                                          emitted == 0 ? "[\"...\",\""
+                                                       : ",[\"...\",\"");
+        ok = ok && now68k_fmt_append_long(out, avail, &pos,
+                                           (long)(r->count - emitted));
+        ok = ok && now68k_fmt_append_str(out, avail, &pos,
+                                          " more not shown\"]");
+    }
+    ok = ok && now68k_fmt_append_str(out, avail, &pos, "]}}");
+    if (!ok || pos <= 0) {
+        /* Unreachable at NOW68K_CMDROWS_MIN_CAP - the reserve above is what
+         * makes it so - but a caller blocked on a command.result must never
+         * be left with a half-built buffer it might try to send. */
+        if (cap > 0) {
+            out[0] = '\0';
+        }
+        return 0;
+    }
+    out[pos] = '\0';
+    return pos;
+}
+
+long n68_cmdrows_render_text(const N68CmdRows *r, char *out, long cap)
+{
+    /* The column the value starts in. Wide enough for most names on this
+     * machine and narrow enough that a value still has room on a 58-column
+     * pane; a longer label pushes its value right rather than being cut. */
+    enum { kValueColumn = 20 };
+    long avail = cap > 0 ? cap - 1 : 0;
+    long pos = 0;
+    int i;
+
+    if (r == NULL || avail <= 0) {
+        if (cap > 0) {
+            out[0] = '\0';
+        }
+        return 0;
+    }
+    if (!r->ok) {
+        N68CmdResult flat;
+
+        n68_cmdresult_set_error(&flat, r->code, r->text);
+        return n68_cmdresult_render_text(&flat, out, cap);
+    }
+
+    for (i = 0; i < r->count; ++i) {
+        long rollback = pos;      /* includes this line's separator */
+        long line_start;
+
+        if (i > 0) {
+            /* CR, not LF, for the reason the one-row renderer above gives:
+             * n68_linesplit takes both and everything else this guest
+             * writes is CR. */
+            if (pos >= avail) {
+                break;
+            }
+            out[pos++] = '\r';
+        }
+        line_start = pos;         /* column 0 of the line itself */
+        if (!append_text_safe(out, avail, &pos, r->rows[i].label)) {
+            pos = rollback;
+            break;
+        }
+        while (pos - line_start < kValueColumn && pos < avail) {
+            out[pos++] = ' ';
+        }
+        if (!append_text_safe(out, avail, &pos, r->rows[i].value)) {
+            pos = rollback;
+            break;
+        }
+    }
+
+    out[pos] = '\0';
+    return pos;
+}

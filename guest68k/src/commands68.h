@@ -75,16 +75,22 @@
  * wire and in the console at the same moment, which is the property this
  * split exists to buy.
  *
- * TWO commands do not fit that seam and answer inside dispatch instead:
- * `help` (a row per command) and `ps` (a row per process). An N68CmdResult
- * holds ONE row, so neither could pass through it, and widening the struct
- * to a row array to preserve the shape would cost this guest's 384 KB
- * partition more than the property is worth here. What makes the exception
- * safe is that neither owns an implementation: help renders k_docs, which
- * the console renders too, and ps renders proc_list_rows(), which the
- * console and process.listing also render. Anything with a SINGLE row's
- * worth to say goes through now68k_commands_run, and a third exception
- * should be argued for, not assumed (docs/command-parity.md). */
+ * THREE commands do not fit that seam and answer inside dispatch instead:
+ * `help` (a row per command), `ps` (a row per process) and `vprobe` (a row
+ * per measurement). An N68CmdResult holds ONE row, so none could pass
+ * through it. What makes the exceptions safe is that none owns an
+ * implementation: help renders k_docs, which the console renders too, ps
+ * renders proc_list_rows(), and vprobe borrows the one measurement table
+ * rather than measuring twice.
+ *
+ * THERE IS NO FOURTH. docs/command-parity.md's ruling on the third was that
+ * "three row-array commands is no longer a special case, it is a shape: the
+ * fix is a result type that holds rows" - so `ls` goes through
+ * now68k_commands_run_rows and N68CmdRows (n68_cmdresult.h) instead, which
+ * is the same run-then-render seam with a different renderer. The three
+ * above are unchanged in that pass; the shape now exists for them to move
+ * into, which is what was missing. Anything with a SINGLE row's worth to
+ * say still goes through now68k_commands_run. */
 
 /* THE size of a command.result on this guest, stated once, here, for both
  * the code that BUILDS one and the code that SENDS it.
@@ -270,5 +276,33 @@ int now68k_commands_dispatch(const char *name, const char *target, long id,
  * around this call the way main.c pumps around MenuSelect - see conwin.c. */
 int now68k_commands_run(const char *name, const char *target,
                          N68CmdResult *res);
+
+/* The same seam for a command whose answer is a TABLE, and the reason the
+ * exemption list did not grow a fourth name.
+ *
+ * `help`, `ps` and `vprobe` answer inside now68k_commands_dispatch because
+ * an N68CmdResult holds one row. docs/command-parity.md's ruling is that a
+ * fourth must not be another arm but a result type that holds rows, and
+ * N68CmdRows (n68_cmdresult.h) is it. `ls` is the first command through
+ * here: conwin.c calls this before now68k_commands_run and renders whatever
+ * it gets as text, so a table verb added to this function reaches the
+ * console the moment it exists - which is the property the one-row seam
+ * already buys and the three exemptions do not.
+ *
+ * Returns a pointer to the filled table, or NULL if `name` is not one of
+ * them - the same "not mine, build your own unknown-command reply"
+ * additivity contract the two functions above use.
+ *
+ * LENT, not owned, exactly like now68k_commands_vprobe's table and for the
+ * same reason: ~1.8 KB is too much for a stack frame the command path can
+ * re-enter (proc68.c's DEFECT 3 note has the measurement). Valid until the
+ * next call, which is all any caller needs - both faces render immediately
+ * and neither keeps the pointer.
+ *
+ * NOT free of TIME: `ls` reads a folder's catalog. Bounded by the page (see
+ * n68_fileenum.h on why that needs no pump), but a caller inside an event
+ * loop should treat it the way it treats now68k_commands_run. */
+const N68CmdRows *now68k_commands_run_rows(const char *name,
+                                            const char *target);
 
 #endif /* NOW68K_COMMANDS68_H */

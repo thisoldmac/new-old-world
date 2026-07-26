@@ -132,6 +132,8 @@ run_c guest68k test_putrx.c        "" src/n68_putrx.c src/n68_crc32.c \
       src/json_scan.c
 run_c guest68k test_puttx.c        "" src/n68_puttx.c src/n68_crc32.c \
       src/n68_cmdresult.c src/numfmt.c src/frame.c
+run_c guest68k test_filelist.c     "" src/n68_filelist.c src/n68_cmdresult.c \
+      src/numfmt.c
 
 # Every test file must be in the manifest above. Grepping this script for the
 # filename is crude and deliberate: it is the check that cannot itself go

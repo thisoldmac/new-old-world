@@ -2,11 +2,13 @@
  * wire68.h - the NOW protocol client for NOW-68K.
  *
  * Speaks a SUBSET of contract revision 1 over net.h: dial, hello handshake,
- * 30 s ping keepalive, frame read/write, the launch/quit commands, and
- * process.list. It does not implement capture, files, streams, the process
- * drive verbs or the software listing; the contract's answer to an
- * unimplemented message is an error reply, not silence, so the host fails
- * fast rather than waiting out a watchdog.
+ * 30 s ping keepalive, frame read/write, the commands, process.list, and
+ * the file family's push, pull and browse halves (file.offer/begin/end
+ * both ways, and file.list). It does not implement capture, streams, the
+ * process drive verbs, the software listing, or the file family's
+ * mutations - file.get, file.move, file.trash and file.mkdir; the
+ * contract's answer to an unimplemented message is an error reply, not
+ * silence, so the host fails fast rather than waiting out a watchdog.
  *
  * This is deliberately NOT a port of the PowerPC guest's wire.c. That file is
  * 4638 lines because the whole command surface lives inside it; only about

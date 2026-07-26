@@ -28,11 +28,14 @@
  * NOT A SHARE, and deliberately not gated. The contract's `path` still
  * resolves relative to this root, so a host may name a subfolder and
  * nothing stops it reaching one. That is the right amount of structure
- * for now - the browse/ls verbs that would make choosing a destination
- * meaningful do not exist yet, and a boundary drawn before there is
- * anything to browse would be a guess dressed as a policy. When they
- * land, now68k_desktop_folder() is the single place the root is
- * decided, for both directions.
+ * for now - a boundary drawn before there is anything to browse would be
+ * a guess dressed as a policy.
+ *
+ * There IS something to browse now: file.list and `ls` land here too
+ * (n68_fileenum.h), which is why now68k_desktop_folder() is published.
+ * Three directions, one root, decided in one place - and they share
+ * n68_putrx_path_ok() for what a path may say, so a folder a host can
+ * list is a folder it can also be written into.
  *
  * ---- Bytes land under a temporary name -------------------------------
  *

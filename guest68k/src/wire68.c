@@ -40,6 +40,10 @@
  *                                                 kWireOutQueueDepth
  *                                                 comment below for the
  *                                                 arithmetic behind both)
+ *   g_file_rows[16]        16 * ~56        = 896  bytes  (one file.list
+ *                                                 page; see its own comment
+ *                                                 for why it is not on the
+ *                                                 stack)
  *   g_proc_rows[48]        48 * ~56       = 2688  bytes  (one process.list
  *                                                 snapshot; see its own
  *                                                 comment for why it is
@@ -79,6 +83,20 @@
  * saying plainly: the partition is preferred == minimum on a 4 MB
  * machine (guest68k.r), so there is no headroom to borrow, and the next
  * feature of this size needs the budget looked at rather than assumed.
+ *
+ * Measured whole-application delta for the BROWSE half (this file's
+ * g_file_rows and handler, n68_fileenum.c, n68_filelist.c, and the rows
+ * result type in n68_cmdresult.c), m68k-apple-macos-size, -O2, against
+ * bb54ab3:
+ *     text 138328 -> 145064  (+6736)
+ *     data  13040 ->  13648   (+608)
+ *     bss   67224 ->  69928  (+2704)
+ * so +10048 bytes, about 2.6% of the partition. The bss is the honest
+ * cost of the design: ~900 bytes for the page this file cuts a listing
+ * from and ~1.8 KB for commands68.c's one N68CmdRows, both file-scope
+ * rather than stack because the command path can be re-entered (see the
+ * DEFECT 3 note in proc68.c for what that cost the last time it was
+ * assumed away).
  */
 #include "wire68.h"
 #include "commands68.h"
@@ -88,6 +106,8 @@
 #include "hello.h"
 #include "json_scan.h"
 #include "log.h"
+#include "n68_fileenum.h"
+#include "n68_filelist.h"
 #include "n68_filesrc.h"
 #include "n68_proclist.h"
 #include "n68_putfile.h"
@@ -110,7 +130,7 @@
  * than overwriting, that string is the only reliable answer to "which build
  * am I actually running" - AGENTS.md: check the build stamp before believing
  * a test result. */
-#define NOW68K_APP_VERSION "0.19"
+#define NOW68K_APP_VERSION "0.20"
 
 enum {
     /* contract/asyncapi.yaml: "the guest sends ping after 30s of wire
@@ -179,6 +199,11 @@ _Static_assert(NOW68K_CONTROL_SEND_CAP >= NOW68K_PROCLIST_MIN_CAP,
                "the outbound slot cannot carry a process.listing page with "
                "a row in it - every page would be empty with more:true, and "
                "the host would page forever");
+_Static_assert(NOW68K_CONTROL_SEND_CAP >= NOW68K_FILELIST_MIN_CAP,
+               "the outbound slot cannot carry a file.listing page with an "
+               "entry in it - the same infinite paging loop, one message "
+               "family over. Shorten NOW68K_FILELIST_PATH_MAX, or widen the "
+               "slot");
 
 /* Four slots, not two.
  *
@@ -1220,6 +1245,144 @@ static void handle_process_list(const char *json, long len)
     }
 }
 
+/* ---- file.list: this guest's share of the browse half ------------------
+ *
+ * The contract's hostBrowsesFiles, and the same symmetric rule the rest of
+ * the family follows: whoever RECEIVES the request serves its OWN share.
+ * NOW-68K's share is now68k_desktop_folder() - the one root all three
+ * directions use (n68_fileenum.h says why a fourth would be a bug).
+ *
+ * Additive: FileList and FileListing were already in the contract, already
+ * decoded by the host, and already served by the PowerPC guest. Nothing in
+ * contract/asyncapi.yaml changed for this.
+ *
+ * Every judgement here belongs to n68_filelist.c and every disk call to
+ * n68_fileenum.c. What is left in this file is the wire.
+ */
+
+/* file.refuse, for any request in the family that cannot be served.
+ *
+ * ONE builder, because the family now has two kinds of refusal - a folder
+ * this guest will not list, and an offer it will not take (put_refuse,
+ * below) - and a second copy of these bytes is how one of them eventually
+ * stops matching the schema while the other still does. `code` and `reason`
+ * are always this build's own literals, never a host string, so neither
+ * needs escaping. */
+static void send_file_refuse(long id, const char *code, const char *reason)
+{
+    char payload[224];
+    long pos = 0;
+    int ok = 1;
+
+    now68k_log(reason);
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                      "{\"type\":\"file.refuse\",\"id\":");
+    ok = ok && now68k_fmt_append_long(payload, (long)sizeof payload, &pos, id);
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                      ",\"code\":\"");
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos, code);
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                      "\",\"reason\":\"");
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                      reason);
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                      "\"}");
+    if (!ok || pos <= 0) {
+        now68k_log("wire: file.refuse build failed");
+        return;
+    }
+    if (!enqueue_control_send(payload, pos)) {
+        /* The host is waiting on an answer to this request and will not
+         * get one. Worth a line of its own: silence here looks exactly
+         * like a wedged guest. */
+        now68k_log("wire: file.refuse dropped, outbound queue full");
+    }
+}
+
+/* The page one file.listing is cut from. Static rather than a local for the
+ * reason g_proc_rows is: ~900 bytes underneath a handler that is reachable
+ * from inside the frame reader's callback chain, on a machine where
+ * MaxApplZone() leaves no slack between the stack and the heap. Rebuilt on
+ * every request; single-threaded, one caller. */
+static N68FileRow g_file_rows[NOW68K_FILELIST_MAX_ROWS];
+
+static void handle_file_list(const char *json, long len)
+{
+    char payload[NOW68K_CONTROL_SEND_CAP];
+    /* +2, not +1. find_string TRUNCATES to fit, so a buffer of exactly
+     * cap+1 makes strlen() top out AT the cap and the over-long check
+     * below can never fire - it would list the wrong folder rather than
+     * refuse. The extra byte is what lets a 65-character path arrive as 65
+     * characters and be seen. */
+    char path[NOW68K_FILELIST_PATH_MAX + 2];
+    char root[NOW68K_FILELIST_ROOT_MAX + 1];
+    long id = 0;
+    long cursor = 0;
+    long count;
+    long n;
+    int more = 0;
+    int have_id = now68k_json_find_int(json, (size_t)len, "id", &id);
+
+    path[0] = '\0';
+    /* A path longer than the buffer is TRUNCATED by find_string, which
+     * would silently list a different folder - so the truncation is
+     * detected rather than trusted. One byte of slack past the cap is
+     * exactly what makes an over-long path visible here.
+     *
+     * Read with find_string, not a text decoder: this guest has none. A
+     * host sending a UTF-8 path with an accented character therefore fails
+     * to RESOLVE it and gets not-found, which is a truthful refusal - the
+     * receive half has the same property (n68_putrx.c) and neither half
+     * mis-names anything as a result. It is a real gap and it is in
+     * docs/open-issues.md, not papered over here. */
+    (void)now68k_json_find_string(json, (size_t)len, "path",
+                                  path, (long)sizeof path);
+    if (strlen(path) > NOW68K_FILELIST_PATH_MAX) {
+        send_file_refuse(have_id ? id : 0,
+                         n68_fileenum_code_word(kN68EnumBadPath),
+                         n68_fileenum_code_reason(kN68EnumBadPath));
+        return;
+    }
+    if (!now68k_json_find_int(json, (size_t)len, "cursor", &cursor)) {
+        cursor = 1;   /* absent cursor means the first page */
+    }
+    if (cursor < 1) {
+        cursor = 1;
+    }
+
+    count = n68_fileenum_page(path, cursor, g_file_rows,
+                              (long)NOW68K_FILELIST_MAX_ROWS, &more);
+    if (count < 0) {
+        N68EnumCode rc = (N68EnumCode)(-count);
+
+        send_file_refuse(have_id ? id : 0, n68_fileenum_code_word(rc),
+                         n68_fileenum_code_reason(rc));
+        return;
+    }
+
+    root[0] = '\0';
+    if (path[0] == '\0') {
+        n68_fileenum_root_name(root, (long)sizeof root);
+    }
+    n = n68_filelist_build(have_id ? id : 0, path, cursor, g_file_rows,
+                           count, more, root[0] != '\0' ? root : NULL,
+                           payload, (long)sizeof payload, NULL, NULL);
+    if (n <= 0) {
+        /* Unreachable at the shipping cap - the static asserts at the top
+         * of this file are what make it so - but a host waiting on a
+         * file.listing must never wait forever, so answer the refusal the
+         * family already has a shape for. */
+        now68k_log("wire: file.listing build failed");
+        send_file_refuse(have_id ? id : 0,
+                         n68_fileenum_code_word(kN68EnumIOError),
+                         "the listing did not fit one frame");
+        return;
+    }
+    if (!enqueue_control_send(payload, n)) {
+        now68k_log("wire: file.listing dropped, outbound queue full");
+    }
+}
+
 /* ---- the file family: receiving a push --------------------------------
  *
  * The contract's hostPutsFiles sequence, and this guest's share of a
@@ -1272,34 +1435,8 @@ static void put_report_progress(int force)
  * there is nothing to clean up. */
 static void put_refuse(long id, N68PutCode code)
 {
-    char payload[224];
-    long pos = 0;
-    int ok = 1;
-
-    now68k_log(n68_putrx_code_reason(code));
-    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
-                                      "{\"type\":\"file.refuse\",\"id\":");
-    ok = ok && now68k_fmt_append_long(payload, (long)sizeof payload, &pos, id);
-    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
-                                      ",\"code\":\"");
-    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
-                                      n68_putrx_code_word(code));
-    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
-                                      "\",\"reason\":\"");
-    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
-                                      n68_putrx_code_reason(code));
-    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
-                                      "\"}");
-    if (!ok || pos <= 0) {
-        now68k_log("wire: file.refuse build failed");
-        return;
-    }
-    if (!enqueue_control_send(payload, pos)) {
-        /* The host is waiting on an answer to this offer and will not
-         * get one. Worth a line of its own: silence here looks exactly
-         * like a wedged guest. */
-        now68k_log("wire: file.refuse dropped, outbound queue full");
-    }
+    send_file_refuse(id, n68_putrx_code_word(code),
+                     n68_putrx_code_reason(code));
 }
 
 /* file.done: the transfer is over, one way or the other. */
@@ -1720,11 +1857,16 @@ static void handle_control_message(const char *json, long len)
         handle_process_list(json, len);
         return;
     }
-    /* The file family, both halves now. file.list / file.move and the
-     * rest still fall through to send_error_reply below - this guest
-     * receives a push and makes one, and does not yet SERVE its share
-     * (a host asking to browse or pull), which is the asymmetry left and
-     * it is visible here rather than hidden. */
+    /* The file family: push, pull and now browse. file.get and the
+     * mutations (file.move, file.trash, file.mkdir) still fall through to
+     * send_error_reply below - this guest can be asked WHAT is there and
+     * can move a file in either direction, but will not change the shape
+     * of its own disk on request. That is the asymmetry left, and it is
+     * visible here rather than hidden. */
+    if (strcmp(type, "file.list") == 0) {
+        handle_file_list(json, len);
+        return;
+    }
     if (strcmp(type, "file.offer") == 0) {
         handle_file_offer(json, len);
         return;
