@@ -86,6 +86,7 @@ Kept in the test as data, not prose, so they cannot rot:
 | `help`, `clear`, `?` | console only | act on the console window itself and mean nothing on a wire |
 | `put`, `mv`, `trash`, `untrash`, `mkdir` | console only (PPC) | the host reaches the same capability through the `file.*` message families, not through x-commands |
 | `put` | **both faces (NOW-68K)** | the same capability, the opposite decision — see below |
+| `cancel` | **both faces (NOW-68K)**, no verb on PPC | ending a transfer, split the same way `put` is and for a sharper reason — see below |
 
 Adding a row here should feel like a small act of documentation. It is a
 decision with a justification, not a to-do — anything not listed fails
@@ -118,6 +119,30 @@ console through `now68k_commands_run` like every other table verb.
 `notOnThePowerPCGuest` — that test used to assume the registry WAS the
 PowerPC guest's command set, which stopped being true the moment a
 command existed that only the other guest answers.
+
+### `cancel` is the same split, one step further along
+
+Ending a transfer went the same way, and the argument is stronger there
+than for `put`. Both guests honour `file.cancel` on the wire, so the
+CAPABILITY was never asymmetric; what differed is whether it needed to
+be typeable. The PowerPC guest is cancelled from the host's Files UI or
+from its own Workshop, so it declares no verb. NOW-68K has neither — no
+Files page, no cancel affordance anywhere — so on that machine the verb
+IS the face.
+
+And it is the face that matters most. The lane is one transfer wide
+across BOTH directions, so a transfer nobody can end is a machine that
+will not transfer anything again (open-issues, 2026-07-26). The person
+in that situation is standing at a classic Mac whose host has stopped
+answering — which is exactly the moment the wire is not available to
+them. A cancel reachable only over the wire is a cancel missing
+precisely when it is needed.
+
+It takes no argument, unlike the wire's `file.cancel {transfer}`. A
+person has no way to know a transfer id and no second transfer to
+confuse it with; asking for one would be asking for a number the
+machine already holds. A quiet machine answers `nothing-to-cancel`
+rather than pretending to have stopped something.
 
 Sending, like receiving, is also a message FAMILY, so `xfer` reports
 both directions from `now68k_wire_send_status()` and

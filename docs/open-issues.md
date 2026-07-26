@@ -103,10 +103,20 @@ a desynchronised wire rather than a cancelled transfer.
 - **Not on the 180c.** Emulator-verified only, and the emulator is a
   68040 with 128 MB. The behaviour under test is a state machine rather
   than a rate, so it should carry — but nobody has watched it.
-- **A cancel still has no console face.** `put` is on both faces
-  ([docs/command-parity.md](command-parity.md)); abandoning a transfer
-  in flight is reachable from the wire only. A human at the machine
-  whose host has gone away still has nothing to press.
+- ~~**A cancel has no console face.**~~ Closed in the same pass. It is
+  a `cancel` verb now — contract's `x-commands` first, then
+  `commands68.c`, which the console reaches through
+  `now68k_commands_run` without conwin.c gaining a second dispatch, so
+  both faces run one implementation and `help` lists it. Verified on
+  the emulator from the console face specifically: `help` shows the
+  row, a quiet machine answers `nothing-to-cancel` rather than
+  pretending, and the verb produces the same `file.done ok:false
+  code:cancelled cleanup:temp-discarded` the wire message does. The
+  PowerPC guest deliberately gains no verb — a host cancels it from
+  the Files UI and a person at that guest from its own Workshop — and
+  that decision is named with its reason in
+  `CommandRegistryTests.notOnThePowerPCGuest` rather than left as a
+  silent gap.
 - **The other 65 s window is unexamined.** A host that abandons a
   transfer AND stops answering pings is cleaned up by the watchdog, but
   no one has watched that path either, and it is the only path in which

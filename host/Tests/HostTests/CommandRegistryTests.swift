@@ -130,6 +130,20 @@ final class CommandRegistryTests: XCTestCase {
             dumb shell that knows no message families. See \
             docs/command-parity.md.
             """,
+        "cancel": """
+            The same split as `put`, one step further along the same \
+            transfer. Both guests honour file.cancel on the wire, so the \
+            CAPABILITY is symmetric; what differs is whether it needs to \
+            be typeable. A host driving the PowerPC guest cancels from \
+            the Files UI, and a person at that guest cancels from its \
+            own Workshop — neither needs a verb. NOW-68K has no Files \
+            page and no cancel affordance anywhere, so on that machine \
+            the verb IS the face, and it is the face that matters most: \
+            the lane is one transfer wide across both directions, so \
+            someone whose host has stopped answering mid-transfer has a \
+            machine that will not transfer anything again until they can \
+            say stop.
+            """,
     ]
 
     func testTheThreeHalvesAgreeOnTheCommandSet() throws {

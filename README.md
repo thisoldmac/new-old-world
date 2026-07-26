@@ -273,8 +273,8 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
 ## What does not work
 
 - **NOW-68K implements a small part of the contract.** `launch`, `quit`,
-  `help`, `ps`, `vprobe`, `put` and `process.list`, plus receiving and
-  sending a file and the keepalive; everything else — capture, census,
+  `help`, `ps`, `vprobe`, `put`, `cancel` and `process.list`, plus
+  receiving and sending a file and the keepalive; everything else — capture, census,
   streams, the process drive verbs, and the half of the file family that
   SERVES a host (`file.list`, `file.get`, `file.move`, `file.trash`) —
   answers `unknown-command` or `refused`, which is the contract's own
@@ -317,7 +317,12 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   normally. Both directions now honour a cancel within one 4 KB chunk of
   its arrival, release the lane, and delete the staging file; that last
   claim is checked against the disk image rather than the guest's own
-  report. Emulator-verified, not metal-verified.
+  report. It is also a **`cancel` verb**, on the guest's own console and
+  over the wire from this side's console — one implementation, both
+  faces, listed in `help` — because the person who most needs to end a
+  transfer is standing at a machine whose host has stopped answering,
+  which is exactly when the wire is not the face available.
+  Emulator-verified, not metal-verified.
 - **The two directions briefly disagreed about where files live**, and
   that is worth knowing because of what missed it. Receiving landed on
   the Desktop while sending read from the application's own folder — a

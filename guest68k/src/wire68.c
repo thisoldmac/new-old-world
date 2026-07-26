@@ -110,7 +110,7 @@
  * than overwriting, that string is the only reliable answer to "which build
  * am I actually running" - AGENTS.md: check the build stamp before believing
  * a test result. */
-#define NOW68K_APP_VERSION "0.20"
+#define NOW68K_APP_VERSION "0.21"
 
 enum {
     /* contract/asyncapi.yaml: "the guest sends ping after 30s of wire
@@ -1690,13 +1690,25 @@ static void handle_file_done(const char *json, long len)
  * bytes have already begun going out finishes (rule 2) - the peer's
  * decoder is counting them, and a frame cut short is a desynchronised
  * wire, not a cancelled transfer. A frame merely STAGED has not been
- * seen by anyone and is dropped. */
-static void handle_file_cancel(const char *json, long len)
+ * seen by anyone and is dropped.
+ *
+ * TWO FACES, ONE IMPLEMENTATION. This is the body of both the wire's
+ * file.cancel and the console's `cancel` verb (commands68.c), which is
+ * the rule in docs/command-parity.md rather than a convenience: a
+ * person at a PowerBook whose host has stopped answering is exactly
+ * who needs to end a transfer, and the wire is exactly the face not
+ * available to them then. `named` says whether the caller is naming a
+ * particular transfer - the wire does, a person cannot and does not
+ * need to. `what` takes a short phrase naming what was stopped, for
+ * whoever is going to render it; NULL when nobody is. */
+static int cancel_in_flight(int named, long transfer, char *what, long cap)
 {
-    long transfer = 0;
-    int named = now68k_json_find_int(json, (size_t)len, "transfer",
-                                     &transfer);
     int hit = 0;
+    long pos = 0;
+
+    if (what != NULL && cap > 0) {
+        what[0] = '\0';
+    }
 
     /* `transfer` is required by the contract, so its absence is a
      * malformed message rather than a shape to support. It is still
@@ -1708,7 +1720,13 @@ static void handle_file_cancel(const char *json, long len)
     if (g_putrx.active
         && (!named || g_put_transfer == 0
             || transfer == (long)g_put_transfer)) {
-        now68k_log("wire: the host cancelled the file it was sending");
+        now68k_log("wire: the file arriving was cancelled");
+        if (what != NULL) {
+            (void)now68k_fmt_append_str(what, cap, &pos, "stopped ");
+            (void)now68k_fmt_append_str(what, cap, &pos,
+                                        g_putrx.offer.name);
+            (void)now68k_fmt_append_str(what, cap, &pos, " on its way in");
+        }
         n68_putrx_cancel(&g_putrx);
         /* The staging file is already deleted by the cancel; this tells
          * the host so, with the contract's own word for it. A receiver
@@ -1722,7 +1740,18 @@ static void handle_file_cancel(const char *json, long len)
     if (g_puttx.state != kN68SendIdle
         && (!named || g_puttx.state == kN68SendOffered
             || transfer == (long)g_puttx.transfer)) {
-        now68k_log("wire: the host cancelled the file we were sending");
+        now68k_log("wire: the file going out was cancelled");
+        if (what != NULL) {
+            /* Both directions can be live only if something has gone
+             * wrong upstream, but if they are, both get named rather
+             * than one silently winning the buffer. */
+            if (pos > 0) {
+                (void)now68k_fmt_append_str(what, cap, &pos, "; ");
+            }
+            (void)now68k_fmt_append_str(what, cap, &pos, "stopped ");
+            (void)now68k_fmt_append_str(what, cap, &pos, g_puttx.name);
+            (void)now68k_fmt_append_str(what, cap, &pos, " on its way out");
+        }
         /* A staged chunk nobody has seen goes; one already part-way out
          * does not (rule 2 - flush_outbound finishes it). */
         if (g_bulk_off == 0) {
@@ -1742,14 +1771,35 @@ static void handle_file_cancel(const char *json, long len)
         hit = 1;
     }
 
-    if (!hit) {
-        /* Not an error and not answered. A cancel for a transfer that
-         * has already ended is a message that arrived late, and the
-         * contract gives file.cancel no reply of any kind - so an error
-         * reply here would answer a message nobody is waiting on. */
+    if (what != NULL && pos > 0 && pos < cap) {
+        what[pos] = '\0';
+    }
+    return hit;
+}
+
+/* The wire's face on it. Nothing is answered on a miss: a cancel for a
+ * transfer that has already ended is a message that arrived late, and
+ * the contract gives file.cancel no reply of any kind - so an error
+ * reply here would answer a message nobody is waiting on. */
+static void handle_file_cancel(const char *json, long len)
+{
+    long transfer = 0;
+    int named = now68k_json_find_int(json, (size_t)len, "transfer",
+                                     &transfer);
+
+    if (!cancel_in_flight(named, transfer, NULL, 0)) {
         now68k_log_num("wire: file.cancel names no transfer in flight",
                         transfer);
     }
+}
+
+/* The console's face on it, and the host console reaches the same verb
+ * over command.request - see commands68.c :: run_cancel. A person
+ * cannot name a transfer id and does not need to: the lane is one
+ * transfer wide, so there is only ever one thing "cancel" can mean. */
+int now68k_wire_cancel_transfer(char *what, long cap)
+{
+    return cancel_in_flight(0, 0, what, cap);
 }
 
 /* Dispatch for one fully-received control payload. Everything the guest

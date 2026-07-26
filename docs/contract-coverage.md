@@ -59,14 +59,14 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 | `file.offer` / `file.begin` / `file.end` | ✅ | ✅ | receiving a push |
 | `file.accept` / `file.refuse` / `file.done` | ✅ | ✅ | the reply half, both directions |
 | `file.progress` | ✅ | ❌ | 68K SENDS it and handles none inbound |
-| **`file.cancel`** | ✅ | ❌ | **a host cannot abort a 68K transfer in flight** |
+| `file.cancel` | ✅ | ✅ | either direction; 68K also has it as a `cancel` verb |
 | `file.list` / `file.listing` | ✅ | ❌ | browse |
 | `file.get` | ✅ | ❌ | host-initiated pull |
 | `file.move` / `file.trash` / `file.restore` / `file.mkdir` | ✅ | ❌ | change |
 | `capture.request` / `capture.accept` / `capture.refuse` / `capture.cancel` | ✅ | ❌ | **no screenshots on 68K at all** |
 | `stream.start` / `stream.stop` / `stream.refresh` | ✅ | ❌ | |
 
-PPC handles 33 types; NOW-68K handles 14. **That count understates the
+PPC handles 33 types; NOW-68K handles 15. **That count understates the
 difference** — see the next two sections, where two of these rows open
 into 16 verbs and 14 hardware probes.
 
@@ -77,7 +77,7 @@ hides most of what a machine can be asked — the hardware, network, RAM
 and ROM facts do not have message types of their own. They live behind
 `gestalt` and `census`, one row each above and a whole subsystem below.
 
-The registry is `x-commands` in the contract: **16 verbs.**
+The registry is `x-commands` in the contract: **17 verbs.**
 
 | Verb | What it asks the machine | PPC | 68K |
 |---|---|:--:|:--:|
@@ -96,12 +96,15 @@ The registry is `x-commands` in the contract: **16 verbs.**
 | `launch` | open an application | ✅ | ✅ |
 | `quit` | ask an application to quit | ✅ | ✅ |
 | `put` | send a file from the guest | console only | ✅ |
+| `cancel` | stop the transfer in flight, either way | via UI / `file.cancel` | ✅ |
 | `putstat` | transfer diagnostics | ✅ | ❌ |
 
-**PPC serves 15 of 16** (`put` is console-only there, deliberately —
-the host reaches that capability through the `file.*` families).
-**NOW-68K serves 6 of 16.** Both asymmetries are argued in
-[command-parity.md](command-parity.md).
+**PPC serves 15 of 17** (`put` is console-only there and `cancel` is
+not a verb at all, both deliberately — the host reaches those
+capabilities through the `file.*` families and that guest's own
+Workshop). **NOW-68K serves 7 of 17.** Every asymmetry is argued in
+[command-parity.md](command-parity.md) and named with its reason in
+`CommandRegistryTests.notOnThePowerPCGuest`.
 
 ### `gestalt` — the machine's account of itself
 
@@ -167,10 +170,6 @@ the same way.
   NOW-68K to push one back, but cannot list the machine or fetch by
   name. The Files module therefore has nothing to show against a 68K
   guest.
-- **No cancel.** `file.cancel` is not in the 68K dispatch, so a host
-  that abandons a 4 MB push has no way to tell the guest. Worth
-  confirming what the guest actually does with the abandoned transfer
-  before designing the fix.
 - **No software listing, no streams, no process drive** beyond `launch`
   and `quit`.
 
@@ -197,6 +196,7 @@ specific paths.
 | **receive a file** (incl. MacBinary, Desktop landing) | emulator-verified only |
 | **send a file** (byte source, CRC, control lane) | emulator-verified only |
 | `put` on the console | tested only |
+| **cancel a transfer** (both directions, both faces) | emulator-verified only |
 
 The whole file family — both directions, the largest thing NOW-68K
 serves — has never moved a byte on the 180c. A Quadra 800 under 8.1
@@ -211,7 +211,8 @@ here: parse both dispatches, compare against this table, fail on drift.
 Until that exists, this document is a snapshot and the two `grep`
 commands at the top are the source of truth.
 
-Last derived: 2026-07-26, at `bb54ab3`. The command registry came from
+Last derived: 2026-07-26, at `bb54ab3`, and re-derived the same
+way after `file.cancel` and the `cancel` verb landed. The command registry came from
 `x-commands` in `contract/asyncapi.yaml`, the PPC verb set from
 `strcmp(name, ...)` in `guest/src/commands.c`, and the probe list from
 `k_probes` in `guest/src/census_probes.c`.
