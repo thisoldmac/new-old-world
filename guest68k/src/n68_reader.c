@@ -63,11 +63,19 @@ void n68_reader_drain(N68Reader *r)
                 ops->frame_started(r->ctx);
 
                 if (hdr.channel != NOW68K_CHANNEL_CONTROL) {
-                    /* Bulk: no bulk features implemented yet. Consume and
-                     * discard to stay in frame sync, per the deliverable
-                     * brief - never fatal. */
+                    /* Bulk. Whoever might receive it decides: delivered
+                     * to bulk_data, or consumed and discarded when
+                     * nothing is expecting bytes. Discarding stays the
+                     * default and is never fatal - a frame still in
+                     * flight when a transfer was abandoned has to land
+                     * somewhere, and frame sync is what matters. */
                     r->remaining = hdr.length;
-                    r->state = (hdr.length == 0) ? N68_RS_HEADER : N68_RS_SKIP;
+                    if (hdr.length == 0) {
+                        r->state = N68_RS_HEADER;
+                    } else {
+                        r->state = ops->bulk_wanted(r->ctx, hdr.length)
+                                       ? N68_RS_BULK : N68_RS_SKIP;
+                    }
                     continue;
                 }
                 if (!now68k_control_frame_fits(hdr.length)) {
@@ -100,6 +108,28 @@ void n68_reader_drain(N68Reader *r)
             }
             r->remaining -= (unsigned long)got;
             ops->took(r->ctx, got);
+            if (r->remaining == 0) {
+                r->state = N68_RS_HEADER;
+            }
+            continue;
+        }
+        case N68_RS_BULK: {
+            /* Same shape as RS_SKIP - take what the transport has, up to
+             * what is left of the frame - except the bytes are handed
+             * on instead of dropped. Bounded by sink_cap, so a 32 KB
+             * frame costs no buffer: this is what "streams bulk without
+             * buffering a frame whole" means on this side. */
+            long cap = (r->remaining > (unsigned long)r->sink_cap)
+                           ? r->sink_cap
+                           : (long)r->remaining;
+            long got = ops->take(r->ctx, r->sink, cap);
+
+            if (got <= 0) {
+                return;
+            }
+            r->remaining -= (unsigned long)got;
+            ops->took(r->ctx, got);
+            ops->bulk_data(r->ctx, r->sink, got);
             if (r->remaining == 0) {
                 r->state = N68_RS_HEADER;
             }

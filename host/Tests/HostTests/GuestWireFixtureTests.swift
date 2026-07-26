@@ -599,6 +599,219 @@ final class GuestWireFixtureTests: XCTestCase {
         XCTAssertEqual(rows.last, ["...", "6 more not shown"],
                        "the last row names the processes not shown")
     }
+
+    // MARK: - NOW-68K's file family (the receive half)
+
+    /// handle_file_offer() - guest68k/src/wire68.c. The acceptance.
+    ///
+    /// Two fields and no more, and BOTH absences are the point.
+    ///
+    /// `have` is absent because this guest does not implement resume.
+    /// The contract reads an absent `have` as "start from the beginning"
+    /// (FileAccept), so the simplest possible receiver is a legal one -
+    /// but a host that read a missing `have` as anything else would
+    /// begin every transfer at an offset the guest never claimed.
+    ///
+    /// `freeBytes` / `reservedBytes` are absent because this guest checks
+    /// room before accepting and then says nothing about it. The PowerPC
+    /// guest reports both, so the two accepts do not look alike on the
+    /// wire and the host has to be happy with either.
+    func test68KFileAcceptAsTheGuestWritesIt() throws {
+        guard case .fileAccept(let a) =
+                try decode(Guest68KWire.fileAccept) else {
+            return XCTFail("not a file.accept")
+        }
+        XCTAssertEqual(a.id, 3)
+        XCTAssertNil(a.have, """
+            NOW-68K must never claim a resume offset: it keeps no \
+            partials, so any `have` it sent would name bytes it does not \
+            hold and the sender would begin past the start of the file.
+            """)
+        XCTAssertEqual(a.staging, "same-folder-temp")
+    }
+
+    /// put_refuse() - guest68k/src/wire68.c, rendering an N68PutCode.
+    ///
+    /// The MacBinary case pins a CONTRACT GAP rather than a behaviour:
+    /// FileRefuse.code has no value meaning "this receiver cannot handle
+    /// that", so an unsupported container is reported as `io-error` with
+    /// the truth in `reason`. Nothing failed and nothing was attempted,
+    /// so the code is a lie of category - an honest one, because every
+    /// alternative in the enum is worse, but the day the contract grows
+    /// a value for it this fixture is where the change lands.
+    func test68KFileRefuseAsTheGuestWritesIt() throws {
+        guard case .fileRefuse(let r) =
+                try decode(Guest68KWire.fileRefuseExists) else {
+            return XCTFail("not a file.refuse")
+        }
+        XCTAssertEqual(r.id, 4)
+        XCTAssertEqual(r.code, "exists")
+
+        guard case .fileRefuse(let mb) =
+                try decode(Guest68KWire.fileRefuseMacBinary) else {
+            return XCTFail("not a file.refuse")
+        }
+        XCTAssertEqual(mb.code, "io-error",
+                       "the contract has no code for `unsupported`")
+        XCTAssertEqual(mb.reason,
+                       "this guest receives data-fork files only, "
+                       + "not MacBinary",
+                       "so `reason` is the only place the truth lives")
+    }
+
+    /// put_report_progress() - guest68k/src/wire68.c.
+    ///
+    /// The smallest message this guest sends and the one it sends most,
+    /// because it is not a progress bar: the host clocks its sender on
+    /// these and parks once it is too far ahead of the last one
+    /// (docs/large-transfers.md). A `received` the host cannot read is a
+    /// transfer that stops at the window size and never resumes, so this
+    /// shape matters far more than its size suggests.
+    func test68KFileProgressAsTheGuestWritesIt() throws {
+        guard case .fileProgress(let p) =
+                try decode(Guest68KWire.fileProgress) else {
+            return XCTFail("not a file.progress")
+        }
+        XCTAssertEqual(p.id, 3)
+        XCTAssertEqual(p.received, 8192)
+    }
+
+    /// put_done() - guest68k/src/wire68.c, both outcomes.
+    ///
+    /// The success case carries the guest's own CRC-32, and that is the
+    /// field this fixture is really here for. `crc32` is UNSIGNED and
+    /// `long` on the 68K toolchain is not, so a value above 0x7FFFFFFF -
+    /// half of them - comes out negative through an ordinary integer
+    /// append. It would still decode as a number, compare unequal to the
+    /// host's, and report a perfectly good 4 MB file as corrupt. The
+    /// value below sits above that boundary on purpose.
+    func test68KFileDoneAsTheGuestWritesIt() throws {
+        guard case .fileDone(let ok) =
+                try decode(Guest68KWire.fileDoneOK) else {
+            return XCTFail("not a file.done")
+        }
+        XCTAssertEqual(ok.id, 3)
+        XCTAssertTrue(ok.ok)
+        XCTAssertEqual(ok.received, 4_194_304)
+        XCTAssertEqual(ok.crc32, 3_419_628_326,
+                       "0xCBF43926 - above the signed-long boundary, "
+                       + "which is where an unsigned append is the "
+                       + "difference between `complete` and `corrupt`")
+        XCTAssertEqual(ok.finalization, "same-folder-rename")
+        XCTAssertEqual(ok.cleanup, "temp-renamed")
+
+        guard case .fileDone(let bad) =
+                try decode(Guest68KWire.fileDoneCorrupt) else {
+            return XCTFail("not a file.done")
+        }
+        XCTAssertFalse(bad.ok)
+        XCTAssertEqual(bad.code, "corrupt")
+        XCTAssertEqual(bad.cleanup, "temp-discarded", """
+            Always temp-discarded on this guest: it implements no resume, \
+            so a partial nothing can resume from is debris. A \
+            `partial-retained` from here would promise the host a resume \
+            candidate that does not exist.
+            """)
+    }
+
+    /// send_bye_and_close() - guest68k/src/wire68.c.
+    ///
+    /// Piecemeal since it was written, and invisible to
+    /// testMessagesThisCannotCheckAreKnown for just as long: three C
+    /// character literals ('"') in a helper above it inverted that
+    /// scanner's quote parity, so it read every literal after them
+    /// inside-out and never saw this message at all. The scanner now
+    /// understands character literals; this fixture is the coverage that
+    /// was missing the whole time.
+    func test68KByeAsTheGuestWritesIt() throws {
+        // Every code the guest can send, and all three matter: Bye.Code
+        // is a closed enum on this side, so a code the host has no case
+        // for fails to DECODE — the guest's parting message becomes an
+        // unreadable frame at exactly the moment nobody is watching.
+        let cases: [(String, Bye.Code)] = [
+            (Guest68KWire.byeNormal, .normal),
+            (Guest68KWire.byeProtocolError, .protocolError),
+            (Guest68KWire.byeShuttingDown, .shuttingDown),
+        ]
+        for (json, want) in cases {
+            guard case .bye(let b) = try decode(json) else {
+                return XCTFail("not a bye")
+            }
+            XCTAssertEqual(b.code, want)
+        }
+    }
+
+    // MARK: - NOW-68K's file family (the send half)
+
+    /// The offer this guest makes when a person types `put`. Decoded
+    /// here because the host's answer to it is `onAcceptOffer`, the same
+    /// path the PowerPC guest's offer takes — the two guests must be
+    /// indistinguishable to it, or the host grows a per-guest branch.
+    ///
+    /// `path` present and empty is the field that cost a dropped
+    /// connection when the PowerPC guest omitted it: the host could not
+    /// decode the frame at all, so the failure was not "a bad offer" but
+    /// "the link died".
+    func test68KFileOfferAsTheGuestWritesIt() throws {
+        guard case .fileOffer(let offer) =
+            try decode(Guest68KWire.sendOffer) else {
+            return XCTFail("not a file.offer")
+        }
+        XCTAssertEqual(offer.id, 3)
+        XCTAssertEqual(offer.name, "Notes")
+        XCTAssertEqual(offer.path, "")
+        XCTAssertEqual(offer.container, "data")
+        XCTAssertEqual(offer.bytes, 1000)
+        XCTAssertEqual(offer.fileType, "TEXT")
+        XCTAssertEqual(offer.creator, "ttxt")
+    }
+
+    func test68KFileOfferCarriesAnUnsignedModified() throws {
+        guard case .fileOffer(let offer) =
+            try decode(Guest68KWire.sendOfferMacBinary) else {
+            return XCTFail("not a file.offer")
+        }
+        XCTAssertEqual(offer.container, "macbinary")
+        XCTAssertEqual(offer.modified, 2_952_790_016,
+                       "a Mac date past 2^31 must not arrive negative")
+    }
+
+    /// file.begin is what actually fixes the stream: name and container
+    /// are required here as well as in the offer, because the host sizes
+    /// its InboundFileSink from `bytes` before a byte arrives.
+    func test68KFileBeginAsTheGuestWritesIt() throws {
+        guard case .fileBegin(let begin) =
+            try decode(Guest68KWire.sendBegin) else {
+            return XCTFail("not a file.begin")
+        }
+        XCTAssertEqual(begin.id, 7)
+        XCTAssertEqual(begin.transfer, 9)
+        XCTAssertEqual(begin.name, "Report")
+        XCTAssertEqual(begin.container, "data")
+        XCTAssertEqual(begin.bytes, 300)
+    }
+
+    func test68KFileEndAsTheGuestWritesIt() throws {
+        guard case .fileEnd(let end) =
+            try decode(Guest68KWire.sendEndOK) else {
+            return XCTFail("not a file.end")
+        }
+        XCTAssertTrue(end.ok)
+        XCTAssertEqual(end.transfer, 9)
+        XCTAssertEqual(end.sendMs, 42)
+        XCTAssertEqual(end.crc32, 3_419_628_326,
+                       "the CRC is unsigned; half of them are above 2^31")
+
+        guard case .fileEnd(let failed) =
+            try decode(Guest68KWire.sendEndFailed) else {
+            return XCTFail("not a file.end")
+        }
+        XCTAssertFalse(failed.ok)
+        XCTAssertNil(failed.crc32,
+                     "a failed transfer must not carry a checksum: absent "
+                     + "means unchecked, and a number here would be read "
+                     + "as corruption rather than truncation")
+    }
 }
 
 /// The exact payload bytes NOW-68K puts on the control channel, derived
@@ -643,6 +856,77 @@ enum Guest68KWire {
     static let hello = #"{"type":"hello","contract":1,"side":"guest","#
         + #""version":"\#(appVersion)","name":"now-68k","os":"7.1","#
         + #""chunk":4096}"#
+
+
+    // The file family's receive half, as handle_file_offer / put_refuse /
+    // put_report_progress / put_done append them.
+    static let fileAccept =
+        #"{"type":"file.accept","id":3,"staging":"same-folder-temp"}"#
+
+    static let fileRefuseExists = #"{"type":"file.refuse","id":4,"#
+        + #""code":"exists","#
+        + #""reason":"a file of that name is already there"}"#
+
+    static let fileRefuseMacBinary = #"{"type":"file.refuse","id":5,"#
+        + #""code":"io-error","#
+        + #""reason":"this guest receives data-fork files only, "#
+        + #"not MacBinary"}"#
+
+    static let fileProgress =
+        #"{"type":"file.progress","id":3,"received":8192}"#
+
+    // 3419628326 is 0xCBF43926: the CRC of the standard "123456789"
+    // check vector, chosen here because it also sits above the
+    // signed-long boundary and so fails visibly if the unsigned append
+    // is ever lost.
+    static let fileDoneOK = #"{"type":"file.done","id":3,"ok":true,"#
+        + #""received":4194304,"crc32":3419628326,"#
+        + #""finalization":"same-folder-rename","cleanup":"temp-renamed"}"#
+
+    static let fileDoneCorrupt = #"{"type":"file.done","id":3,"ok":false,"#
+        + #""code":"corrupt","reason":"the bytes did not check out","#
+        + #""received":4194304,"cleanup":"temp-discarded"}"#
+
+    // ---- the SEND half (n68_puttx.c) ----------------------------------
+    //
+    // These three are the transcription of guest68k/tests/test_puttx.c's
+    // pinned strings, which is the point of having them here: that test
+    // proves the guest BUILDS these bytes, and these tests prove this
+    // side DECODES them. Neither half proves anything on its own, and a
+    // test that constructs the message it then parses proves less than
+    // either (AGENTS.md).
+    static let sendOffer = #"{"type":"file.offer","id":3,"name":"Notes","#
+        + #""path":"","container":"data","bytes":1000,"#
+        + #""fileType":"TEXT","creator":"ttxt"}"#
+
+    // modified is a Mac epoch second past 2^31. It is here because
+    // `long` is 32 bits signed on that toolchain, so this field is one
+    // of the two that come out NEGATIVE if the unsigned append is ever
+    // lost — and a negative date decodes fine and lands a file in 1904.
+    static let sendOfferMacBinary =
+        #"{"type":"file.offer","id":4,"name":"App","path":"","#
+        + #""container":"macbinary","bytes":4,"fileType":"APPL","#
+        + #""creator":"MACS","modified":2952790016}"#
+
+    static let sendBegin = #"{"type":"file.begin","id":7,"transfer":9,"#
+        + #""name":"Report","container":"data","bytes":300}"#
+
+    // 3419628326 is 0xCBF43926, above the signed-long boundary for the
+    // same reason fileDoneOK uses it: a lost unsigned append is a
+    // checksum mismatch reported against a file that arrived perfectly.
+    static let sendEndOK = #"{"type":"file.end","id":7,"transfer":9,"#
+        + #""ok":true,"sendMs":42,"crc32":3419628326}"#
+
+    // No crc32, and that is the assertion. A checksum over a stream that
+    // stopped early is arithmetically correct about bytes nobody wanted,
+    // and a receiver comparing it reports corruption instead of the
+    // truncation that actually happened.
+    static let sendEndFailed =
+        #"{"type":"file.end","id":7,"transfer":9,"ok":false}"#
+
+    static let byeNormal = #"{"type":"bye","code":"normal"}"#
+    static let byeProtocolError = #"{"type":"bye","code":"protocol-error"}"#
+    static let byeShuttingDown = #"{"type":"bye","code":"shutting-down"}"#
 
     static let pingFirst = #"{"type":"ping","id":1}"#
     static let pingLater = #"{"type":"ping","id":7}"#

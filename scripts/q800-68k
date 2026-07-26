@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+#
+# q800-68k — boot NOW-68K on the Quadra 800 emulator, dialling this Mac.
+#
+# The PowerBook 180c is the real target and this is not it: a 68040 under
+# Mac OS 8.1 with 128 MB is a different machine from a 68030 under System
+# 7.1 with 4 MB, and nothing about timing, memory pressure or MacTCP's
+# behaviour under load carries over. What DOES carry over is whether the
+# code is correct — whether a 4 MB file arrives byte for byte, whether the
+# File Manager calls are the right ones, whether the frame reader stays in
+# sync. That is worth having before anyone walks to the PowerBook, because
+# every one of those failures costs an FTP round trip and a reboot there.
+#
+# Read a green run here as "emulator-verified" and never as
+# "metal-verified" (AGENTS.md: verification is a status, not an adjective).
+#
+# How it hangs together:
+#   * the guest DIALS OUT, so nothing here forwards a port inward. Under
+#     QEMU's user-mode networking this Mac is 10.0.2.2, which is exactly
+#     the address NOW-68K's own set_defaults already uses.
+#   * the app and a dev settings file naming host/port/autoconnect go into
+#     System Folder:Startup Items, so the guest is dialling within a few
+#     seconds of the boot chime with nobody double-clicking anything.
+#   * the disk is a session-private clone (tbt_clone_disk); the shared base
+#     is never written. Parent AGENTS.md, "Operating the VM".
+#
+#     scripts/q800-68k            # build, inject, boot, wait for the dial
+#     scripts/q800-68k --port N   # dial a listener on another port
+#     scripts/q800-68k --stop     # QMP quit (never pkill — see below)
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TBT="${TBT_REPO:-$HOME/Lab/Code/timbottu}"
+. "$TBT/tools/lib.sh"
+
+QEMU="${TIMBOTTU_QEMU_M68K:-$TBT/qemu/build/qemu-system-m68k}"
+ROM="${TBT_Q800_ROM:-$HOME/Lab/Assets/q800-qemu/Quadra800.rom}"
+BASE="${TBT_Q800_IMG:-$HOME/Lab/Assets/q800-qemu/os81-target.img}"
+HFS="${TBT_HFSUTILS:-$HOME/Lab/Tools/Retro68-build/hfsutils}"
+TOOLCHAIN="${NOW68K_TOOLCHAIN:-$HOME/Lab/Tools/Retro68-build-68k/toolchain}"
+
+RUN="$REPO/.q800"
+PORT=5250
+BUILD=1
+case "${1:-}" in
+    --stop)
+        # QMP `quit`, never pkill/SIGKILL: a hard kill trips the macOS
+        # crash health-check dialog that then needs dismissing by hand
+        # (parent AGENTS.md).
+        printf '{"execute":"qmp_capabilities"}\n{"execute":"quit"}\n' \
+            | nc -U "$RUN/qmp.sock" >/dev/null 2>&1 || true
+        echo "q800-68k: stopped"
+        exit 0 ;;
+    --no-build) BUILD=0; shift ;;
+esac
+[ "${1:-}" = "--port" ] && { PORT="$2"; shift 2; }
+
+mkdir -p "$RUN"
+
+# --- 1. build -------------------------------------------------------------
+if [ "$BUILD" = 1 ]; then
+    echo "==> building NOW-68K"
+    # Force the build stamp current before anything is measured: CMake
+    # touches it at the END of a build, so it can read minutes early
+    # (AGENTS.md, "check the build stamp before believing a test result").
+    touch "$REPO/guest68k/src/wire68.c"
+    cmake -S "$REPO/guest68k" -B "$RUN/build" -G Ninja \
+        -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN/m68k-apple-macos/cmake/retro68.toolchain.cmake" \
+        >/dev/null
+    cmake --build "$RUN/build" >/dev/null
+fi
+APP="$RUN/build/now68k-guest.bin"
+[ -f "$APP" ] || { echo "error: no build at $APP" >&2; exit 1; }
+
+# --- 2. a disposable disk with the app and its settings on it -------------
+DISK="$RUN/session.img"
+rm -f "$DISK"
+tbt_clone_disk "$BASE" "$DISK" >/dev/null
+
+# NOW-68K has no preferences; the dev settings file is how a build under
+# test learns where to dial without someone typing an address into the
+# window (n68_devsettings.h). CR line endings: this is read by a classic
+# Mac, and the parser accepts either, but authoring it correctly keeps the
+# file readable in TeachText if anyone opens it there.
+printf 'host = 10.0.2.2\rport = %s\rautoconnect = on\rretry = on\rretry-interval = 3\r' \
+    "$PORT" > "$RUN/_devsettings.txt"
+
+"$HFS/hmount" "$DISK" >/dev/null
+"$HFS/hcd" "System Folder" >/dev/null
+"$HFS/hcd" "Startup Items" >/dev/null
+# -m: MacBinary, so both forks and the Finder type/creator survive. A
+# resource fork lost here produces an application the Finder will not
+# launch, with no error that names the cause.
+"$HFS/hcopy" -m "$APP" ":"
+"$HFS/hcopy" -t "$RUN/_devsettings.txt" ":NOW-68K Dev Settings"
+"$HFS/humount" >/dev/null
+echo "==> injected NOW-68K + dev settings (host 10.0.2.2:$PORT)"
+
+# --- 3. boot --------------------------------------------------------------
+rm -f "$RUN/qmp.sock"
+# tbt_spawn_detached takes the LOG PATH as its first argument and opens it
+# for writing itself; it does not read a shell redirect. Passing "$QEMU"
+# first — as this script did once — makes the emulator binary the log
+# file, and `>` truncates it to nothing before the exec that was supposed
+# to run it. It cost a QEMU relink to notice. The log path goes first.
+tbt_spawn_detached "$RUN/qemu.log" "$QEMU" \
+    -M q800 -m 128 -bios "$ROM" \
+    -device scsi-hd,scsi-id=0,drive=hd0 \
+    -drive file="$DISK",format=raw,if=none,id=hd0 \
+    -nic user,model=dp83932 \
+    -display none \
+    -qmp unix:"$RUN/qmp.sock",server,nowait \
+    > "$RUN/qemu.pid"
+echo "==> booting (headless); qmp at $RUN/qmp.sock"
+
+# The image was not shut down cleanly, so the Finder puts up a modal
+# BEFORE Startup Items run, and until it is dismissed the guest never
+# launches at all.
+#
+# Sent REPEATEDLY rather than once at a fixed delay. A single timed
+# Return is a guess about how long this boot takes, and boot time varies
+# with what else the host is doing: the first run here dismissed it at
+# 12s and the second missed it entirely, leaving the dialog up and the
+# whole test run reading "no guest dialled in" — a symptom that points
+# nowhere near a modal nobody can see on a headless VM. Extra Returns
+# after it is gone land on the Finder and do nothing.
+echo "==> waiting out the boot, dismissing the improper-shutdown modal"
+for _ in $(seq 1 12); do
+    sleep 5
+    printf '{"execute":"qmp_capabilities"}\n{"execute":"send-key","arguments":{"keys":[{"type":"qcode","data":"ret"}]}}\n' \
+        | nc -U "$RUN/qmp.sock" >/dev/null 2>&1 || true
+done
+echo "==> NOW-68K should be dialling 10.0.2.2:$PORT now"
+echo "    (it retries every 3s, so start the listener whenever)"
