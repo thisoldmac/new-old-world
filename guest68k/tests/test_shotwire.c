@@ -127,7 +127,7 @@ static void test_capture_begin_matches_the_envelope_the_host_decodes(void)
     long n;
 
     (void)n68_shotwire_plan(640, 480, 8, &p);
-    n = n68_shotwire_begin_json(&p, 7, 3, 213, 0, json, (long)sizeof json);
+    n = n68_shotwire_begin_json(&p, 7, 3, 213, 0, 0, json, (long)sizeof json);
     check(n > 0, "capture.begin fits its buffer");
     /* Field for field and in order, as guest/src/wire.c sends it. */
     check_str(json,
@@ -139,13 +139,31 @@ static void test_capture_begin_matches_the_envelope_the_host_decodes(void)
     check_long(n, (long)strlen(json), "the returned length is the length");
 }
 
+/* The staged lane announces packbits; the streaming lane announces raw.
+ * They share one builder, and it hardcoded "raw" until a real receiver
+ * decoded 137,794 packed bytes as though they were 307,968 unpacked ones.
+ * This is the check that would have caught it on the host cc. */
+static void test_the_encoding_word_follows_the_payload(void)
+{
+    N68ShotWirePlan p;
+    char json[kN68ShotWireJsonCap];
+
+    (void)n68_shotwire_plan(640, 480, 8, &p);
+    (void)n68_shotwire_begin_json(&p, 7, 3, 0, 0, 1, json, (long)sizeof json);
+    check(strstr(json, "\"encoding\":\"packbits\"") != NULL,
+          "packed rows are announced as packbits");
+    (void)n68_shotwire_begin_json(&p, 7, 3, 0, 0, 0, json, (long)sizeof json);
+    check(strstr(json, "\"encoding\":\"raw\"") != NULL,
+          "unpacked rows are announced as raw");
+}
+
 static void test_capture_begin_refuses_a_buffer_it_would_overflow(void)
 {
     N68ShotWirePlan p;
     char tiny[40];
 
     (void)n68_shotwire_plan(640, 480, 8, &p);
-    check_long(n68_shotwire_begin_json(&p, 7, 3, 0, 0, tiny,
+    check_long(n68_shotwire_begin_json(&p, 7, 3, 0, 0, 0, tiny,
                                        (long)sizeof tiny),
                0, "a truncated capture.begin is not sent");
     check_str(tiny, "", "and leaves nothing half-built");
@@ -173,6 +191,7 @@ int main(void)
     test_where_a_byte_comes_from();
     test_past_the_end_is_not_a_row();
     test_capture_begin_matches_the_envelope_the_host_decodes();
+    test_the_encoding_word_follows_the_payload();
     test_capture_begin_refuses_a_buffer_it_would_overflow();
     test_capture_end_both_ways();
 

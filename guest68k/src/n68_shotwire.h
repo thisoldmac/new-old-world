@@ -110,10 +110,19 @@ int n68_shotwire_locate(const N68ShotWirePlan *plan, long offset,
                         long *row, long *column);
 
 /* capture.begin, exactly as guest/src/wire.c builds it, for the fields
- * this guest has. Returns the length written, or 0 if it did not fit. */
+ * this guest has. `packed` selects the encoding word.
+ *
+ * THE ENCODING IS A PARAMETER BECAUSE IT WAS ONCE A LITERAL, and the
+ * literal was wrong. This file was written for the streaming rung, which
+ * sends raw, and hardcoded "raw"; the staged rung then reused it to
+ * announce PackBits rows. Every native test passed - they only ever
+ * exercised the raw plan - and the guest sent a perfectly correct 137,794
+ * bytes of packed pixels under a word that told the host to read 307,968
+ * bytes of unpacked ones. Only a real receiver could notice, and one did,
+ * on the first transfer that crossed. Returns the length written, or 0. */
 long n68_shotwire_begin_json(const N68ShotWirePlan *plan, long id,
                              unsigned int transfer, long capture_ms,
-                             long encode_ms, char *out, long cap);
+                             long encode_ms, int packed, char *out, long cap);
 
 /* capture.end. `ok` false is the contract's way to close a transfer that
  * failed after it was announced - the receiver is already staging bytes

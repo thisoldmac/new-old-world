@@ -1904,13 +1904,33 @@ Unverified, and worth naming because the numbers will get quoted:
   carry a 17th row; the honest next step if the `fmove.d` number ever
   looks wrong.
 
-## The capture tx: the source is built, the routing is not
+## The capture tx: staged, and crossing the wire on the emulator
 
-Slice two — the pixels reaching the host — is half done and stopped at a
-named line. What exists (`n68_shotwire.c`, `shotsrc68.c`, 8 native tests,
-every guard proven by mutation) is the **byte source and the envelopes**;
-what does not exist is the wire routing that arms a transfer with them.
-Nothing about this has run on any machine, emulator included.
+Slice two — the pixels reaching the host — **works on the Quadra 800**
+(OS 8.1, 640x480x8, 2026-07-26). The host sends `capture.request`, the
+guest stages a PackBits capture, announces `capture.begin`, streams it
+down the bulk lane and closes with `capture.end ok:true`; the host
+decodes the palette and the packed rows into a pixel-accurate PNG of the
+guest's screen. 137,783 bytes for a full frame, every byte accounted for
+(`consumed 137783 of 137783`), 2.2:1 on that busy desktop. **Nothing has
+run on the 180c**, and the emulator's `captureMs 16, encodeMs 3` are a
+68040 reading host memory — meaningless as predictions, as ever.
+
+Two ways to send exist now and they are not rivals:
+
+- **staged** (`shotstage68.c`) — pack the whole frame to a scratch file in
+  the published root, whose size is then an exact fact, and stream that
+  file through the tested file source. Costs a disk round trip; buys
+  compression. This is the one that crossed.
+- **streaming** (`shotsrc68.c`) — read the framebuffer straight down the
+  wire as `raw`, no staging and no scratch file, at ~300 KB. Built and
+  native-tested; **not yet routed**, because the staged path answered
+  `capture.request` first and one lane is one transfer wide.
+
+The header of `n68_bytesrc.h` argues against staging ("cannot be staged
+to a temporary file first either"). It was written before anyone had
+measured a capture, and it is right about 300 KB and wrong about 65 KB.
+That argument is now answered with numbers rather than overridden.
 
 **PICT is not the wire format, and the contract said so first.**
 `CaptureBegin.encoding` is `raw | packbits`, described as "NOT PICT: modern
@@ -1957,14 +1977,30 @@ here. The cost of the rung that needs no argument is stated plainly: raw
 is ~300 KB where packed would be ~65 KB on a quiet screen, and on this
 machine's wire that difference is the whole user-visible experience.
 
-**Where it stops.** `wire68.c` has `now68k_wire_send_file()`; it needs the
-sibling that arms a transfer from an arbitrary `N68ByteSource` and
-announces it with `capture.begin`/`capture.end` instead of `file.*`, plus
-routing for the contract's `capture.request`. The send half's own header
-says it "never opens, reads, seeks or closes a file", so that sibling
-should be a small generalisation rather than a second lane — but it is
-someone editing `wire68.c`, which is where the file-transfer arc has just
-finished, and it has not been done.
+**Two bugs the wire found that no test could have.** Both are recorded
+because both are the same shape — a thing that is only wrong when two
+real halves meet:
+
+1. **The staged file was written where the sender does not look.** Staging
+   put it beside the application; `n68_filesrc` reads from the published
+   root (the Desktop). The capture staged perfectly, 137,760 bytes, and
+   then could not be found. This is the *second* time this tree has made
+   exactly this mistake — `n68_putfile.h` records the send and receive
+   halves briefly disagreeing about the root, and says only a real file
+   system can notice. `now68k_desktop_folder()` is the one place it is
+   decided and now this uses it too.
+2. **`capture.begin` announced `raw` while the payload was `packbits`.**
+   The envelope builder was written for the streaming rung and hardcoded
+   the word; the staged rung reused it. Every native test passed — they
+   only ever built raw plans — and the guest sent 137,794 perfectly
+   correct packed bytes under a label telling the host to read 307,968
+   unpacked ones. The encoding is a parameter now, and a native test pins
+   both spellings.
+
+**What is left before metal.** Nothing structural — this is a deploy and
+a run. Worth doing on the 180c specifically because every timing number
+so far is an emulator's, and because the compression that makes this lane
+worth having was 4.7:1 there against 2.2:1 here.
 
 **One thing that already works and is worth knowing.** `screenshot`
 followed by `put` gets pixels to the host *today*, using two shipped

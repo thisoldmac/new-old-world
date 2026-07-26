@@ -93,6 +93,8 @@
 #include "n68_putfile.h"
 #include "n68_putrx.h"
 #include "n68_puttx.h"
+#include "n68_shotwire.h"
+#include "shotstage68.h"
 #include "n68_reader.h"
 #include "numfmt.h"
 #include "ping.h"
@@ -298,6 +300,27 @@ static long            g_bulk_len = 0;   /* frame bytes staged, 0 = empty */
 static long            g_bulk_off = 0;   /* bytes already accepted */
 static long            g_send_next_id = 1;
 static unsigned short  g_send_next_transfer = 1;
+
+/* THIS TRANSFER IS A CAPTURE, not a file. The lane, the chunking, the
+ * back-pressure rule and the source interface are all n68_puttx's and are
+ * shared verbatim; what differs is the ENVELOPE - the contract announces a
+ * capture with capture.begin/capture.end and a file with
+ * file.offer/begin/end - and the handshake, because a host-requested
+ * capture has no offer/accept step to wait through (contract:
+ * capture.request -> capture.begin -> bulk -> capture.end). Two senders
+ * would have been two back-pressure rules; one sender with two envelopes
+ * is the arrangement n68_bytesrc.h was shaped for. */
+static int             g_send_is_capture = 0;
+static N68ShotWirePlan g_capture_plan;
+static long            g_capture_capture_ms = 0;
+static long            g_capture_encode_ms = 0;
+static long            g_capture_id = 0;
+static unsigned short  g_capture_transfer = 0;
+
+/* Defined with the send half, below; declared here because the control
+ * dispatcher is above it. */
+int now68k_wire_send_capture(long id, char *why, long why_cap);
+static void handle_capture_request(const char *json, long len);
 static unsigned long   g_send_start_tick = 0;
 
 /* ---- status line building -------------------------------------------- */
@@ -1513,6 +1536,28 @@ static void send_file_end(int ok, N68SendCode why)
         ms = (long)(((unsigned long)TickCount() - g_send_start_tick)
                     * 1000UL / 60UL);
     }
+    if (g_send_is_capture) {
+        /* capture.end, and then STRAIGHT TO IDLE. A file transfer waits
+         * for the host's file.done - a put is not finished until the
+         * receiver says so - but the contract gives a capture no such
+         * receipt, so waiting for one would leave the lane occupied
+         * forever after the first capture. */
+        n = n68_shotwire_end_json(g_capture_id, g_capture_transfer, ok,
+                                  payload, (long)sizeof payload);
+        if (n <= 0 || !enqueue_control_send(payload, n)) {
+            now68k_log("wire: capture.end could not be queued");
+        }
+        n68_puttx_done(&g_puttx, g_capture_id, ok, NULL);
+        g_send_is_capture = 0;
+        g_send_start_tick = 0;
+        /* The staged bytes have now either been sent or been abandoned;
+         * either way they are 65 KB of a 4 MB disk. */
+        shotstage68_discard();
+        if (!ok) {
+            now68k_log_num("wire: capture failed", (long)why);
+        }
+        return;
+    }
     n = n68_puttx_build_end(&g_puttx, payload, (long)sizeof payload, ok, ms);
     if (n > 0) {
         if (!enqueue_control_send(payload, n)) {
@@ -1714,6 +1759,10 @@ static void handle_control_message(const char *json, long len)
     }
     if (strcmp(type, "census.request") == 0) {
         handle_census_request(json, len);
+        return;
+    }
+    if (strcmp(type, "capture.request") == 0) {
+        handle_capture_request(json, len);
         return;
     }
     if (strcmp(type, "process.list") == 0) {
@@ -2280,6 +2329,168 @@ int now68k_wire_send_file(const char *leaf, char *why, long why_cap)
         return 0;
     }
     ++g_send_next_id;
+    return 1;
+}
+
+/* capture.request from the host. The contract's answer to a request it
+ * cannot serve is capture.end ok:false for that id, NOT a protocol error
+ * and not silence - the host is already waiting on this id, and an error
+ * envelope answers a different waiter than the one that is blocked (the
+ * same reasoning DEFECT 11 records for command.request). */
+static void handle_capture_request(const char *json, long len)
+{
+    char why[128];
+    char payload[kWireOutPayloadCap];
+    long id = 0;
+    long depth = 0;
+    long n;
+
+    if (!now68k_json_find_int(json, (size_t)len, "id", &id)) {
+        return;                 /* nothing to answer to */
+    }
+    /* depth is required by the schema; this guest serves 8-bit only and
+     * says so with a refusal rather than converting - shot68.h carries
+     * why a non-native depth is a separate, unmeasured decision. */
+    if (now68k_json_find_int(json, (size_t)len, "depth", &depth)
+        && depth != 8) {
+        now68k_log_num("wire: capture refused, depth", depth);
+        n = n68_shotwire_end_json(id, 0, 0, payload, (long)sizeof payload);
+        if (n > 0) {
+            (void)enqueue_control_send(payload, n);
+        }
+        return;
+    }
+    if (!now68k_wire_send_capture(id, why, (long)sizeof why)) {
+        /* The sentence, not just the fact. A refusal whose reason is only
+         * in a return value is a refusal nobody can diagnose from the
+         * machine it happened on. */
+        now68k_log(why[0] != '\0' ? why : "wire: capture.request refused");
+        n = n68_shotwire_end_json(id, 0, 0, payload, (long)sizeof payload);
+        if (n > 0) {
+            (void)enqueue_control_send(payload, n);
+        }
+    }
+}
+
+/* Stage a capture and put it on the wire: the tx half of `screenshot`.
+ *
+ * Staged rather than streamed, and shotstage68.h carries the argument -
+ * capture.begin must promise an exact byte count, a PackBits length is not
+ * knowable without packing, and this machine cannot hold a packed frame to
+ * measure one. Packing to a file makes the length a fact. The bytes then
+ * go out through the file source that already exists, because the staged
+ * file IS the bulk payload, byte for byte.
+ *
+ * No offer, no accept: this announces capture.begin immediately and starts
+ * sending, which is the sequence the contract states for a capture. */
+int now68k_wire_send_capture(long id, char *why, long why_cap)
+{
+    N68ByteSource src;
+    ShotStage68 staged;
+    N68SendCode rc;
+    char name[kN68SendNameCap];
+    char type[8];
+    char creator[8];
+    unsigned long modified = 0;
+    char payload[kWireOutPayloadCap];
+    long n;
+    long pos = 0;
+
+    if (why != NULL && why_cap > 0) {
+        why[0] = '\0';
+    }
+    if (g_state != kWireLive) {
+        (void)now68k_fmt_append_str(why, why_cap, &pos, "not connected");
+        why[pos] = '\0';
+        return 0;
+    }
+    if (g_puttx.state != kN68SendIdle) {
+        (void)now68k_fmt_append_str(why, why_cap, &pos,
+                                    n68_puttx_code_reason(kN68SendBusy));
+        why[pos] = '\0';
+        return 0;
+    }
+    if (g_putrx.active) {
+        (void)now68k_fmt_append_str(why, why_cap, &pos,
+                                    "a file is arriving right now");
+        why[pos] = '\0';
+        return 0;
+    }
+
+    /* Staging first, and BEFORE anything is announced: it reads the whole
+     * screen and can refuse (wrong depth, no disk), and a capture.begin
+     * already on the wire could then only be withdrawn with a
+     * capture.end ok:false the host has to unwind. */
+    if (shotstage68_write(&staged, why, why_cap) != kShotStage68OK) {
+        return 0;
+    }
+    g_capture_plan = staged.plan;
+    g_capture_capture_ms = staged.capture_ms;
+    g_capture_encode_ms = staged.encode_ms;
+
+    if (!now68k_filesrc_open(&g_filesrc, staged.leaf, &src, name,
+                             (long)sizeof name, type, creator, &modified)) {
+        shotstage68_discard();
+        (void)now68k_fmt_append_str(why, why_cap, &pos,
+                                    "the staged capture could not be read");
+        why[pos] = '\0';
+        return 0;
+    }
+    if (src.total != staged.total) {
+        /* The file source measured the fork; staging counted what it
+         * wrote. If those disagree, capture.begin would promise a number
+         * the stream cannot keep - which the receiver sizes its staging
+         * from. Refuse rather than send a length nobody can honour. */
+        src.ops->close(src.ctx);
+        shotstage68_discard();
+        (void)now68k_fmt_append_str(why, why_cap, &pos,
+                                    "the staged capture changed size");
+        why[pos] = '\0';
+        return 0;
+    }
+
+    rc = n68_puttx_begin(&g_puttx, id, name, &src, 0, type, creator,
+                         modified);
+    if (rc != kN68SendOK) {
+        src.ops->close(src.ctx);
+        shotstage68_discard();
+        (void)now68k_fmt_append_str(why, why_cap, &pos,
+                                    n68_puttx_code_reason(rc));
+        why[pos] = '\0';
+        return 0;
+    }
+
+    g_capture_id = id;
+    g_capture_transfer = g_send_next_transfer;
+    if (!n68_puttx_accepted(&g_puttx, id, g_capture_transfer)) {
+        n68_puttx_cancel(&g_puttx, kN68SendGone);
+        shotstage68_discard();
+        (void)now68k_fmt_append_str(why, why_cap, &pos,
+                                    "the capture could not be armed");
+        why[pos] = '\0';
+        return 0;
+    }
+    ++g_send_next_transfer;
+    if (g_send_next_transfer == 0) {
+        g_send_next_transfer = 1;
+    }
+
+    g_capture_plan.total = staged.total;
+    n = n68_shotwire_begin_json(&g_capture_plan, id, g_capture_transfer,
+                                g_capture_capture_ms, g_capture_encode_ms,
+                                1 /* staged rows are PackBits */,
+                                payload, (long)sizeof payload);
+    if (n <= 0 || !enqueue_control_send(payload, n)) {
+        n68_puttx_cancel(&g_puttx, kN68SendGone);
+        shotstage68_discard();
+        (void)now68k_fmt_append_str(why, why_cap, &pos,
+                                    "capture.begin could not be sent");
+        why[pos] = '\0';
+        return 0;
+    }
+    g_send_is_capture = 1;
+    g_send_start_tick = (unsigned long)TickCount();
+    now68k_log_num("wire: capture armed, bytes", staged.total);
     return 1;
 }
 

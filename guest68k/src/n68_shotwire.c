@@ -68,7 +68,7 @@ int n68_shotwire_locate(const N68ShotWirePlan *plan, long offset,
 
 long n68_shotwire_begin_json(const N68ShotWirePlan *plan, long id,
                              unsigned int transfer, long capture_ms,
-                             long encode_ms, char *out, long cap)
+                             long encode_ms, int packed, char *out, long cap)
 {
     long avail = cap > 0 ? cap - 1 : 0;
     long pos = 0;
@@ -101,8 +101,10 @@ long n68_shotwire_begin_json(const N68ShotWirePlan *plan, long id,
     ok = ok && now68k_fmt_append_long(out, avail, &pos, plan->total);
     ok = ok && now68k_fmt_append_str(out, avail, &pos, ",\"paletteBytes\":");
     ok = ok && now68k_fmt_append_long(out, avail, &pos, plan->palette_bytes);
+    ok = ok && now68k_fmt_append_str(out, avail, &pos, ",\"encoding\":\"");
     ok = ok && now68k_fmt_append_str(out, avail, &pos,
-                                     ",\"encoding\":\"raw\",\"captureMs\":");
+                                     packed ? "packbits" : "raw");
+    ok = ok && now68k_fmt_append_str(out, avail, &pos, "\",\"captureMs\":");
     ok = ok && now68k_fmt_append_long(out, avail, &pos, capture_ms);
     ok = ok && now68k_fmt_append_str(out, avail, &pos, ",\"encodeMs\":");
     ok = ok && now68k_fmt_append_long(out, avail, &pos, encode_ms);
