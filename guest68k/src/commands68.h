@@ -226,6 +226,23 @@ typedef struct {
     const char *usage;
 } N68CommandDoc;
 
+/* Runs `vprobe` and lends the caller the table it filled, or NULL if the
+ * probe refused (the reason lands in `why`).
+ *
+ * The console needs the WHOLE table, not the two-row summary an
+ * N68CmdResult can carry - a measurement command whose console face shows
+ * two of seventeen rows is a capability reachable from one face and
+ * summarised on the other, which docs/command-parity.md does not count as
+ * reachable. So the console renders the same table the wire does, through
+ * n68_vprobe_render_text.
+ *
+ * LENT, not owned: the pointer is commands68.c's single static table (one
+ * instance, because 820 bytes is too much for a stack frame the command
+ * path can re-enter). It is valid until the next vprobe run, which is all
+ * any caller needs, and vprobe68_run refuses re-entry so two probes can
+ * never be filling it at once. */
+const N68VProbeTable *now68k_commands_vprobe(char *why, long why_cap);
+
 const N68CommandDoc *now68k_commands_docs(void);
 
 int now68k_commands_dispatch(const char *name, const char *target, long id,

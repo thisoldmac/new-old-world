@@ -349,6 +349,58 @@ static void submit_line(void)
         show_processes();
         return;
     }
+    if (strcmp(name, "vprobe") == 0) {
+        /* The WHOLE table, not the two-row summary an N68CmdResult holds.
+         * A measurement command that shows a person two of seventeen rows
+         * is reachable from one face and summarised on the other, which is
+         * not what docs/command-parity.md means by reachable — and the
+         * rows this one exists to be read TOGETHER (movem against reread)
+         * are not the two a summary would pick.
+         *
+         * Same table the wire renders, borrowed rather than re-measured:
+         * running it twice would cost ~12s and could not agree with itself
+         * anyway, since the screen may have changed between them. */
+        const N68VProbeTable *table;
+        char why[128];
+
+        /* con_out invalidates; it does not draw. This file has exactly
+         * one painter and it runs inside the update bracket. The notice
+         * still reaches the screen before the numbers do, because
+         * vprobe68_run pumps between its phases and main.c routes the
+         * update event here on the first pump — so the pumping the probe
+         * already does for the WIRE pays for this too. */
+        con_out("vprobe: measuring, ~12s, hold the screen still...");
+        table = now68k_commands_vprobe(why, (long)sizeof why);
+        if (table == NULL) {
+            char line[160];
+            long pos = 0;
+
+            (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                        "! vprobe: ");
+            (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                        why[0] != '\0' ? why
+                                            : "refused, no reason given");
+            con_out(line);
+            return;
+        }
+        {
+            /* STATIC, not a stack frame. The full table is ~1 KB of text
+             * and this file's deepest transient is ~930 bytes on a path
+             * wire68.c's dispatch can already re-enter; another kilobyte
+             * there is the wrong kind of thrift. Safe because vprobe68_run
+             * refuses re-entry, so two renders can never overlap. */
+            static char rendered[NOW68K_VPROBE_JSON_MAX];
+            long pos = n68_vprobe_render_text(table, rendered,
+                                              (long)sizeof rendered);
+
+            if (pos > 0) {
+                con_out_block(rendered, pos);
+            } else {
+                con_out("! vprobe: the table did not fit this pane");
+            }
+        }
+        return;
+    }
     if (strcmp(name, "clear") == 0) {
         n68_console_init(&gOut);
         gScrollBack = 0;

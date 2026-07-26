@@ -450,6 +450,17 @@ static void run_quit(const char *target, N68CmdResult *res)
  * be writing this table at once. */
 static N68VProbeTable g_vprobe;
 
+const N68VProbeTable *now68k_commands_vprobe(char *why, long why_cap)
+{
+    if (why != NULL && why_cap > 0) {
+        why[0] = '\0';
+    }
+    if (vprobe68_run(&g_vprobe, why, why_cap) != kVProbe68OK) {
+        return NULL;
+    }
+    return &g_vprobe;
+}
+
 static VProbe68Status run_vprobe(N68CmdResult *res)
 {
     char why[kDetailCap];

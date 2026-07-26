@@ -110,7 +110,20 @@ the command table too**, not only in the console's dispatch. The host
 console reaches a guest through commands and nothing else;
 `testEveryVerbTheSixtyEightKConsoleAnswersIsAlsoOnItsWire` is the guard,
 and it was written after `ps` spent a day reachable from one keyboard.
-Two verbs answer inside `now68k_commands_dispatch` rather than through
-`now68k_commands_run` — `help` and `ps` — because each returns a row per
-item and an `N68CmdResult` holds one row. That is the whole exception,
-and a third one is an argument to have, not a pattern to follow.
+Three verbs answer inside `now68k_commands_dispatch` rather than through
+`now68k_commands_run` — `help`, `ps` and `vprobe` — because each returns a
+row per item and an `N68CmdResult` holds one row.
+
+The third one arrived the same day this paragraph warned against it, so
+here is the argument rather than the pattern. Each exemption buys its
+place by asserting the thing that keeps it honest: `help` renders the
+published doc table, `ps` renders `proc_list_rows()`, and `vprobe`
+**borrows** the single measurement table rather than measuring twice — a
+second run would cost ~12 s and could not agree with the first anyway,
+the screen having moved in between. The parity test checks each of those
+borrowings by name.
+
+**A fourth should not be another arm.** Three row-array commands is no
+longer a special case, it is a shape: the fix is a result type that holds
+rows, so the console and the wire render it the way they already render
+one-row results, and the exemption list goes back to being empty.

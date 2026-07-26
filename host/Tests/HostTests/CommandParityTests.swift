@@ -139,8 +139,23 @@ final class CommandParityTests: XCTestCase {
         //
         // Any OTHER verb on both faces is two implementations of one verb.
         let table = dispatched(in: try source("guest68k/src/commands68.c"))
+        // vprobe is the THIRD row-array command, and each exemption has to
+        // buy its place with the thing that makes it safe. help renders the
+        // published doc table; ps renders proc_list_rows(); vprobe BORROWS
+        // the single measurement table rather than measuring again — which
+        // matters more here than for the other two, because a second run
+        // would cost ~12s AND could not agree with the first, the screen
+        // having moved in between.
+        XCTAssertTrue(consoleText.contains("now68k_commands_vprobe"), """
+            conwin.c runs its own vprobe instead of borrowing the table \
+            commands68.c filled. Two measurements of a changing screen \
+            cannot agree, so the console and the wire would report \
+            different numbers for the same machine and both would be \
+            defensible — the worst kind of disagreement to debug.
+            """)
+
         let duplicated = table.intersection(dispatched(in: consoleText))
-            .subtracting(["help", "ps"])
+            .subtracting(["help", "ps", "vprobe"])
         XCTAssertTrue(duplicated.isEmpty, """
             conwin.c dispatches \(duplicated.sorted()) itself while \
             commands68.c also does. Two implementations of one verb is how \
