@@ -1904,6 +1904,232 @@ Unverified, and worth naming because the numbers will get quoted:
   carry a 17th row; the honest next step if the `fmove.d` number ever
   looks wrong.
 
+## The capture tx: staged, and crossing the wire on the emulator
+
+Slice two — the pixels reaching the host — **works on the Quadra 800**
+(OS 8.1, 640x480x8, 2026-07-26). The host sends `capture.request`, the
+guest stages a PackBits capture, announces `capture.begin`, streams it
+down the bulk lane and closes with `capture.end ok:true`; the host
+decodes the palette and the packed rows into a pixel-accurate PNG of the
+guest's screen. 137,783 bytes for a full frame, every byte accounted for
+(`consumed 137783 of 137783`), 2.2:1 on that busy desktop. **Nothing has
+run on the 180c**, and the emulator's `captureMs 16, encodeMs 3` are a
+68040 reading host memory — meaningless as predictions, as ever.
+
+Two ways to send exist now and they are not rivals:
+
+- **staged** (`shotstage68.c`) — pack the whole frame to a scratch file in
+  the published root, whose size is then an exact fact, and stream that
+  file through the tested file source. Costs a disk round trip; buys
+  compression. This is the one that crossed.
+- **streaming** (`shotsrc68.c`) — read the framebuffer straight down the
+  wire as `raw`, no staging and no scratch file, at ~300 KB. Built and
+  native-tested; **not yet routed**, because the staged path answered
+  `capture.request` first and one lane is one transfer wide.
+
+The header of `n68_bytesrc.h` argues against staging ("cannot be staged
+to a temporary file first either"). It was written before anyone had
+measured a capture, and it is right about 300 KB and wrong about 65 KB.
+That argument is now answered with numbers rather than overridden.
+
+**PICT is not the wire format, and the contract said so first.**
+`CaptureBegin.encoding` is `raw | packbits`, described as "NOT PICT: modern
+macOS cannot decode QuickDraw pictures, so the wire uses a format both
+sides own". So none of `shot68.c`'s picture machinery is on this path. The
+stream is the palette as RGB triples, then rows top to bottom — which the
+host already decodes, because the PowerPC guest already sends it. The
+envelope is built field for field from `guest/src/wire.c`'s, and
+`bytes` includes the palette (the contract's one-line description says
+`rowBytes * height`; the sender that exists sends `GetHandleSize` of
+palette-plus-rows, and the host agrees with the sender).
+
+**The pull/push problem, which is why the source reads the screen and not
+the picture.** `shot68.c` hands the whole frame to QuickDraw in ONE
+`CopyBits` that runs for ~480 ms and cannot be suspended. `fill()` is a
+pull. There is no way to pull from inside a call that is pushing — no
+threads, no coroutines, and the banded recording that would have made it
+incremental is the thing that killed QuickDraw on the third band. So the
+source reads the framebuffer directly through the shared walk, which is
+exactly what `raw` already is. PICT stays the disk format. The two paths
+meet at the screen and nowhere else.
+
+**This rung sends `raw`, and packbits is blocked on a real constraint,
+not on effort.** `n68_bytesrc.h`'s first promise is that `total` is exact
+before the first fill, because `capture.begin` carries the byte count and
+the receiver sizes its staging from it. For raw that is arithmetic. For
+packbits it is not knowable without packing, and this machine cannot hold
+a packed frame to measure one:
+
+- the packed frame is **not bounded**. The 180c's own desktop packs 4.7:1
+  (65.6 KB), but PackBits *expands* incompressible data, so the worst case
+  is ~303 KB against a 384 KB partition. "Usually fits" is not a budget.
+- a counting pass then an emitting pass would produce an exact number for
+  a screen that no longer exists. The two passes read the display at
+  different moments, so their lengths can differ — and `capture.begin`
+  would then be a lie the receiver sized its buffer from. Worse than
+  sending more bytes.
+
+So packbits over this lane needs **a decision, not code**: either stage
+the packed frame in a temporary file (whose size IS exact — the 180c wrote
+65 KB in ~800 ms, and `screenshot` already writes that file today), or a
+contract that can carry a transfer of unknown length. Neither is taken
+here. The cost of the rung that needs no argument is stated plainly: raw
+is ~300 KB where packed would be ~65 KB on a quiet screen, and on this
+machine's wire that difference is the whole user-visible experience.
+
+**Two bugs the wire found that no test could have.** Both are recorded
+because both are the same shape — a thing that is only wrong when two
+real halves meet:
+
+1. **The staged file was written where the sender does not look.** Staging
+   put it beside the application; `n68_filesrc` reads from the published
+   root (the Desktop). The capture staged perfectly, 137,760 bytes, and
+   then could not be found. This is the *second* time this tree has made
+   exactly this mistake — `n68_putfile.h` records the send and receive
+   halves briefly disagreeing about the root, and says only a real file
+   system can notice. `now68k_desktop_folder()` is the one place it is
+   decided and now this uses it too.
+2. **`capture.begin` announced `raw` while the payload was `packbits`.**
+   The envelope builder was written for the streaming rung and hardcoded
+   the word; the staged rung reused it. Every native test passed — they
+   only ever built raw plans — and the guest sent 137,794 perfectly
+   correct packed bytes under a label telling the host to read 307,968
+   unpacked ones. The encoding is a parameter now, and a native test pins
+   both spellings.
+
+**What is left before metal.** Nothing structural — this is a deploy and
+a run. Worth doing on the 180c specifically because every timing number
+so far is an emulator's, and because the compression that makes this lane
+worth having was 4.7:1 there against 2.2:1 here.
+
+**One thing that already works and is worth knowing.** `screenshot`
+followed by `put` gets pixels to the host *today*, using two shipped
+verbs and no new code — as a PICT, which the host cannot render but can
+store. That is a stopgap, not the lane.
+
+## `screenshot` on NOW-68K: metal-verified, and what it measured
+
+`screenshot` slice one is implemented on NOW-68K
+(`shot68.c` / `n68_shot.c`, contract-declared already — nothing in
+`contract/asyncapi.yaml` changed to add it). It captures the screen,
+encodes a packed 8-bit PICT, writes it to the guest's own desktop as
+`Screenshot YYYY-MM-DD HH.MM.SS` (type `PICT`, creator `ttxt`), and
+returns the measurement rows. No pixels cross the wire; that is slice
+two and belongs to the bulk-send work.
+
+**Metal-verified on the PowerBook 180c** (System 7.1, 640x480x8, 4 MB,
+2026-07-26) — deployed as a spike (`NOW-68K shot 0.14+shot`, its own
+folder and its own dev-settings file so the current build's 5252 was never
+touched), launched by asking the running build to `launch` it by path, and
+driven over the wire on 5050. Three captures: one `--no-save` and two
+saves. Both files landed on the guest's desktop with distinct names, and
+one was pulled back over FTP and **decoded here** — 640x480, `pixelSize`
+8, 256-entry colour table, and the 180c's own screen, correctly. The
+capture ran inside the partition with room to spare (the guest reported
+`free=489K max=179K` at the time; the capture's ceiling is ~21 KB).
+
+**The numbers, which are the point of the slice:**
+
+| | 180c (metal) | notes |
+|---|---|---|
+| read | 187–227 ms | matches vprobe's ~200 ms banded CopyBits |
+| pack | 431–542 ms | **the unknown this slice existed to measure** |
+| write | ~800 ms | 65 KB to the internal disk |
+| output | 65,648–65,692 B | full 640x480x8 frame |
+| ratio | **4.7:1** | |
+
+**Packing costs about 2.4x the read, not 10x.** The worst case in
+`shot68.c` was written assuming up to 10x and is therefore conservative by
+a wide margin: a whole capture is ~1.5 s wall clock, against a ~65 s
+death timer. And **4.7:1 on a real desktop means a frame is 65 KB**, not
+300 — which is the number slice two turns on, and it is a far friendlier
+number than the emulator's 2.2:1 suggested (the emulator's desktop was
+busier; a real 180c desktop packs better).
+
+**The 180c's clock is not set** — its PRAM battery is dead, and the 2020
+capacitor/battery work is queued for that machine anyway. Both captures
+were named `Screenshot 1904-01-01 23.49.0x`, the Mac epoch, which is what
+`GetTime` returned. The naming code is doing the right thing with the
+wrong input. What is worth keeping is that the per-second collision guard
+is carrying more weight on this machine than it was written for: every
+session after a restart starts near the same instant, so the tick-stamped
+fallback — not the timestamp — is what keeps shots from overwriting each
+other until that battery is replaced.
+
+**Also verified on the Quadra 800 emulator** (OS 8.1, 640x480x8, 2026-07-25):
+run from the guest's own console, three captures in one session
+(`--no-save`, then two saves), the app survived all three, both files
+landed with distinct names, and one of them was pulled off the disk image
+with `hfsutils` and **decoded on the host** — 640x480, `pixelSize` 8, a
+256-entry colour table, and pixel-for-pixel the screen at the moment of
+the command with the cursor shielded out of it. That is the strongest
+statement available short of hardware: the picture is not merely a file,
+it is the right picture.
+
+**The emulator settled nothing about TIME, and said so at the time.** It
+reported `read 0 ms, pack 23 ms, write 8 ms` — a 68040 with a
+host-memory framebuffer. Its 2.2:1 ratio also did not carry: the 180c's
+own desktop packs to 4.7:1. Both were correctly labelled as proving the
+code RUNS and produces the right picture, and nothing more; the metal run
+is what produced numbers.
+
+Still unverified, and named because these are the ones that will bite:
+
+- **Only one screen has been captured, and it was quiet.** 4.7:1 is a
+  desktop with two windows on it. A screen full of dithered photographic
+  content will pack far worse, and nothing here establishes a floor.
+- **The timing split is a difference of two passes.** `read_ms` is a real
+  banded-CopyBits measurement (vprobe's, on vprobe's band); `encode_ms`
+  is the recording pass minus the read minus the write, so it carries
+  both passes' noise. On a machine where packing dominates that is fine;
+  if the two ever land close together the number degrades to noise, and
+  it is floored at zero rather than allowed to go negative.
+- **8-bit only, by refusal.** A screen at any other depth is declined
+  with a sentence naming the depth. `CopyBits` would convert for free but
+  the 1400c showed a non-native path eats the whole margin
+  (`vram-readout.md`), and nobody has measured that here.
+- **The capture does not pump the wire.** Bounded by arithmetic at ~10 s
+  worst case against the host's ~65 s death timer (`kShotWorstCaseMs`) —
+  measured at ~1.5 s, so the bound is conservative by ~7x,
+  deliberately, because a pumped event can move a window mid-recording
+  and tear the picture. If a real 180c ever exceeds that bound the fix is
+  to band the PUMP, not the picture.
+
+One refactor rode along with this and is worth naming: **`vprobe`'s walk
+to the framebuffer and its one-band GWorld moved out of `vprobe68.c` into
+`screen68.c`**, unchanged, because `screenshot` needed the same three
+answers and a second copy of a fail-closed geometry check is one copy
+that falls behind. `vprobe` is metal-verified on the 180c; the moved
+version is not, and the move was verbatim rather than a rewrite, but
+"verbatim" is a claim about the diff and not about the machine.
+
+### The banded recording that had to be abandoned — worth knowing
+
+The first implementation recorded the picture **a band at a time** into a
+640x32 offscreen port, which is the obvious way to bound memory and is
+what the task was scoped around. On System 8.1 it **killed the
+application on the third band, every time**, while QuickDraw was writing
+that band's colour table. It was bisected on the emulator against the
+guest's own log:
+
+- not the file: `--no-save` (no `FSWrite` at all) died identically;
+- not the geometry: removing `SetOrigin` and recording every band at the
+  port's top died identically;
+- not the partition: 2 MB instead of 384 KB died identically;
+- not the put proc: it was entered correctly and had already streamed
+  6.7 KB across two good bands, and the partial PICT recovered from the
+  disk image decodes as two valid `PackBitsRect` opcodes.
+
+The cure was to stop banding the *destination* at all, which the design
+did not need: **a picture being recorded is never drawn into.** QuickDraw
+diverts the bottleneck and hands the source pixels to the put proc, so
+the destination port supplies only a coordinate space, a depth and a clip
+— and the Window Manager's colour port is all three for free. One
+recording `CopyBits` over the whole frame, one colour table instead of
+fifteen, ~21 KB ceiling, and none of the above. The root cause inside
+QuickDraw was never identified; if anyone reopens banded recording, that
+is the thing to find first.
+
 ## The 180c, 2026-07-25 evening: everything automated is green
 
 The display came back (a via that wiggled against its pad, found by

@@ -228,6 +228,25 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   streaming on that machine is arithmetic, not tuning.
   [docs/vram-readout-68k.md](docs/vram-readout-68k.md).
 
+- **`screenshot` on NOW-68K, to the guest's own disk.** The 68K guest
+  captures its screen, encodes a packed 8-bit PICT and writes it to its
+  own desktop as `Screenshot 2026-07-26 02.51.06` — type `PICT`, creator
+  `ttxt`, so it opens with a double-click — and reports what it cost. No
+  pixels cross the wire yet; the contract already said this slice was the
+  measurement, and the measurement is the point. It never holds a frame
+  or a picture: a picture being *recorded* is never drawn into, so the
+  destination is the Window Manager's own port and the opcodes stream
+  through a replaced `putPicProc` into a 1 KB buffer. The whole capture's
+  ceiling is ~21 KB against a 384 KB partition, whatever the screen size.
+  **Metal-verified on the PowerBook 180c** (System 7.1, 4 MB): three
+  captures, two files on its desktop with distinct names, one pulled back
+  over FTP and decoded here — pixel-for-pixel the 180c's screen, 8-bit,
+  cursor shielded out. It reads in ~200 ms, **packs in ~480 ms** — the one
+  cost nobody had measured, and 2.4x the read rather than the 10x the
+  budget assumed — writes 65 KB in ~800 ms, and packs **4.7:1**. A frame
+  is 65 KB, not 300, which is what slice two's viability over MacTCP turns
+  on.
+
 - **Files move both ways on NOW-68K** — the machine that previously
   discarded every bulk frame to stay in frame sync. Receiving a push is
   **emulator-verified**: a 4 MB file onto a Quadra 800 at 352 KB/s, pulled
@@ -260,7 +279,7 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
 
 - **A dev loop that does not need a Macintosh.** Neither guest can run its
   own suite, so the pure-C halves compile under the host `cc`:
-  `scripts/test-native` runs all 27 across both guests in one command, and
+  `scripts/test-native` runs all 28 across both guests in one command, and
   a test file missing from its manifest fails the run — a test nobody runs
   reads as coverage in a directory listing and proves nothing. The metal
   gates now **fail rather than skip** once a human has opted into a metal
@@ -273,19 +292,31 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
 ## What does not work
 
 - **NOW-68K implements a small part of the contract.** `launch`, `quit`,
-  `help`, `ps`, `vprobe`, `put` and `process.list`, plus receiving and
-  sending a file and the keepalive; everything else — capture, census,
-  streams, the process drive verbs, and the half of the file family that
-  SERVES a host (`file.list`, `file.get`, `file.move`, `file.trash`) —
-  answers `unknown-command` or `refused`, which is the contract's own
-  additive answer, not a failure. It can be told to send a file and can be
-  sent one; it cannot yet be browsed. **Receiving** decodes MacBinary, so
-  an application and its resource fork can cross inbound; **sending** does
-  not, so outbound is the data fork only. Every one of
-  those it does serve is reachable from
-  both its faces (the console and the wire), which
+  `help`, `ps`, `vprobe`, `screenshot`, `put` and `process.list`, plus
+  receiving and sending a file and the keepalive; everything else —
+  census, streams, the process drive verbs, and the half of the file
+  family that SERVES a host (`file.list`, `file.get`, `file.move`,
+  `file.trash`) — answers `unknown-command` or `refused`, which is the
+  contract's own additive answer, not a failure. It can be told to send a
+  file and can be sent one; it cannot yet be browsed. **Receiving**
+  decodes MacBinary, so an application and its resource fork can cross
+  inbound; **sending** does not, so outbound is the data fork only. Every
+  one of those it does serve is reachable from both its faces (the console
+  and the wire), which
   [docs/command-parity.md](docs/command-parity.md) explains and
   `CommandParityTests` enforces.
+- **NOW-68K's `screenshot` has captured exactly one kind of screen.** It is
+  metal-verified on the 180c, but 4.7:1 is a quiet desktop with two windows
+  on it; a screen full of dithered photographic content will pack far
+  worse and nothing establishes a floor. It captures **8-bit screens
+  only**, by refusal rather than conversion, and **its pixels do not cross
+  the wire** — that is slice two. Its `encode` figure is a difference of
+  two passes rather than a direct reading, so it carries both passes'
+  noise.
+- **The 180c's clock is not set.** Its screenshots are named
+  `Screenshot 1904-01-01 23.49.05` — the Mac epoch, which is what the
+  machine believes the time is. The same-instant collision guard is what
+  keeps a second shot from overwriting the first there.
 - **Receiving a file on NOW-68K is emulator-verified, not
   metal-verified.** A host can push into the Desktop, `data` or
   MacBinary, and 4 MB arrives byte-identical at ~350 KB/s on a Quadra

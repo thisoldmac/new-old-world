@@ -187,3 +187,14 @@ borrowings by name.
 longer a special case, it is a shape: the fix is a result type that holds
 rows, so the console and the wire render it the way they already render
 one-row results, and the exemption list goes back to being empty.
+
+`screenshot` is the first capability added since that paragraph was
+written, and it did not become a fourth. Its reply is a sentence and a
+handful of numbers — geometry, bytes, ratio, where it went, what it cost
+— which is two rows, which is what an `N68CmdResult` holds. So it went in
+`commands68.c`'s table like `launch` and `quit`, the console reached it
+by delegation the moment it existed, and nobody had to touch `conwin.c`.
+The one thing it did cost was **twenty-four bytes of `kN68CmdStateCap`** (24 to 48): row
+two is the only field a caller cannot spill into row one, and the cost
+line did not fit 24. Widening a field is the cheap answer; a fourth
+dispatch arm was the expensive one.
