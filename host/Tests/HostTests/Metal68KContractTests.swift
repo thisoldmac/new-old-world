@@ -35,6 +35,11 @@ final class Metal68KContractTests: XCTestCase {
         try XCTSkipUnless(env["NOW_METAL"] != nil,
                           "set NOW_METAL=1 to run against a live guest")
         port = env["NOW_METAL_PORT"].flatMap { UInt16($0) } ?? 5252
+        // Whether the machine is free, before whether the right guest
+        // answers it (MetalMachineGuard). This process's own sockets are
+        // excluded, so the self-race `startListening` absorbs below is
+        // invisible here and stays absorbed.
+        try MetalMachineGuard.preflight(port: port)
         listener = GuestListener(identity: .init(version: "0.1-metal",
                                                  name: "Metal Harness"))
         await startListening()

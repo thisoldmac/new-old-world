@@ -270,6 +270,18 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   one failure `quit` exists to catch and the one no real guest will
   perform on request.
 
+- **A metal run whose result can be attributed.** Two host sessions once
+  shared one PowerBook and produced a stall nothing could explain, so a
+  68K metal suite now establishes that the machine is FREE before it
+  binds anything — nothing else holding the port, nothing else talking
+  to the machine — and fails in about a second naming the process
+  instead of reporting a number nobody can trust. The procedure is
+  [docs/68k-metal-runbook.md](docs/68k-metal-runbook.md); what a run
+  should record, and why one sample from that machine is an anecdote, is
+  [docs/68k-metal-baseline.md](docs/68k-metal-baseline.md). It cannot
+  ask the guest whether it is mid-transfer — `xfer` knows, and is
+  console-only — which is in the ledger rather than papered over.
+
 ## What does not work
 
 - **NOW-68K implements a small part of the contract.** `launch`, `quit`,

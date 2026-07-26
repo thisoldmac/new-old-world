@@ -8,6 +8,12 @@ import XCTest
 ///     NOW_68K_OLD_PORT=5252 NOW_68K_NEW_PORT=5253 \
 ///     swift test --filter Metal68KHandoffTests
 ///
+/// It SKIPS unless `NOW_68K_NEW_APP` is set, which only
+/// `scripts/deploy-68k --handoff` does — see `setUp`. That is a
+/// deliberate exception to "a metal gate fails rather than skips": this
+/// is a deploy step and not a coverage gate, and `--filter Metal68K`
+/// catches it alongside the suites that are.
+///
 /// This is what `launch` and `quit` were written for. `proc68.h` puts it
 /// first, above the feature framing: "every probe run on this machine is
 /// deploy -> quit the FTP server -> measure -> relaunch, and doing that by
@@ -56,17 +62,51 @@ final class Metal68KHandoffTests: XCTestCase {
         let env = ProcessInfo.processInfo.environment
         try XCTSkipUnless(env["NOW_METAL"] != nil,
                           "set NOW_METAL=1 to run against a live guest")
-        // Not a skip: asking for a metal run and giving no build to hand
-        // off to is a broken invocation, not a decision to sit this out.
-        guard let app = env["NOW_68K_NEW_APP"], !app.isEmpty else {
-            throw gateFailed("NOW_68K_NEW_APP must name the build to launch "
-                             + "on the Mac, e.g. \"NOW-68K 0.8\" — it is the "
-                             + "name the file has on the machine, which is "
-                             + "the name `launch` searches the catalog for.")
+
+        // A SECOND OPT-IN, and a skip is right here for the same reason
+        // NOW_QUIT_DIRTY's is in MetalQuitTests: NOW_METAL=1 says a
+        // machine is available, not that this particular thing was asked
+        // for. This file is not a coverage gate — it is a DEPLOY STEP
+        // that needs a freshly uploaded build, two free ports, and the
+        // exact HFS path of a file `scripts/deploy-68k --handoff` has
+        // just put on the Mac. It sets these; nothing else does.
+        //
+        // It used to fail instead, and the argument for that was sound
+        // in isolation — "asking for a metal run and giving no build to
+        // hand off to is a broken invocation". The trouble is that
+        // `--filter Metal68K` catches this class too, so an ordinary
+        // metal pass over the 68K suites reported a failure that meant
+        // nothing, every time. A red that always fires is a red nobody
+        // reads, which costs more than the invocation check saved.
+        //
+        // The broken-invocation case is still a failure: set but EMPTY
+        // is somebody having tried and got it wrong, and is caught below.
+        guard let app = env["NOW_68K_NEW_APP"] else {
+            throw XCTSkip("""
+                a handoff is its own step, not part of a metal pass. \
+                `scripts/deploy-68k --handoff` sets NOW_68K_NEW_APP (and \
+                NOW_68K_NEW_PATH, NOW_68K_OLD_PORT, NOW_68K_NEW_PORT) \
+                after uploading a build; run it rather than this filter.
+                """)
+        }
+        guard !app.isEmpty else {
+            throw gateFailed("NOW_68K_NEW_APP is set but empty. It must name "
+                             + "the build to launch on the Mac, e.g. "
+                             + "\"NOW-68K 0.8\" — the name the file has on "
+                             + "the machine, which is the name `launch` "
+                             + "searches the catalog for.")
         }
         newApp = app
         oldPort = env["NOW_68K_OLD_PORT"].flatMap { UInt16($0) } ?? 5252
         newPort = env["NOW_68K_NEW_PORT"].flatMap { UInt16($0) } ?? 5253
+
+        // BOTH ports, because a handoff holds both at once and a
+        // half-free pair is the state that produces the most confusing
+        // failure here: the new build dials a port another session owns,
+        // handshakes with somebody else's harness, and this one waits out
+        // its 120 s and blames the build.
+        try MetalMachineGuard.requireThePortIsFree(oldPort)
+        try MetalMachineGuard.requireThePortIsFree(newPort)
 
         oldHost = GuestListener(identity: .init(version: "0.1-metal",
                                                 name: "Metal Harness (old)"))

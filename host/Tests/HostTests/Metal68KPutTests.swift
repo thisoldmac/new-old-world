@@ -51,12 +51,18 @@ import XCTest
 @MainActor
 final class Metal68KPutTests: XCTestCase {
     private var listener: GuestListener!
+    private var port: UInt16 = 5250
 
     override func setUp() async throws {
         let env = ProcessInfo.processInfo.environment
         try XCTSkipUnless(env["NOW_METAL"] != nil,
                           "set NOW_METAL=1 to run against a live guest")
-        let port = env["NOW_METAL_PORT"].flatMap { UInt16($0) } ?? 5250
+        port = env["NOW_METAL_PORT"].flatMap { UInt16($0) } ?? 5250
+        // Before anything binds. `requireTheBuildUnderTest` asks whether
+        // the right guest answered; this asks whether the machine was
+        // free to answer at all, which is the question the contended run
+        // of 2026-07-25 had no way to put.
+        try MetalMachineGuard.preflight(port: port)
         listener = GuestListener(
             identity: .init(version: "0.1-metal68k", name: "Metal Harness"),
             pacing: .classicMac)
@@ -74,6 +80,12 @@ final class Metal68KPutTests: XCTestCase {
         -> String {
         let deadline = Date().addingTimeInterval(seconds)
         while Date() < deadline {
+            // Checked every pass rather than once: a bind failure that
+            // arrives late still means nothing could dial in, and
+            // reporting it as "the Mac never answered" points a diagnosis
+            // at the wrong end of the room for two minutes.
+            try MetalMachineGuard.requireItIsListening(listener.state,
+                                                       port: port)
             if case .connected(let name) = listener.state {
                 try await Task.sleep(nanoseconds: 500_000_000)
                 return name
@@ -84,7 +96,10 @@ final class Metal68KPutTests: XCTestCase {
             No guest dialled in within \(Int(seconds))s. NOW_METAL is set, \
             so this is a failure and not a skip — boot one with \
             scripts/q800-68k, or check that the 180c is running a build \
-            whose dev settings point at this port.
+            whose dev settings point at this port. The harness WAS \
+            listening on \(port) and nothing else held it, so this is the \
+            Mac's end: if MacTCP has wedged, the dial never completes and \
+            nothing here can tell you so. Reboot it.
             """)
         throw XCTSkip("no guest")
     }
@@ -104,6 +119,17 @@ final class Metal68KPutTests: XCTestCase {
         var ok: Bool
         var text: String
         var receipt: GuestListener.PutReceipt?
+        /// Kept as numbers as well as prose, because the prose is for the
+        /// person watching and the numbers are the baseline record
+        /// (docs/68k-metal-baseline.md). Deriving them back out of the
+        /// text later is how a measurement becomes an anecdote.
+        var seconds: TimeInterval = 0
+        var reports = 0
+        var maxGap = 0
+        /// Where a transfer that never finished stopped. 606208 of
+        /// 1048576 was the whole of what the contended run left behind,
+        /// and it lived in a transcript rather than in a record.
+        var stalledAt: Int?
     }
 
     private func put(_ name: String, _ bytes: Data,
@@ -144,13 +170,15 @@ final class Metal68KPutTests: XCTestCase {
                         format: "ok in %.1fs (%.0f KB/s), %d reports, "
                               + "largest gap %d B, integrity %@",
                         secs, rate, reports, maxGap, receipt.integrity),
-                    receipt: receipt)
+                    receipt: receipt,
+                    seconds: secs, reports: reports, maxGap: maxGap)
             case .failure(let f):
                 result = Outcome(
                     ok: false,
                     text: "FAILED [\(f.code)] \(f.message) "
                         + "after \(Int(secs))s, \(lastSeen) of \(bytes.count)",
-                    receipt: nil)
+                    receipt: nil,
+                    seconds: secs, reports: reports, maxGap: maxGap)
             }
         }
 
@@ -165,7 +193,9 @@ final class Metal68KPutTests: XCTestCase {
                 text: "HUNG after \(Int(timeout))s at \(lastSeen) of "
                     + "\(bytes.count) bytes, \(reports) reports "
                     + "(largest gap \(maxGap) B)",
-                receipt: nil)
+                receipt: nil,
+                seconds: timeout, reports: reports, maxGap: maxGap,
+                stalledAt: lastSeen)
         }
         return result!
     }
@@ -177,9 +207,26 @@ final class Metal68KPutTests: XCTestCase {
     /// being round: the batch buffer and the progress step are both
     /// 8192, and the host's frame is 8192 too, so one byte either side of
     /// a multiple is where an off-by-one in the flush or the ack lives.
+    ///
+    /// ---- Repeats, and which rungs get them -------------------------------
+    ///
+    /// The small rungs are CORRECTNESS checks — a byte either side of a
+    /// frame boundary is right or it is not, and running it three times
+    /// says the same thing three times. The large ones are the only
+    /// MEASUREMENT this suite makes, and on a machine whose MacTCP has
+    /// been watched wedging silently, one sample of a rate is an
+    /// anecdote. So `NOW_METAL_REPEATS` (default 1, the runbook asks for
+    /// 3 on the 180c) repeats the rungs at or above 1 MB only, and the
+    /// baseline record carries each sample separately so their spread is
+    /// visible rather than averaged away.
     func testTheSizeLadderUpToFourMegabytes() async throws {
         let who = try await waitForGuest()
         print("=== \(who) ===")
+        let repeats = MetalBaseline.repeats
+        MetalBaseline.emitMeta(guestName: who,
+                               version: listener.health?.guestVersion,
+                               os: listener.health?.guestOS,
+                               port: port, repeats: repeats)
 
         let sizes: [(String, Int)] = [
             ("empty", 0),
@@ -195,15 +242,27 @@ final class Metal68KPutTests: XCTestCase {
 
         var failures: [String] = []
         for (label, size) in sizes {
-            let outcome = await put("N68 \(size)", pattern(size))
-            print("  \(label) (\(size) B): \(outcome.text)")
-            if !outcome.ok {
-                failures.append("\(label): \(outcome.text)")
-                // Keep going: which rungs fail is the diagnosis, and
-                // stopping at the first one throws that away.
-                continue
-            }
-            if let r = outcome.receipt {
+            let samples = size >= 1_048_576 ? repeats : 1
+            for rep in 1...samples {
+                let outcome = await put("N68 \(size)", pattern(size))
+                let which = samples > 1 ? " [\(rep)/\(samples)]" : ""
+                print("  \(label) (\(size) B)\(which): \(outcome.text)")
+                MetalBaseline.emitRung(
+                    direction: "receive", label: label, bytes: size,
+                    seconds: outcome.seconds, rep: rep, of: samples,
+                    result: outcome.ok ? "ok" : "failed",
+                    extra: [("reports", String(outcome.reports)),
+                            ("maxgap", String(outcome.maxGap)),
+                            ("integrity", outcome.receipt?.integrity ?? "-"),
+                            ("stalled_at",
+                             outcome.stalledAt.map(String.init) ?? "-")])
+                if !outcome.ok {
+                    failures.append("\(label)\(which): \(outcome.text)")
+                    // Keep going: which rungs fail is the diagnosis, and
+                    // stopping at the first one throws that away.
+                    continue
+                }
+                guard let r = outcome.receipt else { continue }
                 XCTAssertEqual(r.receiverConfirmedBytes, size, label)
                 XCTAssertEqual(r.finalization, "same-folder-rename", label)
                 XCTAssertEqual(r.cleanup, "temp-renamed", label)
@@ -372,6 +431,15 @@ final class Metal68KPutTests: XCTestCase {
         print("  gestalt idle \(idle.map { String(format: "%.2fs", $0) } ?? "—")"
               + ", during \(during.map { String(format: "%.2fs", $0) } ?? "no answer")"
               + "; transfer \(outcome.text)")
+        // One question, so `asked` is 1 and `unanswered` is 0 or 1 — the
+        // receive direction samples the control lane rather than
+        // hammering it, unlike the send suite. Recorded in the same shape
+        // regardless, because the two directions' latencies under load
+        // are the comparison the 180c is most likely to make interesting.
+        MetalBaseline.emitControlLane(
+            direction: "receive", asked: 1,
+            unanswered: during == nil ? 1 : 0,
+            worst: during ?? 0, idle: idle)
         XCTAssertTrue(outcome.ok, outcome.text)
         XCTAssertNotNil(during, """
             The guest stopped answering commands while receiving. It is \

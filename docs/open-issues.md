@@ -84,12 +84,134 @@ gap is that nothing establishes whether the *machine* is already busy.
 rule covers several guests reaching one listener; this is several
 listeners reaching one guest, and it is not written down anywhere else.
 
+**Fixed on 2026-07-26**, test-side only — see `MetalMachineGuard` and
+[68k-metal-runbook.md](68k-metal-runbook.md). Before any 68K metal suite
+binds, it establishes that nothing else on this Mac holds the port and
+(when `NOW_METAL_MACHINE` names the guest's address) that nothing else
+is talking to the machine, and fails in about a second naming the
+process rather than producing an unattributable result. It also reports
+a bind failure as a bind failure: the suites used to wait out a full
+120 s and say "no guest dialled in", which aims the diagnosis at the
+Macintosh for a fault entirely on this side.
+
+What it still cannot see is below, and it is the honest limit of the
+fix.
+
+### A host cannot ask a 68K guest whether it is busy
+
+**Found 2026-07-26 while building the guard above; no code changed.**
+
+NOW-68K knows perfectly well whether it is mid-transfer in either
+direction, and renders exactly that: `xfer` reports an active receive
+with its byte count, an active send, and the last completed one either
+way. **There is no way for a host to ask.** `xfer` is console-only by a
+recorded decision (`CommandParityTests :: consoleOnly` — "renders the
+file.* family's state; the host reads it from file.progress and
+file.done instead"), and the PowerPC guest's wire-only `putstat` has no
+68K counterpart.
+
+That reasoning holds for a host that is *driving* the transfer, which is
+the case it was written for: such a host has the progress messages. It
+does not hold for a host that wants to know whether the machine is free
+before it starts — which is precisely the question the contended run
+needed to ask and could not. So contention detection is host-side only,
+and the guard says so rather than guessing.
+
+Not fixed here, because it is a product change and this pass was tests
+and documentation. If it is taken up, the cheap version is a `busy`
+verb (or an `xfer` promoted to both faces per
+[command-parity.md](command-parity.md)) answering the two booleans and
+the two byte counts `N68PutStatus` / `N68SendStatus` already hold. The
+gap it would close is real but narrow: it tells a second session that
+the machine is busy, and tells it nothing about who has it.
+
 Related and unresolved: the name a build has on the disk and the version
 it reports on the wire are established by different means, and a guest
 answering `"version":"0.16"` was found on a machine whose deploy folder
 had just gained a file named `NOW-68K 0.18`. Whether those were the same
 application was never established. `deploy-68k` stamps both from one
 source, so this only arises when something bypasses it.
+
+### `--filter Metal68K` used to report a failure that meant nothing
+
+**Fixed 2026-07-26**, test-side only. `Metal68KHandoffTests` is a deploy
+step, not a coverage gate: it needs a freshly uploaded build and the
+exact HFS path of it, which only `scripts/deploy-68k --handoff` knows.
+It used to FAIL when those were absent, on the argument that asking for
+a metal run with no build to hand off to is a broken invocation — sound
+in isolation, but `--filter Metal68K` catches that class too, so every
+ordinary 68K metal pass reported one red that meant nothing. A red that
+always fires is a red nobody reads.
+
+It now SKIPS when `NOW_68K_NEW_APP` is unset, with the same second
+opt-in shape `MetalQuitTests` already uses for the dirty-document case
+("NOW_METAL=1 alone does not say a human is at the keyboard"). Set but
+EMPTY is still a failure, because that is somebody having tried.
+
+This is a deliberate exception to "a metal gate fails rather than
+skips", and it is narrow: the thing being skipped is a deploy action,
+not evidence about the guest.
+
+### NOW-68K cannot send the same file twice, and says it can
+
+**Found 2026-07-26 on the emulator, by the repeat sampling above; no
+code changed.**
+
+`n68_puttx.c`'s offer never sets `overwrite`, so the host applies the
+contract's default of false (`GuestListener.acceptOffer`) and REFUSES
+the second offer of a name the share already holds. That is defensible
+policy — the host will not silently replace a file — but the guest end
+of it is not honest:
+
+- `put <name>` has ALREADY answered `ok` by then, because the command
+  returns as soon as the offer is away (deliberately: a command that
+  blocked for a multi-megabyte transfer would hold a `command.result`
+  for minutes). So the person who typed it is told it worked.
+- The refusal arrives afterwards as `file.refuse`, and the only place it
+  surfaces is `xfer`'s "last FAILED" line — which nobody has a reason to
+  type after being told `ok`.
+
+From the host side it presents as a transfer that never starts: the
+offer goes out and nothing ever arrives. It cost a 300 s timeout per
+sample to work out, and read exactly like the machine having gone away
+— the same signature as the contended run, from an entirely different
+cause, which is worth knowing on its own.
+
+Not fixed here (product change; this pass was tests and docs). Three
+candidate fixes and they are not equivalent: the guest could set
+`overwrite` on its offer (wrong — that hands a guest the right to
+replace files on the host), the host could decline more visibly, or the
+guest could hold the send's outcome somewhere `put`'s caller can reach.
+The last is the one that matches the direction the contract already
+takes for progress.
+
+The suites work around it by naming every sample separately
+(`RT<size>r<rep>`), which is a harness fix and not a fix.
+
+### Two `swift test` runs on one Mac fail three suites
+
+**Found 2026-07-26, reproduced deterministically; pre-existing, no code
+changed.** Three suites share state outside the process:
+`HostLogTests` and `LoggingSpecTests` both write
+`~/Library/Logs/now-logs`, and `HostAppStateWiringTests` binds a fixed
+port 52981. Running two `swift test` processes concurrently fails them
+every time.
+
+It surfaced here because a metal pass and an ordinary gate run overlapped
+by a few seconds, and the result was two failures that vanished on
+re-run — the flakiness signature, from a cause that is not flaky at all.
+Worth fixing at some point (a per-process log path and an ephemeral
+port), and worth knowing meanwhile: the runbook says one at a time.
+
+### What a 68K metal run should record
+
+[68k-metal-baseline.md](68k-metal-baseline.md). In short: the suites now
+emit one greppable `NOWBASE` line per measurement, carrying the
+conditions (build, machine, port) beside the numbers, because the
+2026-07-25 run's numbers were real and unattributable. `NOW_METAL_REPEATS=3`
+takes three samples of every rung at or above 1 MB, so a rate can be
+told from an interruption — which one sample from this machine
+demonstrably cannot do.
 
 ## Host -> guest file transfer on NOW-68K (2026-07-25)
 

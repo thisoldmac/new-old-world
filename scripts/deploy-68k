@@ -350,8 +350,16 @@ def main() -> int:
         scratch = os.environ.get(
             "NOW_SWIFT_SCRATCH",
             str(Path(tempfile.gettempdir()) / "now-swiftbuild"))
-        env = dict(os.environ, NOW_METAL="1", NOW_METAL_PORT=args.port)
-        print("\n== metal suite (%s), port %s" % (args.filter, args.port))
+        # NOW_METAL_MACHINE names the machine under test to the
+        # machine-busy guard, which without it can only check ports and
+        # says so. This script knows the address, so the common path
+        # should not depend on somebody remembering to export it - and
+        # the run this guard exists to prevent was a run where an FTP
+        # deploy to exactly this address overlapped a ladder.
+        env = dict(os.environ, NOW_METAL="1", NOW_METAL_PORT=args.port,
+                   NOW_METAL_MACHINE=HOST)
+        print("\n== metal suite (%s), port %s, machine %s"
+              % (args.filter, args.port, HOST))
         # Not check=True: a metal gate FAILING is a result, not a crash,
         # and its own output says more than a traceback would.
         return subprocess.run(
