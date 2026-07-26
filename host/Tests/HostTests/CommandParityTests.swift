@@ -62,6 +62,13 @@ final class CommandParityTests: XCTestCase {
         "trash": "file.* family from the host side, not an x-command",
         "untrash": "file.* family from the host side, not an x-command",
         "mkdir": "file.* family from the host side, not an x-command",
+        // NOW-68K's own console face on the file.* family. The host does
+        // not reach it as a command — it pushes a file and reads the
+        // file.progress / file.done it gets back — so this is a
+        // renderer for a capability the wire already has, not a verb the
+        // wire is missing.
+        "xfer": "renders the file.* family's state; the host reads it "
+              + "from file.progress and file.done instead",
     ]
 
     private static let wireOnly: [String: String] = [
@@ -214,6 +221,75 @@ final class CommandParityTests: XCTestCase {
             the console lists processes without using proc_list_rows(), so \
             there are now two process walks that can disagree. One \
             implementation, two renderers — see docs/command-parity.md.
+            """)
+    }
+
+    /// The second capability that is not a command. Receiving a pushed
+    /// file is the `file.*` message family, so — exactly like
+    /// `process.list` above — no command table compares the two faces,
+    /// and a wire-only implementation would look complete from every
+    /// angle except a person standing at the machine.
+    func testTheSixtyEightKConsoleCanSeeAnIncomingFile() throws {
+        let wire = try source("guest68k/src/wire68.c")
+        let console = try source("guest68k/src/conwin.c")
+
+        guard wire.contains("\"file.offer\"") else {
+            return   // if the guest ever stops receiving files, this is moot
+        }
+        XCTAssertTrue(console.contains("\"xfer\""), """
+            NOW-68K accepts a file.offer over the wire, so the host can \
+            push a file to it — but its console cannot say whether one is \
+            arriving, how far it has got, or where it will land. A \
+            transfer in flight shows no window and a finished one lands \
+            somewhere the app never mentioned, so this is the whole of \
+            what a person at the machine can know about it.
+            """)
+        XCTAssertTrue(console.contains("now68k_wire_put_status"), """
+            conwin.c reports on transfers without reading \
+            now68k_wire_put_status(), so the console and the wire now \
+            keep separate counts of the same transfer. One \
+            implementation, two renderers — see docs/command-parity.md.
+            """)
+    }
+
+    /// The third capability that is not a command — and the one where
+    /// the lesson was applied before it cost anything. SENDING a file is
+    /// the `file.*` family read from the other end, so again no command
+    /// table compares the two faces on its own.
+    ///
+    /// Two things are asserted, and they are different. The first is
+    /// that a person at the machine can SEE an outgoing transfer, which
+    /// is `xfer`'s job in both directions. The second is that `put` is
+    /// in commands68.c rather than only in conwin.c, so the host console
+    /// — a dumb shell with no knowledge of message families — can type
+    /// it. `ps` satisfied the first and failed the second for a day.
+    func testTheSixtyEightKConsoleCanSeeAnOutgoingFile() throws {
+        let wire = try source("guest68k/src/wire68.c")
+        let console = try source("guest68k/src/conwin.c")
+        // dispatched(), not contains("\"put\"") — the doc table names
+        // every verb too, so a substring check passes on a guest that
+        // merely ADVERTISES the command and answers unknown-command to
+        // it. Caught by mutation: renaming the dispatch arm left the
+        // first version of this test green.
+        let table = dispatched(in: try source("guest68k/src/commands68.c"))
+
+        guard wire.contains("now68k_wire_send_file") else {
+            return   // if the guest ever stops sending files, this is moot
+        }
+        XCTAssertTrue(console.contains("now68k_wire_send_status"), """
+            NOW-68K can send a file, but its console cannot say whether \
+            one is going out or what became of the last one. A person who \
+            types `put` and then has no way to ask what happened is in \
+            exactly the position `xfer` was written to fix, facing the \
+            other way.
+            """)
+        XCTAssertTrue(table.contains("put"), """
+            `put` is not in commands68.c's table, so the host console \
+            gets unknown-command for it while a person at the PowerBook \
+            can send files happily. That is the `ps` failure exactly: the \
+            host console sends the line a person types and knows no \
+            message families, so a capability reachable only from the \
+            guest's own keyboard is one the host cannot reach at all.
             """)
     }
 

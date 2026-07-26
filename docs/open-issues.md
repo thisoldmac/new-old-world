@@ -9,6 +9,374 @@ wrong thing) versus **unverified** (it may well be right, but no one has
 watched it work on the PowerBook). Unverified is not a lesser problem —
 several of tonight's bugs lived in code that looked obviously correct.
 
+## The 68K file family, both directions in one tree (2026-07-25 night)
+
+Three branches merged and verified together: the receive half (MacBinary,
+Desktop landing, the `FSClose` fork repair), the send half (the
+byte-source sender), and the version-bump commit that carried them to the
+machine. What that merge found, and what it left open.
+
+### Broken
+
+- **~~The two halves disagreed about where files live.~~** Fixed in this
+  pass, and worth keeping in the ledger for how it hid. Receiving landed
+  on the Desktop, sending read from the application's own folder; each
+  branch was self-consistent, so no reviewer of either could see it. It
+  survived the merge (no textual conflict — two roots in two files), 27
+  native tests, 508 host tests, both Xcode configs, and `-Werror`. The
+  round-trip ladder on the emulator named it as `fnfErr` on all ten
+  rungs. **A cross-direction test is the only kind that could have
+  caught this, and it could not exist while the halves were on separate
+  branches.** `now68k_desktop_folder` is now published from
+  `n68_putfile.h` and both directions read it.
+- **A merge can drop an `#include` with no conflict.** `git` took one
+  side's include block wholesale and `<Processes.h>` went with it. The
+  block was never marked conflicted, so reviewing the conflicted hunks
+  would not have shown it. `-Werror` caught it; nothing else would have
+  until link time.
+- **A conflict region can cut a function mid-body.** The resolution
+  looked complete — every declaration present — and the function simply
+  never closed, which the compiler reported as four *unrelated*
+  functions being "defined but not used" and a fifth reaching the end of
+  a non-void function. The error names never mention the function that
+  is actually broken.
+- **The handoff's retire step may quit the wrong build.** `NOW-68K 0.17`
+  reached the 180c and its log reads `wire: connected` then `cmd: quit
+  ok 0` — the incoming build took a quit and executed it, where the
+  outgoing one was meant to. Not diagnosed, and **not confirmed**: the
+  run it came from was contended (see below), so this is a suspicion
+  with a log line behind it, not a defect with a repro.
+
+### Unverified
+
+- **Neither direction has moved a byte on the 180c.** Both are
+  emulator-verified on a Quadra 800 under Mac OS 8.1 — receive 4 MB in
+  11.7 s (350 KB/s, 512 progress reports, CRC-confirmed), send 4 MB in
+  1.8 s, MacBinary both forks, control lane 0.05 s idle against 0.10 s
+  during a 1 MB push. A 68040 with 128 MB is not a 68030 with 4 MB, and
+  the send rate in particular reads off a disk the emulator caches —
+  read it as "the path works", never as a rate.
+- **The PackBits ratio and encode cost are unmeasured.** `vprobe` has
+  the framebuffer READ at 159 ms for a 300 KB frame
+  ([docs/vram-readout-68k.md](vram-readout-68k.md)); nobody has measured
+  what compressing it costs on a 33 MHz 68030, and **the ratio is what
+  decides whether screenshots are viable over MacTCP at all**. No branch
+  in this repository implements PackBits. The send half was built as a
+  byte source (`n68_bytesrc.h`) precisely so a capture can feed the pipe
+  in bands rather than buffer 300 KB against a 384 KB partition — that
+  shape held through the merge, so a screenshot sender does not need a
+  second send path.
+
+### Two host sessions can contend for one PowerBook, invisibly
+
+A metal run of these suites on 2026-07-25 held port 5252 for the better
+part of an hour while another session deployed a build into the same
+folder mid-ladder. The results were unattributable: a 1 MB push stalled
+at 606208 bytes and every rung after it timed out at `0 of N`. The most
+likely cause is contention rather than a defect — NetPresenz serving an
+FTP upload while NOW-68K received a push, both on MacTCP, on a 68030
+with 4 MB — but nothing proves that either, which is the point.
+
+**`requireTheBuildUnderTest()` would not have caught it.** That guard
+asks whether the connected guest is the right *guest*, and it was. The
+gap is that nothing establishes whether the *machine* is already busy.
+`lsof -iTCP:<port>` before a run answers it in a second. The existing
+rule covers several guests reaching one listener; this is several
+listeners reaching one guest, and it is not written down anywhere else.
+
+Related and unresolved: the name a build has on the disk and the version
+it reports on the wire are established by different means, and a guest
+answering `"version":"0.16"` was found on a machine whose deploy folder
+had just gained a file named `NOW-68K 0.18`. Whether those were the same
+application was never established. `deploy-68k` stamps both from one
+source, so this only arises when something bypasses it.
+
+## Host -> guest file transfer on NOW-68K (2026-07-25)
+
+NOW-68K receives a pushed file. Offer, accept, stream, checksum, done -
+the contract's `hostPutsFiles` sequence, served by the guest that
+previously discarded every bulk frame to stay in frame sync.
+
+**Emulator-verified, NOT metal-verified.** Everything below was measured
+on a Quadra 800 under Mac OS 8.1 with 128 MB (`scripts/q800-68k`). The
+real target is a 68030 under System 7.1 with 4 MB. What carries over is
+correctness; what does not is every number in the table.
+
+| Size | Result (emulator) |
+|---|---|
+| 0, 1, 8191, 8192, 8193 B | ok - the boundaries either side of one frame |
+| 64 KB | ok, 299 KB/s |
+| 256 KB | ok, 348 KB/s |
+| 1 MB | ok, 357 KB/s |
+| **4 MB** | **ok, 11.6 s, 352 KB/s, 512 progress reports** |
+
+The 4 MB file was pulled back off the disk image with hfsutils and is
+**byte-identical** to what was sent (CRC-32 `A627E416`, agreeing with
+zlib and with the guest's own). The catalog shows exact sizes rather
+than allocation-block-rounded ones, so the `Allocate` + EOF-trim pair
+works, and no `NOW incoming ...` staging file was left behind.
+
+The guest's event loop is not starved by the receive path: `help`
+round-tripped in 0.05 s during a 1 MB transfer against 0.06 s idle.
+
+## MacBinary on NOW-68K: the fork corruption, found and fenced (2026-07-26)
+
+Full record: **[68k-file-receive.md](68k-file-receive.md)**. In short.
+
+`FSClose` of a written resource fork on Mac OS 8.1 splices 77 bytes of
+File Manager catalog state into the fork's first block at offset 48 - an
+in-memory record layout that matches nothing on disk. Deterministic:
+every resource-carrying MacBinary file, every run; data forks never; a
+MacBinary file with an empty data fork never affected.
+
+Pinned by three structural facts, in this order: the splice is
+sub-sector, so the bytes were wrong in RAM and no allocation-level
+theory survives; the spliced content carries the staging name and
+`BINA` but both FINAL fork lengths, which brackets the write to the
+close window and explains why disabling `Allocate`, `SetEOF`,
+`FSpRename`, `FSpSetFInfo` and `PBSetCatInfo` each missed; and read-back
+probes read clean before the close and spliced after it, 5/5.
+
+The guest keeps the fork's first 512 bytes as written, re-reads them
+after the close and after the rename, rewrites them when they diverge,
+and re-verifies through a fresh open. Unrepairable before rename fails
+the transfer; after rename it deletes the file rather than leave a
+corrupt application to be double-clicked. Detected 5/5, repaired in one
+round 5/5, raw disk clean, both forks byte-identical.
+
+**Still open, and the first is the one that matters:**
+
+1. **System 7.1 on the real 180c is untested** - the 7.5.3 image in the
+   lab has no MacTCP, so the OS discriminator is blocked. The shipped
+   probes double as the experiment: push one MacBinary file and the log
+   either names the scribble or stays silent. Either answer is safe.
+2. QEMU's contribution is not separated from 8.1 itself.
+3. The PowerPC guest's resource forks have never been byte-verified.
+
+### What is deliberately not there
+
+- **No resume.** The guest never reports `have`, which the contract
+  reads as "start from the beginning". Partials are always discarded.
+  Deliberate: resume is an open hang on the PowerPC side (see the large
+  transfer notes) and a 4 MB transfer is not long enough to make
+  restarting a hardship.
+- **~~Receive only.~~** Superseded — NOW-68K now sends as well as
+  receives; see the next section. `file.list`, `file.move`,
+  `file.trash` and the host-initiated PULL (`file.get`) still answer the
+  generic not-implemented error, so the guest can push a file it is told
+  to push but cannot serve a host that wants to browse or fetch.
+- **~~The destination is the application's own folder.~~** Superseded —
+  **files land on the Desktop, and nothing is gated.** NOW-68K has no
+  preferences and no share root, so there is nothing to read a
+  destination out of. The Desktop needs no state to name and is where a
+  person looks for something that arrived. `path` from the offer still
+  resolves relative to it and a host may reach a subfolder — deliberate
+  until the browse/ls verbs exist, because a boundary drawn before
+  there is anything to browse is a guess dressed as a policy. It was
+  briefly the application's own folder, which meant a host could write
+  into the System Folder. The send half still reads its SOURCE from the
+  application's own folder (`now68k_app_folder`), which is a different
+  root for a different direction and deliberately so.
+
+### Open
+
+1. **Nothing has run on the PowerBook 180c.** Everything above is an
+   emulator result. The 180c has 4 MB against the emulator's 128, a
+   68030 against a 68040, and MacTCP that has already been observed to
+   wedge silently on that machine. A 4 MB transfer into a 384 KB
+   partition is exactly the shape that behaves differently there.
+2. **A contract gap: `FileRefuse.code` has no value for "this receiver
+   cannot handle that".** An unrecognized container is reported as
+   `io-error` with the truth only in `reason`, which is a lie of
+   category - nothing failed, the request was never serviceable. The
+   honest fix is an additive enum value in the contract, which touches
+   both halves and was out of scope for a spike. (Unknown containers are
+   now REFUSED rather than treated as `data`; writing an unknown
+   envelope out as a raw fork produces a file of the wrong length and
+   the wrong shape and blames the disk.)
+3. **`FileOffer.modified` has no stated units in the contract.** Both
+   guests treat it as Mac-epoch seconds (it goes straight into
+   `ioFlMdDat`), and the two agreeing is the only reason it works. It
+   should be written down.
+4. **The host never uses the `chunk` it negotiates.** `hello.chunk` is
+   computed and echoed (`GuestListener.swift`), but the file sender's
+   frame size is a hardcoded 8192. NOW-68K advertises 4096 for a stated
+   MacTCP reason and is sent 8 KB frames regardless. Harmless today - the
+   guest streams and needs no frame-sized buffer - but the negotiation
+   is decorative, and a guest that genuinely could not take 8 KB would
+   have no way to say so.
+5. **The application partition is getting tight.** This pass cost
+   +19408 bytes (~5% of 384 KB), leaving roughly 184 KB of image before
+   stack and heap. Preferred == minimum on a 4 MB machine, so there is
+   nothing to borrow. The next addition this size needs the budget
+   looked at rather than assumed.
+6. **`g_sink` is still 256 bytes**, inherited from when it was a pure
+   discard sink. A 4 MB transfer therefore makes ~32 passes per 8 KB
+   frame. Cheap memcpys, but it is a knob nobody has measured on the
+   180c, where BSS is the scarcer resource.
+
+## Guest -> host file transfer on NOW-68K (2026-07-25)
+
+The other direction. NOW-68K makes the offer, streams the bulk frames
+and closes with a checksum: `file.offer` -> `file.accept` ->
+`file.begin` -> bulk -> `file.end` -> `file.done`. **Additive — no
+contract schema changed.** Every message and every field already
+existed, is already served by the host (`GuestListener.onAcceptOffer` /
+`finishInbound`) and is already sent by the PowerPC guest; that was
+verified against the schemas rather than assumed.
+
+**Emulator-verified, NOT metal-verified.** Measured on a Quadra 800
+under Mac OS 8.1 with 128 MB (`scripts/q800-68k`), driven by
+`Metal68KSendTests`. The real target is a 68030 under System 7.1 with
+4 MB. What carries over is correctness; what does not is every number.
+
+Each case pushes a known pattern to the guest, asks the guest to send
+that same file back, and compares the bytes **the host still holds**
+against the bytes that came back. Nothing in the comparison comes from
+the guest's own accounting — not its progress, not its CRC, not its
+byte count, because a sender marking its own work proves nothing.
+
+| Size | Result (emulator) |
+|---|---|
+| 0, 1, 4095, 4096, 4097, 8192 B | ok — the boundaries either side of one chunk |
+| 64 KB | ok, 313 KB/s |
+| 256 KB | ok, 1227 KB/s |
+| 1 MB | ok, 2198 KB/s |
+| **4 MB** | **ok, 2.5 s, 1648 KB/s, byte-identical** |
+
+Sending reads from a disk the emulator caches, so these rates are
+several times the receive direction's 352 KB/s and mean nothing about
+the 180c, where the read is a real one off a real disk.
+
+**The wire-sharing rule holds under real back-pressure**, which is the
+claim nothing off-metal can check: during a 4 MB send, 28 `help`
+requests were answered, **none dropped, worst 0.10 s**. That is the
+rule working — control drains before bulk, and a reply waits for the
+chunk in flight rather than for the transfer.
+
+The 0-byte case is worth its row: a zero-length source sends **no bulk
+frame at all**, begin then end, and the receiver closes out correctly
+rather than waiting for a stream that never comes.
+
+### It is a byte-source sender, not a file sender
+
+The point of the shape, stated because it is the thing most likely to
+be undone by someone in a hurry. The source is an interface
+(`n68_bytesrc.h`) with four promises: it knows its length before the
+first fill, it returns promptly, it does not allocate, and it never
+touches the wire. A file (`n68_filesrc.h`) is the FIRST implementation,
+not the only intended one — a screen capture is ~300 KB against a
+384 KB partition, so it can never be a buffer and cannot be staged to a
+disk that may not have room. **If a screenshot ever needs a second,
+parallel send path, this was built wrong.**
+
+### How bulk and control share the wire
+
+Stated once in `n68_puttx.h` and enforced in `flush_outbound()`:
+
+1. Bulk never touches the four 1024-byte control slots; it has one
+   dedicated 4104-byte slot, so no volume of bulk can consume the slot
+   a `command.result` needs.
+2. A frame already being handed to `net_queue_send` finishes before any
+   other frame's first byte.
+3. Otherwise control drains before bulk, so a reply queued mid-transfer
+   waits for the chunk in flight (~12 ms) and never for the transfer.
+4. Back-pressure is `net_queue_send`'s short accept and nothing else.
+
+Rule 4 is the one that will read as a bug later, so: this side does
+**not** need the receiver's `file.progress` to clock itself and the
+host **does**. MacTCP's staging buffer is small and reports truthfully
+and synchronously how much room is left; the host writes into
+Network.framework, which accepts essentially unbounded writes and so
+tells it nothing. Two senders, two mechanisms, neither one the other's
+bug.
+
+### Parity: `put` is on both faces here, and console-only on the PPC guest
+
+Deliberate, and the two guests genuinely differ. A host driving the
+PowerPC guest reaches the same capability through `file.list` and
+`file.get`, so that guest needs no verb. NOW-68K is the machine whose
+display has already failed mid-session and whose host console is a dumb
+shell with no knowledge of message families — so on that guest the
+capability is a verb in `commands68.c`'s table, reachable from both
+faces through one implementation. The contract declares `put` in
+`x-commands` first, per AGENTS.md.
+
+`CommandRegistryTests` had to learn this: it assumed the registry IS
+the PowerPC guest's command set. NOW-68K always answered a strict
+subset, which that test never had to notice; `put` is the first command
+going the other way, and it is named in `notOnThePowerPCGuest` with its
+reason rather than subtracted silently.
+
+### Open
+
+1. **Nothing has sent a byte on the 180c.** The emulator results above
+   say the code is correct; they say nothing about a 68030 with 4 MB,
+   whose MacTCP has already been observed to wedge silently. Reading a
+   4 MB file off a real disk while streaming it is exactly the shape
+   that behaves differently there.
+2. **Several guests can reach one listener, and one of them is not
+   yours.** Every QEMU guest on this Mac sees the host as `10.0.2.2`
+   under user-mode networking, so any session's VM can answer any
+   session's listener. This cost real time: the first run of
+   `Metal68KSendTests` reported `unknown-command` for `put` from a
+   guest that was simply another branch's build — and the refusal test
+   PASSED against it, because "unknown command" is also a refusal with
+   a reason. `requireTheBuildUnderTest()` now asks the connected guest
+   whether `help` lists `put` before believing anything it says. Run
+   with `NOW_METAL_PORT` set to something nothing else is dialling.
+3. **No MacBinary, so no application and no resource fork.** The data
+   fork only — which is the contract's own default for a both-forks
+   file, so it is legal rather than a shortcut, but it means a file
+   whose content lives in its resource fork (most classic Mac
+   applications, every ResEdit document) arrives empty or meaningless.
+   This is the natural SECOND implementation of `N68ByteSourceOps` —
+   header, data fork, padding, resource fork, each in bands — and
+   writing it is the real test of whether the interface earns its keep.
+4. **The source is limited to the application's own folder.** Same
+   weakness the receive half has and for the same reason: NOW-68K has
+   no share root. `put` takes a leaf name, not a path.
+5. **One transfer at a time is enforced across both directions**, and
+   the answer to a second request is `busy` with a reason. Not
+   exercised against a host that offers a push while a send is in
+   flight — the check exists and has never been raced.
+6. **A contract gap, the mirror of the receive half's.** `FileEnd` has
+   no way to say "the sender's own source let it down", so
+   `kN68SendSourceFailed`, `kN68SendShort` and `kN68SendLong` all
+   render as `io-error` with the truth only in the reason. Same honest
+   fix: an additive enum value.
+7. **The contract's operations index is asymmetric about this
+   direction, and was before this change.** `guestServesFiles` lists
+   `file.begin`/`end`/`progress`/`refuse`/`listing` but not
+   `file.offer`; `file.accept` and `file.done` appear in **no**
+   operation at all, in either direction, though both sides send both.
+   The schemas are complete and correct — this is the index above them.
+   Left alone rather than fixed in passing: it is a contract edit that
+   touches how both halves are described and deserves its own pass.
+8. **`sendMs` is computed from `TickCount` at 1/60 s.** Fine for a
+   figure the contract types as advisory, but it is not milliseconds
+   measured, it is ticks scaled.
+
+### Two defects found by this pass, in code that predates it
+
+- **`GuestWireConformanceTests` could not see `bye`.** Its C-literal
+  scanner did not understand character literals, so the three `'"'` in
+  wire68.c's `read_string_field` inverted its quote parity and every
+  literal after them was read inside-out. `bye` had been piecemeal since
+  the day it was written and never appeared in the cannot-check set -
+  the set read complete and was not, inside the mechanism built to
+  prevent exactly that. Fixed, and `bye` has the fixture it should
+  always have had.
+- **The console printed one line's tail on the end of the next.**
+  `now68k_fmt_append_*` do not NUL-terminate, and every builder in
+  `conwin.c` declares `char line[80]` inside its loop, so a line shorter
+  than the one before it trailed that one's tail: "files land in Startup
+  Items" rendered as "files land in Startup Itemsbytes". `show_help` and
+  `show_processes` had it latent and only escaped because their lines
+  happen to grow rather than shrink. All emission now goes through
+  `con_out_built`, which terminates. **No native test could have caught
+  this** - it is pixels, and it was found by looking at a screen.
+
 ## Deferred by decision
 
 **NOW agent-integration V0 is complete** (2026-07-24). All five bounded
@@ -1575,13 +1943,15 @@ death timer. And **4.7:1 on a real desktop means a frame is 65 KB**, not
 number than the emulator's 2.2:1 suggested (the emulator's desktop was
 busier; a real 180c desktop packs better).
 
-**The 180c's clock is not set.** Both captures were named
-`Screenshot 1904-01-01 23.49.0x` — the Mac epoch, which is what `GetTime`
-returned. The naming code is doing the right thing with the wrong input,
-and the per-second collision guard is carrying more weight than expected
-on this machine: every session after a restart starts near the same
-instant, so the tick-stamped fallback is the thing keeping shots from
-overwriting each other. Setting the PowerBook's clock is the real fix.
+**The 180c's clock is not set** — its PRAM battery is dead, and the 2020
+capacitor/battery work is queued for that machine anyway. Both captures
+were named `Screenshot 1904-01-01 23.49.0x`, the Mac epoch, which is what
+`GetTime` returned. The naming code is doing the right thing with the
+wrong input. What is worth keeping is that the per-second collision guard
+is carrying more weight on this machine than it was written for: every
+session after a restart starts near the same instant, so the tick-stamped
+fallback — not the timestamp — is what keeps shots from overwriting each
+other until that battery is replaced.
 
 **Also verified on the Quadra 800 emulator** (OS 8.1, 640x480x8, 2026-07-25):
 run from the guest's own console, three captures in one session

@@ -5,8 +5,10 @@
  * The JSON half moved here verbatim from commands68.c's append_envelope /
  * finish_error / finish_ok_row1 / finish_ok_row2, which are now one
  * function with a row count. The MacRoman escape table and
- * append_json_escaped moved with it, because they exist only to serve the
- * JSON renderer and nothing in commands68.c calls them any more.
+ * now68k_json_append_escaped moved with it, because they exist only to
+ * serve the JSON renderer and nothing in commands68.c calls them any
+ * more. The escaper is published (n68_cmdresult.h) now that the file
+ * sender needs the same one for a filename a person chose.
  *
  * This file owns no BSS and calls nothing outside numfmt.h and <string.h>.
  * In particular it does NOT call log.h: a render that does not fit returns
@@ -89,7 +91,7 @@ void n68_cmdresult_set_ok2(N68CmdResult *r, const char *key,
 /* MacRoman 0x80..0xFF to Unicode, read the other way from the PowerPC
  * guest's own copy (now/guest/src/json.c, static k_macroman_high[]) -
  * reproduced rather than shared because that file lives in a different
- * repo/build this client cannot include. Used by append_json_escaped()
+ * repo/build this client cannot include. Used by now68k_json_append_escaped()
  * below for bytes >= 0x80: a process or HFS name on this platform routinely
  * carries one of these (an accented letter, a trademark sign), and it is
  * ordinary text here, not corruption. */
@@ -141,7 +143,7 @@ static const unsigned short k_macroman_high[128] = {
  * contract (the caller terminates once the whole chain succeeds). No
  * snprintf - hex digits are built by hand (standing rule: no printf family
  * in this tree). */
-static int append_json_escaped(char *buf, long cap, long *pos, const char *s)
+int now68k_json_append_escaped(char *buf, long cap, long *pos, const char *s)
 {
     static const char kHex[] = "0123456789ABCDEF";
 
@@ -195,8 +197,9 @@ static int append_json_escaped(char *buf, long cap, long *pos, const char *s)
  * envelope bytes the contract requires verbatim are written in exactly one
  * place each.
  *
- * Everything variable goes through append_json_escaped, including `key` and
- * the row labels. Today those are always this build's own C literals, where
+ * Everything variable goes through now68k_json_append_escaped, including
+ * `key` and the row labels. Today those are always this build's own C
+ * literals, where
  * escaping is a no-op; running them through it anyway means the renderer
  * has no "which of these fields is trusted" rule for a future command to
  * get wrong. */
@@ -216,25 +219,25 @@ static int build_json(const N68CmdResult *r, long id, const char *text,
     if (!r->ok) {
         ok = ok && now68k_fmt_append_str(out, avail, pos,
                                           ",\"ok\":false,\"error\":{\"code\":\"");
-        ok = ok && append_json_escaped(out, avail, pos, r->code);
+        ok = ok && now68k_json_append_escaped(out, avail, pos, r->code);
         ok = ok && now68k_fmt_append_str(out, avail, pos, "\",\"message\":\"");
-        ok = ok && append_json_escaped(out, avail, pos, text);
+        ok = ok && now68k_json_append_escaped(out, avail, pos, text);
         ok = ok && now68k_fmt_append_str(out, avail, pos, "\"}}");
         return ok;
     }
 
     ok = ok && now68k_fmt_append_str(out, avail, pos,
                                       ",\"ok\":true,\"output\":{\"");
-    ok = ok && append_json_escaped(out, avail, pos, r->key);
+    ok = ok && now68k_json_append_escaped(out, avail, pos, r->key);
     ok = ok && now68k_fmt_append_str(out, avail, pos, "\":[[\"");
-    ok = ok && append_json_escaped(out, avail, pos, r->label);
+    ok = ok && now68k_json_append_escaped(out, avail, pos, r->label);
     ok = ok && now68k_fmt_append_str(out, avail, pos, "\",\"");
-    ok = ok && append_json_escaped(out, avail, pos, text);
+    ok = ok && now68k_json_append_escaped(out, avail, pos, text);
     if (r->state[0] != '\0') {
         ok = ok && now68k_fmt_append_str(out, avail, pos, "\"],[\"");
-        ok = ok && append_json_escaped(out, avail, pos, r->label2);
+        ok = ok && now68k_json_append_escaped(out, avail, pos, r->label2);
         ok = ok && now68k_fmt_append_str(out, avail, pos, "\",\"");
-        ok = ok && append_json_escaped(out, avail, pos, r->state);
+        ok = ok && now68k_json_append_escaped(out, avail, pos, r->state);
     }
     ok = ok && now68k_fmt_append_str(out, avail, pos, "\"]]}}");
     return ok;
@@ -244,8 +247,9 @@ long n68_cmdresult_render_json(const N68CmdResult *r, long id,
                                 char *out, long cap)
 {
     /* One byte of `cap` is reserved for the NUL terminator:
-     * now68k_fmt_append_str/long and append_json_escaped will fill a buffer
-     * right up to the capacity they are given, so building against `cap`
+     * now68k_fmt_append_str/long and now68k_json_append_escaped will fill
+     * a buffer right up to the capacity they are given, so building
+     * against `cap`
      * itself and then writing out[pos] = '\0' could write one byte past the
      * caller's buffer. */
     long avail = cap > 0 ? cap - 1 : 0;

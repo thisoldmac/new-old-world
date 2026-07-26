@@ -195,6 +195,39 @@ static void input_set_text(const char *s)
 
 /* ---- running a line -------------------------------------------------------- */
 
+/* Emits a line built with now68k_fmt_append_* .
+ *
+ * THE APPEND HELPERS DO NOT TERMINATE. They copy strlen(s) bytes and
+ * advance pos, which is right for building a wire payload of a known
+ * length (numfmt.h exists so this guest can avoid snprintf entirely),
+ * and wrong for anything handed to a function that takes a C string.
+ * con_out takes a C string.
+ *
+ * Every builder here declares `char line[80]` INSIDE its loop, so each
+ * iteration gets the same stack bytes the previous one left behind. A
+ * line shorter than the one before it therefore trails that one's tail:
+ * "files land in Startup Items" came out as "files land in Startup
+ * Itemsbytes", picking up the end of "...1048576 bytes" above it. Caught
+ * on a screen, because no native test can see a pixel.
+ *
+ * Terminating at each call site is the fix that had already been
+ * forgotten twice (show_help and show_processes both had it latent, and
+ * only avoided showing it because their lines happen to grow rather than
+ * shrink). This is the one that cannot be forgotten: there is no way to
+ * emit a built line except through here. */
+static void con_out_built(char *line, long cap, long pos)
+{
+    /* A failed append leaves pos unspecified (numfmt.h), so it is
+       clamped rather than trusted - the alternative is a NUL written
+       past the end of the buffer on exactly the path that was already
+       going wrong. */
+    if (pos < 0 || pos > cap - 1) {
+        pos = cap - 1;
+    }
+    line[pos] = '\0';
+    con_out(line);
+}
+
 static void show_help(void)
 {
     const N68CommandDoc *docs = now68k_commands_docs();
@@ -218,7 +251,7 @@ static void show_help(void)
         }
         (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
                                     docs[i].summary);
-        con_out(line);
+        con_out_built(line, (long)sizeof line, pos);
     }
 
     /* Console-only, and deliberately not in that list: the wire's help must
@@ -226,6 +259,7 @@ static void show_help(void)
      * is in the table now, because the host's console is a dumb shell and
      * could not reach a capability the wire served only as a message
      * family. */
+    con_out("  xfer                     an incoming file: where, how far");
     con_out("  clear                    clear this pane");
     con_out("Return runs. Up/Down walk history.");
     con_out("Option-Up/Down (or Page Up/Down) scroll this pane.");
@@ -304,8 +338,154 @@ static void show_processes(void)
         (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
                                     rows[i].name[0] != '\0'
                                         ? rows[i].name : "(unnamed)");
-        con_out(line);
+        con_out_built(line, (long)sizeof line, pos);
     }
+}
+
+/* The console's face on receiving a file.
+ *
+ * A push is a MESSAGE FAMILY, not a command: no command table reaches
+ * it, so nothing would have compared the two faces and the gap would
+ * have been invisible - which is exactly how process.list shipped
+ * wire-only (docs/command-parity.md). The wire face is
+ * handle_file_offer and friends in wire68.c; this is the other one, and
+ * both read the same receiver rather than each keeping a count.
+ *
+ * What a person standing at the machine actually wants to know, in
+ * order: is something arriving, how far has it got, and where will it
+ * be. The last two are the ones that are otherwise unanswerable - a
+ * transfer in flight shows no window, and a finished one has landed
+ * somewhere the app never mentioned. */
+static void show_transfer(void)
+{
+    N68PutStatus st;
+    char line[80];
+    char where[64];
+    long pos;
+
+    now68k_wire_put_status(&st);
+    now68k_wire_put_where(where, (long)sizeof where);
+
+    if (st.active) {
+        pos = 0;
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                    "receiving ");
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, st.name);
+        con_out_built(line, (long)sizeof line, pos);
+
+        pos = 0;
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, "  ");
+        (void)now68k_fmt_append_long(line, (long)sizeof line, &pos,
+                                     st.received);
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, " of ");
+        (void)now68k_fmt_append_long(line, (long)sizeof line, &pos, st.bytes);
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                    " bytes, ");
+        (void)now68k_fmt_append_long(line, (long)sizeof line, &pos,
+                                     st.writes);
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, " writes");
+        con_out_built(line, (long)sizeof line, pos);
+    }
+    /* The "nothing has happened" line moved below, where it can see BOTH
+     * directions - it used to say "no file has arrived this session"
+     * while a send was in flight, which is true and reads as false. */
+
+    if (st.had_one) {
+        pos = 0;
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                    st.last_ok ? "last: " : "last FAILED: ");
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                    st.last_name);
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, ", ");
+        (void)now68k_fmt_append_long(line, (long)sizeof line, &pos,
+                                     st.last_bytes);
+        (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, " bytes");
+        if (!st.last_ok) {
+            (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, " (");
+            (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                        st.last_code);
+            /* The OSErr, when there is one. "The File Manager refused"
+             * names no cause; the number does, and on this machine the
+             * number is often the whole diagnosis. */
+            if (st.last_error != 0) {
+                (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                            " ");
+                (void)now68k_fmt_append_long(line, (long)sizeof line, &pos,
+                                             (long)st.last_error);
+            }
+            (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, ")");
+        }
+        con_out_built(line, (long)sizeof line, pos);
+    }
+
+    /* The OTHER direction, in the same readout. Sending is a message
+     * family too, so no command table compares its two faces - which is
+     * precisely the shape process.list drifted in, twice. A person who
+     * types `put` and then has no way to ask what became of it is in the
+     * position `xfer` was written to fix, facing the other way. */
+    {
+        N68SendStatus tx;
+
+        now68k_wire_send_status(&tx);
+        if (tx.active) {
+            pos = 0;
+            (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                        tx.offered ? "offering "
+                                                   : "sending ");
+            (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                        tx.name);
+            con_out_built(line, (long)sizeof line, pos);
+
+            if (!tx.offered) {
+                pos = 0;
+                (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                            "  ");
+                (void)now68k_fmt_append_long(line, (long)sizeof line, &pos,
+                                             tx.sent);
+                (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                            " of ");
+                (void)now68k_fmt_append_long(line, (long)sizeof line, &pos,
+                                             tx.bytes);
+                (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                            " bytes sent");
+                con_out_built(line, (long)sizeof line, pos);
+            }
+        }
+        if (tx.had_one) {
+            pos = 0;
+            (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                        tx.last_ok ? "last sent: "
+                                                   : "last send FAILED: ");
+            (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                        tx.last_name);
+            (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, ", ");
+            (void)now68k_fmt_append_long(line, (long)sizeof line, &pos,
+                                         tx.last_bytes);
+            (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                        " bytes");
+            if (!tx.last_ok) {
+                (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                            " (");
+                (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                            tx.last_code);
+                (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                            ")");
+            }
+            con_out_built(line, (long)sizeof line, pos);
+        }
+        if (!st.active && !st.had_one && !tx.active && !tx.had_one) {
+            con_out("no file has moved either way this session");
+        }
+    }
+
+    pos = 0;
+    (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                "files land in ");
+    (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                where[0] != '\0' ? where
+                                                 : "(cannot resolve the folder)");
+    con_out_built(line, (long)sizeof line, pos);
+    con_out("  and `put <name>` sends one from there to the host");
 }
 
 static void submit_line(void)
@@ -399,6 +579,10 @@ static void submit_line(void)
                 con_out("! vprobe: the table did not fit this pane");
             }
         }
+        return;
+    }
+    if (strcmp(name, "xfer") == 0) {
+        show_transfer();
         return;
     }
     if (strcmp(name, "clear") == 0) {

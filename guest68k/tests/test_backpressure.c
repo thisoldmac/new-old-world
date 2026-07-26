@@ -151,9 +151,25 @@ static int m_still_reading(void *ctx)
     return m->queued < m->depth;
 }
 
+/* This model is about the CONTROL queue's backpressure, so it declines
+ * every bulk frame - which is also what wire68.c does whenever no
+ * transfer is expecting bytes, and it keeps the frame-sync assertions
+ * below testing the discard path they were written for. */
+static int m_bulk_wanted(void *ctx, unsigned long length)
+{
+    (void)ctx; (void)length;
+    return 0;
+}
+
+static void m_bulk_data(void *ctx, const unsigned char *bytes, long len)
+{
+    (void)ctx; (void)bytes; (void)len;
+}
+
 static const N68ReaderOps kOps = {
     m_take, m_took, m_frame_started, m_oversized_frame,
-    m_oversized_control, m_empty_control, m_control_message, m_still_reading
+    m_oversized_control, m_empty_control, m_bulk_wanted, m_bulk_data,
+    m_control_message, m_still_reading
 };
 
 static char g_ctrl_buf[NOW68K_CONTROL_BUFFER_CAP];

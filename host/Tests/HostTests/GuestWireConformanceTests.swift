@@ -88,6 +88,33 @@ final class GuestWireConformanceTests: XCTestCase {
                 i += 2
                 continue
             }
+            // A C CHARACTER literal, which may itself be a quote: '"'.
+            // Without this the lone quote in `c == '"'` opens a string
+            // the scanner then closes on the next real literal's opening
+            // quote, and every literal after it is read inside-out until
+            // another stray quote happens to restore the parity.
+            //
+            // That was not hypothetical. guest68k/src/wire68.c had three
+            // such literals in one helper, and they hid `bye` — a
+            // genuinely piecemeal message — from this file's own
+            // cannot-check set for as long as the helper existed. The
+            // set looked complete and was not, which is precisely the
+            // failure testMessagesThisCannotCheckAreKnown exists to
+            // prevent, committed inside the mechanism meant to prevent it.
+            if chars[i] == "'" {
+                i += 1
+                while i < chars.count, chars[i] != "'" {
+                    i += (chars[i] == "\\") ? 2 : 1
+                }
+                i += 1
+                // A character literal is not whitespace, so it ends a run
+                // of adjacent string literals exactly like any other token.
+                if current != nil {
+                    out.append(current!)
+                    current = nil
+                }
+                continue
+            }
             guard chars[i] == "\"" else {
                 if !chars[i].isWhitespace, current != nil {
                     out.append(current!)          // the run ended
@@ -342,6 +369,17 @@ final class GuestWireConformanceTests: XCTestCase {
         "hello": "test68KHelloAsTheGuestWritesIt",
         "ping": "test68KPingAsTheGuestWritesIt",
         "error": "test68KErrorReplyAsTheGuestWritesIt",
+        "bye": "test68KByeAsTheGuestWritesIt",
+        "file.accept": "test68KFileAcceptAsTheGuestWritesIt",
+        "file.refuse": "test68KFileRefuseAsTheGuestWritesIt",
+        "file.progress": "test68KFileProgressAsTheGuestWritesIt",
+        "file.done": "test68KFileDoneAsTheGuestWritesIt",
+        // NOW-68K's send half (n68_puttx.c). Assembled from append calls
+        // rather than one format string, like everything else this guest
+        // builds, so they need the hand-written fixtures below.
+        "file.offer": "test68KFileOfferAsTheGuestWritesIt",
+        "file.begin": "test68KFileBeginAsTheGuestWritesIt",
+        "file.end": "test68KFileEndAsTheGuestWritesIt",
     ]
 
     func testMessagesThisCannotCheckAreKnown() throws {

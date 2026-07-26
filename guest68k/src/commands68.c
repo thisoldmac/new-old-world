@@ -37,6 +37,12 @@
 #include "proc68.h"
 #include "shot68.h"
 #include "vprobe68.h"
+/* The one command whose whole meaning is "put this on the wire", so this
+ * layer reaches down to the transport for it. wire68.c already reaches up
+ * to this file for dispatch; the cycle is between translation units, not
+ * headers, and the alternative - a second dispatch inside wire68.c - is
+ * the two-implementations shape docs/command-parity.md exists to stop. */
+#include "wire68.h"
 
 #include <string.h>
 
@@ -565,6 +571,7 @@ static const N68CommandDoc k_docs[] = {
       "vprobe (no arguments; wants a still screen)" },
     { "screenshot", "capture this Mac's screen to its desktop",
       "screenshot [--depth 8] [--no-save]" },
+    { "put", "send a file from this Mac to the host", "put <file name>" },
     { NULL, NULL, NULL }
 };
 
@@ -690,6 +697,47 @@ static long run_ps(long id, char *out, long cap)
     return n68_proclist_render_ps(id, rows, count, out, cap);
 }
 
+/* `put` is a COMMAND on this guest and only a console verb on the
+ * PowerPC one, and the difference is deliberate.
+ *
+ * There, the host reaches the same capability through the file.* message
+ * families, so a person at the guest gets a console verb and the wire
+ * needs none. Here, the host's console is a dumb shell that relays a
+ * typed line as a command.request and knows no families - and on a
+ * PowerBook 180c whose display is often the only face anyone has, the
+ * console cannot be the only place a file can be sent from either. So it
+ * belongs in this table, where BOTH faces reach one implementation, which
+ * is the lesson `ps` cost a day to learn (docs/command-parity.md).
+ *
+ * One row, so it goes through now68k_commands_run and the console gets
+ * it for free rather than through a second dispatch in conwin.c. What the
+ * row says is that the OFFER went out, not that the file arrived: the
+ * transfer runs from wire_idle() afterwards and its outcome is what
+ * `xfer` reports. Blocking here until a multi-megabyte file lands would
+ * hold the reply the host is waiting on for minutes. */
+static void run_put(const char *target, N68CmdResult *res)
+{
+    char leaf[64];
+    char why[96];
+
+    if (target == NULL
+        || !trim_and_unquote(target, leaf, (int)sizeof leaf)
+        || leaf[0] == '\0') {
+        n68_cmdresult_set_error(res, "bad-request",
+                                "put needs the name of a file in this "
+                                "application's folder");
+        return;
+    }
+    if (!now68k_wire_send_file(leaf, why, (long)sizeof why)) {
+        n68_cmdresult_set_error(res, "put-refused", why);
+        return;
+    }
+    res->ok = 1;
+    bounded_strcpy(res->key, sizeof res->key, "put");
+    bounded_strcpy(res->label, sizeof res->label, leaf);
+    bounded_strcpy(res->text, sizeof res->text, "offered to the host");
+}
+
 /* ---- dispatch --------------------------------------------------------------- */
 
 int now68k_commands_run(const char *name, const char *target,
@@ -728,6 +776,10 @@ int now68k_commands_run(const char *name, const char *target,
      * same two rows of the same capture, from here. */
     if (strcmp(name, "screenshot") == 0) {
         run_shot(target, res);
+        return 1;
+    }
+    if (strcmp(name, "put") == 0) {
+        run_put(target, res);
         return 1;
     }
     return 0;

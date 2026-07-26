@@ -162,4 +162,21 @@ long n68_cmdresult_render_json(const N68CmdResult *r, long id,
  */
 long n68_cmdresult_render_text(const N68CmdResult *r, char *out, long cap);
 
+/* Appends `s` into buf[*pos, cap) as the BODY of a JSON string - the
+ * caller writes the surrounding quotes. See the definition in
+ * n68_cmdresult.c for what each byte class becomes and why '?' is not an
+ * acceptable answer for any of them.
+ *
+ * Published from this file, which is an odd home for it, because the
+ * alternative is worse. Every message this guest sends with a
+ * human-supplied string in it needs exactly this escaping, and the second
+ * copy of a MacRoman-to-\u table is the kind of drift that presents as
+ * "the 68K guest corrupts accented filenames" while the bytes on disk are
+ * perfect. One implementation, and the file that already had it keeps it.
+ *
+ * Returns 1 if the whole string fit, 0 if it did not - and on 0 nothing
+ * half-escaped is left behind, matching numfmt.h's append contract. No NUL
+ * is written; the caller terminates once its whole chain succeeds. */
+int now68k_json_append_escaped(char *buf, long cap, long *pos, const char *s);
+
 #endif /* NOW68K_N68_CMDRESULT_H */

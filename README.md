@@ -247,9 +247,39 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   is 65 KB, not 300, which is what slice two's viability over MacTCP turns
   on.
 
+- **Files move both ways on NOW-68K** — the machine that previously
+  discarded every bulk frame to stay in frame sync. Receiving a push is
+  **emulator-verified**: a 4 MB file onto a Quadra 800 at 352 KB/s, pulled
+  back off the disk image byte-identical, with the guest's `help` still
+  answering in 0.05 s mid-transfer. Sending is now **emulator-verified**
+  too, as a round trip: a pattern is pushed to the guest, the guest is
+  asked to send that same file back, and the bytes the host still holds
+  are compared against the bytes that came back — 4 MB byte-identical,
+  and nothing in that comparison comes from the guest's own accounting.
+  Neither direction has run on the **PowerBook 180c**, which is the
+  machine that matters and the one whose numbers will differ.
+
+  The wire-sharing rule was checked where only a real socket can check
+  it: during a 4 MB send, 28 control requests were answered, none
+  dropped, worst 0.10 s.
+
+  The send half is deliberately **not a file sender**. It streams from a
+  byte-source interface — fill this buffer, say how many and whether you
+  are done — with a file as the first implementation, because a screen
+  capture is ~300 KB against a 384 KB partition and can never exist as a
+  buffer at all. Bulk and control share one wire under a rule written down
+  once: bulk gets its own slot and never a control slot, a frame already
+  going out finishes first, control drains before bulk, and back-pressure
+  is the transport's short accept rather than the far side's progress
+  reports. `put` is a verb on **both** faces here — unlike the PowerPC
+  guest, where the host reaches the same capability through the `file.*`
+  families — because this is the machine whose display has already failed
+  mid-session. No contract schema changed: the whole family already
+  existed and the host already served it.
+
 - **A dev loop that does not need a Macintosh.** Neither guest can run its
   own suite, so the pure-C halves compile under the host `cc`:
-  `scripts/test-native` runs all 25 across both guests in one command, and
+  `scripts/test-native` runs all 28 across both guests in one command, and
   a test file missing from its manifest fails the run — a test nobody runs
   reads as coverage in a directory listing and proves nothing. The metal
   gates now **fail rather than skip** once a human has opted into a metal
@@ -262,12 +292,17 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
 ## What does not work
 
 - **NOW-68K implements a small part of the contract.** `launch`, `quit`,
-  `help`, `ps`, `vprobe`, `screenshot` and `process.list`, plus the
-  keepalive; everything else — files, census, streams, the process drive
-  verbs — answers
-  `unknown-command` or `refused`, which is the contract's own additive
-  answer, not a failure. Every one of those it does serve is reachable from
-  both its faces (the console and the wire), which
+  `help`, `ps`, `vprobe`, `screenshot`, `put` and `process.list`, plus
+  receiving and sending a file and the keepalive; everything else —
+  census, streams, the process drive verbs, and the half of the file
+  family that SERVES a host (`file.list`, `file.get`, `file.move`,
+  `file.trash`) — answers `unknown-command` or `refused`, which is the
+  contract's own additive answer, not a failure. It can be told to send a
+  file and can be sent one; it cannot yet be browsed. **Receiving**
+  decodes MacBinary, so an application and its resource fork can cross
+  inbound; **sending** does not, so outbound is the data fork only. Every
+  one of those it does serve is reachable from both its faces (the console
+  and the wire), which
   [docs/command-parity.md](docs/command-parity.md) explains and
   `CommandParityTests` enforces.
 - **NOW-68K's `screenshot` has captured exactly one kind of screen.** It is
@@ -282,6 +317,34 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   `Screenshot 1904-01-01 23.49.05` — the Mac epoch, which is what the
   machine believes the time is. The same-instant collision guard is what
   keeps a second shot from overwriting the first there.
+- **Receiving a file on NOW-68K is emulator-verified, not
+  metal-verified.** A host can push into the Desktop, `data` or
+  MacBinary, and 4 MB arrives byte-identical at ~350 KB/s on a Quadra
+  800 under Mac OS 8.1. Nothing has run on the PowerBook 180c, which is
+  the machine this is for — a 68030 with 4 MB against a 68040 with 128.
+  There is also a live File Manager defect underneath it: on 8.1,
+  `FSClose` of a written resource fork scribbles 77 bytes of catalog
+  state into the fork, and the guest detects and repairs that rather
+  than being able to prevent it. Whether System 7.1 does the same is
+  **unknown and untested**; the shipped check is also the experiment.
+  [docs/68k-file-receive.md](docs/68k-file-receive.md) is the record.
+- **Sending a file from NOW-68K is emulator-verified, not
+  metal-verified.** Round-tripped byte-identical to 4 MB on the same
+  Quadra 800, with the control lane proved to survive a transfer
+  (`gestalt` 0.05 s idle against 0.10 s during a 1 MB push). Nothing has
+  sent a byte on the 180c. The sender takes an abstract byte source
+  rather than a file, so a screen capture can feed the pipe in bands
+  instead of buffering 300 KB against a 384 KB partition; a file is
+  simply its first implementation.
+- **The two directions briefly disagreed about where files live**, and
+  that is worth knowing because of what missed it. Receiving landed on
+  the Desktop while sending read from the application's own folder — a
+  disagreement no textual conflict marked and that 27 native tests, 508
+  host tests, both Xcode configs and `-Werror` all passed over, because
+  noticing it needs a real file system. The round-trip ladder on the
+  emulator named it on all ten rungs. Both directions now read one
+  published root. A cross-direction test could not exist while the two
+  halves lived on separate branches.
 - **NOW-68K's interactive console is metal-verified.** A second window (Windows > Console, Command-K, and it
   toggles) with an input line, history and scrollback. Watched working on a
   Quadra 800 under Mac OS 8.1 — including two redraw bugs found there and

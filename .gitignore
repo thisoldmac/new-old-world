@@ -5,3 +5,8 @@ xcuserdata/
 *.xcodeproj/project.xcworkspace/
 *.xcworkspace/
 
+
+# scripts/q800-68k's session directory: a cloned 1 GB disk image, a build
+# tree and screendumps. Disposable by construction, and the disk alone
+# would dwarf the repository.
+.q800/

@@ -36,6 +36,11 @@ add_application(now68k-guest
     src/n68_linesplit.c
     src/n68_console_ring.c
     src/n68_reader.c
+    src/n68_crc32.c
+    src/n68_putrx.c
+    src/n68_putfile.c
+    src/n68_puttx.c
+    src/n68_filesrc.c
     src/n68_proclist.c
     src/connfields.c
     src/n68_devsettings.c

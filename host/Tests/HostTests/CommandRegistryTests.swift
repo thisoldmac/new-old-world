@@ -107,15 +107,43 @@ final class CommandRegistryTests: XCTestCase {
         return names
     }
 
+    /// Commands the registry declares that the POWERPC guest deliberately
+    /// does not answer, with the reason — the same shape
+    /// CommandParityTests uses, and for the same reason: an exemption
+    /// that is a decision belongs in data with its justification, not in
+    /// a subtraction someone finds later and cannot explain.
+    ///
+    /// This map exists because the registry stopped being one guest's
+    /// command set. It was written when the PowerPC guest was the only
+    /// one with commands at all; NOW-68K has always answered a strict
+    /// SUBSET (launch, quit, help, ps, vprobe), which this test never had
+    /// to notice. `put` is the first entry going the other way — a
+    /// command one guest answers and the other deliberately does not.
+    private static let notOnThePowerPCGuest: [String: String] = [
+        "put": """
+            NOW-68K answers `put` on its wire; the PowerPC guest answers \
+            it only at its own console. That is deliberate on both sides. \
+            A host driving the PowerPC guest reaches the same capability \
+            through file.list and file.get, so it needs no verb — while \
+            NOW-68K is the machine whose display fails, whose keyboard is \
+            sometimes the only face there is, and whose host console is a \
+            dumb shell that knows no message families. See \
+            docs/command-parity.md.
+            """,
+    ]
+
     func testTheThreeHalvesAgreeOnTheCommandSet() throws {
         let declared = try declared()
+            .subtracting(Self.notOnThePowerPCGuest.keys)
         let answered = try answered()
         let documented = try documented()
 
         XCTAssertEqual(declared, answered, """
             The contract and the guest disagree. Declared but unanswered \
             means a command that fails when asked for; answered but \
-            undeclared means a working command nobody can reach.
+            undeclared means a working command nobody can reach. A \
+            command only NOW-68K serves belongs in \
+            notOnThePowerPCGuest with its reason.
             """)
         XCTAssertEqual(documented, declared, """
             The guest's doc table and the contract disagree. Since the host \

@@ -103,6 +103,17 @@ Both: comments say **why**, not what. Match the surrounding density.
   having never reached a machine is worse than no gate.
   `tools/fakeguest.py` exercises the harness without hardware — and proves
   nothing about a guest; read its header before quoting a result from it.
+- **A metal gate must check WHICH guest answered.** Every QEMU guest on
+  this Mac sees the host as `10.0.2.2` under user-mode networking, and
+  the human's own app may already hold the default port — so any
+  session's VM, running any branch's build, can answer your listener.
+  This is not theoretical: `Metal68KSendTests` first reported
+  `unknown-command` from another branch's guest, and its refusal case
+  PASSED against it, because "unknown command" is also a refusal with a
+  reason. Boot with `scripts/q800-68k --port N` on a port nothing else
+  is dialling, pass the same `NOW_METAL_PORT`, and assert a capability
+  only the build under test has before believing anything it says
+  (`requireTheBuildUnderTest()` is the pattern).
 - `GuestWireConformanceTests` reads `guest/src/*.c` and checks every
   message the guest can emit against this side's decoder and the
   contract's required fields. **If you add a message built across

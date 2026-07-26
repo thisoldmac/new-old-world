@@ -29,4 +29,16 @@ int now68k_fmt_append_long(char *buf, long cap, long *pos, long value);
  * not fit in cap - *pos bytes. */
 int now68k_fmt_append_str(char *buf, long cap, long *pos, const char *s);
 
+/* Appends the decimal text of an UNSIGNED 32-bit value.
+ *
+ * Not a convenience over append_long: `long` is 32 bits signed on this
+ * toolchain, so a CRC-32 above 0x7FFFFFFF - half of them - comes out
+ * NEGATIVE through append_long. The contract types crc32 as an integer
+ * and the host reads it as one, so a negative number there is a checksum
+ * mismatch on a file that arrived perfectly. The low 32 bits are used
+ * whatever the host's `unsigned long` happens to be, so this behaves the
+ * same under the 64-bit host cc that runs the native test. */
+int now68k_fmt_append_u32(char *buf, long cap, long *pos,
+                           unsigned long value);
+
 #endif
