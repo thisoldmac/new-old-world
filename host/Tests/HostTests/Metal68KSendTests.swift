@@ -46,6 +46,7 @@ final class Metal68KSendTests: XCTestCase {
     private var listener: GuestListener!
     private var shareRoot: URL!
     private var previousRoot: URL!
+    private var port: UInt16 = 5250
 
     /// Files the guest has sent back, by name, as they land.
     private var landed: [String: URL] = [:]
@@ -54,7 +55,11 @@ final class Metal68KSendTests: XCTestCase {
         let env = ProcessInfo.processInfo.environment
         try XCTSkipUnless(env["NOW_METAL"] != nil,
                           "set NOW_METAL=1 to run against a live guest")
-        let port = env["NOW_METAL_PORT"].flatMap { UInt16($0) } ?? 5250
+        port = env["NOW_METAL_PORT"].flatMap { UInt16($0) } ?? 5250
+        // Before anything binds — see MetalMachineGuard. This suite's
+        // round trip is the one whose 2026-07-25 run produced numbers
+        // nobody could attribute.
+        try MetalMachineGuard.preflight(port: port)
         listener = GuestListener(
             identity: .init(version: "0.1-metal68k", name: "Metal Harness"),
             pacing: .classicMac)
@@ -68,6 +73,12 @@ final class Metal68KSendTests: XCTestCase {
         try FileManager.default.createDirectory(
             at: shareRoot, withIntermediateDirectories: true)
         previousRoot = listener.share.root
+        // Read BEFORE the root moves: leftovers in the share a real run
+        // lands in are the one piece of "somebody is mid-ladder"
+        // evidence visible from this side. Reported, not thrown — a file
+        // is evidence and this suite's own previous run is a likely
+        // author of it.
+        MetalMachineGuard.reportRecentLeftovers(in: previousRoot)
         listener.share.root = shareRoot
 
         listener.announceReceivedFile = { [weak self] _, url, _ in
@@ -96,6 +107,11 @@ final class Metal68KSendTests: XCTestCase {
         -> String {
         let deadline = Date().addingTimeInterval(seconds)
         while Date() < deadline {
+            // A bind failure means nothing could dial in; reporting it as
+            // "the Mac never answered" aims two minutes of diagnosis at
+            // the wrong end of the room.
+            try MetalMachineGuard.requireItIsListening(listener.state,
+                                                       port: port)
             if case .connected(let name) = listener.state {
                 try await Task.sleep(nanoseconds: 500_000_000)
                 return name
@@ -106,7 +122,10 @@ final class Metal68KSendTests: XCTestCase {
             No guest dialled in within \(Int(seconds))s. NOW_METAL is set, \
             so this is a failure and not a skip — boot one with \
             scripts/q800-68k, or check that the 180c is running a build \
-            whose dev settings point at this port.
+            whose dev settings point at this port. The harness WAS \
+            listening on \(port) and nothing else held it, so this is the \
+            Mac's end; if MacTCP has wedged, the dial never completes and \
+            nothing here can tell you so.
             """)
         throw XCTSkip("no guest")
     }
@@ -249,10 +268,22 @@ final class Metal68KSendTests: XCTestCase {
     /// at all — begin then end — which is a decision
     /// guest68k/tests/test_puttx.c pins and only a real host can confirm
     /// does not leave a receiver waiting.
+    ///
+    /// `NOW_METAL_REPEATS` (default 1, the runbook asks for 3 on the
+    /// 180c) repeats the rungs at or above 1 MB. The small ones are
+    /// correctness and repeat nothing useful; the large ones are this
+    /// suite's only measurement, and the emulator's send rate reads off a
+    /// cached disk, so the 180c's is the first real one and a single
+    /// sample of it would be an anecdote.
     func testTheRoundTripLadder() async throws {
         let who = try await waitForGuest()
         print("=== \(who) — guest to host ===")
         try await requireTheBuildUnderTest()
+        let repeats = MetalBaseline.repeats
+        MetalBaseline.emitMeta(guestName: who,
+                               version: listener.health?.guestVersion,
+                               os: listener.health?.guestOS,
+                               port: port, repeats: repeats)
 
         let sizes: [(String, Int)] = [
             ("empty", 0),
@@ -271,35 +302,64 @@ final class Metal68KSendTests: XCTestCase {
 
         var failures: [String] = []
         for (label, size) in sizes {
-            let name = "RT\(size)"
             let original = pattern(size)
-            try await push(name, original)
+            let samples = size >= 1_048_576 ? repeats : 1
 
-            let sent = await askToSend(name)
-            guard sent.ok, let url = landed[name] else {
-                failures.append("\(label) (\(size) B): \(sent.detail)")
-                print("  \(label): FAILED — \(sent.detail)")
-                continue
-            }
+            for rep in 1...samples {
+                // A NAME PER SAMPLE, and it is not tidiness. NOW-68K's
+                // offer never sets `overwrite`, so the host defaults it
+                // to false (`GuestListener.acceptOffer`) and REFUSES a
+                // second offer of a name the share already holds. Reusing
+                // one name made every repeat read as "the offer went out
+                // but nothing arrived in 300s" — a 300 s stall that looks
+                // exactly like the machine having gone away, produced
+                // entirely by this harness. Watched, 2026-07-26, on the
+                // emulator.
+                let name = "RT\(size)r\(rep)"
+                let which = samples > 1 ? " [\(rep)/\(samples)]" : ""
+                try await push(name, original)
 
-            let returned = try Data(contentsOf: url)
-            // The whole point. Not a count, not a checksum the guest
-            // computed — the bytes this test sent, against the bytes it
-            // got back.
-            if returned != original {
-                let where_ = zip(returned, original).enumerated()
-                    .first { $0.element.0 != $0.element.1 }?.offset
-                failures.append("""
-                    \(label) (\(size) B): came back WRONG — \
-                    \(returned.count) bytes against \(original.count), \
-                    first difference at \(where_.map(String.init) ?? "n/a")
-                    """)
-                print("  \(label): CORRUPT")
-                continue
+                let sent = await askToSend(name)
+                func record(_ result: String) {
+                    MetalBaseline.emitRung(
+                        direction: "send", label: label, bytes: size,
+                        seconds: sent.seconds, rep: rep, of: samples,
+                        result: result,
+                        // The comparison is what makes a send rung mean
+                        // anything, so whether it ran is part of the
+                        // record and not something to infer from `ok`.
+                        extra: [("verify", result == "ok"
+                                           ? "byte-identical" : "-")])
+                }
+                guard sent.ok, let url = landed[name] else {
+                    failures.append("\(label)\(which) (\(size) B): "
+                                    + sent.detail)
+                    print("  \(label)\(which): FAILED — \(sent.detail)")
+                    record("failed")
+                    continue
+                }
+
+                let returned = try Data(contentsOf: url)
+                // The whole point. Not a count, not a checksum the guest
+                // computed — the bytes this test sent, against the bytes
+                // it got back.
+                if returned != original {
+                    let where_ = zip(returned, original).enumerated()
+                        .first { $0.element.0 != $0.element.1 }?.offset
+                    failures.append("""
+                        \(label)\(which) (\(size) B): came back WRONG — \
+                        \(returned.count) bytes against \(original.count), \
+                        first difference at \(where_.map(String.init) ?? "n/a")
+                        """)
+                    print("  \(label)\(which): CORRUPT")
+                    record("corrupt")
+                    continue
+                }
+                let rate = Double(size) / 1024.0 / max(sent.seconds, 0.001)
+                print(String(format: "  %@%@: ok in %.1fs (%.0f KB/s)",
+                             label, which, sent.seconds, rate))
+                record("ok")
             }
-            let rate = Double(size) / 1024.0 / max(sent.seconds, 0.001)
-            print(String(format: "  %@: ok in %.1fs (%.0f KB/s)",
-                         label, sent.seconds, rate))
         }
 
         XCTAssertTrue(failures.isEmpty, """
@@ -370,6 +430,13 @@ final class Metal68KSendTests: XCTestCase {
             """)
         print(String(format: "=== control lane: %d asked, %d unanswered, "
                            + "worst %.2fs", asked, unanswered, worst))
+        // The claim nothing off metal can check, and the one most likely
+        // to read differently on a 33 MHz 68030 with 4 MB. No idle
+        // figure: this case measures only under load, and a dash is
+        // honester than a number taken from somewhere else.
+        MetalBaseline.emitControlLane(direction: "send", asked: asked,
+                                      unanswered: unanswered, worst: worst,
+                                      idle: nil)
         XCTAssertEqual(unanswered, 0, """
             \(unanswered) of \(asked) control requests went unanswered \
             while a bulk transfer was running. Bulk is starving the \

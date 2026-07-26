@@ -114,6 +114,20 @@ Both: comments say **why**, not what. Match the surrounding density.
   is dialling, pass the same `NOW_METAL_PORT`, and assert a capability
   only the build under test has before believing anything it says
   (`requireTheBuildUnderTest()` is the pattern).
+- **A metal gate must also check the MACHINE is free.** That rule asks
+  who answered; it cannot ask whether somebody else was already using
+  the Mac. Two host sessions once shared one PowerBook — one holding a
+  port for an hour while the other deployed into the same folder
+  mid-transfer — and produced a stall at 606208 bytes that nothing could
+  attribute afterwards. `MetalMachineGuard` runs before anything binds
+  (`lsof` answers it in a second) and FAILS naming the process; set
+  `NOW_METAL_MACHINE` for a run against real hardware, or half of it
+  cannot run. The procedure, and how to tell contention from a defect,
+  is [docs/68k-metal-runbook.md](docs/68k-metal-runbook.md). A metal
+  MEASUREMENT is recorded rather than narrated: `NOWBASE` lines carry
+  the build, machine and port beside every number and
+  `NOW_METAL_REPEATS` samples the large rungs more than once
+  ([docs/68k-metal-baseline.md](docs/68k-metal-baseline.md)).
 - `GuestWireConformanceTests` reads `guest/src/*.c` and checks every
   message the guest can emit against this side's decoder and the
   contract's required fields. **If you add a message built across
