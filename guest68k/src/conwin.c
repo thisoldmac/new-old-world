@@ -385,9 +385,10 @@ static void show_transfer(void)
                                      st.writes);
         (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, " writes");
         con_out_built(line, (long)sizeof line, pos);
-    } else if (!st.had_one) {
-        con_out("no file has arrived this session");
     }
+    /* The "nothing has happened" line moved below, where it can see BOTH
+     * directions - it used to say "no file has arrived this session"
+     * while a send was in flight, which is true and reads as false. */
 
     if (st.had_one) {
         pos = 0;
@@ -417,12 +418,73 @@ static void show_transfer(void)
         con_out_built(line, (long)sizeof line, pos);
     }
 
+    /* The OTHER direction, in the same readout. Sending is a message
+     * family too, so no command table compares its two faces - which is
+     * precisely the shape process.list drifted in, twice. A person who
+     * types `put` and then has no way to ask what became of it is in the
+     * position `xfer` was written to fix, facing the other way. */
+    {
+        N68SendStatus tx;
+
+        now68k_wire_send_status(&tx);
+        if (tx.active) {
+            pos = 0;
+            (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                        tx.offered ? "offering "
+                                                   : "sending ");
+            (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                        tx.name);
+            con_out_built(line, (long)sizeof line, pos);
+
+            if (!tx.offered) {
+                pos = 0;
+                (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                            "  ");
+                (void)now68k_fmt_append_long(line, (long)sizeof line, &pos,
+                                             tx.sent);
+                (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                            " of ");
+                (void)now68k_fmt_append_long(line, (long)sizeof line, &pos,
+                                             tx.bytes);
+                (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                            " bytes sent");
+                con_out_built(line, (long)sizeof line, pos);
+            }
+        }
+        if (tx.had_one) {
+            pos = 0;
+            (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                        tx.last_ok ? "last sent: "
+                                                   : "last send FAILED: ");
+            (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                        tx.last_name);
+            (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, ", ");
+            (void)now68k_fmt_append_long(line, (long)sizeof line, &pos,
+                                         tx.last_bytes);
+            (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                        " bytes");
+            if (!tx.last_ok) {
+                (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                            " (");
+                (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                            tx.last_code);
+                (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                            ")");
+            }
+            con_out_built(line, (long)sizeof line, pos);
+        }
+        if (!st.active && !st.had_one && !tx.active && !tx.had_one) {
+            con_out("no file has moved either way this session");
+        }
+    }
+
     pos = 0;
     (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, "files land in ");
     (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
                                 where[0] != '\0' ? where
                                                  : "(cannot resolve the folder)");
     con_out_built(line, (long)sizeof line, pos);
+    con_out("  and `put <name>` sends one from there to the host");
 }
 
 static void submit_line(void)

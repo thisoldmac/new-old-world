@@ -219,9 +219,31 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   streaming on that machine is arithmetic, not tuning.
   [docs/vram-readout-68k.md](docs/vram-readout-68k.md).
 
+- **Files move both ways on NOW-68K** — the machine that previously
+  discarded every bulk frame to stay in frame sync. Receiving a push is
+  **emulator-verified**: a 4 MB file onto a Quadra 800 at 352 KB/s, pulled
+  back off the disk image byte-identical, with the guest's `help` still
+  answering in 0.05 s mid-transfer. Sending is the other direction and is
+  **tested only** — nothing has yet watched a byte leave this guest, on
+  metal or in an emulator, and that is the honest state of it.
+
+  The send half is deliberately **not a file sender**. It streams from a
+  byte-source interface — fill this buffer, say how many and whether you
+  are done — with a file as the first implementation, because a screen
+  capture is ~300 KB against a 384 KB partition and can never exist as a
+  buffer at all. Bulk and control share one wire under a rule written down
+  once: bulk gets its own slot and never a control slot, a frame already
+  going out finishes first, control drains before bulk, and back-pressure
+  is the transport's short accept rather than the far side's progress
+  reports. `put` is a verb on **both** faces here — unlike the PowerPC
+  guest, where the host reaches the same capability through the `file.*`
+  families — because this is the machine whose display has already failed
+  mid-session. No contract schema changed: the whole family already
+  existed and the host already served it.
+
 - **A dev loop that does not need a Macintosh.** Neither guest can run its
   own suite, so the pure-C halves compile under the host `cc`:
-  `scripts/test-native` runs all 18 across both guests in one command, and
+  `scripts/test-native` runs all 27 across both guests in one command, and
   a test file missing from its manifest fails the run — a test nobody runs
   reads as coverage in a directory listing and proves nothing. The metal
   gates now **fail rather than skip** once a human has opted into a metal
@@ -234,10 +256,15 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
 ## What does not work
 
 - **NOW-68K implements a small part of the contract.** `launch`, `quit`,
-  `help` and `process.list`, plus the keepalive; everything else — capture,
-  files, census, streams, the process drive verbs — answers
-  `unknown-command` or `refused`, which is the contract's own additive
-  answer, not a failure. Every one of those it does serve is reachable from
+  `help`, `ps`, `vprobe`, `put` and `process.list`, plus receiving and
+  sending a file and the keepalive; everything else — capture, census,
+  streams, the process drive verbs, and the half of the file family that
+  SERVES a host (`file.list`, `file.get`, `file.move`, `file.trash`) —
+  answers `unknown-command` or `refused`, which is the contract's own
+  additive answer, not a failure. It can be told to send a file and can be
+  sent one; it cannot yet be browsed. Neither direction does MacBinary, so
+  **no application and no resource fork crosses either way**. Every one of
+  those it does serve is reachable from
   both its faces (the console and the wire), which
   [docs/command-parity.md](docs/command-parity.md) explains and
   `CommandParityTests` enforces.

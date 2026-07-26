@@ -47,9 +47,11 @@ round-tripped in 0.05 s during a 1 MB transfer against 0.06 s idle.
   Deliberate: resume is an open hang on the PowerPC side (see the large
   transfer notes) and a 4 MB transfer is not long enough to make
   restarting a hardship.
-- **Receive only.** `file.list`, `file.move`, `file.trash` and the pull
-  direction still answer the generic not-implemented error. NOW-68K has
-  no share to serve.
+- **~~Receive only.~~** Superseded — NOW-68K now sends as well as
+  receives; see the next section. `file.list`, `file.move`,
+  `file.trash` and the host-initiated PULL (`file.get`) still answer the
+  generic not-implemented error, so the guest can push a file it is told
+  to push but cannot serve a host that wants to browse or fetch.
 - **The destination is the application's own folder.** NOW-68K has no
   preferences and no share root, so there was nothing to read one from.
   This is the spike's weakest decision and the first thing a real
@@ -89,6 +91,109 @@ round-tripped in 0.05 s during a 1 MB transfer against 0.06 s idle.
    discard sink. A 4 MB transfer therefore makes ~32 passes per 8 KB
    frame. Cheap memcpys, but it is a knob nobody has measured on the
    180c, where BSS is the scarcer resource.
+
+## Guest -> host file transfer on NOW-68K (2026-07-25)
+
+The other direction. NOW-68K makes the offer, streams the bulk frames
+and closes with a checksum: `file.offer` -> `file.accept` ->
+`file.begin` -> bulk -> `file.end` -> `file.done`. **Additive — no
+contract schema changed.** Every message and every field already
+existed, is already served by the host (`GuestListener.onAcceptOffer` /
+`finishInbound`) and is already sent by the PowerPC guest; that was
+verified against the schemas rather than assumed.
+
+**Builds and tested. NOT metal-verified, and not emulator-verified
+either** — unlike the receive half, nothing has yet watched a byte
+leave this guest. That is the single biggest thing missing below.
+
+### It is a byte-source sender, not a file sender
+
+The point of the shape, stated because it is the thing most likely to
+be undone by someone in a hurry. The source is an interface
+(`n68_bytesrc.h`) with four promises: it knows its length before the
+first fill, it returns promptly, it does not allocate, and it never
+touches the wire. A file (`n68_filesrc.h`) is the FIRST implementation,
+not the only intended one — a screen capture is ~300 KB against a
+384 KB partition, so it can never be a buffer and cannot be staged to a
+disk that may not have room. **If a screenshot ever needs a second,
+parallel send path, this was built wrong.**
+
+### How bulk and control share the wire
+
+Stated once in `n68_puttx.h` and enforced in `flush_outbound()`:
+
+1. Bulk never touches the four 1024-byte control slots; it has one
+   dedicated 4104-byte slot, so no volume of bulk can consume the slot
+   a `command.result` needs.
+2. A frame already being handed to `net_queue_send` finishes before any
+   other frame's first byte.
+3. Otherwise control drains before bulk, so a reply queued mid-transfer
+   waits for the chunk in flight (~12 ms) and never for the transfer.
+4. Back-pressure is `net_queue_send`'s short accept and nothing else.
+
+Rule 4 is the one that will read as a bug later, so: this side does
+**not** need the receiver's `file.progress` to clock itself and the
+host **does**. MacTCP's staging buffer is small and reports truthfully
+and synchronously how much room is left; the host writes into
+Network.framework, which accepts essentially unbounded writes and so
+tells it nothing. Two senders, two mechanisms, neither one the other's
+bug.
+
+### Parity: `put` is on both faces here, and console-only on the PPC guest
+
+Deliberate, and the two guests genuinely differ. A host driving the
+PowerPC guest reaches the same capability through `file.list` and
+`file.get`, so that guest needs no verb. NOW-68K is the machine whose
+display has already failed mid-session and whose host console is a dumb
+shell with no knowledge of message families — so on that guest the
+capability is a verb in `commands68.c`'s table, reachable from both
+faces through one implementation. The contract declares `put` in
+`x-commands` first, per AGENTS.md.
+
+`CommandRegistryTests` had to learn this: it assumed the registry IS
+the PowerPC guest's command set. NOW-68K always answered a strict
+subset, which that test never had to notice; `put` is the first command
+going the other way, and it is named in `notOnThePowerPCGuest` with its
+reason rather than subtracted silently.
+
+### Open
+
+1. **Nothing has sent a byte.** Not on the 180c, not on the q800
+   emulator. `scripts/q800-68k` proved the receive half and can prove
+   this one the same way; that is the obvious next step and it was not
+   taken here. Every claim below the framing is therefore "tested",
+   never "works".
+2. **No MacBinary, so no application and no resource fork.** The data
+   fork only — which is the contract's own default for a both-forks
+   file, so it is legal rather than a shortcut, but it means a file
+   whose content lives in its resource fork (most classic Mac
+   applications, every ResEdit document) arrives empty or meaningless.
+   This is the natural SECOND implementation of `N68ByteSourceOps` —
+   header, data fork, padding, resource fork, each in bands — and
+   writing it is the real test of whether the interface earns its keep.
+3. **The source is limited to the application's own folder.** Same
+   weakness the receive half has and for the same reason: NOW-68K has
+   no share root. `put` takes a leaf name, not a path.
+4. **One transfer at a time is enforced across both directions**, and
+   the answer to a second request is `busy` with a reason. Not
+   exercised against a host that offers a push while a send is in
+   flight — the check exists and has never been raced.
+5. **A contract gap, the mirror of the receive half's.** `FileEnd` has
+   no way to say "the sender's own source let it down", so
+   `kN68SendSourceFailed`, `kN68SendShort` and `kN68SendLong` all
+   render as `io-error` with the truth only in the reason. Same honest
+   fix: an additive enum value.
+6. **The contract's operations index is asymmetric about this
+   direction, and was before this change.** `guestServesFiles` lists
+   `file.begin`/`end`/`progress`/`refuse`/`listing` but not
+   `file.offer`; `file.accept` and `file.done` appear in **no**
+   operation at all, in either direction, though both sides send both.
+   The schemas are complete and correct — this is the index above them.
+   Left alone rather than fixed in passing: it is a contract edit that
+   touches how both halves are described and deserves its own pass.
+7. **`sendMs` is computed from `TickCount` at 1/60 s.** Fine for a
+   figure the contract types as advisory, but it is not milliseconds
+   measured, it is ticks scaled.
 
 ### Two defects found by this pass, in code that predates it
 

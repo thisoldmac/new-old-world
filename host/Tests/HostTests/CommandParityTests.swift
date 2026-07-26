@@ -252,6 +252,47 @@ final class CommandParityTests: XCTestCase {
             """)
     }
 
+    /// The third capability that is not a command — and the one where
+    /// the lesson was applied before it cost anything. SENDING a file is
+    /// the `file.*` family read from the other end, so again no command
+    /// table compares the two faces on its own.
+    ///
+    /// Two things are asserted, and they are different. The first is
+    /// that a person at the machine can SEE an outgoing transfer, which
+    /// is `xfer`'s job in both directions. The second is that `put` is
+    /// in commands68.c rather than only in conwin.c, so the host console
+    /// — a dumb shell with no knowledge of message families — can type
+    /// it. `ps` satisfied the first and failed the second for a day.
+    func testTheSixtyEightKConsoleCanSeeAnOutgoingFile() throws {
+        let wire = try source("guest68k/src/wire68.c")
+        let console = try source("guest68k/src/conwin.c")
+        // dispatched(), not contains("\"put\"") — the doc table names
+        // every verb too, so a substring check passes on a guest that
+        // merely ADVERTISES the command and answers unknown-command to
+        // it. Caught by mutation: renaming the dispatch arm left the
+        // first version of this test green.
+        let table = dispatched(in: try source("guest68k/src/commands68.c"))
+
+        guard wire.contains("now68k_wire_send_file") else {
+            return   // if the guest ever stops sending files, this is moot
+        }
+        XCTAssertTrue(console.contains("now68k_wire_send_status"), """
+            NOW-68K can send a file, but its console cannot say whether \
+            one is going out or what became of the last one. A person who \
+            types `put` and then has no way to ask what happened is in \
+            exactly the position `xfer` was written to fix, facing the \
+            other way.
+            """)
+        XCTAssertTrue(table.contains("put"), """
+            `put` is not in commands68.c's table, so the host console \
+            gets unknown-command for it while a person at the PowerBook \
+            can send files happily. That is the `ps` failure exactly: the \
+            host console sends the line a person types and knows no \
+            message families, so a capability reachable only from the \
+            guest's own keyboard is one the host cannot reach at all.
+            """)
+    }
+
     /// Both guests must only claim verbs the contract declares. The
     /// contract's registry is the source of truth; a guest inventing one
     /// is how a host learns to ask for something no schema describes.

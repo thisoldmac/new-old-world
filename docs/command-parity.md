@@ -85,10 +85,46 @@ Kept in the test as data, not prose, so they cannot rot:
 | `putstat` | wire only | a diagnostic the host reads to size a transfer; nothing for a person at the guest to do with it |
 | `help`, `clear`, `?` | console only | act on the console window itself and mean nothing on a wire |
 | `put`, `mv`, `trash`, `untrash`, `mkdir` | console only (PPC) | the host reaches the same capability through the `file.*` message families, not through x-commands |
+| `put` | **both faces (NOW-68K)** | the same capability, the opposite decision — see below |
 
 Adding a row here should feel like a small act of documentation. It is a
 decision with a justification, not a to-do — anything not listed fails
 the build.
+
+### The two guests answer `put` differently, on purpose
+
+The same capability, opposite decisions, and the reason is the machine
+rather than the code.
+
+On the **PowerPC guest**, `put` is a console verb only. A host driving
+that guest reaches sending through the `file.*` message families — it
+asks for a listing, it asks for a file — so there is nothing for a
+command to add, and a verb would be a second route to one capability.
+
+On **NOW-68K** it is in `commands68.c`'s table, reachable from both
+faces. Two things make that the opposite answer to the same question.
+The host console is a **dumb shell**: it relays the line a person types
+as a `command.request` and knows no message families, so a capability
+that is only a family is a capability the host cannot type. And this is
+the machine whose display failed mid-session on 2026-07-25 — the guest
+whose own keyboard is sometimes the only face there is, and sometimes
+the one that is gone. A capability that exists on one face is
+unavailable in whichever half of that pair you are living in.
+
+So `put` is declared in the contract's `x-commands` (the contract
+changes first, always), answered by NOW-68K's wire, and reached by its
+console through `now68k_commands_run` like every other table verb.
+`CommandRegistryTests` records the resulting asymmetry in
+`notOnThePowerPCGuest` — that test used to assume the registry WAS the
+PowerPC guest's command set, which stopped being true the moment a
+command existed that only the other guest answers.
+
+Sending, like receiving, is also a message FAMILY, so `xfer` reports
+both directions from `now68k_wire_send_status()` and
+`now68k_wire_put_status()` — one implementation each, two renderers, and
+`testTheSixtyEightKConsoleCanSeeAnOutgoingFile` is the guard. It was
+written before the gap could cost anything, which is the first time that
+has been true in this file.
 
 ## Adding a capability
 
