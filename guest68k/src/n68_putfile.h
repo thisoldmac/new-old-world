@@ -35,6 +35,15 @@
  * application. The PowerPC guest stages the same way and for the same
  * reason (now/guest/src/fileshare.h).
  *
+ * ---- MacBinary: two forks, one staging file ---------------------------
+ *
+ * n68_putrx.c decodes the envelope and says which fork each run belongs
+ * to; this file opens the second one when first asked. The forks are
+ * written in order - data, then resource - because that is the order
+ * MacBinary stores them, and nothing here seeks: each fork is appended
+ * to through its own refNum, and the File Manager keeps a separate mark
+ * per refNum.
+ *
  * ---- No completion routines, no interrupt time ------------------------
  *
  * Every call here is the synchronous high-level form, made from the main
@@ -60,6 +69,12 @@ typedef struct {
     FSSpec temp;             /* what is being written */
     FSSpec final;            /* what it becomes on success */
     short  ref;              /* open data fork; 0 when closed */
+    short  rsrc_ref;         /* open resource fork; 0 when closed.
+                                Opened lazily, on the first resource-fork
+                                write a MacBinary transfer asks for - a
+                                data-only file never opens one, and a
+                                resource fork created and left empty is
+                                not the same file as one never created. */
     int    have_temp;        /* a staging file exists on disk */
     OSType file_type, creator;
     unsigned long modified;  /* Mac epoch seconds, straight from the offer */

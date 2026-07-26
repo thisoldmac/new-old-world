@@ -227,6 +227,7 @@ static N68PutCode pf_create(void *ctx, const N68PutOffer *offer)
         pf->have_temp = 0;
         return kN68PutIOError;
     }
+    pf->rsrc_ref = 0;
 
     /* Claim the space up front. Two reasons, and the second is the one
      * that matters on this machine: a disk-full failure arrives NOW, as
@@ -269,16 +270,35 @@ static N68PutCode pf_create(void *ctx, const N68PutOffer *offer)
     return kN68PutOK;
 }
 
-static N68PutCode pf_write(void *ctx, const void *bytes, long len)
+static N68PutCode pf_write(void *ctx, N68PutFork fork,
+                           const void *bytes, long len)
 {
     N68PutFile *pf = (N68PutFile *)ctx;
     long count = len;
+    short ref;
     OSErr err;
 
-    if (pf->ref == 0) {
+    if (fork == kN68ForkRsrc) {
+        /* Opened on first use, not at create: a data-only file must not
+         * acquire an empty resource fork it never had. Only a MacBinary
+         * transfer ever reaches here, and only after its data fork is
+         * complete. */
+        if (pf->rsrc_ref == 0) {
+            err = FSpOpenRF(&pf->temp, fsWrPerm, &pf->rsrc_ref);
+            if (err != noErr) {
+                pf->err = err;
+                pf->rsrc_ref = 0;
+                return kN68PutIOError;
+            }
+        }
+        ref = pf->rsrc_ref;
+    } else {
+        ref = pf->ref;
+    }
+    if (ref == 0) {
         return kN68PutIOError;
     }
-    err = FSWrite(pf->ref, &count, bytes);
+    err = FSWrite(ref, &count, bytes);
     if (err != noErr) {
         pf->err = err;
         return (err == dskFulErr) ? kN68PutTooBig : kN68PutIOError;
@@ -304,7 +324,13 @@ static N68PutCode pf_finish(void *ctx)
          * the physical EOF that Allocate claimed. Trimming it is what
          * makes the file's size the file's size rather than the space it
          * was given - without this a 4 MB file reports as whatever the
-         * allocation rounded up to. */
+         * allocation rounded up to.
+         *
+         * It matters more for MacBinary than for a raw data fork: there
+         * the whole ENVELOPE was pre-allocated on the data fork, so the
+         * data fork would otherwise report the size of the envelope
+         * rather than of the file inside it - a Finder size that is
+         * wrong by the resource fork plus the padding. */
         long here = 0;
 
         if (GetFPos(pf->ref, &here) == noErr) {
@@ -312,6 +338,14 @@ static N68PutCode pf_finish(void *ctx)
         }
         err = FSClose(pf->ref);
         pf->ref = 0;
+        if (err != noErr) {
+            pf->err = err;
+            return kN68PutIOError;
+        }
+    }
+    if (pf->rsrc_ref != 0) {
+        err = FSClose(pf->rsrc_ref);
+        pf->rsrc_ref = 0;
         if (err != noErr) {
             pf->err = err;
             return kN68PutIOError;
@@ -370,10 +404,33 @@ static N68PutCode pf_finish(void *ctx)
     return kN68PutOK;
 }
 
+static void pf_set_info(void *ctx, unsigned long file_type,
+                        unsigned long creator, unsigned long modified)
+{
+    N68PutFile *pf = (N68PutFile *)ctx;
+
+    /* Zero means "the sender did not say", and leaves whatever create()
+     * took from the offer in place - a MacBinary header with no type is
+     * not a reason to forget the one the offer carried. */
+    if (file_type != 0) {
+        pf->file_type = (OSType)file_type;
+    }
+    if (creator != 0) {
+        pf->creator = (OSType)creator;
+    }
+    if (modified != 0) {
+        pf->modified = modified;
+    }
+}
+
 static void pf_discard(void *ctx)
 {
     N68PutFile *pf = (N68PutFile *)ctx;
 
+    if (pf->rsrc_ref != 0) {
+        (void)FSClose(pf->rsrc_ref);
+        pf->rsrc_ref = 0;
+    }
     if (pf->ref != 0) {
         (void)FSClose(pf->ref);
         pf->ref = 0;
@@ -386,7 +443,7 @@ static void pf_discard(void *ctx)
 }
 
 static const N68PutFileOps kOps = {
-    pf_free_bytes, pf_create, pf_write, pf_finish, pf_discard
+    pf_free_bytes, pf_create, pf_write, pf_set_info, pf_finish, pf_discard
 };
 
 const N68PutFileOps *now68k_putfile_ops(void)

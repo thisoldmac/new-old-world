@@ -37,11 +37,74 @@ works, and no `NOW incoming ...` staging file was left behind.
 The guest's event loop is not starved by the receive path: `help`
 round-tripped in 0.05 s during a 1 MB transfer against 0.06 s idle.
 
+## MacBinary on NOW-68K: decoded correctly, stored wrongly (2026-07-25)
+
+**Do not deploy this to the PowerBook yet, and do not read it as
+working.** The decode is right and the storage is not.
+
+MacBinary is now decoded in flight - 128-byte header, data fork padded
+to 128, resource fork padded the same way, with every section boundary
+able to land mid-run. `test_putrx.c` replays one envelope at nine
+arrival splits including one byte at a time, walks 30 fork-size
+combinations around the padding boundary, and refuses five malformed
+envelopes. Mutating the fork-flush or the padding skip makes it name the
+fork-swap signature exactly.
+
+**What the emulator confirms is right.** Six envelopes up to 212 KB
+(12 KB data + 200 KB resource, an application's shape) all complete with
+the checksum confirmed, and on the HFS volume every one has EXACTLY the
+right fork sizes, `APPL`/`MPS ` from the HEADER rather than the offer,
+and a modification date that resolves through the Mac epoch to 2008 as
+sent. A file with no resource fork does not acquire an empty one.
+
+**What is wrong.** Reading the files back off the disk image, **the
+resource fork has 77 bytes overwritten at fork offset 48** - and the
+overwriting bytes are that file's own create-time HFS catalog record
+(its `NOW incoming <hex>` staging name, and the `BINA`/`NW68` type and
+creator `FSpCreate` gave it). The data fork is always perfect. Verified:
+
+- Reproducible with a SINGLE transfer on a freshly cloned image.
+- Same 77 bytes at the same offset 48 for a 3000-byte and a
+  200000-byte resource fork, and across separate runs.
+- Confirmed by two independent extractors (hfsutils MacBinary and
+  BinHex), so it is on the disk and not an artifact of reading.
+- Data-container files are byte-identical at 8191, 8192, 8193, 65536,
+  262144 and 4194304 bytes. **Only resource forks are affected.**
+
+**Eliminated, each by disabling it and re-running:** `Allocate()`
+pre-allocation, `FSpSetFInfo`, `FSpRename`, and the `PBSetCatInfoSync`
+that stamps the date. The corruption survives all four, so none of this
+guest's catalog writes causes it - and the record that lands in the fork
+predates them anyway (it carries the staging name and `BINA`, not the
+final name and `APPL`).
+
+**Leading hypothesis, NOT established:** the resource fork is allocated
+a block that HFS has also given to the catalog, i.e. an allocation
+bitmap that disagrees with the catalog file's extents. That would
+explain why it is resource-fork-only (data forks are allocated at a
+different point in the sequence), why each file gets its OWN catalog
+record spliced in, and why it is deterministic (every run replays the
+same operations from the same base image clone). Whether the fault is in
+the shared `os81-target.img` - which has been hard-powered-off many
+times, by this work among others - in Mac OS 8.1, or in QEMU's q800 SCSI
+path, is **not established**, and separating those needs a transfer onto
+a freshly formatted volume. NOW-68K writes into its own application
+folder, so arranging that means giving it a configurable destination
+first.
+
+**What this does NOT tell us about the 180c.** Nothing. If the cause is
+the emulator image, metal may be clean; if it is the File Manager call
+sequence, metal will be worse, because that is a 4 MB machine with a
+real disk. Either way an application whose resource fork has 77 bytes
+of catalog record in it is an application that will not launch, so this
+must be resolved before MacBinary is used for anything.
+
 ### What is deliberately not there
 
-- **No MacBinary.** Data fork only; a MacBinary offer is refused. This
-  is the biggest functional gap - it means no application, and no file
-  with a resource fork, can be pushed to NOW-68K yet.
+- **MacBinary decodes but does not yet STORE correctly** - see above.
+  The container is accepted rather than refused, which is a deliberate
+  choice to make the defect visible and testable rather than hidden
+  behind a refusal; it is also why this must not go to the PowerBook.
 - **No resume.** The guest never reports `have`, which the contract
   reads as "start from the beginning". Partials are always discarded.
   Deliberate: resume is an open hang on the PowerPC side (see the large
@@ -64,11 +127,14 @@ round-tripped in 0.05 s during a 1 MB transfer against 0.06 s idle.
    wedge silently on that machine. A 4 MB transfer into a 384 KB
    partition is exactly the shape that behaves differently there.
 2. **A contract gap: `FileRefuse.code` has no value for "this receiver
-   cannot handle that".** An unsupported container is reported as
+   cannot handle that".** An unrecognized container is reported as
    `io-error` with the truth only in `reason`, which is a lie of
    category - nothing failed, the request was never serviceable. The
    honest fix is an additive enum value in the contract, which touches
-   both halves and was out of scope for a spike.
+   both halves and was out of scope for a spike. (Unknown containers are
+   now REFUSED rather than treated as `data`; writing an unknown
+   envelope out as a raw fork produces a file of the wrong length and
+   the wrong shape and blames the disk.)
 3. **`FileOffer.modified` has no stated units in the contract.** Both
    guests treat it as Mac-epoch seconds (it goes straight into
    `ioFlMdDat`), and the two agreeing is the only reason it works. It

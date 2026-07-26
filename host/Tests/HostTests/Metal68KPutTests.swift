@@ -32,14 +32,22 @@ import XCTest
 ///
 ///   * the host computes CRC-32 with its own code over the bytes it
 ///     sends, and puts it in file.end;
-///   * the guest computes CRC-32 with n68_crc32.c over the bytes it
-///     WROTE TO DISK, in whatever runs MacTCP handed over;
+///   * the guest computes CRC-32 with n68_crc32.c over the bytes AS THEY
+///     ARRIVE, in whatever runs MacTCP handed over;
 ///   * the guest compares them itself and answers file.done ok:false
 ///     code:"corrupt" on a mismatch, deleting the file.
 ///
 /// So `ok:true` from a 4 MB push means both halves independently agree
 /// about all 4,194,304 bytes. A test that read the count back off the
 /// guest's own progress reports would be testing one half twice.
+///
+/// "As they arrive" rather than "as written" is load-bearing for
+/// MacBinary and not a detail: the contract checksums the WHOLE file's
+/// wire bytes (FileEnd.crc32), and an envelope's 128-byte header and its
+/// inter-fork padding are wire bytes that reach neither fork. A receiver
+/// that checksummed what it wrote would disagree with every sender on
+/// every MacBinary file, and would report `corrupt` for files that
+/// arrived perfectly.
 @MainActor
 final class Metal68KPutTests: XCTestCase {
     private var listener: GuestListener!
@@ -99,6 +107,7 @@ final class Metal68KPutTests: XCTestCase {
     }
 
     private func put(_ name: String, _ bytes: Data,
+                     container: String = "data",
                      timeout: TimeInterval = 300) async -> Outcome {
         let started = Date()
         var result: Outcome?
@@ -122,7 +131,7 @@ final class Metal68KPutTests: XCTestCase {
         defer { watch.cancel() }
 
         listener.putFileWithReceipt(
-            name: name, into: "", container: "data", bytes: bytes,
+            name: name, into: "", container: container, bytes: bytes,
             overwrite: true
         ) { r in
             let secs = Date().timeIntervalSince(started)
@@ -216,16 +225,110 @@ final class Metal68KPutTests: XCTestCase {
                       "rungs that failed:\n  " + failures.joined(separator: "\n  "))
     }
 
-    /// A file the guest must REFUSE, and refuse without leaving anything
-    /// behind. Cheap to run and it exercises the branch a size ladder
-    /// never reaches: NOW-68K decodes no MacBinary, and a container it
-    /// cannot decode written out verbatim would produce a file that looks
-    /// right and opens wrong.
-    func testMacBinaryIsRefusedRatherThanWrittenOutVerbatim() async throws {
+    /// A real MacBinary envelope: 128-byte header, data fork padded to
+    /// 128, resource fork padded the same way.
+    ///
+    /// This is the container that carries an APPLICATION, which is the
+    /// whole reason it matters on this machine — a Mac application IS
+    /// its resource fork, and a transfer that can only carry a data fork
+    /// cannot deliver one. The check that it worked is the same one the
+    /// data ladder uses and it is not self-referential: the guest
+    /// computes CRC-32 over the WIRE bytes (header and padding
+    /// included), compares them against the host's, and answers
+    /// `corrupt` on a mismatch. `ok:true` means both halves agree about
+    /// the envelope.
+    private func macBinary(data: Int, rsrc: Int,
+                           type: String, creator: String) -> Data {
+        func padded(_ n: Int) -> Int { (n + 127) & ~127 }
+        var header = [UInt8](repeating: 0, count: 128)
+        header[0] = 0                                  // old version, zero
+        header[1] = 6
+        for (i, b) in Array("AnApp!".utf8).enumerated() { header[2 + i] = b }
+        for (i, b) in Array(type.utf8).enumerated() { header[65 + i] = b }
+        for (i, b) in Array(creator.utf8).enumerated() { header[69 + i] = b }
+        func put32(_ at: Int, _ v: UInt32) {
+            header[at] = UInt8(truncatingIfNeeded: v >> 24)
+            header[at + 1] = UInt8(truncatingIfNeeded: v >> 16)
+            header[at + 2] = UInt8(truncatingIfNeeded: v >> 8)
+            header[at + 3] = UInt8(truncatingIfNeeded: v)
+        }
+        put32(83, UInt32(data))
+        put32(87, UInt32(rsrc))
+        put32(95, 3_300_000_000)                       // Mac epoch seconds
+        header[122] = 130                              // MacBinary III
+        header[123] = 129
+        // CRC-16/XMODEM over the first 124 bytes — the field that says
+        // "this is a header and not 128 bytes of something else".
+        var crc: UInt16 = 0
+        for byte in header[0..<124] {
+            crc ^= UInt16(byte) << 8
+            for _ in 0..<8 {
+                crc = (crc & 0x8000) != 0 ? (crc << 1) ^ 0x1021 : crc << 1
+            }
+        }
+        header[124] = UInt8(truncatingIfNeeded: crc >> 8)
+        header[125] = UInt8(truncatingIfNeeded: crc)
+
+        var out = Data(header)
+        out.append(pattern(data))
+        out.append(Data(repeating: 0, count: padded(data) - data))
+        // Inverted, so a decode that put a run in the wrong fork fails on
+        // content rather than only on length.
+        out.append(Data(pattern(rsrc).map { $0 ^ 0xFF }))
+        out.append(Data(repeating: 0, count: padded(rsrc) - rsrc))
+        return out
+    }
+
+    func testMacBinaryCarriesBothForks() async throws {
+        try await waitForGuest()
+
+        // Sizes chosen against the padding rule rather than for being
+        // round: a fork that is an exact multiple of 128 has NO padding,
+        // so the next section starts immediately, and that is where an
+        // off-by-one in the decode lives.
+        let cases: [(String, Int, Int)] = [
+            ("both forks", 5000, 3000),
+            ("data an exact multiple of 128", 4096, 1000),
+            ("rsrc an exact multiple of 128", 1000, 4096),
+            ("no resource fork", 2000, 0),
+            ("no data fork", 0, 2000),
+            ("a resource-heavy application", 12_000, 200_000),
+        ]
+
+        var failures: [String] = []
+        for (label, data, rsrc) in cases {
+            let env = macBinary(data: data, rsrc: rsrc,
+                                type: "APPL", creator: "MPS ")
+            let outcome = await put("N68 mb \(data)-\(rsrc)", env,
+                                    container: "macbinary")
+            print("  \(label) (\(data)+\(rsrc), envelope \(env.count) B): "
+                  + outcome.text)
+            if !outcome.ok {
+                failures.append("\(label): \(outcome.text)")
+                continue
+            }
+            if let r = outcome.receipt {
+                // The receiver confirms the ENVELOPE's byte count — the
+                // stream it took off the wire — not the forks' total.
+                XCTAssertEqual(r.receiverConfirmedBytes, env.count, label)
+                XCTAssertEqual(r.integrity, "guest-crc32-confirmed", label)
+                XCTAssertEqual(r.cleanup, "temp-renamed", label)
+            }
+        }
+        XCTAssertTrue(failures.isEmpty,
+                      "envelopes that failed:\n  "
+                      + failures.joined(separator: "\n  "))
+    }
+
+    /// A container from some later contract revision. It must be REFUSED
+    /// rather than quietly written out as a raw data fork, which would
+    /// produce a file of the wrong length and the wrong shape and blame
+    /// the disk.
+    func testAnUnknownContainerIsRefused() async throws {
         try await waitForGuest()
         var settled: String?
-        listener.putFile(name: "N68 macbin", into: "",
-                         container: "macbinary", bytes: pattern(4096),
+        listener.putFile(name: "N68 unknown", into: "",
+                         container: "applesingle", bytes: pattern(4096),
                          overwrite: true) { r in
             switch r {
             case .success: settled = "accepted"
@@ -236,17 +339,16 @@ final class Metal68KPutTests: XCTestCase {
         while settled == nil, Date() < deadline {
             try? await Task.sleep(nanoseconds: 200_000_000)
         }
-        print("  macbinary: \(settled ?? "no answer in 60s")")
+        print("  unknown container: \(settled ?? "no answer in 60s")")
         XCTAssertNotNil(settled, "the guest never answered the offer")
         XCTAssertEqual(settled?.hasPrefix("refused"), true, """
-            NOW-68K decodes no MacBinary, so it must refuse the offer. \
-            Accepting one writes the container out as if it were the file.
+            An unrecognized container must be refused. Treating one as \
+            `data` writes the envelope out as if it were the file.
             """)
-        XCTAssertEqual(settled?.contains("MacBinary"), true, """
+        XCTAssertEqual(settled?.contains("container"), true, """
             The refusal has to SAY so. FileRefuse.code has no value for \
             "this receiver cannot handle that", so the code is io-error \
-            and `reason` is the only place the truth can live — if that \
-            text stops arriving, the host is left blaming a disk.
+            and `reason` is the only place the truth can live.
             """)
     }
 

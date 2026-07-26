@@ -20,11 +20,18 @@ static N68PutCode fail(N68PutRx *rx, N68PutCode code)
     return code;
 }
 
-/* Empties the batch buffer to disk. The CRC is accumulated HERE rather
- * than as bytes arrive, so it covers exactly the bytes that were handed
- * to the disk, in the order they were handed over - a checksum computed
- * over a different set of bytes than the file contains is worse than no
- * checksum, because it reports success. */
+/* Empties the batch buffer into whichever fork it was filled for.
+ *
+ * The CRC is NOT accumulated here. It used to be - which was correct
+ * while every arriving byte was also a written byte, and became wrong
+ * the moment MacBinary arrived: the contract checksums "the WHOLE file's
+ * wire bytes" (FileEnd.crc32), and a MacBinary envelope's header and
+ * padding are wire bytes that are never written to either fork. A CRC
+ * over the written bytes would disagree with the sender's on every
+ * MacBinary transfer, reporting `corrupt` for files that arrived
+ * perfectly. It is accumulated on arrival instead - see
+ * n68_putrx_data - which is also what the PowerPC guest does, and its
+ * comment gives the same reason. */
 static N68PutCode flush(N68PutRx *rx)
 {
     N68PutCode rc;
@@ -32,13 +39,219 @@ static N68PutCode flush(N68PutRx *rx)
     if (rx->buf_len == 0) {
         return kN68PutOK;
     }
-    rc = rx->ops->write(rx->ctx, rx->buf, rx->buf_len);
+    rc = rx->ops->write(rx->ctx, rx->buf_fork, rx->buf, rx->buf_len);
     if (rc != kN68PutOK) {
         return rc;
     }
     rx->writes++;
-    rx->crc = now68k_crc32(rx->crc, rx->buf, rx->buf_len);
     rx->buf_len = 0;
+    return kN68PutOK;
+}
+
+/* Buffers `len` bytes for `fork`, flushing whenever the batch fills or
+ * the fork changes. The fork change is the subtle one: the batch is a
+ * single buffer shared by both forks, so carrying bytes across the
+ * boundary would write the head of the resource fork onto the end of the
+ * data fork. The PowerPC guest flushes at exactly the same point and for
+ * exactly this reason. */
+static N68PutCode stage(N68PutRx *rx, N68PutFork fork,
+                        const unsigned char *p, long len)
+{
+    if (rx->buf_len > 0 && rx->buf_fork != fork) {
+        N68PutCode rc = flush(rx);
+
+        if (rc != kN68PutOK) {
+            return rc;
+        }
+    }
+    rx->buf_fork = fork;
+    while (len > 0) {
+        long room = rx->buf_cap - rx->buf_len;
+        long take = (len < room) ? len : room;
+
+        memcpy(rx->buf + rx->buf_len, p, (size_t)take);
+        rx->buf_len += take;
+        p += take;
+        len -= take;
+        if (rx->buf_len == rx->buf_cap) {
+            N68PutCode rc = flush(rx);
+
+            if (rc != kN68PutOK) {
+                return rc;
+            }
+        }
+    }
+    return kN68PutOK;
+}
+
+/* CRC-16/XMODEM over the header's first 124 bytes, which is what
+ * MacBinary II stores at offset 124. Nothing to do with the CRC-32 the
+ * contract carries; this one only says whether the header is a header. */
+static unsigned short macbinary_crc16(const unsigned char *bytes, long len)
+{
+    unsigned short crc = 0;
+    long i;
+
+    for (i = 0; i < len; ++i) {
+        int bit;
+
+        crc ^= (unsigned short)((unsigned short)bytes[i] << 8);
+        for (bit = 0; bit < 8; ++bit) {
+            crc = (crc & 0x8000) != 0
+                ? (unsigned short)((unsigned short)(crc << 1) ^ 0x1021)
+                : (unsigned short)(crc << 1);
+        }
+    }
+    return crc;
+}
+
+static long be32(const unsigned char *p)
+{
+    return ((long)p[0] << 24) | ((long)p[1] << 16)
+         | ((long)p[2] << 8) | (long)p[3];
+}
+
+/* Padding to the next 128-byte boundary. */
+static long padded(long n)
+{
+    return (n + 127L) & ~127L;
+}
+
+/* Is the completed header a MacBinary header at all, and does it
+ * describe a file that fits the stream the sender offered?
+ *
+ * Checked the moment the 128 bytes are in hand rather than at the end,
+ * because everything after depends on the two lengths in it: a garbage
+ * mb_data_len would otherwise be used to decide where the resource fork
+ * starts, and the transfer would write megabytes into the wrong fork
+ * before anything noticed. Mirrors valid_macbinary_receive in the
+ * PowerPC guest (now/guest/src/fileshare.c) - the two guests are reached
+ * by the same host and must refuse the same envelopes. */
+static int header_is_macbinary(const N68PutRx *rx)
+{
+    long data_padded, rsrc_padded;
+
+    /* The three bytes MacBinary reserves as zero, and the name length
+       field, are the cheap structural check every implementation makes. */
+    if (rx->header[0] != 0 || rx->header[74] != 0 || rx->header[82] != 0
+        || rx->header[1] < 1 || rx->header[1] > 63) {
+        return 0;
+    }
+    if (rx->mb_data_len < 0 || rx->mb_rsrc_len < 0) {
+        return 0;
+    }
+    /* MacBinary II and III both stamp a version and a header CRC. A
+       MacBinary I header has neither, so the CRC is checked only when
+       the version says there is one to check. */
+    if (rx->header[122] == 129 || rx->header[122] == 130) {
+        unsigned short stored = (unsigned short)
+            (((unsigned short)rx->header[124] << 8) | rx->header[125]);
+
+        if (stored != macbinary_crc16(rx->header, 124)) {
+            return 0;
+        }
+    }
+    /* The envelope has to fit inside the size the sender offered. Both
+       comparisons are written as subtractions from `expected` so that
+       neither side can overflow on a header claiming a huge fork. */
+    data_padded = padded(rx->mb_data_len);
+    rsrc_padded = padded(rx->mb_rsrc_len);
+    if (rx->offer.bytes < kN68MacBinaryHeader
+        || data_padded > rx->offer.bytes - kN68MacBinaryHeader
+        || rsrc_padded > rx->offer.bytes - kN68MacBinaryHeader - data_padded) {
+        return 0;
+    }
+    return 1;
+}
+
+/* Routes one run of arriving bytes into the header, a fork, or the
+ * padding between them. Any run may straddle any number of those
+ * boundaries, including all of them, which is why this is a loop and not
+ * a switch. */
+static N68PutCode take_macbinary(N68PutRx *rx, const unsigned char *p,
+                                 long len)
+{
+    while (len > 0) {
+        long take;
+
+        if (rx->header_have < kN68MacBinaryHeader) {
+            take = kN68MacBinaryHeader - rx->header_have;
+            if (take > len) {
+                take = len;
+            }
+            memcpy(rx->header + rx->header_have, p, (size_t)take);
+            rx->header_have += take;
+            p += take;
+            len -= take;
+            if (rx->header_have == kN68MacBinaryHeader) {
+                rx->mb_data_len = be32(rx->header + 83);
+                rx->mb_rsrc_len = be32(rx->header + 87);
+                if (!header_is_macbinary(rx)) {
+                    return kN68PutCorrupt;
+                }
+                /* The header wins over the offer: it describes the file,
+                   the offer describes the envelope around it. */
+                rx->ops->set_info(rx->ctx,
+                                  (unsigned long)be32(rx->header + 65),
+                                  (unsigned long)be32(rx->header + 69),
+                                  (unsigned long)be32(rx->header + 95));
+            }
+            continue;
+        }
+
+        if (rx->mb_data_done < rx->mb_data_len) {
+            N68PutCode rc;
+
+            take = rx->mb_data_len - rx->mb_data_done;
+            if (take > len) {
+                take = len;
+            }
+            rc = stage(rx, kN68ForkData, p, take);
+            if (rc != kN68PutOK) {
+                return rc;
+            }
+            rx->mb_data_done += take;
+            p += take;
+            len -= take;
+            continue;
+        }
+
+        /* The padding after the data fork carries nothing; it is counted
+           into mb_data_done so this branch closes. */
+        if (rx->mb_data_done < padded(rx->mb_data_len)) {
+            take = padded(rx->mb_data_len) - rx->mb_data_done;
+            if (take > len) {
+                take = len;
+            }
+            rx->mb_data_done += take;
+            p += take;
+            len -= take;
+            continue;
+        }
+
+        if (rx->mb_rsrc_done < rx->mb_rsrc_len) {
+            N68PutCode rc;
+
+            take = rx->mb_rsrc_len - rx->mb_rsrc_done;
+            if (take > len) {
+                take = len;
+            }
+            rc = stage(rx, kN68ForkRsrc, p, take);
+            if (rc != kN68PutOK) {
+                return rc;
+            }
+            rx->mb_rsrc_done += take;
+            p += take;
+            len -= take;
+            continue;
+        }
+
+        /* Trailing padding, and anything a packer appended past it. The
+           bytes are still COUNTED (rx->received, and the CRC) - they are
+           part of the stream the sender checksummed - they simply belong
+           to no fork. */
+        break;
+    }
     return kN68PutOK;
 }
 
@@ -86,9 +299,13 @@ int n68_putrx_parse_offer(const char *json, long len, N68PutOffer *out)
      * malformed one. */
     (void)now68k_json_find_string(json, (size_t)len, "path",
                                   out->path, (long)sizeof out->path);
+    /* Absent means `data` (the contract's default), which is known. */
+    out->container_known = 1;
     if (now68k_json_find_string(json, (size_t)len, "container",
                                 container, (long)sizeof container)) {
         out->macbinary = (strcmp(container, "macbinary") == 0);
+        out->container_known = out->macbinary
+            || strcmp(container, "data") == 0;
     }
     (void)now68k_json_find_string(json, (size_t)len, "fileType",
                                   out->file_type,
@@ -140,18 +357,14 @@ N68PutCode n68_putrx_offer(N68PutRx *rx, const N68PutOffer *offer)
     long free_bytes;
     N68PutCode rc;
 
+    if (!offer->container_known) {
+        return kN68PutUnsupported;
+    }
     if (rx->active) {
         /* One transfer at a time. The shared lane is one transfer wide,
          * and refusing is honest where queueing would mean holding a
          * second offer open against a 384 KB partition. */
         return kN68PutBusy;
-    }
-    /* MacBinary is a container this guest does not decode yet. Refusing
-     * is the whole of the handling: an unsupported container that gets
-     * written out verbatim produces a file that looks right, opens
-     * wrong, and blames the disk. */
-    if (offer->macbinary) {
-        return kN68PutUnsupported;
     }
     /* HFS stops at 31 characters. The sender is supposed to have
      * sanitized already (FileOffer.name), so this is a check on the
@@ -190,8 +403,14 @@ N68PutCode n68_putrx_offer(N68PutRx *rx, const N68PutOffer *offer)
     rx->reported = 0;
     rx->crc = 0;
     rx->buf_len = 0;
+    rx->buf_fork = kN68ForkData;
     rx->chunks = 0;
     rx->writes = 0;
+    rx->header_have = 0;
+    rx->mb_data_len = 0;
+    rx->mb_rsrc_len = 0;
+    rx->mb_data_done = 0;
+    rx->mb_rsrc_done = 0;
     rx->active = 1;
     return kN68PutOK;
 }
@@ -220,22 +439,24 @@ N68PutCode n68_putrx_data(N68PutRx *rx, const void *bytes, long len)
         return fail(rx, kN68PutCorrupt);
     }
 
-    while (len > 0) {
-        long room = rx->buf_cap - rx->buf_len;
-        long take = (len < room) ? len : room;
+    /* Over the bytes AS THEY ARRIVE, before any container is decoded.
+     * The contract checksums "the WHOLE file's wire bytes"
+     * (FileEnd.crc32), and for a MacBinary transfer the header and the
+     * padding are wire bytes that reach neither fork - so a CRC taken
+     * where the writes happen would disagree with the sender's on every
+     * MacBinary file and report `corrupt` for a perfect one. Doing it
+     * here also means one pass and no re-reads, and it covers every
+     * container the same way. */
+    rx->crc = now68k_crc32(rx->crc, p, len);
+    rx->received += len;
 
-        memcpy(rx->buf + rx->buf_len, p, (size_t)take);
-        rx->buf_len += take;
-        p += take;
-        len -= take;
-        rx->received += take;
+    {
+        N68PutCode rc = rx->offer.macbinary
+            ? take_macbinary(rx, p, len)
+            : stage(rx, kN68ForkData, p, len);
 
-        if (rx->buf_len == rx->buf_cap) {
-            N68PutCode rc = flush(rx);
-
-            if (rc != kN68PutOK) {
-                return fail(rx, rc);
-            }
+        if (rc != kN68PutOK) {
+            return fail(rx, rc);
         }
     }
     return kN68PutOK;
@@ -284,6 +505,26 @@ N68PutCode n68_putrx_end(N68PutRx *rx, int sender_ok,
      * which is exactly the thing the staging name exists to keep a human
      * from double-clicking. */
     if (rx->received != rx->offer.bytes) {
+        return fail(rx, kN68PutCorrupt);
+    }
+
+    /* DEFENSIVE, not load-bearing, and worth saying so rather than
+     * letting it read as the check that catches a truncated envelope.
+     *
+     * It cannot currently fire: header_is_macbinary already refuses any
+     * header whose forks do not fit the offered size, and the byte count
+     * above already refuses a stream that did not deliver that size - so
+     * by the time control reaches here the forks are complete by
+     * arithmetic. It stays because both of those are conditions on
+     * OTHER numbers, and a future change to either (a container that
+     * allows trailing data, a resumed transfer) would make this the only
+     * thing standing between a half-written resource fork and a file the
+     * Finder will happily launch. A test cannot reach it; that is why
+     * this comment exists instead of a claim in the test file. */
+    if (rx->offer.macbinary
+        && (rx->header_have != kN68MacBinaryHeader
+            || rx->mb_data_done < padded(rx->mb_data_len)
+            || rx->mb_rsrc_done != rx->mb_rsrc_len)) {
         return fail(rx, kN68PutCorrupt);
     }
 
@@ -342,7 +583,7 @@ const char *n68_putrx_code_reason(N68PutCode code)
     case kN68PutCorrupt:   return "the bytes did not check out";
     case kN68PutIOError:   return "could not write the file";
     case kN68PutUnsupported:
-        return "this guest receives data-fork files only, not MacBinary";
+        return "that container is not one this guest knows";
     }
     return "could not write the file";
 }

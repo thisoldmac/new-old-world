@@ -32,6 +32,21 @@
  * batch - MacTCP hands over whatever it happens to hold, often under a
  * kilobyte, and a trap per those is a trap per those too many.
  *
+ * ---- MacBinary is decoded as it arrives -------------------------------
+ *
+ * A `macbinary` offer carries one envelope holding both forks: a
+ * 128-byte header, the data fork padded up to a multiple of 128, then
+ * the resource fork padded the same way. It is decoded IN FLIGHT, for
+ * the same reason nothing else is staged - an application worth sending
+ * is far larger than this partition - so the header may itself arrive
+ * split across three MacTCP reads and every section boundary can land
+ * mid-run.
+ *
+ * The header WINS on type, creator and date. The offer describes the
+ * envelope; the header describes the file inside it, and a MacBinary
+ * stream that disagreed with its own offer would otherwise land with the
+ * envelope's identity and be un-openable.
+ *
  * ---- Bytes land under a temporary name --------------------------------
  *
  * n68_putfile.h creates the staging file; this module never lets it take
@@ -91,6 +106,21 @@ typedef enum {
     kN68PutUnsupported    /* this guest cannot receive that container */
 } N68PutCode;
 
+/* Which fork a run of decoded bytes belongs to.
+ *
+ * A `data` container only ever names the data fork. A MacBinary
+ * envelope carries both, one after the other, which is the whole reason
+ * this parameter exists - and the reason the batch buffer has to be
+ * flushed at the boundary between them rather than carried across it. */
+typedef enum {
+    kN68ForkData = 0,
+    kN68ForkRsrc = 1
+} N68PutFork;
+
+/* Fixed by the format: a MacBinary header is 128 bytes and every section
+ * is padded up to a multiple of 128. */
+#define kN68MacBinaryHeader 128
+
 /* What one file.offer asked for. */
 typedef struct {
     long id;
@@ -98,6 +128,14 @@ typedef struct {
     char name[kN68PutNameCap];     /* leaf name as it should land */
     char path[kN68PutPathCap];     /* destination FOLDER; "" is the root */
     int  macbinary;                /* container == "macbinary" */
+    /* 0 when the offer named a container this guest does not know.
+       NOT the same as "data": an unrecognized container written out as
+       if it were a raw data fork produces a file that is the wrong
+       length and the wrong shape, and blames the disk. The two the
+       contract declares are `data` and `macbinary`; anything else is a
+       future contract revision this build predates, and the honest
+       answer to one is a refusal. */
+    int  container_known;
     char file_type[8];             /* four chars, or "" */
     char creator[8];
     long modified;
@@ -139,8 +177,22 @@ typedef struct N68PutFileOps {
        refusal - and on anything but OK, nothing was left behind. */
     N68PutCode (*create)(void *ctx, const N68PutOffer *offer);
 
-    /* Append `len` bytes to the staging file. */
-    N68PutCode (*write)(void *ctx, const void *bytes, long len);
+    /* Append `len` bytes to one of the staging file's two forks.
+       kN68ForkRsrc is only ever asked for by a MacBinary transfer, and
+       only after the data fork is complete - so an implementation may
+       open the resource fork lazily on the first such call. */
+    N68PutCode (*write)(void *ctx, N68PutFork fork,
+                        const void *bytes, long len);
+
+
+    /* Type, creator and modification date, once they are known.
+       For a `data` container that is at create() time, from the offer.
+       For MacBinary it is when the 128-byte header has been read, and
+       the header WINS: the offer describes the envelope, the header
+       describes the file inside it, and they are allowed to differ.
+       Any of the three may be 0, meaning "the sender did not say". */
+    void (*set_info)(void *ctx, unsigned long file_type,
+                     unsigned long creator, unsigned long modified);
 
     /* Close the fork, stamp type/creator/modified, and rename the
        staging file to its final name. Only ever called once the stream
@@ -167,6 +219,18 @@ typedef struct {
     unsigned char *buf;
     long buf_cap;
     long buf_len;
+    N68PutFork buf_fork;    /* which fork the buffered bytes belong to */
+
+    /* ---- MacBinary decode, all zero for a `data` container ----------
+       The envelope is decoded as it arrives rather than parsed from a
+       staged copy, because there is nothing to stage it in: an
+       application big enough to be worth sending is far larger than
+       this whole partition. */
+    unsigned char header[kN68MacBinaryHeader];
+    long header_have;
+    long mb_data_len, mb_rsrc_len;
+    long mb_data_done;      /* data fork bytes AND their padding */
+    long mb_rsrc_done;
 
     /* Counters, for the console's own face on this capability. Timing
        where the work happens beats inferring it from the far end of a
