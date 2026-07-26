@@ -261,6 +261,12 @@ static N68PutRx        g_putrx;
 static N68PutFile      g_putfile;
 static unsigned char   g_put_batch[kN68PutProgressStep];
 static long            g_put_id;         /* the offer id in flight */
+/* The BULK correlation id of the transfer arriving, taken from
+ * file.begin. Kept only because file.cancel names a transfer and nothing
+ * else - it carries no id - so without this there is no way to tell a
+ * cancel meant for the push in flight from one for a transfer that has
+ * already ended. 0 means "no file.begin has been seen yet". */
+static unsigned short  g_put_transfer;
 /* What the console's own face on this capability reads. Kept across the
  * end of a transfer on purpose: "what happened to the last one" is the
  * question a person actually has, and it is unanswerable the moment the
@@ -1410,6 +1416,7 @@ static void handle_file_offer(const char *json, long len)
         return;
     }
     g_put_id = offer.id;
+    g_put_transfer = 0;   /* file.begin has not named one yet */
 
     /* file.accept. No `have`: this guest does not implement resume, and
      * the contract reads an absent `have` as "start from the beginning"
@@ -1443,9 +1450,19 @@ static void handle_file_offer(const char *json, long len)
 static void handle_file_begin(const char *json, long len)
 {
     long offset = 0;
+    long transfer = 0;
 
     if (!g_putrx.active) {
         return;
+    }
+    /* Remembered, not checked: this guest correlates bulk by "there is
+     * one transfer and it is this one" and always has. It is kept
+     * because file.cancel names a transfer and carries no id, so this
+     * is the only thing that can tell a cancel for the push in flight
+     * from a late one for a transfer that already ended. */
+    if (now68k_json_find_int(json, (size_t)len, "transfer", &transfer)
+        && transfer > 0 && transfer <= 0xFFFFL) {
+        g_put_transfer = (unsigned short)transfer;
     }
     if (now68k_json_find_int(json, (size_t)len, "offset", &offset)
         && offset != 0) {
@@ -1645,6 +1662,96 @@ static void handle_file_done(const char *json, long len)
     g_send_start_tick = 0;
 }
 
+/* file.cancel {transfer} - the peer has stopped wanting a transfer, in
+ * whichever direction it was going.
+ *
+ * WHY THIS EXISTS AT ALL. There is no message for "I have lost
+ * interest", so an abandoned transfer is indistinguishable from a slow
+ * one, and neither half of this guest carries a timer: the only clock
+ * anywhere near a transfer is service_live()'s 65 s no-traffic
+ * watchdog, which is a property of the CONNECTION and never fires while
+ * the guest's own keepalive ping is being answered. Before this handler
+ * existed a cancel fell through to send_error_reply() - the guest
+ * answered "not-implemented" and carried on holding a staging file, or
+ * carried on streaming megabytes at a host that had already thrown them
+ * away. The lane is one transfer wide in BOTH directions, so that
+ * turned a host changing its mind into a guest that refused every
+ * later transfer until it was relaunched. This is the only exit.
+ *
+ * DELIVERABILITY, which is the part worth checking rather than
+ * assuming: a cancel is a control frame, and control frames are read
+ * whole and dispatched between bulk frames (n68_reader.c), so this
+ * handler runs at most one chunk - 4096 bytes, ~12 ms at the measured
+ * link speed - after the cancel arrives, not at the end of the
+ * transfer. That is n68_puttx.h rule 3 read from the receiving side,
+ * and it is the case that rule exists for.
+ *
+ * MID-FRAME is the one thing a cancel may not do. A bulk frame whose
+ * bytes have already begun going out finishes (rule 2) - the peer's
+ * decoder is counting them, and a frame cut short is a desynchronised
+ * wire, not a cancelled transfer. A frame merely STAGED has not been
+ * seen by anyone and is dropped. */
+static void handle_file_cancel(const char *json, long len)
+{
+    long transfer = 0;
+    int named = now68k_json_find_int(json, (size_t)len, "transfer",
+                                     &transfer);
+    int hit = 0;
+
+    /* `transfer` is required by the contract, so its absence is a
+     * malformed message rather than a shape to support. It is still
+     * acted on: the lane is one transfer wide, so "the transfer" is
+     * never ambiguous here, and refusing to cancel over a missing field
+     * would leave the wedge this handler exists to prevent. The same
+     * reasoning covers a transfer we hold no id for - a push whose
+     * file.begin has not arrived yet. */
+    if (g_putrx.active
+        && (!named || g_put_transfer == 0
+            || transfer == (long)g_put_transfer)) {
+        now68k_log("wire: the host cancelled the file it was sending");
+        n68_putrx_cancel(&g_putrx);
+        /* The staging file is already deleted by the cancel; this tells
+         * the host so, with the contract's own word for it. A receiver
+         * still owes a file.done - it is the only thing that closes a
+         * put, and a host that cancelled still has a transfer open on
+         * its side until it hears one. */
+        put_done(0, kN68PutCancelled);
+        hit = 1;
+    }
+
+    if (g_puttx.state != kN68SendIdle
+        && (!named || g_puttx.state == kN68SendOffered
+            || transfer == (long)g_puttx.transfer)) {
+        now68k_log("wire: the host cancelled the file we were sending");
+        /* A staged chunk nobody has seen goes; one already part-way out
+         * does not (rule 2 - flush_outbound finishes it). */
+        if (g_bulk_off == 0) {
+            g_bulk_len = 0;
+        }
+        /* file.end ok:false says the transfer is over in the sender's
+         * own voice, which is what the PowerPC guest sends here too
+         * (wire.c, xfer_abort -> xfer_finish(false)). It moves this
+         * sender to kN68SendEnded, so the cancel that follows is not
+         * belt-and-braces: a host that has given up sends no file.done
+         * (GuestListener.swift, finishFile returns early for a transfer
+         * it is discarding), and waiting for one is precisely the park
+         * that wedged the lane. */
+        send_file_end(0, kN68SendCancelled);
+        n68_puttx_cancel(&g_puttx, kN68SendCancelled);
+        g_send_start_tick = 0;
+        hit = 1;
+    }
+
+    if (!hit) {
+        /* Not an error and not answered. A cancel for a transfer that
+         * has already ended is a message that arrived late, and the
+         * contract gives file.cancel no reply of any kind - so an error
+         * reply here would answer a message nobody is waiting on. */
+        now68k_log_num("wire: file.cancel names no transfer in flight",
+                        transfer);
+    }
+}
+
 /* Dispatch for one fully-received control payload. Everything the guest
  * does not implement (capture, files, streams, the process drive verbs and
  * the software listing) falls through to the generic error reply - see
@@ -1748,6 +1855,12 @@ static void handle_control_message(const char *json, long len)
     }
     if (strcmp(type, "file.done") == 0) {
         handle_file_done(json, len);
+        return;
+    }
+    /* Either direction's, and the only message in the family that names
+     * a transfer rather than an offer id. */
+    if (strcmp(type, "file.cancel") == 0) {
+        handle_file_cancel(json, len);
         return;
     }
 
@@ -1991,6 +2104,7 @@ void wire_init(void)
     n68_putrx_init(&g_putrx, g_put_batch, (long)sizeof g_put_batch,
                     now68k_putfile_ops(), &g_putfile);
     g_put_id = 0;
+    g_put_transfer = 0;
     g_put_had_one = 0;
     g_put_last_name[0] = '\0';
     g_put_last_code[0] = '\0';

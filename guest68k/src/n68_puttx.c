@@ -373,7 +373,20 @@ long n68_puttx_build_end(N68SendTx *tx, char *buf, long cap, int ok,
 
 void n68_puttx_done(N68SendTx *tx, long id, int ok, const char *code)
 {
-    if (tx->state != kN68SendEnded || tx->id != id) {
+    /* ANY non-idle state, not just kN68SendEnded, and that is the whole
+       point of the check being written this way.
+
+       A receiver's file.done is the last word on a transfer whenever it
+       arrives, and a receiver that gives up does not wait politely for
+       our file.end first - the host sends file.cancel and file.done
+       together the moment its sink fails (GuestListener.swift,
+       failInboundStream). Requiring kN68SendEnded here dropped exactly
+       that message, and since the lane is one transfer wide in both
+       directions, the sender then parked forever waiting for a reply
+       that had already been and gone: every later transfer answered
+       busy for the life of the connection. See test_puttx.c ::
+       test_a_receiver_that_gives_up_midstream_frees_the_lane. */
+    if (tx->state == kN68SendIdle || tx->id != id) {
         return;
     }
     release_source(tx);   /* already closed by build_end; costs nothing */
@@ -406,6 +419,7 @@ const char *n68_puttx_code_word(N68SendCode code)
     case kN68SendRefused:       return "refused";
     case kN68SendBadName:       return "bad-path";
     case kN68SendGone:          return "cancelled";
+    case kN68SendCancelled:     return "cancelled";
     /* The contract gap n68_puttx.h names: there is no code for "the
        sender's own source let it down", so these three land on io-error
        and the reason carries the truth. */
@@ -429,6 +443,11 @@ const char *n68_puttx_code_reason(N68SendCode code)
     case kN68SendBadName:       return "that name cannot go on the wire";
     case kN68SendRefused:       return "the host refused it";
     case kN68SendGone:          return "the connection went away";
+    /* Deliberately NOT the same sentence as kN68SendGone even though the
+       wire word is. Both end a transfer that was going fine; only one of
+       them means the link is broken, and a log that cannot tell them
+       apart sends the next hour of diagnosis at the wrong half. */
+    case kN68SendCancelled:     return "the host cancelled it";
     default:                    return "it did not finish";
     }
 }
