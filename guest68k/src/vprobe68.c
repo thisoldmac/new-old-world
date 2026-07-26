@@ -4,7 +4,7 @@
  * MOVEM.L / reread pair this run is shaped around.
  *
  * STATIC BUDGET (file-scope BSS, no allocation on any path except the one
- * band GWorld below, which is disposed before this function returns):
+ * band GWorld, which is disposed before this function returns):
  *   g_sink / g_sinkd                     12 bytes
  *   g_running (re-entry guard)            2 bytes
  *   ----------------------------------------------
@@ -13,8 +13,11 @@
  * taken and given back inside one call. A whole-frame offscreen copy
  * would be 300 KB against a 384 KB partition - not affordable, and not
  * needed, because CopyBits can be timed a band at a time and the fidelity
- * check reuses the same band. The row table itself is the caller's
- * (commands68.c holds one in BSS); this file owns none.
+ * check reuses the same band. It is opened and closed through screen68.h,
+ * which is also where the walk to the framebuffer went when `screenshot`
+ * became the second caller; this file no longer contains either. The row
+ * table itself is the caller's (commands68.c holds one in BSS); this file
+ * owns none.
  *
  * No printf family (numfmt.h and n68_vprobe.h's formatters only), matching
  * the rest of guest68k/src.
@@ -31,6 +34,7 @@
 
 #include "log.h"
 #include "numfmt.h"
+#include "screen68.h"
 #include "wire68.h"
 
 #include <Events.h>
@@ -124,13 +128,16 @@ static Boolean g_running = false;
  * confirm on metal.
  *
  * Its RESOLUTION is a different question and is measured rather than
- * assumed - see timer_step_us and the Timer row. */
+ * assumed - see timer_step_us and the Timer row.
+ *
+ * The call itself is screen68_micros(), shared with `screenshot`, because
+ * the two capabilities' numbers get compared against each other and two
+ * clocks is one clock too many to keep honest. This note stays here: it is
+ * about vprobe's use of the trap, and it is the paragraph anyone debugging
+ * an unimplemented-trap crash will come looking for. */
 static unsigned long now_us(void)
 {
-    UnsignedWide t;
-
-    Microseconds(&t);
-    return t.lo;
+    return screen68_micros();
 }
 
 /* The clock's actual resolution, measured rather than assumed. A timing
@@ -393,190 +400,14 @@ static void measure(ReadFn fn, const char *base, long full_bytes,
 }
 
 /* ---- the screen ----------------------------------------------------------- */
+/* The walk to the framebuffer and the one-band GWorld MOVED to screen68.c
+ * when `screenshot` became the second thing that reads this screen. They
+ * are unchanged in behaviour - screen68_info() still refuses on the same
+ * n68_vprobe_geometry_ok() grounds and still names the caller in the
+ * sentence, which for this caller is still "vprobe". Two copies of a
+ * fail-closed geometry check is one copy that falls behind, and the cost
+ * of the one that falls behind is a bus error on a 68030. */
 
-typedef struct {
-    unsigned long base;
-    long          row_bytes;
-    long          width;
-    long          height;
-    long          depth;
-    long          bytes;
-    long          visible_row;   /* bytes of a row that hold pixels */
-    Rect          bounds;        /* global, as QuickDraw sees it */
-    PixMapHandle  pix;           /* NULL when there is no Color QuickDraw */
-} ScreenInfo;
-
-static int color_qd_present(void)
-{
-    long qdv = 0;
-
-    if (Gestalt(gestaltQuickdrawVersion, &qdv) != noErr) {
-        return 0;
-    }
-    return qdv >= gestalt8BitQD;
-}
-
-/* Walks to the framebuffer FAIL-CLOSED. Two routes, because this guest
- * should say something useful on a machine without Color QuickDraw rather
- * than refuse: the GDevice's PixMap when there is one, and QuickDraw's own
- * screenBits otherwise. Whichever route produced the numbers, they go
- * through n68_vprobe_geometry_ok() before anything is dereferenced - the
- * walk is what might have landed somewhere unexpected, and on a 68030 the
- * cost of finding out by reading is the machine. */
-static VProbe68Status screen_info(ScreenInfo *s, char *why, long why_cap)
-{
-    N68VProbeGeom geom;
-    long pos = 0;
-
-    memset(s, 0, sizeof *s);
-
-    if (color_qd_present()) {
-        GDHandle gd = GetMainDevice();
-
-        if (gd == NULL || (**gd).gdPMap == NULL) {
-            (void)now68k_fmt_append_str(why, why_cap - 1, &pos,
-                                        "vprobe: this Mac has no main "
-                                        "screen device");
-            why[pos > 0 ? pos : 0] = '\0';
-            return kVProbe68NoScreen;
-        }
-        s->pix = (**gd).gdPMap;
-        s->base = (unsigned long)GetPixBaseAddr(s->pix);
-        s->row_bytes = (long)((**s->pix).rowBytes & 0x3FFF);
-        s->bounds = (**s->pix).bounds;
-        s->depth = (long)(**s->pix).pixelSize;
-    } else {
-        s->pix = NULL;
-        s->base = (unsigned long)qd.screenBits.baseAddr;
-        s->row_bytes = (long)(qd.screenBits.rowBytes & 0x3FFF);
-        s->bounds = qd.screenBits.bounds;
-        s->depth = 1;
-    }
-    s->width = (long)(s->bounds.right - s->bounds.left);
-    s->height = (long)(s->bounds.bottom - s->bounds.top);
-
-    geom = n68_vprobe_geometry_ok(s->base, s->row_bytes, s->width, s->height,
-                                  s->depth, &s->bytes);
-    if (geom != kN68VProbeGeomOK) {
-        pos = 0;
-        (void)(now68k_fmt_append_str(why, why_cap - 1, &pos,
-                                     "vprobe refused to read: ")
-               && now68k_fmt_append_str(why, why_cap - 1, &pos,
-                                        n68_vprobe_geom_reason(geom)));
-        if (pos < 0 || pos >= why_cap) {
-            pos = 0;
-        }
-        why[pos] = '\0';
-        return kVProbe68Geometry;
-    }
-    s->visible_row = (s->width * s->depth + 7) / 8;
-    return kVProbe68OK;
-}
-
-/* ---- CopyBits, a band at a time ------------------------------------------- */
-
-typedef struct {
-    GWorldPtr    world;
-    PixMapHandle pix;
-    short        rows;
-    long         row_bytes;
-    Ptr          base;
-} BandWorld;
-
-/* One band of offscreen at the screen's own depth AND with the screen's
- * own colour table. The colour table is not a detail: CopyBits between two
- * 8-bit pixmaps with different tables translates indices, which would make
- * the fidelity comparison below fail on a perfectly good copy. */
-static int band_open(BandWorld *b, const ScreenInfo *s, short rows)
-{
-    Rect r;
-    CTabHandle clut = NULL;
-
-    memset(b, 0, sizeof *b);
-    if (s->pix == NULL) {
-        return 0;               /* no Color QuickDraw: no GWorld either */
-    }
-    if (rows > (short)s->height) {
-        rows = (short)s->height;
-    }
-    SetRect(&r, 0, 0, (short)s->width, rows);
-    if (s->depth <= 8) {
-        clut = (**s->pix).pmTable;
-    }
-    if (NewGWorld(&b->world, (short)s->depth, &r, clut, NULL, 0) != noErr
-        || b->world == NULL) {
-        /* Temporary memory rather than this 384 KB partition, for the same
-         * reason every offscreen in this project tries it second. */
-        if (NewGWorld(&b->world, (short)s->depth, &r, clut, NULL,
-                      useTempMem) != noErr || b->world == NULL) {
-            return 0;
-        }
-    }
-    b->pix = GetGWorldPixMap(b->world);
-    if (b->pix == NULL || !LockPixels(b->pix)) {
-        DisposeGWorld(b->world);
-        b->world = NULL;
-        return 0;
-    }
-    b->rows = rows;
-    b->row_bytes = (long)((**b->pix).rowBytes & 0x3FFF);
-    b->base = GetPixBaseAddr(b->pix);
-    return b->base != NULL;
-}
-
-static void band_close(BandWorld *b)
-{
-    if (b->world != NULL) {
-        if (b->pix != NULL) {
-            UnlockPixels(b->pix);
-        }
-        DisposeGWorld(b->world);
-        b->world = NULL;
-        b->pix = NULL;
-    }
-}
-
-/* Copies rows [top, top + b->rows) of the screen into the band, and returns
- * what the CopyBits itself cost. The port swap is outside the timed region
- * on purpose: this row is meant to be comparable with a raw read of the
- * same bytes, not with a whole capture pipeline.
- *
- * NOT QUITE THE POWERPC GUEST'S CopyBits ROW, and worth knowing before the
- * two are compared. That one blits the whole screen in one call into a
- * full-frame GWorld; this one blits fifteen bands into a 20 KB GWorld,
- * because 300 KB of offscreen does not fit a 384 KB partition. The sum
- * therefore carries fifteen call overheads that the 1400c's number does
- * not - it is the honest cost of a BANDED capture on this machine, which
- * is the only kind this machine can do. */
-static unsigned long band_copy(BandWorld *b, const ScreenInfo *s, long top)
-{
-    CGrafPtr  save_port;
-    GDHandle  save_device;
-    Rect      src;
-    Rect      dst;
-    unsigned long t0;
-    unsigned long t1;
-
-    src = s->bounds;
-    src.top = (short)(s->bounds.top + top);
-    src.bottom = (short)(src.top + b->rows);
-    SetRect(&dst, 0, 0, (short)s->width, b->rows);
-
-    GetGWorld(&save_port, &save_device);
-    SetGWorld(b->world, NULL);
-    ForeColor(blackColor);
-    BackColor(whiteColor);
-    /* The screen PixMap is dereferenced straight into the call with no
-     * allocation in between, and it is NOT locked here: it belongs to the
-     * GDevice, the system keeps it where it wants it, and an HUnlock of a
-     * handle this code did not lock would clear a lock bit that was not
-     * ours to clear. */
-    t0 = now_us();
-    CopyBits((BitMap *)*s->pix, (BitMap *)*b->pix, &src, &dst, srcCopy, NULL);
-    t1 = now_us();
-    SetGWorld(save_port, save_device);
-    return t1 - t0;
-}
 
 /* ---- the run -------------------------------------------------------------- */
 
@@ -610,8 +441,7 @@ static unsigned long rate_bpms(long bytes, unsigned long us)
 
 VProbe68Status vprobe68_run(N68VProbeTable *t, char *why, long why_cap)
 {
-    ScreenInfo s;
-    VProbe68Status status;
+    Screen68 s;
     PassResult pass;
     char value[kN68VProbeValueCap];
     char label[kN68VProbeLabelCap];
@@ -643,10 +473,17 @@ VProbe68Status vprobe68_run(N68VProbeTable *t, char *why, long why_cap)
     g_running = true;
     run_t0 = now_us();
 
-    status = screen_info(&s, why, why_cap);
-    if (status != kVProbe68OK) {
+    /* screen68.c's two refusals map one-to-one onto this enum's; they were
+     * the same two values before the walk moved out of this file. */
+    switch (screen68_info(&s, "vprobe", why, why_cap)) {
+    case kScreen68OK:
+        break;
+    case kScreen68NoScreen:
         g_running = false;
-        return status;
+        return kVProbe68NoScreen;
+    default:
+        g_running = false;
+        return kVProbe68Geometry;
     }
 
     /* --- what was measured, before anything measured ---------------------- */
@@ -724,22 +561,22 @@ VProbe68Status vprobe68_run(N68VProbeTable *t, char *why, long why_cap)
 
     /* --- CopyBits baseline at native depth -------------------------------- */
     {
-        BandWorld band;
+        Band68 band;
 
-        if (band_open(&band, &s, (short)kBandRows)) {
+        if (screen68_band_open(&band, &s, (short)kBandRows)) {
             unsigned long total = 0;
             long covered = 0;
             long top;
 
             for (top = 0; top + band.rows <= s.height; top += band.rows) {
-                total += band_copy(&band, &s, top);
+                total += screen68_band_copy(&band, &s, top);
                 covered += (long)band.rows * s.row_bytes;
                 if (total >= (unsigned long)kPhaseBudgetUs) {
                     break;      /* bounded like every other phase */
                 }
                 vprobe_pump();
             }
-            band_close(&band);
+            screen68_band_close(&band);
             n68_vprobe_bw_value(value, (long)sizeof value, covered, s.bytes,
                                 total);
         } else {
@@ -890,9 +727,9 @@ VProbe68Status vprobe68_run(N68VProbeTable *t, char *why, long why_cap)
 
     /* --- fidelity: does a raw read see what CopyBits copies? ---------------- */
     {
-        BandWorld band;
+        Band68 band;
 
-        if (band_open(&band, &s, (short)kBandRows)) {
+        if (screen68_band_open(&band, &s, (short)kBandRows)) {
             unsigned long started = now_us();
             long compared = 0;
             long differ = 0;
@@ -912,7 +749,7 @@ VProbe68Status vprobe68_run(N68VProbeTable *t, char *why, long why_cap)
             for (top = 0; top + band.rows <= s.height; top += band.rows) {
                 long r;
 
-                (void)band_copy(&band, &s, top);
+                (void)screen68_band_copy(&band, &s, top);
                 for (r = 0; r < (long)band.rows; ++r) {
                     const char *screen_row =
                         (const char *)s.base + (top + r) * s.row_bytes;
@@ -932,7 +769,7 @@ VProbe68Status vprobe68_run(N68VProbeTable *t, char *why, long why_cap)
                 }
             }
             ShowCursor();
-            band_close(&band);
+            screen68_band_close(&band);
 
             pos = 0;
             if (differ == 0) {

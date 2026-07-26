@@ -1536,6 +1536,93 @@ Unverified, and worth naming because the numbers will get quoted:
   carry a 17th row; the honest next step if the `fmove.d` number ever
   looks wrong.
 
+## `screenshot` on NOW-68K: it works on the emulator, and no 68030 has seen it
+
+`screenshot` slice one is implemented on NOW-68K
+(`shot68.c` / `n68_shot.c`, contract-declared already — nothing in
+`contract/asyncapi.yaml` changed to add it). It captures the screen,
+encodes a packed 8-bit PICT, writes it to the guest's own desktop as
+`Screenshot YYYY-MM-DD HH.MM.SS` (type `PICT`, creator `ttxt`), and
+returns the measurement rows. No pixels cross the wire; that is slice
+two and belongs to the bulk-send work.
+
+**Verified on the Quadra 800 emulator** (OS 8.1, 640x480x8, 2026-07-25):
+run from the guest's own console, three captures in one session
+(`--no-save`, then two saves), the app survived all three, both files
+landed with distinct names, and one of them was pulled off the disk image
+with `hfsutils` and **decoded on the host** — 640x480, `pixelSize` 8, a
+256-entry colour table, and pixel-for-pixel the screen at the moment of
+the command with the cursor shielded out of it. That is the strongest
+statement available short of hardware: the picture is not merely a file,
+it is the right picture.
+
+**What the emulator settles nothing about is TIME.** It reported `read 0
+ms, pack 23 ms, write 8 ms` for a full frame — a 68040 with a
+host-memory framebuffer, so every number is meaningless as a prediction
+for a 33 MHz 68030 reading real VRAM. The compression ratio is the one
+number that should carry over, and it came out **2.2:1** on a desktop
+with two windows open (307,200 raw → ~142 KB written). If that holds on
+the 180c it is the number slice two's viability over MacTCP turns on, and
+it is not encouraging: 142 KB is a large thing to push down that wire.
+
+Unverified, and named because these are the ones that will bite:
+
+- **Nothing has run on a 68030 under System 7.1.** The Window Manager
+  port, `SetStdCProcs`, the replaced `putPicProc` and `ShieldCursor` are
+  all documented back to 7.0 and were checked against the Universal
+  Interfaces headers, but "declared and works on 8.1" is not "works on
+  7.1". First thing to run on the 180c.
+- **The timing split is a difference of two passes.** `read_ms` is a real
+  banded-CopyBits measurement (vprobe's, on vprobe's band); `encode_ms`
+  is the recording pass minus the read minus the write, so it carries
+  both passes' noise. On a machine where packing dominates that is fine;
+  if the two ever land close together the number degrades to noise, and
+  it is floored at zero rather than allowed to go negative.
+- **8-bit only, by refusal.** A screen at any other depth is declined
+  with a sentence naming the depth. `CopyBits` would convert for free but
+  the 1400c showed a non-native path eats the whole margin
+  (`vram-readout.md`), and nobody has measured that here.
+- **The capture does not pump the wire.** Bounded by arithmetic at ~10 s
+  worst case against the host's ~65 s death timer (`kShotWorstCaseMs`),
+  deliberately, because a pumped event can move a window mid-recording
+  and tear the picture. If a real 180c ever exceeds that bound the fix is
+  to band the PUMP, not the picture.
+
+One refactor rode along with this and is worth naming: **`vprobe`'s walk
+to the framebuffer and its one-band GWorld moved out of `vprobe68.c` into
+`screen68.c`**, unchanged, because `screenshot` needed the same three
+answers and a second copy of a fail-closed geometry check is one copy
+that falls behind. `vprobe` is metal-verified on the 180c; the moved
+version is not, and the move was verbatim rather than a rewrite, but
+"verbatim" is a claim about the diff and not about the machine.
+
+### The banded recording that had to be abandoned — worth knowing
+
+The first implementation recorded the picture **a band at a time** into a
+640x32 offscreen port, which is the obvious way to bound memory and is
+what the task was scoped around. On System 8.1 it **killed the
+application on the third band, every time**, while QuickDraw was writing
+that band's colour table. It was bisected on the emulator against the
+guest's own log:
+
+- not the file: `--no-save` (no `FSWrite` at all) died identically;
+- not the geometry: removing `SetOrigin` and recording every band at the
+  port's top died identically;
+- not the partition: 2 MB instead of 384 KB died identically;
+- not the put proc: it was entered correctly and had already streamed
+  6.7 KB across two good bands, and the partial PICT recovered from the
+  disk image decodes as two valid `PackBitsRect` opcodes.
+
+The cure was to stop banding the *destination* at all, which the design
+did not need: **a picture being recorded is never drawn into.** QuickDraw
+diverts the bottleneck and hands the source pixels to the put proc, so
+the destination port supplies only a coordinate space, a depth and a clip
+— and the Window Manager's colour port is all three for free. One
+recording `CopyBits` over the whole frame, one colour table instead of
+fifteen, ~21 KB ceiling, and none of the above. The root cause inside
+QuickDraw was never identified; if anyone reopens banded recording, that
+is the thing to find first.
+
 ## The 180c, 2026-07-25 evening: everything automated is green
 
 The display came back (a via that wiggled against its pad, found by

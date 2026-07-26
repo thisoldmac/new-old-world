@@ -8,6 +8,7 @@
  *   run_launch    name[200] + detail[160]                        = 360 B
  *   run_quit      QuitArgs(~40) + msg[80] + detail[160]           = 280 B
  *   run_vprobe    why[160]                                       = 160 B
+ *   run_shot      N68ShotStats(~60) + N68ShotArgs(8) + why[160]    = 228 B
  *   dispatch      one N68CmdResult                               = 256 B
  *   g_vprobe      one N68VProbeTable, BSS                        = ~820 B
  * No two run_* are on the stack at once (dispatch calls exactly one), so
@@ -32,7 +33,9 @@
 #include "n68_proclist.h"
 #include "n68_vprobe.h"
 #include "numfmt.h"
+#include "n68_shot.h"
 #include "proc68.h"
+#include "shot68.h"
 #include "vprobe68.h"
 
 #include <string.h>
@@ -487,13 +490,55 @@ static VProbe68Status run_vprobe(N68CmdResult *res)
     return kVProbe68OK;
 }
 
+/* ---- screenshot ------------------------------------------------------------ */
+
+/* SLICE ONE: the picture lands on the guest's own desktop and what comes
+ * back is the measurement. Nothing about it is a row array - it is a
+ * sentence and a handful of numbers, which is exactly what an
+ * N68CmdResult holds - so it goes through now68k_commands_run like launch
+ * and quit, and the console gets it by delegation with nobody having to
+ * add anything to conwin.c. That is deliberate: three commands already
+ * answer inside now68k_commands_dispatch because their replies are a row
+ * per item, and docs/command-parity.md says plainly that a fourth should
+ * not be another arm. This one does not need to be.
+ *
+ * The failure statuses are collapsed into two codes and a sentence, on
+ * vprobe's argument: a caller that asked for a capture and got none needs
+ * to know whether the machine was BUSY (retry) or REFUSED (do something
+ * about the screen, the disk, or the depth), and the sentence says which
+ * of the ways. An empty result dressed as a success is the one answer a
+ * measurement command must never give. */
+static void run_shot(const char *target, N68CmdResult *res)
+{
+    N68ShotArgs args;
+    N68ShotStats stats;
+    char why[kDetailCap];
+    Shot68Status status;
+
+    why[0] = '\0';
+    n68_shot_args_parse(target, &args);
+    status = shot68_capture(&args, &stats, why, (long)sizeof why);
+    if (status != kShot68OK) {
+        now68k_log_num("cmd: screenshot refused", (long)status);
+        n68_cmdresult_set_error(res, status == kShot68Busy
+                                         ? "screenshot-busy"
+                                         : "screenshot-refused",
+                                why[0] != '\0' ? why
+                                               : "screenshot could not "
+                                                 "capture this screen");
+        return;
+    }
+    now68k_log_num("cmd: screenshot ok", stats.pict_bytes);
+    n68_shot_summary(&stats, res);
+}
+
 /* ---- help ------------------------------------------------------------------- */
 
-/* What THIS Mac serves - four commands, and it says four.
+/* What THIS Mac serves - six commands, and it says six.
  *
  * The other side keeps no command list: there are two guests with different
  * tables (the PowerPC Carbon guest implements fifteen commands, this one
- * implements two through now68k_commands_run plus help, ps and vprobe,
+ * implements three through now68k_commands_run plus help, ps and vprobe,
  * which each build a row per item and so answer at dispatch), so a
  * console-side list would be wrong for both. Discovery is therefore a
  * request like any other, and the honest answer from here is a short one.
@@ -504,7 +549,7 @@ static VProbe68Status run_vprobe(N68CmdResult *res)
  * rather than shared, because the two applications share no source - they
  * meet only on the wire, and the contract is the thing they hold in common.
  *
- * The trailing note row is not decoration. A human reading four commands
+ * The trailing note row is not decoration. A human reading six commands
  * needs to know whether that is all this machine HAS or all it would admit
  * to; saying "everything else answers unknown-command" is the difference
  * between a short list and a suspicious one. */
@@ -518,6 +563,8 @@ static const N68CommandDoc k_docs[] = {
     { "ps", "the processes running on this Mac", "ps" },
     { "vprobe", "measure this Mac's VRAM read cost",
       "vprobe (no arguments; wants a still screen)" },
+    { "screenshot", "capture this Mac's screen to its desktop",
+      "screenshot [--depth 8] [--no-save]" },
     { NULL, NULL, NULL }
 };
 
@@ -675,6 +722,12 @@ int now68k_commands_run(const char *name, const char *target,
         if (run_vprobe(res) == kVProbe68OK) {
             n68_vprobe_summary(&g_vprobe, res);
         }
+        return 1;
+    }
+    /* screenshot needs no exemption and gets none: both faces render the
+     * same two rows of the same capture, from here. */
+    if (strcmp(name, "screenshot") == 0) {
+        run_shot(target, res);
         return 1;
     }
     return 0;

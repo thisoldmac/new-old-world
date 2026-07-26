@@ -44,7 +44,18 @@ enum {
     kN68CmdCodeCap  = 32,   /* "quit-undeliverable" is the longest today */
     kN68CmdKeyCap   = 12,   /* the output object's key: "launch", "quit" */
     kN68CmdLabelCap = 12,   /* a row label: "Launch", "Quit", "Outcome" */
-    kN68CmdStateCap = 24    /* "sent-unconfirmed" is the longest today */
+    kN68CmdStateCap = 48    /* was 24 ("sent-unconfirmed"), until
+                              * `screenshot` put its cost line in row two:
+                              * "read 214 ms, pack 1832 ms, write 96 ms" is
+                              * 38 bytes and a five-digit encode on a slow
+                              * disk is a few more. Row two is the only
+                              * field a caller cannot spill into row one -
+                              * text is 160 - so this is the cap that has
+                              * to move, and 48 rather than 40 leaves the
+                              * next command the same headroom this one
+                              * found missing. Costs 24 bytes on a struct
+                              * that is always a stack local, and 24 bytes
+                              * on a 1024-byte reply buffer. */
 };
 
 /*
@@ -60,7 +71,7 @@ enum {
  * borrowed pointers would dangle the moment that frame returned. 256 bytes
  * copied once beats a lifetime rule nobody can see at the call site.
  *
- * STATIC BUDGET: 4 + 32 + 12 + 12 + 12 + 160 + 24 = 256 bytes, and it is
+ * STATIC BUDGET: 4 + 32 + 12 + 12 + 12 + 160 + 48 = 280 bytes, and it is
  * always a stack local - this file owns no BSS. wire68.c's command path
  * already carries a 512-byte reply buffer in the same frame; 256 more is
  * inside a 68K frame's normal headroom and there is no recursion here.

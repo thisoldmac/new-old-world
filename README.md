@@ -228,9 +228,26 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   streaming on that machine is arithmetic, not tuning.
   [docs/vram-readout-68k.md](docs/vram-readout-68k.md).
 
+- **`screenshot` on NOW-68K, to the guest's own disk.** The 68K guest
+  captures its screen, encodes a packed 8-bit PICT and writes it to its
+  own desktop as `Screenshot 2026-07-26 02.51.06` — type `PICT`, creator
+  `ttxt`, so it opens with a double-click — and reports what it cost. No
+  pixels cross the wire yet; the contract already said this slice was the
+  measurement, and the measurement is the point. It never holds a frame
+  or a picture: a picture being *recorded* is never drawn into, so the
+  destination is the Window Manager's own port and the opcodes stream
+  through a replaced `putPicProc` into a 1 KB buffer. The whole capture's
+  ceiling is ~21 KB against a 384 KB partition, whatever the screen size.
+  Emulator-verified on a Quadra 800 under OS 8.1: three captures in one
+  session, two files with distinct names, and one of them pulled off the
+  disk image and decoded on the host — pixel-for-pixel the screen, at
+  8-bit, cursor shielded out. It packed **2.2:1**, which is the number
+  slice two's viability over MacTCP turns on. On a 68030 it has never
+  run.
+
 - **A dev loop that does not need a Macintosh.** Neither guest can run its
   own suite, so the pure-C halves compile under the host `cc`:
-  `scripts/test-native` runs all 18 across both guests in one command, and
+  `scripts/test-native` runs all 25 across both guests in one command, and
   a test file missing from its manifest fails the run — a test nobody runs
   reads as coverage in a directory listing and proves nothing. The metal
   gates now **fail rather than skip** once a human has opted into a metal
@@ -243,13 +260,23 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
 ## What does not work
 
 - **NOW-68K implements a small part of the contract.** `launch`, `quit`,
-  `help` and `process.list`, plus the keepalive; everything else — capture,
-  files, census, streams, the process drive verbs — answers
+  `help`, `ps`, `vprobe`, `screenshot` and `process.list`, plus the
+  keepalive; everything else — files, census, streams, the process drive
+  verbs — answers
   `unknown-command` or `refused`, which is the contract's own additive
   answer, not a failure. Every one of those it does serve is reachable from
   both its faces (the console and the wire), which
   [docs/command-parity.md](docs/command-parity.md) explains and
   `CommandParityTests` enforces.
+- **NOW-68K's `screenshot` has never run on a 68030.** Everything about it
+  is verified on a Quadra 800 under OS 8.1 — including that the file it
+  writes decodes to the right pixels — and nothing about it is verified on
+  the PowerBook 180c it was written for. Its timing numbers from the
+  emulator are meaningless (a 68040 with a host-memory framebuffer), and
+  the one number expected to carry over, the 2.2:1 compression, has not
+  been taken on real VRAM. It also captures **8-bit screens only**, by
+  refusal rather than conversion, and its pixels do not cross the wire —
+  that is slice two.
 - **NOW-68K's interactive console is metal-verified.** A second window (Windows > Console, Command-K, and it
   toggles) with an input line, history and scrollback. Watched working on a
   Quadra 800 under Mac OS 8.1 — including two redraw bugs found there and
