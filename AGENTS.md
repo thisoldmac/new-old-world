@@ -211,6 +211,24 @@ around **broken** versus **unverified**. Every arc ends by updating it —
 including the arcs that went well, because "we shipped it and here is
 what we still do not know" is the useful half.
 
+[docs/contract-coverage.md](docs/contract-coverage.md) is the inventory
+of **who serves what** — every message type, all 16 `x-commands` verbs
+and the census probes, per guest, with served and PROVEN kept as
+separate columns. **A change to what a guest serves updates it in the
+same commit**, the way a behaviour change updates the contract first.
+
+Two rules it has already had to learn the hard way, both worth keeping
+in mind when you edit it:
+
+- **Derive it, do not remember it.** The file carries the `grep`
+  commands that produce it from the guests' own dispatch tables. Run
+  them; do not hand-edit a row from memory.
+- **Do not count message types.** `command.request` and `census.request`
+  are one row each and open into 16 verbs and 14 hardware probes. The
+  first version of that file counted rows, showed two ticks, and so said
+  nothing about the fact that NOW-68K cannot report its own CPU or RAM.
+  Any row that is a subsystem gets expanded.
+
 Durable technical claims that outlive this repository go to the parent's
 corpus as findings (`data/findings/`), validated with `tools/data check`.
 The platform lessons from here already live there:
