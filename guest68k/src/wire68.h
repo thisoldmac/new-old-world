@@ -130,4 +130,42 @@ typedef struct {
 
 void wire_stats(WireStats *out);
 
+/* ---- an incoming file, for the console -------------------------------
+ *
+ * Receiving a push is a MESSAGE FAMILY, not a command, so no command
+ * table reaches it and nothing would have compared the two faces
+ * (docs/command-parity.md - this is precisely the shape process.list
+ * drifted in). This is the wire face's own state, read out for the
+ * console face to render: one implementation, two renderers.
+ *
+ * Everything here is a cheap copy of bookkeeping this module already
+ * keeps - no Toolbox call, safe on the idle path. */
+typedef struct {
+    int  active;              /* a transfer is in flight right now */
+    long id;                  /* the offer id */
+    char name[64];
+    long bytes;               /* what the sender offered */
+    long received;
+    long chunks;              /* runs taken off the wire */
+    long writes;              /* File Manager writes made */
+    unsigned long crc;        /* running CRC-32 */
+
+    /* The last transfer that ENDED, kept after it is over: "what
+     * happened to the last one" is the question a person actually has,
+     * and it becomes unanswerable the moment the transfer completes if
+     * nothing remembers. */
+    int  had_one;
+    int  last_ok;
+    long last_bytes;
+    char last_name[64];
+    char last_code[16];       /* the contract's own word; "" when ok */
+    short last_error;         /* the OSErr behind an io-error, or 0 */
+} N68PutStatus;
+
+void now68k_wire_put_status(N68PutStatus *out);
+
+/* Where an incoming file lands, as a folder name a person can go and
+ * look in. Empty when it cannot be resolved. */
+void now68k_wire_put_where(char *out, long cap);
+
 #endif /* NOW68K_WIRE68_H */

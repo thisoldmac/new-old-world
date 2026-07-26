@@ -17,7 +17,17 @@
  *
  * STATIC BUDGET (all file-scope, zero-initialized BSS - no allocation):
  *   g_ctrl_buf           4096  bytes  (NOW68K_CONTROL_BUFFER_CAP, frame.h)
- *   g_sink                256  bytes  (bulk / oversized-control discard sink)
+ *   g_sink                256  bytes  (bulk delivery / oversized-control
+ *                                     discard scratch)
+ *   g_put_batch          8192  bytes  (kN68PutProgressStep - the file
+ *                                     receive write batch; the single
+ *                                     largest thing this file owns, and
+ *                                     the reason the whole feature costs
+ *                                     what it does. See n68_putrx.h for
+ *                                     why it is this size and not larger)
+ *   g_putrx (N68PutRx)    ~340  bytes  (offer + counters + buffer ptrs)
+ *   g_putfile             ~170  bytes  (two FSSpecs and the open fork)
+ *   g_put_last_* etc.      ~90  bytes  (what `xfer` reports after the fact)
  *   g_out[4] slots          4 * (8 header + 1024 payload + 4 len + 4 off)
  *                         4 * 1040 = 4160  bytes  (was 1056 at depth 2 and
  *                                                 a 512-byte payload cap,
@@ -53,6 +63,19 @@
  * Under 1% of the 1 MB free-memory design target, dominated entirely by the
  * 4 KB control receive buffer that frame.h's NOW68K_CONTROL_BUFFER_CAP
  * requires us to carry.
+ *
+ * Measured whole-application delta for the file-receive pass (this file's
+ * new state plus n68_crc32.c's 1 KB table, n68_putrx.c and n68_putfile.c),
+ * m68k-apple-macos-size, -O2, against fcda926:
+ *     text 105644 -> 113796  (+8152)
+ *     data   8360 ->   9756  (+1396)
+ *     bss   50508 ->  60368  (+9860)
+ * so +19408 bytes, about 5% of the 384 KB application partition, which
+ * now holds roughly 184 KB of image before stack and heap. That is the
+ * largest single addition this application has taken and it is worth
+ * saying plainly: the partition is preferred == minimum on a 4 MB
+ * machine (guest68k.r), so there is no headroom to borrow, and the next
+ * feature of this size needs the budget looked at rather than assumed.
  */
 #include "wire68.h"
 #include "commands68.h"
@@ -63,6 +86,8 @@
 #include "json_scan.h"
 #include "log.h"
 #include "n68_proclist.h"
+#include "n68_putfile.h"
+#include "n68_putrx.h"
 #include "n68_reader.h"
 #include "numfmt.h"
 #include "ping.h"
@@ -213,7 +238,33 @@ static WireStats      g_stats;
 
 static N68Reader       g_read;
 static char            g_ctrl_buf[NOW68K_CONTROL_BUFFER_CAP];
-static unsigned char   g_sink[256];   /* scratch sink for skip-state draining */
+/* Scratch for the skip state (discard) and the bulk state (deliver). The
+ * bulk state hands whatever it reads straight to n68_putrx, so this size
+ * costs nothing in throughput terms - it only decides how many memcpys a
+ * frame takes. 256 is inherited from when this was a pure discard sink;
+ * a 4 MB transfer at 8 KB frames therefore makes ~32 passes per frame,
+ * each a bounded memcpy into the receive batch. Worth measuring on the
+ * 180c before enlarging: BSS is the scarcer resource here. */
+static unsigned char   g_sink[256];
+
+/* ---- the file family's receive half -----------------------------------
+ * One transfer at a time (the lane is one transfer wide, and a 384 KB
+ * partition has no room to hold a second offer open). The batch buffer
+ * is the single largest thing this file owns; see the static budget at
+ * the top of this file. */
+static N68PutRx        g_putrx;
+static N68PutFile      g_putfile;
+static unsigned char   g_put_batch[kN68PutProgressStep];
+static long            g_put_id;         /* the offer id in flight */
+/* What the console's own face on this capability reads. Kept across the
+ * end of a transfer on purpose: "what happened to the last one" is the
+ * question a person actually has, and it is unanswerable the moment the
+ * transfer is over if nothing is remembered. */
+static char            g_put_last_name[kN68PutNameCap];
+static long            g_put_last_bytes;
+static int             g_put_last_ok;
+static char            g_put_last_code[16];
+static int             g_put_had_one;
 
 static OutSlot         g_out[kWireOutQueueDepth];
 static int             g_out_head = 0;   /* next slot to flush */
@@ -277,27 +328,17 @@ static void append_status_suffix(const char *suffix)
 
 /* ---- tiny local JSON/string helpers ------------------------------------ */
 
-/* Same shape as now68k_json_read_type (json_scan.c) but for an arbitrary
- * key - that function is hardcoded to "type", and refuse.reason / bye.code /
- * error.code / error.message / hello.name / hello.version all need the same
- * bounded quoted-string read for a different key. */
-static int read_string_field(const char *json, size_t json_len,
-                              const char *key, char *out, long cap)
-{
-    const char *end = json + json_len;
-    const char *p = now68k_json_value(json, json_len, key);
-    long n = 0;
-
-    if (p == NULL || p >= end || *p != '"' || out == NULL || cap < 1) {
-        return 0;
-    }
-    ++p;
-    while (p < end && *p != '"' && n + 1 < cap) {
-        out[n++] = *p++;
-    }
-    out[n] = '\0';
-    return (p < end && *p == '"');
-}
+/* A bounded quoted-string read for an arbitrary key.
+ *
+ * This WAS a local copy of now68k_json_read_type with the key made a
+ * parameter, written because that function is hardcoded to "type". The
+ * file family needs the same read for name / path / container, which
+ * would have made a third caller of a second implementation - so the
+ * generalized form now lives in json_scan.c beside the scanner it is
+ * built on, read_type is that function with the key filled in, and this
+ * is the one name the rest of this file already calls it by. */
+#define read_string_field(json, json_len, key, out, cap) \
+    now68k_json_find_string((json), (json_len), (key), (out), (cap))
 
 static void bounded_strcpy(char *dst, long dst_cap, const char *src)
 {
@@ -395,6 +436,43 @@ static int read_still_reading(void *ctx)
     return g_out_count < kWireOutQueueDepth;
 }
 
+static void put_report_progress(int force);
+static void put_finish_failed(N68PutCode code);
+
+/* Bulk is wanted exactly while a push is in flight. Anything else -
+ * a frame that outlived its transfer, a capture this guest never asked
+ * for - is consumed and dropped, which is what this reader did with
+ * every bulk frame before there was a file family at all. */
+static int read_bulk_wanted(void *ctx, unsigned long length)
+{
+    (void)ctx;
+    (void)length;
+    return g_putrx.active;
+}
+
+/* One run of file bytes. n68_putrx owns what happens to them; this
+ * decides only whether the host still needs telling.
+ *
+ * A write failure is NOT reported back to the reader: the frame still
+ * has to be drained to stay in sync, and n68_putrx has already
+ * discarded the partial and gone inactive - so the rest of this frame
+ * arrives with nothing expecting it and is dropped, which is exactly
+ * right. The host learns from the file.done that follows. */
+static void read_bulk_data(void *ctx, const unsigned char *bytes, long len)
+{
+    N68PutCode rc;
+
+    (void)ctx;
+    rc = n68_putrx_data(&g_putrx, bytes, len);
+    if (rc != kN68PutOK) {
+        put_finish_failed(rc);
+        return;
+    }
+    if (n68_putrx_due_report(&g_putrx)) {
+        put_report_progress(0);
+    }
+}
+
 static const N68ReaderOps kReadOps = {
     read_take,
     read_took,
@@ -402,6 +480,8 @@ static const N68ReaderOps kReadOps = {
     read_oversized_frame,
     read_oversized_control,
     read_empty_control,
+    read_bulk_wanted,
+    read_bulk_data,
     read_control_message,
     read_still_reading
 };
@@ -415,6 +495,12 @@ static void reset_read_state(void)
 {
     n68_reader_init(&g_read, g_ctrl_buf, g_sink, (long)sizeof g_sink,
                      &kReadOps, NULL);
+    /* Same reasoning as the reader's own reset, one layer up: a
+     * half-received FILE from a dead connection has nothing to do with
+     * the next one, and its staging file is debris that must not
+     * outlive the connection that was writing it. Sending file.done
+     * would be pointless - there is no longer anyone to send it to. */
+    n68_putrx_cancel(&g_putrx);
 }
 
 static void reset_outbound_queue(void)
@@ -1063,6 +1149,275 @@ static void handle_process_list(const char *json, long len)
     }
 }
 
+/* ---- the file family: receiving a push --------------------------------
+ *
+ * The contract's hostPutsFiles sequence, and this guest's share of a
+ * SYMMETRIC family: whoever receives a request serves its own share.
+ * NOW-68K serves the receive direction only - it never offers a file of
+ * its own and never lists a share - so the other half of file.* still
+ * falls through to send_error_reply below, deliberately and visibly.
+ *
+ * Every judgement here belongs to n68_putrx.c and every disk call to
+ * n68_putfile.c. What is left in this file is the wire: read a message,
+ * hand it over, render the answer.
+ */
+
+/* file.progress. ADVISORY by contract - "dropped rather than queued when
+ * the control queue is busy... a receiver must treat it as a floor that
+ * may skip, never as a sequence" - so it yields to real traffic rather
+ * than crowding out a pong or a file.done.
+ *
+ * It is also the SENDER'S CLOCK (docs/large-transfers.md), which is why
+ * yielding is safe but silence is not: `received` is cumulative, so a
+ * skipped report costs nothing because the next one carries everything
+ * the skipped one would have. Dropping every report would deadlock the
+ * sender; dropping some is free. */
+static void put_report_progress(int force)
+{
+    char payload[96];
+    long pos = 0;
+    int ok = 1;
+
+    if (!force && g_out_count >= kWireOutQueueDepth / 2) {
+        return;                       /* real traffic first */
+    }
+    n68_putrx_noted_report(&g_putrx);
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                      "{\"type\":\"file.progress\",\"id\":");
+    ok = ok && now68k_fmt_append_long(payload, (long)sizeof payload, &pos,
+                                       g_put_id);
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                      ",\"received\":");
+    ok = ok && now68k_fmt_append_long(payload, (long)sizeof payload, &pos,
+                                       g_putrx.received);
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos, "}");
+    if (!ok || pos <= 0) {
+        return;                       /* a lost report costs nothing */
+    }
+    (void)enqueue_control_send(payload, pos);
+}
+
+/* file.refuse: the offer was never accepted, so nothing was created and
+ * there is nothing to clean up. */
+static void put_refuse(long id, N68PutCode code)
+{
+    char payload[224];
+    long pos = 0;
+    int ok = 1;
+
+    now68k_log(n68_putrx_code_reason(code));
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                      "{\"type\":\"file.refuse\",\"id\":");
+    ok = ok && now68k_fmt_append_long(payload, (long)sizeof payload, &pos, id);
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                      ",\"code\":\"");
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                      n68_putrx_code_word(code));
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                      "\",\"reason\":\"");
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                      n68_putrx_code_reason(code));
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                      "\"}");
+    if (!ok || pos <= 0) {
+        now68k_log("wire: file.refuse build failed");
+        return;
+    }
+    if (!enqueue_control_send(payload, pos)) {
+        /* The host is waiting on an answer to this offer and will not
+         * get one. Worth a line of its own: silence here looks exactly
+         * like a wedged guest. */
+        now68k_log("wire: file.refuse dropped, outbound queue full");
+    }
+}
+
+/* file.done: the transfer is over, one way or the other. */
+static void put_done(int okay, N68PutCode code)
+{
+    char payload[288];
+    long pos = 0;
+    int ok = 1;
+
+    g_put_had_one = 1;
+    g_put_last_ok = okay;
+    g_put_last_bytes = g_putrx.received;
+    memcpy(g_put_last_name, g_putrx.offer.name, sizeof g_put_last_name);
+    g_put_last_name[sizeof g_put_last_name - 1] = '\0';
+    if (okay) {
+        g_put_last_code[0] = '\0';
+    } else {
+        long n = (long)strlen(n68_putrx_code_word(code));
+
+        if (n > (long)sizeof g_put_last_code - 1) {
+            n = (long)sizeof g_put_last_code - 1;
+        }
+        memcpy(g_put_last_code, n68_putrx_code_word(code), (size_t)n);
+        g_put_last_code[n] = '\0';
+    }
+
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                      "{\"type\":\"file.done\",\"id\":");
+    ok = ok && now68k_fmt_append_long(payload, (long)sizeof payload, &pos,
+                                       g_put_id);
+    if (okay) {
+        ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                          ",\"ok\":true,\"received\":");
+        ok = ok && now68k_fmt_append_long(payload, (long)sizeof payload, &pos,
+                                           g_put_last_bytes);
+        /* The guest's own CRC, so the host can check the file it now has
+         * against the one it sent even when it chose not to send a
+         * checksum of its own. */
+        ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                          ",\"crc32\":");
+        ok = ok && now68k_fmt_append_u32(payload, (long)sizeof payload, &pos,
+                                          g_putrx.crc);
+        ok = ok && now68k_fmt_append_str(
+                       payload, (long)sizeof payload, &pos,
+                       ",\"finalization\":\"same-folder-rename\","
+                       "\"cleanup\":\"temp-renamed\"}");
+    } else {
+        ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                          ",\"ok\":false,\"code\":\"");
+        ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                          n68_putrx_code_word(code));
+        ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                          "\",\"reason\":\"");
+        ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                          n68_putrx_code_reason(code));
+        ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                          "\",\"received\":");
+        ok = ok && now68k_fmt_append_long(payload, (long)sizeof payload, &pos,
+                                           g_put_last_bytes);
+        /* Always temp-discarded: this guest keeps no partials, because
+         * it does not implement resume and a partial nothing can resume
+         * from is debris. */
+        ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                          ",\"cleanup\":\"temp-discarded\"}");
+    }
+    if (!ok || pos <= 0) {
+        now68k_log("wire: file.done build failed");
+        return;
+    }
+    if (!enqueue_control_send(payload, pos)) {
+        now68k_log("wire: file.done dropped, outbound queue full");
+    }
+}
+
+/* A failure that happened while bytes were streaming. n68_putrx has
+ * already discarded the partial and gone inactive. */
+static void put_finish_failed(N68PutCode code)
+{
+    now68k_log(n68_putrx_code_reason(code));
+    put_done(0, code);
+}
+
+static void handle_file_offer(const char *json, long len)
+{
+    N68PutOffer offer;
+    N68PutCode rc;
+    char payload[224];
+    long pos = 0;
+    int ok = 1;
+
+    if (!n68_putrx_parse_offer(json, len, &offer)) {
+        /* No id, no name, or no size: there is nothing to address an
+         * answer to, or nothing to answer about. The generic error reply
+         * is the honest shape - a file.refuse would have to invent the
+         * id it is refusing. */
+        long id;
+        int have_id = now68k_json_find_int(json, (size_t)len, "id", &id);
+
+        now68k_log("wire: file.offer is missing a field it cannot be "
+                    "answered without");
+        send_error_reply(have_id ? id : 0, have_id);
+        return;
+    }
+
+    rc = n68_putrx_offer(&g_putrx, &offer);
+    if (rc != kN68PutOK) {
+        put_refuse(offer.id, rc);
+        return;
+    }
+    g_put_id = offer.id;
+
+    /* file.accept. No `have`: this guest does not implement resume, and
+     * the contract reads an absent `have` as "start from the beginning"
+     * (FileAccept) - so a receiver that never resumes is a
+     * contract-legal receiver rather than a broken one.
+     *
+     * `staging` IS declared, because it is true and it is the thing a
+     * host most wants to know about a receiver it is about to trust with
+     * 4 MB: nothing appears under the final name before it is whole. */
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                      "{\"type\":\"file.accept\",\"id\":");
+    ok = ok && now68k_fmt_append_long(payload, (long)sizeof payload, &pos,
+                                       offer.id);
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                      ",\"staging\":\"same-folder-temp\"}");
+    if (!ok || pos <= 0 || !enqueue_control_send(payload, pos)) {
+        /* The host never learned we accepted, so it will never send the
+         * bytes. Undo the acceptance rather than sit holding an open
+         * staging file for a transfer that cannot happen. */
+        now68k_log("wire: file.accept could not be sent, abandoning");
+        n68_putrx_cancel(&g_putrx);
+        return;
+    }
+    now68k_log(offer.name);
+}
+
+/* file.begin fixes where the stream starts. This guest always answered
+ * `have` absent, so the only offset it can serve is 0 - and a sender
+ * naming another one has to be refused rather than silently written at
+ * the wrong place, which no checksum can repair, only detect. */
+static void handle_file_begin(const char *json, long len)
+{
+    long offset = 0;
+
+    if (!g_putrx.active) {
+        return;
+    }
+    if (now68k_json_find_int(json, (size_t)len, "offset", &offset)
+        && offset != 0) {
+        now68k_log_num("wire: file.begin names an offset this guest never "
+                        "offered to resume from", offset);
+        n68_putrx_cancel(&g_putrx);
+        put_done(0, kN68PutCorrupt);
+    }
+}
+
+static void handle_file_end(const char *json, long len)
+{
+    unsigned long crc = 0;
+    int has_crc;
+    long sender_ok = 1;
+    N68PutCode rc;
+
+    if (!g_putrx.active) {
+        return;
+    }
+    has_crc = now68k_json_find_u32(json, (size_t)len, "crc32", &crc);
+    {
+        const char *v = now68k_json_value(json, (size_t)len, "ok");
+
+        sender_ok = (v == NULL || v >= json + len || *v == 't');
+    }
+
+    /* One last report before the confirmation, so the host's count
+     * reaches the total rather than stopping wherever the step last
+     * landed. Past the yield rule on purpose: it is one frame and it is
+     * the one that closes the bar. */
+    if (sender_ok && g_putrx.received > 0) {
+        /* `force` rather than a temporary lie about g_out_count: the
+         * queue depth is also what enqueue_control_send picks a free
+         * slot by, so zeroing it here would have written this frame
+         * over the one currently being flushed. */
+        put_report_progress(1);
+    }
+
+    rc = n68_putrx_end(&g_putrx, (int)sender_ok, has_crc, crc);
+    put_done(rc == kN68PutOK, rc);
+}
+
 /* Dispatch for one fully-received control payload. Everything the guest
  * does not implement (capture, files, streams, the process drive verbs and
  * the software listing) falls through to the generic error reply - see
@@ -1136,6 +1491,22 @@ static void handle_control_message(const char *json, long len)
     }
     if (strcmp(type, "process.list") == 0) {
         handle_process_list(json, len);
+        return;
+    }
+    /* The file family, receive half only. file.list / file.move and the
+     * rest of the family still fall through to send_error_reply below -
+     * this guest serves what a host PUSHES to it and nothing else yet,
+     * and that asymmetry is visible here rather than hidden. */
+    if (strcmp(type, "file.offer") == 0) {
+        handle_file_offer(json, len);
+        return;
+    }
+    if (strcmp(type, "file.begin") == 0) {
+        handle_file_begin(json, len);
+        return;
+    }
+    if (strcmp(type, "file.end") == 0) {
+        handle_file_end(json, len);
         return;
     }
 
@@ -1368,6 +1739,17 @@ void wire_init(void)
     g_last_rtt_ms = -1;
     g_peer_name[0] = '\0';
     memset(&g_stats, 0, sizeof g_stats);
+    /* Before reset_read_state, which cancels through g_putrx: cancelling
+     * an uninitialised receiver would call through a NULL ops table. */
+    now68k_putfile_init(&g_putfile);
+    n68_putrx_init(&g_putrx, g_put_batch, (long)sizeof g_put_batch,
+                    now68k_putfile_ops(), &g_putfile);
+    g_put_id = 0;
+    g_put_had_one = 0;
+    g_put_last_name[0] = '\0';
+    g_put_last_code[0] = '\0';
+    g_put_last_bytes = 0;
+    g_put_last_ok = 0;
     reset_read_state();
     reset_outbound_queue();
 
@@ -1536,4 +1918,42 @@ void wire_stats(WireStats *out)
         return;
     }
     *out = g_stats;
+}
+
+/* ---- what the console asks about a transfer ---------------------------
+ * The console's face on this capability. A message family is a
+ * capability too (docs/command-parity.md), and this one has no command
+ * table to reach it through - so the reader is here, and conwin.c
+ * renders it. ONE implementation, two renderers: nothing below decides
+ * anything, it only copies out what the receiver already knows. */
+void now68k_wire_put_status(N68PutStatus *out)
+{
+    if (out == NULL) {
+        return;
+    }
+    memset(out, 0, sizeof *out);
+    out->active = g_putrx.active;
+    out->id = g_put_id;
+    out->bytes = g_putrx.offer.bytes;
+    out->received = g_putrx.received;
+    out->chunks = g_putrx.chunks;
+    out->writes = g_putrx.writes;
+    out->crc = g_putrx.crc;
+    if (g_putrx.active) {
+        memcpy(out->name, g_putrx.offer.name, sizeof out->name);
+        out->name[sizeof out->name - 1] = '\0';
+    }
+    out->had_one = g_put_had_one;
+    out->last_ok = g_put_last_ok;
+    out->last_bytes = g_put_last_bytes;
+    memcpy(out->last_name, g_put_last_name, sizeof out->last_name);
+    out->last_name[sizeof out->last_name - 1] = '\0';
+    memcpy(out->last_code, g_put_last_code, sizeof out->last_code);
+    out->last_code[sizeof out->last_code - 1] = '\0';
+    out->last_error = now68k_putfile_last_error(&g_putfile);
+}
+
+void now68k_wire_put_where(char *out, long cap)
+{
+    now68k_putfile_where(out, cap);
 }

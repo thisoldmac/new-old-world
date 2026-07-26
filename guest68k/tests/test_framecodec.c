@@ -8,6 +8,7 @@
 #include "hello.h"
 #include "ping.h"
 #include "json_scan.h"
+#include "numfmt.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -405,8 +406,72 @@ static void test_json_scan_stops_at_explicit_length(void)
     }
 }
 
+/* A CRC-32 is unsigned and `long` here is not.
+ *
+ * Half of all checksums are above 0x7FFFFFFF, so a writer or reader that
+ * went through a signed long would render or parse them as negative -
+ * and the failure would present as "this guest corrupts every other
+ * file", with perfect bytes on the disk. The sign boundary is where this
+ * has to be checked, so the values below straddle it deliberately. */
+static void test_u32_survives_the_sign_boundary(void)
+{
+    static const unsigned long values[] = {
+        0UL, 1UL, 0x7FFFFFFEUL, 0x7FFFFFFFUL, 0x80000000UL,
+        0x80000001UL, 0xCBF43926UL, 0xFFFFFFFFUL
+    };
+    unsigned i;
+
+    for (i = 0; i < sizeof values / sizeof values[0]; ++i) {
+        char buf[64];
+        long pos = 0;
+        unsigned long back = 0;
+
+        CHECK(now68k_fmt_append_str(buf, (long)sizeof buf, &pos,
+                                     "{\"crc32\":"),
+              "u32: envelope built");
+        CHECK(now68k_fmt_append_u32(buf, (long)sizeof buf, &pos, values[i]),
+              "u32: value appended");
+        CHECK(now68k_fmt_append_str(buf, (long)sizeof buf, &pos, "}"),
+              "u32: envelope closed");
+        CHECK(now68k_json_find_u32(buf, (size_t)pos, "crc32", &back),
+              "u32: value found");
+        if (back != values[i]) {
+            printf("FAIL: u32 round trip %08lX came back %08lX (%.*s)\n",
+                   values[i], back, (int)pos, buf);
+            g_failures++;
+        }
+        g_checks++;
+    }
+
+    /* The rendering must be plain unsigned decimal - the host reads it
+     * as a JSON integer, so a "-1" for 0xFFFFFFFF is a wire defect and
+     * not merely an internal one. */
+    {
+        char buf[32];
+        long pos = 0;
+
+        (void)now68k_fmt_append_u32(buf, (long)sizeof buf, &pos, 0xFFFFFFFFUL);
+        buf[pos] = '\0';
+        CHECK(strcmp(buf, "4294967295") == 0,
+              "u32: 0xFFFFFFFF renders as 4294967295, not as a negative");
+    }
+
+    /* A negative number is not a checksum. Refused rather than wrapped,
+     * so a malformed file.end fails as "unchecked" rather than as a
+     * mismatch against a number nobody computed. */
+    {
+        static const char neg[] = "{\"crc32\":-1}";
+        unsigned long back = 12345UL;
+
+        CHECK(!now68k_json_find_u32(neg, sizeof neg - 1, "crc32", &back),
+              "u32: a negative value is refused");
+        CHECK(back == 12345UL, "u32: a refused read leaves out untouched");
+    }
+}
+
 int main(void)
 {
+    test_u32_survives_the_sign_boundary();
     test_header_roundtrip();
     test_header_byte_layout();
     test_frame_length_ok_is_protocol_legality_only();
