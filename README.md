@@ -208,6 +208,17 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   **untested on any Macintosh**. The second window is a deliberate
   exception to this guest's one-page shape, recorded in the ledger.
 
+- **`vprobe` on both guests** — measures a machine's VRAM read cost by
+  access method, so a capture stage is designed against numbers rather
+  than hope. Metal-verified on the PB1400c and now the PB180c, and the
+  two disagree in ways worth knowing: the 68030's framebuffer path tops
+  out around 16 bits wide, `MOVEM.L` does not burst because the VRAM is
+  uncached, the FPU is slower than plain 32-bit reads, and raw reads beat
+  CopyBits 1.5× where on the PowerPC they barely beat it at all. Best
+  case there is 1.8 MB/s — a 300 KB frame costs 159 ms — so full-frame
+  streaming on that machine is arithmetic, not tuning.
+  [docs/vram-readout-68k.md](docs/vram-readout-68k.md).
+
 - **A dev loop that does not need a Macintosh.** Neither guest can run its
   own suite, so the pure-C halves compile under the host `cc`:
   `scripts/test-native` runs all 18 across both guests in one command, and

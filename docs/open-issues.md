@@ -1422,6 +1422,42 @@ Both of the things that were known-wrong here are fixed (2026-07-25):
   clamped to the floor; the PowerPC guest reached it only incidentally
   through a prefs range check and now enforces it at the wire.
 
+## vprobe on the 180c: measured, and what it does not cover
+
+`vprobe` is **metal-verified** on the PB180c (2026-07-25, `NOW-68K 0.16`):
+ran in 3.0 s, whole-frame on every row, answered in one frame, and the
+wire survived it. Numbers and their reading:
+[vram-readout-68k.md](vram-readout-68k.md).
+
+The hypothesis it was built around resolved cleanly and in the direction
+that costs us: `MOVEM.L` does **not** burst on this machine (6% over
+unrolled `move.l`), and the reread row explains it — the VRAM is uncached,
+and burst fills are cache-line fills. The unexpected result is a **~16-bit
+width ceiling**: 8→16-bit more than doubles the rate, 16→32-bit buys 12%.
+The 1400c's "the bus charges per transaction" does not transfer.
+
+Unverified, and worth naming because the numbers will get quoted:
+
+- **The CopyBits row is fifteen banded calls, not one blit.** Best raw
+  beats it 1.54×, which is the opposite of the 1400c result — but an
+  unknown share of that gap is per-call overhead. It is a floor on the
+  margin, not the margin.
+- **Nothing at a non-native depth was measured.** That is precisely where
+  the 1400c's raw-vs-CopyBits margin evaporated, so the one number most
+  likely to mislead a future capture stage is the one not taken.
+- **`fmove.d` is content-dependent** — extended conversion, and a 68882
+  handles denormals slowly — so it is what an FPU reader costs on that
+  screen, not a bus figure.
+- **`Microseconds()` has no availability gate.** Its trap is assumed
+  present on 7.1 from documentation; a wrong availability test fails in
+  the wrong direction (disabling vprobe where it works), so none was
+  added. It answered with 37 µs resolution on the 180c, which settles the
+  assumption for this machine and no other.
+- **`fmovem.x` was not measured** — no conversion, no exception path, and
+  the one row that might have rescued the FPU result. The reply cannot
+  carry a 17th row; the honest next step if the `fmove.d` number ever
+  looks wrong.
+
 ## The 180c, 2026-07-25 evening: everything automated is green
 
 The display came back (a via that wiggled against its pad, found by
