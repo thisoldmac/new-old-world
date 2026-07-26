@@ -54,6 +54,8 @@ add_application(now68k-guest
     src/vprobe68.c
     src/n68_shot.c
     src/shot68.c
+    src/n68_shotwire.c
+    src/shotsrc68.c
     src/proc_quit_args.c
     src/proc68.c
     guest68k.r

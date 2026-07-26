@@ -1904,6 +1904,73 @@ Unverified, and worth naming because the numbers will get quoted:
   carry a 17th row; the honest next step if the `fmove.d` number ever
   looks wrong.
 
+## The capture tx: the source is built, the routing is not
+
+Slice two — the pixels reaching the host — is half done and stopped at a
+named line. What exists (`n68_shotwire.c`, `shotsrc68.c`, 8 native tests,
+every guard proven by mutation) is the **byte source and the envelopes**;
+what does not exist is the wire routing that arms a transfer with them.
+Nothing about this has run on any machine, emulator included.
+
+**PICT is not the wire format, and the contract said so first.**
+`CaptureBegin.encoding` is `raw | packbits`, described as "NOT PICT: modern
+macOS cannot decode QuickDraw pictures, so the wire uses a format both
+sides own". So none of `shot68.c`'s picture machinery is on this path. The
+stream is the palette as RGB triples, then rows top to bottom — which the
+host already decodes, because the PowerPC guest already sends it. The
+envelope is built field for field from `guest/src/wire.c`'s, and
+`bytes` includes the palette (the contract's one-line description says
+`rowBytes * height`; the sender that exists sends `GetHandleSize` of
+palette-plus-rows, and the host agrees with the sender).
+
+**The pull/push problem, which is why the source reads the screen and not
+the picture.** `shot68.c` hands the whole frame to QuickDraw in ONE
+`CopyBits` that runs for ~480 ms and cannot be suspended. `fill()` is a
+pull. There is no way to pull from inside a call that is pushing — no
+threads, no coroutines, and the banded recording that would have made it
+incremental is the thing that killed QuickDraw on the third band. So the
+source reads the framebuffer directly through the shared walk, which is
+exactly what `raw` already is. PICT stays the disk format. The two paths
+meet at the screen and nowhere else.
+
+**This rung sends `raw`, and packbits is blocked on a real constraint,
+not on effort.** `n68_bytesrc.h`'s first promise is that `total` is exact
+before the first fill, because `capture.begin` carries the byte count and
+the receiver sizes its staging from it. For raw that is arithmetic. For
+packbits it is not knowable without packing, and this machine cannot hold
+a packed frame to measure one:
+
+- the packed frame is **not bounded**. The 180c's own desktop packs 4.7:1
+  (65.6 KB), but PackBits *expands* incompressible data, so the worst case
+  is ~303 KB against a 384 KB partition. "Usually fits" is not a budget.
+- a counting pass then an emitting pass would produce an exact number for
+  a screen that no longer exists. The two passes read the display at
+  different moments, so their lengths can differ — and `capture.begin`
+  would then be a lie the receiver sized its buffer from. Worse than
+  sending more bytes.
+
+So packbits over this lane needs **a decision, not code**: either stage
+the packed frame in a temporary file (whose size IS exact — the 180c wrote
+65 KB in ~800 ms, and `screenshot` already writes that file today), or a
+contract that can carry a transfer of unknown length. Neither is taken
+here. The cost of the rung that needs no argument is stated plainly: raw
+is ~300 KB where packed would be ~65 KB on a quiet screen, and on this
+machine's wire that difference is the whole user-visible experience.
+
+**Where it stops.** `wire68.c` has `now68k_wire_send_file()`; it needs the
+sibling that arms a transfer from an arbitrary `N68ByteSource` and
+announces it with `capture.begin`/`capture.end` instead of `file.*`, plus
+routing for the contract's `capture.request`. The send half's own header
+says it "never opens, reads, seeks or closes a file", so that sibling
+should be a small generalisation rather than a second lane — but it is
+someone editing `wire68.c`, which is where the file-transfer arc has just
+finished, and it has not been done.
+
+**One thing that already works and is worth knowing.** `screenshot`
+followed by `put` gets pixels to the host *today*, using two shipped
+verbs and no new code — as a PICT, which the host cannot render but can
+store. That is a stopgap, not the lane.
+
 ## `screenshot` on NOW-68K: metal-verified, and what it measured
 
 `screenshot` slice one is implemented on NOW-68K

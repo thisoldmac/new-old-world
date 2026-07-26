@@ -129,6 +129,7 @@ run_c guest68k test_vprobe.c       "" src/n68_vprobe.c src/n68_cmdresult.c \
       src/numfmt.c
 run_c guest68k test_shot.c         "" src/n68_shot.c src/n68_cmdresult.c \
       src/numfmt.c
+run_c guest68k test_shotwire.c     "" src/n68_shotwire.c src/numfmt.c
 run_c guest68k test_crc32.c        "" src/n68_crc32.c
 run_c guest68k test_putrx.c        "" src/n68_putrx.c src/n68_crc32.c \
       src/json_scan.c
