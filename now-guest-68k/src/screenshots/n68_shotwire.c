@@ -7,6 +7,7 @@
  */
 #include "n68_shotwire.h"
 
+#include "n68_packbits.h"
 #include "numfmt.h"
 
 #include <string.h>
@@ -64,6 +65,82 @@ int n68_shotwire_locate(const N68ShotWirePlan *plan, long offset,
         *column = pixels % plan->row_bytes;
     }
     return 1;
+}
+
+long n68_shotwire_emit(const N68ShotWirePlan *plan,
+                       const unsigned char *base, long fb_row_bytes,
+                       const unsigned char *palette, long palette_bytes,
+                       const N68ShotWireSink *sink)
+{
+    long emitted = 0;
+    long row;
+
+    if (plan == NULL || base == NULL || sink == NULL || sink->put == NULL) {
+        return -1;
+    }
+    if (plan->row_bytes <= 0 || plan->height <= 0) {
+        return -1;
+    }
+    /* The screen's stride must cover the part this reads out of it.
+     * Refused rather than clamped: a stride narrower than the visible row
+     * means the geometry did not come from a screen, and reading anyway
+     * walks off the end of the last row. */
+    if (fb_row_bytes < plan->row_bytes) {
+        return -1;
+    }
+    if (sink->row_buf == NULL || sink->row_cap < plan->row_bytes) {
+        return -1;
+    }
+    if (sink->pack_buf == NULL
+        || sink->pack_cap < n68_packbits_max(plan->row_bytes)) {
+        return -1;
+    }
+    if (palette_bytes != plan->palette_bytes) {
+        return -1;
+    }
+    if (palette_bytes > 0) {
+        if (palette == NULL) {
+            return -1;
+        }
+        sink->put(sink->ctx, palette, palette_bytes);
+        emitted += palette_bytes;
+    }
+
+    for (row = 0; row < plan->height; ++row) {
+        long packed;
+        unsigned char len_be[2];
+
+        if (sink->stop != NULL && sink->stop(sink->ctx)) {
+            return -1;
+        }
+        if (sink->row_begin != NULL) {
+            sink->row_begin(sink->ctx, row);
+        }
+        /* THE WALK. `fb_row_bytes` is the screen's own stride, padding
+         * included; `plan->row_bytes` is what the host was promised. */
+        memcpy(sink->row_buf, base + row * fb_row_bytes,
+               (size_t)plan->row_bytes);
+        if (sink->row_read != NULL) {
+            sink->row_read(sink->ctx, row);
+        }
+
+        packed = n68_packbits_row(sink->row_buf, plan->row_bytes,
+                                  sink->pack_buf, sink->pack_cap);
+        if (sink->row_packed != NULL) {
+            sink->row_packed(sink->ctx, row);
+        }
+        if (packed <= 0) {
+            return -1;    /* unreachable: pack_cap is checked at the bound */
+        }
+        /* Big-endian, because that is what the host reads and what the
+         * PowerPC guest writes (now-guest-ppc/src/screenshots/pixels.c). */
+        len_be[0] = (unsigned char)((packed >> 8) & 0xFF);
+        len_be[1] = (unsigned char)(packed & 0xFF);
+        sink->put(sink->ctx, len_be, 2);
+        sink->put(sink->ctx, sink->pack_buf, packed);
+        emitted += 2 + packed;
+    }
+    return emitted;
 }
 
 long n68_shotwire_begin_json(const N68ShotWirePlan *plan, long id,

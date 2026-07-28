@@ -9,9 +9,10 @@
  *   g_row      one screen row                                 640 bytes
  *   g_packed   one packed row, at the PackBits BOUND          645 bytes
  *   g_io       the write buffer                              1024 bytes
+ *   g_palette  the screen's CLUT, snapshotted once            768 bytes
  *   g_running  re-entry guard                                   2 bytes
  *   ------------------------------------------------------------------
- *   total                                                   ~2.3 KB
+ *   total                                                   ~3.1 KB
  * It never holds a band, let alone a frame.
  *
  * No printf family (numfmt.h only).
@@ -38,6 +39,7 @@ enum {
 static unsigned char g_row[kStageMaxRow];
 static unsigned char g_packed[kStageMaxRow + kStageMaxRow / 128 + 2];
 static char          g_io[kStageIOBuf];
+static unsigned char g_palette[kN68ShotWirePaletteBytes];
 static long          g_io_n;
 static short         g_ref;
 static OSErr         g_err;
@@ -85,6 +87,66 @@ static void stage_put(const void *bytes, long n)
             stage_flush();
         }
     }
+}
+
+/* ---- the sink the walk hands its bytes to -------------------------------
+ *
+ * The walk itself is n68_shotwire_emit(), which has no Toolbox in it and
+ * is driven over a synthetic framebuffer by test_shotemit.c. What stays
+ * here is the three things only this machine can do: buffer to a file,
+ * hide the cursor over the row being read, and time the two halves. */
+typedef struct {
+    Rect          bounds;        /* the screen's, for the shield rect */
+    unsigned long t0;
+    unsigned long t_read;
+    unsigned long t_pack;
+} StageCtx;
+
+static void stage_sink_put(void *ctx, const void *bytes, long n)
+{
+    (void)ctx;
+    stage_put(bytes, n);
+}
+
+static void stage_sink_row_begin(void *ctx, long row)
+{
+    StageCtx *sc = (StageCtx *)ctx;
+    Rect shield;
+    Point zero;
+
+    /* Shielded per row, for shotsrc68.h's reason: a whole-transfer hide
+     * takes the cursor away from the person at the machine. */
+    shield = sc->bounds;
+    shield.top = (short)(sc->bounds.top + row);
+    shield.bottom = (short)(shield.top + 1);
+    zero.h = 0;
+    zero.v = 0;
+    sc->t0 = screen68_micros();
+    ShieldCursor(&shield, zero);
+}
+
+static void stage_sink_row_read(void *ctx, long row)
+{
+    StageCtx *sc = (StageCtx *)ctx;
+
+    (void)row;
+    ShowCursor();
+    sc->t_read += screen68_micros() - sc->t0;
+    sc->t0 = screen68_micros();
+}
+
+static void stage_sink_row_packed(void *ctx, long row)
+{
+    StageCtx *sc = (StageCtx *)ctx;
+
+    (void)row;
+    sc->t_pack += screen68_micros() - sc->t0;
+}
+
+static int stage_sink_stop(void *ctx)
+{
+    (void)ctx;
+    return g_err != noErr;
 }
 
 static void say(char *why, long why_cap, const char *text)
@@ -162,12 +224,9 @@ ShotStage68Status shotstage68_write(ShotStage68 *out, char *why, long why_cap)
     Screen68 sc;
     FSSpec spec;
     OSErr err;
-    Rect shield;
-    Point zero;
-    unsigned long t_read = 0;
-    unsigned long t_pack = 0;
-    unsigned long t0;
-    long row;
+    StageCtx stage;
+    N68ShotWireSink sink;
+    long emitted;
     long i;
 
     if (out == NULL || why == NULL || why_cap <= 0) {
@@ -225,54 +284,49 @@ ShotStage68Status shotstage68_write(ShotStage68 *out, char *why, long why_cap)
 
     /* The palette, narrowed to 8 bits a channel exactly as shotsrc68.c
      * does - two senders of the same stream must agree on what an entry
-     * means. */
+     * means. Snapshotted before the walk rather than read inside it: a
+     * table that changed mid-capture would describe some rows and not
+     * others. */
     {
         CTabHandle clut = (sc.pix != NULL) ? (**sc.pix).pmTable : NULL;
-        unsigned char entry[3];
 
+        memset(g_palette, 0, sizeof g_palette);
         for (i = 0; i < kN68ShotWirePaletteEntries; ++i) {
-            entry[0] = entry[1] = entry[2] = 0;
-            if (clut != NULL && *clut != NULL
-                && i <= (long)(**clut).ctSize) {
-                entry[0] = (unsigned char)((**clut).ctTable[i].rgb.red >> 8);
-                entry[1] = (unsigned char)((**clut).ctTable[i].rgb.green >> 8);
-                entry[2] = (unsigned char)((**clut).ctTable[i].rgb.blue >> 8);
+            if (clut == NULL || *clut == NULL || i > (long)(**clut).ctSize) {
+                continue;
             }
-            stage_put(entry, 3);
+            g_palette[i * 3 + 0] =
+                (unsigned char)((**clut).ctTable[i].rgb.red >> 8);
+            g_palette[i * 3 + 1] =
+                (unsigned char)((**clut).ctTable[i].rgb.green >> 8);
+            g_palette[i * 3 + 2] =
+                (unsigned char)((**clut).ctTable[i].rgb.blue >> 8);
         }
     }
 
-    zero.h = 0;
-    zero.v = 0;
-    for (row = 0; row < sc.height && g_err == noErr; ++row) {
-        const unsigned char *src = (const unsigned char *)sc.base
-                                   + row * sc.row_bytes;
-        long packed;
-        unsigned char len_be[2];
+    memset(&stage, 0, sizeof stage);
+    stage.bounds = sc.bounds;
 
-        /* Shielded per row, for shotsrc68.h's reason: a whole-transfer
-         * hide takes the cursor away from the person at the machine. */
-        shield = sc.bounds;
-        shield.top = (short)(sc.bounds.top + row);
-        shield.bottom = (short)(shield.top + 1);
-        t0 = screen68_micros();
-        ShieldCursor(&shield, zero);
-        memcpy(g_row, src, (size_t)out->plan.row_bytes);
-        ShowCursor();
-        t_read += screen68_micros() - t0;
+    memset(&sink, 0, sizeof sink);
+    sink.ctx = &stage;
+    sink.put = stage_sink_put;
+    sink.row_begin = stage_sink_row_begin;
+    sink.row_read = stage_sink_row_read;
+    sink.row_packed = stage_sink_row_packed;
+    sink.stop = stage_sink_stop;
+    sink.row_buf = g_row;
+    sink.row_cap = (long)sizeof g_row;
+    sink.pack_buf = g_packed;
+    sink.pack_cap = (long)sizeof g_packed;
 
-        t0 = screen68_micros();
-        packed = n68_packbits_row(g_row, out->plan.row_bytes, g_packed,
-                                  (long)sizeof g_packed);
-        t_pack += screen68_micros() - t0;
-        if (packed < 0) {
-            g_err = paramErr;    /* unreachable: g_packed is at the bound */
-            break;
-        }
-        len_be[0] = (unsigned char)((packed >> 8) & 0xFF);
-        len_be[1] = (unsigned char)(packed & 0xFF);
-        stage_put(len_be, 2);
-        stage_put(g_packed, packed);
+    /* sc.row_bytes is the screen's OWN stride; out->plan.row_bytes is the
+     * visible part the host was promised. Handing both over is the whole
+     * point of the split. */
+    emitted = n68_shotwire_emit(&out->plan,
+                                (const unsigned char *)sc.base, sc.row_bytes,
+                                g_palette, (long)sizeof g_palette, &sink);
+    if (emitted < 0 && g_err == noErr) {
+        g_err = paramErr;
     }
 
     stage_flush();
@@ -291,8 +345,8 @@ ShotStage68Status shotstage68_write(ShotStage68 *out, char *why, long why_cap)
     out->plan.total = g_written;      /* what capture.begin promises */
     out->raw_bytes = out->plan.palette_bytes
                      + out->plan.row_bytes * out->plan.height;
-    out->capture_ms = (long)(t_read / 1000UL);
-    out->encode_ms = (long)(t_pack / 1000UL);
+    out->capture_ms = (long)(stage.t_read / 1000UL);
+    out->encode_ms = (long)(stage.t_pack / 1000UL);
     out->write_ms = (long)(g_write_us / 1000UL);
     memcpy(out->leaf, kShotStageLeaf, sizeof kShotStageLeaf);
     now68k_log_num("stage: packed bytes", out->total);

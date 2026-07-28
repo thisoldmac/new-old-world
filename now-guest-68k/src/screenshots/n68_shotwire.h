@@ -124,6 +124,72 @@ long n68_shotwire_begin_json(const N68ShotWirePlan *plan, long id,
                              unsigned int transfer, long capture_ms,
                              long encode_ms, int packed, char *out, long cap);
 
+/* ---- the walk that produces the bulk body -------------------------------
+ *
+ * WHY THIS IS HERE AND NOT IN shotstage68.c, WHICH IS WHERE IT LIVED.
+ * The framebuffer walk - `base + row * the screen's OWN rowBytes`, copying
+ * only the visible row - was the one part of the capture lane that no test
+ * could reach, because it sat between an FSSpec and a ShieldCursor. That
+ * mattered more than it looks: `vprobe` reads the same framebuffer and is
+ * the only other thing that touches it, and vprobe only TIMES the read. A
+ * walk that reads the wrong bytes reads them at exactly full speed, so
+ * nothing in this tree would have said a word about it.
+ *
+ * So the walk moved here, where the host cc can drive it over a synthetic
+ * framebuffer with poisoned padding (now-guest-68k/tests/test_shotemit.c),
+ * and the Toolbox stayed in shotstage68.c behind the hooks below. The
+ * hooks exist for exactly two things the walk must not know about: hiding
+ * the cursor over the row being read, and timing.
+ */
+typedef struct {
+    void *ctx;
+
+    /* Finished wire bytes. Called for the palette once and then twice per
+     * row (the length prefix, then the packed row), because a sink that
+     * buffers wants them separately anyway. */
+    void (*put)(void *ctx, const void *bytes, long n);
+
+    /* Around the framebuffer read of `row`, and after that row is packed.
+     * Any may be NULL. `row_begin`/`row_read` bracket the read ALONE - a
+     * shield held across the packing would take the cursor away from the
+     * person at the machine for the whole capture. */
+    void (*row_begin)(void *ctx, long row);
+    void (*row_read)(void *ctx, long row);
+    void (*row_packed)(void *ctx, long row);
+
+    /* Non-zero abandons the walk (a write error, on the caller that has a
+     * disk). May be NULL. */
+    int (*stop)(void *ctx);
+
+    /* The caller's scratch: one screen row, and one packed row at the
+     * PackBits bound. Passed in rather than owned because this file has no
+     * BSS and the 68K guest budgets its statics in one place. */
+    unsigned char *row_buf;
+    long           row_cap;
+    unsigned char *pack_buf;
+    long           pack_cap;
+} N68ShotWireSink;
+
+/* Emits the palette and then every row of the framebuffer at `base`,
+ * PackBits-packed with a big-endian u16 length prefix - the body the host
+ * decodes (CaptureDecoder.decodeRows).
+ *
+ * `fb_row_bytes` is the SCREEN's rowBytes, padding included; what is read
+ * out of each row is `plan->row_bytes`, the visible part. On the 180c the
+ * two are both 640 and a confusion between them is invisible; on a Quadra
+ * 800 they are 1024 and 640, and the confusion shears every capture. The
+ * test drives both.
+ *
+ * Returns the number of bytes handed to `put`, or -1 if it refused: a
+ * scratch buffer too small for the row or its PackBits bound, a stride
+ * narrower than the visible row, a palette that is not the length the plan
+ * promised, or `stop` asking it to give up. Nothing is emitted after a
+ * refusal, but bytes already emitted stay emitted - the caller discards. */
+long n68_shotwire_emit(const N68ShotWirePlan *plan,
+                       const unsigned char *base, long fb_row_bytes,
+                       const unsigned char *palette, long palette_bytes,
+                       const N68ShotWireSink *sink);
+
 /* capture.end. `ok` false is the contract's way to close a transfer that
  * failed after it was announced - the receiver is already staging bytes
  * for this id and needs to be told to stop, which is why this envelope
