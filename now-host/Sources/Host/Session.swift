@@ -20,7 +20,16 @@ final class Session {
     private let identity: GuestListener.HostIdentity
     private let timing: GuestListener.Timing
     private let pacing: GuestListener.Pacing
-    private let isBusy: () -> String?
+    /// Asked once, with the guest's own hello, at the gate: nil to serve
+    /// this connection, or the reason to refuse it.
+    ///
+    /// It takes the hello because the answer now depends on WHO is
+    /// dialling — the host serves several guests at once and refuses only
+    /// a machine that is already connected. The predicate that took no
+    /// argument could only answer "is anybody here", which is the same
+    /// answer for the guest already connected and for the other Mac on
+    /// the desk.
+    private let admit: (Hello) -> String?
     private let onActive: (Session) -> Void
     private let onLog: (String, String, HostLog.LogLevel) -> Void
     private let onHealth: (GuestListener.SessionHealth?) -> Void
@@ -89,13 +98,19 @@ final class Session {
     private var helloed = false
     private var closed = false
     private(set) var guestName = "guest"
+    /// What a guest that sent no name is called. One constant, because
+    /// GuestKey folds by it too and a second spelling would let an
+    /// unnamed guest be admitted twice under two different keys.
+    static let unnamedGuest = "Classic Mac"
+    /// Set at the gate, from the hello. Nil until then.
+    private(set) var guestKey: GuestKey?
     private var idleTask: Task<Void, Never>?
 
     init(connection: NWConnection,
          identity: GuestListener.HostIdentity,
          timing: GuestListener.Timing,
          pacing: GuestListener.Pacing,
-         isBusy: @escaping () -> String?,
+         admit: @escaping (Hello) -> String?,
          onActive: @escaping (Session) -> Void,
          onLog: @escaping (String, String, HostLog.LogLevel) -> Void,
          onHealth: @escaping (GuestListener.SessionHealth?) -> Void,
@@ -135,7 +150,7 @@ final class Session {
         self.identity = identity
         self.timing = timing
         self.pacing = pacing
-        self.isBusy = isBusy
+        self.admit = admit
         self.onActive = onActive
         self.onLog = onLog
         self.onHealth = onHealth
@@ -1189,12 +1204,15 @@ final class Session {
             refuse("contract revision \(hello.contract) != \(Contract.revision)")
             return
         }
-        if let connectedName = isBusy() {
-            refuse("busy: \(connectedName)")
+        if let reason = admit(hello) {
+            refuse(reason)
             return
         }
         helloed = true
-        guestName = hello.name ?? "Classic Mac"
+        guestName = hello.name ?? Self.unnamedGuest
+        /* Settled before onActive, so the listener files this session
+           under the same key the gate just admitted it by. */
+        guestKey = GuestKey(hello: hello)
         let chunk = min(hello.chunk ?? Contract.defaultChunk,
                         Contract.defaultChunk)
         send(.hello(Hello(contract: Contract.revision, side: "host",

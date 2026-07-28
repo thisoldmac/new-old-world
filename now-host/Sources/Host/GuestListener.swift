@@ -4,10 +4,18 @@ import CoreGraphics
 import Combine
 import NOWAgentIntegration
 
-/// The host side of the wire: listens, gates on hello, serves exactly one
-/// guest at a time, answers pings, and declares death passively after
+/// The host side of the wire: listens, gates on hello, serves every guest
+/// that dials in, answers pings, and declares death passively after
 /// `timing.idleTimeout` without traffic (the host never pings — see
 /// contract/asyncapi.yaml).
+///
+/// Several guests share one port and are told apart by `GuestKey`. One of
+/// them is ACTIVE: the whole request-shaped API below — runCommand, exec,
+/// listFiles, requestCapture — drives that one, so the console, the
+/// modules and the agent projection go on meaning "the guest" without
+/// knowing there are others. What every connected guest gets regardless
+/// of which is active is the half it initiates: our own share is served,
+/// its pushes are decoded, its pings are answered.
 @MainActor
 final class GuestListener: ObservableObject {
     enum State: Equatable {
@@ -159,8 +167,19 @@ final class GuestListener: ObservableObject {
     /// agent companion reads the accumulated record rather than deciding
     /// anything from the guest's name. Cleared when the connection goes,
     /// because the next guest is not this one.
-    private(set) var familyObservations:
-        [String: GuestFamilyObservation] = [:]
+    /// Read by the agent's capability ledger, which asks about "the
+    /// guest" and means the active one.
+    var familyObservations: [String: GuestFamilyObservation] {
+        activeKey.flatMap { familyObservationsByGuest[$0] } ?? [:]
+    }
+
+    /// Kept per guest, because the record is a claim about ONE machine.
+    /// Held flat on the listener, it would have been cleared by any
+    /// guest's disconnect and read by whichever guest was active — two
+    /// ways to say something untrue about a Mac that never refused
+    /// anything.
+    private var familyObservationsByGuest:
+        [GuestKey: [String: GuestFamilyObservation]] = [:]
 
     /// One family's most recent settled outcome on this connection.
     struct GuestFamilyObservation: Equatable, Sendable {
@@ -182,7 +201,10 @@ final class GuestListener: ObservableObject {
         if !served, let code, code == "timeout" || code == "disconnected" {
             return
         }
-        familyObservations[family] = .init(
+        // Filed against the guest that was asked. A family request only
+        // ever goes to the active one, so that is who answered.
+        guard let key = activeKey else { return }
+        familyObservationsByGuest[key, default: [:]][family] = .init(
             served: served, code: code, message: message,
             observedAt: Date())
     }
@@ -211,15 +233,86 @@ final class GuestListener: ObservableObject {
     private let identity: HostIdentity
     private let timing: Timing
     private let pacing: Pacing
+    private let maxGuests: Int
     private var listener: NWListener?
-    private var session: Session?
+
+    /// Every guest currently past the hello gate, by identity.
+    private var sessions: [GuestKey: Session] = [:]
+    /// Which of them the request-shaped API drives. Nil when none are
+    /// connected.
+    private(set) var activeKey: GuestKey?
+
+    /// The active session. Every existing caller means this one, so it
+    /// stays spelled `session` and stays private — the table is the new
+    /// thing, and nothing outside this file has to learn about it yet.
+    private var session: Session? {
+        activeKey.flatMap { sessions[$0] }
+    }
+
+    /// Who is connected, active one first-class rather than implied.
+    /// Published so a view can list them; nothing reads it yet.
+    @Published private(set) var guests: [ConnectedGuest] = []
 
     init(identity: HostIdentity, timing: Timing = Timing(),
-         pacing: Pacing = .classicMac) {
+         pacing: Pacing = .classicMac, maxGuests: Int = 4) {
         self.identity = identity
         self.timing = timing
         self.pacing = pacing
+        /* Bounded because an accepted connection costs a socket, a
+           decoder and a health record that live until the idle timeout,
+           and "serve several" must not read as "serve any number". The
+           refusal says the number, so a human can tell it from a
+           collision. */
+        self.maxGuests = max(1, maxGuests)
     }
+
+    /// Points the request-shaped API at another connected guest.
+    ///
+    /// The seam the UI will use; `HostAppState` does NOT call it yet, and
+    /// wiring it to a picker is not just a matter of calling it: the
+    /// modules cache a process table, a software inventory and a census
+    /// per CONNECTION and clear it only when the connection drops, so a
+    /// switch would show one guest's rows under the other's name. That
+    /// is the next slice, listed in docs/local/multi-guest-plan.md.
+    @discardableResult
+    func selectGuest(_ key: GuestKey) -> Bool {
+        guard sessions[key] != nil, activeKey != key else { return false }
+        // Requests already in flight belong to the guest we are leaving
+        // and would otherwise settle against whatever answers next.
+        failAllPending("Switched to another Mac")
+        activeKey = key
+        publishActive()
+        return true
+    }
+
+    /// Republishes everything that means "the active guest" — the state,
+    /// its health, and the roster. One place, because the three drifting
+    /// apart is how a disconnected guest stays on screen.
+    private func publishActive() {
+        if let activeKey, let session = sessions[activeKey] {
+            state = .connected(guestName: session.guestName)
+            health = healthByGuest[activeKey]
+        } else if listener != nil {
+            state = .listening(port: boundPort ?? 0)
+            health = nil
+        } else {
+            state = .idle
+            health = nil
+        }
+        guests = sessions.compactMap { key, live -> ConnectedGuest? in
+            guard let record = healthByGuest[key] else { return nil }
+            return ConnectedGuest(
+                key: key, name: live.guestName,
+                version: record.guestVersion,
+                operatingSystem: record.guestOS,
+                connectedAt: record.connectedAt,
+                isActive: key == activeKey)
+        }.sorted { $0.connectedAt < $1.connectedAt }
+    }
+
+    /// Per-guest health, so switching does not have to re-ask the wire
+    /// and a background guest's ping count is not lost.
+    private var healthByGuest: [GuestKey: SessionHealth] = [:]
 
     private static let logLimit = 100
 
@@ -263,8 +356,17 @@ final class GuestListener: ObservableObject {
     }
 
     func stop() {
-        session?.close(sending: Bye(code: .shuttingDown, reason: nil))
-        session = nil
+        // Every guest is told, not just the active one: a guest we stop
+        // serving without a bye learns nothing for ~65 s and leaks a
+        // T_DISCONNECT on OS 9 (contract, connection rules).
+        for live in sessions.values {
+            live.close(sending: Bye(code: .shuttingDown, reason: nil))
+        }
+        sessions = [:]
+        healthByGuest = [:]
+        activeKey = nil
+        guests = []
+        health = nil
         listener?.cancel()
         listener = nil
         state = .idle
@@ -287,13 +389,17 @@ final class GuestListener: ObservableObject {
     /// on the main actor, whichever comes first.
     func shutDown(timeout: TimeInterval = 0.5,
                   completion: @escaping () -> Void) {
-        let live = session
-        session = nil
+        let leaving = Array(sessions.values)
+        sessions = [:]
+        healthByGuest = [:]
+        activeKey = nil
+        guests = []
+        health = nil
         listener?.cancel()
         listener = nil
         state = .idle
 
-        guard let live else {
+        guard !leaving.isEmpty else {
             completion()
             return
         }
@@ -303,8 +409,16 @@ final class GuestListener: ObservableObject {
             reported = true
             completion()
         }
-        live.close(sending: Bye(code: .shuttingDown, reason: nil)) {
-            report()
+        // Every guest is told; the quit proceeds as soon as the LAST
+        // farewell the sockets accept has left, or the timeout below,
+        // whichever comes first. One wedged Mac must not hold the others'
+        // farewell hostage, so each is sent independently.
+        var outstanding = leaving.count
+        for live in leaving {
+            live.close(sending: Bye(code: .shuttingDown, reason: nil)) {
+                outstanding -= 1
+                if outstanding == 0 { report() }
+            }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
             MainActor.assumeIsolated {
@@ -494,8 +608,14 @@ final class GuestListener: ObservableObject {
     var convertServedText = true
 
 
+    /* The four serve functions and noteReceived take the connection that
+       ASKED, rather than reaching for `session`. With one guest the two
+       were the same object and the distinction was invisible; with two,
+       reaching for `session` would answer the active guest's socket with
+       the other guest's listing. */
+
     /// Answers a listing request from the guest.
-    fileprivate func serveList(_ request: FileList) {
+    fileprivate func serveList(_ request: FileList, on session: Session) {
         do {
             let page = try share.list(path: request.path,
                                       cursor: request.cursor ?? 1,
@@ -504,20 +624,20 @@ final class GuestListener: ObservableObject {
                  + "item\(page.entries.count == 1 ? "" : "s") of "
                  + "\(request.path.isEmpty ? "the share root" : request.path)",
                  area: "files")
-            session?.send(.fileListing(FileListing(
+            session.send(.fileListing(FileListing(
                 id: request.id, path: request.path, entries: page.entries,
                 more: page.more, cursor: page.next,
                 /* Only the root listing names the place; a subfolder
                    listing already knows where it is. */
                 root: request.path.isEmpty ? share.root.path : nil)))
         } catch {
-            session?.refuseFile(id: request.id, error: error)
+            session.refuseFile(id: request.id, error: error)
         }
     }
 
     /// Answers a pull request: the same begin / bulk / end shape the
     /// guest uses, metered the same way.
-    fileprivate func serveGet(_ request: FileGet) {
+    fileprivate func serveGet(_ request: FileGet, on session: Session) {
         do {
             let plan = try share.read(
                 path: request.path,
@@ -525,11 +645,11 @@ final class GuestListener: ObservableObject {
                     && request.container != "data")
             note("#\(request.id) serving \(plan.name), "
                  + "\(plan.bytes.count) bytes", area: "files")
-            session?.serveFile(id: request.id, plan: plan,
-                               container: request.container,
-                               modified: plan.modified)
+            session.serveFile(id: request.id, plan: plan,
+                              container: request.container,
+                              modified: plan.modified)
         } catch {
-            session?.refuseFile(id: request.id, error: error)
+            session.refuseFile(id: request.id, error: error)
         }
     }
 
@@ -537,7 +657,7 @@ final class GuestListener: ObservableObject {
     /// prompting: this side is not necessarily attended either, and the
     /// share is what the human already agreed the other machine may
     /// write into.
-    fileprivate func acceptOffer(_ offer: FileOffer) {
+    fileprivate func acceptOffer(_ offer: FileOffer, on session: Session) {
         do {
             let url = try share.destination(
                 name: offer.name, path: offer.path,
@@ -545,9 +665,9 @@ final class GuestListener: ObservableObject {
                 overwrite: offer.overwrite ?? false)
             note("#\(offer.id) accepting \(offer.name), "
                  + "\(offer.bytes) bytes, into the share", area: "files")
-            try session?.beginReceiving(offer: offer, to: url)
+            try session.beginReceiving(offer: offer, to: url)
         } catch {
-            session?.refuseFile(id: offer.id, error: error)
+            session.refuseFile(id: offer.id, error: error)
         }
     }
 
@@ -560,7 +680,8 @@ final class GuestListener: ObservableObject {
     /// them: one file.result, success or not, because the asker is
     /// holding an undo stack and a silent failure leaves it believing
     /// something it can reverse.
-    fileprivate func serveChange(_ change: ChangeRequest) {
+    fileprivate func serveChange(_ change: ChangeRequest,
+                                on session: Session) {
         do {
             switch change {
             case .move(let request):
@@ -570,7 +691,7 @@ final class GuestListener: ObservableObject {
                                                 ?? false)
                 note("#\(request.id) moved \(request.path) to \(landed)",
                      area: "files")
-                session?.send(.fileResult(FileResult(
+                session.send(.fileResult(FileResult(
                     id: request.id, ok: true, path: landed,
                     trashedAs: nil, code: nil, reason: nil)))
             case .trash(let request):
@@ -579,7 +700,7 @@ final class GuestListener: ObservableObject {
                    Trash is the line most worth having later. */
                 note("#\(request.id) trashed \(request.path), it is in the "
                      + "Trash as \(landed)", area: "files")
-                session?.send(.fileResult(FileResult(
+                session.send(.fileResult(FileResult(
                     id: request.id, ok: true, path: request.path,
                     trashedAs: landed, code: nil, reason: nil)))
             case .restore(let request):
@@ -587,14 +708,14 @@ final class GuestListener: ObservableObject {
                                                to: request.toPath)
                 note("#\(request.id) restored \(request.trashedAs) to "
                      + "\(landed)", area: "files")
-                session?.send(.fileResult(FileResult(
+                session.send(.fileResult(FileResult(
                     id: request.id, ok: true, path: landed,
                     trashedAs: nil, code: nil, reason: nil)))
             case .mkdir(let request):
                 let landed = try share.makeFolder(path: request.path)
                 note("#\(request.id) made the folder \(landed)",
                      area: "files")
-                session?.send(.fileResult(FileResult(
+                session.send(.fileResult(FileResult(
                     id: request.id, ok: true, path: landed,
                     trashedAs: nil, code: nil, reason: nil)))
             }
@@ -602,7 +723,7 @@ final class GuestListener: ObservableObject {
             let fault = HostShare.WireFault(error)
             note("#\(change.id) change refused: \(fault.code) "
                  + "(\(fault.reason))", area: "files", level: .warn)
-            session?.send(.fileResult(FileResult(
+            session.send(.fileResult(FileResult(
                 id: change.id, ok: false, path: nil, trashedAs: nil,
                 code: fault.code, reason: fault.reason)))
         }
@@ -622,14 +743,12 @@ final class GuestListener: ObservableObject {
         }
     }
 
-    fileprivate func noteReceived(_ url: URL) {
+    fileprivate func noteReceived(_ url: URL, from session: Session) {
         let bytes = (try? FileManager.default.attributesOfItem(
             atPath: url.path)[.size] as? Int) ?? nil
-        let who: String
-        if case .connected(let name) = state { who = name } else {
-            who = "the other Mac"
-        }
-        announceReceivedFile?(who, url, bytes ?? 0)
+        // The sender, not the active guest: a notification naming the
+        // wrong Mac is worse than one naming none.
+        announceReceivedFile?(session.guestName, url, bytes ?? 0)
     }
 
     // MARK: - Files
@@ -1385,10 +1504,15 @@ final class GuestListener: ObservableObject {
 
     /// The guest asked for a stream: same bracket, host-owned. Accept
     /// unless the lane is taken.
-    fileprivate func guestRequestedStream(_ request: StreamRequest) {
-        guard activeStreamId == nil else {
-            session?.sendError(code: "stream-busy",
-                               message: "a stream or transfer is active")
+    fileprivate func guestRequestedStream(_ request: StreamRequest,
+                                          from session: Session) {
+        // The stream lane is host-wide, so a guest that is not the active
+        // one is refused here rather than at the lane: accepting would
+        // point the bracket at a different connection than the frames.
+        // The refusal goes to the ASKER, whichever it was.
+        guard activeStreamId == nil, session === self.session else {
+            session.sendError(code: "stream-busy",
+                              message: "a stream or transfer is active")
             return
         }
         startStream(depth: request.depth)
@@ -1536,10 +1660,6 @@ final class GuestListener: ObservableObject {
     }
 
     private func failAllPending(_ reason: String) {
-        // The next guest is not this one. A capability record that
-        // outlived its connection would be the same stale-by-inheritance
-        // mistake as reading abilities off a hello name.
-        familyObservations = [:]
         let commands = pendingCommands
         pendingCommands = [:]
         for (id, completion) in commands {
@@ -1609,72 +1729,143 @@ final class GuestListener: ObservableObject {
         }
     }
 
+    /// Names the connection a callback arrived on.
+    ///
+    /// A Session reaches its owner only through the closures it is built
+    /// with — and those closures are built BEFORE the Session exists, so
+    /// until now they could not say which connection they belonged to and
+    /// reached for `session`, meaning "the active one". With one guest
+    /// those were the same object and the difference was invisible. With
+    /// two they are not, and the difference is the whole slice: an answer
+    /// must go back down the socket that asked, and an answer to a
+    /// request we never sent must not settle another guest's waiter.
+    private final class SessionRef { weak var session: Session? }
+
     private func accept(_ connection: NWConnection) {
+        let origin = SessionRef()
+        /// True when this connection is the one the request-shaped API is
+        /// driving — so its answers are the ones our waiters are owed.
+        func fromActive() -> Bool {
+            origin.session != nil && origin.session === session
+        }
         let newSession = Session(
             connection: connection, identity: identity, timing: timing,
             pacing: pacing,
-            isBusy: { [weak self] in
-                guard let session = self?.session else { return nil }
-                return session.guestName
+            admit: { [weak self] hello in
+                guard let self else { return "the host is shutting down" }
+                let key = GuestKey(hello: hello)
+                if let already = self.sessions[key] {
+                    /* The genuine collision, and the only one left: this
+                       machine is already connected. Same wording as the
+                       single-guest refusal, because from the guest's side
+                       it means the same thing. */
+                    return "busy: \(already.guestName)"
+                }
+                if self.sessions.count >= self.maxGuests {
+                    return "too many guests connected "
+                        + "(\(self.maxGuests))"
+                }
+                return nil
             },
             onActive: { [weak self] activated in
-                guard let self else { return }
+                guard let self, let key = activated.guestKey else { return }
                 self.pending.removeAll { $0 === activated }
-                self.session = activated
-                self.state = .connected(guestName: activated.guestName)
+                self.sessions[key] = activated
+                /* First in is the one being driven; a later arrival is
+                   served but does not steal the console out from under
+                   whoever is using it. */
+                if self.activeKey == nil { self.activeKey = key }
+                self.publishActive()
             },
             onLog: { [weak self] text, area, level in
                 self?.note(text, area: area, level: level)
             },
-            onHealth: { [weak self] health in self?.health = health },
+            /* Health is per guest and kept for all of them — a guest
+               nobody is driving is still connected, still pinging, and
+               still worth being able to look at. Only the active one is
+               published as `health`. */
+            onHealth: { [weak self] health in
+                guard let self else { return }
+                if let key = origin.session?.guestKey {
+                    self.healthByGuest[key] = health
+                    guard key == self.activeKey else { return }
+                }
+                self.health = health
+            },
+            /* Everything from here to onStreamRequest is an ANSWER to a
+               request, and the requests only ever go to the active
+               session. An answer from another connection is therefore
+               either a late frame from a guest we switched away from or a
+               confused guest answering an id it was never given; both
+               would settle a waiter that belongs to somebody else, so
+               both are dropped. */
             onCommandResult: { [weak self] result in
+                guard fromActive() else { return }
                 self?.resolveCommand(result)
             },
             onExecOutput: { [weak self] output in
+                guard fromActive() else { return }
                 self?.resolveExecOutput(output)
             },
             onExecResult: { [weak self] result in
+                guard fromActive() else { return }
                 self?.resolveExecResult(result)
             },
             onGuestError: { [weak self] problem in
+                guard fromActive() else { return }
                 self?.recordGuestError(problem)
             },
             onCensusReport: { [weak self] report in
+                guard fromActive() else { return }
                 self?.resolveCensus(report)
             },
             onCapture: { [weak self] result in
+                guard fromActive() else { return }
                 self?.deliverCapture(result)
             },
             onCaptureProgress: { [weak self] progress in
+                guard fromActive() else { return }
                 self?.noteCaptureProgress(progress)
             },
+            /* A push is not an answer: a guest sends it unasked, and a
+               background guest pushing a screenshot is a thing it is
+               entitled to do. It arrives without saying which Mac it came
+               from, which is a gap the Screenshots module will have to
+               close when it grows a guest column. */
             onPushedCapture: { [weak self] delivery in
                 self?.captureProgress = nil
                 self?.pushedCaptures.send(delivery)
             },
             onStreamFrame: { [weak self] delivery in
+                guard fromActive() else { return }
                 self?.streamFrames.send(delivery)
             },
             onStreamStopped: { [weak self] stopped in
+                guard fromActive() else { return }
                 self?.streamEnded(stopped)
             },
             onStreamRequest: { [weak self] request in
-                self?.guestRequestedStream(request)
+                guard let self, let asker = origin.session else { return }
+                self.guestRequestedStream(request, from: asker)
             },
             onFileListing: { [weak self] listing in
+                guard fromActive() else { return }
                 self?.resolveListing(listing)
             },
             onFileResult: { [weak self] result in
+                guard fromActive() else { return }
                 self?.resolveChange(result)
             },
             onFileRefuse: { [weak self] refuse in
+                guard fromActive() else { return }
                 self?.failFile(refuse)
             },
             onFileDelivery: { [weak self] result in
+                guard fromActive() else { return }
                 self?.deliverFile(result)
             },
             onFileDone: { [weak self] done in
-                guard let self else { return }
+                guard let self, fromActive() else { return }
                 // Correlate: a late done from a transfer that already
                 // timed out must not settle the NEXT one, which is how a
                 // failed 128 KB put made a 512 KB put look successful.
@@ -1732,7 +1923,8 @@ final class GuestListener: ObservableObject {
                 }
             },
             onFileProgress: { [weak self] progress in
-                guard let self, self.putId == progress.id else { return }
+                guard let self, fromActive(),
+                      self.putId == progress.id else { return }
                 // The far side has spoken: stop believing our own send
                 // counter for the rest of this put, for the bar and for
                 // the watchdog alike.
@@ -1752,35 +1944,48 @@ final class GuestListener: ObservableObject {
                 self.touchWatchdog(progress.id)
             },
             onFileAccept: { [weak self] accept in
-                guard let self, self.putId == accept.id else { return }
+                guard let self, fromActive(),
+                      self.putId == accept.id else { return }
                 self.putAccepted = accept
             },
+            /* Serving OUR share is the half every connected guest gets
+               whether or not it is the active one — it is the guest's own
+               request, not an answer to ours — and each reply goes back
+               down the connection that asked. */
             onServeList: { [weak self] request in
-                self?.serveList(request)
+                guard let self, let asker = origin.session else { return }
+                self.serveList(request, on: asker)
             },
             onServeGet: { [weak self] request in
-                self?.serveGet(request)
+                guard let self, let asker = origin.session else { return }
+                self.serveGet(request, on: asker)
             },
             onAcceptOffer: { [weak self] offer in
-                self?.acceptOffer(offer)
+                guard let self, let asker = origin.session else { return }
+                self.acceptOffer(offer, on: asker)
             },
             onServeChange: { [weak self] change in
-                self?.serveChange(change)
+                guard let self, let asker = origin.session else { return }
+                self.serveChange(change, on: asker)
             },
             onProcessListing: { [weak self] listing in
+                guard fromActive() else { return }
                 self?.resolveProcessListing(listing)
             },
             onSoftwareListing: { [weak self] listing in
+                guard fromActive() else { return }
                 self?.resolveSoftwareListing(listing)
             },
             onProcessResult: { [weak self] result in
+                guard fromActive() else { return }
                 self?.resolveProcessResult(result)
             },
             onReceived: { [weak self] url in
-                self?.noteReceived(url)
+                guard let self, let sender = origin.session else { return }
+                self.noteReceived(url, from: sender)
             },
             onOutboundProgress: { [weak self] sent, total in
-                guard let self else { return }
+                guard let self, fromActive() else { return }
                 // Bytes accepted by the local socket, which is not the
                 // same claim as bytes received — on this link it runs
                 // minutes ahead. Used only until the guest reports for
@@ -1791,7 +1996,7 @@ final class GuestListener: ObservableObject {
                 if let id = self.putId { self.touchWatchdog(id) }
             },
             onOutboundFailed: { [weak self] message in
-                guard let self else { return }
+                guard let self, fromActive() else { return }
                 self.settlePut(.failure(self.putFailure(
                     code: "io-error",
                     message: message,
@@ -1800,16 +2005,36 @@ final class GuestListener: ObservableObject {
             onClosed: { [weak self] closedSession, reason in
                 guard let self else { return }
                 self.pending.removeAll { $0 === closedSession }
-                guard self.session === closedSession else { return }
-                self.streamSessionClosed()
-                self.session = nil
-                self.health = nil
-                self.failAllPending(reason)
+                guard let key = closedSession.guestKey,
+                      self.sessions[key] === closedSession else { return }
+                self.sessions[key] = nil
+                self.healthByGuest[key] = nil
+                // The next guest under this name is not this one. A
+                // capability record that outlived its connection would be
+                // the same stale-by-inheritance mistake as reading
+                // abilities off a hello name.
+                self.familyObservationsByGuest[key] = nil
                 self.lastDisconnect = reason
-                if self.listener != nil {
-                    self.state = .listening(port: self.boundPort ?? 0)
+                guard self.activeKey == key else {
+                    // A background guest left. Nothing was waiting on it,
+                    // and the console must not flicker.
+                    self.publishActive()
+                    return
                 }
+                self.streamSessionClosed()
+                self.failAllPending(reason)
+                /* Promote another connected guest rather than reporting
+                   "no Mac is connected" while one is sitting right there.
+                   Oldest first, so the choice is stable and not whichever
+                   the dictionary happened to yield. */
+                self.activeKey = self.sessions.min {
+                    (self.healthByGuest[$0.key]?.connectedAt ?? .distantFuture)
+                        < (self.healthByGuest[$1.key]?.connectedAt
+                           ?? .distantFuture)
+                }?.key
+                self.publishActive()
             })
+        origin.session = newSession
         pending.append(newSession)
         newSession.begin()
     }

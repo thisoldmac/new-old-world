@@ -170,7 +170,11 @@ final class GuestListenerTests: XCTestCase {
         if case .connected = listener.state { XCTFail("must not connect") }
     }
 
-    func testSecondGuestIsRefusedBusyAndFirstSurvives() async throws {
+    /// The refusal that survives multi-guest: the SAME machine dialling
+    /// twice. It reads identically on the wire to the old one-guest-only
+    /// refusal, and means something narrower — that Mac is already here.
+    func testTheSameGuestDiallingTwiceIsRefusedBusyAndFirstSurvives()
+        async throws {
         let first = FakeGuest(port: listener.boundPort!)
         first.start()
         try first.send(guestHello(name: "Quadra 950"))
@@ -180,7 +184,9 @@ final class GuestListenerTests: XCTestCase {
 
         let second = FakeGuest(port: listener.boundPort!)
         second.start()
-        try second.send(guestHello(name: "PowerBook 1400"))
+        // Different spelling, same machine: identity folds case and
+        // surrounding space, so this is a collision and not a new guest.
+        try second.send(guestHello(name: " quadra 950 "))
         try await waitUntil("busy refusal") { !second.received.isEmpty }
         guard case .refuse(let refuse) = second.received[0] else {
             return XCTFail("expected refuse, got \(second.received)")
@@ -809,5 +815,248 @@ final class GuestCommandTests: XCTestCase {
         listener.runCommand("gestalt") { received = $0 }
         XCTAssertEqual(received?.ok, false)
         XCTAssertEqual(received?.error?.code, "not-connected")
+    }
+}
+
+/// Two machines on one port.
+///
+/// The host used to serve exactly one guest and refuse the next with an
+/// explanation. It now tells them apart by the identity in their hello and
+/// serves both; the refusal survives for the collision it was always
+/// really about — the same Mac dialling twice.
+@MainActor
+final class MultiGuestListenerTests: XCTestCase {
+    private var listener: GuestListener!
+
+    private struct WaitTimeout: Error { let what: String }
+
+    private func waitUntil(_ what: String, timeout: TimeInterval = 5,
+                           _ condition: @escaping () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() {
+            guard Date() < deadline else {
+                XCTFail("timed out waiting for \(what)")
+                throw WaitTimeout(what: what)
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+    }
+
+    /// Something that must NOT happen has no edge to wait for, so these
+    /// wait a fixed slice and then assert. Long enough that the thing
+    /// under test would have happened on loopback if it were going to.
+    private func settle() async throws {
+        try await Task.sleep(nanoseconds: 300_000_000)
+    }
+
+    private func startListener(maxGuests: Int = 4) async throws {
+        listener = GuestListener(
+            identity: .init(version: "0.1-test", name: "Test Host"),
+            timing: .init(idleTimeout: 60), maxGuests: maxGuests)
+        listener.start(port: 0)
+        try await waitUntil("listening") {
+            if case .listening = self.listener.state { return true }
+            return false
+        }
+    }
+
+    override func setUp() async throws {
+        try await startListener()
+    }
+
+    override func tearDown() async throws {
+        listener?.stop()
+        listener = nil
+    }
+
+    @discardableResult
+    private func dial(_ name: String) async throws -> FakeGuest {
+        let guest = FakeGuest(port: listener.boundPort!)
+        guest.start()
+        try guest.send(.hello(Hello(
+            contract: Contract.revision, side: "guest", version: "0.1.0",
+            name: name, os: "9.1", chunk: 8192)))
+        try await waitUntil("\(name) answered") { !guest.received.isEmpty }
+        return guest
+    }
+
+    private func connect(_ name: String) async throws -> FakeGuest {
+        let guest = try await dial(name)
+        try await waitUntil("\(name) connected") {
+            self.listener.guests.contains { $0.name == name }
+        }
+        return guest
+    }
+
+    private func refusal(_ guest: FakeGuest) -> String? {
+        for message in guest.received {
+            if case .refuse(let refuse) = message { return refuse.reason }
+        }
+        return nil
+    }
+
+    private func answered(_ guest: FakeGuest, id: Int) -> Bool {
+        guest.received.contains { message in
+            switch message {
+            case .fileListing(let listing): return listing.id == id
+            case .fileRefuse(let refuse): return refuse.id == id
+            default: return false
+            }
+        }
+    }
+
+    private func commandRequestID(_ guest: FakeGuest) -> Int? {
+        for message in guest.received {
+            if case .commandRequest(let request) = message {
+                return request.id
+            }
+        }
+        return nil
+    }
+
+    func testTwoDifferentMachinesAreBothServedOnOnePort() async throws {
+        let powerPC = try await connect("PowerBook 1400c")
+        let m68k = try await connect("PowerBook 180c")
+
+        XCTAssertNil(refusal(m68k),
+                     "the second machine is a guest, not a collision")
+        XCTAssertEqual(listener.guests.map(\.name),
+                       ["PowerBook 1400c", "PowerBook 180c"],
+                       "oldest first, so the roster does not reshuffle")
+        XCTAssertEqual(listener.guests.filter(\.isActive).map(\.name),
+                       ["PowerBook 1400c"],
+                       "exactly one is being driven, and it is the first in")
+        XCTAssertEqual(listener.state,
+                       .connected(guestName: "PowerBook 1400c"))
+
+        // Both are live: each answers its own ping.
+        try powerPC.send(.ping(id: 1))
+        try m68k.send(.ping(id: 2))
+        try await waitUntil("both pongs") {
+            powerPC.received.contains(.pong(id: 1))
+                && m68k.received.contains(.pong(id: 2))
+        }
+    }
+
+    func testAGuestBeyondTheCapIsRefusedWithTheNumber() async throws {
+        listener.stop()
+        try await startListener(maxGuests: 2)
+        _ = try await connect("Quadra 950")
+        _ = try await connect("PowerBook 180c")
+
+        let third = try await dial("Power Mac G3")
+        XCTAssertEqual(refusal(third), "too many guests connected (2)",
+                       "says the bound, so it is not read as a collision")
+        XCTAssertEqual(listener.guests.count, 2)
+    }
+
+    /// The defect this slice exists to prevent: with one guest, serving
+    /// our own share replied on `session` — which meant "the active
+    /// guest", not "the one that asked". Accepting a second guest without
+    /// this makes the host answer the wrong socket.
+    func testTheBackgroundGuestsShareRequestIsAnsweredOnItsOwnSocket()
+        async throws {
+        let active = try await connect("PowerBook 1400c")
+        let background = try await connect("PowerBook 180c")
+
+        try background.send(.fileList(FileList(id: 77, path: "",
+                                               cursor: nil)))
+        // Either a listing or a refusal — which one depends on this Mac's
+        // share, and the point is WHERE the answer went, not what it said.
+        try await waitUntil("the asker was answered") {
+            self.answered(background, id: 77)
+        }
+        XCTAssertFalse(answered(active, id: 77),
+                       "the active guest never asked and must not be told")
+    }
+
+    /// Ids are drawn from one host-side sequence, so a guest can name a
+    /// request that was sent to somebody else. Only the connection the
+    /// request went out on may settle it.
+    func testAnAnswerFromTheBackgroundGuestDoesNotSettleTheActivesCommand()
+        async throws {
+        let active = try await connect("PowerBook 1400c")
+        let background = try await connect("PowerBook 180c")
+
+        var settled: CommandResult?
+        listener.runCommand("help") { settled = $0 }
+        try await waitUntil("the request reached the active guest") {
+            self.commandRequestID(active) != nil
+        }
+        let id = try XCTUnwrap(commandRequestID(active))
+        XCTAssertNil(commandRequestID(background),
+                     "a request goes to the driven guest only")
+
+        try background.send(.commandResult(CommandResult(
+            id: id, ok: true, output: nil, error: nil)))
+        try await settle()
+        XCTAssertNil(settled,
+                     "the wrong Mac answering must not settle the waiter")
+
+        try active.send(.commandResult(CommandResult(
+            id: id, ok: true, output: nil, error: nil)))
+        try await waitUntil("the right Mac settles it") { settled != nil }
+    }
+
+    func testTheActiveGuestLeavingPromotesTheOther() async throws {
+        let active = try await connect("PowerBook 1400c")
+        _ = try await connect("PowerBook 180c")
+
+        try active.send(.bye(Bye(code: .normal, reason: nil)))
+        try await waitUntil("promotion") {
+            self.listener.state == .connected(guestName: "PowerBook 180c")
+        }
+        XCTAssertEqual(listener.guests.map(\.name), ["PowerBook 180c"])
+        XCTAssertEqual(listener.lastDisconnect,
+                       "PowerBook 1400c disconnected")
+        XCTAssertEqual(listener.health?.guestName, "PowerBook 180c",
+                       "health follows the guest being driven")
+    }
+
+    func testABackgroundGuestLeavingDoesNotDisturbTheConsole()
+        async throws {
+        _ = try await connect("PowerBook 1400c")
+        let background = try await connect("PowerBook 180c")
+
+        try background.send(.bye(Bye(code: .normal, reason: nil)))
+        try await waitUntil("the roster shrinks") {
+            self.listener.guests.count == 1
+        }
+        XCTAssertEqual(listener.state,
+                       .connected(guestName: "PowerBook 1400c"),
+                       "the guest being driven is untouched")
+        XCTAssertEqual(listener.health?.guestName, "PowerBook 1400c")
+    }
+
+    func testSelectGuestPointsTheCommandPlaneAtTheOtherMac() async throws {
+        let powerPC = try await connect("PowerBook 1400c")
+        let m68k = try await connect("PowerBook 180c")
+
+        XCTAssertTrue(listener.selectGuest(GuestKey(name: "PowerBook 180c")))
+        XCTAssertEqual(listener.state,
+                       .connected(guestName: "PowerBook 180c"))
+        XCTAssertEqual(listener.guests.filter(\.isActive).map(\.name),
+                       ["PowerBook 180c"])
+
+        listener.runCommand("help") { _ in }
+        try await waitUntil("the 68K guest is asked") {
+            self.commandRequestID(m68k) != nil
+        }
+        XCTAssertNil(commandRequestID(powerPC),
+                     "the machine we switched away from is left alone")
+    }
+
+    /// Switching away settles what was in flight rather than leaving it
+    /// to be answered by whichever Mac speaks next.
+    func testSwitchingAwayFailsTheOutstandingRequest() async throws {
+        _ = try await connect("PowerBook 1400c")
+        _ = try await connect("PowerBook 180c")
+
+        var settled: CommandResult?
+        listener.runCommand("help") { settled = $0 }
+        listener.selectGuest(GuestKey(name: "PowerBook 180c"))
+        try await waitUntil("the waiter is answered") { settled != nil }
+        XCTAssertEqual(settled?.ok, false)
+        XCTAssertEqual(settled?.error?.code, "disconnected")
     }
 }

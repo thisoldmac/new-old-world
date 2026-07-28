@@ -37,9 +37,21 @@
 #   The handshake is per-connection: a reconnect re-hellos.
 # - `contract` is a single integer revision. Unequal revisions => refuse.
 #   Breaking changes bump it; additive optional fields do not.
-# - The host serves ONE guest at a time (v1): a second dial is refused with
-#   reason "busy: <connected guest name>". Host internals stay
-#   session-shaped so multi-guest later is a UI decision, not a rework.
+# - The host serves SEVERAL guests concurrently, told apart by the identity
+#   in their `hello` — `name`, compared trimmed and case-folded. A dial from
+#   a machine that is not already connected is accepted and served alongside
+#   the others. A dial repeating the name of a LIVE session is refused with
+#   reason "busy: <connected guest name>": the same refusal as before, now
+#   meaning "that machine is already here" rather than "some machine is".
+#   A host may also bound how many it serves and refuse beyond it, with a
+#   reason saying so.
+#   This is not a guest-visible change and needs no revision bump: the wire
+#   is per-connection, nothing in it changed shape, and a guest cannot tell
+#   — and must not try to infer — how many others are connected.
+#   IDENTITY IS THE NAME, which is as strong as the names are distinct. Two
+#   machines calling themselves the same thing are one guest to this rule,
+#   and the second is refused busy. A stable per-machine id, if that ever
+#   bites, is a new optional `hello` field and a change to both halves.
 # - Control messages that expect an answer carry `id`; answers echo it.
 # - Bulk transfers are announced on control (`capture.begin`), stream on the
 #   bulk channel in chunks (default 8192 bytes, negotiable in hello), and

@@ -9,6 +9,60 @@ wrong thing) versus **unverified** (it may well be right, but no one has
 watched it work on the PowerBook). Unverified is not a lesser problem —
 several of tonight's bugs lived in code that looked obviously correct.
 
+## Two guests on one port: the wire half only (2026-07-28)
+
+The host now serves several guests at once, told apart by the identity
+in their `hello` (the name, trimmed and case-folded). Both PowerBooks
+can dial one port. **Tested, not metal-verified** — neither machine has
+been near this, and the emulator has not either.
+
+One guest is ACTIVE: every request-shaped call (`runCommand`, `exec`,
+`listFiles`, `requestCapture`, the modules, the agent projection) drives
+that one, and `GuestListener.selectGuest` points it at another. What a
+guest gets regardless is the half it initiates — its pings, its pushes,
+and our share served back down its own socket.
+
+### Unfinished, and why the UI is still single-guest
+
+`selectGuest` is deliberately not wired to anything. The modules cache
+per CONNECTION and clear only when the connection DROPS, so switching
+would show one Mac's rows under the other's name:
+
+- `ProcessesModel` and `SoftwareModel` — `connectionChanged` returns
+  early while the new state is still capturable.
+- `CensusModel` — same shape.
+- `ConsoleModel` — transcript, `help` completions and the prompt name;
+  `HostAppState` calls `forgetGuest()` on disconnect only.
+- `FilesModel` — browse path and listing page.
+- `ScreenshotModel` — stream state and the capture filename's guest name.
+
+None of these is wrong today, because nothing switches. All of them
+become wrong the moment a picker exists.
+
+### Open
+
+- **Pending requests share one id space across guests.** Ids are drawn
+  from one host-side sequence so they cannot collide, and answers from a
+  non-active connection are now dropped rather than settling somebody
+  else's waiter — but the maps themselves are still flat on the listener
+  rather than per guest. A switch fails what was in flight instead of
+  keeping it.
+- **One stream, one capture, one put, host-wide.** Two guests cannot
+  stream at once; the second is refused `stream-busy`. Honest, but a
+  limit nobody chose for its own sake.
+- **A pushed capture does not say which Mac sent it.** It arrives on
+  `pushedCaptures` with no identity, so the Screenshots module would
+  attribute a background guest's push to the active one.
+- **The agent/MCP projection is single-guest throughout** — one
+  `connectedSessionID()`, one capability ledger, one process-reference
+  scope. No MCP tool takes a guest argument. Whether it should, or
+  should follow an explicit `guest.select`, is undecided.
+- **Identity is only as strong as the names are distinct.** Two Macs
+  calling themselves the same thing are one guest to this rule and the
+  second is refused busy. The fix, if it ever bites, is a new optional
+  `hello` field carrying a stable per-machine id — a both-halves change,
+  not made.
+
 ## The README shows neither interface (2026-07-28)
 
 **Missing, not broken.** There are no screenshots of either half, in a
