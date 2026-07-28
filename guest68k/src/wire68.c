@@ -1268,6 +1268,27 @@ static void exec_flush(ExecSink *s)
         return;
     }
     s->seq++;
+
+    /* DRAIN, or the queue eats the reply. Found on the q800 emulator
+     * 2026-07-28, and it presented as `help` never coming back at all
+     * while `frobnicate` answered instantly - the signature of "enough
+     * output to fill the queue" rather than of anything wrong with exec.
+     *
+     * kWireOutQueueDepth is FOUR. `help` renders about ten lines, so the
+     * frames past the fourth were dropped, and the one dropped last was
+     * the terminal exec.result - so the host waited out its full 60s
+     * watchdog for a message the guest had built correctly and thrown
+     * away. Every other producer on this wire enqueues one or two frames
+     * and returns to the event loop; exec is the first that emits an
+     * unbounded number inside a single dispatch, so it is the first that
+     * has to pay for its own drain.
+     *
+     * flush_outbound, NOT wire_idle: this pushes queued bytes toward
+     * MacTCP and reads nothing, so it cannot re-enter the dispatch that
+     * is currently on the stack. That distinction is the whole reason
+     * this is safe to call from here - see the NULL pump argument in
+     * handle_exec_request. */
+    flush_outbound();
 }
 
 /* n68_exec.h's emitter: text plus the CR the console's own con_out appends,

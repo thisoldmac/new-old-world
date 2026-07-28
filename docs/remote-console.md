@@ -1,7 +1,11 @@
 # The remote console
 
-**Status:** implemented on both guests and the host, 2026-07-28. Emulator and
-metal gates pending — see [the checklist](#the-metal-checklist) at the foot.
+**Status:** implemented on both guests and the host, 2026-07-28.
+**Emulator-verified** the same day — NOW-68K on the q800, 8/8 in
+`MetalExecTests`, which found two real bugs (below). **Metal pending**; see
+[the checklist](#the-metal-checklist) at the foot. Emulator-verified is not
+metal-verified: a 68040 under 8.1 with 128 MB is not a 68030 under 7.1 with
+4 MB, and nothing about timing or memory pressure carries over.
 
 This describes a shape, not just NOW's implementation of it. It is meant to be
 the standard for any TimBotTu host console. If you are writing a second one,
@@ -188,14 +192,59 @@ is **conforming, not extending**. The contract's silence is load-bearing. Use
 A/UX as a paper stress test when changing this: if answering "what would it
 plug into" requires changing the contract, the change has leaked.
 
+## What the emulator caught
+
+Both were invisible to every unit test, because both are about the *other*
+machine. Recorded because they are the two failure modes a third console
+should expect to hit.
+
+**1. The outbound queue ate the reply.** `kWireOutQueueDepth` on NOW-68K is
+**four**. Every other producer on that wire enqueues one or two frames and
+returns to the event loop; exec is the first that emits an *unbounded* number
+inside a single dispatch. `help` renders about ten lines, so the frames past
+the fourth were dropped — and the one dropped last was the terminal
+`exec.result`, so the host waited out its whole 60 s watchdog for a message
+the guest had built correctly and thrown away.
+
+It presented as *`help` never comes back while `frobnicate` answers
+instantly*, which reads like exec being broken for real commands and is
+actually "enough output to fill the queue". The fix is that exec drains after
+each frame — `flush_outbound()` on 68K, `service_ctl_tx()` on PowerPC, both of
+which push bytes and **read nothing**, so neither can re-enter the dispatch on
+the stack. Anything that emits more than a couple of frames per dispatch needs
+this.
+
+**2. Moving a face lost a capability.** `help quit` worked from the host
+before, via `command.request` → `run_help`. Once the console plane routed
+every typed line through `n68_exec.c` instead, `help quit` reached the
+console's `show_help`, which had never taken a topic and printed the whole
+list. Nothing failed; the host just quietly stopped being able to ask about
+one command.
+
+This is the exact failure `command-parity.md` exists to prevent, arriving
+through the door built to close it. The lesson generalises: **moving a face
+onto one implementation is only safe if the implementation you move onto
+answers everything the one you left behind did.** Check the arms, not just the
+wiring.
+
 ## The metal checklist
 
 Nothing below has run on hardware. Order matters: it climbs from "cannot wedge
 anything" to the one path that could, and the emulator gate comes first.
 
-**Before the machine.** Emulator, both guests: `help`, `ls`, `ps`, `gestalt`
-via the host console, each byte-compared against the same word typed at the
-guest's own console window. They must be identical — that is the whole claim.
+**Before the machine.** Done for NOW-68K on the q800 (2026-07-28):
+
+    scripts/q800-68k                                   # boot; it dials out
+    NOW_METAL=1 swift test --filter MetalExecTests     # in another shell
+
+8/8. **Not yet run against the PowerPC guest** — same command, point it at a
+mac99 image; `MetalExecTests` skips the vprobe arm on a guest that does not
+serve it, so it is the same suite either way.
+
+Still to do by hand on either: byte-compare `help`/`ls`/`ps` against the same
+word typed at the guest's OWN console window. The automated suite proves the
+text arrives and is the guest's; only a human at both screens proves the two
+faces are identical, which is the whole claim.
 
 1. **`help`, `ls`, `ps`** — the ordinary path. Confirm the host shows what the
    guest's own console shows, including alignment.

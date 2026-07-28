@@ -57,10 +57,60 @@ static void out_built(N68ExecEmit emit, void *ctx, char *line, long cap,
 
 /* ---- the verbs this file renders itself ------------------------------ */
 
-static void show_help(N68ExecEmit emit, void *ctx)
+/* `topic` may be NULL or "" for the whole list.
+ *
+ * THE TOPIC ARM EXISTS BECAUSE THE HOST CONSOLE LOST IT. commands68.c's
+ * run_help has always answered `help quit` over the wire, and the host
+ * console used to reach that by sending a command.request. Once the console
+ * plane started routing every typed line through THIS file instead, `help
+ * quit` began arriving here - where the old console-only show_help ignored
+ * its argument and printed the whole list. Nothing failed; the host just
+ * quietly stopped being able to ask about one command.
+ *
+ * Caught by the q800 emulator on 2026-07-28 (MetalExecTests ::
+ * testTheWholeLineArrivesUnsplit, which noticed `help` and `help help`
+ * returning identical bytes). Worth the paragraph because it is the exact
+ * failure mode docs/command-parity.md is about, arriving through the door
+ * that was built to close it: moving a face onto one implementation is only
+ * safe if the implementation you move onto answers everything the one you
+ * left behind did.
+ *
+ * The rows come from the same k_docs table run_help reads, so the two faces
+ * cannot disagree about what a command is for. */
+static void show_help(N68ExecEmit emit, void *ctx, const char *topic)
 {
     const N68CommandDoc *docs = now68k_commands_docs();
     int i;
+
+    if (topic != NULL && topic[0] != '\0') {
+        for (i = 0; docs[i].name != NULL; ++i) {
+            if (strcmp(docs[i].name, topic) == 0) {
+                char line[80];
+                long pos = 0;
+
+                (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                            docs[i].name);
+                (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                            ": ");
+                (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                            docs[i].summary);
+                out_built(emit, ctx, line, (long)sizeof line, pos);
+
+                pos = 0;
+                (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                            "Usage: ");
+                (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
+                                            docs[i].usage);
+                out_built(emit, ctx, line, (long)sizeof line, pos);
+                return;
+            }
+        }
+        /* Same words run_help answers with, so a person reading the console
+         * and a tool reading the wire are told the same thing. */
+        out(emit, ctx, "! unknown-command: that is not a command this Mac "
+                       "knows");
+        return;
+    }
 
     out(emit, ctx, "NOW-68K console. Commands run on THIS machine.");
 
@@ -321,7 +371,7 @@ int now68k_exec_line(const char *line, N68ExecEmit emit, void *ctx,
     }
 
     if (strcmp(name, "help") == 0 || strcmp(name, "?") == 0) {
-        show_help(emit, ctx);
+        show_help(emit, ctx, target);
         return 1;
     }
     if (strcmp(name, "ps") == 0) {

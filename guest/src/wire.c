@@ -2976,6 +2976,27 @@ static void exec_flush(void)
         return;
     }
     ++g_exec.seq;
+
+    /* DRAIN, or the queue eats the reply. Found on the q800 emulator
+       2026-07-28 against the 68K guest, whose queue is four slots deep:
+       `help` renders about ten lines, the frames past the fourth were
+       dropped, and the one dropped last was the terminal exec.result - so
+       the host waited out its whole watchdog for a message the guest had
+       built correctly and thrown away. `frobnicate` answered instantly the
+       entire time, which is what made it look like exec worked.
+
+       This guest has eight slots rather than four and a 512-byte chunk
+       rather than 150, so it takes a much longer command to reach - which
+       is exactly why it is fixed here too rather than left as a 68K
+       peculiarity. Every other producer on this wire enqueues one or two
+       frames and returns to the event loop; exec is the first that emits
+       an unbounded number inside a single dispatch, so it is the first
+       that has to pay for its own drain.
+
+       service_ctl_tx, NOT now_wire_pump: this pushes queued bytes toward
+       Open Transport and READS nothing, so it cannot re-enter the dispatch
+       currently on the stack. */
+    (void)service_ctl_tx();
 }
 
 /* console_model.h's ConsoleEmit. One line at a time from that side; frames
