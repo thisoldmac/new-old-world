@@ -1,0 +1,101 @@
+# What CI can honestly check for this project, and what it cannot.
+#
+# It CAN run the host suites, both Xcode configurations, and both guests'
+# native logic tests - the pure-C halves compiled by the host cc. That is
+# the large majority of the tree.
+#
+# It CANNOT cross-compile either guest: that needs a Retro68 toolchain
+# built from source, which is a long build and not worth it per push.
+# scripts/build-guests skips without one, so a green run here does NOT
+# mean the guests compile. Run `scripts/test-all` locally for that.
+#
+# And nothing here goes near a Macintosh. The metal suites are opt-in
+# through NOW_METAL and, once opted in, FAIL rather than skip - so they
+# must never be enabled in CI, where no PowerBook is reachable and every
+# run would be red for a reason that is not a defect.
+#
+# Green here means TESTED, in the precise sense AGENTS.md gives that word.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+# A new push to the same branch makes the previous run irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: Native guest tests
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      # Cheapest gate, so it runs as its own job: two seconds to find a
+      # broken frame codec, rather than waiting on xcodebuild to reach
+      # the same conclusion by a longer route.
+      - run: scripts/test-native
+
+  host:
+    name: Host suites and app builds
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show toolchain
+        run: swift --version && xcodebuild -version
+      # The suites AND the Xcode app target, Debug and Release. `swift
+      # test` alone is not the gate: the two build systems have diverged
+      # before, and a broken app build once passed 459 green tests for a
+      # day because nothing built the thing a human launches.
+      - run: scripts/test-host
+
+  hygiene:
+    name: No lab configuration in the tree
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # This repository was public-ready only after one desk's addresses,
+      # FTP credentials and absolute toolchain paths came out of it. This
+      # job exists so they cannot come back unnoticed: a default quietly
+      # restored to a script is exactly the change that looks harmless in
+      # review. See docs/lab-setup.md for where such values belong.
+      - name: Reject private lab values
+        run: |
+          set -eu
+          fail=0
+          # A private (RFC1918) address in code, docs or scripts. Two
+          # deliberate carve-outs, both about false positives rather than
+          # leniency:
+          #
+          #   * 10.0.2.x is the QEMU user-mode gateway - a real technical
+          #     constant that appears throughout, correctly.
+          #   * test directories hold synthetic fixtures BY CONSTRUCTION.
+          #     An IP parser has to be tested against real-shaped
+          #     addresses, and 192.168.1.1 in connfields_test.c leaks
+          #     nothing about anyone.
+          #
+          # No \b in this pattern. `git grep -E` accepts \b and then
+          # matches NOTHING, so an earlier version of this guard read
+          # green while checking nothing at all, until it was watched
+          # failing - the exact shape of defect it exists to prevent.
+          if git grep -nIE '(10\.(9[0-9]|[1-8][0-9])\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)[0-9]+\.[0-9]+' \
+               -- . ':!docs/lab-setup.md' ':!.env.lab.example' \
+               ':!*/tests/*' ':!*/Tests/*' \
+               ':!guest/src/conn_edit_dialog.c' ':!guest/src/connection_module.c' \
+               ':!guest68k/src/n68_devsettings.h'; then
+            echo "::error::a private-looking address is in the tree"
+            echo "::error::values that describe one desk belong in .env.lab"
+            fail=1
+          fi
+          if git grep -nIE '/Users/[a-z]' -- . ':!contract/asyncapi.yaml'; then
+            echo "::error::an absolute home path is in the tree"
+            fail=1
+          fi
+          if git ls-files --error-unmatch .env.lab >/dev/null 2>&1; then
+            echo "::error::.env.lab is tracked; it must stay gitignored"
+            fail=1
+          fi
+          exit $fail
