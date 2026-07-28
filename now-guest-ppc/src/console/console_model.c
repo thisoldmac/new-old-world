@@ -30,52 +30,14 @@ enum {
 static char g_lines[kMaxLines][kMaxCols];
 static short g_count = 0;
 
-/* Command history: newest last. g_hist_pos == g_hist_count means "editing a
-   fresh line"; arrow keys walk back into the saved commands. */
-enum { kHistMax = 32 };
-static char g_hist[kHistMax][kMaxCols];
-static short g_hist_count = 0;
-static short g_hist_pos = 0;
-
-void console_model_history_add(const char *cmd)
-{
-    if (cmd[0] == '\0') {
-        return;
-    }
-    if (g_hist_count > 0
-        && strcmp(g_hist[g_hist_count - 1], cmd) == 0) {
-        g_hist_pos = g_hist_count;     /* don't store repeats */
-        return;
-    }
-    if (g_hist_count == kHistMax) {
-        memmove(g_hist[0], g_hist[1], (kHistMax - 1) * (size_t)kMaxCols);
-        --g_hist_count;
-    }
-    strncpy(g_hist[g_hist_count], cmd, kMaxCols - 1);
-    g_hist[g_hist_count][kMaxCols - 1] = '\0';
-    ++g_hist_count;
-    g_hist_pos = g_hist_count;
-}
-
-const char *console_model_history_recall(short delta)
-{
-    short pos = (short)(g_hist_pos + delta);
-
-    if (g_hist_count == 0) {
-        return "";
-    }
-    if (pos < 0) {
-        pos = 0;
-    }
-    if (pos > g_hist_count) {
-        pos = g_hist_count;
-    }
-    g_hist_pos = pos;
-    if (pos == g_hist_count) {
-        return "";                    /* past the newest: empty line */
-    }
-    return g_hist[pos];
-}
+/* The command history that used to live here is gone, not moved within
+   this guest: it is guest-shared/src/console_history.c now, one file both
+   guests compile, and console_module.c holds the instance the way
+   NOW-68K's conwin.c does. This file had its own weaker copy - no saved
+   half-typed line, and "" rather than NULL at both ends of a walk, so an
+   Up past the oldest entry silently blanked the field. Two consoles
+   answering "which line should the field show now" differently was drift
+   below the faces docs/command-parity.md is usually about. */
 
 /* Where output goes. NULL is the scrollback, which is what the Workshop's
    Console page reads; anything else is an exec in flight, and the lines go

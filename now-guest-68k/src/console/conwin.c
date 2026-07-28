@@ -7,7 +7,8 @@
  *   gOut (N68ConsoleRing)   8192 + 128 + ~16     = ~8.2 KB (its own
  *                                                   documented budget,
  *                                                   n68_console_ring.h)
- *   gHistory (N68History)   2048 + 256 + ~12     = ~2.3 KB (n68_history.h)
+ *   gHistory (ConsoleHistory) 2048 + 256 + ~12   = ~2.3 KB (the shared
+ *                                                   console_history.h)
  *   misc scalars (window/TE handles, rects,
  *   scrollback offset, prompt width)             = ~ 120  bytes
  *   ---------------------------------------------------------------------
@@ -54,11 +55,11 @@
  * dispatch: this window no longer knows what a command IS, only how to
  * show text and take a key. n68_cmdresult.h stays for kN68CmdCodeCap,
  * which bounds the verb buffer `clear` is compared against. */
+#include "console_history.h"
 #include "log.h"
 #include "n68_cmdresult.h"
 #include "n68_console_ring.h"
 #include "n68_exec.h"
-#include "n68_history.h"
 #include "wire68.h"
 
 #include <Quickdraw.h>
@@ -94,10 +95,10 @@
 #define kCHintTop    248
 #define kCHintBot    262
 
-/* Must equal kN68HistoryLineCap - see n68_history.h's WHY 256 WIDE. A line
- * the field can hold but the history cannot store would come back from an
- * Up arrow silently shortened. */
-enum { kInputCap = kN68HistoryLineCap };
+/* Must equal kConsoleHistoryLineCap - see console_history.h's WHY 256
+ * WIDE. A line the field can hold but the history cannot store would come
+ * back from an Up arrow silently shortened. */
+enum { kInputCap = kConsoleHistoryLineCap };
 
 /* The two render caps that used to live here (kRenderCap, kRowsRenderCap)
  * moved to n68_exec.c with the code that renders into them. This file no
@@ -118,7 +119,7 @@ static Rect gOutRect, gInRect, gHintRect;
 static short gPromptWidth = 0;   /* pixels taken by the "> " prompt */
 
 static N68ConsoleRing gOut;
-static N68History     gHistory;
+static ConsoleHistory gHistory;
 static int            gInited = 0;
 
 /* How many lines the view is scrolled UP from the newest. 0 = following the
@@ -240,7 +241,7 @@ static void submit_line(void)
 
     input_get_text(line, (int)sizeof line);
     input_set_text("");
-    n68_history_push(&gHistory, line);
+    console_history_push(&gHistory, line);
 
     /* An empty Return is a no-op, not a blank echoed line: on a 17-row pane
      * a stray Return would push real output off the top. */
@@ -398,7 +399,7 @@ static void ensure_buffers(void)
         return;
     }
     n68_console_init(&gOut);
-    n68_history_init(&gHistory);
+    console_history_init(&gHistory);
     gInited = 1;
 
     con_out("NOW-68K console - type help.");
@@ -530,14 +531,17 @@ static void handle_key(EventRecord *event)
          * below, which is where ordinary cursor movement belongs and where
          * shift-extend already works.
          *
-         * n68_history returns NULL for "there is nothing further that way",
-         * which means LEAVE THE FIELD ALONE - never clear it. Pressing Up
-         * past the oldest entry must not wipe what is showing. */
+         * console_history returns NULL for "there is nothing further that
+         * way", which means LEAVE THE FIELD ALONE - never clear it.
+         * Pressing Up past the oldest entry must not wipe what is showing.
+         * The PowerPC guest's Console page reads the same rule from the
+         * same file (console_module.c), which is the point of that file
+         * sitting in guest-shared/ rather than here. */
         if (c == kUpArrowCharCode) {
             input_get_text(current, (int)sizeof current);
-            recalled = n68_history_prev(&gHistory, current);
+            recalled = console_history_prev(&gHistory, current);
         } else {
-            recalled = n68_history_next(&gHistory);
+            recalled = console_history_next(&gHistory);
         }
         if (recalled != NULL) {
             input_set_text(recalled);

@@ -65,7 +65,7 @@ run_c() {
     # loop picks up a NEW domain directory without an edit here, which is
     # the difference between a layout change costing one commit and
     # costing one commit plus a confusing build failure.
-    incs="-I $repo_root/contract"
+    incs="-I $repo_root/contract -I $repo_root/guest-shared/src"
     for d in "$repo_root/$dir/src" "$repo_root/$dir/src"/*/; do
         [ -d "$d" ] && incs="$incs -I $d"
     done
@@ -73,7 +73,10 @@ run_c() {
     # every guest's: the shared headers there (wire_limits.h,
     # share_path.h, peek_table.h) are compiled by both guests and by this
     # host cc, and adding the flag per line meant four tests failing to
-    # build the first time a guest header included one.
+    # build the first time a guest header included one. guest-shared/src
+    # is there for the same reason and with the same history: it holds the
+    # console history BOTH guests compile, so a test of either guest's
+    # console can reach it without a per-line flag.
     # shellcheck disable=SC2086 - extra, incs and srcs are deliberately split
     if ! cc $CFLAGS $extra $incs \
             "$repo_root/$dir/tests/$test_src" $srcs \
@@ -112,6 +115,14 @@ run_py() {
     passed=$((passed + 1))
 }
 
+# Compiled by BOTH guests, so it belongs to neither's section. The one
+# extra -I is the point of the test: it reads the PowerPC console page's
+# own input width from console_model.h rather than copying the number, so
+# a history narrower than the field it serves fails here.
+echo "== guest-shared (both guests compile these) =="
+run_c guest-shared console_history_test.c \
+      "-I $repo_root/now-guest-ppc/src/console"  src/console_history.c
+
 echo "== now-guest-ppc (PowerPC Carbon) =="
 run_c now-guest-ppc census_decode_test.c     ""  src/census/census_decode.c
 run_c now-guest-ppc census_report_test.c     ""  src/census/census_report.c src/core/json.c
@@ -140,7 +151,6 @@ run_c now-guest-68k test_proclist.c     "" src/processes/n68_proclist.c src/core
 run_c now-guest-68k test_backpressure.c "" src/core/n68_reader.c src/core/frame.c
 run_c now-guest-68k test_devsettings.c  "-std=c99 -pedantic"  src/connection/n68_devsettings.c \
       src/connection/connfields.c
-run_c now-guest-68k test_history.c      "-std=c99 -pedantic"  src/console/n68_history.c
 run_c now-guest-68k test_cmdresult.c    "" src/commands/n68_cmdresult.c src/core/numfmt.c
 run_c now-guest-68k test_vprobe.c       "" src/census/n68_vprobe.c src/commands/n68_cmdresult.c \
       src/core/numfmt.c
@@ -165,7 +175,8 @@ run_c now-guest-68k test_filelist.c     "" src/files/n68_filelist.c src/commands
 # stale, because it reads the same text a human reads.
 echo "== manifest =="
 unlisted=""
-for f in "$repo_root"/now-guest-ppc/tests/* "$repo_root"/now-guest-68k/tests/*; do
+for f in "$repo_root"/now-guest-ppc/tests/* "$repo_root"/now-guest-68k/tests/* \
+         "$repo_root"/guest-shared/tests/*; do
     case "$f" in *.c|*.py) ;; *) continue ;; esac
     base=$(basename "$f")
     grep -q -- "$base" "$0" || unlisted="$unlisted $base"

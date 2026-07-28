@@ -2103,11 +2103,14 @@ the useful half.
   JSON bytes for all three reply shapes against literals written out in
   full — not assembled from the renderer's own pieces — and walks six
   outcomes through both renderers asserting they never disagree about the
-  `ok` bit or the error code. `now-guest-68k/tests/test_history.c` (37 checks)
-  covers the arrow-key history, including the two cases that are wrong in
-  most first attempts: "nothing further that way" must leave the field
-  alone rather than clear it, and a walk must not re-capture a recalled
-  entry as the half-typed line.
+  `ok` bit or the error code. `guest-shared/tests/console_history_test.c`
+  (38 checks — it was `now-guest-68k/tests/test_history.c` until the
+  history became one file both guests compile) covers the arrow-key
+  history, including the two cases that are wrong in most first attempts:
+  "nothing further that way" must leave the field alone rather than clear
+  it, and a walk must not re-capture a recalled entry as the half-typed
+  line. Both were wrong in the PowerPC guest's own copy, which is why
+  there is now only one.
 
   **The wire did not change, and that was checked differentially rather
   than assumed.** A scratch harness ran the *old* `finish_error` /

@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "console_history.h"
 #include "console_model.h"
 #include "prefs.h"
 #include "pump.h"
@@ -51,6 +52,12 @@ static Boolean g_inverted;
 static Boolean g_active = true;   /* the caret hides in the background */
 static char g_input[kConsoleMaxCols];
 static short g_input_len;
+/* The page owns the history because the page owns the input field - the
+   same division NOW-68K's conwin.c makes, over the same file
+   (guest-shared/src/console_history.c). ~2.3 KB of statics; see its
+   header's budget. */
+static ConsoleHistory g_history;
+static Boolean g_history_ready = false;
 /* First visible scrollback line. Pinned to the newest output unless the
    human scrolled away; survives module switches with the rest. */
 static short g_top;
@@ -260,7 +267,7 @@ static void run_submit(void)
         --end;
     }
     g_input[end] = '\0';
-    console_model_history_add(g_input + start);
+    console_history_push(&g_history, g_input + start);
     console_model_run(g_input + start);
     g_input[0] = '\0';
     g_input_len = 0;
@@ -272,8 +279,15 @@ static void run_submit(void)
     }
 }
 
+/* NULL means "there is nothing further that way" - leave the field exactly
+   as the human left it. It never means "clear it", which is what this page
+   used to do at both ends of a walk, because its own history returned ""
+   there. See console_history.h. */
 static void take_history(const char *recalled)
 {
+    if (recalled == NULL) {
+        return;
+    }
     strncpy(g_input, recalled, sizeof g_input - 1);
     g_input[sizeof g_input - 1] = '\0';
     g_input_len = (short)strlen(g_input);
@@ -310,6 +324,13 @@ static OSErr console_create(WindowRef owner, const Rect *body)
     g_inverted = prefs.console_invert;
     g_input[0] = '\0';
     g_input_len = 0;
+    /* GUARDED, unlike the input line above it: create runs again every time
+       the Workshop rebuilds this page, and what a human typed earlier in the
+       run should outlive that the way the scrollback does. */
+    if (!g_history_ready) {
+        console_history_init(&g_history);
+        g_history_ready = true;
+    }
 
     g_scroll_action_upp = NewControlActionUPP(scroll_action);
     if (g_scroll_action_upp == NULL) {
@@ -457,7 +478,11 @@ static Boolean console_key(const EventRecord *event)
         return true;
     }
     if (c == 0x1E || c == 0x1F) {     /* up/down: command history */
-        take_history(console_model_history_recall(c == 0x1E ? -1 : 1));
+        /* Up hands the shared history whatever is half-typed, so walking
+           back down past the newest entry restores it instead of blanking
+           it - the shell behaviour whose absence is noticed immediately. */
+        take_history(c == 0x1E ? console_history_prev(&g_history, g_input)
+                               : console_history_next(&g_history));
         return true;
     }
     if (c == '\b' || c == 0x7F) {

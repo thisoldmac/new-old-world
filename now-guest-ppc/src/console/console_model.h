@@ -1,11 +1,14 @@
 #ifndef NOW_CONSOLE_MODEL_H
 #define NOW_CONSOLE_MODEL_H
 
-/* The Console's memory: scrollback, command history, and the local
-   command table. No windows, no controls, no QuickDraw - the Workshop's
-   Console page is one consumer, and a test could be another. State is
-   static, so history and scrollback survive module switches for the
-   whole run. */
+/* The Console's memory: scrollback and the local command table. No
+   windows, no controls, no QuickDraw - the Workshop's Console page is one
+   consumer, and a test could be another. State is static, so the
+   scrollback survives module switches for the whole run.
+
+   The Up/Down HISTORY is not here. It is guest-shared/src/console_history.c,
+   one implementation both guests compile, and the page that owns the input
+   field owns the instance - console_module.c here, conwin.c on NOW-68K. */
 
 enum {
     kConsoleMaxLines = 200,
@@ -54,11 +57,6 @@ void console_model_run(const char *command);
 typedef void (*ConsoleEmit)(void *ctx, const char *line);
 
 int console_model_exec(const char *line, ConsoleEmit emit, void *ctx);
-
-void console_model_history_add(const char *command);
-/* Walks the history: negative delta = older, positive = newer. Returns
-   the recalled command, or "" past the newest entry. */
-const char *console_model_history_recall(short delta);
 
 /* Appends the first-run banner if the scrollback is empty. */
 void console_model_banner(void);
