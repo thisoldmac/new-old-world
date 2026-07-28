@@ -135,7 +135,7 @@ artifacts, guest UI automation, or destination-byte identity.
 - [`processes-and-peek.md`](../processes-and-peek.md) owns PSN identity, live revalidation, and cooperative quit.
 - [`software-module.md`](../software-module.md) owns exact-path launch and ambiguity behavior.
 - [`open-issues.md`](../open-issues.md) remains the authority for broken and unverified behavior.
-- The [sibling CodeKitten roadmap](../../../codekitten/docs/plans/2026-07-23-002-feat-codekitten-phase-0-1-roadmap-plan.md) defines the intended listener proof campaign. Its presence is planning evidence only, not proof that the listener or a shared service exists.
+- The CodeKitten roadmap (a sibling project, not public) defines the intended listener proof campaign. Its presence is planning evidence only, not proof that the listener or a shared service exists.
 
 ### Sequencing
 

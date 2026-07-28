@@ -94,7 +94,7 @@ V1 does not add:
 - enterprise fleet management, remote administration, generic brokering, or a second desktop app;
 - new MCP ownership of pairing, guest transport, target persistence, or the human-facing product.
 
-CodeKitten remains the proving ground for a guest-listener design, pairing and security profile, health and latency semantics, cooperative-loop behavior, lifecycle and recovery, and adversarial multi-peer behavior. Only after that proof may a **separate worktree** consider extracting demonstrated common protocol pieces and a later NOW migration. The extracted service must be compatible with NOW, but NOW must not be mutated to validate CodeKitten hypotheses. See the [CodeKitten proof roadmap](../../../codekitten/docs/plans/2026-07-23-002-feat-codekitten-phase-0-1-roadmap-plan.md); the link is a prerequisite plan, not evidence that the listener or shared service exists.
+CodeKitten remains the proving ground for a guest-listener design, pairing and security profile, health and latency semantics, cooperative-loop behavior, lifecycle and recovery, and adversarial multi-peer behavior. Only after that proof may a **separate worktree** consider extracting demonstrated common protocol pieces and a later NOW migration. The extracted service must be compatible with NOW, but NOW must not be mutated to validate CodeKitten hypotheses. See the CodeKitten proof roadmap (a sibling project, not public); the link is a prerequisite plan, not evidence that the listener or shared service exists.
 
 ## Key Technical Decisions
 

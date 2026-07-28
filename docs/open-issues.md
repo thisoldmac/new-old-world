@@ -9,6 +9,24 @@ wrong thing) versus **unverified** (it may well be right, but no one has
 watched it work on the PowerBook). Unverified is not a lesser problem —
 several of tonight's bugs lived in code that looked obviously correct.
 
+## The README shows neither interface (2026-07-28)
+
+**Missing, not broken.** There are no screenshots of either half, in a
+project whose entire subject is two Macintosh interfaces. A reader is
+being asked to take the interesting part on faith, and the README says
+so rather than quietly not mentioning it.
+
+Wants: the guest's Workshop window on the classic Mac (the Files page
+with a real listing is the most legible single frame), and the host
+window from the same session, so the two images are visibly the same
+connection from both ends. On real hardware if possible — an emulator
+capture is honest, but a photograph of the PowerBook says more about
+what this is for.
+
+What to capture and the rules for it (native size, nothing identifying
+in frame) are in [images/README.md](images/README.md). Michelle is
+taking these; the row closes when they land.
+
 ## The 180c, 2026-07-26: two suites metal-verified, the ladder not (0.22)
 
 Five branches merged, deployed as `NOW-68K 0.22`, and run against the
