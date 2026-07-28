@@ -220,6 +220,17 @@ agents branch in their own worktrees — so the shared checkout stays on
 
 ## Docs
 
+**`docs/` is published; `docs/local/` is scratch and gitignored.** The
+split is by audience, not by who typed the file. `docs/` is read by
+people who have never seen this project, and every file there is a
+deliberate decision to explain something to that person — a standard that
+cannot survive the same directory also being where a session drops its
+working notes. Session handoffs, investigation logs, raw run output and
+not-yet-committed plans go in `docs/local/`; its
+[README](docs/local/README.md) carries the rule and, more importantly,
+how a note **graduates** out of it. A finding written into a scratch file
+and never graduated is how a lesson gets paid for twice.
+
 `README.md` carries **what works and what does not**, together. A
 feature list without its companion is a sales pitch, and the things this
 project got wrong were never in the parts anyone demonstrated.

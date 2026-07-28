@@ -5,6 +5,13 @@
 # describe one desk. Start from .env.lab.example; see docs/lab-setup.md.
 .env.lab
 
+# Scratch docs: session notes, investigation logs, working plans. docs/
+# is published and deliberate; docs/local/ is neither, and keeping them
+# in one directory is how the published half stops being deliberate.
+# Its README is the exception, because the rule has to be readable.
+docs/local/*
+!docs/local/README.md
+
 build-*/
 xcuserdata/
 *.xcodeproj/project.xcworkspace/

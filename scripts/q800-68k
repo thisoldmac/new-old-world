@@ -21,7 +21,7 @@
 #   * the app and a dev settings file naming host/port/autoconnect go into
 #     System Folder:Startup Items, so the guest is dialling within a few
 #     seconds of the boot chime with nobody double-clicking anything.
-#   * the disk is a session-private clone (tbt_clone_disk); the shared base
+#   * the disk is a session-private clone (clone_disk); the shared base
 #     is never written. Parent AGENTS.md, "Operating the VM".
 #
 #     scripts/q800-68k            # build, inject, boot, wait for the dial
@@ -30,14 +30,71 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TBT="${TBT_REPO:-$HOME/Lab/Code/timbottu}"
-. "$TBT/tools/lib.sh"
 
-QEMU="${TIMBOTTU_QEMU_M68K:-$TBT/qemu/build/qemu-system-m68k}"
-ROM="${TBT_Q800_ROM:-$HOME/Lab/Assets/q800-qemu/Quadra800.rom}"
-BASE="${TBT_Q800_IMG:-$HOME/Lab/Assets/q800-qemu/os81-target.img}"
-HFS="${TBT_HFSUTILS:-$HOME/Lab/Tools/Retro68-build/hfsutils}"
-TOOLCHAIN="${NOW68K_TOOLCHAIN:-$HOME/Lab/Tools/Retro68-build-68k/toolchain}"
+# Where the emulator, its ROM and its disk live is a property of one desk,
+# so none of it is defaulted here: a path baked into this file is wrong for
+# everyone else while looking authoritative. Put them in .env.lab (see
+# docs/lab-setup.md); an explicit environment variable still wins.
+if [ -f "$REPO/.env.lab" ]; then
+    set -a; . "$REPO/.env.lab"; set +a
+fi
+
+need () {
+    # A value this script cannot invent. Naming the missing key beats
+    # booting something unexpected off a stale default.
+    if [ -z "${2:-}" ]; then
+        echo "q800-68k: no $1 ($3)." >&2
+        echo "  Set it in .env.lab or the environment - see docs/lab-setup.md." >&2
+        exit 1
+    fi
+    printf '%s\n' "$2"
+}
+
+QEMU="$(need NOW_Q800_QEMU "${NOW_Q800_QEMU:-}" "path to qemu-system-m68k")"
+ROM="$(need NOW_Q800_ROM "${NOW_Q800_ROM:-}" "the Quadra 800 ROM")"
+BASE="$(need NOW_Q800_IMG "${NOW_Q800_IMG:-}" "the base disk image")"
+HFS="$(need NOW_HFSUTILS "${NOW_HFSUTILS:-}" "hfsutils, to inject into the image")"
+TOOLCHAIN="$(need NOW68K_TOOLCHAIN "${NOW68K_TOOLCHAIN:-}" "the Retro68 68K toolchain")"
+
+# --- two helpers this used to source from a sibling repository ----------
+# Inlined so the script stands on its own: a public checkout cannot source
+# a private one, and the dependency was invisible until it failed.
+
+# Make a session-private, disposable copy of a base disk image. An APFS
+# clonefile (cp -c) is instant and costs no extra space until the clone
+# diverges; across volumes it falls back to a full copy, so it is always
+# correct, just slower. The clone is byte-identical and standalone, and
+# any qcow2 internal snapshots survive, so `-loadvm TAG` works on it.
+# This is the ONE place "never boot the shared base" is implemented.
+clone_disk () {
+    local src="$1" dst="$2"
+    [ -f "$src" ] || { echo "error: base image not found: $src" >&2; return 1; }
+    rm -f "$dst"
+    cp -c "$src" "$dst" || return 1
+    printf '%s\n' "$dst"
+}
+
+# Start a command in its OWN session (setsid) with output to LOG, echoing
+# the pid. nohup+disown alone is not enough: the child stays in the
+# launcher's process group, so a caller timeout delivered to that group
+# kills a booting guest along with its launcher (watched 2026-07-17, a
+# 2-minute timeout killed a q800 mid-boot). macOS has no setsid(1), so the
+# new session is entered via python3; exec keeps the pid, so the echoed
+# pid IS the final process.
+spawn_detached () {
+    local log="$1"; shift
+    nohup python3 -c '
+import os, sys
+try:
+    os.setsid()
+except OSError:
+    pass  # already a session leader; detached enough
+os.execvp(sys.argv[1], sys.argv[1:])
+' "$@" >"$log" 2>&1 &
+    local pid=$!
+    disown "$pid" 2>/dev/null || true
+    printf '%s\n' "$pid"
+}
 
 RUN="$REPO/.q800"
 PORT=5250
@@ -46,7 +103,7 @@ case "${1:-}" in
     --stop)
         # QMP `quit`, never pkill/SIGKILL: a hard kill trips the macOS
         # crash health-check dialog that then needs dismissing by hand
-        # (parent AGENTS.md).
+        # (AGENTS.md).
         #
         # Reports what actually happened. It used to `|| true` the nc and
         # print "stopped" unconditionally, which is how a VM whose socket
@@ -94,7 +151,7 @@ APP="$RUN/build/now68k-guest.bin"
 # --- 2. a disposable disk with the app and its settings on it -------------
 DISK="$RUN/session.img"
 rm -f "$DISK"
-tbt_clone_disk "$BASE" "$DISK" >/dev/null
+clone_disk "$BASE" "$DISK" >/dev/null
 
 # NOW-68K has no preferences; the dev settings file is how a build under
 # test learns where to dial without someone typing an address into the
@@ -117,12 +174,12 @@ echo "==> injected NOW-68K + dev settings (host 10.0.2.2:$PORT)"
 
 # --- 3. boot --------------------------------------------------------------
 rm -f "$RUN/qmp.sock"
-# tbt_spawn_detached takes the LOG PATH as its first argument and opens it
+# spawn_detached takes the LOG PATH as its first argument and opens it
 # for writing itself; it does not read a shell redirect. Passing "$QEMU"
 # first — as this script did once — makes the emulator binary the log
 # file, and `>` truncates it to nothing before the exec that was supposed
 # to run it. It cost a QEMU relink to notice. The log path goes first.
-tbt_spawn_detached "$RUN/qemu.log" "$QEMU" \
+spawn_detached "$RUN/qemu.log" "$QEMU" \
     -M q800 -m 128 -bios "$ROM" \
     -device scsi-hd,scsi-id=0,drive=hd0 \
     -drive file="$DISK",format=raw,if=none,id=hd0 \

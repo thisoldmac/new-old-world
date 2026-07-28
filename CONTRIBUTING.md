@@ -89,6 +89,14 @@ coverage in a directory listing and proves nothing.
 - **Say what you did not verify.** A PR that names its own gaps is worth
   more than one that implies coverage it does not have.
 
+## Where notes go
+
+`docs/` is published and deliberate. `docs/local/` is gitignored scratch
+space — session notes, investigation logs, raw output, plans that are not
+commitments yet. Use it freely; see
+[docs/local/README.md](docs/local/README.md) for how a note graduates
+from one to the other.
+
 ## Local machine configuration
 
 Nothing about your network belongs in a commit. Addresses, credentials

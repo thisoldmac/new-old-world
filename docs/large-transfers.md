@@ -476,15 +476,9 @@ Three supporting facts worth carrying across:
   every prior measurement stops, which is why nothing in the corpus
   describes it. That blind spot is itself worth recording.
 
-It is not written into `data/findings/` here because that lives in the
-parent TimBotTu repository, whose checkout is shared with other
-sessions; this branch is in the NOW subrepo. The row wants authoring
-from a TimBotTu worktree, citing this document as its `doc_ref`.
-
-It is not written here because `data/findings/` lives in the parent
-TimBotTu repository, whose checkout is shared with other sessions; this
-branch is in the NOW subrepo. The row wants authoring from a TimBotTu
-worktree, citing this document as its `doc_ref`.
+This document is the record of it. The durable claim — the collapse and
+its bracket — belongs in the research corpus as its own row, citing this
+document; that has not been authored yet.
 
 ### The orphan sweep has to change first
 

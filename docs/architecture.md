@@ -1,5 +1,15 @@
 # Architecture
 
+> **A note on "TimBotTu" and "the corpus."** NOW grew out of a larger
+> private project, TimBotTu, which maintains a corpus of validated
+> findings about classic Mac hardware and platform behaviour — measured
+> claims with their evidence, not lore. Documents here cite it where a
+> number came from there. The corpus is not public and is not required to
+> build, run or understand NOW; **no TimBotTu runtime code is imported on
+> any side**, which is a boundary this project holds deliberately rather
+> than an accident of packaging. Read a citation as provenance for a
+> figure, and nothing more.
+
 ## Product boundary
 
 Two applications and exactly one connection between them: a single
