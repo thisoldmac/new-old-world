@@ -1,6 +1,8 @@
 #ifndef NOW68K_FRAME_H
 #define NOW68K_FRAME_H
 
+#include "wire_limits.h"
+
 /* Frame header layout, contract/asyncapi.yaml lines 16-22 (prose, not a
  * schema -- no schema standard expresses binary framing):
  *
@@ -17,23 +19,29 @@
  * so the codec is provably correct on both.
  */
 
-#define NOW68K_FRAME_HEADER_BYTES 8u
+#define NOW68K_FRAME_HEADER_BYTES ((unsigned)NOW_WIRE_FRAME_HEADER_BYTES)
 
-#define NOW68K_CHANNEL_CONTROL 0u
-#define NOW68K_CHANNEL_BULK    1u
+#define NOW68K_CHANNEL_CONTROL ((unsigned)NOW_WIRE_CHANNEL_CONTROL)
+#define NOW68K_CHANNEL_BULK    ((unsigned)NOW_WIRE_CHANNEL_BULK)
 
-#define NOW68K_FLAG_END 0x01u
+#define NOW68K_FLAG_END ((unsigned)NOW_WIRE_FLAG_END)
 
 /* Max payload bytes of ANY frame, control or bulk -- the ONE bound the
- * contract states normatively (frame-header comment above, "length ...
- * max 32768"; cross-checked against host/Sources/Host/FrameCodec.swift's
- * maxPayloadLength and the PPC guest's kNowMaxPayload, both 32768). A
- * length over this is a PROTOCOL VIOLATION on either channel: the sender
- * broke the wire format itself, and the connection cannot be trusted
- * past that point. There is no smaller protocol-level cap for control
- * frames -- see NOW68K_CONTROL_BUFFER_CAP below for why an earlier
- * version of this file believed otherwise. */
-#define NOW68K_MAX_PAYLOAD 32768UL
+ * contract states normatively. A length over this is a PROTOCOL
+ * VIOLATION on either channel: the sender broke the wire format itself,
+ * and the connection cannot be trusted past that point. There is no
+ * smaller protocol-level cap for control frames -- see
+ * NOW68K_CONTROL_BUFFER_CAP below for why an earlier version of this
+ * file believed otherwise.
+ *
+ * The number itself is contract/wire_limits.h now. This comment used to
+ * record that it had been "cross-checked against FrameCodec.swift's
+ * maxPayloadLength and the PPC guest's kNowMaxPayload, both 32768" --
+ * which is exactly the hand-maintained agreement between three copies
+ * that AGENTS.md names as this project's costliest defect. Two of the
+ * three are aliases of one number now, and the Swift one is asserted
+ * against it by FrameCodecTests. */
+#define NOW68K_MAX_PAYLOAD ((unsigned long)NOW_WIRE_MAX_PAYLOAD)
 
 /* Bytes our OWN control receive buffer can hold. This is a BUFFER SIZE,
  * not a protocol bound: nothing on the wire is illegal above this
