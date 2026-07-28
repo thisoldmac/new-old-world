@@ -135,6 +135,10 @@ run_c guest68k test_packbits.c     "" src/n68_packbits.c
 run_c guest68k test_crc32.c        "" src/n68_crc32.c
 run_c guest68k test_putrx.c        "-I $repo_root/contract" \
       src/n68_putrx.c src/n68_crc32.c src/json_scan.c
+# The PowerPC guest's own quit-grammar test, compiled against THIS
+# guest's copy of the parser. One test, two implementations - see the
+# file's header for why it is an #include rather than a second copy.
+run_c guest68k proc_quit_parity_test.c "" src/proc_quit_args.c src/numfmt.c
 run_c guest68k test_puttx.c        "" src/n68_puttx.c src/n68_crc32.c \
       src/n68_cmdresult.c src/numfmt.c src/frame.c
 run_c guest68k test_filelist.c     "" src/n68_filelist.c src/n68_cmdresult.c \
