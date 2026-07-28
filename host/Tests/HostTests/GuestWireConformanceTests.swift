@@ -386,6 +386,13 @@ final class GuestWireConformanceTests: XCTestCase {
         // read them and a hand-written fixture is the only check there is.
         "capture.begin": "test68KCaptureBeginAsTheGuestWritesIt",
         "capture.end": "test68KCaptureEndAsTheGuestWritesIt",
+        // The exec plane (wire68.c). Built from appends like everything
+        // else this guest sends, and worth pinning for a reason the others
+        // are not: exec.output is the only message whose payload is
+        // arbitrary human-facing TEXT, so its escaping is the one place a
+        // guest's own console output can corrupt the wire.
+        "exec.output": "test68KExecOutputAsTheGuestWritesIt",
+        "exec.result": "test68KExecResultAsTheGuestWritesIt",
     ]
 
     func testMessagesThisCannotCheckAreKnown() throws {

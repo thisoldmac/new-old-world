@@ -110,6 +110,45 @@ final class GuestListener: ObservableObject {
     private var nextCensusId = 1
     private var pendingCensus: [Int: (CensusReport) -> Void] = [:]
 
+    /// One exec in flight, from exec.request to its terminal exec.result.
+    ///
+    /// The text is ACCUMULATED here rather than handed up frame by frame,
+    /// and that is a deliberate choice about where the seam sits. A guest
+    /// splits exec.output where its buffer ends, not where a line ends
+    /// (ExecOutput.text: "a chunk, not a line"), so a caller handed raw
+    /// frames would have to reassemble before it could render — and every
+    /// caller would have to do it identically. Doing it once, here, means a
+    /// console renders text and nothing else.
+    ///
+    /// It also makes the phase-2 change invisible from above: a guest that
+    /// sends fifty frames instead of one arrives at the same completion with
+    /// the same string, so nothing above this line knows which it was.
+    private struct PendingExec {
+        var line: String
+        var text: String = ""
+        var nextSeq = 0
+        /// Set when a frame arrives out of order. Surfaced rather than
+        /// smoothed over: a hole in the output of a command someone is about
+        /// to act on is worth an ugly line.
+        var gap = false
+        var completion: (ExecOutcome) -> Void
+    }
+
+    private var nextExecId = 1
+    private var pendingExec: [Int: PendingExec] = [:]
+
+    /// What an exec settled as. `text` is everything the guest emitted,
+    /// reassembled; `ok`/`code` are its terminal word.
+    struct ExecOutcome: Equatable, Sendable {
+        var text: String
+        var ok: Bool
+        var code: String?
+        var message: String?
+        /// True when a frame went missing. The console prints a notice; no
+        /// caller has to check it to be correct.
+        var gap: Bool = false
+    }
+
     /// What this connection has been observed to implement.
     ///
     /// Two guests of very different completeness share this wire, and the
@@ -309,6 +348,85 @@ final class GuestListener: ObservableObject {
         pendingCommands[id] = completion
         session.sendCommand(CommandRequest(id: id, name: name, args: args,
                                            line: line))
+    }
+
+    /// Runs one line on the connected Mac and hands back what it printed.
+    ///
+    /// The line goes out EXACTLY as given — this function does not trim it,
+    /// does not split a verb off it, does not check it against anything, and
+    /// has no list to check it against. That is the entire point of the exec
+    /// plane: a verb a guest gained this morning is reachable from a host
+    /// binary built last month, because this side never learned the old set
+    /// in the first place (contract preamble, "Exec").
+    ///
+    /// The completion fires once, with everything the guest emitted joined
+    /// in `seq` order and its terminal ok/code. A guest that streams and a
+    /// guest that answers in one shot are indistinguishable from here, which
+    /// is what lets the guest gain streaming without this changing.
+    ///
+    /// The watchdog is 60s rather than the 15s a command.request gets. The
+    /// reason is `vprobe`: it measures for ~12 seconds by design, and on a
+    /// PowerBook that is a floor rather than a typical case. A console is
+    /// also the one surface where a human is watching and can see that
+    /// nothing has come back, so a generous bound costs less here than a
+    /// premature "timeout" on a command that was working.
+    func exec(_ line: String,
+              completion: @escaping (ExecOutcome) -> Void) {
+        guard let session, case .connected = state else {
+            completion(ExecOutcome(text: "", ok: false, code: "disconnected",
+                                   message: "No Mac is connected"))
+            return
+        }
+        let id = nextExecId
+        nextExecId += 1
+        pendingExec[id] = PendingExec(line: line, completion: completion)
+        armWatchdog(id: id, seconds: 60) { [weak self] reason in
+            guard let self, let pending = self.pendingExec
+                .removeValue(forKey: id) else { return }
+            /* Whatever DID arrive is handed over, not discarded. A command
+               that printed four lines and then wedged has told a human more
+               than a bare "timeout" does, and throwing it away to keep the
+               failure tidy would be throwing away the diagnosis. */
+            pending.completion(ExecOutcome(
+                text: pending.text, ok: false, code: "timeout",
+                message: reason, gap: pending.gap))
+        }
+        session.send(.execRequest(ExecRequest(id: id, line: line)))
+    }
+
+    /// Cancels an exec by id. Answered by the guest with a terminal
+    /// exec.result either way, so the completion still fires exactly once
+    /// and this function stores nothing.
+    func cancelExec(id: Int) {
+        guard let session, case .connected = state else { return }
+        session.send(.execCancel(ExecCancel(id: id)))
+    }
+
+    private func resolveExecOutput(_ output: ExecOutput) {
+        guard var pending = pendingExec[output.id] else {
+            /* Output for an exec nobody is waiting on: a late frame after a
+               timeout already settled it. Dropping is right — the caller has
+               been answered and answering twice is worse than losing a line
+               nobody is looking at. */
+            return
+        }
+        if output.seq != pending.nextSeq {
+            pending.gap = true
+        }
+        pending.nextSeq = output.seq + 1
+        pending.text += output.text
+        pendingExec[output.id] = pending
+        touchWatchdogs()          /* output is evidence of life */
+    }
+
+    private func resolveExecResult(_ result: ExecResult) {
+        guard let pending = pendingExec.removeValue(forKey: result.id) else {
+            return
+        }
+        clearWatchdog(result.id)
+        pending.completion(ExecOutcome(
+            text: pending.text, ok: result.ok, code: result.code,
+            message: result.message, gap: pending.gap))
     }
 
     /// Ask the connected guest for one page of a census probe. The dossier
@@ -1380,6 +1498,16 @@ final class GuestListener: ObservableObject {
                                  rows: [], more: false,
                                  note: "[\(problem.code)] \(problem.message)"))
         }
+        if let waiting = pendingExec.removeValue(forKey: id) {
+            routed = true
+            /* A guest too old to know exec.request answers `error`, and this
+               is the line that turns that into an immediate, readable
+               refusal instead of a 60-second silence. Exactly the case the
+               comment above was written for, arriving on schedule. */
+            waiting.completion(ExecOutcome(
+                text: waiting.text, ok: false, code: problem.code,
+                message: problem.message, gap: waiting.gap))
+        }
         // Only now, and only if somebody was actually answered. Clearing
         // the watchdog first looked tidier and was a trap: a waiter this
         // function forgets to route would then have neither an answer nor
@@ -1400,6 +1528,13 @@ final class GuestListener: ObservableObject {
             completion(CommandResult(
                 id: id, ok: false, output: nil,
                 error: .init(code: "disconnected", message: reason)))
+        }
+        let execs = pendingExec
+        pendingExec = [:]
+        for (_, pending) in execs {
+            pending.completion(ExecOutcome(
+                text: pending.text, ok: false, code: "disconnected",
+                message: reason, gap: pending.gap))
         }
         let census = pendingCensus
         pendingCensus = [:]
@@ -1476,6 +1611,12 @@ final class GuestListener: ObservableObject {
             onHealth: { [weak self] health in self?.health = health },
             onCommandResult: { [weak self] result in
                 self?.resolveCommand(result)
+            },
+            onExecOutput: { [weak self] output in
+                self?.resolveExecOutput(output)
+            },
+            onExecResult: { [weak self] result in
+                self?.resolveExecResult(result)
             },
             onGuestError: { [weak self] problem in
                 self?.recordGuestError(problem)
@@ -1672,6 +1813,8 @@ final class Session {
     private let onLog: (String, String, HostLog.LogLevel) -> Void
     private let onHealth: (GuestListener.SessionHealth?) -> Void
     private let onCommandResult: (CommandResult) -> Void
+    private let onExecOutput: (ExecOutput) -> Void
+    private let onExecResult: (ExecResult) -> Void
     private let onGuestError: (ErrorMessage) -> Void
     private let onCensusReport: (CensusReport) -> Void
     private let onCapture:
@@ -1745,6 +1888,8 @@ final class Session {
          onLog: @escaping (String, String, HostLog.LogLevel) -> Void,
          onHealth: @escaping (GuestListener.SessionHealth?) -> Void,
          onCommandResult: @escaping (CommandResult) -> Void,
+         onExecOutput: @escaping (ExecOutput) -> Void,
+         onExecResult: @escaping (ExecResult) -> Void,
          onGuestError: @escaping (ErrorMessage) -> Void,
          onCensusReport: @escaping (CensusReport) -> Void,
          onCapture: @escaping (Result<GuestListener.CaptureDelivery,
@@ -1783,6 +1928,8 @@ final class Session {
         self.onLog = onLog
         self.onHealth = onHealth
         self.onCommandResult = onCommandResult
+        self.onExecOutput = onExecOutput
+        self.onExecResult = onExecResult
         self.onGuestError = onGuestError
         self.onCensusReport = onCensusReport
         self.onCapture = onCapture
@@ -1965,6 +2112,16 @@ final class Session {
             touchHealth(pingsDelta: 1)
         case .commandResult(let result):
             onCommandResult(result)
+        case .execOutput(let output):
+            onExecOutput(output)
+        case .execResult(let result):
+            onExecResult(result)
+        case .execRequest, .execCancel:
+            /* Declared asymmetry, the same shape as softwareList above: the
+               exec plane has only ever run host-to-guest. This host serves
+               no commands, so there is nothing for it to interpret a line
+               with, and inventing an answer would make it a third face. */
+            break
         case .censusReport(let report):
             onCensusReport(report)
         case .censusRequest(let request):

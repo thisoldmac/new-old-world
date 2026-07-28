@@ -17,6 +17,10 @@ enum ControlMessage: Equatable, Sendable {
     case error(ErrorMessage)
     case commandRequest(CommandRequest)
     case commandResult(CommandResult)
+    case execRequest(ExecRequest)
+    case execOutput(ExecOutput)
+    case execResult(ExecResult)
+    case execCancel(ExecCancel)
     case censusRequest(CensusRequest)
     case censusReport(CensusReport)
     case fileList(FileList)
@@ -112,6 +116,48 @@ struct CommandResult: Codable, Equatable, Sendable {
     /// returns snapshot/cpu/memory/os/network/hw; the console shows a slice.
     var output: [String: [[String]]]?
     var error: CommandError?
+}
+
+/// The exec plane: a line this side does not read, and text it does not
+/// parse. See the "Exec" section of the contract preamble for why this is a
+/// second plane rather than a loosening of CommandRequest above.
+///
+/// The whole of the host's involvement in running a command is in these four
+/// types, and what matters is what is ABSENT: no command name, no arg
+/// dictionary, no per-command output schema. A verb this host has never
+/// heard of travels through here unchanged — which is the property the plane
+/// exists for, and the reason nothing in this file needs editing when a
+/// guest grows one.
+struct ExecRequest: Codable, Equatable, Sendable {
+    var id: Int
+    /// The whole line, verb included, exactly as typed. Nothing on this side
+    /// looks inside it — not even to find where the verb ends, because that
+    /// is a grammar, and a grammar belongs to the machine that serves the
+    /// verb. Contrast CommandRequest.line, which is what is left AFTER this
+    /// host has already split a name off the front.
+    var line: String
+}
+
+struct ExecOutput: Codable, Equatable, Sendable {
+    var id: Int
+    /// 0-based and contiguous per exec. A gap means a frame was lost, and
+    /// the console says so rather than quietly showing a hole.
+    var seq: Int
+    /// Free text, as the guest would have drawn it. A CHUNK, not a line: a
+    /// guest splits where its buffer ends, so a reader reassembles before it
+    /// goes looking for line breaks.
+    var text: String
+}
+
+struct ExecResult: Codable, Equatable, Sendable {
+    var id: Int
+    var ok: Bool
+    var code: String?
+    var message: String?
+}
+
+struct ExecCancel: Codable, Equatable, Sendable {
+    var id: Int
 }
 
 /// The hardware census. Symmetric by contract: whoever receives the
@@ -581,6 +627,18 @@ enum ControlMessageCodec {
         case "command.result":
             return .commandResult(
                 try decoder.decode(CommandResult.self, from: data))
+        case "exec.request":
+            return .execRequest(
+                try decoder.decode(ExecRequest.self, from: data))
+        case "exec.output":
+            return .execOutput(
+                try decoder.decode(ExecOutput.self, from: data))
+        case "exec.result":
+            return .execResult(
+                try decoder.decode(ExecResult.self, from: data))
+        case "exec.cancel":
+            return .execCancel(
+                try decoder.decode(ExecCancel.self, from: data))
         case "census.request":
             return .censusRequest(
                 try decoder.decode(CensusRequest.self, from: data))
@@ -708,6 +766,10 @@ enum ControlMessageCodec {
         case .error(let error): return try tagged("error", error)
         case .commandRequest(let m): return try tagged("command.request", m)
         case .commandResult(let m): return try tagged("command.result", m)
+        case .execRequest(let m): return try tagged("exec.request", m)
+        case .execOutput(let m): return try tagged("exec.output", m)
+        case .execResult(let m): return try tagged("exec.result", m)
+        case .execCancel(let m): return try tagged("exec.cancel", m)
         case .censusRequest(let m): return try tagged("census.request", m)
         case .censusReport(let m): return try tagged("census.report", m)
         case .captureRequest(let m): return try tagged("capture.request", m)

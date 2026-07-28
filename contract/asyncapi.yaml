@@ -78,6 +78,15 @@
 #   unknown-command cleanly); changing a command's shape is breaking and
 #   bumps the revision. The wire is never a TTY: no raw keystrokes, no
 #   byte-streams — shell face, typed spine.
+#
+#   CORRECTED 2026-07-28: the sentence above ("never a TTY") described the
+#   command plane, and was written as though it described the wire. It now
+#   describes the command plane only. There is a second plane — exec —
+#   whose whole purpose is to carry a line this file has never heard of;
+#   see "Exec" below. Neither clause is retracted: the typed spine keeps
+#   every property it was built for, and exec keeps none of them on
+#   purpose.
+#
 #   TWO CALLERS, TWO SHAPES. A typed caller (a host module, an agent) knows
 #   the command it is calling and sends `args`. A CONSOLE does not: it is a
 #   dumb shell that relays the line a human typed and knows no command's
@@ -91,6 +100,43 @@
 #   args, line). The classic guest scans a frame FLAT — first occurrence
 #   wins — so a shadowed key is read as the command name. launch shipped
 #   that bug to metal with an arg named "name"; the family uses "target".
+# - Exec: the SECOND plane, and the opposite bargain (added 2026-07-28).
+#   exec.request carries ONE field that matters — `line`, the whole line a
+#   human typed, byte for byte, with no name split off it. This file does
+#   not declare what lines mean. It cannot: that is the point. The guest
+#   interprets the line and answers with the TEXT its own console would
+#   have shown, in exec.output frames terminated by exactly one
+#   exec.result.
+#   WHY A SECOND PLANE INSTEAD OF LOOSENING THE FIRST. The typed spine
+#   earns its closure — a module or an agent calling `process.quit` wants
+#   a declared shape, and x-commands is what makes that checkable. What it
+#   cost was iteration: a verb was not typeable from the host until this
+#   file declared it AND the host was rebuilt, so the console was most
+#   expensive exactly when it was most useful, and the two sides drifted
+#   in the gap. Exec pays that cost to zero and buys nothing else. A verb
+#   added to a guest is typeable from an UNCHANGED host binary against an
+#   UNCHANGED contract. That sentence is the acceptance test for this
+#   plane; if it stops being true, the plane has failed and no amount of
+#   passing tests says otherwise.
+#   ONE IMPLEMENTATION STILL. Exec is a FACE, not an implementation — it
+#   dispatches into the same command table the guest's own console runs
+#   and renders with the same text renderer, so it cannot answer a
+#   question differently from the machine's own keyboard. It is legal
+#   under the one-implementation rule for the same reason the guest's
+#   console is (docs/command-parity.md). A guest that grows a second
+#   dispatch behind exec has broken that rule, and the parity test says so.
+#   TEXT, NOT ROWS. exec.output carries free text because a plane that
+#   does not know the command cannot know its columns. The typed plane's
+#   [label, value] rows stay exactly as they are for callers that DO know.
+#   NOT A TTY EITHER, YET. Phase 1 is one line in, text out. Streaming
+#   (many exec.output frames, exec.cancel) and interactive input are
+#   declared here and land after; a guest answers what it implements and
+#   errors on the rest, which is what keeps this additive.
+#   CONTROL CHANNEL, NEVER BULK. Exec rides channel 0 as small JSON
+#   frames. The bulk lane is one transfer wide across both directions, so
+#   an exec session holding it would block capture and file transfer for
+#   its lifetime. It also wants the control channel's queue-and-retry:
+#   pixels are re-capturable, a command's output is not.
 
 asyncapi: 3.0.0
 
@@ -114,6 +160,10 @@ channels:
       error: { $ref: "#/components/messages/error" }
       commandRequest: { $ref: "#/components/messages/commandRequest" }
       commandResult: { $ref: "#/components/messages/commandResult" }
+      execRequest: { $ref: "#/components/messages/execRequest" }
+      execOutput: { $ref: "#/components/messages/execOutput" }
+      execResult: { $ref: "#/components/messages/execResult" }
+      execCancel: { $ref: "#/components/messages/execCancel" }
       censusRequest: { $ref: "#/components/messages/censusRequest" }
       censusReport: { $ref: "#/components/messages/censusReport" }
       captureRequest: { $ref: "#/components/messages/captureRequest" }
@@ -162,6 +212,38 @@ channels:
       that began the transfer says which.
 
 operations:
+  hostExecutesLine:
+    action: receive
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/execRequest"
+      - $ref: "#/channels/control/messages/execCancel"
+    description: >
+      Host sends a line a human typed, verbatim. It performs no
+      tokenization at all — not even splitting a command name off the
+      front — because "where does the verb end" is a grammar, and every
+      grammar belongs to the machine that serves it. A line the guest
+      cannot interpret comes back as exec.result ok:false with the
+      guest's own words, never a protocol error: that is what keeps a
+      host binary correct against a guest it has never met.
+      exec.cancel asks the guest to stop the exec with that id and is
+      ALWAYS answered — an unknown id gets exec.result ok:false
+      "not-running", the same way stream.stop is always answered.
+  guestAnswersExec:
+    action: send
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/execOutput"
+      - $ref: "#/channels/control/messages/execResult"
+    description: >
+      Zero or more exec.output frames carrying text, then exactly one
+      exec.result. The result is TERMINAL STATUS ONLY and never carries
+      output — a guest that answers in a single shot sends one
+      exec.output and one exec.result, and a guest that streams sends
+      many exec.output and the same one exec.result. That is why the
+      shapes are split: the host accumulates output until the result
+      arrives, so gaining streaming later is a GUEST-ONLY change and
+      breaks no host that already speaks this.
   guestOffersCapture:
     action: send
     channel: { $ref: "#/channels/control" }
@@ -496,6 +578,18 @@ components:
     commandResult:
       name: command.result
       payload: { $ref: "#/components/schemas/CommandResult" }
+    execRequest:
+      name: exec.request
+      payload: { $ref: "#/components/schemas/ExecRequest" }
+    execOutput:
+      name: exec.output
+      payload: { $ref: "#/components/schemas/ExecOutput" }
+    execResult:
+      name: exec.result
+      payload: { $ref: "#/components/schemas/ExecResult" }
+    execCancel:
+      name: exec.cancel
+      payload: { $ref: "#/components/schemas/ExecCancel" }
     censusRequest:
       name: census.request
       payload: { $ref: "#/components/schemas/CensusRequest" }
@@ -758,6 +852,105 @@ components:
               type: string
               description: Stable slug, e.g. "unknown-command".
             message: { type: string }
+    ExecRequest:
+      type: object
+      required: [type, id, line]
+      additionalProperties: false
+      properties:
+        type: { const: exec.request }
+        id:
+          type: integer
+          description: >
+            Correlates every exec.output and the exec.result, and IS the
+            exec's identity for exec.cancel. There is no separate session
+            field, for the same reason a stream's id is its capture.begin
+            id: a second identifier is a second thing to get wrong.
+        line:
+          type: string
+          description: >
+            The whole line, exactly as typed, INCLUDING the verb. This is
+            the field the plane exists for and the one rule about it is
+            that the sender does not look inside it. Contrast
+            CommandRequest.line, which is the text AFTER a name the host
+            already split off — that split is a host-side grammar, and
+            removing it is most of what makes this plane honest.
+
+            An empty line is a no-op answered ok with no output, not an
+            error: a human pressing return at a prompt has asked for
+            nothing, which is a thing a console does constantly.
+
+            NOT DECLARED, ON PURPOSE. No x-commands entry constrains this
+            string, and none ever should. A guest may interpret it with
+            its command table (all of them do today), and a guest that
+            one day hands it to some other interpreter is conforming, not
+            extending. The contract's silence here is load-bearing.
+    ExecOutput:
+      type: object
+      required: [type, id, seq, text]
+      additionalProperties: false
+      properties:
+        type: { const: exec.output }
+        id: { type: integer, description: Echoes the request id. }
+        seq:
+          type: integer
+          description: >
+            0-based, contiguous, per exec. The host renders in seq order
+            and a gap is a bug worth surfacing rather than papering over.
+        text:
+          type: string
+          description: >
+            Free text — the bytes the guest's OWN console would have
+            shown for this line. Deliberately unstructured: a plane that
+            does not know the command cannot know its columns, and the
+            [label, value] rows of the typed plane are exactly the cage
+            this escapes. Embedded newlines are ordinary content; a frame
+            is a chunk, not a line, and carries no promise of ending on a
+            line boundary.
+
+            ENCODING: the guest's text is MacRoman; the host decodes it
+            as MacRoman and must not assume UTF-8. A guest sends what it
+            would have drawn, not a transcoding of it.
+    ExecResult:
+      type: object
+      required: [type, id, ok]
+      additionalProperties: false
+      properties:
+        type: { const: exec.result }
+        id: { type: integer, description: Echoes the request id. }
+        ok: { type: boolean }
+        code:
+          type: string
+          description: >
+            Present when ok is false. Stable slug — "unknown-command"
+            when the interpreter did not recognise the line,
+            "not-running" for a cancel naming an exec that has already
+            finished, "cancelled" for one that was stopped.
+        message:
+          type: string
+          description: >
+            The guest's own words, rendered as-is. The host never
+            composes a failure sentence of its own: it does not know what
+            the line was supposed to do.
+      description: >
+        TERMINAL STATUS ONLY — this message carries no output, ever. The
+        text lives in exec.output, including for a guest that sends
+        exactly one. Splitting them is what lets streaming arrive later
+        as a guest-only change.
+    ExecCancel:
+      type: object
+      required: [type, id]
+      additionalProperties: false
+      properties:
+        type: { const: exec.cancel }
+        id:
+          type: integer
+          description: >
+            The exec.request id to stop. Always answered with an
+            exec.result — ok:false "cancelled" if it was stopped,
+            ok:false "not-running" if the guest no longer has it. A
+            cancel that goes unanswered is the wedge stream.stop was
+            hardened against; this family inherits the rule rather than
+            rediscovering it.
     CensusRequest:
       type: object
       required: [type, id, probe]

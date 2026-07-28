@@ -27,6 +27,7 @@ add_application(now68k-guest
     src/conwin.c
     src/n68_history.c
     src/n68_cmdresult.c
+    src/n68_exec.c
     src/log.c
     src/frame.c
     src/json_scan.c

@@ -109,6 +109,7 @@
 #include "n68_fileenum.h"
 #include "n68_filelist.h"
 #include "n68_cmdresult.h"   /* now68k_json_append_escaped */
+#include "n68_exec.h"        /* exec.request: the console plane */
 #include "n68_filesrc.h"
 #include "n68_proclist.h"
 #include "n68_putfile.h"
@@ -1174,6 +1175,166 @@ static void handle_command_request(const char *json, long len)
     }
 }
 
+/* ---- exec.request: the console plane -----------------------------------
+ *
+ * The other half of the two-planes design (contract preamble, "Exec"). Where
+ * handle_command_request above takes a NAME the host already split off and
+ * answers with a declared output schema, this takes the whole LINE and
+ * answers with the text this machine's own console window would have shown -
+ * because it asks the same function that window asks (n68_exec.h).
+ *
+ * Nothing here knows a verb. That is the property being bought: a command
+ * added to commands68.c is typeable from the host the moment it exists, with
+ * no edit to this file, to the contract, or to the host binary.
+ */
+
+/* Raw text per exec.output frame, chosen from the escape blow-up rather
+ * than from taste. A MacRoman high byte becomes \uXXXX - six bytes - so a
+ * worst-case chunk is 6x its raw size, and the frame also carries ~55 bytes
+ * of envelope. 150 * 6 + 55 = 955, comfortably inside
+ * NOW68K_CONTROL_SEND_CAP with room for the envelope to grow a field. Most
+ * text is ASCII and packs 1:1, so this is the floor of what fits, not the
+ * size a frame usually is. */
+enum { kExecChunkRaw = 150 };
+
+typedef struct {
+    long id;
+    long seq;
+    long len;
+    int  failed;      /* an enqueue failed; stop building frames nobody gets */
+    char raw[kExecChunkRaw + 1];
+} ExecSink;
+
+static void exec_flush(ExecSink *s)
+{
+    char payload[NOW68K_CONTROL_SEND_CAP];
+    long pos = 0;
+    int ok = 1;
+
+    if (s->len <= 0 || s->failed) {
+        s->len = 0;
+        return;
+    }
+    s->raw[s->len] = '\0';
+
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                     "{\"type\":\"exec.output\",\"id\":");
+    ok = ok && now68k_fmt_append_long(payload, (long)sizeof payload, &pos,
+                                      s->id);
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                     ",\"seq\":");
+    ok = ok && now68k_fmt_append_long(payload, (long)sizeof payload, &pos,
+                                      s->seq);
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                     ",\"text\":\"");
+    ok = ok && now68k_json_append_escaped(payload, (long)sizeof payload, &pos,
+                                          s->raw);
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                     "\"}");
+    s->len = 0;
+    if (!ok || pos <= 0) {
+        /* The chunk bound above makes this unreachable for text this guest
+         * produces. Logged rather than asserted because the honest failure
+         * is a gap in `seq` the host can see, not a dead guest. */
+        now68k_log("wire: exec.output build failed");
+        return;
+    }
+    if (!enqueue_control_send(payload, pos)) {
+        now68k_log("wire: exec.output dropped, outbound queue full");
+        s->failed = 1;
+        return;
+    }
+    s->seq++;
+}
+
+/* n68_exec.h's emitter: text plus the CR the console's own con_out appends,
+ * chunked to what a frame can carry. A block longer than one chunk is split
+ * across frames at no particular boundary, which is why ExecOutput's `text`
+ * promises to be a chunk and not a line - the host reassembles. */
+static void exec_emit(void *ctx, const char *text, long length)
+{
+    ExecSink *s = (ExecSink *)ctx;
+    long i;
+
+    for (i = 0; i < length; ++i) {
+        if (s->len >= kExecChunkRaw) {
+            exec_flush(s);
+            if (s->failed) {
+                return;
+            }
+        }
+        s->raw[s->len++] = text[i];
+    }
+    if (s->len >= kExecChunkRaw) {
+        exec_flush(s);
+        if (s->failed) {
+            return;
+        }
+    }
+    s->raw[s->len++] = '\r';
+}
+
+static void handle_exec_request(const char *json, long len)
+{
+    char payload[NOW68K_CONTROL_SEND_CAP];
+    /* A line is a human's typing, not a path or a name: kInputCap on the
+     * guest's own console is 256, and a line the host can send but this
+     * machine could not have typed would answer differently on the two
+     * faces. Same number, for that reason. */
+    char line[256];
+    ExecSink sink;
+    long pos = 0;
+    int ok = 1;
+    int served;
+    long id = 0;
+    int have_id = now68k_json_find_int(json, (size_t)len, "id", &id);
+
+    if (!read_string_field(json, (size_t)len, "line", line, sizeof line)) {
+        line[0] = '\0';
+    }
+
+    sink.id = have_id ? id : 0;
+    sink.seq = 0;
+    sink.len = 0;
+    sink.failed = 0;
+
+    /* NULL pump: this IS the wire, and pumping from inside its own dispatch
+     * would re-enter the read path with a half-served request on the stack.
+     * The console window passes wire_idle here instead - see N68ExecPump.
+     * Costs no more than command.request already costs, which has never
+     * pumped either. */
+    served = now68k_exec_line(line, exec_emit, &sink, NULL);
+    exec_flush(&sink);
+
+    /* Terminal status only - the text went out in exec.output, including
+     * when there was exactly one frame of it. ExecResult carries no output
+     * by schema, which is what lets a streaming guest arrive later without
+     * breaking a host that already speaks this. */
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                     "{\"type\":\"exec.result\",\"id\":");
+    ok = ok && now68k_fmt_append_long(payload, (long)sizeof payload, &pos,
+                                      have_id ? id : 0);
+    if (served) {
+        ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                         ",\"ok\":true}");
+    } else {
+        /* The human already read "! unknown-command: <verb>" in the output;
+         * this is the same fact in the form a TOOL can branch on. Both come
+         * from one return value, so they cannot disagree. */
+        ok = ok && now68k_fmt_append_str(
+                       payload, (long)sizeof payload, &pos,
+                       ",\"ok\":false,\"code\":\"unknown-command\","
+                       "\"message\":\"this Mac serves no such command\"}");
+    }
+    if (!ok || pos <= 0) {
+        now68k_log("wire: exec.result build failed");
+        return;
+    }
+    if (!enqueue_control_send(payload, pos)) {
+        now68k_log("wire: exec.result dropped, outbound queue full");
+    }
+}
+
 static void handle_census_request(const char *json, long len)
 {
     char payload[160];
@@ -2148,6 +2309,14 @@ static void handle_control_message(const char *json, long len)
      * actually blocked. */
     if (strcmp(type, "command.request") == 0) {
         handle_command_request(json, len);
+        return;
+    }
+    /* Same rule as command.request above and for the same reason: this has a
+     * contract-mandated reply shape (exec.result, always), so it must never
+     * fall through to send_error_reply - a host waiting on exec.result is
+     * not listening for an error envelope and would wait forever. */
+    if (strcmp(type, "exec.request") == 0) {
+        handle_exec_request(json, len);
         return;
     }
     if (strcmp(type, "census.request") == 0) {
