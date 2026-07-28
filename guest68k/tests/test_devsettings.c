@@ -209,7 +209,7 @@ int main(void)
     {
         static const char kFile[] =
             "# NOW-68K dev settings - lab only\n"
-            "host = 10.91.5.47\n"
+            "host = 192.0.2.47\n"
             "port = 5250\n"
             "retry = on\n"
             "retry-interval = 5\n"
@@ -218,8 +218,8 @@ int main(void)
         N68DevSettings s = parse(kFile);
 
         g_checks++;
-        if (!s.have_host || s.host_addr != 0x0A5B052FUL
-            || strcmp(s.host_text, "10.91.5.47") != 0
+        if (!s.have_host || s.host_addr != 0xC000022FUL
+            || strcmp(s.host_text, "192.0.2.47") != 0
             || !s.have_port || s.port != 5250
             || !s.have_retry || !s.retry_on
             || !s.have_retry_secs || s.retry_secs != 5

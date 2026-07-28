@@ -43,7 +43,7 @@ swift test --package-path host --filter Metal68KPutTests 2>&1 | grep NOWBASE
 Three kinds:
 
 ```
-NOWBASE meta guest=now-68k version=0.19 os=7.1 port=5252 machine=10.91.5.180 repeats=3
+NOWBASE meta guest=now-68k version=0.19 os=7.1 port=5252 machine=192.0.2.180 repeats=3
 NOWBASE rung dir=receive label=4_MB bytes=4194304 secs=11.70 rate_kbs=350 rep=1/3 result=ok reports=512 maxgap=8192 integrity=guest-crc32-confirmed stalled_at=-
 NOWBASE control dir=send asked=28 unanswered=0 worst_s=0.10 idle_s=-
 ```

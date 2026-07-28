@@ -92,7 +92,7 @@ Boolean now_conn_edit(char *host, long host_cap, unsigned short *port)
             if (!now_conn_ipv4_valid(new_host)) {
                 set_field(dialog, kItemStatus,
                           "The address must be dotted IPv4, like "
-                          "10.91.5.20.");
+                          "192.168.1.20.");
             } else if ((parsed = now_conn_port_parse(new_port)) < 0) {
                 set_field(dialog, kItemStatus,
                           "The port must be a number from 1 through "

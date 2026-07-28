@@ -6,8 +6,8 @@ This is the record of what that actually was, measured rather than
 reasoned about, and what was built in response.
 
 All measurements below are against **`now-guest-2` on the real
-PowerBook 1400c** (10.91.5.47, port 5251, OS 9.1, 56 MB, CarbonLib 1.6)
-unless a line says otherwise. Host tests that need no hardware are
+PowerBook 1400c** (port 5251, OS 9.1, 56 MB, CarbonLib 1.6) unless a
+line says otherwise. Host tests that need no hardware are
 marked "local".
 
 ## Status at handoff (2026-07-20)

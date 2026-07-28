@@ -47,23 +47,58 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 VERSION_SRC = REPO / "guest68k" / "src" / "wire68.c"
 STAMPER = REPO / "guest" / "tools" / "name_macbinary.py"
-
-# The 180c, and the folder NOW-68K builds live in on it. Overridable, but
-# named here so the common case is one word on the command line.
-HOST = os.environ.get("NOW68K_FTP_HOST", "10.91.5.180")
-USER = os.environ.get("NOW68K_FTP_USER", "claude")
-PASSWORD = os.environ.get("NOW68K_FTP_PASS", "claude")
-REMOTE_DIR = os.environ.get("NOW68K_FTP_DIR", "Lab/now-68k")
-
-TOOLCHAIN = Path(os.environ.get(
-    "NOW68K_TOOLCHAIN",
-    "/Users/michelle/Lab/Tools/Retro68-build-68k/toolchain/"
-    "m68k-apple-macos/cmake/retro68.toolchain.cmake"))
+LAB_ENV = REPO / ".env.lab"
 
 
 def fail(message: str) -> "NoReturn":  # noqa: F821
     print("deploy-68k: " + message, file=sys.stderr)
     raise SystemExit(1)
+
+
+def load_lab_env() -> None:
+    """Read `.env.lab` into the environment, without overriding what is
+    already set there.
+
+    Nobody's network belongs in a commit: the address of a particular
+    PowerBook, the account it answers to and the path a particular
+    toolchain was built at are properties of ONE desk, and a default
+    baked into this file is a default that is wrong for everyone else
+    while looking authoritative. So the values live in a gitignored file
+    beside the repo, and an explicit environment variable still wins over
+    it - which is what lets a one-off run point at another machine
+    without editing anything."""
+    if not LAB_ENV.exists():
+        return
+    for line in LAB_ENV.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip())
+
+
+def lab_setting(name: str, what: str, default: str = None) -> str:
+    """A value this script cannot invent. Missing means STOP and say which
+    key and where it goes, because the failure mode we are avoiding is a
+    deploy that silently goes to whatever machine a stale default named."""
+    value = os.environ.get(name, default)
+    if not value:
+        fail("no %s (%s).\n"
+             "  Set it in .env.lab or the environment - see "
+             "docs/lab-setup.md.\n"
+             "  Start from: cp .env.lab.example .env.lab" % (name, what))
+    return value
+
+
+load_lab_env()
+
+HOST = lab_setting("NOW68K_FTP_HOST", "the 68K Mac's address")
+USER = lab_setting("NOW68K_FTP_USER", "its FTP account")
+PASSWORD = lab_setting("NOW68K_FTP_PASS", "that account's password")
+REMOTE_DIR = os.environ.get("NOW68K_FTP_DIR", "Lab/now-68k")
+
+TOOLCHAIN = Path(lab_setting("NOW68K_TOOLCHAIN",
+                             "the Retro68 68K toolchain file"))
 
 
 def source_version() -> str:
@@ -202,8 +237,9 @@ def write_settings(ftp: FTP, port: str) -> None:
         "port = %s\n"
         "retry = on\n"
         "retry-interval = 5\n"
-        "autoconnect = on\n" % (os.environ.get("NOW68K_HARNESS_HOST",
-                                               "10.91.5.15"), port))
+        "autoconnect = on\n" % (lab_setting("NOW68K_HARNESS_HOST",
+                                            "this Mac's address, as the "
+                                            "guest must dial it"), port))
     # Extra keys for a particular experiment - e.g. shortening the launch
     # search budget so the truncation branch can be watched firing on a
     # volume whose catalog finishes well inside the real one.

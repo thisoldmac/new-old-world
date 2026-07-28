@@ -33,7 +33,7 @@ final class MetalMachineGuardTests: XCTestCase {
         p832
         cpython3.11
         f7
-        n10.91.5.15:63194->10.91.5.180:5252
+        n192.0.2.15:63194->192.0.2.180:5252
         TST=ESTABLISHED
         TQR=0
         TQS=131072
@@ -45,7 +45,7 @@ final class MetalMachineGuardTests: XCTestCase {
             .init(pid: 4711, command: "xctest",
                   endpoint: "*:5252", state: "LISTEN"),
             .init(pid: 832, command: "python3.11",
-                  endpoint: "10.91.5.15:63194->10.91.5.180:5252",
+                  endpoint: "192.0.2.15:63194->192.0.2.180:5252",
                   state: "ESTABLISHED"),
         ])
     }
@@ -158,7 +158,7 @@ final class MetalMachineGuardTests: XCTestCase {
         XCTAssertTrue(
             MetalMachineGuard.Holder(
                 pid: 1, command: "xctest",
-                endpoint: "10.91.5.15:5252->10.91.5.180:1401",
+                endpoint: "192.0.2.15:5252->192.0.2.180:1401",
                 state: "ESTABLISHED").holdsLocally(5252),
             "another session's harness already has the machine")
         XCTAssertTrue(
@@ -196,8 +196,8 @@ final class MetalMachineGuardTests: XCTestCase {
         XCTAssertTrue(
             MetalMachineGuard.Holder(
                 pid: 832, command: "python3.11",
-                endpoint: "10.91.5.15:63194->10.91.5.180:21",
-                state: "ESTABLISHED").talksTo("10.91.5.180"),
+                endpoint: "192.0.2.15:63194->192.0.2.180:21",
+                state: "ESTABLISHED").talksTo("192.0.2.180"),
             "an FTP deploy in flight is the case this exists for")
     }
 
@@ -208,18 +208,18 @@ final class MetalMachineGuardTests: XCTestCase {
         XCTAssertFalse(
             MetalMachineGuard.Holder(
                 pid: 1, command: "x",
-                endpoint: "10.91.5.180:5252->10.91.5.15:1401",
-                state: "ESTABLISHED").talksTo("10.91.5.180"))
+                endpoint: "192.0.2.180:5252->192.0.2.15:1401",
+                state: "ESTABLISHED").talksTo("192.0.2.180"))
     }
 
-    /// The colon anchors this one too: 10.91.5.18 must not match a
-    /// conversation with 10.91.5.180.
+    /// The colon anchors this one too: 192.0.2.18 must not match a
+    /// conversation with 192.0.2.180.
     func testAnAddressThatIsAPrefixOfAnotherIsNotAMatch() {
         XCTAssertFalse(
             MetalMachineGuard.Holder(
                 pid: 1, command: "x",
-                endpoint: "10.91.5.15:1000->10.91.5.180:21",
-                state: "ESTABLISHED").talksTo("10.91.5.18"))
+                endpoint: "192.0.2.15:1000->192.0.2.180:21",
+                state: "ESTABLISHED").talksTo("192.0.2.18"))
     }
 
     // MARK: - the live half

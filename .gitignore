@@ -1,5 +1,10 @@
 .DS_Store
 .build/
+
+# Lab configuration: addresses, credentials and toolchain paths that
+# describe one desk. Start from .env.lab.example; see docs/lab-setup.md.
+.env.lab
+
 build-*/
 xcuserdata/
 *.xcodeproj/project.xcworkspace/

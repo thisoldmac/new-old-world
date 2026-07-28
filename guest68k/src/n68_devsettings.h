@@ -33,7 +33,7 @@
  * nothing whose absence is a syntax error:
  *
  *     # NOW-68K dev settings - lab only, never shipped
- *     host = 10.91.5.47
+ *     host = 192.168.1.20
  *     port = 5250
  *     retry = on
  *     retry-interval = 5

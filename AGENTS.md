@@ -1,9 +1,9 @@
 # Working conventions for New Old World
 
 Read this before writing code or docs here. It applies to **everyone —
-human or agent**. The parent repository's `AGENTS.md` still governs the
-machines, the corpus and the lab; this covers what is different about
-this one.
+human or agent**. [CONTRIBUTING.md](CONTRIBUTING.md) is the shorter door
+into the same material for a first-time contributor; this is the full
+set.
 
 ## What this is
 
@@ -13,10 +13,7 @@ third, **NOW-68K** (`guest68k/`), speaks a subset of the same contract
 from a 68K Mac under System 7.1 over MacTCP — non-Carbon Toolbox C via
 Retro68, for machines Carbon cannot reach. It is a sibling of the Carbon
 guest, not a port of it: load `classic-mac-toolbox-ui` and
-`classic-mac-toolbox-platform` for that tree, not the Carbon skills. No
-TimBotTu runtime code is imported on either side. `now/` is a **nested
-repository with its own history**, gitignored by the parent exactly like
-`qemu/`.
+`classic-mac-toolbox-platform` for that tree, not the Carbon skills.
 
 NOW may also ship **optional resident components** on the guest (the NOW
 Extension), each behind a versioned in-memory contract stated once in a
@@ -152,9 +149,16 @@ obviously correct and had never run on the real machine. Never write
 
 ## Deploying to the PowerBook
 
-FTP to `10.91.5.47` (`claude`/`claude`), into `Lab/`. Rumpus decodes a
+FTP the build to the machine, into its `Lab/` folder. Rumpus decodes a
 MacBinary `.bin` on arrival; verify by comparing fork sizes, not by
 re-downloading.
+
+The address, account and toolchain path are **not in this repository** —
+they describe one desk. They come from `.env.lab`, which is gitignored;
+copy `.env.lab.example` and see [docs/lab-setup.md](docs/lab-setup.md).
+`scripts/deploy-68k` reads it and stops naming the missing key rather
+than guessing, because the failure it exists to prevent is a deploy that
+quietly went to whatever machine a stale default named.
 
 - **The canonical binary is `New Old World`.** The build emits it as
   `New Old World.bin` beside `now-guest.bin` (the CMake target name can't

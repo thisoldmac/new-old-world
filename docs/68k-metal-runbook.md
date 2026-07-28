@@ -47,7 +47,7 @@ Empty is what you want. Anything there is another harness, a
   nobody; the NOW app sits on 5250 all day without touching the 180c.
 
 ```bash
-lsof -nP -iTCP@10.91.5.180
+lsof -nP -iTCP@"$NOW_METAL_MACHINE"
 ```
 
 Empty is what you want. An `ftp` or `python` conversation is a deploy in
@@ -73,9 +73,20 @@ decision, and NOW-68K serves no `putstat`. See the ledger.)
 |---|---|
 | `NOW_METAL=1` | opts in. Without it every metal suite skips; with it they FAIL rather than skip, which is the point (AGENTS.md). |
 | `NOW_METAL_PORT` | the port the guest dials. **Set it.** The defaults differ per suite (5250, 5251, 5252, 5253) and a run that takes the default takes whichever one that file happened to pick. |
-| `NOW_METAL_MACHINE` | the guest's address — `10.91.5.180` for the 180c. **Set it for any run against the PowerBook.** Without it the guard cannot check whether anything else on this Mac is talking to the machine, and it says so rather than passing quietly. |
+| `NOW_METAL_MACHINE` | the guest's address. **Set it for any run against the PowerBook.** Without it the guard cannot check whether anything else on this Mac is talking to the machine, and it says so rather than passing quietly. |
 | `NOW_METAL_REPEATS` | how many times the rungs at or above 1 MB are measured. Default 1. **Use 3 on the 180c** — see [68k-metal-baseline.md](68k-metal-baseline.md). |
 | `NOW_68K_NEW_APP` etc. | set only by `scripts/deploy-68k --handoff`. Do not set them by hand. |
+
+The machine's address is not in this repository — it describes one desk.
+Put it in `.env.lab` (see [lab-setup.md](lab-setup.md)) and export it for
+the shell you run the recipes below in:
+
+```bash
+set -a; . ./.env.lab; set +a
+```
+
+The recipes name `NOW_METAL` and `NOW_METAL_PORT` on the line, because
+those change per run; `NOW_METAL_MACHINE` comes from that file.
 
 **One `swift test` process at a time on this Mac.** The suites share
 external state: `HostLogTests` and `LoggingSpecTests` both write
@@ -127,7 +138,7 @@ Without `--handoff` somebody has to double-click the new build on the
 ### 1. The wire still works — `Metal68KTests`
 
 ```bash
-NOW_METAL=1 NOW_METAL_PORT=5252 NOW_METAL_MACHINE=10.91.5.180 \
+NOW_METAL=1 NOW_METAL_PORT=5252 \
   swift test --package-path host --filter Metal68KTests
 ```
 
@@ -138,7 +149,7 @@ suite's failure mode includes "the wire is not working".
 ### 2. What the guest says it serves — `Metal68KContractTests`
 
 ```bash
-NOW_METAL=1 NOW_METAL_PORT=5252 NOW_METAL_MACHINE=10.91.5.180 \
+NOW_METAL=1 NOW_METAL_PORT=5252 \
   swift test --package-path host --filter Metal68KContractTests
 ```
 
@@ -149,7 +160,7 @@ ladder.
 ### 3. Receiving — `Metal68KPutTests`
 
 ```bash
-NOW_METAL=1 NOW_METAL_PORT=5252 NOW_METAL_MACHINE=10.91.5.180 \
+NOW_METAL=1 NOW_METAL_PORT=5252 \
   NOW_METAL_REPEATS=3 \
   swift test --package-path host --filter Metal68KPutTests
 ```
@@ -162,7 +173,7 @@ thing that can be slow rather than wrong.
 ### 4. Sending — `Metal68KSendTests`
 
 ```bash
-NOW_METAL=1 NOW_METAL_PORT=5252 NOW_METAL_MACHINE=10.91.5.180 \
+NOW_METAL=1 NOW_METAL_PORT=5252 \
   NOW_METAL_REPEATS=3 \
   swift test --package-path host --filter Metal68KSendTests
 ```
@@ -236,7 +247,7 @@ guard runs first. In order of strength:
 1. **The guard fired.** Then it is contention and you have not measured
    anything. Stop and clear the machine.
 2. **A `deploy-68k` or another `xctest` was talking to the machine.**
-   `lsof -nP -iTCP@10.91.5.180` after the fact still catches a long one.
+   `lsof -nP -iTCP@"$NOW_METAL_MACHINE"` after the fact still catches a long one.
 3. **`xfer` at the machine shows a transfer you did not start.** The
    strongest evidence there is, and only a human at the keyboard can
    get it.

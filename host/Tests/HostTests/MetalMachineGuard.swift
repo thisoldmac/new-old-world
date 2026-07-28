@@ -43,7 +43,7 @@ enum MetalMachineGuard {
     struct Holder: Equatable, CustomStringConvertible {
         var pid: Int32
         var command: String
-        /// `*:5252`, or `10.91.5.15:63194->10.91.5.180:21` for a
+        /// `*:5252`, or `192.0.2.15:63194->192.0.2.180:21` for a
         /// conversation.
         var endpoint: String
         /// `LISTEN`, `ESTABLISHED`, or empty when lsof reported none.
@@ -240,7 +240,7 @@ enum MetalMachineGuard {
 
     /// Nothing else on this Mac may be talking to the machine under test.
     ///
-    /// `NOW_METAL_MACHINE` names it (the 180c is 10.91.5.180). When it is
+    /// `NOW_METAL_MACHINE` names it (the 180c is 192.0.2.180). When it is
     /// unset the address check cannot run — there is no way to know from
     /// here whether the guest that will dial in is the PowerBook or a
     /// local emulator — so this says so out loud rather than passing
@@ -289,7 +289,7 @@ enum MetalMachineGuard {
         } else {
             print("=== machine-busy guard: NOW_METAL_MACHINE unset, so only "
                   + "the port checks ran. Set it to the guest's address "
-                  + "(the 180c is 10.91.5.180) for the full check.")
+                  + "(the 180c is 192.0.2.180) for the full check.")
         }
 
         let neighbours = conventionalPorts

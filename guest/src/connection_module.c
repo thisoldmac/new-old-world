@@ -184,7 +184,7 @@ static Boolean read_fields(char *host, long host_cap, long *port_out)
 {
     if (!now_conn_ipv4_valid(g_host)) {
         set_status("The address must be a dotted IPv4 number, "
-                   "like 10.91.5.20. Use Edit to set it.");
+                   "like 192.168.1.20. Use Edit to set it.");
         return false;
     }
     strncpy(host, g_host, (size_t)(host_cap - 1));

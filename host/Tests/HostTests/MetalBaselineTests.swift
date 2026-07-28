@@ -26,7 +26,7 @@ final class MetalBaselineTests: XCTestCase {
         let line = MetalBaseline.meta(guestName: "New Old World",
                                       version: "0.19", os: "7.1",
                                       port: 5252, repeats: 3,
-                                      machine: "10.91.5.180")
+                                      machine: "192.0.2.180")
         XCTAssertTrue(line.contains("guest=New_Old_World"), line)
         XCTAssertEqual(line.split(separator: " ").count, 8,
                        "marker, kind, and six key=value fields: \(line)")
@@ -38,9 +38,9 @@ final class MetalBaselineTests: XCTestCase {
     func testMetaCarriesTheConditionsTheRatesDependOn() {
         let line = MetalBaseline.meta(guestName: "now-68k", version: "0.19",
                                       os: "7.1", port: 5252, repeats: 3,
-                                      machine: "10.91.5.180")
+                                      machine: "192.0.2.180")
         XCTAssertEqual(line, "NOWBASE meta guest=now-68k version=0.19 "
-                           + "os=7.1 port=5252 machine=10.91.5.180 repeats=3")
+                           + "os=7.1 port=5252 machine=192.0.2.180 repeats=3")
     }
 
     /// An unnamed machine is recorded as unnamed rather than omitted. A
