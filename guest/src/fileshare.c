@@ -5,36 +5,16 @@
 
 #include "prefs.h"
 #include "pump.h"
+#include "share_path.h"
 
 enum { kSharingDialogID = 301 };
 
 /* --- path handling ------------------------------------------------------ */
 
-/* Rejects traversal and overlong segments. Colon-path semantics make an
-   empty segment mean "parent", so "::" anywhere (or a bare colon at
-   either end) is refused rather than resolved. */
-static int rel_path_ok(const char *rel)
-{
-    long seg = 0;
-
-    if (rel == NULL) {
-        return 0;
-    }
-    if (rel[0] == ':') {
-        return 0;
-    }
-    for (; *rel != '\0'; ++rel) {
-        if (*rel == ':') {
-            if (seg == 0) {
-                return 0;             /* empty segment = traversal */
-            }
-            seg = 0;
-        } else if (++seg > 31) {
-            return 0;
-        }
-    }
-    return 1;
-}
+/* The share-boundary rule is now_share_path_ok, in
+   contract/share_path.h: stated once for both guests and tested
+   natively. It used to be a private copy here, character for character
+   NOW-68K's and untested on this side. */
 
 /* Finds the vRefNum of the configured share volume (empty = boot
    volume, which always mounts first). */
@@ -93,7 +73,7 @@ static int resolve(const char *rel, FSSpec *spec)
     long dir;
     OSErr err;
 
-    if (!rel_path_ok(rel)) {
+    if (!now_share_path_ok(rel)) {
         return kFilesBadPath;
     }
     now_prefs_load(&prefs);
@@ -1153,7 +1133,7 @@ static int resolve_folder_ex(const char *rel, FSSpec *spec, long *dir_id,
     long dir;
     OSErr err;
 
-    if (!rel_path_ok(rel)) {
+    if (!now_share_path_ok(rel)) {
         return kFilesBadPath;
     }
     now_prefs_load(&prefs);

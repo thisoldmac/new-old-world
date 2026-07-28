@@ -5,6 +5,7 @@
 
 #include "json_scan.h"
 #include "n68_crc32.h"
+#include "share_path.h"
 
 #include <string.h>
 
@@ -329,27 +330,13 @@ int n68_putrx_parse_offer(const char *json, long len, N68PutOffer *out)
     return 1;
 }
 
+/* The rule itself is contract/share_path.h, shared with the PowerPC
+   guest. This name stays published because test_putrx.c walks the
+   traversal cases through it, and because a caller here should be
+   reading this module's vocabulary rather than the contract's. */
 int n68_putrx_path_ok(const char *rel)
 {
-    long seg = 0;
-
-    if (rel == NULL) {
-        return 0;
-    }
-    if (rel[0] == ':') {
-        return 0;             /* leading colon = "start at the parent" */
-    }
-    for (; *rel != '\0'; ++rel) {
-        if (*rel == ':') {
-            if (seg == 0) {
-                return 0;     /* empty segment = traversal */
-            }
-            seg = 0;
-        } else if (++seg > 31) {
-            return 0;         /* longer than HFS can name */
-        }
-    }
-    return 1;
+    return now_share_path_ok(rel);
 }
 
 N68PutCode n68_putrx_offer(N68PutRx *rx, const N68PutOffer *offer)

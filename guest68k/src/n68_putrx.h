@@ -150,10 +150,14 @@ typedef struct {
  * A LEADING OR DOUBLED COLON IS THE WHOLE POINT. On HFS an empty path
  * segment means "parent", so ":Lab" and "Lab::Secrets" are traversal out
  * of the share, and a share that can be escaped upward is not a share.
- * This is the same rule the PowerPC guest applies in rel_path_ok
- * (now/guest/src/fileshare.c) and it is stated in both places because
- * both guests are reached by the same host over the same verb - a guest
- * that resolved one of these would be the one that leaked.
+ *
+ * The rule itself is now contract/share_path.h, compiled by both guests
+ * and by the host cc for its own test, the way peek_table.h is. It used
+ * to be stated HERE and again in the PowerPC guest's rel_path_ok,
+ * character for character the same and tested on one side only - which
+ * is the arrangement AGENTS.md names twice as having cost this project
+ * most. Both guests are reached by the same host over the same verbs; a
+ * guest that resolved one of these paths would be the one that leaked.
  *
  * Published rather than static so guest68k/tests/test_putrx.c can walk
  * the traversal cases directly: this is the check that must not be

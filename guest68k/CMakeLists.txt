@@ -66,7 +66,8 @@ add_application(now68k-guest
 )
 
 target_include_directories(now68k-guest PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../contract)
 
 # Retro68/CMake defaults to -O0 when no optimization level is set, which
 # would make every later size/timing measurement on this milestone

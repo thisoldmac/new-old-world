@@ -104,6 +104,7 @@ run_c guest json_native_test.c       ""  src/json.c
 run_c guest peek_table_test.c \
       "-DNOW_PEEK_TABLE_HOST -I $repo_root/contract"
 run_c guest peek_validate_test.c     ""  src/peek_validate.c
+run_c guest share_path_test.c        "-I $repo_root/contract"
 run_c guest proc_quit_args_test.c    ""  src/proc_quit_args.c
 run_c guest processes_layout_test.c  ""  src/processes_layout.c
 run_c guest software_layout_test.c   ""  src/software_layout.c
@@ -132,8 +133,8 @@ run_c guest68k test_shot.c         "" src/n68_shot.c src/n68_cmdresult.c \
 run_c guest68k test_shotwire.c     "" src/n68_shotwire.c src/numfmt.c
 run_c guest68k test_packbits.c     "" src/n68_packbits.c
 run_c guest68k test_crc32.c        "" src/n68_crc32.c
-run_c guest68k test_putrx.c        "" src/n68_putrx.c src/n68_crc32.c \
-      src/json_scan.c
+run_c guest68k test_putrx.c        "-I $repo_root/contract" \
+      src/n68_putrx.c src/n68_crc32.c src/json_scan.c
 run_c guest68k test_puttx.c        "" src/n68_puttx.c src/n68_crc32.c \
       src/n68_cmdresult.c src/numfmt.c src/frame.c
 run_c guest68k test_filelist.c     "" src/n68_filelist.c src/n68_cmdresult.c \
