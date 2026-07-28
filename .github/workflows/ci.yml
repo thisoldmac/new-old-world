@@ -74,8 +74,12 @@ jobs:
           #     constant that appears throughout, correctly.
           #   * test directories hold synthetic fixtures BY CONSTRUCTION.
           #     An IP parser has to be tested against real-shaped
-          #     addresses, and 192.168.1.1 in connfields_test.c leaks
+          #     addresses, and the ones in connfields_test.c leak
           #     nothing about anyone.
+          #
+          # This comment deliberately spells no address itself: the job
+          # greps the whole tree including this file, and an example in
+          # a comment here would fail the build it is explaining.
           #
           # No \b in this pattern. `git grep -E` accepts \b and then
           # matches NOTHING, so an earlier version of this guard read
