@@ -84,6 +84,17 @@ Both: comments say **why**, not what. Match the surrounding density.
 
 ## Testing
 
+- **`scripts/test-all` is the gate.** It runs the three below in order,
+  cheapest first, and stops at the first failure naming it. A broken
+  frame codec should cost two seconds to find, not the four minutes
+  xcodebuild takes to reach the same conclusion by a longer route.
+- Guest builds: `scripts/build-guests` cross-compiles both guests.
+  Nothing else in this tree does — every other gate can be green while
+  neither guest compiles, because none of them invokes a cross-compiler,
+  which is exactly the shape of gate this project has been bitten by
+  before. It skips (exit 0) without Retro68 installed, because a
+  contributor who cannot run a gate is not failing it. A build proves
+  only that the code compiles.
 - Host: `scripts/test-host` — the suites *and* the Xcode app target, Debug
   and Release. `swift test` alone is not the gate: the two build systems
   have diverged before, and a broken app build passed 459 green tests for

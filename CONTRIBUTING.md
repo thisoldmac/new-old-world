@@ -9,6 +9,9 @@ your desk.
 
 Most of the tree, as it turns out.
 
+**`scripts/test-all` is the one command.** It runs everything below in
+order, cheapest first, and stops at the first failure naming it.
+
 - **The host application** is an ordinary Swift package plus an Xcode
   project. `scripts/test-host` runs the suites and both build systems on
   any recent macOS. No guest required.

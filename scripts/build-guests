@@ -1,0 +1,74 @@
+#!/bin/sh
+# Cross-build both guests, which nothing else in this tree does.
+#
+#     scripts/build-guests           # both
+#     scripts/build-guests ppc       # only the PowerPC Carbon guest
+#     scripts/build-guests 68k       # only NOW-68K
+#
+# Until this existed, the only thing that compiled a guest was a person
+# about to deploy one. Every other gate here - 556 host tests, 31 native
+# tests, both Xcode configurations - can be green while neither guest
+# builds at all, because none of them invokes a cross-compiler. That is
+# the same shape as the defect this project has paid for most: a gate
+# that looks like coverage and never touched the thing it names.
+#
+# A build proves the code COMPILES and nothing whatever about behaviour
+# (AGENTS.md: verification is a status, not an adjective). It is the
+# cheapest possible check and it is not one of the three levels.
+#
+# Toolchains come from .env.lab - see docs/lab-setup.md. Absent, this
+# skips with a message and exit 0: a contributor with no Retro68 install
+# is not failing, they simply cannot run this gate. `scripts/test-all`
+# reports the skip rather than hiding it.
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_root=$(dirname "$script_dir")
+which=${1:-both}
+
+if [ -f "$repo_root/.env.lab" ]; then
+    set -a
+    . "$repo_root/.env.lab"
+    set +a
+fi
+
+out_root=${TMPDIR:-/tmp}/now-guest-builds
+rc=0
+
+have () { [ -n "${1:-}" ] && [ -f "$1" ]; }
+
+# build_guest <label> <source-dir> <toolchain-file> <build-subdir>
+build_guest() {
+    label=$1; src=$2; toolchain=$3; sub=$4
+    if ! have "$toolchain"; then
+        echo "== $label: SKIPPED (no toolchain; see docs/lab-setup.md)"
+        return 0
+    fi
+    dir="$out_root/$sub"
+    log="$dir/build.log"
+    mkdir -p "$dir"
+    # Configure quietly; a failure prints the log rather than a bare
+    # non-zero, because "cmake failed" with no output is a bug report
+    # nobody can act on.
+    if ! cmake -S "$repo_root/$src" -B "$dir" -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$toolchain" >"$log" 2>&1 \
+        || ! cmake --build "$dir" >>"$log" 2>&1; then
+        echo "== $label: FAILED"
+        tail -30 "$log"
+        rc=1
+        return 0
+    fi
+    echo "== $label: ok"
+}
+
+if [ "$which" = both ] || [ "$which" = ppc ]; then
+    build_guest "guest (PowerPC Carbon)" guest \
+        "${NOW_PPC_TOOLCHAIN:-}" ppc
+fi
+
+if [ "$which" = both ] || [ "$which" = 68k ]; then
+    build_guest "guest68k (68K, System 7.1)" guest68k \
+        "${NOW68K_TOOLCHAIN:-}" m68k
+fi
+
+exit $rc

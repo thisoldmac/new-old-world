@@ -1,0 +1,50 @@
+#!/bin/sh
+# Every gate this project has, cheapest first.
+#
+#     scripts/test-all
+#
+#   1. native tests   - both guests' pure logic, host cc, ~2 seconds
+#   2. guest builds   - both cross-compilers (skipped without Retro68)
+#   3. host gate      - 556 tests plus both Xcode configurations
+#
+# Cheapest first is the whole design. A broken frame codec should cost
+# two seconds to discover, not the four minutes it takes xcodebuild to
+# reach the same conclusion by a longer route.
+#
+# What this does NOT run: the metal suites. They need hardware, they are
+# opt-in through NOW_METAL, and once opted in they FAIL rather than skip
+# (AGENTS.md). Running them from a general gate would make every ordinary
+# test run depend on a 33-year-old laptop being switched on.
+# docs/68k-metal-runbook.md is their procedure.
+#
+# Green here means TESTED. It does not mean metal-verified, and the two
+# guest builds mean only that the guests compile.
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
+fail () {
+    echo
+    echo "==> FAILED at: $1"
+    echo "    Nothing after it ran."
+    exit 1
+}
+
+echo "==> [1/3] native tests"
+"$script_dir/test-native" || fail "native tests"
+
+echo
+echo "==> [2/3] guest cross-builds"
+"$script_dir/build-guests" || fail "guest cross-builds"
+
+echo
+echo "==> [3/3] host gate"
+"$script_dir/test-host" >/dev/null 2>&1 || {
+    # Re-run showing output: the host gate is verbose enough that hiding
+    # it on the happy path is worth the second run on the sad one.
+    "$script_dir/test-host" || fail "host gate"
+}
+echo "==> host gate passed"
+
+echo
+echo "==> all gates passed (TESTED; not metal-verified)"

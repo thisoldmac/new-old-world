@@ -54,7 +54,11 @@ QEMU="$(need NOW_Q800_QEMU "${NOW_Q800_QEMU:-}" "path to qemu-system-m68k")"
 ROM="$(need NOW_Q800_ROM "${NOW_Q800_ROM:-}" "the Quadra 800 ROM")"
 BASE="$(need NOW_Q800_IMG "${NOW_Q800_IMG:-}" "the base disk image")"
 HFS="$(need NOW_HFSUTILS "${NOW_HFSUTILS:-}" "hfsutils, to inject into the image")"
-TOOLCHAIN="$(need NOW68K_TOOLCHAIN "${NOW68K_TOOLCHAIN:-}" "the Retro68 68K toolchain")"
+# The toolchain FILE, not its directory. One key, one meaning: this
+# script used to take the directory and append the rest itself while
+# deploy-68k took the file, so a single .env.lab value could not satisfy
+# both. State a limit once, where every reader of it agrees (AGENTS.md).
+TOOLCHAIN="$(need NOW68K_TOOLCHAIN "${NOW68K_TOOLCHAIN:-}" "the Retro68 68K toolchain FILE")"
 
 # --- two helpers this used to source from a sibling repository ----------
 # Inlined so the script stands on its own: a public checkout cannot source
@@ -141,7 +145,7 @@ if [ "$BUILD" = 1 ]; then
     # (AGENTS.md, "check the build stamp before believing a test result").
     touch "$REPO/guest68k/src/wire68.c"
     cmake -S "$REPO/guest68k" -B "$RUN/build" -G Ninja \
-        -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN/m68k-apple-macos/cmake/retro68.toolchain.cmake" \
+        -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
         >/dev/null
     cmake --build "$RUN/build" >/dev/null
 fi
