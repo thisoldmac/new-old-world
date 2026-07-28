@@ -56,6 +56,9 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 | `process.quit` | ✅ | ✅ | both guests also serve a `quit` VERB — PSN for a machine, name for a person |
 | `process.shot` | ✅ | ❌ | per-window capture; 68K captures the whole screen only |
 | `software.list` | ✅ | ❌ | whole-volume sweep |
+| `exec.request` | ✅ | ✅ | the console plane — one opaque line, the guest's own console text back |
+| `exec.cancel` | ✅ | ✅ | always answered, even for an id the guest does not have |
+| `exec.input` | ✅ | ✅ | answers a guest that is waiting; a guest that was not drops it |
 | `file.offer` / `file.begin` / `file.end` | ✅ | ✅ | receiving a push |
 | `file.accept` / `file.refuse` / `file.done` | ✅ | ✅ | the reply half, both directions |
 | `file.progress` | ✅ | ❌ | 68K SENDS it and handles none inbound |
@@ -205,7 +208,9 @@ reason (`command-parity.md`, "The MCP is a client, not a face").
 
 **PPC guest** — the capture, census, files, processes and software arcs
 are metal-verified on the PowerBook 1400c; see the ledger for which
-specific paths.
+specific paths. The **exec console plane is the exception**: built and
+tested, never run on the 1400c, and not yet on a PowerPC emulator
+either — only NOW-68K's half of it has faced a live guest.
 
 **NOW-68K:**
 
@@ -223,6 +228,7 @@ specific paths.
 | **browse** (`file.list`, the `ls` verb) | emulator-verified only |
 | **capture to the guest's own disk** (`screenshot`) | **metal-verified (180c)** |
 | **capture across the wire** (`capture.request` -> bulk) | emulator-verified only |
+| **the exec console plane** (`exec.request` / `.cancel` / `.input`) | emulator-verified only (Q800, 8/8 `MetalExecTests`) |
 
 The whole file family — both directions, the largest thing NOW-68K
 serves — has never moved a byte on the 180c. A Quadra 800 under 8.1

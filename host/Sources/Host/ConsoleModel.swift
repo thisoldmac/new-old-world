@@ -3,24 +3,38 @@ import Foundation
 /// The host console: a **dumb shell** into the connected Mac.
 ///
 /// It does not know what commands the other machine has, and must not. There
-/// are two guests now — the PowerPC Carbon guest serves fifteen commands, and
-/// NOW-68K serves three — so any list kept here would be wrong for one of
-/// them, and wrong again the next time either grows a verb. So: the line a
-/// human types is relayed as it was typed (`command.request` with `line`), and
-/// whatever comes back is rendered, including the guest's own
-/// `unknown-command` for something it does not have. Every argument grammar
-/// lives on the machine that serves the command; see CommandRequest.line and
-/// each command's `x-line` in contract/asyncapi.yaml.
+/// are two guests, serving different tables, so any list kept here would be
+/// wrong for one of them and wrong again the next time either grows a verb.
+///
+/// So the line a human types goes across **exactly as typed** — the whole
+/// line, verb included, as `exec.request` — and what comes back is the text
+/// that machine's own console would have shown, rendered as text. Not
+/// re-derived from structured rows: the same bytes, from the same renderer,
+/// on the same machine. See the "Exec" section of contract/asyncapi.yaml.
+///
+/// The property that buys, stated as the thing to protect: **a verb added to
+/// a guest is typeable from here with no change to this file, this binary, or
+/// the contract.** `ConsoleShellTests` asserts it with a verb that exists
+/// nowhere else.
+///
+/// The typed `command.request` plane is still here and still right for what
+/// it is for — a caller that KNOWS the command and wants columns. Exactly one
+/// thing in this file uses it: Tab completion, which reads `help`'s first
+/// column. That is an enhancement, and it may be absent or wrong without
+/// affecting a single pixel of output.
 ///
 /// What that leaves host-side, deliberately small and explicit:
 ///
 /// - **`/`-verbs**, and the test for belonging there is that **no guest could
 ///   answer them**: `/clear`, `/save` and `/help` act on this console;
 ///   `/swpage` drives the `software.list` family, which is a wire family this
-///   side implements rather than a command anyone serves. The prefix is the
-///   whole rule — a bare word is always the far machine's, so a command added
-///   to either guest tomorrow needs no edit here and can never be shadowed by
-///   something local.
+///   side implements rather than a command anyone serves; `/cancel` stops a
+///   request THIS side made and holds the id for, which a guest has no word
+///   for. The prefix is the whole rule — a bare word is always the far
+///   machine's, so a command added to either guest tomorrow needs no edit
+///   here and can never be shadowed by something local.
+/// - **Answering a prompt.** While a command is running, a typed line goes as
+///   `exec.input` instead of starting a second one. See `submit()`.
 /// - **History** is this console's own (↑ / ↓). It needs no command set.
 /// - **Completion** (Tab) comes from the guest, at runtime, by asking it
 ///   `help` — the same command a human can type. It is fetched on the first
@@ -55,6 +69,7 @@ final class ConsoleModel: ObservableObject {
         case save
         case help
         case swpage
+        case cancel
 
         var summary: String {
             switch self {
@@ -65,6 +80,8 @@ final class ConsoleModel: ObservableObject {
                 return "these local verbs; type \"help\" for the guest's"
             case .swpage:
                 return "page software.list directly (/swpage [domain] [cursor])"
+            case .cancel:
+                return "stop the command now running on the other Mac"
             }
         }
     }
@@ -118,31 +135,54 @@ final class ConsoleModel: ObservableObject {
             runLocal(String(command.dropFirst()))
             return
         }
+        /* While a command is running, a typed line can only be an ANSWER to
+           it — a second command would be refused `exec-busy`, because both
+           guests dispatch synchronously. So it goes as exec.input rather
+           than as a new exec.request.
+
+           The host deliberately does not try to tell a prompt from ordinary
+           output; it has no way to and does not need one. If the guest was
+           not waiting it DROPS the line rather than buffering it, so the
+           cost of guessing wrong is that nothing happens — never that a
+           stale answer lands in the next prompt. */
+        if let running = listener.runningExecId {
+            listener.provideExecInput(id: running, text: command)
+            return
+        }
         send(command)
     }
 
-    /// Splits at the first run of spaces and sends the rest verbatim. This is
-    /// the whole of the host's parsing, and it stops here on purpose: the
-    /// remainder may be a path with spaces, a flag, a quoted name or nothing,
-    /// and only the machine that serves the command knows which.
+    /// Sends the line. The WHOLE line, verb and all, with no parsing at all.
+    ///
+    /// This used to split at the first run of spaces and send the name and
+    /// the remainder as two fields. That split was the last piece of command
+    /// grammar living on this side, and it was load-bearing in the wrong
+    /// direction: "a verb ends at the first space" is a rule about a command
+    /// set, this Mac serves no commands, and a line whose verb does not end
+    /// at a space could not survive it.
+    ///
+    /// Removing it is what the exec plane is for: nothing in this file, in
+    /// this binary, or in the contract has to change when a guest grows a
+    /// verb. The guest splits, interprets and renders; this console shows
+    /// what came back.
     private func send(_ command: String) {
-        let name = String(command.prefix { $0 != " " })
-        let line = String(command.dropFirst(name.count))
-            .trimmingCharacters(in: .whitespaces)
-        listener.runCommand(name, line: line) { [weak self] result in
-            self?.render(name, result)
+        listener.exec(command) { [weak self] outcome in
+            self?.render(outcome)
         }
     }
 
     /// The menu's "Ask the Guest What It Serves", and the console's own way
     /// in. Shown in the scrollback exactly as if typed, because a reply that
     /// appears with no request above it reads like an error.
+    ///
+    /// Goes through exec like any other typed line — it IS a typed line, and
+    /// routing it specially would mean the menu item and the word `help`
+    /// could show different things. Completion is fetched separately, on the
+    /// typed plane, because it needs columns rather than text; see
+    /// requestCompletions.
     func runHelp() {
         append(.input(guest: connectedName), "help")
-        listener.runCommand("help", line: "") { [weak self] result in
-            self?.render("help", result)
-            self?.absorbCompletions(result)
-        }
+        send("help")
     }
 
     private var connectedName: String {
@@ -171,7 +211,22 @@ final class ConsoleModel: ObservableObject {
             showLocalHelp()
         case .swpage:
             runSwPage(rest)
+        case .cancel:
+            runCancel()
         }
+    }
+
+    /// Stops a running exec. Local because it acts on a request THIS side
+    /// made and holds the id for — a guest has no word for "the thing you
+    /// asked me a moment ago". The guest answers a cancel either way, so the
+    /// exec still settles exactly once and this prints nothing on success:
+    /// the terminal result will say what happened.
+    private func runCancel() {
+        guard let id = listener.runningExecId else {
+            append(.notice, "Nothing is running.")
+            return
+        }
+        listener.cancelExec(id: id)
     }
 
     private func showLocalHelp() {
@@ -346,35 +401,48 @@ final class ConsoleModel: ObservableObject {
 
     // MARK: - Rendering
 
-    /// One renderer for every command, which is what a dumb shell can have:
-    /// the contract's command output is grouped [label, value] rows for all
-    /// of them, so a command added to either guest renders here with no host
-    /// change at all. A failure — including `unknown-command` — is the
-    /// guest's own words, not a local guess at them.
-    private func render(_ command: String, _ result: CommandResult) {
-        if let error = result.error {
-            append(.failure, "\(command): \(error.message) [\(error.code)]")
-            return
+    /// Shows what the guest printed. That is the whole renderer now, and the
+    /// shrinkage is the point.
+    ///
+    /// It used to rebuild the display from the contract's [label, value]
+    /// rows: pad the first column, group the second, skip anything that was
+    /// not a pair. Three things were wrong with that, and only the first was
+    /// obvious. It could not show anything that was not two columns, so
+    /// `rows.count >= 2` silently DROPPED any row a guest sent with one — a
+    /// missing line rather than an ugly one. It reconstructed a layout the
+    /// guest had already decided, so a listing lined up one way on the
+    /// PowerBook's own screen and another way here. And it meant a new
+    /// output shape needed a host change, which is the drift this plane was
+    /// built to end.
+    ///
+    /// Now the guest renders and this prints. The two consoles show the same
+    /// bytes because they come from the same renderer on the same machine
+    /// (guest68k/src/n68_exec.c), which is a property no amount of careful
+    /// re-implementation here could have bought.
+    private func render(_ outcome: GuestListener.ExecOutcome) {
+        if outcome.gap {
+            append(.failure, "(some output was lost in transit)")
         }
-        guard let output = result.output, !output.isEmpty else {
+        // Guests separate lines with CR (n68_cmdresult.h). Splitting on
+        // both terminators rather than translating: a guest that one day
+        // sends LF is not wrong, and neither is one that sends both.
+        let body = outcome.text.split(omittingEmptySubsequences: false,
+                                      whereSeparator: { $0.isNewline })
+        for line in body where !(line.isEmpty && body.count == 1) {
+            append(.output, String(line))
+        }
+        if !outcome.ok {
+            // The guest has usually said this already, in its own words, in
+            // the text above — "! unknown-command: frobnicate". This is the
+            // machine-readable half, and it is shown only when it adds
+            // something a reader does not already have.
+            let detail = outcome.message ?? "the command did not succeed"
+            let code = outcome.code ?? "failed"
+            if outcome.text.isEmpty {
+                append(.failure, "\(detail) [\(code)]")
+            }
+        } else if outcome.text.isEmpty {
             append(.output, "(ok)")
-            return
-        }
-        for key in output.keys.sorted() {
-            let rows = output[key] ?? []
-            // Aligned per group, not across the whole reply: gestalt --full
-            // returns several groups whose labels have nothing to do with
-            // each other, and one shared width indents the short ones off
-            // the page.
-            let width = rows.map { $0.first?.count ?? 0 }.max() ?? 0
-            if output.count > 1 {
-                append(.notice, "[\(key)]")
-            }
-            for row in rows where row.count >= 2 {
-                let label = row[0].padding(toLength: width, withPad: " ",
-                                           startingAt: 0)
-                append(.output, "  \(label)  \(row[1])")
-            }
         }
     }
 

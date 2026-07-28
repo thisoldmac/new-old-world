@@ -35,6 +35,20 @@ WebSocket: hello gate with revision refusal, guest-driven ping/pong,
 The **guest dials the host** — classic Mac OS listeners are the fragile
 half of OS 9 networking, so every listener stays on the modern side.
 
+### Two planes on the control channel
+
+`command.*` is the typed spine: a caller that knows the command, a declared
+output schema per verb, a closed registry. `exec.*` is the console plane: one
+opaque line in, the guest's own console text out, nothing declared about what
+a line may say. Neither replaces the other and the split is the point — see
+[remote-console.md](remote-console.md).
+
+Exec rides the **control** channel and never the bulk lane. The lane is one
+transfer wide across both directions, so a console session holding it would
+block capture and file transfer for its lifetime; and control frames
+queue-and-retry, which is what console text needs, because unlike pixels it
+cannot be re-derived.
+
 ### Transfer rules (each learned the hard way)
 
 - **One contiguous send per frame.** Real classic NICs drop the second

@@ -231,4 +231,34 @@ typedef struct {
 
 void now68k_wire_send_status(N68SendStatus *out);
 
+/* --- exec: asking the far end for a line ---------------------------------
+
+   For an interpreter running under exec.request that needs input mid-command
+   - a confirmation, a "which one?", a name it cannot guess. Emits `prompt`
+   (may be NULL) as exec.output, FLUSHES it so it actually leaves before the
+   wait begins, then pumps the wire until the host answers exec.input.
+
+   Returns 1 with the line in `out`, or 0 - and 0 is an ordinary outcome, not
+   an exception. It means one of: nothing is running under exec (a person at
+   this Mac's own console window is never prompted, because they would have
+   no way to answer); the host cancelled; or the bounded wait expired. An
+   interpreter MUST have an answer for 0 that does not involve asking again.
+
+   THE WEDGE THIS IS SHAPED AROUND. This guest is cooperatively scheduled on
+   a machine with no preemption to rescue it, so an unbounded wait here is a
+   Mac that needs a power cycle - the `sertx` failure with a different cause.
+   Hence: the wait is BOUNDED (30 s), it PUMPS rather than blocks so the
+   machine stays alive and answerable throughout, exec.cancel breaks it
+   immediately, and the exec-busy guard means the pumping cannot start a
+   second exec underneath this one.
+
+   Untested on metal as of 2026-07-28. docs/remote-console.md's checklist
+   exercises this path deliberately, last, and on the emulator first.
+
+   NOTHING CALLS THIS YET, and that is deliberate rather than unfinished:
+   every verb in commands68.c answers without asking. It is the mechanism an
+   interactive interpreter needs, built and wired so that adding one is not
+   also a wire change. */
+int now68k_exec_read_input(char *out, long cap, const char *prompt);
+
 #endif /* NOW68K_WIRE68_H */

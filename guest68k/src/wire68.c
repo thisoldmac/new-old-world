@@ -109,6 +109,7 @@
 #include "n68_fileenum.h"
 #include "n68_filelist.h"
 #include "n68_cmdresult.h"   /* now68k_json_append_escaped */
+#include "n68_exec.h"        /* exec.request: the console plane */
 #include "n68_filesrc.h"
 #include "n68_proclist.h"
 #include "n68_putfile.h"
@@ -1174,6 +1175,366 @@ static void handle_command_request(const char *json, long len)
     }
 }
 
+/* ---- exec.request: the console plane -----------------------------------
+ *
+ * The other half of the two-planes design (contract preamble, "Exec"). Where
+ * handle_command_request above takes a NAME the host already split off and
+ * answers with a declared output schema, this takes the whole LINE and
+ * answers with the text this machine's own console window would have shown -
+ * because it asks the same function that window asks (n68_exec.h).
+ *
+ * Nothing here knows a verb. That is the property being bought: a command
+ * added to commands68.c is typeable from the host the moment it exists, with
+ * no edit to this file, to the contract, or to the host binary.
+ */
+
+/* Raw text per exec.output frame, chosen from the escape blow-up rather
+ * than from taste. A MacRoman high byte becomes \uXXXX - six bytes - so a
+ * worst-case chunk is 6x its raw size, and the frame also carries ~55 bytes
+ * of envelope. 150 * 6 + 55 = 955, comfortably inside
+ * NOW68K_CONTROL_SEND_CAP with room for the envelope to grow a field. Most
+ * text is ASCII and packs 1:1, so this is the floor of what fits, not the
+ * size a frame usually is. */
+enum { kExecChunkRaw = 150 };
+
+/* How long an interpreter may wait for exec.input before giving up.
+ *
+ * BOUNDED ON PURPOSE. This guest is cooperatively scheduled on a machine
+ * with no preemption to rescue it, so an unbounded wait here is a Mac that
+ * needs a power cycle - the `sertx` failure with a different cause. 30
+ * seconds is long enough for a person to read a prompt and type, short
+ * enough that a forgotten prompt frees the machine while somebody is still
+ * in the room. The wait PUMPS rather than blocks, so the guest stays
+ * answerable throughout and exec.cancel can end it early. */
+enum { kExecInputTicks = 60 * 30 };
+
+typedef struct {
+    int  active;
+    long id;
+    long seq;
+    long len;
+    int  failed;      /* an enqueue failed; stop building frames nobody gets */
+    int  cancelled;
+    int  waiting;     /* an interpreter is blocked on exec.input */
+    int  have_input;
+    char input[128];
+    char raw[kExecChunkRaw + 1];
+} ExecSink;
+
+/* ONE exec at a time, and the state is a file static rather than a stack
+ * local because exec.cancel and exec.input arrive on a LATER frame than the
+ * request they answer - they have to find it. A second exec.request while
+ * one runs is refused "exec-busy": the dispatch below is synchronous, so a
+ * second could only run by re-entering it. */
+static ExecSink g_exec;
+
+static void exec_flush(ExecSink *s)
+{
+    char payload[NOW68K_CONTROL_SEND_CAP];
+    long pos = 0;
+    int ok = 1;
+
+    if (s->len <= 0 || s->failed) {
+        s->len = 0;
+        return;
+    }
+    s->raw[s->len] = '\0';
+
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                     "{\"type\":\"exec.output\",\"id\":");
+    ok = ok && now68k_fmt_append_long(payload, (long)sizeof payload, &pos,
+                                      s->id);
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                     ",\"seq\":");
+    ok = ok && now68k_fmt_append_long(payload, (long)sizeof payload, &pos,
+                                      s->seq);
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                     ",\"text\":\"");
+    ok = ok && now68k_json_append_escaped(payload, (long)sizeof payload, &pos,
+                                          s->raw);
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                     "\"}");
+    s->len = 0;
+    if (!ok || pos <= 0) {
+        /* The chunk bound above makes this unreachable for text this guest
+         * produces. Logged rather than asserted because the honest failure
+         * is a gap in `seq` the host can see, not a dead guest. */
+        now68k_log("wire: exec.output build failed");
+        return;
+    }
+    if (!enqueue_control_send(payload, pos)) {
+        now68k_log("wire: exec.output dropped, outbound queue full");
+        s->failed = 1;
+        return;
+    }
+    s->seq++;
+
+    /* DRAIN, or the queue eats the reply. Found on the q800 emulator
+     * 2026-07-28, and it presented as `help` never coming back at all
+     * while `frobnicate` answered instantly - the signature of "enough
+     * output to fill the queue" rather than of anything wrong with exec.
+     *
+     * kWireOutQueueDepth is FOUR. `help` renders about ten lines, so the
+     * frames past the fourth were dropped, and the one dropped last was
+     * the terminal exec.result - so the host waited out its full 60s
+     * watchdog for a message the guest had built correctly and thrown
+     * away. Every other producer on this wire enqueues one or two frames
+     * and returns to the event loop; exec is the first that emits an
+     * unbounded number inside a single dispatch, so it is the first that
+     * has to pay for its own drain.
+     *
+     * flush_outbound, NOT wire_idle: this pushes queued bytes toward
+     * MacTCP and reads nothing, so it cannot re-enter the dispatch that
+     * is currently on the stack. That distinction is the whole reason
+     * this is safe to call from here - see the NULL pump argument in
+     * handle_exec_request. */
+    flush_outbound();
+}
+
+/* n68_exec.h's emitter: text plus the CR the console's own con_out appends,
+ * chunked to what a frame can carry. A block longer than one chunk is split
+ * across frames at no particular boundary, which is why ExecOutput's `text`
+ * promises to be a chunk and not a line - the host reassembles. */
+static void exec_emit(void *ctx, const char *text, long length)
+{
+    ExecSink *s = (ExecSink *)ctx;
+    long i;
+
+    if (s->failed || s->cancelled) {
+        return;
+    }
+    for (i = 0; i < length; ++i) {
+        if (s->len >= kExecChunkRaw) {
+            exec_flush(s);
+            if (s->failed) {
+                return;
+            }
+        }
+        s->raw[s->len++] = text[i];
+    }
+    if (s->len >= kExecChunkRaw) {
+        exec_flush(s);
+        if (s->failed) {
+            return;
+        }
+    }
+    s->raw[s->len++] = '\r';
+}
+
+/* Terminal status, sent exactly once however the exec ended. Carries no
+ * output by schema - the text left in exec.output frames, including when
+ * there was only one. */
+static void exec_finish(int ok, const char *code, const char *message)
+{
+    char payload[NOW68K_CONTROL_SEND_CAP];
+    long pos = 0;
+    int built = 1;
+
+    exec_flush(&g_exec);
+
+    built = built && now68k_fmt_append_str(payload, (long)sizeof payload,
+                                          &pos,
+                                          "{\"type\":\"exec.result\",\"id\":");
+    built = built && now68k_fmt_append_long(payload, (long)sizeof payload,
+                                           &pos, g_exec.id);
+    if (ok) {
+        built = built && now68k_fmt_append_str(payload, (long)sizeof payload,
+                                              &pos, ",\"ok\":true}");
+    } else {
+        built = built && now68k_fmt_append_str(payload, (long)sizeof payload,
+                                              &pos, ",\"ok\":false,\"code\":\"");
+        built = built && now68k_fmt_append_str(payload, (long)sizeof payload,
+                                              &pos, code);
+        built = built && now68k_fmt_append_str(payload, (long)sizeof payload,
+                                              &pos, "\",\"message\":\"");
+        built = built && now68k_json_append_escaped(payload,
+                                                    (long)sizeof payload,
+                                                    &pos, message);
+        built = built && now68k_fmt_append_str(payload, (long)sizeof payload,
+                                              &pos, "\"}");
+    }
+    g_exec.active = 0;
+    g_exec.waiting = 0;
+    g_exec.have_input = 0;
+    if (!built || pos <= 0) {
+        now68k_log("wire: exec.result build failed");
+        return;
+    }
+    if (!enqueue_control_send(payload, pos)) {
+        now68k_log("wire: exec.result dropped, outbound queue full");
+    }
+}
+
+static void handle_exec_request(const char *json, long len)
+{
+    /* A line is a human's typing, not a path or a name: kInputCap on this
+     * guest's own console is 256, and a line the host could send but this
+     * machine could not have typed would answer differently on the two
+     * faces. Same number, for that reason. */
+    char line[256];
+    int served;
+    long id = 0;
+    int have_id = now68k_json_find_int(json, (size_t)len, "id", &id);
+
+    if (g_exec.active) {
+        char payload[NOW68K_CONTROL_SEND_CAP];
+        long pos = 0;
+        int ok = 1;
+
+        ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                         "{\"type\":\"exec.result\",\"id\":");
+        ok = ok && now68k_fmt_append_long(payload, (long)sizeof payload, &pos,
+                                          have_id ? id : 0);
+        ok = ok && now68k_fmt_append_str(
+                       payload, (long)sizeof payload, &pos,
+                       ",\"ok\":false,\"code\":\"exec-busy\",\"message\":\""
+                       "another command is already running on this Mac\"}");
+        if (ok && pos > 0 && !enqueue_control_send(payload, pos)) {
+            now68k_log("wire: exec.result dropped, outbound queue full");
+        }
+        return;
+    }
+
+    if (!read_string_field(json, (size_t)len, "line", line, sizeof line)) {
+        line[0] = '\0';
+    }
+
+    g_exec.active = 1;
+    g_exec.id = have_id ? id : 0;
+    g_exec.seq = 0;
+    g_exec.len = 0;
+    g_exec.failed = 0;
+    g_exec.cancelled = 0;
+    g_exec.waiting = 0;
+    g_exec.have_input = 0;
+
+    /* NULL pump: this IS the wire, and pumping from inside its own dispatch
+     * would re-enter the read path with a half-served request on the stack.
+     * The console window passes wire_idle instead - see N68ExecPump. An
+     * interpreter that genuinely needs the wire to keep turning asks for it
+     * explicitly through now68k_exec_read_input, which pumps under the
+     * exec-busy guard above. */
+    served = now68k_exec_line(line, exec_emit, &g_exec, NULL);
+
+    if (g_exec.cancelled) {
+        exec_finish(0, "cancelled", "stopped at the host's request");
+    } else if (!served) {
+        /* The human already read "! unknown-command: <verb>" in the output;
+         * this is the same fact in the form a TOOL can branch on. Both come
+         * from one return value, so they cannot disagree. */
+        exec_finish(0, "unknown-command", "this Mac serves no such command");
+    } else {
+        exec_finish(1, (const char *)0, (const char *)0);
+    }
+}
+
+/* ALWAYS answered, even for an exec this Mac no longer has - the rule
+ * stream.stop was hardened into, inherited rather than rediscovered. An
+ * unanswered cancel is a host waiting on a reply that never comes.
+ *
+ * Marked, not acted on: the dispatch is synchronous, so this stops further
+ * output at once and handle_exec_request sends the one terminal result when
+ * the command returns. Exactly one exec.result goes out however the race
+ * falls. A cancel can only ARRIVE mid-command while something pumps, so a
+ * command that runs straight through finishes first and the cancel finds
+ * nothing running - which is answered "not-running", and is true. */
+static void handle_exec_cancel(const char *json, long len)
+{
+    char payload[NOW68K_CONTROL_SEND_CAP];
+    long pos = 0;
+    int ok = 1;
+    long id = 0;
+    int have_id = now68k_json_find_int(json, (size_t)len, "id", &id);
+
+    if (g_exec.active && have_id && g_exec.id == id) {
+        g_exec.cancelled = 1;
+        g_exec.waiting = 0;      /* breaks a bounded input wait at once */
+        return;
+    }
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                     "{\"type\":\"exec.result\",\"id\":");
+    ok = ok && now68k_fmt_append_long(payload, (long)sizeof payload, &pos,
+                                      have_id ? id : 0);
+    ok = ok && now68k_fmt_append_str(
+                   payload, (long)sizeof payload, &pos,
+                   ",\"ok\":false,\"code\":\"not-running\",\"message\":\""
+                   "nothing by that id is running on this Mac\"}");
+    if (!ok || pos <= 0) {
+        now68k_log("wire: exec.result build failed");
+        return;
+    }
+    if (!enqueue_control_send(payload, pos)) {
+        now68k_log("wire: exec.result dropped, outbound queue full");
+    }
+}
+
+/* Input for an exec that is not asking is DROPPED, not buffered: a line
+ * typed at a prompt that has already gone would otherwise be answered into
+ * the NEXT prompt, which is how a console runs something nobody meant. */
+static void handle_exec_input(const char *json, long len)
+{
+    long id = 0;
+    int have_id = now68k_json_find_int(json, (size_t)len, "id", &id);
+
+    if (!g_exec.active || !g_exec.waiting || !have_id || g_exec.id != id) {
+        return;
+    }
+    if (!read_string_field(json, (size_t)len, "text", g_exec.input,
+                           sizeof g_exec.input)) {
+        g_exec.input[0] = '\0';
+    }
+    g_exec.have_input = 1;
+    g_exec.waiting = 0;
+}
+
+int now68k_exec_read_input(char *out, long cap, const char *prompt)
+{
+    unsigned long deadline;
+
+    if (out == (char *)0 || cap <= 0) {
+        return 0;
+    }
+    out[0] = '\0';
+    /* Only an exec can be asked for input. A person at this Mac's own
+     * console window is never prompted, because they would have no way to
+     * answer - so there is never a prompt on screen nobody can reach. */
+    if (!g_exec.active || g_exec.cancelled) {
+        return 0;
+    }
+    if (prompt != (const char *)0 && prompt[0] != '\0') {
+        exec_emit(&g_exec, prompt, (long)strlen(prompt));
+    }
+    exec_flush(&g_exec);     /* the prompt must LEAVE before we wait on it */
+
+    g_exec.waiting = 1;
+    g_exec.have_input = 0;
+    deadline = (unsigned long)TickCount() + (unsigned long)kExecInputTicks;
+
+    while (g_exec.waiting && !g_exec.cancelled) {
+        wire_idle();
+        if ((unsigned long)TickCount() > deadline) {
+            /* The bounded end of a bounded wait. An interpreter gets 0 and
+             * must cope; it must never be handed a line that never came. */
+            g_exec.waiting = 0;
+            return 0;
+        }
+    }
+    if (g_exec.cancelled || !g_exec.have_input) {
+        return 0;
+    }
+    {
+        long i = 0;
+
+        while (i < cap - 1 && g_exec.input[i] != '\0') {
+            out[i] = g_exec.input[i];
+            ++i;
+        }
+        out[i] = '\0';
+    }
+    g_exec.have_input = 0;
+    return 1;
+}
+
 static void handle_census_request(const char *json, long len)
 {
     char payload[160];
@@ -2148,6 +2509,22 @@ static void handle_control_message(const char *json, long len)
      * actually blocked. */
     if (strcmp(type, "command.request") == 0) {
         handle_command_request(json, len);
+        return;
+    }
+    /* Same rule as command.request above and for the same reason: this has a
+     * contract-mandated reply shape (exec.result, always), so it must never
+     * fall through to send_error_reply - a host waiting on exec.result is
+     * not listening for an error envelope and would wait forever. */
+    if (strcmp(type, "exec.request") == 0) {
+        handle_exec_request(json, len);
+        return;
+    }
+    if (strcmp(type, "exec.cancel") == 0) {
+        handle_exec_cancel(json, len);
+        return;
+    }
+    if (strcmp(type, "exec.input") == 0) {
+        handle_exec_input(json, len);
         return;
     }
     if (strcmp(type, "census.request") == 0) {

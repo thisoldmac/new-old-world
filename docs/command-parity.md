@@ -203,6 +203,42 @@ constructing it. `ps` says `self` on that row on both guests, so a person
 at either keyboard can see it too: a fact the wire carries and the
 console cannot show is the drift this file is about.
 
+## The exec plane is a FACE, and the console's dispatch moved
+
+Added 2026-07-28, and it changes where this file's rules are enforced rather
+than what they say.
+
+The host console no longer sends a command NAME. It sends the whole line
+(`exec.request`), the guest interprets it, and what comes back is the text
+that guest's own console would have shown — see
+[remote-console.md](remote-console.md). So the sentence this file repeats
+five times, "the host console is a dumb shell that knows no message
+families", is now true one layer deeper: it knows no COMMANDS either, and
+there is no host-side list left to drift from.
+
+That did not add a face. It added a reader to the one that existed, and it
+removed a renderer:
+
+- **NOW-68K.** `conwin.c`'s `submit_line()` held the console's dispatch
+  POLICY — which verbs render whole tables, that `ps` answers directly, what
+  an unknown name says. That was reachable only by someone standing at the
+  PowerBook, so the host console rebuilt an approximation of it from
+  `[label, value]` rows. Both are now `n68_exec.c`, called by `conwin.c` and
+  by `wire68.c`. Same bytes on both screens, by construction rather than by
+  care.
+- **The PowerPC guest** already had the split (`console_model_run` takes a
+  line and appends lines), so it needed a sink and not a move.
+
+**The parity tests read `n68_exec.c` now, not `conwin.c`** — that is where the
+console's dispatch lives. `conwin.c` keeps only what acts on its own window:
+`clear`, scrolling, history, the echo.
+
+**The rule for a new verb is unchanged and the payoff is larger.** Implement
+it once below both faces; the wire renderer and the console renderer follow.
+What is new is that the console renderer now reaches the HOST too, so "add a
+verb, it appears in both places in the same commit" has become "…and it is
+typeable from a host binary nobody rebuilt".
+
 ## The MCP is a client, not a face
 
 The agent-integration companion (`agent-integration.md`) is **not** a third

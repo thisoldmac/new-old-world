@@ -27,9 +27,17 @@ final class ConsoleShellTests: XCTestCase {
     }
 
     /// A box, because the guest's callback runs after the pair is built.
+    ///
+    /// `execs` is what the console actually sends now. `commands` is kept
+    /// because ONE thing still uses the typed plane on purpose — Tab
+    /// completion, which needs `help`'s first column and not its prose. That
+    /// split is the design, so both are recorded and both are asserted.
     private final class Requests {
-        var all: [CommandRequest] = []
-        var last: CommandRequest? { all.last }
+        var execs: [ExecRequest] = []
+        var commands: [CommandRequest] = []
+        var cancels: [ExecCancel] = []
+        var inputs: [ExecInput] = []
+        var last: ExecRequest? { execs.last }
     }
 
     /// `serves` is the guest's whole command table. Everything else gets the
@@ -48,18 +56,60 @@ final class ConsoleShellTests: XCTestCase {
         let guest = FakeGuest(port: listener.boundPort!)
         let requests = Requests()
         guest.onMessage = { message in
-            guard case .commandRequest(let request) = message else { return }
-            requests.all.append(request)
-            if let output = serves[request.name] {
-                try? guest.send(.commandResult(CommandResult(
-                    id: request.id, ok: true, output: output, error: nil)))
-            } else {
-                try? guest.send(.commandResult(CommandResult(
-                    id: request.id, ok: false, output: nil,
-                    error: .init(
-                        code: "unknown-command",
-                        message: "\(request.name) is not a command this Mac "
-                            + "knows"))))
+            switch message {
+            case .execRequest(let request):
+                requests.execs.append(request)
+                /* THE GUEST SPLITS. That is not a convenience here, it is
+                   the thing under test: the host sent one opaque string and
+                   somebody has to find the verb in it, and the contract says
+                   the somebody is whoever serves the verb. A fake guest that
+                   received a pre-split name would be testing the wire the
+                   host used to speak. */
+                let verb = String(request.line.prefix { $0 != " " })
+                if let output = serves[verb] {
+                    var seq = 0
+                    for (group, rows) in output.sorted(by: { $0.key < $1.key }) {
+                        if output.count > 1 {
+                            try? guest.send(.execOutput(ExecOutput(
+                                id: request.id, seq: seq, text: "[\(group)]\r")))
+                            seq += 1
+                        }
+                        for row in rows {
+                            try? guest.send(.execOutput(ExecOutput(
+                                id: request.id, seq: seq,
+                                text: row.joined(separator: "  ") + "\r")))
+                            seq += 1
+                        }
+                    }
+                    try? guest.send(.execResult(ExecResult(
+                        id: request.id, ok: true, code: nil, message: nil)))
+                } else {
+                    try? guest.send(.execOutput(ExecOutput(
+                        id: request.id, seq: 0,
+                        text: "! unknown-command: \(verb)\r")))
+                    try? guest.send(.execResult(ExecResult(
+                        id: request.id, ok: false, code: "unknown-command",
+                        message: "\(verb) is not a command this Mac knows")))
+                }
+            case .commandRequest(let request):
+                requests.commands.append(request)
+                if let output = serves[request.name] {
+                    try? guest.send(.commandResult(CommandResult(
+                        id: request.id, ok: true, output: output, error: nil)))
+                } else {
+                    try? guest.send(.commandResult(CommandResult(
+                        id: request.id, ok: false, output: nil,
+                        error: .init(
+                            code: "unknown-command",
+                            message: "\(request.name) is not a command this "
+                                + "Mac knows"))))
+                }
+            case .execCancel(let cancel):
+                requests.cancels.append(cancel)
+            case .execInput(let input):
+                requests.inputs.append(input)
+            default:
+                return
             }
         }
         guest.start()
@@ -85,9 +135,14 @@ final class ConsoleShellTests: XCTestCase {
 
     // MARK: - What goes onto the wire
 
-    /// The line is relayed as typed: the command name, and everything after
-    /// it as one unparsed string. The host used to turn "census pci" into
-    /// {"probe": "pci"} — a mapping it could only know by knowing census.
+    /// The line crosses whole. Not "the name, and the rest as a string" —
+    /// ONE string, verb included, with no field for the host to have split
+    /// it into.
+    ///
+    /// The host used to turn "census pci" into {"probe": "pci"}, a mapping it
+    /// could only know by knowing census. Then it sent name="census",
+    /// line="pci", which was better and still a rule about where verbs end.
+    /// Now it sends "census pci" and has no rule at all.
     func testTheTypedLineIsRelayedUnparsed() async throws {
         let pair = try await connect(serves: ["census": ["census": []]])
         defer { pair.listener.stop() }
@@ -96,17 +151,17 @@ final class ConsoleShellTests: XCTestCase {
         pair.console.submit()
         try await settle { pair.requests.last != nil }
 
-        XCTAssertEqual(pair.requests.last?.name, "census")
-        XCTAssertEqual(pair.requests.last?.line, "pci",
-                       "the console must send the line, not a parsed argument")
-        XCTAssertNil(pair.requests.last?.args,
-                     "args is the typed caller's field; a console has nothing "
-                     + "to put in it")
+        XCTAssertEqual(pair.requests.last?.line, "census pci",
+                       "the whole line, verb and all")
+        XCTAssertTrue(pair.requests.commands.isEmpty,
+                      "a typed line must not touch the command plane; that "
+                      + "plane is for callers that KNOW the command")
     }
 
     /// A name with spaces is one argument, and the host does not know that —
     /// so it must not split. "quit Adobe Photoshop 5.0" is the case that
-    /// forced the rule.
+    /// forced the rule, and the flags in front of it are the case that shows
+    /// why splitting only the FIRST word was still not enough.
     func testAWholeLineWithSpacesSurvivesIntact() async throws {
         let pair = try await connect(serves: ["quit": ["quit": []]])
         defer { pair.listener.stop() }
@@ -116,14 +171,14 @@ final class ConsoleShellTests: XCTestCase {
         try await settle { pair.requests.last != nil }
 
         XCTAssertEqual(pair.requests.last?.line,
-                       "--wait 12 Adobe Photoshop 5.0")
+                       "quit --wait 12 Adobe Photoshop 5.0")
     }
 
-    /// A bare command still carries a line, empty. Presence is the signal:
-    /// the guest answers a human's bare `gestalt` with the snapshot and a
-    /// module's argument-less call with every group, and it can only tell
-    /// them apart by this field being there.
-    func testABareCommandSendsAnEmptyLineNotNoLine() async throws {
+    /// A bare command is just itself. There is no empty-argument field to
+    /// get right any more: the old plane needed `line: ""` to distinguish a
+    /// human's bare `gestalt` from a module's argument-less call, and this
+    /// plane needs nothing, because only a human is ever on it.
+    func testABareCommandIsTheWholeLine() async throws {
         let pair = try await connect(serves: ["gestalt": ["snapshot": []]])
         defer { pair.listener.stop() }
 
@@ -131,8 +186,24 @@ final class ConsoleShellTests: XCTestCase {
         pair.console.submit()
         try await settle { pair.requests.last != nil }
 
-        XCTAssertEqual(pair.requests.last?.line, "",
-                       "a bare console command sends \"\", never nil")
+        XCTAssertEqual(pair.requests.last?.line, "gestalt")
+    }
+
+    /// A line whose verb does not end at a space. Nothing serves this today
+    /// and that is the point: it must still ARRIVE, because the host is not
+    /// the thing that decides what a verb looks like. The old split would
+    /// have sent name="cd" and quietly dropped the rest of the meaning.
+    func testALineWithNoSpaceDelimitedVerbStillCrosses() async throws {
+        let pair = try await connect(serves: [:])
+        defer { pair.listener.stop() }
+
+        pair.console.input = "cd Lab && ls"
+        pair.console.submit()
+        try await settle { pair.requests.last != nil }
+
+        XCTAssertEqual(pair.requests.last?.line, "cd Lab && ls",
+                       "an interpreter this host has never heard of would "
+                       + "receive exactly what was typed")
     }
 
     /// The whole point. A command this build has never heard of goes across
@@ -148,13 +219,12 @@ final class ConsoleShellTests: XCTestCase {
             pair.console.lines.contains { $0.text.contains("unknown-command") }
         }
 
-        XCTAssertEqual(pair.requests.last?.name, "teleport",
+        XCTAssertEqual(pair.requests.last?.line, "teleport",
                        "an unknown command must still reach the guest — only "
                        + "it knows what it serves")
         XCTAssertTrue(pair.console.lines.contains {
-            $0.text.contains("teleport")
-                && $0.text.contains("not a command this Mac knows")
-        }, "the guest's own words, rendered")
+            $0.text.contains("! unknown-command: teleport")
+        }, "the guest's own words, rendered — including its own marker")
     }
 
     /// A command the OTHER guest serves is not special-cased here either.
@@ -167,15 +237,43 @@ final class ConsoleShellTests: XCTestCase {
 
         pair.console.input = "ls Lab:Code"
         pair.console.submit()
-        try await settle { pair.requests.last?.name == "ls" }
+        try await settle { pair.requests.last != nil }
 
-        XCTAssertEqual(pair.requests.last?.name, "ls")
-        XCTAssertEqual(pair.requests.last?.line, "Lab:Code")
+        XCTAssertEqual(pair.requests.last?.line, "ls Lab:Code")
+    }
+
+    /// THE ACCEPTANCE TEST for this plane, stated as code.
+    ///
+    /// A verb no version of this host has ever heard of, that appears in no
+    /// contract file and in no registry, is typed and answered. Nothing was
+    /// rebuilt on this side and nothing was declared anywhere. If this test
+    /// ever needs a host-side edit to keep passing, the plane has failed
+    /// whatever else is green.
+    func testAVerbThisHostHasNeverHeardOfIsTypeable() async throws {
+        let pair = try await connect(serves: [
+            "frobnicate": ["frobnicate": [["Widgets", "17 frobbed"]]]])
+        defer { pair.listener.stop() }
+
+        pair.console.input = "frobnicate --all"
+        pair.console.submit()
+        try await settle {
+            pair.console.lines.contains { $0.text.contains("frobbed") }
+        }
+        XCTAssertEqual(pair.requests.last?.line, "frobnicate --all")
+        XCTAssertTrue(pair.console.lines.contains {
+            $0.text.contains("Widgets") && $0.text.contains("17 frobbed") })
     }
 
     // MARK: - Rendering
 
-    func testGuestOutputRendersAsAlignedRows() async throws {
+    /// Text arrives as the guest drew it, and is shown that way.
+    ///
+    /// This used to assert that the HOST aligned two columns. It no longer
+    /// does any such thing, and that is the fix rather than a regression:
+    /// the guest already decided its own layout for its own screen, and a
+    /// host re-deciding it meant the same listing lined up one way on the
+    /// PowerBook and another way here.
+    func testGuestTextIsShownAsTheGuestWroteIt() async throws {
         let pair = try await connect(serves: [
             "gestalt": ["snapshot": [["System", "Mac OS 9.1"],
                                      ["CarbonLib", "1.6"]]]])
@@ -187,16 +285,19 @@ final class ConsoleShellTests: XCTestCase {
             pair.console.lines.contains { $0.text.contains("1.6") }
         }
         XCTAssertTrue(pair.console.lines.contains {
-            $0.text.contains("System") && $0.text.contains("Mac OS 9.1") })
+            $0.text == "System  Mac OS 9.1" },
+            "the guest's spacing, not a width this side computed")
     }
 
-    /// Several groups are labelled and aligned per group. gestalt --full is
-    /// the only reply shaped this way, and the host renders it without being
-    /// told which command it came from.
-    func testSeveralGroupsAreLabelled() async throws {
+    /// Multi-line output is split on the guest's own CR and shown as lines,
+    /// with nothing dropped. The old renderer skipped any row that was not
+    /// exactly two columns — a MISSING line rather than an ugly one, which
+    /// is the worst way for a console to be wrong.
+    func testEveryLineSurvivesIncludingOnesThatAreNotTwoColumns()
+        async throws {
         let pair = try await connect(serves: [
-            "gestalt": ["cpu": [["Processor", "PowerPC 603e"]],
-                        "memory": [["Physical", "40 MB"]]]])
+            "gestalt": ["cpu": [["Processor", "PowerPC 603e"],
+                                ["a bare sentence with no column at all"]]]])
         defer { pair.listener.stop() }
 
         pair.console.input = "gestalt --full"
@@ -204,8 +305,177 @@ final class ConsoleShellTests: XCTestCase {
         try await settle {
             pair.console.lines.contains { $0.text.contains("603e") }
         }
-        XCTAssertTrue(pair.console.lines.contains { $0.text == "[cpu]" })
-        XCTAssertTrue(pair.console.lines.contains { $0.text == "[memory]" })
+        XCTAssertTrue(pair.console.lines.contains {
+            $0.text == "a bare sentence with no column at all" },
+            "a one-column line is shown, not silently dropped")
+    }
+
+    // MARK: - Streaming, cancel and input
+
+    /// Many exec.output frames become one body. The host reassembles before
+    /// it looks for line breaks, because a guest splits where its BUFFER
+    /// ends and not where a line does — so a naive reader would show
+    /// "Hel"/"lo" as two lines.
+    func testChunkedOutputIsReassembledBeforeItIsSplit() async throws {
+        let pair = try await connect(serves: [:])
+        defer { pair.listener.stop() }
+
+        pair.guest.onMessage = { message in
+            guard case .execRequest(let request) = message else { return }
+            /* One line, cut mid-word across three frames, as a guest with a
+               small buffer really would. */
+            for (i, piece) in ["Sys", "tem  Mac O", "S 9.1\r"].enumerated() {
+                try? pair.guest.send(.execOutput(ExecOutput(
+                    id: request.id, seq: i, text: piece)))
+            }
+            try? pair.guest.send(.execResult(ExecResult(
+                id: request.id, ok: true, code: nil, message: nil)))
+        }
+
+        pair.console.input = "gestalt"
+        pair.console.submit()
+        try await settle {
+            pair.console.lines.contains { $0.text.contains("9.1") }
+        }
+        XCTAssertTrue(pair.console.lines.contains {
+            $0.text == "System  Mac OS 9.1" },
+            "three frames, one line — not three")
+    }
+
+    /// A frame that never arrives is SAID, not smoothed over. A hole in the
+    /// output of a command somebody is about to act on is worth an ugly line.
+    func testALostFrameIsReported() async throws {
+        let pair = try await connect(serves: [:])
+        defer { pair.listener.stop() }
+
+        pair.guest.onMessage = { message in
+            guard case .execRequest(let request) = message else { return }
+            try? pair.guest.send(.execOutput(ExecOutput(
+                id: request.id, seq: 0, text: "first\r")))
+            /* seq 1 never sent. */
+            try? pair.guest.send(.execOutput(ExecOutput(
+                id: request.id, seq: 2, text: "third\r")))
+            try? pair.guest.send(.execResult(ExecResult(
+                id: request.id, ok: true, code: nil, message: nil)))
+        }
+
+        pair.console.input = "ls"
+        pair.console.submit()
+        try await settle {
+            pair.console.lines.contains { $0.text.contains("third") }
+        }
+        XCTAssertTrue(pair.console.lines.contains {
+            $0.text.contains("lost in transit") },
+            "a gap in seq is surfaced")
+    }
+
+    /// /cancel stops the running command and nothing else. It is local
+    /// because it acts on a request THIS side made and holds the id for — a
+    /// guest has no word for "the thing you asked me a moment ago".
+    func testCancelStopsTheRunningCommand() async throws {
+        let pair = try await connect(serves: [:])
+        defer { pair.listener.stop() }
+
+        pair.guest.onMessage = { message in
+            switch message {
+            case .execRequest:
+                break          /* deliberately never answers: still running */
+            case .execCancel(let cancel):
+                pair.requests.cancels.append(cancel)
+                try? pair.guest.send(.execResult(ExecResult(
+                    id: cancel.id, ok: false, code: "cancelled",
+                    message: "stopped at the host's request")))
+            default:
+                break
+            }
+        }
+
+        pair.console.input = "vprobe"
+        pair.console.submit()
+        try await settle { pair.listener.runningExecId != nil }
+
+        pair.console.input = "/cancel"
+        pair.console.submit()
+        try await settle { pair.listener.runningExecId == nil }
+
+        XCTAssertEqual(pair.requests.cancels.count, 1)
+        XCTAssertTrue(pair.console.lines.contains {
+            $0.text.contains("cancelled") }, "the guest's own terminal word")
+    }
+
+    /// /cancel with nothing running says so rather than sending a cancel for
+    /// an id that does not exist.
+    func testCancelWithNothingRunningSaysSo() async throws {
+        let pair = try await connect(serves: [:])
+        defer { pair.listener.stop() }
+
+        pair.console.input = "/cancel"
+        pair.console.submit()
+
+        XCTAssertTrue(pair.console.lines.contains {
+            $0.text.contains("Nothing is running") })
+        XCTAssertTrue(pair.requests.cancels.isEmpty)
+    }
+
+    /// A line typed WHILE a command runs is an answer to it, not a second
+    /// command. The host does not try to tell a prompt from ordinary output
+    /// and does not need to: a second exec would be refused `exec-busy`, and
+    /// a guest that was not waiting drops the line rather than buffering it.
+    func testALineTypedDuringACommandGoesAsInput() async throws {
+        let pair = try await connect(serves: [:])
+        defer { pair.listener.stop() }
+
+        pair.guest.onMessage = { message in
+            switch message {
+            case .execRequest(let request):
+                pair.requests.execs.append(request)
+                try? pair.guest.send(.execOutput(ExecOutput(
+                    id: request.id, seq: 0,
+                    text: "Really erase the disk? [y/N] ")))
+            case .execInput(let input):
+                pair.requests.inputs.append(input)
+                try? pair.guest.send(.execResult(ExecResult(
+                    id: input.id, ok: true, code: nil, message: nil)))
+            default:
+                break
+            }
+        }
+
+        pair.console.input = "erase"
+        pair.console.submit()
+        try await settle { pair.listener.runningExecId != nil }
+
+        pair.console.input = "N"
+        pair.console.submit()
+        try await settle { !pair.requests.inputs.isEmpty }
+
+        XCTAssertEqual(pair.requests.inputs.first?.text, "N")
+        XCTAssertEqual(pair.requests.execs.count, 1,
+                       "the answer must not start a second command")
+    }
+
+    /// A local verb still works while a command is running — it acts on this
+    /// side, so it can never be mistaken for an answer to a prompt.
+    func testALocalVerbDuringACommandIsStillLocal() async throws {
+        let pair = try await connect(serves: [:])
+        defer { pair.listener.stop() }
+
+        pair.guest.onMessage = { message in
+            guard case .execRequest = message else { return }
+            /* never answers: still running */
+        }
+
+        pair.console.input = "vprobe"
+        pair.console.submit()
+        try await settle { pair.listener.runningExecId != nil }
+
+        pair.console.input = "/help"
+        pair.console.submit()
+
+        XCTAssertTrue(pair.console.lines.contains {
+            $0.text.contains("/save") })
+        XCTAssertTrue(pair.requests.inputs.isEmpty,
+                      "a /-verb is never sent as input")
     }
 
     // MARK: - What stays host-side
@@ -219,7 +489,7 @@ final class ConsoleShellTests: XCTestCase {
         pair.console.input = "gestalt"
         pair.console.submit()
         try await settle { pair.requests.last != nil }
-        let sent = pair.requests.all.count
+        let sent = pair.requests.execs.count
 
         pair.console.input = "/clear"
         pair.console.submit()
@@ -231,7 +501,7 @@ final class ConsoleShellTests: XCTestCase {
             $0.text.contains("/save") })
 
         try await settle(until: { false }, seconds: 0.3)
-        XCTAssertEqual(pair.requests.all.count, sent,
+        XCTAssertEqual(pair.requests.execs.count, sent,
                        "no local verb may send anything")
     }
 
@@ -247,7 +517,7 @@ final class ConsoleShellTests: XCTestCase {
             $0.text.contains("not a local verb")
                 && $0.text.contains("other Mac")
         })
-        XCTAssertTrue(pair.requests.all.isEmpty)
+        XCTAssertTrue(pair.requests.execs.isEmpty)
     }
 
     /// `/save` replaces `gestalt --save`, which only worked because the host

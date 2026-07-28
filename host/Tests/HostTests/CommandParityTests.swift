@@ -109,7 +109,7 @@ final class CommandParityTests: XCTestCase {
     /// `conwin.c` adds the console-local verbs plus any capability that is
     /// a message family rather than a command.
     func testTheSixtyEightKGuestsTwoFacesAgree() throws {
-        let consoleText = try source("guest68k/src/conwin.c")
+        let consoleText = try source("guest68k/src/n68_exec.c")
 
         // The console does not re-dispatch launch/quit; it hands the name
         // to the SAME table the wire uses. That delegation is the whole
@@ -117,7 +117,7 @@ final class CommandParityTests: XCTestCase {
         // could compare: a verb added to commands68.c reaches the console
         // the moment it exists, with nobody having to remember.
         XCTAssertTrue(consoleText.contains("now68k_commands_run"), """
-            conwin.c no longer delegates to now68k_commands_run, so the \
+            n68_exec.c no longer delegates to now68k_commands_run, so the \
             console and the wire now have separate command paths that can \
             disagree. That is the defect class this project has paid the \
             most for — see two-halves-never-met-in-a-test.
@@ -129,7 +129,7 @@ final class CommandParityTests: XCTestCase {
         // console-local verbs, and no single result struct holds both
         // shapes. What makes it safe is that both render the SAME list.
         XCTAssertTrue(consoleText.contains("now68k_commands_docs"), """
-            conwin.c prints a help list it wrote itself instead of \
+            n68_exec.c prints a help list it wrote itself instead of \
             rendering commands68.h's published table. A hand-written list \
             agrees with the wire's until someone adds a command, and then \
             the machine has two different answers to "what can you do" — \
@@ -154,7 +154,7 @@ final class CommandParityTests: XCTestCase {
         // would cost ~12s AND could not agree with the first, the screen
         // having moved in between.
         XCTAssertTrue(consoleText.contains("now68k_commands_vprobe"), """
-            conwin.c runs its own vprobe instead of borrowing the table \
+            n68_exec.c runs its own vprobe instead of borrowing the table \
             commands68.c filled. Two measurements of a changing screen \
             cannot agree, so the console and the wire would report \
             different numbers for the same machine and both would be \
@@ -164,7 +164,7 @@ final class CommandParityTests: XCTestCase {
         let duplicated = table.intersection(dispatched(in: consoleText))
             .subtracting(["help", "ps", "vprobe"])
         XCTAssertTrue(duplicated.isEmpty, """
-            conwin.c dispatches \(duplicated.sorted()) itself while \
+            n68_exec.c dispatches \(duplicated.sorted()) itself while \
             commands68.c also does. Two implementations of one verb is how \
             the console and the wire start telling a person different \
             things about the same machine.
@@ -185,7 +185,7 @@ final class CommandParityTests: XCTestCase {
     /// message family made the capability LOOK present on both faces —
     /// and a message family is not something anyone can type.
     func testEveryVerbTheSixtyEightKConsoleAnswersIsAlsoOnItsWire() throws {
-        let console = dispatched(in: try source("guest68k/src/conwin.c"))
+        let console = dispatched(in: try source("guest68k/src/n68_exec.c"))
         let wire = dispatched(in: try source("guest68k/src/commands68.c"))
 
         let missingFromWire = console.subtracting(wire)
@@ -205,7 +205,7 @@ final class CommandParityTests: XCTestCase {
     /// command tables — and that is exactly how it shipped wire-only.
     func testTheSixtyEightKConsoleCanListProcesses() throws {
         let wire = try source("guest68k/src/wire68.c")
-        let console = try source("guest68k/src/conwin.c")
+        let console = try source("guest68k/src/n68_exec.c")
 
         guard wire.contains("\"process.list\"") else {
             return   // if the guest ever stops serving it, this is moot
@@ -231,7 +231,7 @@ final class CommandParityTests: XCTestCase {
     /// angle except a person standing at the machine.
     func testTheSixtyEightKConsoleCanSeeAnIncomingFile() throws {
         let wire = try source("guest68k/src/wire68.c")
-        let console = try source("guest68k/src/conwin.c")
+        let console = try source("guest68k/src/n68_exec.c")
 
         guard wire.contains("\"file.offer\"") else {
             return   // if the guest ever stops receiving files, this is moot
@@ -245,7 +245,7 @@ final class CommandParityTests: XCTestCase {
             what a person at the machine can know about it.
             """)
         XCTAssertTrue(console.contains("now68k_wire_put_status"), """
-            conwin.c reports on transfers without reading \
+            n68_exec.c reports on transfers without reading \
             now68k_wire_put_status(), so the console and the wire now \
             keep separate counts of the same transfer. One \
             implementation, two renderers — see docs/command-parity.md.
@@ -265,7 +265,7 @@ final class CommandParityTests: XCTestCase {
     /// it. `ps` satisfied the first and failed the second for a day.
     func testTheSixtyEightKConsoleCanSeeAnOutgoingFile() throws {
         let wire = try source("guest68k/src/wire68.c")
-        let console = try source("guest68k/src/conwin.c")
+        let console = try source("guest68k/src/n68_exec.c")
         // dispatched(), not contains("\"put\"") — the doc table names
         // every verb too, so a substring check passes on a guest that
         // merely ADVERTISES the command and answers unknown-command to
@@ -307,7 +307,7 @@ final class CommandParityTests: XCTestCase {
     /// read one enumeration.
     func testTheSixtyEightKConsoleCanListFiles() throws {
         let wire = try source("guest68k/src/wire68.c")
-        let console = try source("guest68k/src/conwin.c")
+        let console = try source("guest68k/src/n68_exec.c")
         let table = dispatched(in: try source("guest68k/src/commands68.c"))
 
         guard wire.contains("\"file.list\"") else {
@@ -326,7 +326,7 @@ final class CommandParityTests: XCTestCase {
             — the same gap as `ps`, facing the other way.
             """)
         XCTAssertFalse(dispatched(in: console).contains("ls"), """
-            conwin.c dispatches `ls` itself. It must not: \
+            n68_exec.c dispatches `ls` itself. It must not: \
             docs/command-parity.md's ruling on the third row-array command \
             was that a fourth should be a result type that holds rows, not \
             another exemption — and a strcmp here is exactly the fourth \

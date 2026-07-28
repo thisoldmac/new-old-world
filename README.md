@@ -30,6 +30,7 @@ noticed. Adding them: see [docs/images/README.md](docs/images/README.md).
 |---|---|---|---|
 | Persistent connection, heartbeat, reconnect | yes | yes | metal-verified |
 | Console — one command table, both faces | yes | yes | tested; 68K's own console metal-verified |
+| Remote console (`exec`) — drive either guest's console from the host | yes | yes | emulator-verified (68K); PPC half untested live |
 | Files: browse, pull, push, rename, move, trash | yes | browse, pull, push | metal-verified (PPC) |
 | Screenshots, one-shot, either direction | yes | capture only; pixels do not cross | metal-verified (PPC) |
 | Live screen streaming, with recording | yes | no | metal-verified |

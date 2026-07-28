@@ -25,6 +25,8 @@ final class Session {
     private let onLog: (String, String, HostLog.LogLevel) -> Void
     private let onHealth: (GuestListener.SessionHealth?) -> Void
     private let onCommandResult: (CommandResult) -> Void
+    private let onExecOutput: (ExecOutput) -> Void
+    private let onExecResult: (ExecResult) -> Void
     private let onGuestError: (ErrorMessage) -> Void
     private let onCensusReport: (CensusReport) -> Void
     private let onCapture:
@@ -98,6 +100,8 @@ final class Session {
          onLog: @escaping (String, String, HostLog.LogLevel) -> Void,
          onHealth: @escaping (GuestListener.SessionHealth?) -> Void,
          onCommandResult: @escaping (CommandResult) -> Void,
+         onExecOutput: @escaping (ExecOutput) -> Void,
+         onExecResult: @escaping (ExecResult) -> Void,
          onGuestError: @escaping (ErrorMessage) -> Void,
          onCensusReport: @escaping (CensusReport) -> Void,
          onCapture: @escaping (Result<GuestListener.CaptureDelivery,
@@ -136,6 +140,8 @@ final class Session {
         self.onLog = onLog
         self.onHealth = onHealth
         self.onCommandResult = onCommandResult
+        self.onExecOutput = onExecOutput
+        self.onExecResult = onExecResult
         self.onGuestError = onGuestError
         self.onCensusReport = onCensusReport
         self.onCapture = onCapture
@@ -318,6 +324,16 @@ final class Session {
             touchHealth(pingsDelta: 1)
         case .commandResult(let result):
             onCommandResult(result)
+        case .execOutput(let output):
+            onExecOutput(output)
+        case .execResult(let result):
+            onExecResult(result)
+        case .execRequest, .execCancel, .execInput:
+            /* Declared asymmetry, the same shape as softwareList above: the
+               exec plane has only ever run host-to-guest. This host serves
+               no commands, so there is nothing for it to interpret a line
+               with, and inventing an answer would make it a third face. */
+            break
         case .censusReport(let report):
             onCensusReport(report)
         case .censusRequest(let request):

@@ -1064,6 +1064,63 @@ final class GuestWireFixtureTests: XCTestCase {
         }
         XCTAssertFalse(failed.ok)
     }
+
+    /// exec.output, the one message whose payload is arbitrary text a human
+    /// will read. The plain case is barely worth pinning; the escaped one is
+    /// the whole reason this fixture exists.
+    ///
+    /// NOW-68K draws in MacRoman and sends what it drew, so a high byte
+    /// reaches the wire as a `\uXXXX` escape from now68k_json_append_escaped
+    /// — the same routine every other guest message uses for a
+    /// human-supplied string, which is exactly why the exec path must not
+    /// grow a second copy of it. A guest that got this wrong would corrupt
+    /// the wire only when someone ran `ls` in a folder with an accented
+    /// name, which is the kind of bug that reaches metal.
+    func test68KExecOutputAsTheGuestWritesIt() throws {
+        guard case .execOutput(let first) =
+            try decode(Guest68KWire.execOutputFirst68K) else {
+            return XCTFail("not an exec.output")
+        }
+        XCTAssertEqual(first.id, 7)
+        XCTAssertEqual(first.seq, 0, "the first frame of an exec is seq 0")
+        XCTAssertEqual(first.text, "Launch: SimpleText launched\r",
+                       "the CR the guest's own console appends travels with "
+                       + "the text; the host splits on it rather than the "
+                       + "guest translating for a reader it cannot see")
+
+        guard case .execOutput(let escaped) =
+            try decode(Guest68KWire.execOutputEscaped68K) else {
+            return XCTFail("not an exec.output")
+        }
+        XCTAssertEqual(escaped.seq, 1, "seq is contiguous, not restarted")
+        XCTAssertEqual(escaped.text, "Caf\u{00E9}: 4K\r",
+                       "a MacRoman e-acute arrives as the character, not as "
+                       + "its escape and not as a substitution")
+    }
+
+    /// exec.result, which carries STATUS AND NOTHING ELSE. The assertion
+    /// that matters is the negative one: there is no output field to read on
+    /// either shape. That is what lets a guest gain streaming later without
+    /// a host that already speaks this having to change.
+    func test68KExecResultAsTheGuestWritesIt() throws {
+        guard case .execResult(let ok) =
+            try decode(Guest68KWire.execResultOK68K) else {
+            return XCTFail("not an exec.result")
+        }
+        XCTAssertEqual(ok.id, 7)
+        XCTAssertTrue(ok.ok)
+        XCTAssertNil(ok.code)
+        XCTAssertNil(ok.message)
+
+        guard case .execResult(let unknown) =
+            try decode(Guest68KWire.execResultUnknown68K) else {
+            return XCTFail("not an exec.result")
+        }
+        XCTAssertFalse(unknown.ok)
+        XCTAssertEqual(unknown.code, "unknown-command",
+                       "the machine-readable half of the same fact the human "
+                       + "already read as \"! unknown-command:\" in the text")
+    }
 }
 
 /// The exact payload bytes NOW-68K puts on the control channel, derived
@@ -1320,6 +1377,33 @@ enum Guest68KWire {
         + #""code":"bad-path","#
         + #""reason":"that path is not one this Mac will list"}"#
 
+    // ---- the exec plane (wire68.c :: exec_flush / handle_exec_request) ----
+
+    /// The first frame of `launch SimpleText`. Text is what
+    /// n68_cmdresult_render_text produced, plus the CR exec_emit appends —
+    /// byte for byte what the guest's own console window shows, because it
+    /// is the same renderer reached through the same dispatch.
+    static let execOutputFirst68K = #"{"type":"exec.output","id":7,"#
+        + #""seq":0,"text":"Launch: SimpleText launched\r"}"#
+
+    /// A second frame, carrying a MacRoman high byte. `é` is 0x8E on the
+    /// guest and leaves as é; the escape is the shared one every other
+    /// human-supplied string on this wire goes through.
+    static let execOutputEscaped68K = #"{"type":"exec.output","id":7,"#
+        + #""seq":1,"text":"Café: 4K\r"}"#
+
+    /// Terminal status, ok. No output field — by schema, and asserted.
+    static let execResultOK68K =
+        #"{"type":"exec.result","id":7,"ok":true}"#
+
+    /// Terminal status for a line whose verb this Mac does not serve. The
+    /// human has already read "! unknown-command: frobnicate" in an
+    /// exec.output above; this is the same fact a tool can branch on, and
+    /// both come from one return value so they cannot disagree.
+    static let execResultUnknown68K = #"{"type":"exec.result","id":8,"#
+        + #""ok":false,"code":"unknown-command","#
+        + #""message":"this Mac serves no such command"}"#
+
     /// Every fixture string above, for the contract check next door.
     static let all: [String] = [
         hello, pingFirst, pingLater,
@@ -1329,5 +1413,7 @@ enum Guest68KWire {
         fileListRefuseBadPath,
         processQuitSent, processQuitStale, processQuitSelf,
         processFrontSent, processFrontStale,
+        execOutputFirst68K, execOutputEscaped68K,
+        execResultOK68K, execResultUnknown68K,
     ]
 }
