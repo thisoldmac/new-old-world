@@ -116,6 +116,7 @@ enforces it.
 
 - [docs/status.md](docs/status.md) — what works and what does not, in full.
 - [docs/architecture.md](docs/architecture.md) — the design and its rules.
+- [docs/naming.md](docs/naming.md) — the guest naming scheme, and the one question still open.
 - [docs/open-issues.md](docs/open-issues.md) — the ledger: broken versus unverified.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — including what you can do with no vintage hardware.
 - [AGENTS.md](AGENTS.md) — the full working conventions, for humans and agents alike.
