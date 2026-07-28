@@ -139,7 +139,7 @@ Without `--handoff` somebody has to double-click the new build on the
 
 ```bash
 NOW_METAL=1 NOW_METAL_PORT=5252 \
-  swift test --package-path host --filter Metal68KTests
+  swift test --package-path now-host --filter Metal68KTests
 ```
 
 Dial, handshake, keepalive, the bounded catalog search, the farewell,
@@ -150,7 +150,7 @@ suite's failure mode includes "the wire is not working".
 
 ```bash
 NOW_METAL=1 NOW_METAL_PORT=5252 \
-  swift test --package-path host --filter Metal68KContractTests
+  swift test --package-path now-host --filter Metal68KContractTests
 ```
 
 Fast, and it establishes that the build on the wire is the one you
@@ -162,7 +162,7 @@ ladder.
 ```bash
 NOW_METAL=1 NOW_METAL_PORT=5252 \
   NOW_METAL_REPEATS=3 \
-  swift test --package-path host --filter Metal68KPutTests
+  swift test --package-path now-host --filter Metal68KPutTests
 ```
 
 The size ladder to 4 MB, the MacBinary envelopes, the unknown-container
@@ -175,7 +175,7 @@ thing that can be slow rather than wrong.
 ```bash
 NOW_METAL=1 NOW_METAL_PORT=5252 \
   NOW_METAL_REPEATS=3 \
-  swift test --package-path host --filter Metal68KSendTests
+  swift test --package-path now-host --filter Metal68KSendTests
 ```
 
 The round trip — push a pattern, ask for it back, compare the bytes this

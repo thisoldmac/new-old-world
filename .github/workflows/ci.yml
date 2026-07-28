@@ -88,8 +88,8 @@ jobs:
           if git grep -nIE '(10\.(9[0-9]|[1-8][0-9])\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)[0-9]+\.[0-9]+' \
                -- . ':!docs/lab-setup.md' ':!.env.lab.example' \
                ':!*/tests/*' ':!*/Tests/*' \
-               ':!guest/src/conn_edit_dialog.c' ':!guest/src/connection_module.c' \
-               ':!guest68k/src/n68_devsettings.h'; then
+               ':!now-guest-ppc/src/connection/conn_edit_dialog.c' ':!now-guest-ppc/src/connection/connection_module.c' \
+               ':!now-guest-68k/src/connection/n68_devsettings.h'; then
             echo "::error::a private-looking address is in the tree"
             echo "::error::values that describe one desk belong in .env.lab"
             fail=1

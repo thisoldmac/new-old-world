@@ -82,7 +82,7 @@ to it. Finding: `carbon-databrowser-usable-carbonlib-16`.
 - **Data Browser works** under CarbonLib 1.6: 22/22 symbols, draws
   native, selection, double-click and header sorting from a plain
   `WaitNextEvent` loop. Type-select does not. `spikes/databrowser` is
-  the probe; `guest/src/files_browser_view.c` is a working list.
+  the probe; `now-guest-ppc/src/files/files_browser_view.c` is a working list.
 - **Icons are available**: `GetIconRefFromFile` for a real file,
   `GetIconRef` for a type/creator pair, which is all a listing off the
   wire carries. `GetIconRefFromTypeInfo` is absent.

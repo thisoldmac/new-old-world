@@ -9,7 +9,7 @@ set.
 
 Two applications and one contract between them: a PowerPC Carbon app for
 Mac OS 8.6–9.2.2 (the CarbonLib 1.6 range), and a native macOS app. A
-third, **NOW-68K** (`guest68k/`), speaks a subset of the same contract
+third, **NOW-68K** (`now-guest-68k/`), speaks a subset of the same contract
 from a 68K Mac under System 7.1 over MacTCP — non-Carbon Toolbox C via
 Retro68, for machines Carbon cannot reach. It is a sibling of the Carbon
 guest, not a port of it: load `classic-mac-toolbox-ui` and
@@ -136,7 +136,7 @@ Both: comments say **why**, not what. Match the surrounding density.
   the build, machine and port beside every number and
   `NOW_METAL_REPEATS` samples the large rungs more than once
   ([docs/68k-metal-baseline.md](docs/68k-metal-baseline.md)).
-- `GuestWireConformanceTests` reads `guest/src/*.c` and checks every
+- `GuestWireConformanceTests` reads `now-guest-ppc/src/**/*.c` and checks every
   message the guest can emit against this side's decoder and the
   contract's required fields. **If you add a message built across
   several `snprintf` calls, it will fail** until you give it a fixture —
@@ -172,8 +172,8 @@ than guessing, because the failure it exists to prevent is a deploy that
 quietly went to whatever machine a stale default named.
 
 - **The canonical binary is `New Old World`.** The build emits it as
-  `New Old World.bin` beside `now-guest.bin` (the CMake target name can't
-  hold a space, so `guest/tools/name_macbinary.py` stamps the product
+  `New Old World.bin` beside `now-guest-ppc.bin` (the CMake target name can't
+  hold a space, so `now-guest-ppc/tools/name_macbinary.py` stamps the product
   name into the MacBinary; Rumpus decodes by that internal name). That is
   the one a human tests on metal and the one that lands on main.
   `now-guest` and other names are dev / side builds — a side experiment
@@ -191,7 +191,7 @@ quietly went to whatever machine a stale default named.
   over from the old `now-guest` canonical.)
 - **Check the build stamp before believing a test result.** It can read
   a few minutes early, because CMake touches `build_stamp.c` at the end
-  of a build; `touch guest/src/build_stamp.c` first to force it current.
+  of a build; `touch now-guest-ppc/src/core/build_stamp.c` first to force it current.
 
 ## Git
 

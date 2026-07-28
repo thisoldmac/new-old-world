@@ -70,12 +70,12 @@ build_guest() {
 }
 
 if [ "$which" = both ] || [ "$which" = ppc ]; then
-    build_guest "guest (PowerPC Carbon)" guest \
+    build_guest "now-guest-ppc (PowerPC Carbon)" now-guest-ppc \
         "${NOW_PPC_TOOLCHAIN:-}" ppc
 fi
 
 if [ "$which" = both ] || [ "$which" = 68k ]; then
-    build_guest "guest68k (68K, System 7.1)" guest68k \
+    build_guest "now-guest-68k (68K, System 7.1)" now-guest-68k \
         "${NOW68K_TOOLCHAIN:-}" m68k
 fi
 

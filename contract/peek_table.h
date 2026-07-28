@@ -6,7 +6,7 @@
    ------------------------------------------------------------------
    This header is compiled by THREE compilers: the Retro68 68K build of
    the extension, the retrocarbon PPC build of the application, and the
-   host cc for guest/tests/peek_table_test.c. It is the analogue of
+   host cc for now-guest-ppc/tests/peek_table_test.c. It is the analogue of
    asyncapi.yaml for the in-memory seam (docs/resident-components.md),
    and the same rule applies: every limit is stated here, once.
 

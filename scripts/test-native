@@ -31,7 +31,7 @@ mkdir -p "$out_root"
 trap 'rm -rf "$out_root"' EXIT INT TERM
 
 # The gate the guests were developed under. -Werror is not decoration here:
-# guest68k's CMakeLists records that one of its real bugs was caught by
+# now-guest-68k's CMakeLists records that one of its real bugs was caught by
 # -Werror alone, so a runner that dropped it would be a weaker gate than the
 # comment lines it replaced.
 CFLAGS="-Wall -Wextra -Werror"
@@ -58,13 +58,24 @@ run_c() {
     done
 
     printf '%-28s ' "$name"
+    # Every domain directory under src/ is on the include path, not just
+    # src/ itself. The guests include their headers by bare name
+    # ("json.h", "frame.h") from wherever they sit, so the domain split is
+    # a filing decision the compiler never has to know about - and this
+    # loop picks up a NEW domain directory without an edit here, which is
+    # the difference between a layout change costing one commit and
+    # costing one commit plus a confusing build failure.
+    incs="-I $repo_root/contract"
+    for d in "$repo_root/$dir/src" "$repo_root/$dir/src"/*/; do
+        [ -d "$d" ] && incs="$incs -I $d"
+    done
     # contract/ is on every guest test's include path, the way it is on
     # every guest's: the shared headers there (wire_limits.h,
     # share_path.h, peek_table.h) are compiled by both guests and by this
     # host cc, and adding the flag per line meant four tests failing to
     # build the first time a guest header included one.
-    # shellcheck disable=SC2086 - extra and srcs are deliberately word-split
-    if ! cc $CFLAGS $extra -I "$repo_root/contract" -I "$repo_root/$dir/src" \
+    # shellcheck disable=SC2086 - extra, incs and srcs are deliberately split
+    if ! cc $CFLAGS $extra $incs \
             "$repo_root/$dir/tests/$test_src" $srcs \
             -o "$out_root/$name" > "$out_root/$name.build" 2>&1; then
         echo "BUILD FAILED"
@@ -101,60 +112,60 @@ run_py() {
     passed=$((passed + 1))
 }
 
-echo "== guest (PowerPC Carbon) =="
-run_c guest census_decode_test.c     ""  src/census_decode.c
-run_c guest census_report_test.c     ""  src/census_report.c src/json.c
-run_c guest conn_fields_test.c       ""  src/conn_fields.c
-run_c guest json_native_test.c       ""  src/json.c
-run_c guest peek_table_test.c \
+echo "== now-guest-ppc (PowerPC Carbon) =="
+run_c now-guest-ppc census_decode_test.c     ""  src/census/census_decode.c
+run_c now-guest-ppc census_report_test.c     ""  src/census/census_report.c src/core/json.c
+run_c now-guest-ppc conn_fields_test.c       ""  src/connection/conn_fields.c
+run_c now-guest-ppc json_native_test.c       ""  src/core/json.c
+run_c now-guest-ppc peek_table_test.c \
       "-DNOW_PEEK_TABLE_HOST"
-run_c guest peek_validate_test.c     ""  src/peek_validate.c
-run_c guest share_path_test.c        ""
-run_c guest proc_quit_args_test.c    ""  src/proc_quit_args.c
-run_c guest processes_layout_test.c  ""  src/processes_layout.c
-run_c guest software_layout_test.c   ""  src/software_layout.c
-run_c guest sw_vers_parse_test.c     ""  src/sw_vers_parse.c
-run_c guest workshop_layout_test.c   ""  src/workshop_layout.c
-run_c guest cmd_help_test.c         ""  src/cmd_help.c
-run_c guest cmd_line_test.c         ""  src/cmd_line.c src/json.c
-run_py guest ot_connect_source_test.py
+run_c now-guest-ppc peek_validate_test.c     ""  src/peek/peek_validate.c
+run_c now-guest-ppc share_path_test.c        ""
+run_c now-guest-ppc proc_quit_args_test.c    ""  src/processes/proc_quit_args.c
+run_c now-guest-ppc processes_layout_test.c  ""  src/processes/processes_layout.c
+run_c now-guest-ppc software_layout_test.c   ""  src/software/software_layout.c
+run_c now-guest-ppc sw_vers_parse_test.c     ""  src/software/sw_vers_parse.c
+run_c now-guest-ppc workshop_layout_test.c   ""  src/workshop/workshop_layout.c
+run_c now-guest-ppc cmd_help_test.c         ""  src/commands/cmd_help.c
+run_c now-guest-ppc cmd_line_test.c         ""  src/commands/cmd_line.c src/core/json.c
+run_py now-guest-ppc ot_connect_source_test.py
 
-echo "== guest68k (68K, System 7.1) =="
-run_c guest68k connfields_test.c  "-std=c99 -pedantic"  src/connfields.c
-run_c guest68k test_console_ring.c "" src/n68_console_ring.c src/n68_linesplit.c
-run_c guest68k test_framecodec.c   "" src/frame.c src/hello.c src/ping.c \
-      src/json_scan.c src/numfmt.c
-run_c guest68k test_reader.c       "" src/n68_reader.c src/frame.c
-run_c guest68k test_proclist.c     "" src/n68_proclist.c src/numfmt.c
-run_c guest68k test_backpressure.c "" src/n68_reader.c src/frame.c
-run_c guest68k test_devsettings.c  "-std=c99 -pedantic"  src/n68_devsettings.c \
-      src/connfields.c
-run_c guest68k test_history.c      "-std=c99 -pedantic"  src/n68_history.c
-run_c guest68k test_cmdresult.c    "" src/n68_cmdresult.c src/numfmt.c
-run_c guest68k test_vprobe.c       "" src/n68_vprobe.c src/n68_cmdresult.c \
-      src/numfmt.c
-run_c guest68k test_shot.c         "" src/n68_shot.c src/n68_cmdresult.c \
-      src/numfmt.c
-run_c guest68k test_shotwire.c     "" src/n68_shotwire.c src/numfmt.c
-run_c guest68k test_packbits.c     "" src/n68_packbits.c
-run_c guest68k test_crc32.c        "" src/n68_crc32.c
-run_c guest68k test_putrx.c        "" \
-      src/n68_putrx.c src/n68_crc32.c src/json_scan.c
+echo "== now-guest-68k (68K, System 7.1) =="
+run_c now-guest-68k connfields_test.c  "-std=c99 -pedantic"  src/connection/connfields.c
+run_c now-guest-68k test_console_ring.c "" src/console/n68_console_ring.c src/console/n68_linesplit.c
+run_c now-guest-68k test_framecodec.c   "" src/core/frame.c src/core/hello.c src/core/ping.c \
+      src/core/json_scan.c src/core/numfmt.c
+run_c now-guest-68k test_reader.c       "" src/core/n68_reader.c src/core/frame.c
+run_c now-guest-68k test_proclist.c     "" src/processes/n68_proclist.c src/core/numfmt.c
+run_c now-guest-68k test_backpressure.c "" src/core/n68_reader.c src/core/frame.c
+run_c now-guest-68k test_devsettings.c  "-std=c99 -pedantic"  src/connection/n68_devsettings.c \
+      src/connection/connfields.c
+run_c now-guest-68k test_history.c      "-std=c99 -pedantic"  src/console/n68_history.c
+run_c now-guest-68k test_cmdresult.c    "" src/commands/n68_cmdresult.c src/core/numfmt.c
+run_c now-guest-68k test_vprobe.c       "" src/census/n68_vprobe.c src/commands/n68_cmdresult.c \
+      src/core/numfmt.c
+run_c now-guest-68k test_shot.c         "" src/screenshots/n68_shot.c src/commands/n68_cmdresult.c \
+      src/core/numfmt.c
+run_c now-guest-68k test_shotwire.c     "" src/screenshots/n68_shotwire.c src/core/numfmt.c
+run_c now-guest-68k test_packbits.c     "" src/screenshots/n68_packbits.c
+run_c now-guest-68k test_crc32.c        "" src/core/n68_crc32.c
+run_c now-guest-68k test_putrx.c        "" \
+      src/files/n68_putrx.c src/core/n68_crc32.c src/core/json_scan.c
 # The PowerPC guest's own quit-grammar test, compiled against THIS
 # guest's copy of the parser. One test, two implementations - see the
 # file's header for why it is an #include rather than a second copy.
-run_c guest68k proc_quit_parity_test.c "" src/proc_quit_args.c src/numfmt.c
-run_c guest68k test_puttx.c        "" src/n68_puttx.c src/n68_crc32.c \
-      src/n68_cmdresult.c src/numfmt.c src/frame.c
-run_c guest68k test_filelist.c     "" src/n68_filelist.c src/n68_cmdresult.c \
-      src/numfmt.c
+run_c now-guest-68k proc_quit_parity_test.c "" src/processes/proc_quit_args.c src/core/numfmt.c
+run_c now-guest-68k test_puttx.c        "" src/files/n68_puttx.c src/core/n68_crc32.c \
+      src/commands/n68_cmdresult.c src/core/numfmt.c src/core/frame.c
+run_c now-guest-68k test_filelist.c     "" src/files/n68_filelist.c src/commands/n68_cmdresult.c \
+      src/core/numfmt.c
 
 # Every test file must be in the manifest above. Grepping this script for the
 # filename is crude and deliberate: it is the check that cannot itself go
 # stale, because it reads the same text a human reads.
 echo "== manifest =="
 unlisted=""
-for f in "$repo_root"/guest/tests/* "$repo_root"/guest68k/tests/*; do
+for f in "$repo_root"/now-guest-ppc/tests/* "$repo_root"/now-guest-68k/tests/*; do
     case "$f" in *.c|*.py) ;; *) continue ;; esac
     base=$(basename "$f")
     grep -q -- "$base" "$0" || unlisted="$unlisted $base"

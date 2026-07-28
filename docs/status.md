@@ -231,7 +231,7 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
 
 - **One command table, two readers.** `launch` and `quit` are implemented
   once. A command fills an `N68CmdResult` — what happened, no formatting
-  — and `guest68k/src/n68_cmdresult.c` renders that either as the
+  — and `now-guest-68k/src/commands/n68_cmdresult.c` renders that either as the
   contract's `command.result` JSON for the host or as text for a human
   typing at the machine. Adding a command means one case in
   `now68k_commands_run()` and nothing else; it reaches the wire and the
@@ -497,7 +497,7 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   rules and this is its one dishonest edge; it is stated in the contract
   next to the field.
 - **Nothing verified against `tools/fakeguest.py` is evidence about a
-  guest.** It is hand-written from `guest68k/src` and the contract, so it
+  guest.** It is hand-written from `now-guest-68k/src` and the contract, so it
   can only show that the harness reacts correctly to a peer that behaves a
   stated way. A test that construes it otherwise is testing one half
   twice, which is the defect class that has cost this project the most.

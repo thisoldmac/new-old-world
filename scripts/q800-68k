@@ -143,13 +143,13 @@ if [ "$BUILD" = 1 ]; then
     # Force the build stamp current before anything is measured: CMake
     # touches it at the END of a build, so it can read minutes early
     # (AGENTS.md, "check the build stamp before believing a test result").
-    touch "$REPO/guest68k/src/wire68.c"
-    cmake -S "$REPO/guest68k" -B "$RUN/build" -G Ninja \
+    touch "$REPO/now-guest-68k/src/core/wire68.c"
+    cmake -S "$REPO/now-guest-68k" -B "$RUN/build" -G Ninja \
         -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
         >/dev/null
     cmake --build "$RUN/build" >/dev/null
 fi
-APP="$RUN/build/now68k-guest.bin"
+APP="$RUN/build/now-guest-68k.bin"
 [ -f "$APP" ] || { echo "error: no build at $APP" >&2; exit 1; }
 
 # --- 2. a disposable disk with the app and its settings on it -------------

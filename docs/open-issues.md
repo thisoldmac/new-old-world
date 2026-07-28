@@ -153,7 +153,7 @@ unverified — most of it is about what a small frame costs.
   scanner has a different name.
 - **`identity` is absent from every entry.** Deliberate — it is a
   precondition token for mutations this guest does not serve, and nothing
-  in `host/Sources` reads it. It is the first field to add if
+  in `now-host/Sources` reads it. It is the first field to add if
   `file.move`, `file.trash` or `file.get` ever land here, and adding it
   costs ~30 bytes of a 1024-byte page, which is roughly one entry.
 - **Three row-array commands still answer inside
@@ -1260,10 +1260,10 @@ working on the PowerBook.
   commands the guest has: it sends `command.request` with `line` — the raw
   text a human typed — and renders whatever comes back. Every argument
   grammar moved to the machine that serves the verb
-  (`guest/src/cmd_line.c`, natively tested by mutation), `help` became an
+  (`now-guest-ppc/src/commands/cmd_line.c`, natively tested by mutation), `help` became an
   x-command answered from the one doc table each guest already showed its
-  own console (`guest/src/cmd_help.c`,
-  `guest68k/src/commands68.c`), and the host's Tab completion is that
+  own console (`now-guest-ppc/src/commands/cmd_help.c`,
+  `now-guest-68k/src/commands/commands68.c`), and the host's Tab completion is that
   answer at runtime.
 
   Tested here: 459 host tests, the two new native guest tests, and both
@@ -2038,7 +2038,7 @@ tests, both xcodebuild configurations — and none of it is
 
 - No capability report has been taken against the PowerBook 180c. The
   fake partial guest in the tests answers `not-implemented` the way
-  `guest68k/src/wire68.c` does, but a fake guest proves the host's half
+  `now-guest-68k/src/core/wire68.c` does, but a fake guest proves the host's half
   twice and the guest's half not at all.
 - `now_list_processes` against NOW-68K is the tool this arc claims is newly
   possible, and it has not been called against that machine. The 68K's
@@ -2071,7 +2071,7 @@ the useful half.
   Carbon guest's rule is that a new feature is a Workshop module and
   never a window (`docs/adding-a-workshop-module.md`), `window.h` and
   this README both describe NOW-68K as one page with no tabs, and
-  `guest68k.r`'s `SIZE` comment agrees. Michelle asked for the console
+  `now-guest-68k.r`'s `SIZE` comment agrees. Michelle asked for the console
   in its own window on this guest, and it is implemented that way.
 
   The reason it is defensible: the main window's console pane is a **log
@@ -2093,17 +2093,17 @@ the useful half.
   emit its `command.result` JSON in one pass, which is fine with one
   reader and impossible with two. It now fills an `N68CmdResult` (the
   facts, no formatting) via `now68k_commands_run()`, and
-  `guest68k/src/n68_cmdresult.c` holds **both** renderers side by side:
+  `now-guest-68k/src/commands/n68_cmdresult.c` holds **both** renderers side by side:
   JSON for the wire, text for the console. Adding a command means one
   case in `now68k_commands_run` and nothing else — it appears in both
   places in the same commit. This is deliberately aimed at the parent
   corpus finding `two-halves-never-met-in-a-test`.
 
-  What is proven: `guest68k/tests/test_cmdresult.c` (50 checks) pins the
+  What is proven: `now-guest-68k/tests/test_cmdresult.c` (50 checks) pins the
   JSON bytes for all three reply shapes against literals written out in
   full — not assembled from the renderer's own pieces — and walks six
   outcomes through both renderers asserting they never disagree about the
-  `ok` bit or the error code. `guest68k/tests/test_history.c` (37 checks)
+  `ok` bit or the error code. `now-guest-68k/tests/test_history.c` (37 checks)
   covers the arrow-key history, including the two cases that are wrong in
   most first attempts: "nothing further that way" must leave the field
   alone rather than clear it, and a walk must not re-capture a recalled
@@ -2211,8 +2211,8 @@ the useful half.
 - **Oversized control frames — now tested, still never sent.** The
   skip-not-fatal path (a frame larger than our 4 KB buffer but inside the
   protocol's 32 KB) is covered off-metal since 2026-07-25: the reader
-  moved to `guest68k/src/n68_reader.c` behind an ops table, and
-  `guest68k/tests/test_reader.c` drives it through a scripted transport —
+  moved to `now-guest-68k/src/core/n68_reader.c` behind an ops table, and
+  `now-guest-68k/tests/test_reader.c` drives it through a scripted transport —
   the oversized frame is skipped **and the next frame still parses**,
   which is the actual claim, under four chunkings plus a stall at every
   one of ~380 byte offsets. What that does not prove: **nothing in NOW
@@ -2421,7 +2421,7 @@ macOS cannot decode QuickDraw pictures, so the wire uses a format both
 sides own". So none of `shot68.c`'s picture machinery is on this path. The
 stream is the palette as RGB triples, then rows top to bottom — which the
 host already decodes, because the PowerPC guest already sends it. The
-envelope is built field for field from `guest/src/wire.c`'s, and
+envelope is built field for field from `now-guest-ppc/src/core/wire.c`'s, and
 `bytes` includes the palette (the contract's one-line description says
 `rowBytes * height`; the sender that exists sends `GetHandleSize` of
 palette-plus-rows, and the host agrees with the sender).
@@ -2632,7 +2632,7 @@ grew.
 **Three defects were in the GATES, not the guest**, and the worst of them
 had been reading green:
 
-- The self-refusal case quit `now68k-guest` — the CMake target name —
+- The self-refusal case quit `now-guest-68k` — the CMake target name —
   while a deployed build runs as `NOW-68K 0.14`, its MacBinary name. It
   asked to quit a process that does not exist, got "nothing named that is
   running", asserted nothing, and passed. It had never once tested the
@@ -2699,7 +2699,7 @@ pull, or direct guest free-heap measurement.
 `build_stamp.c` at the END of a build, so the stamp reflects when that
 file was last compiled rather than when the binary was linked. It has
 already caused one "is this the build I think it is?" moment, and the
-verification ritual depends on it. `touch guest/src/build_stamp.c`
+verification ritual depends on it. `touch now-guest-ppc/src/core/build_stamp.c`
 before a build forces it current.
 
 **The wire fixtures are transcribed by hand.** `GuestWireFixtureTests`

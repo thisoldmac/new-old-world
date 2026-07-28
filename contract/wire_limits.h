@@ -2,8 +2,8 @@
  *
  * These are contract facts: they mean the same thing on every side, and
  * a side that disagrees about one of them is not speaking the protocol.
- * They lived in three places - guest/src/contract.h, guest68k/src/frame.h
- * and host/Sources/Host/FrameCodec.swift - and frame.h's own comment
+ * They lived in three places - now-guest-ppc/src/core/contract.h, now-guest-68k/src/core/frame.h
+ * and now-host/Sources/Host/FrameCodec.swift - and frame.h's own comment
  * recorded that a human had "cross-checked" the other two by hand.
  *
  * AGENTS.md names that arrangement as the failure this project has paid

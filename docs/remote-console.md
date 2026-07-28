@@ -117,14 +117,14 @@ recording because a third console will be one or the other.
 `submit_line()` decided that `vprobe` renders its whole table, that `ps` is
 answered directly, what an unknown name says — reachable only by someone
 standing at the PowerBook. That moved out to
-[`guest68k/src/n68_exec.c`](../guest68k/src/n68_exec.c) verbatim, with
+[`now-guest-68k/src/commands/n68_exec.c`](../now-guest-68k/src/commands/n68_exec.c) verbatim, with
 `con_out`/`con_out_block` collapsed into one emit callback. Both consoles call
 it. `clear` stayed behind.
 
 **The PowerPC guest** — the split already existed: `console_model_run()` took a
 whole line and appended lines to a scrollback. So it needed a **sink**, not
 surgery. `console_model_append` gained a redirect
-([`guest/src/console_model.c`](../guest/src/console_model.c)), which means all
+([`now-guest-ppc/src/console/console_model.c`](../now-guest-ppc/src/console/console_model.c)), which means all
 forty-odd of its call sites — including every one added after today — reach
 whichever face is asking without any of them knowing there are two.
 

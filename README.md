@@ -73,7 +73,7 @@ open "/private/tmp/now-host-product/New Old World.app"
 ```
 
 The ad-hoc signature that script produces is fine for development, but
-system notifications need a real one — `host/NewOldWorld.xcodeproj`
+system notifications need a real one — `now-host/NewOldWorld.xcodeproj`
 builds the same sources as an app target. Open it in Xcode, pick a
 signing team, and build.
 
@@ -95,7 +95,7 @@ The optional agent companion is a separate executable with no
 checked-in client configuration:
 
 ```bash
-swift build --package-path host --product NOWAgentCompanion
+swift build --package-path now-host --product NOWAgentCompanion
 ```
 
 Build products stay outside the repository, and the bundling script
@@ -106,9 +106,9 @@ enforces it.
 | Path | What lives there |
 |---|---|
 | `contract/asyncapi.yaml` | **The source of truth.** Every message, the frame header, connection rules, `x-commands`. A behaviour change starts here. |
-| `guest/` | PowerPC Carbon guest. `wire.c` is the connection manager, `capture`/`pixels` the capture engines; the human surface is the Workshop — `workshop_*` plus one `*_module.c` per page. |
-| `guest68k/` | NOW-68K. A *sibling* of the Carbon guest, not a port of it. |
-| `host/` | Swift package (`GuestListener` + modules) and `NewOldWorld.xcodeproj` for signed builds. |
+| `now-guest-ppc/` | PowerPC Carbon guest. `src/` is split by domain: `core/` (wire, JSON, prefs, logging), `workshop/` for the one-window shell, then one directory per Workshop page — `console/`, `files/`, `processes/`, `screenshots/`, `software/`, `census/`, `logs/`, `connection/`, plus `commands/` and `peek/`. |
+| `now-guest-68k/` | NOW-68K. A *sibling* of the Carbon guest, not a port of it, and filed the same way: `core/`, `ui/`, `commands/`, `console/`, `connection/`, `files/`, `processes/`, `screenshots/`, `census/`. |
+| `now-host/` | Swift package (`GuestListener` + modules) and `NewOldWorld.xcodeproj` for signed builds. |
 | `ext/` | The optional resident 68K component. Always optional — the product degrades honestly without it. |
 | `docs/` | Architecture, measurements, and the ledgers. `docs/local/` is gitignored scratch. |
 | `spikes/` | Throwaway feasibility probes, kept for their findings. |
@@ -117,7 +117,7 @@ enforces it.
 
 - [docs/status.md](docs/status.md) — what works and what does not, in full.
 - [docs/architecture.md](docs/architecture.md) — the design and its rules.
-- [docs/naming.md](docs/naming.md) — the guest naming scheme, and the one question still open.
+- [docs/naming.md](docs/naming.md) — the naming scheme and the `src/` domain split, and why the host has no architecture suffix.
 - [docs/open-issues.md](docs/open-issues.md) — the ledger: broken versus unverified.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — including what you can do with no vintage hardware.
 - [AGENTS.md](AGENTS.md) — the full working conventions, for humans and agents alike.

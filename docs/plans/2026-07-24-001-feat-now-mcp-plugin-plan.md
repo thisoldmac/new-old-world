@@ -156,7 +156,7 @@ artifacts, guest UI automation, or destination-byte identity.
 - **Goal:** Turn the table above into executable tool schemas, typed outcomes, and traceability to existing contract messages.
 - **Requirements:** R1-R14
 - **Dependencies:** None
-- **Files:** `contract/asyncapi.yaml` (read only), `host/Sources/Host/ContractMessages.swift` (read only), `docs/plans/2026-07-24-001-feat-now-mcp-plugin-plan.md`
+- **Files:** `contract/asyncapi.yaml` (read only), `now-host/Sources/Host/ContractMessages.swift` (read only), `docs/plans/2026-07-24-001-feat-now-mcp-plugin-plan.md`
 - **Approach:** Confirm that every proposed input is narrower than its wire owner. Record any missing host-only adapter behavior separately; a missing guest field stops the tool rather than expanding the wire in V0.
 - **Test scenarios:** Table review catches any tool that would require a new guest message, accepts a raw path/PSN, or maps success to a weaker event than its current receipt.
 - **Verification:** The implementation change begins with a reviewed mapping diff before adding handlers.
@@ -166,7 +166,7 @@ artifacts, guest UI automation, or destination-byte identity.
 - **Goal:** Give an optional local client a typed, narrow interface while the native app retains the live `GuestListener`.
 - **Requirements:** R1-R3, R5-R10
 - **Dependencies:** U1
-- **Files:** `host/Sources/Host/GuestListener.swift`, new focused files under `host/Sources/Host/Automation/`, tests under `host/Tests/HostTests/`
+- **Files:** `now-host/Sources/Host/GuestListener.swift`, new focused files under `now-host/Sources/Host/Automation/`, tests under `now-host/Tests/HostTests/`
 - **Approach:** Extract domain operations, not the listener. Define session generation, opaque references, bounded result types, and a user-local adapter whose lifecycle cannot start or stop NOW. Choose its concrete IPC and caller-authentication mechanism in the contract-map review before executable work.
 - **Test scenarios:** Companion absent; adapter client disconnect; guest reconnect invalidates all references; concurrent calls preserve the one-lane invariant; app UI and adapter observe the same host-owned session.
 - **Verification:** Host tests prove no adapter call changes listener configuration and existing host suites remain green.
@@ -186,7 +186,7 @@ artifacts, guest UI automation, or destination-byte identity.
 - **Goal:** Add the two bounded actions without raw names, paths, or PSNs becoming authority.
 - **Requirements:** R7-R8, R13-R14
 - **Dependencies:** U3
-- **Files:** launch/quit facade and MCP handler files under `host/Sources/Host/Automation/` and `mcp/`; corresponding host and MCP tests
+- **Files:** launch/quit facade and MCP handler files under `now-host/Sources/Host/Automation/` and `mcp/`; corresponding host and MCP tests
 - **Approach:** Launch queries may return candidates but never act on ambiguity. Exact references are refreshed before `launch`. Quit requires a current process reference, a fresh matching listing, and the guest's existing final PSN validation.
 - **Test scenarios:** zero/one/many launch matches; empty listing path; stale software reference; reconnect; PSN reuse; target exits during revalidation; NOW self-quit; guest refusal; quit sent but process remains.
 - **Verification:** Mutation checks remove each revalidation guard and watch its named test fail.
@@ -196,7 +196,7 @@ artifacts, guest UI automation, or destination-byte identity.
 - **Goal:** Transfer one pre-approved immutable artifact and return an honest receipt.
 - **Requirements:** R9-R14
 - **Dependencies:** U2, U3
-- **Files:** native approval action and approval/receipt facade files under `host/Sources/Host/Automation/`, the MCP handler under `mcp/`, and corresponding transfer security tests
+- **Files:** native approval action and approval/receipt facade files under `now-host/Sources/Host/Automation/`, the MCP handler under `mcp/`, and corresponding transfer security tests
 - **Approach:** The host action stages one selected regular file and mints a one-use, expiring receipt without exposing its original path. Redemption opens the staged copy without following links, compares file identity, link count, size, and digest, then calls the existing put path and awaits `file.done`.
 - **Test scenarios:** explicit host approval; MCP cannot mint approval; valid receipt; expiry; replay; changed bytes; symlink swap; hard-link alias; directory or special file; leaked original CodeKitten path; destination traversal; busy lane; disconnect; timeout after all bytes sent; `file.done ok:false`; no destination hash proof.
 - **Verification:** Integration tests use the existing fake guest and assert that rejected cases emit no `file.offer`.
@@ -218,7 +218,7 @@ artifacts, guest UI automation, or destination-byte identity.
 | Gate | Evidence required |
 | --- | --- |
 | Documentation | All relative links resolve; Markdown/frontmatter parse; diff contains no runtime, contract, or config change. |
-| Host behavior | `swift test --package-path host --scratch-path <outside the repo>` passes, with new guards mutation-checked. |
+| Host behavior | `swift test --package-path now-host --scratch-path <outside the repo>` passes, with new guards mutation-checked. |
 | MCP protocol | Tool schemas, stdio framing, bounded output, cancellation, and stdout isolation pass in the future MCP suite. |
 | Security | Every adversarial case in U4-U5 proves no wire action occurred on rejection. |
 | Emulator | A connected guest exercises health, list, exact launch, stale quit, successful quit request, busy transfer, and receipt failure. |

@@ -45,8 +45,8 @@ from ftplib import FTP
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-VERSION_SRC = REPO / "guest68k" / "src" / "wire68.c"
-STAMPER = REPO / "guest" / "tools" / "name_macbinary.py"
+VERSION_SRC = REPO / "now-guest-68k" / "src" / "core" / "wire68.c"
+STAMPER = REPO / "now-guest-ppc" / "tools" / "name_macbinary.py"
 LAB_ENV = REPO / ".env.lab"
 
 
@@ -139,7 +139,7 @@ def bump_version() -> str:
         text.replace('#define NOW68K_APP_VERSION "%s"' % current,
                      '#define NOW68K_APP_VERSION "%s"' % nxt, 1),
         encoding="utf-8")
-    print("== bumped %s -> %s (guest68k/src/wire68.c)" % (current, nxt))
+    print("== bumped %s -> %s (now-guest-68k/src/core/wire68.c)" % (current, nxt))
     return nxt
 
 
@@ -160,13 +160,13 @@ def build(build_dir: Path) -> Path:
             fail("no 68K toolchain at %s (set NOW68K_TOOLCHAIN)" % TOOLCHAIN)
         print("== configuring %s" % build_dir)
         subprocess.run(
-            ["cmake", "-S", str(REPO / "guest68k"), "-B", str(build_dir),
+            ["cmake", "-S", str(REPO / "now-guest-68k"), "-B", str(build_dir),
              "-DCMAKE_TOOLCHAIN_FILE=" + str(TOOLCHAIN)],
             check=True, stdout=subprocess.DEVNULL)
     print("== building")
     subprocess.run(["cmake", "--build", str(build_dir), "-j4"],
                    check=True, stdout=subprocess.DEVNULL)
-    built = build_dir / "now68k-guest.bin"
+    built = build_dir / "now-guest-68k.bin"
     if not built.exists():
         fail("build produced no %s" % built)
     return built
@@ -365,7 +365,7 @@ def main() -> int:
                        NOW_68K_NEW_PORT=new_port)
             print("\n== handing off (no double-click needed)")
             code = subprocess.run(
-                ["swift", "test", "--package-path", str(REPO / "host"),
+                ["swift", "test", "--package-path", str(REPO / "now-host"),
                  "--scratch-path", scratch,
                  "--filter", "Metal68KHandoffTests"], env=env).returncode
             if code != 0:
@@ -399,7 +399,7 @@ def main() -> int:
         # Not check=True: a metal gate FAILING is a result, not a crash,
         # and its own output says more than a traceback would.
         return subprocess.run(
-            ["swift", "test", "--package-path", str(REPO / "host"),
+            ["swift", "test", "--package-path", str(REPO / "now-host"),
              "--scratch-path", scratch, "--filter", args.filter],
             env=env).returncode
     return 0

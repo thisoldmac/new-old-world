@@ -12,14 +12,14 @@ whether a transfer could be cancelled. All three are answerable and the
 answers are below.
 
 **Derived from the guests' own source**, not from intent:
-`json_type_is(reply, "...")` in `guest/src/wire.c` and
-`strcmp(type, "...")` in `guest68k/src/wire68.c`. Re-derive it the same
+`json_type_is(reply, "...")` in `now-guest-ppc/src/core/wire.c` and
+`strcmp(type, "...")` in `now-guest-68k/src/core/wire68.c`. Re-derive it the same
 way rather than editing from memory:
 
 ```
-grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' guest/src/wire.c \
+grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
   | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
-grep -o 'strcmp(type, "[a-z.]*")' guest68k/src/wire68.c \
+grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
   | sed 's/.*"\(.*\)".*/\1/' | sort -u
 ```
 
@@ -128,7 +128,7 @@ Five groups, all PPC-only: **cpu**, **memory**, **os**, **network**,
 RAM, what ROM, what networking" is answered, and it is the single
 biggest thing NOW-68K does not serve.
 
-**The data already exists on the 68K side.** `guest68k/src/health.c`
+**The data already exists on the 68K side.** `now-guest-68k/src/ui/health.c`
 samples machine identity, CPU type, System version, Virtual Memory,
 MacTCP version, screen geometry and physical RAM once at startup, plus
 free memory and largest free block on every panel redraw — all of it
@@ -140,7 +140,7 @@ it the cheapest large gap on this list to close.
 ### `census` — the hardware census, probe by probe
 
 The PowerPC guest implements **14 probes** (`k_probes` in
-`guest/src/census_probes.c`):
+`now-guest-ppc/src/census/census_probes.c`):
 
 `overview` `identity` `selectors` `video` `volumes` `drives` `drivers`
 `adb` `ata` `pccard` `pram` `power` `pci` `scsi`
@@ -246,6 +246,6 @@ commands at the top are the source of truth.
 Last derived: 2026-07-26, on `claude/metal-integration` after five
 branches landed together. The command registry came from `x-commands` in
 `contract/asyncapi.yaml`, the PPC verb set from `strcmp(name, ...)` in
-`guest/src/commands.c`, the 68K verb set from the table in
-`guest68k/src/commands68.c`, and the probe list from `k_probes` in
-`guest/src/census_probes.c`.
+`now-guest-ppc/src/commands/commands.c`, the 68K verb set from the table in
+`now-guest-68k/src/commands/commands68.c`, and the probe list from `k_probes` in
+`now-guest-ppc/src/census/census_probes.c`.

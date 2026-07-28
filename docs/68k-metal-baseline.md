@@ -37,7 +37,7 @@ quotes.
 The suites emit one `NOWBASE` line per measurement. Grep them out:
 
 ```bash
-swift test --package-path host --filter Metal68KPutTests 2>&1 | grep NOWBASE
+swift test --package-path now-host --filter Metal68KPutTests 2>&1 | grep NOWBASE
 ```
 
 Three kinds:

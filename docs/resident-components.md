@@ -124,7 +124,7 @@ path, anything that can be polled from the main loop instead.
 
 ## Discovery and degradation
 
-`guest/src/peek.h` is the application's view; the four states exist
+`now-guest-ppc/src/peek/peek.h` is the application's view; the four states exist
 because an installer needs all four legible:
 
 | state | evidence |

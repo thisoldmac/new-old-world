@@ -38,13 +38,13 @@ could do. Nobody decided that; it simply never came up.
 3. **The contract declares every wire verb.** A guest inventing one is a
    verb the host can only learn about by accident.
 
-[`host/Tests/HostTests/CommandParityTests.swift`](../host/Tests/HostTests/CommandParityTests.swift)
+[`now-host/Tests/HostTests/CommandParityTests.swift`](../now-host/Tests/HostTests/CommandParityTests.swift)
 enforces all three by reading the guests' own source. Prose goes stale;
 that test fails.
 
 ## Where the seam is
 
-**NOW-68K (`guest68k/`)** — two mechanisms, because it has two kinds of
+**NOW-68K (`now-guest-68k/`)** — two mechanisms, because it has two kinds of
 capability:
 
 - *Commands* (`launch`, `quit`, `front`). `commands68.c` runs one and
@@ -78,7 +78,7 @@ capability:
   JSON or console text. Four faces on the wire and the pane, one
   enumeration.
 
-**The PowerPC guest (`guest/`)** — `commands.c` answers the wire and
+**The PowerPC guest (`now-guest-ppc/`)** — `commands.c` answers the wire and
 `console_model.c` answers the Console page. Two dispatch lists, so two
 chances to drift, and the parity test compares them directly. The
 implementations live below both.

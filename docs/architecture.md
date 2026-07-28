@@ -109,7 +109,7 @@ either shape:
   person (snapshot) is a different request from `gestalt` called by a
   module (every group). Each command's grammar is stated once in the
   contract as `x-line` and implemented once, by the machine that serves
-  the verb — `guest/src/cmd_line.c` for the Carbon guest.
+  the verb — `now-guest-ppc/src/commands/cmd_line.c` for the Carbon guest.
 
 `command.request` has only ever run host to guest: the guest's console
 runs its own commands in-process, and the host serves none. So `line`
@@ -130,8 +130,8 @@ guest's word, not a local guess at it.
 
 **Discovery is a request.** `help` is an x-command: a bare one lists what
 that machine serves, a topic returns one command's usage. Both guests
-answer it from their own table (`guest/src/cmd_help.c`,
-`guest68k/src/commands68.c`), which is also the table their own consoles
+answer it from their own table (`now-guest-ppc/src/commands/cmd_help.c`,
+`now-guest-68k/src/commands/commands68.c`), which is also the table their own consoles
 read, so help cannot drift from the commands. The host console's Tab
 completion is that answer, fetched on the first Tab and dropped when the
 wire drops; a guest too old to serve `help` has no completion, which is
@@ -279,5 +279,5 @@ than trusting the guest to answer.
 ## Naming seam
 
 Display names, creator codes, bundle identifiers, and preference keys
-stay confined to `guest/src/product_identity.h` and
-`host/Sources/Host/ProductIdentity.swift`.
+stay confined to `now-guest-ppc/src/core/product_identity.h` and
+`now-host/Sources/Host/ProductIdentity.swift`.

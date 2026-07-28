@@ -35,7 +35,7 @@
  * PowerPC application share no binary - so the rule is a header the way
  * peek_table.h is a header: compiled by every side that reads it,
  * including the host `cc` for its native test
- * (guest/tests/share_path_test.c).
+ * (now-guest-ppc/tests/share_path_test.c).
  *
  * `static` rather than `extern`: each translation unit gets its own copy
  * and no build gains a link-order dependency, which matters on targets

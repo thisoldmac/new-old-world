@@ -1,73 +1,47 @@
 # Naming the guests
 
-**Status: agreed in direction, not yet executed. One question open.**
+**Status: decided and executed.** The rename landed with the `src/`
+domain split, in one commit.
 
-Nothing in the tree has been renamed. This records the intended scheme so
-that new work adopts it and a rename, when it happens, is mechanical
-rather than a fresh argument.
+## The names
 
-## Where the names are today
+| Thing | Directory | CMake target | Product name |
+|---|---|---|---|
+| PowerPC Carbon guest | `now-guest-ppc/` | `now-guest-ppc` | **`New Old World`** |
+| 68K guest | `now-guest-68k/` | `now-guest-68k` | `NOW-68K` |
+| Host application | `now-host/` | — | `New Old World.app` |
 
-| Thing | Called | Where |
-|---|---|---|
-| PowerPC Carbon guest | `guest/`, CMake target `now-guest` | `guest/CMakeLists.txt` |
-| 68K guest | `guest68k/`, CMake target `now68k-guest`, product "NOW-68K" | `guest68k/CMakeLists.txt` |
-| The shipped PowerPC binary | **`New Old World`** | `guest/src/product_identity.h` |
-| Host application | `New Old World.app` | `host/` |
+The qualifier is always in the same position, and it always names the
+machine the guest runs on. Before this, the directories were `guest/`,
+`guest68k/` and `host/`, and the CMake targets were `now-guest` and
+`now68k-guest` — the qualifier landed in a different place each time, and
+`guest/` read as "the real one" beside `guest68k/` when it is simply the
+older of two peers.
 
-Two problems. `guest/` is unqualified — it was the only guest once, and
-now reads as "the real one" beside `guest68k/`. And `now-guest` versus
-`now68k-guest` puts the qualifier in a different place each time.
+## Why the host has no suffix
 
-## The scheme
+This was the open question, and the answer is that it was the wrong
+question. The scheme was originally drafted as three *guests*, with a
+third name wanted "for modern Macs" — but the modern Mac does not run a
+guest. It runs the host. There is exactly one of those, so nothing needs
+disambiguating and no suffix is load-bearing.
 
-Name each guest for the machine it runs on, with the qualifier always in
-the same position:
+The three candidates all failed for the same underlying reason: they
+answered an axis question that only the guests actually have.
 
-- `now-guest-68k`
-- `now-guest-ppc`
-- a third, for modern Macs — **name undecided, see below**
+- **`now-host-arm64`** is literal for Apple Silicon, but `Package.swift`
+  declares `.macOS(.v13)` and the Xcode project pins no `ARCHS`, so it
+  inherits `ARCHS_STANDARD` and builds **arm64 + x86_64** today. The name
+  would have excluded half the machines it runs on.
+- **`now-host-macos`** distinguishes nothing: all three targets are a Mac
+  OS of some era.
+- **`now-host-modern`** ages badly, and dates the moment it is written.
 
-## The open question
+`68k` and `ppc` work because those machines had one architecture and one
+operating-system era each. A modern Mac has neither property, and `host`
+already carries the whole meaning.
 
-The third name is not settled, because the axis stops being obvious
-there.
-
-`68k` and `ppc` are unambiguous: those machines had one architecture and
-one operating-system era each. A modern Mac does not. Apple ships one
-universal binary for two architectures, so:
-
-- **`now-guest-arm64`** is literal and correct for Apple Silicon, but an
-  Intel Mac would need `now-guest-x86_64` — two names for one product,
-  or one name that quietly excludes half the machines it runs on.
-- **`now-guest-macos`** treats the axis as *era of Mac* rather than CPU,
-  which is arguably what actually distinguishes these three targets: a
-  System 7 machine, a Mac OS 9 machine, and a modern one. One universal
-  binary, one name.
-- **`now-guest-modern`** is CPU-agnostic and survives Apple changing
-  architecture again, but ages badly.
-
-This wants deciding before anything is renamed, because the answer
-determines whether the qualifier means "CPU" or "era" — and the first two
-names are read differently depending on which.
-
-## What a rename touches
-
-Recorded now so the size of the job is known rather than discovered:
-
-- Directory names `guest/` and `guest68k/`, and every path in
-  `scripts/test-native`'s manifest, `scripts/build-guests`,
-  `scripts/test-all`, `scripts/deploy-68k`, `scripts/q800-68k`.
-- CMake target names in both `CMakeLists.txt`, plus the canonical
-  MacBinary stamping rules that name `now-guest.bin`.
-- `host/Tests/HostTests/GuestWireConformanceTests.swift`, which reads
-  `guest/src/*.c` by path.
-- CI paths in `.github/workflows/ci.yml`.
-- Cross-references in `AGENTS.md`, `README.md`, `docs/*`, and the
-  `#include "../../guest/tests/..."` in
-  `guest68k/tests/proc_quit_parity_test.c`.
-
-## What a rename must NOT touch
+## What the rename did NOT touch
 
 **The shipped product name stays `New Old World`.** It is the name a
 person sees, it is what the host application is called, and — the part
@@ -77,5 +51,44 @@ answers on real hardware and looks exactly like a hang. The canonical
 name lives once, in `prefs.c :: prefs_spec`. See AGENTS.md, "Deploying
 to the PowerBook".
 
-`now-guest-*` are **build and repository** names. They are not what the
-product is called.
+`now-guest-*` and `now-host` are **build and repository** names. They are
+not what the product is called.
+
+The dev / side-build MacBinaries followed their targets, though:
+`now-guest.bin` is now `now-guest-ppc.bin`, and `now68k-guest.bin` is
+`now-guest-68k.bin`. `New Old World.bin` is unchanged.
+
+## The src/ domain split
+
+The same commit stopped `src/` being one flat directory in each guest.
+Sources are filed by domain — `core/` for what everything shares, then
+one directory per feature, which for the PowerPC guest means one per
+Workshop module:
+
+```
+now-guest-ppc/src/    main.c, core/, workshop/, commands/, console/,
+                      connection/, files/, processes/, screenshots/,
+                      software/, census/, logs/, peek/
+now-guest-68k/src/    main.c, core/, ui/, commands/, console/,
+                      connection/, files/, processes/, screenshots/,
+                      census/
+```
+
+**Headers are still included by bare name** — `#include "json.h"`, not
+`#include "core/json.h"`. Which domain a header is filed under is a
+decision about where a human looks for it; making every consumer spell
+out that decision would mean re-filing one header touches every file that
+includes it. Both `CMakeLists.txt` and `scripts/test-native` therefore put
+every domain directory on the include path, and both *discover* those
+directories rather than listing them, so adding a domain needs no edit in
+either place.
+
+Two source-reading gates had to learn to recurse.
+`GuestWireConformanceTests.guestSources()` enumerated `src/` shallowly,
+which after the split finds only `main.c` — enough to satisfy its own
+"not empty" assertion, so that assertion is not what protects it. Checked
+by mutation: reverting the walk to `contentsOfDirectory` fails three
+tests, because the message inventory and the cannot-check set both look
+for frames that now live in `core/`. The protection is real but indirect,
+and the code says so. `now-guest-ppc/tests/ot_connect_source_test.py` read
+`src/wire.c` by literal path and failed outright.

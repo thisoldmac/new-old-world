@@ -44,7 +44,7 @@ trap cleanup EXIT INT TERM
 mkdir -p "$scratch_root"
 
 echo "==> swift test"
-swift test --package-path "$repo_root/host" \
+swift test --package-path "$repo_root/now-host" \
     --scratch-path "$scratch_root/swift"
 
 # Debug and Release differ in whole-module optimisation, which has caught
@@ -52,7 +52,7 @@ swift test --package-path "$repo_root/host" \
 for configuration in Debug Release; do
     echo "==> xcodebuild $configuration"
     xcodebuild \
-        -project "$repo_root/host/NewOldWorld.xcodeproj" \
+        -project "$repo_root/now-host/NewOldWorld.xcodeproj" \
         -scheme "New Old World" \
         -configuration "$configuration" \
         -derivedDataPath "$scratch_root/xcode-$configuration" \

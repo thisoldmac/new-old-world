@@ -10,7 +10,7 @@ errata that will bite you regardless of what you are building.
 
 ## The contract
 
-`guest/src/workshop_module.h` declares `WorkshopModuleOps`. A module
+`now-guest-ppc/src/workshop/workshop_module.h` declares `WorkshopModuleOps`. A module
 exposes exactly one symbol:
 
 ```c
@@ -72,9 +72,9 @@ appear or does not switch.
    and the placeholder line shown until the module registers) and
    register the ops in `workshop_open()`.
 5. **`main.c`** — add the View menu item with its Cmd-key.
-6. **`guest/CMakeLists.txt`** — add the source file(s).
+6. **`now-guest-ppc/CMakeLists.txt`** — add the source file(s).
 
-Plus a 16×16 `ics#` in `guest/resources/app.r` for the sidebar icon.
+Plus a 16×16 `ics#` in `now-guest-ppc/resources/app.r` for the sidebar icon.
 **Do not** plot it with `PlotIconID`: the System file can outrank your
 resource at a colliding ID and draw something else entirely. Use
 `plot_small_icon()` in the sidebar, which blits your own bytes. That is
@@ -125,7 +125,7 @@ calls and test it with the host `cc`, the way `workshop_layout.c` and
 runs here rather than on the machine:
 
 ```sh
-cd guest/tests
+cd now-guest-ppc/tests
 cc -Wall -Wextra -Werror -I ../src workshop_layout_test.c \
    ../src/workshop_layout.c -o /tmp/t && /tmp/t
 ```

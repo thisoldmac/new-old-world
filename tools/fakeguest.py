@@ -5,7 +5,7 @@ exercised without a Macintosh on the LAN.
   tools/fakeguest.py --port 5399 --kind 68k|ppc [--self-name X] [--lie]
 
 READ THIS BEFORE TRUSTING ANYTHING IT PRINTS. This proves things about the
-HARNESS, never about the guests. It is hand-written from guest68k/src and
+HARNESS, never about the guests. It is hand-written from now-guest-68k/src and
 the contract, so a run against it can only show that MetalQuitTests reacts
 correctly to a guest that behaves a stated way — it cannot show that either
 real guest behaves that way, and a test that constructs the message it then
@@ -17,7 +17,7 @@ real guest will perform on request.
 
 68k: hello name "now-68k"; serves only launch/quit; answers process.list
      with the generic {"type":"error","code":"not-implemented"} the real
-     guest68k/src/wire68.c sends (which the host does not route, so it
+     now-guest-68k/src/core/wire68.c sends (which the host does not route, so it
      surfaces as the 15s watchdog timeout).
 ppc: hello name "PowerBook 1400c"; also serves process.list from a fake
      process table.
@@ -149,7 +149,7 @@ class Peer:
                              "no commands implemented")
             elif kind == "process.list":
                 if self.kind == "68k":
-                    # guest68k/src/wire68.c :: send_error_reply
+                    # now-guest-68k/src/core/wire68.c :: send_error_reply
                     self.send({"type": "error", "id": mid,
                                "code": "not-implemented",
                                "message": "unsupported message type"})
@@ -169,7 +169,7 @@ def main():
     ap.add_argument("--port", type=int, default=5399)
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--kind", choices=["68k", "ppc"], default="68k")
-    ap.add_argument("--self-name", default="now68k-guest")
+    ap.add_argument("--self-name", default="now-guest-68k")
     ap.add_argument("--victim", default="TeachText")
     ap.add_argument("--lie", action="store_true",
                     help="report gone while keeping the process running")

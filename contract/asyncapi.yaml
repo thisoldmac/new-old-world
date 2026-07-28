@@ -972,7 +972,7 @@ components:
             prompts must bound its wait, must keep pumping while it waits so
             it stays answerable, and must treat exec.cancel as an immediate
             end. The reference implementation is now_exec_read_input
-            (guest/src/wire.c) at 30 seconds.
+            (now-guest-ppc/src/core/wire.c) at 30 seconds.
     ExecCancel:
       type: object
       required: [type, id]

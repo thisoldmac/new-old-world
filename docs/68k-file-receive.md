@@ -181,12 +181,12 @@ this guest's workaround.
 
 | | |
 |---|---|
-| Decisions, no Toolbox | `guest68k/src/n68_putrx.h` / `.c` |
-| File Manager, no decisions | `guest68k/src/n68_putfile.h` / `.c` |
-| CRC-32 | `guest68k/src/n68_crc32.c` |
-| Bulk delivery | `guest68k/src/n68_reader.c` (`N68_RS_BULK`) |
-| The wire | `guest68k/src/wire68.c`, the file family block |
-| The console's face | `guest68k/src/conwin.c`, `xfer` |
-| Off-metal tests | `guest68k/tests/test_putrx.c`, `test_crc32.c` |
+| Decisions, no Toolbox | `now-guest-68k/src/files/n68_putrx.h` / `.c` |
+| File Manager, no decisions | `now-guest-68k/src/files/n68_putfile.h` / `.c` |
+| CRC-32 | `now-guest-68k/src/core/n68_crc32.c` |
+| Bulk delivery | `now-guest-68k/src/core/n68_reader.c` (`N68_RS_BULK`) |
+| The wire | `now-guest-68k/src/core/wire68.c`, the file family block |
+| The console's face | `now-guest-68k/src/console/conwin.c`, `xfer` |
+| Off-metal tests | `now-guest-68k/tests/test_putrx.c`, `test_crc32.c` |
 | Emulator rig | `scripts/q800-68k` |
-| On-wire tests | `host/Tests/HostTests/Metal68KPutTests.swift` |
+| On-wire tests | `now-host/Tests/HostTests/Metal68KPutTests.swift` |

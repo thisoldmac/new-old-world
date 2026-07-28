@@ -206,10 +206,10 @@ and process names have spaces in them.
    Connection moves to item 5 / Cmd-5: the menu item number IS the
    module ID, so the keys follow the numbering rather than muscle
    memory. The existing dispatch holds unchanged.
-6. `guest/CMakeLists.txt` — `processes_module.c` (+ `proc_snapshot.c`
+6. `now-guest-ppc/CMakeLists.txt` — `processes_module.c` (+ `proc_snapshot.c`
    if the walk/format code splits out for native testing).
 
-Plus the icon: a 16×16 `ics#` in `guest/resources/app.r`, drawn with
+Plus the icon: a 16×16 `ics#` in `now-guest-ppc/resources/app.r`, drawn with
 `plot_small_icon()` — never `PlotIconID`
 (`ploticon-suite-loses-to-system-family`).
 

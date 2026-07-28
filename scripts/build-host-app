@@ -24,7 +24,7 @@ scratch="$output_root/swift-build"
 bundle="$output_root/New Old World.app"
 binary="$scratch/debug/Host"
 
-swift build --package-path "$repo_root/host" --scratch-path "$scratch"
+swift build --package-path "$repo_root/now-host" --scratch-path "$scratch"
 mkdir -p "$bundle/Contents/MacOS"
 cp "$binary" "$bundle/Contents/MacOS/Host"
 
