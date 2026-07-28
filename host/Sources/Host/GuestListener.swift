@@ -402,6 +402,24 @@ final class GuestListener: ObservableObject {
         session.send(.execCancel(ExecCancel(id: id)))
     }
 
+    /// The id of the exec currently in flight, or nil. There is at most one:
+    /// the guests refuse a second with `exec-busy`, because their dispatch is
+    /// synchronous and its output sink is a single static.
+    var runningExecId: Int? { pendingExec.keys.first }
+
+    /// Answers a prompt a running exec printed.
+    ///
+    /// The host does NOT try to tell a prompt from ordinary output, and does
+    /// not need to: while an exec is in flight a typed line can only be meant
+    /// as input, since a second exec would be refused. If the guest was not
+    /// in fact waiting it drops the line rather than buffering it, so the
+    /// worst case of guessing wrong is that nothing happens — never that a
+    /// stale answer lands in the next prompt.
+    func provideExecInput(id: Int, text: String) {
+        guard let session, case .connected = state else { return }
+        session.send(.execInput(ExecInput(id: id, text: text)))
+    }
+
     private func resolveExecOutput(_ output: ExecOutput) {
         guard var pending = pendingExec[output.id] else {
             /* Output for an exec nobody is waiting on: a late frame after a
@@ -2116,7 +2134,7 @@ final class Session {
             onExecOutput(output)
         case .execResult(let result):
             onExecResult(result)
-        case .execRequest, .execCancel:
+        case .execRequest, .execCancel, .execInput:
             /* Declared asymmetry, the same shape as softwareList above: the
                exec plane has only ever run host-to-guest. This host serves
                no commands, so there is nothing for it to interpret a line

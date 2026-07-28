@@ -3,24 +3,38 @@ import Foundation
 /// The host console: a **dumb shell** into the connected Mac.
 ///
 /// It does not know what commands the other machine has, and must not. There
-/// are two guests now — the PowerPC Carbon guest serves fifteen commands, and
-/// NOW-68K serves three — so any list kept here would be wrong for one of
-/// them, and wrong again the next time either grows a verb. So: the line a
-/// human types is relayed as it was typed (`command.request` with `line`), and
-/// whatever comes back is rendered, including the guest's own
-/// `unknown-command` for something it does not have. Every argument grammar
-/// lives on the machine that serves the command; see CommandRequest.line and
-/// each command's `x-line` in contract/asyncapi.yaml.
+/// are two guests, serving different tables, so any list kept here would be
+/// wrong for one of them and wrong again the next time either grows a verb.
+///
+/// So the line a human types goes across **exactly as typed** — the whole
+/// line, verb included, as `exec.request` — and what comes back is the text
+/// that machine's own console would have shown, rendered as text. Not
+/// re-derived from structured rows: the same bytes, from the same renderer,
+/// on the same machine. See the "Exec" section of contract/asyncapi.yaml.
+///
+/// The property that buys, stated as the thing to protect: **a verb added to
+/// a guest is typeable from here with no change to this file, this binary, or
+/// the contract.** `ConsoleShellTests` asserts it with a verb that exists
+/// nowhere else.
+///
+/// The typed `command.request` plane is still here and still right for what
+/// it is for — a caller that KNOWS the command and wants columns. Exactly one
+/// thing in this file uses it: Tab completion, which reads `help`'s first
+/// column. That is an enhancement, and it may be absent or wrong without
+/// affecting a single pixel of output.
 ///
 /// What that leaves host-side, deliberately small and explicit:
 ///
 /// - **`/`-verbs**, and the test for belonging there is that **no guest could
 ///   answer them**: `/clear`, `/save` and `/help` act on this console;
 ///   `/swpage` drives the `software.list` family, which is a wire family this
-///   side implements rather than a command anyone serves. The prefix is the
-///   whole rule — a bare word is always the far machine's, so a command added
-///   to either guest tomorrow needs no edit here and can never be shadowed by
-///   something local.
+///   side implements rather than a command anyone serves; `/cancel` stops a
+///   request THIS side made and holds the id for, which a guest has no word
+///   for. The prefix is the whole rule — a bare word is always the far
+///   machine's, so a command added to either guest tomorrow needs no edit
+///   here and can never be shadowed by something local.
+/// - **Answering a prompt.** While a command is running, a typed line goes as
+///   `exec.input` instead of starting a second one. See `submit()`.
 /// - **History** is this console's own (↑ / ↓). It needs no command set.
 /// - **Completion** (Tab) comes from the guest, at runtime, by asking it
 ///   `help` — the same command a human can type. It is fetched on the first
@@ -55,6 +69,7 @@ final class ConsoleModel: ObservableObject {
         case save
         case help
         case swpage
+        case cancel
 
         var summary: String {
             switch self {
@@ -65,6 +80,8 @@ final class ConsoleModel: ObservableObject {
                 return "these local verbs; type \"help\" for the guest's"
             case .swpage:
                 return "page software.list directly (/swpage [domain] [cursor])"
+            case .cancel:
+                return "stop the command now running on the other Mac"
             }
         }
     }
@@ -116,6 +133,20 @@ final class ConsoleModel: ObservableObject {
 
         if command.hasPrefix(Self.localPrefix) {
             runLocal(String(command.dropFirst()))
+            return
+        }
+        /* While a command is running, a typed line can only be an ANSWER to
+           it — a second command would be refused `exec-busy`, because both
+           guests dispatch synchronously. So it goes as exec.input rather
+           than as a new exec.request.
+
+           The host deliberately does not try to tell a prompt from ordinary
+           output; it has no way to and does not need one. If the guest was
+           not waiting it DROPS the line rather than buffering it, so the
+           cost of guessing wrong is that nothing happens — never that a
+           stale answer lands in the next prompt. */
+        if let running = listener.runningExecId {
+            listener.provideExecInput(id: running, text: command)
             return
         }
         send(command)
@@ -180,7 +211,22 @@ final class ConsoleModel: ObservableObject {
             showLocalHelp()
         case .swpage:
             runSwPage(rest)
+        case .cancel:
+            runCancel()
         }
+    }
+
+    /// Stops a running exec. Local because it acts on a request THIS side
+    /// made and holds the id for — a guest has no word for "the thing you
+    /// asked me a moment ago". The guest answers a cancel either way, so the
+    /// exec still settles exactly once and this prints nothing on success:
+    /// the terminal result will say what happened.
+    private func runCancel() {
+        guard let id = listener.runningExecId else {
+            append(.notice, "Nothing is running.")
+            return
+        }
+        listener.cancelExec(id: id)
     }
 
     private func showLocalHelp() {

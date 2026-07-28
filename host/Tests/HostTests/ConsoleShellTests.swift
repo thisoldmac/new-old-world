@@ -35,6 +35,8 @@ final class ConsoleShellTests: XCTestCase {
     private final class Requests {
         var execs: [ExecRequest] = []
         var commands: [CommandRequest] = []
+        var cancels: [ExecCancel] = []
+        var inputs: [ExecInput] = []
         var last: ExecRequest? { execs.last }
     }
 
@@ -102,6 +104,10 @@ final class ConsoleShellTests: XCTestCase {
                             message: "\(request.name) is not a command this "
                                 + "Mac knows"))))
                 }
+            case .execCancel(let cancel):
+                requests.cancels.append(cancel)
+            case .execInput(let input):
+                requests.inputs.append(input)
             default:
                 return
             }
@@ -302,6 +308,174 @@ final class ConsoleShellTests: XCTestCase {
         XCTAssertTrue(pair.console.lines.contains {
             $0.text == "a bare sentence with no column at all" },
             "a one-column line is shown, not silently dropped")
+    }
+
+    // MARK: - Streaming, cancel and input
+
+    /// Many exec.output frames become one body. The host reassembles before
+    /// it looks for line breaks, because a guest splits where its BUFFER
+    /// ends and not where a line does — so a naive reader would show
+    /// "Hel"/"lo" as two lines.
+    func testChunkedOutputIsReassembledBeforeItIsSplit() async throws {
+        let pair = try await connect(serves: [:])
+        defer { pair.listener.stop() }
+
+        pair.guest.onMessage = { message in
+            guard case .execRequest(let request) = message else { return }
+            /* One line, cut mid-word across three frames, as a guest with a
+               small buffer really would. */
+            for (i, piece) in ["Sys", "tem  Mac O", "S 9.1\r"].enumerated() {
+                try? pair.guest.send(.execOutput(ExecOutput(
+                    id: request.id, seq: i, text: piece)))
+            }
+            try? pair.guest.send(.execResult(ExecResult(
+                id: request.id, ok: true, code: nil, message: nil)))
+        }
+
+        pair.console.input = "gestalt"
+        pair.console.submit()
+        try await settle {
+            pair.console.lines.contains { $0.text.contains("9.1") }
+        }
+        XCTAssertTrue(pair.console.lines.contains {
+            $0.text == "System  Mac OS 9.1" },
+            "three frames, one line — not three")
+    }
+
+    /// A frame that never arrives is SAID, not smoothed over. A hole in the
+    /// output of a command somebody is about to act on is worth an ugly line.
+    func testALostFrameIsReported() async throws {
+        let pair = try await connect(serves: [:])
+        defer { pair.listener.stop() }
+
+        pair.guest.onMessage = { message in
+            guard case .execRequest(let request) = message else { return }
+            try? pair.guest.send(.execOutput(ExecOutput(
+                id: request.id, seq: 0, text: "first\r")))
+            /* seq 1 never sent. */
+            try? pair.guest.send(.execOutput(ExecOutput(
+                id: request.id, seq: 2, text: "third\r")))
+            try? pair.guest.send(.execResult(ExecResult(
+                id: request.id, ok: true, code: nil, message: nil)))
+        }
+
+        pair.console.input = "ls"
+        pair.console.submit()
+        try await settle {
+            pair.console.lines.contains { $0.text.contains("third") }
+        }
+        XCTAssertTrue(pair.console.lines.contains {
+            $0.text.contains("lost in transit") },
+            "a gap in seq is surfaced")
+    }
+
+    /// /cancel stops the running command and nothing else. It is local
+    /// because it acts on a request THIS side made and holds the id for — a
+    /// guest has no word for "the thing you asked me a moment ago".
+    func testCancelStopsTheRunningCommand() async throws {
+        let pair = try await connect(serves: [:])
+        defer { pair.listener.stop() }
+
+        pair.guest.onMessage = { message in
+            switch message {
+            case .execRequest:
+                break          /* deliberately never answers: still running */
+            case .execCancel(let cancel):
+                pair.requests.cancels.append(cancel)
+                try? pair.guest.send(.execResult(ExecResult(
+                    id: cancel.id, ok: false, code: "cancelled",
+                    message: "stopped at the host's request")))
+            default:
+                break
+            }
+        }
+
+        pair.console.input = "vprobe"
+        pair.console.submit()
+        try await settle { pair.listener.runningExecId != nil }
+
+        pair.console.input = "/cancel"
+        pair.console.submit()
+        try await settle { pair.listener.runningExecId == nil }
+
+        XCTAssertEqual(pair.requests.cancels.count, 1)
+        XCTAssertTrue(pair.console.lines.contains {
+            $0.text.contains("cancelled") }, "the guest's own terminal word")
+    }
+
+    /// /cancel with nothing running says so rather than sending a cancel for
+    /// an id that does not exist.
+    func testCancelWithNothingRunningSaysSo() async throws {
+        let pair = try await connect(serves: [:])
+        defer { pair.listener.stop() }
+
+        pair.console.input = "/cancel"
+        pair.console.submit()
+
+        XCTAssertTrue(pair.console.lines.contains {
+            $0.text.contains("Nothing is running") })
+        XCTAssertTrue(pair.requests.cancels.isEmpty)
+    }
+
+    /// A line typed WHILE a command runs is an answer to it, not a second
+    /// command. The host does not try to tell a prompt from ordinary output
+    /// and does not need to: a second exec would be refused `exec-busy`, and
+    /// a guest that was not waiting drops the line rather than buffering it.
+    func testALineTypedDuringACommandGoesAsInput() async throws {
+        let pair = try await connect(serves: [:])
+        defer { pair.listener.stop() }
+
+        pair.guest.onMessage = { message in
+            switch message {
+            case .execRequest(let request):
+                pair.requests.execs.append(request)
+                try? pair.guest.send(.execOutput(ExecOutput(
+                    id: request.id, seq: 0,
+                    text: "Really erase the disk? [y/N] ")))
+            case .execInput(let input):
+                pair.requests.inputs.append(input)
+                try? pair.guest.send(.execResult(ExecResult(
+                    id: input.id, ok: true, code: nil, message: nil)))
+            default:
+                break
+            }
+        }
+
+        pair.console.input = "erase"
+        pair.console.submit()
+        try await settle { pair.listener.runningExecId != nil }
+
+        pair.console.input = "N"
+        pair.console.submit()
+        try await settle { !pair.requests.inputs.isEmpty }
+
+        XCTAssertEqual(pair.requests.inputs.first?.text, "N")
+        XCTAssertEqual(pair.requests.execs.count, 1,
+                       "the answer must not start a second command")
+    }
+
+    /// A local verb still works while a command is running — it acts on this
+    /// side, so it can never be mistaken for an answer to a prompt.
+    func testALocalVerbDuringACommandIsStillLocal() async throws {
+        let pair = try await connect(serves: [:])
+        defer { pair.listener.stop() }
+
+        pair.guest.onMessage = { message in
+            guard case .execRequest = message else { return }
+            /* never answers: still running */
+        }
+
+        pair.console.input = "vprobe"
+        pair.console.submit()
+        try await settle { pair.listener.runningExecId != nil }
+
+        pair.console.input = "/help"
+        pair.console.submit()
+
+        XCTAssertTrue(pair.console.lines.contains {
+            $0.text.contains("/save") })
+        XCTAssertTrue(pair.requests.inputs.isEmpty,
+                      "a /-verb is never sent as input")
     }
 
     // MARK: - What stays host-side

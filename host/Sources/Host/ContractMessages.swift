@@ -21,6 +21,7 @@ enum ControlMessage: Equatable, Sendable {
     case execOutput(ExecOutput)
     case execResult(ExecResult)
     case execCancel(ExecCancel)
+    case execInput(ExecInput)
     case censusRequest(CensusRequest)
     case censusReport(CensusReport)
     case fileList(FileList)
@@ -158,6 +159,16 @@ struct ExecResult: Codable, Equatable, Sendable {
 
 struct ExecCancel: Codable, Equatable, Sendable {
     var id: Int
+}
+
+/// One line answering a prompt the guest sent as exec.output.
+///
+/// Unsolicited input is DROPPED by the guest, not buffered — a line typed at
+/// a prompt that has already gone would otherwise be answered into the next
+/// one, which is how a console runs something nobody meant.
+struct ExecInput: Codable, Equatable, Sendable {
+    var id: Int
+    var text: String
 }
 
 /// The hardware census. Symmetric by contract: whoever receives the
@@ -639,6 +650,9 @@ enum ControlMessageCodec {
         case "exec.cancel":
             return .execCancel(
                 try decoder.decode(ExecCancel.self, from: data))
+        case "exec.input":
+            return .execInput(
+                try decoder.decode(ExecInput.self, from: data))
         case "census.request":
             return .censusRequest(
                 try decoder.decode(CensusRequest.self, from: data))
@@ -770,6 +784,7 @@ enum ControlMessageCodec {
         case .execOutput(let m): return try tagged("exec.output", m)
         case .execResult(let m): return try tagged("exec.result", m)
         case .execCancel(let m): return try tagged("exec.cancel", m)
+        case .execInput(let m): return try tagged("exec.input", m)
         case .censusRequest(let m): return try tagged("census.request", m)
         case .censusReport(let m): return try tagged("census.report", m)
         case .captureRequest(let m): return try tagged("capture.request", m)

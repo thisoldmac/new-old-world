@@ -77,8 +77,30 @@ const char *console_model_history_recall(short delta)
     return g_hist[pos];
 }
 
+/* Where output goes. NULL is the scrollback, which is what the Workshop's
+   Console page reads; anything else is an exec in flight, and the lines go
+   there instead.
+
+   A REDIRECT rather than a second dispatch, and that is the whole design:
+   every console_model_append call in this file - forty-odd of them,
+   including every one added after today - reaches whichever face is asking
+   without any of them knowing there are two. A second renderer would have
+   drifted the first time somebody added a verb and updated only one, which
+   is the failure docs/command-parity.md exists to prevent. */
+static ConsoleEmit g_sink = NULL;
+static void       *g_sink_ctx = NULL;
+
+/* Set when the dispatch fell all the way through to now_command_run and
+   that answered unknown-command. Read once, by console_model_exec, to fill
+   exec.result's code; the human has already read the same fact as text. */
+static int g_last_unknown = 0;
+
 void console_model_append(const char *text)
 {
+    if (g_sink != NULL) {
+        g_sink(g_sink_ctx, text);
+        return;
+    }
     if (g_count == kMaxLines) {
         memmove(g_lines[0], g_lines[1],
                 (kMaxLines - 1) * (size_t)kMaxCols);
@@ -299,7 +321,10 @@ static void run_screenshot_local(short depth_flag, short bands_flag,
     }
 }
 
-void console_model_run(const char *input)
+/* The dispatch proper, WITHOUT the echo. Split out so the exec plane can
+   run it without a "> line" the host has already drawn for itself; see
+   console_model_exec at the foot of this file. */
+static void console_model_dispatch(const char *input)
 {
     char line[kMaxCols];
     char name[48];
@@ -319,9 +344,6 @@ void console_model_run(const char *input)
     short bands_flag = 0;
     Boolean expect_depth = false;
     Boolean expect_bands = false;
-
-    snprintf(line, sizeof line, "> %s", input);
-    console_model_append(line);
 
     p = next_token(input, name, sizeof name);
     if (name[0] == '\0') {
@@ -714,12 +736,59 @@ void console_model_run(const char *input)
         return;
     }
     now_command_run(name, NULL, 0, result, sizeof result);
+    {
+        /* The one place this Mac can say "no such verb", so it is the one
+           place the exec plane can learn it. Read from the reply's own
+           code rather than re-deciding: a second opinion about what
+           unknown means is a second implementation. */
+        char code[32];
+
+        if (now_json_find_string(result, "code", code, sizeof code)
+            && strcmp(code, "unknown-command") == 0) {
+            g_last_unknown = 1;
+        }
+    }
     if (now_json_find_string(result, "message", message, sizeof message)) {
         snprintf(line, sizeof line, "%s", message);
         console_model_append(line);
     } else {
         console_model_append("command failed");
     }
+}
+
+void console_model_run(const char *input)
+{
+    char line[kMaxCols];
+
+    snprintf(line, sizeof line, "> %s", input);
+    console_model_append(line);
+    console_model_dispatch(input);
+}
+
+int console_model_exec(const char *line, ConsoleEmit emit, void *ctx)
+{
+    ConsoleEmit saved = g_sink;
+    void *saved_ctx = g_sink_ctx;
+    int served;
+
+    if (emit == NULL) {
+        return 0;
+    }
+    /* An empty line has asked for nothing: not a failure, and not silence
+       that needs explaining (contract: ExecRequest.line). */
+    if (line == NULL || line[0] == '\0') {
+        return 1;
+    }
+
+    g_last_unknown = 0;
+    g_sink = emit;
+    g_sink_ctx = ctx;
+    console_model_dispatch(line);
+    g_sink = saved;
+    g_sink_ctx = saved_ctx;
+
+    served = !g_last_unknown;
+    return served;
 }
 
 

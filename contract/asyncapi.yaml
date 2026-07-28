@@ -128,10 +128,16 @@
 #   TEXT, NOT ROWS. exec.output carries free text because a plane that
 #   does not know the command cannot know its columns. The typed plane's
 #   [label, value] rows stay exactly as they are for callers that DO know.
-#   NOT A TTY EITHER, YET. Phase 1 is one line in, text out. Streaming
-#   (many exec.output frames, exec.cancel) and interactive input are
-#   declared here and land after; a guest answers what it implements and
-#   errors on the rest, which is what keeps this additive.
+#   STILL NOT A TTY, AND THE DISTINCTION IS WORTH KEEPING. exec now
+#   streams (many exec.output frames), can be stopped (exec.cancel) and can
+#   be answered mid-command (exec.input) - but the unit is a LINE, never a
+#   keystroke, and there is no terminal state on this wire: no cursor
+#   addressing, no escape sequences this contract ascribes meaning to, no
+#   resize, no raw mode. A guest may put anything in `text`, and a host that
+#   wants to interpret VT sequences inside it may - but that is the host
+#   choosing to render bytes it was handed, not this contract carrying a
+#   terminal. The line, not the keystroke, is what keeps a cooperatively
+#   scheduled Mac answerable.
 #   CONTROL CHANNEL, NEVER BULK. Exec rides channel 0 as small JSON
 #   frames. The bulk lane is one transfer wide across both directions, so
 #   an exec session holding it would block capture and file transfer for
@@ -164,6 +170,7 @@ channels:
       execOutput: { $ref: "#/components/messages/execOutput" }
       execResult: { $ref: "#/components/messages/execResult" }
       execCancel: { $ref: "#/components/messages/execCancel" }
+      execInput: { $ref: "#/components/messages/execInput" }
       censusRequest: { $ref: "#/components/messages/censusRequest" }
       censusReport: { $ref: "#/components/messages/censusReport" }
       captureRequest: { $ref: "#/components/messages/captureRequest" }
@@ -218,6 +225,7 @@ operations:
     messages:
       - $ref: "#/channels/control/messages/execRequest"
       - $ref: "#/channels/control/messages/execCancel"
+      - $ref: "#/channels/control/messages/execInput"
     description: >
       Host sends a line a human typed, verbatim. It performs no
       tokenization at all — not even splitting a command name off the
@@ -590,6 +598,9 @@ components:
     execCancel:
       name: exec.cancel
       payload: { $ref: "#/components/schemas/ExecCancel" }
+    execInput:
+      name: exec.input
+      payload: { $ref: "#/components/schemas/ExecInput" }
     censusRequest:
       name: census.request
       payload: { $ref: "#/components/schemas/CensusRequest" }
@@ -936,6 +947,32 @@ components:
         text lives in exec.output, including for a guest that sends
         exactly one. Splitting them is what lets streaming arrive later
         as a guest-only change.
+    ExecInput:
+      type: object
+      required: [type, id, text]
+      additionalProperties: false
+      properties:
+        type: { const: exec.input }
+        id:
+          type: integer
+          description: The exec.request this line is an answer to.
+        text:
+          type: string
+          description: >
+            One line, as a human typed it, answering a prompt the guest sent
+            as exec.output. Unsolicited input - for an exec that is not
+            waiting, or an id that is not running - is DROPPED, not buffered:
+            a line typed at a prompt that has already gone would otherwise be
+            answered into the next one, which is how a console runs something
+            nobody meant.
+
+            THE WAIT IS BOUNDED AND THE GUEST SAYS SO. A classic Mac is
+            cooperatively scheduled, so a guest waiting forever on this
+            message is a machine that needs a power cycle. A guest that
+            prompts must bound its wait, must keep pumping while it waits so
+            it stays answerable, and must treat exec.cancel as an immediate
+            end. The reference implementation is now_exec_read_input
+            (guest/src/wire.c) at 30 seconds.
     ExecCancel:
       type: object
       required: [type, id]

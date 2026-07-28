@@ -272,12 +272,15 @@ final class CommandRegistryTests: XCTestCase {
     func testHostLocalVerbsAreFewAndPrefixed() throws {
         XCTAssertEqual(ConsoleModel.localPrefix, "/")
         XCTAssertEqual(Set(ConsoleModel.LocalVerb.allCases.map(\.rawValue)),
-                       ["clear", "save", "help", "swpage"], """
+                       ["clear", "save", "help", "swpage", "cancel"], """
             The host-local verb set changed. It stays small and explicit: a \
             verb belongs here only if no guest could serve it as a command — \
-            three act on this console, and swpage drives the software.list \
-            family, which the host implements itself. Anything a guest could \
-            answer belongs on the guest, where the two tables differ.
+            three act on this console, swpage drives the software.list \
+            family, which the host implements itself, and cancel acts on a \
+            request THIS side made and holds the id for, which a guest has \
+            no word for ("the thing you asked me a moment ago" names \
+            nothing on the far machine). Anything a guest could answer \
+            belongs on the guest, where the two tables differ.
             """)
         for verb in ConsoleModel.LocalVerb.allCases {
             XCTAssertFalse(verb.summary.isEmpty,

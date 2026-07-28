@@ -185,4 +185,26 @@ long now_wire_stream_interval_ms(void);
 /* Ends the guest's current stream cleanly (stream.stopped, no reason). */
 void now_wire_stream_stop(void);
 
+/* --- exec: asking the far end for a line ---------------------------------
+
+   For an interpreter running under exec.request that needs input mid-command
+   - a confirmation, a "which one?", a name it cannot guess. Emits `prompt`
+   (may be NULL) as exec.output, FLUSHES it so it actually leaves before the
+   wait begins, and then pumps the wire until the host answers exec.input.
+
+   Returns 1 with the line in `out`, or 0 - and 0 is an ordinary outcome, not
+   an exception. It means one of: nothing is running under exec (a person at
+   this Mac's own Console page is never prompted, because they would have no
+   way to answer); the host cancelled; or the bounded wait expired. An
+   interpreter MUST have an answer for 0 that does not involve asking again.
+
+   THE WEDGE THIS IS SHAPED AROUND. This guest is cooperatively scheduled, so
+   an unbounded wait here is a Mac that needs a power cycle - the `sertx`
+   failure with a different cause. Hence: the wait is BOUNDED (30 s), it
+   PUMPS rather than blocks so the machine stays alive and answerable
+   throughout, and exec.cancel breaks it immediately. Untested on metal as of
+   2026-07-28; docs/remote-console.md's checklist exercises this path
+   deliberately and last. */
+int now_exec_read_input(char *out, long cap, const char *prompt);
+
 #endif

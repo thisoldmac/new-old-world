@@ -23,6 +23,38 @@ const char *console_model_line(int index);
    falling through to commands.c. */
 void console_model_run(const char *command);
 
+/* --- the exec plane ------------------------------------------------------
+
+   The same dispatch, with its output handed to a caller instead of to the
+   scrollback, and with no "> line" echo (the host echoes its own).
+
+   This is what makes the HOST console show what a person standing at this
+   Mac would see: not a re-rendering of structured output, but the very
+   lines console_model_run would have appended. See the "Exec" section of
+   the contract preamble; the short version is that a verb added to this
+   file is typeable from an unchanged host binary against an unchanged
+   contract, and that stops being true the moment anything other than this
+   function is asked to produce console text.
+
+   The 68K guest reaches the same property by a different route - its
+   dispatch moved to n68_exec.c, because there it lived inside a WINDOW
+   rather than in a model. This guest already had the split, so it needs a
+   sink and not a surgery.
+
+   `emit` receives one NUL-terminated line at a time with no terminator:
+   this model has always been line-oriented (one string per entry), unlike
+   the 68K side's CR-separated blocks.
+
+   Returns 1 if the line was interpreted - INCLUDING a command that ran and
+   failed, whose failure is in the emitted text where a human can read it -
+   and 0 only if no verb on this Mac matched.
+
+   Not re-entrant, and does not need to be: both faces run on the one
+   cooperative thread. The sink is saved and restored regardless. */
+typedef void (*ConsoleEmit)(void *ctx, const char *line);
+
+int console_model_exec(const char *line, ConsoleEmit emit, void *ctx);
+
 void console_model_history_add(const char *command);
 /* Walks the history: negative delta = older, positive = newer. Returns
    the recalled command, or "" past the newest entry. */
