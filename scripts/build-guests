@@ -32,7 +32,15 @@ if [ -f "$repo_root/.env.lab" ]; then
     set +a
 fi
 
-out_root=${TMPDIR:-/tmp}/now-guest-builds
+# Keyed to THIS checkout. Build products stay outside the repository
+# (AGENTS.md), but a single shared path outside it is worse than useless
+# here: this project runs many worktrees at once, and CMake caches the
+# source directory in its build tree, so the second worktree to run this
+# fails with "does not match the source used to generate cache" - which
+# reads like a broken checkout rather than two of them sharing a drawer.
+# Found by building a merge trial in a scratch worktree.
+out_root=${TMPDIR:-/tmp}/now-guest-builds/$(printf '%s' "$repo_root" \
+    | shasum | cut -c1-12)
 rc=0
 
 have () { [ -n "${1:-}" ] && [ -f "$1" ]; }
