@@ -174,8 +174,12 @@ land — a showcase of parity work, not a scope input:
 3. *save it, copy it here, open it in TextEdit* — W4c, W1 #4, and
    `NSWorkspace`. Only the save leg is new work.
 
-Machine choice is not load-bearing; the demo runs wherever a PPC guest is
-paired.
+Machine choice is not load-bearing for rungs 1 and 2. **It became
+load-bearing for rung 3** once the probe landed: the save leg is `Cmd-S`, and
+modifier injection is app-tier on the 68K guest but needs the extension plane
+on the Carbon PPC guest. So rung 3 is either cheap on a 68K machine or
+gated behind resident work on a PPC one. That is a scheduling fact about the
+showcase, not a reason to reorder parity work — see the stop condition.
 
 Two hazards to design against rather than discover:
 
@@ -199,28 +203,56 @@ trust boundary both refuse an opaque agentic control plane.
   revalidated, audited — the same shape as the existing transfer approval
   receipt, which is the pattern to copy rather than reinvent. Independent of
   W0/W1; can start immediately.
-- **W4b — text injection.** Application tier if the probe below passes.
-- **W4c — modifier/menu keys.** Application tier if the probe passes;
-  otherwise **one plane on the existing NOW Extension**, armed by the app,
-  off the jGNE filter already chained in its frozen core. Per
+- **W4b — text injection.** Application tier on **both** guests; measured,
+  see the probe below.
+- **W4c — modifier/menu keys.** **Splits by ISA, and not the way this plan
+  originally assumed.** Application tier on the 68K guest via `PPostEvent`;
+  on the Carbon PPC guest the cheap tier does not reach it at all, and the
+  home is **one plane on the existing NOW Extension**, armed by the app, off
+  the jGNE filter already chained in its frozen core. Per
   resident-components.md: developed as a throwaway INIT under an honest name
   (`tools/mb_rename.py`) on a QEMU clone, folded into NOW Extension only
   after its ladder passes. No second extension, no sibling INITs.
 - **W4d — AppleScript / Apple Events.** PPC only, and last: the expensive
   one, and nothing else in the slice waits on it.
 
-### The de-risking probe
+### The de-risking probe — ANSWERED 2026-07-29, emulator-observed
 
-**Can `PostEvent` carry modifiers?** Plain typing looks application-tier:
-`PostEvent` puts `keyDown` into the system event queue and the front app's
-`GetNextEvent` collects it — no residency, rule 5 satisfied at the cheapest
-tier. `Cmd-S` is the doubt: `PostEvent` fills the event record's modifiers
-from actual keyboard state rather than letting a caller set them, so a
-posted `Cmd-S` may arrive as a bare `S`.
+Finding: `data/findings/postevent-modifiers-need-ppostevent.md`. Measured on
+q800 / Mac OS 8.1 with a **separate** poster and observer process, so no half
+of it tests itself. Nothing here is metal-verified.
 
-**Reasoned, not measured.** It decides whether W4c is app-tier or a resident
-plane — a large cost swing — so it runs early and in parallel, on a QEMU
-clone. It gates nothing but W4c.
+- **`PostEvent` carries no modifiers** — confirmed. It delivers `mod=0x0080`
+  (`btnState` alone); there is no argument for a modifier and none appears.
+- **`PPostEvent` does.** It returns the queue element, and
+  `qel->evtQModifiers |= cmdKey` survives to the receiver's `GetNextEvent`.
+  An injected `Cmd-S` was byte-identical to one typed on the keyboard, and
+  two modifiers carry equally. Cooperative scheduling means nothing runs in
+  the post-then-amend window, so there is no race.
+- **Plain cross-process typing needs no residency**, on either guest.
+- **`MenuKey` is not the discriminator** and will mislead anyone who uses it
+  as one: it resolves on the character and never inspects the event, so a
+  bare `S` also "matches". What decides is the target's ordinary
+  `if (modifiers & cmdKey)` gate — which is the bit measured present.
+
+**The consequence inverts this plan's ISA posture for W4c.** `PPostEvent`
+and `GetEvQHdr` sit inside `#if CALL_NOT_IN_CARBON` — CarbonLib does not
+export them — while `PostEvent` is CarbonLib 1.0 and later. The NOW PPC
+guest **is** Carbon (`#include <Carbon.h>` throughout
+`now-guest-ppc/src/core/`, CarbonLib 1.6 required). So the cheap path exists
+on the guest this plan de-prioritised and is absent on the one it focuses on:
+
+| | text injection | modifier/menu keys |
+|---|---|---|
+| 68K guest (non-Carbon) | app tier | **app tier** — `PPostEvent` |
+| PPC guest (Carbon) | app tier | **extension plane** — no app-tier route |
+
+This does not change the PPC focus for W0–W1, which is where the bulk of the
+slice is. It does mean W4c on PPC is resident work, and that the plane's
+requirements are now known rather than speculative: an arm cell naming
+process and modifiers for one event with self-disarm, a bounded lifetime so
+a wedged host cannot leave Command stuck down, and a capability bit keeping
+it dark until metal.
 
 Also inherit rather than re-pay for: keyboard-first over clicking, never
 `tell` an unverified app, never a whole-disk Finder search from a script
@@ -340,7 +372,10 @@ Three of these have already bitten this repo; none is hypothetical.
 
 ## Corpus impact
 
-`corpus_impact: none` — intent only; nothing measured or verified here. The
-first findings land with Phase 0's `PostEvent` probe and Phase 1's capture
-template, which produce the two costs this plan can currently only reason
-about.
+The `PostEvent` probe has landed:
+`data/findings/postevent-modifiers-need-ppostevent.md` (emulator-observed,
+not metal-verified). It answered the W4c residency question and inverted this
+plan's ISA assumption for that one item; both are recorded above.
+
+Still unmeasured, and the reason Phase 1 exists: the per-capability cost of
+the four-face pattern. Phase 1's capture template produces it.
