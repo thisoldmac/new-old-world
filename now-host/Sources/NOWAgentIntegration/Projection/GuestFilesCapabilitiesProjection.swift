@@ -10,6 +10,20 @@ public enum GuestFilesCapabilitiesProjection: HostProjection {
     public static let requires =
         [AgentIntegrationCapabilityNames.fileList]
 
+    public static let faces: [HostFace: HostFaceReach] = [
+        .appUI: .notReached(because:
+            "What it reports is the agent-facing guestRoot policy — that "
+            + "root, its bounds, and which guest Files commands are "
+            + "implemented versus deferred. `guestRoot` appears nowhere in "
+            + "the app's own sources: the app browses the share the guest "
+            + "offers, bounded by the guest, and shows a command it cannot "
+            + "run as a disabled control rather than as a policy readout. A "
+            + "person is inside the policy; only a caller that cannot see "
+            + "the window needs it stated."),
+        .mcp: .reachedByRegistry,
+        .appIntents: .appIntentsFaceNotBuiltYet,
+    ]
+
     public static let availabilityNote =
         "The connected guest serves file.list."
 

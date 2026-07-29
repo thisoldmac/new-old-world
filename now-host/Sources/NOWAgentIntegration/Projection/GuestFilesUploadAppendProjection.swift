@@ -8,6 +8,17 @@ public enum GuestFilesUploadAppendProjection: HostProjection {
 
     public static let requires: [String] = []
 
+    public static let faces: [HostFace: HostFaceReach] = [
+        .appUI: .notReached(because:
+            "The second step of the staging that exists only for a caller "
+            + "with bytes rather than a path — see "
+            + "now_guest_files_upload_begin. A picked file needs no chunk "
+            + "protocol to become readable, so the app UI has nothing to "
+            + "append into."),
+        .mcp: .reachedByRegistry,
+        .appIntents: .appIntentsFaceNotBuiltYet,
+    ]
+
     public static let availabilityNote =
         "Accepts bytes into a private host stage and sends the guest no "
         + "message."

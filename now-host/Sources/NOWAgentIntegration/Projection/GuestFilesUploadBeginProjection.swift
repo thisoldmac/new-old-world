@@ -11,6 +11,19 @@ public enum GuestFilesUploadBeginProjection: HostProjection {
 
     public static let requires: [String] = []
 
+    public static let faces: [HostFace: HostFaceReach] = [
+        .appUI: .notReached(because:
+            "Staging exists because an MCP caller has BYTES and no path the "
+            + "host is willing to read; the reservation is the host bounding "
+            + "its own disk before accepting them. A person hands the app a "
+            + "real file through the picker, so there is nothing to reserve "
+            + "and no chunking to declare. The capability a person reaches "
+            + "is the commit — the same host transfer lane, entered from a "
+            + "file that already exists."),
+        .mcp: .reachedByRegistry,
+        .appIntents: .appIntentsFaceNotBuiltYet,
+    ]
+
     public static let availabilityNote =
         "Reserves private host disk and sends the guest no message, so "
         + "staging is available regardless; the commit is where the guest's "

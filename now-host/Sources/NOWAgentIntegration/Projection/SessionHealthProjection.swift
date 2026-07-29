@@ -10,6 +10,18 @@ public enum SessionHealthProjection: HostProjection {
 
     public static let requires: [String] = []
 
+    /* The Connection page's Health block renders the same
+       GuestListener.SessionHealth this projection reports — guest name and
+       version, when it connected, how long the wire has been quiet, frames
+       and pings — and the Start/Stop Listening buttons above it are the
+       listener state itself. */
+    public static let faces: [HostFace: HostFaceReach] = [
+        .appUI: .reached(file: "SettingsModuleView.swift",
+                         symbol: "healthBlock(health)"),
+        .mcp: .reachedByRegistry,
+        .appIntents: .appIntentsFaceNotBuiltYet,
+    ]
+
     public static let availabilityNote =
         "Reads host-owned listener state and sends the guest no message, "
         + "so it is available whatever the guest implements."

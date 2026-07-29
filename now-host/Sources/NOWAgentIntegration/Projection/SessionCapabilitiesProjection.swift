@@ -13,6 +13,21 @@ public enum SessionCapabilitiesProjection: HostProjection {
 
     public static let requires: [String] = []
 
+    public static let faces: [HostFace: HostFaceReach] = [
+        .appUI: .notReached(because:
+            "No pane reports what the connected guest can do. The app UI "
+            + "spends those same facts as ENABLEMENT instead — Software "
+            + "greys out an entry a guest cannot launch, a process row that "
+            + "sent no PSN is not drivable, Files disables itself when the "
+            + "guest serves no listing — so a person reads availability off "
+            + "the control they were already reaching for, at the moment it "
+            + "matters. An agent has no greyed-out button to read, which is "
+            + "why the report exists at all. If a capabilities pane is ever "
+            + "built, this row flips and the ledger entry goes."),
+        .mcp: .reachedByRegistry,
+        .appIntents: .appIntentsFaceNotBuiltYet,
+    ]
+
     public static let availabilityNote = "This report."
 
     private static let state: [String: Any] = [

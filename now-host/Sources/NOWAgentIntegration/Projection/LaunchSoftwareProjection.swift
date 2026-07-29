@@ -23,6 +23,15 @@ public enum LaunchSoftwareProjection: HostProjection {
         AgentIntegrationCapabilityNames.launchCommand,
     ]
 
+    /* The Software page's Launch button, acting by the selected entry's
+       launch key the same way this projection does. */
+    public static let faces: [HostFace: HostFaceReach] = [
+        .appUI: .reached(file: "SoftwareModuleView.swift",
+                         symbol: "model.launch(entry)"),
+        .mcp: .reachedByRegistry,
+        .appIntents: .appIntentsFaceNotBuiltYet,
+    ]
+
     public static let availabilityNote =
         "The connected guest serves software.list and launch."
 

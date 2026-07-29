@@ -17,6 +17,66 @@ public struct HostCapabilityID: Hashable, Sendable, CustomStringConvertible {
     public var description: String { rawValue }
 }
 
+/// The host's faces — the ways a caller reaches a projected capability.
+///
+/// The guest has two (console, wire) and `CommandParityTests` compares them.
+/// The host has three, and until now nothing compared anything: a capability
+/// could arrive on the MCP face and be unreachable from the app a person
+/// actually launches — the host's version of the guest drift that shipped
+/// `process.list` on one face only, which nothing noticed for a day
+/// (docs/command-parity.md).
+///
+/// `appIntents` is listed here while it does not exist. That is the point of
+/// listing it: a face silently absent from the model is the failure this
+/// whole gate is for, so the face that is *coming* (W3) is declared as
+/// uniformly not-yet-reached and starts demanding justifications from every
+/// row the moment its first source file lands.
+public enum HostFace: String, CaseIterable, Sendable {
+    /// The NOW app a person launches: its sidebar modules and their controls.
+    case appUI = "app UI"
+    /// The agent companion's MCP tool surface.
+    case mcp = "MCP"
+    /// AppIntents / Siri. Planned (W3); no source exists yet.
+    case appIntents = "AppIntents"
+}
+
+/// Whether one face reaches one capability, and the evidence or the reason.
+///
+/// A row does not get to *assert* reach: for the app UI it names the file and
+/// the affordance that proves it, and `HostFaceParityTests` reads that file.
+/// A declaration nobody checks is prose, and prose goes stale.
+public enum HostFaceReach: Sendable {
+    /// The face reaches it, proven by `symbol` appearing in `file` (relative
+    /// to `now-host/Sources/Host`). Name the CALL SITE a person's click
+    /// reaches, not the function it calls — a handler left behind after its
+    /// button was deleted proves nothing.
+    case reached(file: String, symbol: String)
+
+    /// The face reaches every registered row structurally, because its
+    /// renderer loops the registry rather than naming capabilities. No row
+    /// can be missing from such a face, and none names its own evidence;
+    /// the parity test checks the loop is still there instead.
+    case reachedByRegistry
+
+    /// The face does not reach it, and this is the decision behind that.
+    /// Adding one should feel like a small act of documentation — it is
+    /// reviewed against the ledger in `HostFaceParityTests`, so it cannot be
+    /// the quiet way to make a failure go away.
+    case notReached(because: String)
+}
+
+extension HostFaceReach {
+    /// AppIntents, spelled once for all twelve rows rather than twelve
+    /// invented variations on one fact. When W3 lands, this constant goes
+    /// and each row has to say what its intent is — which is the whole
+    /// reason the face is modelled before it exists.
+    public static let appIntentsFaceNotBuiltYet = HostFaceReach.notReached(
+        because: "The AppIntents face is planned (W3) and no AppIntents "
+            + "source exists yet. Declared not-yet rather than omitted so "
+            + "that the first intent to land forces every row to say "
+            + "whether it has one.")
+}
+
 /// What a projection is allowed to be.
 ///
 /// **The host projection layer may address, authorize, bound and render. It
@@ -67,6 +127,14 @@ public protocol HostProjection {
     /// therefore available whatever the guest implements. It does not mean
     /// "requirements not worked out yet".
     static var requires: [String] { get }
+
+    /// Which of the host's three faces reach this capability.
+    ///
+    /// Every face in `HostFace.allCases` is stated, including the one that
+    /// does not exist yet: a row that simply omits a face reads as parity
+    /// nobody checked. Reach is evidence or a reason, never an assertion —
+    /// see `HostFaceReach`.
+    static var faces: [HostFace: HostFaceReach] { get }
 
     /// One sentence for the caller, used when every requirement is met.
     /// The unavailable and unproven wordings are derived, so a row states
