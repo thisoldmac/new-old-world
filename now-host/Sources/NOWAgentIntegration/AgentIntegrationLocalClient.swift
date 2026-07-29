@@ -177,6 +177,20 @@ public struct AgentIntegrationLocalClient: Sendable {
         return result
     }
 
+    /// Report one completed invocation for the host's log.
+    ///
+    /// It returns nothing and throws nothing a caller is expected to handle
+    /// beyond the transport's own errors: the value of the call is the line
+    /// in the person's log, and there is nothing to hand back to the face
+    /// that already knows what it did.
+    public func recordAudit(_ event: HostProjectionAuditEvent) async throws {
+        let response = try await send(.audit(event))
+        guard response.recorded == true else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response did not confirm the audit event")
+        }
+    }
+
     func sendRaw(_ request: Data) async throws -> Data {
         try await Task.detached {
             try sendRaw(
@@ -210,6 +224,8 @@ public struct AgentIntegrationLocalClient: Sendable {
         case .guestFilesUploadBegin, .guestFilesUploadAppend,
              .guestFilesUploadCommit:
             preconditionFailure("Guest Files upload requires typed input")
+        case .audit:
+            preconditionFailure("An audit report requires its event")
         }
     }
 
@@ -237,7 +253,11 @@ public struct AgentIntegrationLocalClient: Sendable {
             case .sessionHealth, .listProcesses,
                  .guestFilesCapabilities, .guestFilesList,
                  .guestFilesStat, .guestFilesUploadBegin,
-                 .guestFilesUploadAppend:
+                 .guestFilesUploadAppend, .audit:
+                /* The audit report shares the read-only window: it writes
+                   one line on the main actor and reaches no guest, so a
+                   longer wait would only mean holding an MCP answer back
+                   for a host that has stopped answering at all. */
                 timeout = readOnlyReceiveTimeout
             case .sessionCapabilities:
                 timeout = capabilitiesReceiveTimeout

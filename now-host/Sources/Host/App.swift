@@ -309,7 +309,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                    honoured. Session health is exempt: it is the call a
                    caller makes to DISCOVER the ids, and refusing it for
                    naming an id would be a closed loop. */
+                /* Audit is exempt for a different reason than health: it
+                   asks nothing of any guest, and a line about a call that
+                   was refused BECAUSE no machine answered is exactly the
+                   line the person needs. */
                 if request.operation != .sessionHealth,
+                   request.operation != .audit,
                    let refusal = agentIntegration.addressingRefusal(
                        request.guestSelector) {
                     return .notAddressed(refusal)
@@ -410,6 +415,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     return .guestFilesUploadCommit(
                         await guestFiles.agentCommitUpload(
                             uploadID: uploadID))
+                case .audit:
+                    /* Rule 3 of the parity slice, arriving: a face reports
+                       what it was asked to do and this side writes it where
+                       the person at the machine can read it. The line is
+                       composed HERE, from typed fields the codec has already
+                       validated, rather than accepted as text — the log is
+                       the human's, and a reporting process does not get to
+                       write arbitrary rows into it. */
+                    guard let event = request.auditEvent else {
+                        return .recorded
+                    }
+                    AgentIntegrationAuditLog.record(
+                        event,
+                        drivenGuest:
+                            agentIntegration.activeReference()?.id)
+                    return .recorded
                 }
             }
             try server.start()

@@ -184,6 +184,9 @@ public final class AgentIntegrationLocalServer {
                 response = .init(
                     requestID: request.requestID,
                     guestFilesUploadCommitResult: result)
+            case .recorded:
+                response = .init(
+                    requestID: request.requestID, recorded: true)
             }
             finish(descriptor, response: response)
         }

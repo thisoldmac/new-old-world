@@ -21,13 +21,21 @@ actor NOWMCPServer {
 
     private let client: AgentIntegrationClient
     private let registry: HostProjectionRegistry
+    /// Every capability this face reaches goes through here, and every one
+    /// that does leaves a line in the person's log. The sink is a required
+    /// argument rather than a default, so a face cannot be assembled without
+    /// saying where its audit events go.
+    private let dispatch: HostProjectionDispatch
     private var initializeResponded = false
     private var initialized = false
 
     init(client: AgentIntegrationClient,
-         registry: HostProjectionRegistry = .hostFaces) {
+         registry: HostProjectionRegistry = .hostFaces,
+         audit: any HostProjectionAuditSink) {
         self.client = client
         self.registry = registry
+        dispatch = HostProjectionDispatch(
+            face: .mcp, registry: registry, audit: audit)
     }
 
     func handle(_ data: Data) async -> Data? {
@@ -164,7 +172,7 @@ actor NOWMCPServer {
     private func callTool(_ request: [String: Any], id: Any) async -> Data {
         guard var params = request["params"] as? [String: Any],
               let name = params["name"] as? String,
-              let projection = registry.projection(named: name) else {
+              registry.projection(named: name) != nil else {
             return errorResponse(id: id, code: -32602,
                                  message: "Unknown tool")
         }
@@ -185,14 +193,27 @@ actor NOWMCPServer {
             selector = text
             params["arguments"] = object
         }
+        /* Through the dispatch rather than at the projection directly: this
+           is the seam that makes the invocation visible to the person at the
+           machine, and reaching past it would put a capability on this face
+           that leaves no trace. `HostProjectionAuditGateTests` fails when
+           anything here calls a projection's `invoke` itself. */
         let client = self.client.addressing(selector)
-        let outcome = await projection.invoke(
-            .init(raw: params["arguments"]), through: client)
+        let outcome = await dispatch.invoke(
+            name,
+            arguments: .init(raw: params["arguments"]),
+            guest: selector,
+            through: client)
         switch outcome {
         case .value(let value):
             return toolResponse(id: id, value: value)
         case .invalidArguments(let message):
             return errorResponse(id: id, code: -32602, message: message)
+        case nil:
+            // No row claims the name. The guard above says the same thing
+            // first; this is the dispatch's own answer, not a second policy.
+            return errorResponse(id: id, code: -32602,
+                                 message: "Unknown tool")
         }
     }
 

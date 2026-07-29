@@ -33,7 +33,7 @@ final class NOWAgentCompanionTests: XCTestCase {
     private func initializedServer(
         client: AgentIntegrationClient
     ) async throws -> NOWMCPServer {
-        let server = NOWMCPServer(client: client)
+        let server = NOWMCPServer(client: client, audit: AuditSinkSpy())
         _ = await server.handle(try Self.request(
             id: 1,
             method: "initialize",
@@ -318,7 +318,7 @@ final class NOWAgentCompanionTests: XCTestCase {
 
     func testMalformedJSONReturnsParseError() async throws {
         let server = NOWMCPServer(
-            client: StubAgentIntegrationClient())
+            client: StubAgentIntegrationClient(), audit: AuditSinkSpy())
 
         let response = try Self.object(
             await server.handle(Data("{nope".utf8)))
@@ -330,7 +330,7 @@ final class NOWAgentCompanionTests: XCTestCase {
 
     func testFractionalRequestIDReturnsInvalidRequest() async throws {
         let server = NOWMCPServer(
-            client: StubAgentIntegrationClient())
+            client: StubAgentIntegrationClient(), audit: AuditSinkSpy())
         let data = try JSONSerialization.data(withJSONObject: [
             "jsonrpc": "2.0",
             "id": 1.5,
@@ -398,6 +398,8 @@ final class NOWAgentCompanionTests: XCTestCase {
                     return .guestFilesUploadStage(.hostUnavailable(.guest))
                 case .guestFilesUploadCommit:
                     return .guestFilesUploadCommit(.hostUnavailable(.guest))
+                case .audit:
+                    return .recorded
                 }
             })
         try localServer.start()
