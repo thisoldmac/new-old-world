@@ -156,7 +156,13 @@ run_c now-guest-68k test_vprobe.c       "" src/census/n68_vprobe.c src/commands/
       src/core/numfmt.c
 run_c now-guest-68k test_shot.c         "" src/screenshots/n68_shot.c src/commands/n68_cmdresult.c \
       src/core/numfmt.c
-run_c now-guest-68k test_shotwire.c     "" src/screenshots/n68_shotwire.c src/core/numfmt.c
+run_c now-guest-68k test_shotwire.c     "" src/screenshots/n68_shotwire.c \
+      src/screenshots/n68_packbits.c src/core/numfmt.c
+# The framebuffer walk, over a synthetic screen with poisoned padding. The
+# only automated cover the VRAM read has: vprobe times it, and a wrong base
+# reads at full speed.
+run_c now-guest-68k test_shotemit.c     "" src/screenshots/n68_shotwire.c \
+      src/screenshots/n68_packbits.c src/core/numfmt.c
 run_c now-guest-68k test_packbits.c     "" src/screenshots/n68_packbits.c
 run_c now-guest-68k test_crc32.c        "" src/core/n68_crc32.c
 run_c now-guest-68k test_putrx.c        "" \

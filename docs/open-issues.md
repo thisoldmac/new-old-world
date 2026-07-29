@@ -2483,6 +2483,72 @@ real halves meet:
    unpacked ones. The encoding is a parameter now, and a native test pins
    both spellings.
 
+### BROKEN: the 180c's wire capture arrives garbled, and the obvious cause is not the cause
+
+A capture taken on the PowerBook 180c **saves correctly to that machine's
+desktop as a PICT and arrives at the host as structured noise**, banded at
+a plausible stride — memory that was never a screen. The Quadra 800
+emulator run above is byte-accurate on the same code, so this is
+180c-specific and unreproduced here.
+
+**The leading hypothesis is contradicted by this tree's own metal
+evidence, and is recorded so nobody spends the evening twice.** The
+hypothesis was that `screen68.c` takes `GetPixBaseAddr()` without
+`StripAddress()`, so a 24-bit-mode dereference reads somewhere that is not
+the framebuffer while `CopyBits` stays immune because QuickDraw resolves
+addressing itself. It is a good theory and two measurements say it is not
+what is happening here:
+
+- **`vprobe`'s Fidelity row is the same walk.** `vprobe68.c` computes
+  `s.base + (top + r) * s.row_bytes` and `memcmp`s `s.visible_row` bytes
+  against a `CopyBits` band — byte for byte the arithmetic the capture
+  uses. On the 180c it reported **MATCH (480 rows)**
+  ([vram-readout-68k.md](vram-readout-68k.md), 2026-07-25). A base the CPU
+  could not reach would have differed on all 480.
+- **The measured base is `0xFC080000`.** That address is only reachable
+  with 32-bit addressing on; in 24-bit mode the ROM maps built-in video
+  into slot space and `baseAddr` would not read like that at all. The
+  machine was in 32-bit mode, where `StripAddress` is the identity.
+
+So a `StripAddress`/`SwapMMUMode` change would be a no-op on the
+configuration that was measured. It is not ruled out that the 180c's
+Memory control panel differed between the vprobe run and the garbled
+capture — which is exactly what the diagnostic below settles.
+
+**One run on the 180c settles it.** Have the guest report, beside the
+capture, `base` as `screen68_info` returns it, `StripAddress(base)`, and
+`GetMMUMode()`. If the three agree (base == stripped, mode == `true32b`)
+the read is not the fault and the search moves to the staged file and the
+bulk lane; if `base != StripAddress(base)`, the hypothesis is live after
+all and the fix is `SwapMMUMode` around the read, not a strip.
+
+**The file the diagnosis pointed at is not on this path.**
+`shotsrc68.c`'s `shotsrc68_open()` has **zero callers** — the file
+compiles and is native-tested and nothing routes to it, exactly as the
+"two ways to send" note above says ("not yet routed"). The live wire path
+is `shotstage68.c`. A fix applied to the streaming source would change
+nothing a person could see.
+
+**What did change: the walk now has a gate.** The framebuffer walk was
+the one part of the lane no test could reach — it sat between an `FSSpec`
+and a `ShieldCursor`, and the only other reader of that memory (`vprobe`)
+merely *times* it, so a wrong base reads at full speed and every number
+stays green. `n68_shotwire_emit()` now owns the walk with no Toolbox in
+it, `shotstage68.c` keeps the file, the cursor and the clock behind hooks,
+and `test_shotemit.c` drives it over a synthetic framebuffer whose padding
+is poisoned, decoding the result with the **host's** PackBits decoder
+transcribed from `CaptureDecoder.swift` rather than this guest's own
+unpacker. Both stride shapes are driven: 640-over-640 (the 180c, where a
+stride bug is invisible) and 640-over-1024 (the Quadra, where it is not).
+Mutation-verified — reintroducing the stride confusion fails the Quadra
+shape and the poison check and leaves the 180c shape green, which is the
+whole argument for testing both.
+
+**What that gate does NOT prove.** It proves the arithmetic and the
+encoding, over memory the host cc can allocate. It cannot say anything
+about whether `sc.base` points at the 180c's framebuffer, which is the
+open question. Tested, not metal-verified.
+
 **What is left before metal.** Nothing structural — this is a deploy and
 a run. Worth doing on the 180c specifically because every timing number
 so far is an emulator's, and because the compression that makes this lane
