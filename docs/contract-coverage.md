@@ -55,7 +55,7 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 | `process.front` | ✅ | ✅ | bring to front; both guests also serve a `front` VERB |
 | `process.quit` | ✅ | ✅ | both guests also serve a `quit` VERB — PSN for a machine, name for a person |
 | `process.shot` | ✅ | ❌ | per-window capture; 68K captures the whole screen only |
-| `software.list` | ✅ | ❌ | whole-volume sweep |
+| `software.list` | ✅ | ✅ | whole-volume sweep; 68K also has it as a `sw` verb, serves six of the eight entry fields — see below |
 | `exec.request` | ✅ | ✅ | the console plane — one opaque line, the guest's own console text back |
 | `exec.cancel` | ✅ | ✅ | always answered, even for an id the guest does not have |
 | `exec.input` | ✅ | ✅ | answers a guest that is waiting; a guest that was not drops it |
@@ -70,13 +70,18 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 | `capture.accept` / `capture.refuse` / `capture.cancel` | ✅ | ❌ | the guest-OFFERS-a-capture handshake; 68K only answers requests |
 | `stream.start` / `stream.stop` / `stream.refresh` | ✅ | ❌ | |
 
-PPC handles 34 inbound types; NOW-68K handles 19. **That count
+PPC handles 37 inbound types; NOW-68K handles 23. **That count
 understates the difference** — see the next two sections, where two of
-these rows open into 18 command verbs and 14 hardware probes.
+these rows open into 19 command verbs and 14 hardware probes.
 
 (An earlier version of this file said 33 for the PowerPC guest and was
 wrong: the number had been hand-counted. It is derived now, and that is
 the whole argument for the two `grep`s at the top.)
+
+**A ✅ here means the message is answered, not that both guests answer it
+identically.** `software.list` is the row where that distinction is
+sharpest and it is expanded below with the rest of the software family;
+`census.request`'s ⚠️ is the same warning made visible.
 
 ### `command.request` verbs
 
@@ -94,7 +99,7 @@ The registry is `x-commands` in the contract: **19 verbs.**
 | `gestalt` | **CPU, memory, OS, network, hardware** — see below | ✅ | ❌ |
 | `census` | the hardware census, probe by probe — see below | ✅ | ❌ |
 | `catsearch` | catalog search across a volume | ✅ | ❌ |
-| `sw` | installed software | ✅ | ❌ |
+| `sw` | installed software | ✅ | ✅ |
 | `ls` | list a folder | ✅ | ✅ |
 | `tail` | the end of a file | ✅ | ❌ |
 | `reveal` | show an item in the Finder | ✅ | ❌ |
@@ -115,13 +120,48 @@ capabilities through the `file.*` families and that guest's own
 Workshop. `shotdiag` is the third, and the newest: it diagnoses a raw
 framebuffer walk the PowerPC guest does not have.
 
-**NOW-68K serves 11 of 19** — `help`, `ls`, `put`, `cancel`, `vprobe`,
-`screenshot`, `shotdiag`, `ps`, `launch`, `quit`, `front`. The eight it
-does not: `gestalt`, `census`, `catsearch`, `sw`, `tail`, `reveal`,
+**NOW-68K serves 12 of 19** — `help`, `ls`, `sw`, `put`, `cancel`,
+`vprobe`, `screenshot`, `shotdiag`, `ps`, `launch`, `quit`, `front`. The
+seven it does not: `gestalt`, `census`, `catsearch`, `tail`, `reveal`,
 `vers`, `putstat`.
 
 Every asymmetry is argued in [command-parity.md](command-parity.md) and
 named with its reason in `CommandRegistryTests.notOnThePowerPCGuest`.
+
+### `software.list` — one message, two amounts of answer
+
+The row above says both guests serve it, and that is true. It is also
+the row where "served" hides the most, so this expands it the way
+`census` and `gestalt` are expanded: a message type is not a coverage
+unit when the two guests can answer it with different numbers of facts.
+
+`SoftwareEntry` has eight fields. **The PowerPC guest fills all eight.
+NOW-68K fills six** — `name`, `path`, `type`, `creator`, `sizeK`, `off`
+— and omits two, deliberately and with the schema's blessing (both are
+optional, and both have "absent" as a defined reading):
+
+| Field | Why NOW-68K omits it |
+|---|---|
+| `version` | one resource-fork open per served entry. The contract calls that "an explicitly bounded cost" and on a 1400c it is; on a 68030 with 4 MB and a 384 KB partition it is a resource map per file in a heap with no slack. Absent, never `""`. |
+| `running` | the join against the process list is a Process Manager walk per page, on the machine where `ps` is already the slowest thing a person types. Absent, never `false` — `false` would be a claim. |
+
+**This is an asymmetry in the ANSWER, not in the contract**, and the
+difference matters: the two guests mean the same thing by
+`software.list` and by every field they both send. A host reading a
+NOW-68K listing gets fewer facts, and reads their absence as absence,
+which is what the schema already says absence means. A guest that had
+sent `"version":""` would have been the contract violation.
+
+Two more limits are NOW-68K's alone and are reported in the listing's
+`note` rather than left to be inferred:
+
+- **the inventory is bounded at 48 applications** (`apps` domain). A
+  whole-volume sweep can find hundreds; this machine holds 48 FSSpecs
+  and stops, saying so. The folder domains have no such bound — they
+  page live off the catalog and run to the end.
+- **`PBCatSearch` is not available on every System 7.1 volume**, and the
+  fallback walks the startup volume's ROOT only. An `apps` answer from
+  the fallback is NARROWER, not merely shorter, and says which.
 
 ### `gestalt` — the machine's account of itself
 
@@ -159,7 +199,7 @@ as "has a census".**
 
 Worth stating, because the first version of this file made the mistake.
 Counting inbound message types put `census.request` and `command.request`
-at one row each, which read as two ticks and hid 18 verbs and 14 hardware
+at one row each, which read as two ticks and hid 19 verbs and 14 hardware
 probes behind them. **Two of the rows above are subsystems.** Any future
 version of this document has to expand them or it will understate the gap
 the same way.
@@ -193,8 +233,13 @@ rather than editing it.
   `file.restore` or `file.mkdir`. NOW-68K will say what is there and
   carry bytes both ways; it will not change the shape of its own disk on
   request.
-- **No software listing and no streams.** The process family is no
-  longer on this list: `process.list`, `process.quit` and
+- **No streams.** The software family is no longer on this list:
+  `software.list` is served and `sw` is a verb, with the two omitted
+  entry fields and the two bounds set out above — a host can ask
+  NOW-68K what is installed on it and get a launchable path back.
+  `stream.start` / `.stop` / `.refresh` remain unserved.
+- The process family is no longer on this list either:
+  `process.list`, `process.quit` and
   `process.front` are all served, and the two drive verbs have `quit`
   and `front` COMMANDS beside them so a person can type what the
   Processes module clicks. `process.shot` is the one that remains, and
@@ -228,6 +273,7 @@ either — only NOW-68K's half of it has faced a live guest.
 | **cancel a transfer** (both directions, both faces) | emulator-verified only |
 | `process.quit` / `process.front`, `isSelf`, the `front` verb | tested only |
 | **browse** (`file.list`, the `ls` verb) | emulator-verified only |
+| **installed software** (`software.list`, the `sw` verb) | **tested only** — no guest has run the sweep |
 | **capture to the guest's own disk** (`screenshot`) | **metal-verified (180c)** |
 | **capture across the wire** (`capture.request` -> bulk) | emulator-verified only |
 | `shotdiag` (where the staged walk read from) | tested only — the one it exists to answer is unrun |
@@ -253,8 +299,12 @@ here: parse both dispatches, compare against this table, fail on drift.
 Until that exists, this document is a snapshot and the two `grep`
 commands at the top are the source of truth.
 
-Last derived: 2026-07-26, on `claude/metal-integration` after five
-branches landed together. The command registry came from `x-commands` in
+Last derived: 2026-07-28, on `claude/68k-software-list-sw`, when NOW-68K
+gained `software.list` and `sw`. The two counts at the top of the
+message table (37 / 23) were re-derived with the `grep`s above and had
+both drifted — the file said 34 / 19, from before the exec console plane
+landed, which is the fifth time this document has been wrong about a
+number it did not derive. The command registry came from `x-commands` in
 `contract/asyncapi.yaml`, the PPC verb set from `strcmp(name, ...)` in
 `now-guest-ppc/src/commands/commands.c`, the 68K verb set from the table in
 `now-guest-68k/src/commands/commands68.c`, and the probe list from `k_probes` in

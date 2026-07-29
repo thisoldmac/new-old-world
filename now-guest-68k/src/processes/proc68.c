@@ -432,6 +432,18 @@ static void yield_ticks(long ticks)
     (void)WaitNextEvent(0, &event, (unsigned long)ticks, NULL);
 }
 
+/* The same yield, published. n68_swenum.c's whole-volume sweep needs the
+ * between-slice pump this file already has, and a second copy of it would
+ * be a second `pumping` guard that does not know about this one - which is
+ * the DEFECT 3 hazard above reintroduced one file over, in the exact
+ * situation it was found in (a host pipelining requests while a multi-second
+ * catalog search runs). A wrapper rather than a rename so the guard, the
+ * event mask and the reasoning stay in one place. */
+void proc_yield_ticks(long ticks)
+{
+    yield_ticks(ticks);
+}
+
 /* Sends the 'quit' Apple Event. noErr means DELIVERED, never that the
  * application has gone - proc68.h's whole reason for existing. */
 static OSErr ask_quit(const ProcessSerialNumber *psn)

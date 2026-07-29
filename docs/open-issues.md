@@ -9,6 +9,55 @@ wrong thing) versus **unverified** (it may well be right, but no one has
 watched it work on the PowerBook). Unverified is not a lesser problem —
 several of tonight's bugs lived in code that looked obviously correct.
 
+## NOW-68K's software listing has never touched a disk (2026-07-28)
+
+`software.list` and the `sw` verb are served on NOW-68K
+(`now-guest-68k/src/software/`). The status is **tested**, and the half
+that is tested is the half with no Toolbox in it.
+
+### Unverified
+
+- **The sweep has never run.** `n68_swenum.c` is pure Toolbox and no gate
+  in this tree can reach it. Nothing has confirmed that `PBCatSearchSync`
+  finds a single application on a System 7.1 volume, that the disabled
+  sibling folders resolve through `FindFolder`, that the parent-chain
+  climb produces a launchable HFS path, or that a folder domain's
+  two-catalog cursor lands on the right item at the boundary. The
+  emulator (`scripts/q800-68k`) can answer all of those and has not been
+  asked.
+- **The timing is a guess.** The contract records ~4 s cold for the
+  equivalent sweep on a PowerBook 1400c. The 180c is a 33 MHz 68030 with
+  a much smaller, much older disk, and nobody has measured it. The
+  budget in force is `proc_launch_search_seconds()` (20 s by default,
+  shared with `launch`), so the honest statement is that the sweep will
+  either finish or truncate inside 20 s — not that it finishes.
+- **The pump has never been exercised under load.** The sweep calls
+  `proc_yield_ticks()` between slices, which runs `wire_idle()` and can
+  re-enter the frame reader. That is the DEFECT 3 path proc68.c
+  documents; it is guarded by the same single `pumping` flag, which is
+  precisely why the pump was exported rather than copied. Nothing has
+  pipelined a second request into a running sweep to watch it hold.
+- **48 may be the wrong bound.** `NOW68K_SWLIST_APP_CACHE_MAX` was
+  chosen from the memory budget (3360 bytes of BSS), not from a count of
+  what is on the 180c's disk. If that machine has 200 applications the
+  listing is honest and mostly useless; if it has 30 the bound never
+  fires. One `sw apps` on metal answers it.
+
+### Open
+
+- **No `version`, no `running`.** Both are omitted on this guest with
+  their reasons written down (contract-coverage.md). `version` is the
+  one a person is most likely to want, and the bounded way in exists —
+  a page is at most ten entries, so ten resource-fork opens — if the
+  heap on a 4 MB machine turns out to tolerate it. That is a
+  measurement, not a decision, and it has not been taken.
+- **`launch` and the listing do not share a search.** `proc68.c` sweeps
+  for one named application and `n68_swenum.c` sweeps for all of them;
+  the SHAPE is shared (slice, budget, retry, fallback) and the code is
+  not. Two sweeps that drift would disagree about which applications
+  this machine has, which is the `two-halves-never-met-in-a-test` shape
+  one file over. Worth folding together the next time both are open.
+
 ## A capture crosses the wire garbled from the 180c (2026-07-28)
 
 ### Broken

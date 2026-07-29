@@ -47,6 +47,8 @@ add_application(now-guest-68k
     src/files/n68_filesrc.c
     src/files/n68_fileenum.c
     src/files/n68_filelist.c
+    src/software/n68_swenum.c
+    src/software/n68_swlist.c
     src/processes/n68_proclist.c
     src/connection/connfields.c
     src/connection/n68_devsettings.c

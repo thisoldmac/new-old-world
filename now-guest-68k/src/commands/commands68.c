@@ -41,6 +41,8 @@
 #include "numfmt.h"
 #include "n68_shot.h"
 #include "n68_shotdiag.h"
+#include "n68_swenum.h"
+#include "n68_swlist.h"
 #include "proc68.h"
 #include "shot68.h"
 #include "shotstage68.h"
@@ -690,6 +692,8 @@ static const N68CommandDoc k_docs[] = {
       "shotdiag (no arguments; wants a still screen)" },
     { "put", "send a file from this Mac to the host", "put <file name>" },
     { "ls", "list a folder in this Mac's share", "ls [folder]" },
+    { "sw", "the software installed on this Mac",
+      "sw [apps|extensions|cdevs|startup|apple]" },
     { "cancel", "stop the file transfer in flight, either direction",
       "cancel (no arguments)" },
     { NULL, NULL, NULL }
@@ -939,6 +943,81 @@ static void run_ls(const char *target, N68CmdRows *out)
                       more, out);
 }
 
+/* ---- `sw`: installed software, the same rows the wire pages -------------
+ *
+ * The fifth command through the rows seam, and it needed no argument for
+ * its place there: an item per row is a table, and docs/command-parity.md's
+ * ruling is that a table-shaped answer takes N68CmdRows so the console
+ * reaches it by delegating. conwin.c and n68_exec.c are untouched by this
+ * verb existing.
+ *
+ * `sw` is to software.list what `ls` is to file.list and `ps` is to
+ * process.list: one enumeration (n68_swenum.c), two renderers
+ * (n68_swlist.c). No domain is the overview - the per-domain counts the
+ * contract's x-command describes.
+ *
+ * IT CAN TAKE SECONDS. `sw apps` and the overview both run a whole-volume
+ * PBCatSearch, measured at ~4 s on a 1400c and unmeasured on the 180c. The
+ * sweep pumps the wire between slices (proc_yield_ticks), so a host is not
+ * cut off while a person waits - but a person IS waiting, and that is worth
+ * knowing before typing it into a console that gives no progress. */
+static void run_sw(const char *target, N68CmdRows *out)
+{
+    /* One page's worth, on the stack: 10 rows at ~130 bytes is ~1.3 KB,
+     * which is inside this file's frame budget (see the header) because no
+     * two run_* are ever on the stack at once. */
+    N68SwRow rows[NOW68K_SWLIST_MAX_ROWS];
+    N68SwCount counts[NOW68K_SWLIST_DOMAIN_COUNT];
+    char word[16];
+    N68SwDomain d;
+    long count;
+    int more = 0;
+    int truncated = 0;
+    const char *note = "";
+
+    /* The first word that is not a flag is the domain (the contract's
+     * x-line). There are no flags today, so the whole trimmed line is it -
+     * and a domain is one short ASCII word, so anything that does not fit
+     * `word` is by construction not one of the five. */
+    word[0] = '\0';
+    if (target != NULL && !trim_and_unquote(target, word, (int)sizeof word)) {
+        word[0] = '\0';
+        d = kN68SwDomainUnknown;
+    } else {
+        d = n68_swlist_domain(word);
+    }
+
+    if (d == kN68SwDomainUnknown) {
+        n68_swlist_unknown_domain_rows(out);
+        return;
+    }
+    if (d == kN68SwDomainNone) {
+        n68_swenum_counts(counts);
+        n68_swlist_overview_rows(counts, out);
+        return;
+    }
+
+    count = n68_swenum_page(d, 1, rows, (long)NOW68K_SWLIST_MAX_ROWS,
+                            &more, &truncated, &note);
+    if (count < 0) {
+        N68SwCode rc = (N68SwCode)(-count);
+
+        /* The same code and sentence the wire's refusal carries. A person
+         * typing `sw cdevs` and a host sending software.list must not be
+         * told two different stories about one System Folder. */
+        n68_cmdrows_set_error(out, n68_swenum_code_word(rc),
+                              n68_swenum_code_reason(rc));
+        return;
+    }
+    n68_swlist_rows(d, rows, count, more, truncated, out);
+    if (note[0] != '\0' && note != n68_swlist_note_truncated()) {
+        /* The root-only note is not truncation and must not read as it:
+         * one says "there is more past the bound", the other says "the
+         * search could not go below the volume root at all". */
+        (void)n68_cmdrows_add(out, "!", note);
+    }
+}
+
 /* ---- `shotdiag`: one metal pass, and the machine is answerable ------------
  *
  * A capture taken on the PowerBook 180c arrives at the host as structured
@@ -1035,6 +1114,11 @@ const N68CmdRows *now68k_commands_run_rows(const char *name,
     if (strcmp(name, "ls") == 0) {
         n68_cmdrows_init(&g_rows);
         run_ls(target, &g_rows);
+        return &g_rows;
+    }
+    if (strcmp(name, "sw") == 0) {
+        n68_cmdrows_init(&g_rows);
+        run_sw(target, &g_rows);
         return &g_rows;
     }
     if (strcmp(name, "shotdiag") == 0) {

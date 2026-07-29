@@ -190,6 +190,23 @@ short proc_launch_named(const char *name, char *detail, long detail_cap);
 void           proc_set_launch_search_seconds(unsigned short seconds);
 unsigned short proc_launch_search_seconds(void);
 
+/* Yield one pass with an event mask of ZERO, pumping the wire, guarded
+ * against re-entry.
+ *
+ * Published from this file because this file is where the guard lives.
+ * Every long nested Toolbox loop in this guest has to pump or the
+ * connection stalls for its whole duration - and every one of them can be
+ * re-entered, because pumping runs wire_idle(), which can walk all the way
+ * back into a new request's handler on the same stack. proc68.c's `pumping`
+ * flag is the one thing standing between that and unbounded recursion
+ * (measured at ~3.7 KB of stack per level, on a heap with no slack); a
+ * second pump elsewhere would be a second guard that cannot see this one.
+ *
+ * So: a new slow loop calls THIS, it does not write its own. The mask of
+ * zero is not a detail - taking a keystroke or click on the front
+ * application's behalf is what an event mask here would do. */
+void           proc_yield_ticks(long ticks);
+
 /* Running processes, newest first, for the human and for the quit matcher.
  * Fills up to cap entries and returns the count. Names are Pascal strings
  * converted to C, truncated to 31 characters (the HFS limit they came from). */
