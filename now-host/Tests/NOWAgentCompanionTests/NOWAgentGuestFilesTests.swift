@@ -36,7 +36,7 @@ final class NOWAgentGuestFilesTests: XCTestCase {
     private func initializedServer(
         client: AgentIntegrationClient
     ) async throws -> NOWMCPServer {
-        let server = NOWMCPServer(client: client)
+        let server = NOWMCPServer(client: client, audit: AuditSinkSpy())
         _ = await server.handle(try Self.request(
             id: 1,
             method: "initialize",

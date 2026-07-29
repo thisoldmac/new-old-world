@@ -50,6 +50,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .guestFilesUploadStage(.hostUnavailable(.guest))
                 case .guestFilesUploadCommit:
                     return .guestFilesUploadCommit(.hostUnavailable(.guest))
+                case .audit:
+                    return .recorded
                 }
             })
         try server.start()
@@ -190,6 +192,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .guestFilesUploadStage(.hostUnavailable(.guest))
                 case .guestFilesUploadCommit:
                     return .guestFilesUploadCommit(.hostUnavailable(.guest))
+                case .audit:
+                    return .recorded
                 }
             })
         try server.start()
@@ -256,6 +260,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .guestFilesUploadStage(.hostUnavailable(.guest))
                 case .guestFilesUploadCommit:
                     return .guestFilesUploadCommit(.hostUnavailable(.guest))
+                case .audit:
+                    return .recorded
                 }
             })
 
@@ -301,6 +307,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .guestFilesUploadStage(.hostUnavailable(.guest))
                 case .guestFilesUploadCommit:
                     return .guestFilesUploadCommit(.hostUnavailable(.guest))
+                case .audit:
+                    return .recorded
                 }
             })
         try server.start()
@@ -445,6 +453,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .guestFilesUploadStage(.hostUnavailable(.guest))
                 case .guestFilesUploadCommit:
                     return .guestFilesUploadCommit(.hostUnavailable(.guest))
+                case .audit:
+                    return .recorded
                 }
             })
         try server.start()
@@ -516,6 +526,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .guestFilesUploadStage(.hostUnavailable(.guest))
                 case .guestFilesUploadCommit:
                     return .guestFilesUploadCommit(.hostUnavailable(.guest))
+                case .audit:
+                    return .recorded
                 }
             })
         try server.start()

@@ -89,6 +89,61 @@ dispatch, separates a gap somebody argued for from a gap nobody noticed, and
 is enforced by `MCPCoverageTests` rather than maintained by hand. A new row
 here means a row there, in the same commit; the test says so if it does not.
 
+## Every agent call leaves a trace
+
+**User-initiable where possible; strictly-headless surfaced as a log event.**
+MCP is an optional feature of NOW, and optional does not mean kneecapped —
+but a suite of agentic controls that is completely opaque to the person at the
+machine is not what NOW is. Where a capability cannot be user-initiated, the
+person must at least be able to see that it happened.
+
+That is mechanical rather than a habit. Every face invokes a capability
+through **one** dispatch — `HostProjectionDispatch` — and the dispatch emits
+one audit event per invocation. A row does not emit, so a row cannot forget
+to; the next capability's author gets the behaviour by adding a row.
+
+| The event says | It never says |
+| --- | --- |
+| which capability, by the one name the registry keys on | the arguments — no path, receipt, reference, chunk or name |
+| which face asked (`mcp` today) | anything about the caller beyond its face |
+| which machine it concerned — the selector as given, or the driven machine's id, resolved by the host | the guest's address, which is not on this surface at all |
+| the outcome: `answered`, or `refused` with the projection's own sentence | which flavour of unavailable an answered result reported; that lives in the result |
+
+**A refused invocation emits.** An attempt that was denied is the more
+interesting event of the two, and it is the one class of outcome the host
+would otherwise never see: an argument refusal is decided inside the companion
+and sends no local request, so an unemitted refusal is recorded nowhere.
+`answered` is deliberately coarse — reading a typed result back apart would
+mean this seam learning the shape of a dozen result types and going stale
+behind the thirteenth.
+
+The MCP face reports over the same per-uid private socket everything else
+uses (local schema v8's `audit` operation), and the host writes the line under
+the `agent` area of [logging.md](logging.md#the-agent-area-who-asked). The
+host validates rather than transcribes: an event naming a capability no row
+claims is refused, the face is a closed enum, the refusal sentence is bounded
+and its control bytes are escaped. A same-uid process can already cause real
+agent lines by making real calls; it does not also get to invent lines about
+capabilities that do not exist.
+
+**A failure to report is silent and does not fail the call.** The reasons it
+can fail — the host is absent, is an older version, has stopped answering —
+are all cases where there is no log to write into, and failing a call this
+face has already served would be worse. The known gaps, stated rather than
+discovered later: a call still waiting on a 32-second launch has not been
+logged yet (the event is emitted once, when the outcome is known, rather than
+as a begun/ended pair that would double this face's local round-trips), one
+that takes the process down is never logged, and a malformed `guest` selector
+is refused by the face before any capability is invoked, so it names no
+capability and emits nothing.
+
+Two tests hold it, and both were verified by mutation:
+`HostProjectionAuditTests.testNothingButTheDispatchInvokesAProjection` reads
+`now-host/Sources` and fails naming the file and line when anything but the
+dispatch calls a projection's `invoke`, and
+`NOWAgentAuditTests.testAToolCallReportsItselfToTheHost` drives the real MCP
+entry point and reads what arrived at the host end of the socket.
+
 ## Implemented slices
 
 The implemented V0 surface exposes only five host-owned projections.
@@ -135,6 +190,7 @@ V0 deliberately trusts processes running as the same macOS user. This protects a
 - The host creates `dev.newoldworld.now-agent-<uid>/host.sock` beneath the user's private temporary directory. The directory is mode `0700`; the socket is mode `0600`.
 - The host checks every accepted peer with `getpeereid` and serves it only when the effective UID matches.
 - The companion checks that the directory and socket are owned by its effective UID, have no group/other permission bits, and are a directory and socket rather than links or other file types.
+- Local schema v8 makes an agent call VISIBLE. It adds one operation that asks the host for nothing: a face reports a capability it has just invoked — capability name, face, the guest selector as given, and `answered` or `refused` with a bounded sentence — and the host writes that line into its own log under the `agent` area. It carries no selection of any kind and reaches no guest, so it is exempt from the addressing check and shares the read-only response window. The version moved because the shape of the surface changed: a v7 host answers `invalid-request` to it, which is honest — that host has no audit line to write — and a v7 companion never sends one, which is the opacity rule 3 exists to stop being acceptable. See *Every agent call leaves a trace* above.
 - Local schema v7 makes the surface guest-ADDRESSABLE. Every tool takes an optional `guest`: a machine id (`pb1400c` — "whatever is connected to that Mac now", which follows a reconnection) or a session id (`pb1400c-<uuid>` — one connection, refused `now-guest-session-ended` once it is over rather than answered by its successor, the same staleness contract the process and quit references keep). Omitting it means the machine the host is currently driving, which is what every v6 caller meant. Naming a machine that is connected but not being driven is refused `now-guest-not-addressed`, naming the driven machine and the whole roster — never answered by the other machine. `now_session_health` reports the driven machine's reference and every connected machine, so a caller can discover the ids it needs. **The guest's ADDRESS is not on this surface.** The host observes it and anchors the machine id on it; the companion is told the id, the session id and the display name, and nothing about where anything lives — the same reticence the endpoint keeps about its own path. The version moved because a v6 companion cannot say which machine it means and would read whichever one happened to be active as the answer to a question it asked about another. Addressability does not touch availability: what a guest can do is still asked of the guest and never inferred from which guest it is.
 - Local schema v6 adds the read-only session capability report to v5's staged-upload and browse operations, permits one request per connection, and caps each request and response at 16 KiB. The version changes when authority or action shape changes so an older companion cannot silently misread it. Browse selection is one bounded root-relative path and optional positive cursor; upload selection is one bounded root-relative destination plus declared metadata, followed only by an opaque upload ID, exact offset, and bounded bytes. The NOW command layer performs canonical MacRoman/HFS validation and policy composition. Launch selection is exactly one bounded name or opaque reference; quit selection is exactly one current opaque process reference; artifact selection is exactly one syntactically valid receipt; the capability report's only input is a required boolean `probeCostly`, required rather than defaulted because it decides whether the call spends a guest's whole-volume sweep. The version moved because the shape of the surface changed: a v5 companion cannot ask what the connected guest implements and would present every tool as unconditionally available. MCP stdio input is separately capped at 64 KiB per line.
 - V0.5 upload staging lives in a private mode-`0700` per-process directory; each stage is preallocated mode `0600`, becomes mode `0400` only after size and SHA-256 match, expires after ten minutes, and is consumed after one transfer attempt. Capacity is derived from current host disk availability and outstanding reservations, not an arbitrary whole-file cap. On startup NOW removes only well-formed private stages owned by a demonstrably dead process and emits an audit event. Live-process or structurally unfamiliar directories are retained.

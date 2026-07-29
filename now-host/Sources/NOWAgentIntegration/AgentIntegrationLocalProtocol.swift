@@ -1,7 +1,16 @@
 import Foundation
 
 public enum AgentIntegrationLocalProtocol {
-    /// Version 7 makes the surface guest-ADDRESSABLE. The version moves
+    /// Version 8 makes an agent call VISIBLE to the person at the machine.
+    /// The shape changed because the surface gained an operation that asks
+    /// the host for nothing: the companion reports what it was asked to do
+    /// and what came of it, and the host writes that into its own log. A v7
+    /// host answers `invalid-request` to it, which is the honest answer —
+    /// that host has no audit line to write — and a v7 companion simply
+    /// never sends one, which is what rule 3 of the parity slice exists to
+    /// stop being acceptable.
+    ///
+    /// Version 7 made the surface guest-ADDRESSABLE. The version moves
     /// because the shape changed again: the host serves several machines
     /// at once, so a request may now say WHICH one it means and every
     /// guest-dependent answer names the machine it came from. A v6
@@ -10,7 +19,7 @@ public enum AgentIntegrationLocalProtocol {
     /// asked about another.
     ///
     /// Version 6 added the read-only session capability report.
-    public static let version = 7
+    public static let version = 8
     public static let maximumMessageBytes = 16 * 1024
 }
 
@@ -28,6 +37,10 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         case guestFilesUploadBegin = "guest_files_upload_begin"
         case guestFilesUploadAppend = "guest_files_upload_append"
         case guestFilesUploadCommit = "guest_files_upload_commit"
+        /// Not a request for anything. The face reports one invocation it
+        /// has already performed so the host can write it into the log the
+        /// person at the machine reads.
+        case audit = "audit"
     }
 
     public let version: Int
@@ -44,6 +57,9 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
     public let guestFileUploadChunk: String?
     /// Opt in to the one read-only probe that costs the guest real work.
     public let probeCostly: Bool?
+    /// One completed invocation, reported for the log. Present only on the
+    /// `audit` operation, and never a request for anything.
+    public var auditEvent: HostProjectionAuditEvent? = nil
     /// WHICH machine this request is about, if the caller cares.
     ///
     /// Accepts a machine id (`pb1400c` — "whatever is connected to that
@@ -233,6 +249,29 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
             guestFileCursor: nil,
             guestFileUploadID: uploadID)
     }
+
+    /// One completed invocation, on its way to the host's log.
+    ///
+    /// It carries no selection of any kind: the event names a capability the
+    /// host validates against its own registry, a face from a closed set,
+    /// one outcome word and a bounded refusal sentence. That bound is what
+    /// keeps this from being a way to write arbitrary text into the person's
+    /// log — a same-uid process can already cause real agent lines by
+    /// making real calls, and this operation must not let it invent lines
+    /// about capabilities that do not exist.
+    public static func audit(_ event: HostProjectionAuditEvent,
+                             requestID: UUID = UUID()) -> Self {
+        var request = Self(
+            requestID: requestID,
+            operation: .audit,
+            launchSelection: nil,
+            processReference: nil,
+            approvalReceipt: nil,
+            guestFilePath: nil,
+            guestFileCursor: nil)
+        request.auditEvent = event
+        return request
+    }
 }
 
 public enum AgentIntegrationLocalResult: Equatable, Sendable {
@@ -257,6 +296,10 @@ public enum AgentIntegrationLocalResult: Equatable, Sendable {
     /// ADDRESSING, not to the operation: nothing about the guest was
     /// asked, so no operation-shaped answer would be honest.
     case notAddressed(AgentIntegrationUnavailable)
+    /// The reported invocation reached the host's log. It says only that,
+    /// because that is all the caller can be told: the line is written where
+    /// the person reads it, not returned to whoever reported it.
+    case recorded
 }
 
 public struct AgentIntegrationLocalError: Codable, Equatable, Sendable {
@@ -290,6 +333,9 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
     /// The request named a machine this host cannot answer for. Set
     /// INSTEAD of any operation result: nothing was asked of any guest.
     public var notAddressed: AgentIntegrationUnavailable? = nil
+    /// The reported invocation was written to the host's log. Set INSTEAD of
+    /// any operation result; nothing was asked of any guest.
+    public var recorded: Bool? = nil
     public let error: AgentIntegrationLocalError?
 
     public init(requestID: UUID,
@@ -297,6 +343,21 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         version = AgentIntegrationLocalProtocol.version
         self.requestID = requestID
         self.notAddressed = notAddressed
+        result = nil
+        processListResult = nil
+        launchResult = nil
+        quitResult = nil
+        artifactTransferResult = nil
+        guestFilesCapabilitiesResult = nil
+        guestFilesListResult = nil
+        guestFilesStatResult = nil
+        error = nil
+    }
+
+    public init(requestID: UUID, recorded: Bool) {
+        version = AgentIntegrationLocalProtocol.version
+        self.requestID = requestID
+        self.recorded = recorded
         result = nil
         processListResult = nil
         launchResult = nil
@@ -544,6 +605,7 @@ public enum AgentIntegrationLocalCodec {
             "processReference", "approvalReceipt", "guestFilePath",
             "guestFileCursor", "guestFileUpload", "guestFileUploadID",
             "guestFileUploadOffset", "guestFileUploadChunk", "probeCostly",
+            "auditEvent",
         ])
         guard object["version"] as? Int ==
                 AgentIntegrationLocalProtocol.version else {
@@ -738,6 +800,32 @@ public enum AgentIntegrationLocalCodec {
                 throw AgentIntegrationLocalTransportError.invalidMessage(
                     "Guest Files upload commit does not match the schema")
             }
+        case .audit:
+            /* An audit event names a capability, so the capability has to
+               exist: the host writes this into the log a person reads, and
+               a line about a tool no row claims would be a line about
+               nothing. Everything else in the event is a closed enum or a
+               bounded sentence, which together are the whole bound on what
+               this operation can put in that file. Note there is no guest
+               SELECTOR here — the machine the call concerned travels inside
+               the event, because nothing is being asked of any guest. */
+            expectedKeys = [
+                "version", "requestID", "operation", "auditEvent",
+            ]
+            guard let event = request.auditEvent,
+                  request.launchSelection == nil,
+                  request.processReference == nil,
+                  request.approvalReceipt == nil,
+                  request.guestFilePath == nil,
+                  request.guestFileCursor == nil,
+                  request.probeCostly == nil,
+                  HostProjectionRegistry.hostFaces.projection(
+                      named: event.capability) != nil,
+                  (event.reason?.unicodeScalars.count ?? 0)
+                      <= HostProjectionAuditEvent.maximumReasonScalars else {
+                throw AgentIntegrationLocalTransportError.invalidMessage(
+                    "Audit event does not match the schema")
+            }
         }
         guard Set(object.keys) == expectedKeys else {
             throw AgentIntegrationLocalTransportError.invalidMessage(
@@ -757,7 +845,7 @@ public enum AgentIntegrationLocalCodec {
                 "artifactTransferResult",
                 "guestFilesCapabilitiesResult", "guestFilesListResult",
                 "guestFilesStatResult", "guestFilesUploadStageResult",
-                "guestFilesUploadCommitResult",
+                "guestFilesUploadCommitResult", "recorded",
             ])
         guard object["version"] as? Int ==
                 AgentIntegrationLocalProtocol.version else {
@@ -779,13 +867,15 @@ public enum AgentIntegrationLocalCodec {
             object["guestFilesUploadStageResult"] != nil
         let hasGuestFilesUploadCommit =
             object["guestFilesUploadCommitResult"] != nil
+        let hasRecorded = object["recorded"] != nil
         let hasError = object["error"] != nil
         guard [
             hasResult, hasSessionCapabilities,
             hasProcessList, hasLaunch, hasQuit,
             hasArtifactTransfer, hasGuestFilesCapabilities,
             hasGuestFilesList, hasGuestFilesStat,
-            hasGuestFilesUploadStage, hasGuestFilesUploadCommit, hasError,
+            hasGuestFilesUploadStage, hasGuestFilesUploadCommit,
+            hasRecorded, hasError,
         ]
                 .filter({ $0 }).count == 1 else {
             throw AgentIntegrationLocalTransportError.invalidMessage(
