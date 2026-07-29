@@ -13,7 +13,13 @@ public enum TransferApprovedArtifactProjection: HostProjection {
     public static let requires =
         [AgentIntegrationCapabilityNames.filePut]
 
-    public static let faces: [HostFace: HostFaceReach] = [
+    /* The put lane, which the caller directs — it names the receipt and the
+       guest gains the file. That the destination was fixed when the receipt
+       was minted bounds the ask; it does not make the capability internal. */
+    public static let exposes =
+        [AgentIntegrationCapabilityNames.filePut]
+
+    public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .notReached(because:
             "The app UI is the GRANT side of this capability, not the "
             + "redeeming side: Files offers \"Approve One-Time Agent "

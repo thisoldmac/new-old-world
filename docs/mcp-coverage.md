@@ -8,8 +8,8 @@ decision or an accident.
 It exists because of drift nobody was watching for. The guests handle 37
 (PowerPC) and 23 (68K) inbound message types, 19 command verbs and 14
 hardware census probes between them. Of the 24 host-askable capabilities and
-19 verbs the contract declares, twelve host projections reach **six**; the
-other **37 are gaps**, eleven argued, sixteen planned and **ten decided by
+19 verbs the contract declares, twelve host projections reach **five**; the
+other **38 are gaps**, eleven argued, seventeen planned and **ten decided by
 nobody**. Most of the difference is capability the guest already has and no
 host face can name. Some of that is deliberate and argued; some of it was
 simply never noticed. **Those are different facts, and this file's whole job
@@ -46,7 +46,7 @@ What it derives, and from where:
 
 | Side | Source | How |
 |---|---|---|
-| host reach | `HostProjectionCatalog` → each row's `capability` and `requires` | the registry itself, in process — no parsing |
+| host reach | `HostProjectionCatalog` → each row's `capability`, `requires` and `exposes` | the registry itself, in process — no parsing |
 | host-initiated messages | `contract/asyncapi.yaml` → `operations` with `action: receive`, resolved to each message's wire `name` | `receive` means the guest receives it, so it is an ask |
 | command verbs | `contract/asyncapi.yaml` → `x-commands` | the closed registry |
 | census probes | `contract/asyncapi.yaml` → `x-census`/`x-probes` | the closed registry |
@@ -63,31 +63,57 @@ grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
 
 ## What the twelve reach
 
-One row per registered projection, in catalog order. `Requires` is the row's
-own `requires` array — the guest capabilities it cannot work without — and
-the test compares it against the code literally.
+One row per registered projection, in catalog order. Two columns, because a
+row declares two different things and reading one as the other is the blind
+spot this table used to have:
 
-| MCP tool | Requires | Guest plane |
-|---|---|---|
-| `now_session_health` | — | none; host listener state |
-| `now_session_capabilities` | — | none; `help` plus bounded probes, described in agent-integration.md |
-| `now_list_processes` | `process.list` | message family |
-| `now_launch_software` | `software.list`, `launch` | message family plus command |
-| `now_request_quit` | `process.list`, `process.quit` | message family |
-| `now_transfer_approved_artifact` | `file.put` | message family |
-| `now_guest_files_capabilities` | `file.list` | message family |
-| `now_guest_files_list` | `file.list` | message family |
-| `now_guest_files_stat` | `file.list` | message family |
-| `now_guest_files_upload_begin` | — | none; host staging only |
-| `now_guest_files_upload_append` | — | none; host staging only |
-| `now_guest_files_upload_commit` | `file.put` | message family |
+- **Requires** — the guest capabilities the row cannot work without. It
+  decides availability against a partial guest.
+- **Exposes** — the guest capabilities a caller can actually **ask about**
+  through the row: obtain that capability's own answer, or direct its effect.
+  It decides what counts as covered in the gap table below. Necessarily a
+  subset of Requires — a projection cannot hand back an answer it had no
+  grounds to ask for — and the test checks that too.
 
-Twelve tools, and the distinct guest capabilities behind them are **six**:
+The test compares both against the code literally.
+
+| MCP tool | Requires | Exposes | Guest plane |
+|---|---|---|---|
+| `now_session_health` | — | — | none; host listener state |
+| `now_session_capabilities` | — | — | none; `help` plus bounded probes, described in agent-integration.md |
+| `now_list_processes` | `process.list` | `process.list` | message family |
+| `now_launch_software` | `software.list`, `launch` | `launch` | message family plus command |
+| `now_request_quit` | `process.list`, `process.quit` | `process.quit` | message family |
+| `now_transfer_approved_artifact` | `file.put` | `file.put` | message family |
+| `now_guest_files_capabilities` | `file.list` | — | message family |
+| `now_guest_files_list` | `file.list` | `file.list` | message family |
+| `now_guest_files_stat` | `file.list` | `file.list` | message family |
+| `now_guest_files_upload_begin` | — | — | none; host staging only |
+| `now_guest_files_upload_append` | — | — | none; host staging only |
+| `now_guest_files_upload_commit` | `file.put` | `file.put` | message family |
+
+Twelve tools. The distinct guest capabilities they **require** are six:
 `process.list`, `process.quit`, `software.list`, `file.list`, `file.put` and
-`launch`. Eight of the twelve rows are the guest-files family and the
+`launch`. The distinct capabilities they **expose** are **five** — the same
+list without `software.list`, which every projection that touches it consumes
+internally. Eight of the twelve rows are the guest-files family and the
 sessions pair; the surface is narrower than its tool count suggests, which
 is the same mistake `contract-coverage.md` made when it counted message
-types.
+types, and the six-versus-five is that mistake one layer in.
+
+Three rows require something they do not expose, and each is worth reading as
+a shape rather than an exception:
+
+| Row | Required, not exposed | What the caller gets instead |
+|---|---|---|
+| `now_launch_software` | `software.list` | a launch of one exactly-named application; not one catalog entry |
+| `now_request_quit` | `process.list` | a quit request; the listing is consumed to revalidate the opaque reference |
+| `now_guest_files_capabilities` | `file.list` | the **host's** guestRoot policy and bounds; no directory entry crosses back |
+
+`process.list` and `file.list` are still covered, because
+`now_list_processes` and `now_guest_files_list` genuinely expose them.
+`software.list` is not exposed anywhere, and that is the gap the next section
+used to have to describe in prose.
 
 ### One requirement is not a contract name
 
@@ -106,28 +132,47 @@ anywhere at run time — the capability ledger falls through to the command
 table, misses, and reports the tool permanently unavailable against every
 guest.
 
-### Covered is not the same as exposed — a stated limit of the check
+### Covered is not the same as exposed — the limit, and how it was closed
 
-The check can see that a capability is **required by some projection**. It
-cannot see whether a caller can ask for that capability's own answer.
+**This was a stated limit of the check and is now a distinction the registry
+carries.** The earlier version of this section said the check could see only
+that a capability was *required by some projection*, and could not see whether
+a caller could ask for that capability's own answer — so a capability consumed
+internally read as coverage.
 
-`software.list` is the live instance. `now_launch_software` requires it and
-uses it internally to match one name, so the machine check reads it as
-covered — and there is no tool that returns a software listing. An agent can
-launch an application it can already name exactly; it cannot ask what is
-installed. Plan item W1 #3 is that listing, and the `sw` row below carries
-it.
+`software.list` was the live instance, and it is the reason the fix landed
+rather than the limit surviving another phase. `now_launch_software` requires
+it and sweeps the catalog to match one name; no tool returns a listing. An
+agent could launch an application it could already name exactly and could not
+ask what was installed. That is a real gap, and under a `requires`-derived
+check it wore a tick.
 
-This limit is stated rather than fixed because fixing it means the registry
-declaring `exposes` beside `requires`, which is a change to W0.1's seam and
-not this document's to make. Until then, treat a `COVERED` reading as "some
-projection needs it", never "an agent can ask for it".
+The fix is the one the earlier text named: **`exposes` beside `requires` on the
+row protocol**, and coverage derived from `exposes`. Two consequences, both
+visible in the tables:
+
+- `software.list` moved from covered to a **planned** gap (W1 #3), where it
+  joins the `sw` verb that is the same capability's console spelling.
+- `process.list` and `file.list` stayed covered — they are consumed internally
+  by one row each *and* exposed by another. The distinction narrows coverage to
+  what is genuinely askable; it does not simply reclassify everything a
+  composition touches.
+
+It was done at twelve rows rather than after the wide phase for a reason worth
+recording: at twenty-one rows it is a twenty-one-row edit, and every row added
+in between would have inherited the blindness and been documented as covered.
+
+What remains true, and is now a narrower claim: a `COVERED` reading means "some
+projection returns this capability's answer or directs its effect". It still
+says nothing about how much of that answer, under what bound, or whether it has
+ever run against a Macintosh — see Status.
 
 ## Every gap, with its disposition
 
 The complete list of host-askable guest capability that no projection
-requires. `Served` is derived from each guest's own dispatch: **both** ·
-**ppc** · **68k** · **none**.
+**exposes** — see the section above for why that is the right test and
+`requires` is not. `Served` is derived from each guest's own dispatch:
+**both** · **ppc** · **68k** · **none**.
 
 Three dispositions, and the difference between them is this file's reason
 to exist:
@@ -158,6 +203,7 @@ to exist:
 | `file.trash` | message | ppc | planned | W1 #7. |
 | `process.front` | message | both | planned | W1 #5. |
 | `process.shot` | message | ppc | deliberate | Excluded by name in the [parity slice plan](plans/2026-07-29-004-feat-now-tbt-classic-parity-slice-plan.md): PPC-only, and no consumer asked for a single-window capture. |
+| `software.list` | message | both | planned | W1 #3. The gap that `exposes` made visible: `now_launch_software` **requires** this and consumes it to match one name, so a `requires`-derived check called it covered while no tool returns a listing. Its console spelling is the `sw` row below. |
 | `stream.refresh` | message | ppc | unnoticed | Part of the live-stream bracket; see `stream.start`. |
 | `stream.start` | message | ppc | unnoticed | A stream is a continuous host-owned bracket rather than one bounded call, so it may well not belong on a tool surface at all — but **that is a hypothesis, not a decision**: nothing argues it, and the host app's live view owning it today is a fact about what exists rather than a reason. |
 | `stream.stop` | message | ppc | unnoticed | The other end of the same bracket; see `stream.start`. |
@@ -175,7 +221,7 @@ to exist:
 | `reveal` | command | ppc | unnoticed | Show an item in the Finder. Served on PPC; nothing asks. |
 | `screenshot` | command | both | planned | W1 #1 — the verb spelling of `capture.request`. |
 | `shotdiag` | command | 68k | unnoticed | Where a staged capture read from. It found the 24-bit addressing defect on the 180c and is reachable from no host face. |
-| `sw` | command | both | planned | W1 #3 — the installed-software listing. Note that `software.list` reads COVERED above while this listing is unreachable; see "Covered is not the same as exposed". |
+| `sw` | command | both | planned | W1 #3 — the installed-software listing, and now the `software.list` message row above it. The two used to disagree, one reading COVERED and the other unreachable; `exposes` is what reconciled them. |
 | `tail` | command | ppc | planned | W1 #9. |
 | `vers` | command | ppc | deliberate | Build identity. `hello` already carries name, version and OS, and `now_session_health` reports all three ([agent-integration.md](agent-integration.md)). |
 | `vprobe` | command | both | unnoticed | Framebuffer read cost. A ~12 s measurement on the guest, which is a reason to gate it, not a reason it is absent — nothing has decided either way. |
@@ -228,10 +274,14 @@ of it has run. `contract-coverage.md`'s "how far each served thing is
 proven" is the axis for that and is not duplicated here.
 
 The test is proven by mutation: adding a thirteenth registry row without a
-table entry, and declaring a gap for a capability a projection requires,
-both fail naming the capability. See the commit that added it.
+table entry, and declaring a gap for a capability a projection exposes, both
+fail naming the capability. The `exposes` distinction was proven the same way —
+making `now_launch_software` claim it exposes the `software.list` it only
+consumes makes the `software.list` gap row fail as a phantom, naming it. See
+the commits that added each.
 
-Last derived: 2026-07-29, on `claude/mcp-coverage-doc`, off
-`claude/host-projection-registry` at the twelve-projection registry. Re-derive
-by running `swift test --filter MCPCoverage` rather than by reading — if the
-tables and the code disagree, the code is right and the test says so.
+Last derived: 2026-07-29, on `claude/host-exposes-seam`, off
+`claude/tbt-parity-slice` at the twelve-projection registry with `exposes` on
+the row protocol. Re-derive by running `swift test --filter MCPCoverage` rather
+than by reading — if the tables and the code disagree, the code is right and
+the test says so.

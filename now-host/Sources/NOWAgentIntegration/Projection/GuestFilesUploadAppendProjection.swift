@@ -8,7 +8,11 @@ public enum GuestFilesUploadAppendProjection: HostProjection {
 
     public static let requires: [String] = []
 
-    public static let faces: [HostFace: HostFaceReach] = [
+    /* Nothing — bytes into a host stage, same as the begin step. The guest is
+       reached at commit. */
+    public static let exposes: [String] = []
+
+    public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .notReached(because:
             "The second step of the staging that exists only for a caller "
             + "with bytes rather than a path — see "

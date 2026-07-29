@@ -11,12 +11,20 @@ public enum GuestFilesStatProjection: HostProjection {
     public static let requires =
         [AgentIntegrationCapabilityNames.fileList]
 
+    /* file.list, narrowed to one item rather than consumed: the caller names
+       a path and receives the entry the guest's own bounded parent scan
+       returned. A second row exposing the same capability is not a
+       duplication to remove — coverage is a set union, and each row states
+       what it alone does with the capability. */
+    public static let exposes =
+        [AgentIntegrationCapabilityNames.fileList]
+
     /* Reached by the same mechanism, not an equivalent one: this projection
        stats one item by a bounded scan of its PARENT, which is exactly what
        the browser does when a person navigates there, and the row renders
        the entry's kind, size and modified date. A person has a window and
        needs no path; a caller has a path and no window. */
-    public static let faces: [HostFace: HostFaceReach] = [
+    public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "FileBrowserTable.swift",
                          symbol: "item.kind"),
         .mcp: .reachedByRegistry,

@@ -159,12 +159,13 @@ final class HostProjectionRegistryTests: XCTestCase {
 private enum DuplicateHealthProjection: HostProjection {
     static let capability = SessionHealthProjection.capability
     static let requires: [String] = []
+    static let exposes: [String] = []
     /// Nothing registers it, so no face reaches it. Stated rather than
     /// defaulted, because the protocol deliberately has no default: a row
     /// that says nothing about a face is the drift HostFaceParityTests is
     /// for, and that has to be true of every conformer including this one.
-    static let faces: [HostFace: HostFaceReach] = Dictionary(
-        uniqueKeysWithValues: HostFace.allCases.map {
+    static let faces: [HostCapabilityFace: HostFaceReach] = Dictionary(
+        uniqueKeysWithValues: HostCapabilityFace.allCases.map {
             ($0, .notReached(because:
                 "A second claimant on a registered capability, existing only "
                 + "to be refused by the registry. It is never in the "

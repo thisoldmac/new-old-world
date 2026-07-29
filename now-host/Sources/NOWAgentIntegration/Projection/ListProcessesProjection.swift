@@ -11,9 +11,15 @@ public enum ListProcessesProjection: HostProjection {
     public static let requires =
         [AgentIntegrationCapabilityNames.processList]
 
+    /* The listing itself is the answer handed back, so a caller reaches
+       process.list through this row — the one place it is exposed rather than
+       consumed. */
+    public static let exposes =
+        [AgentIntegrationCapabilityNames.processList]
+
     /* The Processes page IS this listing: its Refresh button asks for
        process.list and the table renders the rows. */
-    public static let faces: [HostFace: HostFaceReach] = [
+    public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "ProcessesModuleView.swift",
                          symbol: "model.refresh()"),
         .mcp: .reachedByRegistry,

@@ -13,7 +13,15 @@ public enum SessionCapabilitiesProjection: HostProjection {
 
     public static let requires: [String] = []
 
-    public static let faces: [HostFace: HostFaceReach] = [
+    /* Nothing. What it reports is which capabilities are *available*, which
+       is a different fact from any of their answers: knowing the guest serves
+       software.list does not tell a caller what is installed. Reading this
+       report as exposure would make every capability it merely mentions look
+       reachable, which is the inverse of the mistake `exposes` exists to
+       stop. */
+    public static let exposes: [String] = []
+
+    public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .notReached(because:
             "No pane reports what the connected guest can do. The app UI "
             + "spends those same facts as ENABLEMENT instead — Software "

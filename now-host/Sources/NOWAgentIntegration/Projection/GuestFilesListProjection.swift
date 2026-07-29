@@ -11,9 +11,15 @@ public enum GuestFilesListProjection: HostProjection {
     public static let requires =
         [AgentIntegrationCapabilityNames.fileList]
 
+    /* The page of entries the guest enumerated is the answer, so this is
+       where a caller reaches file.list. Bounded to guestRoot — exposure is
+       "can a caller obtain this capability's answer", not "without limits". */
+    public static let exposes =
+        [AgentIntegrationCapabilityNames.fileList]
+
     /* The Files page's browser table, walking the same file.list the
        projection pages through. */
-    public static let faces: [HostFace: HostFaceReach] = [
+    public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "FilesModuleView.swift",
                          symbol: "FileBrowserTable("),
         .mcp: .reachedByRegistry,

@@ -23,9 +23,20 @@ public enum LaunchSoftwareProjection: HostProjection {
         AgentIntegrationCapabilityNames.launchCommand,
     ]
 
+    /* `launch` and NOT software.list — the row this whole distinction was
+       written for. The catalog is swept, matched against, and discarded; not
+       one entry of it reaches the caller, and the several-matches refusal
+       returns at most eight bounded candidate names rather than a listing.
+       So an agent can launch what it can already name exactly and cannot ask
+       what is installed. Declaring software.list here would restore the blind
+       spot: it would read as coverage in docs/mcp-coverage.md and W1 #3's gap
+       would disappear from the table without anything being built. */
+    public static let exposes =
+        [AgentIntegrationCapabilityNames.launchCommand]
+
     /* The Software page's Launch button, acting by the selected entry's
        launch key the same way this projection does. */
-    public static let faces: [HostFace: HostFaceReach] = [
+    public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "SoftwareModuleView.swift",
                          symbol: "model.launch(entry)"),
         .mcp: .reachedByRegistry,

@@ -70,9 +70,11 @@ guest in the same breath and nothing remembered between calls.
 
 **Adding a capability is one new file plus one row** in
 `HostProjectionCatalog`. There is deliberately no shared switch: a row
-declares its name, the guest capabilities it cannot work without, the
-sentence the capability report uses when the guest has them, its MCP
-descriptor, and its own argument validation. The tool's `name` and the
+declares its name, the guest capabilities it cannot work without
+(`requires`), the ones a caller can actually ask about through it
+(`exposes` — a subset, and a different question), the sentence the
+capability report uses when the guest has them, its MCP descriptor, and its
+own argument validation. The tool's `name` and the
 `guest` selector are injected by the renderer, so a row cannot misspell its
 identity or forget addressing. Two rows claiming one capability throws
 rather than letting one win silently, which is what makes it safe for

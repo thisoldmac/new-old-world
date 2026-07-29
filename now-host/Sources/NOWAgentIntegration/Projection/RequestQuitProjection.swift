@@ -18,11 +18,20 @@ public enum RequestQuitProjection: HostProjection {
         AgentIntegrationCapabilityNames.processQuit,
     ]
 
+    /* `process.quit` only. The caller directs the quit, and the process.list
+       this row also requires is consumed internally to revalidate the opaque
+       reference against a current PSN — no listing comes back. process.list
+       stays covered because `now_list_processes` genuinely exposes it, which
+       is the point: exposure is a property of a row, and the capability is
+       covered if any row exposes it. */
+    public static let exposes =
+        [AgentIntegrationCapabilityNames.processQuit]
+
     /* The Processes page's Ask to Quit button, on the selected row. It is
        disabled for the row the guest reports as itself rather than being
        offered and refused, which is a rendering decision about the same
        capability. */
-    public static let faces: [HostFace: HostFaceReach] = [
+    public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "ProcessesModuleView.swift",
                          symbol: "model.askToQuit(entry)"),
         .mcp: .reachedByRegistry,

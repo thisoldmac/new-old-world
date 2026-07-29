@@ -11,7 +11,12 @@ public enum GuestFilesUploadBeginProjection: HostProjection {
 
     public static let requires: [String] = []
 
-    public static let faces: [HostFace: HostFaceReach] = [
+    /* Nothing, and it could not be otherwise: it requires no guest capability,
+       and `exposes` is necessarily a subset of `requires`. Reserving host disk
+       reaches no machine. */
+    public static let exposes: [String] = []
+
+    public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .notReached(because:
             "Staging exists because an MCP caller has BYTES and no path the "
             + "host is willing to read; the reservation is the host bounding "

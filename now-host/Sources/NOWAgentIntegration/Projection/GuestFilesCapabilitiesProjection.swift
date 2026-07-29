@@ -10,7 +10,13 @@ public enum GuestFilesCapabilitiesProjection: HostProjection {
     public static let requires =
         [AgentIntegrationCapabilityNames.fileList]
 
-    public static let faces: [HostFace: HostFaceReach] = [
+    /* Nothing. It requires file.list because a share it cannot enumerate has
+       no policy worth reporting, but what it answers is the HOST's guestRoot
+       policy and bounds — no directory entry crosses back. file.list stays
+       covered through `now_guest_files_list`. */
+    public static let exposes: [String] = []
+
+    public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .notReached(because:
             "What it reports is the agent-facing guestRoot policy — that "
             + "root, its bounds, and which guest Files commands are "

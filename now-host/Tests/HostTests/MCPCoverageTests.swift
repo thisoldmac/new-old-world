@@ -37,11 +37,17 @@ final class MCPCoverageTests: XCTestCase {
 
     // MARK: - Host side: the registry, in process
 
-    /// Capability name → its declared requirements, read from the live
-    /// registry rather than from a parsed copy of it.
-    private func registryRows() -> [(name: String, requires: [String])] {
+    /// Capability name → what it requires and what it exposes, read from the
+    /// live registry rather than from a parsed copy of it.
+    ///
+    /// Both arrays are carried because they answer different questions and
+    /// this file needs each for a different check. `requires` decides
+    /// availability against a partial guest; `exposes` decides coverage. Using
+    /// the first as the second is the blind spot this test used to have.
+    private func registryRows()
+        -> [(name: String, requires: [String], exposes: [String])] {
         HostProjectionRegistry.hostFaces.projections.map {
-            ($0.capability.rawValue, $0.requires)
+            ($0.capability.rawValue, $0.requires, $0.exposes)
         }
     }
 
@@ -54,13 +60,13 @@ final class MCPCoverageTests: XCTestCase {
     /// undocumented, which is the drift the document was written for.
     func testTheProjectionTableMatchesTheRegistry() throws {
         let rows = try table(under: "## What the twelve reach")
-        var documented: [String: [String]] = [:]
+        var documented: [String: (requires: [String], exposes: [String])] = [:]
         for row in rows {
             let name = try backticked(row[0], row: row)
             XCTAssertNil(
                 documented[name],
                 "\(Self.coverageDoc) lists \(name) twice.")
-            documented[name] = codeTokens(row[1])
+            documented[name] = (codeTokens(row[1]), codeTokens(row[2]))
         }
 
         let registry = registryRows()
@@ -87,13 +93,43 @@ final class MCPCoverageTests: XCTestCase {
         for row in registry {
             guard let stated = documented[row.name] else { continue }
             XCTAssertEqual(
-                Set(stated), Set(row.requires),
+                Set(stated.requires), Set(row.requires),
                 "\(Self.coverageDoc) states \(row.name) requires "
-                    + "\(stated.sorted()); the code declares "
+                    + "\(stated.requires.sorted()); the code declares "
                     + "\(row.requires.sorted()). Requirements decide "
                     + "availability against a partial guest, so a wrong "
                     + "row here reads as a tool that works where it does "
                     + "not.")
+            XCTAssertEqual(
+                Set(stated.exposes), Set(row.exposes),
+                "\(Self.coverageDoc) states \(row.name) exposes "
+                    + "\(stated.exposes.sorted()); the code declares "
+                    + "\(row.exposes.sorted()). Exposure decides what the "
+                    + "gap table says is covered, so a wrong row here is a "
+                    + "capability reading as askable when nothing returns "
+                    + "its answer.")
+        }
+    }
+
+    /// A projection cannot expose a capability it does not require.
+    ///
+    /// The subset rule is what keeps `exposes` an honest narrowing of
+    /// `requires` rather than a second, freely-written list. A row that claims
+    /// to expose something it never asks the guest for is either mislabelled
+    /// or answering from host state — and the second is the stop condition the
+    /// whole seam exists to make visible.
+    func testExposedCapabilitiesAreAlwaysRequiredOnes() {
+        for row in registryRows() {
+            let extra = Set(row.exposes).subtracting(row.requires)
+            XCTAssertTrue(
+                extra.isEmpty,
+                "\(row.name) exposes "
+                    + "\(extra.sorted().joined(separator: ", "))"
+                    + " and does not require it. A projection cannot hand a "
+                    + "caller the answer to a capability it never had "
+                    + "grounds to ask the guest for; either add the "
+                    + "requirement, or the row is answering from host state "
+                    + "and that is a redesign.")
         }
     }
 
@@ -136,12 +172,20 @@ final class MCPCoverageTests: XCTestCase {
     }
 
     /// The gap table is exactly the host-askable capability no projection
-    /// requires — no row missing, and no row for a gap that is not one.
+    /// **exposes** — no row missing, and no row for a gap that is not one.
+    ///
+    /// Coverage is derived from `exposes`, not `requires`, and the difference
+    /// is the point. Required-internally is not askable-by-a-caller:
+    /// `now_launch_software` requires `software.list`, sweeps the catalog to
+    /// match one name, and returns no listing at all — so under `requires` the
+    /// software listing read as covered while an agent could not ask what was
+    /// installed. It was a real gap wearing a tick, and the document said so
+    /// about itself because it could not fix it from where it sat.
     func testTheGapTableIsExactlyWhatNoProjectionReaches() throws {
         let contract = try Contract(text: read("contract/asyncapi.yaml"))
         let aliases = try aliasTable()
         let covered = Set(
-            registryRows().flatMap(\.requires).map { aliases[$0] ?? $0 })
+            registryRows().flatMap(\.exposes).map { aliases[$0] ?? $0 })
 
         var universe = contract.hostInitiated.union(contract.verbs)
         for row in try table(
@@ -157,9 +201,11 @@ final class MCPCoverageTests: XCTestCase {
             universe.insert(name)
         }
         // A subsystem row stays one row until it is reached at all. The
-        // moment a projection requires the census, whoever landed it owes
+        // moment a projection EXPOSES the census, whoever landed it owes
         // a row per probe — contract-coverage.md's rule, applied as a
-        // condition rather than a judgement.
+        // condition rather than a judgement. Exposure is the right trigger:
+        // a projection that merely consumed a census answer internally would
+        // not let a caller ask probe by probe, so it would owe nothing.
         if covered.contains("census.request") {
             universe.formUnion(contract.probes)
         }
@@ -177,15 +223,19 @@ final class MCPCoverageTests: XCTestCase {
         for missing in expected.subtracting(stated).sorted() {
             XCTFail(
                 "\"\(missing)\" is host-askable guest capability that no "
-                    + "projection requires, and \(Self.coverageDoc) does "
-                    + "not declare it. An undeclared gap is the accidental "
+                    + "projection EXPOSES — some projection may well "
+                    + "require it, which is not the same thing — and "
+                    + "\(Self.coverageDoc) does not declare it. An "
+                    + "undeclared gap is the accidental "
                     + "kind by definition — give it a row with a "
                     + "disposition, even if that disposition is "
                     + "\"unnoticed\".")
         }
         for phantom in stated.subtracting(expected).sorted() {
             let reason = covered.contains(phantom)
-                ? "a projection already requires it, so it is not a gap"
+                ? "a projection already EXPOSES it, so it is not a gap — "
+                    + "note that requiring it would not be enough, because "
+                    + "a capability consumed internally is still unaskable"
                 : "the contract declares no such host-askable capability"
             XCTFail(
                 "\(Self.coverageDoc) declares a gap for \"\(phantom)\" "

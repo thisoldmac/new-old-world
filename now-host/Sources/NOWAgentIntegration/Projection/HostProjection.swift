@@ -17,21 +17,33 @@ public struct HostCapabilityID: Hashable, Sendable, CustomStringConvertible {
     public var description: String { rawValue }
 }
 
-/// The host's faces — the ways a caller reaches a projected capability.
+/// **Which faces can reach a capability** — the design-time reach model a
+/// row declares and `HostFaceParityTests` checks.
 ///
-/// The guest has two (console, wire) and `CommandParityTests` compares them.
-/// The host has three, and until now nothing compared anything: a capability
-/// could arrive on the MCP face and be unreachable from the app a person
-/// actually launches — the host's version of the guest drift that shipped
-/// `process.list` on one face only, which nothing noticed for a day
+/// The guest has two faces (console, wire) and `CommandParityTests` compares
+/// them. The host has three, and until now nothing compared anything: a
+/// capability could arrive on the MCP face and be unreachable from the app a
+/// person actually launches — the host's version of the guest drift that
+/// shipped `process.list` on one face only, which nothing noticed for a day
 /// (docs/command-parity.md).
+///
+/// **Not to be confused with `HostInvokingFace`, and the two are different
+/// axes rather than two spellings of one.** This enum answers *can this face
+/// reach this capability at all*, which is a property of the product and is
+/// asserted per row. `HostInvokingFace` answers *who invoked, on this call*,
+/// which is a runtime fact and reaches the audit log. That is why this one
+/// has an `appUI` case and that one deliberately does not: the app UI reaches
+/// every capability it reaches, and reaches none of them *through a
+/// projection*. Neither type is a subset of the other and they must not be
+/// collapsed — `appIntents` here is a face that does not exist yet, while
+/// `HostInvokingFace.appIntent` is a caller that can already be constructed.
 ///
 /// `appIntents` is listed here while it does not exist. That is the point of
 /// listing it: a face silently absent from the model is the failure this
 /// whole gate is for, so the face that is *coming* (W3) is declared as
 /// uniformly not-yet-reached and starts demanding justifications from every
 /// row the moment its first source file lands.
-public enum HostFace: String, CaseIterable, Sendable {
+public enum HostCapabilityFace: String, CaseIterable, Sendable {
     /// The NOW app a person launches: its sidebar modules and their controls.
     case appUI = "app UI"
     /// The agent companion's MCP tool surface.
@@ -40,7 +52,8 @@ public enum HostFace: String, CaseIterable, Sendable {
     case appIntents = "AppIntents"
 }
 
-/// Whether one face reaches one capability, and the evidence or the reason.
+/// Whether one `HostCapabilityFace` reaches one capability, and the evidence
+/// or the reason.
 ///
 /// A row does not get to *assert* reach: for the app UI it names the file and
 /// the affordance that proves it, and `HostFaceParityTests` reads that file.
@@ -50,6 +63,36 @@ public enum HostFaceReach: Sendable {
     /// to `now-host/Sources/Host`). Name the CALL SITE a person's click
     /// reaches, not the function it calls — a handler left behind after its
     /// button was deleted proves nothing.
+    ///
+    /// **The known limit of that proof, stated where the next author will
+    /// read it: it is `file.contains(symbol)` and nothing more.** It catches
+    /// the failure it was built for — the affordance deleted or renamed, the
+    /// file gone — and it cannot catch an affordance that is still *spelled*
+    /// and no longer *reachable*. Concretely, all of these keep this check
+    /// green while a person loses the capability:
+    ///
+    /// - the call site wrapped in `if false`, `#if`, or a feature flag;
+    /// - the control left in place but permanently `.disabled(true)`;
+    /// - the whole view no longer instantiated, because its module was
+    ///   dropped from the sidebar registry — the file and the symbol both
+    ///   survive untouched;
+    /// - the symbol surviving only inside a comment or a `#Preview`.
+    ///
+    /// This is the same weakness the MCP face's check has and names: that one
+    /// is textual over `NOWMCPServer`'s registry loop, so a `guard … continue`
+    /// added inside the loop body would skip a row without changing any
+    /// matched string. **The app-UI proof is weaker still, because a loop at
+    /// least fails uniformly and a hand-built pane fails one row at a time.**
+    ///
+    /// It is documented rather than strengthened on purpose. Every cheap fix
+    /// available here — stripping comments, rejecting a `.disabled` on the
+    /// same line, walking from the module registry to the view — is a partial
+    /// parser of Swift that would pass the four cases above in some spelling
+    /// while *reading* as a reachability proof. An honest limit a reviewer can
+    /// price beats a check that makes a false claim. The real proof of an
+    /// app-UI face is a person clicking the control; treat `reached` as "the
+    /// affordance was here when someone last looked", which is what a
+    /// divergence review is for.
     case reached(file: String, symbol: String)
 
     /// The face reaches every registered row structurally, because its
@@ -128,13 +171,39 @@ public protocol HostProjection {
     /// "requirements not worked out yet".
     static var requires: [String] { get }
 
+    /// The guest capabilities a caller can actually **ask about** through this
+    /// row — as distinct from those the row merely consumes to do its job.
+    ///
+    /// `requires` and this are different questions, and reading the first as
+    /// an answer to the second is a blind spot with a live instance:
+    /// `now_launch_software` requires `software.list` and uses it internally
+    /// to match one name, so any check that counts "required by some
+    /// projection" as coverage reads the software listing as covered — while
+    /// no tool returns a listing at all. An agent can launch an application it
+    /// can already name exactly and cannot ask what is installed. That gap
+    /// wore a tick until this array existed.
+    ///
+    /// So the test: could a caller of this tool obtain that capability's own
+    /// answer, or direct its effect? `now_launch_software` exposes `launch`
+    /// (the caller chooses what is launched) and does **not** expose
+    /// `software.list` (the catalog is consumed and discarded).
+    /// `now_request_quit` exposes `process.quit` and not the `process.list` it
+    /// revalidates a reference against.
+    ///
+    /// Necessarily a subset of `requires` — a projection cannot expose an
+    /// answer it never had grounds to ask for — and `MCPCoverageTests` checks
+    /// that. Empty is the honest common case: a row that only reads host state
+    /// exposes nothing, and so does one whose guest traffic is entirely
+    /// internal to its own composition.
+    static var exposes: [String] { get }
+
     /// Which of the host's three faces reach this capability.
     ///
-    /// Every face in `HostFace.allCases` is stated, including the one that
-    /// does not exist yet: a row that simply omits a face reads as parity
-    /// nobody checked. Reach is evidence or a reason, never an assertion —
-    /// see `HostFaceReach`.
-    static var faces: [HostFace: HostFaceReach] { get }
+    /// Every face in `HostCapabilityFace.allCases` is stated, including the
+    /// one that does not exist yet: a row that simply omits a face reads as
+    /// parity nobody checked. Reach is evidence or a reason, never an
+    /// assertion — see `HostFaceReach`.
+    static var faces: [HostCapabilityFace: HostFaceReach] { get }
 
     /// One sentence for the caller, used when every requirement is met.
     /// The unavailable and unproven wordings are derived, so a row states
