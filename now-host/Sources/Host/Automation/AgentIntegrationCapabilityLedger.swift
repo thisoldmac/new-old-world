@@ -259,7 +259,6 @@ final class AgentIntegrationCapabilityLedger {
         commandNames: [String]?,
         families: [AgentIntegrationFamilyCapability]
     ) -> [AgentIntegrationToolCapability] {
-        let names = AgentIntegrationCapabilityNames.self
         let byName = Dictionary(
             uniqueKeysWithValues: families.map { ($0.family, $0) })
 
@@ -306,48 +305,14 @@ final class AgentIntegrationCapabilityLedger {
                          missing: missing, reason: reason)
         }
 
-        return [
-            .init(tool: "now_session_health", state: .available,
-                  requires: [], missing: [],
-                  reason: "Reads host-owned listener state and sends the "
-                      + "guest no message, so it is available whatever the "
-                      + "guest implements."),
-            .init(tool: "now_session_capabilities", state: .available,
-                  requires: [], missing: [],
-                  reason: "This report."),
-            tool("now_list_processes", [names.processList],
-                 "The connected guest serves process.list."),
-            // Quit needs the family, not the `quit` COMMAND. A guest with
-            // a `quit` verb and no process.quit cannot support the
-            // opaque-reference/PSN-revalidation model this tool is built
-            // on, and the fix is never to relax the model to fit.
-            tool("now_request_quit", [names.processList, names.processQuit],
-                 "The connected guest serves process.list and "
-                     + "process.quit."),
-            // Both halves matter: the `launch` command alone is not
-            // enough, because "launch exactly one exact match from the
-            // current catalog" is the entire safety story and there is no
-            // catalog without software.list.
-            tool("now_launch_software",
-                 [names.softwareList, names.launchCommand],
-                 "The connected guest serves software.list and launch."),
-            tool("now_transfer_approved_artifact", [names.filePut],
-                 "The connected guest accepts a host-driven put."),
-            tool("now_guest_files_capabilities", [names.fileList],
-                 "The connected guest serves file.list."),
-            tool("now_guest_files_list", [names.fileList],
-                 "The connected guest serves file.list."),
-            tool("now_guest_files_stat", [names.fileList],
-                 "The connected guest serves file.list."),
-            tool("now_guest_files_upload_begin", [],
-                 "Reserves private host disk and sends the guest no "
-                     + "message, so staging is available regardless; the "
-                     + "commit is where the guest's put lane is needed."),
-            tool("now_guest_files_upload_append", [],
-                 "Accepts bytes into a private host stage and sends the "
-                     + "guest no message."),
-            tool("now_guest_files_upload_commit", [names.filePut],
-                 "The connected guest accepts a host-driven put."),
-        ]
+        // One row per registered projection, and no list of tool names
+        // here at all. A projection declares the guest capabilities it
+        // cannot work without and the sentence to use when it has them;
+        // this report derives the rest. The names used to be typed twice —
+        // once in the companion's tool enum and once in a literal here —
+        // which is two places for a capability to exist in only one of.
+        return HostProjectionRegistry.hostFaces.projections.map {
+            tool($0.capability.rawValue, $0.requires, $0.availabilityNote)
+        }
     }
 }
