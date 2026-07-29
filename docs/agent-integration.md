@@ -52,6 +52,36 @@ ordered bounded bytes rather than a host path, seals them by declared SHA-256,
 and enters the existing one-at-a-time guest put lane through a file-backed
 source. Download and every broader mutation/deployment command remain deferred.
 
+## Where a projection lives
+
+The projections are a module, not a shape the MCP server happens to have:
+`now-host/Sources/NOWAgentIntegration/Projection/`. It sits in the package
+product both build systems already share, so every host face can read one
+registry — the companion renders it as MCP tools, the capability ledger
+renders it as per-tool availability, and a later face renders it its own
+way without a second list to keep in step.
+
+`HostProjection` is the contract and states rule 2 of the parity slice in
+its own words: a projection may **address, authorize, bound and render**,
+and may not **decide or answer**. `LaunchSoftwareProjection` is the
+reference example of how much composition that allows — list, exact-match,
+opaque reference, revalidate, `launch`, with every fact supplied by the
+guest in the same breath and nothing remembered between calls.
+
+**Adding a capability is one new file plus one row** in
+`HostProjectionCatalog`. There is deliberately no shared switch: a row
+declares its name, the guest capabilities it cannot work without, the
+sentence the capability report uses when the guest has them, its MCP
+descriptor, and its own argument validation. The tool's `name` and the
+`guest` selector are injected by the renderer, so a row cannot misspell its
+identity or forget addressing. Two rows claiming one capability throws
+rather than letting one win silently, which is what makes it safe for
+several agents to add rows in parallel — a silent winner would leave one
+face reaching a capability the next does not.
+
+Same discipline as [adding-a-workshop-module.md](adding-a-workshop-module.md)
+on the guest side, and for the same reason.
+
 ## Implemented slices
 
 The implemented V0 surface exposes only five host-owned projections.
