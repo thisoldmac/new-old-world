@@ -1,6 +1,7 @@
 import Foundation
 
-/// WHICH face asked for a capability.
+/// **WHICH face invoked a projection, on this call** — a runtime fact about
+/// one invocation, recorded in the audit log.
 ///
 /// Rule 3 of the parity slice: *user-initiable where possible;
 /// strictly-headless surfaced as a log event*. MCP is an optional feature of
@@ -8,17 +9,28 @@ import Foundation
 /// controls opaque to the person at the machine is not what NOW is. So every
 /// invocation says who asked, and the person can read it.
 ///
+/// **This is a different axis from `HostCapabilityFace`, not a subset of it.**
+/// That enum is the design-time reach model — *can this face reach this
+/// capability* — declared per row and checked by `HostFaceParityTests`. This
+/// one is *who called, just now*. A face can appear in that model and never
+/// appear here, which is exactly what the app UI does.
+///
+/// **The absence of an `appUI` case is deliberate, and load-bearing rather
+/// than an omission.** The app UI never invokes a projection at all: a person
+/// clicking a button reaches the app's own model directly, and those paths
+/// already log under their own areas (`proc`, `sw`, `files`). Adding an
+/// `appUI` case would model a caller that cannot exist by construction — the
+/// only way one could is if some pane started dispatching through
+/// `HostProjectionDispatch`, and then the case belongs here and that pane gets
+/// audited by adding it. So this type covers the **agent faces only**, which
+/// is precisely the set rule 3 is about: the callers a person at the machine
+/// cannot see happening.
+///
 /// Neither case here is proof a human is present. The MCP obviously is not,
 /// and an AppIntent is not either: a Shortcuts automation fires one
 /// unattended, which is why the parity plan keeps granted control behind an
 /// app-UI grant regardless of which face asks.
-///
-/// The app UI has no case because it does not dispatch through the
-/// projection registry: a human driving NOW reaches a capability as their own
-/// command, and those already log under their own areas (`proc`, `sw`,
-/// `files`). A face that starts dispatching through the registry adds its
-/// case here, and gets audited by doing so.
-public enum HostProjectionFace: String, Codable, Sendable {
+public enum HostInvokingFace: String, Codable, Sendable {
     case mcp
     case appIntent = "intent"
 }
@@ -72,7 +84,7 @@ public struct HostProjectionAuditEvent: Codable, Equatable, Sendable {
     public static let maximumReasonScalars = 120
 
     public let capability: String
-    public let face: HostProjectionFace
+    public let face: HostInvokingFace
     public let guest: String?
     public let outcome: Outcome
     /// The projection's own refusal sentence, bounded. Present only on a
@@ -81,7 +93,7 @@ public struct HostProjectionAuditEvent: Codable, Equatable, Sendable {
     public let reason: String?
 
     public init(capability: HostCapabilityID,
-                face: HostProjectionFace,
+                face: HostInvokingFace,
                 guest: String?,
                 outcome: Outcome,
                 reason: String? = nil) {
@@ -96,7 +108,7 @@ public struct HostProjectionAuditEvent: Codable, Equatable, Sendable {
 
     /// The event for one completed invocation.
     public init(capability: HostCapabilityID,
-                face: HostProjectionFace,
+                face: HostInvokingFace,
                 guest: String?,
                 outcome: HostProjectionOutcome) {
         switch outcome {

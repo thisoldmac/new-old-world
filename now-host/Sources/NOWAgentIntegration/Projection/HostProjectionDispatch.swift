@@ -19,11 +19,11 @@ import Foundation
 /// this file may call a projection's `invoke` — because a face that reached
 /// past this seam would be exactly the opaque control plane rule 3 refuses.
 public struct HostProjectionDispatch {
-    public let face: HostProjectionFace
+    public let face: HostInvokingFace
     private let registry: HostProjectionRegistry
     private let audit: any HostProjectionAuditSink
 
-    public init(face: HostProjectionFace,
+    public init(face: HostInvokingFace,
                 registry: HostProjectionRegistry = .hostFaces,
                 audit: any HostProjectionAuditSink) {
         self.face = face

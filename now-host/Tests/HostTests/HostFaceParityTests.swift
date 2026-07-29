@@ -84,17 +84,17 @@ final class HostFaceParityTests: XCTestCase {
     /// closed — three faces, stated by every row, whether or not the face
     /// exists yet.
     func testEveryRowStatesEveryFace() {
-        XCTAssertEqual(HostFace.allCases.count, 3,
+        XCTAssertEqual(HostCapabilityFace.allCases.count, 3,
                        "The host has three faces: the app UI, MCP, and "
                            + "AppIntents from W3. A face added to or removed "
                            + "from this model changes what parity means, so "
                            + "it is a deliberate edit here.")
-        XCTAssertTrue(HostFace.allCases.contains(.appIntents),
+        XCTAssertTrue(HostCapabilityFace.allCases.contains(.appIntents),
                       "AppIntents is modelled before it is built, on "
-                          + "purpose — see HostFace.")
+                          + "purpose — see HostCapabilityFace.")
         for row in rows {
             let name = row.capability.rawValue
-            for face in HostFace.allCases {
+            for face in HostCapabilityFace.allCases {
                 XCTAssertNotNil(
                     row.faces[face],
                     "\(name) states nothing about the \(face.rawValue) "
@@ -104,9 +104,9 @@ final class HostFaceParityTests: XCTestCase {
                         + "reads as parity.")
             }
             XCTAssertEqual(
-                row.faces.count, HostFace.allCases.count,
+                row.faces.count, HostCapabilityFace.allCases.count,
                 "\(name) states \(row.faces.count) faces; there are "
-                    + "\(HostFace.allCases.count).")
+                    + "\(HostCapabilityFace.allCases.count).")
         }
     }
 
@@ -273,7 +273,7 @@ final class HostFaceParityTests: XCTestCase {
     func testEveryDivergenceCarriesASubstantiveReason() {
         for row in rows {
             let name = row.capability.rawValue
-            for face in HostFace.allCases {
+            for face in HostCapabilityFace.allCases {
                 guard case .notReached(let reason) = row.faces[face] else {
                     continue
                 }
