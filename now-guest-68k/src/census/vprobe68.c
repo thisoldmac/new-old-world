@@ -7,8 +7,9 @@
  * band GWorld, which is disposed before this function returns):
  *   g_sink / g_sinkd                     12 bytes
  *   g_running (re-entry guard)            2 bytes
+ *   g_reach (how to reach the screen)     2 bytes
  *   ----------------------------------------------
- *   total                                14 bytes
+ *   total                                16 bytes
  * The band GWorld is the only heap block: 640 x 32 x 8 bits = 20 KB,
  * taken and given back inside one call. A whole-frame offscreen copy
  * would be 300 KB against a 384 KB partition - not affordable, and not
@@ -106,6 +107,24 @@ static volatile double        g_sinkd;
  * same hazard; here the consequence would be worse than deep recursion -
  * the inner probe's numbers would be the outer probe's stalls. */
 static Boolean g_running = false;
+
+/* How a raw read reaches this Mac's framebuffer, decided once per run by
+ * screen68_info() and read by time_one() and the fidelity sweep.
+ *
+ * A FILE STATIC RATHER THAN A PARAMETER, and it is worth saying why given
+ * this file's static budget is otherwise fourteen bytes: it would
+ * otherwise be threaded through measure() and time_one(), whose signatures
+ * are "how to time one read method" and have nothing to do with
+ * addressing. It is written once, before any read, and read-only after -
+ * the same shape as g_sink, which every method also shares.
+ *
+ * Every raw row in this probe was WRONG on a machine in 24-bit addressing
+ * and said so at full speed. The Fidelity row is the one that noticed
+ * (480/480 differ on the 180c, 2026-07-28) and only after somebody looked
+ * for it; the bandwidth rows read exactly the same either way, which is
+ * why a fast number from this probe means nothing unless the Addressing
+ * row beside it is read too. */
+static Screen68Reach g_reach = kScreen68ReachDirect;
 
 /* ---- clock ---------------------------------------------------------------- */
 
@@ -356,12 +375,22 @@ typedef struct {
     long          bytes;      /* what the pass actually covered */
 } PassResult;
 
+/* THE 32-BIT WINDOW IS INSIDE THE TIMED REGION, and that is deliberate.
+ * Two SwapMMUMode traps cost single-digit microseconds against passes of
+ * 150 ms and more, so they cannot move a row; putting them outside would
+ * mean the mode was left switched across now_us(), which is a Toolbox call
+ * and exactly what screen68.h forbids between enter and leave. The read
+ * loops themselves call nothing at all, which is what makes bracketing a
+ * whole pass legal here where bracketing a whole capture is not. */
 static unsigned long time_one(ReadFn fn, const char *base, long bytes)
 {
+    Screen68Mode mode;
     unsigned long t0 = now_us();
     unsigned long t1;
 
+    screen68_vram_enter(g_reach, &mode);
     fn(base, bytes);
+    screen68_vram_leave(&mode);
     t1 = now_us();
     return t1 - t0;            /* unsigned: correct across the 71 min wrap */
 }
@@ -482,9 +511,13 @@ VProbe68Status vprobe68_run(N68VProbeTable *t, char *why, long why_cap)
         g_running = false;
         return kVProbe68NoScreen;
     default:
+        /* kScreen68Addressing lands here too: on a Mac whose framebuffer
+         * the CPU cannot reach there is nothing for this probe to time,
+         * and `why` already carries the sentence. */
         g_running = false;
         return kVProbe68Geometry;
     }
+    g_reach = s.reach;
 
     /* --- what was measured, before anything measured ---------------------- */
     pos = 0;
@@ -524,6 +557,27 @@ VProbe68Status vprobe68_run(N68VProbeTable *t, char *why, long why_cap)
                                          s.row_bytes));
         value[pos > 0 ? pos : 0] = '\0';
         (void)n68_vprobe_add(t, "Framebuffer", value);
+    }
+
+    /* THE ADDRESSING ROW, and it belongs beside the base rather than
+     * buried in `shotdiag`. On a 68K Mac the addressing mode decides
+     * whether that base is an address at all, it defaults back to 24-bit
+     * on every power cycle of a machine with a dead PRAM battery (which is
+     * most of them), and a person debugging one has no other way to see
+     * it. It is the ADDRESSING MODE - not vprobe's "Raw 8/16/32-bit" read
+     * widths below, and not the screen's 8-bit colour depth above; three
+     * different quantities that share a word. */
+    {
+        pos = 0;
+        (void)(now68k_fmt_append_str(value, (long)sizeof value - 1, &pos,
+                                     screen68_mode_is_32bit()
+                                     ? "32-bit" : "24-bit")
+               && now68k_fmt_append_str(value, (long)sizeof value - 1, &pos,
+                                        s.reach == kScreen68ReachSwitch
+                                        ? ", 32-bit for reads"
+                                        : ", read as is"));
+        value[pos > 0 ? pos : 0] = '\0';
+        (void)n68_vprobe_add(t, "Addressing", value);
     }
 
     pos = 0;
@@ -756,8 +810,12 @@ VProbe68Status vprobe68_run(N68VProbeTable *t, char *why, long why_cap)
                     const char *band_row = band.base + r * band.row_bytes;
 
                     ++compared;
-                    if (memcmp(screen_row, band_row,
-                               (size_t)s.visible_row) != 0) {
+                    /* screen68_vram_same rather than memcmp: the screen
+                     * side of this comparison needs the same addressing
+                     * window the reads above got, and memcmp is a library
+                     * call that must not be made inside one. */
+                    if (!screen68_vram_same(g_reach, screen_row, band_row,
+                                            s.visible_row)) {
                         ++differ;
                         if (first_diff < 0) {
                             first_diff = top + r;

@@ -32,7 +32,7 @@ noticed. Adding them: see [docs/images/README.md](docs/images/README.md).
 | Console — one command table, both faces | yes | yes | tested; 68K's own console metal-verified |
 | Remote console (`exec`) — drive either guest's console from the host | yes | yes | emulator-verified (68K); PPC half untested live |
 | Files: browse, pull, push, rename, move, trash | yes | browse, pull, push | metal-verified (PPC) |
-| Screenshots, one-shot, either direction | yes | capture only; pixels do not cross | metal-verified (PPC) |
+| Screenshots, one-shot, either direction | yes | capture only; pixels do not cross | metal-verified (PPC); 68K's raw read fixed for 24-bit addressing but unrun on metal |
 | Live screen streaming, with recording | yes | no | metal-verified |
 | Processes: list, launch, quit, front | yes | yes | emulator-verified |
 | Hardware census (14 probes) | yes | none | tested |
@@ -46,8 +46,11 @@ as separate columns.
 **The headline gaps:** resume-by-offset hangs; one large transfer in
 about six degrades badly; an unreachable host presents as a hang rather
 than naming the address it cannot reach; NOW-68K cannot report its own
-CPU, RAM or ROM; and NOW-68K's file family has never run on the
-PowerBook 180c it is actually for. [docs/status.md](docs/status.md)
+CPU, RAM or ROM; NOW-68K's file family has never run on the
+PowerBook 180c it is actually for; and NOW-68K's capture-across-the-wire
+read a 24-bit-truncated address on that machine until 2026-07-28 — fixed
+by switching to 32-bit addressing around the read, and not yet re-run
+there. [docs/status.md](docs/status.md)
 carries the rest, and [docs/open-issues.md](docs/open-issues.md) is the
 ledger.
 

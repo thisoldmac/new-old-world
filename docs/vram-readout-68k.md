@@ -30,7 +30,38 @@ not the limit.
 
 Reread: 179.3 ms first, 179.3 ms best — **identical**. Uncached.
 Partial: 48 rows measured 24.1 ms against 17.9 ms predicted from the
-full-frame rate. Fidelity: 480/480 rows matched CopyBits.
+full-frame rate. Fidelity: 480/480 rows matched CopyBits — **and that row
+means less than it reads as; see below.**
+
+## The fidelity row was measured in 32-bit addressing, and does not generalise
+
+**Every number above is a rate, and a rate is the same whether or not the
+address was a screen.** On 2026-07-28 the same probe on the same machine
+reported `Fidelity 480/480 differ, 1st 0`, and `shotdiag` in the same
+session reported `Addressing 24-bit`, `Base 0xFC080000`, `StripAddress
+0x00080000`. The machine's PRAM battery is dead, so the Memory control
+panel's 32-bit setting had reverted between the two sessions; in 24-bit
+mode the top byte of that base is ignored and the walk was reading main
+RAM. The human then switched 32-bit addressing back on and captures came
+across correct immediately, which is the confirmation.
+
+So:
+
+- **The fidelity row above is a fact about a 32-bit session, not about
+  raw reads.** Read as "raw reads are pixel-faithful *when the CPU can
+  reach the framebuffer*". 24-bit addressing is the DEFAULT state of these
+  machines, not an anomaly.
+- **The bandwidth rows are unaffected.** Reading the wrong memory costs
+  the same as reading the right memory, which is exactly why this went
+  unnoticed for so long — and is the reason a number from this probe is
+  only quotable beside its Addressing row (added 2026-07-28).
+- **CopyBits was never affected** at all: QuickDraw resolves addressing
+  itself, which is why the guest's own on-disk PICT was always correct
+  while the wire capture was noise.
+
+NOW-68K now switches to 32-bit addressing around the VRAM copy alone
+(`core/screen68.c`), so the mode the machine boots in no longer changes
+what a capture contains. Tested, not re-measured on metal.
 
 ## What this settles
 
@@ -67,8 +98,13 @@ rows for about 15% of the time. On the 1400c partial reads were exactly
 linear, and that exactness is what made predictive capture attractive
 there. Here the lever still works and is simply worth less per pull.
 
-**Raw reads are pixel-faithful** (480/480 rows), so a raw capture stage is
-safe to build on, as on the 1400c.
+**Raw reads are pixel-faithful WHEN THE CPU CAN REACH THE FRAMEBUFFER**
+(480/480 rows, in a 32-bit-addressing session), so a raw capture stage is
+safe to build on — but only one that puts the machine in 32-bit addressing
+for the read itself. See the addressing section above; the same sweep
+reported 480/480 *differ* three days later on the same machine, with
+nothing changed but a Memory control panel setting that had reverted on
+its own.
 
 ## What it means for a capture stage on this machine
 

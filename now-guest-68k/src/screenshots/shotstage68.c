@@ -38,6 +38,15 @@ enum {
     kStageIOBuf  = 1024
 };
 
+/* n68_shotdiag.h spells Screen68Reach as plain ints so its renderer stays
+ * Toolbox-free. This is the one file that holds both, so this is where the
+ * two are pinned - a silent renumbering would otherwise turn "refused"
+ * into "direct" on a table nobody could check from here. */
+_Static_assert((int)kScreen68ReachDirect == kN68ShotDiagReachDirect
+               && (int)kScreen68ReachSwitch == kN68ShotDiagReachSwitch
+               && (int)kScreen68ReachRefused == kN68ShotDiagReachRefused,
+               "Screen68Reach and kN68ShotDiagReach* have drifted apart");
+
 static unsigned char g_row[kStageMaxRow];
 static unsigned char g_packed[kStageMaxRow + kStageMaxRow / 128 + 2];
 static char          g_io[kStageIOBuf];
@@ -103,6 +112,7 @@ typedef struct {
     unsigned long t_read;
     unsigned long t_pack;
     unsigned long base;          /* the walk's own base, for the diagnostic */
+    Screen68Reach reach;         /* what the row copy has to do to see it */
     N68ShotDiag  *diag;          /* NULL on the ordinary path */
 } StageCtx;
 
@@ -117,7 +127,8 @@ typedef struct {
  * byte (0x0CB2), but Universal Interfaces declares the low-memory
  * accessor as an inline and lists GetMMUMode among the calls that need
  * glue, and a diagnostic that fails to LINK is worth nothing. */
-static void sample_addressing(N68ShotDiag *diag, unsigned long base)
+static void sample_addressing(N68ShotDiag *diag, unsigned long base,
+                              Screen68Reach reach)
 {
     if (diag == NULL) {
         return;
@@ -125,12 +136,25 @@ static void sample_addressing(N68ShotDiag *diag, unsigned long base)
     diag->base = base;
     diag->stripped = (unsigned long)StripAddress((void *)base);
     diag->mmu32 = LMGetMMU32Bit() != 0;
+    diag->reach = (int)reach;
 }
 
 static void stage_sink_put(void *ctx, const void *bytes, long n)
 {
     (void)ctx;
     stage_put(bytes, n);
+}
+
+/* THE ONE PLACE THE FRAMEBUFFER IS TOUCHED on this path, and the only
+ * thing inside the 32-bit addressing window. The window is this narrow on
+ * purpose: the walk around it interleaves PackBits with File Manager
+ * writes, and bracketing any of that would run the File Manager in an
+ * addressing mode the rest of the system was not told about. */
+static void stage_sink_row_copy(void *ctx, void *dst, const void *src, long n)
+{
+    StageCtx *sc = (StageCtx *)ctx;
+
+    screen68_vram_read(sc->reach, dst, src, n);
 }
 
 static void stage_sink_row_begin(void *ctx, long row)
@@ -140,7 +164,7 @@ static void stage_sink_row_begin(void *ctx, long row)
     Point zero;
 
     if (row == 0) {
-        sample_addressing(sc->diag, sc->base);
+        sample_addressing(sc->diag, sc->base, sc->reach);
     }
     /* Shielded per row, for shotsrc68.h's reason: a whole-transfer hide
      * takes the cursor away from the person at the machine. */
@@ -277,9 +301,13 @@ static void sample_pair(N68ShotDiag *diag, const Screen68 *sc)
     }
     HideCursor();      /* so the cursor cannot differ between the two looks */
     (void)screen68_band_copy(&band, sc, 0);
+    /* The band is ordinary heap read in the machine's own mode; the screen
+     * is not, and goes through the same read the capture uses - otherwise
+     * this comparison would be between a fixed walk and a broken one and
+     * would report a fault that no longer exists. */
     memcpy(diag->blit, band.base, (size_t)kN68ShotDiagSampleBytes);
-    memcpy(diag->walk_again, (const void *)sc->base,
-           (size_t)kN68ShotDiagSampleBytes);
+    screen68_vram_read(sc->reach, diag->walk_again, (const void *)sc->base,
+                       (long)kN68ShotDiagSampleBytes);
     ShowCursor();
     screen68_band_close(&band);
     diag->pair_ok = 1;
@@ -318,6 +346,11 @@ ShotStage68Status shotstage68_diagnose(ShotStage68 *out, N68ShotDiag *diag,
         break;
     case kScreen68NoScreen:
         return kShotStage68NoScreen;
+    case kScreen68Addressing:
+        /* Refused rather than sent: a capture of main RAM looks like a
+         * picture right up until somebody opens it, and this is the exact
+         * failure that cost two evenings on the 180c. */
+        return kShotStage68Addressing;
     default:
         return kShotStage68Geometry;
     }
@@ -341,7 +374,7 @@ ShotStage68Status shotstage68_diagnose(ShotStage68 *out, N68ShotDiag *diag,
         /* The addressing sample is taken again inside the walk; this one
          * exists so a run that never reaches the walk (no disk, no room)
          * still says where the screen was said to be. */
-        sample_addressing(diag, sc.base);
+        sample_addressing(diag, sc.base, sc.reach);
     }
 
     g_running = true;
@@ -407,11 +440,13 @@ ShotStage68Status shotstage68_diagnose(ShotStage68 *out, N68ShotDiag *diag,
     memset(&stage, 0, sizeof stage);
     stage.bounds = sc.bounds;
     stage.base = sc.base;
+    stage.reach = sc.reach;
     stage.diag = diag;
 
     memset(&sink, 0, sizeof sink);
     sink.ctx = &stage;
     sink.put = stage_sink_put;
+    sink.row_copy = stage_sink_row_copy;
     sink.row_begin = stage_sink_row_begin;
     sink.row_read = stage_sink_row_read;
     sink.row_packed = stage_sink_row_packed;

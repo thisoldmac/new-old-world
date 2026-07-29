@@ -63,7 +63,10 @@ typedef enum {
     kShotStage68NoScreen,
     kShotStage68Geometry,
     kShotStage68Depth,      /* not 8-bit; this lane will not convert */
-    kShotStage68File        /* create, write or close said no */
+    kShotStage68File,       /* create, write or close said no */
+    kShotStage68Addressing  /* the CPU cannot reach the framebuffer at all
+                             * (screen68.h) - refused rather than sent as
+                             * whatever the truncated address pointed at */
 } ShotStage68Status;
 
 /* The scratch file's name. Fixed rather than timestamped: there is one

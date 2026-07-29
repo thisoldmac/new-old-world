@@ -960,7 +960,7 @@ static void run_ls(const char *target, N68CmdRows *out)
  * kShotStageLeaf's own note warns about.
  *
  * A row array rather than an N68CmdResult, and therefore through
- * now68k_commands_run_rows and NOT a fifth arm in the dispatch: nine
+ * now68k_commands_run_rows and NOT a fifth arm in the dispatch: eleven
  * [label, value] pairs is a table, and docs/command-parity.md's ruling is
  * that a table-shaped answer takes the rows seam so the console reaches it
  * by delegating. conwin.c is untouched by this command's existence. */

@@ -76,6 +76,7 @@ static void fill_clean(N68ShotDiag *d)
     d->base = 0xFC080000UL;
     d->stripped = 0xFC080000UL;
     d->mmu32 = 1;
+    d->reach = kN68ShotDiagReachDirect;
     d->width = 640;
     d->height = 480;
     d->depth = 8;
@@ -163,6 +164,8 @@ static void test_matching_samples_clear_the_base(void)
     CHECK(has_row(&rows, "StripAddress", "0xFC080000"),
           "StripAddress is reported separately");
     CHECK(has_row(&rows, "Addressing", "32-bit"), "the MMU mode is reported");
+    CHECK(has_row(&rows, "Raw read", "direct - no switch needed"),
+          "and what the walk did about it is a separate row");
     CHECK(has_row(&rows, "Screen", "640x480 8-bit"), "geometry is reported");
     CHECK(has_row(&rows, "Bytes", "stride 640, row 640"),
           "the screen's stride and the promised row are BOTH reported");
@@ -245,19 +248,47 @@ static void test_a_stripped_base_survives_to_the_table(void)
 
     printf("a_stripped_base_survives_to_the_table\n");
     fill_clean(&d);
-    /* The shape the whole diagnostic exists to catch: a framebuffer above
-     * 16 MB, and a machine that has decided the top byte is not an
-     * address. 0xFC080000 truncates to 0x00080000, which is main RAM. */
+    /* The shape the whole diagnostic existed to catch, and the shape a
+     * PowerBook with a dead PRAM battery boots into every time: a
+     * framebuffer above 16 MB, and a machine that has decided the top byte
+     * is not an address. 0xFC080000 truncates to 0x00080000, main RAM. */
     d.stripped = 0x00080000UL;
     d.mmu32 = 0;
+    d.reach = kN68ShotDiagReachSwitch;
     n68_cmdrows_init(&rows);
     n68_shotdiag_rows(&d, &rows);
 
     CHECK(has_row(&rows, "Base", "0xFC080000"), "the base is unchanged");
     CHECK(has_row(&rows, "StripAddress", "0x00080000"),
           "and the stripped address is reported as it came back");
-    CHECK(has_row(&rows, "Addressing", "24-bit (!)"),
-          "24-bit addressing is reported loudly");
+    /* NO LONGER "(!)". It is the expected state of these machines, and the
+     * next row is what says whether it mattered. A reader who saw the old
+     * exclamation mark beside a capture that is now correct would go
+     * looking for a bug that had already been fixed. */
+    CHECK(has_row(&rows, "Addressing", "24-bit"),
+          "24-bit addressing is reported as a fact, not an alarm");
+    CHECK(has_row(&rows, "Raw read", "SwapMMUMode to 32-bit"),
+          "and the walk says it switched to reach the screen");
+}
+
+/* A Mac that cannot switch at all. There is nothing honest to send from
+ * here, and the table has to say so rather than leave a reader to infer it
+ * from a base and a mode. */
+static void test_an_unreachable_screen_says_so(void)
+{
+    N68ShotDiag d;
+    N68CmdRows rows;
+
+    printf("an_unreachable_screen_says_so\n");
+    fill_clean(&d);
+    d.stripped = 0x00080000UL;
+    d.mmu32 = 0;
+    d.reach = kN68ShotDiagReachRefused;
+    n68_cmdrows_init(&rows);
+    n68_shotdiag_rows(&d, &rows);
+
+    CHECK(has_row(&rows, "Raw read", "REFUSED - unreachable"),
+          "an unreachable framebuffer is named as such");
 }
 
 static void test_a_walk_that_never_ran_says_so(void)
@@ -288,6 +319,7 @@ int main(void)
     test_a_moving_screen_does_not_read_as_a_pass();
     test_no_band_is_not_a_pass_either();
     test_a_stripped_base_survives_to_the_table();
+    test_an_unreachable_screen_says_so();
     test_a_walk_that_never_ran_says_so();
 
     printf("%d checks, %d failures\n", g_checks, g_failures);

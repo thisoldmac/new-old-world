@@ -17,9 +17,174 @@
 #include "numfmt.h"
 
 #include <Gestalt.h>
+#include <LowMem.h>       /* LMGetMMU32Bit - the CURRENT mode */
+#include <MacMemory.h>    /* StripAddress */
+#include <OSUtils.h>      /* SwapMMUMode */
 #include <Timer.h>
 
 #include <string.h>
+
+/* ---- addressing ----------------------------------------------------------
+ *
+ * THREE QUANTITIES IN THIS TREE SHARE THE WORD "BIT" AND ARE UNRELATED,
+ * which has already confused one reader:
+ *
+ *   - ADDRESSING MODE - 24-bit or 32-bit, and those are the only two a Mac
+ *     has ever had. There is no 16-bit addressing mode; nothing in the
+ *     Universal Interfaces names one. That is what this section is about.
+ *   - READ WIDTH - vprobe's "Raw 8-bit / 16-bit / 32-bit" rows, which are
+ *     move.b / move.w / move.l over the same memory.
+ *   - COLOUR DEPTH - the screen's "8-bit", bits per pixel.
+ *
+ * true32b/false32b are the values SwapMMUMode takes and returns. They are
+ * NOT in this toolchain's headers (Multiverse.h declares the call and the
+ * trap number and nothing else), so they are spelled here, once, with
+ * their documented values from Inside Macintosh: Memory. */
+enum {
+    kFalse32b = 0,
+    kTrue32b  = 1
+};
+
+int screen68_mode_is_32bit(void)
+{
+    /* A plain read of low memory 0x0CB2, not a call - safe to do from
+     * inside a 32-bit window, which is exactly what proves the switch
+     * took. */
+    return LMGetMMU32Bit() != 0;
+}
+
+/* Gestalt says the machine is 32-bit capable; the switch itself says it
+ * works. Both, because the second is the one that matters and the first is
+ * what makes it safe to try: on a Mac that predates 32-bit addressing the
+ * _SwapMMUMode trap need not exist, and an unimplemented trap on System
+ * 7.1 is a crash rather than a no-op. */
+static int can_switch_to_32bit(void)
+{
+    Screen68Mode m;
+    int took;
+
+    if (!screen68_mode_is_32bit()) {
+        long attr = 0;
+
+        if (Gestalt(gestaltAddressingModeAttr, &attr) != noErr) {
+            return 0;
+        }
+        if ((attr & (1L << gestalt32BitCapable)) == 0L) {
+            return 0;
+        }
+    }
+    /* Proven by doing it, with nothing in between the two swaps. */
+    m.saved = kTrue32b;
+    SwapMMUMode(&m.saved);
+    took = screen68_mode_is_32bit();
+    SwapMMUMode(&m.saved);
+    return took;
+}
+
+Screen68Reach screen68_reach(unsigned long base)
+{
+    if (can_switch_to_32bit()) {
+        return kScreen68ReachSwitch;
+    }
+    /* Not capable. StripAddress is used as a PREDICATE here and the answer
+     * is not rewritten into the base: on a machine that cannot address 32
+     * bits, an address the top byte matters to is one this CPU will never
+     * see, and 0xFC080000 & 0x00FFFFFF is main RAM rather than a rescue. */
+    if ((unsigned long)StripAddress((void *)base) == base) {
+        return kScreen68ReachDirect;
+    }
+    return kScreen68ReachRefused;
+}
+
+const char *screen68_reach_reason(Screen68Reach reach)
+{
+    if (reach == kScreen68ReachRefused) {
+        return "this Mac cannot address its own framebuffer (24-bit "
+               "addressing, and no 32-bit mode to switch to)";
+    }
+    return NULL;
+}
+
+void screen68_vram_enter(Screen68Reach reach, Screen68Mode *m)
+{
+    if (m == NULL) {
+        return;
+    }
+    m->saved = kFalse32b;
+    m->armed = 0;
+    if (reach != kScreen68ReachSwitch) {
+        return;
+    }
+    m->saved = kTrue32b;
+    SwapMMUMode(&m->saved);      /* m->saved now holds the mode we left */
+    m->armed = 1;
+}
+
+void screen68_vram_leave(Screen68Mode *m)
+{
+    if (m == NULL || !m->armed) {
+        return;
+    }
+    m->armed = 0;
+    SwapMMUMode(&m->saved);
+}
+
+/* The loops below are written out rather than handed to memcpy/memcmp on
+ * purpose. Inside the 32-bit window a cross-segment call would reach the
+ * jump table and could fault in the Segment Loader - a Toolbox call, in
+ * the one place this file promises there are none. A loop compiled into
+ * this function calls nothing.
+ *
+ * Long-at-a-time when the alignment allows: vprobe measured byte reads of
+ * this framebuffer at 2.7x the cost of long reads (484 ms against 179 ms a
+ * frame, docs/vram-readout-68k.md), so a byte loop would have made every
+ * capture visibly slower to buy nothing. */
+void screen68_vram_read(Screen68Reach reach, void *dst, const void *src,
+                        long n)
+{
+    Screen68Mode m;
+    unsigned char *d = (unsigned char *)dst;
+    const unsigned char *s = (const unsigned char *)src;
+
+    if (dst == NULL || src == NULL || n <= 0) {
+        return;
+    }
+    screen68_vram_enter(reach, &m);
+    if ((((unsigned long)d | (unsigned long)s) & 3UL) == 0UL) {
+        while (n >= 4) {
+            *(unsigned long *)d = *(const unsigned long *)s;
+            d += 4;
+            s += 4;
+            n -= 4;
+        }
+    }
+    while (n-- > 0) {
+        *d++ = *s++;
+    }
+    screen68_vram_leave(&m);
+}
+
+int screen68_vram_same(Screen68Reach reach, const void *a, const void *b,
+                       long n)
+{
+    Screen68Mode m;
+    const unsigned char *p = (const unsigned char *)a;
+    const unsigned char *q = (const unsigned char *)b;
+    int same = 1;
+
+    if (a == NULL || b == NULL || n <= 0) {
+        return 0;
+    }
+    screen68_vram_enter(reach, &m);
+    while (n-- > 0) {
+        if (*p++ != *q++) {
+            same = 0;
+            break;
+        }
+    }
+    screen68_vram_leave(&m);
+    return same;
+}
 
 unsigned long screen68_micros(void)
 {
@@ -92,6 +257,23 @@ Screen68Status screen68_info(Screen68 *s, const char *who,
         return kScreen68Geometry;
     }
     s->visible_row = (s->width * s->depth + 7) / 8;
+
+    /* Last, because it is about the address the checks above just cleared
+     * rather than about the geometry. */
+    s->reach = screen68_reach(s->base);
+    if (s->reach == kScreen68ReachRefused) {
+        pos = 0;
+        (void)(now68k_fmt_append_str(why, why_cap - 1, &pos, who)
+               && now68k_fmt_append_str(why, why_cap - 1, &pos,
+                                        " refused to read: ")
+               && now68k_fmt_append_str(why, why_cap - 1, &pos,
+                                        screen68_reach_reason(s->reach)));
+        if (pos < 0 || pos >= why_cap) {
+            pos = 0;
+        }
+        why[pos] = '\0';
+        return kScreen68Addressing;
+    }
     return kScreen68OK;
 }
 
@@ -128,7 +310,12 @@ int screen68_band_open(Band68 *b, const Screen68 *s, short rows)
     }
     b->rows = rows;
     b->row_bytes = (long)((**b->pix).rowBytes & 0x3FFF);
-    b->base = GetPixBaseAddr(b->pix);
+    /* Stripped, which the SCREEN's base deliberately is not (screen68.h).
+     * This one is a Memory Manager block: in 24-bit mode its top byte is
+     * master-pointer flags, and a caller comparing it against the screen
+     * from inside a 32-bit window would follow those flags somewhere else.
+     * In 32-bit mode the call is the identity, so this costs nothing. */
+    b->base = (Ptr)StripAddress(GetPixBaseAddr(b->pix));
     return b->base != NULL;
 }
 

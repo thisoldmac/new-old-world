@@ -66,6 +66,30 @@ typedef struct {
     long           stop_after;   /* -1: never */
 } TestSink;
 
+/* THE READ HOOK STANDS IN FOR screen68_vram_read. On the guest that call
+ * brackets the copy with SwapMMUMode, because a 68K Mac in 24-bit
+ * addressing cannot see a framebuffer above 16 MB (screen68.h); here there
+ * is no MMU and no Toolbox, so it is the copy alone. It is REQUIRED rather
+ * than defaulted to memcpy inside the emitter, and the mark below is what
+ * proves the emitter really goes through it - a fallback memcpy would
+ * produce a perfectly correct picture and silently reinstate the bug on
+ * the one machine that has the MMU. */
+static long g_rows_copied;
+static int  g_copy_marks;      /* non-zero: flip every byte on the way out */
+
+static void t_row_copy(void *ctx, void *dst, const void *src, long n)
+{
+    unsigned char *d = (unsigned char *)dst;
+    const unsigned char *s = (const unsigned char *)src;
+    long i;
+
+    (void)ctx;
+    ++g_rows_copied;
+    for (i = 0; i < n; ++i) {
+        d[i] = g_copy_marks ? (unsigned char)(s[i] ^ 0xFF) : s[i];
+    }
+}
+
 static void t_put(void *ctx, const void *bytes, long n)
 {
     TestSink *s = (TestSink *)ctx;
@@ -262,6 +286,7 @@ static void emit_and_decode(long width, long height, long fb_row_bytes,
     memset(&sink, 0, sizeof sink);
     sink.ctx = &out;
     sink.put = t_put;
+    sink.row_copy = t_row_copy;
     sink.row_begin = t_row_begin;
     sink.row_read = t_row_read;
     sink.row_packed = t_row_packed;
@@ -355,6 +380,7 @@ static void test_it_refuses_what_it_cannot_read(void)
     memset(&sink, 0, sizeof sink);
     sink.ctx = &out;
     sink.put = t_put;
+    sink.row_copy = t_row_copy;
     sink.row_buf = row_buf;
     sink.row_cap = (long)sizeof row_buf;
     sink.pack_buf = pack_buf;
@@ -369,6 +395,18 @@ static void test_it_refuses_what_it_cannot_read(void)
     check_long(n68_shotwire_emit(&plan, fb, 64, palette,
                                  (long)sizeof palette, NULL), -1,
                "no sink, no walk");
+
+    /* NO row_copy, NO WALK - the one refusal that is about a machine
+     * rather than about arithmetic. A caller that forgets it on the 68K
+     * guest would be asking for a plain dereference of an address the CPU
+     * may not be able to reach, which is the 24-bit addressing bug this
+     * hook exists to close (n68_shotwire.h). Filling it in with memcpy
+     * would have made that caller look correct here and wrong on metal. */
+    sink.row_copy = NULL;
+    check_long(n68_shotwire_emit(&plan, fb, 64, palette,
+                                 (long)sizeof palette, &sink), -1,
+               "no way to read the framebuffer, no walk");
+    sink.row_copy = t_row_copy;
 
     /* A stride narrower than the visible row is not a screen, and reading
      * it anyway walks off the end of the last row. */
@@ -417,6 +455,7 @@ static void test_stop_abandons_the_walk(void)
     memset(&sink, 0, sizeof sink);
     sink.ctx = &out;
     sink.put = t_put;
+    sink.row_copy = t_row_copy;
     sink.row_begin = t_row_begin;
     sink.stop = t_stop;
     sink.row_buf = row_buf;
@@ -454,6 +493,7 @@ static void test_a_flat_screen_packs_to_the_expected_length(void)
     memset(&sink, 0, sizeof sink);
     sink.ctx = &out;
     sink.put = t_put;
+    sink.row_copy = t_row_copy;
     sink.row_buf = row_buf;
     sink.row_cap = (long)sizeof row_buf;
     sink.pack_buf = pack_buf;
@@ -466,6 +506,62 @@ static void test_a_flat_screen_packs_to_the_expected_length(void)
                768 + 4 * (2 + 10), "a flat screen's body is exactly sized");
 }
 
+/* THE HOOK IS THE ONLY WAY THE PIXELS TRAVEL, proven by making the hook
+ * lie. Every byte it hands back is inverted; if the emitter ever read the
+ * framebuffer itself - a memcpy fallback, a "fast path" for a NULL hook -
+ * the picture would come out RIGHT and this would fail. On the guest the
+ * difference between "through the hook" and "not" is the difference
+ * between the screen and main RAM, and nothing else in this tree can see
+ * it. */
+static void test_the_walk_reads_only_through_the_hook(void)
+{
+    N68ShotWirePlan plan;
+    N68ShotWireSink sink;
+    TestSink out;
+    unsigned char fb[64 * 4];
+    unsigned char blob[8192];
+    unsigned char row_buf[64];
+    unsigned char pack_buf[128];
+    unsigned char pixels[64 * 4];
+    unsigned char palette[kN68ShotWirePaletteBytes];
+    unsigned char got_palette[kN68ShotWirePaletteBytes];
+    long i;
+
+    memset(fb, 0x1D, sizeof fb);
+    memset(palette, 0, sizeof palette);
+    (void)n68_shotwire_plan(64, 4, 8, &plan);
+
+    memset(&out, 0, sizeof out);
+    out.bytes = blob;
+    out.stop_after = -1;
+    memset(&sink, 0, sizeof sink);
+    sink.ctx = &out;
+    sink.put = t_put;
+    sink.row_copy = t_row_copy;
+    sink.row_buf = row_buf;
+    sink.row_cap = (long)sizeof row_buf;
+    sink.pack_buf = pack_buf;
+    sink.pack_cap = (long)sizeof pack_buf;
+
+    g_rows_copied = 0;
+    g_copy_marks = 1;
+    check(n68_shotwire_emit(&plan, fb, 64, palette,
+                            (long)sizeof palette, &sink) > 0,
+          "the marked walk emits");
+    g_copy_marks = 0;
+    check_long(g_rows_copied, 4, "the hook was asked for every row");
+
+    check(host_decode_rows(blob, out.len, &plan, got_palette, pixels,
+                           NULL) == 0, "the marked body still decodes");
+    for (i = 0; i < (long)sizeof pixels; ++i) {
+        if (pixels[i] != (unsigned char)(0x1D ^ 0xFF)) {
+            printf("FAIL byte %ld did not come through the read hook\n", i);
+            ++g_failures;
+            break;
+        }
+    }
+}
+
 int main(void)
 {
     test_the_180c_shape();
@@ -474,6 +570,7 @@ int main(void)
     test_it_refuses_what_it_cannot_read();
     test_stop_abandons_the_walk();
     test_a_flat_screen_packs_to_the_expected_length();
+    test_the_walk_reads_only_through_the_hook();
 
     if (g_failures != 0) {
         printf("%d failure(s)\n", g_failures);

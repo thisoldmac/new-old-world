@@ -220,7 +220,8 @@ either — only NOW-68K's half of it has faced a live guest.
 |---|---|
 | dial, handshake, keepalive, health, logging, clean quit | metal-verified (180c) |
 | `launch`, the `gone` path of `quit` | metal-verified |
-| `ps`, `vprobe` | metal-verified |
+| `ps` | metal-verified |
+| `vprobe` | metal-verified — but see the addressing note below |
 | interactive console | metal-verified |
 | **receive a file** (incl. MacBinary, Desktop landing) | emulator-verified only |
 | **send a file** (byte source, CRC, control lane) | emulator-verified only |
@@ -230,15 +231,26 @@ either — only NOW-68K's half of it has faced a live guest.
 | **browse** (`file.list`, the `ls` verb) | emulator-verified only |
 | **capture to the guest's own disk** (`screenshot`) | **metal-verified (180c)** |
 | **capture across the wire** (`capture.request` -> bulk) | emulator-verified only |
-| `shotdiag` (where the staged walk read from) | tested only — the one it exists to answer is unrun |
+| `shotdiag` (where the staged walk read from) | **metal-verified (180c)** — it answered, and named 24-bit addressing |
+| the 24-bit addressing fix it produced | tested only — unrun on the 180c |
 | **the exec console plane** (`exec.request` / `.cancel` / `.input`) | emulator-verified only (Q800, 8/8 `MetalExecTests`) |
 
-`shotdiag`'s row is the honest one and worth reading twice: the verb
-was written **because** capture across the wire is garbled on the 180c
-and correct on the Q800, and it has never run on the machine it was
-built for. Its renderer is gated by `test_shotdiag.c`; everything it
-actually measures — `StripAddress`, the MMU byte, the walk — is a
-Toolbox call no gate in this tree can reach.
+`shotdiag` did the job it was written for. Run on the 180c on
+2026-07-28 it reported `Addressing 24-bit (!)`, base `0xFC080000`
+stripping to `0x00080000`, and `DIFFERS at byte 0 - wrong memory`: the
+machine was in 24-bit addressing and every raw framebuffer read went to
+main RAM. The fix (`SwapMMUMode` around the VRAM copy alone,
+`core/screen68.c`) is **tested only** — it has not been back to the
+machine.
+
+**`vprobe`'s metal row needs the same asterisk.** Its bandwidth numbers
+are unaffected by addressing (reading the wrong memory costs the same),
+but its *Fidelity* row was measured in a 32-bit session and reported
+480/480 differing when re-run in a 24-bit one. It now emits an
+**Addressing** row so a number from it is quotable; that row is
+tested only. NOW-68K serves no `census` probes at all, which is why
+this fact lives in `vprobe` and `shotdiag` rather than in a census
+probe — adding the census subsystem to this guest is its own arc.
 
 The whole file family — both directions, the largest thing NOW-68K
 serves — has never moved a byte on the 180c. A Quadra 800 under 8.1

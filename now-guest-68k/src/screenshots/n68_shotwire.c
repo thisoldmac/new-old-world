@@ -75,7 +75,8 @@ long n68_shotwire_emit(const N68ShotWirePlan *plan,
     long emitted = 0;
     long row;
 
-    if (plan == NULL || base == NULL || sink == NULL || sink->put == NULL) {
+    if (plan == NULL || base == NULL || sink == NULL || sink->put == NULL
+        || sink->row_copy == NULL) {
         return -1;
     }
     if (plan->row_bytes <= 0 || plan->height <= 0) {
@@ -117,9 +118,12 @@ long n68_shotwire_emit(const N68ShotWirePlan *plan,
             sink->row_begin(sink->ctx, row);
         }
         /* THE WALK. `fb_row_bytes` is the screen's own stride, padding
-         * included; `plan->row_bytes` is what the host was promised. */
-        memcpy(sink->row_buf, base + row * fb_row_bytes,
-               (size_t)plan->row_bytes);
+         * included; `plan->row_bytes` is what the host was promised. The
+         * address is computed here and dereferenced by the caller's
+         * `row_copy`, which is the only thing that knows what addressing
+         * mode this Mac needs to be in to see it (header). */
+        sink->row_copy(sink->ctx, sink->row_buf,
+                       base + row * fb_row_bytes, plan->row_bytes);
         if (sink->row_read != NULL) {
             sink->row_read(sink->ctx, row);
         }

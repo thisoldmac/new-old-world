@@ -112,7 +112,12 @@ static long shot_fill(void *ctx, void *dst, long cap, int *done)
         zero.h = 0;
         zero.v = 0;
         ShieldCursor(&shield, zero);
-        memcpy(dst, row_base + column, (size_t)take);
+        /* Through screen68_vram_read for the 24-bit addressing reason in
+         * screen68.h, the same as the staged path. This source has no
+         * callers today, and that is exactly why it is fixed here rather
+         * than left: the last time this file drifted from the live one,
+         * the drift was what a diagnosis chased. */
+        screen68_vram_read(src->screen.reach, dst, row_base + column, take);
         ShowCursor();
     }
 
@@ -170,6 +175,8 @@ ShotSrc68Status shotsrc68_open(ShotSrc68 *src, N68ByteSource *out,
     case kScreen68NoScreen:
         return kShotSrc68NoScreen;
     default:
+        /* kScreen68Addressing among them: `why` names it, and sending a
+         * frame of main RAM would be worse than refusing. */
         return kShotSrc68Geometry;
     }
     if (!n68_shotwire_plan(src->screen.width, src->screen.height,

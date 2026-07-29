@@ -138,8 +138,22 @@ long n68_shotwire_begin_json(const N68ShotWirePlan *plan, long id,
  * So the walk moved here, where the host cc can drive it over a synthetic
  * framebuffer with poisoned padding (now-guest-68k/tests/test_shotemit.c),
  * and the Toolbox stayed in shotstage68.c behind the hooks below. The
- * hooks exist for exactly two things the walk must not know about: hiding
- * the cursor over the row being read, and timing.
+ * hooks exist for the things the walk must not know about: hiding the
+ * cursor over the row being read, timing, and - since the 24-bit
+ * addressing fix - the act of touching the framebuffer at all.
+ *
+ * WHY `row_copy` IS A HOOK AND NOT A memcpy HERE. On a 68K Mac in 24-bit
+ * addressing (the default state of a machine whose PRAM battery is dead,
+ * which is most of them) the framebuffer's address does not resolve, and
+ * the read has to be bracketed by SwapMMUMode - a Toolbox call, which
+ * cannot live in this file without costing it the property the file exists
+ * for. The split that keeps both: the ARITHMETIC stays here, where the
+ * host cc drives it over a synthetic framebuffer with poisoned padding;
+ * the act of DEREFERENCING that address goes out through a hook, because
+ * it is the only part that depends on which machine this is. Chosen over
+ * passing a mode flag down (which puts the Toolbox back in this file) and
+ * over hoisting the walk into shotstage68.c (which is where it was,
+ * untestable, and is what the previous pass fixed).
  */
 typedef struct {
     void *ctx;
@@ -148,6 +162,14 @@ typedef struct {
      * row (the length prefix, then the packed row), because a sink that
      * buffers wants them separately anyway. */
     void (*put)(void *ctx, const void *bytes, long n);
+
+    /* THE READ ITSELF: `n` bytes out of the framebuffer at `src` into
+     * `dst`. REQUIRED - a NULL here is refused rather than quietly filled
+     * in with memcpy, because on the machine this was written for memcpy
+     * is precisely the wrong answer and a caller that forgot would send a
+     * frame of main RAM at full speed with every test green. Fail-closed
+     * costs the host test one three-line shim and the guest nothing. */
+    void (*row_copy)(void *ctx, void *dst, const void *src, long n);
 
     /* Around the framebuffer read of `row`, and after that row is packed.
      * Any may be NULL. `row_begin`/`row_read` bracket the read ALONE - a
@@ -183,8 +205,9 @@ typedef struct {
  * Returns the number of bytes handed to `put`, or -1 if it refused: a
  * scratch buffer too small for the row or its PackBits bound, a stride
  * narrower than the visible row, a palette that is not the length the plan
- * promised, or `stop` asking it to give up. Nothing is emitted after a
- * refusal, but bytes already emitted stay emitted - the caller discards. */
+ * promised, no `row_copy`, or `stop` asking it to give up. Nothing is
+ * emitted after a refusal, but bytes already emitted stay emitted - the
+ * caller discards. */
 long n68_shotwire_emit(const N68ShotWirePlan *plan,
                        const unsigned char *base, long fb_row_bytes,
                        const unsigned char *palette, long palette_bytes,

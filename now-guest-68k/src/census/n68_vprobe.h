@@ -45,8 +45,9 @@ enum {
     kN68VProbeLabelCap = 18,
     kN68VProbeValueCap = 30,
 
-    /* Sixteen rows are emitted today (vprobe68.c). One spare, and no
-     * more, because every row costs 54 bytes of a reply that CANNOT PAGE:
+    /* Seventeen rows are emitted today (vprobe68.c) - the Addressing row
+     * took the spare that used to be here. THERE IS NO SPARE LEFT, because
+     * every row costs 54 bytes of a reply that CANNOT PAGE:
      * command.result has no cursor in the contract, so the only ways to
      * carry more rows are a bigger frame or fewer rows. An eighteenth row
      * means raising NOW68K_COMMAND_RESULT_CAP and NOW68K_CONTROL_SEND_CAP

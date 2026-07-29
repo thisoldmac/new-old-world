@@ -9,96 +9,111 @@ wrong thing) versus **unverified** (it may well be right, but no one has
 watched it work on the PowerBook). Unverified is not a lesser problem —
 several of tonight's bugs lived in code that looked obviously correct.
 
-## A capture crosses the wire garbled from the 180c (2026-07-28)
+## The 180c's garbled capture was 24-bit addressing (2026-07-28)
 
-### Broken
+### Fixed, and confirmed on metal by remedy
 
-A screenshot taken on the PowerBook 180c **saves correctly to that
-machine's own Desktop** and arrives at the host as **structured noise**,
-banded at a plausible stride, looking like memory that was never a
-screen. The same lane crosses **byte-accurately on the Quadra 800
-emulator** (137,783 bytes), so it is 180c-specific. `capture.begin` and
-`CaptureDecoder.swift` agree; the walk arithmetic, palette, PackBits
-encoder and per-row length prefix are consolidated in
-`n68_shotwire_emit()` and gated by `test_shotemit.c`.
+A screenshot taken on the PowerBook 180c saved correctly to that machine's
+own Desktop and arrived at the host as **structured noise**. `shotdiag`,
+run on the 180c, answered it in one pass:
 
-### What this pass ruled out, and how
+```
+Base          0xFC080000
+StripAddress  0x00080000
+Addressing    24-bit (!)
+Walk row 0    04 0F 0D 07 01 04 02 0E 0F 02 0B 0D 08 01 03 0A
+Walk again    04 0F 0D 07 01 04 02 0E 0F 02 0B 0D 08 01 03 0A
+Blit row 0    00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+Verdict       DIFFERS at byte 0 - wrong memory
+```
 
-The live path is `screenshots/shotstage68.c` (staged PackBits to a
-scratch file on the Desktop, streamed through `n68_filesrc.c`);
-`shotsrc68.c` is dead code with no callers. A previous pass cleared the
-staged path **by inspection**, which is why it was re-read line by line
-here. Audited and **not** the cause:
+The machine was in **24-bit addressing**, so the top byte of the
+framebuffer's address was thrown away and every raw read went to
+`0x00080000` — main RAM. `Walk` and `Walk again` agreeing proves the screen
+held still, so the run is valid. `Blit row 0` (CopyBits) is correct, which
+is why the on-disk PICT was always fine: QuickDraw resolves addressing
+itself. **Confirmed by remedy** — 32-bit addressing switched on in the
+Memory control panel, and captures crossed correctly at once.
 
-- **A `capture.begin` byte count that disagrees with the file.** Already
-  guarded: `wire68.c` refuses when `src.total != staged.total`, one
-  number from the catalog and one from the staging.
-- **Short or failed File Manager writes, a full disk.** `FSWrite`
-  reports `dskFulErr` with the count it managed; `stage_flush` records
-  it, `stage_sink_stop` ends the walk, and the capture is refused. The
-  bytes cannot go out short and be described as complete.
-- **A stale or reused staging file.** Deleted and recreated per capture,
-  then size-checked against what was written.
-- **Memory pressure during packing.** ~3.1 KB of file-scope BSS, no
-  allocation anywhere on the path.
-- **Per-row `ShieldCursor`/`ShowCursor`.** Could cost at most a
-  cursor-sized patch of one row; cannot band a frame.
-- **PackBits framing.** Every row carries its own big-endian length, so
-  one bad row cannot shift the rows after it — which is what banding
-  across a whole frame would require.
+### Why the earlier refutation was wrong, and the lesson in it
 
-**Fixed in passing** (latent, not the cause): `stage_spec()`'s return was
-ignored, so a failure other than `fnfErr` handed an **uninitialised stack
-`FSSpec`** to `FSpDelete` and `FSpCreate`. It needs
-`now68k_desktop_folder` to fail or the volume to vanish mid-call, and it
-has never been seen to fire.
+A previous pass retired this exact hypothesis on the grounds that
+`vprobe`'s fidelity sweep reported **480/480 rows matching** at base
+`0xFC080000` (docs/vram-readout-68k.md, 2026-07-25), so the base must have
+been reachable. Re-run beside `shotdiag` three days later, the same sweep
+on the same machine reported **480/480 differ, 1st 0**. Nothing had
+changed but the Memory control panel setting, which had reverted on its
+own — **the PRAM battery is dead**.
 
-### Unverified — the hypothesis that survives
+So `vprobe` was broken in exactly the same way as the capture, and the
+inference drawn from their difference ("the difference between them is the
+file the capture opens first") was drawn from a measurement taken in a
+different machine state. Two runs of one probe on one machine are not
+comparable unless the addressing mode is recorded beside them. `vprobe`
+now carries an **Addressing** row for that reason.
 
-The walk reads the wrong memory *at capture time*, and `vprobe` cannot
-see it. `vprobe`'s fidelity sweep reported **480/480 rows matching**
-CopyBits at base `0xFC080000` (docs/vram-readout-68k.md), which retired
-the plain `StripAddress` hypothesis — but **`vprobe` opens no file**. The
-staged capture creates and opens a scratch file on the Desktop **before**
-it walks the framebuffer. If anything in that path leaves the machine in
-**24-bit addressing**, `0xFC080000` truncates to `0x00080000` — main RAM,
-which is exactly what "memory that was never a screen" reads as. It also
-fits the one asymmetry nobody has explained: the *PICT* capture, which
-goes through CopyBits rather than a raw walk, is correct on the same
-machine.
+### The fix
 
-This is a hypothesis. It has not been tested, and it cannot be from here.
+`core/screen68.c` decides, from the machine's actual state, how a raw read
+reaches the framebuffer:
 
-### The diagnostic, and the one pass that settles it
+- **32-bit capable** (Gestalt `gestaltAddressingModeAttr` /
+  `gestalt32BitCapable`, confirmed by performing the switch once and
+  checking low memory `0x0CB2` moved) → `SwapMMUMode(true32b)` around the
+  VRAM copy, always, whichever mode the machine is currently in. The mode
+  can change between the check and the read — the File Manager runs in
+  between on the capture path — so the switch is not conditional on it.
+- **not capable, address survives 24 bits** → read it as it is.
+- **not capable, address does not survive 24 bits** → refuse the capture
+  with a reason. Wrong pixels are worse than a refusal.
 
-`shotdiag` (contract `x-commands`, both faces, `n68_shotdiag.h`) stages a
-capture down the **live** path — `shotstage68_diagnose()` *is*
-`shotstage68_write()` — and reports, sampled from inside the walk's first
-row: `base`, `StripAddress(base)`, the MMU byte, the screen's stride
-beside the promised row, and the first 16 bytes of row 0 as the walk sees
-them beside the same row as CopyBits copies it.
+**24-bit is the expected state of a vintage Mac, not an anomaly.** Most of
+these machines have dead PRAM batteries and come up with 32-bit addressing
+off however it was left. Asking a human to set it is not a fix: it reverts
+on the next power cycle and reads as a regression.
 
-Procedure, one visit:
+**The switch wraps the VRAM copy and nothing else.** While switched, the
+machine is in an addressing mode the rest of the system was not told
+about, so no Toolbox or OS call may be made — and the staged capture
+interleaves the read with PackBits and File Manager writes. The copy goes
+out through a `row_copy` hook on `N68ShotWireSink`, which keeps
+`n68_shotwire_emit()` Toolbox-free (the host `cc` still compiles and drives
+it) while the dereference itself happens where the Toolbox is allowed. The
+hook is **required**: a NULL is refused rather than filled in with memcpy,
+because a caller that forgot would send main RAM at full speed with every
+test green.
 
-1. Deploy the build under an honest name (AGENTS.md), on a still screen.
-2. Type `shotdiag` at the guest, or send it from the host console.
-3. Read the **Verdict** row.
-   - `identical - the base is right` → the walk is innocent and the whole
-     upper half of the pipeline is retired; the fault is in staging,
-     transport or decode, and the next look is at the staged file's own
-     bytes.
-   - `DIFFERS at byte N` → the walk read elsewhere. Compare **Base**
-     against **StripAddress**, and read **Addressing**: `24-bit (!)`
-     confirms the hypothesis above outright.
-   - `matches now; screen moved during walk` → the run proved nothing.
-     Repeat on a still screen.
-4. Then run `vprobe` in the same session and compare its Fidelity row. If
-   `vprobe` is clean and `shotdiag` is not, the difference between them
-   is the file the capture opens first, and that is the answer.
+**`StripAddress` is a different question and is not the fix.** Stripping
+`0xFC080000` *is* the bug, spelled deliberately. It is used as a predicate
+on the screen's base ("does this address survive 24-bit mode?") and as a
+normalisation of the offscreen **band's** base, which is a Memory Manager
+block whose top byte is master-pointer flags in 24-bit mode. It never
+rewrites the framebuffer address.
 
-`shotdiag` has **never run on the 180c**. Its renderer is gated by
-`test_shotdiag.c`; everything it measures is a Toolbox call no gate in
-this tree can reach.
+There are exactly two addressing modes on a Mac, 24-bit and 32-bit. There
+is no 16-bit mode; "16-bit" in `vprobe`'s readout is a read WIDTH and
+"8-bit" beside the screen is colour DEPTH.
+
+### Unverified
+
+**Tested, not metal-verified.** The fix has not run on the 180c — nobody
+here has a machine. Both guests cross-build, `scripts/test-all` is green,
+and the emitted 68K code contains the `_SwapMMUMode` trap (`0xA05D`)
+inline, so it links. What a metal pass should show, on a machine left in
+its default 24-bit mode:
+
+- `shotdiag` → `Addressing 24-bit`, `Raw read SwapMMUMode to 32-bit`,
+  `Walk row 0` equal to `Blit row 0`, `Verdict identical - the base is
+  right`.
+- `vprobe` in the same session → `Addressing 24-bit, 32-bit for reads` and
+  `Fidelity MATCH (480 rows)`, with the bandwidth rows unchanged from
+  2026-07-25 (a switch is two traps against passes of 150 ms).
+- A capture over the wire, decoded, showing the 180c's screen — with no
+  visit to the Memory control panel.
+
+If `Raw read` reads `REFUSED - unreachable`, the machine reported itself
+not 32-bit capable and the framebuffer is above 16 MB; that combination is
+believed impossible and would be the thing to report.
 
 ## Two guests on one port (2026-07-28)
 
@@ -2655,51 +2670,32 @@ real halves meet:
    unpacked ones. The encoding is a parameter now, and a native test pins
    both spellings.
 
-### BROKEN: the 180c's wire capture arrives garbled, and the obvious cause is not the cause
+### RESOLVED: the 180c's wire capture arrived garbled — 24-bit addressing
 
-A capture taken on the PowerBook 180c **saves correctly to that machine's
-desktop as a PICT and arrives at the host as structured noise**, banded at
-a plausible stride — memory that was never a screen. The Quadra 800
-emulator run above is byte-accurate on the same code, so this is
-180c-specific and unreproduced here.
+Superseded by the entry at the top of this file, which carries the metal
+evidence, the fix and what is still unverified. **The reasoning recorded
+here was wrong and is kept because being wrong in this particular way cost
+two passes.**
 
-**The leading hypothesis is contradicted by this tree's own metal
-evidence, and is recorded so nobody spends the evening twice.** The
-hypothesis was that `screen68.c` takes `GetPixBaseAddr()` without
-`StripAddress()`, so a 24-bit-mode dereference reads somewhere that is not
-the framebuffer while `CopyBits` stays immune because QuickDraw resolves
-addressing itself. It is a good theory and two measurements say it is not
-what is happening here:
+What was written here: the `StripAddress`/`SwapMMUMode` hypothesis "is
+contradicted by this tree's own metal evidence", because `vprobe`'s
+fidelity sweep reported MATCH (480 rows) at base `0xFC080000`, and because
+that base "is only reachable with 32-bit addressing on", so the machine
+must have been in 32-bit mode.
 
-- **`vprobe`'s Fidelity row is the same walk.** `vprobe68.c` computes
-  `s.base + (top + r) * s.row_bytes` and `memcmp`s `s.visible_row` bytes
-  against a `CopyBits` band — byte for byte the arithmetic the capture
-  uses. On the 180c it reported **MATCH (480 rows)**
-  ([vram-readout-68k.md](vram-readout-68k.md), 2026-07-25). A base the CPU
-  could not reach would have differed on all 480.
-- **The measured base is `0xFC080000`.** That address is only reachable
-  with 32-bit addressing on; in 24-bit mode the ROM maps built-in video
-  into slot space and `baseAddr` would not read like that at all. The
-  machine was in 32-bit mode, where `StripAddress` is the identity.
+Both halves were true of the session they were measured in and neither
+generalised. The 180c's **PRAM battery is dead**, so its Memory control
+panel setting reverts to 24-bit on every power cycle; the vprobe run and
+the garbled capture were in different machine states, three days apart.
+Re-run beside `shotdiag`, the same sweep reported 480/480 rows DIFFERING.
+The address does read like a 32-bit one because `GetPixBaseAddr` returns
+what QuickDraw knows — QuickDraw is not the thing that truncates it, the
+CPU is, at the moment of the dereference.
 
-So a `StripAddress`/`SwapMMUMode` change would be a no-op on the
-configuration that was measured. It is not ruled out that the 180c's
-Memory control panel differed between the vprobe run and the garbled
-capture — which is exactly what the diagnostic below settles.
-
-**One run on the 180c settles it.** Have the guest report, beside the
-capture, `base` as `screen68_info` returns it, `StripAddress(base)`, and
-`GetMMUMode()`. If the three agree (base == stripped, mode == `true32b`)
-the read is not the fault and the search moves to the staged file and the
-bulk lane; if `base != StripAddress(base)`, the hypothesis is live after
-all and the fix is `SwapMMUMode` around the read, not a strip.
-
-**The file the diagnosis pointed at is not on this path.**
-`shotsrc68.c`'s `shotsrc68_open()` has **zero callers** — the file
-compiles and is native-tested and nothing routes to it, exactly as the
-"two ways to send" note above says ("not yet routed"). The live wire path
-is `shotstage68.c`. A fix applied to the streaming source would change
-nothing a person could see.
+**The lesson worth keeping.** A measurement retired a hypothesis, and the
+measurement did not carry the state it depended on. Everything raw this
+tree measures on a 68K Mac is now reported beside its addressing mode for
+that reason.
 
 **What did change: the walk now has a gate.** The framebuffer walk was
 the one part of the lane no test could reach — it sat between an `FSSpec`

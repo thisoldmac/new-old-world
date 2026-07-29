@@ -172,8 +172,22 @@ void n68_shotdiag_rows(const N68ShotDiag *d, N68CmdRows *rows)
      * table: it means the trap decided this address needs 24 bits, which
      * on a machine whose framebuffer lives above 16 MB is the whole bug. */
     add_addr(rows, "StripAddress", d->stripped);
-    (void)n68_cmdrows_add(rows, "Addressing",
-                          d->mmu32 ? "32-bit" : "24-bit (!)");
+    /* NO LONGER "(!)" FOR 24-BIT. It was, when a 24-bit machine meant a
+     * garbled capture; a dead PRAM battery makes 24-bit the state most of
+     * these machines boot into, so it is a fact rather than a fault. What
+     * the walk did about it is the next row. */
+    (void)n68_cmdrows_add(rows, "Addressing", d->mmu32 ? "32-bit" : "24-bit");
+    switch (d->reach) {
+    case kN68ShotDiagReachSwitch:
+        (void)n68_cmdrows_add(rows, "Raw read", "SwapMMUMode to 32-bit");
+        break;
+    case kN68ShotDiagReachDirect:
+        (void)n68_cmdrows_add(rows, "Raw read", "direct - no switch needed");
+        break;
+    default:
+        (void)n68_cmdrows_add(rows, "Raw read", "REFUSED - unreachable");
+        break;
+    }
 
     pos = 0;
     (void)(now68k_fmt_append_long(value, (long)sizeof value - 1, &pos,
