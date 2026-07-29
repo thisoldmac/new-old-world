@@ -9,6 +9,51 @@ wrong thing) versus **unverified** (it may well be right, but no one has
 watched it work on the PowerBook). Unverified is not a lesser problem —
 several of tonight's bugs lived in code that looked obviously correct.
 
+## The agent audit line has never been read on a real run (2026-07-29)
+
+### Unverified
+
+Every capability the MCP face invokes now emits one audit event, and the
+host writes it under the `agent` area of its log
+([agent-integration.md](agent-integration.md#every-agent-call-leaves-a-trace)).
+The gate is mutation-checked and the whole path is exercised over a real
+private socket in `NOWAgentAuditTests` — but with a fake host at the far
+end. **Nobody has yet driven the running app from a real MCP client and
+read the lines out of `~/Library/Logs/now-logs`.** The host app's own
+handler for the operation (the `.audit` case in `App.swift`) is the one
+piece with no automated cover, because nothing in this tree tests that
+closure; the line's format is tested one layer in, at
+`AgentIntegrationAuditLog`.
+
+Two known gaps, stated rather than left to be discovered:
+
+- A call still waiting on a 32-second launch has not been logged yet. The
+  event is emitted once, when the outcome is known — a begun/ended pair
+  would double this face's local round-trips per call — so a launch in
+  flight is invisible until it settles, and one that takes the process
+  down is never logged at all.
+- A malformed `guest` selector is refused by the face before any
+  capability is invoked, so it names no capability and emits nothing.
+
+## Local schema v7's addressing cannot survive its own codec (2026-07-29)
+
+### Broken
+
+Found while adding the audit operation, filed rather than fixed because it
+is a behaviour change needing its own tests. Both defects are in
+`AgentIntegrationLocalCodec` and both are on `main`:
+
+- `decodeRequest` omits `guestSelector` from its `allowedKeys` and from
+  every operation's `expectedKeys`, so any request that actually names a
+  machine is rejected as not matching the schema. Nil selectors are
+  omitted by the encoder, which is why the single-Mac path still works.
+- `decodeResponse` omits `notAddressed` from its allowlist, so the
+  refusal `SocketAgentIntegrationClient` is specifically written to pass
+  through as itself arrives as `now-host-invalid-response` instead.
+
+`grep -rn "guestSelector\|notAddressed" now-host/Tests` returns nothing,
+which is why neither is failing anything today.
+
 ## NOW-68K has a hardware census, and none of it has run (2026-07-28)
 
 ### Unverified, in the strongest sense on this list
