@@ -18,6 +18,17 @@ public enum RequestQuitProjection: HostProjection {
         AgentIntegrationCapabilityNames.processQuit,
     ]
 
+    /* The Processes page's Ask to Quit button, on the selected row. It is
+       disabled for the row the guest reports as itself rather than being
+       offered and refused, which is a rendering decision about the same
+       capability. */
+    public static let faces: [HostFace: HostFaceReach] = [
+        .appUI: .reached(file: "ProcessesModuleView.swift",
+                         symbol: "model.askToQuit(entry)"),
+        .mcp: .reachedByRegistry,
+        .appIntents: .appIntentsFaceNotBuiltYet,
+    ]
+
     public static let availabilityNote =
         "The connected guest serves process.list and process.quit."
 

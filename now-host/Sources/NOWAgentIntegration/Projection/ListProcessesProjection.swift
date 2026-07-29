@@ -11,6 +11,15 @@ public enum ListProcessesProjection: HostProjection {
     public static let requires =
         [AgentIntegrationCapabilityNames.processList]
 
+    /* The Processes page IS this listing: its Refresh button asks for
+       process.list and the table renders the rows. */
+    public static let faces: [HostFace: HostFaceReach] = [
+        .appUI: .reached(file: "ProcessesModuleView.swift",
+                         symbol: "model.refresh()"),
+        .mcp: .reachedByRegistry,
+        .appIntents: .appIntentsFaceNotBuiltYet,
+    ]
+
     public static let availabilityNote =
         "The connected guest serves process.list."
 

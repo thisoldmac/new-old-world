@@ -11,6 +11,18 @@ public enum GuestFilesStatProjection: HostProjection {
     public static let requires =
         [AgentIntegrationCapabilityNames.fileList]
 
+    /* Reached by the same mechanism, not an equivalent one: this projection
+       stats one item by a bounded scan of its PARENT, which is exactly what
+       the browser does when a person navigates there, and the row renders
+       the entry's kind, size and modified date. A person has a window and
+       needs no path; a caller has a path and no window. */
+    public static let faces: [HostFace: HostFaceReach] = [
+        .appUI: .reached(file: "FileBrowserTable.swift",
+                         symbol: "item.kind"),
+        .mcp: .reachedByRegistry,
+        .appIntents: .appIntentsFaceNotBuiltYet,
+    ]
+
     public static let availabilityNote =
         "The connected guest serves file.list."
 

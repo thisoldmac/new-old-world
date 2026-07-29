@@ -13,6 +13,21 @@ public enum TransferApprovedArtifactProjection: HostProjection {
     public static let requires =
         [AgentIntegrationCapabilityNames.filePut]
 
+    public static let faces: [HostFace: HostFaceReach] = [
+        .appUI: .notReached(because:
+            "The app UI is the GRANT side of this capability, not the "
+            + "redeeming side: Files offers \"Approve One-Time Agent "
+            + "Transfer…\", which stages one private copy and hands out a "
+            + "receipt. Redeeming that receipt is the agent's half by "
+            + "construction — a person with a file to send uses Add File… "
+            + "(now_guest_files_upload_commit) and needs no receipt, and a "
+            + "button that redeemed the app's own grant would be the app "
+            + "approving on the human's behalf, which is the one thing the "
+            + "approval exists to prevent."),
+        .mcp: .reachedByRegistry,
+        .appIntents: .appIntentsFaceNotBuiltYet,
+    ]
+
     public static let availabilityNote =
         "The connected guest accepts a host-driven put."
 

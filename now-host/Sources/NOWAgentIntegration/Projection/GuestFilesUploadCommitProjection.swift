@@ -10,6 +10,19 @@ public enum GuestFilesUploadCommitProjection: HostProjection {
     public static let requires =
         [AgentIntegrationCapabilityNames.filePut]
 
+    /* Files' Add File… — the picker's primary action — sends through the
+       same host transfer lane this commit consumes; what differs is only
+       where the bytes came from (a file a person chose, versus a sealed
+       private stage). This is the row that makes the begin/append pair's
+       app-UI divergence honest: the CAPABILITY, creating a file on the
+       guest, is reachable from the app. */
+    public static let faces: [HostFace: HostFaceReach] = [
+        .appUI: .reached(file: "FilesModuleView.swift",
+                         symbol: "model.send(url)"),
+        .mcp: .reachedByRegistry,
+        .appIntents: .appIntentsFaceNotBuiltYet,
+    ]
+
     public static let availabilityNote =
         "The connected guest accepts a host-driven put."
 

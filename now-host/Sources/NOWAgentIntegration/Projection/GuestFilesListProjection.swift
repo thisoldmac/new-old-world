@@ -11,6 +11,15 @@ public enum GuestFilesListProjection: HostProjection {
     public static let requires =
         [AgentIntegrationCapabilityNames.fileList]
 
+    /* The Files page's browser table, walking the same file.list the
+       projection pages through. */
+    public static let faces: [HostFace: HostFaceReach] = [
+        .appUI: .reached(file: "FilesModuleView.swift",
+                         symbol: "FileBrowserTable("),
+        .mcp: .reachedByRegistry,
+        .appIntents: .appIntentsFaceNotBuiltYet,
+    ]
+
     public static let availabilityNote =
         "The connected guest serves file.list."
 
