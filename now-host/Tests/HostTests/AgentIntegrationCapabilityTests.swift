@@ -407,6 +407,24 @@ final class AgentIntegrationCapabilityTests: XCTestCase {
         // Every file of the companion surface, health included: naming
         // either guest is out everywhere, because there is no legitimate
         // reason for this code to know which one is on the wire.
+        // The projection module is ENUMERATED rather than listed. A hand
+        // written list is how this guard would quietly stop covering the
+        // surface it names: the whole point of the registry is that a
+        // capability arrives as a new file, and a new file nobody added
+        // here would be the one place identity could creep back in.
+        let projectionRoot =
+            "now-host/Sources/NOWAgentIntegration/Projection"
+        let projectionFiles = try FileManager.default
+            .contentsOfDirectory(
+                atPath: root.appendingPathComponent(projectionRoot).path)
+            .filter { $0.hasSuffix(".swift") }
+            .sorted()
+            .map { "\(projectionRoot)/\($0)" }
+        XCTAssertGreaterThanOrEqual(
+            projectionFiles.count, 12,
+            "The projection module should hold at least one file per "
+                + "registered capability; this guard reads the directory, "
+                + "so an empty read means the path moved.")
         let surface = [
             "now-host/Sources/Host/Automation/AgentIntegrationCapabilityLedger.swift",
             "now-host/Sources/Host/Automation/AgentIntegrationProcessControl.swift",
@@ -414,7 +432,7 @@ final class AgentIntegrationCapabilityTests: XCTestCase {
             "now-host/Sources/Host/Automation/AgentIntegrationSessionHealth.swift",
             "now-host/Sources/Host/Automation/GuestFilesCommands.swift",
             "now-host/Sources/NOWAgentCompanion/NOWMCPServer.swift",
-        ]
+        ] + projectionFiles
         // The ones that DECIDE something. `guestName` / `guestOS` /
         // `guestVersion` are the hello's fields — the only identity the
         // host has — and reading them in a file that chooses what a tool
