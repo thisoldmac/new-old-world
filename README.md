@@ -36,6 +36,7 @@ noticed. Adding them: see [docs/images/README.md](docs/images/README.md).
 | Live screen streaming, with recording | yes | no | metal-verified |
 | Processes: list, launch, quit, front | yes | yes | emulator-verified |
 | Hardware census (14 probes) | yes | none | tested |
+| Two Macs on one port, with a picker for which one you are driving | yes | yes | tested; **never run against real hardware** |
 
 The cells that say "no" are not oversights.
 [docs/contract-coverage.md](docs/contract-coverage.md) is the inventory

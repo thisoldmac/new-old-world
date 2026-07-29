@@ -50,7 +50,7 @@ final class HostAppStateWiringTests: XCTestCase {
                        .connected(guestName: "PowerBook 1400"),
                        "listener state must reflect the connection")
         XCTAssertEqual(state.screenshots.connection,
-                       .connected(name: "PowerBook 1400"),
+                       .connected(named: "PowerBook 1400"),
                        "Screenshots badge must mirror the connection")
 
         state.stopListening()

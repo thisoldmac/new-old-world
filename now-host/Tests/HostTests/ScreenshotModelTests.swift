@@ -21,7 +21,7 @@ final class ScreenshotModelTests: XCTestCase {
         model.connection = .connecting
         XCTAssertFalse(model.canCapture)
 
-        model.connection = .connected(name: "Power Mac")
+        model.connection = .connected(named: "Power Mac")
         XCTAssertTrue(model.canCapture)
     }
 
@@ -78,7 +78,7 @@ final class ScreenshotModelTests: XCTestCase {
 
     func testCancelIsIgnoredWhenNothingIsInFlight() {
         let model = makeModel()
-        model.connection = .connected(name: "PowerBook 1400")
+        model.connection = .connected(named: "PowerBook 1400")
         model.cancel()
         XCTAssertNil(model.lastError)
     }
@@ -124,7 +124,7 @@ final class ScreenshotModelTests: XCTestCase {
 
     func testCapturingWithoutAGuestFailsHonestly() {
         let model = makeModel()
-        model.connection = .connected(name: "PowerBook 1400")
+        model.connection = .connected(named: "PowerBook 1400")
         model.capture()
         // The listener holds no session, so it refuses immediately.
         XCTAssertEqual(model.lastError, "No Mac is connected")

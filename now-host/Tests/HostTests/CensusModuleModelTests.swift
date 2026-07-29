@@ -53,7 +53,7 @@ final class CensusModuleModelTests: XCTestCase {
             if case .connected = self.listener.state { return true }
             return false
         }
-        model.connection = .connected(name: "PB 1400")
+        model.connection = .connected(named: "PB 1400")
         return guest
     }
 

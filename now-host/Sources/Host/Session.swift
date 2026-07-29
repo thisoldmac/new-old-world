@@ -101,7 +101,7 @@ final class Session {
     /// What a guest that sent no name is called. One constant, because
     /// GuestKey folds by it too and a second spelling would let an
     /// unnamed guest be admitted twice under two different keys.
-    static let unnamedGuest = "Classic Mac"
+    nonisolated static let unnamedGuest = "Classic Mac"
     /// Set at the gate, from the hello. Nil until then.
     private(set) var guestKey: GuestKey?
     private var idleTask: Task<Void, Never>?
@@ -1177,7 +1177,9 @@ final class Session {
             let ms = Int(Date().timeIntervalSince(captureStart) * 1000)
             let delivery = GuestListener.CaptureDelivery(
                 image: image, format: format,
-                transferMs: ms, wireBytes: blob.count)
+                transferMs: ms, wireBytes: blob.count,
+                // Stamped here because here is where the socket is known.
+                guestName: guestName, guestKey: guestKey)
             if streaming {
                 onStreamFrame(delivery)
             } else if pushed {

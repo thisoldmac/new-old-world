@@ -829,7 +829,7 @@ final class TransferQueueTests: XCTestCase {
             if case .connected = self.listener.state { return true }
             return false
         }
-        model.connection = .connected(name: "PowerBook 1400")
+        model.connection = .connected(named: "PowerBook 1400")
         return guest
     }
 

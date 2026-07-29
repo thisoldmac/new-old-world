@@ -399,6 +399,63 @@ final class ConsoleModel: ObservableObject {
         completionsRequested = false
     }
 
+    // MARK: - Which machine this console is a console for
+
+    /// One machine's session at the console: what was typed, what came
+    /// back, and what that machine said it serves.
+    ///
+    /// This is the model whose state MOST wants keeping. A scrollback is
+    /// not a cache of something the guest could be asked again — it is the
+    /// record of a conversation, and there is no re-fetching it. Someone
+    /// who runs a long command on the 68K Mac, switches to the PowerPC one
+    /// to compare, and comes back, must find their output where they left
+    /// it; anything else makes the picker a thing you avoid using.
+    ///
+    /// The completions go with it rather than being re-asked, because they
+    /// are already per machine for the reason `forgetGuest` states: NOW-68K
+    /// serves three commands where the Carbon guest serves fifteen. The
+    /// history is here too — it is this console's own, but "this console"
+    /// now means one per machine, and recalling the other Mac's paths with
+    /// ↑ is exactly the confusion the whole slice is about.
+    struct Snapshot {
+        var lines: [Line] = []
+        var history: [String] = []
+        var completions: [String] = []
+        var completionsRequested = false
+    }
+
+    private let cache = GuestStateCache<Snapshot>()
+
+    /// Points the console at another machine. Nil (a disconnect) leaves
+    /// everything on screen: the scrollback is what a person reads to find
+    /// out WHY the wire dropped, and clearing it then would be the single
+    /// most annoying possible moment to do it.
+    func focus(on connection: GuestConnectionState) {
+        // The FIRST machine to connect inherits what is on screen rather
+        // than clearing it: those lines were typed before there was a
+        // machine, and this is the machine they were typed at.
+        let firstEver = cache.focused == nil
+        guard case .switched(let restored) =
+            cache.focus(connection.key, parking: snapshot()) else { return }
+        if firstEver { return }
+        let fresh = restored ?? Snapshot()
+        lines = fresh.lines
+        history = fresh.history
+        historyPos = fresh.history.count
+        completions = fresh.completions
+        completionsRequested = fresh.completionsRequested
+        if lines.isEmpty {
+            append(.notice, "Console — every line runs on "
+                + "\(connection.peerLabel). Type \"help\" to ask it what it "
+                + "serves; \"/help\" for what this side does.")
+        }
+    }
+
+    private func snapshot() -> Snapshot {
+        Snapshot(lines: lines, history: history, completions: completions,
+                 completionsRequested: completionsRequested)
+    }
+
     // MARK: - Rendering
 
     /// Shows what the guest printed. That is the whole renderer now, and the

@@ -29,6 +29,10 @@ enum MainMenu {
     /// must not silently retarget an updater.
     enum Tag: Int {
         case listenToggle = 2001
+        /// The "Drive" submenu holder, whose contents are the connected
+        /// machines and so cannot be built here — the menu is a pure
+        /// function of the registry, and the roster is not in it.
+        case guestList = 2002
         case moduleFirst = 2100      // + the module's index in the registry
     }
 
@@ -190,7 +194,16 @@ enum MainMenu {
     /// wrongly under any of the standard menus.
     private static func guestMenuItem(appName: String, target: AnyObject,
                                       actions: Actions) -> NSMenuItem {
-        submenu("Guest", [
+        // "Drive" is the first item because everything under it acts on
+        // whichever machine is chosen there: a menu that offers to
+        // screenshot "the guest" while several are connected has to say
+        // which one it means, in the same menu, above the verb.
+        let drive = NSMenuItem(title: "Drive", action: nil, keyEquivalent: "")
+        drive.tag = Tag.guestList.rawValue
+        drive.submenu = NSMenu(title: "Drive")
+        return submenu("Guest", [
+            drive,
+            .separator(),
             item("Screenshot Guest", actions.screenshotGuest, "s",
                  target: target, modifiers: [.command, .shift]),
             .separator(),
@@ -200,6 +213,50 @@ enum MainMenu {
                  target: target, modifiers: [.command, .shift],
                  tag: .listenToggle),
         ])
+    }
+
+    /// Fills the "Drive" submenu with the machines currently connected.
+    ///
+    /// Rebuilt as the menu opens rather than tracked, for the reason the
+    /// listen toggle is: a menu that caches the roster is a menu that
+    /// offers to drive a Mac that hung up ten minutes ago.
+    ///
+    /// The item's TITLE is the identity it acts on. That is not laziness
+    /// about `representedObject`: `GuestKey` is derived from the name by
+    /// one rule (`GuestKey(name:)`), the roster's name is the name that
+    /// rule was applied to, and so the round trip is exact by
+    /// construction. A boxed key stored beside the title would be a second
+    /// copy of the same fact, free to drift from what the item says.
+    ///
+    /// Empty is a state worth drawing rather than hiding: "No Macs
+    /// connected", disabled, says the wire is idle. A submenu that opens
+    /// onto nothing reads as a bug in the app.
+    @discardableResult
+    static func fillDriveMenu(_ holder: NSMenuItem,
+                              guests: [ConnectedGuest],
+                              target: AnyObject,
+                              action: Selector) -> NSMenu {
+        let menu = holder.submenu ?? NSMenu(title: "Drive")
+        menu.removeAllItems()
+        guard !guests.isEmpty else {
+            let empty = NSMenuItem(title: "No Macs Connected", action: nil,
+                                   keyEquivalent: "")
+            empty.isEnabled = false
+            menu.addItem(empty)
+            holder.submenu = menu
+            holder.isEnabled = false
+            return menu
+        }
+        for guest in guests {
+            let entry = NSMenuItem(title: guest.name, action: action,
+                                   keyEquivalent: "")
+            entry.target = target
+            entry.state = guest.isActive ? .on : .off
+            menu.addItem(entry)
+        }
+        holder.submenu = menu
+        holder.isEnabled = true
+        return menu
     }
 
     /// The window item leads with the window itself, the way Mail's does:

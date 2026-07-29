@@ -238,6 +238,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         if let toggle = menu.item(withTag: MainMenu.Tag.listenToggle.rawValue) {
             toggle.title = Self.listenToggleTitle(state.listener.state)
         }
+        if let drive = menu.item(withTag: MainMenu.Tag.guestList.rawValue) {
+            MainMenu.fillDriveMenu(drive, guests: state.listener.guests,
+                                   target: self,
+                                   action: #selector(driveGuest(_:)))
+        }
+    }
+
+    /// Points the window at the Mac named by the item. The title is the
+    /// identity — see `MainMenu.fillDriveMenu` for why that is exact and
+    /// not a shortcut.
+    @objc func driveGuest(_ sender: NSMenuItem) {
+        state.selectGuest(GuestKey(name: sender.title))
     }
 
     /// One item, two truths — and the truth is read as the menu opens rather

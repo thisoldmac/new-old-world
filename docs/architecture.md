@@ -30,7 +30,14 @@ multiplexing a JSON control channel and a raw bulk channel over one TCP
 connection, written as AsyncAPI 3.0 with normative prose for the frame
 layout and connection rules. WS-shaped semantics without literal
 WebSocket: hello gate with revision refusal, guest-driven ping/pong,
-`bye` with close codes, one guest at a time.
+`bye` with close codes, one connection per guest.
+
+Several guests share one port. Each connection is one guest, told apart
+by the identity in its `hello`; the host serves all of them but DRIVES
+one — the "active" guest that every request-shaped call goes to, chosen
+in the sidebar's pop-up or under Guest ▸ Drive. Each module model keeps
+what it holds per machine or throws it away on a switch, deliberately
+and for stated reasons (`now-host/Sources/Host/GuestScopedState.swift`).
 
 The **guest dials the host** — classic Mac OS listeners are the fragile
 half of OS 9 networking, so every listener stays on the modern side.

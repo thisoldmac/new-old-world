@@ -140,7 +140,7 @@ final class MainMenuTests: XCTestCase {
     func testGuestVerbsAreInTheGuestMenu() throws {
         let guest = try submenu("Guest", in: menu())
         let titles = guest.items.filter { !$0.isSeparatorItem }.map(\.title)
-        XCTAssertEqual(titles, ["Screenshot Guest", "Start Listening"])
+        XCTAssertEqual(titles, ["Drive", "Screenshot Guest", "Start Listening"])
         XCTAssertEqual(guest.items.first { $0.title == "Screenshot Guest" }?
             .keyEquivalentModifierMask, [.command, .shift])
     }

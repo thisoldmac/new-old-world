@@ -72,8 +72,35 @@ struct FileRow: Identifiable, Equatable {
 }
 
 @MainActor
-final class FilesModuleModel: ObservableObject {
-    @Published var connection: GuestConnectionState = .disconnected
+final class FilesModuleModel: ObservableObject, GuestScopedModel {
+    /// Where one machine's browser was left, parked while another is
+    /// driven.
+    ///
+    /// The load-bearing member is the BREADCRUMB, and it is the clearest
+    /// case in the whole slice: `Macintosh HD:System Folder:Extensions` is
+    /// not a path that means something different on the other Mac, it is a
+    /// path that may not exist there at all. Restoring a person to where
+    /// they were on each machine is also what a file browser is expected to
+    /// do; the rows come with it because they are that path's listing and
+    /// the two are meaningless apart.
+    ///
+    /// It survives a disconnect the way it always has — nothing here
+    /// cleared on one — so a machine that drops mid-browse and comes back
+    /// is still in its own folder.
+    struct Snapshot {
+        var breadcrumb: [String] = []
+        var rows: [FileRow] = []
+        var selection: FileRow.ID?
+        var shareRoot: String?
+        var pageCursor: Int?
+        var history: [FileChange] = []
+    }
+
+    private let cache = GuestStateCache<Snapshot>()
+
+    @Published var connection: GuestConnectionState = .disconnected {
+        didSet { connectionChanged(from: oldValue) }
+    }
     /// Path components from the share root; empty = the root itself.
     @Published private(set) var breadcrumb: [String] = []
     @Published private(set) var rows: [FileRow] = []
@@ -264,6 +291,50 @@ final class FilesModuleModel: ObservableObject {
         let sorted = rows.sorted(using: order)
         sortCache = (order, rows, sorted)
         return sorted
+    }
+
+    // MARK: - Which machine is being browsed
+
+    private func connectionChanged(from old: GuestConnectionState) {
+        guard connection != old,
+              case .switched(let restored) =
+                cache.focus(connection.key, parking: snapshot())
+        else { return }
+        let fresh = restored ?? Snapshot()
+        breadcrumb = fresh.breadcrumb
+        rows = fresh.rows
+        selection = fresh.selection
+        shareRoot = fresh.shareRoot
+        pageCursor = fresh.pageCursor
+        history = fresh.history
+        isLoading = false
+        lastError = nil
+        transfer = nil
+        renaming = nil
+        newFolderName = nil
+        pendingChange = nil
+        overwritePrompt = nil
+        /* A queue of files is the one thing here that must NOT survive the
+           switch, parked or otherwise. It is a list of things to WRITE, and
+           the machine they were meant for is no longer the one on the other
+           end of the wire — sending them anyway is the destructive version
+           of the bug this whole slice is about. Dropping them says so out
+           loud rather than resuming against the wrong Mac later. */
+        if !queue.isEmpty {
+            let dropped = queue.count
+            lastError = "\(dropped) file\(dropped == 1 ? "" : "s") "
+                + "still waiting to send were dropped: they were meant for "
+                + "the other Mac."
+        }
+        queue = []
+        queueTotal = 0
+        queueDone = 0
+    }
+
+    private func snapshot() -> Snapshot {
+        Snapshot(breadcrumb: breadcrumb, rows: rows, selection: selection,
+                 shareRoot: shareRoot, pageCursor: pageCursor,
+                 history: history)
     }
 
     // MARK: - Browsing
