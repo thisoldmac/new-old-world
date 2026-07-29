@@ -323,6 +323,19 @@ side exactly as it does for the one-row shape. `conwin.c` has **no**
 renders whatever comes back, which is the same delegation that makes
 `launch` reach the console for free.
 
+`sw` (2026-07-28) is the fifth and the first to cost nothing at all: it
+was written straight into `now68k_commands_run_rows()`, and both faces
+had it without a line changing in `conwin.c` or `n68_exec.c`. That is
+the payoff the ruling was arguing for, so it is worth recording that it
+arrived — a shape is only proven by the second thing that fits it. What
+`sw` did have to write down is an asymmetry of a different kind: the two
+guests serve the same `software.list` and NOW-68K fills six of its eight
+entry fields, omitting `version` and `running` rather than fabricating
+them. That is not a parity gap — both of NOW-68K's own faces show
+exactly the same six — so it lives in
+[contract-coverage.md](contract-coverage.md), where what a guest can
+answer is the subject.
+
 `testTheSixtyEightKConsoleCanListFiles` asserts all three halves of that:
 that `ls` is in `commands68.c` so the host console can type it, that
 `conwin.c` reaches the rows seam, and that `conwin.c` does **not**

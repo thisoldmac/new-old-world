@@ -97,6 +97,22 @@
  * rather than stack because the command path can be re-entered (see the
  * DEFECT 3 note in proc68.c for what that cost the last time it was
  * assumed away).
+ *
+ * Measured whole-application delta for the SOFTWARE family (this file's
+ * g_sw_rows and handler, n68_swenum.c, n68_swlist.c and commands68.c's
+ * `sw`), m68k-apple-macos-size, -O2, against cc67682:
+ *     text 170216 -> 178188  (+7972)
+ *     data  17940 ->  18652   (+712)
+ *     bss   75396 ->  80072  (+4676)
+ * so +13360 bytes, about 3.5% of the 384 KB partition. The bss is almost
+ * entirely the two bounded caches this design is built on and neither is
+ * incidental: ~3360 bytes for the apps sweep's 48 FSSpecs
+ * (NOW68K_SWLIST_APP_CACHE_MAX, which is the whole reason a whole-volume
+ * sweep is affordable here at all) and ~1300 for the page this file cuts a
+ * listing from. AGENTS.md's warning after the file-receive pass still
+ * stands: the partition is preferred == minimum on a 4 MB machine, there
+ * is no headroom to borrow, and the next feature of this size needs the
+ * budget looked at rather than assumed.
  */
 #include "wire68.h"
 #include "commands68.h"
@@ -116,6 +132,8 @@
 #include "n68_putrx.h"
 #include "n68_puttx.h"
 #include "n68_shotwire.h"
+#include "n68_swenum.h"
+#include "n68_swlist.h"
 #include "shotstage68.h"
 #include "n68_reader.h"
 #include "numfmt.h"
@@ -208,6 +226,11 @@ _Static_assert(NOW68K_CONTROL_SEND_CAP >= NOW68K_FILELIST_MIN_CAP,
                "entry in it - the same infinite paging loop, one message "
                "family over. Shorten NOW68K_FILELIST_PATH_MAX, or widen the "
                "slot");
+_Static_assert(NOW68K_CONTROL_SEND_CAP >= NOW68K_SWLIST_MIN_CAP,
+               "the outbound slot cannot carry a software.listing page with "
+               "an entry in it - the same infinite paging loop again. "
+               "NOW68K_SWLIST_PATH_MAX is what this bound was solved for; "
+               "shorten it, or widen the slot");
 
 /* Four slots, not two.
  *
@@ -1774,6 +1797,125 @@ static void handle_file_list(const char *json, long len)
     }
 }
 
+/* ---- software.list: this guest's share of the software family -----------
+ *
+ * The contract's hostBrowsesSoftware, and the same symmetric rule: whoever
+ * RECEIVES the request serves its OWN installed software. Additive -
+ * SoftwareList and SoftwareListing were already in the contract, already
+ * decoded by the host, and already served by the PowerPC guest. Nothing in
+ * contract/asyncapi.yaml changed for this.
+ *
+ * The family has NO refuse message, deliberately: the contract answers a
+ * bad domain with a listing carrying `note` ("no such domain"), so every
+ * outcome is a software.listing and a host waiting on one always gets one.
+ * The two failures this guest can have - an unknown domain, and a machine
+ * whose System Folder or startup volume it could not read - therefore both
+ * arrive as an empty page with the reason in `note` rather than as silence.
+ *
+ * THIS HANDLER CAN BLOCK FOR SECONDS. Cursor 1 on the "apps" domain runs
+ * the whole-volume sweep, which is the contract's own warning ("the asker's
+ * watchdog must outlive it"). It pumps the wire between slices through
+ * proc_yield_ticks, which means this handler is re-entrant in exactly the
+ * way proc68.c's DEFECT 3 note describes - and is safe for the same reason,
+ * because that one guard is shared rather than copied.
+ *
+ * Every judgement here belongs to n68_swlist.c and every disk call to
+ * n68_swenum.c. What is left in this file is the wire.
+ */
+
+/* The page one software.listing is cut from. Static rather than a local for
+ * the reason g_file_rows is - ~1.3 KB underneath a handler reachable from
+ * inside the frame reader's callback chain - and more so here, because the
+ * sweep this handler can start makes that chain deeper than any other. */
+static N68SwRow g_sw_rows[NOW68K_SWLIST_MAX_ROWS];
+
+static void send_software_listing(long id, const char *domain_word,
+                                  long cursor, const N68SwRow *rows,
+                                  long count, int more, const char *note)
+{
+    char payload[NOW68K_CONTROL_SEND_CAP];
+    long n = n68_swlist_build(id, domain_word, cursor, rows, count, more,
+                              note, payload, (long)sizeof payload,
+                              NULL, NULL);
+
+    if (n <= 0) {
+        /* Unreachable at the shipping cap - the static assert at the top of
+         * this file is what makes it so - but a host waiting on a
+         * software.listing must never wait forever. An empty page with the
+         * reason in `note` is the shape this family has for saying no. */
+        now68k_log("wire: software.listing build failed");
+        n = n68_swlist_build(id, domain_word, cursor, NULL, 0, 0,
+                             n68_swenum_code_reason(kN68SwIOError),
+                             payload, (long)sizeof payload, NULL, NULL);
+        if (n <= 0) {
+            return;
+        }
+    }
+    if (!enqueue_control_send(payload, n)) {
+        now68k_log("wire: software.listing dropped, outbound queue full");
+    }
+}
+
+static void handle_software_list(const char *json, long len)
+{
+    /* A domain is one short word from a closed enum. Anything longer than
+     * this buffer is by construction not one of the five, and find_string
+     * truncating it cannot turn a non-domain into a domain. */
+    char word[16];
+    long id = 0;
+    long cursor = 0;
+    long count;
+    int more = 0;
+    int truncated = 0;
+    const char *note = "";
+    const char *domain_word;
+    N68SwDomain d;
+    int have_id = now68k_json_find_int(json, (size_t)len, "id", &id);
+
+    word[0] = '\0';
+    (void)now68k_json_find_string(json, (size_t)len, "domain",
+                                  word, (long)sizeof word);
+    d = n68_swlist_domain(word);
+    if (!now68k_json_find_int(json, (size_t)len, "cursor", &cursor)) {
+        cursor = 1;   /* absent cursor means the first page */
+    }
+    if (cursor < 1) {
+        cursor = 1;
+    }
+
+    /* `domain` is REQUIRED by the schema, so an absent one is as much a
+     * bad request as a misspelt one - and both get the same answer the
+     * contract already defines rather than a second vocabulary. The echoed
+     * word is this build's literal for a known domain and the empty string
+     * for an unknown one: a host's own string never reaches the wire from
+     * here, which is why nothing below has to trust the escaping. */
+    if (d == kN68SwDomainNone || d == kN68SwDomainUnknown) {
+        send_software_listing(have_id ? id : 0, "", cursor, NULL, 0, 0,
+                              n68_swlist_note_unknown_domain());
+        return;
+    }
+    domain_word = n68_swlist_domain_word(d);
+
+    count = n68_swenum_page(d, cursor, g_sw_rows,
+                            (long)NOW68K_SWLIST_MAX_ROWS, &more, &truncated,
+                            &note);
+    if (count < 0) {
+        N68SwCode rc = (N68SwCode)(-count);
+
+        send_software_listing(have_id ? id : 0, domain_word, cursor, NULL, 0,
+                              0, n68_swenum_code_reason(rc));
+        return;
+    }
+    /* `truncated` is already folded into `note` by the enumerator - the
+     * inventory bound and the root-only fallback each have their own
+     * sentence there. It stays in the signature because `sw`'s table
+     * renders the two facts as separate rows and the wire has only one
+     * field for them. */
+    (void)truncated;
+    send_software_listing(have_id ? id : 0, domain_word, cursor, g_sw_rows,
+                          count, more, note);
+}
+
 /* ---- the drive verbs: process.quit and process.front --------------------
  *
  * The other half of the identity story process.listing's isSelf starts.
@@ -2553,6 +2695,10 @@ static void handle_control_message(const char *json, long len)
      * can move a file in either direction, but will not change the shape
      * of its own disk on request. That is the asymmetry left, and it is
      * visible here rather than hidden. */
+    if (strcmp(type, "software.list") == 0) {
+        handle_software_list(json, len);
+        return;
+    }
     if (strcmp(type, "file.list") == 0) {
         handle_file_list(json, len);
         return;
