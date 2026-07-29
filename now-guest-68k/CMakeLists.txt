@@ -63,6 +63,7 @@ add_application(now-guest-68k
     src/screenshots/n68_shotwire.c
     src/screenshots/shotsrc68.c
     src/screenshots/n68_packbits.c
+    src/screenshots/n68_shotdiag.c
     src/screenshots/shotstage68.c
     src/processes/proc_quit_args.c
     src/processes/proc68.c

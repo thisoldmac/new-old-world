@@ -85,7 +85,7 @@ hides most of what a machine can be asked — the hardware, network, RAM
 and ROM facts do not have message types of their own. They live behind
 `gestalt` and `census`, one row each above and a whole subsystem below.
 
-The registry is `x-commands` in the contract: **18 verbs.**
+The registry is `x-commands` in the contract: **19 verbs.**
 
 | Verb | What it asks the machine | PPC | 68K |
 |---|---|:--:|:--:|
@@ -100,6 +100,7 @@ The registry is `x-commands` in the contract: **18 verbs.**
 | `reveal` | show an item in the Finder | ✅ | ❌ |
 | `screenshot` | capture the screen | ✅ | ✅ |
 | `vprobe` | framebuffer read cost | ✅ | ✅ |
+| `shotdiag` | where a staged capture read from | ❌ | ✅ |
 | `ps` | running processes | ✅ | ✅ |
 | `launch` | open an application | ✅ | ✅ |
 | `quit` | ask an application to quit | ✅ | ✅ |
@@ -108,15 +109,16 @@ The registry is `x-commands` in the contract: **18 verbs.**
 | `cancel` | stop the transfer in flight, either way | via UI / `file.cancel` | ✅ |
 | `putstat` | transfer diagnostics | ✅ | ❌ |
 
-**PPC serves 16 of 18.** `put` is console-only there and `cancel` is
+**PPC serves 16 of 19.** `put` is console-only there and `cancel` is
 not a verb at all, both deliberately: the host reaches those
 capabilities through the `file.*` families and that guest's own
-Workshop.
+Workshop. `shotdiag` is the third, and the newest: it diagnoses a raw
+framebuffer walk the PowerPC guest does not have.
 
-**NOW-68K serves 10 of 18** — `help`, `ls`, `put`, `cancel`, `vprobe`,
-`screenshot`, `ps`, `launch`, `quit`, `front`. The eight it does not:
-`gestalt`, `census`, `catsearch`, `sw`, `tail`, `reveal`, `vers`,
-`putstat`.
+**NOW-68K serves 11 of 19** — `help`, `ls`, `put`, `cancel`, `vprobe`,
+`screenshot`, `shotdiag`, `ps`, `launch`, `quit`, `front`. The eight it
+does not: `gestalt`, `census`, `catsearch`, `sw`, `tail`, `reveal`,
+`vers`, `putstat`.
 
 Every asymmetry is argued in [command-parity.md](command-parity.md) and
 named with its reason in `CommandRegistryTests.notOnThePowerPCGuest`.
@@ -228,7 +230,15 @@ either — only NOW-68K's half of it has faced a live guest.
 | **browse** (`file.list`, the `ls` verb) | emulator-verified only |
 | **capture to the guest's own disk** (`screenshot`) | **metal-verified (180c)** |
 | **capture across the wire** (`capture.request` -> bulk) | emulator-verified only |
+| `shotdiag` (where the staged walk read from) | tested only — the one it exists to answer is unrun |
 | **the exec console plane** (`exec.request` / `.cancel` / `.input`) | emulator-verified only (Q800, 8/8 `MetalExecTests`) |
+
+`shotdiag`'s row is the honest one and worth reading twice: the verb
+was written **because** capture across the wire is garbled on the 180c
+and correct on the Q800, and it has never run on the machine it was
+built for. Its renderer is gated by `test_shotdiag.c`; everything it
+actually measures — `StripAddress`, the MMU byte, the walk — is a
+Toolbox call no gate in this tree can reach.
 
 The whole file family — both directions, the largest thing NOW-68K
 serves — has never moved a byte on the 180c. A Quadra 800 under 8.1

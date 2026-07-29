@@ -27,6 +27,8 @@
 
 #include <Files.h>
 #include <Folders.h>
+#include <LowMem.h>       /* LMGetMMU32Bit - see sample_addressing() */
+#include <MacMemory.h>    /* StripAddress */
 #include <Quickdraw.h>
 
 #include <string.h>
@@ -100,7 +102,30 @@ typedef struct {
     unsigned long t0;
     unsigned long t_read;
     unsigned long t_pack;
+    unsigned long base;          /* the walk's own base, for the diagnostic */
+    N68ShotDiag  *diag;          /* NULL on the ordinary path */
 } StageCtx;
+
+/* THE INSTANT THIS IS READ IS THE WHOLE POINT (n68_shotdiag.h). It is
+ * sampled from inside the walk's first row, which is AFTER the scratch
+ * file has been created and opened - so if the File Manager or the disk
+ * driver left this machine in 24-bit addressing, this is where it shows.
+ * A probe that samples it before opening a file cannot see that, which is
+ * why `vprobe` reporting a clean fidelity sweep did not settle anything.
+ *
+ * LMGetMMU32Bit() rather than GetMMUMode(): they read the same low-memory
+ * byte (0x0CB2), but Universal Interfaces declares the low-memory
+ * accessor as an inline and lists GetMMUMode among the calls that need
+ * glue, and a diagnostic that fails to LINK is worth nothing. */
+static void sample_addressing(N68ShotDiag *diag, unsigned long base)
+{
+    if (diag == NULL) {
+        return;
+    }
+    diag->base = base;
+    diag->stripped = (unsigned long)StripAddress((void *)base);
+    diag->mmu32 = LMGetMMU32Bit() != 0;
+}
 
 static void stage_sink_put(void *ctx, const void *bytes, long n)
 {
@@ -114,6 +139,9 @@ static void stage_sink_row_begin(void *ctx, long row)
     Rect shield;
     Point zero;
 
+    if (row == 0) {
+        sample_addressing(sc->diag, sc->base);
+    }
     /* Shielded per row, for shotsrc68.h's reason: a whole-transfer hide
      * takes the cursor away from the person at the machine. */
     shield = sc->bounds;
@@ -129,7 +157,14 @@ static void stage_sink_row_read(void *ctx, long row)
 {
     StageCtx *sc = (StageCtx *)ctx;
 
-    (void)row;
+    /* The bytes the capture ACTUALLY sent, taken out of the same buffer
+     * PackBits is about to read - not a second read of the same address,
+     * which could differ and would then be describing a capture nobody
+     * received. */
+    if (row == 0 && sc->diag != NULL) {
+        memcpy(sc->diag->walk, g_row, (size_t)kN68ShotDiagSampleBytes);
+        sc->diag->walk_ok = 1;
+    }
     ShowCursor();
     sc->t_read += screen68_micros() - sc->t0;
     sc->t0 = screen68_micros();
@@ -219,7 +254,44 @@ void shotstage68_discard(void)
     }
 }
 
+/* The second opinion, taken as a PAIR and with nothing pumped between the
+ * two reads: one CopyBits band of row 0, and one fresh walk of the same
+ * row. Comparing those two answers "is the base right"; comparing the
+ * fresh walk against the one the capture took answers "did the screen hold
+ * still", which is what makes the first answer quotable. n68_shotdiag.h
+ * carries the argument.
+ *
+ * A band this small (one row, 640 bytes at 8 bits) is the cheapest thing
+ * screen68_band_open is ever asked for, but it can still fail on a 384 KB
+ * partition - and a failure is reported as one rather than folded into a
+ * pass. */
+static void sample_pair(N68ShotDiag *diag, const Screen68 *sc)
+{
+    Band68 band;
+
+    if (diag == NULL) {
+        return;
+    }
+    if (!screen68_band_open(&band, sc, 1)) {
+        return;
+    }
+    HideCursor();      /* so the cursor cannot differ between the two looks */
+    (void)screen68_band_copy(&band, sc, 0);
+    memcpy(diag->blit, band.base, (size_t)kN68ShotDiagSampleBytes);
+    memcpy(diag->walk_again, (const void *)sc->base,
+           (size_t)kN68ShotDiagSampleBytes);
+    ShowCursor();
+    screen68_band_close(&band);
+    diag->pair_ok = 1;
+}
+
 ShotStage68Status shotstage68_write(ShotStage68 *out, char *why, long why_cap)
+{
+    return shotstage68_diagnose(out, NULL, why, why_cap);
+}
+
+ShotStage68Status shotstage68_diagnose(ShotStage68 *out, N68ShotDiag *diag,
+                                       char *why, long why_cap)
 {
     Screen68 sc;
     FSSpec spec;
@@ -233,6 +305,7 @@ ShotStage68Status shotstage68_write(ShotStage68 *out, char *why, long why_cap)
         return kShotStage68Geometry;
     }
     memset(out, 0, sizeof *out);
+    n68_shotdiag_init(diag);
     why[0] = '\0';
 
     if (g_running) {
@@ -259,6 +332,18 @@ ShotStage68Status shotstage68_write(ShotStage68 *out, char *why, long why_cap)
         return kShotStage68Geometry;
     }
 
+    if (diag != NULL) {
+        diag->width = out->plan.width;
+        diag->height = out->plan.height;
+        diag->depth = out->plan.depth;
+        diag->fb_row_bytes = sc.row_bytes;
+        diag->row_bytes = out->plan.row_bytes;
+        /* The addressing sample is taken again inside the walk; this one
+         * exists so a run that never reaches the walk (no disk, no room)
+         * still says where the screen was said to be. */
+        sample_addressing(diag, sc.base);
+    }
+
     g_running = true;
     g_io_n = 0;
     g_ref = 0;
@@ -268,7 +353,22 @@ ShotStage68Status shotstage68_write(ShotStage68 *out, char *why, long why_cap)
 
     /* Recreated every time: a stale capture from a previous transfer would
      * otherwise be appended to and sent as this one. */
-    (void)stage_spec(&spec);
+    /* stage_spec's RETURN IS CHECKED, and it was not before. fnfErr is the
+     * ordinary answer - the scratch file does not exist yet and the FSSpec
+     * is fully built anyway, which is exactly what FSpCreate wants. Any
+     * other failure means `spec` was never filled in, and the old code
+     * then handed an uninitialised stack FSSpec to FSpDelete and FSpCreate:
+     * a random vRefNum, dirID and name, acted on by the File Manager. It
+     * has never been seen to fire (it needs now68k_desktop_folder to fail,
+     * or the volume to go away between the two calls) and it is one line
+     * to close, which is the whole argument for closing it. */
+    err = stage_spec(&spec);
+    if (err != noErr && err != fnfErr) {
+        g_running = false;
+        say_num(why, why_cap, "could not name the capture file (error ",
+                (long)err, ")");
+        return kShotStage68File;
+    }
     (void)FSpDelete(&spec);
     err = FSpCreate(&spec, 'NW68', 'BINA', smSystemScript);
     if (err == noErr) {
@@ -306,6 +406,8 @@ ShotStage68Status shotstage68_write(ShotStage68 *out, char *why, long why_cap)
 
     memset(&stage, 0, sizeof stage);
     stage.bounds = sc.bounds;
+    stage.base = sc.base;
+    stage.diag = diag;
 
     memset(&sink, 0, sizeof sink);
     sink.ctx = &stage;
@@ -350,6 +452,13 @@ ShotStage68Status shotstage68_write(ShotStage68 *out, char *why, long why_cap)
     out->write_ms = (long)(g_write_us / 1000UL);
     memcpy(out->leaf, kShotStageLeaf, sizeof kShotStageLeaf);
     now68k_log_num("stage: packed bytes", out->total);
+    if (diag != NULL) {
+        diag->staged_bytes = out->total;
+        /* AFTER the file is closed, so the band's memory is asked for at
+         * the moment of least pressure rather than while the write buffer
+         * and an open fork are both live on a 4 MB machine. */
+        sample_pair(diag, &sc);
+    }
     g_running = false;
     return kShotStage68OK;
 }

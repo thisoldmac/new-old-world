@@ -144,6 +144,22 @@ final class CommandRegistryTests: XCTestCase {
             machine that will not transfer anything again until they can \
             say stop.
             """,
+        "shotdiag": """
+            A diagnostic for a defect that exists on one machine. A \
+            capture taken on the PowerBook 180c saves correctly to that \
+            machine's own Desktop and arrives at the host as structured \
+            noise, while the same lane crosses byte-accurately on the \
+            Quadra 800 emulator — so it is 68K-specific, it is that \
+            machine's, and only that machine can settle it. The verb \
+            stages a capture down NOW-68K's own wire path and reports \
+            where it read from. The PowerPC guest has neither the defect \
+            nor the path: its capture is CopyBits into a full-frame \
+            GWorld, not a raw walk to a framebuffer above 16 MB. A verb \
+            there would be a second implementation of a question that \
+            machine does not have. If this is ever settled and the verb \
+            outlives its reason, DELETE it rather than porting it — see \
+            docs/command-parity.md.
+            """,
     ]
 
     func testTheThreeHalvesAgreeOnTheCommandSet() throws {

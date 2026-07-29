@@ -164,6 +164,11 @@ run_c now-guest-68k test_shotwire.c     "" src/screenshots/n68_shotwire.c \
 run_c now-guest-68k test_shotemit.c     "" src/screenshots/n68_shotwire.c \
       src/screenshots/n68_packbits.c src/core/numfmt.c
 run_c now-guest-68k test_packbits.c     "" src/screenshots/n68_packbits.c
+# The capture diagnostic's renderer. The Toolbox half (StripAddress, the
+# MMU byte, the walk) is unreachable from here and is NOT covered; what is
+# covered is the four verdicts and the exact width of a sample row.
+run_c now-guest-68k test_shotdiag.c     "" src/screenshots/n68_shotdiag.c \
+      src/commands/n68_cmdresult.c src/core/numfmt.c
 run_c now-guest-68k test_crc32.c        "" src/core/n68_crc32.c
 run_c now-guest-68k test_putrx.c        "" \
       src/files/n68_putrx.c src/core/n68_crc32.c src/core/json_scan.c

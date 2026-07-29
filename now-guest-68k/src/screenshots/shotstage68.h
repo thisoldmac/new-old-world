@@ -55,6 +55,7 @@
 #ifndef NOW68K_SHOTSTAGE68_H
 #define NOW68K_SHOTSTAGE68_H
 
+#include "n68_shotdiag.h"
 #include "n68_shotwire.h"
 
 typedef enum {
@@ -89,6 +90,19 @@ typedef struct {
  * Not re-entrant and not free of time - the same guard and the same
  * reasoning as shot68.c. */
 ShotStage68Status shotstage68_write(ShotStage68 *out, char *why, long why_cap);
+
+/* The SAME staging, with the addressing facts and a CopyBits second
+ * opinion of row 0 recorded on the way past (n68_shotdiag.h says what they
+ * settle and why they have to be sampled here rather than by a probe).
+ *
+ * shotstage68_write() is this function with `diag` NULL, so the capture the
+ * diagnostic describes is the capture the wire sends - byte for byte, same
+ * code, same order, same file. That is the entire reason it is a parameter
+ * on the live path instead of a second routine that "does the same thing":
+ * a diagnostic that runs beside the real path rather than inside it can
+ * only ever clear the path it is not. */
+ShotStage68Status shotstage68_diagnose(ShotStage68 *out, N68ShotDiag *diag,
+                                       char *why, long why_cap);
 
 /* Removes the scratch file. Called when a transfer ends, however it ends -
  * a staged capture nobody is sending is 65 KB of a 4 MB disk. */

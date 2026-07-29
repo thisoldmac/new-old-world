@@ -9,6 +9,97 @@ wrong thing) versus **unverified** (it may well be right, but no one has
 watched it work on the PowerBook). Unverified is not a lesser problem —
 several of tonight's bugs lived in code that looked obviously correct.
 
+## A capture crosses the wire garbled from the 180c (2026-07-28)
+
+### Broken
+
+A screenshot taken on the PowerBook 180c **saves correctly to that
+machine's own Desktop** and arrives at the host as **structured noise**,
+banded at a plausible stride, looking like memory that was never a
+screen. The same lane crosses **byte-accurately on the Quadra 800
+emulator** (137,783 bytes), so it is 180c-specific. `capture.begin` and
+`CaptureDecoder.swift` agree; the walk arithmetic, palette, PackBits
+encoder and per-row length prefix are consolidated in
+`n68_shotwire_emit()` and gated by `test_shotemit.c`.
+
+### What this pass ruled out, and how
+
+The live path is `screenshots/shotstage68.c` (staged PackBits to a
+scratch file on the Desktop, streamed through `n68_filesrc.c`);
+`shotsrc68.c` is dead code with no callers. A previous pass cleared the
+staged path **by inspection**, which is why it was re-read line by line
+here. Audited and **not** the cause:
+
+- **A `capture.begin` byte count that disagrees with the file.** Already
+  guarded: `wire68.c` refuses when `src.total != staged.total`, one
+  number from the catalog and one from the staging.
+- **Short or failed File Manager writes, a full disk.** `FSWrite`
+  reports `dskFulErr` with the count it managed; `stage_flush` records
+  it, `stage_sink_stop` ends the walk, and the capture is refused. The
+  bytes cannot go out short and be described as complete.
+- **A stale or reused staging file.** Deleted and recreated per capture,
+  then size-checked against what was written.
+- **Memory pressure during packing.** ~3.1 KB of file-scope BSS, no
+  allocation anywhere on the path.
+- **Per-row `ShieldCursor`/`ShowCursor`.** Could cost at most a
+  cursor-sized patch of one row; cannot band a frame.
+- **PackBits framing.** Every row carries its own big-endian length, so
+  one bad row cannot shift the rows after it — which is what banding
+  across a whole frame would require.
+
+**Fixed in passing** (latent, not the cause): `stage_spec()`'s return was
+ignored, so a failure other than `fnfErr` handed an **uninitialised stack
+`FSSpec`** to `FSpDelete` and `FSpCreate`. It needs
+`now68k_desktop_folder` to fail or the volume to vanish mid-call, and it
+has never been seen to fire.
+
+### Unverified — the hypothesis that survives
+
+The walk reads the wrong memory *at capture time*, and `vprobe` cannot
+see it. `vprobe`'s fidelity sweep reported **480/480 rows matching**
+CopyBits at base `0xFC080000` (docs/vram-readout-68k.md), which retired
+the plain `StripAddress` hypothesis — but **`vprobe` opens no file**. The
+staged capture creates and opens a scratch file on the Desktop **before**
+it walks the framebuffer. If anything in that path leaves the machine in
+**24-bit addressing**, `0xFC080000` truncates to `0x00080000` — main RAM,
+which is exactly what "memory that was never a screen" reads as. It also
+fits the one asymmetry nobody has explained: the *PICT* capture, which
+goes through CopyBits rather than a raw walk, is correct on the same
+machine.
+
+This is a hypothesis. It has not been tested, and it cannot be from here.
+
+### The diagnostic, and the one pass that settles it
+
+`shotdiag` (contract `x-commands`, both faces, `n68_shotdiag.h`) stages a
+capture down the **live** path — `shotstage68_diagnose()` *is*
+`shotstage68_write()` — and reports, sampled from inside the walk's first
+row: `base`, `StripAddress(base)`, the MMU byte, the screen's stride
+beside the promised row, and the first 16 bytes of row 0 as the walk sees
+them beside the same row as CopyBits copies it.
+
+Procedure, one visit:
+
+1. Deploy the build under an honest name (AGENTS.md), on a still screen.
+2. Type `shotdiag` at the guest, or send it from the host console.
+3. Read the **Verdict** row.
+   - `identical - the base is right` → the walk is innocent and the whole
+     upper half of the pipeline is retired; the fault is in staging,
+     transport or decode, and the next look is at the staged file's own
+     bytes.
+   - `DIFFERS at byte N` → the walk read elsewhere. Compare **Base**
+     against **StripAddress**, and read **Addressing**: `24-bit (!)`
+     confirms the hypothesis above outright.
+   - `matches now; screen moved during walk` → the run proved nothing.
+     Repeat on a still screen.
+4. Then run `vprobe` in the same session and compare its Fidelity row. If
+   `vprobe` is clean and `shotdiag` is not, the difference between them
+   is the file the capture opens first, and that is the answer.
+
+`shotdiag` has **never run on the 180c**. Its renderer is gated by
+`test_shotdiag.c`; everything it measures is a Toolbox call no gate in
+this tree can reach.
+
 ## Two guests on one port: the wire half only (2026-07-28)
 
 The host now serves several guests at once, told apart by the identity

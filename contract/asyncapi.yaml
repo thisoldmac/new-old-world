@@ -2044,6 +2044,23 @@ components:
         properties:
           screenshot:
             $ref: "#/components/x-commands/gestalt/x-rowArray"
+    shotdiag:
+      description: >
+        Stage a capture down the guest's real wire path and report where it
+        read from: the framebuffer base as the guest resolved it,
+        StripAddress of that base, whether the machine is in 32-bit
+        addressing at the moment of the walk, and the first sixteen bytes
+        of row 0 as the walk sees them beside the same row as CopyBits
+        copies it. Identical samples mean the base is right and the fault
+        is downstream; different ones name the byte. A diagnostic, not a
+        capture — the scratch file is discarded and nothing crosses the
+        bulk channel. Runs a full screen read and pack, so it wants a
+        still screen and costs what a capture costs.
+      args: {}
+      output:
+        type: object
+        properties:
+          shotdiag: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
     ps:
       description: >
         The guest's running processes, one row per process: the name, and

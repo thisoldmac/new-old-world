@@ -40,8 +40,10 @@
 #include "n68_vprobe.h"
 #include "numfmt.h"
 #include "n68_shot.h"
+#include "n68_shotdiag.h"
 #include "proc68.h"
 #include "shot68.h"
+#include "shotstage68.h"
 #include "vprobe68.h"
 /* The one command whose whole meaning is "put this on the wire", so this
  * layer reaches down to the transport for it. wire68.c already reaches up
@@ -684,6 +686,8 @@ static const N68CommandDoc k_docs[] = {
       "vprobe (no arguments; wants a still screen)" },
     { "screenshot", "capture this Mac's screen to its desktop",
       "screenshot [--depth 8] [--no-save]" },
+    { "shotdiag", "stage a capture and report where it read from",
+      "shotdiag (no arguments; wants a still screen)" },
     { "put", "send a file from this Mac to the host", "put <file name>" },
     { "ls", "list a folder in this Mac's share", "ls [folder]" },
     { "cancel", "stop the file transfer in flight, either direction",
@@ -935,6 +939,63 @@ static void run_ls(const char *target, N68CmdRows *out)
                       more, out);
 }
 
+/* ---- `shotdiag`: one metal pass, and the machine is answerable ------------
+ *
+ * A capture taken on the PowerBook 180c arrives at the host as structured
+ * noise while the same lane crosses byte-accurately on the Quadra 800
+ * emulator. Nothing here can settle that; only that machine can, and it is
+ * in another room. So this verb exists to make ONE trip enough:
+ * n68_shotdiag.h states the two surviving hypotheses and the single
+ * observation that separates them.
+ *
+ * IT RUNS THE LIVE PATH, not a copy of it. shotstage68_diagnose() IS
+ * shotstage68_write() - same walk, same PackBits, same scratch file - with
+ * the facts recorded on the way past. A diagnostic built as its own
+ * routine could only ever clear the routine it is, which is how the
+ * previous pass came to clear shotstage68.c by inspection and prove
+ * nothing.
+ *
+ * The scratch file is discarded afterwards. This verb answers a question;
+ * it does not arm a transfer, and 65 KB left on a 4 MB disk is the failure
+ * kShotStageLeaf's own note warns about.
+ *
+ * A row array rather than an N68CmdResult, and therefore through
+ * now68k_commands_run_rows and NOT a fifth arm in the dispatch: nine
+ * [label, value] pairs is a table, and docs/command-parity.md's ruling is
+ * that a table-shaped answer takes the rows seam so the console reaches it
+ * by delegating. conwin.c is untouched by this command's existence. */
+static void run_shotdiag(N68CmdRows *out)
+{
+    ShotStage68 staged;
+    N68ShotDiag diag;
+    char why[kDetailCap];
+    ShotStage68Status status;
+
+    why[0] = '\0';
+    n68_shotdiag_init(&diag);
+    status = shotstage68_diagnose(&staged, &diag, why, (long)sizeof why);
+    shotstage68_discard();
+    if (status != kShotStage68OK) {
+        now68k_log_num("cmd: shotdiag refused", (long)status);
+        /* ONE code, not `screenshot`'s two, and that is a deliberate
+         * difference rather than a copy made carelessly. `screenshot`
+         * splits busy from refused because Shot68Status tells them apart.
+         * ShotStage68Status does not: kShotStage68File is returned both
+         * for "a capture is already being staged" and for a disk that said
+         * no, and a code that guessed between them would be a retry hint
+         * invented out of nothing. The sentence carries which. */
+        n68_cmdrows_set_error(out, "shotdiag-refused",
+                              why[0] != '\0' ? why
+                                             : "shotdiag could not stage a "
+                                               "capture on this Mac");
+        return;
+    }
+    now68k_log_num("cmd: shotdiag ok", diag.staged_bytes);
+    out->ok = 1;
+    bounded_strcpy(out->key, sizeof out->key, "shotdiag");
+    n68_shotdiag_rows(&diag, out);
+}
+
 /* The other end of `put`, and of a push arriving - one verb for both,
  * because the lane is one transfer wide and there is only ever one thing
  * to stop. wire68.c owns the doing; this is a renderer.
@@ -974,6 +1035,11 @@ const N68CmdRows *now68k_commands_run_rows(const char *name,
     if (strcmp(name, "ls") == 0) {
         n68_cmdrows_init(&g_rows);
         run_ls(target, &g_rows);
+        return &g_rows;
+    }
+    if (strcmp(name, "shotdiag") == 0) {
+        n68_cmdrows_init(&g_rows);
+        run_shotdiag(&g_rows);
         return &g_rows;
     }
     return NULL;
