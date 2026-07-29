@@ -82,6 +82,13 @@ face reaching a capability the next does not.
 Same discipline as [adding-a-workshop-module.md](adding-a-workshop-module.md)
 on the guest side, and for the same reason.
 
+**What the registry currently reaches, and what it does not, is
+[mcp-coverage.md](mcp-coverage.md)** — this file is the boundary, that one is
+the inventory. It joins the registry against the contract and both guests'
+dispatch, separates a gap somebody argued for from a gap nobody noticed, and
+is enforced by `MCPCoverageTests` rather than maintained by hand. A new row
+here means a row there, in the same commit; the test says so if it does not.
+
 ## Implemented slices
 
 The implemented V0 surface exposes only five host-owned projections.
