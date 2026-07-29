@@ -100,9 +100,15 @@ final class HostAppState: ObservableObject {
         self.defaults = defaults
         settings = SettingsModel(defaults: defaults)
         logs = LogsModel(log: .shared, defaults: defaults)
-        listener = GuestListener(identity: .init(
-            version: ProductIdentity.version,
-            name: Host.current().localizedName ?? "Mac"))
+        listener = GuestListener(
+            identity: .init(
+                version: ProductIdentity.version,
+                name: Host.current().localizedName ?? "Mac"),
+            /* The one place that asks for machine handles to SURVIVE a
+               relaunch. Everywhere else — tests, previews — gets the
+               memory-only default and cannot write into a real desk's
+               book of Macs. */
+            registry: GuestRegistry(defaults: defaults))
         artifactApprovals = try? AgentIntegrationArtifactApprovalStore()
         let integration = AgentIntegrationHostAdapter(
             listener: listener,
@@ -120,7 +126,8 @@ final class HostAppState: ObservableObject {
             ?? ""
         stateMirror = listener.$state.sink { [weak self] state in
             guard let self else { return }
-            let connection = Self.guestState(from: state)
+            let connection = Self.guestState(
+                from: state, key: self.listener.activeKey)
             /* One assignment per model, from one place, in one turn. The
                models decide for themselves what a switch means to them —
                see GuestScopedState.swift — but they must all learn about it
@@ -200,15 +207,23 @@ final class HostAppState: ObservableObject {
         }
     }
 
-    /// The listener's state says WHO is connected by name; the key the
-    /// models compare is derived from that name by the same rule the
-    /// listener itself used at hello (`GuestKey(name:)` is the one place
-    /// the folding lives), so the two cannot disagree about what "the same
-    /// machine" means.
-    private static func guestState(from state: GuestListener.State)
+    /// The listener's state says WHO is connected by name; the key comes
+    /// from the listener itself.
+    ///
+    /// It used to be DERIVED from the name, by the same folding rule the
+    /// gate used — safe only for exactly as long as identity was the name.
+    /// It is not: two Macs may share one, and a redeploy changes it. The
+    /// key is now per connection and cannot be recomputed from anything
+    /// visible here, so it is passed rather than reconstructed. `activeKey`
+    /// is a plain property, settled before the state is published, so this
+    /// reads the same turn's answer and not the previous one's.
+    private static func guestState(from state: GuestListener.State,
+                                   key: GuestKey?)
         -> GuestConnectionState {
         switch state {
-        case .connected(let name): return .connected(named: name)
+        case .connected(let name):
+            guard let key else { return .disconnected }
+            return .connected(name: name, key: key)
         case .idle, .listening, .failed: return .disconnected
         }
     }

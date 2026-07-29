@@ -140,7 +140,8 @@ final class NOWAgentCompanionTests: XCTestCase {
             artifactTool["inputSchema"] as? [String: Any])
         let artifactProperties = try XCTUnwrap(
             artifactInput["properties"] as? [String: Any])
-        XCTAssertEqual(Set(artifactProperties.keys), ["approvalReceipt"])
+        XCTAssertEqual(Set(artifactProperties.keys),
+                       ["approvalReceipt", "guest"])
         let artifactAnnotations = try XCTUnwrap(
             artifactTool["annotations"] as? [String: Any])
         XCTAssertEqual(artifactAnnotations["destructiveHint"] as? Bool, true)

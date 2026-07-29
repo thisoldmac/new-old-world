@@ -1,5 +1,50 @@
 import Foundation
 
+/// Which machine an answer is about — the pairing, wherever a guest is
+/// named on this surface.
+///
+/// Three fields because there are three different questions. `id` is the
+/// MACHINE (`pb1400c`): stable, host-assigned, what a caller types to
+/// address it, and what survives a redeploy. `sessionID`
+/// (`pb1400c-<uuid>`) is THIS CONNECTION: a caller that holds one and
+/// presents it after a silent reconnect is told the session ended rather
+/// than being retargeted at its successor — the same shape as the process
+/// and quit references already on this surface, which are refused when
+/// stale rather than reinterpreted. `name` is what the machine calls
+/// itself, which is guest-asserted, carries the version, and is therefore
+/// a label and never a handle.
+///
+/// **No address.** The host observes the guest's peer address and uses it
+/// internally to anchor the id, and it does not travel to a companion
+/// process: this surface has never disclosed where anything is — not the
+/// guest's address, not the host's socket path — and being able to name a
+/// machine does not require being told where it lives. The pairing the
+/// requirement asks for is exposed to the HUMAN, in the app's own roster
+/// and log, where the address is already theirs.
+public struct AgentIntegrationGuestReference:
+    Codable, Equatable, Sendable {
+    public let id: String
+    public let sessionID: String
+    public let name: String
+    /// True while the id is the host's own ordinal and nobody has named
+    /// this machine. It addresses the machine; it just says nothing about
+    /// it.
+    public let idIsAutoAssigned: Bool
+    /// False when the host cannot tell two machines apart at this address,
+    /// so the id's survival across a reconnection is a guess. A caller
+    /// that needs certainty uses `sessionID`.
+    public let idIsAnchored: Bool
+
+    public init(id: String, sessionID: String, name: String,
+                idIsAutoAssigned: Bool, idIsAnchored: Bool) {
+        self.id = id
+        self.sessionID = sessionID
+        self.name = name
+        self.idIsAutoAssigned = idIsAutoAssigned
+        self.idIsAnchored = idIsAnchored
+    }
+}
+
 public struct AgentIntegrationUnavailable: Codable, Equatable, Sendable {
     public static let host = AgentIntegrationUnavailable(
         code: "now-host-unavailable",
@@ -7,6 +52,39 @@ public struct AgentIntegrationUnavailable: Codable, Equatable, Sendable {
     public static let guest = AgentIntegrationUnavailable(
         code: "now-guest-unavailable",
         message: "No paired New Old World guest is connected")
+    /// The caller named a machine that is connected but is not the one
+    /// the host's request-shaped API is driving. Refused rather than
+    /// served by the other machine — being handed the wrong Mac's process
+    /// table is the failure this whole slice exists to prevent.
+    public static func notAddressed(asking: String,
+                                    driving: String,
+                                    connected: [String])
+        -> AgentIntegrationUnavailable {
+        AgentIntegrationUnavailable(
+            code: "now-guest-not-addressed",
+            message: "\(asking) is connected, but this host is driving "
+                + "\(driving). Connected: \(connected.joined(separator: ", "))")
+    }
+
+    /// The caller held a session id for a connection that has ended.
+    /// Distinct from `notAddressed` and from `guest`, because "your
+    /// session ended" and "nothing is connected" are different facts and
+    /// only one of them is fixed by reconnecting.
+    public static func sessionEnded(_ sessionID: String)
+        -> AgentIntegrationUnavailable {
+        AgentIntegrationUnavailable(
+            code: "now-guest-session-ended",
+            message: "Session \(sessionID) has ended. Address the machine "
+                + "by its id to reach whatever is connected to it now.")
+    }
+
+    /// The caller named a machine the host has no live connection to.
+    public static func notConnected(_ id: String)
+        -> AgentIntegrationUnavailable {
+        AgentIntegrationUnavailable(
+            code: "now-guest-not-connected",
+            message: "No New Old World guest \(id) is connected")
+    }
 
     public let code: String
     public let message: String
@@ -65,6 +143,9 @@ public struct AgentIntegrationSessionHealth: Codable, Equatable, Sendable {
     }
 
     public struct Guest: Codable, Equatable, Sendable {
+        /// Who this is — id, session id and label together. Optional only
+        /// so a decoder built against v6 keeps working.
+        public let reference: AgentIntegrationGuestReference?
         public let name: String
         public let version: String?
         public let operatingSystem: String?
@@ -74,10 +155,12 @@ public struct AgentIntegrationSessionHealth: Codable, Equatable, Sendable {
         public let pingsAnswered: Int?
         public let framesReceived: Int?
 
-        public init(name: String, version: String?,
+        public init(reference: AgentIntegrationGuestReference? = nil,
+                    name: String, version: String?,
                     operatingSystem: String?, connectedAt: Date?,
                     lastTraffic: Date?, quietFor: TimeInterval?,
                     pingsAnswered: Int?, framesReceived: Int?) {
+            self.reference = reference
             self.name = name
             self.version = version
             self.operatingSystem = operatingSystem
@@ -94,10 +177,18 @@ public struct AgentIntegrationSessionHealth: Codable, Equatable, Sendable {
     public let listeningPort: UInt16?
     public let sessionID: UUID?
     public let guest: Guest?
+    /// EVERY machine currently connected, not just the one being driven.
+    /// The host serves several at once, so a caller that could only see
+    /// the active one had no way to discover the id it needs to address
+    /// another — and no way to know the others were there at all.
+    public let roster: [AgentIntegrationGuestReference]
     public let failure: String?
 
     public init(state: State, observedAt: Date, listeningPort: UInt16?,
-                sessionID: UUID?, guest: Guest?, failure: String?) {
+                sessionID: UUID?, guest: Guest?,
+                roster: [AgentIntegrationGuestReference] = [],
+                failure: String?) {
+        self.roster = roster
         self.state = state
         self.observedAt = observedAt
         self.listeningPort = listeningPort
@@ -161,15 +252,22 @@ public struct AgentIntegrationProcessSnapshot:
     }
 
     public let sessionID: UUID
+    /// WHICH machine these rows came from. A process table that does not
+    /// say whose it is was the concrete complaint: an agent calling
+    /// process.list got whatever guest happened to be active with nothing
+    /// in the answer naming it.
+    public let guest: AgentIntegrationGuestReference?
     public let observedAt: Date
     public let freshness: Freshness
     public let referenceAuthority: ReferenceAuthority
     public let processes: [AgentIntegrationObservedProcess]
 
-    public init(sessionID: UUID, observedAt: Date,
+    public init(sessionID: UUID, guest: AgentIntegrationGuestReference? = nil,
+                observedAt: Date,
                 freshness: Freshness = .pointInTime,
                 referenceAuthority: ReferenceAuthority = .cooperativeQuit,
                 processes: [AgentIntegrationObservedProcess]) {
+        self.guest = guest
         self.sessionID = sessionID
         self.observedAt = observedAt
         self.freshness = freshness

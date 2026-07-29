@@ -23,13 +23,19 @@ final class Session {
     /// Asked once, with the guest's own hello, at the gate: nil to serve
     /// this connection, or the reason to refuse it.
     ///
-    /// It takes the hello because the answer now depends on WHO is
-    /// dialling — the host serves several guests at once and refuses only
-    /// a machine that is already connected. The predicate that took no
-    /// argument could only answer "is anybody here", which is the same
-    /// answer for the guest already connected and for the other Mac on
-    /// the desk.
+    /// It takes the hello because the answer used to depend on WHO was
+    /// dialling. It no longer does — identity is per CONNECTION now, so
+    /// no arriving guest can collide with one already here and the only
+    /// refusal left is the host's own limit. The hello stays in the
+    /// signature because the refusal text is written for the guest that
+    /// will read it.
     private let admit: (Hello) -> String?
+    /// The peer address, observed off the connection at accept. Handed to
+    /// `identify` at the gate, where it anchors the machine id.
+    private let address: GuestAddress
+    /// Mints this connection's session identity. Asked once, at the gate,
+    /// because the machine id it embeds depends on the hello.
+    private let identify: (Hello, GuestAddress) -> GuestKey
     private let onActive: (Session) -> Void
     private let onLog: (String, String, HostLog.LogLevel) -> Void
     private let onHealth: (GuestListener.SessionHealth?) -> Void
@@ -102,15 +108,19 @@ final class Session {
     /// GuestKey folds by it too and a second spelling would let an
     /// unnamed guest be admitted twice under two different keys.
     nonisolated static let unnamedGuest = "Classic Mac"
-    /// Set at the gate, from the hello. Nil until then.
+    /// Set at the gate. Nil until then.
     private(set) var guestKey: GuestKey?
+    /// Where this connection came from, known from accept.
+    var guestAddress: GuestAddress { address }
     private var idleTask: Task<Void, Never>?
 
     init(connection: NWConnection,
          identity: GuestListener.HostIdentity,
          timing: GuestListener.Timing,
          pacing: GuestListener.Pacing,
+         address: GuestAddress,
          admit: @escaping (Hello) -> String?,
+         identify: @escaping (Hello, GuestAddress) -> GuestKey,
          onActive: @escaping (Session) -> Void,
          onLog: @escaping (String, String, HostLog.LogLevel) -> Void,
          onHealth: @escaping (GuestListener.SessionHealth?) -> Void,
@@ -150,7 +160,9 @@ final class Session {
         self.identity = identity
         self.timing = timing
         self.pacing = pacing
+        self.address = address
         self.admit = admit
+        self.identify = identify
         self.onActive = onActive
         self.onLog = onLog
         self.onHealth = onHealth
@@ -1213,8 +1225,10 @@ final class Session {
         helloed = true
         guestName = hello.name ?? Self.unnamedGuest
         /* Settled before onActive, so the listener files this session
-           under the same key the gate just admitted it by. */
-        guestKey = GuestKey(hello: hello)
+           under the same key the gate just minted. Per connection, so
+           two Macs calling themselves the same thing are two guests. */
+        let key = identify(hello, address)
+        guestKey = key
         let chunk = min(hello.chunk ?? Contract.defaultChunk,
                         Contract.defaultChunk)
         send(.hello(Hello(contract: Contract.revision, side: "host",
@@ -1226,7 +1240,11 @@ final class Session {
             guestOS: hello.os, connectedAt: now, lastTraffic: now,
             pingsAnswered: 0, framesReceived: 1)
         onHealth(health)
-        var line = "Connected: \(guestName)"
+        /* The handle, what the machine calls itself, and where it dialled
+           from — together, once, in the host's own log. A person reading
+           it afterwards needs the pairing to know which Mac this was. */
+        var line = "Connected: \(key.machine.slug) — \(guestName)"
+            + " at \(address.text)"
         if !hello.version.isEmpty {
             line += " (guest \(hello.version)"
             line += hello.os.map { ", OS \($0))" } ?? ")"

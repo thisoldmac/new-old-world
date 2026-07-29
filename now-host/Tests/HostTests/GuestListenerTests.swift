@@ -170,10 +170,16 @@ final class GuestListenerTests: XCTestCase {
         if case .connected = listener.state { XCTFail("must not connect") }
     }
 
-    /// The refusal that survives multi-guest: the SAME machine dialling
-    /// twice. It reads identically on the wire to the old one-guest-only
-    /// refusal, and means something narrower — that Mac is already here.
-    func testTheSameGuestDiallingTwiceIsRefusedBusyAndFirstSurvives()
+    /// The refusal that DID NOT survive: two machines calling themselves
+    /// the same thing.
+    ///
+    /// Identity used to be the folded hello name, so this second dial was
+    /// refused `busy` and a real second Mac on the desk could not be
+    /// served. Identity is the connection now, so both are served, both
+    /// appear in the roster, and they are told apart by their host-assigned
+    /// machine ids. The name is still shown — it is just no longer the
+    /// thing that decides.
+    func testTwoMacsOfTheSameNameAreTwoGuestsAndNotABusyRefusal()
         async throws {
         let first = FakeGuest(port: listener.boundPort!)
         first.start()
@@ -184,16 +190,24 @@ final class GuestListenerTests: XCTestCase {
 
         let second = FakeGuest(port: listener.boundPort!)
         second.start()
-        // Different spelling, same machine: identity folds case and
-        // surrounding space, so this is a collision and not a new guest.
+        // Same name, differently spelled — which the old rule folded into
+        // one machine.
         try second.send(guestHello(name: " quadra 950 "))
-        try await waitUntil("busy refusal") { !second.received.isEmpty }
-        guard case .refuse(let refuse) = second.received[0] else {
-            return XCTFail("expected refuse, got \(second.received)")
+        try await waitUntil("both are in the roster") {
+            self.listener.guests.count == 2
         }
-        XCTAssertEqual(refuse.reason, "busy: Quadra 950")
+        XCTAssertFalse(second.received.contains { message in
+            if case .refuse = message { return true }
+            return false
+        }, "the second Mac must not be refused for sharing a name")
+        let ids = Set(listener.guests.map(\.id.slug))
+        XCTAssertEqual(ids.count, 2,
+                       "two machines, two handles, never one row")
+        let sessions = Set(listener.guests.map(\.sessionID))
+        XCTAssertEqual(sessions.count, 2)
         XCTAssertEqual(listener.state,
-                       .connected(guestName: "Quadra 950"))
+                       .connected(guestName: "Quadra 950"),
+                       "and the first is still the one being driven")
 
         // The surviving session still answers pings.
         try first.send(.ping(id: 7))
@@ -746,7 +760,8 @@ final class GuestListenerDiagnosticsTests: XCTestCase {
         XCTAssertEqual(health.guestVersion, "0.9")
         XCTAssertEqual(health.guestOS, "8.1")
         XCTAssertTrue(listener.log.contains {
-            $0.text.contains("Connected: Quadra 950") })
+            $0.text.contains("Connected:")
+                && $0.text.contains("Quadra 950") })
 
         try guest.send(.ping(id: 1))
         while (listener.health?.pingsAnswered ?? 0) == 0, Date() < deadline {
@@ -1013,6 +1028,16 @@ final class MultiGuestListenerTests: XCTestCase {
                        "health follows the guest being driven")
     }
 
+    /// The live session key for a connected Mac, by the name it reports.
+    ///
+    /// A test cannot derive a key from a name any more, and should not be
+    /// able to: that derivation WAS the defect. It asks the roster, which
+    /// is what the picker does.
+    private func liveKey(_ name: String) throws -> GuestKey {
+        try XCTUnwrap(listener.guests.first { $0.name == name }?.key,
+                      "no connected guest called \(name)")
+    }
+
     func testABackgroundGuestLeavingDoesNotDisturbTheConsole()
         async throws {
         _ = try await connect("PowerBook 1400c")
@@ -1032,7 +1057,7 @@ final class MultiGuestListenerTests: XCTestCase {
         let powerPC = try await connect("PowerBook 1400c")
         let m68k = try await connect("PowerBook 180c")
 
-        XCTAssertTrue(listener.selectGuest(GuestKey(name: "PowerBook 180c")))
+        XCTAssertTrue(listener.selectGuest(try liveKey("PowerBook 180c")))
         XCTAssertEqual(listener.state,
                        .connected(guestName: "PowerBook 180c"))
         XCTAssertEqual(listener.guests.filter(\.isActive).map(\.name),
@@ -1054,7 +1079,7 @@ final class MultiGuestListenerTests: XCTestCase {
 
         var settled: CommandResult?
         listener.runCommand("help") { settled = $0 }
-        listener.selectGuest(GuestKey(name: "PowerBook 180c"))
+        listener.selectGuest(try liveKey("PowerBook 180c"))
         try await waitUntil("the waiter is answered") { settled != nil }
         XCTAssertEqual(settled?.ok, false)
         XCTAssertEqual(settled?.error?.code, "disconnected")

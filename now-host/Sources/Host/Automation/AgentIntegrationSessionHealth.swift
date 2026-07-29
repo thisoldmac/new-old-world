@@ -13,7 +13,8 @@ final class AgentIntegrationHostAdapter {
     private let artifactApprovals: AgentIntegrationArtifactApprovalStore?
     private lazy var processControl = AgentIntegrationProcessControl(
         listener: listener,
-        currentSessionID: { [unowned self] in connectedSessionID() })
+        currentSessionID: { [unowned self] in connectedSessionID() },
+        currentGuest: { [unowned self] in activeReference() })
     private lazy var softwareLaunch = AgentIntegrationSoftwareLaunch(
         listener: listener,
         commandTimeout: launchCommandTimeout,
@@ -75,6 +76,7 @@ final class AgentIntegrationHostAdapter {
             let health = listener.health
             refreshSession(connectedAt: health?.connectedAt)
             let guest = AgentIntegrationSessionHealth.Guest(
+                reference: activeReference(),
                 name: health?.guestName ?? guestName,
                 version: health?.guestVersion,
                 operatingSystem: health?.guestOS,
@@ -91,6 +93,7 @@ final class AgentIntegrationHostAdapter {
                 listeningPort: listener.boundPort,
                 sessionID: sessionID,
                 guest: guest,
+                roster: roster(),
                 failure: nil))
         }
     }
@@ -149,7 +152,21 @@ final class AgentIntegrationHostAdapter {
         await artifactTransfer.transfer(receipt: receipt)
     }
 
+    /// The session token this surface scopes its references to.
+    ///
+    /// It is no longer minted here. The listener already mints one
+    /// identity per CONNECTION — the session id — and this is the UUID
+    /// inside it, so the token that scopes a process reference and the
+    /// `<machine>-<uuid>` a caller sees are two readings of one fact
+    /// rather than two facts that can disagree. Two connections to the
+    /// same machine are two tokens, which is what the references have
+    /// always meant.
     private func refreshSession(connectedAt: Date?) {
+        if let live = listener.activeKey?.session {
+            if sessionID != live { sessionID = live }
+            sessionConnectedAt = connectedAt
+            return
+        }
         guard sessionID != nil else {
             self.sessionID = UUID()
             sessionConnectedAt = connectedAt
@@ -163,6 +180,79 @@ final class AgentIntegrationHostAdapter {
         guard previous != connectedAt else { return }
         self.sessionID = UUID()
         sessionConnectedAt = connectedAt
+    }
+
+    /// The machine the request-shaped API is driving, named.
+    func activeReference() -> AgentIntegrationGuestReference? {
+        listener.guests.first(where: \.isActive).map(Self.reference)
+    }
+
+    /// Every connected machine. A caller needs the whole list to discover
+    /// the id it must pass to address one that is not being driven.
+    func roster() -> [AgentIntegrationGuestReference] {
+        listener.guests.map(Self.reference)
+    }
+
+    private static func reference(_ guest: ConnectedGuest)
+        -> AgentIntegrationGuestReference {
+        AgentIntegrationGuestReference(
+            id: guest.id.slug,
+            sessionID: guest.sessionID,
+            name: guest.name,
+            idIsAutoAssigned: guest.idIsAutoAssigned,
+            idIsAnchored: guest.idIsAnchored)
+    }
+
+    /// Whether this host can answer for the machine a caller named.
+    ///
+    /// Nil to proceed. Otherwise the typed reason, which is never a
+    /// substitute answer from another machine: being handed the wrong
+    /// Mac's process table while believing you asked about yours is the
+    /// exact failure this addressing exists to prevent.
+    ///
+    /// **Addressing is an assertion, not a switch.** Naming a machine
+    /// says which one you mean; it does not point the host at it. The
+    /// request-shaped listener API drives one session at a time by
+    /// construction, and making an agent call silently re-point it would
+    /// take the console out from under whoever is sitting at it. So a
+    /// caller that names a connected-but-not-driven machine is refused
+    /// with that machine, the driven one, and the whole roster in the
+    /// message — enough to say what to do next.
+    ///
+    /// This is availability by ADDRESS and does not touch availability by
+    /// CAPABILITY. What a guest can do is still asked of the guest and
+    /// never inferred from which guest it is; this only decides whether
+    /// the question reaches the machine the caller meant.
+    func addressingRefusal(_ selector: String?)
+        -> AgentIntegrationUnavailable? {
+        guard let selector, !selector.isEmpty else { return nil }
+        let connected = listener.guests
+        guard let active = connected.first(where: \.isActive) else {
+            return .guest
+        }
+        /* A session id is precise and is checked first, because it is
+           also parseable as nothing else. */
+        if let key = GuestKey.parse(selector) {
+            if key == active.key { return nil }
+            if connected.contains(where: { $0.key == key }) {
+                return .notAddressed(
+                    asking: key.machine.slug,
+                    driving: active.id.slug,
+                    connected: connected.map(\.id.slug))
+            }
+            return .sessionEnded(selector)
+        }
+        guard let wanted = GuestID(selector) else {
+            return .notConnected(selector)
+        }
+        if wanted == active.id { return nil }
+        if connected.contains(where: { $0.id == wanted }) {
+            return .notAddressed(
+                asking: wanted.slug,
+                driving: active.id.slug,
+                connected: connected.map(\.id.slug))
+        }
+        return .notConnected(wanted.slug)
     }
 
     private func clearSession() {

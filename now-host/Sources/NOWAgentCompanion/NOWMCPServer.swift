@@ -3,6 +3,11 @@ import Foundation
 import NOWAgentIntegration
 
 protocol AgentIntegrationClient: Sendable {
+    /// Which machine the calls that follow are about. One method rather
+    /// than a parameter on every other one: the selector is orthogonal to
+    /// all of them, and a default implementation lets a client that has
+    /// no host to ask ignore it.
+    func addressing(_ selector: String?) -> AgentIntegrationClient
     func sessionHealth() async -> AgentIntegrationSessionHealthResult
     func sessionCapabilities(probeCostly: Bool) async
         -> AgentIntegrationSessionCapabilitiesResult
@@ -45,10 +50,13 @@ extension AgentIntegrationClient {
         -> AgentIntegrationGuestFileUploadCommitResult {
         .hostUnavailable(.host)
     }
+
+    /// Nothing to address: this client answers "no host" to everything.
+    func addressing(_ selector: String?) -> AgentIntegrationClient { self }
 }
 
 struct SocketAgentIntegrationClient: AgentIntegrationClient {
-    private let client: AgentIntegrationLocalClient?
+    private var client: AgentIntegrationLocalClient?
     private let startupError: Error?
 
     init(endpoint: AgentIntegrationEndpoint? = nil) {
@@ -59,6 +67,12 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
             client = nil
             startupError = error
         }
+    }
+
+    func addressing(_ selector: String?) -> AgentIntegrationClient {
+        var copy = self
+        copy.client = client?.addressing(selector)
+        return copy
     }
 
     func sessionHealth() async -> AgentIntegrationSessionHealthResult {
@@ -218,6 +232,12 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
                 message: "New Old World host communication failed")
         }
         switch local {
+        // Passed through as itself. "This host is driving another
+        // machine" is a fact about ADDRESSING, and flattening it into a
+        // communication failure would tell a caller to retry the one
+        // thing that cannot work.
+        case .notAddressed(let refusal):
+            return refusal
         case .hostUnavailable:
             return .host
         case .unsafeEndpoint:
@@ -367,7 +387,7 @@ actor NOWMCPServer {
                                  message: "Invalid tools/list cursor")
         }
         return successResponse(id: id, result: [
-            "tools": [
+            "tools": Self.addressable([
                 [
                     "name": ToolName.sessionHealth.rawValue,
                     "title": "New Old World Session Health",
@@ -405,9 +425,39 @@ actor NOWMCPServer {
                 guestFilesUploadBeginTool(),
                 guestFilesUploadAppendTool(),
                 guestFilesUploadCommitTool(),
-            ],
+            ]),
         ])
     }
+
+    /// Adds the `guest` selector to every tool's schema, in one place.
+    ///
+    /// The host serves several machines at once. A caller that cannot say
+    /// which one it means gets whichever is being driven — which is fine
+    /// on a one-Mac desk and is a silent wrong answer anywhere else — so
+    /// the parameter exists on every tool rather than on the ones somebody
+    /// remembered.
+    private static func addressable(_ tools: [[String: Any]])
+        -> [[String: Any]] {
+        tools.map { tool in
+            var tool = tool
+            guard var schema = tool["inputSchema"] as? [String: Any] else {
+                return tool
+            }
+            var properties =
+                (schema["properties"] as? [String: Any]) ?? [:]
+            properties["guest"] = [
+                "type": "string",
+                "description": Self.guestSelectorHelp,
+            ]
+            schema["properties"] = properties
+            tool["inputSchema"] = schema
+            return tool
+        }
+    }
+
+    private static let guestSelectorHelp = """
+        Which connected Mac this call is about. A machine id (for example         pb1400c) means whatever is connected to that machine now and         follows a reconnection; a session id (machine id, a hyphen and a         UUID, as reported by now_session_health) means one connection and         fails once it has ended rather than being answered by its         successor. Omit to address the machine the host is currently         driving. Naming a connected machine the host is not driving is         refused, never answered by the other one.
+        """
 
     /// The tool that makes the other eleven honest against a guest that
     /// implements only part of the contract. It reports what the CONNECTED
@@ -1058,12 +1108,30 @@ actor NOWMCPServer {
     }
 
     private func callTool(_ request: [String: Any], id: Any) async -> Data {
-        guard let params = request["params"] as? [String: Any],
+        guard var params = request["params"] as? [String: Any],
               let name = params["name"] as? String,
               let tool = ToolName(rawValue: name) else {
             return errorResponse(id: id, code: -32602,
                                  message: "Unknown tool")
         }
+        /* `guest` is lifted off every tool's arguments in ONE place and
+           removed before the tool's own validation runs, so eleven
+           argument checks did not each have to learn about it and drift.
+           An empty or oversized selector is rejected here rather than
+           travelling to the host as a name nothing can match. */
+        var selector: String?
+        if var object = params["arguments"] as? [String: Any],
+           let raw = object.removeValue(forKey: "guest") {
+            guard let text = raw as? String, !text.isEmpty,
+                  text.count <= 128 else {
+                return errorResponse(
+                    id: id, code: -32602,
+                    message: "guest must be a machine id or session id")
+            }
+            selector = text
+            params["arguments"] = object
+        }
+        let client = self.client.addressing(selector)
         if tool == .sessionHealth || tool == .listProcesses
             || tool == .guestFilesCapabilities,
            let arguments = params["arguments"] {

@@ -235,15 +235,99 @@ and saved but appears in no list until you switch to that machine.
   the other one, a transfer it started, an error it reported are all
   invisible until you switch to it. The roster is the obvious place for
   a badge, and it does not have one.
-- **The agent/MCP projection is single-guest throughout** — one
-  `connectedSessionID()`, one capability ledger, one process-reference
-  scope. No MCP tool takes a guest argument. Whether it should, or
-  should follow an explicit `guest.select`, is undecided.
-- **Identity is only as strong as the names are distinct.** Two Macs
-  calling themselves the same thing are one guest to this rule and the
-  second is refused busy. The fix, if it ever bites, is a new optional
-  `hello` field carrying a stable per-machine id — a both-halves change,
-  not made.
+- **One stream, one capture, one put, host-wide** (see above), and with
+  it the reason MCP addressing is an assertion rather than a switch.
+
+### A guest is addressed by a machine id, mapped to its address
+
+Identity used to be the folded `hello.name`. Two consequences, both
+wrong: two Macs calling themselves the same thing were ONE guest and the
+second was refused `busy`, and — because a deployed guest runs under its
+MacBinary name and that name carries the version — every redeploy minted
+a phantom machine. An identifier that changes when you deploy is not an
+identifier.
+
+There are three identities now, kept apart on purpose
+(`now-host/Sources/Host/GuestIdentity.swift`):
+
+| | what it is | who asserts it | changes when |
+| --- | --- | --- | --- |
+| **machine id** | `pb1400c` — the handle a person or an agent types | the HOST assigns it | only a human rename |
+| **session id** | `pb1400c-<uuid>` — one connection | the host mints it at hello | every dial |
+| **address** | the peer IP off the `NWConnection` | host-OBSERVED | DHCP |
+| display name | `NOW Guest 0.14` | the GUEST asserts it | every deploy |
+
+The roster pairs them: the picker and the Drive menu read
+`pb1400c — NOW Guest 0.14`, the log line adds the address, and a caller
+gets the id and session id together.
+
+**No contract change, and none was needed.** The address is host-side
+knowledge, arriving on the socket; the name is already in `hello`.
+Neither guest is touched, neither now differs from the other, and
+`docs/contract-coverage.md` is unchanged because nothing about what a
+guest SERVES moved.
+
+**Where the id comes from.** Assigned host-side and persisted host-side
+(`GuestRegistry`), anchored on the observed address plus a fingerprint
+(the hello's os and its name with the version stripped). The reasoning,
+including why Gestalt cannot supply one — no serial number;
+`gestaltMachineType` is a MODEL; `gestaltSerialAttr` is serial PORTS —
+is written out at the top of that file. First sight is `guest-1`,
+addressable with zero configuration and flagged auto-assigned; a human
+rename makes it `pb1400c`.
+
+**The rules, and what each costs.** An id never silently rebinds:
+adoption needs address AND fingerprint to match, so a stranger inheriting
+a DHCP lease does not inherit `pb1400c` — and the same rule means a Mac
+whose lease changes costs the human one rename. Two machines never
+collapse onto one id: ordinals are unique and a rename onto a taken id is
+refused naming the holder. Where the address cannot tell machines apart —
+loopback, and therefore every emulated guest and every test — a slot
+completes the anchor, and the row says `idIsAnchored: false` rather than
+pretending.
+
+**The MCP surface is addressable** (local protocol v7). Every tool takes
+an optional `guest`: a machine id ("whatever is connected to that Mac
+now", which follows a reconnection) or a session id (precise, and refused
+`now-guest-session-ended` once that connection is over rather than being
+answered by its successor — the same staleness contract the process and
+quit references already keep). `now_session_health` reports the driven
+machine's reference and the WHOLE roster, so a caller can discover the
+ids. Availability by capability is untouched: this decides which machine
+a question reaches, never what a machine can do.
+
+Open, from this slice:
+
+- **Addressing is an assertion, not a switch.** Naming a machine the host
+  is not driving is refused `now-guest-not-addressed`, with the driven
+  machine and the roster in the message. It cannot be answered, because
+  the request-shaped listener API drives one session at a time and every
+  waiter map is still flat (above). Making an agent call re-point it
+  would also take the console out from under whoever is sitting at it —
+  a policy question, not just a plumbing one.
+- **Not every projection names the guest yet.** Session health, the
+  process snapshot and the roster do. Launch, quit, artifact transfer and
+  the Files results still carry only the session UUID. They cannot answer
+  for the wrong machine — addressing is checked before any of them — but
+  a caller reading one of those results alone still has to remember what
+  it asked about.
+- **The real fix is still a guest-minted id in `hello`.** A stable id the
+  MACHINE knows would survive a DHCP change without a rename and would
+  tell two emulated guests apart. It is a contract change and both
+  guests, deliberately not half-implemented here. The candidates and
+  their failure modes — boot volume creation date (a cloned disk yields
+  two machines with one id), a self-assigned id in the guest's own
+  preferences (PPC preferences key off the BINARY'S name, so a side build
+  mints a new one), PRAM (wiped every power cycle on the 180c), the
+  Ethernet address (it belongs to a SCSI-Ethernet dongle that moves) —
+  are recorded in `GuestRegistry`'s header so the next attempt starts
+  where this one stopped.
+- **The address is not on the agent surface, on purpose.** The host
+  observes it and uses it internally; the companion is told the id, the
+  session id and the display name, and nothing about where anything is.
+  Being able to NAME a machine does not require being told its address.
+  The human-facing halves — the app's roster and its log — do show it,
+  because that is the human's own desk.
 
 ## The README shows neither interface (2026-07-28)
 

@@ -236,8 +236,15 @@ final class GuestListener: ObservableObject {
     private let maxGuests: Int
     private var listener: NWListener?
 
-    /// Every guest currently past the hello gate, by identity.
+    /// Every guest currently past the hello gate, by SESSION identity —
+    /// one entry per connection, never per name.
     private var sessions: [GuestKey: Session] = [:]
+    /// Which machine each live session is a session WITH. The registry is
+    /// the book; this is the page open at each socket.
+    private var machineBySession: [GuestKey: GuestRegistry.Record] = [:]
+    /// The host's own book of machine handles. See GuestRegistry for
+    /// where an id comes from and why it is assigned here.
+    let registry: GuestRegistry
     /// Which of them the request-shaped API drives. Nil when none are
     /// connected.
     private(set) var activeKey: GuestKey?
@@ -254,7 +261,9 @@ final class GuestListener: ObservableObject {
     @Published private(set) var guests: [ConnectedGuest] = []
 
     init(identity: HostIdentity, timing: Timing = Timing(),
-         pacing: Pacing = .classicMac, maxGuests: Int = 4) {
+         pacing: Pacing = .classicMac, maxGuests: Int = 4,
+         registry: GuestRegistry? = nil) {
+        self.registry = registry ?? GuestRegistry()
         self.identity = identity
         self.timing = timing
         self.pacing = pacing
@@ -299,15 +308,93 @@ final class GuestListener: ObservableObject {
             state = .idle
             health = nil
         }
+        /* Built from LIVE sessions only. The registry remembers machines
+           that are not here, and deliberately cannot put a row on this
+           list: that is what stops a stale record shadowing the machine
+           actually on the wire. */
         guests = sessions.compactMap { key, live -> ConnectedGuest? in
             guard let record = healthByGuest[key] else { return nil }
+            let machine = machineBySession[key]
             return ConnectedGuest(
-                key: key, name: live.guestName,
+                key: key,
+                id: machine?.id ?? key.machine,
+                idIsAutoAssigned: machine?.autoAssigned ?? true,
+                idIsAnchored: live.guestAddress.distinguishesMachines,
+                name: live.guestName,
+                address: live.guestAddress,
                 version: record.guestVersion,
                 operatingSystem: record.guestOS,
                 connectedAt: record.connectedAt,
                 isActive: key == activeKey)
         }.sorted { $0.connectedAt < $1.connectedAt }
+    }
+
+    /// This connection's session identity, minted once at the gate.
+    ///
+    /// The machine id comes from the registry; the UUID makes the session
+    /// its own thing, so a caller holding `pb1400c-<uuid>` after a silent
+    /// reconnect is told its session ended rather than being retargeted
+    /// at the successor while believing it holds continuity.
+    private func mintSessionKey(hello: Hello,
+                                address: GuestAddress) -> GuestKey {
+        let print = GuestRegistry.fingerprint(
+            name: hello.name, operatingSystem: hello.os)
+        /* Only slots held by a LIVE session count. A machine reconnecting
+           into a slot nobody is using re-adopts the id it had. */
+        let occupied = Set(machineBySession.values.filter {
+            $0.address == address.text && $0.fingerprint == print
+        }.map(\.slot))
+        let record = registry.identify(
+            address: address, name: hello.name, operatingSystem: hello.os,
+            occupiedSlots: occupied)
+        let key = GuestKey(machine: record.id, session: UUID())
+        machineBySession[key] = record
+        return key
+    }
+
+    /// The connected guest a caller means, by machine id.
+    ///
+    /// "Whatever is connected to that Mac now" — the convenient mode, and
+    /// the right one for a person or an agent that just wants the
+    /// machine. It follows a reconnection, which is exactly what a
+    /// session id does not do.
+    func guest(machine id: GuestID) -> ConnectedGuest? {
+        guests.first { $0.id == id }
+    }
+
+    /// The connected guest a caller means, by session id.
+    ///
+    /// Precise: if that session has ended, this is nil and the caller is
+    /// owed "that session ended", never its successor's answer. The same
+    /// shape as the process and quit references on the agent surface — a
+    /// stale reference is refused, not reinterpreted.
+    func guest(session text: String) -> ConnectedGuest? {
+        guard let key = GuestKey.parse(text) else { return nil }
+        return guests.first { $0.key == key }
+    }
+
+    /// Names a connected machine, and re-labels its live session's row.
+    ///
+    /// The session id it was minted with does NOT change — a caller
+    /// holding one must keep being able to present it — so a renamed
+    /// machine reads as `pb1400c` in the roster while its current session
+    /// is still `guest-2-<uuid>`. The next connection carries the new
+    /// name into its session id.
+    @discardableResult
+    func renameGuest(_ key: GuestKey, to proposed: String)
+        -> Result<GuestID, GuestRegistry.RenameFailure> {
+        guard let record = machineBySession[key] else {
+            return .failure(.notFound)
+        }
+        let outcome = registry.rename(record.id, to: proposed)
+        if case .success(let renamed) = outcome {
+            for (session, held) in machineBySession where held.id == record.id {
+                machineBySession[session]?.id = renamed
+                machineBySession[session]?.autoAssigned = false
+            }
+            publishActive()
+        }
+        return outcome
     }
 
     /// Per-guest health, so switching does not have to re-ask the wire
@@ -363,6 +450,7 @@ final class GuestListener: ObservableObject {
             live.close(sending: Bye(code: .shuttingDown, reason: nil))
         }
         sessions = [:]
+        machineBySession = [:]
         healthByGuest = [:]
         activeKey = nil
         guests = []
@@ -391,6 +479,7 @@ final class GuestListener: ObservableObject {
                   completion: @escaping () -> Void) {
         let leaving = Array(sessions.values)
         sessions = [:]
+        machineBySession = [:]
         healthByGuest = [:]
         activeKey = nil
         guests = []
@@ -1764,6 +1853,10 @@ final class GuestListener: ObservableObject {
 
     private func accept(_ connection: NWConnection) {
         let origin = SessionRef()
+        /* Host-observed, before a byte of the guest's own account of
+           itself has been read. This is the fact the machine registry
+           anchors on precisely because the guest had no say in it. */
+        let address = GuestAddress(endpoint: connection.endpoint)
         /// True when this connection is the one the request-shaped API is
         /// driving — so its answers are the ones our waiters are owed.
         func fromActive() -> Bool {
@@ -1771,22 +1864,34 @@ final class GuestListener: ObservableObject {
         }
         let newSession = Session(
             connection: connection, identity: identity, timing: timing,
-            pacing: pacing,
-            admit: { [weak self] hello in
+            pacing: pacing, address: address,
+            admit: { [weak self] _ in
                 guard let self else { return "the host is shutting down" }
-                let key = GuestKey(hello: hello)
-                if let already = self.sessions[key] {
-                    /* The genuine collision, and the only one left: this
-                       machine is already connected. Same wording as the
-                       single-guest refusal, because from the guest's side
-                       it means the same thing. */
-                    return "busy: \(already.guestName)"
-                }
+                /* No identity refusal remains. It used to refuse a hello
+                   name already connected, which meant two Macs sharing a
+                   name were one guest and the second was turned away —
+                   and behind an emulator, where every guest arrives from
+                   the loopback address, an address test would repeat that
+                   mistake in a new place. Identity is per connection now,
+                   so an arriving guest cannot collide with one already
+                   here; a duplicate row left by a half-dead socket is
+                   cleared by the idle timeout, which is a strictly better
+                   failure than refusing a real second machine.
+
+                   The limit is the one refusal left, and it says its
+                   number so a human can tell it from anything else. */
                 if self.sessions.count >= self.maxGuests {
                     return "too many guests connected "
                         + "(\(self.maxGuests))"
                 }
                 return nil
+            },
+            identify: { [weak self] hello, address in
+                guard let self else {
+                    return GuestKey(machine: GuestID("guest")!,
+                                    session: UUID())
+                }
+                return self.mintSessionKey(hello: hello, address: address)
             },
             onActive: { [weak self] activated in
                 guard let self, let key = activated.guestKey else { return }
@@ -2029,6 +2134,7 @@ final class GuestListener: ObservableObject {
                 guard let key = closedSession.guestKey,
                       self.sessions[key] === closedSession else { return }
                 self.sessions[key] = nil
+                self.machineBySession[key] = nil
                 self.healthByGuest[key] = nil
                 // The next guest under this name is not this one. A
                 // capability record that outlived its connection would be

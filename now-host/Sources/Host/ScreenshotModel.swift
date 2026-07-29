@@ -25,10 +25,12 @@ enum GuestConnectionState: Equatable, Sendable {
     /// prevent is showing one Mac's state under another's name.
     case connected(name: String, key: GuestKey)
 
-    /// The ordinary spelling: a name is all a caller usually has, and the
-    /// key is derived from it exactly as the wire derives it.
+    /// Tests and previews only. A key CANNOT be derived from a name any
+    /// more — identity is per connection, and two Macs may share a name —
+    /// so the live path takes the listener's key and this mints a
+    /// synthetic one that is merely distinct per label.
     static func connected(named name: String) -> GuestConnectionState {
-        .connected(name: name, key: GuestKey(name: name))
+        .connected(name: name, key: .synthetic(name))
     }
 
     var canCapture: Bool {

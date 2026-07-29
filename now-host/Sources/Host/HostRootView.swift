@@ -122,7 +122,12 @@ struct GuestPicker: View {
                         .foregroundStyle(.secondary)
                     Picker("Driving", selection: selection) {
                         ForEach(listener.guests) { guest in
-                            Text(guest.name).tag(GuestKey?.some(guest.key))
+                            /* Handle, then what the machine calls itself.
+                               Two Macs may report the same name — that is
+                               the case the old identity could not serve at
+                               all — so the row a person clicks must carry
+                               the thing that tells them apart. */
+                            Text(guest.label).tag(GuestKey?.some(guest.key))
                         }
                     }
                     .labelsHidden()
