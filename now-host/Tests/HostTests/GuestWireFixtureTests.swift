@@ -531,6 +531,62 @@ final class GuestWireFixtureTests: XCTestCase {
         XCTAssertEqual(later, 7, "multi-digit ids are plain decimal")
     }
 
+    /// n68_census_report_json() — now-guest-68k/src/census/n68_census.c. The
+    /// 68K guest's census.report, assembled from numfmt appends like
+    /// everything else it writes, so the source scanner sees fragments and
+    /// this is the whole frame.
+    ///
+    /// Three shapes, and each pins something the other two cannot:
+    ///
+    ///   - an outcome that is not `present` carries its reason in `note`,
+    ///     so a partial answer says what it could not reach;
+    ///   - `absent` decodes as absent. It is the MACHINE saying no, and
+    ///     conflating it with `refused` is the defect the whole census
+    ///     design is built against — the 68K guest now answers all
+    ///     fourteen declared probes, several of them absent, where until
+    ///     this arc it answered every one of them refused;
+    ///   - `cursor` appears only with `more`, and counts what the FRAME
+    ///     carried. The rows a 1024-byte control frame could not hold are
+    ///     deferred to the next request rather than lost, which is the one
+    ///     thing this guest's paging can get wrong without any single page
+    ///     looking wrong.
+    ///
+    /// NOTE: these are claims about the emitter read off the C and proved
+    /// by its native test. No census probe on this guest has ever run on a
+    /// Macintosh — see docs/contract-coverage.md.
+    func test68KCensusReportAsTheGuestWritesIt() throws {
+        guard case .censusReport(let pram) =
+            try decode(Guest68KWire.censusReportPram68K) else {
+            return XCTFail("not a report")
+        }
+        XCTAssertEqual(pram.probe, "pram")
+        XCTAssertEqual(pram.outcome, "partial")
+        XCTAssertEqual(pram.rows.count, 2)
+        XCTAssertEqual(pram.rows[0],
+                       ["valid", "$A8",
+                        "$A8 - Parameter RAM is being retained"],
+                       "name, raw, meaning - in that order")
+        XCTAssertFalse(pram.more)
+        XCTAssertNil(pram.cursor, "no cursor when there is no continuation")
+        XCTAssertEqual(pram.total, 2)
+
+        guard case .censusReport(let pccard) =
+            try decode(Guest68KWire.censusReportAbsent68K) else {
+            return XCTFail("not a report")
+        }
+        XCTAssertEqual(pccard.outcome, "absent",
+                       "the machine said no; that is not `refused`")
+        XCTAssertTrue(pccard.rows.isEmpty)
+
+        guard case .censusReport(let paged) =
+            try decode(Guest68KWire.censusReportPaged68K) else {
+            return XCTFail("not a report")
+        }
+        XCTAssertTrue(paged.more)
+        XCTAssertEqual(paged.cursor, 1, "resume at the first row not carried")
+        XCTAssertEqual(paged.total, 24, "and say how many there are in all")
+    }
+
     /// send_error_reply() — now-guest-68k/src/core/wire68.c:461-494, the 68K guest's
     /// only emitter of a top-level `error`. Reached from the live-state
     /// dispatcher's fall-through (wire68.c:894-899) for any message type
@@ -1415,5 +1471,46 @@ enum Guest68KWire {
         processFrontSent, processFrontStale,
         execOutputFirst68K, execOutputEscaped68K,
         execResultOK68K, execResultUnknown68K,
+        censusReportPram68K, censusReportAbsent68K, censusReportPaged68K,
     ]
+
+    // ---- the hardware census (n68_census.c) ---------------------------
+    //
+    // Transcribed from the pinned strings in
+    // now-guest-68k/tests/test_census.c, which is the point of the pair:
+    // that test proves the guest BUILDS these bytes and these prove this
+    // side DECODES them. Neither half proves anything alone.
+    //
+    // Field order is the order of the appends: type, id, probe, outcome,
+    // rows, more, then cursor (only when more), total, note.
+
+    /// The probe worth most on this particular machine. `partial` because
+    /// 20 of Parameter RAM's 256 bytes are what these Universal Interfaces
+    /// can reach, and the note says so rather than the outcome implying it.
+    static let censusReportPram68K = """
+        {"type":"census.report","id":9,"probe":"pram",\
+        "outcome":"partial","rows":[["valid","$A8",\
+        "$A8 - Parameter RAM is being retained"],\
+        ["Addressing","","24-bit now, 32-bit capable"]],\
+        "more":false,"total":2,\
+        "note":"20 of 256 bytes - no XPRAM trap in these headers"}
+        """
+
+    /// `absent`, which is the MACHINE saying no and is never the same
+    /// answer as `refused`. A PowerBook 180c has no PC Card socket; that
+    /// is a finding, and the host renders it as content.
+    static let censusReportAbsent68K = """
+        {"type":"census.report","id":10,"probe":"pccard",\
+        "outcome":"absent","rows":[],"more":false,"total":0,\
+        "note":"no PC Card sockets - PCMCIA arrived after this Mac"}
+        """
+
+    /// A page with more behind it. `cursor` counts the rows this frame
+    /// carried, not the rows the probe gathered - the rows a 1024-byte
+    /// control frame could not hold are deferred, never dropped.
+    static let censusReportPaged68K = """
+        {"type":"census.report","id":11,"probe":"drivers",\
+        "outcome":"present","rows":[["Unit 3","refNum -4","Sony"]],\
+        "more":true,"cursor":1,"total":24}
+        """
 }

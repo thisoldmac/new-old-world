@@ -35,7 +35,7 @@ noticed. Adding them: see [docs/images/README.md](docs/images/README.md).
 | Screenshots, one-shot, either direction | yes | capture only; pixels do not cross | metal-verified (PPC); 68K's raw read fixed for 24-bit addressing but unrun on metal |
 | Live screen streaming, with recording | yes | no | metal-verified |
 | Processes: list, launch, quit, front | yes | yes | emulator-verified |
-| Hardware census (14 probes) | yes | none | tested |
+| Hardware census (14 probes) | yes | 14 probes, 4 of them honestly `absent`/`refused` on this hardware | metal-verified (PPC); **68K's probes have never run at all** |
 | Two Macs on one port, with a picker for which one you are driving | yes | yes | tested; **never run against real hardware** |
 
 The cells that say "no" are not oversights.
@@ -45,8 +45,9 @@ as separate columns.
 
 **The headline gaps:** resume-by-offset hangs; one large transfer in
 about six degrades badly; an unreachable host presents as a hang rather
-than naming the address it cannot reach; NOW-68K cannot report its own
-CPU, RAM or ROM; NOW-68K's file family has never run on the
+than naming the address it cannot reach; NOW-68K's census can now report
+its own CPU, RAM and ROM but not one of its probes has run on a
+Macintosh; NOW-68K's file family has never run on the
 PowerBook 180c it is actually for; and NOW-68K's capture-across-the-wire
 read a 24-bit-truncated address on that machine until 2026-07-28 — fixed
 by switching to 32-bit addressing around the read, and not yet re-run

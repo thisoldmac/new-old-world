@@ -108,7 +108,9 @@
 #include "log.h"
 #include "n68_fileenum.h"
 #include "n68_filelist.h"
+#include "census68.h"        /* census.request: the hardware census */
 #include "n68_cmdresult.h"   /* now68k_json_append_escaped */
+#include "n68_census.h"
 #include "n68_exec.h"        /* exec.request: the console plane */
 #include "n68_filesrc.h"
 #include "n68_proclist.h"
@@ -203,6 +205,11 @@ _Static_assert(NOW68K_CONTROL_SEND_CAP >= NOW68K_PROCLIST_MIN_CAP,
                "the outbound slot cannot carry a process.listing page with "
                "a row in it - every page would be empty with more:true, and "
                "the host would page forever");
+_Static_assert(NOW68K_CONTROL_SEND_CAP >= NOW68K_CENSUS_MIN_CAP,
+               "the outbound slot cannot carry a census.report with a row in "
+               "it and still say `more` - every page would be empty with "
+               "more:true and the host would page forever, which is the same "
+               "loop the two asserts around this one prevent");
 _Static_assert(NOW68K_CONTROL_SEND_CAP >= NOW68K_FILELIST_MIN_CAP,
                "the outbound slot cannot carry a file.listing page with an "
                "entry in it - the same infinite paging loop, one message "
@@ -1535,13 +1542,21 @@ int now68k_exec_read_input(char *out, long cap, const char *prompt)
     return 1;
 }
 
+/* The page one census.request is cut from. Static rather than a local for
+ * exactly g_proc_rows' reason one message family over: it is ~1.1 KB, and
+ * this function is reachable from inside the frame reader's callback chain
+ * with a pumped dispatch potentially underneath it. One instance is also
+ * the right number - a census.request is answered whole before the next
+ * frame is read, and nothing keeps a pointer into it. */
+static N68CensusPage g_census_page;
+
 static void handle_census_request(const char *json, long len)
 {
-    char payload[160];
-    char probe[24];
+    char payload[NOW68K_CONTROL_SEND_CAP];
+    char probe[kN68CensusProbeCap];
     long pos = 0;
-    int ok = 1;
     long id = 0;
+    long cursor = 0;
     int have_id = now68k_json_find_int(json, (size_t)len, "id", &id);
 
     if (!read_string_field(json, (size_t)len, "probe", probe,
@@ -1549,26 +1564,31 @@ static void handle_census_request(const char *json, long len)
         probe[0] = '\0';
     }
     sanitize_json_string(probe);
+    if (!now68k_json_find_int(json, (size_t)len, "cursor", &cursor)) {
+        cursor = 0;             /* absent means start over, per the schema */
+    }
 
-    /* This guest implements no x-census probes, so every census.request is
-     * "refused" (CensusRequest.probe doc: "never a protocol error; that is
-     * what keeps the registry additive"), never "absent" - "absent" means
-     * the machine was asked and said no, which is not what happened here.
-     * CensusReport.id/probe/outcome/rows/more are all required by the
-     * schema and so are always emitted. */
-    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
-                                      "{\"type\":\"census.report\",\"id\":");
-    ok = ok && now68k_fmt_append_long(payload, (long)sizeof payload, &pos,
-                                       have_id ? id : 0);
-    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
-                                      ",\"probe\":\"");
-    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
-                                      probe);
-    ok = ok && now68k_fmt_append_str(
-                   payload, (long)sizeof payload, &pos,
-                   "\",\"outcome\":\"refused\",\"rows\":[],\"more\":false,"
-                   "\"note\":\"no probes implemented\"}");
-    if (!ok || pos <= 0) {
+    if (now68k_census_gather(probe, cursor, &g_census_page)) {
+        pos = n68_census_report_json(probe[0] != '\0' ? probe : "overview",
+                                     have_id ? id : 0, &g_census_page,
+                                     payload, (long)sizeof payload);
+    } else {
+        /* A name that is not in the registry. "refused" with a note, never
+         * a protocol error (CensusRequest.probe: "that is what keeps the
+         * registry additive") and never "absent" - absent would say the
+         * machine was asked and said no, which is not what happened. This
+         * is now the ONLY census answer that is refused for not knowing
+         * the name; the fourteen the contract declares are all answered by
+         * census68.c, several of them absent, which is a different and
+         * truer thing. */
+        n68_census_page_init(&g_census_page, 0);
+        n68_census_page_say(&g_census_page, kN68CensusRefused,
+                            "no such probe on this Mac - see the contract's "
+                            "x-census registry");
+        pos = n68_census_report_json(probe, have_id ? id : 0, &g_census_page,
+                                     payload, (long)sizeof payload);
+    }
+    if (pos <= 0) {
         now68k_log("wire: census.report build failed");
         return;
     }

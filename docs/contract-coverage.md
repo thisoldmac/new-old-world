@@ -50,7 +50,7 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 |---|:--:|:--:|---|
 | `hello`, `bye`, `pong`, `refuse`, `error` | ✅ | ✅ | the handshake and keepalive floor |
 | `command.request` | ✅ | ✅ | verb sets differ — see below |
-| `census.request` | ✅ | ⚠️ | 68K answers, with **zero probes** — always `refused` |
+| `census.request` | ✅ | ✅ | both answer, probe by probe — the subsets differ, see below |
 | `process.list` | ✅ | ✅ | |
 | `process.front` | ✅ | ✅ | bring to front; both guests also serve a `front` VERB |
 | `process.quit` | ✅ | ✅ | both guests also serve a `quit` VERB — PSN for a machine, name for a person |
@@ -92,7 +92,7 @@ The registry is `x-commands` in the contract: **19 verbs.**
 | `help` | what commands this machine serves | ✅ | ✅ |
 | `vers` | build identity | ✅ | ❌ |
 | `gestalt` | **CPU, memory, OS, network, hardware** — see below | ✅ | ❌ |
-| `census` | the hardware census, probe by probe — see below | ✅ | ❌ |
+| `census` | the hardware census, probe by probe — see below | ✅ | ✅ |
 | `catsearch` | catalog search across a volume | ✅ | ❌ |
 | `sw` | installed software | ✅ | ❌ |
 | `ls` | list a folder | ✅ | ✅ |
@@ -115,9 +115,9 @@ capabilities through the `file.*` families and that guest's own
 Workshop. `shotdiag` is the third, and the newest: it diagnoses a raw
 framebuffer walk the PowerPC guest does not have.
 
-**NOW-68K serves 11 of 19** — `help`, `ls`, `put`, `cancel`, `vprobe`,
-`screenshot`, `shotdiag`, `ps`, `launch`, `quit`, `front`. The eight it
-does not: `gestalt`, `census`, `catsearch`, `sw`, `tail`, `reveal`,
+**NOW-68K serves 12 of 19** — `help`, `ls`, `put`, `cancel`, `vprobe`,
+`screenshot`, `shotdiag`, `ps`, `census`, `launch`, `quit`, `front`. The
+seven it does not: `gestalt`, `catsearch`, `sw`, `tail`, `reveal`,
 `vers`, `putstat`.
 
 Every asymmetry is argued in [command-parity.md](command-parity.md) and
@@ -127,33 +127,93 @@ named with its reason in `CommandRegistryTests.notOnThePowerPCGuest`.
 
 Five groups, all PPC-only: **cpu**, **memory**, **os**, **network**,
 **hw**, plus a `snapshot` summary. This is where "what CPU, how much
-RAM, what ROM, what networking" is answered, and it is the single
-biggest thing NOW-68K does not serve.
+RAM, what ROM, what networking" is answered in ONE verb, and it is now
+the largest thing NOW-68K does not serve — the census below closed the
+other half of that sentence on 2026-07-28.
 
 **The data already exists on the 68K side.** `now-guest-68k/src/ui/health.c`
 samples machine identity, CPU type, System version, Virtual Memory,
 MacTCP version, screen geometry and physical RAM once at startup, plus
 free memory and largest free block on every panel redraw — all of it
 cached, in fixed buffers, with the strings pre-built. It is drawn on the
-guest's own panel and **no verb exposes it**. A `gestalt` on NOW-68K is
-therefore closer to a rendering job than a measurement one, which makes
-it the cheapest large gap on this list to close.
+guest's own panel, and the census now reports most of the same facts
+under `identity` and `overview` — but the `gestalt` VERB still does not
+exist here, and a host that asks for it by name gets
+`unknown-command`. A `gestalt` on NOW-68K is closer to a rendering job
+than a measurement one, which makes it the cheapest large gap left.
 
 ### `census` — the hardware census, probe by probe
 
-The PowerPC guest implements **14 probes** (`k_probes` in
-`now-guest-ppc/src/census/census_probes.c`):
+The registry is CLOSED and lives in the contract (`x-census/x-probes`):
+**14 probes**, and both guests answer all fourteen. What differs is the
+OUTCOME, and that is the point of the table below rather than a tick.
 
-`overview` `identity` `selectors` `video` `volumes` `drives` `drivers`
-`adb` `ata` `pccard` `pram` `power` `pci` `scsi`
+Derive it from each guest's own dispatch table:
 
-**NOW-68K implements none.** It serves `census.request` and answers
-every one with `outcome: "refused"` and the note "no probes
-implemented" — deliberately `refused` rather than `absent`, because
-absent would mean the machine was asked and said no, which is not what
-happened. That is honest and it is still zero coverage: **read the ✅
-for `census.request` in the message table as "answers the message", not
-as "has a census".**
+```
+grep -A 20 'k_probes\[\] = {' now-guest-ppc/src/census/census_probes.c \
+  | grep -oE '"[a-z]+"' | tr -d '"'
+grep -A 20 'k_probes68\[\] = {' now-guest-68k/src/census/census68.c \
+  | grep -oE '"[a-z]+"' | tr -d '"'
+```
+
+`CensusProbeRegistryTests` fails the build if either table drifts from
+the contract or from the other's order.
+
+| Probe | PPC | 68K | What 68K answers, and why |
+|---|:--:|:--:|---|
+| `overview` | ✅ | ✅ | model, CPU, RAM, System, display, addressing, free memory |
+| `identity` | ✅ | ✅ | the curated dozen, plus **Addressing** — see below |
+| `selectors` | ✅ | ⛔ | **refused**: the documented-selector table is 32 KB of names in a 384 KB partition |
+| `video` | ✅ | ✅ | the GDevice walk; `absent` on a Mac with only original QuickDraw |
+| `volumes` | ✅ | ✅ | indexed `PBHGetVInfo` |
+| `drives` | ✅ | ✅ | the drive queue, zero bus I/O |
+| `drivers` | ✅ | ✅ | the Device Manager unit table |
+| `adb` | ✅ | ✅ | plain traps here, where Carbon has to resolve them by name |
+| `ata` | ✅ | 🚫 | **absent**, gated on Gestalt: this Mac's internal disk is SCSI |
+| `pccard` | ✅ | 🚫 | **absent**, gated on Gestalt: PCMCIA arrived after this Mac |
+| `pram` | partial | ✅ | **partial** — 20 of 256 bytes, and the one that matters most here |
+| `power` | ✅ | ✅ | the Power Manager; `absent` on a desktop |
+| `pci` | 🚫 | 🚫 | **absent** on both: no 68K Mac has a Name Registry |
+| `scsi` | ✅ | ⛔ | **refused**: an INQUIRY scan is active bus I/O, never attended here |
+
+✅ answers with rows · 🚫 the MACHINE said no (`absent`) · ⛔ THIS BUILD
+declined (`refused`, with its reason in the note)
+
+**The two symbols are not interchangeable and that is the whole design.**
+`absent` is a finding about the hardware, rendered as content; `refused`
+is this build saying it did not look. A ❌ that means "this machine
+cannot" reads differently from a ❌ that means "not built yet", and until
+this arc NOW-68K answered every probe `refused` — honest, and zero
+coverage.
+
+**The two probes worth more here than on the PowerPC target:**
+
+- **`pram`.** This PowerBook's PRAM battery is dead, so the 32-bit
+  addressing switch — which lives in Parameter RAM — resets on every
+  power cycle, and every raw framebuffer read then lands in main RAM.
+  That cost a full investigation and a purpose-built diagnostic
+  (`shotdiag`) to find. The probe reads `valid` (the byte the OS writes
+  when PRAM is being retained), says plainly when it is not, and adds
+  the consequence beside it. `partial` because 20 bytes is what
+  `GetSysPPtr` reaches: the 256-byte XPRAM behind `_ReadXPRam` is a
+  register-based trap these Universal Interfaces do not declare, and
+  reaching it means hand-written inline assembly testable nowhere but on
+  the machine.
+- **`power`.** It is a battery-powered laptop. Gated on
+  `gestaltPowerMgrAttr`, and which call it makes is a capability
+  question rather than a preference: `GetScaledBatteryInfo` only where
+  Gestalt says the Power Manager dispatcher exists, the classic
+  `BatteryStatus` otherwise. A dispatch selector an older Power Manager
+  does not implement is a crash, not a slow path.
+
+**Addressing mode went into `identity` and `pram`, not into a probe of
+its own** — a deliberate decision, reconsidered rather than inherited.
+The registry is closed and declared in the contract, so a fifteenth
+name would be a contract change and a host-registry change for a fact
+that is already what `identity` is for ("the machine in a curated
+dozen"). It appears twice on purpose: in `identity` as what the machine
+is right now, and in `pram` as the reason it will not stay that way.
 
 ### A message-type table is not a coverage table
 
@@ -171,14 +231,15 @@ that stood here that morning — no capture, no browse, no cancel — were
 all false by the evening, which is the argument for deriving this file
 rather than editing it.
 
-- **No account of the machine.** No `gestalt`, no census probes, no
-  `vers`. A host talking to NOW-68K cannot ask what CPU it is, how much
-  RAM it has, what ROM, what is on the SCSI bus, or what its networking
-  looks like — and the PowerBook 180c is precisely the machine where
-  someone would want to know. The health data is already sampled locally
-  (above), so `gestalt` is mostly a renderer; the census probes are real
-  Toolbox work and would need doing per probe. **This is now the largest
-  gap on the list.**
+- **A census, but still no `gestalt` and no `vers`.** The census half of
+  this bullet closed on 2026-07-28: a host can now ask NOW-68K what CPU
+  it is, how much RAM and ROM it has, what is mounted, what is on the ADB
+  bus, whether its PRAM is being retained and what its battery is doing —
+  fourteen probes, several of them honestly `absent`. What remains is
+  `gestalt` (five groups and a snapshot, and mostly a RENDERER here: the
+  data is already sampled by `health.c` and now again by the census) and
+  `vers`. **Every census probe on this guest is unproven** — see the
+  table below; nothing in that subsystem has run on a Macintosh.
 - **Capture answers, but does not offer.** `capture.request` is served —
   the guest stages the screen to disk, packs it, and sends the staged
   file as the bulk payload, so the byte count `capture.begin` promises is
@@ -234,6 +295,7 @@ either — only NOW-68K's half of it has faced a live guest.
 | `shotdiag` (where the staged walk read from) | **metal-verified (180c)** — it answered, and named 24-bit addressing |
 | the 24-bit addressing fix it produced | tested only — unrun on the 180c |
 | **the exec console plane** (`exec.request` / `.cancel` / `.input`) | emulator-verified only (Q800, 8/8 `MetalExecTests`) |
+| **the census** (`census.request`, the `census` verb, all 14 probes) | **tested only — the pure half.** The page, the paging arithmetic, the `census.report` bytes and the row collapse are native-tested (`test_census.c`); every PROBE is Toolbox calls no gate here can reach. Not one of them has run on a Macintosh, emulated or metal. |
 
 `shotdiag` did the job it was written for. Run on the 180c on
 2026-07-28 it reported `Addressing 24-bit (!)`, base `0xFC080000`
@@ -248,9 +310,10 @@ are unaffected by addressing (reading the wrong memory costs the same),
 but its *Fidelity* row was measured in a 32-bit session and reported
 480/480 differing when re-run in a 24-bit one. It now emits an
 **Addressing** row so a number from it is quotable; that row is
-tested only. NOW-68K serves no `census` probes at all, which is why
-this fact lives in `vprobe` and `shotdiag` rather than in a census
-probe — adding the census subsystem to this guest is its own arc.
+tested only. That arc has now run: NOW-68K serves the census, and the
+addressing fact has a home in it — `identity` reports the mode the
+machine is in, and `pram` reports whether the switch will survive the
+next power cycle. Neither row has been read on the 180c.
 
 The whole file family — both directions, the largest thing NOW-68K
 serves — has never moved a byte on the 180c. A Quadra 800 under 8.1
@@ -265,9 +328,10 @@ here: parse both dispatches, compare against this table, fail on drift.
 Until that exists, this document is a snapshot and the two `grep`
 commands at the top are the source of truth.
 
-Last derived: 2026-07-26, on `claude/metal-integration` after five
-branches landed together. The command registry came from `x-commands` in
+Last derived: 2026-07-28, on `claude/68k-census-probes`, which gave
+NOW-68K the census section above. The command registry came from `x-commands` in
 `contract/asyncapi.yaml`, the PPC verb set from `strcmp(name, ...)` in
 `now-guest-ppc/src/commands/commands.c`, the 68K verb set from the table in
 `now-guest-68k/src/commands/commands68.c`, and the probe list from `k_probes` in
-`now-guest-ppc/src/census/census_probes.c`.
+`now-guest-ppc/src/census/census_probes.c` with NOW-68K's beside it from
+`k_probes68` in `now-guest-68k/src/census/census68.c`.
