@@ -54,7 +54,7 @@ static char g_input[kConsoleMaxCols];
 static short g_input_len;
 /* The page owns the history because the page owns the input field - the
    same division NOW-68K's conwin.c makes, over the same file
-   (guest-shared/src/console_history.c). ~2.3 KB of statics; see its
+   (now-guest-shared/src/console_history.c). ~2.3 KB of statics; see its
    header's budget. */
 static ConsoleHistory g_history;
 static Boolean g_history_ready = false;

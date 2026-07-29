@@ -536,7 +536,7 @@ static void handle_key(EventRecord *event)
          * Pressing Up past the oldest entry must not wipe what is showing.
          * The PowerPC guest's Console page reads the same rule from the
          * same file (console_module.c), which is the point of that file
-         * sitting in guest-shared/ rather than here. */
+         * sitting in now-guest-shared/ rather than here. */
         if (c == kUpArrowCharCode) {
             input_get_text(current, (int)sizeof current);
             recalled = console_history_prev(&gHistory, current);

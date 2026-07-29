@@ -31,7 +31,7 @@ static char g_lines[kMaxLines][kMaxCols];
 static short g_count = 0;
 
 /* The command history that used to live here is gone, not moved within
-   this guest: it is guest-shared/src/console_history.c now, one file both
+   this guest: it is now-guest-shared/src/console_history.c now, one file both
    guests compile, and console_module.c holds the instance the way
    NOW-68K's conwin.c does. This file had its own weaker copy - no saved
    half-typed line, and "" rather than NULL at both ends of a walk, so an

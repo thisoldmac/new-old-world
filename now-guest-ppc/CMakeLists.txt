@@ -12,7 +12,7 @@ add_application(now-guest-ppc
     # Not under src/: one implementation both guests compile, the way
     # contract/ carries the headers both guests include. See its own
     # header for why the console history in particular is out here.
-    ../guest-shared/src/console_history.c
+    ../now-guest-shared/src/console_history.c
     src/screenshots/capture.c
     src/files/fileshare.c
     src/core/pump.c
@@ -74,7 +74,7 @@ list(FILTER NOW_GUEST_SRC_DIRS EXCLUDE REGEX "\\.[ch]$")
 # contract/ carries the in-memory table header shared with the 68K
 # extension build - the wire contract's sibling.
 target_include_directories(now-guest-ppc PRIVATE
-    src ${NOW_GUEST_SRC_DIRS} ../contract ../guest-shared/src)
+    src ${NOW_GUEST_SRC_DIRS} ../contract ../now-guest-shared/src)
 target_compile_options(now-guest-ppc PRIVATE
     -Wall
     -Wextra

@@ -2103,7 +2103,7 @@ the useful half.
   JSON bytes for all three reply shapes against literals written out in
   full — not assembled from the renderer's own pieces — and walks six
   outcomes through both renderers asserting they never disagree about the
-  `ok` bit or the error code. `guest-shared/tests/console_history_test.c`
+  `ok` bit or the error code. `now-guest-shared/tests/console_history_test.c`
   (38 checks — it was `now-guest-68k/tests/test_history.c` until the
   history became one file both guests compile) covers the arrow-key
   history, including the two cases that are wrong in most first attempts:

@@ -10,6 +10,7 @@ domain split, in one commit.
 | PowerPC Carbon guest | `now-guest-ppc/` | `now-guest-ppc` | **`New Old World`** |
 | 68K guest | `now-guest-68k/` | `now-guest-68k` | `NOW-68K` |
 | Host application | `now-host/` | — | `New Old World.app` |
+| Code both guests compile | `now-guest-shared/` | — (compiled into each) | — |
 
 The qualifier is always in the same position, and it always names the
 machine the guest runs on. Before this, the directories were `guest/`,
@@ -57,6 +58,32 @@ not what the product is called.
 The dev / side-build MacBinaries followed their targets, though:
 `now-guest.bin` is now `now-guest-ppc.bin`, and `now68k-guest.bin` is
 `now-guest-68k.bin`. `New Old World.bin` is unchanged.
+
+## Where shared guest code lives
+
+`now-guest-shared/` holds source compiled by **both** guests — one file per
+unit, added to both `CMakeLists.txt` and both include paths. It carries the
+`now-` prefix for the same reason everything else does: it is a top-level
+tree, and a directory that opted out of the scheme would re-open the
+argument this file exists to close.
+
+**The bar for putting something there is high, and it is not "these look
+alike".** The two guests are siblings, not ports: one is Carbon on
+CarbonLib 1.6, the other non-Carbon System 7.1 with a 384 KB partition and
+no usable `snprintf`. Logic qualifies only when it is genuinely identical
+on both machines and carries no size or Toolbox-era assumption. The
+console's Up/Down history qualified. Its scrollback ring did not — 32×256
+fed by a byte stream and 200×128 fed a line at a time are the same shape
+and a different thing, and sharing them means one guest inherits the
+other's wrong number.
+
+There is a second, older shape for sharing, and it is still correct where
+it applies: `processes/proc_quit_args.c` is a copy per guest pinned by
+`now-guest-68k/tests/proc_quit_parity_test.c`, which `#include`s the
+PowerPC test rather than restating it. That file had to be duplicated
+because its message building needed rewriting for the 68K's printf ban.
+Prefer one real file when the code can be literally identical; fall back to
+copy-plus-parity-test when it cannot.
 
 ## The src/ domain split
 

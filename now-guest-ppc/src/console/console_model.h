@@ -6,7 +6,7 @@
    consumer, and a test could be another. State is static, so the
    scrollback survives module switches for the whole run.
 
-   The Up/Down HISTORY is not here. It is guest-shared/src/console_history.c,
+   The Up/Down HISTORY is not here. It is now-guest-shared/src/console_history.c,
    one implementation both guests compile, and the page that owns the input
    field owns the instance - console_module.c here, conwin.c on NOW-68K. */
 

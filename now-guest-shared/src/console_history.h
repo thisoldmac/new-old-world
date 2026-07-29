@@ -7,7 +7,7 @@
  * "Which line should the input field show now" is decidable without a
  * TERec, a WindowRef, a Carbon event or a WaitNextEvent - so it is
  * decided here and tested on the host
- * (guest-shared/tests/console_history_test.c). Neither guest's console
+ * (now-guest-shared/tests/console_history_test.c). Neither guest's console
  * had a Toolbox reason to answer it differently, and they answered it
  * differently anyway: NOW-68K kept the half-typed line across a walk and
  * returned NULL for "there is nothing further that way", while the

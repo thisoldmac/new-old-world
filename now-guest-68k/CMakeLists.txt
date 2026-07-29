@@ -28,7 +28,7 @@ add_application(now-guest-68k
     # Not under src/: one implementation both guests compile, the way
     # contract/ carries the headers both guests include. See its own
     # header for why the console history in particular is out here.
-    ../guest-shared/src/console_history.c
+    ../now-guest-shared/src/console_history.c
     src/commands/n68_cmdresult.c
     src/commands/n68_exec.c
     src/core/log.c
@@ -87,7 +87,7 @@ target_include_directories(now-guest-68k PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${NOW68K_SRC_DIRS}
     ${CMAKE_CURRENT_SOURCE_DIR}/../contract
-    ${CMAKE_CURRENT_SOURCE_DIR}/../guest-shared/src)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../now-guest-shared/src)
 
 # Retro68/CMake defaults to -O0 when no optimization level is set, which
 # would make every later size/timing measurement on this milestone
