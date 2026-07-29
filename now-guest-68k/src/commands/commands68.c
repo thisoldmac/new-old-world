@@ -4,7 +4,7 @@
  * No malloc/NewPtr/NewHandle anywhere in this file - every buffer below is
  * a fixed, file-scope-sized local, matching the rest of now-guest-68k/src.
  *
- * STATIC BUDGET (stack per call, plus one BSS block):
+ * STATIC BUDGET (stack per call, plus the BSS blocks):
  *   run_launch    name[200] + detail[160]                        = 360 B
  *   run_quit      QuitArgs(~40) + msg[80] + detail[160]           = 280 B
  *   run_front     name[32] + msg[80] + detail[160]               = 272 B
@@ -19,9 +19,9 @@
  * inside a 68K stack frame's normal headroom on a machine with ~1.7 MB
  * free. No recursion, no VLA.
  *
- * The two BSS blocks are the vprobe row table and the one N68CmdRows a
- * table-shaped command fills. Both are BSS rather than locals precisely
- * because this file's callers can be several levels deep by the time a
+ * The BSS blocks are the vprobe row table, the one N68CmdRows a
+ * table-shaped command fills, and the one census page a probe fills. All
+ * three are BSS rather than locals precisely because this file's callers can be several levels deep by the time a
  * command runs (wire68.c -> dispatch, and a pumped nested dispatch on top
  * of that - proc68.c measured ~3.7 KB per level). See each one's comment
  * for why one instance is also the right number.
@@ -32,7 +32,9 @@
  */
 #include "commands68.h"
 
+#include "census68.h"
 #include "log.h"
+#include "n68_census.h"
 #include "n68_cmdresult.h"
 #include "n68_fileenum.h"
 #include "n68_filelist.h"
@@ -692,6 +694,14 @@ static const N68CommandDoc k_docs[] = {
       "shotdiag (no arguments; wants a still screen)" },
     { "put", "send a file from this Mac to the host", "put <file name>" },
     { "ls", "list a folder in this Mac's share", "ls [folder]" },
+    /* The usage line is one row of an N68CmdResult and so is capped at
+     * kN68CmdStateCap (48). The fourteen probe names do not fit that and
+     * are not put there truncated: a grammar cut off mid-list is worse
+     * than a short one, because a person would type what they could see.
+     * `census` with no argument runs `overview`, which is the discovery
+     * path the contract already specifies. */
+    { "census", "one hardware-census probe of this Mac",
+      "census [probe]; no probe runs overview" },
     { "sw", "the software installed on this Mac",
       "sw [apps|extensions|cdevs|startup|apple]" },
     { "cancel", "stop the file transfer in flight, either direction",
@@ -885,6 +895,14 @@ static void run_put(const char *target, N68CmdResult *res)
  * full folder is a file.list away - which is the same trade `ps` makes
  * against process.list. */
 static N68CmdRows g_rows;
+
+/* The page `census` fills, in BSS for g_rows' reason (~1.1 KB is too much
+ * for a stack frame the command path can re-enter) and separate from
+ * wire68.c's own page on purpose: that one is filled from inside the frame
+ * reader, this one from a console line, and one buffer shared between them
+ * would be a page half-overwritten by a request that arrived while a human
+ * was reading. */
+static N68CensusPage g_census;
 
 /* This module PROMISES its callers NOW68K_COMMAND_RESULT_CAP (commands68.h)
  * and the shipping caller hands over the larger NOW68K_CONTROL_SEND_CAP, so
@@ -1088,6 +1106,51 @@ static void run_shotdiag(N68CmdRows *out)
  * pretending. Typing `cancel` at a machine that is not transferring
  * anything is a reasonable thing to have done - usually because the
  * last one already ended - and the useful reply says so. */
+/* ---- `census`: one probe, one page, for a person --------------------------
+ *
+ * The console face of the same census the host pages through
+ * censusExchange, and the same implementation underneath - census68.c
+ * gathers, and n68_census.c renders that page either as a `census.report`
+ * for the wire or as these rows. The contract's own verb description says
+ * what the collapse is: the wire's [name, raw, meaning] triple becomes
+ * [name, meaning] for a text surface, and the raw value folds into the
+ * meaning column when a row has no decoded form, so nothing is dropped on
+ * the way to a human.
+ *
+ * The rows seam rather than a sixth dispatch arm, for `ls`'s reason: a
+ * table-shaped answer goes through now68k_commands_run_rows so the console
+ * reaches it by delegating, and n68_exec.c is untouched by this verb's
+ * existence.
+ *
+ * ONE PAGE. The contract gives command.result no cursor and a console has
+ * none to send back, so a probe with more rows than fit says so in its
+ * trailing status row and the full walk is a census.request away - the
+ * same trade `ps` makes against process.list. */
+static void run_census(const char *target, N68CmdRows *out)
+{
+    char probe[kN68CensusProbeCap];
+
+    /* The whole line is the probe name. No probe in the registry has a
+     * space in it, but taking the line whole is what every other verb here
+     * does, and a second grammar for one command is how a console learns
+     * to disagree with itself. */
+    probe[0] = '\0';
+    if (target != NULL) {
+        bounded_strcpy(probe, (long)sizeof probe, target);
+    }
+    if (!now68k_census_gather(probe, 0, &g_census)) {
+        /* ok:false, never a protocol error, and never `absent`: the
+         * machine was not asked anything here - a name was not found. */
+        n68_cmdrows_set_error(out, "unknown-probe",
+                              "no census probe by that name - try `census` "
+                              "with no argument");
+        return;
+    }
+    out->ok = 1;
+    bounded_strcpy(out->key, sizeof out->key, "census");
+    n68_census_rows(probe[0] != '\0' ? probe : "overview", &g_census, out);
+}
+
 static void run_cancel(N68CmdResult *res)
 {
     char what[96];
@@ -1124,6 +1187,11 @@ const N68CmdRows *now68k_commands_run_rows(const char *name,
     if (strcmp(name, "shotdiag") == 0) {
         n68_cmdrows_init(&g_rows);
         run_shotdiag(&g_rows);
+        return &g_rows;
+    }
+    if (strcmp(name, "census") == 0) {
+        n68_cmdrows_init(&g_rows);
+        run_census(target, &g_rows);
         return &g_rows;
     }
     return NULL;

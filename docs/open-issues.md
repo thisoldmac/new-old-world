@@ -9,6 +9,81 @@ wrong thing) versus **unverified** (it may well be right, but no one has
 watched it work on the PowerBook). Unverified is not a lesser problem —
 several of tonight's bugs lived in code that looked obviously correct.
 
+## NOW-68K has a hardware census, and none of it has run (2026-07-28)
+
+### Unverified, in the strongest sense on this list
+
+NOW-68K answers all fourteen probes of the contract's `x-census`
+registry, on both faces (`census.request` on the wire, the `census` verb
+for a person), where it previously answered every one of them `refused`
+with the note "no probes implemented". **Not one probe has run on a
+Macintosh** - emulated or metal.
+
+That is worth stating sharply because the automated cover looks better
+than it is. `test_census.c` (native, 680 checks) covers the page, the
+cursor arithmetic, the frame bound and both renderers, and the host
+decodes three pinned frames. All of that is the half with no Toolbox in
+it. Every PROBE is Gestalt, the GDevice list, `PBHGetVInfo`, the drive
+queue, the unit table, ADB, `GetSysPPtr` and the Power Manager, and no
+gate in this repository can reach any of them.
+
+What a first pass should look at, in rough order of what could plausibly
+be wrong:
+
+- **`drivers`** is the riskiest walk. It reads the Device Manager unit
+  table from `LMGetUTableBase`, and a driver's name is a Pascal string at
+  offset 18 of the driver header - reached through a HANDLE for a
+  RAM-based driver and a POINTER for a ROM-based one (`dRAMBasedMask`).
+  The flag is checked rather than assumed, but the check has never been
+  exercised. Bad names, or a hang, would point here.
+- **`power`** picks its call from `gestaltPMgrDispatchExists`:
+  `GetScaledBatteryInfo` (a `_PowerMgrDispatch` selector) where that bit
+  is set, the classic `BatteryStatus` otherwise. A 180c under 7.1 is
+  expected to take the second path. If the machine takes the first and
+  the selector is not really there, that is a crash and not a bad row.
+- **`pram`** should read `valid $A8` on a machine with a live PRAM
+  battery and something else on the 180c, whose battery is dead (the
+  entry below). If it reports `$A8` there, the byte is not saying what
+  this probe claims it says.
+- **`adb`** should find two devices on the PowerBook (keyboard and
+  trackball) and may find none under an emulator, which answers
+  `absent` - correctly, and worth not misreading as a defect.
+- **`ata`, `pccard`, `pci`** should all answer `absent` on the 180c and
+  the Q800, each with its reason. An `absent` there is the probe working.
+
+### What is deliberately NOT served, with the reason
+
+Two of the fourteen answer `refused`, which means this build declined to
+look rather than the machine saying no:
+
+- **`scsi`.** The contract calls it the declared exception to
+  passive-by-rule - an INQUIRY bus scan is active bus I/O - and says
+  attended first runs on real hardware are the expected discipline. The
+  180c's internal disk is on that bus, nobody has ever attended a scan
+  from this guest, and a wedged target on a cooperatively-scheduled
+  68030 is a power cycle. `drives` and `volumes` answer what is attached
+  without touching it. **Doing this properly means someone in front of
+  the machine**, which is the whole reason it is parked.
+- **`selectors`.** The PowerPC guest walks a snapshotted table of
+  documented Gestalt selectors; that table is 32 KB of names, against a
+  384 KB partition. `identity` carries the rows a person actually reads.
+
+### Cost, measured
+
+The 68K binary grew 197,248 -> 215,808 bytes of code (+18.1 KB, ~4.7% of
+the partition), and the census owns two ~1.1 KB BSS pages - one in
+`wire68.c` for the wire, one in `commands68.c` for the console, separate
+because a request arriving while somebody is reading must not overwrite
+the page they are reading. Most of the code is the notes: fourteen
+probes' worth of sentences explaining what `absent` means on this
+machine. That is the trade this subsystem exists to make.
+
+### Still missing beside it
+
+`gestalt` - the five-group verb - is now the largest thing NOW-68K does
+not serve, and it is mostly a renderer: `health.c` already samples the
+facts and the census now reports most of them again. A host asking for
+it by name still gets `unknown-command`.
 ## NOW-68K's software listing has never touched a disk (2026-07-28)
 
 `software.list` and the `sw` verb are served on NOW-68K

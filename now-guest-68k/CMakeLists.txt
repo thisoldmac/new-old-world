@@ -58,6 +58,8 @@ add_application(now-guest-68k
     src/ui/health.c
     src/commands/commands68.c
     src/census/n68_vprobe.c
+    src/census/n68_census.c
+    src/census/census68.c
     src/core/screen68.c
     src/census/vprobe68.c
     src/screenshots/n68_shot.c

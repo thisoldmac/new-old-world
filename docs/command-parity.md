@@ -336,6 +336,25 @@ exactly the same six — so it lives in
 [contract-coverage.md](contract-coverage.md), where what a guest can
 answer is the subject.
 
+`census` is the fourth verb through that seam (after `ls`, `sw` and
+`shotdiag`), and it is the one that shows what the seam bought. A
+hardware census is a table by nature - fourteen probes, a page of
+[name, raw, meaning] triples each - and it arrived on both faces in one
+commit with **no edit to `n68_exec.c` or `conwin.c` at all**. The wire
+gets `census.report` through `censusExchange` and the console gets the
+contract's declared collapse of the same page to [name, meaning]; both
+render one gather from `census68.c`, which is the property
+"one implementation, two renderers" is worth a document for.
+
+It also inherits the seam's one sharp edge, which is worth writing down
+because the next table verb will meet it too: a verb's USAGE line is a
+single `N68CmdResult` row and is capped at `kN68CmdStateCap` (48 bytes).
+`census`'s fourteen probe names do not fit, and are not put there
+truncated - a grammar cut off mid-list is worse than a short one,
+because a person types what they can see. `help census` says
+`census [probe]; no probe runs overview` and the registry lives in the
+contract, where it is the source of truth anyway.
+
 `testTheSixtyEightKConsoleCanListFiles` asserts all three halves of that:
 that `ls` is in `commands68.c` so the host console can type it, that
 `conwin.c` reaches the rows seam, and that `conwin.c` does **not**

@@ -85,6 +85,65 @@ final class CensusProbeRegistryTests: XCTestCase {
             "host probe order drifted from the guest's k_probes rail order")
     }
 
+    /// The `k_probes68[]` names in NOW-68K, read the same way.
+    private func guest68KProbeOrder() throws -> [String] {
+        let url = Self.repoRoot
+            .appendingPathComponent("now-guest-68k/src/census/census68.c")
+        let text = try String(contentsOf: url, encoding: .utf8)
+        guard let braceRange = text.range(of: "k_probes68[] = {") else {
+            XCTFail("no k_probes68 table in census68.c"); return []
+        }
+        let tail = text[braceRange.upperBound...]
+        guard let end = tail.range(of: "};") else {
+            XCTFail("k_probes68 table not terminated"); return []
+        }
+        var order: [String] = []
+        var i = tail[..<end.lowerBound].startIndex
+        let body = tail[..<end.lowerBound]
+        while let open = body[i...].firstIndex(of: "\"") {
+            guard let close = body[body.index(after: open)...].firstIndex(of: "\"")
+            else { break }
+            order.append(String(body[body.index(after: open)..<close]))
+            i = body.index(after: close)
+        }
+        return order
+    }
+
+    /// NOW-68K must not invent a probe, and must not miss one.
+    ///
+    /// Inventing is the obvious half: a name outside `x-census` is a probe
+    /// a host can only learn about by accident, the census twin of
+    /// `testNeitherGuestInventsCommandsTheContractDoesNotDeclare`.
+    ///
+    /// MISSING is the half worth the test. A declared probe absent from
+    /// this table falls through to "unknown probe", which tells a caller
+    /// the REGISTRY does not have it — a different and false statement
+    /// from "this machine does not". NOW-68K answers all fourteen for
+    /// exactly that reason, several with outcome `absent` (no PCI, no PC
+    /// Card, no ATA bus on a 68030 PowerBook) and two with `refused` and a
+    /// note. Those two words are not interchangeable, and this test is
+    /// what keeps a future edit from closing the gap by deleting a row.
+    func testTheSixtyEightKProbeSetIsExactlyTheContractRegistry() throws {
+        let guest = try guest68KProbeOrder()
+        let contract = try contractProbeIDs()
+        XCTAssertEqual(Set(guest), contract, """
+            NOW-68K's k_probes68 drifted from the contract's x-census: \
+            missing there: \(contract.subtracting(Set(guest)).sorted()); \
+            extra there: \(Set(guest).subtracting(contract).sorted()). A \
+            declared probe this guest does not list answers "unknown \
+            probe", which says the registry lacks it rather than that the \
+            machine does.
+            """)
+    }
+
+    /// Both guests present the same probes in the same order, so a host
+    /// drawing a PowerBook 1400c and a PowerBook 180c draws one rail
+    /// rather than two that happen to overlap.
+    func testBothGuestsOrderTheirProbesTheSameWay() throws {
+        XCTAssertEqual(try guest68KProbeOrder(), try guestProbeOrder(),
+                       "the two guests' probe rails are in different orders")
+    }
+
     func testEveryProbeHasThreeColumnTitles() {
         for probe in CensusProbes.all {
             XCTAssertEqual(probe.columns.count, 3,
