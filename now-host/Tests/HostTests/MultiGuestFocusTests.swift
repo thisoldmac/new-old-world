@@ -30,18 +30,18 @@ final class MultiGuestFocusTests: XCTestCase {
     func testTheCacheParksTheOutgoingMachineAndRestoresTheIncomingOne() {
         let cache = GuestStateCache<String>()
         // First focus has nothing to park and nothing to restore.
-        guard case .switched(let first) = cache.focus(GuestKey(name: "A"),
+        guard case .switched(let first) = cache.focus(GuestKey.synthetic("A"),
                                                       parking: "") else {
             return XCTFail("the first machine is a switch, not a no-op")
         }
         XCTAssertNil(first, "a machine never seen starts empty")
 
-        guard case .switched(let toB) = cache.focus(GuestKey(name: "B"),
+        guard case .switched(let toB) = cache.focus(GuestKey.synthetic("B"),
                                                     parking: "A's state") else {
             return XCTFail("B is a different machine")
         }
         XCTAssertNil(toB)
-        guard case .switched(let backToA) = cache.focus(GuestKey(name: "A"),
+        guard case .switched(let backToA) = cache.focus(GuestKey.synthetic("A"),
                                                         parking: "B's state")
         else { return XCTFail("A is a different machine again") }
         XCTAssertEqual(backToA, "A's state")
@@ -52,13 +52,13 @@ final class MultiGuestFocusTests: XCTestCase {
     /// the moment the wire dropped.
     func testADisconnectIsNotASwitch() {
         let cache = GuestStateCache<String>()
-        _ = cache.focus(GuestKey(name: "A"), parking: "")
+        _ = cache.focus(GuestKey.synthetic("A"), parking: "")
         guard case .unchanged = cache.focus(nil, parking: "A's state") else {
             return XCTFail("nil focus must leave the live state alone")
         }
         // ...and the machine coming back is still the focused one, so it
         // finds its own state rather than a restore of nothing.
-        guard case .unchanged = cache.focus(GuestKey(name: "A"),
+        guard case .unchanged = cache.focus(GuestKey.synthetic("A"),
                                             parking: "A's state") else {
             return XCTFail("the same machine is not a switch")
         }
@@ -66,13 +66,13 @@ final class MultiGuestFocusTests: XCTestCase {
 
     func testTheCacheIsBoundedByMachinesSeen() {
         let cache = GuestStateCache<String>(limit: 2)
-        _ = cache.focus(GuestKey(name: "A"), parking: "")
-        _ = cache.focus(GuestKey(name: "B"), parking: "A")
-        _ = cache.focus(GuestKey(name: "C"), parking: "B")
-        _ = cache.focus(GuestKey(name: "D"), parking: "C")
-        XCTAssertNil(cache.parkedState(for: GuestKey(name: "A")),
+        _ = cache.focus(GuestKey.synthetic("A"), parking: "")
+        _ = cache.focus(GuestKey.synthetic("B"), parking: "A")
+        _ = cache.focus(GuestKey.synthetic("C"), parking: "B")
+        _ = cache.focus(GuestKey.synthetic("D"), parking: "C")
+        XCTAssertNil(cache.parkedState(for: GuestKey.synthetic("A")),
                      "the oldest machine's state is dropped past the limit")
-        XCTAssertEqual(cache.parkedState(for: GuestKey(name: "C")), "C")
+        XCTAssertEqual(cache.parkedState(for: GuestKey.synthetic("C")), "C")
     }
 
     // MARK: - The console
@@ -131,7 +131,7 @@ final class MultiGuestFocusTests: XCTestCase {
                                   bytes: 16, paletteBytes: 0, packed: false,
                                   captureMs: 1, encodeMs: 1),
             transferMs: 1, wireBytes: 16,
-            guestName: guest, guestKey: GuestKey(name: guest))
+            guestName: guest, guestKey: GuestKey.synthetic(guest))
     }
 
     /// The gap the wire slice left open, stated in its own words: a push
@@ -242,7 +242,7 @@ final class MultiGuestFocusTests: XCTestCase {
         XCTAssertEqual(state.screenshots.connection.peerLabel,
                        "PowerBook 1400c")
 
-        XCTAssertTrue(state.selectGuest(GuestKey(name: "PowerBook 180c")))
+        XCTAssertTrue(state.selectGuest(try liveKey(state, "PowerBook 180c")))
         try await waitUntil("the models follow") {
             state.screenshots.connection.peerLabel == "PowerBook 180c"
         }
@@ -318,7 +318,7 @@ final class MultiGuestFocusTests: XCTestCase {
             state.software.rows.map(\.name) == ["SimpleText"]
         }
 
-        XCTAssertTrue(state.selectGuest(GuestKey(name: "PowerBook 180c")))
+        XCTAssertTrue(state.selectGuest(try liveKey(state, "PowerBook 180c")))
         try await waitUntil("the switch reaches Software") {
             state.software.connection.peerLabel == "PowerBook 180c"
         }
@@ -330,7 +330,7 @@ final class MultiGuestFocusTests: XCTestCase {
             state.software.rows.map(\.name) == ["TeachText"]
         }
 
-        XCTAssertTrue(state.selectGuest(GuestKey(name: "PowerBook 1400c")))
+        XCTAssertTrue(state.selectGuest(try liveKey(state, "PowerBook 1400c")))
         try await waitUntil("the switch back") {
             state.software.connection.peerLabel == "PowerBook 1400c"
         }
@@ -352,31 +352,71 @@ final class MultiGuestFocusTests: XCTestCase {
         }
     }
 
+    /// The live session key for a connected Mac, by the name it reports.
+    /// A key is not derivable from a name any more — that derivation was
+    /// the defect — so a test asks the roster, as the picker does.
+    private func liveKey(_ state: HostAppState, _ name: String) throws
+        -> GuestKey {
+        try XCTUnwrap(state.listener.guests.first { $0.name == name }?.key,
+                      "no connected guest called \(name)")
+    }
+
     // MARK: - The menu
 
-    func testTheDriveMenuNamesTheMacsAndTicksTheOneBeingDriven() {
+    func testTheDriveMenuNamesTheMacsAndTicksTheOneBeingDriven() throws {
         let holder = NSMenuItem(title: "Drive", action: nil, keyEquivalent: "")
         holder.submenu = NSMenu(title: "Drive")
+        let jem = Self.guest(id: "pb1400c", name: "PowerBook 1400c",
+                             address: "10.91.5.180", active: false)
+        let ess = Self.guest(id: "pb180c", name: "PowerBook 180c",
+                             address: "10.91.5.181", active: true)
         let menu = MainMenu.fillDriveMenu(
             holder,
-            guests: [
-                ConnectedGuest(key: GuestKey(name: "PowerBook 1400c"),
-                               name: "PowerBook 1400c", version: nil,
-                               operatingSystem: nil, connectedAt: Date(),
-                               isActive: false),
-                ConnectedGuest(key: GuestKey(name: "PowerBook 180c"),
-                               name: "PowerBook 180c", version: nil,
-                               operatingSystem: nil, connectedAt: Date(),
-                               isActive: true),
-            ],
+            guests: [jem, ess],
             target: self, action: #selector(noop))
+        // Handle first, then what the machine calls itself: the id is
+        // what a person has to type, and the name is what changes.
         XCTAssertEqual(menu.items.map(\.title),
-                       ["PowerBook 1400c", "PowerBook 180c"])
+                       ["pb1400c — PowerBook 1400c",
+                        "pb180c — PowerBook 180c"])
         XCTAssertEqual(menu.items.map(\.state), [.off, .on])
-        // The title is the identity the action acts on, so it must fold
-        // back to the same key the roster carries.
-        XCTAssertEqual(GuestKey(name: menu.items[1].title),
-                       GuestKey(name: "PowerBook 180c"))
+        // The item carries its SESSION id. The title cannot be the
+        // identity any more — two Macs may report the same name — so what
+        // the action acts on travels beside it.
+        XCTAssertEqual(menu.items[1].representedObject as? String,
+                       ess.sessionID)
+        XCTAssertEqual(GuestKey.parse(
+            try XCTUnwrap(menu.items[1].representedObject as? String)),
+                       ess.key)
+    }
+
+    /// Two Macs that call themselves the SAME thing are two rows with two
+    /// handles — the case that used to refuse the second machine `busy`.
+    func testTheDriveMenuTellsTwoMacsOfTheSameNameApart() throws {
+        let holder = NSMenuItem(title: "Drive", action: nil, keyEquivalent: "")
+        holder.submenu = NSMenu(title: "Drive")
+        let first = Self.guest(id: "guest-1", name: "NOW Guest 0.14",
+                               address: "10.91.5.180", active: true)
+        let second = Self.guest(id: "guest-2", name: "NOW Guest 0.14",
+                                address: "10.91.5.181", active: false)
+        let menu = MainMenu.fillDriveMenu(
+            holder, guests: [first, second],
+            target: self, action: #selector(noop))
+        XCTAssertEqual(menu.items.count, 2)
+        XCTAssertNotEqual(menu.items[0].title, menu.items[1].title)
+        XCTAssertNotEqual(
+            menu.items[0].representedObject as? String,
+            menu.items[1].representedObject as? String)
+    }
+
+    private static func guest(id: String, name: String, address: String,
+                              active: Bool) -> ConnectedGuest {
+        let key = GuestKey(machine: GuestID(id)!, session: UUID())
+        return ConnectedGuest(
+            key: key, id: GuestID(id)!, idIsAutoAssigned: true,
+            idIsAnchored: true, name: name,
+            address: GuestAddress(text: address), version: nil,
+            operatingSystem: nil, connectedAt: Date(), isActive: active)
     }
 
     func testAnEmptyDriveMenuSaysSoRatherThanOpeningOntoNothing() {

@@ -1,11 +1,16 @@
 import Foundation
 
 public enum AgentIntegrationLocalProtocol {
-    /// Version 6 adds the read-only session capability report. The version
-    /// moves because the SHAPE of the surface changed: a v5 companion has
-    /// no way to ask what the connected guest implements and would present
-    /// twelve tools as unconditionally available.
-    public static let version = 6
+    /// Version 7 makes the surface guest-ADDRESSABLE. The version moves
+    /// because the shape changed again: the host serves several machines
+    /// at once, so a request may now say WHICH one it means and every
+    /// guest-dependent answer names the machine it came from. A v6
+    /// companion cannot say which machine it wants and would take
+    /// whichever one happened to be active as the answer to a question it
+    /// asked about another.
+    ///
+    /// Version 6 added the read-only session capability report.
+    public static let version = 7
     public static let maximumMessageBytes = 16 * 1024
 }
 
@@ -39,6 +44,18 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
     public let guestFileUploadChunk: String?
     /// Opt in to the one read-only probe that costs the guest real work.
     public let probeCostly: Bool?
+    /// WHICH machine this request is about, if the caller cares.
+    ///
+    /// Accepts a machine id (`pb1400c` — "whatever is connected to that
+    /// Mac now", which follows a reconnection) or a session id
+    /// (`pb1400c-<uuid>` — precise, and fails once that connection ends
+    /// rather than being retargeted at its successor). Nil means "the
+    /// machine this host is driving", which is what every v6 caller
+    /// meant and what a single-Mac desk still means.
+    ///
+    /// A `var` with a default rather than another parameter on eleven
+    /// factory methods: it is orthogonal to every one of them.
+    public var guestSelector: String?
 
     private init(requestID: UUID,
                  operation: Operation,
@@ -233,6 +250,13 @@ public enum AgentIntegrationLocalResult: Equatable, Sendable {
         AgentIntegrationGuestFileUploadStageResult)
     case guestFilesUploadCommit(
         AgentIntegrationGuestFileUploadCommitResult)
+    /// The request named a machine, and this host cannot answer for it.
+    ///
+    /// One case rather than a variant of each of the eleven results,
+    /// because the reason is the same for all of them and belongs to the
+    /// ADDRESSING, not to the operation: nothing about the guest was
+    /// asked, so no operation-shaped answer would be honest.
+    case notAddressed(AgentIntegrationUnavailable)
 }
 
 public struct AgentIntegrationLocalError: Codable, Equatable, Sendable {
@@ -263,7 +287,26 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         AgentIntegrationGuestFileUploadStageResult? = nil
     public var guestFilesUploadCommitResult:
         AgentIntegrationGuestFileUploadCommitResult? = nil
+    /// The request named a machine this host cannot answer for. Set
+    /// INSTEAD of any operation result: nothing was asked of any guest.
+    public var notAddressed: AgentIntegrationUnavailable? = nil
     public let error: AgentIntegrationLocalError?
+
+    public init(requestID: UUID,
+                notAddressed: AgentIntegrationUnavailable) {
+        version = AgentIntegrationLocalProtocol.version
+        self.requestID = requestID
+        self.notAddressed = notAddressed
+        result = nil
+        processListResult = nil
+        launchResult = nil
+        quitResult = nil
+        artifactTransferResult = nil
+        guestFilesCapabilitiesResult = nil
+        guestFilesListResult = nil
+        guestFilesStatResult = nil
+        error = nil
+    }
 
     public init(requestID: UUID,
                 result: AgentIntegrationSessionHealthResult) {
@@ -791,6 +834,11 @@ public enum AgentIntegrationLocalCodec {
 }
 
 public enum AgentIntegrationLocalTransportError: Error, Equatable {
+    /// The host would not answer for the machine this request named.
+    /// Carried out of the transport as itself, so the caller can report
+    /// which machine and which one is being driven rather than "invalid
+    /// response".
+    case notAddressed(AgentIntegrationUnavailable)
     case hostUnavailable
     case unsafeEndpoint(String)
     case invalidMessage(String)

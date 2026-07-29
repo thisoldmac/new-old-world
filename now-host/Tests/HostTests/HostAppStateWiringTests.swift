@@ -49,8 +49,16 @@ final class HostAppStateWiringTests: XCTestCase {
         XCTAssertEqual(state.listener.state,
                        .connected(guestName: "PowerBook 1400"),
                        "listener state must reflect the connection")
+        // The badge mirrors the LISTENER'S key, not one derived from the
+        // name: two Macs may report the same name, so a derived key would
+        // put one machine's state under the other's badge.
+        XCTAssertEqual(state.screenshots.connection.peerLabel,
+                       "PowerBook 1400",
+                       "Screenshots badge must mirror the connection")
         XCTAssertEqual(state.screenshots.connection,
-                       .connected(named: "PowerBook 1400"),
+                       .connected(name: "PowerBook 1400",
+                                  key: try XCTUnwrap(
+                                    state.listener.activeKey)),
                        "Screenshots badge must mirror the connection")
 
         state.stopListening()

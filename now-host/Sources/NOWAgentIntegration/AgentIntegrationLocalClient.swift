@@ -3,6 +3,10 @@ import Foundation
 
 public struct AgentIntegrationLocalClient: Sendable {
     public let endpoint: AgentIntegrationEndpoint
+    /// WHICH machine every request from this client is about. Set once
+    /// with `addressing(_:)` rather than threaded through eleven method
+    /// signatures, because it is orthogonal to all of them.
+    public private(set) var guestSelector: String?
     private let expectedUID: uid_t
     private let readOnlyReceiveTimeout: TimeInterval
     private let launchReceiveTimeout: TimeInterval
@@ -209,9 +213,25 @@ public struct AgentIntegrationLocalClient: Sendable {
         }
     }
 
+    /// A copy of this client that says which machine it is asking about.
+    ///
+    /// A machine id (`pb1400c`) means "whatever is connected to that Mac
+    /// now" and follows a reconnection; a session id (`pb1400c-<uuid>`)
+    /// means this connection and nothing else, and stops being valid the
+    /// moment it ends — the same contract the process and quit references
+    /// on this surface already keep.
+    public func addressing(_ selector: String?)
+        -> AgentIntegrationLocalClient {
+        var copy = self
+        copy.guestSelector = selector
+        return copy
+    }
+
     private func send(_ request: AgentIntegrationLocalRequest) async throws
         -> AgentIntegrationLocalResponse {
-        try await Task.detached {
+        var request = request
+        request.guestSelector = guestSelector
+        return try await Task.detached {
             let timeout: TimeInterval
             switch request.operation {
             case .sessionHealth, .listProcesses,
@@ -234,6 +254,10 @@ public struct AgentIntegrationLocalClient: Sendable {
             guard decoded.requestID == request.requestID else {
                 throw AgentIntegrationLocalTransportError.invalidMessage(
                     "Local response request ID did not match")
+            }
+            if let refusal = decoded.notAddressed {
+                throw AgentIntegrationLocalTransportError
+                    .notAddressed(refusal)
             }
             if let error = decoded.error {
                 throw AgentIntegrationLocalTransportError.invalidMessage(

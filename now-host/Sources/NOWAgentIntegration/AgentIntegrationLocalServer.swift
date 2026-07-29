@@ -137,6 +137,10 @@ public final class AgentIntegrationLocalServer {
             }
             let response: AgentIntegrationLocalResponse
             switch await handler(request) {
+            case .notAddressed(let unavailable):
+                response = .init(
+                    requestID: request.requestID,
+                    notAddressed: unavailable)
             case .sessionHealth(let result):
                 response = .init(
                     requestID: request.requestID, result: result)

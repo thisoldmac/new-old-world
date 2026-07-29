@@ -245,11 +245,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         }
     }
 
-    /// Points the window at the Mac named by the item. The title is the
-    /// identity — see `MainMenu.fillDriveMenu` for why that is exact and
-    /// not a shortcut.
+    /// Points the window at the Mac the item stands for. The item carries
+    /// its SESSION id, not its title: a title is a label now and two of
+    /// them can read the same.
     @objc func driveGuest(_ sender: NSMenuItem) {
-        state.selectGuest(GuestKey(name: sender.title))
+        guard let sessionID = sender.representedObject as? String,
+              let key = GuestKey.parse(sessionID) else { return }
+        state.selectGuest(key)
     }
 
     /// One item, two truths — and the truth is read as the menu opens rather
@@ -302,6 +304,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             let server = try AgentIntegrationLocalServer {
                 [agentIntegration = state.agentIntegration,
                  guestFiles = state.guestFiles] request in
+                /* Addressing is checked once, before any operation, so
+                   no tool can be reached with a guest selector nobody
+                   honoured. Session health is exempt: it is the call a
+                   caller makes to DISCOVER the ids, and refusing it for
+                   naming an id would be a closed loop. */
+                if request.operation != .sessionHealth,
+                   let refusal = agentIntegration.addressingRefusal(
+                       request.guestSelector) {
+                    return .notAddressed(refusal)
+                }
                 switch request.operation {
                 case .sessionHealth:
                     return .sessionHealth(

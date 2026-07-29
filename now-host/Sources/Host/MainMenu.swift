@@ -221,12 +221,13 @@ enum MainMenu {
     /// listen toggle is: a menu that caches the roster is a menu that
     /// offers to drive a Mac that hung up ten minutes ago.
     ///
-    /// The item's TITLE is the identity it acts on. That is not laziness
-    /// about `representedObject`: `GuestKey` is derived from the name by
-    /// one rule (`GuestKey(name:)`), the roster's name is the name that
-    /// rule was applied to, and so the round trip is exact by
-    /// construction. A boxed key stored beside the title would be a second
-    /// copy of the same fact, free to drift from what the item says.
+    /// The item CARRIES its session id in `representedObject`, and no
+    /// longer relies on its title round-tripping to an identity. It used
+    /// to: the key was derived from the name by one rule, so title and key
+    /// agreed by construction. They cannot agree any more — two Macs may
+    /// call themselves the same thing, and a redeploy renames one — so the
+    /// title is now free to be what a person needs to read (`pb1400c —
+    /// NOW-68K 0.14`) while the identity travels beside it.
     ///
     /// Empty is a state worth drawing rather than hiding: "No Macs
     /// connected", disabled, says the wire is idle. A submenu that opens
@@ -248,8 +249,12 @@ enum MainMenu {
             return menu
         }
         for guest in guests {
-            let entry = NSMenuItem(title: guest.name, action: action,
+            /* Handle first, then what the machine calls itself. Two Macs
+               reporting the same name are two rows with two handles, so a
+               person can tell them apart and type the one they meant. */
+            let entry = NSMenuItem(title: guest.label, action: action,
                                    keyEquivalent: "")
+            entry.representedObject = guest.sessionID
             entry.target = target
             entry.state = guest.isActive ? .on : .off
             menu.addItem(entry)

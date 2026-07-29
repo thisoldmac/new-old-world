@@ -33,14 +33,22 @@ final class AgentIntegrationProcessControl {
 
     private let listener: GuestListener
     private let currentSessionID: @MainActor () -> UUID?
+    /// WHICH machine an answer is about. A projection, not a decision:
+    /// nothing here reads it to choose what may be done — availability is
+    /// still decided by capability — it is stamped on the answer so a
+    /// caller is never left inferring whose process table it holds.
+    private let currentGuest: @MainActor () -> AgentIntegrationGuestReference?
     private var records: [Identity: ReferenceRecord] = [:]
     private var referenceSessionID: UUID?
     private var quitInFlight = false
 
     init(listener: GuestListener,
-         currentSessionID: @escaping @MainActor () -> UUID?) {
+         currentSessionID: @escaping @MainActor () -> UUID?,
+         currentGuest: @escaping @MainActor ()
+            -> AgentIntegrationGuestReference? = { nil }) {
         self.listener = listener
         self.currentSessionID = currentSessionID
+        self.currentGuest = currentGuest
     }
 
     func list(observedAt: Date = Date())
@@ -224,6 +232,7 @@ final class AgentIntegrationProcessControl {
         }
         return .available(.init(
             sessionID: sessionID,
+            guest: currentGuest(),
             observedAt: observedAt,
             processes: processes))
     }

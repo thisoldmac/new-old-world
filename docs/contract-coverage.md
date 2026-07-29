@@ -29,6 +29,16 @@ such test yet** — see the last section. Until it does, treat it as
 correct on the date at the bottom and check it against the two commands
 above before relying on it.
 
+
+> **Guest identity and addressing changed nothing here (2026-07-28).**
+> Guests are now addressed by a host-assigned machine id mapped to the
+> host-observed peer address, and the agent projections that carry a guest
+> name it. All of it is host-side: the address arrives on the
+> socket and the display name is already in `hello`. No message, no verb
+> and no probe moved, and both guests are byte-identical in what they
+> serve. The row that WOULD move is a guest-minted stable id in `hello`,
+> which is deliberately not implemented — see docs/open-issues.md.
+
 ## Verification status is not coverage
 
 Two independent axes, and conflating them is how this project has
