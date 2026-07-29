@@ -1538,11 +1538,32 @@ final class GuestListener: ObservableObject {
         deliverCapture(.failure(.init(message: "Capture cancelled")))
     }
 
+    /// A decoded capture and WHICH machine sent it.
+    ///
+    /// The sender was previously implied: with one guest there was only one
+    /// answer, and with several, a solicited capture still comes from the
+    /// machine we asked. A PUSH does not — a guest nobody is driving may
+    /// send a screenshot whenever it likes — and without this the
+    /// Screenshots module filed it under whoever happened to be active.
+    ///
+    /// **No contract field was needed and none was added.** Which machine
+    /// sent a message is not something the message has to say: it arrived
+    /// on that machine's socket, and the host already knows whose socket
+    /// that is (`Session.guestKey`, set at hello). Putting a name in the
+    /// payload would have created a second, weaker answer to a question the
+    /// connection already answers exactly — and one a guest could get
+    /// wrong. Both guests are therefore unchanged by this, and neither
+    /// differs from the other.
     struct CaptureDelivery {
         var image: CGImage
         var format: CaptureFormat
         var transferMs: Int
         var wireBytes: Int
+        /// What the sender calls itself, for anything a person reads.
+        var guestName: String = Session.unnamedGuest
+        /// The sender's identity, for routing. Nil only for a capture
+        /// decoded before a hello, which cannot happen on this path.
+        var guestKey: GuestKey?
     }
 
     private var pendingCapture:

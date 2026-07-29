@@ -100,35 +100,60 @@ Procedure, one visit:
 `test_shotdiag.c`; everything it measures is a Toolbox call no gate in
 this tree can reach.
 
-## Two guests on one port: the wire half only (2026-07-28)
+## Two guests on one port (2026-07-28)
 
-The host now serves several guests at once, told apart by the identity
-in their `hello` (the name, trimmed and case-folded). Both PowerBooks
-can dial one port. **Tested, not metal-verified** — neither machine has
-been near this, and the emulator has not either.
+The host serves several guests at once, told apart by the identity in
+their `hello` (the name, trimmed and case-folded). Both PowerBooks can
+dial one port, and the window can be pointed at either. **Tested, not
+metal-verified** — neither machine has been near this, and the emulator
+has not either. Nothing below has ever run against a real classic Mac.
 
 One guest is ACTIVE: every request-shaped call (`runCommand`, `exec`,
 `listFiles`, `requestCapture`, the modules, the agent projection) drives
-that one, and `GuestListener.selectGuest` points it at another. What a
-guest gets regardless is the half it initiates — its pings, its pushes,
-and our share served back down its own socket.
+that one. What a guest gets regardless is the half it initiates — its
+pings, its pushes, and our share served back down its own socket.
 
-### Unfinished, and why the UI is still single-guest
+### Choosing which Mac
 
-`selectGuest` is deliberately not wired to anything. The modules cache
-per CONNECTION and clear only when the connection DROPS, so switching
-would show one Mac's rows under the other's name:
+`GuestListener.selectGuest` is now reachable two ways: a pop-up in the
+sidebar footer, which appears only when a second machine is connected,
+and **Guest ▸ Drive** in the menu bar, rebuilt as the menu opens.
 
-- `ProcessesModel` and `SoftwareModel` — `connectionChanged` returns
-  early while the new state is still capturable.
-- `CensusModel` — same shape.
-- `ConsoleModel` — transcript, `help` completions and the prompt name;
-  `HostAppState` calls `forgetGuest()` on disconnect only.
-- `FilesModel` — browse path and listing page.
-- `ScreenshotModel` — stream state and the capture filename's guest name.
+Each module model decides for itself what a switch means to it, and the
+decisions are not the same — the reasoning is at each `Snapshot` type,
+and the mechanism is one small cache (`GuestScopedState.swift`):
 
-None of these is wrong today, because nothing switches. All of them
-become wrong the moment a picker exists.
+- **Kept per machine**, because it cannot be re-fetched or is expensive
+  to: the console scrollback, history and completions; the screenshot
+  history; the census dossier; the software inventory; the Files
+  breadcrumb and listing.
+- **Discarded on a switch**, because it goes stale on its own machine
+  faster than a person can read it: the process table. Also every
+  in-flight thing — stream brackets, sweeps, loads — which the listener
+  has already failed by then.
+- **Dropped rather than parked**: a queue of files still waiting to be
+  sent. They were meant for the other Mac; the module says so.
+
+A machine that DISCONNECTS keeps its parked state (the same machine
+dialling back in finds its own scrollback), except the software
+inventory, which dies with the connection exactly as it did before —
+a redeployed guest has a different disk.
+
+### A pushed capture now says which Mac sent it
+
+`CaptureDelivery` carries the sender's name and key, stamped in
+`Session` from the socket it arrived on. A background machine's push is
+filed under that machine — it no longer appears in the driven Mac's
+history — and the system notification names the right Mac. It is still
+auto-saved to the landing pad, and it does NOT take the clipboard.
+
+**No contract field was added and none was needed.** Which machine sent
+a message is answered exactly by which socket it arrived on; a name in
+the payload would be a second, weaker copy of that fact. Both guests are
+unchanged, and neither now differs from the other.
+
+Visible consequence, not yet addressed: a background push is announced
+and saved but appears in no list until you switch to that machine.
 
 ### Open
 
@@ -141,9 +166,11 @@ become wrong the moment a picker exists.
 - **One stream, one capture, one put, host-wide.** Two guests cannot
   stream at once; the second is refused `stream-busy`. Honest, but a
   limit nobody chose for its own sake.
-- **A pushed capture does not say which Mac sent it.** It arrives on
-  `pushedCaptures` with no identity, so the Screenshots module would
-  attribute a background guest's push to the active one.
+- **Nothing on screen says a background Mac is doing anything.** The
+  picker names the machines and nothing more: a push that landed under
+  the other one, a transfer it started, an error it reported are all
+  invisible until you switch to it. The roster is the obvious place for
+  a badge, and it does not have one.
 - **The agent/MCP projection is single-guest throughout** — one
   `connectedSessionID()`, one capability ledger, one process-reference
   scope. No MCP tool takes a guest argument. Whether it should, or

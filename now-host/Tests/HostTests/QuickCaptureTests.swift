@@ -36,7 +36,7 @@ final class QuickCaptureTests: XCTestCase {
 
     func testEnabledOnAnIdleConnection() {
         let ready = QuickCaptureReadiness.evaluate(
-            connection: .connected(name: "PowerBook 1400"),
+            connection: .connected(named: "PowerBook 1400"),
             isCapturing: false, isStreaming: false, isTransferringFile: false)
         XCTAssertTrue(ready.isEnabled)
         XCTAssertNil(ready.reason)
@@ -45,7 +45,7 @@ final class QuickCaptureTests: XCTestCase {
     /// The single transfer lane: each of the three occupants blocks, and
     /// each names itself so the toast can explain the grey-out.
     func testEveryLaneOccupantDisablesWithItsOwnReason() {
-        let connected = GuestConnectionState.connected(name: "Quadra 950")
+        let connected = GuestConnectionState.connected(named: "Quadra 950")
         let cases: [(Bool, Bool, Bool, String)] = [
             (true, false, false, "A screenshot is already on its way"),
             (false, true, false, "The live stream is using the connection"),
@@ -63,7 +63,7 @@ final class QuickCaptureTests: XCTestCase {
     func testReadinessTracksTheConnectionLive() {
         let (command, screenshots, _) = makeCommand()
         XCTAssertFalse(command.readiness.isEnabled)
-        screenshots.connection = .connected(name: "PowerBook 1400")
+        screenshots.connection = .connected(named: "PowerBook 1400")
         XCTAssertTrue(command.readiness.isEnabled)
         screenshots.connection = .disconnected
         XCTAssertFalse(command.readiness.isEnabled)
@@ -84,7 +84,7 @@ final class QuickCaptureTests: XCTestCase {
     /// hang waiting for a toast that never comes.
     func testAFailedCaptureIsReportedNotSwallowed() {
         let (command, screenshots, _) = makeCommand()
-        screenshots.connection = .connected(name: "PowerBook 1400")
+        screenshots.connection = .connected(named: "PowerBook 1400")
         var outcomes: [QuickCaptureOutcome] = []
         command.report = { outcomes.append($0) }
         command.run()

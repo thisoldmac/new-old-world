@@ -44,7 +44,7 @@ struct ProcessesModuleView: View {
             }
             Spacer()
             switch model.connection {
-            case .connected(let name):
+            case .connected(let name, _):
                 Label(name, systemImage: "circle.fill")
                     .foregroundStyle(.green)
             case .connecting:

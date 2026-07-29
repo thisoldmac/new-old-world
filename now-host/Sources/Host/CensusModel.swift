@@ -24,18 +24,60 @@ struct CensusProbeState: Identifiable, Equatable {
 /// request. It never serves a census - the guest is the machine with
 /// hardware worth asking about - it only requests and displays.
 @MainActor
-final class CensusModuleModel: ObservableObject {
+final class CensusModuleModel: ObservableObject, GuestScopedModel {
+    /// One machine's dossier, parked while another is driven.
+    ///
+    /// Cached rather than discarded because a hardware census is the most
+    /// nearly PERMANENT thing either guest can tell us: a Mac's CPU, RAM,
+    /// slots and monitors do not change between two glances at the other
+    /// machine, and on a 68K guest each probe is slow enough that a person
+    /// runs the sweep once and reads it for the rest of the session. It
+    /// survives a disconnect for the same reason it survives a switch, and
+    /// that was already true before there were two guests.
+    struct Snapshot {
+        var probes: [CensusProbeState]
+        var selection: String?
+    }
+
+    private let cache = GuestStateCache<Snapshot>()
+
     @Published var connection: GuestConnectionState = .disconnected {
-        didSet {
-            if case .connected = connection { return }
-            // The link dropped: nothing is still running, and a sweep that
-            // was in flight is over. Results already gathered stay on screen.
+        didSet { connectionChanged(from: oldValue) }
+    }
+
+    private func connectionChanged(from old: GuestConnectionState) {
+        guard connection != old else { return }
+        if case .switched(let restored) = cache.focus(connection.key,
+                                                      parking: snapshot()) {
+            // A sweep in flight belongs to the machine we left; the
+            // listener has already failed whatever request was outstanding.
             isSweeping = false
             sweepQueue = []
-            for i in probes.indices where probes[i].isRunning {
-                probes[i].isRunning = false
+            generation = [:]
+            let fresh = restored
+                ?? Snapshot(
+                    probes: CensusProbes.all.map { CensusProbeState(probe: $0) },
+                    selection: CensusProbes.all.first?.id)
+            probes = fresh.probes.map { state in
+                var state = state
+                state.isRunning = false
+                return state
             }
+            selection = fresh.selection
+            return
         }
+        if case .connected = connection { return }
+        // The link dropped: nothing is still running, and a sweep that
+        // was in flight is over. Results already gathered stay on screen.
+        isSweeping = false
+        sweepQueue = []
+        for i in probes.indices where probes[i].isRunning {
+            probes[i].isRunning = false
+        }
+    }
+
+    private func snapshot() -> Snapshot {
+        Snapshot(probes: probes, selection: selection)
     }
     @Published private(set) var probes: [CensusProbeState]
     @Published var selection: String?

@@ -9,7 +9,32 @@ import Foundation
 /// entry's full path, the listing's launch key, so the guest's
 /// name-ambiguity refusal can never fire from this page.
 @MainActor
-final class SoftwareModel: ObservableObject {
+final class SoftwareModel: ObservableObject, GuestScopedModel {
+    /// What one machine's inventory is, parked while another is driven.
+    ///
+    /// This one is CACHED rather than discarded because of what it costs
+    /// the other machine to produce: rebuilding the Applications domain is
+    /// a ~4 s sweep of the guest's disk, done by a cooperatively-scheduled
+    /// classic Mac that is doing nothing else while it runs. Throwing that
+    /// away because somebody glanced at the other Mac and came back would
+    /// make the picker expensive to use, which is a good way to make a
+    /// two-machine feature feel like a mistake.
+    ///
+    /// The domain travels with it: "which domain am I looking at" is a
+    /// question about the machine in front of you, and returning to a Mac
+    /// on Control Panels having left it on Control Panels is the whole
+    /// point of parking anything.
+    struct Snapshot {
+        var rows: [SoftwareEntry] = []
+        var domain: Domain = .apps
+        var note: String?
+        var fetchedAt: Date?
+        var selection: SoftwareEntry.ID?
+        var search = ""
+    }
+
+    private let cache = GuestStateCache<Snapshot>()
+
     /// The declared domains, in the guest page's order. The keys are the
     /// contract's; the labels are what a person reads.
     enum Domain: String, CaseIterable, Identifiable {
@@ -31,8 +56,11 @@ final class SoftwareModel: ObservableObject {
         didSet { connectionChanged(from: oldValue) }
     }
     @Published var domain: Domain = .apps {
-        didSet { if domain != oldValue { refresh() } }
+        // Restoring a parked domain must not re-ask the wire: the rows for
+        // it are being restored in the same breath.
+        didSet { if domain != oldValue, !isRestoring { refresh() } }
     }
+    private var isRestoring = false
     @Published private(set) var rows: [SoftwareEntry] = []
     @Published private(set) var isLoading = false
     @Published private(set) var lastError: String?
@@ -85,15 +113,58 @@ final class SoftwareModel: ObservableObject {
     /// The inventory belongs to one connection; a redeployed guest has a
     /// different disk state. Drop the table the instant the connection
     /// does — the reconnect re-reads on its own from the view.
+    ///
+    /// A SWITCH is the other case, and it is not a drop: the outgoing
+    /// machine's inventory is parked under its key and the incoming
+    /// machine's is restored, so neither is ever shown under the other's
+    /// name and neither has to be swept again.
     private func connectionChanged(from old: GuestConnectionState) {
-        guard connection != old, !connection.canCapture else { return }
-        rows = []
-        fetchedAt = nil
-        lastError = nil
-        note = nil
-        lastAction = nil
+        guard connection != old else { return }
+        switch cache.focus(connection.key, parking: snapshot()) {
+        case .switched(let restored):
+            restore(restored ?? Snapshot())
+        case .unchanged:
+            guard !connection.canCapture else { return }
+            rows = []
+            fetchedAt = nil
+            lastError = nil
+            note = nil
+            lastAction = nil
+            loadToken += 1
+            isLoading = false
+        }
+    }
+
+    /// A machine that disconnects loses its parked inventory, for exactly
+    /// the reason the live one is dropped above: the next time this Mac
+    /// dials in it may have been redeployed, and an inventory taken before
+    /// that is a page of files that are no longer there. This is the only
+    /// model here that forgets — the others cache a record of what a person
+    /// did or what the hardware is, neither of which a reconnect invalidates.
+    func guestLeft(_ key: GuestKey) {
+        cache.forget(key)
+    }
+
+    private func snapshot() -> Snapshot {
+        Snapshot(rows: rows, domain: domain, note: note,
+                 fetchedAt: fetchedAt, selection: selection, search: search)
+    }
+
+    private func restore(_ snapshot: Snapshot) {
+        // A page still in flight belongs to the machine we just left.
         loadToken += 1
         isLoading = false
+        actionInFlight = false
+        lastError = nil
+        lastAction = nil
+        isRestoring = true
+        domain = snapshot.domain
+        isRestoring = false
+        rows = snapshot.rows
+        note = snapshot.note
+        fetchedAt = snapshot.fetchedAt
+        selection = snapshot.selection
+        search = snapshot.search
     }
 
     func refresh() {

@@ -33,11 +33,16 @@ struct HostRootView: View {
 
     @ViewBuilder
     private var footer: some View {
-        if !registry.footerModules.isEmpty {
-            SidebarFooter(modules: registry.footerModules,
-                          monitor: state.guestStatus,
-                          selectedID: state.selectedModuleID) { id in
-                state.selectedModuleID = id
+        VStack(spacing: 0) {
+            GuestPicker(listener: state.listener) { key in
+                state.selectGuest(key)
+            }
+            if !registry.footerModules.isEmpty {
+                SidebarFooter(modules: registry.footerModules,
+                              monitor: state.guestStatus,
+                              selectedID: state.selectedModuleID) { id in
+                    state.selectedModuleID = id
+                }
             }
         }
     }
@@ -85,6 +90,61 @@ struct HostRootView: View {
                     .font(.title2.weight(.semibold))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}
+
+/// Which Mac the window is driving, when there is a choice.
+///
+/// A pop-up button, which is `Picker` under `.menu` — the stock AppKit
+/// control for "one of a short list", drawn by the system rather than
+/// rebuilt out of rows here. The alternative, a second list of machines
+/// above the modules, would have said the same thing in more pixels and
+/// invented a selection idiom the rest of the OS does not use.
+///
+/// **It appears only when there are two.** With one machine connected the
+/// popup would offer a choice that is not a choice, and the footer's status
+/// line already names it; with none there is nothing to name. The row is
+/// therefore evidence in itself: seeing it means a second Mac is on the
+/// wire, which is the fact a person most needs when a command lands
+/// somewhere surprising.
+struct GuestPicker: View {
+    @ObservedObject var listener: GuestListener
+    let select: (GuestKey) -> Void
+
+    var body: some View {
+        if listener.guests.count > 1 {
+            VStack(spacing: 0) {
+                Divider()
+                HStack(spacing: 6) {
+                    Image(systemName: "desktopcomputer")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Picker("Driving", selection: selection) {
+                        ForEach(listener.guests) { guest in
+                            Text(guest.name).tag(GuestKey?.some(guest.key))
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .controlSize(.small)
+                }
+                .padding(.horizontal, 10)
+                .padding(.top, 8)
+                .help("Every command, module and capture request goes to "
+                      + "the Mac chosen here. The others stay connected.")
+            }
+        }
+    }
+
+    /// Reads the roster rather than a stored choice: the active guest is
+    /// the listener's fact, and a picker holding its own copy would go on
+    /// showing a machine that had disconnected.
+    private var selection: Binding<GuestKey?> {
+        Binding {
+            listener.guests.first(where: \.isActive)?.key
+        } set: { picked in
+            if let picked { select(picked) }
         }
     }
 }

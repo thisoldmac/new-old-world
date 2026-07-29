@@ -72,6 +72,27 @@ final class HostAppState: ObservableObject {
     private let defaults: UserDefaults
     private static let selectionKey = "selectedModuleID"
     private var stateMirror: AnyCancellable?
+    private var rosterMirror: AnyCancellable?
+    private var knownGuests: Set<GuestKey> = []
+
+    /// Every model that shows one machine's state. Listed once so a new
+    /// module cannot be wired into the connection and forgotten by the
+    /// switch — the two used to be separate assignments, and a module added
+    /// to one and not the other is precisely the defect this list closes.
+    private var guestScopedModels: [any GuestScopedModel] {
+        [screenshots, files, census, processes, software]
+    }
+
+    /// Points the whole window at another connected Mac.
+    ///
+    /// The listener moves the request plane; the models re-focus off the
+    /// state change that follows, which is why this is two lines and not a
+    /// broadcast. Returns false when the key names nobody, so a stale menu
+    /// item is a no-op rather than a silent nothing.
+    @discardableResult
+    func selectGuest(_ key: GuestKey) -> Bool {
+        listener.selectGuest(key)
+    }
 
     init(registry: ModuleRegistry,
          defaults: UserDefaults = UserDefaults(
@@ -98,20 +119,40 @@ final class HostAppState: ObservableObject {
             ?? registry.modules.first?.id
             ?? ""
         stateMirror = listener.$state.sink { [weak self] state in
-            self?.screenshots.connection = Self.guestState(from: state)
-            self?.files.connection = Self.guestState(from: state)
-            self?.census.connection = Self.guestState(from: state)
-            self?.processes.connection = Self.guestState(from: state)
-            self?.software.connection = Self.guestState(from: state)
+            guard let self else { return }
+            let connection = Self.guestState(from: state)
+            /* One assignment per model, from one place, in one turn. The
+               models decide for themselves what a switch means to them —
+               see GuestScopedState.swift — but they must all learn about it
+               at the same moment, or the window shows two machines at once
+               for a frame. */
+            for model in self.guestScopedModels {
+                model.connection = connection
+            }
             // The console's completions came from THIS guest's `help`, and
             // the next one may serve a different set — NOW-68K serves three
             // commands where the Carbon guest serves fifteen. So they go
             // with the connection rather than lingering as a list from a
             // machine that is no longer there.
+            self.console.focus(on: connection)
             if case .connected = state {} else {
-                self?.console.forgetGuest()
+                self.console.forgetGuest()
             }
-            self?.captureSmokeIfRequested(state)
+            self.captureSmokeIfRequested(state)
+        }
+        /* A guest leaving the roster is a different event to the active one
+           changing, and only the models whose cache dies with the
+           connection act on it. Diffed here rather than published as a
+           departure, because the roster is the thing that is true. */
+        rosterMirror = listener.$guests.sink { [weak self] guests in
+            guard let self else { return }
+            let now = Set(guests.map(\.key))
+            for gone in self.knownGuests.subtracting(now) {
+                for model in self.guestScopedModels {
+                    model.guestLeft(gone)
+                }
+            }
+            self.knownGuests = now
         }
         if settings.listenAtLaunch {
             startListening()
@@ -159,10 +200,15 @@ final class HostAppState: ObservableObject {
         }
     }
 
+    /// The listener's state says WHO is connected by name; the key the
+    /// models compare is derived from that name by the same rule the
+    /// listener itself used at hello (`GuestKey(name:)` is the one place
+    /// the folding lives), so the two cannot disagree about what "the same
+    /// machine" means.
     private static func guestState(from state: GuestListener.State)
         -> GuestConnectionState {
         switch state {
-        case .connected(let name): return .connected(name: name)
+        case .connected(let name): return .connected(named: name)
         case .idle, .listening, .failed: return .disconnected
         }
     }

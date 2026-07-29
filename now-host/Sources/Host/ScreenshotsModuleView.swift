@@ -289,7 +289,7 @@ struct ScreenshotsModuleView: View {
         case .connecting:
             Label("Connecting", systemImage: "circle.dotted")
                 .foregroundStyle(.orange)
-        case .connected(let name):
+        case .connected(let name, _):
             Label(name, systemImage: "circle.fill")
                 .foregroundStyle(.green)
         }

@@ -8,7 +8,7 @@ import Foundation
 /// It shows what the guest serves and nothing it does not — the read is
 /// honest about being a snapshot from the moment it was asked.
 @MainActor
-final class ProcessesModel: ObservableObject {
+final class ProcessesModel: ObservableObject, GuestScopedModel {
     @Published var connection: GuestConnectionState = .disconnected {
         didSet { connectionChanged(from: oldValue) }
     }
@@ -85,9 +85,22 @@ final class ProcessesModel: ObservableObject {
     /// reconnect (or a reopened pane) reads afresh on its own, with no
     /// manual Refresh. This only clears — the re-read is driven from the
     /// view, past the state change the listener has yet to see.
+    ///
+    /// **The one model here that parks nothing.** Every other module caches
+    /// something worth keeping per machine; a process table is worth
+    /// keeping for about as long as it takes to read it. It goes stale on
+    /// its own machine in seconds — that is why the header says when it was
+    /// fetched — so parking it would buy a page of rows that are wrong in
+    /// the same way the shared-across-guests version was wrong, only
+    /// quieter. Switching guests therefore clears it exactly as
+    /// disconnecting does, and the view re-reads.
     private func connectionChanged(from old: GuestConnectionState) {
-        guard connection != old, !connection.canCapture else { return }
+        let switched = connection.key != nil && connection.key != old.key
+        guard connection != old, !connection.canCapture || switched else {
+            return
+        }
         rows = []
+        selection = nil
         fetchedAt = nil
         lastError = nil
         // A page still in flight from the old connection must not append.

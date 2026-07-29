@@ -18,11 +18,29 @@ enum CaptureDepth: Int, CaseIterable, Identifiable, Sendable {
 enum GuestConnectionState: Equatable, Sendable {
     case disconnected
     case connecting
-    case connected(name: String)
+    /// Connected, and to WHICH machine. The key is here rather than
+    /// alongside because a model that has to consult two published
+    /// properties to know whose rows it is holding will one day read them
+    /// a frame apart — and the whole failure this carries exists to
+    /// prevent is showing one Mac's state under another's name.
+    case connected(name: String, key: GuestKey)
+
+    /// The ordinary spelling: a name is all a caller usually has, and the
+    /// key is derived from it exactly as the wire derives it.
+    static func connected(named name: String) -> GuestConnectionState {
+        .connected(name: name, key: GuestKey(name: name))
+    }
 
     var canCapture: Bool {
         if case .connected = self { return true }
         return false
+    }
+
+    /// Which machine, when there is one. Nil is "nobody is being driven",
+    /// never "some machine we cannot name".
+    var key: GuestKey? {
+        if case .connected(_, let key) = self { return key }
+        return nil
     }
 
     /// What to call the machine on the other end, for anything a human
@@ -32,7 +50,7 @@ enum GuestConnectionState: Equatable, Sendable {
     /// the code, not for the person using it. And never "the Mac":
     /// both of them are Macs.
     var peerLabel: String {
-        if case .connected(let name) = self, !name.isEmpty { return name }
+        if case .connected(let name, _) = self, !name.isEmpty { return name }
         return "the classic Mac"
     }
 }
@@ -54,6 +72,10 @@ struct ScreenshotRecord: Identifiable, Equatable {
     let format: CaptureFormat
     let transferMs: Int
     let wireBytes: Int
+    /// Which machine this is a picture of. Carried on the record rather
+    /// than inferred from the list it is in, because a push arrives from
+    /// whichever guest felt like sending one.
+    var guest: String = Session.unnamedGuest
 
     var width: Int { format.width }
     var height: Int { format.height }
@@ -71,8 +93,30 @@ struct ScreenshotRecord: Identifiable, Equatable {
 }
 
 @MainActor
-final class ScreenshotModuleModel: ObservableObject {
-    @Published var connection: GuestConnectionState = .disconnected
+final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
+    /// One machine's captures, parked while another is driven.
+    ///
+    /// The history is CACHED, and the reasoning here ran the other way to
+    /// begin with: a screenshot cache looks like the cheapest thing in the
+    /// app to throw away. It is not, because it is the only cache here that
+    /// cannot be refilled — a capture is a picture of a moment on a machine
+    /// that has moved on, and auto-save is off by default, so discarding it
+    /// on a switch would destroy something. Cheap to re-fetch is the test,
+    /// and this is the one that fails it.
+    ///
+    /// The STREAM is the opposite and is discarded: the frame, the stats
+    /// and the recorder all belong to a bracket that only the driven guest
+    /// can hold, and the listener has already closed it by the time this
+    /// runs.
+    struct Snapshot {
+        var history: [ScreenshotRecord] = []
+    }
+
+    private let cache = GuestStateCache<Snapshot>()
+
+    @Published var connection: GuestConnectionState = .disconnected {
+        didSet { connectionChanged(from: oldValue) }
+    }
     @Published var selectedDepth: CaptureDepth = .indexed
     /// The host's tuning knobs, sent with every request and stream so the
     /// initiator's settings win; the guest's panel remains the fallback
@@ -219,6 +263,20 @@ final class ScreenshotModuleModel: ObservableObject {
             .sink { [weak self] id in self?.streamStateChanged(id) }
     }
 
+    private func connectionChanged(from old: GuestConnectionState) {
+        guard connection != old,
+              case .switched(let restored) =
+                cache.focus(connection.key, parking: Snapshot(history: history))
+        else { return }
+        history = restored?.history ?? []
+        liveFrame = nil
+        streamStats = nil
+        progress = nil
+        isCapturing = false
+        lastError = nil
+        discardRecording()
+    }
+
     func startStream() {
         guard canStream else { return }
         lastError = nil
@@ -297,7 +355,7 @@ final class ScreenshotModuleModel: ObservableObject {
         let record = ScreenshotRecord(
             capturedAt: Date(), image: delivery.image,
             format: delivery.format, transferMs: delivery.transferMs,
-            wireBytes: delivery.wireBytes)
+            wireBytes: delivery.wireBytes, guest: delivery.guestName)
         liveFrame = record
         recorder?.append(delivery.image, at: record.capturedAt)
         frameClock.append(record.capturedAt)
@@ -325,26 +383,44 @@ final class ScreenshotModuleModel: ObservableObject {
     /// A guest-initiated screenshot: same record as a requested one, but it
     /// always writes to the landing pad — unlike a panel capture it has no
     /// other home — and it announces itself.
+    ///
+    /// It files under the machine that SENT it, which is not necessarily
+    /// the one being driven. A push is the one capture path that arrives
+    /// unasked, so a Mac nobody is looking at can produce one at any
+    /// moment; attributing it to whoever was active — which is what this
+    /// did, by reading `connection` for a name — put one machine's screen
+    /// in another machine's list and told the notification the wrong Mac's
+    /// name. The picture still lands on disk and still announces itself
+    /// either way: a push nobody sees is worse than one filed away.
     func receivePushed(_ delivery: GuestListener.CaptureDelivery) {
         let record = ScreenshotRecord(
             capturedAt: Date(), image: delivery.image,
             format: delivery.format, transferMs: delivery.transferMs,
-            wireBytes: delivery.wireBytes)
-        receive(record)
-        if autoCopy {
-            copyToPasteboard(record)
+            wireBytes: delivery.wireBytes, guest: delivery.guestName)
+        let fromBackground = delivery.guestKey.map { key in
+            cache.updateParked(key, startingFrom: Snapshot()) { parked in
+                parked.history.insert(record, at: 0)
+                if parked.history.count > Self.historyLimit {
+                    parked.history.removeLast(
+                        parked.history.count - Self.historyLimit)
+                }
+            }
+        } ?? false
+        if !fromBackground {
+            receive(record)
+            if autoCopy {
+                // The clipboard is a place a person is about to PASTE from,
+                // so only the machine they are looking at may take it.
+                copyToPasteboard(record)
+            }
         }
         var savedTo: URL?
         if let failure = write(record, to: saveDirectory, savedTo: &savedTo) {
+            // A background machine's failure is still this app's failure to
+            // report; it is shown wherever the human is.
             lastError = failure
         }
-        let guest: String
-        if case .connected(let name) = connection {
-            guest = name
-        } else {
-            guest = "the guest"
-        }
-        announce?(guest, record.format, savedTo)
+        announce?(record.guest, record.format, savedTo)
     }
 
     func capture() {
@@ -404,7 +480,7 @@ final class ScreenshotModuleModel: ObservableObject {
             let record = ScreenshotRecord(
                 capturedAt: Date(), image: delivery.image,
                 format: delivery.format, transferMs: delivery.transferMs,
-                wireBytes: delivery.wireBytes)
+                wireBytes: delivery.wireBytes, guest: delivery.guestName)
             receive(record)
             if forcingClipboard || autoCopy {
                 copyToPasteboard(record)
