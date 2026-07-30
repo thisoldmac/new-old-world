@@ -23,6 +23,12 @@ final class AgentIntegrationHostAdapter {
         listener: listener,
         commandTimeout: launchCommandTimeout,
         currentSessionID: { [unowned self] in connectedSessionID() })
+    /// Beside the launch control, which consumes the same family and hands
+    /// back none of it — this one is the family's own caller.
+    private lazy var softwareInventoryControl =
+        AgentIntegrationSoftwareInventory(
+        listener: listener,
+        currentSessionID: { [unowned self] in connectedSessionID() })
     private lazy var revealControl = AgentIntegrationRevealItem(
         listener: listener,
         currentSessionID: { [unowned self] in connectedSessionID() })
@@ -165,6 +171,16 @@ final class AgentIntegrationHostAdapter {
     /// `MachineFactsProjection` carry the difference in plane and shape.
     func machineFacts() async -> AgentIntegrationGuestRowReportResult {
         await machineFactsControl.read()
+    }
+
+    /// One page of one software domain. The domain is required and there is no
+    /// all-domains form; `apps` at cursor 1 is a whole-volume sweep, and
+    /// `AgentIntegrationSoftwareInventory` carries what this side may and may
+    /// not do with what comes back.
+    func softwareInventory(
+        domain: AgentIntegrationSoftwareDomain, cursor: Int?
+    ) async -> AgentIntegrationSoftwareInventoryResult {
+        await softwareInventoryControl.page(domain: domain, cursor: cursor)
     }
 
     /// One page of one hardware-census probe. The probe's own outcome is a

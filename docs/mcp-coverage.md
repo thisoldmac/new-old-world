@@ -105,6 +105,7 @@ The test compares both against the code literally.
 | `now_guest_log_tail` | `tail` | `tail` | command |
 | `now_capture_screen` | `capture.request` | `capture.request` | message family |
 | `now_catalog_search` | `catsearch` | `catsearch` | command |
+| `now_software_inventory` | `software.list` | `software.list` | message family |
 | `now_launch_software` | `software.list`, `launch` | `launch` | message family plus command |
 | `now_reveal_item` | `reveal` | `reveal` | command |
 | `now_bring_to_front` | `process.list`, `process.front` | `process.front` | message family |
@@ -143,16 +144,26 @@ hand-written.
 
 | Row | Required, not exposed | What the caller gets instead |
 |---|---|---|
-| `now_launch_software` | `software.list` | a launch of one exactly-named application; not one catalog entry |
+| `now_launch_software` | `software.list` | a launch of one exactly-named application; not one catalog entry. The row stays here — it still consumes the catalog and returns none of it — but the CAPABILITY is no longer unreachable: `now_software_inventory` exposes it |
 | `now_bring_to_front` | `process.list` | a front switch, and whether a listing CONFIRMS it; the two listings are consumed to revalidate the reference and then to check the switch landed. No listing crosses back — which is why this row does not re-expose the `front` flag `now_list_processes` already returns |
 | `now_request_quit` | `process.list` | a quit request; the listing is consumed to revalidate the opaque reference |
 | `now_guest_files_capabilities` | `file.list` | the **host's** guestRoot policy and bounds; no directory entry crosses back |
 | `now_guest_files_download` | `file.list` | one file, in host-owned private storage, and a receipt naming it. The listing is consumed to observe that item's fork sizes, which is how the size ceiling is applied *before* any byte moves rather than by watching one arrive |
 
-`process.list` and `file.list` are still covered, because
-`now_list_processes` and `now_guest_files_list` genuinely expose them.
-`software.list` is not exposed anywhere, and that is the gap the next section
-used to have to describe in prose.
+**Every capability in the second column is exposed by some OTHER row**, which
+is the reading this table is for: a row appearing here says something about
+that row's shape, not about a hole in the surface. `process.list` and
+`file.list` are covered because `now_list_processes` and
+`now_guest_files_list` expose them; `software.list` joined them on 2026-07-30,
+when `now_software_inventory` landed. **That was not true when this table was
+written** — `software.list` was then required by one row, exposed by none, and
+a gap the next section had to describe in prose. It is the case the whole
+`exposes` split was built for, and it is now closed.
+
+The table has one hole left that nothing here can fill, and it is worth
+knowing rather than inferring: this section cannot tell you whether a
+required-and-hidden capability is exposed elsewhere. That is the gap table's
+job, and a capability missing from both is the thing to look for.
 
 ### One requirement is not a contract name
 
@@ -191,7 +202,11 @@ row protocol**, and coverage derived from `exposes`. Two consequences, both
 visible in the tables:
 
 - `software.list` moved from covered to a **planned** gap (W1 #3), where it
-  joins the `sw` verb that is the same capability's console spelling.
+  joined the `sw` verb that is the same capability's console spelling. **It is
+  now closed** — `now_software_inventory` (P1 #3) exposes the family, and the
+  `sw` verb's row moved to `deliberate` for the reason `ps` and `ls` are
+  there. The whole arc is what this section describes: a capability wore a
+  tick, the split took the tick away, and the gap it revealed was built.
 - `process.list` and `file.list` stayed covered — they are consumed internally
   by one row each *and* exposed by another. The distinction narrows coverage to
   what is genuinely askable; it does not simply reclassify everything a
@@ -256,6 +271,69 @@ Rule 3 is carried by two lines and not by the answer: the dispatch's audit
 event (face, capability, machine, outcome) and a host line under `sw` naming
 the target, because for this capability the target **is** the event — the same
 reason the guest-Files family logs its paths.
+
+### One row costs four seconds of somebody's machine, and is not gated for it
+
+`now_software_inventory`'s `apps` domain rebuilds its inventory with a
+whole-volume `PBCatSearch` sweep — about four seconds on a PowerBook doing
+nothing else, which is the cost `now_catalog_search` exists to measure. The
+capability ledger will **not** spend that on its own: it probes `software.list`
+only when a caller passes `probeCostly`, on the stated grounds that four
+seconds of someone's machine is spent on purpose
+([agent-integration.md](agent-integration.md)).
+
+**That gate stays on the ledger and is deliberately not repeated as a flag on
+the tool**, and the reason is worth stating because the sibling row reached the
+same conclusion by an argument that does not transfer:
+
+| | `now_catalog_search` | `now_software_inventory` |
+|---|---|---|
+| plane | command — availability comes off `help`, free | **message family** — availability can only be settled by sending a request |
+| could anything spend the cost incidentally? | **No.** No report can reach a command's cost, so the only way to pay is to call the tool | **Yes, and that is what `probeCostly` gates** — the capability report faced a real choice between four seconds and `unproven` |
+| why no flag on the tool anyway | the only caller is already asking on purpose | the sweep is not a side effect of the answer, it **is** the answer |
+
+So the structural half of catalog search's argument inverts here. What carries
+is the other half: `probeCostly` guards **incidental** spending, and a caller
+asking what is installed has asked for the sweep in the same sense as a caller
+asking what the sweep costs. A required acknowledgement on top would guard a
+door with nothing behind it while making the honest answer harder to obtain.
+
+What the cost earns instead is disclosure that is sharper than a per-call flag
+could be, because **the cost is per domain and per page rather than per call**:
+
+| Ask | What it costs the machine |
+|---|---|
+| `apps`, cursor absent or 1 | the whole sweep, ~4 s measured |
+| `apps`, a later cursor | pages the same cached inventory; no second sweep |
+| `extensions` / `cdevs` / `startup` / `apple` | dozens of catalog reads, enumerated live |
+
+One consequence runs the other way and is a reason the gate belongs where it
+is: an ordinary call to this tool **settles the family** as a side effect
+(`GuestListener.listSoftware` records the outcome), so one real call moves the
+row in the capability report from `unproven` to the guest's own answer and
+makes a later `probeCostly` report free. The ledger's probe answers a question
+nobody asked; this tool's caller asked it.
+
+### One row's answer is smaller on one guest, and every way it is smaller says so
+
+The same row is where rule 4 — degrade the ANSWER, not the message — is most
+concrete, because the degradation is enumerable.
+[contract-coverage.md](contract-coverage.md) has the per-guest account; what
+belongs here is what a CALLER sees, and there are three shapes of it:
+
+| What is smaller | How the caller learns it |
+|---|---|
+| two of eight entry fields | `version` and `running` are **absent keys**. NOW-68K omits them deliberately — a resource-fork open per entry, a Process Manager walk per page — so absent means the machine did not look. Never `""`, never `false`: `false` would be indistinguishable from the truth on the guest that does look. |
+| the `apps` inventory stops at 48 | the guest's own `note`, verbatim: `"the inventory stopped at this Mac's bound of 48 items"`. |
+| `PBCatSearch` was unusable, so only the volume root was walked | the guest's own `note` again — and this one makes the answer **narrower rather than shorter**, because a root-only walk cannot see an application inside a folder. |
+
+**The host does not parse any of those into a typed field of its own.** A
+`partial: true` derived by reading the guest's prose would go stale the first
+time a guest reworded a note, and deciding out of a sentence that an inventory
+was incomplete is the host answering a question about somebody's Macintosh out
+of its own state. The one bound this side applies to a note is its LENGTH, and
+it is sized over both guests' note buffers so it cannot be the thing that
+shortens a guest's declaration of its own bound.
 
 ### One row can change the machine
 
@@ -347,7 +425,6 @@ to exist:
 | `exec.input` | message | both | deliberate | Part of the console plane excluded under rule 3 — [agent-integration.md](agent-integration.md) and the parity slice plan. |
 | `exec.request` | message | both | deliberate | The console plane. A shell is not user-initiable in any meaningful sense and is the one thing [agent-integration.md](agent-integration.md) is right to keep out. |
 | `process.shot` | message | ppc | deliberate | Excluded by name in the [parity slice plan](plans/2026-07-29-004-feat-now-tbt-classic-parity-slice-plan.md): PPC-only, and no consumer asked for a single-window capture. |
-| `software.list` | message | both | planned | W1 #3. The gap that `exposes` made visible: `now_launch_software` **requires** this and consumes it to match one name, so a `requires`-derived check called it covered while no tool returns a listing. Its console spelling is the `sw` row below. |
 | `stream.refresh` | message | ppc | unnoticed | Part of the live-stream bracket; see `stream.start`. |
 | `stream.start` | message | ppc | unnoticed | A stream is a continuous host-owned bracket rather than one bounded call, so it may well not belong on a tool surface at all — but **that is a hypothesis, not a decision**: nothing argues it, and the host app's live view owning it today is a fact about what exists rather than a reason. |
 | `stream.stop` | message | ppc | unnoticed | The other end of the same bracket; see `stream.start`. |
@@ -376,7 +453,7 @@ to exist:
 | `quit` | command | both | deliberate | `now_request_quit` needs the `process.quit` **family**, not this command: the opaque-reference and PSN-revalidation model has nothing to stand on without it, and is not relaxed to make a tool work ([agent-integration.md](agent-integration.md)). |
 | `screenshot` | command | both | deliberate | The console spelling of `capture.request`, which is projected as `now_capture_screen`. One capability, one route — [command-parity.md](command-parity.md) ("two ways to name a target is not two faces"), the same rule that keeps `ls` and `ps` off this surface. |
 | `shotdiag` | command | 68k | unnoticed | Where a staged capture read from. It found the 24-bit addressing defect on the 180c and is reachable from no host face. |
-| `sw` | command | both | planned | W1 #3 — the installed-software listing, and now the `software.list` message row above it. The two used to disagree, one reading COVERED and the other unreachable; `exposes` is what reconciled them. |
+| `sw` | command | both | deliberate | The console spelling of `software.list`, which is projected as `now_software_inventory` — so the same rule as `ls`, `ps` and `census`: one capability, one route per face ([command-parity.md](command-parity.md), "two ways to name a target is not two faces"). It was `planned` beside the message row until 2026-07-30, and closing the message is what settled the verb. **One thing this verb has that the family does not**, recorded rather than left to be discovered: `sw` with no domain runs an OVERVIEW — per-domain counts rather than items — and `software.list` has no domainless form to project it with. That is a separate capability with a separate shape, and whether it belongs on this surface is a decision for whoever wants it, not one this row makes by omission. |
 | `vers` | command | ppc | deliberate | Build identity. `hello` already carries name, version and OS, and `now_session_health` reports all three ([agent-integration.md](agent-integration.md)). |
 | `vprobe` | command | both | unnoticed | Framebuffer read cost. A ~12 s measurement on the guest, which is a reason to gate it, not a reason it is absent — nothing has decided either way. |
 
@@ -536,12 +613,18 @@ real defect in its own first draft — reading the whole section rather than its
 first paragraph collected the two names the explanation mentions *because* they
 are not on the list.
 
-Last derived: 2026-07-30, on `claude/machine-facts` off
-`claude/tbt-parity-slice`, adding `now_machine_facts` — which removed the
-largest name from the unnoticed list by building it. Before that, on
-`claude/census-projection` off
-`claude/tbt-parity-slice`, adding `now_hardware_census` — which is what
-expanded the census into fourteen probe rows. The stamp no longer carries a
+Last derived: 2026-07-30, on `claude/tbt-parity-slice` with eleven
+projections landed. The two most recent were `now_software_inventory` — which
+**closed the gap this document's `exposes` split was built to find**: the
+`software.list` row left the gap table, the `sw` verb moved from `planned` to
+`deliberate`, and `now_launch_software`'s required-and-not-exposed row stayed
+exactly where it was, because that row still consumes a catalog and returns
+none of it — and `now_machine_facts`, which removed the largest name from the
+unnoticed list by building it. Before those, `now_hardware_census` expanded the
+census into fourteen probe rows.
+
+Each branch stamped this line with its own name; the integration is what the
+tables actually describe, so this says so instead. The stamp no longer carries a
 registry count: the previous one said sixteen while the registry held
 seventeen, which is what a hand-typed number beside a derived table costs.
 Its predecessor integrated `now_reveal_item`,

@@ -598,7 +598,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                        strict key list. */
                     return .machineFacts(
                         await agentIntegration.machineFacts())
-                case .softwareInventory, .diagnostics:
+                case .softwareInventory:
+                    /* P1 #3. The domain is REQUIRED by the contract and by
+                       the codec, so a request without one never reached a
+                       machine and the refusal is the request's rather than
+                       the guest's. The cursor is optional and its FLOOR is 1,
+                       not 0 — unlike the census, absent and 0 are different
+                       here, because the cursor indexes the guest's cached
+                       inventory 1-based and 1 rebuilds it. */
+                    guard let domain = request.softwareDomain else {
+                        return .softwareInventory(.refused(.init(
+                            code: "now-software-domain-invalid",
+                            message:
+                                "The software inventory request named no domain")))
+                    }
+                    return .softwareInventory(
+                        await agentIntegration.softwareInventory(
+                            domain: domain,
+                            cursor: request.softwareCursor))
+                case .diagnostics:
                     /* P1a landed the SERIALIZATION for eleven capabilities
                        and none of their adapters (plan 005): eleven agents
                        each

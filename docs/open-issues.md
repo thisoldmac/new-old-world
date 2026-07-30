@@ -114,6 +114,33 @@ new to it.
   the 2 s read-only one at the same time, for the same reason: a page is
   16 rows, and what costs is the probe.
 
+### `software.list` is the family that DOES settle, and no agent has settled it
+
+Worth recording as the contrast to the two rows above rather than as a defect,
+because it is the shape those two are missing: `GuestListener.listSoftware` IS
+wrapped by `observing`, so an ordinary `now_software_inventory` call moves the
+ledger row to the guest's own answer and makes a later `probeCostly` report
+free. That is the cure capture and the census want, already working one lane
+over.
+
+What is unverified is everything downstream of it:
+
+- **No guest has served this family to an agent face.**
+  [contract-coverage.md](contract-coverage.md) already records the software
+  family as *tested only* — no guest has run the sweep for anyone — and
+  `now_software_inventory` inherits that unchanged. The 25 tests behind it are
+  over a real socket and a fake guest.
+- **The ~4 s sweep figure is one disk's.** It is metal-measured, but by
+  `catsearch` on the 1400c. NOW-68K's `apps` path has two shapes the number
+  has never covered: the 48-FSSpec cache, and the `PBCatSearch`-unusable
+  fallback that walks the volume root. Neither has been timed on that machine,
+  so nothing here knows whether the listener's 30 s watchdog is generous or
+  tight there.
+- **The `note` sentences have never crossed a real wire.** Both are asserted
+  against the guest's own literals, which proves the host carries whatever it
+  is handed; it does not prove a 68K Mac with 60 applications actually emits
+  the truncation note rather than a short page and silence.
+
 ### The face-reachability proofs are textual, deliberately
 
 Three coverage gates landed with the slice, and none of them proves what
