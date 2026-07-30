@@ -105,7 +105,7 @@ command → app affordance → MCP tool → intent where sensible → log event.
 
 | # | Capability | Contract | ISAs | User-facing home |
 |---|---|---|:--:|---|
-| 1 | Screen capture | `capture.request` | both | button |
+| 1 | Screen capture (+ `capture.cancel`) | `capture.request` | both | button |
 | 2 | Hardware census | `census.request`, 14 probes | both | machine pane |
 | 3 | Software listing | `software.list` | both | pane (today: internal to launch only) |
 | 4 | Transfer guest→host | `file.get` (PPC) / `put` (68K) | both | Files page |
@@ -114,6 +114,32 @@ command → app affordance → MCP tool → intent where sensible → log event.
 | 7 | File mutation | `file.move`/`.trash`/`.restore`/`.mkdir` | PPC | Files page — its missing verbs |
 | 8 | Transfer cancel | `file.cancel` (PPC) / `cancel` verb (68K) | both | transfer UI |
 | 9 | Tail a file | `tail` verb | PPC | log viewer |
+| 10 | Machine facts | `gestalt` verb | PPC | machine pane |
+| 11 | Catalog search | `catsearch` verb | PPC | Files page |
+| 12 | Reveal in Finder | `reveal` verb | PPC | Files page row action |
+| 13 | **Diagnostics module** | `vprobe` (both), `shotdiag` (68K), `putstat` (PPC) | both | **a Diagnostics module of its own** |
+
+**Items 10–13 were added 2026-07-29**, after `docs/mcp-coverage.md` derived the
+gap table and found that this list had been written from a hand analysis that
+undercounted. Nine of the ten gaps it classed *unnoticed* are served by a guest
+right now with nothing in the repo arguing for their absence; `gestalt` is the
+largest — one PPC verb answering CPU, memory, OS, network and hardware,
+reachable from no face at all. That is the case for deriving a list rather than
+composing one, and it is why W0.4 shipped with a test.
+
+**#13 is a decision, not a projection.** `vprobe`, `shotdiag` and `putstat` are
+diagnostics — framebuffer read cost, staged-capture provenance, transfer
+statistics. They could have been declared deliberate gaps on the grounds that
+an agent does not need them; the call (2026-07-29) is that they get a **home**
+instead, as a Diagnostics module. Rule 3 is the reason: a diagnostic an agent
+can read and a person cannot is exactly the asymmetry this slice exists to
+close, and `shotdiag` is the verb that found the 180c addressing defect —
+precisely the thing someone standing at a misbehaving machine wants.
+
+**Still undecided:** `stream.start`/`.stop`/`.refresh` (PPC only). Real feature,
+much larger than a projection, and it is either its own workstream or an
+explicit deferral with a reason. Not in W1 until that is settled — an
+undecided row is worse than an absent one.
 
 **#1 is the template.** Read-only, served on both ISAs, exercises a binary
 payload, and has an obvious home on every face. It is first because it is
@@ -135,6 +161,32 @@ keep out.
 Items 4, 7 and 8 were **not** withheld on authority grounds — confirmed
 2026-07-29, simply unbuilt. They stop being an MCP question and become a
 Files-page question.
+
+## W1.5 — The codec defects (added 2026-07-29, in scope by decision)
+
+W0.3 found two defects in `now-host/Sources/NOWAgentIntegration/AgentIntegrationLocalProtocol.swift`
+while building the audit gate. Both are on `main`, both were untested, and both
+were independently confirmed before being taken seriously:
+
+- **`guestSelector` is absent from `decodeRequest`'s `allowedKeys`**, which is a
+  *strict* object check. Any request that actually names a machine is rejected
+  as invalid. The encoder writes a field the decoder refuses, so guest
+  addressability — the machine-id / session-id scheme landed 2026-07-28, the
+  whole point of local schema v7 — cannot work through this path at all.
+- **`notAddressed` is absent from `decodeResponse`'s `allowedKeys`**, so the
+  `now-guest-not-addressed` refusal reaches the companion as
+  `now-host-invalid-response`: a real refusal wearing a protocol error.
+
+Originally scoped out as main-line bugs with their own tests. **Folded in by
+decision** — a slice about capabilities being reachable from every face cannot
+coherently leave the addressing layer broken underneath it, since every
+projection takes an optional `guest`.
+
+Worked on a branch off **`main`**, not off this slice, so it can land
+independently rather than waiting for the slice; it merges here afterwards. Two
+omissions of one shape also justify an audit of every allowlist against the
+fields it admits, in both directions, rather than fixing these two and assuming
+the rest are fine.
 
 ## W2 — Guest gaps
 
