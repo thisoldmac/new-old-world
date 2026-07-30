@@ -7,6 +7,7 @@ add_application(now-guest-ppc
     src/commands/cmd_help.c
     src/commands/cmd_line.c
     src/commands/commands.c
+    src/commands/gestalt_json.c
     src/console/console_model.c
     src/console/console_module.c
     # Not under src/: one implementation both guests compile, the way

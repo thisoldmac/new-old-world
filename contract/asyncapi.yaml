@@ -1887,6 +1887,16 @@ components:
         description: >
           Grouped, ordered rows. Each group maps to an array of [label, value]
           string pairs, preserving order (unlike a plain object).
+
+          `notice` is not a group of facts about the machine: it is the
+          reply's account of itself, and today carries one row —
+          ["truncated", "<n> rows omitted - reply buffer full"] — when the
+          gather did not fit the responder's result buffer. It exists
+          because without it a truncated reply and a machine with fewer
+          facts to report are indistinguishable, and the difference matters:
+          one is a limit of the wire, the other is the answer. A reader that
+          treats every key as a group will show it as one, which is
+          harmless; a reader that cares should look for it by name.
         properties:
           snapshot: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
           cpu: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
@@ -1894,6 +1904,7 @@ components:
           os: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
           network: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
           hw: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+          notice: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
       x-rowArray:
         type: array
         items:

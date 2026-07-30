@@ -12,6 +12,7 @@
 #include "census.h"
 #include "cmd_help.h"
 #include "cmd_line.h"
+#include "gestalt_json.h"
 #include "json.h"
 #include "prefs.h"
 #include "fileshare.h"
@@ -365,16 +366,6 @@ int now_process_gather(ProcRow *rows, int max)
 
 /* --- wire path: serialize the rows to grouped JSON ---------------------- */
 
-static void append_escaped(char *out, long cap, long *pos, const char *s)
-{
-    while (*s != '\0' && *pos + 2 < cap) {
-        if (*s == '"' || *s == '\\') {
-            out[(*pos)++] = '\\';
-        }
-        out[(*pos)++] = *s++;
-    }
-}
-
 /* The group a gestalt console flag selects, or NULL. The guest's own
    console reads the same mapping (console_model.c's flag_to_group); this is
    the wire's copy of one grammar, and the reason the host has none. */
@@ -392,8 +383,6 @@ static void run_gestalt(const char *request_json, long id, char *out, long cap)
 {
     GestaltRow rows[kGestaltMaxRows];
     int count = now_gestalt_gather(rows, kGestaltMaxRows);
-    long pos = 0;
-    int i;
     /* every group, in a stable order, snapshot first */
     static const char *const all_groups[] = {
         "snapshot", "cpu", "memory", "os", "network", "hw", NULL
@@ -403,8 +392,6 @@ static void run_gestalt(const char *request_json, long id, char *out, long cap)
     const char *one[2];
     char line[128];
     char word[32];
-    int g;
-    Boolean first_group = true;
 
     /* No line: a typed caller, which gets every group as it always has.
        A line: a human, who asked for a slice — and the slice is chosen HERE,
@@ -440,46 +427,11 @@ static void run_gestalt(const char *request_json, long id, char *out, long cap)
         }
     }
 
-    pos += snprintf(out, cap,
-                    "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
-                    "\"output\":{", id);
-    for (g = 0; groups[g] != NULL; ++g) {
-        Boolean first_row = true;
-        for (i = 0; i < count; ++i) {
-            if (strcmp(rows[i].group, groups[g]) != 0) {
-                continue;
-            }
-            if (first_row) {
-                if (!first_group) {
-                    out[pos++] = ',';
-                }
-                pos += snprintf(out + pos, cap - pos, "\"%s\":[", groups[g]);
-                first_group = false;
-                first_row = false;
-            } else {
-                out[pos++] = ',';
-            }
-            out[pos++] = '[';
-            out[pos++] = '"';
-            append_escaped(out, cap, &pos, rows[i].label);
-            out[pos++] = '"';
-            out[pos++] = ',';
-            out[pos++] = '"';
-            append_escaped(out, cap, &pos, rows[i].value);
-            out[pos++] = '"';
-            out[pos++] = ']';
-        }
-        if (!first_row) {
-            out[pos++] = ']';
-        }
-    }
-    if (pos + 3 < cap) {
-        out[pos++] = '}';
-        out[pos++] = '}';
-        out[pos] = '\0';
-    } else {
-        out[cap - 1] = '\0';
-    }
+    /* The serialization itself lives next door, in pure C the host cc can
+       compile and gestalt_json_test.c can drive at a cap small enough to
+       overflow — which is not a hypothetical shape here: kGestaltMaxRows is
+       48 rows of 96 bytes, and the wire's result buffer is 3072. */
+    (void)now_gestalt_result_json(id, rows, count, groups, out, cap);
 }
 
 static void run_screenshot(const char *request_json, long id,

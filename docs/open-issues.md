@@ -1625,6 +1625,41 @@ Not load-bearing; parked as a known gap rather than chased.
 Everything here builds and passes its tests. None of it has been watched
 working on the PowerBook.
 
+- **The `gestalt` reply's truncation path** (2026-07-30, branch
+  `claude/goofy-sutherland-3e6cf4`). `run_gestalt` used to write every
+  structural byte of its JSON — the `[`, `]`, `,` and the quotes around
+  each label and value — with a bare `out[pos++]`, checking the cap only
+  around the escaped text and once more at the very end, *after* all the
+  unchecked writes. It never bit: a whole-machine gestalt is about 26
+  rows and sits well inside the 3072-byte buffer `wire.c` passes. But
+  `kGestaltMaxRows` is 48 and a `GestaltRow` is 96 bytes, so a machine
+  answering more selectors, or one more group, would have run past the
+  caller's buffer rather than truncating.
+
+  The serializer now lives in `now-guest-ppc/src/commands/gestalt_json.c`,
+  split out precisely so the host `cc` can run it at caps no Macintosh
+  will ever produce — `gestalt_json_test.c` sweeps every cap from the
+  floor to 6000 with a poisoned guard region past the bound. That sweep
+  found a second defect the hand-picked sizes missed: the `]` closing a
+  group is a write like any other and can be the one that hits the
+  bound, and clearing `group_open` regardless left an array nothing
+  closed.
+
+  A truncated reply now says so, in a `notice` group carrying
+  `["truncated", "<n> rows omitted - reply buffer full"]` (contract:
+  `x-commands/gestalt/output`), because a short reply and a machine with
+  fewer facts to report were previously indistinguishable. Room for it is
+  held back from the cap up front — a buffer too full for rows is also
+  too full for the sentence explaining why.
+
+  **What has not happened:** no real gather has ever been large enough to
+  truncate, so the notice has never crossed the wire from a Macintosh,
+  and no host UI has been seen rendering it. The host's console shows
+  command.result groups generically, so it should appear as a group named
+  `notice` with one row; that is inferred from the code, not watched.
+  Anyone with a machine that answers unusually many selectors is the
+  first person who could confirm it.
+
 - **`ps` on NOW-68K's wire** (2026-07-25, branch
   `claude/host-console-remote-shell`). The dumb-shell console landed and
   `ps` still came back `unknown-command` from a 68K guest that ran it
