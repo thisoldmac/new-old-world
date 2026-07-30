@@ -454,6 +454,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                         drivenGuest:
                             agentIntegration.activeReference()?.id)
                     return .recorded
+                case .census, .softwareInventory, .guestFileDownload,
+                     .bringToFront, .guestFileMutation, .transferCancel,
+                     .guestLogTail, .machineFacts, .catalogSearch,
+                     .revealItem, .diagnostics:
+                    /* P1a landed the SERIALIZATION for these eleven and
+                       none of their adapters (plan 005): eleven agents each
+                       adding a verb to the same three list tails is eleven
+                       conflicts, so the verbs went in as one commit and the
+                       capabilities follow one row at a time.
+
+                       A typed refusal and not an empty success. Nothing can
+                       reach this from a face — a verb with no projection row
+                       is unreachable from all four — so the only caller is
+                       a process composing the request itself, and what it
+                       must be told is that this host does not serve the
+                       operation YET. An empty answer would read as a fact
+                       about the Mac.
+
+                       WIRING ONE: replace its case here with the adapter
+                       call, and add its projection row. Nothing else in
+                       this file needs to change. */
+                    return .notImplemented(
+                        .notWired(request.operation.rawValue))
                 }
             }
             try server.start()

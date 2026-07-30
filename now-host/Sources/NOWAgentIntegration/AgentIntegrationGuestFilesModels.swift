@@ -37,6 +37,12 @@ public enum AgentIntegrationGuestFileOperation:
     case mkdir
     case move
     case delete
+    /// To the Trash and back out of it. Distinct from `delete`, and the
+    /// distinction is the whole point of the pair: a trashed item is still
+    /// there, named by where it landed, and `restore` is the only thing
+    /// that name is good for.
+    case trash
+    case restore
     case deployTree
     case prune
 }

@@ -224,6 +224,12 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         // thing that cannot work.
         case .notAddressed(let refusal):
             return refusal
+        // Passed through for the same reason: "this host carries the verb
+        // and nothing serves it yet" is a fact about the HOST's wiring, and
+        // a caller told "communication failed" would retry a call that is
+        // going to answer the same way every time.
+        case .notImplemented(let pending):
+            return pending
         case .hostUnavailable:
             return .host
         case .unsafeEndpoint:

@@ -133,6 +133,12 @@ final class AgentIntegrationAddressingCodecTests: XCTestCase {
                 base64: Data("hi".utf8).base64EncodedString()),
             .guestFilesUploadCommit(uploadID: UUID()),
         ]
+        /* P1a's eleven come from the list their own tests are built on
+           rather than being copied in here. This sweep and that file would
+           otherwise be two lists of the same operations, and the one this
+           file's comment above asks a contributor to remember is exactly
+           the one that gets forgotten. */
+            + AgentIntegrationProjectedVerbSamples.projected
 
         for sample in samples {
             var addressed = sample

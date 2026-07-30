@@ -191,6 +191,53 @@ public final class AgentIntegrationLocalServer {
             case .recorded:
                 response = .init(
                     requestID: request.requestID, recorded: true)
+            case .census(let result):
+                response = .init(
+                    requestID: request.requestID, censusResult: result)
+            case .softwareInventory(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    softwareInventoryResult: result)
+            case .guestFileDownload(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    guestFileDownloadResult: result)
+            case .bringToFront(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    bringToFrontResult: result)
+            case .guestFileMutation(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    guestFileMutationResult: result)
+            case .transferCancel(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    transferCancelResult: result)
+            case .guestLogTail(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    guestLogTailResult: result)
+            case .machineFacts(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    machineFactsResult: result)
+            case .catalogSearch(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    catalogSearchResult: result)
+            case .revealItem(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    revealItemResult: result)
+            case .diagnostics(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    diagnosticsResult: result)
+            case .notImplemented(let unavailable):
+                response = .init(
+                    requestID: request.requestID,
+                    notImplemented: unavailable)
             }
             finish(descriptor, response: response)
         }

@@ -248,7 +248,15 @@ final class MetalAgentLocalSurface {
         case .launchSoftware, .requestQuit, .transferApprovedArtifact,
              .guestFilesCapabilities, .guestFilesList, .guestFilesStat,
              .guestFilesUploadBegin, .guestFilesUploadAppend,
-             .guestFilesUploadCommit, .audit:
+             .guestFilesUploadCommit, .audit,
+             /* P1a's eleven, refused here for the same reason and one more:
+                on this rig they are not merely out of scope, they are
+                unserved everywhere — so a gate that let one through would
+                be measuring nothing. */
+             .census, .softwareInventory, .guestFileDownload,
+             .bringToFront, .guestFileMutation, .transferCancel,
+             .guestLogTail, .machineFacts, .catalogSearch, .revealItem,
+             .diagnostics:
             /* Every operation that could CHANGE the machine, refused by
                this rig rather than served. A capture gate has no business
                being able to move a file on somebody's PowerBook, and the
@@ -396,6 +404,8 @@ private struct MetalLocalProjectionClient: AgentIntegrationClient {
         switch local {
         case .notAddressed(let refusal):
             return refusal
+        case .notImplemented(let pending):
+            return pending
         case .hostUnavailable:
             return .host
         case .unsafeEndpoint:

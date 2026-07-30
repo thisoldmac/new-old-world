@@ -262,7 +262,181 @@ public struct AgentIntegrationLocalClient: Sendable {
         case .capture:
             preconditionFailure(
                 "A capture request says which of its three shapes it is")
+        case .transferCancel:
+            return try await send(.transferCancel())
+        case .machineFacts:
+            return try await send(.machineFacts())
+        case .catalogSearch:
+            return try await send(.catalogSearch())
+        case .census:
+            preconditionFailure("A census request names its probe")
+        case .softwareInventory:
+            preconditionFailure(
+                "A software inventory request names its domain")
+        case .guestFileDownload:
+            preconditionFailure("A download requires a path")
+        case .bringToFront:
+            preconditionFailure(
+                "Bringing a process forward requires its reference")
+        case .guestFileMutation:
+            preconditionFailure(
+                "A file mutation says which of its four it is")
+        case .guestLogTail:
+            /* The one P1a operation whose every field is optional, so a
+               bare operation IS a complete request: absent means the
+               verb's own default of 20 lines. */
+            return try await send(.guestLogTail())
+        case .revealItem:
+            preconditionFailure("A reveal requires a target")
+        case .diagnostics:
+            preconditionFailure("A diagnostics request names its probe")
         }
+    }
+
+    // MARK: - P1a: the eleven verbs
+
+    /* Typed sends for verbs nothing serves yet, so that when a capability's
+       adapter lands, the round trip it needs is already here and tested.
+       Each one throws `.notImplemented` today — from `send`, uniformly,
+       rather than from eleven `guard let` failures reporting a missing
+       result field, which is what a caller would otherwise be told about a
+       host that answered perfectly honestly. */
+
+    public func census(probe: String, cursor: Int?) async throws
+        -> AgentIntegrationCensusResult {
+        let response = try await send(
+            .census(probe: probe, cursor: cursor))
+        guard let result = response.censusResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no census result")
+        }
+        return result
+    }
+
+    public func softwareInventory(
+        domain: AgentIntegrationSoftwareDomain,
+        cursor: Int?
+    ) async throws -> AgentIntegrationSoftwareInventoryResult {
+        let response = try await send(
+            .softwareInventory(domain: domain, cursor: cursor))
+        guard let result = response.softwareInventoryResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no software inventory result")
+        }
+        return result
+    }
+
+    public func downloadGuestFile(path: String) async throws
+        -> AgentIntegrationGuestFileDownloadResult {
+        let response = try await send(.guestFileDownload(path: path))
+        guard let result = response.guestFileDownloadResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no guest-file download result")
+        }
+        return result
+    }
+
+    public func bringToFront(reference: String) async throws
+        -> AgentIntegrationFrontResult {
+        let response = try await send(.bringToFront(reference: reference))
+        guard let result = response.bringToFrontResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no bring-to-front result")
+        }
+        return result
+    }
+
+    public func moveGuestFile(path: String, toPath: String) async throws
+        -> AgentIntegrationGuestFileMutationResult {
+        try await mutationResult(
+            of: .guestFileMove(path: path, toPath: toPath))
+    }
+
+    public func trashGuestFile(path: String) async throws
+        -> AgentIntegrationGuestFileMutationResult {
+        try await mutationResult(of: .guestFileTrash(path: path))
+    }
+
+    public func restoreGuestFile(trashedAs: String, toPath: String)
+        async throws -> AgentIntegrationGuestFileMutationResult {
+        try await mutationResult(
+            of: .guestFileRestore(trashedAs: trashedAs, toPath: toPath))
+    }
+
+    public func makeGuestDirectory(path: String) async throws
+        -> AgentIntegrationGuestFileMutationResult {
+        try await mutationResult(
+            of: .guestFileMakeDirectory(path: path))
+    }
+
+    private func mutationResult(of request: AgentIntegrationLocalRequest)
+        async throws -> AgentIntegrationGuestFileMutationResult {
+        let response = try await send(request)
+        guard let result = response.guestFileMutationResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no guest-file mutation result")
+        }
+        return result
+    }
+
+    public func cancelTransfer() async throws
+        -> AgentIntegrationTransferCancelResult {
+        let response = try await send(.transferCancel())
+        guard let result = response.transferCancelResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no transfer cancel result")
+        }
+        return result
+    }
+
+    public func tailGuestLog(lines: Int?) async throws
+        -> AgentIntegrationGuestRowReportResult {
+        let response = try await send(.guestLogTail(lines: lines))
+        guard let result = response.guestLogTailResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no guest log result")
+        }
+        return result
+    }
+
+    public func machineFacts() async throws
+        -> AgentIntegrationGuestRowReportResult {
+        let response = try await send(.machineFacts())
+        guard let result = response.machineFactsResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no machine facts result")
+        }
+        return result
+    }
+
+    public func catalogSearch() async throws
+        -> AgentIntegrationGuestRowReportResult {
+        let response = try await send(.catalogSearch())
+        guard let result = response.catalogSearchResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no catalog search result")
+        }
+        return result
+    }
+
+    public func revealItem(target: String) async throws
+        -> AgentIntegrationGuestRowReportResult {
+        let response = try await send(.revealItem(target: target))
+        guard let result = response.revealItemResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no reveal result")
+        }
+        return result
+    }
+
+    public func diagnostics(probe: AgentIntegrationDiagnosticProbe)
+        async throws -> AgentIntegrationGuestRowReportResult {
+        let response = try await send(.diagnostics(probe: probe))
+        guard let result = response.diagnosticsResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no diagnostics result")
+        }
+        return result
     }
 
     /// A copy of this client that says which machine it is asking about.
@@ -310,6 +484,34 @@ public struct AgentIntegrationLocalClient: Sendable {
                    back for a host that has stopped answering. */
                 timeout = request.captureDepth != nil
                     ? captureReceiveTimeout : readOnlyReceiveTimeout
+            case .census, .bringToFront, .guestFileMutation,
+                 .transferCancel, .guestLogTail, .machineFacts,
+                 .revealItem:
+                /* Bounded reads and small mutations. Each reaches the guest
+                   and back inside its own watchdog: a census page is capped
+                   at 16 rows, a `file.result` is one reply, and a front is a
+                   couple of seconds of the guest yielding. */
+                timeout = readOnlyReceiveTimeout
+            case .softwareInventory:
+                /* The `apps` domain sweeps the startup volume's catalog on
+                   the first page, which is the cost `catsearch` was written
+                   to measure — seconds on a real disk, not a bounded read.
+                   It shares the capabilities window because that window is
+                   already the sum of the guest's own family watchdogs. */
+                timeout = capabilitiesReceiveTimeout
+            case .guestFileDownload:
+                /* A real transfer over the bulk channel. */
+                timeout = transferReceiveTimeout
+            case .catalogSearch, .diagnostics:
+                /* Both are MEASUREMENTS that run on the machine and are
+                   bounded there rather than here: `catsearch` is ~20 s per
+                   pass on a disk that cannot answer faster and runs two,
+                   and `vprobe`/`shotdiag` each cost what a full-screen read
+                   costs. The capture window is the one already sized for
+                   "the guest is busy for seconds"; the read-only two would
+                   time out locally on a call that was going to succeed,
+                   which teaches its caller nothing. */
+                timeout = captureReceiveTimeout
             }
             let response = try sendRaw(
                 AgentIntegrationLocalCodec.encode(request),
@@ -323,6 +525,14 @@ public struct AgentIntegrationLocalClient: Sendable {
             if let refusal = decoded.notAddressed {
                 throw AgentIntegrationLocalTransportError
                     .notAddressed(refusal)
+            }
+            /* Checked beside the addressing refusal and before any typed
+               accessor, because it is the same kind of answer: the host
+               answered honestly and there is no operation-shaped result to
+               hand back. */
+            if let pending = decoded.notImplemented {
+                throw AgentIntegrationLocalTransportError
+                    .notImplemented(pending)
             }
             if let error = decoded.error {
                 throw AgentIntegrationLocalTransportError.invalidMessage(
