@@ -87,6 +87,33 @@ capability callable; the note is in
 behaviour change in the listener: give the capture lane a typed code and
 put the request through `observing`.
 
+### `census.request` joins it, and its page bound is unmeasured
+
+`now_hardware_census` landed against the same two gaps and neither is
+new to it.
+
+- **`unproven` on every guest, by construction.**
+  `GuestListener.requestCensus` is not wrapped by
+  `observing`/`observeFamily` either, and the listener's own failure path
+  folds a guest's typed refusal code into a `CensusReport` note
+  (`"[code] message"`) rather than keeping it typed — so there is nothing
+  for the ledger to file even if the request were wrapped. The family is
+  also not probed, and its reason is sharper than capture's: the probe
+  argument is **required**, so a probe would have to choose one, and the
+  registry's default is `overview` — the synthesis that arranges what
+  every other probe read. Same cure as capture's: a typed code plus
+  `observing` in the listener.
+- **The adapter's 30 s page bound is a guess, and declared as one.**
+  `census.request` has no guest-side watchdog, so
+  `AgentIntegrationCensus.pageTimeout` is the only bound on a probe. Not
+  one census probe has ever run against a Macintosh
+  ([contract-coverage.md](contract-coverage.md)), so the number is the
+  same order as the measurements beside it — `catsearch` ~20 s per pass,
+  the `software.list` sweep ~4 s — and the first metal run is what
+  replaces it. The local surface's window for the operation was moved off
+  the 2 s read-only one at the same time, for the same reason: a page is
+  16 rows, and what costs is the probe.
+
 ### The face-reachability proofs are textual, deliberately
 
 Three coverage gates landed with the slice, and none of them proves what
