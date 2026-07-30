@@ -264,6 +264,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         }
     }
 
+    /// One local mutation request, revalidated through the same failable
+    /// initialisers every other face uses.
+    ///
+    /// The codec has already checked the shape; this checks the *rules* —
+    /// non-empty paths, a move that is neither its own source nor inside it,
+    /// a trashed name that is a name — and it does so by asking the one type
+    /// that owns them rather than restating any of it here. Nil is a refusal
+    /// this host writes, not one the guest was troubled with.
+    static func mutationRequest(
+        _ mutation: AgentIntegrationGuestFileMutation,
+        path: String,
+        destination: String?,
+        trashedAs: String?
+    ) -> AgentIntegrationGuestFileMutationRequest? {
+        switch mutation {
+        case .move:
+            guard let destination, trashedAs == nil else { return nil }
+            return .move(path: path, toPath: destination)
+        case .restore:
+            guard let trashedAs, destination == nil else { return nil }
+            return .restore(trashedAs: trashedAs, toPath: path)
+        case .trash:
+            guard destination == nil, trashedAs == nil else { return nil }
+            return .trash(path: path)
+        case .mkdir:
+            guard destination == nil, trashedAs == nil else { return nil }
+            return .makeFolder(path: path)
+        }
+    }
+
     /// The header carries the connection, and — when Screenshot Guest is
     /// greyed out for a reason the connection alone does not explain (a
     /// stream or a transfer holding the one lane) — that reason too, so the
@@ -469,8 +499,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     return .bringToFront(
                         await agentIntegration.bringToFront(
                             reference: reference))
+                case .guestFileMutation:
+                    /* P1 #7, and the first MUTATING guest-Files verb here.
+                       The codec has already refused every crossed shape —
+                       a move with no destination, a restore with no trashed
+                       name, either field on a trash — so this branch reads
+                       validated fields and refuses only the request that
+                       named no intention at all, which never reached a
+                       machine and so is the request's refusal rather than
+                       the guest's. The authority (guestRoot), the bounds
+                       (one item, one attempt, never an overwrite) and the
+                       receipt live in GuestFileMutationCommands. */
+                    guard let mutation = request.guestFileMutation,
+                          let path = request.guestFilePath,
+                          let composed = Self.mutationRequest(
+                            mutation,
+                            path: path,
+                            destination: request.guestFileDestinationPath,
+                            trashedAs: request.guestFileTrashName) else {
+                        return .guestFileMutation(.hostUnavailable(.init(
+                            code: "now-files-mutation-invalid",
+                            message:
+                                "The file mutation did not name one bounded item and one intention")))
+                    }
+                    return .guestFileMutation(
+                        await guestFiles.agentMutate(composed))
                 case .census, .softwareInventory, .guestFileDownload,
-                     .guestFileMutation, .transferCancel,
+                     .transferCancel,
                      .guestLogTail, .machineFacts, .catalogSearch,
                      .revealItem, .diagnostics:
                     /* P1a landed the SERIALIZATION for eleven capabilities

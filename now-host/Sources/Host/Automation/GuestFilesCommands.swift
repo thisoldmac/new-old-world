@@ -18,6 +18,7 @@ final class GuestFilesCommandService {
     private let maximumStatPages: Int
     private let clock: () -> Date
     private let uploadCommands: GuestFileUploadCommands
+    private let mutationCommands: GuestFileMutationCommands
     private var observations: [String: Observation] = [:]
 
     static let observationLifetime: TimeInterval = 60
@@ -57,6 +58,12 @@ final class GuestFilesCommandService {
             currentSessionID: currentSessionID,
             audit: auditSink,
             staging: staging,
+            clock: clock)
+        mutationCommands = GuestFileMutationCommands(
+            listener: listener,
+            policy: policy,
+            currentSessionID: currentSessionID,
+            audit: auditSink,
             clock: clock)
     }
 
@@ -116,8 +123,8 @@ final class GuestFilesCommandService {
                                   listServed: Bool) -> GuestFileCapabilities {
         var available: [GuestFileCommandKind] = [.capabilities]
         var deferred: [GuestFileCommandKind] = [
-            .download, .readText, .tailText, .mkdir,
-            .move, .delete, .deployTree, .prune,
+            .download, .readText, .tailText, .delete,
+            .deployTree, .prune,
         ]
         if listServed {
             available.append(contentsOf: [.list, .stat])
@@ -133,6 +140,14 @@ final class GuestFilesCommandService {
         } else {
             deferred.append(.put)
         }
+        /* The four mutations are wired on THIS side, which is all this
+           report can honestly speak for — the same split the put lane above
+           states. Whether the connected guest serves `file.move` and its
+           three siblings is a question about the guest, and the session
+           capability report is where it is asked and answered: against a
+           guest that refuses all four, `now_guest_files_mutate` reads
+           unavailable while this list still says the commands exist here. */
+        available.append(contentsOf: [.mkdir, .move, .trash, .restore])
         return GuestFileCapabilities(
             guestRoot: root,
             rootLabel: rootLabel,
@@ -289,6 +304,13 @@ final class GuestFilesCommandService {
     func commitUpload(uploadID: UUID) async
         -> GuestFileCommandResponse<GuestFileUploadTransferReceipt> {
         await uploadCommands.commit(uploadID: uploadID)
+    }
+
+    /// Move, trash, restore or create one item. The authority, the bounds
+    /// and the one-request rule live in `GuestFileMutationCommands`.
+    func mutate(_ request: AgentIntegrationGuestFileMutationRequest) async
+        -> GuestFileCommandResponse<GuestFileMutationReport> {
+        await mutationCommands.mutate(request)
     }
 
     private var transferLaneState: String {

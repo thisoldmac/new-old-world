@@ -187,6 +187,14 @@ public enum AgentIntegrationCapabilityNames {
     public static let softwareList = "software.list"
     public static let fileList = "file.list"
     public static let filePut = "file.put"
+    /// The four catalog mutations, named separately because the contract
+    /// names them separately — and required TOGETHER by the one row that
+    /// projects them: a guest that could trash and not restore would offer a
+    /// deletion nothing can undo, which is not the capability.
+    public static let fileMove = "file.move"
+    public static let fileTrash = "file.trash"
+    public static let fileRestore = "file.restore"
+    public static let fileMkdir = "file.mkdir"
     /// The screen-capture family. A contract message name, not an alias:
     /// `capture.request` is what the host sends and both guests dispatch.
     public static let captureRequest = "capture.request"
@@ -208,7 +216,8 @@ public enum AgentIntegrationCapabilityNames {
     /// set still fails somewhere.
     public static let all: Set<String> = [
         processList, processQuit, processFront, softwareList, fileList,
-        filePut, captureRequest, launchCommand,
+        filePut, fileMove, fileTrash, fileRestore, fileMkdir,
+        captureRequest, launchCommand,
     ]
 
     /// Refusal codes that mean "this guest does not implement that", as

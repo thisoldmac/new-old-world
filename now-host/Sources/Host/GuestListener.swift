@@ -1015,7 +1015,8 @@ final class GuestListener: ObservableObject {
     func moveFile(from: String, to: String, overwrite: Bool = false,
                   completion: @escaping (Result<FileResult,
                                                 FileFailure>) -> Void) {
-        sendChange(completion) { session, id in
+        sendChange(AgentIntegrationCapabilityNames.fileMove,
+                   completion) { session, id in
             session.sendFileMove(FileMove(id: id, path: from, toPath: to,
                                           overwrite: overwrite ? true : nil))
         }
@@ -1025,7 +1026,8 @@ final class GuestListener: ObservableObject {
     func trashFile(path: String,
                    completion: @escaping (Result<FileResult,
                                                  FileFailure>) -> Void) {
-        sendChange(completion) { session, id in
+        sendChange(AgentIntegrationCapabilityNames.fileTrash,
+                   completion) { session, id in
             session.sendFileTrash(FileTrash(id: id, path: path))
         }
     }
@@ -1033,7 +1035,8 @@ final class GuestListener: ObservableObject {
     func restoreFile(trashedAs: String, to path: String,
                      completion: @escaping (Result<FileResult,
                                                    FileFailure>) -> Void) {
-        sendChange(completion) { session, id in
+        sendChange(AgentIntegrationCapabilityNames.fileRestore,
+                   completion) { session, id in
             session.sendFileRestore(FileRestore(id: id, trashedAs: trashedAs,
                                                 toPath: path))
         }
@@ -1042,13 +1045,22 @@ final class GuestListener: ObservableObject {
     func makeFolder(path: String,
                     completion: @escaping (Result<FileResult,
                                                   FileFailure>) -> Void) {
-        sendChange(completion) { session, id in
+        sendChange(AgentIntegrationCapabilityNames.fileMkdir,
+                   completion) { session, id in
             session.sendFileMkdir(FileMkdir(id: id, path: path))
         }
     }
 
     /// The shared shape of the four: control-plane, one answer, watchdog.
+    ///
+    /// Each carries its own family name, so the capability ledger learns
+    /// these four from ORDINARY USE the way it learns the process and
+    /// listing families. It matters because the ledger never probes a
+    /// mutating family: without the observation, a guest that refused
+    /// `file.move` with `not-implemented` would leave the row `unproven`
+    /// forever and nothing would ever record that NOW-68K does not serve it.
     private func sendChange(
+        _ family: String,
         _ completion: @escaping (Result<FileResult, FileFailure>) -> Void,
         _ emit: (Session, Int) -> Void) {
         guard let session, case .connected = state else {
@@ -1058,7 +1070,15 @@ final class GuestListener: ObservableObject {
         }
         let id = nextCommandId
         nextCommandId += 1
-        pendingChanges[id] = completion
+        /* `resolveChange` below renders an `ok:false` answer as a `.failure`
+           carrying the guest's own code, so an ordinary refusal — `exists`,
+           `not-found` — reaches the ledger as one too. That is safe rather
+           than misleading only because the ledger moves a family to
+           `unavailable` for the contract's typed I-do-not-implement-that
+           codes alone; anything else leaves it `unproven` while recording
+           what the guest said. A guest that refused a duplicate name must
+           not read as a guest without the family. */
+        pendingChanges[id] = observing(family, completion)
         armWatchdog(id: id, seconds: 20) { [weak self] reason in
             self?.pendingChanges.removeValue(forKey: id)?(
                 .failure(.init(code: "timeout", message: reason)))

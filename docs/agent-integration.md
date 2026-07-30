@@ -14,7 +14,7 @@ Two sources, matching the two kinds of capability a guest has.
 
 **Commands** come from `help`, a wire command on both guests that returns that machine's own table. It is fetched once per connection and is the same live source the host console's Tab completion uses, which means a guest that grows a verb becomes usable here with no companion release.
 
-**Message families** (`process.list`, `file.list`, `process.quit`, `software.list`, `file.put`) are not in any command table. `help` cannot see them, and that gap is exactly how `ps` shipped wire-only on NOW-68K and went unnoticed for a day. A family's availability is therefore established by asking, under a stated probing policy:
+**Message families** (`process.list`, `file.list`, `process.quit`, `process.front`, `software.list`, `file.put`, and the four catalog mutations `file.move` / `file.trash` / `file.restore` / `file.mkdir`) are not in any command table. `help` cannot see them, and that gap is exactly how `ps` shipped wire-only on NOW-68K and went unnoticed for a day. A family's availability is therefore established by asking, under a stated probing policy:
 
 | Family | How it is established | Why |
 | --- | --- | --- |
@@ -23,6 +23,7 @@ Two sources, matching the two kinds of capability a guest has.
 | `software.list` | probed only when the caller passes `probeCostly` | its first page is a whole-volume sweep, ~4 s on the PowerBook. A guest that does not implement it refuses instantly, so the cost falls only on the guest that does — but that is still four seconds of someone's machine, so a caller asks for it on purpose |
 | `process.quit` | ordinary use only | the smallest request in this family quits a process. "I would have to quit something to find out whether I can quit things" is not an acceptable way to answer a question |
 | `file.put` | ordinary use only | same: the smallest request writes a file to the guest |
+| `file.move`, `file.trash`, `file.restore`, `file.mkdir` | ordinary use only | same again, and plainly: the smallest request in each of these families moves, trashes, restores or creates something on somebody's disk. The listener records each answer as it settles, so one real call is what settles the family — and a guest that does not serve it refuses instantly |
 
 A family therefore has three states, not two. `unproven` means nobody has asked this guest yet, and is a different fact from `unavailable`. Collapsing them would make the report understate a machine it never questioned — the same failure the hello-name table produced. Only the contract's typed refusals (`not-implemented`, `unknown-command` and their siblings) move a family to `unavailable`; a timeout or a Toolbox error leaves it `unproven`, because silence proves nothing about what a guest implements and one wedged MacTCP stack must not be recorded as a permanently missing feature.
 
@@ -32,11 +33,12 @@ Because ordinary use feeds the same ledger, tools switch on as capabilities appe
 
 - `now_request_quit` needs the `process.quit` **family**, not the `quit` **command**. NOW-68K has the command; it does not have the family, so the opaque-reference and PSN-revalidation model this tool is built on has nothing to stand on. The model is not relaxed to make the tool "work".
 - `now_launch_software` needs `software.list` as well as the `launch` command, because "launch exactly one exact match from the current catalog" is the entire safety story and there is no catalog without the listing.
+- `now_guest_files_mutate` needs **all four** catalog-mutation families, not the three it happens to be using on a given call. A guest serving `file.trash` without `file.restore` would offer a deletion the tool could not undo, and that pairing is the safety property rather than a convenience, so it is a requirement — the tool is unavailable where the lane is incomplete rather than shipping the half that destroys.
 - `now_bring_to_front` needs the `process.front` **family** for the same reason as quit, and needs `process.list` twice over: once to revalidate the reference, once to tell a confirmed switch from an accepted one. Both guests serve the family, so this one is available where quit is not.
 
 And a refusal must arrive as a refusal. `GuestListener.recordGuestError` routes a guest `error` to every waiter kind — command, file listing, process listing, software listing, process result, file change and census — because the ids come from one sequence. It previously routed three of those six, so exactly the requests a partial guest refuses reached their caller as a 15- or 30-second timeout carrying no reason. Against a guest that implements part of the contract, refusal is ordinary traffic rather than an edge case, and routing it is what makes the companion usable at all.
 
-The completed five-tool V0 surface remains intact; the surface is now fourteen tools. The approved follow-on is the
+The completed five-tool V0 surface remains intact; the surface is every row the projection registry lists, and [mcp-coverage.md](mcp-coverage.md) is the derived inventory of them. The count used to be written here and went stale on each landing; count the rows there if you need a number. The approved follow-on is the
 [NOW MCP V0.5 guest-files command roadmap](plans/2026-07-24-003-feat-now-mcp-v0-5-files-command-roadmap-plan.md).
 V0.5 widens guest filesystem authority only through typed, logged NOW commands
 under a persisted root-relative `guestRoot`; it does not turn this companion
@@ -51,7 +53,7 @@ logs command start/outcome. Invalid stored policy is rejected and reset
 audibly. A create-only staged upload now reserves private host disk, accepts
 ordered bounded bytes rather than a host path, seals them by declared SHA-256,
 and enters the existing one-at-a-time guest put lane through a file-backed
-source. Download and every broader mutation/deployment command remain deferred.
+source. Download remains deferred. **Catalog mutation no longer does**: `file.move`, `file.trash`, `file.restore` and `file.mkdir` are projected as one row under the authority stated in its own file and summarised below. What stays deferred is everything that authority cannot cover — unlink (`delete`), tree deployment, prune, and overwrite in any form.
 
 ## Where a projection lives
 
@@ -195,6 +197,18 @@ The V0.5 read-only additions are:
 | `now_guest_files_list` | `guestFiles.list` over `file.list` / `file.listing` | Accepts only a bounded canonical path relative to `guestRoot` plus an optional positive cursor. Returns at most one 16-entry page, both fork sizes, type/creator, classic modified time when present, freshness, continuation, and a command receipt. |
 | `now_guest_files_stat` | `guestFiles.stat` over bounded parent listing pages | Accepts one exact root-relative item path. Returns its bounded metadata or typed not-found, scan-limit, stale-session, unavailable, or refusal evidence. |
 
+The parity-slice addition (P1 #7) is the first **mutating** guest-Files row:
+
+| Tool contract | Existing NOW owner | Implemented projection |
+| --- | --- | --- |
+| `now_guest_files_mutate` | `file.move` / `file.trash` / `file.restore` / `file.mkdir` over `GuestListener.moveFile` / `trashFile` / `restoreFile` / `makeFolder` — the same four calls the Files page's confirmation sheet, New Folder and Undo controls make | Four intentions on one row, because the contract's four messages are one lane: one path space beneath `guestRoot`, one `file.result` code vocabulary, one authorization, and `restore` consumes what `trash` answered. The authority is `guestRoot` and nothing else the caller can name: both of a move's paths are composed beneath the host-owned root, the root itself is never the target, and a path the share cannot express is refused before anything is sent. **Nothing is overwritten and nothing is unlinked.** `file.move`'s `overwrite` flag is never set and an argument asking for it is refused, so a collision comes back as the guest's own `exists`, rendered `conflict`; removal means the Trash, and the answer carries the name the item landed under — the only key a restore takes, remembered on neither side. One item, one intention, one attempt, one wire request, no created parents, no recursion. A trash whose answer names nothing is reported as exactly that rather than as a restorable one. Rule 3 costs it nothing: a person has had all four with a worded confirmation and a fifty-deep Undo since the Files page learned to change the share, and each agent call writes the same path-bearing Files log line the browse commands write beside the dispatch's own audit event. |
+
+The four families are required **together** and none of them is ever probed,
+so the row reads `unproven` until a real call settles it and `unavailable`
+against a guest that refuses any of the four. Only one guest serves them
+today; that is a fact the guest supplies by answering, and no file on this
+surface reads which guest it is talking to.
+
 The V0.5 upload additions are:
 
 | Tool contract | NOW command owner | Implemented projection |
@@ -203,7 +217,7 @@ The V0.5 upload additions are:
 | `now_guest_files_upload_append` | Private NOW upload stage | Accepts one ordered base64 chunk of at most 8 KiB at the exact receipt offset. It never accepts or resolves a modern-host path and sends no guest message. |
 | `now_guest_files_upload_commit` | `guestFiles.put` over existing `file.offer` / bulk / `file.done` | Seals and revalidates the stage, validates MacBinary structure when selected, streams one frame at a time from its immutable file, never creates parents or overwrites, and returns guest reservation, progress, integrity, finalization, and cleanup evidence. Success requires matching guest length, CRC, same-folder rename, and temp cleanup. The stage is one-attempt and replay conflicts. |
 
-The client-launched `NOWAgentCompanion` executable speaks newline-delimited JSON-RPC over stdio and advertises these fourteen tools. It opens one bounded local request to the running host for each call. Session health and upload staging send no guest message; the capability report sends only `help` and the bounded read-only probes named above; commit and the other guest-dependent tools ask the host to use the existing paired connection. Launch accepts exactly one bounded name or generated opaque reference; quit accepts exactly one generated process reference; approved-artifact transfer accepts exactly one host-minted receipt. The V0.5 Files tools accept only canonical paths relative to host-owned `guestRoot`, never an absolute guest path or a modern-host path. No tool accepts a PSN, shell text, arbitrary host filesystem operation, or unimplemented guest Files mutation. Every tool exposes typed unavailability and no host or listener lifecycle operation. If the host is absent, the result is `now-host-unavailable`; the companion never launches it. If the host is present without a paired guest, guest-dependent tools return `now-guest-unavailable` and never use cached state.
+The client-launched `NOWAgentCompanion` executable speaks newline-delimited JSON-RPC over stdio and advertises exactly the registry's rows. It opens one bounded local request to the running host for each call. Session health and upload staging send no guest message; the capability report sends only `help` and the bounded read-only probes named above; commit and the other guest-dependent tools ask the host to use the existing paired connection. Launch accepts exactly one bounded name or generated opaque reference; quit accepts exactly one generated process reference; approved-artifact transfer accepts exactly one host-minted receipt. The V0.5 Files tools accept only canonical paths relative to host-owned `guestRoot`, never an absolute guest path or a modern-host path. No tool accepts a PSN, shell text, an arbitrary host filesystem operation, or a guest Files mutation this host does not implement — and none accepts an overwrite flag, an unlink, a recursive form, or more than one item per call. Every tool exposes typed unavailability and no host or listener lifecycle operation. If the host is absent, the result is `now-host-unavailable`; the companion never launches it. If the host is present without a paired guest, guest-dependent tools return `now-guest-unavailable` and never use cached state.
 
 ## Connection posture
 
@@ -286,7 +300,7 @@ The fake partial guest answers `not-implemented` the way
 and the guest's half not at all. Nothing here has been run against the
 PowerBook 180c; `open-issues.md` lists exactly what that leaves open.
 
-All fourteen projections, the local socket, and the stdio wrapper are **tested** here. V0 coverage remains as previously recorded: missing host or guest; bounded process snapshots and references; exact launch/refusal/revalidation; cooperative quit; receipt-backed artifact approval, staging, replay and delivery; malformed and oversized requests; endpoint permissions and peer UID; concurrency; discriminated schemas; and unchanged host module inventory/listener state. V0.5 browse coverage adds explicit/default/invalid `guestRoot` policy, canonical path and root-escape rejection, empty/populated/paged list behavior, fork/type/creator/date projection, exact stat/not-found/scan-limit, stale sessions, bounded guest refusal and malformed listing rejection, concurrent reads, prior local schema v4 rejection, maximum-page response size, host absence without launch, strict MCP arguments, and private-socket round-trip. Upload coverage adds disk-reservation refusal, ordered bounded chunks, digest mismatch cleanup, orphan-stage recovery, create-only collision policy, stale/unavailable handling, one-attempt replay and concurrent-commit refusal, file-backed framing, strict guest completion evidence, late-collision preservation, malformed MacBinary refusal, stale-accept invalidation, cleanup-failure recovery, host/guest observation identities, modified-date omission, strict local/MCP decoding, host build, and a clean Retro68 guest build.
+Every projection, the local socket, and the stdio wrapper are **tested** here. V0 coverage remains as previously recorded: missing host or guest; bounded process snapshots and references; exact launch/refusal/revalidation; cooperative quit; receipt-backed artifact approval, staging, replay and delivery; malformed and oversized requests; endpoint permissions and peer UID; concurrency; discriminated schemas; and unchanged host module inventory/listener state. V0.5 browse coverage adds explicit/default/invalid `guestRoot` policy, canonical path and root-escape rejection, empty/populated/paged list behavior, fork/type/creator/date projection, exact stat/not-found/scan-limit, stale sessions, bounded guest refusal and malformed listing rejection, concurrent reads, prior local schema v4 rejection, maximum-page response size, host absence without launch, strict MCP arguments, and private-socket round-trip. Upload coverage adds disk-reservation refusal, ordered bounded chunks, digest mismatch cleanup, orphan-stage recovery, create-only collision policy, stale/unavailable handling, one-attempt replay and concurrent-commit refusal, file-backed framing, strict guest completion evidence, late-collision preservation, malformed MacBinary refusal, stale-accept invalidation, cleanup-failure recovery, host/guest observation identities, modified-date omission, strict local/MCP decoding, host build, and a clean Retro68 guest build.
 
 As of the 2026-07-25 reconciliation, the combined V0.5 tree containing these
 eleven projections plus the independently verified reverse-streaming
@@ -305,6 +319,24 @@ identity, classic metadata/fork fidelity, interruption cleanup, and performance
 therefore remain open metal gates. Before that pass, the command also needs a
 count quota for active stages—including zero-byte stages—and a stale result
 when the human changes the active guest share between begin and commit.
+
+`now_guest_files_mutate` is **tested and not metal-verified**, and the
+distinction matters more here than for a read: nothing in this slice has moved
+or trashed a file on the PowerBook. Its coverage is the refusal list (an
+overwrite argument, a crossed key set, the root as a target, a move into its
+own subtree, a trashed name that is a path, a path the share cannot express —
+the last proven to send nothing at all), root composition on both of a move's
+paths, the absent `overwrite` flag on the wire, `exists` arriving as
+`conflict` with the File Manager's own number intact, the trashed name
+returned verbatim rather than the name that was asked for, a trash with no
+reported name staying an honest success with no undo key, the Files log line
+carrying the path and the outcome, a refused family taking the whole row
+`unavailable` in the capability report, and a report — including its costly
+form — sending none of the four. Each was watched failing by mutation. What
+remains open on metal is what always does: the `PBCatMove` rename-first path
+on a real volume, a Trash that must be created, and the guest's own timings
+([files.md](files.md#verified-on-a-real-volume) has the emulator receipt for
+the human lane).
 
 The three V0.5 read-only tools also have a bounded **metal-verified** receipt
 from 2026-07-24 against the paired PowerBook 1400c. The current host build

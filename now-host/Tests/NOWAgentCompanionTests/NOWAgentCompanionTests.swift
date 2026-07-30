@@ -153,15 +153,32 @@ final class NOWAgentCompanionTests: XCTestCase {
             ($0["name"] as? String)?.hasPrefix(
                 "now_guest_files_") == true
         }
-        XCTAssertEqual(guestFileTools.count, 6)
-        let guestFileReadTools = guestFileTools.filter {
-            !($0["name"] as? String ?? "").contains("_upload_")
+        XCTAssertEqual(guestFileTools.count, 7)
+        /* Three groups, and the third arrived with the mutation row: "not an
+           upload" stopped meaning "read-only" the moment this family could
+           change the catalog, and a filter that still said so would have
+           asserted `readOnlyHint: true` of a tool that trashes things. */
+        let guestFileMutateTools = guestFileTools.filter {
+            ($0["name"] as? String) == "now_guest_files_mutate"
         }
         let guestFileUploadTools = guestFileTools.filter {
             ($0["name"] as? String ?? "").contains("_upload_")
         }
+        let guestFileReadTools = guestFileTools.filter { tool in
+            let name = tool["name"] as? String ?? ""
+            return !name.contains("_upload_")
+                && name != "now_guest_files_mutate"
+        }
         XCTAssertEqual(guestFileReadTools.count, 3)
         XCTAssertEqual(guestFileUploadTools.count, 3)
+        XCTAssertEqual(guestFileMutateTools.count, 1)
+        XCTAssertTrue(guestFileMutateTools.allSatisfy {
+            let annotations = $0["annotations"] as? [String: Any]
+            return annotations?["readOnlyHint"] as? Bool == false
+                && annotations?["destructiveHint"] as? Bool == true
+                && annotations?["idempotentHint"] as? Bool == false
+                && annotations?["openWorldHint"] as? Bool == false
+        })
         XCTAssertTrue(guestFileReadTools.allSatisfy {
             let annotations = $0["annotations"] as? [String: Any]
             return annotations?["readOnlyHint"] as? Bool == true

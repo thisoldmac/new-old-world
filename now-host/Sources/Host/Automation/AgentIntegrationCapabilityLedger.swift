@@ -255,6 +255,20 @@ final class AgentIntegrationCapabilityLedger {
                honest state. */
             .init(names.processFront, .notProbedMutating),
             .init(names.filePut, .notProbedMutating),
+            /* The four catalog mutations. Mutating in the plainest sense —
+               the smallest request in each of these families moves, trashes,
+               restores or creates something on somebody's disk — so none of
+               them is probed and all four read `unproven` until a real call
+               settles them. Unproven leaves the capability callable, which is
+               the honest state: a guest that does not serve them refuses
+               instantly, `GuestListener.sendChange` records that refusal,
+               and the first real call is what turns the row `unavailable` —
+               which is a fact the guest supplied rather than a guess about
+               which guest is on the wire. */
+            .init(names.fileMove, .notProbedMutating),
+            .init(names.fileTrash, .notProbedMutating),
+            .init(names.fileRestore, .notProbedMutating),
+            .init(names.fileMkdir, .notProbedMutating),
             /* Read-only, and NOT probed — the reason is `software.list`'s
                rather than `process.quit`'s. A capture costs the guest a
                whole screen grab and holds the connection's only transfer

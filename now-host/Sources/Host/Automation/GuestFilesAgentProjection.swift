@@ -30,6 +30,15 @@ extension GuestFilesCommandService {
             failure: response.failure.map(\.agentValue))
     }
 
+    func agentMutate(_ request: AgentIntegrationGuestFileMutationRequest)
+        async -> AgentIntegrationGuestFileMutationResult {
+        let response = await mutate(request)
+        return .completed(
+            receipt: response.receipt.agentValue,
+            value: response.value.map(\.agentValue),
+            failure: response.failure.map(\.agentValue))
+    }
+
     func agentBeginUpload(_ request: AgentIntegrationGuestFileUploadBegin)
         async -> AgentIntegrationGuestFileUploadStageResult {
         let response = await beginUpload(.init(
@@ -79,9 +88,18 @@ private extension GuestFileCommandKind {
         case .mkdir: .mkdir
         case .move: .move
         case .delete: .delete
+        case .trash: .trash
+        case .restore: .restore
         case .deployTree: .deployTree
         case .prune: .prune
         }
+    }
+}
+
+private extension GuestFileMutationReport {
+    var agentValue: AgentIntegrationGuestFileMutationOutcome {
+        .init(mutation: mutation, path: path, trashedAs: trashedAs,
+              observedAt: observedAt)
     }
 }
 
