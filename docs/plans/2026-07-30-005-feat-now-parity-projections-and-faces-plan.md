@@ -82,7 +82,7 @@ predecessor's W1.
 | 3 | Software listing | `software.list` | both | new | pane |
 | 4 | Transfer guest→host | `file.get` (PPC) / `put` (68K) | both | new | Files page |
 | 5 | Bring to front | `process.front` | both | new | click a row |
-| 6 | Frontmost app | `front` flag on `process.listing` | both | **existing** | machine pane |
+| ~~6~~ | ~~Frontmost app~~ | — | — | — | **struck — never a gap** |
 | 7 | File mutation | `file.move`/`.trash`/`.restore`/`.mkdir` | PPC | new | Files page |
 | 8 | Transfer cancel | `file.cancel` / `cancel` | both | new | transfer UI |
 | 9 | Tail a file | `tail` verb | PPC | new | log viewer |
@@ -92,27 +92,33 @@ predecessor's W1.
 | 13 | Diagnostics module | `vprobe` / `shotdiag` / `putstat` | both | new | **its own module** |
 
 **The column is verified against `AgentIntegrationLocalRequest.Operation`,
-and it is worse than a first pass suggested.** Eleven of the twelve need a
-new client verb. The existing operations are session health, session
-capabilities, list processes, launch software, request quit, transfer
-approved artifact, four guest-files operations, audit and capture — and
-critically, `launchSoftware` returns a *launch result*, not a catalog, so
-software listing does **not** ride it. There is no `front` operation at all.
+and it is worse than a first pass suggested.** The existing operations are
+session health, session capabilities, list processes, launch software, request
+quit, transfer approved artifact, four guest-files operations, audit and
+capture. Critically, `launchSoftware` returns a *launch result*, not a
+catalog, so software listing does **not** ride it, and there is no `front`
+operation at all.
 
-Only **#6** genuinely rides an existing verb: `listProcesses` already returns
-the listing with its `front` flag, so projecting frontmost-app is a rendering
-change.
+**Every remaining item needs a new client verb.** There is no cheap-side item
+left in the inventory.
 
-**That reshapes the estimate.** At ~20 files each, eleven new-verb items is
-the bulk of the work and **P0.2 stops being housekeeping and becomes the
-central structural decision of this plan.** It also means this plan may itself
-be two: the eleven are not obviously one unit.
+**#6 is struck, and the reason is worth keeping.** It was "project the `front`
+flag on `process.listing`" — invented in a hand analysis and never present in
+the derived gap table. `ListProcessesProjection` already returns `front` as a
+*required* boolean on every entry, so which application is frontmost is
+answerable today; the only gaps the table has are `process.front` and its
+`front` verb spelling, which are the **action** of bringing something forward
+and are #5. Two hand-written items in this plan's lineage have now turned out
+to be wrong in the same way — invented rather than derived. Derive.
 
-**#6 goes first** — it is the only item that can confirm the cost model's
-cheap side, and it should land near two files. **#3 goes first among the
-new-verb items**, because the gap it closes is the sharpest one in the
-inventory: an agent can launch an application it can already name and cannot
-ask what is installed.
+**The consequence for the cost model:** the ~2-file figure describes nothing
+that remains. Eleven items at ~20 files each is the honest estimate, which
+makes P1a's batched verb edit the whole game and means **this plan is
+plausibly two.**
+
+Among the eleven, **#3 is the one worth doing first** once the verbs exist:
+the gap it closes is the sharpest in the inventory — an agent can launch an
+application it can already name and cannot ask what is installed.
 
 **#13 is a decision already taken.** The diagnostics trio could have been
 declared deliberate gaps on the grounds that agents do not need them; the
@@ -166,24 +172,21 @@ one: it resolves on the character and never inspects the event.
 Cost-split-led. The barriers are real dependencies.
 
 ```
-P0   cleanups + version .............  2 agents  BARRIER
-P1a  #6 frontmost app ...............  1 agent   BARRIER (confirms the cheap side)
-P1b  the batched verb edit ..........  1 agent   BARRIER (all eleven verbs, one commit)
-P1c  the eleven rows ................  up to 11 agents, integration lane queued
+P0   cleanups + build stamp .........  1 agent   BARRIER   [DONE 2026-07-30]
+P1a  the batched verb edit ..........  1 agent   BARRIER (all eleven verbs, one commit)
+P1b  #5 bring to front, first row ...  1 agent   BARRIER (proves the row template)
+P1c  the remaining ten rows .........  waves of 4-5, integration lane queued
 P2   AppIntents .....................  2 agents
 P3   grant, then injection ..........  2-3 agents
 ```
 
-**P0 is a barrier** because P1b's shape depends on it and the four lists are
-edited by everything.
+**P0 was a barrier** because P1a's shape depended on it and the four lists
+were edited by everything. Done: all four now derive, and P0 reported that the
+`default:` collapse leaves the eleven new operations needing **zero** test
+edits — so P1a is genuinely confined to the protocol file plus its own
+round-trip tests.
 
-**P1a is a barrier** for the same reason capture was: it confirms the cost
-model before anything fans out against it. It is a small item, and that is
-the point — if the only existing-verb projection in the inventory does not
-land near two files, the model is wrong and this plan needs rewriting rather
-than staffing.
-
-**P1b is the structural heart of this plan**, not a chore. One agent adds all
+**P1a is the structural heart of this plan**, not a chore. One agent adds all
 eleven client verbs to `AgentIntegrationLocalProtocol.swift` in a single
 deliberate commit — operation cases, result cases, response fields and inits,
 decode branches — and only then do per-capability agents fan out against a
@@ -194,8 +197,13 @@ merge that touches them.
 
 The trade is real and worth stating: batching means one large reviewable
 commit that no single capability's tests cover in isolation. Accept it, and
-have P1b's agent write the round-trip tests for all eleven verbs in the same
+have P1a's agent write the round-trip tests for all eleven verbs in the same
 commit so the batch is not landing untested.
+
+**P1b is the template proof**, taking capture's old role. #5 is the smallest
+of the eleven — one message, one verb spelling, an action with no payload — so
+it establishes what a row costs on top of a verb that already exists, before
+ten more are staffed against that number.
 
 Every phase ends with an adversarial verification agent, and the standing
 rule holds: a test you have not watched fail proves nothing.
