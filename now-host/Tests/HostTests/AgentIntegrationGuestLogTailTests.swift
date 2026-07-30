@@ -484,6 +484,69 @@ final class AgentIntegrationGuestLogTailTests: XCTestCase {
                 + "test knows.")
     }
 
+    // MARK: - PowerPC only, in typed form and by derivation
+
+    /// **The whole of "PPC only".** A guest whose command table names `tail`
+    /// can be asked; one whose table does not reports the row `unavailable`
+    /// — a complete typed answer with a reason, never a weaker version of
+    /// the tool — and nothing in the row or the ledger asks which guest is on
+    /// the wire to get there. The 68K guest's table has no `tail`, so that is
+    /// the mechanism the fork rides on.
+    func testTheRowIsAvailableExactlyWhenTheGuestsHelpNamesTail()
+        async throws {
+        for (commands, expected) in [
+            (["help", "tail"], AgentIntegrationCapabilityState.available),
+            (["help", "ls", "ps"], .unavailable),
+        ] {
+            let (listener, guest) = try await connectedListener()
+            defer {
+                guest.connection.cancel()
+                listener.stop()
+            }
+            guest.onMessage = { message in
+                switch message {
+                case .commandRequest(let request)
+                    where request.name == "help":
+                    try? guest.send(.commandResult(.init(
+                        id: request.id, ok: true,
+                        output: ["help": commands.map { [$0, "a verb"] }],
+                        error: nil)))
+                /* The report probes these two families. Answered — with the
+                   refusal a guest that lacks them really sends — because a
+                   silent fake makes each probe wait out its full watchdog,
+                   and a minute of test time is paid for nothing this test is
+                   about. */
+                case .processList(let request):
+                    try? guest.send(.error(.init(
+                        id: request.id, code: "not-implemented",
+                        message: "unsupported message type")))
+                case .fileList(let request):
+                    try? guest.send(.error(.init(
+                        id: request.id, code: "not-implemented",
+                        message: "unsupported message type")))
+                default:
+                    break
+                }
+            }
+            let adapter = AgentIntegrationHostAdapter(listener: listener)
+
+            let report = await adapter.sessionCapabilities()
+            guard case .available(let capabilities) = report else {
+                return XCTFail("expected a capability report: \(report)")
+            }
+            let row = capabilities.tools.first {
+                $0.tool == "now_guest_log_tail"
+            }
+            XCTAssertEqual(
+                row?.state, expected,
+                "A command requirement is resolved against the guest's own "
+                    + "help table; \(commands) should read \(expected).")
+            if expected == .unavailable {
+                XCTAssertEqual(row?.missing, ["tail"])
+            }
+        }
+    }
+
     /// The rendering is bounded, and a guest answering something larger or
     /// stranger than the contract's two groups is carried rather than
     /// trusted.
