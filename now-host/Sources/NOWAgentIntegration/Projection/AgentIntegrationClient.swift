@@ -23,6 +23,11 @@ public protocol AgentIntegrationClient: Sendable {
     func launchSoftware(_ selection: AgentIntegrationLaunchSelection) async
         -> AgentIntegrationLaunchSoftwareResult
     func requestQuit(reference: String) async -> AgentIntegrationQuitResult
+    /// Bring one recently observed process forward. The same reference
+    /// vocabulary as `requestQuit`, revalidated the same way — a PSN is
+    /// meaningful only while the process it names lives.
+    func bringToFront(reference: String) async
+        -> AgentIntegrationFrontResult
     func transferApprovedArtifact(receipt: String) async
         -> AgentIntegrationArtifactTransferResult
     func guestFilesCapabilities() async
@@ -86,6 +91,14 @@ extension AgentIntegrationClient {
 
     public func abandonGuestCapture() async
         -> AgentIntegrationCaptureResult {
+        .hostUnavailable
+    }
+
+    /// Defaulted for the same reason as the trio above: a stub client with
+    /// no host to ask answers "no host" without every conformer in the tree
+    /// learning a new lane the day one lands.
+    public func bringToFront(reference: String) async
+        -> AgentIntegrationFrontResult {
         .hostUnavailable
     }
 

@@ -41,6 +41,7 @@ final class AgentIntegrationProcessControl {
     private var records: [Identity: ReferenceRecord] = [:]
     private var referenceSessionID: UUID?
     private var quitInFlight = false
+    private var frontInFlight = false
 
     init(listener: GuestListener,
          currentSessionID: @escaping @MainActor () -> UUID?,
@@ -155,6 +156,133 @@ final class AgentIntegrationProcessControl {
         }
     }
 
+    /// Bring one recently observed process forward, and say whether the
+    /// switch is CONFIRMED or only accepted.
+    ///
+    /// The revalidation is quit's, line for line in intent: the reference
+    /// must be this session's and inside its age bound, and the PSN must
+    /// still carry the same full identity. What differs is the end — quit
+    /// stops at "the request was sent" because nothing on this platform can
+    /// tell it more, and front CAN be told more, by one further listing.
+    ///
+    /// `process.result` cannot carry the difference (`ok` and a reason,
+    /// nothing else), and the guests' own dispatch says so: `ok:true` means
+    /// `SetFrontProcess` was accepted, and the switch lands when the guest
+    /// next yields. So the confirmation is a second `process.list` read here
+    /// — a different subsystem from the one just asked, which is what makes
+    /// it evidence rather than the same answer twice.
+    func bringToFront(reference: String, requestedAt: Date = Date()) async
+        -> AgentIntegrationFrontResult {
+        guard let sessionID = currentSessionID() else {
+            clearReferences()
+            return .unavailable(.guest)
+        }
+        synchronizeReferences(to: sessionID)
+        guard AgentIntegrationQuitPolicy.isValidReference(reference),
+              let record = records.values.first(where: {
+                  $0.reference == reference && $0.sessionID == sessionID
+              }) else {
+            return staleFront()
+        }
+        let age = requestedAt.timeIntervalSince(record.observedAt)
+        guard age >= 0,
+              age <= AgentIntegrationQuitPolicy.maximumReferenceAge else {
+            return staleFront()
+        }
+        /* Its own flag rather than quit's. They are different asks with
+           different costs, and one lane for both would let a quit sitting
+           on a Save dialog refuse a front switch that takes two seconds.
+           Both still serialise against themselves, which is what the flag
+           is for: two fronts in flight would race to confirm each other's
+           switch. */
+        guard !frontInFlight else {
+            return refusedFront(
+                "now-front-busy",
+                "Another New Old World front switch is in progress")
+        }
+        frontInFlight = true
+        defer { frontInFlight = false }
+
+        let entries: [ProcessEntry]
+        switch await loadEntries(sessionID: sessionID) {
+        case .failure:
+            return currentSessionID() == sessionID
+                ? refusedFront(
+                    "now-process-list-unavailable",
+                    "The paired guest process list is unavailable")
+                : .unavailable(.guest)
+        case .success(let current):
+            entries = current
+        }
+        guard currentSessionID() == sessionID else {
+            return .unavailable(.guest)
+        }
+        guard let current = entries.first(where: {
+            $0.psnHigh == record.identity.high
+                && $0.psnLow == record.identity.low
+        }) else {
+            /* A refusal, where quit calls not-running an outcome: quit's
+               asked-for state already holds when nothing is running, and
+               this one's cannot. A caller whose next step assumes a window
+               is up must not read "it is not there" as done. */
+            return refusedFront(
+                "now-process-not-found",
+                "The selected process is no longer running")
+        }
+        guard identity(current) == record.identity else {
+            return staleFront()
+        }
+
+        let revalidatedAt = Date()
+        let driveResult = await driveFront(
+            high: record.identity.high, low: record.identity.low)
+        guard currentSessionID() == sessionID else {
+            return .unavailable(.init(
+                code: "now-front-outcome-unknown",
+                message:
+                    "The paired guest changed while the front switch was in progress"))
+        }
+        switch driveResult {
+        case .failure:
+            return refusedFront(
+                "now-front-outcome-unknown",
+                "The paired guest did not answer the front request")
+        case .success(let result) where !result.ok:
+            return refusedFront(
+                "now-front-refused",
+                "The paired guest would not bring it to the front")
+        case .success:
+            break
+        }
+
+        /* Accepted. Everything from here decides only WHICH success, and a
+           failure to confirm is `unconfirmed` rather than a refusal: the ask
+           landed, and reporting it as refused would be a worse lie than
+           reporting it as unverified. */
+        var outcome = AgentIntegrationFrontOutcome.unconfirmed
+        var observedAt = Date()
+        if case .success(let confirming) = await loadEntries(
+            sessionID: sessionID),
+           currentSessionID() == sessionID {
+            observedAt = Date()
+            /* `front` is optional on the wire, and absent is not false: a
+               listing that carries no flag confirms nothing, which is the
+               same answer as a switch that has not landed. */
+            if let target = confirming.first(where: {
+                $0.psnHigh == record.identity.high
+                    && $0.psnLow == record.identity.low
+            }), target.front == true {
+                outcome = .fronted
+            }
+        }
+        return .completed(.init(
+            reference: reference,
+            name: boundedName(current.name),
+            outcome: outcome,
+            revalidatedAt: revalidatedAt,
+            observedAt: observedAt))
+    }
+
     private func loadEntries(sessionID: UUID) async -> InventoryResult {
         var entries: [ProcessEntry] = []
         var cursor: Int?
@@ -205,6 +333,17 @@ final class AgentIntegrationProcessControl {
         await withCheckedContinuation { continuation in
             listener.driveProcess(
                 psnHigh: high, psnLow: low, verb: .quit
+            ) {
+                continuation.resume(returning: $0)
+            }
+        }
+    }
+
+    private func driveFront(high: Int, low: Int) async
+        -> Result<ProcessResult, GuestListener.FileFailure> {
+        await withCheckedContinuation { continuation in
+            listener.driveProcess(
+                psnHigh: high, psnLow: low, verb: .front
             ) {
                 continuation.resume(returning: $0)
             }
@@ -301,6 +440,22 @@ final class AgentIntegrationProcessControl {
 
     private func refused(_ code: String, _ message: String)
         -> AgentIntegrationQuitResult {
+        .refused(.init(code: code, message: message))
+    }
+
+    /* The front lane's own two, because its envelope is the shared
+       projected result rather than quit's five-case one. Same wordings on
+       purpose: a caller holding one stale reference should not have to
+       learn two vocabularies for the same fact about it. */
+    private func staleFront() -> AgentIntegrationFrontResult {
+        .refused(.init(
+            code: "now-process-reference-stale",
+            message:
+                "The process reference is not current for this session"))
+    }
+
+    private func refusedFront(_ code: String, _ message: String)
+        -> AgentIntegrationFrontResult {
         .refused(.init(code: code, message: message))
     }
 

@@ -179,6 +179,11 @@ extension AgentIntegrationSessionCapabilitiesResult: Codable {
 public enum AgentIntegrationCapabilityNames {
     public static let processList = "process.list"
     public static let processQuit = "process.quit"
+    /// The other drive verb of the same family. Named here for the reason
+    /// the rest are: `GuestListener` records its observation under this
+    /// string and `BringToFrontProjection` requires it, and those used to
+    /// be one hand-typed literal and one constant.
+    public static let processFront = "process.front"
     public static let softwareList = "software.list"
     public static let fileList = "file.list"
     public static let filePut = "file.put"
@@ -202,8 +207,8 @@ public enum AgentIntegrationCapabilityNames {
     /// against `contract/asyncapi.yaml`, so a name that exists only in this
     /// set still fails somewhere.
     public static let all: Set<String> = [
-        processList, processQuit, softwareList, fileList, filePut,
-        captureRequest, launchCommand,
+        processList, processQuit, processFront, softwareList, fileList,
+        filePut, captureRequest, launchCommand,
     ]
 
     /// Refusal codes that mean "this guest does not implement that", as

@@ -1000,7 +1000,7 @@ final class GuestListener: ObservableObject {
         pendingProcessResults[id] = observing(
             verb == .quit
                 ? AgentIntegrationCapabilityNames.processQuit
-                : "process.front",
+                : AgentIntegrationCapabilityNames.processFront,
             completion)
         armWatchdog(id: id, seconds: 15) { [weak self] reason in
             self?.pendingProcessResults.removeValue(forKey: id)?(

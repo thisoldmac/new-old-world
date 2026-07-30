@@ -13,6 +13,7 @@ public enum HostProjectionCatalog {
         ListProcessesProjection.self,
         CaptureScreenProjection.self,
         LaunchSoftwareProjection.self,
+        BringToFrontProjection.self,
         RequestQuitProjection.self,
         TransferApprovedArtifactProjection.self,
         GuestFilesCapabilitiesProjection.self,

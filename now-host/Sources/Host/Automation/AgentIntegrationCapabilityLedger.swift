@@ -208,6 +208,15 @@ final class AgentIntegrationCapabilityLedger {
             family(names.softwareList,
                    whenUnproven: probedCostly ? .probed : .notProbedCostly),
             family(names.processQuit, whenUnproven: .notProbedMutating),
+            /* Mutating for the same reason quit is, even though it is the
+               gentler of the two drive verbs: probing it would move a
+               window on somebody's screen to answer a question nobody
+               asked. Unproven leaves the capability callable, which is the
+               honest state — and without this row `state(of:)` would fall
+               through to the COMMAND table, miss the message family, and
+               report now_bring_to_front permanently unavailable against
+               every guest with nothing anywhere complaining. */
+            family(names.processFront, whenUnproven: .notProbedMutating),
             family(names.filePut, whenUnproven: .notProbedMutating),
             /* Read-only, and NOT probed — the reason is `software.list`'s
                rather than `process.quit`'s. A capture costs the guest a

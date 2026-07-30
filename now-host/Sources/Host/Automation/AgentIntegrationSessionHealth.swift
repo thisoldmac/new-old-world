@@ -124,6 +124,15 @@ final class AgentIntegrationHostAdapter {
             reference: reference, requestedAt: requestedAt)
     }
 
+    /// Bring one observed process forward. The confirmed-versus-accepted
+    /// distinction, and why it cannot come off the wire, is in
+    /// `AgentIntegrationProcessControl`.
+    func bringToFront(reference: String, requestedAt: Date = Date()) async
+        -> AgentIntegrationFrontResult {
+        await processControl.bringToFront(
+            reference: reference, requestedAt: requestedAt)
+    }
+
     func launchSoftware(_ selection: AgentIntegrationLaunchSelection,
                         observedAt: Date = Date()) async
         -> AgentIntegrationLaunchSoftwareResult {

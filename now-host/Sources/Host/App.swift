@@ -454,12 +454,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                         drivenGuest:
                             agentIntegration.activeReference()?.id)
                     return .recorded
+                case .bringToFront:
+                    /* The first of P1a's eleven to be wired (plan 005,
+                       P1b). Shaped like requestQuit above and for the same
+                       reason: the reference is all a caller may send, and a
+                       request without one never reached a machine, so the
+                       refusal is the reference's rather than the guest's. */
+                    guard let reference = request.processReference else {
+                        return .bringToFront(.refused(.init(
+                            code: "now-process-reference-stale",
+                            message:
+                                "The process reference is not current for this session")))
+                    }
+                    return .bringToFront(
+                        await agentIntegration.bringToFront(
+                            reference: reference))
                 case .census, .softwareInventory, .guestFileDownload,
-                     .bringToFront, .guestFileMutation, .transferCancel,
+                     .guestFileMutation, .transferCancel,
                      .guestLogTail, .machineFacts, .catalogSearch,
                      .revealItem, .diagnostics:
-                    /* P1a landed the SERIALIZATION for these eleven and
-                       none of their adapters (plan 005): eleven agents each
+                    /* P1a landed the SERIALIZATION for eleven capabilities
+                       and none of their adapters (plan 005): eleven agents
+                       each
                        adding a verb to the same three list tails is eleven
                        conflicts, so the verbs went in as one commit and the
                        capabilities follow one row at a time.

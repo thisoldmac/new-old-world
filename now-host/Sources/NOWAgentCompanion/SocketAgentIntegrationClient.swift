@@ -82,6 +82,18 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
+    func bringToFront(reference: String) async
+        -> AgentIntegrationFrontResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.bringToFront(reference: reference)
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
     func transferApprovedArtifact(receipt: String) async
         -> AgentIntegrationArtifactTransferResult {
         guard let client else {

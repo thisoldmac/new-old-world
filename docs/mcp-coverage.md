@@ -8,8 +8,8 @@ decision or an accident.
 It exists because of drift nobody was watching for. The guests handle 37
 (PowerPC) and 23 (68K) inbound message types, 19 command verbs and 14
 hardware census probes between them. Of the 24 host-askable capabilities and
-19 verbs the contract declares, thirteen host projections reach **six**; the
-other **37 are gaps**, thirteen argued, fifteen planned and **nine decided by
+19 verbs the contract declares, fourteen host projections reach **seven**; the
+other **36 are gaps**, fourteen argued, thirteen planned and **nine decided by
 nobody**. Most of the difference is capability the guest already has and no
 host face can name. Some of that is deliberate and argued; some of it was
 simply never noticed. **Those are different facts, and this file's whole job
@@ -84,6 +84,7 @@ The test compares both against the code literally.
 | `now_list_processes` | `process.list` | `process.list` | message family |
 | `now_capture_screen` | `capture.request` | `capture.request` | message family |
 | `now_launch_software` | `software.list`, `launch` | `launch` | message family plus command |
+| `now_bring_to_front` | `process.list`, `process.front` | `process.front` | message family |
 | `now_request_quit` | `process.list`, `process.quit` | `process.quit` | message family |
 | `now_transfer_approved_artifact` | `file.put` | `file.put` | message family |
 | `now_guest_files_capabilities` | `file.list` | — | message family |
@@ -93,14 +94,15 @@ The test compares both against the code literally.
 | `now_guest_files_upload_append` | — | — | none; host staging only |
 | `now_guest_files_upload_commit` | `file.put` | `file.put` | message family |
 
-The distinct guest capabilities those rows **require** are seven:
-`process.list`, `process.quit`, `software.list`, `file.list`, `file.put`,
-`capture.request` and `launch`. The distinct capabilities they **expose** are
-**six** — the same list without `software.list`, which every projection that
-touches it consumes internally. Most of the rows above are the guest-files
-family and the sessions pair; the surface is narrower than its tool count
-suggests, which is the same mistake `contract-coverage.md` made when it counted
-message types, and the seven-versus-six is that mistake one layer in.
+The distinct guest capabilities those rows **require** are eight:
+`process.list`, `process.quit`, `process.front`, `software.list`,
+`file.list`, `file.put`, `capture.request` and `launch`. The distinct
+capabilities they **expose** are **seven** — the same list without
+`software.list`, which every projection that touches it consumes internally.
+Most of the rows above are the guest-files family and the sessions pair; the
+surface is narrower than its tool count suggests, which is the same mistake
+`contract-coverage.md` made when it counted message types, and the
+eight-versus-seven is that mistake one layer in.
 
 That is also why this section is not called "what the thirteen reach", which
 is what it was called until 2026-07-30: a heading naming the tool count meant
@@ -108,12 +110,13 @@ every new capability renamed a published heading **and** the test string that
 matches it. The count belongs in the table, which is derived; a heading is
 not the place to state a number that changes.
 
-Three rows require something they do not expose, and each is worth reading as
+Four rows require something they do not expose, and each is worth reading as
 a shape rather than an exception:
 
 | Row | Required, not exposed | What the caller gets instead |
 |---|---|---|
 | `now_launch_software` | `software.list` | a launch of one exactly-named application; not one catalog entry |
+| `now_bring_to_front` | `process.list` | a front switch, and whether a listing CONFIRMS it; the two listings are consumed to revalidate the reference and then to check the switch landed. No listing crosses back — which is why this row does not re-expose the `front` flag `now_list_processes` already returns |
 | `now_request_quit` | `process.list` | a quit request; the listing is consumed to revalidate the opaque reference |
 | `now_guest_files_capabilities` | `file.list` | the **host's** guestRoot policy and bounds; no directory entry crosses back |
 
@@ -230,7 +233,6 @@ to exist:
 | `file.move` | message | ppc | planned | W1 #7. |
 | `file.restore` | message | ppc | planned | W1 #7. |
 | `file.trash` | message | ppc | planned | W1 #7. |
-| `process.front` | message | both | planned | W1 #5. |
 | `process.shot` | message | ppc | deliberate | Excluded by name in the [parity slice plan](plans/2026-07-29-004-feat-now-tbt-classic-parity-slice-plan.md): PPC-only, and no consumer asked for a single-window capture. |
 | `software.list` | message | both | planned | W1 #3. The gap that `exposes` made visible: `now_launch_software` **requires** this and consumes it to match one name, so a `requires`-derived check called it covered while no tool returns a listing. Its console spelling is the `sw` row below. |
 | `stream.refresh` | message | ppc | unnoticed | Part of the live-stream bracket; see `stream.start`. |
@@ -239,7 +241,7 @@ to exist:
 | `cancel` | command | 68k | planned | W1 #8. The 68K guest's verb spelling of transfer cancel. |
 | `catsearch` | command | ppc | unnoticed | Catalog search across a volume. Served on the PowerPC guest, reachable by nothing. |
 | `census` | command | both | planned | W1 #2 — the verb spelling of `census.request`. |
-| `front` | command | both | planned | W1 #5 — the verb spelling of `process.front`. |
+| `front` | command | both | deliberate | `now_bring_to_front` needs the `process.front` **family**, not this command, for the reason `quit` gives below: the command takes a NAME, and the opaque-reference and PSN-revalidation model the tool stands on has nothing to stand on without the message. The name form is the console's, by contract — one capability, one route per face ([command-parity.md](command-parity.md)). |
 | `gestalt` | command | ppc | unnoticed | **The largest single unnoticed gap.** One verb answers CPU, memory, OS, network and hardware for the whole machine; the PowerPC guest has served it throughout and no host face can ask. |
 | `help` | command | both | deliberate | Already sent, once per connection, to build the capability report — its answer *is* `now_session_capabilities` ([agent-integration.md](agent-integration.md)). A second route would be the same answer twice. |
 | `ls` | command | both | deliberate | The console spelling of `file.list`, which is projected. One capability, one route — [command-parity.md](command-parity.md) ("two ways to name a target is not two faces"). |
