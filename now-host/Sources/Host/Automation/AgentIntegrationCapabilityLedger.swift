@@ -276,7 +276,6 @@ final class AgentIntegrationCapabilityLedger {
             .init(names.fileTrash, .notProbedMutating),
             .init(names.fileRestore, .notProbedMutating),
             .init(names.fileMkdir, .notProbedMutating),
->>>>>>> claude/guest-file-mutation
             /* Read-only, and NOT probed — the reason is `software.list`'s
                rather than `process.quit`'s. A capture costs the guest a
                whole screen grab and holds the connection's only transfer
