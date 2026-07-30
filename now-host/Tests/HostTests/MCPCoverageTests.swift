@@ -59,7 +59,7 @@ final class MCPCoverageTests: XCTestCase {
     /// This is the assertion that fails when a thirteenth capability lands
     /// undocumented, which is the drift the document was written for.
     func testTheProjectionTableMatchesTheRegistry() throws {
-        let rows = try table(under: "## What the twelve reach")
+        let rows = try table(under: "## What the thirteen reach")
         var documented: [String: (requires: [String], exposes: [String])] = [:]
         for row in rows {
             let name = try backticked(row[0], row: row)
@@ -79,8 +79,8 @@ final class MCPCoverageTests: XCTestCase {
                     + "\(Self.coverageDoc) does not list it. A capability "
                     + "an agent can call and the coverage document has "
                     + "never heard of is the drift this document exists to "
-                    + "make visible — add a row under \"What the twelve "
-                    + "reach\".")
+                    + "make visible — add a row under \"What the "
+                    + "thirteen reach\".")
         }
         for extra in inDoc.subtracting(registered).sorted() {
             XCTFail(

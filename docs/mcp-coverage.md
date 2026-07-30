@@ -8,8 +8,8 @@ decision or an accident.
 It exists because of drift nobody was watching for. The guests handle 37
 (PowerPC) and 23 (68K) inbound message types, 19 command verbs and 14
 hardware census probes between them. Of the 24 host-askable capabilities and
-19 verbs the contract declares, twelve host projections reach **five**; the
-other **38 are gaps**, eleven argued, seventeen planned and **ten decided by
+19 verbs the contract declares, thirteen host projections reach **six**; the
+other **37 are gaps**, thirteen argued, fifteen planned and **nine decided by
 nobody**. Most of the difference is capability the guest already has and no
 host face can name. Some of that is deliberate and argued; some of it was
 simply never noticed. **Those are different facts, and this file's whole job
@@ -61,7 +61,7 @@ grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
   | sed 's/.*"\(.*\)".*/\1/' | sort -u
 ```
 
-## What the twelve reach
+## What the thirteen reach
 
 One row per registered projection, in catalog order. Two columns, because a
 row declares two different things and reading one as the other is the blind
@@ -82,6 +82,7 @@ The test compares both against the code literally.
 | `now_session_health` | — | — | none; host listener state |
 | `now_session_capabilities` | — | — | none; `help` plus bounded probes, described in agent-integration.md |
 | `now_list_processes` | `process.list` | `process.list` | message family |
+| `now_capture_screen` | `capture.request` | `capture.request` | message family |
 | `now_launch_software` | `software.list`, `launch` | `launch` | message family plus command |
 | `now_request_quit` | `process.list`, `process.quit` | `process.quit` | message family |
 | `now_transfer_approved_artifact` | `file.put` | `file.put` | message family |
@@ -92,14 +93,14 @@ The test compares both against the code literally.
 | `now_guest_files_upload_append` | — | — | none; host staging only |
 | `now_guest_files_upload_commit` | `file.put` | `file.put` | message family |
 
-Twelve tools. The distinct guest capabilities they **require** are six:
-`process.list`, `process.quit`, `software.list`, `file.list`, `file.put` and
-`launch`. The distinct capabilities they **expose** are **five** — the same
-list without `software.list`, which every projection that touches it consumes
-internally. Eight of the twelve rows are the guest-files family and the
-sessions pair; the surface is narrower than its tool count suggests, which
-is the same mistake `contract-coverage.md` made when it counted message
-types, and the six-versus-five is that mistake one layer in.
+Thirteen tools. The distinct guest capabilities they **require** are seven:
+`process.list`, `process.quit`, `software.list`, `file.list`, `file.put`,
+`capture.request` and `launch`. The distinct capabilities they **expose** are
+**six** — the same list without `software.list`, which every projection that
+touches it consumes internally. Eight of the thirteen rows are the guest-files
+family and the sessions pair; the surface is narrower than its tool count
+suggests, which is the same mistake `contract-coverage.md` made when it counted
+message types, and the seven-versus-six is that mistake one layer in.
 
 Three rows require something they do not expose, and each is worth reading as
 a shape rather than an exception:
@@ -167,6 +168,29 @@ projection returns this capability's answer or directs its effect". It still
 says nothing about how much of that answer, under what bound, or whether it has
 ever run against a Macintosh — see Status.
 
+### One row's answer is not JSON
+
+`now_capture_screen` is the first, and it changed one thing in the seam rather
+than in this inventory: `HostProjectionValue` gained an **attachment** beside
+its encodable part, and the MCP face renders it as that protocol's `image`
+content block. The bytes are deliberately absent from the structured result,
+because that face serialises the structured result into the text block beside
+it — a picture in a JSON field would be sent to its caller twice.
+
+Two paging problems sit under one call, and **a caller sees neither**:
+
+| Where | Bound | Who absorbs it |
+|---|---|---|
+| guest → host | the capture transport's chunked `capture.begin` / bulk / `capture.end` | `GuestListener`, as it always did for the app |
+| host → face | 16 KiB per local request and response | `CaptureScreenProjection`, which pages the PNG out of a host-staged capture and hashes the result against the digest the host declared |
+
+The cost of hiding it, so nobody has to discover it: one tool call is N+1
+local round trips (a 200 KB screen is 26), a caller cannot resume a partial
+fetch, and a fetch that fails halfway is reported as a failed capture rather
+than as something retryable. That is the same trade the sibling TBT project
+made when it collapsed its `screenshot` and `shotdata` verbs into one image
+result.
+
 ## Every gap, with its disposition
 
 The complete list of host-askable guest capability that no projection
@@ -188,9 +212,8 @@ to exist:
 | Guest capability | Kind | Served | Disposition | Why |
 |---|---|:--:|---|---|
 | `capture.accept` | message | ppc | deliberate | Answering a guest-initiated capture offer is the paired host's own handshake obligation, not a capability an agent asks for — [command-parity.md](command-parity.md) ("the MCP is a client, not a face"). |
-| `capture.cancel` | message | ppc | unnoticed | Abandoning a capture in flight. W1 #8 covers file-transfer cancel and does not mention this one. |
+| `capture.cancel` | message | ppc | deliberate | Abandoning a capture in flight, and the caller-facing half of it **is** reachable: `now_capture_screen`'s `abandon` releases the connection's one transfer lane. What a caller directs there is the host's WAIT, not this message — `GuestListener.cancelCapture` settles the request locally whether or not the guest honours the wire message, and the answer never reports which happened. Requiring it would also make a capability both guests serve read as PowerPC-only, which rule 4 of the [parity slice plan](plans/2026-07-29-004-feat-now-tbt-classic-parity-slice-plan.md) refuses: degrade the answer, not the message. |
 | `capture.refuse` | message | ppc | deliberate | The refusal half of the same handshake, and the same reason — [command-parity.md](command-parity.md). |
-| `capture.request` | message | both | planned | W1 #1, the template capability for the whole parity slice. |
 | `census.request` | message | both | planned | W1 #2. Opens into 14 probes; see the probe note below. |
 | `exec.cancel` | message | both | deliberate | Ends an exec, and is excluded with the rest of the console plane — [agent-integration.md](agent-integration.md). |
 | `exec.input` | message | both | deliberate | Part of the console plane excluded under rule 3 — [agent-integration.md](agent-integration.md) and the parity slice plan. |
@@ -219,20 +242,23 @@ to exist:
 | `putstat` | command | ppc | unnoticed | Transfer diagnostics. The host reads them internally to size a transfer; whether an agent should be able to is undecided. |
 | `quit` | command | both | deliberate | `now_request_quit` needs the `process.quit` **family**, not this command: the opaque-reference and PSN-revalidation model has nothing to stand on without it, and is not relaxed to make a tool work ([agent-integration.md](agent-integration.md)). |
 | `reveal` | command | ppc | unnoticed | Show an item in the Finder. Served on PPC; nothing asks. |
-| `screenshot` | command | both | planned | W1 #1 — the verb spelling of `capture.request`. |
+| `screenshot` | command | both | deliberate | The console spelling of `capture.request`, which is projected as `now_capture_screen`. One capability, one route — [command-parity.md](command-parity.md) ("two ways to name a target is not two faces"), the same rule that keeps `ls` and `ps` off this surface. |
 | `shotdiag` | command | 68k | unnoticed | Where a staged capture read from. It found the 24-bit addressing defect on the 180c and is reachable from no host face. |
 | `sw` | command | both | planned | W1 #3 — the installed-software listing, and now the `software.list` message row above it. The two used to disagree, one reading COVERED and the other unreachable; `exposes` is what reconciled them. |
 | `tail` | command | ppc | planned | W1 #9. |
 | `vers` | command | ppc | deliberate | Build identity. `hello` already carries name, version and OS, and `now_session_health` reports all three ([agent-integration.md](agent-integration.md)). |
 | `vprobe` | command | both | unnoticed | Framebuffer read cost. A ~12 s measurement on the guest, which is a reason to gate it, not a reason it is absent — nothing has decided either way. |
 
-### Ten unnoticed rows, named together
+### Nine unnoticed rows, named together
 
-Because they are the point: `capture.cancel`, `stream.start`,
-`stream.stop`, `stream.refresh`, `catsearch`, `gestalt`, `putstat`,
-`reveal`, `shotdiag`, `vprobe`.
+Because they are the point: `stream.start`, `stream.stop`,
+`stream.refresh`, `catsearch`, `gestalt`, `putstat`, `reveal`, `shotdiag`,
+`vprobe`.
 
-Nine of the ten are served by a guest right now. Nothing in this repository
+They were ten. `capture.cancel` left the list by being decided rather than
+by being built — see its row.
+
+All nine are served by a guest right now. Nothing in this repository
 argued for their absence; they are absent because the question never came
 up. That is exactly the shape of the `process.list` drift
 `command-parity.md` was written for, one layer out.
@@ -280,8 +306,8 @@ making `now_launch_software` claim it exposes the `software.list` it only
 consumes makes the `software.list` gap row fail as a phantom, naming it. See
 the commits that added each.
 
-Last derived: 2026-07-29, on `claude/host-exposes-seam`, off
-`claude/tbt-parity-slice` at the twelve-projection registry with `exposes` on
-the row protocol. Re-derive by running `swift test --filter MCPCoverage` rather
+Last derived: 2026-07-29, on `claude/capture-projection`, off
+`claude/tbt-parity-slice` at the thirteen-projection registry — `exposes` on
+the row protocol, plus the first row whose answer carries an image. Re-derive by running `swift test --filter MCPCoverage` rather
 than by reading — if the tables and the code disagree, the code is right and
 the test says so.
