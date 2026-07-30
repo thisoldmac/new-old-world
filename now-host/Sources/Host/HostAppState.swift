@@ -54,6 +54,7 @@ final class HostAppState: ObservableObject {
     private let artifactApprovals: AgentIntegrationArtifactApprovalStore?
     private(set) lazy var console = ConsoleModel(listener: listener)
     private(set) lazy var census = CensusModuleModel(listener: listener)
+    private(set) lazy var diagnostics = DiagnosticsModel(listener: listener)
     private(set) lazy var software = SoftwareModel(listener: listener)
     private(set) lazy var processes: ProcessesModel = {
         let model = ProcessesModel(listener: listener)
@@ -80,7 +81,7 @@ final class HostAppState: ObservableObject {
     /// switch — the two used to be separate assignments, and a module added
     /// to one and not the other is precisely the defect this list closes.
     private var guestScopedModels: [any GuestScopedModel] {
-        [screenshots, files, census, processes, software]
+        [screenshots, files, census, diagnostics, processes, software]
     }
 
     /// Points the whole window at another connected Mac.
