@@ -100,6 +100,7 @@ The test compares both against the code literally.
 | `now_session_health` | — | — | none; host listener state |
 | `now_session_capabilities` | — | — | none; `help` plus bounded probes, described in agent-integration.md |
 | `now_list_processes` | `process.list` | `process.list` | message family |
+| `now_guest_log_tail` | `tail` | `tail` | command |
 | `now_capture_screen` | `capture.request` | `capture.request` | message family |
 | `now_catalog_search` | `catsearch` | `catsearch` | command |
 | `now_launch_software` | `software.list`, `launch` | `launch` | message family plus command |
@@ -284,6 +285,38 @@ and one bound worth knowing:
   restore takes, it is not always the name the item had, and neither side
   remembers it ([files.md](files.md#changing-the-share-from-the-host)).
 
+### One row returns text the machine wrote, and names no file
+
+`now_guest_log_tail` is the first row whose answer is prose the guest
+composed rather than facts about the machine, so what it may be pointed at is
+worth stating here rather than only in its own source.
+
+**It may be pointed at nothing.** The `tail` verb takes one argument and it
+is a count (`x-commands.tail`: `lines`, default 20, most 40). What it reads
+is the guest application's own in-memory ring for the launch it is in — the
+same text the person at that machine has on its Logs page — and there is no
+path in the verb, none in the local operation, and none in the tool's input
+schema. The decision behind that:
+
+| | |
+|---|---|
+| Why not a path | This row returns BYTES, which `file.list` and `reveal` do not. The Files family is confined to the host-owned `guestRoot`; `reveal` leaves that confinement only because it hands nothing back. "Tail any file on the volume" is a materially wider authority than anything on this surface has, and it is not the host's to grant in any case — the verb would have to grow an argument, which is a guest change, which means it was never a projection. |
+| What already covers the named case | `now_guest_files_download`, under `guestRoot`, with the authority that belongs there. |
+| What it can still disclose | A log line is prose, and some of that prose contains paths: the `get`, `put` and `files` areas log the items they handled by design ([logging.md](logging.md)). So a caller can learn the NAMES of items the machine touched, including outside `guestRoot`. The bound is the guest's own editorial judgement about its log, and it is the same text the person at the machine reads — but it is a widening over the Files family and is recorded rather than discovered later. |
+| Who chooses how much | The caller, between 1 and 40. Above 40 is refused rather than clamped: the guest cannot fit more in one 4 KB control frame, and a silently smaller answer to a bigger question reads as a machine that went quiet. |
+| How the bound stays visible | The guest's own `log` group says it — `shown` reads `"12 of 20 (older ones did not fit)"` when its frame budget dropped the oldest lines. That row is carried through untouched, and it is also the cross-check on the host's rendering bounds, which are sized from the guest's own buffers so they cannot bite first. |
+| Encoding | Settled on the guest, not guessed here: it maps its MacRoman high range through its own table and emits `\uXXXX`, so nothing undecodable reaches this side. CR endings are gone before that — the ring holds lines without terminators. A control character *inside* a line is written `\xNN` so it is neither dropped nor passed through to corrupt a row. |
+
+**One host-side limit this row found, which is not about `tail`.**
+`CommandRequest.args` is `[String: String]`, so every typed argument reaches
+the wire quoted, and the guest reads an integer argument with `strtol` on the
+byte after the colon — `strtol("\"40\"")` is 0. `tail` is the first verb whose
+typed argument is an integer, so nothing had met that edge. The count
+therefore travels on the `line` field, which the contract declares for this
+verb (`x-line`: "the first integer on the line is the count"). Widening the
+args map to carry typed values is a shared-file, both-guests change; it is
+recorded here and in the row's source, not made from inside one capability.
+
 ## Every gap, with its disposition
 
 The complete list of host-askable guest capability that no projection
@@ -330,7 +363,6 @@ to exist:
 | `screenshot` | command | both | deliberate | The console spelling of `capture.request`, which is projected as `now_capture_screen`. One capability, one route — [command-parity.md](command-parity.md) ("two ways to name a target is not two faces"), the same rule that keeps `ls` and `ps` off this surface. |
 | `shotdiag` | command | 68k | unnoticed | Where a staged capture read from. It found the 24-bit addressing defect on the 180c and is reachable from no host face. |
 | `sw` | command | both | planned | W1 #3 — the installed-software listing, and now the `software.list` message row above it. The two used to disagree, one reading COVERED and the other unreachable; `exposes` is what reconciled them. |
-| `tail` | command | ppc | planned | W1 #9. |
 | `vers` | command | ppc | deliberate | Build identity. `hello` already carries name, version and OS, and `now_session_health` reports all three ([agent-integration.md](agent-integration.md)). |
 | `vprobe` | command | both | unnoticed | Framebuffer read cost. A ~12 s measurement on the guest, which is a reason to gate it, not a reason it is absent — nothing has decided either way. |
 

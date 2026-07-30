@@ -11,6 +11,11 @@ public enum HostProjectionCatalog {
         SessionHealthProjection.self,
         SessionCapabilitiesProjection.self,
         ListProcessesProjection.self,
+        /* With the observations rather than beside the Files family: it
+           reads what the guest wrote about itself, changes nothing, and
+           names no file — the nearest neighbour of a process listing, not
+           of a directory one. */
+        GuestLogTailProjection.self,
         CaptureScreenProjection.self,
         /* Beside capture on purpose: the two costly MEASUREMENTS of the
            machine sit together, before the actions. */

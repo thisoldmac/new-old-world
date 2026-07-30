@@ -51,6 +51,12 @@ public protocol AgentIntegrationClient: Sendable {
     /// Finder obeyed — `RevealItemProjection` says why in full.
     func revealItem(target: String) async
         -> AgentIntegrationGuestRowReportResult
+    /// The end of the guest's own log for this launch. `lines` is a count,
+    /// never a file: the verb names nothing on the disk and this side must
+    /// not invent a way for it to — see `GuestLogTailProjection`. Absent
+    /// means the verb's own default.
+    func tailGuestLog(lines: Int?) async
+        -> AgentIntegrationGuestRowReportResult
     func transferApprovedArtifact(receipt: String) async
         -> AgentIntegrationArtifactTransferResult
     func guestFilesCapabilities() async
@@ -172,6 +178,15 @@ extension AgentIntegrationClient {
     /// implement only their own lanes, and a requirement without a default
     /// is seven compile errors in seven files named for other capabilities.
     public func revealItem(target: String) async
+        -> AgentIntegrationGuestRowReportResult {
+        .hostUnavailable
+    }
+
+    /// Declared with its default in the one edit, per the rule at the top of
+    /// this file. "No host" and not an empty tail: a client with nothing to
+    /// ask has not read a quiet log, and an empty answer would be a claim
+    /// about a machine nobody reached.
+    public func tailGuestLog(lines: Int?) async
         -> AgentIntegrationGuestRowReportResult {
         .hostUnavailable
     }

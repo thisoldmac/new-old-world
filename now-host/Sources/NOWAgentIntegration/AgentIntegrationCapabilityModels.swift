@@ -224,6 +224,18 @@ public enum AgentIntegrationCapabilityNames {
     /// availability comes off `help`, free, so nothing has to decide
     /// whether settling it is worth what it costs.
     public static let catsearchCommand = "catsearch"
+    /// The guest's own log for this launch. A COMMAND, like `reveal` and for
+    /// the same mechanical reason: the ledger resolves it against the
+    /// guest's `help` table, which is what makes the row PowerPC-only
+    /// without anything on this side naming a guest — the 68K guest's
+    /// command table has no `tail` row, so it resolves `unavailable` there
+    /// by derivation rather than by a fork in the code.
+    ///
+    /// Note what it is NOT: there is no `log.*` message family, and this
+    /// name must not grow one by accident. The verb reads the application's
+    /// own in-memory ring, and a family would be a second mechanism for one
+    /// capability.
+    public static let tailCommand = "tail"
 
     /// Every name above, as a set.
     ///
@@ -243,7 +255,7 @@ public enum AgentIntegrationCapabilityNames {
         processList, processQuit, processFront, softwareList, fileList,
         fileGet, filePut, fileCancel, fileMove, fileTrash, fileRestore,
         fileMkdir, captureRequest, launchCommand, revealCommand,
-        catsearchCommand,
+        catsearchCommand, tailCommand,
     ]
 
     /// Refusal codes that mean "this guest does not implement that", as
