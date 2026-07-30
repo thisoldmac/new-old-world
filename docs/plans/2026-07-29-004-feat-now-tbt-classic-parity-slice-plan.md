@@ -454,6 +454,39 @@ Three of these have already bitten this repo; none is hypothetical.
   gate before any Phase 2 agent starts — every later coverage claim rests on
   it.
 
+## Where this slice ends (decided 2026-07-30)
+
+It grew past one slice. W1 went from nine items to thirteen once the gap
+table was derived rather than composed; W1.5 arrived by decision; the
+diagnostics module became a product decision rather than a projection. Held
+together as one unit, "the slice" would mean four different things and none
+of them could land.
+
+**So it ends here, at W0 + W1.5 + W1 #1.** That is a coherent thing: the
+seam, four mechanical gates, a live bug fixed, and the first hardware
+evidence the agent surface has ever had. It is worth landing on `main` on
+its own — the codec fix alone is, since guest addressability had been broken
+since 2026-07-28.
+
+What is deliberately **not** in it, and why the split falls here:
+
+| Follow-on | Why separate |
+|---|---|
+| The remaining twelve projections | Each is now costed rather than guessed; they fan out against a proven template and need no design |
+| W3 AppIntents | An additional face. Wants the projections it would consume to exist first |
+| W4 granted control | Its own authority model — the session grant is a design question, not a projection |
+
+Sequencing constraint that outlives this plan: **do the two one-off cleanups
+before the twelve.** The four hand-maintained capability lists and the
+`AgentIntegrationLocalProtocol.swift` serialization chokepoint are costs that
+every subsequent item otherwise pays again — twelve times over, on shared
+files, with one integration lane.
+
+Status does **not** live here. Per [README](README.md) this file is intent
+and goes stale by design; what is verified belongs in
+[open-issues.md](../open-issues.md) and what the system does belongs in
+[status.md](../status.md).
+
 ## Corpus impact
 
 The `PostEvent` probe has landed:
