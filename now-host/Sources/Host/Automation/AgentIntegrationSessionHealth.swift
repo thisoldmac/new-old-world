@@ -14,6 +14,9 @@ final class AgentIntegrationHostAdapter {
     /// one is 42 s, and a test that had to wait it out to prove the timeout
     /// path is a test nobody runs.
     private let catalogSearchTimeout: TimeInterval
+    /// Injected for the reason the two above are, and one of its own: this
+    /// bound is the ONLY watchdog on a `vprobe`, since the guest has none.
+    private let diagnosticsTimeout: TimeInterval
     private let artifactApprovals: AgentIntegrationArtifactApprovalStore?
     private lazy var processControl = AgentIntegrationProcessControl(
         listener: listener,
@@ -48,6 +51,15 @@ final class AgentIntegrationHostAdapter {
         listener: listener,
         currentSessionID: { [unowned self] in connectedSessionID() },
         commandTimeout: catalogSearchTimeout)
+    /* Beside the catalog search, because it is the same kind of thing: a
+       measurement of the machine, bounded here because the guest does not
+       bound it. Injected timeout for the same reason as the two above — the
+       real one is 40 s and a test that waited it out is a test nobody
+       runs. */
+    private lazy var diagnostics = AgentIntegrationDiagnostics(
+        listener: listener,
+        currentSessionID: { [unowned self] in connectedSessionID() },
+        commandTimeout: diagnosticsTimeout)
     private lazy var artifactTransfer = AgentIntegrationArtifactTransfer(
         listener: listener,
         approvals: artifactApprovals,
@@ -60,11 +72,14 @@ final class AgentIntegrationHostAdapter {
         launchCommandTimeout: TimeInterval = 32,
         catalogSearchTimeout: TimeInterval =
             AgentIntegrationCatalogSearchPolicy.commandTimeout,
+        diagnosticsTimeout: TimeInterval =
+            AgentIntegrationDiagnosticsPolicy.commandTimeout,
         artifactApprovals: AgentIntegrationArtifactApprovalStore? = nil
     ) {
         self.listener = listener
         self.launchCommandTimeout = launchCommandTimeout
         self.catalogSearchTimeout = catalogSearchTimeout
+        self.diagnosticsTimeout = diagnosticsTimeout
         self.artifactApprovals = artifactApprovals
     }
 
@@ -203,6 +218,17 @@ final class AgentIntegrationHostAdapter {
     func measureCatalogSearch(observedAt: Date = Date()) async
         -> AgentIntegrationGuestRowReportResult {
         await catalogSearch.measure(observedAt: observedAt)
+    }
+
+    /// Run one named diagnostic — `vprobe`, `shotdiag` or `putstat`. One
+    /// entry point for three capabilities because they are one lane and one
+    /// bound; which of them the connected machine answers is the capability
+    /// ledger's question, not this call's. `AgentIntegrationDiagnostics`
+    /// carries the bound and why a second run is refused rather than queued.
+    func runDiagnostic(_ probe: AgentIntegrationDiagnosticProbe,
+                       observedAt: Date = Date()) async
+        -> AgentIntegrationGuestRowReportResult {
+        await diagnostics.run(probe, observedAt: observedAt)
     }
 
     /// One picture of the connected machine's screen, staged for the pages

@@ -258,15 +258,15 @@ public enum FramebufferProbeProjection: HostProjection {
             "inputSchema": HostProjectionSchema.emptyInput,
             "outputSchema": [
                 "oneOf": [
-                    variant("completed", payload: "completed", schema:
+                    variant("completed", "completed",
                         diagnosticReport(
                             verb: "vprobe",
                             note:
                                 "Present only when a bound was reached. The Carbon guest offers no note for this verb and NOW-68K reports its own dropped-row count inside the rows, so the only sentence that appears here is the host saying it had to shorten the answer.",
                             groupDescription:
                                 "The guest's own rows, in its own order and wording: one per access width, the CopyBits baseline, the reread and linearity checks, fidelity, and on NOW-68K an Addressing row. Never parsed on this side — a host that turned \"CopyBits failed\" into a typed field would be answering for the machine.")),
-                    variant("refused", payload: "refused",
-                            schema: diagnosticFailure),
+                    variant("refused", "refused",
+                            diagnosticFailure),
                     HostProjectionSchema.unavailableVariant,
                 ],
             ],
@@ -354,15 +354,15 @@ public enum CaptureDiagnosticsProjection: HostProjection {
             "inputSchema": HostProjectionSchema.emptyInput,
             "outputSchema": [
                 "oneOf": [
-                    variant("completed", payload: "completed", schema:
+                    variant("completed", "completed",
                         diagnosticReport(
                             verb: "shotdiag",
                             note:
                                 "Present only when a bound was reached. The guest states its verdict and every edge of the answer inside the rows, so the only sentence that appears here is the host saying it had to shorten them.",
                             groupDescription:
                                 "The guest's own rows, in its own order and wording — the resolved base, its stripped form, the addressing mode, the two row-0 samples, and the guest's own verdict line. The samples are carried verbatim and never compared on this side: which one is right is the question the machine was asked.")),
-                    variant("refused", payload: "refused",
-                            schema: diagnosticFailure),
+                    variant("refused", "refused",
+                            diagnosticFailure),
                     HostProjectionSchema.unavailableVariant,
                 ],
             ],
@@ -446,7 +446,7 @@ public enum TransferDiagnosticsProjection: HostProjection {
             "inputSchema": HostProjectionSchema.emptyInput,
             "outputSchema": [
                 "oneOf": [
-                    variant("completed", payload: "completed", schema:
+                    variant("completed", "completed",
                         diagnosticReport(
                             verb: "putstat",
                             note:
@@ -459,8 +459,8 @@ public enum TransferDiagnosticsProjection: HostProjection {
                        host's own timeout. A row that omitted the arm would
                        be publishing a schema its caller can be handed
                        something outside. */
-                    variant("refused", payload: "refused",
-                            schema: diagnosticFailure),
+                    variant("refused", "refused",
+                            diagnosticFailure),
                     HostProjectionSchema.unavailableVariant,
                 ],
             ],
