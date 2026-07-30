@@ -217,6 +217,7 @@ tidiness preference.)*
 | Guest: events — process drive verbs (front/quit/shot), census outcomes, process-list refresh | Compiled 2026-07-22; **not yet exercised on metal**. Each carries the wire id; drive-verb refusal reasons now reach the log, not only the wire. `process.list` logs once per refresh (cursor 1), never per page |
 | Host: file per launch, in the line format above | Built, **unverified on a real run** |
 | Host: `tail` of the guest's log | Built; needs `fork/logging` landed and a rebuild |
+| Guest log readable by a non-user host face | Built + tested 2026-07-30 as the `now_guest_log_tail` projection: a line count and never a path, the guest's `shown` row carried through as the bound, and one `app` line per read so the person at the machine can see their log was read. **Unverified on metal.** Scope and encoding: [mcp-coverage.md](mcp-coverage.md) |
 | `tail` output as one row per line | Built — byte-bounded, oldest dropped first, and it says so |
 | Correlation ids in both logs | Built for the file family; **capture and stream still have none** |
 | Per-chunk rule enforced by a test | Built (`LoggingSpecTests`), mutation-checked |
