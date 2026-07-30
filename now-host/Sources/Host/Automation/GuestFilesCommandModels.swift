@@ -10,7 +10,16 @@ enum GuestFileCommandKind: String, Equatable, Sendable {
     case put
     case mkdir
     case move
+    /// The unlink the V0.5 roadmap named, and the one command in this list
+    /// that is not coming: removal on this surface means `trash`, which is
+    /// reversible, so `delete` stays deferred rather than being implemented
+    /// (docs/files.md, "Delete means the Trash, not unlink").
     case delete
+    /// To the Trash and back out of it. Two kinds and not one, because the
+    /// receipts read differently: a trash reports the name the item landed
+    /// under, and a restore consumes it.
+    case trash
+    case restore
     case deployTree
     case prune
 }

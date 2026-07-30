@@ -277,9 +277,44 @@ enum GuestFilesSchema {
 
     static let operations = [
         "capabilities", "list", "stat", "download", "readText",
-        "tailText", "put", "mkdir", "move", "delete", "deployTree",
-        "prune",
+        "tailText", "put", "mkdir", "move", "delete", "trash", "restore",
+        "deployTree", "prune",
     ]
+
+    /// What one catalog mutation did. It carries **both halves of its own
+    /// undo**: `path` says where the item is now, and a trash's `trashedAs`
+    /// is the name the Trash gave it — which is not always the name it had,
+    /// and which nothing on either side remembers.
+    static var mutationOutcome: [String: Any] {
+        [
+            "type": "object",
+            "properties": [
+                "mutation": [
+                    "type": "string",
+                    "enum": AgentIntegrationGuestFileMutation.allCases
+                        .map(\.rawValue),
+                ],
+                "path": [
+                    "oneOf": [path, ["type": "null"]],
+                    "description":
+                        "Where the item ended up, when the guest could express it.",
+                ],
+                "trashedAs": [
+                    "type": ["string", "null"],
+                    "maxLength":
+                        AgentIntegrationGuestFilePolicy
+                            .maximumSegmentScalars,
+                    "description":
+                        "Answering a trash: the item's name inside the Trash. KEEP IT — it is the only key a restore takes. Absent means the guest reported none, so this particular trashing cannot be restored through this surface, only by hand at the machine.",
+                ],
+                "observedAt": [
+                    "type": "string", "format": "date-time",
+                ],
+            ],
+            "required": ["mutation", "observedAt"],
+            "additionalProperties": false,
+        ]
+    }
 
     static var capabilities: [String: Any] {
         [

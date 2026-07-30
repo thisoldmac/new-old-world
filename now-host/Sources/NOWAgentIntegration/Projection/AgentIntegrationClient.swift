@@ -74,6 +74,13 @@ public protocol AgentIntegrationClient: Sendable {
     /// transfer" is never ambiguous — and the transfer id the wire message
     /// carries is this host's own, never a caller's to hold.
     func cancelTransfer() async -> AgentIntegrationTransferCancelResult
+    /// Move, trash, restore or create one item beneath `guestRoot`. Four
+    /// intentions on one method because they are one lane: they share the
+    /// path space, the one `file.result` code vocabulary and one
+    /// authorization, and `restore` consumes what `trash` answered.
+    func mutateGuestFile(
+        _ mutation: AgentIntegrationGuestFileMutationRequest
+    ) async -> AgentIntegrationGuestFileMutationResult
     /// Ask the paired guest for its screen, and get back the first page of
     /// the result. Three calls rather than one because the answer is an
     /// image: the local request/response cap is 16 KiB, so a screen crosses
@@ -103,6 +110,15 @@ extension AgentIntegrationClient {
 
     public func commitGuestFileUpload(uploadID: UUID) async
         -> AgentIntegrationGuestFileUploadCommitResult {
+        .hostUnavailable(.host)
+    }
+
+    /// Defaulted with the trio above, and in the same edit that declared it:
+    /// a client with no host to ask answers "no host" rather than making
+    /// seven stub files in seven other capabilities' tests learn this lane.
+    public func mutateGuestFile(
+        _ mutation: AgentIntegrationGuestFileMutationRequest
+    ) async -> AgentIntegrationGuestFileMutationResult {
         .hostUnavailable(.host)
     }
 

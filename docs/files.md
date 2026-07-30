@@ -584,6 +584,23 @@ Console parity: `mv <path> <new path>`, `trash <path>`,
 `help`. `trash` prints the name the item landed under, which is what
 `untrash` wants.
 
+### The agent surface reaches the same four
+
+`now_guest_files_mutate` projects these four messages for a host face other
+than the browser (`agent-integration.md`, P1 #7). It is the same guest
+mechanism and the same three decisions above — the Trash rather than unlink, a
+name-based undo, the host holding the history — with two bounds the human lane
+does not need because a person can see what they clicked:
+
+- every path is composed beneath the host-owned `guestRoot`, and the root
+  itself is never the target;
+- `overwrite` is unreachable. The human lane can pass it; the agent lane has
+  no spelling for it, so a collision refuses rather than replaces.
+
+One item per call, one wire request, no created parents. The trashed name goes
+back to the caller because that is the only thing a restore takes — the same
+reason the browser's Undo stack keeps it.
+
 ### Verified on a real volume
 
 `NOW_LIVE=1 swift test --filter LiveChangeTests` drives a connected

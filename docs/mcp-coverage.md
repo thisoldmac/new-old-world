@@ -110,6 +110,7 @@ The test compares both against the code literally.
 | `now_guest_files_capabilities` | `file.list` | — | message family |
 | `now_guest_files_list` | `file.list` | `file.list` | message family |
 | `now_guest_files_stat` | `file.list` | `file.list` | message family |
+| `now_guest_files_mutate` | `file.move`, `file.trash`, `file.restore`, `file.mkdir` | `file.move`, `file.trash`, `file.restore`, `file.mkdir` | message family |
 | `now_guest_files_upload_begin` | — | — | none; host staging only |
 | `now_guest_files_upload_append` | — | — | none; host staging only |
 | `now_guest_files_upload_commit` | `file.put` | `file.put` | message family |
@@ -250,6 +251,36 @@ event (face, capability, machine, outcome) and a host line under `sw` naming
 the target, because for this capability the target **is** the event — the same
 reason the guest-Files family logs its paths.
 
+### One row can change the machine
+
+`now_guest_files_mutate` is the first mutating guest-Files row, and it closed
+four gap rows at once because the four contract messages are one lane: they
+share the path space beneath `guestRoot`, the one `file.result` code
+vocabulary, and one authorization — and `file.restore` consumes what
+`file.trash` answered. It **requires all four together**, which is not
+tidiness: a guest serving `trash` without `restore` would offer a deletion
+the row could not undo, and that pairing is the safety property rather than a
+convenience. Where the four are not served the row is unavailable in typed
+form; nothing partial is offered.
+
+Two facts the gap table can no longer carry, now that those rows are closed,
+and one bound worth knowing:
+
+- **Only one guest serves the four** — the `Served` column read `ppc` for all
+  of them. The row is therefore reachable in practice against the PowerPC
+  guest only, and that follows from what the guest answers rather than from
+  anything the host knows about it (`agent-integration.md`, "Availability is
+  decided by capability, never by identity").
+- **There is no `delete` on this surface and there is not meant to be.** The
+  contract's verbs are `trash` and `restore`; the projection cannot express an
+  unlink, never sets `file.move`'s `overwrite` flag, and refuses an argument
+  that asks for it — so a collision refuses rather than replacing. That is
+  what makes "everything an agent removes from a path is recoverable" a
+  property of the code rather than a hope.
+- **A caller must keep what a trash answers.** `trashedAs` is the only key a
+  restore takes, it is not always the name the item had, and neither side
+  remembers it ([files.md](files.md#changing-the-share-from-the-host)).
+
 ## Every gap, with its disposition
 
 The complete list of host-askable guest capability that no projection
@@ -279,10 +310,6 @@ to exist:
 | `exec.input` | message | both | deliberate | Part of the console plane excluded under rule 3 — [agent-integration.md](agent-integration.md) and the parity slice plan. |
 | `exec.request` | message | both | deliberate | The console plane. A shell is not user-initiable in any meaningful sense and is the one thing [agent-integration.md](agent-integration.md) is right to keep out. |
 | `file.get` | message | ppc | planned | W1 #4. Not withheld on authority grounds — confirmed 2026-07-29, simply unbuilt. The 68K guest reaches the same capability through its `put` verb. |
-| `file.mkdir` | message | ppc | planned | W1 #7. |
-| `file.move` | message | ppc | planned | W1 #7. |
-| `file.restore` | message | ppc | planned | W1 #7. |
-| `file.trash` | message | ppc | planned | W1 #7. |
 | `process.shot` | message | ppc | deliberate | Excluded by name in the [parity slice plan](plans/2026-07-29-004-feat-now-tbt-classic-parity-slice-plan.md): PPC-only, and no consumer asked for a single-window capture. |
 | `software.list` | message | both | planned | W1 #3. The gap that `exposes` made visible: `now_launch_software` **requires** this and consumes it to match one name, so a `requires`-derived check called it covered while no tool returns a listing. Its console spelling is the `sw` row below. |
 | `stream.refresh` | message | ppc | unnoticed | Part of the live-stream bracket; see `stream.start`. |

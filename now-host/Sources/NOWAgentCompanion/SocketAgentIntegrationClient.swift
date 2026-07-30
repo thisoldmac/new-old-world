@@ -210,6 +210,48 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
+    /// The one place the four intentions become four local requests.
+    ///
+    /// The wire shapes differ per intention (P1a's `guestFileMutation`
+    /// branch), the projection holds one operation, and this is the seam
+    /// between them. The two `preconditionFailure`s cannot fire: only
+    /// `AgentIntegrationGuestFileMutationRequest`'s failable initialisers can
+    /// build one of these, and they refuse a move with no destination and a
+    /// restore with no trashed name. They are stated rather than defaulted
+    /// for the reason the local client's own branch states its: a substituted
+    /// value here would send a Macintosh a request nobody wrote.
+    func mutateGuestFile(
+        _ mutation: AgentIntegrationGuestFileMutationRequest
+    ) async -> AgentIntegrationGuestFileMutationResult {
+        guard let client else {
+            return .hostUnavailable(unavailable(for: startupError))
+        }
+        do {
+            switch mutation.mutation {
+            case .move:
+                guard let toPath = mutation.destinationPath else {
+                    preconditionFailure("A move names where it is going")
+                }
+                return try await client.moveGuestFile(
+                    path: mutation.path, toPath: toPath)
+            case .trash:
+                return try await client.trashGuestFile(path: mutation.path)
+            case .restore:
+                guard let trashedAs = mutation.trashedAs else {
+                    preconditionFailure(
+                        "A restore names the item's name in the Trash")
+                }
+                return try await client.restoreGuestFile(
+                    trashedAs: trashedAs, toPath: mutation.path)
+            case .mkdir:
+                return try await client.makeGuestDirectory(
+                    path: mutation.path)
+            }
+        } catch {
+            return .hostUnavailable(unavailable(for: error))
+        }
+    }
+
     func requestGuestCapture(depth: Int?) async
         -> AgentIntegrationCaptureResult {
         guard let client else {
