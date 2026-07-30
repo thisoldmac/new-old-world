@@ -302,6 +302,25 @@ final class AgentIntegrationCapabilityLedger {
                leaves the capability callable; it is docs/open-issues.md
                material rather than something to paper over here. */
             .init(names.captureRequest, .notProbedCostly),
+            /* Read-only, and NOT probed, for capture's reason rather than
+               quit's. There is no cheap request in this family: the probe
+               argument is required, so a probe would have to CHOOSE one, and
+               the registry's own default — `overview` — is the synthesis that
+               arranges what every other probe read. Spending a whole-machine
+               walk on a question nobody asked is the `software.list` trade
+               without `software.list`'s escape, because there is no probe
+               here that a guest which serves the family answers instantly.
+
+               The same honest consequence capture's row carries applies, and
+               it is narrower than the costly families': `GuestListener
+               .requestCensus` is not wrapped in `observing`, so no census
+               call records a family observation either way and this row reads
+               `unproven` on every guest until that changes. Unproven leaves
+               the capability callable, which is the truthful state — a guest
+               that does not implement the family refuses the first real call
+               in its own words. docs/open-issues.md material rather than
+               something to paper over here. */
+            .init(names.censusRequest, .notProbedCostly),
         ]
     }()
 

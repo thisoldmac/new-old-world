@@ -99,6 +99,7 @@ The test compares both against the code literally.
 |---|---|---|---|
 | `now_session_health` | — | — | none; host listener state |
 | `now_session_capabilities` | — | — | none; `help` plus bounded probes, described in agent-integration.md |
+| `now_hardware_census` | `census.request` | `census.request` | message family |
 | `now_list_processes` | `process.list` | `process.list` | message family |
 | `now_guest_log_tail` | `tail` | `tail` | command |
 | `now_capture_screen` | `capture.request` | `capture.request` | message family |
@@ -341,7 +342,6 @@ to exist:
 | `capture.accept` | message | ppc | deliberate | Answering a guest-initiated capture offer is the paired host's own handshake obligation, not a capability an agent asks for — [command-parity.md](command-parity.md) ("the MCP is a client, not a face"). |
 | `capture.cancel` | message | ppc | deliberate | Abandoning a capture in flight, and the caller-facing half of it **is** reachable: `now_capture_screen`'s `abandon` releases the connection's one transfer lane. What a caller directs there is the host's WAIT, not this message — `GuestListener.cancelCapture` settles the request locally whether or not the guest honours the wire message, and the answer never reports which happened. Requiring it would also make a capability both guests serve read as PowerPC-only, which rule 4 of the [parity slice plan](plans/2026-07-29-004-feat-now-tbt-classic-parity-slice-plan.md) refuses: degrade the answer, not the message. |
 | `capture.refuse` | message | ppc | deliberate | The refusal half of the same handshake, and the same reason — [command-parity.md](command-parity.md). |
-| `census.request` | message | both | planned | W1 #2. Opens into 14 probes; see the probe note below. |
 | `exec.cancel` | message | both | deliberate | Ends an exec, and is excluded with the rest of the console plane — [agent-integration.md](agent-integration.md). |
 | `exec.input` | message | both | deliberate | Part of the console plane excluded under rule 3 — [agent-integration.md](agent-integration.md) and the parity slice plan. |
 | `exec.request` | message | both | deliberate | The console plane. A shell is not user-initiable in any meaningful sense and is the one thing [agent-integration.md](agent-integration.md) is right to keep out. |
@@ -350,8 +350,22 @@ to exist:
 | `stream.refresh` | message | ppc | unnoticed | Part of the live-stream bracket; see `stream.start`. |
 | `stream.start` | message | ppc | unnoticed | A stream is a continuous host-owned bracket rather than one bounded call, so it may well not belong on a tool surface at all — but **that is a hypothesis, not a decision**: nothing argues it, and the host app's live view owning it today is a fact about what exists rather than a reason. |
 | `stream.stop` | message | ppc | unnoticed | The other end of the same bracket; see `stream.start`. |
+| `overview` | probe | none | deliberate | Reachable as `now_hardware_census`'s `probe` argument, like the thirteen below it — read the probe note under this table for why `Served` says `none` for all fourteen. The synthesis, in plain words: model, CPU, RAM, System, display, storage. Both guests answer it; NOW-68K adds addressing and free memory ([contract-coverage.md](contract-coverage.md)). |
+| `identity` | probe | none | deliberate | The curated dozen — model, CPU and clock, RAM, ROM, OS, CarbonLib, QuickDraw, keyboard, networking. Both guests answer; NOW-68K adds **Addressing**, which is where the 24-bit mode fact lives rather than in a fifteenth probe ([contract-coverage.md](contract-coverage.md)). |
+| `selectors` | probe | none | deliberate | The documented Gestalt walk. **PPC answers, NOW-68K answers `refused`** — 32 KB of selector names does not fit a 384 KB partition — and an agent gets that refusal as a completed call saying the machine declined to look, never as an absence ([contract-coverage.md](contract-coverage.md)). |
+| `video` | probe | none | deliberate | The GDevice walk, one record per display. Both; `absent` on a Mac with only original QuickDraw, which is a finding about the hardware ([contract-coverage.md](contract-coverage.md)). |
+| `volumes` | probe | none | deliberate | Mounted volumes via indexed `PBHGetVInfo`. Both guests ([contract-coverage.md](contract-coverage.md)). |
+| `drives` | probe | none | deliberate | The drive queue, zero bus I/O. Both guests ([contract-coverage.md](contract-coverage.md)). |
+| `drivers` | probe | none | deliberate | The Device Manager unit table, with an in-ROM check. Both guests ([contract-coverage.md](contract-coverage.md)). |
+| `adb` | probe | none | deliberate | The ADB device table. Both guests ([contract-coverage.md](contract-coverage.md)). |
+| `ata` | probe | none | deliberate | IDENTIFY DEVICE through the ATA Manager — the IDE boot disk a SCSI scan cannot see. PPC answers; **NOW-68K answers `absent`**, Gestalt-gated, because that machine's internal disk is SCSI ([contract-coverage.md](contract-coverage.md)). |
+| `pccard` | probe | none | deliberate | Card Services' version and socket count; touches no socket and reads no CIS. PPC answers; **NOW-68K answers `absent`** — PCMCIA arrived after that Mac ([contract-coverage.md](contract-coverage.md)). |
+| `pram` | probe | none | deliberate | Parameter RAM. **PPC answers `partial`** (20 of 256 bytes is all `GetSysPPtr` reaches) where NOW-68K reads all 256 — the one probe where the 68K guest reaches further, and the note says what was out of reach ([contract-coverage.md](contract-coverage.md)). |
+| `power` | probe | none | deliberate | The Power Manager's battery view, Gestalt-gated. Both guests; a desktop answers `absent` ([contract-coverage.md](contract-coverage.md)). |
+| `pci` | probe | none | deliberate | The Name Registry device tree. **`absent` on both** — the 1400c is pre-PCI and no 68K Mac has a Name Registry — which is a fact about the hardware and the clearest case for why `absent` is not `refused` ([contract-coverage.md](contract-coverage.md)). |
+| `scsi` | probe | none | deliberate | An INQUIRY bus scan: the contract's one declared exception to passive-by-rule, paced at one target per page. PPC answers; **NOW-68K answers `refused`** because active bus I/O is never unattended there. This is the probe a caller must read the outcome of rather than the rows ([contract-coverage.md](contract-coverage.md)). |
 | `cancel` | command | 68k | deliberate | The 68K guest's console spelling of transfer cancel, and `now_transfer_cancel` needs the `file.cancel` **message** rather than this verb: the message is what both guests dispatch, and requiring the verb would make a capability both guests serve read as 68K-only — rule 4 of the [parity slice plan](plans/2026-07-29-004-feat-now-tbt-classic-parity-slice-plan.md). The verb exists so a person at a PowerBook whose host has stopped answering can still end a transfer, which is a reason for the GUEST to have two faces, not a second mechanism for the host to pick between — [command-parity.md](command-parity.md). |
-| `census` | command | both | planned | W1 #2 — the verb spelling of `census.request`. |
+| `census` | command | both | deliberate | The console spelling of `census.request`, which is projected as `now_hardware_census`. `now_hardware_census` needs the **family** and not this verb, for the reason `front` and `quit` give: the verb is the flat single-page read a person types at the machine, and the family is the one that paginates and carries a per-probe outcome — which is the whole capability. One capability, one route per face — [command-parity.md](command-parity.md). |
 | `front` | command | both | deliberate | `now_bring_to_front` needs the `process.front` **family**, not this command, for the reason `quit` gives below: the command takes a NAME, and the opaque-reference and PSN-revalidation model the tool stands on has nothing to stand on without the message. The name form is the console's, by contract — one capability, one route per face ([command-parity.md](command-parity.md)). |
 | `gestalt` | command | ppc | unnoticed | **The largest single unnoticed gap.** One verb answers CPU, memory, OS, network and hardware for the whole machine; the PowerPC guest has served it throughout and no host face can ask. |
 | `help` | command | both | deliberate | Already sent, once per connection, to build the capability report — its answer *is* `now_session_capabilities` ([agent-integration.md](agent-integration.md)). A second route would be the same answer twice. |
@@ -382,21 +396,99 @@ argued for their absence; they are absent because the question never came
 up. That is exactly the shape of the `process.list` drift
 `command-parity.md` was written for, one layer out.
 
-### The census probes are one row until they are fourteen
+### The census probes were one row and are now fourteen
 
 `contract-coverage.md`'s hard-learned rule is that a row which is a
 subsystem gets expanded, because `census.request` as a single tick hid the
-fact that NOW-68K could not report its own CPU. The same rule applies here
-and lands differently: **no host face reaches the census at all**, so
-fourteen rows would carry no information a single row does not.
+fact that NOW-68K could not report its own CPU. While no host face reached
+the census, fourteen rows here would have carried nothing a single row did
+not — so the test encoded the expansion as a **condition** rather than a
+judgement, adding the 14 probes to the universe it demands rows for the
+moment any projection exposed `census.request`.
 
-The test encodes that as a condition rather than a judgement. The 14 probes
-enter the universe it demands rows for **the moment any projection requires
-`census.request`** — so whoever lands W1 #2 must declare, probe by probe,
-which of the fourteen an agent can reach. `selectors` and `scsi` are
-`refused` on NOW-68K and `pci` is `absent` on both, so a census projection
-will not reach fourteen everywhere, and a single tick would hide that the
-same way it did before.
+**That fired when `now_hardware_census` landed, and this is the fourteen.**
+They are in the contract's registry order rather than alphabetically, so
+they read beside `contract-coverage.md`'s per-guest table.
+
+Two things about those rows are worth reading before quoting them:
+
+- **Every one is `deliberate` and every one is reachable.** A probe is an
+  ARGUMENT of `now_hardware_census`, not a capability of its own: the probe
+  argument is required, the registry is the guest's, and the row bounds a
+  probe name without enumerating it — so a probe a newer guest grows is
+  reachable the day it ships, with no host release. What each row's Why
+  states is therefore not an absence but the **outcome** an agent gets, per
+  guest, which is the thing a single tick hid.
+- **`Served` says `none` for all fourteen, and that is a fact about the
+  DERIVATION rather than about the guests.** Both guests answer all
+  fourteen. The Served column is derived from the four dispatch greps at the
+  top of this file, which read each guest's message and command tables; the
+  probe tables are neither, and live in `now-guest-ppc/src/census/
+  census_probes.c` and `now-guest-68k/src/census/census68.c`. So `none`
+  here means "no dispatch table names it", and the per-guest truth is
+  `contract-coverage.md`'s census section, which derives from those probe
+  tables and is pinned by `CensusProbeRegistryTests`. Read the two together;
+  neither column is wrong about its own question.
+
+### One row hands its caller the cursor
+
+`now_hardware_census` is the second paginated capability and it makes the
+opposite choice from the first, deliberately.
+
+| | `now_capture_screen` | `now_hardware_census` |
+|---|---|---|
+| paging | hidden; the row fetches every page | exposed; one call is one page |
+| why | the answer is one picture, and a half-fetched PNG is nothing | the page boundary is **semantic** — the contract paces `scsi` at ONE target per page so a wedged target stalls one frame turnaround |
+
+Looping until `more` went false would collapse that pacing back into one
+unbounded call and hand a caller an answer it had no way to stop. So
+`hasMore` and `nextCursor` are required fields of the answer, and a page
+carrying more than the contract's 16 rows is **refused rather than
+trimmed** — a short page under a `hasMore` that says it is whole is the one
+failure a paginated answer must not be able to have.
+
+### Two levels of outcome, and neither is the other
+
+The census is the first capability where "it worked" has two answers, and
+`x-census` exists to keep them apart:
+
+| Level | Vocabulary | Says |
+|---|---|---|
+| the CALL | `completed` / `refused` / `unavailable` | whether a Macintosh answered at all |
+| the PROBE, inside a completed call | `present` / `absent` / `partial` / `refused` / `failed` / `not-attempted` | what that machine found when it looked |
+
+A probe answering `refused` — NOW-68K's `selectors` and `scsi` — is a
+**completed call** whose report says the machine declined to look. A probe
+answering `absent` — `pci` on both guests — is a **finding about the
+hardware**, rendered as content with zero rows. Flattening either into the
+call's `refused` arm would tell a caller nothing reached the machine, which
+is both false and unfixable by retrying; flattening `absent` into an empty
+success would claim the host had looked and found nothing.
+
+The same discipline covers what the guest did not say: `total`, `note` and
+`nextCursor` are absent keys rather than `0`, `""` and `0`. A zero the
+guest never sent is a claim about somebody's Macintosh.
+
+### `gestalt` and the census answer adjacent questions by different routes
+
+`gestalt` (below, and the largest single unnoticed gap) overlaps the
+census's `identity` and `selectors` probes: both reach Gestalt selectors,
+and on the PowerPC guest both can answer CPU, memory and OS. They are not
+unified and should not be — the overlap is **two capabilities answering
+adjacent questions**, which is fine, where composing one out of the other
+would not be. Three concrete differences an integrator should see rather
+than reconcile:
+
+| | the census | `gestalt` |
+|---|---|---|
+| plane | message family, both guests | command, PPC only ([contract-coverage.md](contract-coverage.md): the verb answers `unknown-command` on NOW-68K) |
+| shape | paged, per-probe outcome, raw beside decoded | one command result |
+| what absence means | a typed probe outcome the caller reads | the verb's own refusal |
+
+The census's `selectors` probe **is** the documented Gestalt walk on the
+machines that can afford it, and says so in its own outcome where it cannot
+— which is why a host that answered `gestalt` out of a census page, or
+vice versa, would be composing a fact rather than carrying one.
 
 ### Asks the operations section does not mark
 
@@ -431,10 +523,12 @@ real defect in its own first draft — reading the whole section rather than its
 first paragraph collected the two names the explanation mentions *because* they
 are not on the list.
 
-Last derived: 2026-07-30, on `claude/tbt-parity-slice` at the
-eighteen-projection registry — the previous stamp said sixteen and the
-registry already held seventeen, which is what this line being hand-typed
-beside a derived table costs. Integrating `now_reveal_item`,
+Last derived: 2026-07-30, on `claude/census-projection` off
+`claude/tbt-parity-slice`, adding `now_hardware_census` — which is what
+expanded the census into fourteen probe rows. The stamp no longer carries a
+registry count: the previous one said sixteen while the registry held
+seventeen, which is what a hand-typed number beside a derived table costs.
+Its predecessor integrated `now_reveal_item`,
 `now_transfer_cancel`, `now_guest_files_mutate` and
 `now_guest_files_download` — each stamped this line on its own branch, and the
 integration is what the tables actually describe. Re-derive by

@@ -484,14 +484,27 @@ public struct AgentIntegrationLocalClient: Sendable {
                    back for a host that has stopped answering. */
                 timeout = request.captureDepth != nil
                     ? captureReceiveTimeout : readOnlyReceiveTimeout
-            case .census, .bringToFront, .guestFileMutation,
+            case .bringToFront, .guestFileMutation,
                  .transferCancel, .guestLogTail, .machineFacts,
                  .revealItem:
                 /* Bounded reads and small mutations. Each reaches the guest
-                   and back inside its own watchdog: a census page is capped
-                   at 16 rows, a `file.result` is one reply, and a front is a
-                   couple of seconds of the guest yielding. */
+                   and back inside its own watchdog: a `file.result` is one
+                   reply, and a front is a couple of seconds of the guest
+                   yielding. */
                 timeout = readOnlyReceiveTimeout
+            case .census:
+                /* A census PAGE is bounded at 16 rows and the page is not
+                   what costs — the PROBE is. `overview` synthesizes what
+                   every other probe read, `selectors` walks the documented
+                   Gestalt table, and `scsi` waits on a bus. Sixteen rows of
+                   that off a 68030 is a measurement, not a bounded read, and
+                   the two-second window would time out locally on a call
+                   that was going to succeed. The capture window is the one
+                   already sized for "the guest is busy for seconds", and it
+                   outlives the host adapter's own 30 s page bound so the
+                   caller reads a typed answer rather than a transport
+                   error. */
+                timeout = captureReceiveTimeout
             case .softwareInventory:
                 /* The `apps` domain sweeps the startup volume's catalog on
                    the first page, which is the cost `catsearch` was written

@@ -10,6 +10,12 @@ public enum HostProjectionCatalog {
     public static let projections: [any HostProjection.Type] = [
         SessionHealthProjection.self,
         SessionCapabilitiesProjection.self,
+        /* First of the observations, because it is the machine's standing
+           facts: what the hardware IS changes on a timescale of screwdrivers,
+           where the process table and the screen change while you read them.
+           A person opening the app meets the Census page in the same
+           position. */
+        HardwareCensusProjection.self,
         ListProcessesProjection.self,
         /* With the observations rather than beside the Files family: it
            reads what the guest wrote about itself, changes nothing, and

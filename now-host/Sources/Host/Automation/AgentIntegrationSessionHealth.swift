@@ -29,6 +29,9 @@ final class AgentIntegrationHostAdapter {
     private lazy var logTailControl = AgentIntegrationGuestLogTail(
         listener: listener,
         currentSessionID: { [unowned self] in connectedSessionID() })
+    private lazy var censusControl = AgentIntegrationCensus(
+        listener: listener,
+        currentSessionID: { [unowned self] in connectedSessionID() })
     private lazy var capabilityLedger = AgentIntegrationCapabilityLedger(
         listener: listener,
         currentSessionID: { [unowned self] in connectedSessionID() })
@@ -151,6 +154,14 @@ final class AgentIntegrationHostAdapter {
         -> AgentIntegrationFrontResult {
         await processControl.bringToFront(
             reference: reference, requestedAt: requestedAt)
+    }
+
+    /// One page of one hardware-census probe. The probe's own outcome is a
+    /// fact about the machine and lives inside a completed result;
+    /// `AgentIntegrationCensus` carries why that is not this call's outcome.
+    func census(probe: String, cursor: Int?) async
+        -> AgentIntegrationCensusResult {
+        await censusControl.page(probe: probe, cursor: cursor)
     }
 
     /// Show one item in the connected machine's own Finder. A completed
