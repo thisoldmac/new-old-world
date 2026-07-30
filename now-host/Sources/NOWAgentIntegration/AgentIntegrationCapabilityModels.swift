@@ -191,6 +191,12 @@ public enum AgentIntegrationCapabilityNames {
     /// `capture.request` is what the host sends and both guests dispatch.
     public static let captureRequest = "capture.request"
     public static let launchCommand = "launch"
+    /// The whole-volume application sweep, measured on the machine. A
+    /// COMMAND and not a message family, which is the whole reason
+    /// `CatalogSearchProjection` needs no `familyPolicy` row: a command's
+    /// availability comes off `help`, free, so nothing has to decide
+    /// whether settling it is worth what it costs.
+    public static let catsearchCommand = "catsearch"
 
     /// Every name above, as a set.
     ///
@@ -208,7 +214,7 @@ public enum AgentIntegrationCapabilityNames {
     /// set still fails somewhere.
     public static let all: Set<String> = [
         processList, processQuit, processFront, softwareList, fileList,
-        filePut, captureRequest, launchCommand,
+        filePut, captureRequest, launchCommand, catsearchCommand,
     ]
 
     /// Refusal codes that mean "this guest does not implement that", as

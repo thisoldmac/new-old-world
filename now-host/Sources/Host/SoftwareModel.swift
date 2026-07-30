@@ -76,6 +76,11 @@ final class SoftwareModel: ObservableObject, GuestScopedModel {
     /// What the last launch said — "launched SimpleText", or the
     /// guest's refusal, verbatim.
     @Published private(set) var lastAction: String?
+    /// The last sweep-cost measurement, in the guest's own rows. Not parked
+    /// with the inventory: it is a measurement of one moment on one disk, and
+    /// showing yesterday's timings beside today's Refresh button would read
+    /// as a current fact about the machine.
+    @Published private(set) var sweepCost: [SweepRow]?
 
     private let listener: GuestListener
     /// Guards against a slow page landing after a refresh or a domain
@@ -130,6 +135,7 @@ final class SoftwareModel: ObservableObject, GuestScopedModel {
             lastError = nil
             note = nil
             lastAction = nil
+            sweepCost = nil
             loadToken += 1
             isLoading = false
         }
@@ -157,6 +163,9 @@ final class SoftwareModel: ObservableObject, GuestScopedModel {
         actionInFlight = false
         lastError = nil
         lastAction = nil
+        // A timing measured on the machine we just left is not a fact about
+        // the one we just arrived at.
+        sweepCost = nil
         isRestoring = true
         domain = snapshot.domain
         isRestoring = false
@@ -219,6 +228,48 @@ final class SoftwareModel: ObservableObject, GuestScopedModel {
                 self.lastError = result.error?.message ?? "The Mac declined"
             }
         }
+    }
+
+    /// Measure what producing the Applications inventory costs this Mac —
+    /// the guest's `catsearch` probe.
+    ///
+    /// Every other action on this page SPENDS the inventory; this one asks
+    /// what it costs to build, which is the question a person has when the
+    /// Applications sweep feels slow. It is the expensive one on the page:
+    /// the guest gives up after 20 s per pass and runs two, so the button
+    /// stays disabled while it runs and the rows come back in the guest's own
+    /// words — including whether the volume supports CatSearch at all, which
+    /// is the case where the answer is narrower rather than shorter.
+    ///
+    /// No local timeout here, unlike the agent path: a person watching a
+    /// spinner can see that nothing has come back, which is the same reason
+    /// the console's watchdog is generous.
+    func measureCatalogSearch() {
+        guard canBrowse, !actionInFlight else { return }
+        actionInFlight = true
+        lastError = nil
+        lastAction = nil
+        sweepCost = nil
+        listener.runCommand("catsearch") { [weak self] result in
+            guard let self else { return }
+            self.actionInFlight = false
+            guard result.ok, let rows = result.output?["catsearch"] else {
+                self.lastError = result.error?.message
+                    ?? "The Mac could not measure the sweep"
+                return
+            }
+            self.sweepCost = rows.map {
+                SweepRow(label: $0.first ?? "",
+                         value: $0.count > 1 ? $0[1] : "")
+            }
+        }
+    }
+
+    /// One row of the last sweep measurement, as the guest wrote it.
+    struct SweepRow: Identifiable {
+        let label: String
+        let value: String
+        var id: String { label }
     }
 
     /// One page, chaining into the next while `more` holds. Cursor 1 is

@@ -101,6 +101,7 @@ The test compares both against the code literally.
 | `now_session_capabilities` | — | — | none; `help` plus bounded probes, described in agent-integration.md |
 | `now_list_processes` | `process.list` | `process.list` | message family |
 | `now_capture_screen` | `capture.request` | `capture.request` | message family |
+| `now_catalog_search` | `catsearch` | `catsearch` | command |
 | `now_launch_software` | `software.list`, `launch` | `launch` | message family plus command |
 | `now_bring_to_front` | `process.list`, `process.front` | `process.front` | message family |
 | `now_request_quit` | `process.list`, `process.quit` | `process.quit` | message family |
@@ -260,7 +261,6 @@ to exist:
 | `stream.start` | message | ppc | unnoticed | A stream is a continuous host-owned bracket rather than one bounded call, so it may well not belong on a tool surface at all — but **that is a hypothesis, not a decision**: nothing argues it, and the host app's live view owning it today is a fact about what exists rather than a reason. |
 | `stream.stop` | message | ppc | unnoticed | The other end of the same bracket; see `stream.start`. |
 | `cancel` | command | 68k | planned | W1 #8. The 68K guest's verb spelling of transfer cancel. |
-| `catsearch` | command | ppc | unnoticed | Catalog search across a volume. Served on the PowerPC guest, reachable by nothing. |
 | `census` | command | both | planned | W1 #2 — the verb spelling of `census.request`. |
 | `front` | command | both | deliberate | `now_bring_to_front` needs the `process.front` **family**, not this command, for the reason `quit` gives below: the command takes a NAME, and the opaque-reference and PSN-revalidation model the tool stands on has nothing to stand on without the message. The name form is the console's, by contract — one capability, one route per face ([command-parity.md](command-parity.md)). |
 | `gestalt` | command | ppc | unnoticed | **The largest single unnoticed gap.** One verb answers CPU, memory, OS, network and hardware for the whole machine; the PowerPC guest has served it throughout and no host face can ask. |
@@ -281,7 +281,7 @@ to exist:
 ### The unnoticed rows, named together
 
 Because they are the point: `stream.start`, `stream.stop`,
-`stream.refresh`, `catsearch`, `gestalt`, `putstat`, `reveal`, `shotdiag`,
+`stream.refresh`, `gestalt`, `putstat`, `reveal`, `shotdiag`,
 `vprobe`.
 
 Gated against the table's own `unnoticed` column, so closing one of these is

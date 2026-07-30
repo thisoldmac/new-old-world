@@ -12,6 +12,9 @@ public enum HostProjectionCatalog {
         SessionCapabilitiesProjection.self,
         ListProcessesProjection.self,
         CaptureScreenProjection.self,
+        /* Beside capture on purpose: the two costly MEASUREMENTS of the
+           machine sit together, before the actions. */
+        CatalogSearchProjection.self,
         LaunchSoftwareProjection.self,
         BringToFrontProjection.self,
         RequestQuitProjection.self,

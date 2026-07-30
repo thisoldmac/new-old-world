@@ -53,6 +53,11 @@ public protocol AgentIntegrationClient: Sendable {
         -> AgentIntegrationGuestFileListResult
     func statGuestFile(path: String) async
         -> AgentIntegrationGuestFileStatResult
+    /// Measure what a whole-volume application search costs on the connected
+    /// machine. No parameters, because the guest's `catsearch` takes none:
+    /// the volume is the guest's own startup volume and the sweep's shape is
+    /// the guest's. See `CatalogSearchProjection` for the cost and the scope.
+    func catalogSearch() async -> AgentIntegrationGuestRowReportResult
     func beginGuestFileUpload(
         _ upload: AgentIntegrationGuestFileUploadBegin
     ) async -> AgentIntegrationGuestFileUploadStageResult
@@ -116,6 +121,13 @@ extension AgentIntegrationClient {
     /// learning a new lane the day one lands.
     public func bringToFront(reference: String) async
         -> AgentIntegrationFrontResult {
+        .hostUnavailable
+    }
+
+    /// Defaulted with the trio and `bringToFront`, and arriving in the same
+    /// edit as the requirement above — the rule at the top of this file.
+    public func catalogSearch() async
+        -> AgentIntegrationGuestRowReportResult {
         .hostUnavailable
     }
 

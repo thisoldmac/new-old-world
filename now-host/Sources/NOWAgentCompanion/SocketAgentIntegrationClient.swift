@@ -143,6 +143,17 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
+    func catalogSearch() async -> AgentIntegrationGuestRowReportResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.catalogSearch()
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
     func beginGuestFileUpload(
         _ upload: AgentIntegrationGuestFileUploadBegin
     ) async -> AgentIntegrationGuestFileUploadStageResult {

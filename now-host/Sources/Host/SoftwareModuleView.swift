@@ -270,6 +270,9 @@ struct SoftwareModuleView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            if let rows = model.sweepCost {
+                sweepCostRows(rows)
+            }
             if let note = model.note {
                 // The listing's honest edge (a truncated inventory,
                 // an unknown domain) in the guest's own words.
@@ -285,6 +288,21 @@ struct SoftwareModuleView: View {
                 }
                 .disabled(!model.canBrowse || model.isLoading)
 
+                // What building the Applications list COSTS this Mac, as
+                // opposed to what is in it. Expensive on purpose — the
+                // guest sweeps its whole catalog twice — so it is a
+                // deliberate click rather than part of Refresh.
+                Button {
+                    model.measureCatalogSearch()
+                } label: {
+                    Label("Measure Sweep Cost", systemImage: "stopwatch")
+                }
+                .disabled(!model.canBrowse || model.isLoading
+                          || model.actionInFlight)
+                .help("Times a whole-disk search for applications on the "
+                      + "connected Mac — cold, then warm. Takes seconds, "
+                      + "and up to 20 seconds per pass on a slow disk.")
+
                 if model.isLoading {
                     ProgressView().controlSize(.small)
                 }
@@ -294,6 +312,27 @@ struct SoftwareModuleView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+            }
+        }
+    }
+
+    /// The last sweep measurement, verbatim. Label and value as the Mac
+    /// wrote them and in its order — including the rows that say the volume
+    /// has no CatSearch, or that the sweep gave up before finishing, which
+    /// are the cases where the answer is narrower rather than shorter.
+    private func sweepCostRows(
+        _ rows: [SoftwareModel.SweepRow]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(rows) { row in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(row.label)
+                        .frame(width: 96, alignment: .leading)
+                        .foregroundStyle(.secondary)
+                    Text(row.value)
+                        .textSelection(.enabled)
+                }
+                .font(.system(.caption, design: .monospaced))
             }
         }
     }

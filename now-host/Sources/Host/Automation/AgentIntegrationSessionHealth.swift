@@ -25,6 +25,9 @@ final class AgentIntegrationHostAdapter {
     private lazy var captureControl = AgentIntegrationCaptureControl(
         listener: listener,
         currentSessionID: { [unowned self] in connectedSessionID() })
+    private lazy var catalogSearch = AgentIntegrationCatalogSearch(
+        listener: listener,
+        currentSessionID: { [unowned self] in connectedSessionID() })
     private lazy var artifactTransfer = AgentIntegrationArtifactTransfer(
         listener: listener,
         approvals: artifactApprovals,
@@ -137,6 +140,14 @@ final class AgentIntegrationHostAdapter {
                         observedAt: Date = Date()) async
         -> AgentIntegrationLaunchSoftwareResult {
         await softwareLaunch.launch(selection, observedAt: observedAt)
+    }
+
+    /// What a whole-volume application sweep costs on the connected machine.
+    /// The bound on the wait, and why a second one is refused rather than
+    /// queued, live in `AgentIntegrationCatalogSearch`.
+    func measureCatalogSearch(observedAt: Date = Date()) async
+        -> AgentIntegrationGuestRowReportResult {
+        await catalogSearch.measure(observedAt: observedAt)
     }
 
     /// One picture of the connected machine's screen, staged for the pages
