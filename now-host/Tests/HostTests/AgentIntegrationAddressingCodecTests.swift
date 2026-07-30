@@ -53,6 +53,33 @@ final class AgentIntegrationAddressingCodecTests: XCTestCase {
         XCTAssertEqual(decoded.operation, .listProcesses)
     }
 
+    /// Absent and empty are different claims. Absent means "the machine
+    /// this host is driving"; empty means a caller addressed nothing while
+    /// saying it addressed something, and the adapter must never see it as
+    /// a third state that is neither nil nor an id.
+    ///
+    /// The companion validates this too, but the companion is not the trust
+    /// boundary — any process of this uid can write the socket directly, so
+    /// the codec is the layer every caller actually goes through.
+    func testARequestNamingAnEmptyMachineIsRejected() throws {
+        let raw = try JSONSerialization.data(withJSONObject: [
+            "version": AgentIntegrationLocalProtocol.version,
+            "requestID": UUID().uuidString,
+            "operation": "list_processes",
+            "guestSelector": "",
+        ])
+
+        XCTAssertThrowsError(
+            try AgentIntegrationLocalCodec.decodeRequest(raw)
+        ) { error in
+            guard case AgentIntegrationLocalTransportError
+                .invalidMessage(let reason) = error else {
+                return XCTFail("expected invalidMessage, got \(error)")
+            }
+            XCTAssertEqual(reason, "Local request names an empty machine")
+        }
+    }
+
     /// A session id is the other addressing form, and it goes through the
     /// same field: the codec must not develop an opinion about which one.
     func testCompanionAuthoredRequestMayNameASession() throws {

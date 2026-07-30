@@ -835,7 +835,20 @@ public enum AgentIntegrationLocalCodec {
            caller actually sent it, so an absent selector stays absent
            rather than becoming a required field. */
         var operationKeys = expectedKeys
-        if request.guestSelector != nil {
+        if let selector = request.guestSelector {
+            /* Absent means "the machine this host is driving", which is a
+               real answer. Empty means a caller addressed nothing while
+               claiming to address something, and it must not reach the
+               adapter as a third state neither nil nor an id.
+
+               Validated HERE and not only in the companion, because the
+               companion is not the trust boundary: any process of this uid
+               can write this socket directly, and the codec is what every
+               one of them goes through. */
+            guard !selector.isEmpty else {
+                throw AgentIntegrationLocalTransportError.invalidMessage(
+                    "Local request names an empty machine")
+            }
             operationKeys.insert("guestSelector")
         }
         guard Set(object.keys) == operationKeys else {
