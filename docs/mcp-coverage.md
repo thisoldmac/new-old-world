@@ -105,6 +105,9 @@ The test compares both against the code literally.
 | `now_guest_log_tail` | `tail` | `tail` | command |
 | `now_capture_screen` | `capture.request` | `capture.request` | message family |
 | `now_catalog_search` | `catsearch` | `catsearch` | command |
+| `now_framebuffer_probe` | `vprobe` | `vprobe` | command |
+| `now_capture_diagnostics` | `shotdiag` | `shotdiag` | command |
+| `now_transfer_diagnostics` | `putstat` | `putstat` | command |
 | `now_launch_software` | `software.list`, `launch` | `launch` | message family plus command |
 | `now_reveal_item` | `reveal` | `reveal` | command |
 | `now_bring_to_front` | `process.list`, `process.front` | `process.front` | message family |
@@ -319,6 +322,68 @@ verb (`x-line`: "the first integer on the line is the count"). Widening the
 args map to carry typed values is a shared-file, both-guests change; it is
 recorded here and in the row's source, not made from inside one capability.
 
+### One capability is three rows, because availability is per row
+
+The diagnostics — `vprobe`, `shotdiag`, `putstat` — are one item in the plan
+(P1 #13), one local operation on the wire, and **three registry rows**. That
+is the one place in this inventory where a single guest-facing lane deliberately
+becomes three tools, so here is the reason.
+
+They are not served by the same guests:
+
+| verb | measures | Served |
+|---|---|:--:|
+| `vprobe` | framebuffer read cost by access method | both |
+| `shotdiag` | where a staged capture read from | 68k |
+| `putstat` | where a received file spent its time | ppc |
+
+`requires` is a **conjunction**, and a row is the unit the capability ledger
+answers for. So one row was not available:
+
+| One row requiring… | What the ledger would report | Why it is wrong |
+|---|---|---|
+| all three | `unavailable` against every guest, forever | no guest serves all three, and the sentence reads as a fact about the Macintosh |
+| `vprobe` only, exposing `vprobe` | available on both guests | the tool would still ANSWER the other two while this document went on calling them unreached — a lie the derived gap table cannot see |
+| `vprobe` only, exposing all three | rejected by the seam | `exposes ⊆ requires` is enforced, and rightly |
+
+**The census's two-levels-of-outcome shape does not rescue it**, and the reason
+is worth keeping because it is easy to reach for. That shape works because a
+census probe is an **argument**: it is in no command table, so the ledger could
+not resolve it even if a row asked. These three are first-class commands in the
+guest's own `help` table, which the ledger resolves one at a time — so wearing
+the census's shape here would take three capabilities the ledger can answer for
+individually and collapse them into one it must be wrong about.
+
+Three rows, each requiring and exposing exactly its own command, makes each
+exactly as available as the connected machine makes it — the same derivation
+that already makes `gestalt`, `tail`, `catsearch` and `reveal` PowerPC-only
+without anything on this side asking which guest answered. A caller learns
+which of the three its machine answers the same two ways it learns anything
+else here: `now_session_capabilities` before calling, and the guest's own
+`unknown-command` refusal on calling anyway.
+
+This is the same wall the `put` row below reports from the other side, and
+these rows do **not** close it: a genuinely disjunctive requirement is still
+unexpressible. What the trio shows is that the wall only bites when one
+capability must span the alternatives. Three separate capabilities that happen
+to share a lane do not need a disjunction at all.
+
+### One row's result must not be read as another's
+
+`now_framebuffer_probe` measures the framebuffer read path. **A failing row in
+its answer says nothing about whether screen capture works**, and this is
+recorded rather than left to be rediscovered: a `vprobe` run on the PowerBook
+1400c reported `CopyBits failed`, and that failure does not reproduce through
+`capture.request` (plan 005, Metal). Different paths.
+
+Both faces carry the distinction rather than assuming a reader will infer it —
+the tool description says it in as many words, and the app's card says it
+before the probe is run rather than as a footnote under a number that has
+already misled someone. Neither side parses the guest's rows to say it: which
+row failed and what that means is the machine's account, and a host that
+turned "CopyBits failed" into a typed field would be answering for the
+machine and would go stale the first time the guest reworded it.
+
 ## Every gap, with its disposition
 
 The complete list of host-askable guest capability that no projection
@@ -372,18 +437,15 @@ to exist:
 | `ls` | command | both | deliberate | The console spelling of `file.list`, which is projected. One capability, one route — [command-parity.md](command-parity.md) ("two ways to name a target is not two faces"). |
 | `ps` | command | both | deliberate | The console spelling of `process.list`, which is projected — same rule as `ls`, [command-parity.md](command-parity.md). |
 | `put` | command | 68k | planned | W1 #4, and the half of it that did not land. `now_guest_files_download` closed the `file.get` message; this verb is the same capability by the other mechanism — guest-initiated, a leaf name inside the same share root `ls` lists (`now68k_desktop_folder`, "ONE root, both ways"). What blocks it is host machinery rather than the guest or authority: a row's `requires` is a **conjunction**, so a row cannot say "the family OR the verb". Requiring both switches the tool off against every guest; requiring neither overstates; and routing to the verb behind a row that requires the family would make the tool work exactly where the capability report says it cannot. A disjunctive requirement in `HostProjectionCatalog`'s contract is what closes this, plus the reported bound that the verb cannot express a subfolder path. |
-| `putstat` | command | ppc | unnoticed | Transfer diagnostics. The host reads them internally to size a transfer; whether an agent should be able to is undecided. |
 | `quit` | command | both | deliberate | `now_request_quit` needs the `process.quit` **family**, not this command: the opaque-reference and PSN-revalidation model has nothing to stand on without it, and is not relaxed to make a tool work ([agent-integration.md](agent-integration.md)). |
 | `screenshot` | command | both | deliberate | The console spelling of `capture.request`, which is projected as `now_capture_screen`. One capability, one route — [command-parity.md](command-parity.md) ("two ways to name a target is not two faces"), the same rule that keeps `ls` and `ps` off this surface. |
-| `shotdiag` | command | 68k | unnoticed | Where a staged capture read from. It found the 24-bit addressing defect on the 180c and is reachable from no host face. |
 | `sw` | command | both | planned | W1 #3 — the installed-software listing, and now the `software.list` message row above it. The two used to disagree, one reading COVERED and the other unreachable; `exposes` is what reconciled them. |
 | `vers` | command | ppc | deliberate | Build identity. `hello` already carries name, version and OS, and `now_session_health` reports all three ([agent-integration.md](agent-integration.md)). |
-| `vprobe` | command | both | unnoticed | Framebuffer read cost. A ~12 s measurement on the guest, which is a reason to gate it, not a reason it is absent — nothing has decided either way. |
 
 ### The unnoticed rows, named together
 
 Because they are the point: `stream.start`, `stream.stop`,
-`stream.refresh`, `putstat`, `shotdiag`, `vprobe`.
+`stream.refresh`.
 
 Gated against the table's own `unnoticed` column, so closing one of these is
 a two-place edit and the test names the second place. `capture.cancel` used to
@@ -391,7 +453,15 @@ be on the list and left it by being **decided** rather than by being built —
 see its row; that is the other way a name leaves. `gestalt` left it the third
 way, by being **built**: it was the largest of them, and
 `now_machine_facts` now exposes it, so its gap row is gone rather than
-re-dispositioned.
+re-dispositioned. The three diagnostics left the same way and all at once —
+the framebuffer probe, the capture-provenance verb and the transfer counters
+are now three rows of their own, for the reason the section below gives.
+
+**What is left on that list is one subsystem, and it is the one that was
+always going to be hard.** The streaming bracket is not an oversight of the
+same kind as a verb nobody projected: it is a continuous host-owned bracket
+rather than a bounded call, which is why it is still undecided rather than
+merely unbuilt.
 
 Every one of them is served by a guest right now. Nothing in this repository
 argued for their absence; they are absent because the question never came
@@ -536,7 +606,12 @@ real defect in its own first draft — reading the whole section rather than its
 first paragraph collected the two names the explanation mentions *because* they
 are not on the list.
 
-Last derived: 2026-07-30, on `claude/machine-facts` off
+Last derived: 2026-07-30, on `claude/diagnostics-projection` off
+`claude/tbt-parity-slice`, adding `now_framebuffer_probe`,
+`now_capture_diagnostics` and `now_transfer_diagnostics` — which emptied the
+unnoticed list of everything but the streaming bracket, and is the first row
+set where one plan item and one wire operation became three registry rows on
+purpose. Before that, on `claude/machine-facts` off
 `claude/tbt-parity-slice`, adding `now_machine_facts` — which removed the
 largest name from the unnoticed list by building it. Before that, on
 `claude/census-projection` off
