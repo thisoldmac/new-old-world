@@ -168,6 +168,44 @@ The last is the worst: every new capability renames a heading in
 `docs/mcp-coverage.md` and a string in a test. Worth fixing before a wide
 phase, not during one.
 
+### An integer command argument cannot ride `CommandRequest.args`
+
+`CommandRequest.args` is `[String: String]`, so every typed argument
+reaches the guest quoted. A guest reading an integer argument uses
+`now_json_find_int`, which is `strtol` on the byte after the colon —
+`strtol("\"40\"")` is 0. The failure is silent in the worst way: `tail`'s
+`run_tail` clamps 0 up to 1, so a caller asking for forty log lines gets
+**one**, with `ok:true` and nothing anywhere saying so.
+
+Nothing had met this edge because `launch`, `reveal`, `help` and the census
+all take strings; `tail` (P1 #9) is the first host-side caller whose typed
+argument is a number. It sends the count on `line` instead, which the
+contract declares for that verb (`x-commands.tail.x-line`) and which
+`run_tail` reaches precisely when no typed `lines` is present, with a test
+that fails if somebody tidies it back into `args`.
+
+**Unfixed, and it will bite the next numeric argument.** The fix is a typed
+args value on both sides of the wire, which is a `contract/asyncapi.yaml` +
+both-guests change and belongs to one owning agent, not to whichever
+capability trips over it. Until then: an integer argument goes on the line,
+and a reviewer seeing a number in an `args` dictionary should ask what the
+guest parses it with.
+
+### The guest log is readable by an agent and has not been read on metal
+
+`now_guest_log_tail` (P1 #9) is **tested, not metal-verified**. Two things
+about it are worth knowing before it is trusted on a real machine:
+
+- The audit line it writes under `app` shares the state of every other
+  agent-facing log line — see *The agent audit line has never been read on
+  a real run* below.
+- It is the first row that returns text the machine wrote, so it is the
+  first that can disclose a name from **outside** `guestRoot`: the guest's
+  own `get`, `put` and `files` lines quote the items they handled. That is
+  argued and recorded in [mcp-coverage.md](mcp-coverage.md) rather than
+  accidental, but it is a widening over the Files family's authority and a
+  reviewer should agree with it explicitly rather than inherit it.
+
 ### A schema rejection surfaces as the wrong error
 
 `AgentIntegrationLocalServer` replies to a `decodeRequest` failure with
