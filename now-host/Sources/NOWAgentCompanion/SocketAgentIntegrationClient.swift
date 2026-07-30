@@ -94,6 +94,33 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
+    func revealItem(target: String) async
+        -> AgentIntegrationGuestRowReportResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.revealItem(target: target)
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
+    func cancelTransfer() async
+        -> AgentIntegrationTransferCancelResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.cancelTransfer()
+        } catch {
+            /* "No host" and never `nothingToCancel`: a socket that could not
+               be reached has said nothing about whether a Macintosh is
+               moving a file. */
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
     func transferApprovedArtifact(receipt: String) async
         -> AgentIntegrationArtifactTransferResult {
         guard let client else {
@@ -138,6 +165,18 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
         do {
             return try await client.statGuestFile(path: path)
+        } catch {
+            return .hostUnavailable(unavailable(for: error))
+        }
+    }
+
+    func downloadGuestFile(path: String) async
+        -> AgentIntegrationGuestFileDownloadResult {
+        guard let client else {
+            return .hostUnavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.downloadGuestFile(path: path)
         } catch {
             return .hostUnavailable(unavailable(for: error))
         }
@@ -189,6 +228,48 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         do {
             return try await client.commitGuestFileUpload(
                 uploadID: uploadID)
+        } catch {
+            return .hostUnavailable(unavailable(for: error))
+        }
+    }
+
+    /// The one place the four intentions become four local requests.
+    ///
+    /// The wire shapes differ per intention (P1a's `guestFileMutation`
+    /// branch), the projection holds one operation, and this is the seam
+    /// between them. The two `preconditionFailure`s cannot fire: only
+    /// `AgentIntegrationGuestFileMutationRequest`'s failable initialisers can
+    /// build one of these, and they refuse a move with no destination and a
+    /// restore with no trashed name. They are stated rather than defaulted
+    /// for the reason the local client's own branch states its: a substituted
+    /// value here would send a Macintosh a request nobody wrote.
+    func mutateGuestFile(
+        _ mutation: AgentIntegrationGuestFileMutationRequest
+    ) async -> AgentIntegrationGuestFileMutationResult {
+        guard let client else {
+            return .hostUnavailable(unavailable(for: startupError))
+        }
+        do {
+            switch mutation.mutation {
+            case .move:
+                guard let toPath = mutation.destinationPath else {
+                    preconditionFailure("A move names where it is going")
+                }
+                return try await client.moveGuestFile(
+                    path: mutation.path, toPath: toPath)
+            case .trash:
+                return try await client.trashGuestFile(path: mutation.path)
+            case .restore:
+                guard let trashedAs = mutation.trashedAs else {
+                    preconditionFailure(
+                        "A restore names the item's name in the Trash")
+                }
+                return try await client.restoreGuestFile(
+                    trashedAs: trashedAs, toPath: mutation.path)
+            case .mkdir:
+                return try await client.makeGuestDirectory(
+                    path: mutation.path)
+            }
         } catch {
             return .hostUnavailable(unavailable(for: error))
         }

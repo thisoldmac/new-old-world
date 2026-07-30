@@ -10,7 +10,16 @@ enum GuestFileCommandKind: String, Equatable, Sendable {
     case put
     case mkdir
     case move
+    /// The unlink the V0.5 roadmap named, and the one command in this list
+    /// that is not coming: removal on this surface means `trash`, which is
+    /// reversible, so `delete` stays deferred rather than being implemented
+    /// (docs/files.md, "Delete means the Trash, not unlink").
     case delete
+    /// To the Trash and back out of it. Two kinds and not one, because the
+    /// receipts read differently: a trash reports the name the item landed
+    /// under, and a restore consumes it.
+    case trash
+    case restore
     case deployTree
     case prune
 }
@@ -139,6 +148,22 @@ struct GuestFileListingSnapshot: Equatable, Sendable {
     let nextCursor: Int?
     let rootLabel: String?
     let observedAt: Date
+}
+
+/// What a completed download left on this Mac.
+///
+/// `hostPath` is present only on success, and that is load-bearing: naming a
+/// path for a transfer that did not finish is how a caller ends up opening a
+/// partial file. `crc32` absent means the guest computed none — UNCHECKED,
+/// never "correct".
+struct GuestFileDownloadLanding: Equatable, Sendable {
+    let guestPath: String
+    let hostPath: String
+    let bytes: Int
+    let container: String
+    let crc32: Int?
+    let resumeToken: String?
+    let elapsedMs: Int
 }
 
 struct GuestFileUploadBeginRequest: Equatable, Sendable {

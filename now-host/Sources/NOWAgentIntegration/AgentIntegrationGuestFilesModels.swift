@@ -2,6 +2,12 @@ import Foundation
 
 public enum AgentIntegrationGuestFilePolicy {
     public static let maximumPathScalars = 223
+    /// One HFS name. It bounds a trashed item's name the way
+    /// `maximumPathScalars` bounds a path — the wire's generic selector
+    /// bound is an order of magnitude looser, and a name that cannot exist
+    /// on that volume is refused here rather than carried to a Macintosh to
+    /// be refused there.
+    public static let maximumSegmentScalars = 31
     public static let maximumObservationReferenceScalars = 45
     public static let maximumUploadChunkBytes = 8 * 1024
     public static let maximumUploadChunkBase64Scalars =

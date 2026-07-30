@@ -19,10 +19,16 @@ final class AgentIntegrationHostAdapter {
         listener: listener,
         commandTimeout: launchCommandTimeout,
         currentSessionID: { [unowned self] in connectedSessionID() })
+    private lazy var revealControl = AgentIntegrationRevealItem(
+        listener: listener,
+        currentSessionID: { [unowned self] in connectedSessionID() })
     private lazy var capabilityLedger = AgentIntegrationCapabilityLedger(
         listener: listener,
         currentSessionID: { [unowned self] in connectedSessionID() })
     private lazy var captureControl = AgentIntegrationCaptureControl(
+        listener: listener,
+        currentSessionID: { [unowned self] in connectedSessionID() })
+    private lazy var transferControl = AgentIntegrationTransferControl(
         listener: listener,
         currentSessionID: { [unowned self] in connectedSessionID() })
     private lazy var catalogSearch = AgentIntegrationCatalogSearch(
@@ -136,6 +142,14 @@ final class AgentIntegrationHostAdapter {
             reference: reference, requestedAt: requestedAt)
     }
 
+    /// Show one item in the connected machine's own Finder. A completed
+    /// answer means the machine was ASKED — the guest's Apple Event requests
+    /// no reply — and `AgentIntegrationRevealItem` carries the whole of why.
+    func revealItem(target: String) async
+        -> AgentIntegrationGuestRowReportResult {
+        await revealControl.reveal(target: target)
+    }
+
     func launchSoftware(_ selection: AgentIntegrationLaunchSelection,
                         observedAt: Date = Date()) async
         -> AgentIntegrationLaunchSoftwareResult {
@@ -164,6 +178,13 @@ final class AgentIntegrationHostAdapter {
 
     func abandonCapture() -> AgentIntegrationCaptureResult {
         captureControl.abandon()
+    }
+
+    /// Ends the file transfer in flight, either direction. The lane's own
+    /// reasoning — and why the answer says `asked` rather than `cancelled` —
+    /// lives in `AgentIntegrationTransferControl`.
+    func cancelTransfer() -> AgentIntegrationTransferCancelResult {
+        transferControl.cancel()
     }
 
     func approveArtifact(

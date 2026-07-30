@@ -186,11 +186,38 @@ public enum AgentIntegrationCapabilityNames {
     public static let processFront = "process.front"
     public static let softwareList = "software.list"
     public static let fileList = "file.list"
+    /// The host-initiated pull — `file.get` → `file.begin` → bulk →
+    /// `file.end`. Named here beside its sibling because it is the one
+    /// requirement of `now_guest_files_download` that decides whether the
+    /// bounded-download model has anything to stand on.
+    public static let fileGet = "file.get"
     public static let filePut = "file.put"
+    /// Ending the transfer in flight, in whichever direction it is going.
+    ///
+    /// The message name, and it is required on **both** guests rather than
+    /// forked by ISA: the 68K guest's `cancel` verb is that machine's CONSOLE face
+    /// on the same body (`wire68.c :: cancel_in_flight`, reached from both
+    /// `handle_file_cancel` and `now68k_wire_cancel_transfer`), not a second
+    /// mechanism a host would have to choose between. One capability, two
+    /// guest answers, and the host sends the message either way.
+    public static let fileCancel = "file.cancel"
+    /// The four catalog mutations, named separately because the contract
+    /// names them separately — and required TOGETHER by the one row that
+    /// projects them: a guest that could trash and not restore would offer a
+    /// deletion nothing can undo, which is not the capability.
+    public static let fileMove = "file.move"
+    public static let fileTrash = "file.trash"
+    public static let fileRestore = "file.restore"
+    public static let fileMkdir = "file.mkdir"
     /// The screen-capture family. A contract message name, not an alias:
     /// `capture.request` is what the host sends and both guests dispatch.
     public static let captureRequest = "capture.request"
     public static let launchCommand = "launch"
+    /// `launch`'s read-only twin: show one item in the guest's own Finder.
+    /// A COMMAND rather than a message family — the ledger resolves it
+    /// against the guest's `help` table, which is what makes the row
+    /// PowerPC-only without anything here naming a guest.
+    public static let revealCommand = "reveal"
     /// The whole-volume application sweep, measured on the machine. A
     /// COMMAND and not a message family, which is the whole reason
     /// `CatalogSearchProjection` needs no `familyPolicy` row: a command's
@@ -214,7 +241,9 @@ public enum AgentIntegrationCapabilityNames {
     /// set still fails somewhere.
     public static let all: Set<String> = [
         processList, processQuit, processFront, softwareList, fileList,
-        filePut, captureRequest, launchCommand, catsearchCommand,
+        fileGet, filePut, fileCancel, fileMove, fileTrash, fileRestore,
+        fileMkdir, captureRequest, launchCommand, revealCommand,
+        catsearchCommand,
     ]
 
     /// Refusal codes that mean "this guest does not implement that", as

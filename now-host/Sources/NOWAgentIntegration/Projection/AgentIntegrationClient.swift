@@ -45,6 +45,12 @@ public protocol AgentIntegrationClient: Sendable {
     /// meaningful only while the process it names lives.
     func bringToFront(reference: String) async
         -> AgentIntegrationFrontResult
+    /// Show one item in the guest's own Finder. The target is a full HFS
+    /// path or an item name; the answer is the guest's own rows, and a
+    /// completed one means the machine was asked rather than that the
+    /// Finder obeyed — `RevealItemProjection` says why in full.
+    func revealItem(target: String) async
+        -> AgentIntegrationGuestRowReportResult
     func transferApprovedArtifact(receipt: String) async
         -> AgentIntegrationArtifactTransferResult
     func guestFilesCapabilities() async
@@ -53,6 +59,12 @@ public protocol AgentIntegrationClient: Sendable {
         -> AgentIntegrationGuestFileListResult
     func statGuestFile(path: String) async
         -> AgentIntegrationGuestFileStatResult
+    /// Pull one bounded file off the machine into host-owned private
+    /// storage. The caller names what to fetch and never where it lands —
+    /// the mirror of the upload lane, which takes bytes and never a host
+    /// path. See `GuestFilesDownloadProjection`.
+    func downloadGuestFile(path: String) async
+        -> AgentIntegrationGuestFileDownloadResult
     /// Measure what a whole-volume application search costs on the connected
     /// machine. No parameters, because the guest's `catsearch` takes none:
     /// the volume is the guest's own startup volume and the sweep's shape is
@@ -66,6 +78,20 @@ public protocol AgentIntegrationClient: Sendable {
     ) async -> AgentIntegrationGuestFileUploadStageResult
     func commitGuestFileUpload(uploadID: UUID) async
         -> AgentIntegrationGuestFileUploadCommitResult
+    /// End the transfer in flight, in whichever direction it is going.
+    ///
+    /// No parameter, and none is available to invent: the lane is one
+    /// transfer wide across BOTH directions (contract, `cancel`), so "the
+    /// transfer" is never ambiguous — and the transfer id the wire message
+    /// carries is this host's own, never a caller's to hold.
+    func cancelTransfer() async -> AgentIntegrationTransferCancelResult
+    /// Move, trash, restore or create one item beneath `guestRoot`. Four
+    /// intentions on one method because they are one lane: they share the
+    /// path space, the one `file.result` code vocabulary and one
+    /// authorization, and `restore` consumes what `trash` answered.
+    func mutateGuestFile(
+        _ mutation: AgentIntegrationGuestFileMutationRequest
+    ) async -> AgentIntegrationGuestFileMutationResult
     /// Ask the paired guest for its screen, and get back the first page of
     /// the result. Three calls rather than one because the answer is an
     /// image: the local request/response cap is 16 KiB, so a screen crosses
@@ -81,6 +107,14 @@ public protocol AgentIntegrationClient: Sendable {
 }
 
 extension AgentIntegrationClient {
+    /// Defaulted with the guest-files lanes below it, and for the same
+    /// reason: a client with no host to ask answers "no host" rather than
+    /// making seven stub conformers in the test tree learn a new lane.
+    public func downloadGuestFile(path: String) async
+        -> AgentIntegrationGuestFileDownloadResult {
+        .hostUnavailable(.host)
+    }
+
     public func beginGuestFileUpload(
         _ upload: AgentIntegrationGuestFileUploadBegin
     ) async -> AgentIntegrationGuestFileUploadStageResult {
@@ -95,6 +129,15 @@ extension AgentIntegrationClient {
 
     public func commitGuestFileUpload(uploadID: UUID) async
         -> AgentIntegrationGuestFileUploadCommitResult {
+        .hostUnavailable(.host)
+    }
+
+    /// Defaulted with the trio above, and in the same edit that declared it:
+    /// a client with no host to ask answers "no host" rather than making
+    /// seven stub files in seven other capabilities' tests learn this lane.
+    public func mutateGuestFile(
+        _ mutation: AgentIntegrationGuestFileMutationRequest
+    ) async -> AgentIntegrationGuestFileMutationResult {
         .hostUnavailable(.host)
     }
 
@@ -124,10 +167,30 @@ extension AgentIntegrationClient {
         .hostUnavailable
     }
 
-    /// Defaulted with the trio and `bringToFront`, and arriving in the same
-    /// edit as the requirement above — the rule at the top of this file.
+    /// Defaulted in the same edit that added the requirement, per the rule
+    /// at the top of this file: seven stub clients across the test tree
+    /// implement only their own lanes, and a requirement without a default
+    /// is seven compile errors in seven files named for other capabilities.
+    public func revealItem(target: String) async
+        -> AgentIntegrationGuestRowReportResult {
+        .hostUnavailable
+    }
+
+    /// Defaulted with the trio, `bringToFront` and `revealItem`, and
+    /// arriving in the same edit as the requirement above — the rule at the
+    /// top of this file.
     public func catalogSearch() async
         -> AgentIntegrationGuestRowReportResult {
+        .hostUnavailable
+    }
+
+    /// Same reason again, and one more that is specific to this lane: "no
+    /// host" is the only truthful answer a client with no host can give
+    /// about a transfer, and `nothingToCancel` — which would also be
+    /// harmless-looking — would assert that a machine nobody asked was
+    /// quiet.
+    public func cancelTransfer() async
+        -> AgentIntegrationTransferCancelResult {
         .hostUnavailable
     }
 

@@ -153,15 +153,50 @@ final class NOWAgentCompanionTests: XCTestCase {
             ($0["name"] as? String)?.hasPrefix(
                 "now_guest_files_") == true
         }
-        XCTAssertEqual(guestFileTools.count, 6)
-        let guestFileReadTools = guestFileTools.filter {
-            !($0["name"] as? String ?? "").contains("_upload_")
+        /* Derived, not counted. This assertion was three literals — 6, 3
+           and 3 — and every capability joining the family had to edit a
+           test named for something else, which is the papercut P0.1
+           collapsed everywhere it found it and missed here. What the
+           check is really for is the ANNOTATIONS below: the read side is
+           read-only-hinted, the upload side is not, and the mutation side
+           is destructive. So the counts are now the registry's own, and the
+           partition is asserted to be a partition rather than to be a
+           particular size. */
+        let registeredGuestFileTools = HostProjectionCatalog.projections
+            .filter {
+                $0.capability.rawValue.hasPrefix("now_guest_files_")
+            }
+        XCTAssertEqual(guestFileTools.count,
+                       registeredGuestFileTools.count)
+        /* Three groups, and the third arrived with the mutation row: "not an
+           upload" stopped meaning "read-only" the moment this family could
+           change the catalog, and a filter that still said so would have
+           asserted `readOnlyHint: true` of a tool that trashes things. */
+        let guestFileMutateTools = guestFileTools.filter {
+            ($0["name"] as? String) == "now_guest_files_mutate"
         }
         let guestFileUploadTools = guestFileTools.filter {
             ($0["name"] as? String ?? "").contains("_upload_")
         }
-        XCTAssertEqual(guestFileReadTools.count, 3)
-        XCTAssertEqual(guestFileUploadTools.count, 3)
+        let guestFileReadTools = guestFileTools.filter { tool in
+            let name = tool["name"] as? String ?? ""
+            return !name.contains("_upload_")
+                && name != "now_guest_files_mutate"
+        }
+        XCTAssertFalse(guestFileReadTools.isEmpty)
+        XCTAssertFalse(guestFileUploadTools.isEmpty)
+        XCTAssertEqual(guestFileMutateTools.count, 1)
+        XCTAssertEqual(
+            guestFileReadTools.count + guestFileUploadTools.count
+                + guestFileMutateTools.count,
+            guestFileTools.count)
+        XCTAssertTrue(guestFileMutateTools.allSatisfy {
+            let annotations = $0["annotations"] as? [String: Any]
+            return annotations?["readOnlyHint"] as? Bool == false
+                && annotations?["destructiveHint"] as? Bool == true
+                && annotations?["idempotentHint"] as? Bool == false
+                && annotations?["openWorldHint"] as? Bool == false
+        })
         XCTAssertTrue(guestFileReadTools.allSatisfy {
             let annotations = $0["annotations"] as? [String: Any]
             return annotations?["readOnlyHint"] as? Bool == true

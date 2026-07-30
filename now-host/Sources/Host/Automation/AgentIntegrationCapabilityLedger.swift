@@ -255,6 +255,39 @@ final class AgentIntegrationCapabilityLedger {
                honest state. */
             .init(names.processFront, .notProbedMutating),
             .init(names.filePut, .notProbedMutating),
+            /* The pull direction, and NOT probed for capture's reason
+               rather than quit's: `file.get` changes nothing on the
+               machine, but the smallest request in the family is a whole
+               file off a classic disk holding the connection's one
+               transfer lane while it crosses. There is also nothing to
+               name — a probe would have to invent a path and would then be
+               settling the family with a not-found. Unproven leaves the
+               capability callable, and a guest that does not implement it
+               answers `not-implemented` on the first real call, which is
+               what moves this row to unavailable in the guest's own
+               words. */
+            .init(names.fileGet, .notProbedCostly),
+            /* Mutating in the sharpest possible sense: the smallest request
+               in this family ENDS somebody's transfer. There is also nothing
+               to read back — the contract gives `file.cancel` no reply — so a
+               probe could not settle the question even at that price, and
+               would answer it by destroying the evidence. Unproven leaves the
+               capability callable, which is the honest state. */
+            .init(names.fileCancel, .notProbedMutating),
+            /* The four catalog mutations. Mutating in the plainest sense —
+               the smallest request in each of these families moves, trashes,
+               restores or creates something on somebody's disk — so none of
+               them is probed and all four read `unproven` until a real call
+               settles them. Unproven leaves the capability callable, which is
+               the honest state: a guest that does not serve them refuses
+               instantly, `GuestListener.sendChange` records that refusal,
+               and the first real call is what turns the row `unavailable` —
+               which is a fact the guest supplied rather than a guess about
+               which guest is on the wire. */
+            .init(names.fileMove, .notProbedMutating),
+            .init(names.fileTrash, .notProbedMutating),
+            .init(names.fileRestore, .notProbedMutating),
+            .init(names.fileMkdir, .notProbedMutating),
             /* Read-only, and NOT probed — the reason is `software.list`'s
                rather than `process.quit`'s. A capture costs the guest a
                whole screen grab and holds the connection's only transfer

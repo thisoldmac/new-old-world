@@ -907,6 +907,19 @@ final class GuestListener: ObservableObject {
         var modified: Int?
         var staged: InboundFileSink.StagedFile
         var transferMs: Int
+        /// The whole-stream CRC-32 the SENDER computed, when it sent one.
+        /// The sink has already verified the received bytes against it, so
+        /// a value here means checked; **nil means the guest computed none
+        /// and the bytes are UNCHECKED**, which a consumer must report as
+        /// unchecked rather than as correct (`file.end.crc32` is optional
+        /// by contract, and an older guest sends no field at all).
+        var crc32: UInt32?
+        /// The opaque source token a guest offered in `file.begin`, when it
+        /// offered one. Reverse resume is not implemented
+        /// (docs/reverse-file-streaming.md), so nothing consumes this — it
+        /// is carried because a consumer reporting a receipt should say
+        /// what the machine said, not what this host does with it.
+        var resumeToken: String?
     }
 
     /// Lists one page of a folder in the guest's share. Paths are
@@ -1015,7 +1028,8 @@ final class GuestListener: ObservableObject {
     func moveFile(from: String, to: String, overwrite: Bool = false,
                   completion: @escaping (Result<FileResult,
                                                 FileFailure>) -> Void) {
-        sendChange(completion) { session, id in
+        sendChange(AgentIntegrationCapabilityNames.fileMove,
+                   completion) { session, id in
             session.sendFileMove(FileMove(id: id, path: from, toPath: to,
                                           overwrite: overwrite ? true : nil))
         }
@@ -1025,7 +1039,8 @@ final class GuestListener: ObservableObject {
     func trashFile(path: String,
                    completion: @escaping (Result<FileResult,
                                                  FileFailure>) -> Void) {
-        sendChange(completion) { session, id in
+        sendChange(AgentIntegrationCapabilityNames.fileTrash,
+                   completion) { session, id in
             session.sendFileTrash(FileTrash(id: id, path: path))
         }
     }
@@ -1033,7 +1048,8 @@ final class GuestListener: ObservableObject {
     func restoreFile(trashedAs: String, to path: String,
                      completion: @escaping (Result<FileResult,
                                                    FileFailure>) -> Void) {
-        sendChange(completion) { session, id in
+        sendChange(AgentIntegrationCapabilityNames.fileRestore,
+                   completion) { session, id in
             session.sendFileRestore(FileRestore(id: id, trashedAs: trashedAs,
                                                 toPath: path))
         }
@@ -1042,13 +1058,22 @@ final class GuestListener: ObservableObject {
     func makeFolder(path: String,
                     completion: @escaping (Result<FileResult,
                                                   FileFailure>) -> Void) {
-        sendChange(completion) { session, id in
+        sendChange(AgentIntegrationCapabilityNames.fileMkdir,
+                   completion) { session, id in
             session.sendFileMkdir(FileMkdir(id: id, path: path))
         }
     }
 
     /// The shared shape of the four: control-plane, one answer, watchdog.
+    ///
+    /// Each carries its own family name, so the capability ledger learns
+    /// these four from ORDINARY USE the way it learns the process and
+    /// listing families. It matters because the ledger never probes a
+    /// mutating family: without the observation, a guest that refused
+    /// `file.move` with `not-implemented` would leave the row `unproven`
+    /// forever and nothing would ever record that NOW-68K does not serve it.
     private func sendChange(
+        _ family: String,
         _ completion: @escaping (Result<FileResult, FileFailure>) -> Void,
         _ emit: (Session, Int) -> Void) {
         guard let session, case .connected = state else {
@@ -1058,7 +1083,15 @@ final class GuestListener: ObservableObject {
         }
         let id = nextCommandId
         nextCommandId += 1
-        pendingChanges[id] = completion
+        /* `resolveChange` below renders an `ok:false` answer as a `.failure`
+           carrying the guest's own code, so an ordinary refusal — `exists`,
+           `not-found` — reaches the ledger as one too. That is safe rather
+           than misleading only because the ledger moves a family to
+           `unavailable` for the contract's typed I-do-not-implement-that
+           codes alone; anything else leaves it `unproven` while recording
+           what the guest said. A guest that refused a duplicate name must
+           not read as a guest without the family. */
+        pendingChanges[id] = observing(family, completion)
         armWatchdog(id: id, seconds: 20) { [weak self] reason in
             self?.pendingChanges.removeValue(forKey: id)?(
                 .failure(.init(code: "timeout", message: reason)))
@@ -1290,6 +1323,31 @@ final class GuestListener: ObservableObject {
             putMaximumProgressGap,
             max(0, outcome.timeIntervalSince(lastActivity)))
         return Int((gap * 1_000).rounded())
+    }
+
+    /// Which way the one transfer lane is pointing, or nil when it holds no
+    /// FILE transfer.
+    ///
+    /// Read by a caller that must not guess. `cancelFile()` below is a void
+    /// method that does nothing at all when nothing is in flight, which is
+    /// right for a button — a person can see the bar is gone — and is not
+    /// enough for an agent, which has to be able to tell "stopped it" from
+    /// "there was nothing to stop" and report which.
+    ///
+    /// It answers about the FILE lane only. A capture or a live stream holds
+    /// the same one-wide lane and neither is ended by `file.cancel`;
+    /// `isCapturePending` and `activeStreamId` are their own answers.
+    enum FileTransferInFlight {
+        /// A file this host is pushing to the guest.
+        case outgoing
+        /// A file this host is pulling off it.
+        case incoming
+    }
+
+    var fileTransferInFlight: FileTransferInFlight? {
+        if pendingPut != nil { return .outgoing }
+        if pendingFile != nil { return .incoming }
+        return nil
     }
 
     /// Abandons the file transfer; settles locally for the same reason

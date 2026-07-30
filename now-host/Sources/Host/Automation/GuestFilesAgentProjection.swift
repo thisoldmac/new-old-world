@@ -30,6 +30,24 @@ extension GuestFilesCommandService {
             failure: response.failure.map(\.agentValue))
     }
 
+    func agentDownload(path: String)
+        async -> AgentIntegrationGuestFileDownloadResult {
+        let response = await download(path: path)
+        return .completed(
+            receipt: response.receipt.agentValue,
+            value: response.value.map(\.agentValue),
+            failure: response.failure.map(\.agentValue))
+    }
+
+    func agentMutate(_ request: AgentIntegrationGuestFileMutationRequest)
+        async -> AgentIntegrationGuestFileMutationResult {
+        let response = await mutate(request)
+        return .completed(
+            receipt: response.receipt.agentValue,
+            value: response.value.map(\.agentValue),
+            failure: response.failure.map(\.agentValue))
+    }
+
     func agentBeginUpload(_ request: AgentIntegrationGuestFileUploadBegin)
         async -> AgentIntegrationGuestFileUploadStageResult {
         let response = await beginUpload(.init(
@@ -79,9 +97,18 @@ private extension GuestFileCommandKind {
         case .mkdir: .mkdir
         case .move: .move
         case .delete: .delete
+        case .trash: .trash
+        case .restore: .restore
         case .deployTree: .deployTree
         case .prune: .prune
         }
+    }
+}
+
+private extension GuestFileMutationReport {
+    var agentValue: AgentIntegrationGuestFileMutationOutcome {
+        .init(mutation: mutation, path: path, trashedAs: trashedAs,
+              observedAt: observedAt)
     }
 }
 
@@ -113,6 +140,19 @@ private extension GuestFileCommandReceipt {
             outcome: outcome.agentValue,
             wireRequestCount: wireRequestCount,
             affectedPaths: affectedPaths)
+    }
+}
+
+private extension GuestFileDownloadLanding {
+    var agentValue: AgentIntegrationGuestFileDownload {
+        .init(
+            guestPath: guestPath,
+            hostPath: hostPath,
+            bytes: bytes,
+            container: container,
+            crc32: crc32,
+            resumeToken: resumeToken,
+            elapsedMs: elapsedMs)
     }
 }
 

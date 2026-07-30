@@ -264,6 +264,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         }
     }
 
+    /// One local mutation request, revalidated through the same failable
+    /// initialisers every other face uses.
+    ///
+    /// The codec has already checked the shape; this checks the *rules* —
+    /// non-empty paths, a move that is neither its own source nor inside it,
+    /// a trashed name that is a name — and it does so by asking the one type
+    /// that owns them rather than restating any of it here. Nil is a refusal
+    /// this host writes, not one the guest was troubled with.
+    static func mutationRequest(
+        _ mutation: AgentIntegrationGuestFileMutation,
+        path: String,
+        destination: String?,
+        trashedAs: String?
+    ) -> AgentIntegrationGuestFileMutationRequest? {
+        switch mutation {
+        case .move:
+            guard let destination, trashedAs == nil else { return nil }
+            return .move(path: path, toPath: destination)
+        case .restore:
+            guard let trashedAs, destination == nil else { return nil }
+            return .restore(trashedAs: trashedAs, toPath: path)
+        case .trash:
+            guard destination == nil, trashedAs == nil else { return nil }
+            return .trash(path: path)
+        case .mkdir:
+            guard destination == nil, trashedAs == nil else { return nil }
+            return .makeFolder(path: path)
+        }
+    }
+
     /// The header carries the connection, and — when Screenshot Guest is
     /// greyed out for a reason the connection alone does not explain (a
     /// stream or a transfer holding the one lane) — that reason too, so the
@@ -370,6 +400,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     return .guestFilesStat(
                         await guestFiles.agentStat(
                             path: request.guestFilePath ?? ""))
+                case .guestFileDownload:
+                    /* The path is the whole request, and an absent one
+                       never reached a machine — so the refusal is the
+                       path's rather than the guest's. Shaped like the two
+                       browse cases above rather than like the upload ones:
+                       the download is a Files command with the same
+                       guestRoot policy and the same receipt envelope. */
+                    return .guestFileDownload(
+                        await guestFiles.agentDownload(
+                            path: request.guestFilePath ?? ""))
                 case .guestFilesUploadBegin:
                     guard let upload = request.guestFileUpload else {
                         return .guestFilesUploadStage(.completed(
@@ -469,19 +509,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     return .bringToFront(
                         await agentIntegration.bringToFront(
                             reference: reference))
+                case .revealItem:
+                    /* The target is all a caller may send, and a request
+                       without one never reached a machine — so the refusal
+                       is the target's rather than the guest's. The codec
+                       has already bounded it; this is the shape check that
+                       cannot be expressed in a strict key list. */
+                    guard let target = request.revealTarget else {
+                        return .revealItem(.refused(.init(
+                            code: "now-reveal-target-invalid",
+                            message:
+                                "The reveal request named no target")))
+                    }
+                    return .revealItem(
+                        await agentIntegration.revealItem(target: target))
+                case .transferCancel:
+                    /* Says only its own name, and the codec has already
+                       refused a request carrying anything else. There is
+                       nothing to read off it here: the lane is one transfer
+                       wide across both directions, so what to cancel is not
+                       a caller's to name. */
+                    return .transferCancel(
+                        agentIntegration.cancelTransfer())
+                case .guestFileMutation:
+                    /* P1 #7, and the first MUTATING guest-Files verb here.
+                       The codec has already refused every crossed shape —
+                       a move with no destination, a restore with no trashed
+                       name, either field on a trash — so this branch reads
+                       validated fields and refuses only the request that
+                       named no intention at all, which never reached a
+                       machine and so is the request's refusal rather than
+                       the guest's. The authority (guestRoot), the bounds
+                       (one item, one attempt, never an overwrite) and the
+                       receipt live in GuestFileMutationCommands. */
+                    guard let mutation = request.guestFileMutation,
+                          let path = request.guestFilePath,
+                          let composed = Self.mutationRequest(
+                            mutation,
+                            path: path,
+                            destination: request.guestFileDestinationPath,
+                            trashedAs: request.guestFileTrashName) else {
+                        return .guestFileMutation(.hostUnavailable(.init(
+                            code: "now-files-mutation-invalid",
+                            message:
+                                "The file mutation did not name one bounded item and one intention")))
+                    }
+                    return .guestFileMutation(
+                        await guestFiles.agentMutate(composed))
                 case .catalogSearch:
                     /* Takes nothing, by the contract: `catsearch` has
                        `args: {}` and the volume is the guest's own choice.
                        So there is no field to validate here and no refusal
                        this side can compose — everything a caller could get
-                       wrong was already refused by the projection's
-                       no-arguments bound. */
+                       wrong was already refused by the codec's strict key
+                       list. */
                     return .catalogSearch(
                         await agentIntegration.measureCatalogSearch())
-                case .census, .softwareInventory, .guestFileDownload,
-                     .guestFileMutation, .transferCancel,
+                case .census, .softwareInventory,
                      .guestLogTail, .machineFacts,
-                     .revealItem, .diagnostics:
+                     .diagnostics:
                     /* P1a landed the SERIALIZATION for eleven capabilities
                        and none of their adapters (plan 005): eleven agents
                        each
