@@ -106,6 +106,21 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
+    func cancelTransfer() async
+        -> AgentIntegrationTransferCancelResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.cancelTransfer()
+        } catch {
+            /* "No host" and never `nothingToCancel`: a socket that could not
+               be reached has said nothing about whether a Macintosh is
+               moving a file. */
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
     func transferApprovedArtifact(receipt: String) async
         -> AgentIntegrationArtifactTransferResult {
         guard let client else {

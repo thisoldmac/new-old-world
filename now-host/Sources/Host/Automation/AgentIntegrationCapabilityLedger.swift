@@ -255,6 +255,13 @@ final class AgentIntegrationCapabilityLedger {
                honest state. */
             .init(names.processFront, .notProbedMutating),
             .init(names.filePut, .notProbedMutating),
+            /* Mutating in the sharpest possible sense: the smallest request
+               in this family ENDS somebody's transfer. There is also nothing
+               to read back — the contract gives `file.cancel` no reply — so a
+               probe could not settle the question even at that price, and
+               would answer it by destroying the evidence. Unproven leaves the
+               capability callable, which is the honest state. */
+            .init(names.fileCancel, .notProbedMutating),
             /* Read-only, and NOT probed — the reason is `software.list`'s
                rather than `process.quit`'s. A capture costs the guest a
                whole screen grab and holds the connection's only transfer

@@ -479,6 +479,7 @@ final class AgentIntegrationProjectedVerbCodecTests: XCTestCase {
                 transferCancelResult: .completed(
                     .init(outcome: .nothingToCancel,
                           direction: nil,
+                          hostLaneFree: true,
                           note: "no transfer was in flight",
                           observedAt: now)))),
             ("log tail", .init(

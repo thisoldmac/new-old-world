@@ -20,6 +20,10 @@ public enum HostProjectionCatalog {
         BringToFrontProjection.self,
         RequestQuitProjection.self,
         TransferApprovedArtifactProjection.self,
+        /* Beside the transfer it can end, and before the Files family:
+           it ends a transfer in EITHER direction, so it belongs to
+           neither half of the lane. */
+        TransferCancelProjection.self,
         GuestFilesCapabilitiesProjection.self,
         GuestFilesListProjection.self,
         GuestFilesStatProjection.self,

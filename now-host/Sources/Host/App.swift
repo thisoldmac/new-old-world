@@ -483,8 +483,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     }
                     return .revealItem(
                         await agentIntegration.revealItem(target: target))
+                case .transferCancel:
+                    /* Says only its own name, and the codec has already
+                       refused a request carrying anything else. There is
+                       nothing to read off it here: the lane is one transfer
+                       wide across both directions, so what to cancel is not
+                       a caller's to name. */
+                    return .transferCancel(
+                        agentIntegration.cancelTransfer())
                 case .census, .softwareInventory, .guestFileDownload,
-                     .guestFileMutation, .transferCancel,
+                     .guestFileMutation,
                      .guestLogTail, .machineFacts, .catalogSearch,
                      .diagnostics:
                     /* P1a landed the SERIALIZATION for eleven capabilities

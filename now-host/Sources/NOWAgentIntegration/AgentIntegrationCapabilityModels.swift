@@ -187,6 +187,15 @@ public enum AgentIntegrationCapabilityNames {
     public static let softwareList = "software.list"
     public static let fileList = "file.list"
     public static let filePut = "file.put"
+    /// Ending the transfer in flight, in whichever direction it is going.
+    ///
+    /// The message name, and it is required on **both** guests rather than
+    /// forked by ISA: the 68K guest's `cancel` verb is that machine's CONSOLE face
+    /// on the same body (`wire68.c :: cancel_in_flight`, reached from both
+    /// `handle_file_cancel` and `now68k_wire_cancel_transfer`), not a second
+    /// mechanism a host would have to choose between. One capability, two
+    /// guest answers, and the host sends the message either way.
+    public static let fileCancel = "file.cancel"
     /// The screen-capture family. A contract message name, not an alias:
     /// `capture.request` is what the host sends and both guests dispatch.
     public static let captureRequest = "capture.request"
@@ -213,7 +222,7 @@ public enum AgentIntegrationCapabilityNames {
     /// set still fails somewhere.
     public static let all: Set<String> = [
         processList, processQuit, processFront, softwareList, fileList,
-        filePut, captureRequest, launchCommand, revealCommand,
+        filePut, fileCancel, captureRequest, launchCommand, revealCommand,
     ]
 
     /// Refusal codes that mean "this guest does not implement that", as

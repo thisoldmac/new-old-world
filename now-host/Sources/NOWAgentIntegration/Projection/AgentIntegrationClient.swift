@@ -67,6 +67,13 @@ public protocol AgentIntegrationClient: Sendable {
     ) async -> AgentIntegrationGuestFileUploadStageResult
     func commitGuestFileUpload(uploadID: UUID) async
         -> AgentIntegrationGuestFileUploadCommitResult
+    /// End the transfer in flight, in whichever direction it is going.
+    ///
+    /// No parameter, and none is available to invent: the lane is one
+    /// transfer wide across BOTH directions (contract, `cancel`), so "the
+    /// transfer" is never ambiguous — and the transfer id the wire message
+    /// carries is this host's own, never a caller's to hold.
+    func cancelTransfer() async -> AgentIntegrationTransferCancelResult
     /// Ask the paired guest for its screen, and get back the first page of
     /// the result. Three calls rather than one because the answer is an
     /// image: the local request/response cap is 16 KiB, so a screen crosses
@@ -131,6 +138,16 @@ extension AgentIntegrationClient {
     /// is seven compile errors in seven files named for other capabilities.
     public func revealItem(target: String) async
         -> AgentIntegrationGuestRowReportResult {
+        .hostUnavailable
+    }
+
+    /// Same reason again, and one more that is specific to this lane: "no
+    /// host" is the only truthful answer a client with no host can give
+    /// about a transfer, and `nothingToCancel` — which would also be
+    /// harmless-looking — would assert that a machine nobody asked was
+    /// quiet.
+    public func cancelTransfer() async
+        -> AgentIntegrationTransferCancelResult {
         .hostUnavailable
     }
 
