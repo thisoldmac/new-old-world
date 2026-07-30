@@ -184,6 +184,10 @@ public final class AgentIntegrationLocalServer {
                 response = .init(
                     requestID: request.requestID,
                     guestFilesUploadCommitResult: result)
+            case .capture(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    captureResult: result)
             case .recorded:
                 response = .init(
                     requestID: request.requestID, recorded: true)

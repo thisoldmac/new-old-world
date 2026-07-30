@@ -22,6 +22,9 @@ final class AgentIntegrationHostAdapter {
     private lazy var capabilityLedger = AgentIntegrationCapabilityLedger(
         listener: listener,
         currentSessionID: { [unowned self] in connectedSessionID() })
+    private lazy var captureControl = AgentIntegrationCaptureControl(
+        listener: listener,
+        currentSessionID: { [unowned self] in connectedSessionID() })
     private lazy var artifactTransfer = AgentIntegrationArtifactTransfer(
         listener: listener,
         approvals: artifactApprovals,
@@ -124,6 +127,22 @@ final class AgentIntegrationHostAdapter {
                         observedAt: Date = Date()) async
         -> AgentIntegrationLaunchSoftwareResult {
         await softwareLaunch.launch(selection, observedAt: observedAt)
+    }
+
+    /// One picture of the connected machine's screen, staged for the pages
+    /// the local surface has to carry it in. The lane's own reasoning lives
+    /// in `AgentIntegrationCaptureControl`.
+    func capture(depth: Int) async -> AgentIntegrationCaptureResult {
+        await captureControl.capture(depth: depth)
+    }
+
+    func capturePage(captureID: UUID, offset: Int)
+        -> AgentIntegrationCaptureResult {
+        captureControl.page(captureID: captureID, offset: offset)
+    }
+
+    func abandonCapture() -> AgentIntegrationCaptureResult {
+        captureControl.abandon()
     }
 
     func approveArtifact(
@@ -260,6 +279,7 @@ final class AgentIntegrationHostAdapter {
         sessionID = nil
         sessionConnectedAt = nil
         capabilityLedger.forgetGuest()
+        captureControl.forgetGuest()
     }
 
     func connectedSessionID() -> UUID? {

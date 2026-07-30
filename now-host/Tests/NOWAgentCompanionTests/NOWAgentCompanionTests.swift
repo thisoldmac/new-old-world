@@ -63,6 +63,7 @@ final class NOWAgentCompanionTests: XCTestCase {
             "now_session_health",
             "now_session_capabilities",
             "now_list_processes",
+            "now_capture_screen",
             "now_launch_software",
             "now_request_quit",
             "now_transfer_approved_artifact",
@@ -398,6 +399,8 @@ final class NOWAgentCompanionTests: XCTestCase {
                     return .guestFilesUploadStage(.hostUnavailable(.guest))
                 case .guestFilesUploadCommit:
                     return .guestFilesUploadCommit(.hostUnavailable(.guest))
+                case .capture:
+                    return .capture(.unavailable(.guest))
                 case .audit:
                     return .recorded
                 }

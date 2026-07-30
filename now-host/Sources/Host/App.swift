@@ -415,6 +415,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     return .guestFilesUploadCommit(
                         await guestFiles.agentCommitUpload(
                             uploadID: uploadID))
+                case .capture:
+                    /* Three shapes, and the codec has already refused any
+                       request that is more than one of them — so the order
+                       here is a reading of validated fields rather than a
+                       precedence. */
+                    if request.captureAbandon == true {
+                        return .capture(
+                            agentIntegration.abandonCapture())
+                    }
+                    if let captureID = request.captureID,
+                       let offset = request.captureOffset {
+                        return .capture(
+                            agentIntegration.capturePage(
+                                captureID: captureID, offset: offset))
+                    }
+                    guard let depth = request.captureDepth else {
+                        return .capture(.refused(.init(
+                            code: "now-capture-request-invalid",
+                            message: "The capture request named no depth, "
+                                + "page or abandon")))
+                    }
+                    return .capture(
+                        await agentIntegration.capture(depth: depth))
                 case .audit:
                     /* Rule 3 of the parity slice, arriving: a face reports
                        what it was asked to do and this side writes it where

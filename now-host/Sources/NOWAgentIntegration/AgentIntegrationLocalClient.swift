@@ -12,6 +12,7 @@ public struct AgentIntegrationLocalClient: Sendable {
     private let launchReceiveTimeout: TimeInterval
     private let transferReceiveTimeout: TimeInterval
     private let capabilitiesReceiveTimeout: TimeInterval
+    private let captureReceiveTimeout: TimeInterval
 
     public init(endpoint: AgentIntegrationEndpoint? = nil,
                 expectedUID: uid_t = geteuid()) throws {
@@ -36,13 +37,19 @@ public struct AgentIntegrationLocalClient: Sendable {
          // software.list at 30 s). The window is their sum plus slack, not
          // the two seconds a single bounded read gets — a capability
          // report that times out locally teaches its caller nothing.
-         capabilitiesReceiveTimeout: TimeInterval = 90) throws {
+         capabilitiesReceiveTimeout: TimeInterval = 90,
+         // The guest's capture watchdog is 20 s and starts before the
+         // transfer does; a deep full screen off a 68030 spends seconds
+         // more on the wire after that. This is that sum plus slack, not a
+         // read-only window.
+         captureReceiveTimeout: TimeInterval = 45) throws {
         self.endpoint = try endpoint ?? .currentUser(uid: expectedUID)
         self.expectedUID = expectedUID
         self.readOnlyReceiveTimeout = readOnlyReceiveTimeout
         self.launchReceiveTimeout = launchReceiveTimeout
         self.transferReceiveTimeout = transferReceiveTimeout
         self.capabilitiesReceiveTimeout = capabilitiesReceiveTimeout
+        self.captureReceiveTimeout = captureReceiveTimeout
     }
 
     public func sessionCapabilities(probeCostly: Bool) async throws
@@ -177,6 +184,32 @@ public struct AgentIntegrationLocalClient: Sendable {
         return result
     }
 
+    public func requestCapture(depth: Int) async throws
+        -> AgentIntegrationCaptureResult {
+        try await captureResult(of: .capture(depth: depth))
+    }
+
+    public func fetchCapturePage(captureID: UUID, offset: Int) async throws
+        -> AgentIntegrationCaptureResult {
+        try await captureResult(
+            of: .capturePage(captureID: captureID, offset: offset))
+    }
+
+    public func abandonCapture() async throws
+        -> AgentIntegrationCaptureResult {
+        try await captureResult(of: .captureAbandon())
+    }
+
+    private func captureResult(of request: AgentIntegrationLocalRequest)
+        async throws -> AgentIntegrationCaptureResult {
+        let response = try await send(request)
+        guard let result = response.captureResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no capture result")
+        }
+        return result
+    }
+
     /// Report one completed invocation for the host's log.
     ///
     /// It returns nothing and throws nothing a caller is expected to handle
@@ -226,6 +259,9 @@ public struct AgentIntegrationLocalClient: Sendable {
             preconditionFailure("Guest Files upload requires typed input")
         case .audit:
             preconditionFailure("An audit report requires its event")
+        case .capture:
+            preconditionFailure(
+                "A capture request says which of its three shapes it is")
         }
     }
 
@@ -265,6 +301,15 @@ public struct AgentIntegrationLocalClient: Sendable {
                 timeout = launchReceiveTimeout
             case .transferApprovedArtifact, .guestFilesUploadCommit:
                 timeout = transferReceiveTimeout
+            case .capture:
+                /* Only TAKING one waits on a machine — the guest's own
+                   capture watchdog is 20 s and a deep screen spends real
+                   time on the wire after it. A page fetch and an abandon
+                   reach no guest at all, so they share the read-only
+                   window; giving them the long one would hold an answer
+                   back for a host that has stopped answering. */
+                timeout = request.captureDepth != nil
+                    ? captureReceiveTimeout : readOnlyReceiveTimeout
             }
             let response = try sendRaw(
                 AgentIntegrationLocalCodec.encode(request),
