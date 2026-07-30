@@ -11,8 +11,8 @@ import Foundation
 /// | Buffer | Rows | Label | Value |
 /// |---|:--:|:--:|:--:|
 /// | `vprobe`, Carbon guest (`vprobe.h :: VProbeRow`, called with 20) | 20 | 24 | 48 |
-/// | `vprobe`, NOW-68K (`n68_vprobe.h`) | 17 | 18 | 30 |
-/// | `shotdiag`, NOW-68K (`n68_cmdresult.h :: N68CmdRows`) | 20 | 32 | 48 |
+/// | `vprobe`, the 68K guest (`n68_vprobe.h`) | 17 | 18 | 30 |
+/// | `shotdiag`, the 68K guest (`n68_cmdresult.h :: N68CmdRows`) | 20 | 32 | 48 |
 /// | `putstat`, Carbon guest (`commands.c :: run_putstat`) | 11 | — | — |
 public enum AgentIntegrationDiagnosticsPolicy {
     /// The row ceiling: the largest guest table, so it cannot truncate any
@@ -158,7 +158,7 @@ private var diagnosticFailure: [String: Any] {
 /// | verb | measures | served by |
 /// |---|---|---|
 /// | `vprobe` | framebuffer read cost by access method | **both guests** |
-/// | `shotdiag` | where a staged capture read from | NOW-68K only |
+/// | `shotdiag` | where a staged capture read from | the 68K guest only |
 /// | `putstat` | where a received file spent its time | the Carbon guest only |
 ///
 /// The batched verb edit (P1a) gave this side **one** local operation with a
@@ -262,9 +262,9 @@ public enum FramebufferProbeProjection: HostProjection {
                         diagnosticReport(
                             verb: "vprobe",
                             note:
-                                "Present only when a bound was reached. The Carbon guest offers no note for this verb and NOW-68K reports its own dropped-row count inside the rows, so the only sentence that appears here is the host saying it had to shorten the answer.",
+                                "Present only when a bound was reached. The Carbon guest offers no note for this verb and the 68K guest reports its own dropped-row count inside the rows, so the only sentence that appears here is the host saying it had to shorten the answer.",
                             groupDescription:
-                                "The guest's own rows, in its own order and wording: one per access width, the CopyBits baseline, the reread and linearity checks, fidelity, and on NOW-68K an Addressing row. Never parsed on this side — a host that turned \"CopyBits failed\" into a typed field would be answering for the machine.")),
+                                "The guest's own rows, in its own order and wording: one per access width, the CopyBits baseline, the reread and linearity checks, fidelity, and on the 68K guest an Addressing row. Never parsed on this side — a host that turned \"CopyBits failed\" into a typed field would be answering for the machine.")),
                     variant("refused", "refused",
                             diagnosticFailure),
                     HostProjectionSchema.unavailableVariant,
@@ -314,7 +314,7 @@ public enum FramebufferProbeProjection: HostProjection {
 /// `now_capture_screen`. What it costs is what a capture costs, because it
 /// does the same full-screen read and pack.
 ///
-/// NOW-68K only, by derivation: the verb is absent from the Carbon guest's
+/// Served by the 68K guest only, by derivation: the verb is absent from the Carbon guest's
 /// `help` table, so against that guest this row is `unavailable` in typed
 /// form with the ledger's own sentence. There is no reduced form and none is
 /// wanted — a "shotdiag with the walk skipped" would answer nothing this

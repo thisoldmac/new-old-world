@@ -261,7 +261,7 @@ public enum AgentIntegrationCapabilityNames {
        All three are COMMANDS, so the ledger resolves each against the
        guest's own `help` table, one at a time. That matters because their
        availability genuinely differs: `vprobe` is served by both guests,
-       `shotdiag` by NOW-68K only, `putstat` by the Carbon guest only. A row's
+       `shotdiag` by the 68K guest only, `putstat` by the Carbon guest only. A row's
        `requires` is a CONJUNCTION, so one row requiring all three would
        resolve `unavailable` against every guest that exists, for the life of
        every connection, in a sentence that reads as a fact about the
@@ -275,7 +275,7 @@ public enum AgentIntegrationCapabilityNames {
     /// of the trio that is.
     public static let vprobeCommand = "vprobe"
     /// Where a staged capture read from — the verb that found the 180c's
-    /// 24-bit addressing defect. NOW-68K only, by derivation from `help`.
+    /// 24-bit addressing defect. The 68K guest only, by derivation from `help`.
     ///
     /// Note what it is NOT: it is not a capture, and it must never be
     /// required by the capture row. It stages one down the real path, records
