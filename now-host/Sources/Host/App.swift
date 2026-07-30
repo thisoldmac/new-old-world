@@ -589,8 +589,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     return .census(
                         await agentIntegration.census(
                             probe: probe, cursor: request.censusCursor))
-                case .softwareInventory, .machineFacts,
-                     .diagnostics:
+                case .machineFacts:
+                    /* P1 #10. Takes nothing, by the contract: `gestalt` has
+                       `args: {}` and a typed call with no line returns every
+                       group, so there is no field to validate here and no
+                       refusal this side can compose — everything a caller
+                       could get wrong was already refused by the codec's
+                       strict key list. */
+                    return .machineFacts(
+                        await agentIntegration.machineFacts())
+                case .softwareInventory, .diagnostics:
                     /* P1a landed the SERIALIZATION for eleven capabilities
                        and none of their adapters (plan 005): eleven agents
                        each

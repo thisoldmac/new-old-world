@@ -29,6 +29,9 @@ final class AgentIntegrationHostAdapter {
     private lazy var logTailControl = AgentIntegrationGuestLogTail(
         listener: listener,
         currentSessionID: { [unowned self] in connectedSessionID() })
+    private lazy var machineFactsControl = AgentIntegrationMachineFacts(
+        listener: listener,
+        currentSessionID: { [unowned self] in connectedSessionID() })
     private lazy var censusControl = AgentIntegrationCensus(
         listener: listener,
         currentSessionID: { [unowned self] in connectedSessionID() })
@@ -154,6 +157,14 @@ final class AgentIntegrationHostAdapter {
         -> AgentIntegrationFrontResult {
         await processControl.bringToFront(
             reference: reference, requestedAt: requestedAt)
+    }
+
+    /// What the connected machine says it is — every `gestalt` group in one
+    /// call, in the guest's own words. Adjacent to the census above rather
+    /// than composed from it: `AgentIntegrationMachineFacts` and
+    /// `MachineFactsProjection` carry the difference in plane and shape.
+    func machineFacts() async -> AgentIntegrationGuestRowReportResult {
+        await machineFactsControl.read()
     }
 
     /// One page of one hardware-census probe. The probe's own outcome is a
