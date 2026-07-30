@@ -606,6 +606,9 @@ public enum AgentIntegrationLocalCodec {
             "guestFileCursor", "guestFileUpload", "guestFileUploadID",
             "guestFileUploadOffset", "guestFileUploadChunk", "probeCostly",
             "auditEvent",
+            // Orthogonal to every operation, so it clears BOTH gates:
+            // this allowlist, and the per-operation key set below.
+            "guestSelector",
         ])
         guard object["version"] as? Int ==
                 AgentIntegrationLocalProtocol.version else {
@@ -827,7 +830,15 @@ public enum AgentIntegrationLocalCodec {
                     "Audit event does not match the schema")
             }
         }
-        guard Set(object.keys) == expectedKeys else {
+        /* Addressing belongs to no operation, so it is admitted for all of
+           them rather than repeated in twelve key sets — and only when the
+           caller actually sent it, so an absent selector stays absent
+           rather than becoming a required field. */
+        var operationKeys = expectedKeys
+        if request.guestSelector != nil {
+            operationKeys.insert("guestSelector")
+        }
+        guard Set(object.keys) == operationKeys else {
             throw AgentIntegrationLocalTransportError.invalidMessage(
                 "Local request fields do not match the operation schema")
         }
@@ -846,6 +857,9 @@ public enum AgentIntegrationLocalCodec {
                 "guestFilesCapabilitiesResult", "guestFilesListResult",
                 "guestFilesStatResult", "guestFilesUploadStageResult",
                 "guestFilesUploadCommitResult", "recorded",
+                // A refusal, not a protocol error: without this the
+                // companion reads a real answer as a broken message.
+                "notAddressed",
             ])
         guard object["version"] as? Int ==
                 AgentIntegrationLocalProtocol.version else {
@@ -869,13 +883,17 @@ public enum AgentIntegrationLocalCodec {
             object["guestFilesUploadCommitResult"] != nil
         let hasRecorded = object["recorded"] != nil
         let hasError = object["error"] != nil
+        /* Counted with the results rather than beside them: the refusal is
+           set INSTEAD of an operation answer, so a response carrying both
+           is malformed for the same reason two results are. */
+        let hasNotAddressed = object["notAddressed"] != nil
         guard [
             hasResult, hasSessionCapabilities,
             hasProcessList, hasLaunch, hasQuit,
             hasArtifactTransfer, hasGuestFilesCapabilities,
             hasGuestFilesList, hasGuestFilesStat,
             hasGuestFilesUploadStage, hasGuestFilesUploadCommit,
-            hasRecorded, hasError,
+            hasRecorded, hasNotAddressed, hasError,
         ]
                 .filter({ $0 }).count == 1 else {
             throw AgentIntegrationLocalTransportError.invalidMessage(
