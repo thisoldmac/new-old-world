@@ -271,11 +271,34 @@ public enum HostProjectionOutcome {
 
 /// One projection result, kept encodable without the face having to know
 /// which of a dozen result types it is holding.
+///
+/// **Twelve capabilities answered in JSON; the thirteenth answers with an
+/// image**, and that is why this type gained a second half. A capture's
+/// bytes cannot go in the encodable part: the MCP face renders a result
+/// twice — once as `structuredContent` and once as the text block beside it —
+/// so a 300 KB screen in a JSON field arrives as 600 KB of base64 in
+/// somebody's context window. So the picture travels as an ATTACHMENT,
+/// exactly once, and each face renders it in its own idiom (the MCP face as
+/// an `image` content block).
+///
+/// It is deliberately not a general blob: an attachment is a rendering of
+/// the same answer the encodable part describes, never a second answer. A
+/// row whose metadata says one thing and whose attachment shows another
+/// would be two facts about one machine.
 public struct HostProjectionValue {
-    private let encodeValue: (JSONEncoder) throws -> Data
+    /// A non-JSON rendering of this result, for faces that can carry one.
+    public enum Attachment {
+        /// Image bytes and their media type — `image/png` for a capture.
+        case image(bytes: Data, mimeType: String)
+    }
 
-    public init<Value: Encodable>(_ value: Value) {
+    private let encodeValue: (JSONEncoder) throws -> Data
+    public let attachment: Attachment?
+
+    public init<Value: Encodable>(_ value: Value,
+                                  attachment: Attachment? = nil) {
         encodeValue = { try $0.encode(value) }
+        self.attachment = attachment
     }
 
     public func encoded(using encoder: JSONEncoder) throws -> Data {

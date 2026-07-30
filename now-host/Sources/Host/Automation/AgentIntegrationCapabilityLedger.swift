@@ -209,6 +209,20 @@ final class AgentIntegrationCapabilityLedger {
                    whenUnproven: probedCostly ? .probed : .notProbedCostly),
             family(names.processQuit, whenUnproven: .notProbedMutating),
             family(names.filePut, whenUnproven: .notProbedMutating),
+            /* Read-only, and NOT probed — the reason is `software.list`'s
+               rather than `process.quit`'s. A capture costs the guest a
+               whole screen grab and holds the connection's only transfer
+               lane while it does; spending that to answer a question nobody
+               asked would take the lane out from under whoever is streaming.
+               Note the honest consequence, which is narrower than the other
+               costly family's: the capture lane does not record a family
+               observation either (`GuestListener.requestCapture` is not
+               wrapped, and `CaptureFailure` carries a sentence rather than
+               the guest's typed code), so this reads `unproven` on every
+               guest until that changes. Unproven is the truthful answer and
+               leaves the capability callable; it is docs/open-issues.md
+               material rather than something to paper over here. */
+            family(names.captureRequest, whenUnproven: .notProbedCostly),
         ]
     }
 

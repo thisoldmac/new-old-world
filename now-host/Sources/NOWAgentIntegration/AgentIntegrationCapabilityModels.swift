@@ -182,6 +182,9 @@ public enum AgentIntegrationCapabilityNames {
     public static let softwareList = "software.list"
     public static let fileList = "file.list"
     public static let filePut = "file.put"
+    /// The screen-capture family. A contract message name, not an alias:
+    /// `capture.request` is what the host sends and both guests dispatch.
+    public static let captureRequest = "capture.request"
     public static let launchCommand = "launch"
 
     /// Refusal codes that mean "this guest does not implement that", as

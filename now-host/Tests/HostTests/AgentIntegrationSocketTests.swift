@@ -50,6 +50,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .guestFilesUploadStage(.hostUnavailable(.guest))
                 case .guestFilesUploadCommit:
                     return .guestFilesUploadCommit(.hostUnavailable(.guest))
+                case .capture:
+                    return .capture(.unavailable(.guest))
                 case .audit:
                     return .recorded
                 }
@@ -192,6 +194,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .guestFilesUploadStage(.hostUnavailable(.guest))
                 case .guestFilesUploadCommit:
                     return .guestFilesUploadCommit(.hostUnavailable(.guest))
+                case .capture:
+                    return .capture(.unavailable(.guest))
                 case .audit:
                     return .recorded
                 }
@@ -260,6 +264,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .guestFilesUploadStage(.hostUnavailable(.guest))
                 case .guestFilesUploadCommit:
                     return .guestFilesUploadCommit(.hostUnavailable(.guest))
+                case .capture:
+                    return .capture(.unavailable(.guest))
                 case .audit:
                     return .recorded
                 }
@@ -307,6 +313,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .guestFilesUploadStage(.hostUnavailable(.guest))
                 case .guestFilesUploadCommit:
                     return .guestFilesUploadCommit(.hostUnavailable(.guest))
+                case .capture:
+                    return .capture(.unavailable(.guest))
                 case .audit:
                     return .recorded
                 }
@@ -453,6 +461,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .guestFilesUploadStage(.hostUnavailable(.guest))
                 case .guestFilesUploadCommit:
                     return .guestFilesUploadCommit(.hostUnavailable(.guest))
+                case .capture:
+                    return .capture(.unavailable(.guest))
                 case .audit:
                     return .recorded
                 }
@@ -526,6 +536,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .guestFilesUploadStage(.hostUnavailable(.guest))
                 case .guestFilesUploadCommit:
                     return .guestFilesUploadCommit(.hostUnavailable(.guest))
+                case .capture:
+                    return .capture(.unavailable(.guest))
                 case .audit:
                     return .recorded
                 }

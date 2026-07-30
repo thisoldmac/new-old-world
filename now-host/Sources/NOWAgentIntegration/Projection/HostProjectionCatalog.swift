@@ -11,6 +11,7 @@ public enum HostProjectionCatalog {
         SessionHealthProjection.self,
         SessionCapabilitiesProjection.self,
         ListProcessesProjection.self,
+        CaptureScreenProjection.self,
         LaunchSoftwareProjection.self,
         RequestQuitProjection.self,
         TransferApprovedArtifactProjection.self,

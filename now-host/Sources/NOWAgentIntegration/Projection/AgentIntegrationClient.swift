@@ -39,6 +39,18 @@ public protocol AgentIntegrationClient: Sendable {
     ) async -> AgentIntegrationGuestFileUploadStageResult
     func commitGuestFileUpload(uploadID: UUID) async
         -> AgentIntegrationGuestFileUploadCommitResult
+    /// Ask the paired guest for its screen, and get back the first page of
+    /// the result. Three calls rather than one because the answer is an
+    /// image: the local request/response cap is 16 KiB, so a screen crosses
+    /// in pages, and the paging is the projection's business rather than any
+    /// caller's — see `CaptureScreenProjection`.
+    func requestGuestCapture(depth: Int?) async
+        -> AgentIntegrationCaptureResult
+    func fetchGuestCapturePage(captureID: UUID, offset: Int) async
+        -> AgentIntegrationCaptureResult
+    /// Abandon the host's wait for a capture in flight, releasing the
+    /// connection's one transfer lane.
+    func abandonGuestCapture() async -> AgentIntegrationCaptureResult
 }
 
 extension AgentIntegrationClient {
@@ -57,6 +69,24 @@ extension AgentIntegrationClient {
     public func commitGuestFileUpload(uploadID: UUID) async
         -> AgentIntegrationGuestFileUploadCommitResult {
         .hostUnavailable(.host)
+    }
+
+    /* Defaulted for the same reason the upload trio is: a client that has no
+       host to ask answers "no host" without every stub in the tree having to
+       learn a new lane. */
+    public func requestGuestCapture(depth: Int?) async
+        -> AgentIntegrationCaptureResult {
+        .hostUnavailable
+    }
+
+    public func fetchGuestCapturePage(captureID: UUID, offset: Int) async
+        -> AgentIntegrationCaptureResult {
+        .hostUnavailable
+    }
+
+    public func abandonGuestCapture() async
+        -> AgentIntegrationCaptureResult {
+        .hostUnavailable
     }
 
     /// Nothing to address: this client answers "no host" to everything.

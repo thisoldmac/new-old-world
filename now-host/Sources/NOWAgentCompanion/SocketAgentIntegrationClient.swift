@@ -171,6 +171,43 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
+    func requestGuestCapture(depth: Int?) async
+        -> AgentIntegrationCaptureResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.requestCapture(
+                depth: depth ?? AgentIntegrationCapturePolicy.defaultDepth)
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
+    func fetchGuestCapturePage(captureID: UUID, offset: Int) async
+        -> AgentIntegrationCaptureResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.fetchCapturePage(
+                captureID: captureID, offset: offset)
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
+    func abandonGuestCapture() async -> AgentIntegrationCaptureResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.abandonCapture()
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
     private func unavailable(for error: Error?)
         -> AgentIntegrationUnavailable {
         guard let error else { return .host }

@@ -1657,6 +1657,16 @@ final class GuestListener: ObservableObject {
 
     private var pendingCapture:
         ((Result<CaptureDelivery, CaptureFailure>) -> Void)?
+
+    /// Whether a capture is already on its way here.
+    ///
+    /// Read by the agent capture lane, which must not start one while the
+    /// person at the machine is waiting on theirs: `requestCapture` REPLACES
+    /// `pendingCapture`, so a second request would leave the first
+    /// completion — the Screenshots button's — never called. The panel
+    /// guards this with its own `isCapturing`; a second initiator needs the
+    /// fact from the wire's owner rather than from one pane's state.
+    var isCapturePending: Bool { pendingCapture != nil }
     private var captureWatchdogId: Int?
     private var fileWatchdogId: Int?
 

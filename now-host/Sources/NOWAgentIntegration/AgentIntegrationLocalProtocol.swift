@@ -41,6 +41,12 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         /// has already performed so the host can write it into the log the
         /// person at the machine reads.
         case audit = "audit"
+        /// Take a capture, or fetch one page of the one just taken, or
+        /// abandon the wait for one in flight. Three intentions on one
+        /// operation because they are one lane: a page is only meaningful
+        /// against the capture that produced it, and splitting them would
+        /// let a caller fetch pages of a stage no operation created.
+        case capture = "capture"
     }
 
     public let version: Int
@@ -60,6 +66,15 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
     /// One completed invocation, reported for the log. Present only on the
     /// `audit` operation, and never a request for anything.
     public var auditEvent: HostProjectionAuditEvent? = nil
+    /// Bits per pixel to ask the guest's screen capture for. Present only
+    /// when the `capture` operation is TAKING one.
+    public var captureDepth: Int? = nil
+    /// Which staged capture a continuation is reading, and from where.
+    /// Present together, and only on a continuation.
+    public var captureID: UUID? = nil
+    public var captureOffset: Int? = nil
+    /// Abandon the wait for a capture in flight instead of taking one.
+    public var captureAbandon: Bool? = nil
     /// WHICH machine this request is about, if the caller cares.
     ///
     /// Accepts a machine id (`pb1400c` — "whatever is connected to that
@@ -272,6 +287,52 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         request.auditEvent = event
         return request
     }
+
+    /// Take a capture of the addressed machine's screen.
+    public static func capture(depth: Int,
+                               requestID: UUID = UUID()) -> Self {
+        var request = Self(
+            requestID: requestID,
+            operation: .capture,
+            launchSelection: nil,
+            processReference: nil,
+            approvalReceipt: nil,
+            guestFilePath: nil,
+            guestFileCursor: nil)
+        request.captureDepth = depth
+        return request
+    }
+
+    /// Read one page of a capture already staged by this host.
+    public static func capturePage(captureID: UUID,
+                                   offset: Int,
+                                   requestID: UUID = UUID()) -> Self {
+        var request = Self(
+            requestID: requestID,
+            operation: .capture,
+            launchSelection: nil,
+            processReference: nil,
+            approvalReceipt: nil,
+            guestFilePath: nil,
+            guestFileCursor: nil)
+        request.captureID = captureID
+        request.captureOffset = offset
+        return request
+    }
+
+    /// Abandon the host's wait for a capture in flight.
+    public static func captureAbandon(requestID: UUID = UUID()) -> Self {
+        var request = Self(
+            requestID: requestID,
+            operation: .capture,
+            launchSelection: nil,
+            processReference: nil,
+            approvalReceipt: nil,
+            guestFilePath: nil,
+            guestFileCursor: nil)
+        request.captureAbandon = true
+        return request
+    }
 }
 
 public enum AgentIntegrationLocalResult: Equatable, Sendable {
@@ -296,6 +357,7 @@ public enum AgentIntegrationLocalResult: Equatable, Sendable {
     /// ADDRESSING, not to the operation: nothing about the guest was
     /// asked, so no operation-shaped answer would be honest.
     case notAddressed(AgentIntegrationUnavailable)
+    case capture(AgentIntegrationCaptureResult)
     /// The reported invocation reached the host's log. It says only that,
     /// because that is all the caller can be told: the line is written where
     /// the person reads it, not returned to whoever reported it.
@@ -330,6 +392,9 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         AgentIntegrationGuestFileUploadStageResult? = nil
     public var guestFilesUploadCommitResult:
         AgentIntegrationGuestFileUploadCommitResult? = nil
+    /// One capture, or one page of it. Sized so a full page still leaves the
+    /// response inside the 16 KiB cap.
+    public var captureResult: AgentIntegrationCaptureResult? = nil
     /// The request named a machine this host cannot answer for. Set
     /// INSTEAD of any operation result: nothing was asked of any guest.
     public var notAddressed: AgentIntegrationUnavailable? = nil
@@ -558,6 +623,24 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         error = nil
     }
 
+    public init(
+        requestID: UUID,
+        captureResult: AgentIntegrationCaptureResult
+    ) {
+        version = AgentIntegrationLocalProtocol.version
+        self.requestID = requestID
+        result = nil
+        processListResult = nil
+        launchResult = nil
+        quitResult = nil
+        artifactTransferResult = nil
+        guestFilesCapabilitiesResult = nil
+        guestFilesListResult = nil
+        guestFilesStatResult = nil
+        self.captureResult = captureResult
+        error = nil
+    }
+
     public init(requestID: UUID? = nil,
                 error: AgentIntegrationLocalError) {
         version = AgentIntegrationLocalProtocol.version
@@ -605,7 +688,8 @@ public enum AgentIntegrationLocalCodec {
             "processReference", "approvalReceipt", "guestFilePath",
             "guestFileCursor", "guestFileUpload", "guestFileUploadID",
             "guestFileUploadOffset", "guestFileUploadChunk", "probeCostly",
-            "auditEvent",
+            "auditEvent", "captureDepth", "captureID", "captureOffset",
+            "captureAbandon",
             // Orthogonal to every operation, so it clears BOTH gates:
             // this allowlist, and the per-operation key set below.
             "guestSelector",
@@ -829,6 +913,62 @@ public enum AgentIntegrationLocalCodec {
                 throw AgentIntegrationLocalTransportError.invalidMessage(
                     "Audit event does not match the schema")
             }
+        case .capture:
+            /* Three shapes on one operation, and exactly one of them per
+               request. A page fetch names its stage AND its offset — either
+               alone is a request nothing can serve — and none of the three
+               carries any other selection, because a capture takes no path,
+               receipt or reference of any kind. */
+            var captureKeys: Set<String> = [
+                "version", "requestID", "operation",
+            ]
+            let takes = request.captureDepth != nil
+            let pages = request.captureID != nil
+                || request.captureOffset != nil
+            let abandons = request.captureAbandon != nil
+            guard [takes, pages, abandons].filter({ $0 }).count == 1,
+                  request.launchSelection == nil,
+                  request.processReference == nil,
+                  request.approvalReceipt == nil,
+                  request.guestFilePath == nil,
+                  request.guestFileCursor == nil,
+                  request.guestFileUpload == nil,
+                  request.guestFileUploadID == nil,
+                  request.guestFileUploadOffset == nil,
+                  request.guestFileUploadChunk == nil,
+                  request.probeCostly == nil,
+                  request.auditEvent == nil else {
+                throw AgentIntegrationLocalTransportError.invalidMessage(
+                    "Capture request does not match the schema")
+            }
+            if takes {
+                guard let depth = request.captureDepth,
+                      AgentIntegrationCapturePolicy.isValidDepth(depth) else {
+                    throw AgentIntegrationLocalTransportError.invalidMessage(
+                        "Capture depth is not one the guest implements")
+                }
+                captureKeys.insert("captureDepth")
+            }
+            if pages {
+                guard request.captureID != nil,
+                      let offset = request.captureOffset,
+                      offset >= 0,
+                      offset <= AgentIntegrationCapturePolicy.maximumBytes,
+                      offset % AgentIntegrationCapturePolicy.pageBytes == 0
+                else {
+                    throw AgentIntegrationLocalTransportError.invalidMessage(
+                        "Capture page request does not match the schema")
+                }
+                captureKeys.formUnion(["captureID", "captureOffset"])
+            }
+            if abandons {
+                guard request.captureAbandon == true else {
+                    throw AgentIntegrationLocalTransportError.invalidMessage(
+                        "Capture abandon is only meaningful as true")
+                }
+                captureKeys.insert("captureAbandon")
+            }
+            expectedKeys = captureKeys
         }
         /* Addressing belongs to no operation, so it is admitted for all of
            them rather than repeated in twelve key sets — and only when the
@@ -869,7 +1009,7 @@ public enum AgentIntegrationLocalCodec {
                 "artifactTransferResult",
                 "guestFilesCapabilitiesResult", "guestFilesListResult",
                 "guestFilesStatResult", "guestFilesUploadStageResult",
-                "guestFilesUploadCommitResult", "recorded",
+                "guestFilesUploadCommitResult", "captureResult", "recorded",
                 // A refusal, not a protocol error: without this the
                 // companion reads a real answer as a broken message.
                 "notAddressed",
@@ -894,6 +1034,7 @@ public enum AgentIntegrationLocalCodec {
             object["guestFilesUploadStageResult"] != nil
         let hasGuestFilesUploadCommit =
             object["guestFilesUploadCommitResult"] != nil
+        let hasCapture = object["captureResult"] != nil
         let hasRecorded = object["recorded"] != nil
         let hasError = object["error"] != nil
         /* Counted with the results rather than beside them: the refusal is
@@ -906,7 +1047,7 @@ public enum AgentIntegrationLocalCodec {
             hasArtifactTransfer, hasGuestFilesCapabilities,
             hasGuestFilesList, hasGuestFilesStat,
             hasGuestFilesUploadStage, hasGuestFilesUploadCommit,
-            hasRecorded, hasNotAddressed, hasError,
+            hasCapture, hasRecorded, hasNotAddressed, hasError,
         ]
                 .filter({ $0 }).count == 1 else {
             throw AgentIntegrationLocalTransportError.invalidMessage(

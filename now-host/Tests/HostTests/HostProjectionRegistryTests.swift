@@ -103,7 +103,8 @@ final class HostProjectionRegistryTests: XCTestCase {
         let names = AgentIntegrationCapabilityNames.self
         let known: Set<String> = [
             names.processList, names.processQuit, names.softwareList,
-            names.fileList, names.filePut, names.launchCommand,
+            names.fileList, names.filePut, names.captureRequest,
+            names.launchCommand,
         ]
         for projection in HostProjectionRegistry.hostFaces.projections {
             for requirement in projection.requires {
