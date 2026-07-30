@@ -197,6 +197,17 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
+    func machineFacts() async -> AgentIntegrationGuestRowReportResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.machineFacts()
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
     func catalogSearch() async -> AgentIntegrationGuestRowReportResult {
         guard let client else {
             return .unavailable(unavailable(for: startupError))

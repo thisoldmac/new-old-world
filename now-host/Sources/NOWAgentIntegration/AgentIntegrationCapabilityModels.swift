@@ -231,6 +231,17 @@ public enum AgentIntegrationCapabilityNames {
     /// availability comes off `help`, free, so nothing has to decide
     /// whether settling it is worth what it costs.
     public static let catsearchCommand = "catsearch"
+    /// The machine's own account of itself — five domain groups and a
+    /// snapshot, in one call. A COMMAND, so the ledger resolves it against
+    /// the guest's `help` table exactly as it does `reveal`, `catsearch` and
+    /// `tail`: that is what makes `now_machine_facts` PowerPC-only by
+    /// derivation, with nothing on this side asking which guest answered.
+    ///
+    /// Note what it is NOT. There is no `gestalt.*` message family and this
+    /// name must not grow one: the census family already carries the paged,
+    /// per-probe reading of adjacent hardware facts, and a second family for
+    /// the same machine would be two mechanisms for one question.
+    public static let gestaltCommand = "gestalt"
     /// The guest's own log for this launch. A COMMAND, like `reveal` and for
     /// the same mechanical reason: the ledger resolves it against the
     /// guest's `help` table, which is what makes the row PowerPC-only
@@ -262,7 +273,7 @@ public enum AgentIntegrationCapabilityNames {
         processList, processQuit, processFront, softwareList, fileList,
         fileGet, filePut, fileCancel, fileMove, fileTrash, fileRestore,
         fileMkdir, censusRequest, captureRequest, launchCommand,
-        revealCommand, catsearchCommand, tailCommand,
+        revealCommand, catsearchCommand, gestaltCommand, tailCommand,
     ]
 
     /// Refusal codes that mean "this guest does not implement that", as

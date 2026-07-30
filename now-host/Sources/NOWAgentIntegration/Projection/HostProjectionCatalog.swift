@@ -16,6 +16,12 @@ public enum HostProjectionCatalog {
            A person opening the app meets the Census page in the same
            position. */
         HardwareCensusProjection.self,
+        /* Immediately after the census, because it answers the same class of
+           question — what the machine IS — by the other route, and the two
+           are meant to be read together. Adjacent and not merged: the
+           difference in plane, shape and meaning of absence is argued in
+           both rows and in docs/mcp-coverage.md. */
+        MachineFactsProjection.self,
         ListProcessesProjection.self,
         /* With the observations rather than beside the Files family: it
            reads what the guest wrote about itself, changes nothing, and

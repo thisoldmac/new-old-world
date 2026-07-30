@@ -58,6 +58,15 @@ public protocol AgentIntegrationClient: Sendable {
     /// Finder obeyed — `RevealItemProjection` says why in full.
     func revealItem(target: String) async
         -> AgentIntegrationGuestRowReportResult
+    /// The connected machine's own account of itself — the `gestalt` verb.
+    ///
+    /// **No parameter, and none to invent.** The contract is explicit that a
+    /// typed call with no `line` "always returns every group", so one call
+    /// carries the whole answer; a group selector would only narrow an answer
+    /// that already arrived, and the group grammar (`--cpu`, `--full`) is the
+    /// console's line, whose presence is what tells the guest a human is
+    /// typing. See `MachineFactsProjection`.
+    func machineFacts() async -> AgentIntegrationGuestRowReportResult
     /// The end of the guest's own log for this launch. `lines` is a count,
     /// never a file: the verb names nothing on the disk and this side must
     /// not invent a way for it to — see `GuestLogTailProjection`. Absent
@@ -194,6 +203,15 @@ extension AgentIntegrationClient {
     /// implement only their own lanes, and a requirement without a default
     /// is seven compile errors in seven files named for other capabilities.
     public func revealItem(target: String) async
+        -> AgentIntegrationGuestRowReportResult {
+        .hostUnavailable
+    }
+
+    /// Declared with its default in the one edit, per the rule at the top of
+    /// this file. "No host" and not an empty report: an empty set of groups
+    /// would say a Macintosh was asked what it is and had nothing to say,
+    /// which is a claim about a machine nobody reached.
+    public func machineFacts() async
         -> AgentIntegrationGuestRowReportResult {
         .hostUnavailable
     }
