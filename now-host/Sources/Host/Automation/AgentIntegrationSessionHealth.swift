@@ -10,6 +10,10 @@ import NOWAgentIntegration
 final class AgentIntegrationHostAdapter {
     private let listener: GuestListener
     private let launchCommandTimeout: TimeInterval
+    /// Injected for the same reason as the launch timeout beside it: the real
+    /// one is 42 s, and a test that had to wait it out to prove the timeout
+    /// path is a test nobody runs.
+    private let catalogSearchTimeout: TimeInterval
     private let artifactApprovals: AgentIntegrationArtifactApprovalStore?
     private lazy var processControl = AgentIntegrationProcessControl(
         listener: listener,
@@ -33,7 +37,8 @@ final class AgentIntegrationHostAdapter {
         currentSessionID: { [unowned self] in connectedSessionID() })
     private lazy var catalogSearch = AgentIntegrationCatalogSearch(
         listener: listener,
-        currentSessionID: { [unowned self] in connectedSessionID() })
+        currentSessionID: { [unowned self] in connectedSessionID() },
+        commandTimeout: catalogSearchTimeout)
     private lazy var artifactTransfer = AgentIntegrationArtifactTransfer(
         listener: listener,
         approvals: artifactApprovals,
@@ -44,10 +49,13 @@ final class AgentIntegrationHostAdapter {
     init(
         listener: GuestListener,
         launchCommandTimeout: TimeInterval = 32,
+        catalogSearchTimeout: TimeInterval =
+            AgentIntegrationCatalogSearchPolicy.commandTimeout,
         artifactApprovals: AgentIntegrationArtifactApprovalStore? = nil
     ) {
         self.listener = listener
         self.launchCommandTimeout = launchCommandTimeout
+        self.catalogSearchTimeout = catalogSearchTimeout
         self.artifactApprovals = artifactApprovals
     }
 
