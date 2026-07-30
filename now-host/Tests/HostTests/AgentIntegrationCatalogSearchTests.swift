@@ -348,12 +348,29 @@ final class AgentIntegrationCatalogSearchTests: XCTestCase {
         ] as [([String], AgentIntegrationCapabilityState)] {
             let (listener, guest) = try await connectedListener()
             guest.onMessage = { message in
-                guard case .commandRequest(let request) = message,
-                      request.name == "help" else { return }
-                try? guest.send(.commandResult(.init(
-                    id: request.id, ok: true,
-                    output: ["help": commands.map { [$0, "a verb"] }],
-                    error: nil)))
+                switch message {
+                case .commandRequest(let request)
+                    where request.name == "help":
+                    try? guest.send(.commandResult(.init(
+                        id: request.id, ok: true,
+                        output: ["help": commands.map { [$0, "a verb"] }],
+                        error: nil)))
+                /* The report probes two read-only FAMILIES on its way to the
+                   answer, and a guest that never answers them costs this
+                   test their two 30 s watchdogs to prove nothing about a
+                   command table. Answering them empty settles the probes at
+                   once and leaves the assertion on its own subject. */
+                case .processList(let request):
+                    try? guest.send(.processListing(.init(
+                        id: request.id, processes: [], more: false,
+                        cursor: nil)))
+                case .fileList(let request):
+                    try? guest.send(.fileListing(.init(
+                        id: request.id, path: request.path, entries: [],
+                        more: false, cursor: nil, root: nil)))
+                default:
+                    return
+                }
             }
             let adapter = AgentIntegrationHostAdapter(listener: listener)
 
