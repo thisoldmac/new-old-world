@@ -13,6 +13,10 @@ public enum HostProjectionCatalog {
         ListProcessesProjection.self,
         CaptureScreenProjection.self,
         LaunchSoftwareProjection.self,
+        /* Beside launch rather than at the tail: they are the same guest
+           verb pair over the same target grammar, and reveal is the one
+           that opens nothing. */
+        RevealItemProjection.self,
         BringToFrontProjection.self,
         RequestQuitProjection.self,
         TransferApprovedArtifactProjection.self,

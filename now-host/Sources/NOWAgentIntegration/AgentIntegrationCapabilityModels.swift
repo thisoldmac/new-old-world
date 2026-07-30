@@ -191,6 +191,11 @@ public enum AgentIntegrationCapabilityNames {
     /// `capture.request` is what the host sends and both guests dispatch.
     public static let captureRequest = "capture.request"
     public static let launchCommand = "launch"
+    /// `launch`'s read-only twin: show one item in the guest's own Finder.
+    /// A COMMAND rather than a message family — the ledger resolves it
+    /// against the guest's `help` table, which is what makes the row
+    /// PowerPC-only without anything here naming a guest.
+    public static let revealCommand = "reveal"
 
     /// Every name above, as a set.
     ///
@@ -208,7 +213,7 @@ public enum AgentIntegrationCapabilityNames {
     /// set still fails somewhere.
     public static let all: Set<String> = [
         processList, processQuit, processFront, softwareList, fileList,
-        filePut, captureRequest, launchCommand,
+        filePut, captureRequest, launchCommand, revealCommand,
     ]
 
     /// Refusal codes that mean "this guest does not implement that", as

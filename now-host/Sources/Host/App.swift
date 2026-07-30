@@ -469,10 +469,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     return .bringToFront(
                         await agentIntegration.bringToFront(
                             reference: reference))
+                case .revealItem:
+                    /* The target is all a caller may send, and a request
+                       without one never reached a machine — so the refusal
+                       is the target's rather than the guest's. The codec
+                       has already bounded it; this is the shape check that
+                       cannot be expressed in a strict key list. */
+                    guard let target = request.revealTarget else {
+                        return .revealItem(.refused(.init(
+                            code: "now-reveal-target-invalid",
+                            message:
+                                "The reveal request named no target")))
+                    }
+                    return .revealItem(
+                        await agentIntegration.revealItem(target: target))
                 case .census, .softwareInventory, .guestFileDownload,
                      .guestFileMutation, .transferCancel,
                      .guestLogTail, .machineFacts, .catalogSearch,
-                     .revealItem, .diagnostics:
+                     .diagnostics:
                     /* P1a landed the SERIALIZATION for eleven capabilities
                        and none of their adapters (plan 005): eleven agents
                        each

@@ -102,6 +102,7 @@ The test compares both against the code literally.
 | `now_list_processes` | `process.list` | `process.list` | message family |
 | `now_capture_screen` | `capture.request` | `capture.request` | message family |
 | `now_launch_software` | `software.list`, `launch` | `launch` | message family plus command |
+| `now_reveal_item` | `reveal` | `reveal` | command |
 | `now_bring_to_front` | `process.list`, `process.front` | `process.front` | message family |
 | `now_request_quit` | `process.list`, `process.quit` | `process.quit` | message family |
 | `now_transfer_approved_artifact` | `file.put` | `file.put` | message family |
@@ -220,6 +221,34 @@ than as something retryable. That is the same trade the sibling TBT project
 made when it collapsed its `screenshot` and `shotdata` verbs into one image
 result.
 
+### One row changes the screen and cannot confirm that it did
+
+`now_reveal_item` is the first capability whose whole effect is on the
+**person's** side of the machine, and the first whose success cannot be
+checked from here. The guest asks its Finder to show an item with one
+`kAEMakeObjectsVisible` Apple Event sent `kAENoReply`, then calls
+`SetFrontProcess` on it. So a completed answer means the machine was
+**asked**: nothing on this wire can say the Finder obeyed, that the right item
+is selected, or that the Finder is frontmost yet — the switch is cooperative
+and lands when the Finder next yields.
+
+The row states that in its schema and claims nothing more. It does **not**
+re-list to confirm, though the confirmable half is cheap and real — a fresh
+`process.list` entry with `kind: "finder"` and `front: true` — because the
+shared row-report result five verbs answer in has nowhere to carry a
+host-derived outcome, and a round trip whose result cannot be reported is
+worse than not taking it. Two named consequences rather than one silent one:
+
+| | Today | What would change it |
+|---|---|---|
+| asked vs confirmed | reported as asked, in the schema's words | a field on `AgentIntegrationGuestRowReport`, which serves five capabilities |
+| "the Finder is not running" vs "no such item" | the guest's own sentence, forwarded verbatim under one code | a distinct guest error code — `reveal` answers every refusal as `reveal-refused`, and typing them apart by reading the prose would be the host deciding |
+
+Rule 3 is carried by two lines and not by the answer: the dispatch's audit
+event (face, capability, machine, outcome) and a host line under `sw` naming
+the target, because for this capability the target **is** the event — the same
+reason the guest-Files family logs its paths.
+
 ## Every gap, with its disposition
 
 The complete list of host-askable guest capability that no projection
@@ -270,7 +299,6 @@ to exist:
 | `put` | command | 68k | planned | W1 #4. On 68K this verb *is* the guest→host transfer; the PowerPC guest answers the same capability as `file.get`. |
 | `putstat` | command | ppc | unnoticed | Transfer diagnostics. The host reads them internally to size a transfer; whether an agent should be able to is undecided. |
 | `quit` | command | both | deliberate | `now_request_quit` needs the `process.quit` **family**, not this command: the opaque-reference and PSN-revalidation model has nothing to stand on without it, and is not relaxed to make a tool work ([agent-integration.md](agent-integration.md)). |
-| `reveal` | command | ppc | unnoticed | Show an item in the Finder. Served on PPC; nothing asks. |
 | `screenshot` | command | both | deliberate | The console spelling of `capture.request`, which is projected as `now_capture_screen`. One capability, one route — [command-parity.md](command-parity.md) ("two ways to name a target is not two faces"), the same rule that keeps `ls` and `ps` off this surface. |
 | `shotdiag` | command | 68k | unnoticed | Where a staged capture read from. It found the 24-bit addressing defect on the 180c and is reachable from no host face. |
 | `sw` | command | both | planned | W1 #3 — the installed-software listing, and now the `software.list` message row above it. The two used to disagree, one reading COVERED and the other unreachable; `exposes` is what reconciled them. |
@@ -281,7 +309,7 @@ to exist:
 ### The unnoticed rows, named together
 
 Because they are the point: `stream.start`, `stream.stop`,
-`stream.refresh`, `catsearch`, `gestalt`, `putstat`, `reveal`, `shotdiag`,
+`stream.refresh`, `catsearch`, `gestalt`, `putstat`, `shotdiag`,
 `vprobe`.
 
 Gated against the table's own `unnoticed` column, so closing one of these is
@@ -343,7 +371,7 @@ real defect in its own first draft — reading the whole section rather than its
 first paragraph collected the two names the explanation mentions *because* they
 are not on the list.
 
-Last derived: 2026-07-30, on `claude/agent-family-gate`, off
-`claude/tbt-parity-slice` at the fourteen-projection registry. Re-derive by
+Last derived: 2026-07-30, on `claude/reveal-item`, off
+`claude/tbt-parity-slice` at the fifteen-projection registry. Re-derive by
 running `swift test --filter MCPCoverage` rather than by reading — if the
 tables and the code disagree, the code is right and the test says so.

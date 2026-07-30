@@ -94,6 +94,18 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
+    func revealItem(target: String) async
+        -> AgentIntegrationGuestRowReportResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.revealItem(target: target)
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
     func transferApprovedArtifact(receipt: String) async
         -> AgentIntegrationArtifactTransferResult {
         guard let client else {

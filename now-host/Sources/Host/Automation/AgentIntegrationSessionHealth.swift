@@ -19,6 +19,9 @@ final class AgentIntegrationHostAdapter {
         listener: listener,
         commandTimeout: launchCommandTimeout,
         currentSessionID: { [unowned self] in connectedSessionID() })
+    private lazy var revealControl = AgentIntegrationRevealItem(
+        listener: listener,
+        currentSessionID: { [unowned self] in connectedSessionID() })
     private lazy var capabilityLedger = AgentIntegrationCapabilityLedger(
         listener: listener,
         currentSessionID: { [unowned self] in connectedSessionID() })
@@ -131,6 +134,14 @@ final class AgentIntegrationHostAdapter {
         -> AgentIntegrationFrontResult {
         await processControl.bringToFront(
             reference: reference, requestedAt: requestedAt)
+    }
+
+    /// Show one item in the connected machine's own Finder. A completed
+    /// answer means the machine was ASKED — the guest's Apple Event requests
+    /// no reply — and `AgentIntegrationRevealItem` carries the whole of why.
+    func revealItem(target: String) async
+        -> AgentIntegrationGuestRowReportResult {
+        await revealControl.reveal(target: target)
     }
 
     func launchSoftware(_ selection: AgentIntegrationLaunchSelection,

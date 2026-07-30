@@ -45,6 +45,12 @@ public protocol AgentIntegrationClient: Sendable {
     /// meaningful only while the process it names lives.
     func bringToFront(reference: String) async
         -> AgentIntegrationFrontResult
+    /// Show one item in the guest's own Finder. The target is a full HFS
+    /// path or an item name; the answer is the guest's own rows, and a
+    /// completed one means the machine was asked rather than that the
+    /// Finder obeyed — `RevealItemProjection` says why in full.
+    func revealItem(target: String) async
+        -> AgentIntegrationGuestRowReportResult
     func transferApprovedArtifact(receipt: String) async
         -> AgentIntegrationArtifactTransferResult
     func guestFilesCapabilities() async
@@ -116,6 +122,15 @@ extension AgentIntegrationClient {
     /// learning a new lane the day one lands.
     public func bringToFront(reference: String) async
         -> AgentIntegrationFrontResult {
+        .hostUnavailable
+    }
+
+    /// Defaulted in the same edit that added the requirement, per the rule
+    /// at the top of this file: seven stub clients across the test tree
+    /// implement only their own lanes, and a requirement without a default
+    /// is seven compile errors in seven files named for other capabilities.
+    public func revealItem(target: String) async
+        -> AgentIntegrationGuestRowReportResult {
         .hostUnavailable
     }
 
