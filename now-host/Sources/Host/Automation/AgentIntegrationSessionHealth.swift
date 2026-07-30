@@ -22,6 +22,9 @@ final class AgentIntegrationHostAdapter {
     private lazy var revealControl = AgentIntegrationRevealItem(
         listener: listener,
         currentSessionID: { [unowned self] in connectedSessionID() })
+    private lazy var logTailControl = AgentIntegrationGuestLogTail(
+        listener: listener,
+        currentSessionID: { [unowned self] in connectedSessionID() })
     private lazy var capabilityLedger = AgentIntegrationCapabilityLedger(
         listener: listener,
         currentSessionID: { [unowned self] in connectedSessionID() })
@@ -145,6 +148,14 @@ final class AgentIntegrationHostAdapter {
     func revealItem(target: String) async
         -> AgentIntegrationGuestRowReportResult {
         await revealControl.reveal(target: target)
+    }
+
+    /// The end of the connected machine's own log for this launch. It names
+    /// no file and cannot be pointed at one; `AgentIntegrationGuestLogTail`
+    /// carries the whole of why, and what a log line can still disclose.
+    func tailGuestLog(lines: Int?) async
+        -> AgentIntegrationGuestRowReportResult {
+        await logTailControl.tail(lines: lines)
     }
 
     func launchSoftware(_ selection: AgentIntegrationLaunchSelection,

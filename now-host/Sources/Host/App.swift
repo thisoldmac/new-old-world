@@ -556,8 +556,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     }
                     return .guestFileMutation(
                         await guestFiles.agentMutate(composed))
+                case .guestLogTail:
+                    /* P1 #9. Nothing to read off the request but a count the
+                       codec has already bounded, and nothing to refuse here:
+                       a request that named no count is a COMPLETE request —
+                       absent means the guest's own default of 20 — which is
+                       what makes this the shortest branch in the switch. */
+                    return .guestLogTail(
+                        await agentIntegration.tailGuestLog(
+                            lines: request.logLineCount))
                 case .census, .softwareInventory,
-                     .guestLogTail, .machineFacts, .catalogSearch,
+                     .machineFacts, .catalogSearch,
                      .diagnostics:
                     /* P1a landed the SERIALIZATION for eleven capabilities
                        and none of their adapters (plan 005): eleven agents
