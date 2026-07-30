@@ -166,7 +166,24 @@ public enum CatalogSearchProjection: HostProjection {
        Refresh. It did NOT already exist — every other affordance on that page
        spends the inventory, and this one measures what producing it costs —
        so it landed with this row, which is what rule 3 asks for when a
-       capability's user-facing home is real and merely unbuilt. */
+       capability's user-facing home is real and merely unbuilt.
+
+       **Why Software and not Files, since the sweep is volume-wide.** The
+       page a capability belongs on is the page whose question it answers, not
+       the one whose nouns it touches. This answers "why is the Applications
+       list slow" — the Applications domain's own first page IS a whole-volume
+       catalog sweep (`AgentIntegrationLocalClient`, the softwareInventory
+       window), and `catsearch` exists because that sweep's cost is what the
+       Software module's design rests on (`catsearch.h`). On the Files page it
+       would sit beside a browser that pages one directory at a time and
+       answers a question that page never asks. The precedent is already
+       there: `reveal` reaches the Finder from this same page, because what it
+       serves is "act on the application I selected".
+
+       Noted for whoever lands the software-inventory capability: it will want
+       this pane too, and the two belong together — the listing and what
+       producing it costs. The footer is where both go; nothing here needs
+       moving when it arrives. */
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "SoftwareModuleView.swift",
                          symbol: "model.measureCatalogSearch()"),
