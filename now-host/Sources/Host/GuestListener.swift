@@ -907,6 +907,19 @@ final class GuestListener: ObservableObject {
         var modified: Int?
         var staged: InboundFileSink.StagedFile
         var transferMs: Int
+        /// The whole-stream CRC-32 the SENDER computed, when it sent one.
+        /// The sink has already verified the received bytes against it, so
+        /// a value here means checked; **nil means the guest computed none
+        /// and the bytes are UNCHECKED**, which a consumer must report as
+        /// unchecked rather than as correct (`file.end.crc32` is optional
+        /// by contract, and an older guest sends no field at all).
+        var crc32: UInt32?
+        /// The opaque source token a guest offered in `file.begin`, when it
+        /// offered one. Reverse resume is not implemented
+        /// (docs/reverse-file-streaming.md), so nothing consumes this — it
+        /// is carried because a consumer reporting a receipt should say
+        /// what the machine said, not what this host does with it.
+        var resumeToken: String?
     }
 
     /// Lists one page of a folder in the guest's share. Paths are

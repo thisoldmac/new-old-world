@@ -18,6 +18,10 @@ final class GuestFilesCommandService {
     private let maximumStatPages: Int
     private let clock: () -> Date
     private let uploadCommands: GuestFileUploadCommands
+    /// Where a pull may land. Nil when private storage could not be created,
+    /// which switches `download` off host-side rather than letting a
+    /// transfer start with nowhere to put it.
+    private let downloads: AgentDownloadStore?
     private var observations: [String: Observation] = [:]
 
     static let observationLifetime: TimeInterval = 60
@@ -30,13 +34,20 @@ final class GuestFilesCommandService {
         audit: Audit? = nil,
         maximumStatPages: Int = 8,
         clock: @escaping () -> Date = Date.init,
-        uploadStaging: GuestUploadStagingStore? = nil
+        uploadStaging: GuestUploadStagingStore? = nil,
+        /* Doubly optional so that "use the real per-launch store" and "there
+           is no store" are different arguments rather than one nil meaning
+           both. Omitted creates it; `.some(nil)` is a host that could not,
+           which is the state the capability report has to be able to
+           describe and a test has to be able to produce. */
+        downloadStore: AgentDownloadStore?? = nil
     ) {
         let auditSink = audit ?? {
             HostLog.shared.write($0, "files", $1)
         }
         let staging = uploadStaging ?? (try? GuestUploadStagingStore(
             clock: clock))
+        downloads = downloadStore ?? (try? AgentDownloadStore())
         self.listener = listener
         self.policy = policy
         self.currentSessionID = currentSessionID
@@ -116,13 +127,24 @@ final class GuestFilesCommandService {
                                   listServed: Bool) -> GuestFileCapabilities {
         var available: [GuestFileCommandKind] = [.capabilities]
         var deferred: [GuestFileCommandKind] = [
-            .download, .readText, .tailText, .mkdir,
+            .readText, .tailText, .mkdir,
             .move, .delete, .deployTree, .prune,
         ]
         if listServed {
             available.append(contentsOf: [.list, .stat])
         } else {
             deferred.append(contentsOf: [.list, .stat])
+        }
+        /* The download lane is a host-side condition AND a guest one, the
+           same split `put` describes below: private storage can exist while
+           the guest serves no `file.get`. Only a real call finds that out,
+           so this stays the host's answer and the session capability report
+           carries the guest's. It also needs the listing, because the size
+           ceiling is applied to what the listing observed. */
+        if downloads != nil && listServed {
+            available.append(.download)
+        } else {
+            deferred.append(.download)
         }
         // The put lane is a host-side condition AND a guest one: staging
         // can be ready while the guest cannot receive. Only the commit
@@ -228,51 +250,268 @@ final class GuestFilesCommandService {
             return finishInvalidPath(context)
         }
 
+        switch await scanParent(
+            for: leaf, wireParent: wireParent, sessionID: sessionID) {
+        case .found(let match, let pages):
+            return finish(
+                context, outcome: .success, wireRequests: pages,
+                value: observedEntry(
+                    match, parent: scoped.parent,
+                    sessionID: sessionID, observedAt: clock()))
+        case .notFound(let pages):
+            return finish(
+                context, outcome: .notFound, wireRequests: pages,
+                failure: .init(
+                    code: "now-files-not-found",
+                    message: "No exact item was observed at that path"))
+        case .scanLimit(let pages):
+            return finish(
+                context, outcome: .scanLimit, wireRequests: pages,
+                failure: .init(
+                    code: "now-files-scan-limit",
+                    message:
+                        "The bounded parent scan ended before that item was observed"))
+        case .stale(let pages):
+            return finishStale(context, wireRequests: pages)
+        case .invalidListing(let pages):
+            return finishInvalidListing(context, wireRequests: pages)
+        case .failure(let failure, let pages):
+            return finish(context, failure: failure, wireRequests: pages)
+        }
+    }
+
+    /// One bounded parent scan, and what it reached.
+    ///
+    /// Extracted from `stat` when the download lane needed the same scan for
+    /// a different receipt: an agent download refuses on the size the
+    /// guest's own listing reports, so it has to observe the item before it
+    /// asks for the bytes. Two copies of a bounded scan would be two places
+    /// for the bound to drift, and the page count is part of every receipt
+    /// this file writes.
+    private enum ParentScan {
+        case found(FileEntry, pages: Int)
+        case notFound(pages: Int)
+        case scanLimit(pages: Int)
+        case stale(pages: Int)
+        case invalidListing(pages: Int)
+        case failure(GuestListener.FileFailure, pages: Int)
+    }
+
+    private func scanParent(
+        for leaf: String,
+        wireParent: GuestFilePath,
+        sessionID: UUID
+    ) async -> ParentScan {
         var cursor: Int?
         for page in 1...maximumStatPages {
             let result = await listOnce(
                 path: wireParent.wireValue, cursor: cursor)
             guard currentSessionID() == sessionID else {
-                return finishStale(context, wireRequests: page)
+                return .stale(pages: page)
             }
             switch result {
             case .failure(let failure):
-                return finish(
-                    context, failure: failure, wireRequests: page)
+                return .failure(failure, pages: page)
             case .success(let listing):
                 guard let validated = validateListing(
                     listing, expectedPath: wireParent.wireValue)
                 else {
-                    return finishInvalidListing(
-                        context, wireRequests: page)
+                    return .invalidListing(pages: page)
                 }
                 if let match = validated.entries.first(where: {
                     $0.name == leaf
                 }) {
-                    return finish(
-                        context, outcome: .success, wireRequests: page,
-                        value: observedEntry(
-                            match, parent: scoped.parent,
-                            sessionID: sessionID, observedAt: clock()))
+                    return .found(match, pages: page)
                 }
                 guard let next = validated.nextCursor else {
-                    return finish(
-                        context, outcome: .notFound, wireRequests: page,
-                        failure: .init(
-                            code: "now-files-not-found",
-                            message:
-                                "No exact item was observed at that path"))
+                    return .notFound(pages: page)
                 }
                 cursor = next
             }
         }
-        return finish(
-            context, outcome: .scanLimit,
-            wireRequests: maximumStatPages,
-            failure: .init(
-                code: "now-files-scan-limit",
+        return .scanLimit(pages: maximumStatPages)
+    }
+
+    // MARK: - Download (W1 #4, the pull direction)
+
+    /// Pulls one bounded file off the machine into host-owned private
+    /// storage, and reports where it landed.
+    ///
+    /// The policy this implements, stated once here because it is the answer
+    /// docs/agent-integration.md deferred ("arbitrary download remains
+    /// absent until a typed NOW command, root/size policy, receipts, audit,
+    /// and explicit tool projection"):
+    ///
+    /// 1. **The source is bounded by the host's `guestRoot` policy**, the
+    ///    same canonical root-relative path `list` and `stat` accept. No
+    ///    absolute guest path, no traversal, one item — a folder is refused
+    ///    rather than walked.
+    /// 2. **The size is refused before any byte moves**, from the fork sizes
+    ///    the guest's own listing reports, against
+    ///    `AgentDownloadStore.maximumBytes`. Checked again after arrival,
+    ///    because a source can grow between the two and MacBinary adds bytes
+    ///    the forks do not include; an over-ceiling arrival is discarded and
+    ///    lands nothing, which costs the wire time and is the honest price
+    ///    of not putting an agent's ceiling into the human's own download
+    ///    lane.
+    /// 3. **The destination is not the caller's to name** — see
+    ///    `AgentDownloadStore`.
+    /// 4. **One attempt.** No resume: the deployed sequence has no
+    ///    guest-issued source identity before the host asks for an offset
+    ///    (docs/reverse-file-streaming.md), so a retained partial could
+    ///    stitch two different sources. A `resumeToken` is reported when the
+    ///    guest offers one and is never used.
+    /// 5. **The container is the guest's answer, not the caller's choice.**
+    ///    Whether a classic file is data or MacBinary is a fact about its
+    ///    forks; the receipt says which arrived.
+    ///
+    /// The bytes themselves go through the existing reverse-streaming path
+    /// unchanged — bounded fork reads, a private disk sink, progress, CRC,
+    /// interruption cleanup, atomic finalization — staged directly into the
+    /// store's root. Nothing here is a second transfer path.
+    func download(path: String) async
+        -> GuestFileCommandResponse<GuestFileDownloadLanding> {
+        let context = begin(.download, path: path)
+        guard let sessionID = context.sessionID else {
+            return finishUnavailable(context)
+        }
+        guard let downloads else {
+            return finishRefused(
+                context, code: "now-download-staging-unavailable",
+                message: "Private download storage is unavailable")
+        }
+        let scoped: GuestFilePath
+        do {
+            scoped = try GuestFilePath(path)
+        } catch {
+            return finishInvalidPath(context)
+        }
+        guard let leaf = scoped.leaf else {
+            return finishRefused(
+                context, code: "now-files-path-invalid",
+                message: "Download requires one file below guestRoot")
+        }
+        let wireParent: GuestFilePath
+        let wirePath: GuestFilePath
+        do {
+            wireParent = try scoped.parent.appending(
+                to: policy.snapshot.guestRoot)
+            wirePath = try scoped.appending(to: policy.snapshot.guestRoot)
+        } catch {
+            return finishInvalidPath(context)
+        }
+
+        let observed: FileEntry
+        var wireRequests: Int
+        switch await scanParent(
+            for: leaf, wireParent: wireParent, sessionID: sessionID) {
+        case .found(let match, let pages):
+            observed = match
+            wireRequests = pages
+        case .notFound(let pages):
+            return finish(
+                context, outcome: .notFound, wireRequests: pages,
+                failure: .init(
+                    code: "now-files-not-found",
+                    message: "No exact item was observed at that path"))
+        case .scanLimit(let pages):
+            return finish(
+                context, outcome: .scanLimit, wireRequests: pages,
+                failure: .init(
+                    code: "now-files-scan-limit",
+                    message:
+                        "The bounded parent scan ended before that item was observed"))
+        case .stale(let pages):
+            return finishStale(context, wireRequests: pages)
+        case .invalidListing(let pages):
+            return finishInvalidListing(context, wireRequests: pages)
+        case .failure(let failure, let pages):
+            return finish(context, failure: failure, wireRequests: pages)
+        }
+
+        guard !observed.isFolder else {
+            return finishRefused(
+                context, code: "now-download-not-a-file",
+                message: "That item is a folder; a download takes one file",
+                wireRequests: wireRequests)
+        }
+        /* Both forks, because a MacBinary answer carries both and the
+           ceiling is about what crosses the wire. An absent fork size is
+           NOT read as zero — the guest declining to say how big something
+           is leaves the ceiling unenforceable before the fact, which is a
+           refusal rather than a reason to try. */
+        guard let dataBytes = observed.dataBytes,
+              let resourceBytes = observed.rsrcBytes else {
+            return finishRefused(
+                context, code: "now-download-size-unknown",
                 message:
-                    "The bounded parent scan ended before that item was observed"))
+                    "The guest's listing did not report that item's size, "
+                    + "so the download ceiling cannot be applied first",
+                wireRequests: wireRequests)
+        }
+        do {
+            try downloads.reserve(bytes: dataBytes + resourceBytes)
+        } catch let failure as AgentDownloadStore.Failure {
+            return finishRefused(
+                context, code: failure.code, message: failure.message,
+                wireRequests: wireRequests)
+        } catch {
+            return finishRefused(
+                context, code: "now-download-staging-unavailable",
+                message: "Private download storage is unavailable",
+                wireRequests: wireRequests)
+        }
+
+        wireRequests += 1
+        let pull = await pullOnce(
+            path: wirePath.wireValue, into: downloads.rootURL)
+        guard currentSessionID() == sessionID else {
+            return finishStale(context, wireRequests: wireRequests)
+        }
+        switch pull {
+        case .failure(let failure):
+            return finish(
+                context, failure: failure, wireRequests: wireRequests)
+        case .success(let delivery):
+            let landing: AgentDownloadStore.Landing
+            do {
+                landing = try downloads.land(
+                    delivery.staged, named: delivery.name)
+            } catch let failure as AgentDownloadStore.Failure {
+                return finishRefused(
+                    context, code: failure.code, message: failure.message,
+                    wireRequests: wireRequests)
+            } catch {
+                return finishRefused(
+                    context, code: "now-download-landing-failed",
+                    message: "NOW could not place the downloaded file",
+                    wireRequests: wireRequests)
+            }
+            return finish(
+                context, outcome: .success, wireRequests: wireRequests,
+                value: GuestFileDownloadLanding(
+                    guestPath: scoped.wireValue,
+                    hostPath: landing.url.path,
+                    bytes: landing.bytes,
+                    container: delivery.container,
+                    crc32: delivery.crc32.map { Int($0) },
+                    resumeToken: delivery.resumeToken,
+                    elapsedMs: delivery.transferMs))
+        }
+    }
+
+    private func pullOnce(path: String, into directory: URL) async
+        -> Result<GuestListener.FileDelivery, GuestListener.FileFailure> {
+        await withCheckedContinuation { continuation in
+            /* `container` stays nil: the guest's own fork rule decides
+               whether this is a stream of data bytes or a MacBinary, which
+               is a fact about the file rather than a caller's preference. */
+            listener.getFile(
+                path: path, container: nil, stagingDirectory: directory
+            ) {
+                continuation.resume(returning: $0)
+            }
+        }
     }
 
     func beginUpload(_ request: GuestFileUploadBeginRequest) async

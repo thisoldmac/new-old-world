@@ -152,9 +152,9 @@ final class GuestFilesCommandTests: XCTestCase {
         XCTAssertEqual(capabilities.guestRoot, "")
         XCTAssertEqual(capabilities.rootLabel, "Macintosh HD:")
         XCTAssertEqual(capabilities.availableCommands,
-                       [.capabilities, .list, .stat, .put])
+                       [.capabilities, .list, .stat, .download, .put])
         XCTAssertEqual(capabilities.deferredCommands,
-                       [.download, .readText, .tailText, .mkdir,
+                       [.readText, .tailText, .mkdir,
                         .move, .delete, .deployTree, .prune])
         XCTAssertEqual(capabilities.maximumPageEntries, 16)
         XCTAssertEqual(capabilities.maximumPathBytes, 223)

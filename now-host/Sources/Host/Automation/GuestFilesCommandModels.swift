@@ -141,6 +141,22 @@ struct GuestFileListingSnapshot: Equatable, Sendable {
     let observedAt: Date
 }
 
+/// What a completed download left on this Mac.
+///
+/// `hostPath` is present only on success, and that is load-bearing: naming a
+/// path for a transfer that did not finish is how a caller ends up opening a
+/// partial file. `crc32` absent means the guest computed none — UNCHECKED,
+/// never "correct".
+struct GuestFileDownloadLanding: Equatable, Sendable {
+    let guestPath: String
+    let hostPath: String
+    let bytes: Int
+    let container: String
+    let crc32: Int?
+    let resumeToken: String?
+    let elapsedMs: Int
+}
+
 struct GuestFileUploadBeginRequest: Equatable, Sendable {
     let destinationPath: String
     let bytes: Int

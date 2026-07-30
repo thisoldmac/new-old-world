@@ -153,15 +153,31 @@ final class NOWAgentCompanionTests: XCTestCase {
             ($0["name"] as? String)?.hasPrefix(
                 "now_guest_files_") == true
         }
-        XCTAssertEqual(guestFileTools.count, 6)
+        /* Derived, not counted. This assertion was three literals — 6, 3
+           and 3 — and every capability joining the family had to edit a
+           test named for something else, which is the papercut P0.1
+           collapsed everywhere it found it and missed here. What the
+           check is really for is the ANNOTATIONS below: the read side is
+           read-only-hinted and the upload side is not. So the counts are
+           now the registry's own, and the partition is asserted to be a
+           partition rather than to be a particular size. */
+        let registeredGuestFileTools = HostProjectionCatalog.projections
+            .filter {
+                $0.capability.rawValue.hasPrefix("now_guest_files_")
+            }
+        XCTAssertEqual(guestFileTools.count,
+                       registeredGuestFileTools.count)
         let guestFileReadTools = guestFileTools.filter {
             !($0["name"] as? String ?? "").contains("_upload_")
         }
         let guestFileUploadTools = guestFileTools.filter {
             ($0["name"] as? String ?? "").contains("_upload_")
         }
-        XCTAssertEqual(guestFileReadTools.count, 3)
-        XCTAssertEqual(guestFileUploadTools.count, 3)
+        XCTAssertFalse(guestFileReadTools.isEmpty)
+        XCTAssertFalse(guestFileUploadTools.isEmpty)
+        XCTAssertEqual(
+            guestFileReadTools.count + guestFileUploadTools.count,
+            guestFileTools.count)
         XCTAssertTrue(guestFileReadTools.allSatisfy {
             let annotations = $0["annotations"] as? [String: Any]
             return annotations?["readOnlyHint"] as? Bool == true

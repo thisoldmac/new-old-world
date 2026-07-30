@@ -143,6 +143,18 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
+    func downloadGuestFile(path: String) async
+        -> AgentIntegrationGuestFileDownloadResult {
+        guard let client else {
+            return .hostUnavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.downloadGuestFile(path: path)
+        } catch {
+            return .hostUnavailable(unavailable(for: error))
+        }
+    }
+
     func beginGuestFileUpload(
         _ upload: AgentIntegrationGuestFileUploadBegin
     ) async -> AgentIntegrationGuestFileUploadStageResult {

@@ -19,6 +19,7 @@ public enum HostProjectionCatalog {
         GuestFilesCapabilitiesProjection.self,
         GuestFilesListProjection.self,
         GuestFilesStatProjection.self,
+        GuestFilesDownloadProjection.self,
         GuestFilesUploadBeginProjection.self,
         GuestFilesUploadAppendProjection.self,
         GuestFilesUploadCommitProjection.self,

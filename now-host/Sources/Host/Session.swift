@@ -1130,7 +1130,8 @@ final class Session {
             name: begin.name, container: begin.container,
             fileType: begin.fileType, creator: begin.creator,
             modified: begin.modified, staged: staged,
-            transferMs: Int(Date().timeIntervalSince(fileStart) * 1000))))
+            transferMs: Int(Date().timeIntervalSince(fileStart) * 1000),
+            crc32: end.crc32, resumeToken: begin.resumeToken)))
     }
 
     private func finishCapture(_ end: CaptureEnd) {

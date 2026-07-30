@@ -255,6 +255,18 @@ final class AgentIntegrationCapabilityLedger {
                honest state. */
             .init(names.processFront, .notProbedMutating),
             .init(names.filePut, .notProbedMutating),
+            /* The pull direction, and NOT probed for capture's reason
+               rather than quit's: `file.get` changes nothing on the
+               machine, but the smallest request in the family is a whole
+               file off a classic disk holding the connection's one
+               transfer lane while it crosses. There is also nothing to
+               name — a probe would have to invent a path and would then be
+               settling the family with a not-found. Unproven leaves the
+               capability callable, and a guest that does not implement it
+               answers `not-implemented` on the first real call, which is
+               what moves this row to unavailable in the guest's own
+               words. */
+            .init(names.fileGet, .notProbedCostly),
             /* Read-only, and NOT probed — the reason is `software.list`'s
                rather than `process.quit`'s. A capture costs the guest a
                whole screen grab and holds the connection's only transfer

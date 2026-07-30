@@ -186,6 +186,11 @@ public enum AgentIntegrationCapabilityNames {
     public static let processFront = "process.front"
     public static let softwareList = "software.list"
     public static let fileList = "file.list"
+    /// The host-initiated pull — `file.get` → `file.begin` → bulk →
+    /// `file.end`. Named here beside its sibling because it is the one
+    /// requirement of `now_guest_files_download` that decides whether the
+    /// bounded-download model has anything to stand on.
+    public static let fileGet = "file.get"
     public static let filePut = "file.put"
     /// The screen-capture family. A contract message name, not an alias:
     /// `capture.request` is what the host sends and both guests dispatch.
@@ -208,7 +213,7 @@ public enum AgentIntegrationCapabilityNames {
     /// set still fails somewhere.
     public static let all: Set<String> = [
         processList, processQuit, processFront, softwareList, fileList,
-        filePut, captureRequest, launchCommand,
+        fileGet, filePut, captureRequest, launchCommand,
     ]
 
     /// Refusal codes that mean "this guest does not implement that", as

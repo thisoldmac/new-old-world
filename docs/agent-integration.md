@@ -36,7 +36,7 @@ Because ordinary use feeds the same ledger, tools switch on as capabilities appe
 
 And a refusal must arrive as a refusal. `GuestListener.recordGuestError` routes a guest `error` to every waiter kind — command, file listing, process listing, software listing, process result, file change and census — because the ids come from one sequence. It previously routed three of those six, so exactly the requests a partial guest refuses reached their caller as a 15- or 30-second timeout carrying no reason. Against a guest that implements part of the contract, refusal is ordinary traffic rather than an edge case, and routing it is what makes the companion usable at all.
 
-The completed five-tool V0 surface remains intact; the surface is now fourteen tools. The approved follow-on is the
+The completed V0 surface remains intact and the parity slice is widening it a row at a time. **The tool count is not stated here on purpose**: it moved four times in two days, every capability that changed it had to edit a sentence it was otherwise unrelated to, and the number is derived in [mcp-coverage.md](mcp-coverage.md)'s projection table from the registry itself. Read it there. The approved follow-on is the
 [NOW MCP V0.5 guest-files command roadmap](plans/2026-07-24-003-feat-now-mcp-v0-5-files-command-roadmap-plan.md).
 V0.5 widens guest filesystem authority only through typed, logged NOW commands
 under a persisted root-relative `guestRoot`; it does not turn this companion
@@ -51,7 +51,11 @@ logs command start/outcome. Invalid stored policy is rejected and reset
 audibly. A create-only staged upload now reserves private host disk, accepts
 ordered bounded bytes rather than a host path, seals them by declared SHA-256,
 and enters the existing one-at-a-time guest put lane through a file-backed
-source. Download and every broader mutation/deployment command remain deferred.
+source. **Download landed 2026-07-30 as a bounded command** — one path beneath
+`guestRoot`, a size ceiling refused from the guest's own reported fork sizes
+before any byte moves, a destination the caller cannot name, one attempt, and
+the same receipt envelope as the rest of the family (see the parity-slice Files
+addition below). The broader mutation and deployment commands remain deferred.
 
 ## Where a projection lives
 
@@ -195,6 +199,12 @@ The V0.5 read-only additions are:
 | `now_guest_files_list` | `guestFiles.list` over `file.list` / `file.listing` | Accepts only a bounded canonical path relative to `guestRoot` plus an optional positive cursor. Returns at most one 16-entry page, both fork sizes, type/creator, classic modified time when present, freshness, continuation, and a command receipt. |
 | `now_guest_files_stat` | `guestFiles.stat` over bounded parent listing pages | Accepts one exact root-relative item path. Returns its bounded metadata or typed not-found, scan-limit, stale-session, unavailable, or refusal evidence. |
 
+The parity-slice Files addition (P1 #4) is:
+
+| Tool contract | Existing NOW owner | Implemented projection |
+| --- | --- | --- |
+| `now_guest_files_download` | `guestFiles.download` over `file.get` / `file.begin` / bulk / `file.end` through `GuestListener.getFile` and the reverse-streaming sink — the same call the Files page's **Download** row action makes | Pulls one file off the machine under a **bounded** policy, which is the answer this document deferred rather than a general download. The source is one canonical path beneath `guestRoot`; a folder is refused rather than walked. The **size ceiling is applied before the wire**, from the fork sizes the guest's own bounded listing just reported — an item over `AgentDownloadPolicy.maximumBytes` (4 MiB, where the artifact lane's human-source cap and the reverse path's metal ladder both stop) is refused having transferred nothing, and an arrival over it is discarded and lands nothing rather than being reported short. **The caller does not name the destination and cannot**: the host writes into private per-launch storage (mode `0700`, the landed file `0400`) and the receipt names the path, which is the exact mirror of upload accepting bytes and never a host path. Those bytes live only as long as the host launch that authorized them. One attempt — reverse resume does not exist, so a `resumeToken` is reported when a guest offers one and never consumed. The container is the guest's fork rule's answer, not a caller's choice, and `crc32` absent means the guest computed none and the bytes are UNCHECKED. Two mechanisms exist on the wire and this row uses one: see the `put` row in [mcp-coverage.md](mcp-coverage.md) for why the 68K verb is still a gap, which is a limitation of the host registry's conjunctive `requires` rather than a fact about either guest. |
+
 The V0.5 upload additions are:
 
 | Tool contract | NOW command owner | Implemented projection |
@@ -203,7 +213,7 @@ The V0.5 upload additions are:
 | `now_guest_files_upload_append` | Private NOW upload stage | Accepts one ordered base64 chunk of at most 8 KiB at the exact receipt offset. It never accepts or resolves a modern-host path and sends no guest message. |
 | `now_guest_files_upload_commit` | `guestFiles.put` over existing `file.offer` / bulk / `file.done` | Seals and revalidates the stage, validates MacBinary structure when selected, streams one frame at a time from its immutable file, never creates parents or overwrites, and returns guest reservation, progress, integrity, finalization, and cleanup evidence. Success requires matching guest length, CRC, same-folder rename, and temp cleanup. The stage is one-attempt and replay conflicts. |
 
-The client-launched `NOWAgentCompanion` executable speaks newline-delimited JSON-RPC over stdio and advertises these fourteen tools. It opens one bounded local request to the running host for each call. Session health and upload staging send no guest message; the capability report sends only `help` and the bounded read-only probes named above; commit and the other guest-dependent tools ask the host to use the existing paired connection. Launch accepts exactly one bounded name or generated opaque reference; quit accepts exactly one generated process reference; approved-artifact transfer accepts exactly one host-minted receipt. The V0.5 Files tools accept only canonical paths relative to host-owned `guestRoot`, never an absolute guest path or a modern-host path. No tool accepts a PSN, shell text, arbitrary host filesystem operation, or unimplemented guest Files mutation. Every tool exposes typed unavailability and no host or listener lifecycle operation. If the host is absent, the result is `now-host-unavailable`; the companion never launches it. If the host is present without a paired guest, guest-dependent tools return `now-guest-unavailable` and never use cached state.
+The client-launched `NOWAgentCompanion` executable speaks newline-delimited JSON-RPC over stdio and advertises every registered projection as a tool. It opens one bounded local request to the running host for each call. Session health and upload staging send no guest message; the capability report sends only `help` and the bounded read-only probes named above; commit and the other guest-dependent tools ask the host to use the existing paired connection. Launch accepts exactly one bounded name or generated opaque reference; quit accepts exactly one generated process reference; approved-artifact transfer accepts exactly one host-minted receipt. The V0.5 Files tools accept only canonical paths relative to host-owned `guestRoot`, never an absolute guest path or a modern-host path. No tool accepts a PSN, shell text, arbitrary host filesystem operation, or unimplemented guest Files mutation. Every tool exposes typed unavailability and no host or listener lifecycle operation. If the host is absent, the result is `now-host-unavailable`; the companion never launches it. If the host is present without a paired guest, guest-dependent tools return `now-guest-unavailable` and never use cached state.
 
 ## Connection posture
 
@@ -250,12 +260,18 @@ bytes from local sends and reports unknown cleanup or stalled state honestly.
 Host staging and outbound reads use bounded off-UI-actor disk I/O. A failed
 local cleanup remains recoverable and is reported as `cleanup-needed`.
 
-The separately proven reverse-streaming prerequisite is now integrated into
-NOW: guest-originated files use bounded fork reads and the host receives into a
+The separately proven reverse-streaming prerequisite is integrated into NOW:
+guest-originated files use bounded fork reads and the host receives into a
 private disk sink with progress, CRC, interruption cleanup, and atomic
-finalization. This changes no MCP authority. Arbitrary download remains absent
-until a typed NOW command, root/size policy, receipts, audit, and explicit tool
-projection are designed and verified; reverse resume remains deferred.
+finalization. `now_guest_files_download` is the agent-facing projection over
+**that** path and adds no second one — the typed command, root and size policy,
+receipt, audit line and explicit tool projection this document said arbitrary
+download would have to wait for. What it deliberately is **not** is arbitrary:
+there is no caller-named destination, no unbounded size, no folder, no
+overwrite and no retry. **Reverse resume remains deferred**, and the download is
+one attempt because of it: the deployed sequence has no guest-issued source
+identity before the host asks for an offset, so a retained partial could stitch
+two different sources together.
 
 ## Current verification
 
@@ -286,7 +302,7 @@ The fake partial guest answers `not-implemented` the way
 and the guest's half not at all. Nothing here has been run against the
 PowerBook 180c; `open-issues.md` lists exactly what that leaves open.
 
-All fourteen projections, the local socket, and the stdio wrapper are **tested** here. V0 coverage remains as previously recorded: missing host or guest; bounded process snapshots and references; exact launch/refusal/revalidation; cooperative quit; receipt-backed artifact approval, staging, replay and delivery; malformed and oversized requests; endpoint permissions and peer UID; concurrency; discriminated schemas; and unchanged host module inventory/listener state. V0.5 browse coverage adds explicit/default/invalid `guestRoot` policy, canonical path and root-escape rejection, empty/populated/paged list behavior, fork/type/creator/date projection, exact stat/not-found/scan-limit, stale sessions, bounded guest refusal and malformed listing rejection, concurrent reads, prior local schema v4 rejection, maximum-page response size, host absence without launch, strict MCP arguments, and private-socket round-trip. Upload coverage adds disk-reservation refusal, ordered bounded chunks, digest mismatch cleanup, orphan-stage recovery, create-only collision policy, stale/unavailable handling, one-attempt replay and concurrent-commit refusal, file-backed framing, strict guest completion evidence, late-collision preservation, malformed MacBinary refusal, stale-accept invalidation, cleanup-failure recovery, host/guest observation identities, modified-date omission, strict local/MCP decoding, host build, and a clean Retro68 guest build.
+Every registered projection, the local socket, and the stdio wrapper are **tested** here. V0 coverage remains as previously recorded: missing host or guest; bounded process snapshots and references; exact launch/refusal/revalidation; cooperative quit; receipt-backed artifact approval, staging, replay and delivery; malformed and oversized requests; endpoint permissions and peer UID; concurrency; discriminated schemas; and unchanged host module inventory/listener state. V0.5 browse coverage adds explicit/default/invalid `guestRoot` policy, canonical path and root-escape rejection, empty/populated/paged list behavior, fork/type/creator/date projection, exact stat/not-found/scan-limit, stale sessions, bounded guest refusal and malformed listing rejection, concurrent reads, prior local schema v4 rejection, maximum-page response size, host absence without launch, strict MCP arguments, and private-socket round-trip. Upload coverage adds disk-reservation refusal, ordered bounded chunks, digest mismatch cleanup, orphan-stage recovery, create-only collision policy, stale/unavailable handling, one-attempt replay and concurrent-commit refusal, file-backed framing, strict guest completion evidence, late-collision preservation, malformed MacBinary refusal, stale-accept invalidation, cleanup-failure recovery, host/guest observation identities, modified-date omission, strict local/MCP decoding, host build, and a clean Retro68 guest build.
 
 As of the 2026-07-25 reconciliation, the combined V0.5 tree containing these
 eleven projections plus the independently verified reverse-streaming
@@ -296,6 +312,25 @@ have the bounded PowerBook receipts below, while staged upload remains tested
 but not metal-verified. The reconciled combined tree passed 419 host tests with
 13 opt-in metal tests skipped, produced the host app, and completed the Retro68
 guest build. No generic download tool was introduced.
+
+`now_guest_files_download` is **tested** and **not metal-verified**. Its
+coverage is aimed at the policy rather than the transfer, because the transfer
+is the reverse path that already has the bounded PowerBook receipt above: a
+whole file landing inside host-owned storage with a receipt naming it, the
+landed file read-only, a guest checksum reported as checked and its absence
+reported as unchecked, an offered resume token reported and unused, caller
+paths rebased beneath `guestRoot`, and — the assertions the policy rests on —
+an over-ceiling item, a folder, an item whose size the guest did not report, a
+host without room, and every escaping or unrepresentable path each refused
+having sent **no** `file.get` at all. Plus: a second download of one name
+landing beside the first rather than over it, an arrival over the ceiling
+discarded leaving nothing behind, a guest name turned into a filename rather
+than a path, and the projection refusing any argument but `path` — which is how
+"the caller cannot name the destination" is enforced rather than asserted. What
+that leaves open is what no automated fixture can settle: no agent download has
+pulled a real file off a Macintosh, so the 4 MiB ceiling's behaviour against a
+1400c's actual catalog sizes, and whether the guest's reported fork sizes agree
+with what MacBinary then puts on the wire, are unmeasured.
 
 Staged upload remains **not metal-verified**. The current automated fixtures
 exercise the existing transfer state machine and the classic build proves the
