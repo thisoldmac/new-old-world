@@ -50,9 +50,10 @@ public enum AgentIntegrationCensusBounds {
 /// | the CALL | `completed` / `refused` / `unavailable` (`AgentIntegrationProjectedResult`) | whether a Macintosh was reached and answered at all |
 /// | the PROBE | `present` / `absent` / `partial` / `refused` / `failed` / `not-attempted` (`x-census.x-outcomes`) | what that machine found when it looked |
 ///
-/// A probe that answers `refused` — NOW-68K's `selectors`, whose documented
-/// selector table is 32 KB of names in a 384 KB partition — is a **completed
-/// call**. The machine was asked, it answered, and the answer is "I did not
+/// A probe that answers `refused` — `selectors` on a machine whose partition
+/// cannot hold 32 KB of documented selector names, `scsi` where an unattended
+/// bus scan is not allowed — is a **completed call**. The machine was asked, it
+/// answered, and the answer is "I did not
 /// look". Mapping it onto the call's `refused` arm would tell a caller that
 /// nothing reached the machine, which is false and unfixable by retrying.
 /// The reverse conflation is worse: a probe answering `absent` (no PCI
@@ -76,9 +77,10 @@ public enum AgentIntegrationCensusBounds {
 /// says so in `outcome`. A `0` where the guest said nothing would be this
 /// side making a claim about somebody's Macintosh.
 ///
-/// **NOW-68K is a full participant here**, one of the few capabilities where
-/// it is. Nothing in this row forks on which guest answered and nothing
-/// degrades the MESSAGE for the smaller one: it degrades the ANSWER, in the
+/// **The smaller guest is a full participant here**, one of the few
+/// capabilities where it is. Nothing in this row forks on which guest
+/// answered — nothing here can even see which one did — and nothing degrades
+/// the MESSAGE for a less capable machine: it degrades the ANSWER, in that
 /// guest's own `outcome` and `note`.
 ///
 /// ## Paging is the caller's, deliberately
