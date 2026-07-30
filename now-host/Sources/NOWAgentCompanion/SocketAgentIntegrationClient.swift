@@ -48,6 +48,21 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
+    /// One census page. A transport failure is "no host" and never a page:
+    /// every value in the report's outcome vocabulary is a claim about a
+    /// Macintosh, and a socket that could not be reached has made none.
+    func census(probe: String, cursor: Int?) async
+        -> AgentIntegrationCensusResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.census(probe: probe, cursor: cursor)
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
     func listProcesses() async -> AgentIntegrationProcessListResult {
         guard let client else {
             return .unavailable(unavailable(for: startupError))

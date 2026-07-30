@@ -36,6 +36,13 @@ public protocol AgentIntegrationClient: Sendable {
     func sessionHealth() async -> AgentIntegrationSessionHealthResult
     func sessionCapabilities(probeCostly: Bool) async
         -> AgentIntegrationSessionCapabilitiesResult
+    /// One page of one hardware-census probe. The probe is required and
+    /// there is no all-probes form: fourteen calls summed here would be an
+    /// answer this side composed. The page's own outcome is a fact about the
+    /// machine and is never flattened into this call's — see
+    /// `HardwareCensusProjection`.
+    func census(probe: String, cursor: Int?) async
+        -> AgentIntegrationCensusResult
     func listProcesses() async -> AgentIntegrationProcessListResult
     func launchSoftware(_ selection: AgentIntegrationLaunchSelection) async
         -> AgentIntegrationLaunchSoftwareResult
@@ -102,6 +109,15 @@ public protocol AgentIntegrationClient: Sendable {
 }
 
 extension AgentIntegrationClient {
+    /// Defaulted in the same edit that declared it, per the rule at the top
+    /// of this file. "No host" and not an empty page: an empty page would
+    /// carry an `outcome`, and every value in that vocabulary is a claim
+    /// about a Macintosh nobody asked.
+    public func census(probe: String, cursor: Int?) async
+        -> AgentIntegrationCensusResult {
+        .hostUnavailable
+    }
+
     /// Defaulted with the guest-files lanes below it, and for the same
     /// reason: a client with no host to ask answers "no host" rather than
     /// making seven stub conformers in the test tree learn a new lane.

@@ -209,6 +209,13 @@ public enum AgentIntegrationCapabilityNames {
     public static let fileTrash = "file.trash"
     public static let fileRestore = "file.restore"
     public static let fileMkdir = "file.mkdir"
+    /// The hardware-census family. The request half names it, as the
+    /// contract does, and one row covers all fourteen probes: a probe is an
+    /// ARGUMENT of `census.request`, never a capability the ledger could
+    /// resolve — neither the family table nor the guest's `help` command
+    /// table can hold a probe name, so requiring one would switch its
+    /// projection off against every guest.
+    public static let censusRequest = "census.request"
     /// The screen-capture family. A contract message name, not an alias:
     /// `capture.request` is what the host sends and both guests dispatch.
     public static let captureRequest = "capture.request"
@@ -236,7 +243,8 @@ public enum AgentIntegrationCapabilityNames {
     public static let all: Set<String> = [
         processList, processQuit, processFront, softwareList, fileList,
         fileGet, filePut, fileCancel, fileMove, fileTrash, fileRestore,
-        fileMkdir, captureRequest, launchCommand, revealCommand,
+        fileMkdir, censusRequest, captureRequest, launchCommand,
+        revealCommand,
     ]
 
     /// Refusal codes that mean "this guest does not implement that", as

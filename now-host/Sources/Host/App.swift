@@ -556,7 +556,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     }
                     return .guestFileMutation(
                         await guestFiles.agentMutate(composed))
-                case .census, .softwareInventory,
+                case .census:
+                    /* P1 #2. The probe is REQUIRED by the contract and by
+                       the codec, so a request without one never reached a
+                       machine and the refusal is the request's rather than
+                       the guest's. The cursor is genuinely optional: absent
+                       and 0 both start the probe over, by contract. */
+                    guard let probe = request.censusProbe else {
+                        return .census(.refused(.init(
+                            code: "now-census-probe-invalid",
+                            message:
+                                "The census request named no probe")))
+                    }
+                    return .census(
+                        await agentIntegration.census(
+                            probe: probe, cursor: request.censusCursor))
+                case .softwareInventory,
                      .guestLogTail, .machineFacts, .catalogSearch,
                      .diagnostics:
                     /* P1a landed the SERIALIZATION for eleven capabilities
