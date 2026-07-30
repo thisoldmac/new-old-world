@@ -1292,6 +1292,31 @@ final class GuestListener: ObservableObject {
         return Int((gap * 1_000).rounded())
     }
 
+    /// Which way the one transfer lane is pointing, or nil when it holds no
+    /// FILE transfer.
+    ///
+    /// Read by a caller that must not guess. `cancelFile()` below is a void
+    /// method that does nothing at all when nothing is in flight, which is
+    /// right for a button — a person can see the bar is gone — and is not
+    /// enough for an agent, which has to be able to tell "stopped it" from
+    /// "there was nothing to stop" and report which.
+    ///
+    /// It answers about the FILE lane only. A capture or a live stream holds
+    /// the same one-wide lane and neither is ended by `file.cancel`;
+    /// `isCapturePending` and `activeStreamId` are their own answers.
+    enum FileTransferInFlight {
+        /// A file this host is pushing to the guest.
+        case outgoing
+        /// A file this host is pulling off it.
+        case incoming
+    }
+
+    var fileTransferInFlight: FileTransferInFlight? {
+        if pendingPut != nil { return .outgoing }
+        if pendingFile != nil { return .incoming }
+        return nil
+    }
+
     /// Abandons the file transfer; settles locally for the same reason
     /// cancelCapture does.
     func cancelFile() {

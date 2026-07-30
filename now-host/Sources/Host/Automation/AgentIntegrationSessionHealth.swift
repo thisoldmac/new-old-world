@@ -25,6 +25,9 @@ final class AgentIntegrationHostAdapter {
     private lazy var captureControl = AgentIntegrationCaptureControl(
         listener: listener,
         currentSessionID: { [unowned self] in connectedSessionID() })
+    private lazy var transferControl = AgentIntegrationTransferControl(
+        listener: listener,
+        currentSessionID: { [unowned self] in connectedSessionID() })
     private lazy var artifactTransfer = AgentIntegrationArtifactTransfer(
         listener: listener,
         approvals: artifactApprovals,
@@ -153,6 +156,13 @@ final class AgentIntegrationHostAdapter {
 
     func abandonCapture() -> AgentIntegrationCaptureResult {
         captureControl.abandon()
+    }
+
+    /// Ends the file transfer in flight, either direction. The lane's own
+    /// reasoning — and why the answer says `asked` rather than `cancelled` —
+    /// lives in `AgentIntegrationTransferControl`.
+    func cancelTransfer() -> AgentIntegrationTransferCancelResult {
+        transferControl.cancel()
     }
 
     func approveArtifact(

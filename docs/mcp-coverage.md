@@ -105,6 +105,7 @@ The test compares both against the code literally.
 | `now_bring_to_front` | `process.list`, `process.front` | `process.front` | message family |
 | `now_request_quit` | `process.list`, `process.quit` | `process.quit` | message family |
 | `now_transfer_approved_artifact` | `file.put` | `file.put` | message family |
+| `now_transfer_cancel` | `file.cancel` | `file.cancel` | message family |
 | `now_guest_files_capabilities` | `file.list` | — | message family |
 | `now_guest_files_list` | `file.list` | `file.list` | message family |
 | `now_guest_files_stat` | `file.list` | `file.list` | message family |
@@ -248,7 +249,6 @@ to exist:
 | `exec.cancel` | message | both | deliberate | Ends an exec, and is excluded with the rest of the console plane — [agent-integration.md](agent-integration.md). |
 | `exec.input` | message | both | deliberate | Part of the console plane excluded under rule 3 — [agent-integration.md](agent-integration.md) and the parity slice plan. |
 | `exec.request` | message | both | deliberate | The console plane. A shell is not user-initiable in any meaningful sense and is the one thing [agent-integration.md](agent-integration.md) is right to keep out. |
-| `file.cancel` | message | both | planned | W1 #8. |
 | `file.get` | message | ppc | planned | W1 #4. Not withheld on authority grounds — confirmed 2026-07-29, simply unbuilt. The 68K guest reaches the same capability through its `put` verb. |
 | `file.mkdir` | message | ppc | planned | W1 #7. |
 | `file.move` | message | ppc | planned | W1 #7. |
@@ -259,7 +259,7 @@ to exist:
 | `stream.refresh` | message | ppc | unnoticed | Part of the live-stream bracket; see `stream.start`. |
 | `stream.start` | message | ppc | unnoticed | A stream is a continuous host-owned bracket rather than one bounded call, so it may well not belong on a tool surface at all — but **that is a hypothesis, not a decision**: nothing argues it, and the host app's live view owning it today is a fact about what exists rather than a reason. |
 | `stream.stop` | message | ppc | unnoticed | The other end of the same bracket; see `stream.start`. |
-| `cancel` | command | 68k | planned | W1 #8. The 68K guest's verb spelling of transfer cancel. |
+| `cancel` | command | 68k | deliberate | The 68K guest's console spelling of transfer cancel, and `now_transfer_cancel` needs the `file.cancel` **message** rather than this verb: the message is what both guests dispatch, and requiring the verb would make a capability both guests serve read as 68K-only — rule 4 of the [parity slice plan](plans/2026-07-29-004-feat-now-tbt-classic-parity-slice-plan.md). The verb exists so a person at a PowerBook whose host has stopped answering can still end a transfer, which is a reason for the GUEST to have two faces, not a second mechanism for the host to pick between — [command-parity.md](command-parity.md). |
 | `catsearch` | command | ppc | unnoticed | Catalog search across a volume. Served on the PowerPC guest, reachable by nothing. |
 | `census` | command | both | planned | W1 #2 — the verb spelling of `census.request`. |
 | `front` | command | both | deliberate | `now_bring_to_front` needs the `process.front` **family**, not this command, for the reason `quit` gives below: the command takes a NAME, and the opaque-reference and PSN-revalidation model the tool stands on has nothing to stand on without the message. The name form is the console's, by contract — one capability, one route per face ([command-parity.md](command-parity.md)). |
@@ -343,7 +343,7 @@ real defect in its own first draft — reading the whole section rather than its
 first paragraph collected the two names the explanation mentions *because* they
 are not on the list.
 
-Last derived: 2026-07-30, on `claude/agent-family-gate`, off
-`claude/tbt-parity-slice` at the fourteen-projection registry. Re-derive by
+Last derived: 2026-07-30, on `claude/transfer-cancel`, off
+`claude/tbt-parity-slice` with `now_transfer_cancel` added. Re-derive by
 running `swift test --filter MCPCoverage` rather than by reading — if the
 tables and the code disagree, the code is right and the test says so.

@@ -114,32 +114,88 @@ public typealias AgentIntegrationGuestFileMutationResult =
         AgentIntegrationGuestFileMutationOutcome>
 
 /// #8 — what came of asking the transfer to stop.
+///
+/// **Neither case claims the guest stopped, and that is the whole design of
+/// this vocabulary.** `file.cancel` has no reply in the contract, deliberately
+/// — "a cancel for a transfer that has already ended is a message that arrived
+/// late, and an error reply here would answer a message nobody is waiting on"
+/// (`now-guest-68k/src/core/wire68.c :: handle_file_cancel`). The terminal
+/// message each guest *does* send for a transfer it cancelled — `file.done
+/// ok:false code:cancelled` on the receiving side, `file.end ok:false` on the
+/// sending one — is thrown away by this host by design, because waiting for it
+/// is precisely the park that wedged the lane (`Session.finishFile` returns
+/// early for a transfer it is discarding).
+///
+/// So the case was renamed off `cancelled`, which P1a's first draft used.
+/// Confirmation is not merely absent here for want of effort: the one place it
+/// could come from is a reply the contract does not define, and the one thing
+/// that arrives instead is discarded to keep a stalled transfer from hanging
+/// its own cancel. Saying `cancelled` would be the host claiming what only the
+/// Macintosh can know — the mistake `BringToFrontProjection` separates *asked*
+/// from *confirmed* to avoid, reached here at the opposite answer.
 public enum AgentIntegrationTransferCancelOutcome:
     String, Codable, Equatable, Sendable, CaseIterable {
-    case cancelled
-    /// No transfer was in flight. **A refusal, not an error**: asking a
-    /// quiet machine to stop is a reasonable thing to have done, and the
-    /// honest answer is that there was nothing to stop.
+    /// **This host has stopped**: it is sending no more bytes, waiting for
+    /// none, and its half of the lane is free. The guest has been told, for
+    /// any transfer it had begun — a pull the guest has not begun carries no
+    /// transfer id to name, so that one is abandoned host-side with no
+    /// message. Not a claim about the guest either way: see the type's own
+    /// note, and `hostLaneFree` for the half that is checked, not assumed.
+    case asked
+    /// No transfer was in flight, so nothing was sent. **An answer, not an
+    /// error**: asking a quiet machine to stop is a reasonable thing to have
+    /// done, and the honest answer is that there was nothing to stop. It is
+    /// also what the guests do — `file.cancel` for an id they do not hold is
+    /// logged and not answered, and the 68K `cancel` verb replies
+    /// `nothing-to-cancel`.
     case nothingToCancel = "nothing-to-cancel"
 }
 
 public struct AgentIntegrationTransferCancelReport:
     Codable, Equatable, Sendable {
+    /// Which way the transfer was going. Nested rather than shared, because
+    /// only this report has a direction to name.
+    public enum Direction: String, Codable, Equatable, Sendable,
+                           CaseIterable {
+        /// Guest → host: a file this host was pulling off the machine.
+        case incoming
+        /// Host → guest: a file this host was pushing onto it.
+        case outgoing
+    }
+
     public let outcome: AgentIntegrationTransferCancelOutcome
     /// Which direction it was going, when there was one. The lane is ONE
     /// transfer wide across both directions — which is why this operation
     /// is not folded into the download that shares its name: cancelling
     /// also ends an upload the download lane knows nothing about.
-    public let direction: String?
+    public let direction: Direction?
+    /// What the receiver had confirmed when the cancel went out, and of how
+    /// much, when the transfer had reported anything at all. Absent is
+    /// absent: a transfer cancelled before its first progress report has no
+    /// confirmed count, and zero would be a different claim.
+    public let confirmedBytes: Int?
+    public let expectedBytes: Int?
+    /// **The one fact here that is checked rather than asked for.** The
+    /// lane is re-read after the cancel: true means this host is holding no
+    /// transfer, which is what makes the next one possible. False would mean
+    /// the cancel did not release the host's own half, and that is a defect
+    /// worth reporting rather than smoothing over.
+    public let hostLaneFree: Bool
     public let note: String?
     public let observedAt: Date
 
     public init(outcome: AgentIntegrationTransferCancelOutcome,
-                direction: String? = nil,
+                direction: Direction? = nil,
+                confirmedBytes: Int? = nil,
+                expectedBytes: Int? = nil,
+                hostLaneFree: Bool,
                 note: String? = nil,
                 observedAt: Date) {
         self.outcome = outcome
         self.direction = direction
+        self.confirmedBytes = confirmedBytes
+        self.expectedBytes = expectedBytes
+        self.hostLaneFree = hostLaneFree
         self.note = note
         self.observedAt = observedAt
     }
