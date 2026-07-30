@@ -99,13 +99,17 @@ final class HostProjectionRegistryTests: XCTestCase {
     /// to the command table, misses, and reports the capability
     /// permanently UNAVAILABLE against every guest — a tool switched off by
     /// a spelling mistake, with no error anywhere.
+    ///
+    /// The known set is `AgentIntegrationCapabilityNames.all`, read rather
+    /// than restated: this test used to keep its own copy of the seven
+    /// names, so a capability requiring a newly-declared one had to edit a
+    /// test to be allowed to. The declaration is the list now.
     func testEveryRequirementIsAKnownGuestCapabilityName() {
-        let names = AgentIntegrationCapabilityNames.self
-        let known: Set<String> = [
-            names.processList, names.processQuit, names.softwareList,
-            names.fileList, names.filePut, names.captureRequest,
-            names.launchCommand,
-        ]
+        let known = AgentIntegrationCapabilityNames.all
+        XCTAssertFalse(
+            known.isEmpty,
+            "AgentIntegrationCapabilityNames.all is empty, so this check "
+                + "passes nothing and would accept any requirement.")
         for projection in HostProjectionRegistry.hostFaces.projections {
             for requirement in projection.requires {
                 XCTAssertTrue(

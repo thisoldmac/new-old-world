@@ -61,7 +61,7 @@ grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
   | sed 's/.*"\(.*\)".*/\1/' | sort -u
 ```
 
-## What the thirteen reach
+## What the projections reach
 
 One row per registered projection, in catalog order. Two columns, because a
 row declares two different things and reading one as the other is the blind
@@ -93,14 +93,20 @@ The test compares both against the code literally.
 | `now_guest_files_upload_append` | — | — | none; host staging only |
 | `now_guest_files_upload_commit` | `file.put` | `file.put` | message family |
 
-Thirteen tools. The distinct guest capabilities they **require** are seven:
+The distinct guest capabilities those rows **require** are seven:
 `process.list`, `process.quit`, `software.list`, `file.list`, `file.put`,
 `capture.request` and `launch`. The distinct capabilities they **expose** are
 **six** — the same list without `software.list`, which every projection that
-touches it consumes internally. Eight of the thirteen rows are the guest-files
+touches it consumes internally. Most of the rows above are the guest-files
 family and the sessions pair; the surface is narrower than its tool count
 suggests, which is the same mistake `contract-coverage.md` made when it counted
 message types, and the seven-versus-six is that mistake one layer in.
+
+That is also why this section is not called "what the thirteen reach", which
+is what it was called until 2026-07-30: a heading naming the tool count meant
+every new capability renamed a published heading **and** the test string that
+matches it. The count belongs in the table, which is derived; a heading is
+not the place to state a number that changes.
 
 Three rows require something they do not expose, and each is worth reading as
 a shape rather than an exception:

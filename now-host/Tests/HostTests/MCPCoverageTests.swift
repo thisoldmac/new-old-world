@@ -35,6 +35,14 @@ final class MCPCoverageTests: XCTestCase {
 
     private static let coverageDoc = "docs/mcp-coverage.md"
 
+    /// The heading above the per-projection table.
+    ///
+    /// Named here once, and deliberately count-free. It used to read "What
+    /// the thirteen reach", so landing a capability renamed a published
+    /// heading and this string with it — the papercut every projection in
+    /// the wide phase would have paid again.
+    private static let projectionSection = "## What the projections reach"
+
     // MARK: - Host side: the registry, in process
 
     /// Capability name → what it requires and what it exposes, read from the
@@ -56,10 +64,10 @@ final class MCPCoverageTests: XCTestCase {
     /// Every registered projection has a row, and every row is a registered
     /// projection — with the requirements the code actually declares.
     ///
-    /// This is the assertion that fails when a thirteenth capability lands
+    /// This is the assertion that fails when a capability lands
     /// undocumented, which is the drift the document was written for.
     func testTheProjectionTableMatchesTheRegistry() throws {
-        let rows = try table(under: "## What the thirteen reach")
+        let rows = try table(under: Self.projectionSection)
         var documented: [String: (requires: [String], exposes: [String])] = [:]
         for row in rows {
             let name = try backticked(row[0], row: row)
@@ -79,8 +87,8 @@ final class MCPCoverageTests: XCTestCase {
                     + "\(Self.coverageDoc) does not list it. A capability "
                     + "an agent can call and the coverage document has "
                     + "never heard of is the drift this document exists to "
-                    + "make visible — add a row under \"What the "
-                    + "thirteen reach\".")
+                    + "make visible — add a row under "
+                    + "\"\(Self.projectionSection)\".")
         }
         for extra in inDoc.subtracting(registered).sorted() {
             XCTFail(

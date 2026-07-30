@@ -187,6 +187,25 @@ public enum AgentIntegrationCapabilityNames {
     public static let captureRequest = "capture.request"
     public static let launchCommand = "launch"
 
+    /// Every name above, as a set.
+    ///
+    /// It exists so a projection's `requires` can be checked against the
+    /// declaration rather than against a second copy of it typed into a
+    /// test — which is what `HostProjectionRegistryTests` used to hold, and
+    /// what every new capability had to remember to edit.
+    ///
+    /// Swift cannot enumerate an enum's static lets, so this is written by
+    /// hand; the point is that it is written *here*, beside the constant it
+    /// lists, and not in a test target. Membership is also not the only
+    /// check a requirement faces: `MCPCoverageTests`
+    /// `testEveryRequirementResolvesToTheContract` resolves the same strings
+    /// against `contract/asyncapi.yaml`, so a name that exists only in this
+    /// set still fails somewhere.
+    public static let all: Set<String> = [
+        processList, processQuit, softwareList, fileList, filePut,
+        captureRequest, launchCommand,
+    ]
+
     /// Refusal codes that mean "this guest does not implement that", as
     /// opposed to "that failed". The 68K guest answers `not-implemented`
     /// to an unknown message type (now-guest-68k/src/core/wire68.c) and

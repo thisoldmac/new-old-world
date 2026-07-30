@@ -59,21 +59,24 @@ final class NOWAgentCompanionTests: XCTestCase {
         let result = try XCTUnwrap(response["result"] as? [String: Any])
         let tools = try XCTUnwrap(result["tools"] as? [[String: Any]])
 
-        XCTAssertEqual(tools.compactMap { $0["name"] as? String }, [
-            "now_session_health",
-            "now_session_capabilities",
-            "now_list_processes",
-            "now_capture_screen",
-            "now_launch_software",
-            "now_request_quit",
-            "now_transfer_approved_artifact",
-            "now_guest_files_capabilities",
-            "now_guest_files_list",
-            "now_guest_files_stat",
-            "now_guest_files_upload_begin",
-            "now_guest_files_upload_append",
-            "now_guest_files_upload_commit",
-        ])
+        /* The expectation is the catalog, in catalog order — not a second
+           copy of it. This is still a two-sided check: the left side is
+           what NOWMCPServer rendered and the right side is the registry, so
+           a renderer that dropped, reordered, renamed or duplicated a row
+           fails here. What it no longer does is fail merely because a row
+           was added, which is the edit every new capability was paying.
+
+           It is not the approval gate the name suggests, and never could
+           be: HostFaceParityTests.testTheMCPFaceIsDerivedFromTheRenderers-
+           OwnLoop establishes that a row cannot opt out of the MCP face, so
+           registering a projection IS exposing it. The review is therefore
+           the catalog row itself, in reviewed source, together with the
+           row's own `faces` declaration. */
+        XCTAssertEqual(
+            tools.compactMap { $0["name"] as? String },
+            HostProjectionCatalog.projections.map {
+                $0.capability.rawValue
+            })
         let processTool = try XCTUnwrap(tools.first {
             $0["name"] as? String == "now_list_processes"
         })
@@ -379,30 +382,15 @@ final class NOWAgentCompanionTests: XCTestCase {
                 switch request.operation {
                 case .sessionHealth:
                     return .sessionHealth(.available(health))
-                case .sessionCapabilities:
-                    return .sessionCapabilities(.guestUnavailable)
-                case .listProcesses:
+                default:
+                    /* This fixture is about one operation reaching the
+                       far end of a real socket. The rest answered a typed
+                       unavailable case by case, which made every new
+                       operation an edit here; NOWAgentAuditTests next door
+                       already used a `default:` for the same reason. A
+                       fixture that reached an operation it had not handled
+                       would decode the wrong response and fail. */
                     return .processList(.guestUnavailable)
-                case .launchSoftware:
-                    return .launchSoftware(.unavailable(.guest))
-                case .requestQuit:
-                    return .requestQuit(.unavailable(.guest))
-                case .transferApprovedArtifact:
-                    return .transferApprovedArtifact(.unavailable(.guest))
-                case .guestFilesCapabilities:
-                    return .guestFilesCapabilities(.hostUnavailable(.guest))
-                case .guestFilesList:
-                    return .guestFilesList(.hostUnavailable(.guest))
-                case .guestFilesStat:
-                    return .guestFilesStat(.hostUnavailable(.guest))
-                case .guestFilesUploadBegin, .guestFilesUploadAppend:
-                    return .guestFilesUploadStage(.hostUnavailable(.guest))
-                case .guestFilesUploadCommit:
-                    return .guestFilesUploadCommit(.hostUnavailable(.guest))
-                case .capture:
-                    return .capture(.unavailable(.guest))
-                case .audit:
-                    return .recorded
                 }
             })
         try localServer.start()
