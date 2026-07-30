@@ -32,6 +32,17 @@ public enum HostProjectionCatalog {
         /* Beside capture on purpose: the two costly MEASUREMENTS of the
            machine sit together, before the actions. */
         CatalogSearchProjection.self,
+        /* The three diagnostics, with the costly measurements and before the
+           actions, because that is what they are: measurements of the
+           machine that change nothing on it. They are three rows rather
+           than one because availability is per row and these three do not
+           co-occur on any guest — the argument is at the top of
+           GuestDiagnosticsProjection.swift. Kept adjacent and in the order
+           the module draws them, so a person reading either list meets them
+           the same way. */
+        FramebufferProbeProjection.self,
+        CaptureDiagnosticsProjection.self,
+        TransferDiagnosticsProjection.self,
         LaunchSoftwareProjection.self,
         /* Beside launch rather than at the tail: they are the same guest
            verb pair over the same target grammar, and reveal is the one

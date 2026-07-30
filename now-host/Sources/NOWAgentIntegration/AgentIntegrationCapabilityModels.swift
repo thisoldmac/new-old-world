@@ -255,6 +255,38 @@ public enum AgentIntegrationCapabilityNames {
     /// capability.
     public static let tailCommand = "tail"
 
+    /* The three diagnostics, and they are named SEPARATELY on purpose —
+       this is the whole crux of the capability that projects them.
+
+       All three are COMMANDS, so the ledger resolves each against the
+       guest's own `help` table, one at a time. That matters because their
+       availability genuinely differs: `vprobe` is served by both guests,
+       `shotdiag` by NOW-68K only, `putstat` by the Carbon guest only. A row's
+       `requires` is a CONJUNCTION, so one row requiring all three would
+       resolve `unavailable` against every guest that exists, for the life of
+       every connection, in a sentence that reads as a fact about the
+       Macintosh — the same wall `put` reported from the other side (see
+       docs/mcp-coverage.md). Three names, required one per row, is what lets
+       each be exactly as available as the machine makes it, with nothing on
+       this side asking which guest answered. */
+
+    /// What reading this machine's framebuffer costs, by access method.
+    /// Both guests serve it, so its row is available on both — the only one
+    /// of the trio that is.
+    public static let vprobeCommand = "vprobe"
+    /// Where a staged capture read from — the verb that found the 180c's
+    /// 24-bit addressing defect. NOW-68K only, by derivation from `help`.
+    ///
+    /// Note what it is NOT: it is not a capture, and it must never be
+    /// required by the capture row. It stages one down the real path, records
+    /// where the walk read, and discards the file; nothing crosses the bulk
+    /// channel. Its answer is about that walk and says nothing about whether
+    /// `capture.request` works.
+    public static let shotdiagCommand = "shotdiag"
+    /// Where the last file the guest RECEIVED spent its time. The Carbon
+    /// guest only, by derivation from `help`.
+    public static let putstatCommand = "putstat"
+
     /// Every name above, as a set.
     ///
     /// It exists so a projection's `requires` can be checked against the
@@ -274,6 +306,7 @@ public enum AgentIntegrationCapabilityNames {
         fileGet, filePut, fileCancel, fileMove, fileTrash, fileRestore,
         fileMkdir, censusRequest, captureRequest, launchCommand,
         revealCommand, catsearchCommand, gestaltCommand, tailCommand,
+        vprobeCommand, shotdiagCommand, putstatCommand,
     ]
 
     /// Refusal codes that mean "this guest does not implement that", as

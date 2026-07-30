@@ -92,6 +92,17 @@ public protocol AgentIntegrationClient: Sendable {
     /// the volume is the guest's own startup volume and the sweep's shape is
     /// the guest's. See `CatalogSearchProjection` for the cost and the scope.
     func catalogSearch() async -> AgentIntegrationGuestRowReportResult
+    /// Run one named diagnostic on the connected machine.
+    ///
+    /// One method for three capabilities, matching the one local operation
+    /// P1a landed: none of the three takes an argument and all three answer
+    /// the same row shape, so the probe is the whole request. **The three
+    /// ROWS stay separate** — they are served by different guests, and
+    /// availability is a property of a row (see
+    /// `GuestDiagnosticsProjection`); what is shared is the lane, not the
+    /// question.
+    func runDiagnostic(_ probe: AgentIntegrationDiagnosticProbe) async
+        -> AgentIntegrationGuestRowReportResult
     func beginGuestFileUpload(
         _ upload: AgentIntegrationGuestFileUploadBegin
     ) async -> AgentIntegrationGuestFileUploadStageResult
@@ -229,6 +240,16 @@ extension AgentIntegrationClient {
     /// arriving in the same edit as the requirement above — the rule at the
     /// top of this file.
     public func catalogSearch() async
+        -> AgentIntegrationGuestRowReportResult {
+        .hostUnavailable
+    }
+
+    /// Declared with its default in the one edit, per the rule at the top of
+    /// this file. "No host" and not an empty report: an empty row set would
+    /// say a machine ran a diagnostic and measured nothing, which is a claim
+    /// about a Macintosh nobody reached — and for `putstat`, whose zeroes are
+    /// a real answer, it would be indistinguishable from one.
+    public func runDiagnostic(_ probe: AgentIntegrationDiagnosticProbe) async
         -> AgentIntegrationGuestRowReportResult {
         .hostUnavailable
     }
