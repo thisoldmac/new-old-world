@@ -63,6 +63,23 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
+    /// One software listing page. A transport failure is "no host" and never
+    /// an empty page: an empty listing reads as "nothing is installed on that
+    /// Mac", and a socket that could not be reached has looked at no disk.
+    func softwareInventory(
+        domain: AgentIntegrationSoftwareDomain, cursor: Int?
+    ) async -> AgentIntegrationSoftwareInventoryResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.softwareInventory(
+                domain: domain, cursor: cursor)
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
     func listProcesses() async -> AgentIntegrationProcessListResult {
         guard let client else {
             return .unavailable(unavailable(for: startupError))

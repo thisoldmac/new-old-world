@@ -26,6 +26,12 @@ public enum HostProjectionCatalog {
         /* Beside capture on purpose: the two costly MEASUREMENTS of the
            machine sit together, before the actions. */
         CatalogSearchProjection.self,
+        /* Between the measurement of the sweep and the verb that acts on
+           what the sweep found, which is the order a caller uses them in:
+           what does this inventory cost, what is in it, open one of them.
+           It is the last of the observations for that reason — the next row
+           is the first that changes the machine. */
+        SoftwareInventoryProjection.self,
         LaunchSoftwareProjection.self,
         /* Beside launch rather than at the tail: they are the same guest
            verb pair over the same target grammar, and reveal is the one

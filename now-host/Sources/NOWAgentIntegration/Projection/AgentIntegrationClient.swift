@@ -43,6 +43,14 @@ public protocol AgentIntegrationClient: Sendable {
     /// `HardwareCensusProjection`.
     func census(probe: String, cursor: Int?) async
         -> AgentIntegrationCensusResult
+    /// One page of one software domain. The domain is required and there is
+    /// no all-domains form: five calls summed here would be an inventory this
+    /// side composed. The cursor is 1-based and 1 rebuilds the guest's cache
+    /// — for `apps` that is a whole-volume sweep, so absent and 0 are NOT the
+    /// same request. See `SoftwareInventoryProjection`.
+    func softwareInventory(
+        domain: AgentIntegrationSoftwareDomain, cursor: Int?
+    ) async -> AgentIntegrationSoftwareInventoryResult
     func listProcesses() async -> AgentIntegrationProcessListResult
     func launchSoftware(_ selection: AgentIntegrationLaunchSelection) async
         -> AgentIntegrationLaunchSoftwareResult
@@ -126,6 +134,16 @@ extension AgentIntegrationClient {
     /// about a Macintosh nobody asked.
     public func census(probe: String, cursor: Int?) async
         -> AgentIntegrationCensusResult {
+        .hostUnavailable
+    }
+
+    /// Declared with its default in the one edit, per the rule at the top of
+    /// this file. "No host" and not an empty page: an empty listing reads as
+    /// "nothing is installed on that Mac", which is a claim about a machine
+    /// nobody reached.
+    public func softwareInventory(
+        domain: AgentIntegrationSoftwareDomain, cursor: Int?
+    ) async -> AgentIntegrationSoftwareInventoryResult {
         .hostUnavailable
     }
 
