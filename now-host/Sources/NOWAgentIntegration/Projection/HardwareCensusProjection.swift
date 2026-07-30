@@ -314,7 +314,10 @@ public enum HardwareCensusProjection: HostProjection {
             await client.census(probe: probe, cursor: cursor)))
     }
 
-    static let argumentRefusal =
+    /// The one wording for every way the arguments can be wrong. Public so a
+    /// test asserts against the constant rather than against a second copy of
+    /// the sentence.
+    public static let argumentRefusal =
         "now_hardware_census requires one bounded probe name and an "
             + "optional cursor of 0 or more"
 }
