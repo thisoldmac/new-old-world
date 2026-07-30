@@ -223,8 +223,21 @@ actor NOWMCPServer {
             let textData = try JSONSerialization.data(
                 withJSONObject: structured, options: [.sortedKeys])
             let text = String(decoding: textData, as: UTF8.self)
+            var content: [[String: Any]] = [["type": "text", "text": text]]
+            /* A result may carry one non-JSON rendering of the same answer —
+               a capture's PNG. It goes here, as MCP's own image block, and
+               NOT in the structured part: this method serialises that into
+               the text block as well, so a picture in a JSON field would be
+               sent to the caller twice. */
+            if case .image(let bytes, let mimeType)? = value.attachment {
+                content.append([
+                    "type": "image",
+                    "data": bytes.base64EncodedString(),
+                    "mimeType": mimeType,
+                ])
+            }
             return successResponse(id: id, result: [
-                "content": [["type": "text", "text": text]],
+                "content": content,
                 "structuredContent": structured,
                 "isError": false,
             ])
