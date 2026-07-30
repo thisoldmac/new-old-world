@@ -15,7 +15,7 @@ import Foundation
 public enum AgentIntegrationSoftwareInventoryBounds {
     /// The contract's own page size (`SoftwareListing.entries`,
     /// `maxItems: 10`), which is also both guests' page buffer — PPC's
-    /// `serve_software_list :: kPage` and NOW-68K's
+    /// `serve_software_list :: kPage` and the smaller guest's
     /// `NOW68K_SWLIST_MAX_ROWS`. A page over it is **refused rather than
     /// trimmed**: ten entries out of eleven under a `hasMore` that says the
     /// page was complete is the one failure a paginated answer must not be
@@ -34,8 +34,10 @@ public enum AgentIntegrationSoftwareInventoryBounds {
     /// arrives whole.
     public static let maximumNameScalars = 63
 
-    /// The guest's own path buffer (PPC `SoftwareEntry.path[224]`, and
-    /// NOW-68K's 80 is smaller). Deep paths are truncated to `""` ON THE
+    /// The LARGER of the two guests' path buffers (PPC
+    /// `SoftwareEntry.path[224]`; the other's 80 is smaller, and a bound
+    /// sized to the smaller one would clip the bigger guest's own answer).
+    /// Deep paths are truncated to `""` ON THE
     /// GUEST rather than clipped, so a path that arrives is a path that
     /// works.
     public static let maximumPathScalars = 223
@@ -46,10 +48,11 @@ public enum AgentIntegrationSoftwareInventoryBounds {
     /// A Finder type or creator code.
     public static let fourCCScalars = 4
 
-    /// The listing's `note`. Sized over both guests' note vocabulary —
-    /// NOW-68K's `NOW68K_SWLIST_NOTE_MAX` is 64 and PPC's longest literal is
-    /// shorter still — so this cannot be the thing that shortens the
-    /// sentence in which a guest declares its own bound.
+    /// The listing's `note`. Sized over both guests' note vocabulary — the
+    /// larger of the two declared ceilings is 64 (`NOW68K_SWLIST_NOTE_MAX`)
+    /// and the longest literal either sends is shorter still — so this cannot
+    /// be the thing that shortens the sentence in which a guest declares its
+    /// own bound.
     public static let maximumNoteScalars = 128
 
     /// A refusal sentence, which may quote a domain a caller sent.
@@ -132,8 +135,8 @@ public enum AgentIntegrationSoftwareInventoryBounds {
 ///
 /// ## Rule 4 lives in this row, concretely
 ///
-/// `SoftwareEntry` has eight fields. **The PowerPC guest fills all eight;
-/// NOW-68K fills six** and omits `version` and `running` deliberately
+/// `SoftwareEntry` has eight fields. **One guest fills all eight; the other
+/// fills six**, omitting `version` and `running` deliberately
 /// ([contract-coverage.md](../../../../docs/contract-coverage.md),
 /// "`software.list` — one message, two amounts of answer"): a `vers` read is
 /// one resource-fork open per served entry, and `running` is a Process
@@ -143,8 +146,9 @@ public enum AgentIntegrationSoftwareInventoryBounds {
 /// So both are **nullable** in the schema and **absent** rather than defaulted
 /// in the answer. `"version": ""` would claim the file has an empty version
 /// string, and `"running": false` would claim the machine looked and found the
-/// application idle — neither of which NOW-68K said, and the second of which
-/// would be indistinguishable from the truth on the guest that does look. The
+/// application idle — neither of which the smaller guest said, and the second
+/// of which would be indistinguishable from the truth on a guest that does
+/// look. The
 /// schema states what absence means on each of them, because a caller that
 /// cannot read absence as absence will read it as a claim.
 ///
@@ -281,13 +285,13 @@ public enum SoftwareInventoryProjection: HostProjection {
                 "running": [
                     "type": ["boolean", "null"],
                     "description":
-                        "Joined against the guest's own process list. ABSENT MEANS ABSENT — NOW-68K omits this deliberately, because the join is a Process Manager walk per page on a machine where listing processes is already its slowest read. Absent is never false: false would claim the machine looked and found it idle.",
+                        "Joined against the guest's own process list. ABSENT MEANS ABSENT — a guest omits this deliberately where the join is a Process Manager walk per page on a machine whose process listing is already its slowest read. Absent is never false: false would claim the machine looked and found it idle.",
                 ],
                 "version": [
                     "type": ["string", "null"],
                     "maxLength": bounds.maximumVersionScalars,
                     "description":
-                        "The 'vers' short version string. ABSENT MEANS ABSENT — either the file has no readable 'vers', or this guest omits the field: NOW-68K does, because reading it is one resource-fork open per served entry. Absent is never the empty string.",
+                        "The 'vers' short version string. ABSENT MEANS ABSENT — either the file has no readable 'vers', or this guest omits the field, which a guest does deliberately where reading it is one resource-fork open per served entry in a heap with no slack. Absent is never the empty string.",
                 ],
             ],
             "required": ["name", "path"],
@@ -325,7 +329,7 @@ public enum SoftwareInventoryProjection: HostProjection {
                     "type": ["string", "null"],
                     "maxLength": bounds.maximumNoteScalars,
                     "description":
-                        "THE GUEST'S OWN SENTENCE about the edges of its answer, carried verbatim, and the field to read before trusting a listing as complete. NOW-68K says here that an apps inventory stopped at its bound of 48 items, or that PBCatSearch was unusable and only the volume root was walked — the second makes the answer NARROWER rather than shorter, because a root-only walk cannot see an application in a folder. A domain this guest does not have is also a completed call that says so here. Absent when the guest said nothing.",
+                        "THE GUEST'S OWN SENTENCE about the edges of its answer, carried verbatim, and the field to read before trusting a listing as complete. A guest says here that an apps inventory stopped at its own bound of 48 items, or that PBCatSearch was unusable and only the volume root was walked — the second makes the answer NARROWER rather than shorter, because a root-only walk cannot see an application in a folder. A domain this guest does not have is also a completed call that says so here. Absent when the guest said nothing.",
                 ],
                 "observedAt": ["type": "string", "format": "date-time"],
             ],

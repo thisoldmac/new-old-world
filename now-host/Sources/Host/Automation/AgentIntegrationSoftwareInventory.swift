@@ -154,8 +154,9 @@ final class AgentIntegrationSoftwareInventory {
     /// One entry, bounded.
     ///
     /// **Every optional field stays optional through here**, and that is the
-    /// whole of rule 4 on this row: NOW-68K omits `version` and `running`
-    /// deliberately, so `nil` is carried as `nil`. A `""` version or a `false`
+    /// whole of rule 4 on this row: a guest omits `version` and `running`
+    /// deliberately where each costs more than the entry is worth, so `nil` is
+    /// carried as `nil`. A `""` version or a `false`
     /// running flag would be this side making a claim the machine never made —
     /// and the second would be indistinguishable from the truth on the guest
     /// that does look.
