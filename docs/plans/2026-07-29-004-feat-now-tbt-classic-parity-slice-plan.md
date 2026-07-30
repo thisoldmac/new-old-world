@@ -141,10 +141,23 @@ much larger than a projection, and it is either its own workstream or an
 explicit deferral with a reason. Not in W1 until that is settled — an
 undecided row is worse than an absent one.
 
-**#1 is the template.** Read-only, served on both ISAs, exercises a binary
-payload, and has an obvious home on every face. It is first because it is
-the cleanest instance of the pattern, not because anything downstream is
-waiting on it.
+**#1 is the template, and it landed 2026-07-29. Its measured cost is 22
+files, not two** — finding `now-four-face-capability-cost`.
+
+The four faces were nearly free, exactly as W0 promised: **app UI 0** (the
+Screenshots pane's Capture button already existed), **MCP 0** (falls out of
+the registry loop), **audit 0** (falls out of the dispatch), AppIntents not
+built. The row itself was **2 files** — one projection plus one catalog line.
+
+What is not free is **a capability that needs a new client verb**: 7 files
+for the verb's serialization alone, 4 for the host capability owner, 2 to
+extend the seam for a non-JSON answer, 5 for gates, 2 for docs. So the real
+estimate for the remaining items splits in two:
+
+- items already served by an existing client verb → near the 2-file claim
+- items needing a new verb → assume ~20 files and a serialized edit
+
+That distinction, not the count, is what should size Phase 2.
 
 **#4 is worth a note** because it inverts the usual expectation: the two
 guests serve it by *different* mechanisms. Per
@@ -381,6 +394,25 @@ Three of these have already bitten this repo; none is hypothetical.
    enum, `contract/asyncapi.yaml`, the `scripts/test-native` manifest, and
    `contract-coverage.md`. W0.1's registry removes the first; the rest get a
    **single owning agent per phase**.
+5. **`AgentIntegrationLocalProtocol.swift` is the real serialization point,
+   and this list originally missed it.** W0.1 removed the tool-enum switch,
+   which made it look as though the shared-file hazard was solved. It was
+   displaced: every capability needing a new client verb must add an
+   operation case, a result case, a response field and init parameter, and a
+   strict-decode branch — all in that one file, at the tails of three lists.
+   Those three tails have now conflicted on **every** merge that touched
+   them (the audit gate, the codec fix, its harvest, and the capture
+   template), always trivially and always needing a human decision.
+   **One owning agent per phase for this file**, and prefer batching the
+   verbs a phase needs into a single edit over one agent per capability.
+6. **Four hand-maintained capability lists survive W0**, so "one file plus
+   one row" is true of the *row* and not of the *capability*:
+   `HostProjectionRegistryTests`' known-names set, `NOWAgentCompanionTests`'
+   approved-tool list, two exhaustive-switch fixtures, and — worst — a
+   `MCPCoverageTests` assertion that matches a doc heading naming the tool
+   *count* literally, so every new capability renames a heading and a test
+   string. Individually trivial; eight times over it is a serialized edit on
+   shared test files. Worth fixing before the wide phase, not during it.
 5. **The extension is one file by charter.** Any plane work is one agent,
    serialized, developed as a throwaway honest-named INIT first. Two agents
    editing NOW Extension is the failure the one-file rule exists to prevent.
