@@ -110,6 +110,7 @@ The test compares both against the code literally.
 | `now_guest_files_capabilities` | `file.list` | — | message family |
 | `now_guest_files_list` | `file.list` | `file.list` | message family |
 | `now_guest_files_stat` | `file.list` | `file.list` | message family |
+| `now_guest_files_download` | `file.list`, `file.get` | `file.get` | message family |
 | `now_guest_files_mutate` | `file.move`, `file.trash`, `file.restore`, `file.mkdir` | `file.move`, `file.trash`, `file.restore`, `file.mkdir` | message family |
 | `now_guest_files_upload_begin` | — | — | none; host staging only |
 | `now_guest_files_upload_append` | — | — | none; host staging only |
@@ -142,6 +143,7 @@ hand-written.
 | `now_bring_to_front` | `process.list` | a front switch, and whether a listing CONFIRMS it; the two listings are consumed to revalidate the reference and then to check the switch landed. No listing crosses back — which is why this row does not re-expose the `front` flag `now_list_processes` already returns |
 | `now_request_quit` | `process.list` | a quit request; the listing is consumed to revalidate the opaque reference |
 | `now_guest_files_capabilities` | `file.list` | the **host's** guestRoot policy and bounds; no directory entry crosses back |
+| `now_guest_files_download` | `file.list` | one file, in host-owned private storage, and a receipt naming it. The listing is consumed to observe that item's fork sizes, which is how the size ceiling is applied *before* any byte moves rather than by watching one arrive |
 
 `process.list` and `file.list` are still covered, because
 `now_list_processes` and `now_guest_files_list` genuinely expose them.
@@ -309,7 +311,6 @@ to exist:
 | `exec.cancel` | message | both | deliberate | Ends an exec, and is excluded with the rest of the console plane — [agent-integration.md](agent-integration.md). |
 | `exec.input` | message | both | deliberate | Part of the console plane excluded under rule 3 — [agent-integration.md](agent-integration.md) and the parity slice plan. |
 | `exec.request` | message | both | deliberate | The console plane. A shell is not user-initiable in any meaningful sense and is the one thing [agent-integration.md](agent-integration.md) is right to keep out. |
-| `file.get` | message | ppc | planned | W1 #4. Not withheld on authority grounds — confirmed 2026-07-29, simply unbuilt. The 68K guest reaches the same capability through its `put` verb. |
 | `process.shot` | message | ppc | deliberate | Excluded by name in the [parity slice plan](plans/2026-07-29-004-feat-now-tbt-classic-parity-slice-plan.md): PPC-only, and no consumer asked for a single-window capture. |
 | `software.list` | message | both | planned | W1 #3. The gap that `exposes` made visible: `now_launch_software` **requires** this and consumes it to match one name, so a `requires`-derived check called it covered while no tool returns a listing. Its console spelling is the `sw` row below. |
 | `stream.refresh` | message | ppc | unnoticed | Part of the live-stream bracket; see `stream.start`. |
@@ -323,7 +324,7 @@ to exist:
 | `help` | command | both | deliberate | Already sent, once per connection, to build the capability report — its answer *is* `now_session_capabilities` ([agent-integration.md](agent-integration.md)). A second route would be the same answer twice. |
 | `ls` | command | both | deliberate | The console spelling of `file.list`, which is projected. One capability, one route — [command-parity.md](command-parity.md) ("two ways to name a target is not two faces"). |
 | `ps` | command | both | deliberate | The console spelling of `process.list`, which is projected — same rule as `ls`, [command-parity.md](command-parity.md). |
-| `put` | command | 68k | planned | W1 #4. On 68K this verb *is* the guest→host transfer; the PowerPC guest answers the same capability as `file.get`. |
+| `put` | command | 68k | planned | W1 #4, and the half of it that did not land. `now_guest_files_download` closed the `file.get` message; this verb is the same capability by the other mechanism — guest-initiated, a leaf name inside the same share root `ls` lists (`now68k_desktop_folder`, "ONE root, both ways"). What blocks it is host machinery rather than the guest or authority: a row's `requires` is a **conjunction**, so a row cannot say "the family OR the verb". Requiring both switches the tool off against every guest; requiring neither overstates; and routing to the verb behind a row that requires the family would make the tool work exactly where the capability report says it cannot. A disjunctive requirement in `HostProjectionCatalog`'s contract is what closes this, plus the reported bound that the verb cannot express a subfolder path. |
 | `putstat` | command | ppc | unnoticed | Transfer diagnostics. The host reads them internally to size a transfer; whether an agent should be able to is undecided. |
 | `quit` | command | both | deliberate | `now_request_quit` needs the `process.quit` **family**, not this command: the opaque-reference and PSN-revalidation model has nothing to stand on without it, and is not relaxed to make a tool work ([agent-integration.md](agent-integration.md)). |
 | `screenshot` | command | both | deliberate | The console spelling of `capture.request`, which is projected as `now_capture_screen`. One capability, one route — [command-parity.md](command-parity.md) ("two ways to name a target is not two faces"), the same rule that keeps `ls` and `ps` off this surface. |
@@ -399,8 +400,11 @@ first paragraph collected the two names the explanation mentions *because* they
 are not on the list.
 
 Last derived: 2026-07-30, on `claude/tbt-parity-slice` at the
-sixteen-projection registry, integrating `now_reveal_item` and
-`now_transfer_cancel` — each stamped this line on its own branch, and the
+eighteen-projection registry — the previous stamp said sixteen and the
+registry already held seventeen, which is what this line being hand-typed
+beside a derived table costs. Integrating `now_reveal_item`,
+`now_transfer_cancel`, `now_guest_files_mutate` and
+`now_guest_files_download` — each stamped this line on its own branch, and the
 integration is what the tables actually describe. Re-derive by
 running `swift test --filter MCPCoverage` rather than by reading — if the
 tables and the code disagree, the code is right and the test says so.

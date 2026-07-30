@@ -186,6 +186,11 @@ public enum AgentIntegrationCapabilityNames {
     public static let processFront = "process.front"
     public static let softwareList = "software.list"
     public static let fileList = "file.list"
+    /// The host-initiated pull — `file.get` → `file.begin` → bulk →
+    /// `file.end`. Named here beside its sibling because it is the one
+    /// requirement of `now_guest_files_download` that decides whether the
+    /// bounded-download model has anything to stand on.
+    public static let fileGet = "file.get"
     public static let filePut = "file.put"
     /// Ending the transfer in flight, in whichever direction it is going.
     ///
@@ -230,8 +235,8 @@ public enum AgentIntegrationCapabilityNames {
     /// set still fails somewhere.
     public static let all: Set<String> = [
         processList, processQuit, processFront, softwareList, fileList,
-        filePut, fileCancel, fileMove, fileTrash, fileRestore, fileMkdir,
-        captureRequest, launchCommand, revealCommand,
+        fileGet, filePut, fileCancel, fileMove, fileTrash, fileRestore,
+        fileMkdir, captureRequest, launchCommand, revealCommand,
     ]
 
     /// Refusal codes that mean "this guest does not implement that", as

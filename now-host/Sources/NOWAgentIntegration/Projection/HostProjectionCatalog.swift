@@ -27,6 +27,9 @@ public enum HostProjectionCatalog {
         GuestFilesCapabilitiesProjection.self,
         GuestFilesListProjection.self,
         GuestFilesStatProjection.self,
+        /* Last of the read side: it returns one file rather than a
+           listing, and changes nothing on the machine. */
+        GuestFilesDownloadProjection.self,
         GuestFilesMutateProjection.self,
         GuestFilesUploadBeginProjection.self,
         GuestFilesUploadAppendProjection.self,

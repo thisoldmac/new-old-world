@@ -400,6 +400,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     return .guestFilesStat(
                         await guestFiles.agentStat(
                             path: request.guestFilePath ?? ""))
+                case .guestFileDownload:
+                    /* The path is the whole request, and an absent one
+                       never reached a machine — so the refusal is the
+                       path's rather than the guest's. Shaped like the two
+                       browse cases above rather than like the upload ones:
+                       the download is a Files command with the same
+                       guestRoot policy and the same receipt envelope. */
+                    return .guestFileDownload(
+                        await guestFiles.agentDownload(
+                            path: request.guestFilePath ?? ""))
                 case .guestFilesUploadBegin:
                     guard let upload = request.guestFileUpload else {
                         return .guestFilesUploadStage(.completed(
@@ -546,7 +556,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     }
                     return .guestFileMutation(
                         await guestFiles.agentMutate(composed))
-                case .census, .softwareInventory, .guestFileDownload,
+                case .census, .softwareInventory,
                      .guestLogTail, .machineFacts, .catalogSearch,
                      .diagnostics:
                     /* P1a landed the SERIALIZATION for eleven capabilities

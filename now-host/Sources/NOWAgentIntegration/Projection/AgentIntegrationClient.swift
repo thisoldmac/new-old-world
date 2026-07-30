@@ -59,6 +59,12 @@ public protocol AgentIntegrationClient: Sendable {
         -> AgentIntegrationGuestFileListResult
     func statGuestFile(path: String) async
         -> AgentIntegrationGuestFileStatResult
+    /// Pull one bounded file off the machine into host-owned private
+    /// storage. The caller names what to fetch and never where it lands —
+    /// the mirror of the upload lane, which takes bytes and never a host
+    /// path. See `GuestFilesDownloadProjection`.
+    func downloadGuestFile(path: String) async
+        -> AgentIntegrationGuestFileDownloadResult
     func beginGuestFileUpload(
         _ upload: AgentIntegrationGuestFileUploadBegin
     ) async -> AgentIntegrationGuestFileUploadStageResult
@@ -96,6 +102,14 @@ public protocol AgentIntegrationClient: Sendable {
 }
 
 extension AgentIntegrationClient {
+    /// Defaulted with the guest-files lanes below it, and for the same
+    /// reason: a client with no host to ask answers "no host" rather than
+    /// making seven stub conformers in the test tree learn a new lane.
+    public func downloadGuestFile(path: String) async
+        -> AgentIntegrationGuestFileDownloadResult {
+        .hostUnavailable(.host)
+    }
+
     public func beginGuestFileUpload(
         _ upload: AgentIntegrationGuestFileUploadBegin
     ) async -> AgentIntegrationGuestFileUploadStageResult {
