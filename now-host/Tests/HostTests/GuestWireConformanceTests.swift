@@ -507,4 +507,63 @@ final class GuestWireConformanceTests: XCTestCase {
         XCTAssertFalse(out.isEmpty, "no properties read for \(schema)")
         return out
     }
+    // MARK: - The build stamp rides hello
+
+    /// The PowerPC guest's hello carries a `build`, and it is the build
+    /// stamp rather than a literal.
+    ///
+    /// `PRODUCT_VERSION` is hand-edited, so two builds routinely report the
+    /// same version — on 2026-07-30 a stale guest on the 1400c failing every
+    /// exec test looked identical to a current one, and an hour of diagnosis
+    /// went to the wrong half of the system (docs/open-issues.md). What makes
+    /// the field worth anything is that nobody types its value:
+    /// `now_build_stamp()` is `__DATE__ " " __TIME__` of a file CMake touches
+    /// every build. A hello that carried a literal here, or dropped the field,
+    /// would leave a host back where it started, so both are checked.
+    func testThePowerPCGuestsHelloCarriesItsBuildStamp() throws {
+        let wire = try String(
+            contentsOf: Self.repoRoot.appendingPathComponent(
+                "now-guest-ppc/src/core/wire.c"),
+            encoding: .utf8)
+        /* The DEFINITION, not the forward declaration above it — wire.c
+           has both, and matching the declaration hands back the body of
+           whatever function happens to follow it. */
+        guard let start = wire.range(
+                of: "static void send_hello(void)\n{"),
+              let end = wire.range(of: "\n}", range: start.upperBound
+                                    ..< wire.endIndex) else {
+            return XCTFail("no send_hello definition in "
+                           + "now-guest-ppc/src/core/wire.c")
+        }
+        let body = String(wire[start.upperBound..<end.lowerBound])
+
+        XCTAssertTrue(
+            body.contains(#"\"build\":\"%s\""#),
+            "The PowerPC guest's hello no longer carries a build field. "
+                + "Without it a host cannot tell a stale guest from a "
+                + "current one, because PRODUCT_VERSION is hand-edited and "
+                + "answers the same for both.")
+        XCTAssertTrue(
+            body.contains("now_build_stamp()"),
+            "hello names a build but does not fill it from "
+                + "now_build_stamp(). A hand-written build string is the "
+                + "same defect as a hand-written version, one field over.")
+    }
+
+    /// The contract admits the field the guest writes, and does not require
+    /// it. Both directions are the point: an unadmitted field is refused by
+    /// a schema that closes `additionalProperties`, and a REQUIRED one would
+    /// break the 68K guest, which sends no build.
+    func testTheContractMakesBuildOptionalOnHello() throws {
+        XCTAssertTrue(
+            try contractProperties(of: "Hello").contains("build"),
+            "contract/asyncapi.yaml does not name `build` on Hello, and the "
+                + "schema closes additionalProperties, so a guest sending "
+                + "one is sending an illegal message.")
+        XCTAssertFalse(
+            try XCTUnwrap(requiredFields()["Hello"]).contains("build"),
+            "`build` is required on Hello. NOW-68K sends none, so requiring "
+                + "it makes every 68K hello non-conformant; absence has a "
+                + "defined reading and that is the whole design.")
+    }
 }

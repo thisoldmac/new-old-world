@@ -21,6 +21,46 @@ final class ContractMessageTests: XCTestCase {
         XCTAssertEqual(hello.contract, Contract.revision)
         XCTAssertEqual(hello.side, "guest")
         XCTAssertNil(hello.chunk)
+        XCTAssertNil(
+            hello.build,
+            "A hello without a build must decode with build nil. It is an "
+                + "optional field and the 68K guest sends none, so absence "
+                + "has to reach the host as absence rather than as a "
+                + "decode failure.")
+    }
+
+    /// The whole point of the field: two builds of one version are told
+    /// apart, and the version alone cannot do it.
+    ///
+    /// Written as a decode of the PowerPC guest's own hello shape rather
+    /// than a round trip of a struct this file built, so it is the wire
+    /// spelling under test.
+    func testTwoBuildsOfOneVersionAreDistinguishedByBuild() throws {
+        func hello(build: String) throws -> Hello {
+            let json = """
+            {"type":"hello","contract":1,"side":"guest","version":"0.1.0",\
+            "build":"\(build)","name":"PowerBook 1400","os":"9",\
+            "chunk":8192}
+            """
+            guard case .hello(let hello) =
+                try ControlMessageCodec.decode(Data(json.utf8)) else {
+                throw XCTSkip("expected hello")
+            }
+            return hello
+        }
+        let stale = try hello(build: "Jul 12 2026 22:14:03")
+        let current = try hello(build: "Jul 30 2026 01:02:58")
+
+        XCTAssertEqual(stale.version, current.version,
+                       "the premise: PRODUCT_VERSION is hand-edited and did "
+                           + "not change between these two builds")
+        XCTAssertEqual(stale.build, "Jul 12 2026 22:14:03")
+        XCTAssertNotEqual(
+            stale.build, current.build,
+            "Two builds a fortnight apart must not report the same build "
+                + "string. This is the misdiagnosis of 2026-07-30: a stale "
+                + "guest on the 1400c failing every exec test looked "
+                + "identical to a current one.")
     }
 
     func testCaptureOfferAnswersRoundTrip() throws {

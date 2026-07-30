@@ -742,6 +742,20 @@ components:
         version:
           type: string
           description: Sending app's own version, for display only.
+        build:
+          type: string
+          maxLength: 64
+          description: >
+            Opaque build identity of the sending app — a string that differs
+            between two builds of the same `version`. NOW's guests send their
+            compile timestamp ("Mmm dd yyyy hh:mm:ss"). For display and for
+            telling builds apart, never parsed and never compared for order:
+            "different" is the only question it answers.
+            ABSENT means the sender does not report one, which is a fact about
+            the sender and NOT a claim that the build is old, unknown-good or
+            the same as any other. A receiver shows nothing rather than
+            guessing, and must not fall back to `version` — a version equal
+            across two builds is exactly the failure this field exists for.
         name:
           type: string
           description: Human-facing machine name, e.g. "Power Mac G3".

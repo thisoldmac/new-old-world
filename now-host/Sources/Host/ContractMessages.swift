@@ -66,6 +66,12 @@ struct Hello: Codable, Equatable, Sendable {
     var contract: Int
     var side: String
     var version: String
+    /// Opaque build identity — a string that differs between two builds of
+    /// the same `version`. Nil means the sender does not report one, which
+    /// says nothing about the build; it is never filled in from `version`,
+    /// because a version equal across two builds is the failure this exists
+    /// for.
+    var build: String? = nil
     var name: String?
     var os: String?
     var chunk: Int?

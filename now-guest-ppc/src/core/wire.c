@@ -6,6 +6,7 @@
 
 #include <Processes.h>
 
+#include "build_stamp.h"
 #include "capture.h"
 #include "fileshare.h"
 #include "commands.h"
@@ -481,10 +482,18 @@ static void send_hello(void)
        answer every machine running NOW would give. */
     now_machine_name(name, sizeof name);
     now_json_escape(name, esc, sizeof esc);
+    /* build carries what version cannot: PRODUCT_VERSION is hand-edited, so
+       a stale build on a machine reports the same string as the current one
+       and a host has no way to tell them apart. It cost a misdiagnosis on
+       2026-07-30. now_build_stamp() is __DATE__ " " __TIME__ of a file CMake
+       touches every build, so it differs whenever the build does. Not
+       escaped: those macros are "Mmm dd yyyy hh:mm:ss" and contain neither a
+       quote nor a backslash. */
     snprintf(json, sizeof json,
              "{\"type\":\"hello\",\"contract\":%d,\"side\":\"guest\","
-             "\"version\":\"%s\",\"name\":\"%s\",\"os\":\"9\",\"chunk\":%d}",
-             kNowContractRevision, PRODUCT_VERSION, esc,
+             "\"version\":\"%s\",\"build\":\"%s\",\"name\":\"%s\","
+             "\"os\":\"9\",\"chunk\":%d}",
+             kNowContractRevision, PRODUCT_VERSION, now_build_stamp(), esc,
              kNowDefaultChunk);
     if (!send_control(json)) {
         fail("Sending hello failed");

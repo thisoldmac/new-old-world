@@ -120,6 +120,13 @@ struct SettingsModuleView: View {
         if let version = health.guestVersion {
             text += "  ·  v\(version)"
         }
+        /* Beside the version, not instead of it: the version says which
+           release this claims to be and the build says whether it is the
+           one just deployed. Absent when the guest reports none — NOW-68K
+           does not — rather than shown empty or backfilled. */
+        if let build = health.guestBuild, !build.isEmpty {
+            text += "  ·  build \(build)"
+        }
         if let os = health.guestOS {
             text += "  ·  OS \(os)"
         }

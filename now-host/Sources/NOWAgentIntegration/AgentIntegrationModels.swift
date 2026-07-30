@@ -148,6 +148,16 @@ public struct AgentIntegrationSessionHealth: Codable, Equatable, Sendable {
         public let reference: AgentIntegrationGuestReference?
         public let name: String
         public let version: String?
+        /// Build identity from the guest's `hello`, when it reports one.
+        ///
+        /// `version` is hand-edited in the guest's source, so two builds
+        /// routinely share it — a stale guest on the PowerBook 1400c reported
+        /// the same "0.1.0" as the current one and an hour of diagnosis went
+        /// to the wrong half of the system (2026-07-30). This differs whenever
+        /// the build does. Nil means the guest reports none, which is a fact
+        /// about that guest and NOT a claim about its build; a caller must not
+        /// fall back to `version` to fill it in.
+        public let build: String?
         public let operatingSystem: String?
         public let connectedAt: Date?
         public let lastTraffic: Date?
@@ -156,13 +166,14 @@ public struct AgentIntegrationSessionHealth: Codable, Equatable, Sendable {
         public let framesReceived: Int?
 
         public init(reference: AgentIntegrationGuestReference? = nil,
-                    name: String, version: String?,
+                    name: String, version: String?, build: String? = nil,
                     operatingSystem: String?, connectedAt: Date?,
                     lastTraffic: Date?, quietFor: TimeInterval?,
                     pingsAnswered: Int?, framesReceived: Int?) {
             self.reference = reference
             self.name = name
             self.version = version
+            self.build = build
             self.operatingSystem = operatingSystem
             self.connectedAt = connectedAt
             self.lastTraffic = lastTraffic

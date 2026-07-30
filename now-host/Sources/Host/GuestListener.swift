@@ -49,6 +49,11 @@ final class GuestListener: ObservableObject {
     struct SessionHealth: Equatable {
         var guestName: String
         var guestVersion: String?
+        /// The guest's build identity from `hello`, when it reports one.
+        /// Nil means it does not — never a guess, and never `guestVersion`
+        /// standing in, because two builds sharing a version is the whole
+        /// reason this is here (docs/open-issues.md, 2026-07-30).
+        var guestBuild: String? = nil
         var guestOS: String?
         var connectedAt: Date
         var lastTraffic: Date
@@ -323,6 +328,7 @@ final class GuestListener: ObservableObject {
                 name: live.guestName,
                 address: live.guestAddress,
                 version: record.guestVersion,
+                build: record.guestBuild,
                 operatingSystem: record.guestOS,
                 connectedAt: record.connectedAt,
                 isActive: key == activeKey)

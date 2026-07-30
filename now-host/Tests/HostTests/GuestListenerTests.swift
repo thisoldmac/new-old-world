@@ -109,9 +109,47 @@ final class GuestListenerTests: XCTestCase {
     }
 
     private func guestHello(name: String = "PowerBook 1400",
-                            contract: Int = Contract.revision) -> ControlMessage {
+                            contract: Int = Contract.revision,
+                            build: String? = nil) -> ControlMessage {
         .hello(Hello(contract: contract, side: "guest", version: "0.1.0",
-                     name: name, os: "9.1", chunk: 8192))
+                     build: build, name: name, os: "9.1", chunk: 8192))
+    }
+
+    /// The build a guest reports at hello reaches the health record.
+    ///
+    /// That string is the only thing distinguishing two builds of one
+    /// hand-edited version, and it is what a host needs to answer "is this
+    /// the build I just deployed" — the question that went unanswered on the
+    /// 1400c on 2026-07-30.
+    func testHelloBuildReachesTheHealthRecord() async throws {
+        let stamp = "Jul 30 2026 01:02:58"
+        let guest = FakeGuest(port: listener.boundPort!)
+        guest.start()
+        try guest.send(guestHello(build: stamp))
+        try await waitUntil("host hello") { !guest.received.isEmpty }
+
+        XCTAssertEqual(
+            listener.health?.guestBuild, stamp,
+            "The guest named its build and the host dropped it.")
+        XCTAssertEqual(listener.health?.guestVersion, "0.1.0")
+        XCTAssertEqual(listener.guests.first?.build, stamp,
+                       "the roster row carries it too")
+    }
+
+    /// A guest that reports no build leaves it absent.
+    ///
+    /// `build` is optional and NOW-68K sends none, so absence has to survive
+    /// as absence. Backfilling it from `version` would reproduce exactly the
+    /// failure the field exists to fix.
+    func testAGuestThatReportsNoBuildLeavesItAbsent() async throws {
+        let guest = FakeGuest(port: listener.boundPort!)
+        guest.start()
+        try guest.send(guestHello(name: "now-68k"))
+        try await waitUntil("host hello") { !guest.received.isEmpty }
+
+        XCTAssertNil(listener.health?.guestBuild)
+        XCTAssertEqual(listener.health?.guestVersion, "0.1.0",
+                       "the version is still there; only the build is not")
     }
 
     func testHelloHandshakeConnectsAndAnswersWithHostHello() async throws {

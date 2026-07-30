@@ -1237,7 +1237,8 @@ final class Session {
         let now = Date()
         health = GuestListener.SessionHealth(
             guestName: guestName, guestVersion: hello.version,
-            guestOS: hello.os, connectedAt: now, lastTraffic: now,
+            guestBuild: hello.build, guestOS: hello.os,
+            connectedAt: now, lastTraffic: now,
             pingsAnswered: 0, framesReceived: 1)
         onHealth(health)
         /* The handle, what the machine calls itself, and where it dialled
@@ -1247,6 +1248,14 @@ final class Session {
             + " at \(address.text)"
         if !hello.version.isEmpty {
             line += " (guest \(hello.version)"
+            /* The build, not just the version: a version is hand-edited and
+               a stale build reports the same one, which is how an hour went
+               to the wrong half of the system on 2026-07-30. Omitted rather
+               than filled in when the guest reports none — the 68K guest
+               does not. */
+            if let build = hello.build, !build.isEmpty {
+                line += " build \(build)"
+            }
             line += hello.os.map { ", OS \($0))" } ?? ")"
         }
         onLog(line, "wire", .info)

@@ -82,6 +82,7 @@ final class AgentIntegrationHostAdapter {
                 reference: activeReference(),
                 name: health?.guestName ?? guestName,
                 version: health?.guestVersion,
+                build: health?.guestBuild,
                 operatingSystem: health?.guestOS,
                 connectedAt: health?.connectedAt,
                 lastTraffic: health?.lastTraffic,

@@ -222,6 +222,9 @@ struct ConnectedGuest: Identifiable, Equatable, Sendable {
     var name: String
     var address: GuestAddress
     var version: String?
+    /// The build this machine reported at `hello`, when it reported one.
+    /// Nil is "did not say", not "same as the last one".
+    var build: String? = nil
     var operatingSystem: String?
     var connectedAt: Date
     /// True for the one the single-guest API — the console, the modules,
