@@ -32,6 +32,17 @@ public enum HostProjectionCatalog {
         /* Beside capture on purpose: the two costly MEASUREMENTS of the
            machine sit together, before the actions. */
         CatalogSearchProjection.self,
+        /* The three diagnostics, with the costly measurements and before the
+           actions, because that is what they are: measurements of the
+           machine that change nothing on it. They are three rows rather
+           than one because availability is per row and these three do not
+           co-occur on any guest — the argument is at the top of
+           GuestDiagnosticsProjection.swift. Kept adjacent and in the order
+           the module draws them, so a person reading either list meets them
+           the same way. */
+        FramebufferProbeProjection.self,
+        CaptureDiagnosticsProjection.self,
+        TransferDiagnosticsProjection.self,
         /* Between the measurement of the sweep and the verb that acts on
            what the sweep found, which is the order a caller uses them in:
            what does this inventory cost, what is in it, open one of them.

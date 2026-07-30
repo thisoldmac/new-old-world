@@ -617,6 +617,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                             domain: domain,
                             cursor: request.softwareCursor))
                 case .diagnostics:
+                    /* P1 #13, and the one P1a operation whose probe is a
+                       CLOSED enum: the codec has already refused a request
+                       that named none, so there is no shape left to check
+                       here and no refusal this side can compose.
+
+                       One operation, three capabilities. Which of them the
+                       connected machine answers is not decided here and
+                       cannot be: a guest without the verb refuses it by
+                       name, and the capability ledger reads the same `help`
+                       table before anyone calls. */
+                    guard let probe = request.diagnosticProbe else {
+                        return .diagnostics(.refused(.init(
+                            code: "now-diagnostic-probe-invalid",
+                            message:
+                                "The diagnostics request named no probe")))
+                    }
+                    return .diagnostics(
+                        await agentIntegration.runDiagnostic(probe))
                     /* P1a landed the SERIALIZATION for eleven capabilities
                        and none of their adapters (plan 005): eleven agents
                        each

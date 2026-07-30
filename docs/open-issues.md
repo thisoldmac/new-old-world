@@ -191,6 +191,21 @@ own:
 They were ten; `capture.cancel` left the list by being **decided** rather
 than by being built.
 
+**Updated 2026-07-30: all three diagnostics are now reachable, and only the
+streaming bracket is left on that list.** `vprobe`, `shotdiag` and `putstat`
+are `now_framebuffer_probe`, `now_capture_diagnostics` and
+`now_transfer_diagnostics`, plus a Diagnostics module — three rows for one
+plan item and one wire operation, because `requires` is a conjunction and no
+guest serves all three (the argument is in `docs/mcp-coverage.md`, "One
+capability is three rows"). **Tested, not metal-verified**: nothing in this
+row set has run against a Macintosh, and the two unverified things worth
+naming are that the module's per-card availability reads the connected
+machine's own `help` table (so a machine that never answers `help` leaves all
+three cards `unknown`, which is stated rather than guessed past), and that the
+host's 40 s bound on a diagnostic is the **only** watchdog in the chain —
+neither `vprobe` nor `shotdiag` has a guest-side give-up, so a 68030 slower
+than that bound would read as a refusal and nobody has timed one.
+
 ### `AgentIntegrationLocalProtocol.swift` is the real serialization point
 
 Any capability needing a new client verb edits four things in that one
@@ -288,6 +303,14 @@ the capture lane stages through the guest's normal screen grab — so a
 nobody conflates them again, and so the reverse is also clear: had the
 capture been refused for that reason, it would have been a finding about
 this machine and not a defect in the gate.
+
+**This distinction is now carried by the product rather than only by this
+ledger (2026-07-30).** `vprobe` has a face on both sides — the
+`now_framebuffer_probe` tool and the Diagnostics module's first card — so the
+misreading is available to more people than the two who wrote these
+paragraphs. The tool description states it, and the card states it **before**
+the probe is run rather than beneath a number that has already sent someone
+looking for a bug in Screenshots.
 
 ## `PRODUCT_VERSION` cannot tell two builds apart (2026-07-30)
 

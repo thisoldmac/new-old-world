@@ -236,6 +236,21 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
+    /// One lane for the three diagnostic rows: the probe is the request, and
+    /// which of them a caller may use is the ledger's answer rather than this
+    /// client's — see `GuestDiagnosticsProjection`.
+    func runDiagnostic(_ probe: AgentIntegrationDiagnosticProbe) async
+        -> AgentIntegrationGuestRowReportResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.diagnostics(probe: probe)
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
     func beginGuestFileUpload(
         _ upload: AgentIntegrationGuestFileUploadBegin
     ) async -> AgentIntegrationGuestFileUploadStageResult {

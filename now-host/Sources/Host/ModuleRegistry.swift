@@ -76,6 +76,17 @@ struct ModuleRegistry: Sendable {
             symbol: "cpu",
             summary: "Run and read the connected Mac's hardware census"
         ),
+        /* Immediately after Hardware, because it answers the same class of
+           question by the other route: Hardware is what the machine IS, and
+           this is what the machine can MEASURE about itself. A person
+           chasing a slow transfer or a wrong-looking screenshot reads them
+           together. */
+        ModuleDescriptor(
+            id: "diagnostics",
+            title: "Diagnostics",
+            symbol: "stethoscope",
+            summary: "Measure this Mac's screen reads and transfers"
+        ),
         ModuleDescriptor(
             id: "software",
             title: "Software",
