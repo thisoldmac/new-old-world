@@ -100,9 +100,11 @@ public enum AgentIntegrationCensusBounds {
 ///
 /// ## The overlap with `gestalt`, named rather than merged
 ///
-/// The `gestalt` verb (`docs/mcp-coverage.md`, the largest single unnoticed
-/// gap) answers adjacent hardware questions by a different route, and a
-/// sibling row is wiring it. Two capabilities answering adjacent questions is
+/// The `gestalt` verb — until it landed the largest single unnoticed gap in
+/// `docs/mcp-coverage.md` — answers adjacent hardware questions by a different
+/// route, and `MachineFactsProjection` is now that row, which endorses this
+/// paragraph rather than reopening it. Two capabilities answering adjacent
+/// questions is
 /// fine; two composing each other is not. Nothing here reads `gestalt` and
 /// nothing here should be rewritten in terms of it — the census's `selectors`
 /// probe IS the documented Gestalt walk on the machines that can afford it,

@@ -100,6 +100,7 @@ The test compares both against the code literally.
 | `now_session_health` | — | — | none; host listener state |
 | `now_session_capabilities` | — | — | none; `help` plus bounded probes, described in agent-integration.md |
 | `now_hardware_census` | `census.request` | `census.request` | message family |
+| `now_machine_facts` | `gestalt` | `gestalt` | command |
 | `now_list_processes` | `process.list` | `process.list` | message family |
 | `now_guest_log_tail` | `tail` | `tail` | command |
 | `now_capture_screen` | `capture.request` | `capture.request` | message family |
@@ -367,7 +368,6 @@ to exist:
 | `cancel` | command | 68k | deliberate | The 68K guest's console spelling of transfer cancel, and `now_transfer_cancel` needs the `file.cancel` **message** rather than this verb: the message is what both guests dispatch, and requiring the verb would make a capability both guests serve read as 68K-only — rule 4 of the [parity slice plan](plans/2026-07-29-004-feat-now-tbt-classic-parity-slice-plan.md). The verb exists so a person at a PowerBook whose host has stopped answering can still end a transfer, which is a reason for the GUEST to have two faces, not a second mechanism for the host to pick between — [command-parity.md](command-parity.md). |
 | `census` | command | both | deliberate | The console spelling of `census.request`, which is projected as `now_hardware_census`. `now_hardware_census` needs the **family** and not this verb, for the reason `front` and `quit` give: the verb is the flat single-page read a person types at the machine, and the family is the one that paginates and carries a per-probe outcome — which is the whole capability. One capability, one route per face — [command-parity.md](command-parity.md). |
 | `front` | command | both | deliberate | `now_bring_to_front` needs the `process.front` **family**, not this command, for the reason `quit` gives below: the command takes a NAME, and the opaque-reference and PSN-revalidation model the tool stands on has nothing to stand on without the message. The name form is the console's, by contract — one capability, one route per face ([command-parity.md](command-parity.md)). |
-| `gestalt` | command | ppc | unnoticed | **The largest single unnoticed gap.** One verb answers CPU, memory, OS, network and hardware for the whole machine; the PowerPC guest has served it throughout and no host face can ask. |
 | `help` | command | both | deliberate | Already sent, once per connection, to build the capability report — its answer *is* `now_session_capabilities` ([agent-integration.md](agent-integration.md)). A second route would be the same answer twice. |
 | `ls` | command | both | deliberate | The console spelling of `file.list`, which is projected. One capability, one route — [command-parity.md](command-parity.md) ("two ways to name a target is not two faces"). |
 | `ps` | command | both | deliberate | The console spelling of `process.list`, which is projected — same rule as `ls`, [command-parity.md](command-parity.md). |
@@ -383,13 +383,15 @@ to exist:
 ### The unnoticed rows, named together
 
 Because they are the point: `stream.start`, `stream.stop`,
-`stream.refresh`, `gestalt`, `putstat`, `shotdiag`,
-`vprobe`.
+`stream.refresh`, `putstat`, `shotdiag`, `vprobe`.
 
 Gated against the table's own `unnoticed` column, so closing one of these is
 a two-place edit and the test names the second place. `capture.cancel` used to
 be on the list and left it by being **decided** rather than by being built —
-see its row; that is the other way a name leaves.
+see its row; that is the other way a name leaves. `gestalt` left it the third
+way, by being **built**: it was the largest of them, and
+`now_machine_facts` now exposes it, so its gap row is gone rather than
+re-dispositioned.
 
 Every one of them is served by a guest right now. Nothing in this repository
 argued for their absence; they are absent because the question never came
@@ -471,7 +473,8 @@ guest never sent is a claim about somebody's Macintosh.
 
 ### `gestalt` and the census answer adjacent questions by different routes
 
-`gestalt` (below, and the largest single unnoticed gap) overlaps the
+`gestalt` — projected as `now_machine_facts`, and until it landed the
+largest single unnoticed gap — overlaps the
 census's `identity` and `selectors` probes: both reach Gestalt selectors,
 and on the PowerPC guest both can answer CPU, memory and OS. They are not
 unified and should not be — the overlap is **two capabilities answering
@@ -482,8 +485,18 @@ than reconcile:
 | | the census | `gestalt` |
 |---|---|---|
 | plane | message family, both guests | command, PPC only ([contract-coverage.md](contract-coverage.md): the verb answers `unknown-command` on NOW-68K) |
-| shape | paged, per-probe outcome, raw beside decoded | one command result |
-| what absence means | a typed probe outcome the caller reads | the verb's own refusal |
+| shape | paged, per-probe outcome, raw beside decoded | one command result, every group |
+| what absence means | a typed probe outcome the caller reads | the verb's own refusal, or `now_machine_facts` unavailable |
+
+**What `now_machine_facts` being PowerPC-only does not say** is that the 68K
+machine cannot answer these questions. It largely can: `health.c` samples
+identity, CPU, System, VM, MacTCP, geometry and RAM at startup for its own
+panel, and the census reports most of the same facts under `identity` and
+`overview` on both guests. What is missing there is the VERB — the one-call
+grouped rendering — which [contract-coverage.md](contract-coverage.md) calls
+"closer to a rendering job than a measurement one" and "the cheapest large gap
+left". Deferred, not refused, and the tool's own unavailability sentence points
+a caller at the census rather than implying a mute machine.
 
 The census's `selectors` probe **is** the documented Gestalt walk on the
 machines that can afford it, and says so in its own outcome where it cannot
@@ -523,7 +536,10 @@ real defect in its own first draft — reading the whole section rather than its
 first paragraph collected the two names the explanation mentions *because* they
 are not on the list.
 
-Last derived: 2026-07-30, on `claude/census-projection` off
+Last derived: 2026-07-30, on `claude/machine-facts` off
+`claude/tbt-parity-slice`, adding `now_machine_facts` — which removed the
+largest name from the unnoticed list by building it. Before that, on
+`claude/census-projection` off
 `claude/tbt-parity-slice`, adding `now_hardware_census` — which is what
 expanded the census into fourteen probe rows. The stamp no longer carries a
 registry count: the previous one said sixteen while the registry held
