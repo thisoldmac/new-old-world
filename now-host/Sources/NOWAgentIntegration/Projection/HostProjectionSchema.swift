@@ -36,6 +36,38 @@ public enum HostProjectionSchema {
             "additionalProperties": false,
         ]
     }
+
+    /// The `unavailable` payload: a code and a sentence, both written by the
+    /// **host**.
+    ///
+    /// Unbounded on purpose, and that is the one thing worth knowing before
+    /// reusing it. A row's other failure payloads carry `maxLength`s because
+    /// the strings inside them come from a Macintosh, over a wire with a
+    /// stated cap; `unavailable` means the running host could not be reached
+    /// or the connected guest does not serve what the row requires, so both
+    /// strings are ours and there is no guest bound to declare. A row whose
+    /// unavailable payload does carry guest words wants its own fragment
+    /// rather than this one.
+    public static let unavailableFailure: [String: Any] = [
+        "type": "object",
+        "properties": [
+            "code": ["type": "string"],
+            "message": ["type": "string"],
+        ],
+        "required": ["code", "message"],
+        "additionalProperties": false,
+    ]
+
+    /// The whole `unavailable` variant, ready to sit in a `oneOf` beside a
+    /// row's own outcomes.
+    ///
+    /// Every discriminated-outcome row has this arm — it is the shared
+    /// envelope's, not any capability's — so it is stated once here. The
+    /// projections that predate this fragment render the arm with their own
+    /// richer `failure` payload instead, which is deliberate and left alone:
+    /// changing them would change a published schema to save a repetition.
+    public static let unavailableVariant: [String: Any] = resultVariant(
+        "unavailable", payload: "unavailable", schema: unavailableFailure)
 }
 
 /// The guest Files family's shared shapes. Six projections render these,

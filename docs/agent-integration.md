@@ -85,6 +85,21 @@ face reaching a capability the next does not.
 Same discipline as [adding-a-workshop-module.md](adding-a-workshop-module.md)
 on the guest side, and for the same reason.
 
+**What a row costs beyond the row**, when the capability is new to the host
+rather than a second view of something already wired. All four are on shared
+files, so they are stated here once rather than rediscovered per capability:
+
+| Obligation | Where | What happens if you forget |
+|---|---|---|
+| the requirement, as a **named constant** | `AgentIntegrationCapabilityNames` | `HostProjectionRegistryTests` names it |
+| a **`familyPolicy` row**, for a requirement that is a message family | `AgentIntegrationCapabilityLedger` | nothing at run time: the ledger falls through to the command table, which cannot hold a family, and the tool reports itself unavailable against **every** guest, forever. `MCPCoverageTests.testEveryFamilyRequirementHasALedgerRow` is the only thing that names it |
+| a **default** for a new client method | the extension in `Projection/AgentIntegrationClient.swift` | the test target stops compiling in seven unrelated stub files. No test can gate this — the build fails before any test runs — so the rule lives in that file's own doc comment |
+| a row in **[mcp-coverage.md](mcp-coverage.md)** | that file's projection table, and the gap it closes | `MCPCoverageTests` names the heading to add it under |
+
+A requirement that is a **command** needs no ledger row: commands come from
+`help`, which the guest itself answers, so the fall-through is the right
+answer rather than a trap.
+
 **What the registry currently reaches, and what it does not, is
 [mcp-coverage.md](mcp-coverage.md)** — this file is the boundary, that one is
 the inventory. It joins the registry against the contract and both guests'

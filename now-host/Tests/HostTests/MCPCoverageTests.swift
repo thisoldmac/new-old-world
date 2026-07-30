@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+@testable import Host
 @testable import NOWAgentIntegration
 
 /// The test `docs/contract-coverage.md` says it wishes it had, pointed at
@@ -42,6 +43,14 @@ final class MCPCoverageTests: XCTestCase {
     /// heading and this string with it — the papercut every projection in
     /// the wide phase would have paid again.
     private static let projectionSection = "## What the projections reach"
+
+    /// The other three sections this file reads by heading, named once for
+    /// the same reason: a rename is then a one-line fix rather than a hunt.
+    private static let gapSection = "## Every gap, with its disposition"
+    private static let requiredNotExposedSection =
+        "### Required and not exposed"
+    private static let unnoticedSection =
+        "### The unnoticed rows, named together"
 
     // MARK: - Host side: the registry, in process
 
@@ -179,6 +188,154 @@ final class MCPCoverageTests: XCTestCase {
         }
     }
 
+    /// A requirement that is a **message family** owes a row in the capability
+    /// ledger's `familyPolicy`, and nothing else in the tree says so.
+    ///
+    /// This is the silent-availability trap, and it is worth being precise
+    /// about why nothing else catches it. The registry gate checks a
+    /// requirement is a declared NAME; the test above checks it is a name the
+    /// contract knows. Neither can see whether the ledger ACCOUNTS for it, and
+    /// the ledger's miss is not an error condition: `state(of:)` looks the
+    /// requirement up among the families, misses, and falls through to the
+    /// COMMAND table — which cannot contain a message family, because `help`
+    /// does not list them. So the tool reports itself `unavailable` against
+    /// every guest, for the life of every connection, with a reason that reads
+    /// as a fact about the Macintosh. No projection test fails, because the
+    /// projection is fine.
+    ///
+    /// It fires on a **probe** name too, and deliberately: the ledger resolves
+    /// families and commands only, so requiring `cpu` rather than
+    /// `census.request` would be the same silent switch-off.
+    func testEveryFamilyRequirementHasALedgerRow() throws {
+        let contract = try Contract(text: read("contract/asyncapi.yaml"))
+        let aliases = try aliasTable()
+        let accounted = Set(
+            AgentIntegrationCapabilityLedger.familyPolicy.map(\.family))
+        XCTAssertFalse(
+            accounted.isEmpty,
+            "AgentIntegrationCapabilityLedger.familyPolicy is empty, so this "
+                + "check cannot fail and is not a gate. Something moved the "
+                + "family report back into inline code.")
+
+        for row in registryRows() {
+            for requirement in row.requires {
+                let origin = aliases[requirement] ?? requirement
+                if contract.verbs.contains(origin) { continue }
+                guard contract.messageNames.contains(origin) else {
+                    let probe = contract.probes.contains(origin)
+                        ? " It is a census PROBE, and the ledger resolves "
+                            + "families and commands only — require "
+                            + "`census.request` and let the projection name "
+                            + "the probe inside its own arguments."
+                        : ""
+                    XCTFail(
+                        "\(row.name) requires \"\(requirement)\", which "
+                            + "resolves to neither a message family the "
+                            + "contract declares nor one of its commands."
+                            + probe
+                            + " An unresolvable requirement fails nowhere at "
+                            + "run time: the capability ledger falls through "
+                            + "to the command table, misses, and reports the "
+                            + "tool unavailable against every guest.")
+                    continue
+                }
+                XCTAssertTrue(
+                    accounted.contains(requirement),
+                    "\(row.name) requires the message family "
+                        + "\"\(requirement)\" and "
+                        + "AgentIntegrationCapabilityLedger.familyPolicy has "
+                        + "no row for it. Add "
+                        + "`.init(names.<name>, .notProbedMutating)` there — "
+                        + "or `.probed` if a read-only request settles it "
+                        + "cheaply — beside the constant in "
+                        + "AgentIntegrationCapabilityNames. Without the row, "
+                        + "`state(of:)` falls through to the command table, "
+                        + "which cannot hold a message family, and "
+                        + "\(row.name) reports itself permanently unavailable "
+                        + "against every guest while nothing fails.")
+            }
+        }
+    }
+
+    /// The document's required-but-not-exposed table is exactly those rows.
+    ///
+    /// It was prose with a hand-counted heading, which every capability that
+    /// consumes a listing internally would have had to remember to edit — and
+    /// the omission would have read as "no row requires anything it does not
+    /// expose", which is the claim the `exposes` split exists to keep honest.
+    /// The "what the caller gets instead" column stays hand-written, because
+    /// nothing derives it.
+    func testTheRequiredNotExposedTableIsExactlyThoseRows() throws {
+        var expected: [String: Set<String>] = [:]
+        for row in registryRows() {
+            let hidden = Set(row.requires).subtracting(row.exposes)
+            guard !hidden.isEmpty else { continue }
+            expected[row.name] = hidden
+        }
+
+        var stated: [String: Set<String>] = [:]
+        for row in try table(under: Self.requiredNotExposedSection) {
+            let name = try backticked(row[0], row: row)
+            XCTAssertNil(
+                stated[name],
+                "\(Self.coverageDoc) lists \(name) twice under "
+                    + "\"\(Self.requiredNotExposedSection)\".")
+            stated[name] = Set(codeTokens(row[1]))
+        }
+
+        for missing in Set(expected.keys).subtracting(stated.keys).sorted() {
+            XCTFail(
+                "\(missing) requires "
+                    + "\(expected[missing]!.sorted().joined(separator: ", "))"
+                    + " and does not expose it, and \(Self.coverageDoc) has no "
+                    + "row for it under "
+                    + "\"\(Self.requiredNotExposedSection)\". A capability "
+                    + "consumed internally is the case the gap table cannot "
+                    + "show, so it is stated here or nowhere.")
+        }
+        for extra in Set(stated.keys).subtracting(expected.keys).sorted() {
+            XCTFail(
+                "\(Self.coverageDoc) says \(extra) requires something it does "
+                    + "not expose; the registry says its exposes covers "
+                    + "everything it requires.")
+        }
+        for (name, hidden) in expected where stated[name] != nil {
+            XCTAssertEqual(
+                stated[name], hidden,
+                "\(Self.coverageDoc) says \(name) requires-and-hides "
+                    + "\(stated[name]!.sorted()); the registry makes it "
+                    + "\(hidden.sorted()).")
+        }
+    }
+
+    /// The unnoticed rows named together are exactly the ones the table marks
+    /// unnoticed.
+    ///
+    /// That section is the document's point — the gaps nobody decided — and it
+    /// was a hand-typed list beside a derived table. Closing an unnoticed gap
+    /// is exactly what most of the projections in flight do, so left ungated it
+    /// would have gone stale ten times over and each time in the direction that
+    /// claims MORE undecided work than exists.
+    func testTheUnnoticedRowsNamedTogetherMatchTheTable() throws {
+        var expected: Set<String> = []
+        for row in try table(under: Self.gapSection)
+        where row[3].trimmingCharacters(in: .whitespaces) == "unnoticed" {
+            expected.insert(try backticked(row[0], row: row))
+        }
+        let named = Set(
+            codeTokens(try leadParagraph(under: Self.unnoticedSection)))
+
+        XCTAssertEqual(
+            named, expected,
+            "\(Self.coverageDoc)'s \"\(Self.unnoticedSection)\" names "
+                + "\(named.sorted().joined(separator: ", ")) and the gap "
+                + "table marks "
+                + "\(expected.sorted().joined(separator: ", "))"
+                + " unnoticed. Closing one is a two-place edit and this is "
+                + "the second place; a stale list here overstates how much "
+                + "of the surface nobody has decided about.")
+    }
+
     /// The gap table is exactly the host-askable capability no projection
     /// **exposes** — no row missing, and no row for a gap that is not one.
     ///
@@ -219,7 +376,7 @@ final class MCPCoverageTests: XCTestCase {
         }
 
         let expected = universe.subtracting(covered)
-        let rows = try table(under: "## Every gap, with its disposition")
+        let rows = try table(under: Self.gapSection)
         var stated: Set<String> = []
         for row in rows {
             let name = try backticked(row[0], row: row)
@@ -265,7 +422,7 @@ final class MCPCoverageTests: XCTestCase {
             ppcCommands: read("now-guest-ppc/src/commands/commands.c"),
             k68Commands: read("now-guest-68k/src/commands/commands68.c"))
 
-        for row in try table(under: "## Every gap, with its disposition") {
+        for row in try table(under: Self.gapSection) {
             let name = try backticked(row[0], row: row)
             let kind = row[1].trimmingCharacters(in: .whitespaces)
             let served = row[2].trimmingCharacters(in: .whitespaces)
@@ -304,7 +461,7 @@ final class MCPCoverageTests: XCTestCase {
     func testADeliberateGapCitesItsArgumentAndAPlannedGapItsPlanItem()
         throws {
         let planItem = try NSRegularExpression(pattern: #"\bW\d"#)
-        for row in try table(under: "## Every gap, with its disposition") {
+        for row in try table(under: Self.gapSection) {
             let name = try backticked(row[0], row: row)
             let disposition = row[3].trimmingCharacters(in: .whitespaces)
             let why = row[4].trimmingCharacters(in: .whitespaces)
@@ -348,7 +505,7 @@ final class MCPCoverageTests: XCTestCase {
     /// If that ever stops being true, the document's opening paragraph is
     /// wrong and should be rewritten rather than left to read as current.
     func testMostUnreachedCapabilityIsAlreadyServedBySomeGuest() throws {
-        let rows = try table(under: "## Every gap, with its disposition")
+        let rows = try table(under: Self.gapSection)
         let unserved = rows.filter {
             $0[2].trimmingCharacters(in: .whitespaces) == "none"
         }
@@ -583,6 +740,36 @@ final class MCPCoverageTests: XCTestCase {
             throw Failure("read no table rows under \"\(heading)\"")
         }
         return rows
+    }
+
+    /// A section's **first paragraph**, for the one place the document states
+    /// a derived fact as a sentence rather than a table.
+    ///
+    /// The paragraph, not the section: the prose underneath explains the list
+    /// and cites things, so reading the whole section would collect every
+    /// backticked name in the explanation — including the two that are there
+    /// precisely because they are NOT on the list. Found by watching this
+    /// test fail that way before it was believed.
+    private func leadParagraph(under heading: String) throws -> String {
+        let document = try read(Self.coverageDoc)
+        guard let start = document.range(of: "\n" + heading + "\n") else {
+            throw Failure(
+                "\(Self.coverageDoc) has no \"\(heading)\" section.")
+        }
+        var paragraph: [String] = []
+        for line in document[start.upperBound...]
+            .components(separatedBy: "\n") {
+            if line.isEmpty {
+                if paragraph.isEmpty { continue }
+                break
+            }
+            guard !line.hasPrefix("#") else { break }
+            paragraph.append(line)
+        }
+        guard !paragraph.isEmpty else {
+            throw Failure("read no prose under \"\(heading)\"")
+        }
+        return paragraph.joined(separator: "\n")
     }
 
     /// The document's alias table: a host-side requirement name and the

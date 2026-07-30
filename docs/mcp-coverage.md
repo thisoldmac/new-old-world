@@ -5,17 +5,21 @@ serves**. This file answers the other half: **what any host face can ask a
 guest to do**, and — where those two differ — whether the difference is a
 decision or an accident.
 
-It exists because of drift nobody was watching for. The guests handle 37
-(PowerPC) and 23 (68K) inbound message types, 19 command verbs and 14
-hardware census probes between them. Of the 24 host-askable capabilities and
-19 verbs the contract declares, fourteen host projections reach **seven**; the
-other **36 are gaps**, fourteen argued, thirteen planned and **nine decided by
-nobody**. Most of the difference is capability the guest already has and no
-host face can name. Some of that is deliberate and argued; some of it was
-simply never noticed. **Those are different facts, and this file's whole job
-is to keep them apart** — a gap with a reason and a gap by accident look
-identical in a table that has one column for both, and the accidental ones
-survive by hiding among the reasoned ones.
+It exists because of drift nobody was watching for. The guests handle far more
+inbound message types, command verbs and hardware census probes than any host
+face can name, and **most of the difference is capability the guest already
+has**. Some of that is deliberate and argued; some of it was simply never
+noticed. **Those are different facts, and this file's whole job is to keep
+them apart** — a gap with a reason and a gap by accident look identical in a
+table that has one column for both, and the accidental ones survive by hiding
+among the reasoned ones.
+
+**The counts are in the tables, which are derived and gated; they are
+deliberately not in this prose.** They used to be — "fourteen reach seven, the
+other 36 are gaps, fourteen argued, thirteen planned and nine decided by
+nobody" — which meant every capability that landed edited three sentences
+nothing checked, in a published file, and a stale number here reads as a
+finding. Count the rows if you need a number.
 
 Read alongside:
 
@@ -51,6 +55,20 @@ What it derives, and from where:
 | command verbs | `contract/asyncapi.yaml` → `x-commands` | the closed registry |
 | census probes | `contract/asyncapi.yaml` → `x-census`/`x-probes` | the closed registry |
 | which guest serves what | `now-guest-ppc/src/core/wire.c`, `now-guest-68k/src/core/wire68.c`, `now-guest-ppc/src/commands/commands.c`, `now-guest-68k/src/commands/commands68.c` | the same greps `contract-coverage.md` publishes, reused rather than reinvented |
+| whether a requirement is **accounted for** | `AgentIntegrationCapabilityLedger.familyPolicy`, in process | a requirement that is a message family owes a row there; see below |
+
+**One check is not about this document at all**, and it is here because this is
+where the derivation lives.
+`testEveryFamilyRequirementHasALedgerRow` classifies every requirement against
+the contract — command, message family, or neither — and demands that a family
+have a row in the capability ledger's `familyPolicy`. Without one, `state(of:)`
+looks the requirement up among the families, misses, falls through to the
+**command** table, and cannot find it there either, because `help` does not
+list message families: so the tool reports itself `unavailable` against every
+guest, for the life of every connection, in a sentence that reads as a fact
+about the Macintosh. No projection test fails, because the projection is fine.
+It was proven by removing `process.front`'s row: twenty-five tests across the
+three most closely related suites stayed green and only this one spoke.
 
 The guest-side greps are `contract-coverage.md`'s, unchanged:
 
@@ -94,15 +112,12 @@ The test compares both against the code literally.
 | `now_guest_files_upload_append` | — | — | none; host staging only |
 | `now_guest_files_upload_commit` | `file.put` | `file.put` | message family |
 
-The distinct guest capabilities those rows **require** are eight:
-`process.list`, `process.quit`, `process.front`, `software.list`,
-`file.list`, `file.put`, `capture.request` and `launch`. The distinct
-capabilities they **expose** are **seven** — the same list without
-`software.list`, which every projection that touches it consumes internally.
-Most of the rows above are the guest-files family and the sessions pair; the
-surface is narrower than its tool count suggests, which is the same mistake
-`contract-coverage.md` made when it counted message types, and the
-eight-versus-seven is that mistake one layer in.
+**The distinct capabilities those rows require is a shorter list than the row
+count, and the ones they expose is shorter still.** Most of the rows above are
+the guest-files family and the sessions pair, so the surface is narrower than
+its tool count suggests — the same mistake `contract-coverage.md` made when it
+counted message types, one layer in. Read both columns as sets rather than
+counting ticks; the gap table below is derived from the second one.
 
 That is also why this section is not called "what the thirteen reach", which
 is what it was called until 2026-07-30: a heading naming the tool count meant
@@ -110,8 +125,13 @@ every new capability renamed a published heading **and** the test string that
 matches it. The count belongs in the table, which is derived; a heading is
 not the place to state a number that changes.
 
-Four rows require something they do not expose, and each is worth reading as
-a shape rather than an exception:
+### Required and not exposed
+
+The rows that consume a capability internally without handing its answer back.
+Each is worth reading as a shape rather than an exception, and this table is
+**derived and gated** — the test builds it from `requires` minus `exposes` and
+fails naming a row that is missing or does not belong. Only the last column is
+hand-written.
 
 | Row | Required, not exposed | What the caller gets instead |
 |---|---|---|
@@ -216,7 +236,8 @@ to exist:
 - **planned** — a named item in a plan, with its number. Noticed, costed,
   not built.
 - **unnoticed** — nobody has decided this either way. **These are the
-  rows this document was written to surface**, and there are ten of them.
+  rows this document was written to surface**; they are named together
+  below, from this column.
 
 | Guest capability | Kind | Served | Disposition | Why |
 |---|---|:--:|---|---|
@@ -257,16 +278,18 @@ to exist:
 | `vers` | command | ppc | deliberate | Build identity. `hello` already carries name, version and OS, and `now_session_health` reports all three ([agent-integration.md](agent-integration.md)). |
 | `vprobe` | command | both | unnoticed | Framebuffer read cost. A ~12 s measurement on the guest, which is a reason to gate it, not a reason it is absent — nothing has decided either way. |
 
-### Nine unnoticed rows, named together
+### The unnoticed rows, named together
 
 Because they are the point: `stream.start`, `stream.stop`,
 `stream.refresh`, `catsearch`, `gestalt`, `putstat`, `reveal`, `shotdiag`,
 `vprobe`.
 
-They were ten. `capture.cancel` left the list by being decided rather than
-by being built — see its row.
+Gated against the table's own `unnoticed` column, so closing one of these is
+a two-place edit and the test names the second place. `capture.cancel` used to
+be on the list and left it by being **decided** rather than by being built —
+see its row; that is the other way a name leaves.
 
-All nine are served by a guest right now. Nothing in this repository
+Every one of them is served by a guest right now. Nothing in this repository
 argued for their absence; they are absent because the question never came
 up. That is exactly the shape of the `process.list` drift
 `command-parity.md` was written for, one layer out.
@@ -307,15 +330,20 @@ Macintosh; it is a derivation over source and a contract, and the guest-side
 of it has run. `contract-coverage.md`'s "how far each served thing is
 proven" is the axis for that and is not duplicated here.
 
-The test is proven by mutation: adding a thirteenth registry row without a
-table entry, and declaring a gap for a capability a projection exposes, both
-fail naming the capability. The `exposes` distinction was proven the same way —
-making `now_launch_software` claim it exposes the `software.list` it only
-consumes makes the `software.list` gap row fail as a phantom, naming it. See
-the commits that added each.
+The test is proven by mutation: adding a registry row without a table entry,
+and declaring a gap for a capability a projection exposes, both fail naming the
+capability. The `exposes` distinction was proven the same way — making
+`now_launch_software` claim it exposes the `software.list` it only consumes
+makes the `software.list` gap row fail as a phantom, naming it. The three
+checks added on 2026-07-30 were proven the same way and each was watched
+failing: removing `process.front`'s ledger row, removing `now_request_quit`
+from the required-and-not-exposed table, and adding a name to the unnoticed
+paragraph that the table does not mark unnoticed. The last of those found a
+real defect in its own first draft — reading the whole section rather than its
+first paragraph collected the two names the explanation mentions *because* they
+are not on the list.
 
-Last derived: 2026-07-29, on `claude/capture-projection`, off
-`claude/tbt-parity-slice` at the thirteen-projection registry — `exposes` on
-the row protocol, plus the first row whose answer carries an image. Re-derive by running `swift test --filter MCPCoverage` rather
-than by reading — if the tables and the code disagree, the code is right and
-the test says so.
+Last derived: 2026-07-30, on `claude/agent-family-gate`, off
+`claude/tbt-parity-slice` at the fourteen-projection registry. Re-derive by
+running `swift test --filter MCPCoverage` rather than by reading — if the
+tables and the code disagree, the code is right and the test says so.

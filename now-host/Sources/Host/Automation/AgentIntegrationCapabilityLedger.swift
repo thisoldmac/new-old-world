@@ -199,25 +199,62 @@ final class AgentIntegrationCapabilityLedger {
         }
     }
 
-    private func familyReport(probedCostly: Bool)
-        -> [AgentIntegrationFamilyCapability] {
+    /// One message family the report accounts for, and the evidence to
+    /// state about it when nothing has been observed.
+    struct FamilyPolicy {
+        let family: String
+        /// The evidence when this session observed nothing in the family —
+        /// for a probed one, that the probe never settled; for an unprobed
+        /// one, the policy that declined to ask.
+        let unobserved: AgentIntegrationCapabilityEvidence
+        /// True when `report(probeCostly: true)` pays for this family, so
+        /// on that path an unobserved answer is `probed` rather than the
+        /// policy above.
+        let probedOnRequest: Bool
+
+        init(_ family: String,
+             _ unobserved: AgentIntegrationCapabilityEvidence,
+             probedOnRequest: Bool = false) {
+            self.family = family
+            self.unobserved = unobserved
+            self.probedOnRequest = probedOnRequest
+        }
+    }
+
+    /// Every message family this report accounts for, in report order.
+    ///
+    /// **A projection requiring a family absent from this list is switched
+    /// off against every guest, silently.** `state(of:)` below looks a
+    /// requirement up here first and falls through to the COMMAND table,
+    /// which cannot contain a message family — `help` does not list them —
+    /// so the miss reads as "the guest does not have it" rather than as
+    /// "nobody declared it", and no test of the projection itself can
+    /// notice. That is what
+    /// `MCPCoverageTests.testEveryFamilyRequirementHasALedgerRow` gates:
+    /// add a family requirement without a row here and it fails naming
+    /// both the capability and the family.
+    ///
+    /// It is a declaration rather than a derivation from the registry's
+    /// requirements on purpose. The probe policy in the second column is
+    /// real knowledge about what a request costs the machine, it is not
+    /// recoverable from a requirement string, and deriving the row set
+    /// while defaulting that column would trade a named failure for a
+    /// quietly mislabelled one.
+    nonisolated static let familyPolicy: [FamilyPolicy] = {
         let names = AgentIntegrationCapabilityNames.self
         return [
-            family(names.processList, whenUnproven: .probed),
-            family(names.fileList, whenUnproven: .probed),
-            family(names.softwareList,
-                   whenUnproven: probedCostly ? .probed : .notProbedCostly),
-            family(names.processQuit, whenUnproven: .notProbedMutating),
+            .init(names.processList, .probed),
+            .init(names.fileList, .probed),
+            .init(names.softwareList, .notProbedCostly,
+                  probedOnRequest: true),
+            .init(names.processQuit, .notProbedMutating),
             /* Mutating for the same reason quit is, even though it is the
                gentler of the two drive verbs: probing it would move a
                window on somebody's screen to answer a question nobody
                asked. Unproven leaves the capability callable, which is the
-               honest state — and without this row `state(of:)` would fall
-               through to the COMMAND table, miss the message family, and
-               report now_bring_to_front permanently unavailable against
-               every guest with nothing anywhere complaining. */
-            family(names.processFront, whenUnproven: .notProbedMutating),
-            family(names.filePut, whenUnproven: .notProbedMutating),
+               honest state. */
+            .init(names.processFront, .notProbedMutating),
+            .init(names.filePut, .notProbedMutating),
             /* Read-only, and NOT probed — the reason is `software.list`'s
                rather than `process.quit`'s. A capture costs the guest a
                whole screen grab and holds the connection's only transfer
@@ -231,8 +268,17 @@ final class AgentIntegrationCapabilityLedger {
                guest until that changes. Unproven is the truthful answer and
                leaves the capability callable; it is docs/open-issues.md
                material rather than something to paper over here. */
-            family(names.captureRequest, whenUnproven: .notProbedCostly),
+            .init(names.captureRequest, .notProbedCostly),
         ]
+    }()
+
+    private func familyReport(probedCostly: Bool)
+        -> [AgentIntegrationFamilyCapability] {
+        Self.familyPolicy.map { policy in
+            family(policy.family,
+                   whenUnproven: probedCostly && policy.probedOnRequest
+                       ? .probed : policy.unobserved)
+        }
     }
 
     /// `whenUnproven` is the evidence to report when nothing was observed
@@ -294,6 +340,10 @@ final class AgentIntegrationCapabilityLedger {
                 if let family = byName[requirement] {
                     current = family.state
                 } else if let commandNames {
+                    // The fall-through that makes `familyPolicy` load-bearing:
+                    // a message family reaching here is absent from every
+                    // command table by construction, so it resolves
+                    // `unavailable` for the rest of the connection's life.
                     current = commandNames.contains(requirement)
                         ? .available : .unavailable
                 } else {

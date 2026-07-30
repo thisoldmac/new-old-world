@@ -128,15 +128,7 @@ public enum BringToFrontProjection: HostProjection {
                 "oneOf": [
                     variant("completed", "completed", receipt),
                     variant("refused", "refused", failure),
-                    variant("unavailable", "unavailable", [
-                        "type": "object",
-                        "properties": [
-                            "code": ["type": "string"],
-                            "message": ["type": "string"],
-                        ],
-                        "required": ["code", "message"],
-                        "additionalProperties": false,
-                    ]),
+                    HostProjectionSchema.unavailableVariant,
                 ],
             ],
             "annotations": [

@@ -10,6 +10,23 @@ import Foundation
 /// may do is allowed to: availability follows from what the connected guest
 /// answers, never from which guest it is
 /// (`AgentIntegrationCapabilityTests.testNoCompanionCodeBranchesOnGuestIdentity`).
+///
+/// **A NEW METHOD HERE ARRIVES WITH ITS DEFAULT, IN THE SAME EDIT.** Add the
+/// requirement below and a default in the extension underneath, returning
+/// "no host" — the truthful answer for a client that has none, and what the
+/// upload trio, the capture trio and `bringToFront` all do.
+///
+/// The nine oldest methods have no default and are implemented by every
+/// conformer; that is history, not the pattern to copy. Seven stub clients
+/// across the test tree conform to this protocol and implement only the lanes
+/// their own tests exercise, so a requirement without a default is seven
+/// compile errors in seven files named for other capabilities.
+///
+/// **No test can catch this, and it is worth knowing why rather than looking
+/// for the gate.** The omission breaks the compilation of the test target
+/// itself, so it fails before any test in the tree runs; a canary type
+/// conforming here would only add an eighth error to the same build failure.
+/// The mechanism is this paragraph, sitting where the method gets typed.
 public protocol AgentIntegrationClient: Sendable {
     /// Which machine the calls that follow are about. One method rather
     /// than a parameter on every other one: the selector is orthogonal to
