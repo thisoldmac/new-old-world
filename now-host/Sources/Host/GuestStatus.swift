@@ -41,6 +41,20 @@ enum GuestStatus: Equatable {
         }
     }
 
+    /// The menu-bar glyph for this state: a template image of the compact
+    /// Mac whose *screen* carries what `glyph` puts in a character — empty,
+    /// a dot, half filled, filled, or filled behind a bang. Kept in step with
+    /// `glyph` deliberately; both describe the same five states, and the text
+    /// one is still the fallback when the asset cannot be loaded.
+    var statusImageName: String {
+        switch self {
+        case .notListening: return "StatusNotListening"
+        case .waiting: return "StatusWaiting"
+        case .connected: return isQuiet ? "StatusQuiet" : "StatusConnected"
+        case .failed: return "StatusFailed"
+        }
+    }
+
     /// The disabled header line at the top of the menu — where the grey-out
     /// of Screenshot Guest gets explained rather than left a mystery.
     var menuLine: String {

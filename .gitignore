@@ -32,3 +32,6 @@ now-host/build/
 
 # iconutil build intermediate; appicon.py regenerates it each run.
 assets/icons/macos/NewOldWorld.iconset/
+
+# Module cache xcodebuild drops beside the project on command-line builds.
+now-host/NewOldWorld.xcodeproj/-Xcc/

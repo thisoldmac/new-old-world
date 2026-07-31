@@ -15,6 +15,38 @@ final class GuestStatusTests: XCTestCase {
 
     // MARK: - Derivation
 
+    /// The menu-bar image and the character describe the same five states.
+    /// If one grows a state the other has not, the status item starts showing
+    /// a picture that disagrees with the menu line under it — and because the
+    /// image is what a person actually sees, the picture is the one believed.
+    func testStatusImageNameTracksTheSameStatesAsTheGlyph() {
+        let now = Date()
+        XCTAssertEqual(GuestStatus.notListening.statusImageName,
+                       "StatusNotListening")
+        XCTAssertEqual(GuestStatus.waiting(port: 5252).statusImageName,
+                       "StatusWaiting")
+        XCTAssertEqual(GuestStatus.failed("Port 5252 in use").statusImageName,
+                       "StatusFailed")
+
+        let fresh = GuestStatus.evaluate(
+            state: .connected(guestName: "Quadra 950"),
+            health: health(lastTraffic: now.addingTimeInterval(-2)), now: now)
+        XCTAssertEqual(fresh.statusImageName, "StatusConnected")
+
+        let quiet = GuestStatus.evaluate(
+            state: .connected(guestName: "Quadra 950"),
+            health: health(lastTraffic: now.addingTimeInterval(-34)), now: now)
+        XCTAssertEqual(quiet.statusImageName, "StatusQuiet",
+                       "quiet is its own glyph, not the connected one")
+    }
+
+    // Whether each of those names actually exists in the asset catalog is
+    // checked by assets/icons/macos/statusglyph.py, not here: the catalog is
+    // built into the app bundle by Xcode, so under `swift test` NSImage(named:)
+    // searches the test runner's bundle and finds nothing regardless. The
+    // generator can see both the enum and the images it writes, so that is
+    // where the two are held to agree.
+
     func testIdleAndListeningBothReadAsNoGuest() {
         XCTAssertEqual(GuestStatus.evaluate(state: .idle, health: nil),
                        .notListening)
