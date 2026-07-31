@@ -223,8 +223,8 @@ struct AgentPresenceReading: Equatable {
         let seconds = Int(now.timeIntervalSince(moment).rounded())
         switch seconds {
         case ..<10: return "just now"
-        case ..<90: return "\(max(seconds, 1)) seconds ago"
-        case ..<5400:
+        case ..<60: return "\(max(seconds, 1)) seconds ago"
+        case ..<3600:
             let minutes = Int((Double(seconds) / 60).rounded())
             return "\(minutes) minute\(minutes == 1 ? "" : "s") ago"
         case ..<172_800:

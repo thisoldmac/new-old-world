@@ -5,8 +5,8 @@ final class ModuleRegistryTests: XCTestCase {
     func testStandardRegistryHasScreenshotsFirstAndSettings() {
         XCTAssertEqual(ModuleRegistry.standard.modules.map(\.id),
                        ["screenshots", "files", "processes", "console",
-                        "census", "diagnostics", "software", "logs",
-                        "settings"])
+                        "census", "diagnostics", "software", "agent",
+                        "logs", "settings"])
         XCTAssertEqual(ModuleRegistry.standard.module(id: "screenshots")?.title,
                        "Screenshots")
         XCTAssertEqual(ModuleRegistry.standard.module(id: "settings")?.title,
@@ -18,9 +18,13 @@ final class ModuleRegistryTests: XCTestCase {
     }
 
     func testFooterHoldsLogsAndConnectionInOrder() {
-        // Logs sits above Connection under the divider — the footer's order.
+        /* Agent, then Logs, then Connection under the divider. Agent sits
+           above Logs because it is the narrower reading of the same record
+           — Logs is everything that happened, Agent is the part of it
+           somebody else caused — and a person who wants that part should
+           not have to know it is in the log. */
         XCTAssertEqual(ModuleRegistry.standard.footerModules.map(\.id),
-                       ["logs", "settings"])
+                       ["agent", "logs", "settings"])
         XCTAssertEqual(ModuleRegistry.standard.listModules.map(\.id),
                        ["screenshots", "files", "processes", "console",
                         "census", "diagnostics", "software"])
