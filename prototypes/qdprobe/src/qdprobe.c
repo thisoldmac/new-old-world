@@ -47,6 +47,31 @@ enum {
     kQDProbeGestalt = (long)QDPROBE_4CC('Q', 'D', 'p', 'r'),
     kQDProbeMagic = (long)QDPROBE_4CC('Q', 'D', 'p', 'r'),
 
+    /* Layout version, EXACT match required of any reader. 1 was the
+       pre-identity block; 2 added arm_a5 / arm_expiry and the refusal
+       counters.
+
+       This exists because of a defect the sibling Portal INIT shipped and
+       then fixed (mirror, 739c42b, 2026-07-31). Its resident block gained
+       a guard field, and a stale INIT still sitting in Extensions had no
+       such field - so arming it left the guard OFF while the caller
+       believed it ON. Their fix was PT_VERSION 1 -> 2 with the verb
+       refusing anything older: "a stale extension is now a reboot instead
+       of an unguarded patch nobody can see."
+
+       It is the same defect here, and worse-shaped. A version-2 reader
+       writing arm_a5 into a version-1 block writes into armed_ports, and
+       arm_expiry into rect_calls, and then sets arm - at which point a
+       version-1 probe sees a bare arm and patches EVERY port it meets,
+       which is precisely the unscoped behaviour version 2 exists to
+       remove. Silently, while the reader believes it named one target.
+
+       An INIT makes this the LIKELY state rather than an unlucky one:
+       the probe is installed by hand and loads at boot only, so "rebuilt
+       the reader, forgot to cold-boot" is the ordinary iteration
+       accident, not a rare one. */
+    kQDProbeVersion = 2,
+
     /* Ports patched at once. Small on purpose: this is a spike, and a
        bigger table would only mean more to unwind if it goes wrong.
        Bounded by identity too - all 8 belong to one A5 world. */
@@ -63,8 +88,11 @@ typedef struct {
 } QDProbePort;
 
 /* Published through Gestalt. Plain 32-bit fields, big-endian machine,
-   and one writer per field - the same discipline as NOW's table, minus
-   the versioning, because nothing ships this.
+   and one writer per field - the same discipline as NOW's table,
+   INCLUDING its versioning. That was left out at first on the grounds
+   that nothing ships this, which confused "throwaway" with "unversioned"
+   and was wrong the moment the block started carrying a guard rather
+   than only counters (see kQDProbeVersion).
 
    The request fields (arm / arm_a5 / arm_expiry) are the READER's, with
    one exception stated below, and `arm` is their commit word:
@@ -100,6 +128,11 @@ typedef struct {
      a bug to be fixed here. */
 typedef struct {
     unsigned long magic;
+    /* Immediately after magic, and checked with it: a reader that
+       matches the magic and ignores this has verified only that it found
+       a QD Probe, not that it found one whose block it understands. See
+       kQDProbeVersion - the two are one check, not two. */
+    unsigned long version;
     unsigned long heartbeat;      /* TickCount at last jGNE pass */
     unsigned long arm;            /* READER (commit): nonzero = patch */
     unsigned long arm_a5;         /* READER: the ONLY A5 world we patch */
@@ -391,7 +424,7 @@ void _start(void)
     if (shared == NULL) {
         return;
     }
-    shared->magic = (unsigned long)kQDProbeMagic;
+    shared->version = (unsigned long)kQDProbeVersion;
     shared->heartbeat = (unsigned long)LMGetTicks();
     /* Dark on arrival, and unaddressed on arrival. An INIT that starts
        patching every port it sees at boot is a machine you cannot
@@ -401,6 +434,13 @@ void _start(void)
     shared->arm = 0;
     shared->arm_a5 = 0;
     shared->arm_expiry = 0;
+    /* Magic LAST, so a reader that somehow reaches this address early
+       finds a block only once it is fully formed - and in particular
+       only once `version` is set, since a zero version read beside a
+       good magic is exactly the mismatch the version exists to catch.
+       now_ext.c publishes its table the same way and for the same
+       reason; this file had it backwards until 2026-07-31. */
+    shared->magic = (unsigned long)kQDProbeMagic;
     gShared = shared;
 
     gestalt_upp = NewSelectorFunctionUPP(qdprobe_gestalt);

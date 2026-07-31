@@ -124,6 +124,32 @@ say whose ports it wants has not asked for anything we are willing to do. Both
 refusals — no target, and wrong context — are counted per pass, so a
 misaddressed request is loud rather than silent.
 
+### A reader must check `version`, not just `magic`
+
+The shared block carries `magic` **and** `version` (currently 2), and they are
+one check rather than two. A reader that matches the magic and ignores the
+version has confirmed it found a QD Probe, not that it found one whose block it
+understands. **Require an exact version; a lower one means a stale INIT is
+resident and the answer is a cold boot, not a proceed.**
+
+This is not hygiene, it is a defect the sibling Portal INIT shipped and then
+fixed (`mirror`, `739c42b`, 2026-07-31): its resident block gained a guard
+field, a stale copy in Extensions had no such field, and arming it left the
+guard **off while the caller believed it on**. Their fix was `PT_VERSION 1 → 2`
+with the verb refusing anything older — *"a stale extension is now a reboot
+instead of an unguarded patch nobody can see."*
+
+The same shape here is worse, because of what the fields happen to be. A
+version-2 reader writing into a version-1 block puts `arm_a5` where
+`armed_ports` lives and `arm_expiry` where `rect_calls` lives, then sets `arm` —
+and a version-1 probe seeing a bare `arm` patches **every port it meets**, which
+is exactly the unscoped behaviour version 2 exists to remove. Silently, while
+the reader believes it named one target.
+
+An INIT makes that the *likely* state rather than an unlucky one: the probe
+loads at boot only, so "rebuilt the reader, forgot to cold-boot" is the ordinary
+iteration accident.
+
 ### Why this changed
 
 The first draft patched whichever port happened to be current while armed,
