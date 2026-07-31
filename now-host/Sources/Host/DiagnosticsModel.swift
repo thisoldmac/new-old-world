@@ -109,6 +109,86 @@ struct DiagnosticState: Identifiable, Equatable {
 
     var id: String { diagnostic.id }
     var hasRun: Bool { ranAt != nil }
+
+    /// The machine said `ok` and sent no rows at all.
+    ///
+    /// The one state that genuinely means "the probe did not answer", and it
+    /// is kept apart from every kind of zero on purpose: a table of zeroes is
+    /// a MEASUREMENT (see `TransferDiagnosticsReading`), while this is the
+    /// absence of one. Before this existed the page drew nothing here, which
+    /// left the two looking alike — an empty card and a card full of zeroes
+    /// both reading as "broken".
+    var answeredWithNothing: Bool {
+        hasRun && !isRunning && refusal == nil && rows.isEmpty
+    }
+
+    /// `putstat`'s rows read as an answer rather than a table. Nil for the
+    /// other two diagnostics, and before a run.
+    var transferReading: TransferDiagnosticsReading? {
+        guard diagnostic.probe == .putstat, !rows.isEmpty else { return nil }
+        return TransferDiagnosticsReading(rows: rows)
+    }
+}
+
+/// `putstat`'s eleven rows, split by what they are actually about.
+///
+/// **Eight of them describe the last file this Mac RECEIVED; three do not.**
+/// The guest emits them in one list (`now-guest-ppc/src/commands/commands.c
+/// :: run_putstat`), but `Rcv backlog`, `Rcv peak` and `Loop passes` are read
+/// from the live connection — they are true whether or not a file has ever
+/// arrived. That split is the whole reason this type exists: a Mac that has
+/// received nothing answers eight zeroes beside three live numbers, and
+/// rendering all eleven as one table turns a working probe into what looks
+/// like a failed one.
+///
+/// **A zero here is a measurement, never a silence.** Whether the probe
+/// answered at all is a different question with a different answer —
+/// `DiagnosticState.answeredWithNothing` — and the two must not be collapsed:
+/// one means "nothing has been received", the other means "this Mac told us
+/// nothing".
+struct TransferDiagnosticsReading: Equatable {
+    /// The rows describing the last received file, in the guest's order.
+    let transfer: [DiagnosticRow]
+    /// The rows that are true of the running connection regardless of any
+    /// transfer — the evidence the probe answered when the rest are zeroes.
+    let live: [DiagnosticRow]
+    /// Every transfer counter is zero: nothing has been received since this
+    /// Mac's NOW started.
+    let hasReceivedNothing: Bool
+
+    /// The three live labels, named rather than derived, because nothing in
+    /// the wire's `[label, value]` pairs says which kind a row is. Any label
+    /// this list does not name counts as a transfer counter — the
+    /// conservative direction, since an unrecognised non-zero row then keeps
+    /// the page from claiming nothing was received.
+    static let liveLabels: Set<String> = ["Rcv backlog", "Rcv peak",
+                                          "Loop passes"]
+
+    init(rows: [DiagnosticRow]) {
+        var transfer: [DiagnosticRow] = []
+        var live: [DiagnosticRow] = []
+        for row in rows {
+            if Self.liveLabels.contains(row.label) {
+                live.append(row)
+            } else {
+                transfer.append(row)
+            }
+        }
+        self.transfer = transfer
+        self.live = live
+        hasReceivedNothing = !transfer.isEmpty
+            && transfer.allSatisfy { Self.isZero($0.value) }
+    }
+
+    /// A value is zero when the digits in it are all zeroes — which covers
+    /// `0`, `0 ms` and the CRC's `00000000` without this side having to know
+    /// which row carries which unit. A value with no digits in it at all is
+    /// NOT zero: it is something this side did not expect, and guessing it
+    /// away would be the page inventing a reading.
+    static func isZero(_ value: String) -> Bool {
+        let digits = value.filter(\.isNumber)
+        return !digits.isEmpty && digits.allSatisfy { $0 == "0" }
+    }
 }
 
 /// One `[label, value]` pair, as the guest wrote it.

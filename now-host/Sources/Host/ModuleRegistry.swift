@@ -34,6 +34,21 @@ struct ModuleRegistry: Sendable {
         modules.first { $0.id == id }
     }
 
+    /// Module ids that have been renamed, old name to new.
+    ///
+    /// The selected module is written to preferences by id, so renaming one
+    /// silently retires whoever was last looking at it: their saved
+    /// selection stops resolving and the next launch drops them on
+    /// Screenshots with no explanation. A rename therefore leaves a
+    /// forwarding address here rather than only in the descriptor.
+    static let renamedIDs: [String: String] = ["agent": "mcp"]
+
+    /// The module a saved selection means today, following one rename.
+    func resolvingRenames(id: String) -> ModuleDescriptor? {
+        module(id: id)
+            ?? Self.renamedIDs[id].flatMap { module(id: $0) }
+    }
+
     /// The two halves of the sidebar, derived rather than stored, so id
     /// uniqueness, `module(id:)`, and the persisted selection keep reading
     /// from the one array no matter where a module is drawn.
@@ -95,15 +110,21 @@ struct ModuleRegistry: Sendable {
         ),
         /* In the footer rather than the list, and above Logs, because the
            list is what you can do to the OTHER Mac and the footer is the
-           state of this side. This page is about this host: who has been
-           driving it and what they did. It sits beside Logs because it is
-           the same record read a different way — Logs is everything that
-           happened, this is the part of it somebody else caused. */
+           state of this side. This page is about this host: the server an
+           agent reaches it through, and what came in that way. It sits
+           beside Logs because part of it is the same record read a
+           different way — Logs is everything that happened, this is the
+           part of it somebody else caused.
+
+           Named for the TRANSPORT rather than for the caller, because that
+           is what the page now controls: MCP is the server this host runs
+           and this side owns its lifecycle. The audit model underneath is
+           deliberately NOT named that — see MCPModuleView. */
         ModuleDescriptor(
-            id: "agent",
-            title: "Agent",
-            symbol: "person.badge.shield.checkmark",
-            summary: "What an agent has done to this Mac",
+            id: "mcp",
+            title: "MCP",
+            symbol: "app.connected.to.app.below.fill",
+            summary: "The MCP server agents reach this Mac through",
             placement: .footer
         ),
         ModuleDescriptor(

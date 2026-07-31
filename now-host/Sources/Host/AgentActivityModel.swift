@@ -78,6 +78,18 @@ enum AgentEndpointState: Equatable {
     case open(path: String)
     /// The server did not stand up, with the reason as it was logged.
     case unavailable(String)
+    /// Stopped from the MCP pane. A fourth case rather than a return to
+    /// `unopened`, because "you switched it off" and "it has not started
+    /// yet" are different answers to the same question, and only one of
+    /// them tells a person why their client cannot connect.
+    case stopped
+
+    /// Whether the server is serving right now. The pane's Start/Stop pair
+    /// reads this, so a failed endpoint offers Start and not Stop.
+    var isRunning: Bool {
+        if case .open = self { return true }
+        return false
+    }
 }
 
 /// What has reached this host's local agent endpoint, in the pane's own
@@ -131,6 +143,15 @@ final class AgentActivityModel: ObservableObject {
 
     func endpointUnavailable(_ reason: String) {
         endpoint = .unavailable(reason)
+    }
+
+    /// The person switched the server off from the MCP pane.
+    ///
+    /// The events stay: what an agent did to this Mac is not undone by
+    /// closing the door it came through, and a record that vanished when the
+    /// server stopped would be the one that mattered most.
+    func endpointStopped() {
+        endpoint = .stopped
     }
 }
 
