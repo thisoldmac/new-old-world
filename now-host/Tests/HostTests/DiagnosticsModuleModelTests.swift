@@ -254,6 +254,129 @@ final class DiagnosticsModuleModelTests: XCTestCase {
         }
     }
 
+    // MARK: - A working probe with nothing to report
+
+    /// **A Mac that has received no file answers zeroes, and the page must
+    /// not draw them as a table.**
+    ///
+    /// This is the exact shape the UX review names as the worst defect the
+    /// product has: eleven `0` rows look like a feature that failed to load.
+    /// The reading splits the response the way the guest actually composes
+    /// it — eight counters about the last received file, three read from the
+    /// live connection — so the page can say "nothing received yet" in words
+    /// and still show the numbers that prove the probe answered.
+    func testAMacThatHasReceivedNothingReadsAsNeverRunNotAsZeroes()
+        async throws {
+        let guest = try await connectGuest(
+            commands: ["help", "putstat"],
+            replies: ["putstat": .init(
+                id: 0, ok: true,
+                output: ["putstat": Self.idleRows], error: nil)])
+        defer { guest.connection.cancel() }
+
+        model.run(.putstat)
+        try await waitUntil("putstat answered") {
+            !(self.model.state(id: "putstat")?.rows.isEmpty ?? true)
+        }
+
+        let reading = try XCTUnwrap(
+            model.state(id: "putstat")?.transferReading)
+        XCTAssertTrue(reading.hasReceivedNothing)
+        XCTAssertEqual(reading.transfer.count, 8)
+        XCTAssertEqual(reading.live.map(\.label),
+                       ["Rcv backlog", "Rcv peak", "Loop passes"])
+        XCTAssertEqual(reading.live.map(\.value), ["58", "103", "11406"],
+                       "The live counters are the evidence the probe "
+                           + "answered, so they survive the never-run state.")
+    }
+
+    /// The same response with one real transfer in it is NOT the never-run
+    /// state, and nothing is hidden: every row the guest sent is still drawn.
+    func testAMacThatHasReceivedAFileKeepsAllElevenRows() async throws {
+        var rows = Self.idleRows
+        rows[0] = ["Bytes", "108544"]
+        rows[1] = ["Chunks", "14"]
+        let guest = try await connectGuest(
+            commands: ["help", "putstat"],
+            replies: ["putstat": .init(
+                id: 0, ok: true, output: ["putstat": rows], error: nil)])
+        defer { guest.connection.cancel() }
+
+        model.run(.putstat)
+        try await waitUntil("putstat answered") {
+            !(self.model.state(id: "putstat")?.rows.isEmpty ?? true)
+        }
+
+        let reading = try XCTUnwrap(
+            model.state(id: "putstat")?.transferReading)
+        XCTAssertFalse(reading.hasReceivedNothing)
+        XCTAssertEqual(reading.transfer.count + reading.live.count, 11)
+    }
+
+    /// **A zero is not a silence.** A machine that answered `ok` and sent no
+    /// rows told us nothing, and that is a different fact from a machine
+    /// reporting zeroes — the whole point of the never-run state is that the
+    /// two must not look alike.
+    func testAnEmptyAnswerIsNotTheSameFactAsAnAnswerOfZeroes() async throws {
+        let guest = try await connectGuest(
+            commands: ["help", "putstat"],
+            replies: ["putstat": .init(
+                id: 0, ok: true, output: ["putstat": []], error: nil)])
+        defer { guest.connection.cancel() }
+
+        model.run(.putstat)
+        try await waitUntil("putstat answered") {
+            self.model.state(id: "putstat")?.hasRun ?? false
+        }
+
+        let state = try XCTUnwrap(model.state(id: "putstat"))
+        XCTAssertTrue(state.answeredWithNothing,
+                      "No rows at all is the probe not answering, and the "
+                          + "page says so rather than drawing nothing.")
+        XCTAssertNil(state.transferReading,
+                     "There is no transfer reading to compose from silence.")
+    }
+
+    /// The three cheap ways the split could be got wrong, held down: an
+    /// unrecognised label counts as a transfer counter (so a non-zero one
+    /// stops the page claiming nothing arrived), `0 ms` and the CRC's
+    /// `00000000` read as zero, and a value with no digits never does.
+    func testTheZeroTestReadsUnitsAndTheCRCButNeverGuesses() {
+        XCTAssertTrue(TransferDiagnosticsReading.isZero("0"))
+        XCTAssertTrue(TransferDiagnosticsReading.isZero("0 ms"))
+        XCTAssertTrue(TransferDiagnosticsReading.isZero("00000000"))
+        XCTAssertFalse(TransferDiagnosticsReading.isZero("1 ms"))
+        XCTAssertFalse(TransferDiagnosticsReading.isZero("—"),
+                       "A value this side did not expect is not a zero.")
+
+        let unknown = TransferDiagnosticsReading(rows: [
+            DiagnosticRow(index: 0, label: "Bytes", value: "0"),
+            DiagnosticRow(index: 1, label: "Sectors Rewritten", value: "9"),
+            DiagnosticRow(index: 2, label: "Loop passes", value: "12"),
+        ])
+        XCTAssertFalse(unknown.hasReceivedNothing,
+                       "A newer guest's unrecognised non-zero counter must "
+                           + "not be filed as live and read away.")
+        XCTAssertEqual(unknown.live.map(\.label), ["Loop passes"])
+    }
+
+    /// `putstat`'s eleven rows exactly as the Carbon guest composes them
+    /// (`now-guest-ppc/src/commands/commands.c :: run_putstat`), with the
+    /// live counters taken from the real screenshot that prompted this work.
+    private static let idleRows: [[String]] = [
+        ["Bytes", "0"],
+        ["Chunks", "0"],
+        ["Writes", "0"],
+        ["In FSWrite", "0 ms"],
+        ["In receive", "0 ms"],
+        ["Resumed from", "0"],
+        ["CRC reseed", "0 ms"],
+        ["CRC-32", "00000000"],
+        ["Rcv backlog", "58"],
+        ["Rcv peak", "103"],
+        ["Loop passes", "11406"],
+    ]
+
     private final class Counter {
         var value = 0
     }

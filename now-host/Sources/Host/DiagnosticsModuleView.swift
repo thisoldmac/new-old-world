@@ -167,12 +167,26 @@ struct DiagnosticsModuleView: View {
                     .font(.callout)
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
+            } else if let reading = state.transferReading {
+                transfer(reading)
             } else if !state.rows.isEmpty {
-                rows(state)
+                rows(state.rows)
             } else if state.isRunning {
                 Text("Measuring…")
                     .font(.callout)
                     .foregroundStyle(.secondary)
+            } else if state.answeredWithNothing {
+                /* The other silence. A machine that answered `ok` and sent
+                   no rows has told us nothing, and until this line existed
+                   the card drew an empty space for it — indistinguishable
+                   from a card of zeroes, which is a real measurement. The
+                   two facts now look different because they are. */
+                Label("This Mac answered but sent no measurements. That is "
+                        + "not a reading of zero — it is no reading at all.",
+                      systemImage: "questionmark.circle")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -196,10 +210,47 @@ struct DiagnosticsModuleView: View {
             + elsewhere
     }
 
-    private func rows(_ state: DiagnosticState) -> some View {
+    /// `putstat` read as an answer: the last transfer, or the sentence that
+    /// replaces it, and always the counters that prove the probe answered.
+    ///
+    /// **A Mac that has received nothing says so in words.** Eleven zeroes is
+    /// the visual shape of a feature that failed to load, and this card's own
+    /// subtitle already predicts the state — so the page states it instead of
+    /// making a person infer it from a table. The live counters stay on
+    /// screen underneath because they are the evidence: they came back
+    /// non-zero from the same response, which is what tells the reader the
+    /// probe worked. The probe not answering at all looks nothing like this
+    /// (see `DiagnosticState.answeredWithNothing`).
+    @ViewBuilder
+    private func transfer(_ reading: TransferDiagnosticsReading) -> some View {
+        if reading.hasReceivedNothing {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("No file has been received by this Mac since New Old "
+                        + "World started there, so there is no transfer to "
+                        + "describe. Nothing is wrong: these counters "
+                        + "describe the LAST received file, and there has "
+                        + "not been one yet. Send it a file and this fills "
+                        + "in.",
+                      systemImage: "tray")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !reading.live.isEmpty {
+                    Text("Live on the connection right now")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    rows(reading.live)
+                }
+            }
+        } else {
+            rows(reading.transfer + reading.live)
+        }
+    }
+
+    private func rows(_ rows: [DiagnosticRow]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Divider()
-            ForEach(state.rows) { row in
+            ForEach(rows) { row in
                 HStack(alignment: .firstTextBaseline) {
                     Text(row.label)
                         .frame(width: 180, alignment: .leading)
