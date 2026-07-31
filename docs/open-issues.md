@@ -9,6 +9,47 @@ wrong thing) versus **unverified** (it may well be right, but no one has
 watched it work on the PowerBook). Unverified is not a lesser problem —
 several of tonight's bugs lived in code that looked obviously correct.
 
+## Proposed: an extension is a thing you enable, not a thing you launch (2026-07-31)
+
+**Proposal, nothing built.** From the manual review pass, and recorded here
+because it is a *new guest capability* rather than a UI gate — the gating half
+(never offering Launch or Bring to Front for an extension or a faceless
+background process) is being handled separately and is not this.
+
+The user's shape for it:
+
+> extensions can surface an enable / disable function that just moves the
+> extension between Extensions and Extensions (Disabled), plus a message that
+> changes will take effect after restart
+
+Three things make this worth writing down before anyone builds it.
+
+**It belongs on the guest, not composed on the host.** The mechanism is a file
+move, and NOW already has a guest move verb — so the tempting cheap version is
+the host composing "disable" out of two paths it constructs itself. That is the
+projection layer *deciding*, which rule 2 forbids, and it breaks the first time
+it meets a System Folder that is not where the host assumed: a non-English
+system, a renamed volume, a machine with no `Extensions (Disabled)` folder yet.
+The guest knows where its own System Folder is and whether the disabled folder
+exists. The host should ask for "disable this extension", not for two paths.
+
+**The restart notice is part of the capability, not decoration.** An INIT loads
+at boot and only at boot, so a disable that reports success is telling the truth
+about the file and a lie about the machine until it restarts. That gap is
+exactly the class of thing this product refuses to paper over elsewhere — it
+belongs in the *result*, not only in a label beside the button.
+
+**It is a destructive-ish capability with an easy undo**, which puts it in the
+same family as the Files verbs: it wants the same confirmation and audit
+treatment, and an agent reaching it must appear in the audit line like any other
+mutation. It is also a good candidate for the consent tiers — a read-only tier
+should not be able to disable a system extension.
+
+Open questions a builder must answer rather than assume: what happens when the
+disabled folder does not exist (create it, or refuse?); whether re-enabling has
+to remember where the file came from or can assume `Extensions`; and whether the
+68K guest serves it at all.
+
 ## The live stream reached the agent surface, and the bracket is a lease (2026-07-31)
 
 `now_stream_screen` closes the last three unnoticed gaps in
