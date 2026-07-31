@@ -378,7 +378,8 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
 
 - **A dev loop that does not need a Macintosh.** Neither guest can run its
   own suite, so the pure-C halves compile under the host `cc`:
-  `scripts/test-native` runs all 28 across both guests in one command, and
+  `scripts/test-native` runs every one of them across both guests in one
+  command and prints the tally itself, and
   a test file missing from its manifest fails the run — a test nobody runs
   reads as coverage in a directory listing and proves nothing. That check
   greps its own text by substring, comments included, so it holds today
