@@ -1,0 +1,240 @@
+#!/usr/bin/env python3
+"""Pack the rendered PNGs into a classic Mac icon family as Rez source.
+
+    icons.py  ->  png/*.png  ->  rez.py  ->  now-icons.r
+
+Emits the six resources a colour-capable Finder looks for, all at ID 128:
+
+    ICN#  32x32 1-bit icon + 1-bit mask   (256 bytes)
+    icl4  32x32 4-bit, indices into the 16-entry system clut    (512 bytes)
+    icl8  32x32 8-bit, indices into the 256-entry system clut  (1024 bytes)
+    ics#  16x16 1-bit icon + 1-bit mask    (64 bytes)
+    ics4  16x16 4-bit                     (128 bytes)
+    ics8  16x16 8-bit                     (256 bytes)
+
+Colour icons carry no mask of their own -- the Finder clips them with the
+ICN#/ics# mask -- so pixels outside the silhouette are written as index 0
+(white) and never displayed.
+
+Every colour is asserted to be an exact clut entry. A near-miss is a bug in
+icons.py worth failing on, not something to paper over by snapping to the
+nearest index: silently shifting a hue is how a designed palette turns into
+an approximated one.
+"""
+from PIL import Image
+from pathlib import Path
+import sys
+
+HERE = Path(__file__).resolve().parent
+PNG = HERE / "png"
+
+# Standard Mac 16-entry clut, in index order (0 = white, 15 = black).
+MAC16 = [
+    (0xFF, 0xFF, 0xFF), (0xFC, 0xF3, 0x05), (0xFF, 0x64, 0x03), (0xDD, 0x09, 0x07),
+    (0xF2, 0x08, 0x84), (0x47, 0x00, 0xA5), (0x00, 0x00, 0xD3), (0x02, 0xAB, 0xEA),
+    (0x1F, 0xB7, 0x14), (0x00, 0x64, 0x12), (0x56, 0x2C, 0x05), (0x90, 0x71, 0x3A),
+    (0xC0, 0xC0, 0xC0), (0x80, 0x80, 0x80), (0x40, 0x40, 0x40), (0x00, 0x00, 0x00),
+]
+
+
+def mac256():
+    """Standard Mac 256-entry clut in index order: a 6x6x6 cube descending
+    from white, then red/green/blue/gray ramps of the ten values the cube
+    misses, then black at 255."""
+    vals = [0xFF, 0xCC, 0x99, 0x66, 0x33, 0x00]
+    pal = [(r, g, b) for r in vals for g in vals for b in vals][:215]
+    ramp = [0xEE, 0xDD, 0xBB, 0xAA, 0x88, 0x77, 0x55, 0x44, 0x22, 0x11]
+    pal += [(v, 0, 0) for v in ramp]
+    pal += [(0, v, 0) for v in ramp]
+    pal += [(0, 0, v) for v in ramp]
+    pal += [(v, v, v) for v in ramp]
+    pal.append((0, 0, 0))
+    assert len(pal) == 256
+    return pal
+
+
+MAC256 = mac256()
+
+
+def load(name):
+    im = Image.open(PNG / name).convert("RGBA")
+    return im.size[0], im.load(), im
+
+
+def bits(name, predicate):
+    """Pack a WxH bitmap MSB-first, one bit per pixel, rows padded to bytes."""
+    n, px, _ = load(name)
+    out = bytearray()
+    for y in range(n):
+        acc = bit = 0
+        for x in range(n):
+            acc = (acc << 1) | (1 if predicate(px[x, y]) else 0)
+            bit += 1
+            if bit == 8:
+                out.append(acc)
+                acc = bit = 0
+    return bytes(out)
+
+
+def indexed(name, clut, bpp):
+    """Map each pixel to its clut index; assert exact membership."""
+    n, px, _ = load(name)
+    lut = {c: i for i, c in enumerate(clut)}
+    vals = []
+    for y in range(n):
+        for x in range(n):
+            r, g, b, a = px[x, y]
+            if a == 0:
+                vals.append(0)          # outside the mask; clipped by ICN#
+                continue
+            key = (r, g, b)
+            if key not in lut:
+                sys.exit(f"{name}: #{r:02X}{g:02X}{b:02X} at ({x},{y}) is not a "
+                         f"{len(clut)}-entry clut colour -- fix icons.py")
+            vals.append(lut[key])
+    if bpp == 8:
+        return bytes(vals)
+    out = bytearray()
+    for i in range(0, len(vals), 2):    # high nibble is the left pixel
+        out.append((vals[i] << 4) | vals[i + 1])
+    return bytes(out)
+
+
+def hexblock(data, per_line, indent=8):
+    """Rez $"..." lines, bytes grouped in fours like the rest of the repo."""
+    lines = []
+    for off in range(0, len(data), per_line):
+        chunk = data[off:off + per_line]
+        groups = [chunk[i:i + 4].hex().upper() for i in range(0, len(chunk), 4)]
+        lines.append(" " * indent + '$"' + " ".join(groups) + '"')
+    return "\n".join(lines)
+
+
+# 1 = black for the icon plane, 1 = opaque for the mask plane.
+icn = bits("now-32-1bit.png", lambda p: p[3] > 0 and p[0] < 128)
+icn_mask = bits("now-32-mask.png", lambda p: p[3] > 0)
+ics = bits("now-16-1bit.png", lambda p: p[3] > 0 and p[0] < 128)
+ics_mask = bits("now-16-mask.png", lambda p: p[3] > 0)
+icl4 = indexed("now-32-4bit.png", MAC16, 4)
+icl8 = indexed("now-32-8bit.png", MAC256, 8)
+ics4 = indexed("now-16-4bit.png", MAC16, 4)
+ics8 = indexed("now-16-8bit.png", MAC256, 8)
+
+for label, blob, want in (("ICN# icon", icn, 128), ("ICN# mask", icn_mask, 128),
+                          ("ics# icon", ics, 32), ("ics# mask", ics_mask, 32),
+                          ("icl4", icl4, 512), ("icl8", icl8, 1024),
+                          ("ics4", ics4, 128), ("ics8", ics8, 256)):
+    assert len(blob) == want, f"{label}: {len(blob)} bytes, expected {want}"
+
+DOC = """\
+/*
+ * now-icons.r - the New Old World application icon, as a classic icon family.
+ *
+ * Generated by assets/icons/classic/rez.py from assets/icons/classic/png/*.png, which are in
+ * turn drawn by assets/icons/classic/icons.py. Edit the generator, not this file.
+ *
+ * The subject is the compact Mac from the full-resolution artwork: beige
+ * case, Finder face on the screen, floppy slot, Apple logo. It is *drawn* at
+ * 32x32 and 16x16 rather than scaled down -- the proportions come from the
+ * 512px original (case 60-450/512, bezel 107-396, slot y~358, logo x 104-128)
+ * but every feature is re-laid on whole pixels, and the face profile is cut
+ * at a steeper slope than the original because a 17-pixel-wide screen cannot
+ * express the real one.
+ *
+ * ID 128 IS THE APPLICATION ICON ID, AND now-guest-ppc/resources/app.r
+ * ALREADY DEFINES ITS OWN PLACEHOLDER 'ICN#' (128) AND 'ics#' (128). Rez'ing
+ * both files together is a duplicate-resource error. Adopting this pack means
+ * deleting those two resources from app.r first -- see assets/icons/classic/README.md.
+ * Nothing includes this file yet; it is deliberately inert until that swap is
+ * made and the result has been seen on real hardware.
+ *
+ * 'ICN#' and 'ics#' use the typed form from Types.r, matching app.r. The four
+ * colour resources use `data` because whether Types.r declares 'icl4'/'icl8'
+ * varies between interface sets, and a raw data statement needs no such
+ * declaration to be valid.
+ *
+ * Colour icons have no mask of their own: the Finder clips them with the
+ * 1-bit mask above, and pixels outside the silhouette are index 0.
+ */
+
+#include "Types.r"
+
+"""
+
+parts = [DOC]
+parts.append("resource 'ICN#' (128) {\n    {\n"
+             + hexblock(icn, 16) + ",\n" + hexblock(icn_mask, 16)
+             + "\n    }\n};\n")
+parts.append("resource 'ics#' (128) {\n    {\n"
+             + hexblock(ics, 16) + ",\n" + hexblock(ics_mask, 16)
+             + "\n    }\n};\n")
+parts.append("/* 32x32, one icon row per line (16 bytes = 32 four-bit pixels). */\n"
+             "data 'icl4' (128) {\n" + hexblock(icl4, 16, 4) + "\n};\n")
+parts.append("/* 32x32, half an icon row per line (32 bytes to a row). */\n"
+             "data 'icl8' (128) {\n" + hexblock(icl8, 16, 4) + "\n};\n")
+parts.append("/* 16x16, two icon rows per line (8 bytes = 16 four-bit pixels). */\n"
+             "data 'ics4' (128) {\n" + hexblock(ics4, 16, 4) + "\n};\n")
+parts.append("/* 16x16, one icon row per line. */\n"
+             "data 'ics8' (128) {\n" + hexblock(ics8, 16, 4) + "\n};\n")
+
+(HERE / "now-icons.r").write_text("\n".join(parts))
+print(f"wrote {HERE / 'now-icons.r'}")
+
+
+# ---------------------------------------------------------------- round trip
+# Decode what was just emitted back into pixels and compare against the PNGs.
+# The packing is bit-twiddling with two plane conventions and a nibble order;
+# a silent transposition would look like art, not like a bug.
+
+def unbits(data, n):
+    return [[(data[(y * n + x) // 8] >> (7 - (x % 8))) & 1
+             for x in range(n)] for y in range(n)]
+
+
+def unindexed(data, n, clut, bpp):
+    out = []
+    for y in range(n):
+        row = []
+        for x in range(n):
+            i = y * n + x
+            v = data[i] if bpp == 8 else (
+                (data[i // 2] >> 4) if i % 2 == 0 else (data[i // 2] & 0xF))
+            row.append(clut[v])
+        out.append(row)
+    return out
+
+
+bad = 0
+for name, data, n in (("now-32-1bit.png", icn, 32), ("now-16-1bit.png", ics, 16)):
+    _, px, _ = load(name)
+    _, mpx, _ = load(name.replace("1bit", "mask"))
+    grid = unbits(data, n)
+    for y in range(n):
+        for x in range(n):
+            if mpx[x, y][3] == 0:
+                continue
+            if grid[y][x] != (1 if px[x, y][0] < 128 else 0):
+                bad += 1
+    print(f"  {name}: 1-bit plane round-trips" + (" " if not bad else " FAILED"))
+
+for name, data, clut, bpp, n in (("now-32-4bit.png", icl4, MAC16, 4, 32),
+                                 ("now-32-8bit.png", icl8, MAC256, 8, 32),
+                                 ("now-16-4bit.png", ics4, MAC16, 4, 16),
+                                 ("now-16-8bit.png", ics8, MAC256, 8, 16)):
+    _, px, _ = load(name)
+    grid = unindexed(data, n, clut, bpp)
+    miss = sum(1 for y in range(n) for x in range(n)
+               if px[x, y][3] > 0 and grid[y][x] != px[x, y][:3])
+    bad += miss
+    print(f"  {name}: {'round-trips exactly' if not miss else f'{miss} MISMATCHES'}")
+
+for name, data, n in (("now-32-mask.png", icn_mask, 32),
+                      ("now-16-mask.png", ics_mask, 16)):
+    _, px, _ = load(name)
+    grid = unbits(data, n)
+    miss = sum(1 for y in range(n) for x in range(n)
+               if grid[y][x] != (1 if px[x, y][3] > 0 else 0))
+    bad += miss
+    print(f"  {name}: {'mask round-trips' if not miss else f'{miss} MISMATCHES'}")
+
+sys.exit(1 if bad else 0)

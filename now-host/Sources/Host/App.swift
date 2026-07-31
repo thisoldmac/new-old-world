@@ -169,17 +169,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         refreshStatusItemTitle()
     }
 
-    /// Glyph first, so the connection reads at a glance without opening
-    /// anything — which is the whole point of a menu-bar app.
+    /// Nothing, normally: the template glyph carries both the identity and
+    /// the connection state, and a menu bar has no room for a sentence it
+    /// does not need. Flashes still arrive as words and sit beside the icon
+    /// for a couple of seconds.
+    ///
+    /// If the glyph cannot be loaded the old text comes back rather than
+    /// leaving an invisible status item — a missing asset should degrade,
+    /// not disappear.
     private var restingTitle: String {
-        "\(state.guestStatus.status.glyph) \(ProductIdentity.displayName)"
+        let status = state.guestStatus.status
+        guard NSImage(named: status.statusImageName) == nil else { return "" }
+        return "\(status.glyph) \(ProductIdentity.displayName)"
     }
 
     private func refreshStatusItemTitle() {
+        // The image is set even mid-flash: a flash owns the words, not the
+        // connection, and sitting on a state change for two seconds is the
+        // staleness StatusItemFlash already exists to avoid.
+        applyStatusImage()
         // A flash owns the title while it is up; settling restores whatever
         // the connection glyph has become in the meantime.
         guard flash?.isFlashing != true else { return }
         statusItem?.button?.title = restingTitle
+    }
+
+    private func applyStatusImage() {
+        guard let button = statusItem?.button else { return }
+        let status = state.guestStatus.status
+        let image = NSImage(named: status.statusImageName)
+        // Template rendering is declared in the asset catalog too; setting it
+        // here means a hand-added image cannot quietly ship as a coloured one.
+        image?.isTemplate = true
+        // The words the character used to spell out. Without this the item
+        // says only "New Old World" to VoiceOver, losing the state entirely.
+        image?.accessibilityDescription = status.menuLine
+        button.image = image
+        button.imagePosition = .imageLeading
+        button.toolTip = status.menuLine
     }
 
     /// Built apart from the status item so a test can assemble the same menu
