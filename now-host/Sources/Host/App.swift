@@ -338,9 +338,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         if window == nil {
             let root = HostRootView(registry: registry, state: state)
             let controller = NSHostingController(rootView: root)
+            /* The WINDOW owns its size, not whichever pane is showing.
+               NSHostingController defaults to .preferredContentSize, which
+               republishes the SwiftUI view's ideal height as a window
+               constraint every time the content changes - so selecting a pane
+               whose ideal content is tall (Agent and Diagnostics both scroll a
+               stack of cards) resized the window past the height of the
+               display, with no way to drag it back. setContentSize below runs
+               once at creation and was simply overridden on the next pane
+               switch.
+
+               Reported from a real machine 2026-07-31; the panes that looked
+               fine were only the ones whose content happened to be short, so
+               this was never about those two views. */
+            controller.sizingOptions = []
             let newWindow = NSWindow(contentViewController: controller)
             newWindow.title = ProductIdentity.displayName
             newWindow.setContentSize(NSSize(width: 980, height: 650))
+            /* A floor, so the window cannot be dragged down to a size where
+               the sidebar and the detail pane have nothing left to render. */
+            newWindow.contentMinSize = NSSize(width: 720, height: 460)
             newWindow.setFrameAutosaveName(ProductIdentity.windowFrameName)
             newWindow.isReleasedWhenClosed = false
             newWindow.delegate = self
