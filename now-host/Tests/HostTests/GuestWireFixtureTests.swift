@@ -1198,14 +1198,20 @@ enum Guest68KWire {
     /// and made the fixture look like it was guarding something it was
     /// not. The version is the one field of hello that is SUPPOSED to
     /// vary; everything around it is what this fixture exists to pin.
+    /// Read through the comment-stripping reader, and for the usual reason:
+    /// this takes the FIRST `#define` the regex finds, so a commented-out
+    /// older one above the live line —
+    ///
+    ///     /* #define NOW68K_APP_VERSION "0.9.0" - before the census build */
+    ///     #define NOW68K_APP_VERSION "0.22"
+    ///
+    /// — silently re-pins every fixture below to a version no guest sends.
+    /// Nothing fails, because these fixtures are consistent with themselves:
+    /// the host tests would go on decoding bytes correctly, against a hello
+    /// no machine has ever put on a wire. Confirmed by mutation 2026-07-31.
     static let appVersion: String = {
-        let source = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()   // …/now-host/Tests/HostTests
-            .deletingLastPathComponent()   // …/now-host/Tests
-            .deletingLastPathComponent()   // …/host
-            .deletingLastPathComponent()   // …/
-            .appendingPathComponent("now-guest-68k/src/core/wire68.c")
-        guard let text = try? String(contentsOf: source, encoding: .utf8),
+        guard let text = try? GateSource.guestC(
+                "now-guest-68k/src/core/wire68.c"),
               let range = text.range(
                 of: #"#define\s+NOW68K_APP_VERSION\s+"([^"]+)""#,
                 options: .regularExpression),
