@@ -2,6 +2,7 @@ import XCTest
 import Network
 import Combine
 @testable import Host
+import NOWAgentIntegration
 
 /// A scripted guest: dials the listener over loopback, sends frames, and
 /// collects decoded control replies.
@@ -108,11 +109,71 @@ final class GuestListenerTests: XCTestCase {
         }
     }
 
-    private func guestHello(name: String = "PowerBook 1400",
-                            contract: Int = Contract.revision,
-                            build: String? = nil) -> ControlMessage {
+    private func guestHello(
+        name: String = "PowerBook 1400",
+        contract: Int = Contract.revision,
+        build: String? = nil,
+        agent: AgentIntegrationGuestAccess? = nil) -> ControlMessage {
         .hello(Hello(contract: contract, side: "guest", version: "0.1.0",
-                     build: build, name: name, os: "9.1", chunk: 8192))
+                     build: build, agent: agent, name: name, os: "9.1",
+                     chunk: 8192))
+    }
+
+    /// The answer a machine gives at hello reaches the record the host
+    /// keeps about it, and the roster row beside it.
+    ///
+    /// A vote nobody carries is a vote nobody counted. This is the whole
+    /// job of this slice: the guest states a position and the host holds
+    /// it — enforcement is elsewhere and deliberately not here.
+    func testHelloAgentAccessReachesTheHealthRecord() async throws {
+        let guest = FakeGuest(port: listener.boundPort!)
+        guest.start()
+        try guest.send(guestHello(agent: .readOnly))
+        try await waitUntil("host hello") { !guest.received.isEmpty }
+
+        XCTAssertEqual(
+            listener.health?.guestAgentAccess, .readOnly,
+            "The machine answered and the host dropped it on the floor.")
+        XCTAssertEqual(listener.guests.first?.agentAccess, .readOnly,
+                       "the roster row carries it too")
+    }
+
+    /// A machine that refuses is held as a refusal.
+    ///
+    /// `disabled` is the state the whole three-state design turns on: it is
+    /// what an installer that omitted the agent features sends, and what a
+    /// flipped switch sends, and it must not arrive looking like the
+    /// silence of a guest that predates the field.
+    func testAMachineThatRefusesIsHeldAsARefusalNotAsSilence() async throws {
+        let guest = FakeGuest(port: listener.boundPort!)
+        guest.start()
+        try guest.send(guestHello(agent: .disabled))
+        try await waitUntil("host hello") { !guest.received.isEmpty }
+
+        XCTAssertEqual(listener.health?.guestAgentAccess, .disabled)
+        XCTAssertNotNil(
+            listener.health?.guestAgentAccess,
+            "A refusal that reaches the host as nil is indistinguishable "
+                + "from a guest that never heard the question — and absence "
+                + "currently fails open, so it would be read as a yes.")
+    }
+
+    /// A guest that never answers leaves it absent.
+    ///
+    /// NOW-68K sends no `agent` and neither does any machine deployed
+    /// before this field. Absence has to survive as absence: filling it in
+    /// with a tier would be the host inventing consent on behalf of a
+    /// machine that was never asked.
+    func testAGuestThatNeverAnswersLeavesAgentAccessAbsent() async throws {
+        let guest = FakeGuest(port: listener.boundPort!)
+        guest.start()
+        try guest.send(guestHello(name: "now-68k"))
+        try await waitUntil("host hello") { !guest.received.isEmpty }
+
+        XCTAssertNil(listener.health?.guestAgentAccess)
+        XCTAssertNil(listener.guests.first?.agentAccess)
+        XCTAssertEqual(listener.health?.guestVersion, "0.1.0",
+                       "the rest of the hello is still there")
     }
 
     /// The build a guest reports at hello reaches the health record.

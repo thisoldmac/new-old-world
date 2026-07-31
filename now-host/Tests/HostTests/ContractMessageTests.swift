@@ -1,5 +1,6 @@
 import XCTest
 @testable import Host
+import NOWAgentIntegration
 
 final class ContractMessageTests: XCTestCase {
     func testHelloRoundTrip() throws {
@@ -61,6 +62,76 @@ final class ContractMessageTests: XCTestCase {
                 + "string. This is the misdiagnosis of 2026-07-30: a stale "
                 + "guest on the 1400c failing every exec test looked "
                 + "identical to a current one.")
+    }
+
+    /// Silence is not consent, and it is not refusal either.
+    ///
+    /// The three-state table only works if all three states survive the
+    /// decoder as themselves. A hello with no `agent` must arrive with
+    /// nil — not defaulted to a tier, and not conflated with `disabled`,
+    /// which is what a machine says when it actually means no.
+    func testAHelloWithNoAgentFieldArrivesAsSilenceNotAnAnswer() throws {
+        let json = """
+        {"type":"hello","contract":1,"side":"guest","version":"0.1.0",\
+        "name":"PowerBook 1400","os":"9.1"}
+        """
+        guard case .hello(let hello) =
+            try ControlMessageCodec.decode(Data(json.utf8)) else {
+            return XCTFail("expected hello")
+        }
+        XCTAssertNil(
+            hello.agent,
+            "A guest older than the field said nothing, and nothing has to "
+                + "reach the host as nothing. Anything else here is the "
+                + "trap the three-state table exists to avoid.")
+        XCTAssertNotEqual(
+            hello.agent, .disabled,
+            "Silence decoded as a refusal. A machine that refuses says so "
+                + "out loud; one that never heard the question did not.")
+    }
+
+    /// Each contract token decodes to the answer it names, and a machine
+    /// that refuses is told apart from every machine that does not.
+    func testEachAgentTokenDecodesToTheAnswerItNames() throws {
+        func agent(_ token: String) throws -> AgentIntegrationGuestAccess? {
+            let json = """
+            {"type":"hello","contract":1,"side":"guest","version":"0.1.0",\
+            "agent":"\(token)","name":"PowerBook 1400","os":"9"}
+            """
+            guard case .hello(let hello) =
+                try ControlMessageCodec.decode(Data(json.utf8)) else {
+                throw XCTSkip("expected hello")
+            }
+            return hello.agent
+        }
+        XCTAssertEqual(try agent("disabled"), .disabled)
+        XCTAssertEqual(try agent("read-only"), .readOnly)
+        XCTAssertEqual(try agent("full"), .fullAccess)
+        XCTAssertNotEqual(
+            try agent("read-only"), try agent("full"),
+            "The tiers are ordered, not a boolean; collapsing them is how a "
+                + "machine that consented to being read ends up driven.")
+    }
+
+    /// A tier this build has never heard of decodes, and stays not-consent.
+    ///
+    /// Both halves matter and they pull opposite ways. Throwing would take
+    /// the connection down over a field a newer machine is entitled to
+    /// send; mapping it onto a known tier would let a machine be driven to
+    /// a ceiling this build cannot even name.
+    func testATierThisBuildDoesNotKnowDecodesAndIsNotConsent() throws {
+        let json = """
+        {"type":"hello","contract":1,"side":"guest","version":"0.1.0",\
+        "agent":"below-the-line","name":"PowerBook 1400","os":"9"}
+        """
+        guard case .hello(let hello) =
+            try ControlMessageCodec.decode(Data(json.utf8)) else {
+            return XCTFail("a hello naming an unknown tier must still decode")
+        }
+        XCTAssertEqual(hello.agent, .unrecognized("below-the-line"),
+                       "kept verbatim, so a log can say what was said")
+        XCTAssertNotEqual(hello.agent, .fullAccess)
+        XCTAssertNotEqual(hello.agent, .readOnly)
     }
 
     func testCaptureOfferAnswersRoundTrip() throws {

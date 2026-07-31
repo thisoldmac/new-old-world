@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import Host
+import NOWAgentIntegration
 
 /// Every control message the guest can emit, read out of the guest's own
 /// source and put through the host's decoder and the contract's required
@@ -565,5 +566,122 @@ final class GuestWireConformanceTests: XCTestCase {
             "`build` is required on Hello. NOW-68K sends none, so requiring "
                 + "it makes every 68K hello non-conformant; absence has a "
                 + "defined reading and that is the whole design.")
+    }
+
+    // MARK: - The machine's own answer rides hello
+
+    /// The PowerPC guest's hello carries `agent`, and it comes from
+    /// `now_agent_access()` rather than a literal.
+    ///
+    /// The literal is the failure mode worth naming: the field's whole
+    /// purpose is that a machine can answer `disabled`, and a token spelled
+    /// into `send_hello` is one a switch or an installer could never change.
+    /// One function, one place for both of those to land.
+    func testThePowerPCGuestsHelloCarriesItsMachinesAnswer() throws {
+        let body = try sendHelloBody()
+
+        XCTAssertTrue(
+            body.contains(#"\"agent\":\"%s\""#),
+            "The PowerPC guest's hello no longer carries an `agent` field. "
+                + "Silence is not consent by contract — but it is also not "
+                + "refusal, so a machine that says nothing cannot refuse, "
+                + "and this guest has no other way to say `disabled`.")
+        XCTAssertTrue(
+            body.contains("now_agent_access()"),
+            "hello names an agent tier but does not fill it from "
+                + "now_agent_access(). A literal here is a machine whose "
+                + "answer nothing can ever change.")
+    }
+
+    /// `send_hello` stays ONE snprintf.
+    ///
+    /// Not style: this file reads the guest's source, and a message built
+    /// across several calls is one it cannot check — the failure text at the
+    /// top of this file says so and offers a fixture instead. `build` kept
+    /// it to one call, and `agent` is the second field to be tempted.
+    func testSendHelloIsStillASingleSnprintf() throws {
+        let body = try sendHelloBody()
+        let calls = body.components(separatedBy: "snprintf(").count - 1
+
+        XCTAssertEqual(
+            calls, 1,
+            "send_hello builds its JSON across \(calls) snprintf calls. "
+                + "This file can only read a message written in one, so "
+                + "splitting it takes hello out of the scan that proves it "
+                + "conforms — quietly, and in the one message every "
+                + "connection begins with.")
+    }
+
+    /// The contract admits `agent` on Hello and does not require it.
+    ///
+    /// Required would break `test68KFixturesCarryTheirRequiredFields`
+    /// against the 68K guest's captured hello, which is direct evidence
+    /// rather than an argument: a guest that predates the field has to stay
+    /// conformant, because absence is a defined reading and not an error.
+    func testTheContractMakesAgentOptionalOnHello() throws {
+        XCTAssertTrue(
+            try contractProperties(of: "Hello").contains("agent"),
+            "contract/asyncapi.yaml does not name `agent` on Hello, and the "
+                + "schema closes additionalProperties, so a guest sending "
+                + "one is sending an illegal message.")
+        XCTAssertFalse(
+            try XCTUnwrap(requiredFields()["Hello"]).contains("agent"),
+            "`agent` is required on Hello. NOW-68K sends none and older "
+                + "guests send none, so requiring it makes their hellos "
+                + "non-conformant — and absence having a defined reading is "
+                + "the whole design.")
+    }
+
+    /// The three tokens the contract lists and the three the host can name
+    /// are the same three.
+    ///
+    /// A tier added to one side only is the defect class this file exists
+    /// for, and it would be quiet in exactly the wrong direction: a token
+    /// the host cannot name is not consent, so a tier added to the contract
+    /// alone would read as a refusal nobody wrote.
+    func testTheContractsAgentTokensAreTheOnesTheHostNames() throws {
+        let text = try String(
+            contentsOf: Self.repoRoot.appendingPathComponent(
+                "contract/asyncapi.yaml"),
+            encoding: .utf8)
+        guard let line = text.components(separatedBy: .newlines).first(
+                where: { $0.hasPrefix("          enum: [disabled") }) else {
+            return XCTFail("contract/asyncapi.yaml no longer declares an "
+                           + "enum of agent tokens on Hello")
+        }
+        let declared = line
+            .drop { $0 != "[" }.dropFirst().prefix { $0 != "]" }
+            .components(separatedBy: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+
+        XCTAssertEqual(
+            declared, ["disabled", "read-only", "full"],
+            "The contract's agent tokens changed. Whoever changed them owes "
+                + "AgentIntegrationGuestAccess the same edit, and the "
+                + "ordering clause an explanation.")
+        for token in declared {
+            XCTAssertEqual(
+                AgentIntegrationGuestAccess(wire: token)?.wire, token,
+                "the host does not name `\(token)`, so it would decode as "
+                    + "unrecognised — which is not consent, and would read "
+                    + "as a refusal the contract never wrote")
+        }
+    }
+
+    /// `send_hello`'s body, by its DEFINITION rather than the forward
+    /// declaration above it — wire.c has both, and matching the declaration
+    /// hands back the body of whatever function happens to follow it.
+    private func sendHelloBody() throws -> String {
+        let wire = try String(
+            contentsOf: Self.repoRoot.appendingPathComponent(
+                "now-guest-ppc/src/core/wire.c"),
+            encoding: .utf8)
+        guard let start = wire.range(of: "static void send_hello(void)\n{"),
+              let end = wire.range(of: "\n}", range: start.upperBound
+                                    ..< wire.endIndex) else {
+            throw XCTSkip("no send_hello definition in "
+                          + "now-guest-ppc/src/core/wire.c")
+        }
+        return String(wire[start.upperBound..<end.lowerBound])
     }
 }
