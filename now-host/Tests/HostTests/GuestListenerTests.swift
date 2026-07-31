@@ -468,7 +468,7 @@ final class GuestPushCaptureTests: XCTestCase {
         let watchPushed = listener.pushedCaptures.sink { _ in pushed += 1 }
         defer { watchFrames.cancel(); watchPushed.cancel() }
 
-        listener.startStream(depth: 8)
+        listener.startStream(depth: 8, origin: .person)
         var streamId: Int?
         try await waitUntil("stream.start") {
             for message in guest.received {
@@ -517,7 +517,7 @@ final class GuestPushCaptureTests: XCTestCase {
         let watch = listener.streamFrames.sink { frames.append($0) }
         defer { watch.cancel() }
 
-        listener.startStream(depth: 8)
+        listener.startStream(depth: 8, origin: .person)
         var streamId: Int?
         try await waitUntil("stream.start") {
             for message in guest.received {
@@ -581,7 +581,7 @@ final class GuestPushCaptureTests: XCTestCase {
         async throws
         -> (id: Int, send: (Int, [UInt8], String, [[Int]]?, Int, Int) throws
                 -> Void) {
-        listener.startStream(depth: 8)
+        listener.startStream(depth: 8, origin: .person)
         var streamId: Int?
         try await waitUntil("stream.start") {
             for message in guest.received {
@@ -690,7 +690,7 @@ final class GuestPushCaptureTests: XCTestCase {
 
     func testRefreshAsksTheGuestForAKeyframe() async throws {
         let guest = try await connectedGuest()
-        listener.startStream(depth: 8)
+        listener.startStream(depth: 8, origin: .person)
         var streamId: Int?
         try await waitUntil("stream.start") {
             for message in guest.received {
@@ -711,7 +711,7 @@ final class GuestPushCaptureTests: XCTestCase {
 
     func testGuestAbortReportsItsReason() async throws {
         let guest = try await connectedGuest()
-        listener.startStream(depth: 1)
+        listener.startStream(depth: 1, origin: .person)
         var streamId: Int?
         try await waitUntil("stream.start") {
             for message in guest.received {
@@ -746,7 +746,7 @@ final class GuestPushCaptureTests: XCTestCase {
 
     func testStreamRequestWhileStreamingIsDeclined() async throws {
         let guest = try await connectedGuest()
-        listener.startStream(depth: 8)
+        listener.startStream(depth: 8, origin: .person)
         try await waitUntil("stream.start") {
             guest.received.contains {
                 if case .streamStart = $0 { return true }
@@ -772,7 +772,7 @@ final class GuestPushCaptureTests: XCTestCase {
 
     func testGuestDisconnectClosesTheBracket() async throws {
         let guest = try await connectedGuest()
-        listener.startStream(depth: 8)
+        listener.startStream(depth: 8, origin: .person)
         try await waitUntil("stream.start") {
             guest.received.contains {
                 if case .streamStart = $0 { return true }
@@ -788,7 +788,7 @@ final class GuestPushCaptureTests: XCTestCase {
 
     func testOfferDuringAStreamIsRefusedBusy() async throws {
         let guest = try await connectedGuest()
-        listener.startStream(depth: 8)
+        listener.startStream(depth: 8, origin: .person)
         try await waitUntil("stream.start") {
             guest.received.contains {
                 if case .streamStart = $0 { return true }

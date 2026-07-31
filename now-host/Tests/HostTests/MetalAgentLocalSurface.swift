@@ -256,7 +256,15 @@ final class MetalAgentLocalSurface {
              .census, .softwareInventory, .guestFileDownload,
              .bringToFront, .guestFileMutation, .transferCancel,
              .guestLogTail, .machineFacts, .catalogSearch, .revealItem,
-             .diagnostics:
+             .diagnostics,
+             /* And the bracket, refused for a reason of its own on TOP of
+                those: it is the one operation that would not end when the
+                gate did. A rig that opened a stream on the person's
+                PowerBook and then finished its test run would leave the
+                machine capturing its own screen, and the ownership rule
+                that ends such a bracket lives in the host app's control,
+                not here. */
+             .stream:
             /* Every operation that could CHANGE the machine, refused by
                this rig rather than served. A capture gate has no business
                being able to move a file on somebody's PowerBook, and the

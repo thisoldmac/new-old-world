@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import Foundation
 import CoreGraphics
+import NOWAgentIntegration
 
 enum CaptureDepth: Int, CaseIterable, Identifiable, Sendable {
     case mono = 1
@@ -196,6 +197,54 @@ final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
         connection.canCapture && !isCapturing && !isStreaming
     }
     var canStream: Bool { connection.canCapture && !isCapturing }
+
+    /// **Who opened the stream that is running**, nil when none is or when
+    /// this person opened it themselves.
+    ///
+    /// The one thing the page could not say. The bracket is host-wide, so an
+    /// agent opening one turns this page's live view on and greys out its
+    /// Capture button — and until this existed, a person who had clicked
+    /// nothing saw a screen they did not ask for and a control that had
+    /// stopped working, which is what a broken app looks like.
+    ///
+    /// **The person always wins, and the honest way to give them that is one
+    /// explicit click rather than a hidden side effect.** Stop Streaming is
+    /// already enabled while any stream runs, whoever opened it, and it ends
+    /// an agent's exactly as it ends their own. What was missing was knowing
+    /// there was something to stop. Making Capture *itself* end an agent's
+    /// stream was the alternative and is rejected: a button that says Capture
+    /// and also silently ends somebody else's work is a button that does two
+    /// things, and the person cannot see the second one in its label.
+    @Published private(set) var streamOwner: AgentIntegrationStreamOrigin?
+
+    var streamOwnerNote: String? {
+        switch streamOwner {
+        case .agent:
+            return "An agent is streaming this Mac's screen. Capture is "
+                + "unavailable while it runs — the machine has one transfer "
+                + "lane. Stop Streaming ends it."
+        case .guest:
+            return "\(connection.peerLabel) asked for this stream. Capture "
+                + "is unavailable while it runs; Stop Streaming ends it."
+        case .person, nil:
+            return nil
+        }
+    }
+
+    var streamButtonTitle: String {
+        isStreaming ? "Stop Streaming" : "Start Streaming"
+    }
+
+    /// The Screenshots page's one stream affordance.
+    ///
+    /// A method rather than the two calls spelled out at the button, so the
+    /// projection row's app-UI proof can name a symbol this file uses exactly
+    /// once — `HostFaceReach.reached` records the failure where a row names a
+    /// symbol its view contains three times and deleting the affordance
+    /// changes nothing.
+    func toggleStream() {
+        isStreaming ? stopStream() : startStream()
+    }
     var latest: ScreenshotRecord? { history.first }
 
     private enum Keys {
@@ -298,6 +347,10 @@ final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
 
     private func streamStateChanged(_ id: Int?) {
         let streaming = id != nil
+        /* Read on every change rather than only on a transition: the guard
+           below returns early when the flag has not moved, and the owner is
+           the field that must be right the first time the page draws. */
+        streamOwner = streaming ? listener.streamOrigin : nil
         guard streaming != isStreaming else { return }
         isStreaming = streaming
         if streaming {

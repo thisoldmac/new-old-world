@@ -29,6 +29,13 @@ public enum HostProjectionCatalog {
            of a directory one. */
         GuestLogTailProjection.self,
         CaptureScreenProjection.self,
+        /* Immediately after capture, because it is the same observation
+           held open: one picture now, or the bracket that produces them
+           until somebody stops it. Adjacent and not merged — a capture is a
+           bounded call and a stream is a lane an agent takes, and the two
+           are mutually exclusive on the wire, which is the first thing a
+           reader of either row needs to meet in the other. */
+        StreamScreenProjection.self,
         /* Beside capture on purpose: the two costly MEASUREMENTS of the
            machine sit together, before the actions. */
         CatalogSearchProjection.self,

@@ -321,6 +321,26 @@ final class AgentIntegrationCapabilityLedger {
                in its own words. docs/open-issues.md material rather than
                something to paper over here. */
             .init(names.censusRequest, .notProbedCostly),
+            /* The three halves of the live-stream bracket. Read-only, and
+               not probed for a reason sharper than capture's: the smallest
+               request in this family does not cost a screen grab, it OPENS
+               ONE AND LEAVES IT OPEN. A probe would put a machine into a
+               mode — and then have to leave it, so settling the question
+               would mean sending stream.stop as well and reporting on a
+               bracket nobody asked for. `stream.refresh` is cheaper still
+               and is unprobeable for the opposite reason: outside a bracket
+               there is nothing for it to refresh, so the only honest probe
+               of it is inside a stream this side would have had to start.
+
+               All three read `unproven` until a real call settles them,
+               which leaves the capability callable — the truthful state. A
+               guest without them refuses by name on the first real call and
+               that is what turns the row unavailable, in the guest's own
+               words rather than by a guess about which guest is on the
+               wire. */
+            .init(names.streamStart, .notProbedCostly),
+            .init(names.streamStop, .notProbedCostly),
+            .init(names.streamRefresh, .notProbedCostly),
         ]
     }()
 
