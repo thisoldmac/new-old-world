@@ -19,6 +19,8 @@ public enum TransferApprovedArtifactProjection: HostProjection {
     public static let exposes =
         [AgentIntegrationCapabilityNames.filePut]
 
+    public static let acceptedArguments: Set<String> = ["approvalReceipt"]
+
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .notReached(because:
             "The app UI is the GRANT side of this capability, not the "
@@ -155,7 +157,7 @@ public enum TransferApprovedArtifactProjection: HostProjection {
         through client: AgentIntegrationClient
     ) async -> HostProjectionOutcome {
         guard let arguments = arguments.object,
-              Set(arguments.keys) == ["approvalReceipt"],
+              Set(arguments.keys) == acceptedArguments,
               let receipt = arguments["approvalReceipt"] as? String,
               AgentIntegrationArtifactPolicy.isValidReceipt(receipt)
         else {

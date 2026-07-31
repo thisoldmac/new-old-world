@@ -98,6 +98,8 @@ public enum RevealItemProjection: HostProjection {
        user-initiable half costs this capability nothing. Note the app UI
        sends the entry's full PATH and never a bare name, which is also the
        form this row recommends. */
+    public static let acceptedArguments: Set<String> = ["target"]
+
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "SoftwareModuleView.swift",
                          symbol: "model.reveal(entry)"),
@@ -225,7 +227,7 @@ public enum RevealItemProjection: HostProjection {
         through client: AgentIntegrationClient
     ) async -> HostProjectionOutcome {
         guard let arguments = arguments.object,
-              Set(arguments.keys) == ["target"],
+              Set(arguments.keys) == acceptedArguments,
               let target = arguments["target"] as? String,
               AgentIntegrationRevealPolicy.isValidTarget(target)
         else {

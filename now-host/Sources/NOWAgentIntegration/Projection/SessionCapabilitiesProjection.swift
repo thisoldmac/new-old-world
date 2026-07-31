@@ -21,6 +21,8 @@ public enum SessionCapabilitiesProjection: HostProjection {
        stop. */
     public static let exposes: [String] = []
 
+    public static let acceptedArguments: Set<String> = ["probeCostly"]
+
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .notReached(because:
             "No pane reports what the connected guest can do. The app UI "
@@ -153,7 +155,7 @@ public enum SessionCapabilitiesProjection: HostProjection {
         default:
             return .invalidArguments(refusal)
         }
-        guard Set(arguments.keys).isSubset(of: ["probeCostly"]) else {
+        guard Set(arguments.keys).isSubset(of: acceptedArguments) else {
             return .invalidArguments(refusal)
         }
         return .value(.init(

@@ -12,6 +12,10 @@ public enum GuestFilesUploadAppendProjection: HostProjection {
        reached at commit. */
     public static let exposes: [String] = []
 
+    public static let acceptedArguments: Set<String> = [
+        "uploadID", "offset", "data",
+    ]
+
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .notReached(because:
             "The second step of the staging that exists only for a caller "
@@ -57,7 +61,7 @@ public enum GuestFilesUploadAppendProjection: HostProjection {
         through client: AgentIntegrationClient
     ) async -> HostProjectionOutcome {
         guard let arguments = arguments.object,
-              Set(arguments.keys) == ["uploadID", "offset", "data"],
+              Set(arguments.keys) == acceptedArguments,
               let rawID = arguments["uploadID"] as? String,
               let uploadID = UUID(uuidString: rawID),
               let offset = arguments["offset"] as? Int,

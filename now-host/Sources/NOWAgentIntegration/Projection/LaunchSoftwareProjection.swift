@@ -36,6 +36,10 @@ public enum LaunchSoftwareProjection: HostProjection {
 
     /* The Software page's Launch button, acting by the selected entry's
        launch key the same way this projection does. */
+    /* Both, though a call carries exactly one: this is the key NAMESPACE, and
+       which of the two a caller may combine is the row's own `invoke`. */
+    public static let acceptedArguments: Set<String> = ["name", "reference"]
+
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "SoftwareModuleView.swift",
                          symbol: "model.launch(entry)"),

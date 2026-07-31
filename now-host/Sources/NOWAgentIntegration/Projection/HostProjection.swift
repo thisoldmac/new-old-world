@@ -206,6 +206,39 @@ public protocol HostProjection {
     /// internal to its own composition.
     static var exposes: [String] { get }
 
+    /// **Every argument key this projection accepts, declared once.**
+    ///
+    /// An unread parameter is indistinguishable from an absent one, and that
+    /// is the whole reason this exists. A caller that sends
+    /// `destinationPath` where the row's name is `toPath` has not sent a
+    /// slightly-wrong request; it has sent a *different* request, and a
+    /// surface that ignores the key it did not recognise performs that
+    /// different request and reports success. The sibling Mirror project
+    /// measured the cost of the fail-open version of this on a real machine
+    /// (`mirror` 156b8ce): `modifiers` for `mods` dropped a Command key, so
+    /// Command-Q typed a literal `q` into an open document, and the reply
+    /// said `performed: true`. A misspelled VALUE was already refused there;
+    /// a misspelled KEY was not, which is the worse half.
+    ///
+    /// **The set is read off this row's own published `mcpDescriptor`, never
+    /// guessed.** `HostProjectionArgumentStrictnessTests` asserts it equals
+    /// the `inputSchema`'s `properties` keys for every registered row, which
+    /// is what stops this declaration from rebuilding the same class of bug
+    /// one row over: a hand-written set that has drifted from the schema is
+    /// a surface that advertises one spelling and accepts another.
+    ///
+    /// Empty is a real answer and eight rows give it — they take no
+    /// arguments at all, and were the only strict ones before this existed.
+    /// There is deliberately no default implementation: a row that has not
+    /// thought about its key namespace must fail to compile rather than
+    /// inherit somebody else's answer.
+    ///
+    /// The envelope's own members are not listed here and must not be. The
+    /// `guest` selector is lifted off in one place before a projection ever
+    /// sees the arguments (`HostProjectionArguments.init`), so no row states
+    /// it and none can forget to.
+    static var acceptedArguments: Set<String> { get }
+
     /// Which of the host's three faces reach this capability.
     ///
     /// Every face in `HostCapabilityFace.allCases` is stated, including the
@@ -243,8 +276,28 @@ public struct HostProjectionArguments {
     /// Exactly what arrived as `params.arguments`, less `guest`.
     public let raw: Any?
 
+    /// **The envelope's own members: addressing, not arguments.**
+    ///
+    /// `guest` says WHICH machine a call is about. It is a property of the
+    /// call rather than of the capability, so no row lists it in
+    /// `acceptedArguments` and every row would otherwise refuse it the
+    /// moment argument keys became strict.
+    ///
+    /// The MCP face already removes it before constructing these arguments,
+    /// and this lift is deliberately kept anyway: the face that removes it is
+    /// one of three, and an exemption that only exists inside one caller is
+    /// an exemption the next face has to rediscover. Stated once, here, where
+    /// the strictness is.
+    public static let envelopeMembers: Set<String> = ["guest"]
+
     public init(raw: Any?) {
-        self.raw = raw
+        guard let object = raw as? [String: Any],
+              object.keys.contains(where: Self.envelopeMembers.contains)
+        else {
+            self.raw = raw
+            return
+        }
+        self.raw = object.filter { !Self.envelopeMembers.contains($0.key) }
     }
 
     /// The arguments as an object, or nil when the caller sent something
@@ -257,6 +310,12 @@ public struct HostProjectionArguments {
 
     /// The shared bound for a projection that takes nothing: absent or an
     /// empty object pass, anything else is refused with one wording.
+    ///
+    /// Kept beside `refusalForUnknownMembers` rather than folded into it
+    /// because it refuses one thing that one cannot: arguments that are not
+    /// an object at all. An unknown *key* is only a question you can ask of
+    /// something with keys, and a row that wants a member out of a JSON array
+    /// has a different complaint to make.
     public func refusalIfAnyPresent(
         tool: HostCapabilityID
     ) -> String? {
@@ -265,6 +324,39 @@ public struct HostProjectionArguments {
             return "\(tool.rawValue) accepts no arguments"
         }
         return nil
+    }
+
+    /// **Refuse a key the projection does not know, naming both halves.**
+    ///
+    /// The wording is the point, not just the refusal. "Unknown parameter"
+    /// leaves a caller guessing which of `toPath` and `destinationPath` is
+    /// the real one, and guessing is the failure being fixed — so the
+    /// sentence carries what arrived AND what the row would have taken, and
+    /// the caller's next attempt is informed rather than another coin flip.
+    ///
+    /// Sorted, so one call's refusal reads the same as the next one's and a
+    /// test can assert the whole sentence rather than a substring.
+    ///
+    /// Returns nil when the arguments are not an object: `refusalIfAnyPresent`
+    /// and each row's own decoding own that case.
+    public func refusalForUnknownMembers(
+        tool: HostCapabilityID,
+        accepting accepted: Set<String>
+    ) -> String? {
+        guard let object = raw as? [String: Any] else { return nil }
+        let unknown = Set(object.keys).subtracting(accepted)
+        guard !unknown.isEmpty else { return nil }
+        guard !accepted.isEmpty else {
+            /* One wording for the rows that take nothing, and it is the
+               wording they already had: "does not accept x; it accepts
+               nothing" is a worse sentence than the one this surface has
+               been answering with since the first empty row. */
+            return "\(tool.rawValue) accepts no arguments"
+        }
+        return "\(tool.rawValue) does not accept "
+            + unknown.sorted().joined(separator: ", ")
+            + "; it accepts "
+            + accepted.sorted().joined(separator: ", ")
     }
 }
 

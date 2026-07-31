@@ -85,6 +85,8 @@ public enum GuestLogTailProjection: HostProjection {
        working as intended rather than a coincidence to lean on. So the
        affordance is real and the implementation is one; what a person gets
        is the guest's rendering of it and what this row gets is its rows. */
+    public static let acceptedArguments: Set<String> = Argument.all
+
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "ConsoleModel.swift",
                          symbol: "send(command)"),

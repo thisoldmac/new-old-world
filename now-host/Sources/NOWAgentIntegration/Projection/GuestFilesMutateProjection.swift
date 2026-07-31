@@ -73,6 +73,16 @@ public enum GuestFilesMutateProjection: HostProjection {
        effect, which is exactly what exposure means. */
     public static let exposes = requires
 
+    /* The one key list this row has, read by both the shared gate and the
+       decoding below. It matters most here of anywhere on this surface: the
+       optional members are `toPath` and `trashedAs`, so a caller who writes
+       `destinationPath` for the first has described a MOVE and, on a fail-open
+       surface, would have got a trash — a different destructive action, with a
+       success reply. */
+    public static let acceptedArguments: Set<String> = [
+        "mutation", "path", "toPath", "trashedAs",
+    ]
+
     /* The Files page's confirmation sheet — the call site a person's click
        reaches for a move, a rename and a trash. The other two intentions are
        in the same file and one click away each (`model.createFolder(named:)`
@@ -185,8 +195,7 @@ public enum GuestFilesMutateProjection: HostProjection {
     private static func mutation(
         _ arguments: [String: Any]
     ) -> AgentIntegrationGuestFileMutationRequest? {
-        guard Set(arguments.keys).isSubset(
-                of: ["mutation", "path", "toPath", "trashedAs"]),
+        guard Set(arguments.keys).isSubset(of: acceptedArguments),
               let intention = arguments["mutation"] as? String,
               let mutation = AgentIntegrationGuestFileMutation(
                 rawValue: intention),

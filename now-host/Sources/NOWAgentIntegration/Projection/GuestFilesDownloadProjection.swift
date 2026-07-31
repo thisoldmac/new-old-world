@@ -90,6 +90,8 @@ public enum GuestFilesDownloadProjection: HostProjection {
        whole project: the same `GuestListener.getFile` has always been one
        click away for the person at the machine, which is why rule 3 costs
        this capability nothing. */
+    public static let acceptedArguments: Set<String> = ["path"]
+
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "FilesModuleView.swift",
                          symbol: "model.download(row)"),
@@ -172,7 +174,7 @@ public enum GuestFilesDownloadProjection: HostProjection {
         through client: AgentIntegrationClient
     ) async -> HostProjectionOutcome {
         guard let arguments = arguments.object,
-              Set(arguments.keys) == ["path"],
+              Set(arguments.keys) == acceptedArguments,
               let path = arguments["path"] as? String,
               !path.isEmpty,
               AgentIntegrationGuestFilePolicy.isBoundedPath(path)

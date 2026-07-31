@@ -58,6 +58,10 @@ public enum CaptureScreenProjection: HostProjection {
     /* Two app-UI affordances, and the row names the panel's rather than the
        menu bar's because that is the one a person finds without knowing the
        feature exists. The menu item is QuickCapture.swift's `run()`. */
+    /* Argument.all, not a second literal: the row already spells its two keys
+       once for its own reads, and a set typed twice is a set that drifts. */
+    public static let acceptedArguments: Set<String> = Argument.all
+
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "ScreenshotsModuleView.swift",
                          symbol: "model.capture()"),

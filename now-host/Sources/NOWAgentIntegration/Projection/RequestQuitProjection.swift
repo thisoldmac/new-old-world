@@ -31,6 +31,8 @@ public enum RequestQuitProjection: HostProjection {
        disabled for the row the guest reports as itself rather than being
        offered and refused, which is a rendering decision about the same
        capability. */
+    public static let acceptedArguments: Set<String> = ["reference"]
+
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "ProcessesModuleView.swift",
                          symbol: "model.askToQuit(entry)"),
@@ -150,7 +152,7 @@ public enum RequestQuitProjection: HostProjection {
         through client: AgentIntegrationClient
     ) async -> HostProjectionOutcome {
         guard let arguments = arguments.object,
-              Set(arguments.keys) == ["reference"],
+              Set(arguments.keys) == acceptedArguments,
               let reference = arguments["reference"] as? String,
               AgentIntegrationQuitPolicy.isValidReference(reference)
         else {

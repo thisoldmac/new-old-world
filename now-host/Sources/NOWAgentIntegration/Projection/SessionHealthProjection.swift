@@ -20,6 +20,10 @@ public enum SessionHealthProjection: HostProjection {
        version, when it connected, how long the wire has been quiet, frames
        and pings — and the Start/Stop Listening buttons above it are the
        listener state itself. */
+    /* Takes no arguments at all, so the strict answer is the empty set
+       rather than an absence of one. */
+    public static let acceptedArguments: Set<String> = []
+
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "SettingsModuleView.swift",
                          symbol: "healthBlock(health)"),

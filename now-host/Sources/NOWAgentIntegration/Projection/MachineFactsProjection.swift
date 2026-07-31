@@ -204,6 +204,10 @@ public enum MachineFactsProjection: HostProjection {
        capability's eventual home: these are the standing facts that belong
        beside the Census page's probe rail, and the two want to be read
        together. Nothing here needs moving when it arrives. */
+    /* Takes no arguments at all, so the strict answer is the empty set
+       rather than an absence of one. */
+    public static let acceptedArguments: Set<String> = []
+
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "ConsoleModel.swift",
                          symbol: "send(command)"),

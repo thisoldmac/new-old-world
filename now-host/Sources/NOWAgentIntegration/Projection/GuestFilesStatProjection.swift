@@ -24,6 +24,8 @@ public enum GuestFilesStatProjection: HostProjection {
        the browser does when a person navigates there, and the row renders
        the entry's kind, size and modified date. A person has a window and
        needs no path; a caller has a path and no window. */
+    public static let acceptedArguments: Set<String> = ["path"]
+
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "FileBrowserTable.swift",
                          symbol: "item.kind"),
@@ -58,7 +60,7 @@ public enum GuestFilesStatProjection: HostProjection {
         through client: AgentIntegrationClient
     ) async -> HostProjectionOutcome {
         guard let arguments = arguments.object,
-              Set(arguments.keys) == ["path"],
+              Set(arguments.keys) == acceptedArguments,
               let path = arguments["path"] as? String,
               !path.isEmpty,
               AgentIntegrationGuestFilePolicy.isBoundedPath(path)

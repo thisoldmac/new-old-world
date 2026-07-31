@@ -47,6 +47,8 @@ public enum BringToFrontProjection: HostProjection {
        predates this row by the whole project: the same GuestListener drive
        verb has always been one click away for the person at the machine,
        which is why rule 3 costs this capability nothing. */
+    public static let acceptedArguments: Set<String> = ["reference"]
+
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "ProcessesModuleView.swift",
                          symbol: "model.bringToFront(entry)"),
@@ -151,7 +153,7 @@ public enum BringToFrontProjection: HostProjection {
         through client: AgentIntegrationClient
     ) async -> HostProjectionOutcome {
         guard let arguments = arguments.object,
-              Set(arguments.keys) == ["reference"],
+              Set(arguments.keys) == acceptedArguments,
               let reference = arguments["reference"] as? String,
               AgentIntegrationQuitPolicy.isValidReference(reference)
         else {

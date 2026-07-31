@@ -140,6 +140,8 @@ public enum HardwareCensusProjection: HostProjection {
        by the whole census arc, so rule 3's user-initiable half costs this
        capability nothing — the difference is that the page pages to the end
        for a person watching, and this row hands the cursor to its caller. */
+    public static let acceptedArguments: Set<String> = ["probe", "cursor"]
+
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "CensusModuleView.swift",
                          symbol: "model.run(probeID: state.id)"),
@@ -295,7 +297,7 @@ public enum HardwareCensusProjection: HostProjection {
         through client: AgentIntegrationClient
     ) async -> HostProjectionOutcome {
         guard let arguments = arguments.object,
-              Set(arguments.keys).isSubset(of: ["probe", "cursor"]),
+              Set(arguments.keys).isSubset(of: acceptedArguments),
               let probe = arguments["probe"] as? String,
               AgentIntegrationCensusPolicy.isValidProbe(probe)
         else {

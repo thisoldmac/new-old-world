@@ -184,6 +184,10 @@ public enum CatalogSearchProjection: HostProjection {
        this pane too, and the two belong together — the listing and what
        producing it costs. The footer is where both go; nothing here needs
        moving when it arrives. */
+    /* Takes no arguments at all, so the strict answer is the empty set
+       rather than an absence of one. */
+    public static let acceptedArguments: Set<String> = []
+
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "SoftwareModuleView.swift",
                          symbol: "model.measureCatalogSearch()"),

@@ -19,6 +19,8 @@ public enum GuestFilesListProjection: HostProjection {
 
     /* The Files page's browser table, walking the same file.list the
        projection pages through. */
+    public static let acceptedArguments: Set<String> = ["path", "cursor"]
+
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "FilesModuleView.swift",
                          symbol: "FileBrowserTable("),
@@ -66,7 +68,7 @@ public enum GuestFilesListProjection: HostProjection {
     private static func selection(
         _ arguments: [String: Any]
     ) -> (path: String, cursor: Int?)? {
-        guard Set(arguments.keys).isSubset(of: ["path", "cursor"])
+        guard Set(arguments.keys).isSubset(of: acceptedArguments)
         else { return nil }
         let path: String
         if let value = arguments["path"] {

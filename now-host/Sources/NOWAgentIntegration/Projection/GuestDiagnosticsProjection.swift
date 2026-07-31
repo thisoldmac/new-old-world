@@ -239,6 +239,10 @@ public enum FramebufferProbeProjection: HostProjection {
     public static let exposes =
         [AgentIntegrationCapabilityNames.vprobeCommand]
 
+    /* Takes no arguments at all, so the strict answer is the empty set
+       rather than an absence of one. */
+    public static let acceptedArguments: Set<String> = []
+
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "DiagnosticsModuleView.swift",
                          symbol: "model.run(.vprobe)"),
@@ -335,6 +339,10 @@ public enum CaptureDiagnosticsProjection: HostProjection {
     public static let exposes =
         [AgentIntegrationCapabilityNames.shotdiagCommand]
 
+    /* Takes no arguments at all, so the strict answer is the empty set
+       rather than an absence of one. */
+    public static let acceptedArguments: Set<String> = []
+
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "DiagnosticsModuleView.swift",
                          symbol: "model.run(.shotdiag)"),
@@ -426,6 +434,10 @@ public enum TransferDiagnosticsProjection: HostProjection {
 
     public static let exposes =
         [AgentIntegrationCapabilityNames.putstatCommand]
+
+    /* Takes no arguments at all, so the strict answer is the empty set
+       rather than an absence of one. */
+    public static let acceptedArguments: Set<String> = []
 
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "DiagnosticsModuleView.swift",

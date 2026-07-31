@@ -57,6 +57,10 @@ public struct HostProjectionDispatch {
         if let denial = await consentDenial(invoking: projection,
                                             through: client) {
             outcome = .deniedByConsent(denial)
+        } else if let refusal = arguments.refusalForUnknownMembers(
+            tool: projection.capability,
+            accepting: projection.acceptedArguments) {
+            outcome = .invalidArguments(refusal)
         } else {
             outcome = await projection.invoke(arguments, through: client)
         }
@@ -67,6 +71,20 @@ public struct HostProjectionDispatch {
             outcome: outcome))
         return outcome
     }
+
+    /* Why the key check is HERE and not in each row, and why it is second.
+
+       Here, for the reason the audit event is here: two places to refuse is
+       one place to forget, and a row added next year gets the strictness by
+       existing rather than by remembering. Every row still validates its own
+       VALUES — this gate knows the key namespace and nothing about what a
+       key means.
+
+       Second, after consent, because a machine whose owner said no has not
+       been asked anything, and telling that caller their spelling was wrong
+       would answer a question nobody got to ask. The cost is one local round
+       trip spent before a malformed call is refused, over a Unix socket on
+       this Mac and nothing on the guest wire. */
 
     /// **The machine's own ceiling, checked on the line that records the
     /// attempt.**
