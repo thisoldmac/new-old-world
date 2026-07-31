@@ -229,14 +229,28 @@ int main(void)
     {
         char err[64];
 
+        now_pull_set_canceller(fake_cancel);
         g_cancel_calls = 0;
         g_cancel_result = 0;
         err[0] = '\0';
-        check(fake_cancel(err, sizeof err) == 0 && g_cancel_calls == 1,
+        check(now_pull_cancel(err, sizeof err) == 0 && g_cancel_calls == 1,
               "the registered canceller is the one that runs");
         g_cancel_result = -1;
-        check(fake_cancel(err, sizeof err) == -1 && err[0] != '\0',
+        err[0] = '\0';
+        check(now_pull_cancel(err, sizeof err) == -1 && err[0] != '\0',
               "a refusal arrives with something to show a person");
+
+        /* With none registered the answer is a refusal WITH A REASON,
+           not a silent zero. A cancel that reports success and stops
+           nothing is the worst outcome available here: the pane would
+           say the transfer was stopped while the file kept arriving. */
+        now_pull_set_canceller(NULL);
+        g_cancel_calls = 0;
+        err[0] = '\0';
+        check(now_pull_cancel(err, sizeof err) == -1,
+              "no canceller is a refusal, never a silent success");
+        check(err[0] != '\0', "and the refusal says why");
+        check(g_cancel_calls == 0, "nothing was called");
     }
     now_pull_set_canceller(NULL);
     now_pull_reset(&v);
