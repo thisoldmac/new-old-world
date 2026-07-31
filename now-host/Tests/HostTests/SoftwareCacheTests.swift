@@ -115,12 +115,36 @@ final class SoftwareCacheTests: XCTestCase {
     /// The barrier every ordered assertion below leans on: force one sweep
     /// that MUST reach the guest, and wait for its answer. Anything an
     /// earlier call put on the wire has arrived by the time this returns.
+    ///
+    /// The settle-and-check is not ceremony. `refresh()` declines while a
+    /// sweep is in flight, so a barrier fired on a busy model is a barrier
+    /// that never happened — and a count read after it would be a count of
+    /// nothing, passing for either answer. Found by mutation: with the
+    /// cache disabled, the version of this helper without these two lines
+    /// left `testTheFirstOpenSweepsAndTheSecondDoesNot` GREEN.
     private func barrierRescan() async throws {
+        try await waitUntil("the page to settle") {
+            self.model.isLoading == false
+        }
         let before = model.fetchedAt
         model.refresh()
+        XCTAssertTrue(model.isLoading,
+                      "the barrier has to actually ask, or it is not one")
         try await waitUntil("the barrier rescan landed") {
             self.model.isLoading == false && self.model.fetchedAt != before
         }
+    }
+
+    /// A call that must NOT reach the wire. `sweep()` flips `isLoading`
+    /// synchronously, so this is a fact about what just happened rather
+    /// than a guess about what has not happened yet — which is the whole
+    /// distinction an asynchronous negative assertion gets wrong.
+    private func expectNoSweep(_ what: String, _ body: () -> Void) {
+        XCTAssertFalse(model.isLoading, "\(what): precondition, page idle")
+        body()
+        XCTAssertFalse(model.isLoading,
+                       "\(what): a domain already in hand must not start a "
+                           + "sweep at all")
     }
 
     private func openAndWait() async throws {
@@ -142,10 +166,11 @@ final class SoftwareCacheTests: XCTestCase {
         XCTAssertEqual(script.count, 1, "the page opened; the Mac swept once")
         XCTAssertEqual(model.rows.count, 1)
 
-        // Re-opening the page. Anything this sent is on the wire ahead of
-        // the barrier, so the count read after the barrier is conclusive.
-        model.openIfNeeded()
-        model.openIfNeeded()
+        // Re-opening the page, twice. Neither may even start a sweep, and
+        // anything they did send is on the wire ahead of the barrier, so
+        // the count read after the barrier is conclusive.
+        expectNoSweep("second open") { model.openIfNeeded() }
+        expectNoSweep("third open") { model.openIfNeeded() }
         try await barrierRescan()
         XCTAssertEqual(script.count, 2,
                        "two more opens cost nothing; only the rescan swept")
@@ -168,7 +193,7 @@ final class SoftwareCacheTests: XCTestCase {
         XCTAssertEqual(script.count(domain: "cdevs"), 1)
 
         // Back to a domain this Mac has already answered.
-        model.domain = .apps
+        expectNoSweep("flipping back to Applications") { model.domain = .apps }
         XCTAssertEqual(model.rows.map(\.name), ["SimpleText"],
                        "the banked listing came back without the wire")
         try await barrierRescan()
@@ -191,7 +216,7 @@ final class SoftwareCacheTests: XCTestCase {
                 && self.model.rows.first?.name == "AppleShare"
         }
         // Opening the page again on a domain already in hand.
-        model.openIfNeeded()
+        expectNoSweep("re-open on Extensions") { model.openIfNeeded() }
         try await barrierRescan()
         XCTAssertEqual(script.count(domain: "extensions"), 2,
                        "one sweep for the open, one for the barrier")
@@ -242,7 +267,10 @@ final class SoftwareCacheTests: XCTestCase {
         XCTAssertEqual(model.rows.map(\.name), ["HyperCard"])
 
         // Back to the first Mac: its own listing, parked, not re-swept.
-        model.connection = .connected(named: "PB 1400")
+        expectNoSweep("returning to the first Mac") {
+            model.connection = .connected(named: "PB 1400")
+            model.openIfNeeded()
+        }
         XCTAssertEqual(model.rows.map(\.name), ["SimpleText"],
                        "each Mac's listing came back under its own name")
         try await barrierRescan()
