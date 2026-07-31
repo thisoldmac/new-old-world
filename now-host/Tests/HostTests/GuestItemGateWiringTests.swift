@@ -393,6 +393,29 @@ final class GuestItemGateWiringTests: XCTestCase {
                        "the Run button is missing again on some card")
     }
 
+    /// **The gate is handed the command table this page already asked for.**
+    ///
+    /// Not a saving worth a line on its own — it is that a second `help` per
+    /// card would be this side asking a machine something it has already
+    /// answered, and the page's own `serving` and the gate would then be two
+    /// answers about one command table, settling at different moments.
+    func testTheDiagnosticsPageAsksForACommandTableExactlyOnce() throws {
+        let model = try GateSource.hostSwift(
+            "now-host/Sources/Host/DiagnosticsModel.swift")
+        /* Read at the CALL rather than anywhere in the file: this model also
+           parks a command table per machine, so a scan of the whole text goes
+           on passing after the evidence stops carrying one. */
+        let calls = model.components(separatedBy: "capabilities.evidence(")
+        XCTAssertEqual(calls.count, 2, "expected exactly one evidence call")
+        let arguments = calls.last?.components(separatedBy: "))").first
+        XCTAssertEqual(arguments?.contains("commandNames: commandNames"), true,
+                       "the gate is deciding without this page's own help "
+                       + "table, so a card would need a second `help`")
+        XCTAssertEqual(
+            model.components(separatedBy: "runCommand(\"help\"").count - 1, 1,
+            "a second help per connection")
+    }
+
     /// One machine's refusal must not darken another's card — the record is
     /// keyed per Mac, and a page reading it must pass the key it is showing.
     func testARefusedDiagnosticBelongsToTheMachineThatRefusedIt() {
