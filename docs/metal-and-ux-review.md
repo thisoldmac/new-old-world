@@ -108,7 +108,36 @@ Move, trash, restore, mkdir, and download. The confirmation sheet and the
 fifty-deep Undo are the human half of a destructive capability an agent can also
 reach. Judge whether the wording makes it clear what will happen and to what.
 
-## 6. Platinum fidelity — deferred
+## 6. Contention, which nobody has ever seen happen
+
+Added 2026-07-31 with `now_stream_screen`. **Two sentences a person reads only
+when an agent is doing something to their Mac**, and neither has been in front
+of anybody.
+
+Drive it: open **Screenshots**, then have an agent call `now_stream_screen`
+with `intention: start` while you watch.
+
+- The live view turns on **without you clicking anything**, the Capture button
+  greys out, and a line under the buttons should say an agent is streaming and
+  that Stop Streaming ends it. Judge whether that reads as *somebody else is
+  using this* or as *the app has done something odd*. Before the line existed,
+  this state was indistinguishable from a fault.
+- **Stop Streaming should end it**, and that is the whole of the person-wins
+  decision: it is one explicit click, and Capture was deliberately NOT made to
+  end an agent's stream as a side effect of being pressed. Judge whether one
+  click is enough, or whether being unable to just take a screenshot is
+  annoying enough to want the other design.
+- The **Agent** page should carry the same fact as a standing state — an
+  orange card naming the held lane — for someone who came to that page to ask
+  what an agent is doing. Judge whether the two sentences say the same thing
+  in the two places without contradicting each other.
+
+Then the reverse: start a stream yourself and have an agent call `start`. It
+should be refused with a sentence naming *you*, not a bare "busy". You cannot
+see that one — it goes to the agent — but the wording is worth reading in the
+tool's answer.
+
+## 7. Platinum fidelity — deferred
 
 Named here so it is not lost, but it belongs to the Mirror fold-in rather than
 this slice. Whether the rendered desktop *looks* right is a human call and the
@@ -118,7 +147,7 @@ one thing no measurement replaces.
 
 # Part two — metal test
 
-## 7. The eleven capabilities that have never crossed a wire
+## 8. The eleven capabilities that have never crossed a wire
 
 **Exactly one capability has met a Macintosh: capture.** Addressing is verified
 too, but addressing is a property of every call rather than a capability of its
@@ -145,6 +174,31 @@ crossed a wire. The verb is the machine's; the row is the surface's.
 | `now_framebuffer_probe` | both guests. The verb is metal-verified; this row is not |
 | `now_capture_diagnostics` | 68K only — so the 180c, not the 1400c |
 | `now_transfer_diagnostics` | PPC only. Three rows rather than one because these three do not co-occur on any guest, which is the thing to confirm on metal: each machine offers exactly the ones it serves |
+| `now_stream_screen` | PPC only, and the one row whose metal question is not "does it work" — see below |
+
+**`now_stream_screen` needs its own paragraph, because the question is a
+number rather than a yes.** The row is built on the assumption that a frame
+off an open bracket is *cheaper than a capture* — a capture measured 0.5–0.6 s
+on the 1400c, and a stream has the machine capturing continuously, so a frame
+should be waiting rather than starting. Nothing has measured that. Ask for
+`intention: frame` several times over an open bracket and record the wall
+time; if it is not clearly under a capture's, **the row's whole reason for
+existing is wrong** and it should be reported as such rather than shipped as a
+capability with an unmeasured premise.
+
+Three more things only metal answers here:
+
+- **What one frame costs the machine at the default 1000 ms pace**, in wire
+  bytes and in how much slower everything else on that Mac gets. The default
+  was chosen by argument, not measurement.
+- **Whether `stream.refresh` actually produces a whole frame promptly** on a
+  real 603e, or whether the guest's self-pacing makes the wait longer than the
+  capture it replaces.
+- **That the bracket ends.** Open one, kill the companion process, and confirm
+  the PowerBook stops capturing within about five seconds — the liveness half
+  of the ownership rule has only ever been exercised against an injected
+  predicate. The lease half needs a minute of doing nothing and is the more
+  likely of the two to be wrong in practice.
 
 **Two known hazards while doing this:**
 
@@ -157,7 +211,7 @@ crossed a wire. The verb is the machine's; the row is the surface's.
   the exact wedge `cancel` exists to prevent, and the app's own Cancel button
   has it too.
 
-## 8. Guest consent, which has never met a machine
+## 9. Guest consent, which has never met a machine
 
 The PPC guest sends a hardcoded `full` from `now_agent_access()`. To test the
 ceiling you need a build that answers otherwise.
@@ -172,20 +226,20 @@ ceiling you need a build that answers otherwise.
 
 Confirm a refusal **emits an audit event** and appears in the Agent module.
 
-## 9. The fifth addressing case
+## 10. The fifth addressing case
 
 `now-guest-not-addressed` means *connected but not driven*, which **one machine
 cannot be**. It needs a second guest live on the same listener — a second real
 Mac, or a QEMU guest dialling the same port. Everything else in that family is
 already verified.
 
-## 10. The agent audit line has never been read on a real run
+## 11. The agent audit line has never been read on a real run
 
 Rule 3's whole point is that a person can see what an agent did. Drive one tool
 against a real machine and then **read the line out of `~/Library/Logs/now-logs`
 and out of the Agent module**. Nobody has done this end to end.
 
-## 11. Two machine-specific facts worth confirming
+## 12. Two machine-specific facts worth confirming
 
 - **`vprobe` reported `CopyBits failed` on the 1400c**, and that failure does
   **not** reproduce through `capture.request` — two clean captures. The paths
@@ -207,8 +261,16 @@ generalises: **mutation-proving is only as strong as the mutation someone
 thought to try**, and an author testing their own gate is the worst-placed
 person to imagine the one that defeats it.
 
-**`capture.request` and the census families read `unproven` in the capability
-ledger by construction**, because the listener records no observation for them.
+**The stream row's ownership rule has never met a real companion.** Both
+halves are mutation-proven against injected values: the liveness check against
+a set of pids a test controls, the lease against a clock a test moves. What
+neither proves is that a real MCP companion's pid behaves the way the design
+assumes — that it outlives a single call and dies with its client. If that
+assumption is wrong, the liveness half is dead weight and the lease is doing
+all the work. Section 8 says how to find out.
+
+**`capture.request`, the census families and the three stream families read
+`unproven` in the capability ledger by construction**, because the listener records no observation for them.
 A guest that has served a capture will still report it unproven. That is honest
 and it is not evidence of a problem.
 

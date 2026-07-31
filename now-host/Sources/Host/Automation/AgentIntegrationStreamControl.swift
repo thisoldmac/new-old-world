@@ -118,7 +118,20 @@ final class AgentIntegrationStreamControl {
         /* The bracket can end without this side asking: the guest stops it,
            the connection drops, the person clicks Stop. Ownership that
            outlived the bracket would have this file ending somebody else's
-           next stream on a lease that belonged to a bracket that is gone. */
+           next stream on a lease that belonged to a bracket that is gone.
+
+           **This and the same-bracket guard in `endIfOwnerIsGone` overlap,
+           and the mutations say exactly how.** Deleting either one alone
+           leaves every test green; deleting BOTH fails
+           `testAPersonsStreamIsNeverEndedByTheOwnershipRule`, so what is
+           proven is the property rather than either line. They are kept
+           apart anyway because they answer at different moments and only
+           this one is prompt: the guard notices at the next five-second
+           tick, and this releases the watchdog the instant the bracket
+           closes. It is also the only one of the two that can be shown to
+           matter on its own — with it gone, a second agent bracket inherits
+           the first's ownership record if `start` is ever made not to
+           overwrite one (mutation M4). */
         streamWatch = listener.$activeStreamId.sink { [weak self] id in
             guard let self, id != self.ownership?.streamID else { return }
             self.releaseOwnership()
@@ -243,6 +256,17 @@ final class AgentIntegrationStreamControl {
             stage = nil
             return .guestUnavailable
         }
+        /* Renewed FIRST, before anything can refuse the request. It sat
+           below the stage guard until a mutation showed what that meant: a
+           page fetch that missed — a stage that had expired, an offset off
+           the boundary — did not renew, so an agent reading a large frame
+           slowly could lose the bracket underneath the read.
+
+           The rule the placement encodes: **the lease is about presence,
+           not about success.** An owner that calls at all is there, and a
+           refused call is still a call. The bracket's cost is paid for
+           frames, and this is not the gate on frames. */
+        renewLease()
         guard let current = stage,
               current.image.captureID == frameID,
               current.image.sessionID == sessionID,
@@ -262,11 +286,6 @@ final class AgentIntegrationStreamControl {
                 message: "\(offset) is not a page boundary inside this "
                     + "frame's \(current.png.count) bytes"))
         }
-        /* A page fetch renews the lease as well as a frame request does: a
-           caller halfway through reading a 300 KB screen is watching by any
-           honest definition, and ending the bracket underneath it would
-           produce the one failure mode the paging was written to avoid. */
-        renewLease()
         let end = min(offset + AgentIntegrationCapturePolicy.pageBytes,
                       current.png.count)
         let bytes = current.png[offset..<end]

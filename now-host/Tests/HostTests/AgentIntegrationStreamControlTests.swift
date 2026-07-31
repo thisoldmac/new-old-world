@@ -119,20 +119,26 @@ final class AgentIntegrationStreamControlTests: XCTestCase {
     /// The lease is renewed by calling, so an agent that keeps reading keeps
     /// its stream. Without this the rule would be a timer that ends every
     /// stream at 60 seconds whatever anybody was doing.
-    func testCallingAgainRenewsTheLease() async throws {
+    func testReadingAFrameRenewsTheLease() async throws {
         let rig = try await Rig()
         defer { rig.tearDown() }
         _ = rig.control.start(depth: 8, minIntervalMs: 1_000)
         let id = try await rig.waitForStreamStart()
 
-        /* Just short of the lease, then a call, then past where the
-           ORIGINAL lease would have expired. */
+        /* Just short of the lease, then a real frame read, then past where
+           the ORIGINAL lease would have expired. */
         rig.now = rig.now.addingTimeInterval(
             AgentIntegrationStreamPolicy.lease - 1)
-        _ = rig.control.page(frameID: UUID(), offset: 0)
+        async let frame = rig.control.nextFrame()
+        try await waitUntil("stream.refresh") {
+            rig.guest.received.contains(.streamRefresh(StreamRefresh(id: id)))
+        }
+        try rig.sendFrame(streamID: id, transfer: 1)
+        _ = await frame
         rig.now = rig.now.addingTimeInterval(2)
         rig.control.endIfOwnerIsGone()
 
+        try await rig.flushWire(streamID: id)
         XCTAssertEqual(rig.listener.activeStreamId, id,
                        "an agent that is reading lost its stream")
         XCTAssertFalse(
@@ -143,19 +149,24 @@ final class AgentIntegrationStreamControlTests: XCTestCase {
     /// long its own lease has been expired. The rule ends what this surface
     /// opened and nothing else — a person's live view has no lease, and
     /// inventing one would have the agent lane closing somebody's window.
+    ///
+    /// **The agent's bracket has to end a way that does NOT go through
+    /// `stop()`, and getting that wrong made this test theatre once
+    /// already.** Written the obvious way — agent starts, agent stops,
+    /// person starts — it passed with both ownership guards deleted, because
+    /// `stop()` releases ownership on its way out and there was nothing
+    /// stale left to reach across. The bracket ends here the way it ends in
+    /// the case the guards exist for: the GUEST ends it, out from under an
+    /// owner record this side is still holding.
     func testAPersonsStreamIsNeverEndedByTheOwnershipRule() async throws {
         let rig = try await Rig()
         defer { rig.tearDown() }
         _ = rig.control.start(depth: 8, minIntervalMs: 1_000)
         let id = try await rig.waitForStreamStart()
 
-        /* The agent's bracket ends the ordinary way, and the person opens
-           one immediately after — the case where a stale owner record would
-           reach across into a stream that is not its own. */
-        _ = rig.control.stop()
-        try rig.guest.send(.streamStopped(StreamStopped(id: id,
-                                                        reason: nil)))
-        try await waitUntil("agent bracket closed") {
+        try rig.guest.send(.streamStopped(StreamStopped(
+            id: id, reason: "capture failed")))
+        try await waitUntil("agent bracket closed by the guest") {
             rig.listener.activeStreamId == nil
         }
         rig.listener.startStream(depth: 8, origin: .person)
@@ -166,11 +177,43 @@ final class AgentIntegrationStreamControlTests: XCTestCase {
             AgentIntegrationStreamPolicy.lease * 10)
         rig.control.endIfOwnerIsGone()
 
+        try await rig.flushWire(streamID: personID)
         XCTAssertEqual(rig.listener.activeStreamId, personID,
                        "the agent lane ended a stream a person opened")
         XCTAssertFalse(
             rig.guest.received.contains(
                 .streamStop(StreamStop(id: personID))))
+    }
+
+    /// The same reach, one step earlier: an agent that opens a SECOND
+    /// bracket after the guest ended its first must not be watching the
+    /// first one's id.
+    ///
+    /// Separate from the test above because the two guards fail differently.
+    /// That one catches the record reaching across into somebody else's
+    /// stream; this catches it going stale against its own next one, which
+    /// is what would leave a live agent stream with no owner and therefore
+    /// no rule at all.
+    func testANewAgentBracketIsOwnedRatherThanInheritingAStaleRecord()
+        async throws {
+        let rig = try await Rig()
+        defer { rig.tearDown() }
+        _ = rig.control.start(depth: 8, minIntervalMs: 1_000)
+        let first = try await rig.waitForStreamStart()
+        try rig.guest.send(.streamStopped(StreamStopped(id: first,
+                                                        reason: nil)))
+        try await waitUntil("first bracket closed") {
+            rig.listener.activeStreamId == nil
+        }
+
+        _ = rig.control.start(depth: 8, minIntervalMs: 1_000)
+        let second = try await rig.waitForStreamStart(after: first)
+        rig.living.remove(Rig.owner)
+        rig.control.endIfOwnerIsGone()
+
+        try await waitUntil("the second bracket is ended too") {
+            rig.guest.received.contains(.streamStop(StreamStop(id: second)))
+        }
     }
 
     // MARK: - Closing it
@@ -207,6 +250,36 @@ final class AgentIntegrationStreamControlTests: XCTestCase {
                            + "\(result)")
         }
         XCTAssertEqual(failure.code, "now-stream-not-open")
+    }
+
+    /// **A call that is REFUSED renews the lease too**, because the lease is
+    /// about presence and a refused call is still a call.
+    ///
+    /// Pinned because the renewal used to sit below the stage guard, where a
+    /// page fetch that missed did not renew — so an agent reading a large
+    /// frame across an expiring lease could lose the bracket underneath its
+    /// own read, which is the one failure the paging exists to avoid.
+    func testEvenARefusedCallFromTheOwnerRenewsTheLease() async throws {
+        let rig = try await Rig()
+        defer { rig.tearDown() }
+        _ = rig.control.start(depth: 8, minIntervalMs: 1_000)
+        let id = try await rig.waitForStreamStart()
+
+        rig.now = rig.now.addingTimeInterval(
+            AgentIntegrationStreamPolicy.lease - 1)
+        /* No stage exists, so this is refused — and it is still an owner
+           saying it is there. */
+        let refused = rig.control.page(frameID: UUID(), offset: 0)
+        guard case .refused = refused else {
+            return XCTFail("the premise is wrong: \(refused)")
+        }
+        rig.now = rig.now.addingTimeInterval(2)
+        rig.control.endIfOwnerIsGone()
+
+        try await rig.flushWire(streamID: id)
+        XCTAssertEqual(rig.listener.activeStreamId, id)
+        XCTAssertFalse(
+            rig.guest.received.contains(.streamStop(StreamStop(id: id))))
     }
 
     func testAskingForAFrameWithNoBracketOpenIsARefusal() async throws {
@@ -324,6 +397,28 @@ final class AgentIntegrationStreamControlTests: XCTestCase {
             let id = try XCTUnwrap(found)
             seen.insert(id)
             return id
+        }
+
+        /// **Waits until the wire has caught up, so that a NEGATIVE claim
+        /// about it means something.**
+        ///
+        /// "No `stream.stop` was sent" cannot be asserted by looking: the
+        /// listener writes asynchronously, so the assertion runs before the
+        /// message it is looking for could have arrived and passes whether
+        /// or not one was sent. This cost two ownership guards their proof —
+        /// both could be deleted with the tests still green.
+        ///
+        /// The fix is ordering rather than sleeping. `stream.refresh` is
+        /// sent AFTER whatever the test just did, down the same ordered
+        /// socket, so once the guest has it, anything sent earlier has
+        /// already arrived and `guest.received` can be trusted to be
+        /// complete up to that point.
+        func flushWire(streamID: Int) async throws {
+            listener.refreshStream()
+            try await waitUntil("the wire to catch up") {
+                self.guest.received.contains(
+                    .streamRefresh(StreamRefresh(id: streamID)))
+            }
         }
 
         /// One whole frame on the bracket, as the guest sends them: a
