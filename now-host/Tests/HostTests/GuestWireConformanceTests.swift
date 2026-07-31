@@ -601,6 +601,69 @@ final class GuestWireConformanceTests: XCTestCase {
                 + "connection begins with.")
     }
 
+    /// The two seams fill the two fields **the way round the format string
+    /// names them**.
+    ///
+    /// Found by mutation, and it is the limit of every check above: they ask
+    /// whether an identifier is somewhere in the body, which a call in the
+    /// argument list satisfies and so does one nowhere near it. Swapping the
+    /// two arguments —
+    ///
+    ///     kNowContractRevision, PRODUCT_VERSION, now_agent_access(),
+    ///     now_build_stamp(), esc, kNowDefaultChunk
+    ///
+    /// — left every gate in this file green while the guest put its access
+    /// tier in `build` and its build stamp in `agent`. That is not a subtle
+    /// wrong answer: an `agent` the host cannot decode is not consent, so
+    /// the machine would read as refusing, and the field that exists to tell
+    /// two builds apart would answer "full" for every one of them.
+    ///
+    /// C's varargs have no other way to say which value fills which `%s`, so
+    /// position IS the meaning here and pinning it is a fair check rather
+    /// than a style rule. Both seams must appear AFTER the format string —
+    /// which is what makes them arguments and not merely present — in the
+    /// order the format string names their fields, and before `esc`, which
+    /// fills the `name` that follows both.
+    func testHelloFillsBuildAndAgentFromTheirSeamsInThatOrder() throws {
+        let body = try sendHelloBody()
+
+        guard let formatEnd = body.range(of: #"\"chunk\":%d}""#),
+              let build = body.range(of: "now_build_stamp()",
+                                     range: formatEnd.upperBound
+                                        ..< body.endIndex),
+              let agent = body.range(of: "now_agent_access()",
+                                     range: formatEnd.upperBound
+                                        ..< body.endIndex),
+              let name = body.range(of: "esc,", range: formatEnd.upperBound
+                                        ..< body.endIndex) else {
+            return XCTFail(
+                "send_hello does not pass now_build_stamp(), "
+                    + "now_agent_access() and the escaped machine name as "
+                    + "arguments after its format string. A seam named in "
+                    + "the body but not in the argument list fills no "
+                    + "field, which is the hole the checks above cannot "
+                    + "see on their own.")
+        }
+        XCTAssertTrue(
+            build.upperBound < agent.lowerBound,
+            "send_hello passes now_agent_access() before now_build_stamp(), "
+                + "and the format string names `build` before `agent` — so "
+                + "the guest sends its access tier as a build stamp and its "
+                + "build stamp as an access tier. The host cannot decode "
+                + "the latter, and an undecodable tier is read as refusal.")
+        XCTAssertTrue(
+            agent.upperBound < name.lowerBound,
+            "send_hello passes the escaped machine name before "
+                + "now_agent_access(), so `agent` and `name` carry each "
+                + "other's values.")
+        XCTAssertTrue(
+            body.range(of: #"\"build\":\"%s\""#)!.lowerBound
+                < body.range(of: #"\"agent\":\"%s\""#)!.lowerBound,
+            "The format string names `agent` before `build` while the "
+                + "argument list is still in build-then-agent order, so the "
+                + "two fields carry each other's values.")
+    }
+
     /// The contract admits `agent` on Hello and does not require it.
     ///
     /// Required would break `test68KFixturesCarryTheirRequiredFields`
@@ -661,40 +724,41 @@ final class GuestWireConformanceTests: XCTestCase {
     /// declaration above it — wire.c has both, and matching the declaration
     /// hands back the body of whatever function happens to follow it.
     ///
-    /// COMMENTS ARE STRIPPED, and that is not tidiness. Every comment in
-    /// this function names the very identifiers these gates look for, so a
-    /// scan of the raw text passes on the prose while the code says
-    /// something else: replacing `now_agent_access()` with a literal was
-    /// invisible to this gate until the stripping went in, and the comment
-    /// three lines above explaining why a literal is wrong was what hid it.
+    /// COMMENTS ARE STRIPPED, through the shared reader in `GateSource`,
+    /// and that is not tidiness. Every comment in this function names the
+    /// very identifiers these gates look for, so a scan of the raw text
+    /// passes on the prose while the code says something else: replacing
+    /// `now_agent_access()` with a literal was invisible to this gate until
+    /// the stripping went in, and the comment three lines above explaining
+    /// why a literal is wrong was what hid it.
+    ///
+    /// **Not finding the function is a FAILURE, not a skip.** It was a skip
+    /// once, and a skip here is the quietest hole in the file: renaming
+    /// `send_hello` — or writing its brace K&R-style — took three gates off
+    /// the board and left a green run reporting one more skip among fifty.
+    /// The file is in the repository; there is no environment in which its
+    /// absence is a legitimate excuse.
     private func sendHelloBody() throws -> String {
-        let wire = try String(
-            contentsOf: Self.repoRoot.appendingPathComponent(
-                "now-guest-ppc/src/core/wire.c"),
-            encoding: .utf8)
+        let wire = try GateSource.raw("now-guest-ppc/src/core/wire.c")
         guard let start = wire.range(of: "static void send_hello(void)\n{"),
               let end = wire.range(of: "\n}", range: start.upperBound
                                     ..< wire.endIndex) else {
-            throw XCTSkip("no send_hello definition in "
-                          + "now-guest-ppc/src/core/wire.c")
+            throw HelloUnreadable.noDefinition
         }
-        return Self.withoutComments(
+        return GateSource.withoutCComments(
             String(wire[start.upperBound..<end.lowerBound]))
     }
 
-    /// Drops `/* ... */` comments. The guest is C in the QEMU/classic-Mac
-    /// dialect, which has no `//`, so one form is all there is.
-    private static func withoutComments(_ source: String) -> String {
-        var out = "", rest = Substring(source)
-        while let open = rest.range(of: "/*") {
-            out += rest[rest.startIndex..<open.lowerBound]
-            guard let close = rest.range(of: "*/",
-                                         range: open.upperBound
-                                            ..< rest.endIndex) else {
-                return out                       // unterminated; take what we have
-            }
-            rest = rest[close.upperBound...]
+    private enum HelloUnreadable: Error, CustomStringConvertible {
+        case noDefinition
+
+        var description: String {
+            "No `static void send_hello(void)` definition in "
+                + "now-guest-ppc/src/core/wire.c. Every hello gate in this "
+                + "file reads that function by name, so a rename or a "
+                + "reformatted brace takes them all off the board at once — "
+                + "which is why this is a failure and not a skip. Point the "
+                + "reader at wherever the function went."
         }
-        return out + rest
     }
 }
