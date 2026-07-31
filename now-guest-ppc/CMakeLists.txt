@@ -47,6 +47,7 @@ add_application(now-guest-ppc
     src/connection/connection_module.c
     src/peek/peek.c
     src/peek/peek_validate.c
+    src/peek/peek_oracle.c
     src/peek/peek_read.c
     src/processes/proc_actions.c
     src/processes/proc_quit_args.c

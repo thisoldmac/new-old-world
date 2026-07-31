@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "peek.h"
+#include "peek_oracle.h"
 #include "peek_validate.h"
 
 /* We read another process's raw in-memory structures by offset, NOT
@@ -69,49 +70,37 @@ static int in_readable(const ReadableZones *z, unsigned long addr,
     return 0;
 }
 
-/* The anchor's window-list head for the process whose partition is
-   [loc,size): the slot whose A5 lies in that partition (the containment
-   IS the PSN<->A5 correlation, and it is what makes the slot provably
-   this process's - not time). Double-samples the stamp against a torn
-   cross-update read. There is no age gate: window state is always "as
-   of the target's last pump" (classic Mac OS has no cross-process live
-   window feed, so a snapshot is all any reader can have - axtree
-   included), and validation plus the A5 match, not a clock, are the
-   safety; the application carries the last good read across blips.
-   *found tells "no anchor at all" from "anchor found, WindowList 0". */
-static unsigned long process_window_list(const NowPeekTable *table,
-                                         unsigned long loc,
-                                         unsigned long size, int *found,
-                                         NowPeekU32 *stamp_out)
+/* The verdict on this partition's anchor, as a read status.
+
+   The matching itself lives in peek_oracle.c, which is Toolbox-free and
+   natively tested; this is only the mapping from its five answers to the
+   reader's vocabulary. Two of them used to be indistinguishable from
+   "nothing captured yet" and now are not.
+
+   No age gate (max_age_ticks 0), which is the rule this reader has
+   always followed and is worth restating: window state is always "as of
+   the target's last pump" - classic Mac OS has no cross-process live
+   window feed, so a snapshot is all any reader can have, axtree
+   included. Validation and the A5 match, not a clock, are the safety;
+   the application carries the last good read across blips and renders
+   the age beside it. Stale is therefore unreachable from here by
+   construction, and the caller sees Ok with an old stamp. */
+static NowPeekReadStatus anchor_status(const NowPeekTable *table,
+                                       unsigned long loc, unsigned long size,
+                                       NowPeekAnchorMatch *match)
 {
-    int i;
-
-    *found = 0;
-    *stamp_out = 0;
-    for (i = 0; i < (int)kNowPeekMaxAnchors; ++i) {
-        const NowPeekAnchorSlot *slot = &table->anchors[i];
-        NowPeekU32 s1 = slot->stamp_ticks;
-        NowPeekU32 a5;
-        NowPeekU32 wl;
-        NowPeekU32 s2;
-
-        if (s1 == 0) {
-            continue;                 /* never captured, or mid-update */
-        }
-        a5 = slot->a5;
-        wl = slot->window_list;
-        s2 = slot->stamp_ticks;
-        if (s1 != s2) {
-            continue;                 /* torn: updated while reading */
-        }
-        if (!now_peek_range_in_partition(a5, 4, loc, size)) {
-            continue;                 /* not this process's A5 */
-        }
-        *found = 1;
-        *stamp_out = s1;              /* the capture tick, for freshness */
-        return wl;
+    switch (now_peek_anchor_match(table, loc, size, 0, 0, match)) {
+    case kNowPeekAnchorOk:
+    case kNowPeekAnchorStale:
+        return kNowPeekReadOk;
+    case kNowPeekAnchorAmbiguous:
+        return kNowPeekReadAmbiguous;
+    case kNowPeekAnchorMismatch:
+        return kNowPeekReadMismatch;
+    case kNowPeekAnchorNotFound:
+        break;
     }
-    return 0;
+    return kNowPeekReadNoAnchor;
 }
 
 /* Resolve a process to its readable zones and window-list head. Returns
@@ -125,8 +114,9 @@ static NowPeekReadStatus resolve(const ProcessSerialNumber *psn,
     const NowPeekTable *table;
     ProcessInfoRec info;
     THz sys;
+    NowPeekAnchorMatch match;
+    NowPeekReadStatus st;
     unsigned long wl;
-    int found;
 
     *wl_head = 0;
     *stamp_out = 0;
@@ -149,10 +139,12 @@ static NowPeekReadStatus resolve(const ProcessSerialNumber *psn,
     z->sys_lo = (unsigned long)sys;
     z->sys_hi = (sys != NULL) ? read_be32(z->sys_lo) : 0;
 
-    wl = process_window_list(table, z->loc, z->size, &found, stamp_out);
-    if (!found) {
-        return kNowPeekReadNoAnchor;
+    st = anchor_status(table, z->loc, z->size, &match);
+    if (st != kNowPeekReadOk) {
+        return st;                    /* NoAnchor / Ambiguous / Mismatch */
     }
+    *stamp_out = match.stamp_ticks;   /* the capture tick, for freshness */
+    wl = (unsigned long)match.window_list;
     if (wl == 0) {
         return kNowPeekReadNoWindows;
     }
