@@ -281,7 +281,31 @@ final class GuestWireConformanceTests: XCTestCase {
 
     // MARK: - The tests
 
+    /// A message whose `type` is COMPUTED rather than spelled, and the
+    /// concrete types it can be.
+    ///
+    /// `xfer_finish` writes `"{\"type\":\"%s.end\"…"` with `"file"` or
+    /// `"capture"`, so the scanner reads a type that no guest ever sends.
+    /// Naming the alternatives lets both be checked for real instead of
+    /// waved through — and a NEW computed type fails until someone lists it,
+    /// which is the same bargain `piecemealCoverage` strikes.
+    private static let computedTypes: [String: [String]] = [
+        "X.end": ["file.end", "capture.end"],
+    ]
+
     /// Every whole message the guest can send decodes on this side.
+    ///
+    /// **This used to forgive any undecodable type that was not `file.*`.**
+    /// The carve-out read "a guest-only verb the host never receives is
+    /// fine", but every one of these is a frame the guest writes onto the
+    /// wire, so the host receives all of them — and the file's own opening
+    /// paragraph is about frames the host could not decode dropping the
+    /// connection. Probed on 2026-07-31: exactly one message reaches that
+    /// branch, and it is `X.end` — the scanner's own `%s` placeholder. So the
+    /// assertion could never fire (a placeholder never starts with `file.`)
+    /// while every genuinely undecodable non-`file.` type went through it in
+    /// silence. A computed type is now resolved to its real alternatives and
+    /// an unknown type is a failure.
     func testEveryGuestMessageDecodes() throws {
         var checked = 0
         for (file, text) in try guestSources() {
@@ -291,10 +315,28 @@ final class GuestWireConformanceTests: XCTestCase {
                 do {
                     _ = try ControlMessageCodec.decode(Data(json.utf8))
                 } catch ControlMessageError.unknownType(let type) {
-                    // A guest-only verb the host never receives is fine;
-                    // one the host DOES receive is caught below.
-                    XCTAssertFalse(type.hasPrefix("file."),
-                                   "\(file): the host cannot decode \(type)")
+                    guard let concrete = Self.computedTypes[type] else {
+                        XCTFail("""
+                            \(file): the host cannot decode \(type), a \
+                            message this guest sends. If the type is \
+                            COMPUTED from a %s, name it in computedTypes \
+                            with the types it can actually be; otherwise \
+                            the host needs a decoder for it.
+                            """)
+                        continue
+                    }
+                    // The placeholder resolved: check what it stands for.
+                    for real in concrete {
+                        let substituted = json.replacingOccurrences(
+                            of: "\"type\":\"\(type)\"",
+                            with: "\"type\":\"\(real)\"")
+                        XCTAssertNoThrow(
+                            try ControlMessageCodec.decode(
+                                Data(substituted.utf8)), """
+                            \(file): the host cannot decode \(real), which \
+                            is one of the types \(type) stands for.
+                            """)
+                    }
                 } catch {
                     XCTFail("""
                         \(file): the host cannot decode a message the guest \
