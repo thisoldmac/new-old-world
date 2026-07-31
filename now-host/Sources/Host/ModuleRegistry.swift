@@ -85,6 +85,17 @@ struct ModuleRegistry: Sendable {
             symbol: "terminal",
             summary: "A shell into the connected Mac"
         ),
+        /* Above the machine-describing pages on purpose: this one is about
+           the OTHER Macs - which are connected and which is being driven -
+           where Census and Software describe the one already chosen. The
+           footer's Connection row keeps its own job (this side's port and
+           link state) and is a different question. */
+        ModuleDescriptor(
+            id: "connections",
+            title: "Connections",
+            symbol: "desktopcomputer.and.arrow.down",
+            summary: "Which Macs are connected, and which one is being driven"
+        ),
         ModuleDescriptor(
             id: "census",
             title: "Hardware",

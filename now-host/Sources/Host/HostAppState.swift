@@ -71,6 +71,18 @@ final class HostAppState: ObservableObject {
     let agentActivity = AgentActivityModel()
     let guestFiles: GuestFilesCommandService
     private let artifactApprovals: AgentIntegrationArtifactApprovalStore?
+    /// The Connections page: which Macs are on the wire, which one the
+    /// window and the agent surface are pointed at, and how to tell them
+    /// apart.
+    ///
+    /// Selection routes through `selectGuest` rather than the listener
+    /// directly, so a person choosing a row moves the whole window — the
+    /// modules refocus with it — instead of moving the request plane out
+    /// from under pages still showing the other Mac's rows.
+    private(set) lazy var connections = ConnectionsModel(
+        listener: listener,
+        addressing: agentIntegration,
+        select: { [weak self] key in self?.selectGuest(key) ?? false })
     private(set) lazy var console = ConsoleModel(listener: listener)
     private(set) lazy var census = CensusModuleModel(listener: listener)
     private(set) lazy var diagnostics = DiagnosticsModel(listener: listener)

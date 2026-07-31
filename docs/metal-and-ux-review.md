@@ -118,6 +118,56 @@ What only a person can settle:
 Also worth one glance: a saved selection of the old `agent` id forwards to this
 pane, so **a person who was last on the Agent page should land here on the next
 launch**, not on Screenshots.
+## 1b. The Connections page, which no eye has ever met
+
+A whole new page, and a page is entirely a UX judgement — no test here settles
+whether it *reads* right. It is not in the sidebar yet; wire it in first.
+
+**The resting state, which is the same trap as section 1.** Open **Connections**
+on a host that is listening with nothing dialled in. It should read as a waiting
+room — what this side is doing, and that the classic Mac dials in — with no
+counters, no red, and no empty table. Judge: *nothing has happened yet*, or
+*something is wrong*? Then stop the listener and look again: "Not listening" is
+a different resting state and must not read as a fault either. The only red on
+this page should be a listener that actually failed (occupy port 1400 with
+`nc -l 1400` and start it to see that one).
+
+**One Mac, which is the common case.** With a single guest connected the page
+should not read as a fleet: one card, no chooser, and nothing implying a choice
+that is not there. If it reads as a list of one, it is the wrong page.
+
+**Two Macs, which is what it exists for.** Needs a second guest on the same
+listener (a QEMU guest dialling the same port will do). Judge:
+
+- Can you tell **at a glance** which Mac the window is driving?
+- **Drive This Mac** on the other row — does the whole window follow, and does
+  every other page now show that machine rather than a mix?
+- The three identities are labelled side by side (machine id, session id,
+  address). Does a person reading the card understand they are three different
+  things, or does it read as three spellings of one? This is the judgement the
+  whole design rests on, and it cannot be tested.
+
+**The addressing lines.** Every row says what an agent naming it would be told,
+in the host's own sentence. With two Macs connected, run one MCP tool with
+`guest:` set to the machine the host is *not* driving, and compare the refusal
+you get to the line on that row. They should say the same thing; if the page's
+wording sends you somewhere the agent's does not, the page is the one that is
+wrong. Section 10 is the same case from the agent's side.
+
+**Remembered machines.** Disconnect a guest and stay on the page. It should move
+to *Remembered* by name, keep its ended session id, and say that a caller
+holding it is told the session ended. Judge whether "remembered" reads as a
+useful memory or as clutter after a week of reconnections.
+
+**Naming a Mac.** Rename a connected guest from the page. Does the id change
+everywhere it is shown? Does the live session id deliberately *not* change (it
+must not), and is that confusing on screen? Try a name another machine already
+holds and read the refusal — it names the other Mac so you know which one to go
+and free.
+
+**On an emulated guest** every row will carry *Id is a guess*, because loopback
+cannot tell two Macs apart. Judge whether that badge reads as informative or as
+alarming; it will be the normal state for every QEMU guest, forever.
 
 ## 2. The guest's icon on a real Finder
 

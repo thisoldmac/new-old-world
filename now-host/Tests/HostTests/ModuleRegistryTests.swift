@@ -4,7 +4,7 @@ import XCTest
 final class ModuleRegistryTests: XCTestCase {
     func testStandardRegistryHasScreenshotsFirstAndSettings() {
         XCTAssertEqual(ModuleRegistry.standard.modules.map(\.id),
-                       ["screenshots", "files", "processes", "console",
+                       ["screenshots", "files", "processes", "console", "connections",
                         "census", "diagnostics", "software", "mcp",
                         "logs", "settings"])
         XCTAssertEqual(ModuleRegistry.standard.module(id: "screenshots")?.title,
@@ -26,7 +26,7 @@ final class ModuleRegistryTests: XCTestCase {
         XCTAssertEqual(ModuleRegistry.standard.footerModules.map(\.id),
                        ["mcp", "logs", "settings"])
         XCTAssertEqual(ModuleRegistry.standard.listModules.map(\.id),
-                       ["screenshots", "files", "processes", "console",
+                       ["screenshots", "files", "processes", "console", "connections",
                         "census", "diagnostics", "software"])
     }
 
