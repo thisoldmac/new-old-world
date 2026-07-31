@@ -1,6 +1,39 @@
 import Darwin
 import Foundation
 
+/// **Who is on the other end of the request being served**, as the kernel
+/// named them.
+///
+/// It exists for one capability and should stay that narrow: the live-stream
+/// bracket is the only thing on this surface that outlives the call that
+/// opened it, so it is the only thing that has to know whose it is. Every
+/// other operation answers and is done, and an operation that started
+/// branching on its caller would be building a per-agent policy nobody
+/// designed.
+///
+/// Nil means the kernel would not name the peer — a companion that closed
+/// between accept and the lookup — which the ledger already models the same
+/// way. A capability that needs an owner must treat nil as "no owner",
+/// never as "the same one as last time".
+public enum AgentIntegrationLocalCaller {
+    @TaskLocal public static var processID: pid_t?
+
+    /// Whether a process this host once served is still there.
+    ///
+    /// `kill(pid, 0)` asks the kernel and sends nothing. **Its known limit is
+    /// the ledger's:** pids are recycled, so a companion that died and whose
+    /// number was reused reads as alive. That undercounts departures rather
+    /// than inventing them, which is the direction to be wrong in here — the
+    /// lease is what catches the recycled case, and a liveness check that
+    /// guessed the other way would end a working agent's stream.
+    public static func isRunning(_ processID: pid_t) -> Bool {
+        /* EPERM means it exists and belongs to somebody else; only ESRCH
+           means gone. The uid gate makes the first unreachable in practice
+           and it is handled anyway, because "not ours" is not "not there". */
+        kill(processID, 0) == 0 || errno == EPERM
+    }
+}
+
 public final class AgentIntegrationLocalServer {
     public typealias Handler = @MainActor @Sendable (
         AgentIntegrationLocalRequest
@@ -145,12 +178,12 @@ public final class AgentIntegrationLocalServer {
             let peer = Self.peerProcessID(descriptor)
             publish(companions.began(processID: peer, at: Date()))
             clientQueue.async { [weak self] in
-                self?.handleClient(descriptor)
+                self?.handleClient(descriptor, peer: peer)
             }
         }
     }
 
-    private func handleClient(_ descriptor: Int32) {
+    private func handleClient(_ descriptor: Int32, peer: pid_t?) {
         let request: AgentIntegrationLocalRequest
         do {
             let data = try AgentIntegrationUnixSocket.readLine(
@@ -175,7 +208,19 @@ public final class AgentIntegrationLocalServer {
                 return
             }
             let response: AgentIntegrationLocalResponse
-            switch await handler(request) {
+            /* The caller's identity travels as a task-local rather than as a
+               handler parameter, and the choice is worth stating: thirty-odd
+               call sites construct this server and all but one of them are
+               tests that do not care who called. A parameter would make every
+               one of them say so.
+
+               It is bound HERE, around the one await that reaches the
+               handler, so the value is scoped to exactly the request it
+               describes and cannot leak into the next one — and it is the
+               kernel's answer off the accepted socket, never anything the
+               peer said about itself. */
+            switch await AgentIntegrationLocalCaller.$processID
+                .withValue(peer, operation: { await self.handler(request) }) {
             case .notAddressed(let unavailable):
                 response = .init(
                     requestID: request.requestID,
@@ -273,6 +318,10 @@ public final class AgentIntegrationLocalServer {
                 response = .init(
                     requestID: request.requestID,
                     diagnosticsResult: result)
+            case .stream(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    streamResult: result)
             case .notImplemented(let unavailable):
                 response = .init(
                     requestID: request.requestID,

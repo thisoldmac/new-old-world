@@ -370,6 +370,54 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
+    func startGuestStream(depth: Int, minIntervalMs: Int) async
+        -> AgentIntegrationStreamResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.startStream(
+                depth: depth, minIntervalMs: minIntervalMs)
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
+    func nextGuestStreamFrame() async -> AgentIntegrationStreamResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.nextStreamFrame()
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
+    func fetchGuestStreamFramePage(frameID: UUID, offset: Int) async
+        -> AgentIntegrationStreamResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.fetchStreamFramePage(
+                frameID: frameID, offset: offset)
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
+    func stopGuestStream() async -> AgentIntegrationStreamResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.stopStream()
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
     private func unavailable(for error: Error?)
         -> AgentIntegrationUnavailable {
         guard let error else { return .host }

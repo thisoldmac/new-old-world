@@ -50,6 +50,13 @@ final class AgentIntegrationHostAdapter {
     private lazy var captureControl = AgentIntegrationCaptureControl(
         listener: listener,
         currentSessionID: { [unowned self] in connectedSessionID() })
+    /* Beside the capture control, because it is the same lane seen the other
+       way round: one picture now, or the bracket that produces them until
+       somebody stops it. The ownership rule that makes the second safe lives
+       in the control, not here. */
+    private lazy var streamControl = AgentIntegrationStreamControl(
+        listener: listener,
+        currentSessionID: { [unowned self] in connectedSessionID() })
     private lazy var transferControl = AgentIntegrationTransferControl(
         listener: listener,
         currentSessionID: { [unowned self] in connectedSessionID() })
@@ -264,6 +271,26 @@ final class AgentIntegrationHostAdapter {
         captureControl.abandon()
     }
 
+    /// The live-stream bracket's four calls. Why an agent-opened bracket ends
+    /// itself, and what ends it, is `AgentIntegrationStreamControl`'s.
+    func startStream(depth: Int, minIntervalMs: Int)
+        -> AgentIntegrationStreamResult {
+        streamControl.start(depth: depth, minIntervalMs: minIntervalMs)
+    }
+
+    func nextStreamFrame() async -> AgentIntegrationStreamResult {
+        await streamControl.nextFrame()
+    }
+
+    func streamFramePage(frameID: UUID, offset: Int)
+        -> AgentIntegrationStreamResult {
+        streamControl.page(frameID: frameID, offset: offset)
+    }
+
+    func stopStream() -> AgentIntegrationStreamResult {
+        streamControl.stop()
+    }
+
     /// Ends the file transfer in flight, either direction. The lane's own
     /// reasoning — and why the answer says `asked` rather than `cancelled` —
     /// lives in `AgentIntegrationTransferControl`.
@@ -406,6 +433,7 @@ final class AgentIntegrationHostAdapter {
         sessionConnectedAt = nil
         capabilityLedger.forgetGuest()
         captureControl.forgetGuest()
+        streamControl.forgetGuest()
     }
 
     func connectedSessionID() -> UUID? {

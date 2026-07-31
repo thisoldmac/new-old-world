@@ -94,6 +94,15 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         /// of them takes an argument, all three answer rows, and they have
         /// a single home.
         case diagnostics = "diagnostics"
+        /// Open the live-stream bracket, read a frame off it, or close it.
+        ///
+        /// One operation for the same reason `capture` folded take, page and
+        /// abandon into one, and one more that is this operation's own: a
+        /// bracket is a lane rather than a family, and the two intentions
+        /// that are not `start` are meaningless except against the `start`
+        /// that opened it. Three operations would let a caller ask for a
+        /// frame of a stream nothing opened.
+        case stream = "stream"
     }
 
     public let version: Int
@@ -177,6 +186,25 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
     public var revealTarget: String? = nil
     /// Which diagnostic.
     public var diagnosticProbe: AgentIntegrationDiagnosticProbe? = nil
+
+    /* The bracket's fields. Which of the three intentions is always
+       explicit, unlike `capture`'s three shapes — a bracket's intentions
+       are not told apart by which optional arrived, because `frame` with no
+       id and `stop` would then be the same request with nothing in it. */
+
+    /// Open, read, or close. Required on the `stream` operation and refused
+    /// anywhere else.
+    public var streamIntention: AgentIntegrationStreamIntention? = nil
+    /// Bits per pixel and the frame-rate ceiling to open with. Present
+    /// together and only on `start`; the projection fills the pace in when
+    /// the caller names none, so this is never absent on the wire.
+    public var streamDepth: Int? = nil
+    public var streamMinIntervalMs: Int? = nil
+    /// Which staged frame a continuation is reading, and from where. Present
+    /// together, and only on a `frame` continuation — a `frame` carrying
+    /// neither is the request for the NEXT one.
+    public var streamFrameID: UUID? = nil
+    public var streamFrameOffset: Int? = nil
 
     private init(requestID: UUID,
                  operation: Operation,
@@ -603,6 +631,50 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         request.diagnosticProbe = probe
         return request
     }
+
+    // MARK: - The live-stream bracket
+
+    /// Open the bracket. The pace is not optional here even though the
+    /// contract lets it be: absent means the guest's own floor, and this
+    /// surface has no unbounded setting to hand out.
+    public static func streamStart(
+        depth: Int,
+        minIntervalMs: Int,
+        requestID: UUID = UUID()
+    ) -> Self {
+        var request = projected(.stream, requestID: requestID)
+        request.streamIntention = .start
+        request.streamDepth = depth
+        request.streamMinIntervalMs = minIntervalMs
+        return request
+    }
+
+    /// Ask the open bracket for a whole frame, and read its first page.
+    public static func streamFrame(requestID: UUID = UUID()) -> Self {
+        var request = projected(.stream, requestID: requestID)
+        request.streamIntention = .frame
+        return request
+    }
+
+    /// Read one more page of the frame this host already staged.
+    public static func streamFramePage(
+        frameID: UUID,
+        offset: Int,
+        requestID: UUID = UUID()
+    ) -> Self {
+        var request = projected(.stream, requestID: requestID)
+        request.streamIntention = .frame
+        request.streamFrameID = frameID
+        request.streamFrameOffset = offset
+        return request
+    }
+
+    /// Close the bracket.
+    public static func streamStop(requestID: UUID = UUID()) -> Self {
+        var request = projected(.stream, requestID: requestID)
+        request.streamIntention = .stop
+        return request
+    }
 }
 
 public enum AgentIntegrationLocalResult: Equatable, Sendable {
@@ -650,6 +722,8 @@ public enum AgentIntegrationLocalResult: Equatable, Sendable {
     case catalogSearch(AgentIntegrationGuestRowReportResult)
     case revealItem(AgentIntegrationGuestRowReportResult)
     case diagnostics(AgentIntegrationGuestRowReportResult)
+    /// The bracket's state, or one page of one frame off it.
+    case stream(AgentIntegrationStreamResult)
 
     /// The operation is carried by this protocol and NOTHING SERVES IT YET.
     ///
@@ -726,6 +800,10 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
         AgentIntegrationGuestRowReportResult? = nil
     public var diagnosticsResult:
         AgentIntegrationGuestRowReportResult? = nil
+    /// The bracket, or one page of a frame off it. Sized like the capture
+    /// field beside it, and for the same reason — a frame IS a capture, so
+    /// a full page still leaves the response inside the 16 KiB cap.
+    public var streamResult: AgentIntegrationStreamResult? = nil
     /// The operation exists here and no capability serves it yet. Set
     /// INSTEAD of any result, and counted with them: a response carrying
     /// both would be claiming to have answered a call it also says it
@@ -1082,6 +1160,12 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
     }
 
     public init(requestID: UUID,
+                streamResult: AgentIntegrationStreamResult) {
+        self.init(empty: requestID)
+        self.streamResult = streamResult
+    }
+
+    public init(requestID: UUID,
                 notImplemented: AgentIntegrationUnavailable) {
         self.init(empty: requestID)
         self.notImplemented = notImplemented
@@ -1117,7 +1201,7 @@ public enum AgentIntegrationLocalCodec {
         "guestFileMutationResult", "transferCancelResult",
         "guestLogTailResult", "machineFactsResult",
         "catalogSearchResult", "revealItemResult",
-        "diagnosticsResult",
+        "diagnosticsResult", "streamResult",
         // Set INSTEAD of any of them, so it is counted with them.
         "notImplemented",
     ]
@@ -1161,6 +1245,9 @@ public enum AgentIntegrationLocalCodec {
             "softwareCursor", "guestFileMutation",
             "guestFileDestinationPath", "guestFileTrashName",
             "logLineCount", "revealTarget", "diagnosticProbe",
+            // The bracket's fields, clearing the same two gates.
+            "streamIntention", "streamDepth", "streamMinIntervalMs",
+            "streamFrameID", "streamFrameOffset",
             // Orthogonal to every operation, so it clears BOTH gates:
             // this allowlist, and the per-operation key set below.
             "guestSelector",
@@ -1601,6 +1688,67 @@ public enum AgentIntegrationLocalCodec {
                 throw AgentIntegrationLocalTransportError.invalidMessage(
                     "Diagnostics request names no probe")
             }
+        case .stream:
+            /* The intention is REQUIRED and carries the shape, unlike
+               capture's three-way read of which optional arrived: `stop`
+               and "the next frame" would otherwise be the same empty
+               request. Each intention then admits exactly its own fields,
+               and the key-set equality below refuses the rest — so a
+               `stop` carrying a depth is refused rather than served with
+               the depth ignored. */
+            var streamKeys: Set<String> = [
+                "version", "requestID", "operation", "streamIntention",
+            ]
+            guard let intention = request.streamIntention else {
+                throw AgentIntegrationLocalTransportError.invalidMessage(
+                    "Stream request names no intention")
+            }
+            switch intention {
+            case .start:
+                guard let depth = request.streamDepth,
+                      AgentIntegrationCapturePolicy.isValidDepth(depth),
+                      let interval = request.streamMinIntervalMs,
+                      AgentIntegrationStreamPolicy.isValidInterval(interval)
+                else {
+                    /* The pace is required here even though the contract
+                       makes it optional on the wire, and this is the one
+                       place that can hold the line: absent means the
+                       guest's own ~15 fps floor, and a surface that let a
+                       caller omit it would be handing out the unbounded
+                       setting by accident rather than on purpose. */
+                    throw AgentIntegrationLocalTransportError.invalidMessage(
+                        "Stream start does not name a depth the guest "
+                            + "implements and a pace this surface will ask "
+                            + "for")
+                }
+                streamKeys.formUnion(["streamDepth", "streamMinIntervalMs"])
+            case .frame:
+                /* Neither field is the request for the NEXT frame; both
+                   together continue the one already staged. Either alone
+                   is a request nothing can serve — the same guard the
+                   capture page fetch keeps. */
+                let continues = request.streamFrameID != nil
+                    || request.streamFrameOffset != nil
+                if continues {
+                    guard request.streamFrameID != nil,
+                          let offset = request.streamFrameOffset,
+                          offset >= 0,
+                          offset <= AgentIntegrationCapturePolicy
+                              .maximumBytes,
+                          offset % AgentIntegrationCapturePolicy.pageBytes
+                              == 0 else {
+                        throw AgentIntegrationLocalTransportError
+                            .invalidMessage(
+                                "Stream frame page request does not match "
+                                    + "the schema")
+                    }
+                    streamKeys.formUnion(
+                        ["streamFrameID", "streamFrameOffset"])
+                }
+            case .stop:
+                break
+            }
+            expectedKeys = streamKeys
         }
         /* Addressing belongs to no operation, so it is admitted for all of
            them rather than repeated in twelve key sets — and only when the

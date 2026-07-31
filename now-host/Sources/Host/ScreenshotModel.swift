@@ -283,7 +283,8 @@ final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
         guard canStream else { return }
         lastError = nil
         listener.startStream(depth: selectedDepth.rawValue,
-                             minIntervalMs: minIntervalMs, tuning: tuning)
+                             minIntervalMs: minIntervalMs, tuning: tuning,
+                             origin: .person)
     }
 
     func stopStream() {
