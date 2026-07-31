@@ -196,7 +196,47 @@ final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
     var canCapture: Bool {
         connection.canCapture && !isCapturing && !isStreaming
     }
-    var canStream: Bool { connection.canCapture && !isCapturing }
+
+    /// **Whether the machine on the wire can be streamed from at all**, and
+    /// the sentence to show when it cannot.
+    ///
+    /// Derived, never asserted: the requirements are
+    /// `StreamScreenProjection`'s own — `stream.start`, `stream.stop`,
+    /// `stream.refresh` as a conjunction, since a bracket you can open and
+    /// cannot close is not a capability — and the answer is whatever the
+    /// connected Mac has said about them. Nothing here asks which guest it is.
+    /// A machine nobody has asked leaves this `unsettled`, which is ENABLED:
+    /// the click is what settles it, and the refusal that comes back is what
+    /// turns the button dark, in that machine's own words.
+    var streamGate: GuestCapabilityGate.Decision {
+        GuestCapabilityGate.decide(
+            StreamScreenProjection.self,
+            in: capabilities.evidence(for: connection, listener: listener))
+    }
+
+    /// Stop is always reachable while a bracket is open — the person always
+    /// wins, whoever opened it — so the gate only governs OPENING one.
+    var canStream: Bool {
+        connection.canCapture && !isCapturing
+            && (isStreaming || streamGate.isEnabled)
+    }
+
+    /// The reason to show beside a Start Streaming button that will not
+    /// respond. Nil while the control works, and nil for the merely unproven
+    /// case: an enabled control does not get to nag, and its sentence lives
+    /// in the tooltip (`streamGateTooltip`).
+    var streamUnavailableNote: String? {
+        guard !isStreaming, streamGate.deservesAVisibleReason else {
+            return nil
+        }
+        return streamGate.explanation
+    }
+
+    /// The hover text for the stream button, in every state that has
+    /// something to say.
+    var streamGateTooltip: String? {
+        isStreaming ? nil : streamGate.explanation
+    }
 
     /// **Who opened the stream that is running**, nil when none is or when
     /// this person opened it themselves.
@@ -267,11 +307,21 @@ final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
                     _ fileURL: URL?) -> Void)?
 
     private let listener: GuestListener
+    /// What the machines on the wire have said they can do. Shared, because
+    /// every page that gates a control wants the same answers about the same
+    /// Macs; injectable, so a test gets its own.
+    let capabilities: GuestCapabilityRecord
     private let defaults: UserDefaults
     private var progressWatch: AnyCancellable?
     private var pushWatch: AnyCancellable?
     private var streamWatch: AnyCancellable?
     private var streamStateWatch: AnyCancellable?
+    private var errorWatch: AnyCancellable?
+    private var capabilityWatch: AnyCancellable?
+    /// The id of a bracket this page opened and has not seen a frame from.
+    /// It is what lets a guest's `error` be attributed to `stream.start`
+    /// rather than to nothing.
+    private var unansweredStreamStart: Int?
     private var frameClock: [Date] = []
     private var recorder: StreamRecorder?
     private static let historyLimit = 20
@@ -279,8 +329,11 @@ final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
     static let fpsChoices = [4, 7, 10, 15, 30]
     static let defaultMaxFps = 15
 
-    init(listener: GuestListener, defaults: UserDefaults = .standard) {
+    init(listener: GuestListener,
+         defaults: UserDefaults = .standard,
+         capabilities: GuestCapabilityRecord = .shared) {
         self.listener = listener
+        self.capabilities = capabilities
         self.defaults = defaults
         self.autoSave = defaults.bool(forKey: Keys.autoSave)
         self.autoCopy = defaults.bool(forKey: Keys.autoCopy)
@@ -312,6 +365,19 @@ final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
         streamStateWatch = listener.$activeStreamId
             .receive(on: DispatchQueue.main)
             .sink { [weak self] id in self?.streamStateChanged(id) }
+        /* The one place a stream refusal can be heard. `stream.start` takes
+           an id no pending map holds, so a guest that does not implement the
+           bracket answers `error` into `lastGuestError` and nothing else on
+           this side is listening. Without this the button would offer the
+           same dead click every time, forever. */
+        errorWatch = listener.$lastGuestError
+            .compactMap { $0 }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.guestReportedError($0) }
+        // The gate is computed, so a recorded refusal has to nudge the view.
+        capabilityWatch = capabilities.$revision
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.objectWillChange.send() }
     }
 
     private func connectionChanged(from old: GuestConnectionState) {
@@ -328,12 +394,49 @@ final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
         discardRecording()
     }
 
+    /// A machine leaving the roster takes its capability answers with it —
+    /// they were claims about that Mac, and the next one to dial in under the
+    /// same name may be a different build.
+    func guestLeft(_ key: GuestKey) {
+        capabilities.forget(key)
+    }
+
     func startStream() {
         guard canStream else { return }
         lastError = nil
-        listener.startStream(depth: selectedDepth.rawValue,
-                             minIntervalMs: minIntervalMs, tuning: tuning,
-                             origin: .person)
+        unansweredStreamStart = listener.startStream(
+            depth: selectedDepth.rawValue, minIntervalMs: minIntervalMs,
+            tuning: tuning, origin: .person)
+    }
+
+    /// A guest error, read for the one thing this page can attribute: the
+    /// bracket it just asked for.
+    ///
+    /// **A refusal by name is a capability answer and is written down.**
+    /// Anything else — a busy lane, a Toolbox failure, silence — is not:
+    /// `GuestCapabilityRecord` would happily store it and the gate would
+    /// still leave the control enabled, but a machine that was merely busy
+    /// must not be recorded as one that cannot, so the filter is here too.
+    private func guestReportedError(_ problem: ErrorMessage) {
+        guard let id = unansweredStreamStart, problem.id == id else { return }
+        unansweredStreamStart = nil
+        guard AgentIntegrationCapabilityNames.isRefusal(problem.code) else {
+            lastError = problem.message
+            return
+        }
+        capabilities.noteRefusal(
+            AgentIntegrationCapabilityNames.streamStart,
+            by: connection.key, code: problem.code, message: problem.message)
+        lastError = "\(connection.peerLabel) does not serve live streaming: "
+            + problem.message
+        /* The bracket was opened optimistically and the guest never took it,
+           so nothing will ever close it — the page would sit on "Waiting for
+           the first frame…" for the rest of the session. Asking to stop is
+           what un-wedges it: this guest refuses that too, and the listener's
+           own unacknowledged-stop fallback then clears the bracket. */
+        if listener.activeStreamId == id {
+            listener.stopStream()
+        }
     }
 
     func stopStream() {
@@ -353,6 +456,16 @@ final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
         streamOwner = streaming ? listener.streamOrigin : nil
         guard streaming != isStreaming else { return }
         isStreaming = streaming
+        /* A bracket the guest itself closed by answering `stream.stopped` is
+           that guest serving stream.stop — the listener's own self-heal sets
+           a different reason, and recording THAT as service would be writing
+           down a silence as an answer. */
+        if !streaming, let reason = listener.streamEndReason,
+           reason != AgentIntegrationStreamFailure.unacknowledgedStop {
+            capabilities.noteServed(
+                AgentIntegrationCapabilityNames.streamStop,
+                by: connection.key)
+        }
         if streaming {
             frameClock = []
             streamStats = nil
@@ -408,6 +521,15 @@ final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
     }
 
     private func receiveStreamFrame(_ delivery: GuestListener.CaptureDelivery) {
+        /* A frame is the machine serving stream.start, which is a better
+           answer than any probe could have bought: the bracket is open and
+           pixels are crossing. */
+        if unansweredStreamStart != nil {
+            unansweredStreamStart = nil
+            capabilities.noteServed(
+                AgentIntegrationCapabilityNames.streamStart,
+                by: connection.key)
+        }
         let record = ScreenshotRecord(
             capturedAt: Date(), image: delivery.image,
             format: delivery.format, transferMs: delivery.transferMs,

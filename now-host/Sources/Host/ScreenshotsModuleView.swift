@@ -57,6 +57,12 @@ struct ScreenshotsModuleView: View {
                     model.toggleStream()
                 }
                 .disabled(!model.canStream)
+                /* Present and dark rather than gone. Hiding it would move
+                   every control beside it as machines connect, and would make
+                   a capability this Mac lacks indistinguishable from one NOW
+                   does not have. The reason is on the button for a pointer
+                   and in the line below for the eye. */
+                .help(model.streamGateTooltip ?? "Watch this Mac's screen live")
 
                 if model.isStreaming {
                     Button("Refresh") { model.refreshStream() }
@@ -83,6 +89,20 @@ struct ScreenshotsModuleView: View {
                 Label(note, systemImage: "person.wave.2")
                     .foregroundStyle(.secondary)
                     .font(.callout)
+            }
+
+            /* **A dark control that says nothing is indistinguishable from a
+               bug**, and the person's conclusion is that the app is broken.
+               So the machine's own refusal is stated in place, beside the
+               button it explains — not as an error, because nothing is wrong:
+               it is a difference between the two guests. Shown only for the
+               states that disable the button; a control that merely has not
+               been proven yet still works, and does not get to nag. */
+            if let note = model.streamUnavailableNote {
+                Label(note, systemImage: "minus.circle")
+                    .foregroundStyle(.secondary)
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             settingsDisclosure
