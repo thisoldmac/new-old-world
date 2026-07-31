@@ -68,13 +68,23 @@ typedef struct {
        sat. Empty rect = the standard centered bounds. */
     short workshop_module;
     Rect workshop_rect;
+
+    /* Whether an agent may drive this Mac, and how far: the AgentAccessTier
+       the MCP page sets and `hello.agent` carries. Read and written only
+       through agent_access.c, which is the one place that decides - a
+       second reader here would be the second source of truth the plan
+       names as its stop condition. A file written before the field existed
+       has no opinion and keeps the default (full), because that is what
+       every deployed machine already does. */
+    short agent_access;
 } NowPrefs;
 
 /* Loads saved settings, or the defaults (10.0.2.2:5250 — the QEMU host
    address — 8-bit, pack on, 8K chunks, no pacing, panel open). Reads the
    v1/v2 record formats (host/port only) through v11 (the v9 layout,
-   twice-renumbered for Processes and Hardware) and v12 (adds log_to_disk
-   and renumbers Connection again for the Logs page). */
+   twice-renumbered for Processes and Hardware), v12 (adds log_to_disk
+   and renumbers Connection again for the Logs page), v13/v14, and v15
+   (adds agent_access and renumbers for the MCP and Diagnostics pages). */
 void now_prefs_load(NowPrefs *prefs);
 OSErr now_prefs_save(const NowPrefs *prefs);
 

@@ -127,6 +127,8 @@ echo "== now-guest-ppc (PowerPC Carbon) =="
 run_c now-guest-ppc census_decode_test.c     ""  src/census/census_decode.c
 run_c now-guest-ppc census_report_test.c     ""  src/census/census_report.c src/core/json.c
 run_c now-guest-ppc conn_fields_test.c       ""  src/connection/conn_fields.c
+run_c now-guest-ppc diag_layout_test.c       ""  src/diagnostics/diag_layout.c
+run_c now-guest-ppc mcp_layout_test.c        ""  src/mcp/mcp_layout.c
 run_c now-guest-ppc json_native_test.c       ""  src/core/json.c
 run_c now-guest-ppc peek_table_test.c \
       "-DNOW_PEEK_TABLE_HOST"

@@ -83,6 +83,15 @@ typedef struct {
    Software joined as nav id 6 (Logs and Connection shifted down); it adds
    no persisted field, like formats 10 and 11 before it. */
 
+/* Format 15: MCP and Diagnostics joined as nav ids 7 and 8, and the MCP
+   page's answer is the first field since 13. Both changes in one bump
+   because they ship together; the renumber is handled beside the earlier
+   ones in now_prefs_load. */
+typedef struct {
+    PrefsRecordV13 v13;               /* format = 15 */
+    short agent_access;
+} PrefsRecordV15;
+
 /* Preferences are per COPY of the app, not per creator. Running two
    guests at once is a real workflow — one for each host, on different
    ports — and a shared file would have them overwrite each other's port
@@ -155,6 +164,12 @@ static void set_defaults(NowPrefs *prefs)
        file has no such field and keeps this default. */
     prefs->log_to_disk = true;
     prefs->logs_invert = false;
+    /* Full access is what every deployed machine already does, so a file
+       that predates the field keeps it; the MCP page is how it is refused.
+       Spelled 2 rather than kAgentAccessFull because prefs.c is below the
+       seam that owns the enum - agent_access.c validates what it reads
+       here and never trusts this number blind. */
+    prefs->agent_access = 2;
     prefs->workshop_module = 1;       /* Screenshots */
     SetRect(&prefs->workshop_rect, 0, 0, 0, 0);
 }
@@ -169,7 +184,8 @@ void now_prefs_load(NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV13);
+    long count = sizeof(PrefsRecordV15);
+    PrefsRecordV15 v15;
     PrefsRecordV13 v13;
     PrefsRecordV12 v12;
     PrefsRecordV9 v9;
@@ -184,9 +200,10 @@ void now_prefs_load(NowPrefs *prefs)
     if (FSpOpenDF(&spec, fsRdPerm, &ref) != noErr) {
         return;
     }
-    memset(&v13, 0, sizeof v13);
-    err = FSRead(ref, &count, &v13);
+    memset(&v15, 0, sizeof v15);
+    err = FSRead(ref, &count, &v15);
     FSClose(ref);
+    v13 = v15.v13;
     v12 = v13.v12;
     v9 = v12.v9;
     record = v9.v8.v7.v6.v5.v4.v3;
@@ -267,7 +284,18 @@ void now_prefs_load(NowPrefs *prefs)
                 module = 7;           /* Logs */
             }
         }
-        if (module >= 1 && module <= 8) {
+        /* MCP and Diagnostics went in as ids 7 and 8, pushing Logs 7 -> 9
+           and Connection 8 -> 10. After the lift above, any pre-15 file is
+           speaking the format-14 numbering, so both move again - Connection
+           first, so 7 -> 9 cannot then run on into 10. */
+        if (record.format <= 14) {
+            if (module == 8) {
+                module = 10;          /* Connection */
+            } else if (module == 7) {
+                module = 9;           /* Logs */
+            }
+        }
+        if (module >= 1 && module <= 10) {
             prefs->workshop_module = module;
         }
         prefs->workshop_rect = v9.workshop_rect;
@@ -276,6 +304,12 @@ void now_prefs_load(NowPrefs *prefs)
         }
         if (record.format >= 13 && count >= (long)sizeof(PrefsRecordV13)) {
             prefs->logs_invert = v13.logs_invert != 0;
+        }
+        if (record.format >= 15 && count >= (long)sizeof(PrefsRecordV15)) {
+            /* Stored raw; agent_access.c is what validates it, because it
+               is the one place that decides what an unreadable answer
+               means. A pre-15 file keeps the default. */
+            prefs->agent_access = v15.agent_access;
         }
     } else if (record.console_open != 0) {
         /* Seed from the old window session: someone who kept the
@@ -289,7 +323,8 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV13);
+    long count = sizeof(PrefsRecordV15);
+    PrefsRecordV15 v15;
     PrefsRecordV13 v13;
     PrefsRecordV12 v12;
     PrefsRecordV9 v9;
@@ -298,8 +333,8 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 
     memset(&record, 0, sizeof record);
     record.magic = kPrefsMagic;
-    record.format = 14;               /* Software inserted as nav id 6;
-                                         V13 layout reused (no new field) */
+    record.format = 15;               /* MCP and Diagnostics inserted as nav
+                                         ids 7 and 8; adds agent_access */
     record.port = prefs->port;
     strncpy(record.host, prefs->host, sizeof record.host - 1);
     record.shot_depth = prefs->shot_depth;
@@ -344,7 +379,10 @@ OSErr now_prefs_save(const NowPrefs *prefs)
     memset(&v13, 0, sizeof v13);
     v13.v12 = v12;
     v13.logs_invert = prefs->logs_invert ? 1 : 0;
-    err = FSWrite(ref, &count, &v13);
+    memset(&v15, 0, sizeof v15);
+    v15.v13 = v13;
+    v15.agent_access = prefs->agent_access;
+    err = FSWrite(ref, &count, &v15);
     if (err == noErr) {
         SetEOF(ref, count);           /* what we wrote, not an older record */
     }

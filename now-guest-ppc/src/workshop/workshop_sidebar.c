@@ -28,7 +28,9 @@ enum {
     kProcessesIconID = 133,
     kHardwareIconID = 134,
     kLogsIconID = 135,
-    kSoftwareIconID = 136
+    kSoftwareIconID = 136,
+    kMcpIconID = 137,
+    kDiagnosticsIconID = 138
 };
 
 static WindowRef g_owner;
@@ -54,6 +56,8 @@ static const struct {
     { "Processes", "Running applications", kProcessesIconID },
     { "Hardware", "Census and probes", kHardwareIconID },
     { "Software", "What is installed", kSoftwareIconID },
+    { "MCP", "Who may drive this Mac", kMcpIconID },
+    { "Diagnostics", "Measure this Mac", kDiagnosticsIconID },
     { "Logs", "This launch's events", kLogsIconID },
     { "Connection", NULL, kConnectionIconID }
 };
