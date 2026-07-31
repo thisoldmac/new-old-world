@@ -522,21 +522,10 @@ final class GuestWireConformanceTests: XCTestCase {
     /// every build. A hello that carried a literal here, or dropped the field,
     /// would leave a host back where it started, so both are checked.
     func testThePowerPCGuestsHelloCarriesItsBuildStamp() throws {
-        let wire = try String(
-            contentsOf: Self.repoRoot.appendingPathComponent(
-                "now-guest-ppc/src/core/wire.c"),
-            encoding: .utf8)
-        /* The DEFINITION, not the forward declaration above it — wire.c
-           has both, and matching the declaration hands back the body of
-           whatever function happens to follow it. */
-        guard let start = wire.range(
-                of: "static void send_hello(void)\n{"),
-              let end = wire.range(of: "\n}", range: start.upperBound
-                                    ..< wire.endIndex) else {
-            return XCTFail("no send_hello definition in "
-                           + "now-guest-ppc/src/core/wire.c")
-        }
-        let body = String(wire[start.upperBound..<end.lowerBound])
+        /* Through the shared reader, which strips comments: the comment
+           beside this line names now_build_stamp(), so a raw-text scan
+           passed even with the call replaced by a literal. */
+        let body = try sendHelloBody()
 
         XCTAssertTrue(
             body.contains(#"\"build\":\"%s\""#),
@@ -671,6 +660,13 @@ final class GuestWireConformanceTests: XCTestCase {
     /// `send_hello`'s body, by its DEFINITION rather than the forward
     /// declaration above it — wire.c has both, and matching the declaration
     /// hands back the body of whatever function happens to follow it.
+    ///
+    /// COMMENTS ARE STRIPPED, and that is not tidiness. Every comment in
+    /// this function names the very identifiers these gates look for, so a
+    /// scan of the raw text passes on the prose while the code says
+    /// something else: replacing `now_agent_access()` with a literal was
+    /// invisible to this gate until the stripping went in, and the comment
+    /// three lines above explaining why a literal is wrong was what hid it.
     private func sendHelloBody() throws -> String {
         let wire = try String(
             contentsOf: Self.repoRoot.appendingPathComponent(
@@ -682,6 +678,23 @@ final class GuestWireConformanceTests: XCTestCase {
             throw XCTSkip("no send_hello definition in "
                           + "now-guest-ppc/src/core/wire.c")
         }
-        return String(wire[start.upperBound..<end.lowerBound])
+        return Self.withoutComments(
+            String(wire[start.upperBound..<end.lowerBound]))
+    }
+
+    /// Drops `/* ... */` comments. The guest is C in the QEMU/classic-Mac
+    /// dialect, which has no `//`, so one form is all there is.
+    private static func withoutComments(_ source: String) -> String {
+        var out = "", rest = Substring(source)
+        while let open = rest.range(of: "/*") {
+            out += rest[rest.startIndex..<open.lowerBound]
+            guard let close = rest.range(of: "*/",
+                                         range: open.upperBound
+                                            ..< rest.endIndex) else {
+                return out                       // unterminated; take what we have
+            }
+            rest = rest[close.upperBound...]
+        }
+        return out + rest
     }
 }
