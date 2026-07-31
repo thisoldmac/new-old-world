@@ -119,6 +119,50 @@ only, `putstat` PPC only. Judge what a card says when the connected machine does
 **not** serve that probe: it must not imply the machine is broken, and it must
 not present a button that silently does nothing.
 
+## 4a. A control the attached Mac cannot serve — 68K, Screenshots
+
+Added 2026-07-31 with `GuestCapabilityGate`. **Only a person with a real 68K
+machine on the wire can judge this**, and it has never met one: nothing below
+was reached by a build or a test.
+
+Connect the 68K guest and open **Screenshots**. Press **Start Streaming** once.
+That guest does not implement the stream family — it answers `not-implemented`
+(`wire68.c :: send_error_reply`) — so what should happen is:
+
+| | |
+| --- | --- |
+| Before the first press | The button is **live**, not grey. Nobody has asked this machine yet, and unproven is not a no. |
+| After the refusal | The button goes **dark and stays there**, with a readable line beside it naming the machine and quoting its own words — and saying nothing is wrong with it. |
+| Layout | **Unchanged.** The button is present in both states; nothing moves as the reason appears. |
+
+Judge three things a test cannot:
+
+1. **Is the sentence readable by someone who does not know the protocol?** It
+   currently contains the wire name (`stream.start`) and the guest's own
+   message. That is honest and it may be jargon.
+2. **Does the dark button read as a difference between two Macs, or as
+   damage?** If a person's next move is to check their network, the wording
+   failed.
+3. **How long does the page sit on "Waiting for the first frame…" first?** The
+   bracket is opened optimistically and the refusal now asks to stop it, which
+   the listener's unacknowledged-stop fallback clears after ~5 s. Time it. If
+   that wait reads as a hang, the fix is in `GuestListener` routing stream ids
+   in `recordGuestError` — see open-issues.
+
+Also worth a glance on a **PowerPC** machine: hovering Start Streaming before
+any stream has run shows "Nothing has established whether … serves stream.stop,
+stream.refresh". True — neither is observable until used — but judge whether it
+reads as a warning on a control that works perfectly.
+
+## 4b. An action that does not apply to the item — Software and Processes
+
+The mechanism exists and is tested; **the panes have not been changed yet** (see
+the integrator note in `GuestItemApplicability.swift`). Once they are, judge on
+metal that the two greyed states are distinguishable *without hovering*: an
+extension whose Launch is dark because it is not an application, versus a
+control dark because this Mac does not serve the verb. Those lead to different
+next actions and a person must be able to tell which they are looking at.
+
 ## 5. The Files page's new verbs
 
 Move, trash, restore, mkdir, and download. The confirmation sheet and the

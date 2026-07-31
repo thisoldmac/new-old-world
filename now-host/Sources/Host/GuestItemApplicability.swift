@@ -1,6 +1,33 @@
 import Foundation
 import NOWAgentIntegration
 
+/*  Integrator note, 2026-07-31 — where this is NOT applied yet.
+
+    The mechanism landed on a branch that owned neither of the two panes it
+    was written for, so three views still decide for themselves. Each is one
+    call, and none changes a layout:
+
+    - `SoftwareModuleView.swift`, the Launch button. Today:
+      `.disabled(!entry.isLaunchable || …)`, where `isLaunchable` is only
+      `!path.isEmpty` — a path-honesty check that says nothing about type, so
+      the button is live on an extension and the guest refuses it after the
+      round trip. Add `entry.itemKind` through
+      `GuestCapabilityGate.decide(LaunchSoftwareProjection.self,
+      performing: .launch, on: entry.itemKind, named: entry.name, in: …)`,
+      disable on `!decision.isEnabled`, and show `decision.explanation` where
+      `deservesAVisibleReason`. Reveal needs no rule and must not get one.
+    - `ProcessesModuleView.swift`, the Bring to Front button, with
+      `entry.itemKind` and `.bringToFront`. `isDrivable`/`isQuittable` stay:
+      they are a third fact (this row sent no PSN) and are not restated here.
+    - `DiagnosticsModuleView.swift`, the three cards — the capability axis
+      only. That page hides the Run button entirely when a verb is absent
+      (`action(_:)` returns `EmptyView()` for `.notServed`); the finding asks
+      for present-and-dark instead, which is `.disabled(!decision.isEnabled)`
+      plus the sentence it already writes in `notServedSentence`.
+      `DiagnosticsModel` already holds a command table, so pass it as
+      `commandNames:` to `GuestCapabilityRecord.evidence(...)` and the gate
+      resolves `vprobe`/`shotdiag`/`putstat` with no second `help`.          */
+
 /// **The second reason a control is dark, and it is not the first one.**
 ///
 /// `GuestCapabilityGate` answers "can the Mac on the wire serve this". This
