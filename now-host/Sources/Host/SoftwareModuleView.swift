@@ -10,6 +10,9 @@ import SwiftUI
 struct SoftwareModuleView: View {
     @ObservedObject var model: SoftwareModel
 
+    /// The table's row type — an item, or a duplicate group's container.
+    private typealias Row = SoftwareModel.SoftwareRow
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
@@ -34,10 +37,11 @@ struct SoftwareModuleView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity,
                alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
-        .onAppear { if model.rows.isEmpty { model.refresh() } }
-        .onChange(of: model.connection) { connection in
-            if connection.canCapture { model.refresh() }
-        }
+        // Opening the page is not a reason to make the other Mac sweep its
+        // disk again. It asks only for a domain this machine has not
+        // answered yet; everything else is the Rescan button.
+        .onAppear { model.openIfNeeded() }
+        .onChange(of: model.connection) { _ in model.openIfNeeded() }
     }
 
     private var header: some View {
@@ -81,26 +85,29 @@ struct SoftwareModuleView: View {
 
     // MARK: list
 
+    /// Duplicates disclose under a container row, matching the guest's own
+    /// Software page — a disk with five SimpleTexts reads as one line on
+    /// both Macs, and opening it says which five.
     private var table: some View {
-        Table(model.visibleRows, selection: $model.selection) {
-            TableColumn("Name") { entry in
-                Text(entry.name)
+        Table(model.visibleRows, selection: selectionBinding) {
+            TableColumn("Name") { (row: Row) in
+                nameCell(row)
             }
-            TableColumn("Version") { entry in
-                Text(entry.version ?? "–")
-                    .foregroundStyle(entry.version == nil
-                                     ? .secondary : .primary)
+            TableColumn("Version") { (row: Row) in
+                Text(row.versionText)
+                    .foregroundStyle(row.versionIsKnown
+                                     ? AnyShapeStyle(.primary)
+                                     : AnyShapeStyle(.secondary))
             }
             .width(min: 60, ideal: 70, max: 110)
-            TableColumn("Size") { entry in
-                Text(entry.sizeLabel ?? "")
+            TableColumn("Size") { (row: Row) in
+                Text(row.sizeText)
                     .monospacedDigit()
             }
             .width(min: 60, ideal: 70, max: 110)
-            TableColumn("State") { entry in
-                Text(entry.stateLabel)
-                    .foregroundStyle(entry.running == true
-                                     ? Color.green : .secondary)
+            TableColumn("State") { (row: Row) in
+                Text(row.stateText)
+                    .foregroundStyle(row.isRunning ? Color.green : .secondary)
             }
             .width(min: 60, ideal: 70, max: 110)
         }
@@ -108,6 +115,51 @@ struct SoftwareModuleView: View {
             if model.visibleRows.isEmpty {
                 emptyState
             }
+        }
+    }
+
+    /// A group's name carries its own disclosure triangle, because `Table`
+    /// cannot draw a real outline before macOS 14 and this app ships to 13.
+    /// Members sit one indent in, under an open container.
+    @ViewBuilder
+    private func nameCell(_ row: Row) -> some View {
+        HStack(spacing: 4) {
+            if row.isGroup {
+                Button {
+                    model.toggle(group: row.id)
+                } label: {
+                    Image(systemName: model.expandedGroups.contains(row.id)
+                          ? "chevron.down" : "chevron.right")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 12)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(
+                    model.expandedGroups.contains(row.id)
+                    ? "Hide the \(row.members.count) copies of \(row.name)"
+                    : "Show the \(row.members.count) copies of \(row.name)")
+            } else if row.depth > 0 {
+                Spacer().frame(width: 16)
+            }
+            Text(row.name)
+                .fontWeight(row.isGroup ? .medium : .regular)
+        }
+    }
+
+    /// A container row discloses, never selects — the guest makes its group
+    /// rows unselectable for the same reason, so the detail pane and the
+    /// Launch / Show in Finder buttons always name one real file rather than
+    /// a heading standing in for five.
+    private var selectionBinding: Binding<Row.ID?> {
+        Binding {
+            model.selection
+        } set: { picked in
+            guard let picked else {
+                model.selection = nil
+                return
+            }
+            if !SoftwareModel.isGroupID(picked) { model.selection = picked }
         }
     }
 
@@ -280,13 +332,25 @@ struct SoftwareModuleView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            if let stale = staleLine {
+                // A rescan that failed left the OLDER listing on screen. It
+                // says so, with both times, rather than letting the rows
+                // pass for the answer that was just asked for.
+                Label(stale, systemImage: "clock.badge.exclamationmark")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
             HStack(spacing: 12) {
                 Button {
                     model.refresh()
                 } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
+                    Label("Rescan", systemImage: "arrow.clockwise")
                 }
                 .disabled(!model.canBrowse || model.isLoading)
+                .help("Sweeps this domain on the connected Mac again. The "
+                      + "listing is read once per Mac per domain and kept "
+                      + "for as long as that Mac stays connected, so this "
+                      + "button is the only thing that re-reads its disk.")
 
                 // What building the Applications list COSTS this Mac, as
                 // opposed to what is in it. Expensive on purpose — the
@@ -337,19 +401,50 @@ struct SoftwareModuleView: View {
         }
     }
 
-    /// "8 of 205 · as of 14:02" — the search-narrowed count over the
-    /// whole, and that the inventory is a snapshot.
+    /// "8 of 205 · as of 14:02:11 (23 minutes ago)" — the search-narrowed
+    /// count over the whole, when the sweep was taken, and how long ago that
+    /// was once it stops being "just now".
+    ///
+    /// The absolute time is the load-bearing half and never goes wrong; the
+    /// relative age is a convenience computed as the page draws, so it
+    /// sharpens on the next interaction rather than ticking. It appears only
+    /// past a couple of minutes, because a listing swept while you watched
+    /// does not need to be told it is a snapshot — "as of" already says so.
     private var countLine: String {
-        let shown = model.visibleRows.count
+        let shown = model.visibleItemCount
         let total = model.rows.count
         var line = shown == total
             ? "\(total) item\(total == 1 ? "" : "s")"
             : "\(shown) of \(total) shown"
         if let at = model.fetchedAt {
             line += " · as of \(Self.time.string(from: at))"
+            if let age = Self.age(of: at) { line += " (\(age))" }
         }
         return line
     }
+
+    /// The sentence a failed rescan owes the person: what failed, when, and
+    /// which listing they are therefore still reading.
+    private var staleLine: String? {
+        guard let failed = model.rescanFailedAt,
+              let at = model.fetchedAt else { return nil }
+        return "Rescan failed at \(Self.time.string(from: failed)) — still "
+            + "showing the listing swept at \(Self.time.string(from: at))."
+    }
+
+    /// Nil while the sweep is recent enough that the clock time says it
+    /// better than a phrase would.
+    static func age(of date: Date, now: Date = Date()) -> String? {
+        let seconds = now.timeIntervalSince(date)
+        guard seconds >= 120 else { return nil }
+        return relative.localizedString(for: date, relativeTo: now)
+    }
+
+    private static let relative: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .full
+        return f
+    }()
 
     private static let time: DateFormatter = {
         let f = DateFormatter()
