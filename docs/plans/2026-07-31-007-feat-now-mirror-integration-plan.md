@@ -182,7 +182,7 @@ process reports `MISMATCH` — a silent, total, *polite* failure rather than a
 loud one. The containment check is deliberately loose so that only a value
 outside the partition entirely is rejected.
 
-### M2 — QDPeek as its own plane
+### M2 — QDPeek as its own plane — **probe built 2026-07-31** (`6a054ae`)
 
 Genuinely new, dormant until armed, and the plane model exists for this. Per the
 charter: developed as a **throwaway INIT under an honest name** on a QEMU clone
@@ -190,6 +190,30 @@ charter: developed as a **throwaway INIT under an honest name** on a QEMU clone
 passes. Planes talk only through the core; no cross-plane calls.
 
 Also settled upstream since 2026-07-30.
+
+**Correction worth making explicit:** this is **P3**, not P2. The charter's plane
+list has P2 as *semantic assist* — "may be empty" — and P3 as content: *"QuickDraw
+bottleneck hooks, the full Timbuktu move. The riskiest class we would ever ship."*
+The existing `kNowPeekTableCapTree` bit is P2's and must not be spent on this.
+
+**As built:** [`prototypes/qdprobe`](../../prototypes/qdprobe/README.md) — a
+throwaway INIT with its own name, creator and Gestalt selector, holding no
+reference to NOW's table in either direction. Nothing in the shipping extension
+changed, which is the point: the charter's "separate failure domain in everything
+but the file" costs a directory when taken literally.
+
+M0 answers **one** question — can a 68K INIT's drawing bottleneck be called by a
+PowerPC application's QuickDraw? — and everything else about P3 is downstream of
+that yes or no. Rung reached: **packages**. Loads, callbacks-run and
+survives-cycles are unrun.
+
+**The ladder is blocked on a reader, and the reader should also be throwaway.**
+The counters publish through Gestalt `'QDpr'` and nothing reads them, so
+"loads at boot" cannot yet be told from "did not load". The guest app is the
+wrong place for it: NOW has no verb that reads an address behind a Gestalt
+selector, and adding one would couple the shipping app to a spike it is
+supposed to be insulated from. A ~100-line standalone app that Gestalts `'QDpr'`
+and draws the counters keeps the whole spike in one disposable place.
 
 ### M3 — the streaming decision
 
