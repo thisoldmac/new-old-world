@@ -67,6 +67,7 @@ add_application(now-guest-ppc
     # (timbottu/mirror). Pure parsers plus one Toolbox binding; see
     # src/axwalk/axwalk.h for why its constants are evidence.
     src/axwalk/axwalk.c
+    src/axwalk/axmenu.c
     resources/app.r
     # The application icon family, generated from the artwork by
     # assets/icons/classic/rez.py and shared with any other target that

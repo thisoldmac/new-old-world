@@ -298,6 +298,46 @@ static void chains_link_up(void)
     check(w.next_window == 0, "the window chain terminates");
 }
 
+/* The two READ WIDTHS, pinned against the end of the partition. Nothing
+   else in this file can see them: everywhere but the boundary, reading
+   148 bytes and reading 156 look identical. Here they do not - a record
+   that ends exactly at the partition's last byte must read, and one four
+   bytes further along must be refused. A widened constant fails the
+   first check; a narrowed one fails the second, which is the case that
+   matters most, because a walk that reads past a partition is the bus
+   error this whole layer exists to prevent. */
+static void record_widths(void)
+{
+    AxFixture f;
+    NowAxMemory m;
+    NowAxWindow w;
+    NowAxControl c;
+    const unsigned long end = AXFIX_TARGET_BASE + AXFIX_TARGET_SIZE;
+    unsigned long win;
+
+    axfix_init(&f, &m);
+    win = end - 148;
+    build_window(&f, win, "Edge", 0, 0);
+    check(now_ax_read_window(&m, win, &w) == kNowAxOk,
+          "a window whose last used byte is the partition's last reads");
+    axfix_init(&f, &m);
+    win = end - 144;
+    build_window(&f, win, "Over", 0, 0);
+    check(now_ax_read_window(&m, win, &w) == kNowAxInvalid,
+          "a window needing four bytes more than remain is refused");
+
+    axfix_init(&f, &m);
+    build_window(&f, kWin, "W", kCtlH, 0);
+    (void)now_ax_read_window(&m, kWin, &w);
+    build_control(&f, kCtlH, end - 296, "Edge", 0);
+    check(now_ax_read_control(&m, &w, kCtlH, &c) == kNowAxOk,
+          "a control record ending at the partition's last byte reads");
+    build_control(&f, kCtlH, end - 292, "Over", 0);
+    check(now_ax_read_control(&m, &w, kCtlH, &c) == kNowAxInvalid,
+          "a control record needing four bytes more is refused");
+    check(f.refused == 0, "every refusal came before the seam");
+}
+
 int main(void)
 {
     window_fields();
@@ -307,6 +347,7 @@ int main(void)
     control_fields();
     control_refusals();
     chains_link_up();
+    record_widths();
 
     if (g_failures != 0) {
         fprintf(stderr, "%d failure(s)\n", g_failures);
