@@ -34,43 +34,20 @@ resource 'vers' (1) {
     "0.1.0, New Old World"
 };
 
-/* The 16x16 small icon. Only ICN# existed, so every Finder list view, the
-   application menu and the about-to-switch bar had to shrink the 32x32 -
-   which on a 1-bit icon means dropping every other row and column, and
-   this design is a one-pixel frame, so half of it disappeared. Drawn at
-   its real size instead: same outer frame, same centred inner box.
+/* The application icon family — 'ICN#', 'ics#' and their four colour
+   siblings — lives in assets/icons/classic/now-icons.r, which this target
+   Rez'es alongside this file. It used to be two hand-written 1-bit
+   resources here: a one-pixel frame, drawn at 32 and again at 16 so the
+   small size would not be a decimated copy of the large one.
 
-   Mask is the solid silhouette, not a copy of the art: it is what the
-   Finder fills for the selected state. */
-resource 'ics#' (128) {
-    {
-        $"0000 7FFE 4002 4002 4002 4FF2 4812 4812"
-        $"4FF2 4002 4002 4002 4002 7FFE 0000 0000",
-        $"0000 7FFE 7FFE 7FFE 7FFE 7FFE 7FFE 7FFE"
-        $"7FFE 7FFE 7FFE 7FFE 7FFE 7FFE 0000 0000"
-    }
-};
+   They are gone rather than kept as a fallback, because Rez'ing two
+   definitions of 'ICN#' (128) is a duplicate-resource error, not a
+   precedence rule. The BNDL above still points at { 'ICN#', 128 } and
+   still resolves — the family simply arrives from the other file now, and
+   with four more depths than a hand-written one could carry.
 
-resource 'ICN#' (128) {
-    {
-        $"00000000 00000000 0FFFFFF0 10000008"
-        $"10000008 13FFFFC8 12000048 12000048"
-        $"12000048 12000048 12000048 12000048"
-        $"12000048 120FF048 12100848 12200448"
-        $"12200448 12200448 12100848 120FF048"
-        $"12000048 12000048 12000048 12000048"
-        $"12000048 12000048 13FFFFC8 10000008"
-        $"10000008 0FFFFFF0 00000000 00000000",
-        $"00000000 00000000 0FFFFFF0 1FFFFFF8"
-        $"1FFFFFF8 1FFFFFF8 1FFFFFF8 1FFFFFF8"
-        $"1FFFFFF8 1FFFFFF8 1FFFFFF8 1FFFFFF8"
-        $"1FFFFFF8 1FFFFFF8 1FFFFFF8 1FFFFFF8"
-        $"1FFFFFF8 1FFFFFF8 1FFFFFF8 1FFFFFF8"
-        $"1FFFFFF8 1FFFFFF8 1FFFFFF8 1FFFFFF8"
-        $"1FFFFFF8 1FFFFFF8 1FFFFFF8 1FFFFFF8"
-        $"1FFFFFF8 0FFFFFF0 00000000 00000000"
-    }
-};
+   The ics# resources BELOW this comment are a different thing entirely:
+   the Workshop's own module icons at 129 and up. They stay. */
 
 /* The Workshop sidebar's module icons, 16x16 1-bit with solid-silhouette
    masks, same rules as ics#(128): drawn at their real size, one-pixel

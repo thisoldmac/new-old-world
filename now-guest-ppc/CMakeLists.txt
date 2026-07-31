@@ -57,6 +57,12 @@ add_application(now-guest-ppc
     src/workshop/workshop_sidebar.c
     src/workshop/workshop_window.c
     resources/app.r
+    # The application icon family, generated from the artwork by
+    # assets/icons/classic/rez.py and shared with any other target that
+    # wants it. Referenced where it is generated rather than copied in: a
+    # copy is a second definition of a file whose own header says not to
+    # hand-edit it, and the two would drift the first time the art moved.
+    ../assets/icons/classic/now-icons.r
 )
 
 # src/ is split by domain (core/, commands/, workshop/, ...), but the
