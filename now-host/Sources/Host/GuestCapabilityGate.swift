@@ -55,11 +55,19 @@ enum GuestCapabilityGate {
         /// nothing is connected must not read as a machine that cannot.
         case noGuest(String)
 
+        /// The action means nothing for this ITEM, whichever Mac is
+        /// attached — launching a system extension, fronting a faceless
+        /// background process. **Disabled**, and it is deliberately not one
+        /// of the three above: those are facts about the machine and this is
+        /// a fact about the thing selected, and a person told the wrong one
+        /// goes looking in the wrong place. See `GuestItemApplicability`.
+        case inapplicable(String)
+
         /// Whether the control accepts a click.
         var isEnabled: Bool {
             switch self {
             case .allowed, .unsettled: return true
-            case .unsupported, .noGuest: return false
+            case .unsupported, .noGuest, .inapplicable: return false
             }
         }
 
@@ -72,7 +80,8 @@ enum GuestCapabilityGate {
             case .allowed: return nil
             case .unsettled(let text),
                  .unsupported(let text),
-                 .noGuest(let text):
+                 .noGuest(let text),
+                 .inapplicable(let text):
                 return text
             }
         }
@@ -83,7 +92,7 @@ enum GuestCapabilityGate {
         /// get to nag, and its sentence lives in the tooltip.
         var deservesAVisibleReason: Bool {
             switch self {
-            case .unsupported, .noGuest: return true
+            case .unsupported, .noGuest, .inapplicable: return true
             case .allowed, .unsettled: return false
             }
         }
