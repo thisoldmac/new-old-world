@@ -263,13 +263,12 @@ void diag_status_text(const DiagCardState *states, char *out, long cap)
     int served = 0;
     int i;
 
+    /* No "measuring" line, deliberately. The probes run synchronously, so
+       while one is running nothing repaints the placard - the card paints
+       its own running line before the call and the event loop is not
+       reached again until the answer is in. A branch here would be a
+       sentence nobody can ever see. */
     for (i = 0; i < kDiagProbeCount; ++i) {
-        if (states[i] == kDiagRunning) {
-            snprintf(out, (size_t)cap, "Measuring %s - leave the screen "
-                                       "still.",
-                     diag_probe_verb((DiagProbe)i));
-            return;
-        }
         if (states[i] != kDiagAbsent) {
             ++served;
         }

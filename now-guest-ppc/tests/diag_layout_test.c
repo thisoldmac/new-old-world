@@ -237,10 +237,17 @@ static void test_status_text(void)
     check(strstr(line, "2 of 3") != NULL,
           "the placard counts what this Mac serves");
 
+    /* A run in progress does NOT get its own placard line: the probes are
+       synchronous, so nothing repaints the placard between the press and
+       the answer. The card paints its own running line instead, which is
+       the one a person can actually see. */
     states[kDiagVProbe] = kDiagRunning;
     diag_status_text(states, line, (long)sizeof line);
-    check(strstr(line, "vprobe") != NULL, "a run in progress names itself");
-    check(strstr(line, "still") != NULL, "and repeats the one instruction");
+    check(strstr(line, "2 of 3") != NULL,
+          "a running probe changes nothing the placard can show");
+    check(diag_body_line(kDiagVProbe, kDiagRunning, 0, line,
+                         (long)sizeof line) > 0,
+          "the card is where a run in progress is said");
 }
 
 int main(void)

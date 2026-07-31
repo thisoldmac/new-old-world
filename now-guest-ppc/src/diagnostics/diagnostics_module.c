@@ -334,6 +334,19 @@ static void state_changed(void)
     }
 }
 
+static void update_button_title(int index)
+{
+    Str255 text;
+    const char *title = diag_button_title((DiagProbe)index,
+                                          g_cards[index].state);
+
+    if (g_buttons[index] == NULL || title == NULL) {
+        return;
+    }
+    CopyCStringToPascal(title, text);
+    SetControlTitle(g_buttons[index], text);
+}
+
 static void run_vprobe(void)
 {
     VProbeRow probe_rows[kDiagMaxRows];
@@ -348,6 +361,13 @@ static void run_vprobe(void)
        trade, and the card said the cost before the button was pressed. */
     card->state = kDiagRunning;
     state_changed();
+    /* Painted here rather than left to the update event: the call below
+       blocks for three seconds without reaching the event loop, so an
+       invalidated rectangle would be repainted only once the answer is
+       already in - which is to say never, as far as anyone watching is
+       concerned. */
+    update_button_title(kDiagVProbe);
+    draw_canvas();
     err[0] = '\0';
     n = now_vprobe_run(probe_rows, kDiagMaxRows, err, (long)sizeof err);
     if (n < 0) {
@@ -498,19 +518,6 @@ static void diagnostics_layout(const Rect *body)
 static void diagnostics_draw(void)
 {
     draw_canvas();
-}
-
-static void update_button_title(int index)
-{
-    Str255 text;
-    const char *title = diag_button_title((DiagProbe)index,
-                                          g_cards[index].state);
-
-    if (g_buttons[index] == NULL || title == NULL) {
-        return;
-    }
-    CopyCStringToPascal(title, text);
-    SetControlTitle(g_buttons[index], text);
 }
 
 static Boolean diagnostics_click(const EventRecord *event, Point local)
