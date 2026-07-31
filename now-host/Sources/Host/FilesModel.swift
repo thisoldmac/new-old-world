@@ -106,6 +106,11 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     @Published private(set) var rows: [FileRow] = []
     @Published private(set) var isLoading = false
     @Published private(set) var lastError: String?
+    /// Something that happened and was not a failure — a file that
+    /// landed where nothing here can open it, say. It reads beside the
+    /// error rather than as one, because calling a success an error
+    /// teaches people to ignore the red text.
+    @Published var lastNotice: String?
     @Published private(set) var transfer: TransferState?
     @Published var selection: FileRow.ID?
 
@@ -230,6 +235,11 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
         /// Position in a multi-file drop, 1-based; nil when alone.
         var index: Int?
         var total: Int?
+        /// Set when this transfer was started by a double-click, so the
+        /// progress row can say what is going to happen. A slow file
+        /// that opens in thirty seconds and a slow file that opens never
+        /// look identical until one of them says which it is.
+        var opensWhenDone = false
         var startedAt = Date()
 
         enum Direction { case incoming, outgoing }
@@ -328,6 +338,7 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
         history = fresh.history
         isLoading = false
         lastError = nil
+        lastNotice = nil
         transfer = nil
         renaming = nil
         newFolderName = nil
@@ -395,6 +406,7 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
         }
         isLoading = true
         lastError = nil
+        lastNotice = nil
         listener.listFiles(path: path, cursor: cursor) { [weak self] result in
             guard let self else { return }
             self.isLoading = false
@@ -419,24 +431,102 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
 
     // MARK: - Download
 
-    func download(_ row: FileRow, container: String? = nil) {
-        guard !row.isFolder, transfer == nil else { return }
+    /// Fetches one file to this Mac.
+    ///
+    /// `into` is where it lands, defaulting to the downloads folder. The
+    /// staging file goes to the same place on purpose: it is the same
+    /// volume as the destination, so finishing a transfer is a rename
+    /// rather than a copy of every byte a second time.
+    func download(_ row: FileRow, container: String? = nil,
+                  into directory: URL? = nil, thenOpen: Bool = false) {
+        guard !row.isFolder else { return }
+        /* One lane, and a click that quietly does nothing is the defect
+           being reported elsewhere in this very feature. Say so. */
+        guard transfer == nil else {
+            lastError = FilesError.busy.errorDescription
+            return
+        }
+        let destination = directory ?? downloadDirectory
         lastError = nil
+        lastNotice = nil
         transfer = TransferState(name: row.name, direction: .incoming,
-                                 received: 0, expected: row.sizeBytes)
+                                 received: 0, expected: row.sizeBytes,
+                                 opensWhenDone: thenOpen)
         listener.getFile(path: row.path, container: container,
-                         stagingDirectory: downloadDirectory) {
+                         stagingDirectory: destination) {
             [weak self] result in
             guard let self else { return }
             self.transfer = nil
             switch result {
             case .success(let file):
-                self.write(file)
+                let landed = self.write(file, into: destination)
+                /* Only a file that actually arrived is opened. A
+                   cancelled or failed transfer arrives here as a
+                   failure, so a stopped download never launches
+                   anything — which is the whole point of being able to
+                   stop it. */
+                if thenOpen, let landed {
+                    self.openLanded(landed)
+                }
             case .failure(let failure):
                 self.lastError = failure.message
             }
         }
     }
+
+    /// What a double-click does: bring the file to the folder this Mac
+    /// shares, then open it with whatever handles it here.
+    ///
+    /// **Why the shared folder and not the downloads folder.** It is the
+    /// one place both machines already agree on — the file is then in
+    /// reach of the guest as well, which is what makes "open it, look at
+    /// it, send it back" a round trip rather than two unrelated copies.
+    /// It is also an existing notion of a directory (`listener.share
+    /// .root`, the same one "Reveal Shared Folder" opens), so this adds
+    /// no second idea of where things go.
+    ///
+    /// A double-click on a folder navigates, as it always did. Nothing
+    /// about a folder is downloadable, and the breadcrumb is what says
+    /// where the navigation landed.
+    func openOnThisMac(_ row: FileRow) {
+        if row.isFolder {
+            open(row)
+        } else {
+            download(row, into: shareDirectory, thenOpen: true)
+        }
+    }
+
+    /// The moment after the bytes land.
+    ///
+    /// **A type this Mac cannot open is not an error.** Plenty of what
+    /// is on a classic volume — a resource-only file, an `APPL` for a
+    /// processor this Mac has not run in twenty years — arrives as
+    /// MacBinary with nothing here to open it. Guessing at an
+    /// application would be worse than useless, so the file is revealed
+    /// in the Finder instead: the transfer succeeded, it is somewhere
+    /// real, and the person can see it. What is refused is the silent
+    /// version, where a double-click ends in nothing at all.
+    private func openLanded(_ url: URL) {
+        if systemOpen.open(url) { return }
+        systemOpen.reveal(url)
+        lastNotice = "\(url.lastPathComponent) is in "
+            + "\(shareDirectory.lastPathComponent) — this Mac has "
+            + "nothing that opens it."
+    }
+
+    /// Opening and revealing, as a seam. The real thing is the Finder;
+    /// a test watches the decision instead of launching an application
+    /// on somebody's Mac.
+    struct SystemOpen {
+        var open: (URL) -> Bool
+        var reveal: (URL) -> Void
+
+        static let workspace = SystemOpen(
+            open: { NSWorkspace.shared.open($0) },
+            reveal: { NSWorkspace.shared.activateFileViewerSelecting([$0]) })
+    }
+
+    var systemOpen = SystemOpen.workspace
 
     func cancelTransfer() {
         listener.cancelFile()
@@ -685,19 +775,29 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
         }
     }
 
+    /// Writes a delivered file, into the downloads folder unless told
+    /// otherwise.
+    ///
+    /// A name already taken is never overwritten, it is bumped. That
+    /// mattered when everything landed in Downloads and it matters more
+    /// now that a double-click lands in the SHARED folder: overwriting
+    /// there would silently replace something the other machine can also
+    /// see, which is a destructive change this browser asks about
+    /// everywhere else.
     @discardableResult
-    func write(_ file: GuestListener.FileDelivery) -> URL? {
+    func write(_ file: GuestListener.FileDelivery,
+               into directory: URL? = nil) -> URL? {
+        let folder = directory ?? downloadDirectory
         let outputName = FileConverter.outputName(
             name: file.name, container: file.container)
-        var url = downloadDirectory
-            .appendingPathComponent(sanitized(outputName))
+        var url = folder.appendingPathComponent(sanitized(outputName))
         var bump = 2
         while FileManager.default.fileExists(atPath: url.path) {
             let base = (outputName as NSString).deletingPathExtension
             let ext = (outputName as NSString).pathExtension
             let name = ext.isEmpty ? "\(base) (\(bump))"
                                    : "\(base) (\(bump)).\(ext)"
-            url = downloadDirectory.appendingPathComponent(sanitized(name))
+            url = folder.appendingPathComponent(sanitized(name))
             bump += 1
         }
         do {

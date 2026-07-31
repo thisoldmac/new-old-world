@@ -136,7 +136,12 @@ struct FilesModuleView: View {
             Spacer()
             if let row = selectedRow, !row.isFolder {
                 Menu {
-                    Button("Download") { model.download(row) }
+                    Button("Open on This Mac") { model.openOnThisMac(row) }
+                    Divider()
+                    Button("Download to "
+                           + model.downloadDirectory.lastPathComponent) {
+                        model.download(row)
+                    }
                     Button("Download as MacBinary") {
                         model.download(row, container: "macbinary")
                     }
@@ -336,13 +341,10 @@ struct FilesModuleView: View {
     private var table: some View {
         FileBrowserTable(model: model,
                          rows: model.sorted(using: sortOrder),
-                         onOpen: { row in
-                             if row.isFolder {
-                                 model.open(row)
-                             } else {
-                                 model.download(row)
-                             }
-                         },
+                         // A double-click means "let me look at this":
+                         // a folder opens, a file comes to the folder
+                         // this Mac shares and opens here.
+                         onOpen: { model.openOnThisMac($0) },
                          sort: $sortOrder)
             .overlay {
                 if model.rows.isEmpty && !model.isLoading {
@@ -429,8 +431,14 @@ struct FilesModuleView: View {
                 + model.connection.peerLabel + " is still receiving ("
                 + String(format: "%d:%02d", secs / 60, secs % 60) + ")"
         }
+        /* A double-click on a big file is a long wait with nothing on
+           screen to explain it, which is indistinguishable from a broken
+           control. The row says what the wait is FOR, and the Cancel
+           button beside it is how it ends early — a stopped transfer
+           opens nothing. */
+        let then = t.opensWhenDone ? ", then opens here" : ""
         return counted + t.name + " — " + byteText(t.received) + " of "
-            + byteText(t.expected)
+            + byteText(t.expected) + then
     }
 
     private var footer: some View {
@@ -438,6 +446,14 @@ struct FilesModuleView: View {
             if let error = model.lastError, !model.rows.isEmpty {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.red)
+            }
+            // Not a failure, so not red, and it is dismissible: a file
+            // that landed somewhere real is news, not a fault.
+            if let notice = model.lastNotice {
+                Label(notice, systemImage: "info.circle")
+                    .foregroundStyle(.secondary)
+                    .onTapGesture { model.lastNotice = nil }
+                    .help("Click to dismiss")
             }
             Toggle("Convert text files", isOn: $model.convertText)
                 .help("Line endings and encoding, both directions")
