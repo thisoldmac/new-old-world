@@ -398,41 +398,60 @@ final class AgentIntegrationCapabilityTests: XCTestCase {
 
     /// The one rule this arc is a chip rather than a patch for. Prose goes
     /// stale; this fails.
+    ///
+    /// **Read through `GateSource.hostSwift`, which drops comment lines.**
+    /// Scanning the raw text made this gate fire on doc comments four times
+    /// in one week, once per agent, an amend each — and every one of them
+    /// was prose *explaining* the rule, in a file that obeys it.
+    ///
+    /// Does stripping weaken it? No, and the reasoning is worth writing
+    /// down, because the instinct is that a guest name in a comment beside
+    /// a decision is evidence the author was reasoning from identity. It
+    /// is — but it is evidence about an author, not about the code, and
+    /// this gate's claim is about code: a comment cannot branch. What the
+    /// raw scan bought was a weak proxy with a high false-positive rate;
+    /// what it cost was more than that, because a surface this narrow was
+    /// the price of keeping the noise tolerable.
+    ///
+    /// So the strip pays for the surface. Both trees are now walked whole
+    /// and RECURSIVELY, rather than one non-recursive directory plus five
+    /// hand-named files. The audit of 2026-07-31 found that the hand-named
+    /// list covered 5 of the 26 files in `Host/Automation` and none of the
+    /// 22 in `NOWAgentIntegration` outside `Projection/` — `if guestName ==
+    /// "now-68k"` in any of the other forty-three was invisible. That hole
+    /// was larger than the one the comments were making noise about.
     func testNoCompanionCodeBranchesOnGuestIdentity() throws {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
+        let root = GateSource.repoRoot
         // Every file of the companion surface, health included: naming
         // either guest is out everywhere, because there is no legitimate
         // reason for this code to know which one is on the wire.
-        // The projection module is ENUMERATED rather than listed. A hand
-        // written list is how this guard would quietly stop covering the
-        // surface it names: the whole point of the registry is that a
-        // capability arrives as a new file, and a new file nobody added
-        // here would be the one place identity could creep back in.
-        let projectionRoot =
-            "now-host/Sources/NOWAgentIntegration/Projection"
-        let projectionFiles = try FileManager.default
-            .contentsOfDirectory(
-                atPath: root.appendingPathComponent(projectionRoot).path)
-            .filter { $0.hasSuffix(".swift") }
-            .sorted()
-            .map { "\(projectionRoot)/\($0)" }
+        //
+        // ENUMERATED, never listed. A hand-written list is how this guard
+        // quietly stops covering the surface it names: the whole point of
+        // the registry is that a capability arrives as a new file, and a
+        // new file nobody added here is the one place identity creeps back
+        // in. That is not hypothetical — it is what the list this replaced
+        // had already become.
+        var surface: [String] = []
+        for tree in ["now-host/Sources/Host/Automation",
+                     "now-host/Sources/NOWAgentIntegration",
+                     "now-host/Sources/NOWAgentCompanion"] {
+            let base = root.appendingPathComponent(tree)
+            let walk = FileManager.default.enumerator(
+                at: base, includingPropertiesForKeys: nil)
+            while let url = walk?.nextObject() as? URL {
+                guard url.pathExtension == "swift" else { continue }
+                surface.append(
+                    tree + "/" + url.path.replacingOccurrences(
+                        of: base.path + "/", with: ""))
+            }
+        }
+        surface.sort()
         XCTAssertGreaterThanOrEqual(
-            projectionFiles.count, 12,
-            "The projection module should hold at least one file per "
-                + "registered capability; this guard reads the directory, "
-                + "so an empty read means the path moved.")
-        let surface = [
-            "now-host/Sources/Host/Automation/AgentIntegrationCapabilityLedger.swift",
-            "now-host/Sources/Host/Automation/AgentIntegrationProcessControl.swift",
-            "now-host/Sources/Host/Automation/AgentIntegrationSoftwareLaunch.swift",
-            "now-host/Sources/Host/Automation/AgentIntegrationSessionHealth.swift",
-            "now-host/Sources/Host/Automation/GuestFilesCommands.swift",
-            "now-host/Sources/NOWAgentCompanion/NOWMCPServer.swift",
-        ] + projectionFiles
+            surface.count, 60,
+            "This guard walks three source trees whole; a short read means "
+                + "a path moved and the rule is being enforced over almost "
+                + "nothing.")
         // The ones that DECIDE something. `guestName` / `guestOS` /
         // `guestVersion` are the hello's fields — the only identity the
         // host has — and reading them in a file that chooses what a tool
@@ -452,9 +471,7 @@ final class AgentIntegrationCapabilityTests: XCTestCase {
             """
 
         for file in surface {
-            let text = try String(
-                contentsOf: root.appendingPathComponent(file),
-                encoding: .utf8)
+            let text = try GateSource.hostSwift(file)
             for needle in ["now-68k", "NOW-68K"] {
                 XCTAssertFalse(
                     text.contains(needle),
@@ -463,9 +480,7 @@ final class AgentIntegrationCapabilityTests: XCTestCase {
             }
         }
         for file in deciders {
-            let text = try String(
-                contentsOf: root.appendingPathComponent(file),
-                encoding: .utf8)
+            let text = try GateSource.hostSwift(file)
             for needle in ["guestName", "guestOS", "guestVersion"] {
                 XCTAssertFalse(
                     text.contains(needle),
