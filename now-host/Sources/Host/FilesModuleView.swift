@@ -118,6 +118,11 @@ struct FilesModuleView: View {
 
     private var breadcrumbBar: some View {
         HStack(spacing: 6) {
+            /* The up button stays. The parent is always a crumb away, so
+               this is not the only way out any more — but it is a fixed
+               target that does not move as the path changes shape, and
+               removing a control that works to make room for a new one
+               is not a trade anybody asked for. */
             Button {
                 model.goUp()
             } label: {
@@ -126,21 +131,7 @@ struct FilesModuleView: View {
             .disabled(model.breadcrumb.isEmpty || !model.canBrowse)
             .help("Enclosing folder")
 
-            Button(model.shareRootName) { model.jump(toDepth: -1) }
-                .buttonStyle(.plain)
-                .foregroundStyle(model.breadcrumb.isEmpty
-                                 ? .primary : Color.accentColor)
-
-            ForEach(Array(model.breadcrumb.enumerated()), id: \.offset) {
-                index, component in
-                Image(systemName: "chevron.right")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                Button(component) { model.jump(toDepth: index) }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(index == model.breadcrumb.count - 1
-                                     ? .primary : Color.accentColor)
-            }
+            pathBar
 
             Spacer()
             if let row = selectedRow, !row.isFolder {
@@ -220,6 +211,126 @@ struct FilesModuleView: View {
             .help("Refresh")
         }
         .font(.callout)
+    }
+
+    /// Where you are, disk first, with every place you are allowed to go
+    /// one click away. The decomposition and the folding are
+    /// `FilePathBar`; this draws what it decided.
+    private var pathBar: some View {
+        HStack(spacing: 4) {
+            ForEach(Array(model.pathItems.enumerated()), id: \.element.id) {
+                offset, item in
+                if offset > 0 {
+                    Image(systemName: "chevron.right")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                switch item {
+                case .crumb(let crumb):
+                    crumbView(crumb)
+                case .elision(let hidden):
+                    elisionMenu(hidden)
+                }
+            }
+            pathStatusNote
+        }
+        .lineLimit(1)
+        .help(model.fullPath.isEmpty
+              ? "The folder \(model.connection.peerLabel) shares"
+              : model.fullPath)
+    }
+
+    @ViewBuilder
+    private func crumbView(_ crumb: FilePathBar.Crumb) -> some View {
+        let label = HStack(spacing: 4) {
+            if crumb.isVolume {
+                // The top of the tree on that machine is a disk with a
+                // name, not a slash.
+                Image(systemName: "externaldrive")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Text(crumb.name)
+        }
+
+        if crumb.isPlaceholder {
+            label
+                .foregroundStyle(.secondary)
+                .help("\(model.connection.peerLabel) has not said which "
+                      + "folder it shares yet.")
+        } else if let depth = crumb.depth {
+            Button { model.jump(toDepth: depth) } label: { label }
+                .buttonStyle(.plain)
+                .foregroundStyle(isCurrent(crumb)
+                                 ? AnyShapeStyle(.primary)
+                                 : AnyShapeStyle(Color.accentColor))
+                .disabled(!model.canBrowse)
+                .help(crumb.role == .shareRoot
+                      ? "The folder \(model.connection.peerLabel) shares"
+                      : "Go to \(crumb.name)")
+        } else {
+            /* Above the shared folder. It is a real place on that Mac
+               and naming it is the point — but the share boundary stops
+               here, so it is not offered as somewhere to click. */
+            label
+                .foregroundStyle(.secondary)
+                .help(crumb.isVolume
+                      ? "The disk on \(model.connection.peerLabel). "
+                        + "Browsing starts at the folder it shares."
+                      : "On \(model.connection.peerLabel), outside the "
+                        + "folder it shares")
+        }
+    }
+
+    /// The folded middle of a deep path. Nothing is lost — it is a menu
+    /// of exactly the crumbs the bar did not have room to draw.
+    private func elisionMenu(_ hidden: [FilePathBar.Crumb]) -> some View {
+        Menu {
+            ForEach(hidden) { crumb in
+                if let depth = crumb.depth {
+                    Button(crumb.name) { model.jump(toDepth: depth) }
+                } else {
+                    Text(crumb.name)
+                }
+            }
+        } label: {
+            Text("…")
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help(hidden.count == 1
+              ? "1 folder not shown: " + hidden[0].name
+              : "\(hidden.count) folders not shown: "
+                + hidden.map(\.name).joined(separator: ", "))
+    }
+
+    /// The bar never goes blank. Before the first listing, and after a
+    /// failed one, it says which of those happened.
+    @ViewBuilder
+    private var pathStatusNote: some View {
+        switch model.pathStatus {
+        case .ready:
+            EmptyView()
+        case .noGuest:
+            Text("— no Mac connected")
+                .foregroundStyle(.secondary)
+        case .loading:
+            Text("— listing…")
+                .foregroundStyle(.secondary)
+        case .unlisted:
+            Text("— nothing listed yet")
+                .foregroundStyle(.secondary)
+        case .failed(let message):
+            Label("not listed", systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.orange)
+                .help(message)
+        }
+    }
+
+    /// The folder actually on screen — the deepest crumb, which is the
+    /// share root itself when nothing has been opened.
+    private func isCurrent(_ crumb: FilePathBar.Crumb) -> Bool {
+        crumb.depth == model.breadcrumb.count - 1
     }
 
     private var table: some View {

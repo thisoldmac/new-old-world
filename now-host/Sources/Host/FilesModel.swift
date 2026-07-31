@@ -181,13 +181,32 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// folder you were looking into.
     @Published private(set) var shareRoot: String?
 
-    /// The last named component of the share root, for the crumb.
-    var shareRootName: String {
-        guard let root = shareRoot else { return "Share" }
-        let parts = root.split(separator: ":").filter { !$0.isEmpty }
-        // A whole volume is "Macintosh HD:" — one part, and the right
-        // name to show. A folder is the last part.
-        return parts.last.map(String.init) ?? "Share"
+    /// The path as the bar draws it: the disk, the published folder, the
+    /// folders inside it, and whatever the width made us fold away. The
+    /// decomposition lives in `FilePathBar`; this is only the join of it
+    /// to what this window currently knows.
+    ///
+    /// It replaced a lone crumb that showed the last component of the
+    /// share root and nothing else — which named a folder without ever
+    /// saying which disk it was on, and left an up button as the only way
+    /// to move.
+    var pathItems: [FilePathBar.Item] {
+        FilePathBar.items(shareRoot: shareRoot, breadcrumb: breadcrumb)
+    }
+
+    /// The whole path in the guest's own spelling, for the bar's tooltip.
+    var fullPath: String {
+        FilePathBar.fullPath(shareRoot: shareRoot, breadcrumb: breadcrumb)
+    }
+
+    /// Why the bar looks the way it does, so it always says something.
+    /// A failed listing keeps its crumbs: where you tried to be is what
+    /// you need in order to go somewhere else.
+    var pathStatus: FilePathBar.Status {
+        if !canBrowse { return .noGuest }
+        if let error = lastError { return .failed(error) }
+        if shareRoot != nil { return .ready }
+        return isLoading ? .loading : .unlisted
     }
 
     @Published var shareDirectory: URL {
