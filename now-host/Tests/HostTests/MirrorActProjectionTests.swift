@@ -26,6 +26,17 @@ import XCTest
 ///    every act must name one.
 /// 2. **`performed: true` is not evidence.** So no receipt on this surface
 ///    may spell a success that means "and it worked".
+///
+/// **Every gate here was watched failing (2026-07-31), by mutation:**
+///
+/// | Mutation | Failed |
+/// | --- | --- |
+/// | `frontmost` added to `WindowActProjection.acceptedArguments` | `…NoActRowAcceptsATargetFreeSelector`, `…AcceptedSetIsExactlyItsPublishedProperties` |
+/// | `TextGetProjection` annotations spelled `readOnlyHint: false` | `…TheReadIsReadOnlyAndTheTwoActsAreFullAccess`, `…AReadOnlyMachineRefusesTheActsAndNotTheRead` |
+/// | `TextSetProjection.invoke` checks the text before the target | `…TheTargetIsRefusedBeforeTheText` |
+/// | a `performed` case added to `AgentIntegrationActDispatch` | `…AnActCanOnlyClaimDispatch` |
+/// | `present == expected` relaxed to `isSuperset(of:)` in the window decode | `…AnActionIsRefusedGeometryItDoesNotTake` |
+/// | `WindowActProjection` registered in `HostProjectionCatalog` without folding its constant | `…ARowIsRegisteredExactlyWhenItsRequirementIsAKnownName` (and `MCPCoverageTests.testEveryRequirementResolvesToTheContract`, which is the reason these rows are unregistered) |
 final class MirrorActProjectionTests: XCTestCase {
 
     private var rows: [any HostProjection.Type] {
