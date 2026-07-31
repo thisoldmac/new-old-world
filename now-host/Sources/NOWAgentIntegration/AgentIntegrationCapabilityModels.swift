@@ -219,6 +219,31 @@ public enum AgentIntegrationCapabilityNames {
     /// The screen-capture family. A contract message name, not an alias:
     /// `capture.request` is what the host sends and both guests dispatch.
     public static let captureRequest = "capture.request"
+    /* The live-stream bracket, named as THREE message families rather than
+       one, and the reason is the opposite of the census's.
+
+       A probe is an argument of `census.request` and could never be a
+       requirement. These three are each a message the contract declares and a
+       guest dispatches by name, so each resolves in the ledger on its own —
+       and the row that projects the bracket requires all three, because a
+       bracket you can open and cannot close is not a capability anyone should
+       be handed. The conjunction is right here where it was wrong for the
+       diagnostics: those three differ per guest, and these three arrived
+       together, are served together, and are absent together. */
+
+    /// Opens the bracket. Every frame's `capture.begin` carries the id this
+    /// message names, which is what routes a frame to the live view instead of
+    /// to the disk.
+    public static let streamStart = "stream.start"
+    /// Closes it. Always answered — `stream.stopped` is the stream's last
+    /// word — which is why the projection can report a closed bracket rather
+    /// than a hope.
+    public static let streamStop = "stream.stop"
+    /// Asks for a keyframe: the guest's next frame is sent whole. The
+    /// contract calls this belt-and-suspenders against compositing drift, and
+    /// on this surface it is load-bearing for a second reason — it is what
+    /// makes "the frame after you asked" a thing a caller can be promised.
+    public static let streamRefresh = "stream.refresh"
     public static let launchCommand = "launch"
     /// `launch`'s read-only twin: show one item in the guest's own Finder.
     /// A COMMAND rather than a message family — the ledger resolves it
@@ -304,9 +329,10 @@ public enum AgentIntegrationCapabilityNames {
     public static let all: Set<String> = [
         processList, processQuit, processFront, softwareList, fileList,
         fileGet, filePut, fileCancel, fileMove, fileTrash, fileRestore,
-        fileMkdir, censusRequest, captureRequest, launchCommand,
-        revealCommand, catsearchCommand, gestaltCommand, tailCommand,
-        vprobeCommand, shotdiagCommand, putstatCommand,
+        fileMkdir, censusRequest, captureRequest, streamStart, streamStop,
+        streamRefresh, launchCommand, revealCommand, catsearchCommand,
+        gestaltCommand, tailCommand, vprobeCommand, shotdiagCommand,
+        putstatCommand,
     ]
 
     /// Refusal codes that mean "this guest does not implement that", as
