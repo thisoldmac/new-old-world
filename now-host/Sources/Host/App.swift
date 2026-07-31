@@ -342,7 +342,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                 }
             ) {
                 [agentIntegration = state.agentIntegration,
-                 guestFiles = state.guestFiles] request in
+                 guestFiles = state.guestFiles,
+                 activity = state.agentActivity] request in
                 /* Addressing is checked once, before any operation, so
                    no tool can be reached with a guest selector nobody
                    honoured. Session health is exempt: it is the call a
@@ -501,7 +502,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     AgentIntegrationAuditLog.record(
                         event,
                         drivenGuest:
-                            agentIntegration.activeReference()?.id)
+                            agentIntegration.activeReference()?.id,
+                        stream: activity)
                     return .recorded
                 case .bringToFront:
                     /* The first of P1a's eleven to be wired (plan 005,
@@ -668,10 +670,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             }
             try server.start()
             agentIntegrationServer = server
+            state.agentActivity.endpointOpened(
+                at: server.endpoint.socketURL.path)
         } catch {
+            let reason = "\(error)"
             HostLog.shared.write(
                 .warn, "agent",
-                "local agent integration unavailable: \(error)")
+                "local agent integration unavailable: \(reason)")
+            /* The Agent page is told, because otherwise it would report
+               the honest "nothing has ever attached" beside a socket path
+               naming a file that is not there — and send somebody
+               configuring a client to look for it. */
+            state.agentActivity.endpointUnavailable(reason)
         }
     }
 }

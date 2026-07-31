@@ -93,6 +93,19 @@ struct ModuleRegistry: Sendable {
             symbol: "shippingbox",
             summary: "What is installed on the connected Mac"
         ),
+        /* In the footer rather than the list, and above Logs, because the
+           list is what you can do to the OTHER Mac and the footer is the
+           state of this side. This page is about this host: who has been
+           driving it and what they did. It sits beside Logs because it is
+           the same record read a different way — Logs is everything that
+           happened, this is the part of it somebody else caused. */
+        ModuleDescriptor(
+            id: "agent",
+            title: "Agent",
+            symbol: "person.badge.shield.checkmark",
+            summary: "What an agent has done to this Mac",
+            placement: .footer
+        ),
         ModuleDescriptor(
             id: "logs",
             title: "Logs",

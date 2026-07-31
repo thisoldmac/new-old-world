@@ -54,6 +54,11 @@ final class HostAppState: ObservableObject {
     /// the app delegate when it stands the server up; `.neverAttached` until
     /// something does, and for good on a Mac nothing ever does.
     let agentCompanions = AgentCompanionModel()
+    /// What those companions have DONE — the audit stream the Agent page
+    /// draws, fed from the same seam that writes the log line. Separate from
+    /// the presence ledger above on purpose: that one records who and when
+    /// and refuses to record what, and this is the what.
+    let agentActivity = AgentActivityModel()
     let guestFiles: GuestFilesCommandService
     private let artifactApprovals: AgentIntegrationArtifactApprovalStore?
     private(set) lazy var console = ConsoleModel(listener: listener)
