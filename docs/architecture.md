@@ -17,10 +17,14 @@ versioned contract over one multiplexed wire. No TimBotTu runtime
 imports, no general remote-control surface. One app on each side,
 polished and human-facing.
 
-The envelope is **PowerPC only** (decided 2026-07-19): the guest is a
-Carbon app using the 8.6+ toolbox (CarbonLib 1.6+, Open Transport via
-runtime CFM resolution, Appearance). A 68K sibling may exist someday; it
-must not constrain this codebase.
+The **PowerPC guest** is the reference implementation (decided
+2026-07-19): a Carbon app using the 8.6+ toolbox (CarbonLib 1.6+, Open
+Transport via runtime CFM resolution, Appearance). The 68K sibling that
+decision said "may exist someday" now does — NOW-68K, Retro68 68K,
+non-Carbon Toolbox C, metal-proven on a PowerBook 180c — and the
+constraint it was granted still holds: it serves a subset of the same
+contract additively, and it does not shape the PowerPC codebase. Who
+serves what is [contract-coverage.md](contract-coverage.md).
 
 ## Wire
 
@@ -41,6 +45,28 @@ and for stated reasons (`now-host/Sources/Host/GuestScopedState.swift`).
 
 The **guest dials the host** — classic Mac OS listeners are the fragile
 half of OS 9 networking, so every listener stays on the modern side.
+
+### The machine's own answer, in `hello`
+
+`hello` carries an optional `agent` field: `disabled` / `read-only` /
+`full`, an **ordered** enum so a higher tier can be added without
+re-shaping the wire. It is the Macintosh's own statement about what an
+agent companion may do to it, and it is the only place that statement
+appears — the host does not offer a switch, because the machine being
+driven is the one entitled to answer.
+
+Three rules the contract states and the host obeys:
+
+- **Absence is a fact about the sender, not an answer.** A guest that
+  predates the field has said nothing, and silence must never be read as
+  consent. It currently fails **open**, which is a dated decision
+  (2026-07-30) matching today's default-on behaviour rather than a
+  property of the design; it is the line that flips when an installer
+  ships.
+- **An unrecognised token is not consent either.** A receiver that cannot
+  name a tier cannot claim to be under it, so everything is refused.
+- **Nothing else in `hello` changed.** The field is additive, and the 68K
+  guest sends none — see [contract-coverage.md](contract-coverage.md).
 
 ### Two planes on the control channel
 
@@ -100,8 +126,9 @@ cannot be re-derived.
 ## The console is a dumb shell
 
 The host console does not know what commands the guest has, and must not.
-There are **two guests**: the PowerPC Carbon guest serves fifteen
-commands, NOW-68K serves three. A command list on the host would be
+There are **two guests** and they serve different verb sets, neither of
+them closed ([contract-coverage.md](contract-coverage.md) has the roster,
+derived). A command list on the host would be
 wrong for one of them and wrong again the next time either grows a verb —
 and wrong quietly, because a command the guest had and the console did
 not was refused locally, without ever reaching the wire.
@@ -168,6 +195,76 @@ the run loop, so `applicationShouldTerminate` returns `terminateLater`
 and `GuestListener.shutDown` reports once the socket has taken the
 farewell — bounded at half a second, because a guest wedged badly enough
 to need telling is exactly the one that will not read.
+
+## Faces, and the one door they share
+
+A **face** is something that can ask this host to act on the guest: the
+app's own UI, and the MCP companion. A **projection** is one capability
+rendered for every face at once — its schema, its bounds, its
+availability rule and its answer, written once.
+`HostProjectionCatalog` is the registry, in presentation order;
+`HostProjectionRegistry` refuses a duplicate capability name.
+
+What each row reaches, what it requires, and every guest capability no
+row exposes yet — with a reason or an admission of not having noticed —
+is [mcp-coverage.md](mcp-coverage.md), which is derived from the registry
+in-process and gated by `MCPCoverageTests`. The boundary and trust model
+are [agent-integration.md](agent-integration.md). Neither is restated
+here, and neither is the row count: **the tables are derived and the
+prose is not**, which is a lesson this repository has now learned twice.
+
+Three rules hold the layer together.
+
+1. **The companion is a client, not a face of its own.** It cannot ask
+   for anything the app could not; adding a tool means adding a row, and
+   a row arrives on every face together.
+2. **Only `HostProjectionDispatch` invokes a projection**, so every
+   invocation emits an audit event and nothing can act on the guest
+   quietly. This is the rule most worth knowing about because it is the
+   one a text-scanning gate cannot fully prove — the gate forgives any
+   line containing `dispatch.invoke(`, and the real fix is narrowing
+   `invoke`'s visibility ([source-text-gates.md](source-text-gates.md)).
+3. **Consent is checked before the row runs, not inside it.** One check
+   covers every registered row without per-row opt-in.
+
+### The consent ceiling
+
+`HostCapabilityTier` is `read-only < full`, ordered rather than boolean.
+`disabled` is deliberately not a tier — it is the absence of one. The
+guest's `hello` answer becomes a **ceiling**, and a row is permitted when
+its required tier is at or below it.
+
+A row's required tier is **derived from what it already publishes**:
+`readOnlyHint` in its own rendered MCP descriptor. There is no separate
+tier field to keep in step, because a second declaration of the same fact
+is the thing that goes stale. `destructiveHint` is not a second boundary;
+it is only a coherence check — a row claiming both read-only and
+destructive fails the suite. A row declaring neither falls to `full`,
+which is fail-restrictive.
+
+**A denial is not an unavailability, and a caller must be able to tell.**
+Consent refusal is a JSON-RPC **error**, code `-32010` — in the
+implementation-defined range, deliberately not `-32602`, because the
+caller asked correctly. Its data names the ground (`machine-declines`,
+`above-granted-tier`, `unrecognized-tier`), the capability, the tier it
+needed and the machine's verbatim answer. A capability the guest simply
+does not serve comes back the other way: a **successful** result carrying
+the row's own `unavailable` arm. So a caller branches on transport shape,
+not on prose.
+
+### Companions, not sockets
+
+The local surface is one request per connection and the companion is
+short-lived and client-launched, so an `isConnected` boolean would be
+true for milliseconds and false whenever anyone looked. The host models
+**companions** instead (`AgentCompanionActivity`), identified by the pid
+the kernel attests on the accepted socket rather than by anything the
+peer claims. Four states, derived from the clock at read time rather than
+stored: **never-attached**, **working** (a call is in flight — it
+outranks recency), **active** (seen inside a two-minute window) and
+**idle**. The ledger keeps counts and clock times and deliberately no
+operation names, arguments or payloads, so it cannot become the back door
+that reintroduces what an audit event leaves out.
 
 ## Logging
 
@@ -266,6 +363,9 @@ than trusting the guest to answer.
   the pages, one per sidebar row, behind `WorkshopModuleOps`. Adding one
   is [docs/adding-a-workshop-module.md](adding-a-workshop-module.md).
 - `prefs.c` — versioned preferences (accretive record, v9).
+- `agent_access.c` — the one seam that answers `hello`'s `agent` field.
+  A function rather than a constant so a future switch or installer has a
+  single landing place; today it returns `full` unconditionally.
 - `main.c` — Toolbox event loop; drops its WaitNextEvent sleep to 0
   while any pump is live.
 
@@ -276,8 +376,24 @@ than trusting the guest to answer.
   compositing, idle timeout.
 - `CaptureDecoder` — wire pixels to CGImage; delta rect patching.
 - `StreamRecorder` — live VFR H.264 encoding.
-- `ScreenshotModuleModel` / `ConsoleModel` / `SettingsModel` — module
-  state; `ModuleRegistry` the composition root; `HostAppState` wiring.
+- `ScreenshotModuleModel` / `ConsoleModel` / `SettingsModel` /
+  `DiagnosticsModel` / `AgentActivityModel` and the rest — module state;
+  `ModuleRegistry` the composition root; `HostAppState` wiring. A module
+  declares a `ModulePlacement`, so the sidebar's pinned footer is derived
+  from the one ordered array rather than stored twice, and the View menu
+  numbers that array rather than being retyped.
+  - `DiagnosticsModel` runs the three guest probes that measure the
+    machine itself (`vprobe`, `shotdiag`, `putstat`) and decides which
+    cards can run **from that machine's own `help` table**, never from
+    which Mac it is. A refusal is shown in the guest's words; an
+    unknown-command refusal reads as absence rather than as an error.
+  - `AgentActivityModel` + `AgentCompanionModel` are the Agent page:
+    companion presence, the machine's consent answer, and a bounded
+    in-memory audit stream. It is a glance, not the record — the log is
+    the record — and it holds no arguments, paths or payloads.
+- `HostProjectionCatalog` / `HostProjectionRegistry` /
+  `HostProjectionDispatch` — the projection layer above; `NOWMCPServer`
+  renders the registry for the companion face.
 - `MainMenu` — the menu bar, as a pure function over the registry;
   `App.swift` installs it, owns the status item, and holds the quit
   sequence. `ConsoleInputField` is AppKit because ↑/↓ and Tab are out of
