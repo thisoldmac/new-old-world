@@ -76,6 +76,31 @@ final class GuestWireConformanceTests: XCTestCase {
         return out
     }
 
+    /// The same sources **with their comments removed** — see `GateSource`.
+    ///
+    /// `guestSources()` above stays RAW on purpose: the literal scanner below
+    /// does its own comment skipping, and it needs the raw text to get the
+    /// character-literal parity right (the `'"'` case, whose absence once hid
+    /// `bye`). Stripping first and then scanning would work, but it would move
+    /// that hard-won logic somewhere nothing exercises it.
+    ///
+    /// A gate that reads the text DIRECTLY — `contains`, a regex — must read
+    /// through here instead, because a comment naming the identifier satisfies
+    /// a raw scan. That is the fourth time this defect has been found in this
+    /// suite: on 2026-07-31 the disk-reservation check below was satisfied
+    /// entirely by a comment. Deleting the `SetEOF` reservation from
+    /// `fileshare.c` and leaving the three pinned lines in the comment that
+    /// replaced them built both guests, passed the native suite, and passed all
+    /// 915 host tests — while every write extended the file and a full disk
+    /// became a late, misleading transfer failure, which is the exact outcome
+    /// the gate's own prose says it prevents.
+    private func guestSourcesWithoutComments() throws -> [(name: String,
+                                                           text: String)] {
+        try guestSources().map {
+            ($0.name, GateSource.withoutCComments($0.text))
+        }
+    }
+
     // MARK: - Reading templates out of C
 
     /// C string literals that sit next to each other are one literal.
@@ -321,7 +346,17 @@ final class GuestWireConformanceTests: XCTestCase {
     func testHfsPathArgumentsAreTextDecoded() throws {
         let pathKeys = ["path", "toPath", "trashedAs"]
         var checked = 0
-        for (file, text) in try guestSources() {
+        // Comments stripped. This gate's direction is the safe one — a
+        // comment can only ADD hits to a check that demands zero — but a
+        // commented-out call is then a failure about code that does not run,
+        // and the suite has paid for that shape of false positive four times
+        // in a week (see AgentIntegrationCapabilityTests).
+        //
+        // The list of keys is hand-written, and that is the real limit: a
+        // NEW key naming an HFS path is invisible here until someone adds
+        // it. Nothing in the contract marks a field as a filename, so there
+        // is nothing to derive the list from.
+        for (file, text) in try guestSourcesWithoutComments() {
             for key in pathKeys {
                 // now_json_find_string( <args, no ';'> "<key>"  — the
                 // negated class stops at the statement's semicolon, so a
@@ -346,10 +381,26 @@ final class GuestWireConformanceTests: XCTestCase {
     /// SetEOF to reserve it. Classic File Manager failures are ordinary
     /// return values; ignoring one turns a full disk into a late, misleading
     /// transfer failure.
+    ///
+    /// **Comments are stripped**, and that is not tidiness — see
+    /// `guestSourcesWithoutComments()` for the mutation that removed the
+    /// reservation outright and left this gate reading the comment that
+    /// replaced it, green, across every suite this project has.
+    ///
+    /// What it still cannot see, and no `contains` can: these are three
+    /// *lines*, pinned by their exact text. They prove the statements are
+    /// written somewhere in the file — not that they run, not that they run in
+    /// this order, and not that they run before the guest answers `file.accept`.
+    /// Reformatting any one of them across two lines fails this gate while
+    /// changing nothing, and hoisting all three into a helper that is never
+    /// called passes it. The claim in the sentence above is about REACHABILITY,
+    /// and reachability is what reading text cannot establish — the standing
+    /// decision not to grow a partial parser for it is at `HostFaceReach.reached`.
     func testGuestChecksDiskReservationBeforeAcceptingUpload()
         throws {
         let fileshare = try XCTUnwrap(
-            try guestSources().first { $0.name.hasSuffix("/fileshare.c") }?.text)
+            try guestSourcesWithoutComments()
+                .first { $0.name.hasSuffix("/fileshare.c") }?.text)
         XCTAssertTrue(fileshare.contains(
             "err = SetEOF(rx->data_ref, bytes);"))
         XCTAssertTrue(fileshare.contains(
