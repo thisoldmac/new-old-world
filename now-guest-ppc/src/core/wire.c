@@ -6,6 +6,7 @@
 
 #include <Processes.h>
 
+#include "agent_access.h"
 #include "build_stamp.h"
 #include "capture.h"
 #include "fileshare.h"
@@ -489,12 +490,17 @@ static void send_hello(void)
        touches every build, so it differs whenever the build does. Not
        escaped: those macros are "Mmm dd yyyy hh:mm:ss" and contain neither a
        quote nor a backslash. */
+    /* agent is this MACHINE'S answer to whether a companion may drive it,
+       stated rather than left to silence: the contract reads an absent
+       field as "predates the feature", never as consent, so a machine that
+       consents has to say so as plainly as one that refuses. Not escaped
+       either — now_agent_access() returns one of three contract tokens. */
     snprintf(json, sizeof json,
              "{\"type\":\"hello\",\"contract\":%d,\"side\":\"guest\","
-             "\"version\":\"%s\",\"build\":\"%s\",\"name\":\"%s\","
-             "\"os\":\"9\",\"chunk\":%d}",
-             kNowContractRevision, PRODUCT_VERSION, now_build_stamp(), esc,
-             kNowDefaultChunk);
+             "\"version\":\"%s\",\"build\":\"%s\",\"agent\":\"%s\","
+             "\"name\":\"%s\",\"os\":\"9\",\"chunk\":%d}",
+             kNowContractRevision, PRODUCT_VERSION, now_build_stamp(),
+             now_agent_access(), esc, kNowDefaultChunk);
     if (!send_control(json)) {
         fail("Sending hello failed");
     }
