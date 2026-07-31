@@ -96,7 +96,11 @@ application code, "where a bug is fixed by copying a file instead of a reboot."
 
 So M1 splits accordingly, and the halves land in different places.
 
-## The blocker nobody has resolved
+## The blocker nobody has resolved — **resolved 2026-07-31**, see M3
+
+Kept as written because the reasoning still holds and the answer is easier to
+judge beside the question. The bracket landed on `claude/stream-projection`; what
+it decided, and how that reshapes M4, is in the sequencing below.
 
 **Mirror is a continuous stream. NOW has one transfer lane across both
 directions.**
@@ -215,12 +219,53 @@ selector, and adding one would couple the shipping app to a spike it is
 supposed to be insulated from. A ~100-line standalone app that Gestalts `'QDpr'`
 and draws the counters keeps the whole spike in one disposable place.
 
-### M3 — the streaming decision
+### M3 — the streaming decision — **answered and built** (`claude/stream-projection`)
 
-**A decision, not an implementation.** Does NOW grow a continuous bracket
-alongside its bounded calls, and if so, how does it share one transfer lane with
-capture and file transfer? Everything downstream of here is shaped by the
-answer.
+**A decision, not an implementation** — it turned out to be both. The bracket
+exists: `stream.start` / `stream.stop` / `stream.refresh`, three capability names
+rather than one, because *"a bracket you can open and cannot close is not a
+capability to hand anybody."* The projection row requires all three.
+
+What it settled, and what each answer costs this fold-in:
+
+- **A frame IS a capture.** Between `stream.start` and `stream.stopped` the guest
+  sends frames as ordinary capture transfers, reusing the capture types whole
+  rather than inventing a second picture type for the same bytes.
+- **The lane stays one wide, and the exclusivity is shown rather than hidden.**
+  An agent's stream turns the person's live view on and **greys out their Capture
+  button**. So the contention question this plan raised has an answer: nothing
+  shares the lane, and the UI says so.
+- **Ownership is two mechanisms, because neither subsumes the other** — a 5 s pid
+  liveness poll for the companion that died, and a 60 s lease renewed by any
+  stream call for the client that lived and lost interest. Pid recycling is the
+  seam; the lease closes it.
+- **No maximum duration**, deliberately, with the cost stated rather than hidden.
+- **`refresh` always sends and waits.** Handing back the newest frame in hand
+  would be free and would also be a picture of an unknown moment.
+
+**The premise is unmeasured, and it decides whether the row should exist at
+all:** nobody has measured whether a frame off an open bracket is actually
+cheaper than a 0.5–0.6 s capture. If it is not clearly cheaper, the row's reason
+for existing is wrong.
+
+### M4 — scene families on the wire
+
+Mirror-shaped, NOW-conventioned. The IR is the thing being carried; read
+`IR-V1.md` upstream when it settles rather than designing against a moving
+target.
+
+**M3 reshaped this rather than merely unblocking it.** The bracket generalises
+for *pictures* — its frame type is a capture, by decision. A Mirror scene frame
+is semantic structure, not a picture, so the M4 question is now specific: **does
+a scene reuse the bracket, or does "a frame IS a capture" have to become "a frame
+is one of two things"?** Reusing it means one bracket, one ownership model, one
+lease, and a second frame kind. Not reusing it means a second continuous
+mechanism, which is the thing M3 was written to avoid having two of.
+
+The exclusivity answer bites here too: a Mirror session holds the one lane, so
+**no file transfer while a scene streams**. That is now a known constraint to
+design around rather than an open question — but it is a product statement, and
+it should be said out loud before it is discovered.
 
 ### M4 — scene families on the wire
 
@@ -243,7 +288,24 @@ now has two precedents.
 
 ### Deferred until it lands
 
-**`portal`.** Mid-solution upstream. Folding a mechanism while its author is
+**`portal`.** Mid-solution upstream, and **actively being worked as of
+2026-07-31** — `MENU_INVOKE` is upstream's defect 0. Do not touch it here.
+
+Two of its measured findings already apply to us, though, and neither waits on
+the fold-in:
+
+- **Self-disarming is not the guard; identity is.** Measured, and it inverted the
+  plan's own assertion: disarming after one use says the patch fires once and
+  says nothing about *whose* call it fires on. An armed menu request rode the
+  user's own press **18/20**; the control patch, which additionally requires the
+  request to name that exact `ControlHandle`, hijacked **0/20**. A bound on time
+  or count is not a bound on scope. This lands on **P3**, whose probe currently
+  patches whichever port happens to be current while armed — see
+  [prototypes/qdprobe](../../prototypes/qdprobe/README.md).
+- **A background target never arms** (6/6 timeouts): a suspended process never
+  pumps, so anything keyed to a target's own context can only reach a process
+  running its event loop. NOW inherits this directly — anchors are captured at
+  `jGNE` — and it bounds what identity-scoped arming can ever address. Folding a mechanism while its author is
 still proving it means integrating a moving target and re-doing it.
 
 Note the adjacency, though: portal is attacking **drag and command-key-less
