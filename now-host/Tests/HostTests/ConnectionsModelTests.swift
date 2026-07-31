@@ -1,4 +1,5 @@
 import XCTest
+import Network
 import NOWAgentIntegration
 @testable import Host
 
@@ -263,6 +264,23 @@ final class ConnectionsModelTests: XCTestCase {
                        "the only alarming line is an actual failure")
     }
 
+    /// Idle is the ROSTER's answer, not the state's.
+    ///
+    /// The listener publishes its state and its roster separately, and a
+    /// `@Published` fires before the value settles, so the two can be read
+    /// a turn apart. If they disagree the page believes the roster: it is
+    /// built from live sessions, and a page that drew "connected" from a
+    /// stale state line would show a Mac with no row under it.
+    func testIdleFollowsTheRosterWhenTheStateDisagrees() {
+        let snapshot = ConnectionsSnapshot.make(
+            state: .connected(guestName: "NOW 0.14"),
+            guests: [], known: [], ended: [:],
+            resolve: resolver(driving: nil, connected: []))
+
+        XCTAssertTrue(snapshot.isIdle)
+        XCTAssertEqual(snapshot.headline, "No Mac connected")
+    }
+
     /// One Mac is the common case, and it must not be dressed up as a
     /// choice between machines.
     func testOneConnectedMacDoesNotReadAsAFleet() {
@@ -280,7 +298,11 @@ final class ConnectionsModelTests: XCTestCase {
     func testTwoConnectedMacsNameTheOneBeingDriven() {
         let snapshot = ConnectionsSnapshot.make(
             state: .connected(guestName: "NOW 0.14"),
-            guests: [guest("q950", at: 5), guest("pb1400c", active: true)],
+            /* The driven Mac arrived SECOND on purpose: sorted by
+               connection time alone it would fall to the bottom, and the
+               row a person is looking for would move whenever another
+               machine dialled in. */
+            guests: [guest("q950"), guest("pb1400c", active: true, at: 5)],
             known: [], ended: [:],
             resolve: resolver(driving: "pb1400c",
                               connected: ["pb1400c", "q950"]))
@@ -357,6 +379,11 @@ final class ConnectionsModelTests: XCTestCase {
         XCTAssertNotEqual(ConnectionsModel.explain(.notFound, proposed: "x"),
                           ConnectionsModel.explain(.malformed, proposed: "x"),
                           "three failures, three sentences")
+        /* `notFound` is about the MACHINE having gone, not about the name
+           that was typed, so quoting the name back would send a person
+           looking for a fault in their typing. */
+        XCTAssertEqual(ConnectionsModel.explain(.notFound, proposed: "pb180c"),
+                       "That Mac is no longer connected.")
     }
 
     /// Renaming a machine that is not connected is refused with a reason
@@ -378,6 +405,80 @@ final class ConnectionsModelTests: XCTestCase {
     }
 
     // MARK: - The model against a real listener
+
+    /// The live path, end to end: a Mac dials in, the page grows a row
+    /// for it, the Mac goes away, and the page keeps the session id long
+    /// enough to say what a caller still holding it would be told.
+    ///
+    /// Written against a real listener and a real socket because the
+    /// ledger is fed by watching the roster change — a unit test that
+    /// handed the ledger its own entries would prove the formatting and
+    /// not the watching.
+    func testAMachineThatLeavesBecomesARememberedRowWithItsEndedSession()
+        async throws {
+        let listener = GuestListener(
+            identity: .init(version: "0.1-test", name: "Test Host"))
+        let model = ConnectionsModel(
+            listener: listener,
+            resolve: { [weak listener] selector in
+                // Nothing connected once it has gone, which is exactly the
+                // host's own answer in that state.
+                guard let listener, !listener.guests.isEmpty else {
+                    return .guest
+                }
+                return GuestKey.parse(selector) == nil
+                    ? .notConnected(selector) : .sessionEnded(selector)
+            })
+        let port: UInt16 = 52987
+        listener.start(port: port)
+
+        let deadline = Date().addingTimeInterval(8)
+        func wait(_ cond: @escaping () -> Bool) async throws {
+            while !cond(), Date() < deadline {
+                try await Task.sleep(nanoseconds: 20_000_000)
+            }
+        }
+        try await wait {
+            if case .listening = listener.state { return true }
+            return false
+        }
+
+        let guest = NWConnection(host: .ipv4(.loopback),
+                                 port: NWEndpoint.Port(rawValue: port)!,
+                                 using: .tcp)
+        guest.start(queue: .main)
+        let hello = try ControlMessageCodec.encode(.hello(
+            Hello(contract: Contract.revision, side: "guest",
+                  version: "0.1.0", name: "PowerBook 180c", os: "7.1",
+                  chunk: 8192)))
+        guest.send(content: try FrameCodec.encode(channel: .control,
+                                                  payload: hello),
+                   completion: .idempotent)
+
+        /* Waited for on the MODEL, not on the listener: the page has to
+           learn about the roster by subscribing to it. A test that called
+           `refresh()` itself would pass with the subscription deleted. */
+        try await wait { model.snapshot.driving != nil }
+        let live = try XCTUnwrap(model.snapshot.driving,
+                                 "the one connected Mac is the driven one")
+        let session = try XCTUnwrap(live.liveSessionID)
+        XCTAssertEqual(live.name, "PowerBook 180c")
+
+        guest.cancel()
+        try await wait { model.snapshot.isIdle }
+
+        XCTAssertTrue(model.snapshot.isIdle,
+                      "a Mac that left leaves the page idle, not broken")
+        let remembered = try XCTUnwrap(
+            model.snapshot.known.first { $0.machineID == live.machineID },
+            "a machine the host has met is remembered by name")
+        XCTAssertNil(remembered.liveSessionID)
+        XCTAssertEqual(remembered.lastSessionID, session,
+                       "the session id survives the connection, because "
+                       + "that is the only thing that can answer a caller "
+                       + "still holding it")
+        listener.stop()
+    }
 
     /// The empty page a fresh host draws: listening at nothing, no rows,
     /// and no invented machine.
