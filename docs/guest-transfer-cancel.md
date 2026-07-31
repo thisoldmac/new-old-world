@@ -63,3 +63,109 @@ the real name**. Nothing half-written is left for a person to double-click.
 
 That is the semantics a guest-side cancel must match: same `get_cleanup(false)`,
 no new teardown path.
+
+## What was built (2026-07-31)
+
+Everything except the wire primitive, which lives in a file this thread does not
+own.
+
+| Piece | Where | What it is |
+| --- | --- | --- |
+| the pull's story | `now-guest-ppc/src/files/files_pull.{c,h}` | Toolbox-free: the phase machine, the wording, the percentage, the repaint gate, the arming rule |
+| its test | `now-guest-ppc/tests/files_pull_test.c` | 43rd native test; ten mutations watched failing |
+| the Stop button | `now-guest-ppc/src/files/files_module.c` | a push button at the right end of the path row, hidden unless a pull is live |
+| starting a pull | `now-guest-ppc/src/files/files_browser_view.c` | `open_row` now says what it is doing before it asks |
+
+### What the person sees, and when
+
+| Moment | Line | Drawn |
+| --- | --- | --- |
+| double-click (or Return) | `Asking for Report.cwk...` | **directly, in that click** — `paint_transfer_now()` |
+| the sender answers | `Getting Report.cwk - 42% of 812 K` | idle, once per whole percent |
+| the sender gave no size | `Getting Report.cwk - 96 K so far` | idle, once per 4 K |
+| Stop pressed | `Stopping Report.cwk...` | directly, before the wire is touched |
+| after the stop | `Stopped getting Report.cwk - nothing was kept. Ready.` | directly |
+
+The button and the first line are drawn rather than queued. Nothing blocks here —
+a queued paint *would* land before the first byte, because the pull is
+asynchronous — but a control that appears one pass after the click it belongs to
+is a control a person has already decided is not there. That is the mirror of
+the repaint trap this repo hit earlier the same day, where a synchronous 3 s
+probe queued "Measuring…" and the paint landed with the answer.
+
+No confirmation. A pull is never resumable, so stopping loses nothing that
+existed; `confirm.c` is for the choices that cost something.
+
+## The one thing missing: `now_wire_get_cancel`
+
+`now_pull_can_stop()` is false until a canceller is registered, so **as merged,
+the Files pane looks exactly as it did** — no dark button, no regression, and no
+defect fixed either. The primitive is 15 lines inside `wire.c`, whose `g_get` is
+private to it:
+
+```c
+/* wire.h, beside now_wire_get_active */
+int now_wire_get_cancel(char *err, long cap);
+
+/* wire.c, beside get_cleanup */
+int now_wire_get_cancel(char *err, long cap)
+{
+    char json[64];
+
+    if (!g_get.pending && !g_get.receiving) {
+        snprintf(err, (size_t)cap, "Nothing is being transferred");
+        return -1;
+    }
+    snprintf(json, sizeof json,
+             "{\"type\":\"file.cancel\",\"transfer\":%ld}", g_get.id);
+    (void)send_control(json);      /* best effort: the local half must
+                                      happen even on a dead wire */
+    now_log(kLogInfo, "get", "#%ld stopped at %ld bytes by the person",
+            g_get.id, g_get.receiving ? g_get.rx.received : 0);
+    get_cleanup(false);
+    return 0;
+}
+```
+
+and one registration line wherever the Files module is created:
+`now_pull_set_canceller(now_wire_get_cancel);`
+
+Three things that make it that and not something else:
+
+- **`transfer`, not `id`.** `contract/asyncapi.yaml` `FileCancel` requires
+  `{type, transfer}` with `additionalProperties: false`. (The guest's own inbound
+  handler at `wire.c:4483` ignores the field entirely and aborts whatever is
+  live, which is a separate looseness.)
+- **Both halves, in that order.** Local-only teardown leaves the host pushing a
+  file nobody is writing into a lane one transfer wide, for the rest of its
+  length: the pane would look stopped and the machine would still be busy.
+  Wire-only leaves an open temp fork. `send_control` is best-effort because a
+  stop on a dead wire still has to free this side.
+- **`get_cleanup(false)`, not a new teardown.** It is what the timeout, the
+  refusal and the failed `file.end` already use.
+
+The contract already says this is how it is meant to be — the `cancel` verb's
+own text: *"the PowerPC guest reaches the same capability from its own UI and
+from file.cancel, and declares no verb."* That sentence has been describing
+something that did not exist.
+
+## Two things noticed in passing, neither fixed here
+
+- **`conn_disconnect()` does not clean up a pull.** `enter_backoff()` calls
+  `xfer_cleanup / offer_cleanup / stream_drop / shot_drop / put_drop`, and
+  `conn_disconnect()` calls none of them. Disconnecting mid-pull therefore leaves
+  `g_get.receiving` true with an open temp fork and no path back to
+  `now_files_receive_abort`. It is also why "just disconnect" is not an
+  acceptable stand-in for a cancel.
+- **`now_wire_get_active()` cannot distinguish *asked* from *receiving nothing
+  yet*.** Both report through one boolean, and a sender that has neither given a
+  size nor delivered a byte is indistinguishable from a question with no answer.
+  The pane copes (it knows it asked, and both states arm Stop and say a fetch is
+  underway), but a `PullPhase` out-parameter would be more honest than the
+  inference.
+
+## corpus_impact
+
+`corpus_impact: none` — this thread's durable claim (the pull path pumps, so a
+Stop button can be pressed) is already the finding recorded in the first commit
+above; the work since is implementation against it and changes no corpus claim.
