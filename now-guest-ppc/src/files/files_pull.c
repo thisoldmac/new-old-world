@@ -28,6 +28,18 @@ Boolean now_pull_have_canceller(void)
     return g_canceller != 0;
 }
 
+int now_pull_cancel(char *err, long cap)
+{
+    if (g_canceller == 0) {
+        if (err != 0 && cap > 0) {
+            snprintf(err, (size_t)cap,
+                     "This Mac cannot stop a transfer yet.");
+        }
+        return -1;
+    }
+    return g_canceller(err, cap);
+}
+
 /* --- state -------------------------------------------------------------- */
 
 void now_pull_reset(PullView *v)

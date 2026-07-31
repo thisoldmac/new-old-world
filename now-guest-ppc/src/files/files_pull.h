@@ -94,6 +94,11 @@ typedef int (*NowPullCanceller)(char *err, long cap);
 void now_pull_set_canceller(NowPullCanceller fn);
 Boolean now_pull_have_canceller(void);
 
+/* Run it. 0 when the transfer was stopped, -1 with a reason in `err` -
+   including when none is registered, which is a refusal a person could
+   in principle be shown rather than a silent no-op. */
+int now_pull_cancel(char *err, long cap);
+
 /* --- state -------------------------------------------------------------- */
 
 void now_pull_reset(PullView *v);
