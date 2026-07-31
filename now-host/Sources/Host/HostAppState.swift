@@ -50,6 +50,10 @@ final class HostAppState: ObservableObject {
     let logs: LogsModel
     let listener: GuestListener
     let agentIntegration: AgentIntegrationHostAdapter
+    /// Who has been driving this host over the local agent endpoint. Fed by
+    /// the app delegate when it stands the server up; `.neverAttached` until
+    /// something does, and for good on a Mac nothing ever does.
+    let agentCompanions = AgentCompanionModel()
     let guestFiles: GuestFilesCommandService
     private let artifactApprovals: AgentIntegrationArtifactApprovalStore?
     private(set) lazy var console = ConsoleModel(listener: listener)

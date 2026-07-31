@@ -331,7 +331,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     /// never become a prerequisite for launching or pairing NOW.
     private func startAgentIntegrationServer() {
         do {
-            let server = try AgentIntegrationLocalServer {
+            let server = try AgentIntegrationLocalServer(
+                /* The ledger is written on the accept thread; the pane that
+                   will draw it lives on the main one. The hop is here, at
+                   the one seam that knows about both, rather than inside a
+                   module that has no business knowing a socket exists. */
+                companionObserver: { [companions = state.agentCompanions]
+                    activity in
+                    Task { @MainActor in companions.update(activity) }
+                }
+            ) {
                 [agentIntegration = state.agentIntegration,
                  guestFiles = state.guestFiles] request in
                 /* Addressing is checked once, before any operation, so
