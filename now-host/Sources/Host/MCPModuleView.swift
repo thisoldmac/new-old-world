@@ -1,9 +1,29 @@
 import AppKit
 import SwiftUI
 
-/// The Agent page: what a companion agent is doing to this Mac, what it has
-/// done, what the machine being driven has agreed to, and where the socket
-/// is.
+/// The MCP page: the server an agent reaches this Mac through — whether it
+/// is running, where its socket is, and how to switch it off — together with
+/// what a companion has done through it and what the machine being driven has
+/// agreed to.
+///
+/// **One pane, two concerns, and they were separate for a reason that has
+/// expired.** The lifecycle of the server and the record of what came in
+/// through it are different things, but MCP is the only way in today, so a
+/// person asking "is this switched on" and "what has it done" is asking about
+/// one surface and was made to find two.
+///
+/// **The audit model underneath stays transport-agnostic on purpose.**
+/// `AgentActivityEvent` carries a `face` (`.mcp`, `.appIntent`) rather than
+/// assuming one, and `AgentCompanionActivity` counts calls without naming a
+/// transport. What an agent did to this Mac is a fact about the Mac, and it
+/// outlives whichever door the call came through: an AppIntent invocation is
+/// already a second face, and folding "MCP" into the types would have to be
+/// unpicked the first time a third one lands. So the PANE is named for the
+/// transport it controls, and the MODEL is not.
+///
+/// **The division of responsibility is settled**: this host owns the server's
+/// lifecycle and its endpoint; the guest surfaces its own enable/disable and
+/// status. Nothing here reaches across that line.
 ///
 /// **It exists because the auditable half was built twelve times and the
 /// visible half never was.** An agent can trash a file, cancel a transfer a
@@ -21,10 +41,15 @@ import SwiftUI
 /// machine being driven owns that answer, and a host-side override would
 /// defeat the point of asking it. The page displays and does not decide —
 /// what may happen is settled at the dispatch, in one place.
-struct AgentActivityModuleView: View {
+struct MCPModuleView: View {
     @ObservedObject var model: AgentActivityModel
     @ObservedObject var companions: AgentCompanionModel
     @ObservedObject var listener: GuestListener
+    /// Nil in a preview or a test that has no server to run. The buttons are
+    /// then absent rather than dead — a control that does nothing is the
+    /// thing every page in this app is written to avoid.
+    var start: (() -> Void)?
+    var stop: (() -> Void)?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -32,11 +57,11 @@ struct AgentActivityModuleView: View {
             Divider()
             ScrollView {
                 VStack(spacing: 12) {
+                    server
                     presence
                     heldLane
                     consent
                     activity
-                    endpoint
                 }
                 .padding(12)
             }
@@ -47,10 +72,11 @@ struct AgentActivityModuleView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("Agent")
+            Text("MCP")
                 .font(.headline)
-            Text("What a companion agent has done to this Mac and the ones "
-                    + "it is driving. Everything here also reaches the log; "
+            Text("The server an agent connects to in order to drive this Mac "
+                    + "and the ones it is paired with, and what has come in "
+                    + "through it. Everything here also reaches the log; "
                     + "this is the same record, in front of you.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -350,6 +376,73 @@ struct AgentActivityModuleView: View {
         }
     }
 
+    // MARK: the server
+
+    /// **The one card on this page that is a control.**
+    ///
+    /// It is the server's state, its switch, and its socket path in one
+    /// place, because they are one question: a person here either wants to
+    /// know whether an agent can reach this Mac, or wants to change the
+    /// answer. The path is beside the switch rather than in its own card
+    /// because configuring a client and turning the thing on are the same
+    /// errand.
+    ///
+    /// Stopping is deliberately not a confirmation prompt: it is reversible
+    /// in one click and its consequence — no agent can reach this Mac — is
+    /// the safe direction. Starting after a failure is worth retrying too,
+    /// since the usual cause is another copy of NOW that has since quit.
+    private var server: some View {
+        card {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("The MCP server")
+                        .font(.headline)
+                    Spacer(minLength: 12)
+                    lifecycleButton
+                }
+                HStack(spacing: 6) {
+                    Image(systemName: model.endpoint.isRunning
+                            ? "circle.fill" : "circle")
+                        .font(.caption2)
+                        .foregroundStyle(model.endpoint.isRunning
+                            ? Color.green : .secondary)
+                    Text(runningLine)
+                        .font(.callout.weight(.medium))
+                }
+                endpoint
+            }
+        }
+    }
+
+    private var runningLine: String {
+        switch model.endpoint {
+        case .open: return "Running"
+        case .unopened: return "Not started"
+        case .stopped: return "Stopped"
+        case .unavailable: return "Did not start"
+        }
+    }
+
+    /// One button, not a pair: the server is either serving or it is not, and
+    /// offering the action it is already in would be a control that does
+    /// nothing.
+    @ViewBuilder
+    private var lifecycleButton: some View {
+        if model.endpoint.isRunning {
+            if let stop {
+                Button("Stop", role: .destructive) { stop() }
+                    .controlSize(.small)
+                    .help("Closes the socket. No agent can reach this Mac "
+                          + "until it is started again; nothing else about "
+                          + "New Old World changes.")
+            }
+        } else if let start {
+            Button("Start") { start() }
+                .controlSize(.small)
+                .help("Opens the local socket an MCP companion connects to.")
+        }
+    }
+
     // MARK: endpoint
 
     /// Where the socket is, because somebody configuring a client needs it —
@@ -357,10 +450,7 @@ struct AgentActivityModuleView: View {
     /// failed to open would send that person looking for a file that is not
     /// there.
     private var endpoint: some View {
-        card {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("The endpoint")
-                    .font(.headline)
+        VStack(alignment: .leading, spacing: 6) {
                 switch model.endpoint {
                 case .open(let path):
                     Text("A companion reaches this Mac over a local socket "
@@ -401,9 +491,20 @@ struct AgentActivityModuleView: View {
                     Text("The local endpoint has not been started.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
+                case .stopped:
+                    /* Said as a consequence rather than as a state, because
+                       the person who reads this line is usually the one
+                       whose client just failed to connect — and half the
+                       time it is not the person who stopped it. */
+                    Text("The local endpoint is stopped, so no agent can "
+                            + "reach this Mac. Nothing an agent already did "
+                            + "is undone; the record of it is below. Start "
+                            + "reopens the socket at the same path.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-        }
     }
 
     // MARK: chrome

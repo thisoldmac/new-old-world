@@ -42,6 +42,16 @@ final class HostAppState: ObservableObject {
     /// HostAppState stays free of AppKit chrome and tests stay silent.
     var quickCaptureFeedback: ((QuickCaptureOutcome) -> Void)?
 
+    /// Starting and stopping the MCP server, set by the app delegate.
+    ///
+    /// Hooks rather than methods for the same reason as the flash above: the
+    /// server object belongs to the delegate, which is the only thing whose
+    /// lifetime matches a listening socket's, and a test or a preview that
+    /// leaves these nil gets a pane with buttons that do nothing to any real
+    /// socket instead of a host process with an endpoint it never wanted.
+    var startMCPServer: (() -> Void)?
+    var stopMCPServer: (() -> Void)?
+
     /// Drives the menu bar's connection glyph and status line.
     private(set) lazy var guestStatus = GuestStatusMonitor(listener: listener)
     let settings: SettingsModel
@@ -131,7 +141,9 @@ final class HostAppState: ObservableObject {
                 integration.connectedSessionID()
             })
         let stored = defaults.string(forKey: Self.selectionKey)
-        selectedModuleID = stored.flatMap(registry.module(id:))?.id
+        /* Through the rename table, so a person whose saved selection is a
+           module's OLD id lands on it rather than on the fallback. */
+        selectedModuleID = stored.flatMap(registry.resolvingRenames(id:))?.id
             ?? registry.modules.first?.id
             ?? ""
         stateMirror = listener.$state.sink { [weak self] state in

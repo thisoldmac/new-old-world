@@ -25,6 +25,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     func applicationDidFinishLaunching(_ notification: Notification) {
         installMainMenu()
         installStatusItem()
+        /* The MCP pane's buttons, wired before the window opens so a person
+           who lands on that page cannot press a control that has not been
+           connected yet. The delegate owns the server object, so the pane
+           reaches it through the app state rather than holding it. */
+        state.startMCPServer = { [weak self] in
+            self?.startAgentIntegrationServer()
+        }
+        state.stopMCPServer = { [weak self] in
+            self?.stopAgentIntegrationServer()
+        }
         openMainWindow()
         startAgentIntegrationServer()
     }
@@ -374,6 +384,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     /// Failure keeps the human product intact; this optional surface must
     /// never become a prerequisite for launching or pairing NOW.
     private func startAgentIntegrationServer() {
+        /* Idempotent since the MCP pane can ask: standing a second server on
+           the same path would take the socket away from the one already
+           serving, which is a worse outcome than a button that does nothing
+           because there is nothing to do. */
+        guard agentIntegrationServer == nil else { return }
         do {
             let server = try AgentIntegrationLocalServer(
                 /* The ledger is written on the accept thread; the pane that
@@ -760,6 +775,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                configuring a client to look for it. */
             state.agentActivity.endpointUnavailable(reason)
         }
+    }
+
+    /// Switched off from the MCP pane.
+    ///
+    /// The socket goes and the record stays: what an agent already did to
+    /// this Mac is not undone by closing the door it came through, so the
+    /// activity stream and the presence ledger are left exactly as they are.
+    private func stopAgentIntegrationServer() {
+        guard let server = agentIntegrationServer else { return }
+        server.stop()
+        agentIntegrationServer = nil
+        HostLog.shared.write(.info, "agent",
+                             "local agent endpoint stopped from the MCP pane")
+        state.agentActivity.endpointStopped()
     }
 }
 

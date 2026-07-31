@@ -63,6 +63,52 @@ final class AgentActivityModelTests: XCTestCase {
         XCTAssertEqual(model.endpoint, .open(path: "/tmp/x/host.sock"))
     }
 
+    // MARK: - The server's lifecycle, which the MCP pane owns
+
+    /// **Stopped is not "never started", and neither is "did not start".**
+    ///
+    /// The MCP pane draws one line off this state and offers one button, so
+    /// three different reasons the socket is absent have to stay three
+    /// states: a person whose client cannot connect is told whether they
+    /// switched it off, whether it failed, or whether it has yet to run.
+    func testAServerStoppedByHandIsItsOwnStateAndNotAFailure() {
+        let model = AgentActivityModel()
+        model.endpointOpened(at: "/tmp/x/host.sock")
+        XCTAssertTrue(model.endpoint.isRunning)
+
+        model.endpointStopped()
+
+        XCTAssertEqual(model.endpoint, .stopped)
+        XCTAssertFalse(model.endpoint.isRunning,
+                       "A stopped server offers Start, never Stop.")
+        XCTAssertNotEqual(model.endpoint, .unopened)
+        for state in [AgentEndpointState.unopened, .stopped,
+                      .unavailable("no")] {
+            XCTAssertFalse(state.isRunning,
+                           "\(state) is not a server anyone can reach.")
+        }
+    }
+
+    /// **Closing the door does not erase what came through it.** The record
+    /// of an agent's calls is the reason the pane exists; a stop that
+    /// cleared it would lose exactly the history somebody stops the server
+    /// to go and read.
+    func testStoppingTheServerKeepsWhatAnAgentAlreadyDid() {
+        let model = AgentActivityModel()
+        model.endpointOpened(at: "/tmp/x/host.sock")
+        model.record(
+            HostProjectionAuditEvent(
+                capability: ListProcessesProjection.capability, face: .mcp,
+                guest: "PB 180c", outcome: .answered, reason: nil),
+            drivenGuest: nil)
+
+        model.endpointStopped()
+
+        XCTAssertEqual(model.events.count, 1)
+        XCTAssertEqual(model.events.first?.capability,
+                       ListProcessesProjection.capability.rawValue)
+    }
+
     // MARK: - Presence that changes with nothing happening
 
     /// The ledger publishes on every change, which covers every transition
