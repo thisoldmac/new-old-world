@@ -14,6 +14,18 @@ nothing about behaviour, **tested** means the suites pass, and
   broken versus unverified.
 - [docs/contract-coverage.md](contract-coverage.md) is the inventory of
   who serves what, per guest, message by message.
+- [docs/mcp-coverage.md](mcp-coverage.md) is the other half of that: what
+  any host face can ask a guest to do, gap by gap, derived from the
+  registry and gated by a test. **Read it rather than re-deriving it, and
+  do not copy its numbers into prose** — including this file's.
+- [docs/metal-and-ux-review.md](metal-and-ux-review.md) is the list of
+  what a person still has to do. Everything built between 2026-07-29 and
+  2026-07-31 is tested and not metal-verified, with two named exceptions,
+  and that file is where each unproven thing waits.
+- [docs/source-text-gates.md](source-text-gates.md) audits every gate in
+  this repository that proves something by reading source text. Six were
+  found not to prove what they claimed. Where this file says a test
+  enforces something, that file says how much.
 
 ## What works today
 
@@ -44,7 +56,11 @@ nothing about behaviour, **tested** means the suites pass, and
   dumb is that a guest verb which never reached the wire is unreachable
   from here: `ps` on NOW-68K was exactly that — served at the guest's own
   keyboard, `unknown-command` from this side — and is now a wire command
-  like the rest, with a parity test that fails on the next one. Tested
+  like the rest, with a parity test that fails on the next one. That test
+  read only one of NOW-68K's two console dispatch sites until 2026-07-31,
+  when a console-only verb added to the other passed it unnoticed; it now
+  walks both and fails when the set of sites changes
+  ([docs/source-text-gates.md](source-text-gates.md)). Tested
   here, and the PowerPC and 68K guests both build; **the PowerBook run is
   pending**.
 - **`launch` and `quit`, by name** — open an application on the classic Mac,
@@ -149,45 +165,57 @@ nothing about behaviour, **tested** means the suites pass, and
   is metal-verified; the host one is built and tested.
 - **Menu-bar capture** — one command grabs the connected machine's
   screen straight to the clipboard, no window needed.
-- **Optional agent integration** — a separate, client-launched stdio
-  MCP companion can report the already-running host and guest session
-  state and read a bounded point-in-time guest process snapshot through
-  a private same-user socket. It can also launch one exact application
-  selected from the current guest catalog; ambiguity launches nothing,
-  opaque candidates are revalidated, and guest paths never cross the
-  adapter. A recent opaque process reference can request cooperative
-  quit only after a fresh full-identity re-list and the guest's existing
-  live-PSN check. Acknowledgement does not claim the process exited. The
-  fifth tool can redeem only a one-use receipt copied from NOW's native
-  Files approval action: NOW privately stages one selected regular file,
-  revalidates that copy, never overwrites a collision, and reports success
-  only after the guest's existing `file.done` acknowledgement. The MCP
-  never receives the source or guest path, and the receipt does not claim
-  destination-byte verification. The companion exposes no lifecycle
-  controls and changes neither app's module inventory. V0.5 adds three
-  read-only projections over NOW's command layer: active guest-files
-  capabilities, one bounded root-scoped listing page, and exact bounded
-  stat. It also adds a create-only staged upload lifecycle: reserve private
-  disk staging, append ordered 8 KiB-or-smaller chunks, then verify and
-  commit through NOW's existing guest transfer lane. These tools accept only
-  canonical paths relative to the host-owned `guestRoot`; the destination's
-  parent must already exist, no host path is an input, and download, mkdir,
-  overwrite, move, delete, tree deployment, and prune remain unavailable.
-  A twelfth tool reports what the **currently connected** guest can do, and
-  therefore which of the other eleven are available against it. NOW now has
-  two guests of very different completeness, and that answer is derived from
-  the guest's own `help` table plus observed and bounded-probed message
-  families — **never from which guest it is**. A tool whose safety model
-  cannot stand up against a guest is unavailable there in typed form, which
-  is a complete answer; `unproven` is a third state meaning nobody has asked
-  yet, and does not mean "no". All twelve tools are tested here. The original
-  five V0 tools and the three read-only V0.5 tools have bounded connected
-  acceptance receipts against the PowerBook 1400c; staged upload and the
-  whole capability projection are **not** metal-verified — nothing in this
-  paragraph about a partial guest has been watched against the PowerBook
-  180c. This is not a broader transport, endurance, mutation, or
-  destination-byte qualification; the exact evidence and limits are in
-  [docs/agent-integration.md](agent-integration.md).
+- **Optional agent integration** — a separate, client-launched stdio MCP
+  companion reaches this Mac's guest through a private same-user socket.
+  It is a **client, not a third face**: it can ask for nothing the app's
+  own UI could not, because both are rendered from one registry of
+  capability rows, and a row arrives on every face together. What those
+  rows reach — and every guest capability no row exposes yet, with a
+  reason or an admission of not having noticed — is
+  [docs/mcp-coverage.md](mcp-coverage.md), derived from the registry
+  in-process and gated by `MCPCoverageTests`. The boundary, the
+  availability rules and the trust model are
+  [docs/agent-integration.md](agent-integration.md). Neither is restated
+  here and neither is counted here.
+
+  The properties worth stating in a status file are the ones that bound
+  it. Availability against a partial guest is derived from that guest's
+  own `help` table plus observed and bounded-probed message families —
+  **never from which guest it is**, which a gate enforces over three
+  source trees. `unproven` is a third state meaning nobody has asked yet
+  and does not mean "no". Guest paths never cross the adapter for the
+  approval-receipt path, uploads are create-only and never overwrite, and
+  every invocation goes through one dispatch, which is what makes an
+  audit event unskippable. Everything the companion did is on the host's
+  Agent page and in the host log.
+
+  **Tested here. Two things have been driven against a real Macintosh**:
+  `now_capture_screen` end to end, and guest addressing in four of its
+  five cases — both on the PowerBook 1400c on 2026-07-29. Everything else
+  added on this arc is **tested and not metal-verified**; see the two
+  entries below and [docs/metal-and-ux-review.md](metal-and-ux-review.md).
+
+- **A Diagnostics page on the host** — the three probes that measure the
+  machine itself rather than anything on it: framebuffer read cost
+  (`vprobe`), where a staged capture actually read from (`shotdiag`) and
+  transfer diagnostics (`putstat`). No two guests serve the same subset,
+  so the page asks the connected machine what it serves and says which
+  card that machine cannot run — naming the sibling guest that can,
+  rather than presenting a button that silently does nothing. A guest's
+  refusal is shown in the guest's own words, and an unknown-command
+  refusal reads as absence rather than as an error. Rows are drawn
+  verbatim and in order. **Built and tested; nobody has looked at it, and
+  no reading in it has come off a real machine through this page.**
+
+- **An Agent page on the host** — what a companion is doing to this Mac,
+  in four parts: whether one is attached and what it has done, the
+  connected machine's own consent answer, a bounded newest-first audit
+  stream of every call with the capability's own words and a badge on the
+  ones that change the Mac, and the socket's endpoint. It is a glance and
+  not the record: the stream is per launch and in memory, holds no
+  arguments, paths or payloads, and the log is what survives. It offers
+  no switch — consent is the guest's answer, not a host preference.
+  **Built and tested; see below for what that does not cover.**
 
 Measured on the real PB1400c: ~4.9 fps at 8-bit with predictive +
 interlace over 802.11b, and file transfers byte-exact at ~227 KB/s.
@@ -352,7 +380,10 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
   own suite, so the pure-C halves compile under the host `cc`:
   `scripts/test-native` runs all 28 across both guests in one command, and
   a test file missing from its manifest fails the run — a test nobody runs
-  reads as coverage in a directory listing and proves nothing. The metal
+  reads as coverage in a directory listing and proves nothing. That check
+  greps its own text by substring, comments included, so it holds today
+  because no basename sits only in a comment rather than because it
+  cannot be fooled ([docs/source-text-gates.md](source-text-gates.md)). The metal
   gates now **fail rather than skip** once a human has opted into a metal
   run, so a suite cannot go green having never reached a machine, and
   `tools/fakeguest.py` impersonates either guest so the harness itself can
@@ -374,17 +405,103 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
 
 ## What does not work
 
-- **NOW-68K implements a small part of the contract.** `launch`, `quit`,
-  `help`, `ps`, `vprobe`, `screenshot`, `put`, `ls`, `cancel` and
-  `process.list`, plus receiving a file, sending one, listing a folder,
-  capturing the screen, cancelling a transfer in either direction, and
-  the keepalive; everything else — census, streams, the process drive
-  verbs, and the file family's PULL and MUTATIONS (`file.get`,
-  `file.move`, `file.trash`, `file.mkdir`) — answers `unknown-command`
+- **Ten of the twelve capabilities added on this arc have never crossed a
+  real wire.** They are `now_hardware_census`, `now_machine_facts`,
+  `now_software_inventory`, `now_catalog_search`, `now_guest_log_tail`,
+  `now_bring_to_front`, `now_reveal_item`, `now_guest_files_download`,
+  `now_guest_files_mutate` and `now_transfer_cancel`. The three
+  diagnostics rows have not run through their page either. Exactly one
+  has: `now_capture_screen`, end to end on the PowerBook 1400c on
+  2026-07-29. Everything else is **tested** — the suites pass and no
+  Macintosh has been involved — and this is the same class of gap that
+  has produced most of this project's surprises, since code that has
+  never met a real machine is where they all came from.
+
+  Two hazards are known in advance rather than discovered on the day.
+  `now_guest_files_mutate` has a **2-second local receive window against
+  a 20-second guest-side watchdog**, so a slow `PBCatMove` can time out
+  locally on a call the machine then completes. And a **download cannot
+  be cancelled on the wire before `file.begin`** at all: the host frees
+  its lane while the guest may keep sending and holding its own — the
+  exact wedge `cancel` exists to prevent, and the app's own Cancel button
+  has it too. Each capability's own watch-for is in
+  [docs/metal-and-ux-review.md](metal-and-ux-review.md).
+
+- **No person has looked at the Agent page**, including its resting
+  state — which is what it shows on most machines for most of their
+  lives, because on most of them no companion has ever attached. That
+  state is the one most likely to read as *broken* rather than as *idle*,
+  and it is deliberately built to show no counters at all, on the
+  argument that "0 companions, 0 calls, last seen never" is the visual
+  shape of something that failed to load. Whether that argument is right
+  is a judgement nobody has made. The same is true of the presence decay
+  from active to idle, which happens on a timer with no event behind it,
+  and of the Diagnostics page's not-served card. Assertions about them
+  are arithmetic over model state; none of it is a person's eyes.
+
+- **The guest consent field has never met a Macintosh.** `hello` carries
+  `agent` (`disabled` / `read-only` / `full`) and the host enforces a
+  ceiling from it, but the only guest that sends the field sends a
+  hardcoded `full` — so every tier below the top, and every refusal path,
+  has only ever been exercised against a test double. NOW-68K sends
+  nothing, and absence currently fails **open**, which is a dated
+  decision (2026-07-30) rather than a property of the design. Untested on
+  a machine: that `disabled` refuses everything as a JSON-RPC error
+  distinguishable from a capability being unavailable, that `read-only`
+  admits exactly the read rows, that an unrecognised token refuses
+  everything, and that a refusal reaches the audit line and the Agent
+  page. **Nobody has read an agent audit line out of a real run** — not
+  from the log, not from the page — and a person being able to see what
+  an agent did is the whole point of the rule that produces it.
+
+- **Guest addressing was unreachable over its own socket for a day.**
+  Host-assigned machine ids shipped 2026-07-28 and were broken from that
+  moment until 2026-07-29 by the local protocol's own strict decoder,
+  which had never learned the request field that names a machine or the
+  refusal that names the one being driven instead. Any request that
+  actually addressed a guest was rejected as malformed, and the honest
+  refusal surfaced as a protocol error telling the caller to retry.
+  Everything on both sides of that decoder was correct and tested. It is
+  fixed, and the tests added with the fix read the field list off the
+  type rather than naming fields, so the next field declared without a
+  place in a second list fails on its own. Four of the five addressing
+  cases are metal-verified; the fifth — *connected but not driven* —
+  cannot be exercised by one machine and needs a second guest on the same
+  listener.
+
+- **Some gates in this repository prove less than their names claim.** An
+  audit on 2026-07-31 found **six** that did not establish the property
+  they asserted, on top of seven found earlier, all sharing one failure
+  mode: a comment that names the identifier satisfies a scan of the raw
+  text, so the better the comment the more reliably it hides the
+  deletion. Among them: an audit sink that records nothing passed the
+  check that the companion is handed a real one, and a filtered map
+  dropping a capability from the MCP tool list passed the check that the
+  face is derived from the registry. They are fixed or documented, but
+  the general lesson stands and applies to every "and a test enforces it"
+  in this file: **mutation-proving is only as strong as the mutation
+  somebody thought to try**, and a gate's own author is the worst-placed
+  person to imagine the one that defeats it. Some limits are inherent —
+  a text scan cannot tell a live call from a dead one, an argument from a
+  token in a body, or what a name is bound to — and where that is so, the
+  gate says so at the site of its claim instead of pretending.
+  [docs/source-text-gates.md](source-text-gates.md) is the audit.
+
+- **NOW-68K implements a small part of the contract**, and the exact part
+  is [docs/contract-coverage.md](contract-coverage.md) — derived from
+  both guests' dispatch source, re-derived on 2026-07-31, and not
+  duplicated here, because a second copy of a derived roster is the thing
+  that goes stale next. In shape: it can be browsed, told to send a file,
+  sent one, asked for its screen, asked what hardware it is, asked what
+  software is on it, told to launch, quit or front an application, and
+  told to stop. What it will not do is change the shape of its own disk
+  on request — no `file.get`, no move, trash, restore or mkdir — and it
+  serves no streams, no per-window capture, no capture it offers rather
+  than answers, and no `gestalt`, so the one verb that reports the whole
+  machine in a breath is still missing even though the census now reports
+  most of the same facts. Everything unserved answers `unknown-command`
   or `refused`, which is the contract's own additive answer, not a
-  failure. It can be browsed, told to send a file, sent one, asked for
-  its screen, and told to stop; it will not change the shape of its own
-  disk on request. **Receiving** decodes MacBinary, so an application and
+  failure. **Receiving** decodes MacBinary, so an application and
   its resource fork can cross inbound; **sending** does not, so outbound
   is the data fork only. Every one of those it does serve is reachable
   from both its faces (the console and the wire), which
@@ -511,10 +628,12 @@ it, and "the Mac" identifies nothing when both machines are Macs. The measuremen
 A "what works" list without its companion is a sales pitch.
 [docs/contract-coverage.md](contract-coverage.md) answers the other
 half — **who serves what**, per guest, message by message and verb by
-verb, with what is served kept separate from what has been proven. The
-short version: the PowerPC guest serves 16 of the 17 command verbs and
-14 hardware probes; NOW-68K serves 7 verbs and no probes at all, so it
-cannot yet report its own CPU, RAM or ROM.
+verb, with what is served kept separate from what has been proven; and
+[docs/mcp-coverage.md](mcp-coverage.md) answers what a host face can ask
+for, gap by gap. Both are derived tables and both are read rather than
+summarised here: this file used to carry their numbers in prose, and
+carried a stale one for days after NOW-68K gained a census and could
+report its own CPU, RAM and ROM.
 [docs/open-issues.md](open-issues.md) is the ledger, organised
 around **broken** versus **unverified** — the second is not the lesser
 category, since most of the surprises so far came from code that looked
