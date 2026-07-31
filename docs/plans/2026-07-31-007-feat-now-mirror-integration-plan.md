@@ -66,9 +66,34 @@ another process — and NOW's already exists, with
 [`contract/peek_table.h`](../../contract/peek_table.h) compiled by three
 toolchains and static asserts pinning every offset.
 
-So AXPeek is not an INIT to port. It is **two more roots in a table row that
-already carries one**, which is exactly the accretive per-plane versioning that
-header specifies.
+So AXPeek is not an INIT to port.
+
+**And it is smaller than even that — checked 2026-07-31, against the source
+rather than the READMEs.** `NowPeekAnchorSlot` already carries `a5`,
+`window_list` **and** `menu_list`, and `capture_anchor()` already fills all
+three from the jGNE filter, with a commit protocol that invalidates the stamp
+first and writes it last. The claim that this plan made a paragraph earlier —
+"two more roots in a row that already carries one" — was wrong: the row already
+carries all three, and the comment beside it cites the same
+`observe-process-local-ui` finding AXPeek was built from.
+
+The actual delta is **one field and one absent layer**:
+
+- **`stack_base`.** AXPeek samples `LMGetCurStackBase()` alongside the three
+  NOW already has. NOW's slot has no equivalent.
+- **The oracle.** AXPeek pairs its capture with a matching layer
+  (`ax_oracle_match`) that validates a sample against the live Process Manager
+  partition — bounds-checking `currentA5` against the partition's range — and
+  answers **OK / AMBIGUOUS / MISMATCH / STALE / NOT_FOUND** rather than a
+  pointer. NOW has nothing equivalent, deliberately: its slot comment says *"the
+  extension never fills PSN; the app correlates A5 to PSN."*
+
+That second point is the same split both projects arrived at independently, and
+NOW's charter states it as a rule: **foreign-memory reads live in the
+application.** The extension publishes addresses; *following* them is
+application code, "where a bug is fixed by copying a file instead of a reboot."
+
+So M1 splits accordingly, and the halves land in different places.
 
 ## The blocker nobody has resolved
 
@@ -94,16 +119,33 @@ that a decimated capture must never leave as a keyframe.
 
 Ordered by what is settled upstream, not by what is interesting.
 
-### M1 — AXPeek into the anchor plane
+### M1a — `stack_base` in the anchor slot
 
 **First because it is settled, needs no wire and no host, and is additive to a
-versioned struct with a defined absence reading.** Extend the anchor plane's
-table row from one root to three. Bump that plane's format word; readers require
-their plane's format and `length >=` what they read, which is the prefs-record
-rule the header already applies.
+versioned struct with a defined absence reading.** One field: sample
+`LMGetCurStackBase()` beside the three roots the filter already captures.
+
+The slot grows 24 → 28 bytes, so `kNowPeekAnchorFormatV1` becomes `V2` and the
+static asserts that pin every offset move with it. Readers require their plane's
+format and `length >=` what they read — the prefs-record rule the header already
+applies — so a V1 reader against a V2 table is a defined case rather than a
+crash. Three toolchains compile that header, which is the safety net: an offset
+mistake fails loudly at compile time rather than quietly on a PowerBook.
 
 Unblocked today. Mirror's `guest/extensions/axpeek` has not moved since
 2026-07-30.
+
+### M1b — the oracle, in the application
+
+Map an anchor to the live Process Manager partition and answer **OK /
+AMBIGUOUS / MISMATCH / STALE / NOT_FOUND** rather than a pointer. Application
+code by charter, not resident code.
+
+Worth taking Mirror's *answers* rather than its implementation. The five
+outcomes are the interesting part — particularly that `AMBIGUOUS` exists at
+all, which says two processes can present as one match and the honest response
+is to refuse rather than pick. That is the same instinct as everything the last
+slice landed: absence is not a value, and a guess is not an answer.
 
 ### M2 — QDPeek as its own plane
 
