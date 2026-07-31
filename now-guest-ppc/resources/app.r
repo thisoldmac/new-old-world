@@ -54,7 +54,8 @@ resource 'vers' (1) {
    art, mask is what the system fills for a selected state.
    129 camera (Screenshots), 130 folder (Files), 131 terminal (Console),
    132 globe (Connection), 133 row list (Processes), 134 chip (Hardware),
-   135 lined page (Logs). */
+   135 lined page (Logs), 136 boxed app tiles (Software), 137 key (MCP),
+   138 gauge (Diagnostics). */
 resource 'ics#' (129) {
     {
         $"0000 0000 0780 7FFE 4002 43C2 4422 4812"
@@ -131,6 +132,30 @@ resource 'ics#' (136) {
         $"1008 1668 1668 1008 1FF8 0000 0000 0000",
         $"0000 1FF8 1FF8 1FF8 1FF8 1FF8 1FF8 1FF8"
         $"1FF8 1FF8 1FF8 1FF8 1FF8 0000 0000 0000"
+    }
+};
+
+/* 137 key (MCP): a ring on the left with a toothed shaft running right -
+   permission, which is the only thing this page decides. Distinct from
+   132's globe, which is about reaching the other Mac rather than about
+   who may reach this one. */
+resource 'ics#' (137) {
+    {
+        $"0000 0000 0000 0000 3800 4400 47FC 4448"
+        $"3848 0000 0000 0000 0000 0000 0000 0000",
+        $"0000 0000 0000 0000 7C00 7C00 7FFC 7FFC"
+        $"7FFC 0000 0000 0000 0000 0000 0000 0000"
+    }
+};
+
+/* 138 gauge (Diagnostics): a framed dial with a needle - measurement,
+   distinct from 134's chip (what this Mac IS) and 133's table. */
+resource 'ics#' (138) {
+    {
+        $"0000 0000 0000 7FFE 4002 4022 4042 4082"
+        $"4102 4202 4382 4002 7FFE 0000 0000 0000",
+        $"0000 0000 0000 7FFE 7FFE 7FFE 7FFE 7FFE"
+        $"7FFE 7FFE 7FFE 7FFE 7FFE 0000 0000 0000"
     }
 };
 

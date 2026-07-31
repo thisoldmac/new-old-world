@@ -31,6 +31,10 @@ add_application(now-guest-ppc
     src/census/census_probes.c
     src/census/census_trap.c
     src/logs/logs_module.c
+    src/mcp/mcp_layout.c
+    src/mcp/mcp_module.c
+    src/diagnostics/diag_layout.c
+    src/diagnostics/diagnostics_module.c
     src/census/census_decode.c
     src/census/census_report.c
     src/files/files_module.c
