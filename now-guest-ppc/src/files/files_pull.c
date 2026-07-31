@@ -5,6 +5,17 @@
 
 /* No Toolbox here - see the header. */
 
+/* A 32-bit signed type on the guest AND on the host that runs the native
+   test. This is not decoration: the guest's `long` is 32 bits and the
+   test host's is 64, so an overflow guard written in `long` is INVISIBLE
+   to the test - the mutation that deletes it passes. Watched happening on
+   2026-07-31, which is why the arithmetic below is in this type. */
+#if defined(__LP64__) || defined(_LP64)
+typedef int PullWide;
+#else
+typedef long PullWide;
+#endif
+
 static NowPullCanceller g_canceller;
 
 void now_pull_set_canceller(NowPullCanceller fn)
@@ -111,12 +122,12 @@ int now_pull_percent(const PullView *v)
     if (v->received > 20000000L) {
         /* Past the multiply's safe range. Both sides to K first: the
            lost precision is under a thousandth of a percent. */
-        long got_k = v->received / 1024;
-        long want_k = v->expected / 1024;
+        PullWide got_k = (PullWide)(v->received / 1024);
+        PullWide want_k = (PullWide)(v->expected / 1024);
 
         pct = want_k > 0 ? got_k * 100 / want_k : 100;
     } else {
-        pct = v->received * 100 / v->expected;
+        pct = (PullWide)v->received * 100 / (PullWide)v->expected;
     }
     if (pct < 0) {
         pct = 0;
