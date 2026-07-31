@@ -452,14 +452,43 @@ final class AgentIntegrationCapabilityTests: XCTestCase {
             "This guard walks three source trees whole; a short read means "
                 + "a path moved and the rule is being enforced over almost "
                 + "nothing.")
-        // The ones that DECIDE something. `guestName` / `guestOS` /
-        // `guestVersion` are the hello's fields — the only identity the
-        // host has — and reading them in a file that chooses what a tool
-        // may do is the whole failure mode. Health is absent from this
-        // second list on purpose: it REPORTS those fields to its caller,
-        // which is a projection, not a decision.
-        let deciders = surface.filter {
-            !$0.hasSuffix("AgentIntegrationSessionHealth.swift")
+        // The ones that DECIDE something. These are the hello's identity
+        // fields — the only identity the host has — and reading one in a
+        // file that chooses what a tool may do is the whole failure mode.
+        //
+        // TWO VOCABULARIES, and missing that made this half of the gate
+        // unable to fire at all. `guestName` / `guestOS` / `guestVersion`
+        // are `Session.swift`'s names, and Session.swift is not in the
+        // guarded surface. Inside these three trees the same three facts are
+        // called `name`, `version` and `operatingSystem` — the translation
+        // happens once, in AgentIntegrationSessionHealth, and the audit of
+        // 2026-07-31 found that all four hits of the old needle list were in
+        // that single file, which is the one file excluded below. Sixty
+        // files were being scanned for three words that could only ever
+        // appear in the one not scanned.
+        //
+        // Mutation: a decider returning `guest.operatingSystem == "9"` —
+        // availability decided by which machine dialled in, the exact rule
+        // this gate states — compiled and passed.
+        //
+        // `operatingSystem` is therefore a needle now. `name` and `version`
+        // are NOT and cannot be: they are ordinary English words that appear
+        // in almost every file here, and a needle with that false-positive
+        // rate is how this gate got its surface cut down to five files in
+        // the first place. The literal scan above is their complement — it
+        // catches a comparison against the token a guest actually sends —
+        // and what neither catches is a comparison that spells the token
+        // some other way (`guest.name.hasPrefix("now-")`, a constant defined
+        // elsewhere). That is inherent to reading text; see
+        // `HostFaceReach.reached`.
+        //
+        // Excluded, both because they CARRY identity rather than decide on
+        // it: SessionHealth translates the fields for its caller, and Models
+        // declares them.
+        let carriers = ["AgentIntegrationSessionHealth.swift",
+                        "AgentIntegrationModels.swift"]
+        let deciders = surface.filter { file in
+            !carriers.contains { file.hasSuffix($0) }
         }
         let explanation = """
             Availability in the agent companion is decided by CAPABILITY, \
@@ -481,7 +510,8 @@ final class AgentIntegrationCapabilityTests: XCTestCase {
         }
         for file in deciders {
             let text = try GateSource.hostSwift(file)
-            for needle in ["guestName", "guestOS", "guestVersion"] {
+            for needle in ["guestName", "guestOS", "guestVersion",
+                           "operatingSystem"] {
                 XCTAssertFalse(
                     text.contains(needle),
                     "\(file) reads the hello field \"\(needle)\", and that "
