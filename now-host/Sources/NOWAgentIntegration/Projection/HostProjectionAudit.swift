@@ -81,6 +81,15 @@ public struct HostProjectionAuditEvent: Codable, Equatable, Sendable {
         /// different events, and only one of them says somebody tried to do
         /// something their machine had already said no to. That is the line
         /// they most want to be able to find.
+        ///
+        /// It extends the value space of an existing v8 field rather than
+        /// changing the shape, so the local protocol version does NOT move.
+        /// The skew it leaves, stated rather than discovered: a host built
+        /// before this case rejects an audit report carrying it, which costs
+        /// one log line on a mixed install and never a call — the reporting
+        /// path is already best-effort. Bumping to v9 instead would make
+        /// that host reject EVERY request from this companion, which is a
+        /// far worse trade for one enum value.
         case denied
     }
 
