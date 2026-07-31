@@ -756,6 +756,32 @@ components:
             the same as any other. A receiver shows nothing rather than
             guessing, and must not fall back to `version` — a version equal
             across two builds is exactly the failure this field exists for.
+        agent:
+          enum: [disabled, read-only, full]
+          description: >
+            The SENDING MACHINE'S OWN ANSWER to whether a companion agent may
+            drive it, and how far. Not a capability and not a negotiation: the
+            machine states its position and the receiver is what enforces it.
+            `disabled` REFUSES — the installer omitted the agent features, or
+            somebody flipped the switch. `read-only` and `full` CONSENT, to
+            that much. The values are ORDERED (disabled < read-only < full) so
+            a further tier can slot above `full` without re-shaping the field
+            or the wire; there is no such tier today and none may be invented
+            without something behind it.
+            ABSENT means the sender predates this field — a fact about the
+            sender and NOT an answer. It must never be read as consent, which
+            is why a refusing machine says `disabled` out loud rather than
+            staying silent: an installer that omits the agent features and a
+            guest older than the field would otherwise look identical here.
+            DECISION, 2026-07-30, to revisit rather than a property of the
+            field: an absent value currently fails OPEN, because that matches
+            today's default-on behaviour and keeps every already-deployed
+            machine working. The moment the installer ships is the moment
+            silence stops being the common case, and the flip gets recorded
+            here rather than drifting.
+            A tier this receiver does not recognise is likewise NOT consent —
+            it is a newer sender, and a receiver that cannot name the ceiling
+            cannot claim to be under it.
         name:
           type: string
           description: Human-facing machine name, e.g. "Power Mac G3".
