@@ -83,6 +83,74 @@ final class CommandParityTests: XCTestCase {
         return false
     }
 
+    /// Every file in either guest that dispatches a verb, and which face it
+    /// answers. **This list is the premise of the whole file**, and
+    /// `testEveryDispatchSiteIsOneThisFileReads` below is what keeps it true:
+    /// a new dispatch site is otherwise invisible here, and invisible is how
+    /// `ps` shipped.
+    ///
+    /// `conwin.c` was exactly that for as long as this file existed. It
+    /// answers `clear` before delegating the rest to `n68_exec.c`, so its
+    /// contents were harmless — but nothing read it, several assertions here
+    /// name it in their prose while reading `n68_exec.c`, and a second verb
+    /// added beside `clear` was a console-only capability the host cannot
+    /// reach, with every gate in this file green. Found by mutation on
+    /// 2026-07-31.
+    private static let dispatchSites: [String: String] = [
+        // NOW-PPC
+        "now-guest-ppc/src/commands/commands.c": "wire",
+        "now-guest-ppc/src/console/console_model.c": "console",
+        // NOW-68K
+        "now-guest-68k/src/commands/commands68.c": "wire",
+        "now-guest-68k/src/commands/n68_exec.c": "console",
+        "now-guest-68k/src/console/conwin.c": "console",
+    ]
+
+    /// NOW-68K's console face, which is **two** files: the shared dispatch in
+    /// `n68_exec.c` that the wire's exec plane reaches too, and the
+    /// window-local arm in `conwin.c` that runs before the delegation.
+    private func sixtyEightKConsoleVerbs() throws -> Set<String> {
+        var out: Set<String> = []
+        for (path, face) in Self.dispatchSites
+        where face == "console" && path.hasPrefix("now-guest-68k/") {
+            out.formUnion(dispatched(in: try source(path)))
+        }
+        return out
+    }
+
+    /// The list above names every file that dispatches a verb.
+    ///
+    /// Without this the list is a hand-maintained premise, and every check in
+    /// this file silently narrows to whatever it happens to name. A guest
+    /// grows a new console window, a new plane, a second table — and the
+    /// two-face rule stops applying to it without one test going red. That is
+    /// the shape of the defect this file was written for, one level up: the
+    /// gate itself drifts out of contact with the thing it gates.
+    ///
+    /// Comments stripped, so a `strcmp(name, …)` quoted in prose does not
+    /// invent a site — and a dispatch commented OUT stops counting as one.
+    func testEveryDispatchSiteIsOneThisFileReads() throws {
+        var found: Set<String> = []
+        for half in ["now-guest-ppc/src", "now-guest-68k/src"] {
+            let dir = Self.repoRoot.appendingPathComponent(half)
+            let names = (FileManager.default.enumerator(atPath: dir.path)?
+                .compactMap { $0 as? String } ?? [])
+                .filter { $0.hasSuffix(".c") }
+            XCTAssertFalse(names.isEmpty, "no guest sources at \(dir.path)")
+            for n in names where try source("\(half)/\(n)")
+                .contains("strcmp(name,") {
+                found.insert("\(half)/\(n)")
+            }
+        }
+        XCTAssertEqual(found, Set(Self.dispatchSites.keys), """
+            The set of files that dispatch a verb changed. Every check in \
+            this file reads a NAMED list, so a site missing from it is a \
+            face the two-face rule quietly stopped applying to — add it to \
+            dispatchSites with the face it answers, and make sure the checks \
+            below actually read it.
+            """)
+    }
+
     /// Every `strcmp(name, "verb")` in a file — how both guests dispatch.
     private func dispatched(in text: String) -> Set<String> {
         var found: Set<String> = []
@@ -219,7 +287,10 @@ final class CommandParityTests: XCTestCase {
             defensible — the worst kind of disagreement to debug.
             """)
 
-        let duplicated = table.intersection(dispatched(in: consoleText))
+        // Both console files, not just n68_exec.c: conwin.c dispatches too,
+        // and a verb it answers that commands68.c also answers is the same
+        // two-implementations defect one file over.
+        let duplicated = table.intersection(try sixtyEightKConsoleVerbs())
             .subtracting(["help", "ps", "vprobe"])
         XCTAssertTrue(duplicated.isEmpty, """
             n68_exec.c dispatches \(duplicated.sorted()) itself while \
@@ -242,8 +313,13 @@ final class CommandParityTests: XCTestCase {
     /// `process.list` on that same wire the whole time (2026-07-25). The
     /// message family made the capability LOOK present on both faces —
     /// and a message family is not something anyone can type.
+    ///
+    /// **Both** console files. `conwin.c` answers `clear` before delegating
+    /// the rest, and it was unread here until 2026-07-31 — a second verb
+    /// beside it was a console-only capability with every gate green, which
+    /// is this test's own defect committed inside the test meant to catch it.
     func testEveryVerbTheSixtyEightKConsoleAnswersIsAlsoOnItsWire() throws {
-        let console = dispatched(in: try source("now-guest-68k/src/commands/n68_exec.c"))
+        let console = try sixtyEightKConsoleVerbs()
         let wire = dispatched(in: try source("now-guest-68k/src/commands/commands68.c"))
 
         let missingFromWire = console.subtracting(wire)
