@@ -79,14 +79,112 @@ relocated BSS at boot. It *linked* — the object file carried a live reference 
 a result. It uses `GetPort()` now, which asks the Toolbox in the current context
 and is correct from anywhere.
 
+A third thing came out of inspecting the identity change the same way, and this
+one is reassuring rather than sharpening. The gate is real in the object code,
+not just in the source: `qdprobe_gne_apply` loads `arm_expiry`, branches to the
+retire path when it is zero, compares with a **signed** subtract otherwise, then
+compares `arm_a5` against `LMGetCurrentA5()` (an inline read of low memory
+`0x904`) and only then executes `_GetPort` (`$A874`). No refusal path reaches
+the Toolbox at all, and `-Os` inlined `patch_current_port` without dropping
+either check. The object file's only library import is `memcpy` — the
+pre-existing `QDProbePort` struct copy in `restore_ports()` — and the map shows
+it linked into our own flat blob rather than dispatched, so it is as resident as
+the rest of us.
+
 ## What it does
 
 - Chains jGNE, like NOW's core, to get a moment in each process's context.
-- While `arm` is nonzero, patches the current port's `rectProc` — recording the
-  port, its previous `grafProcs`, and the **A5 it was patched from**.
+- While a **live request naming this context** stands, patches the current
+  port's `rectProc` — recording the port, its previous `grafProcs`, and the
+  **A5 it was patched from**.
 - Counts every call through the patched proc, then tail-calls the original.
-- While `arm` is zero, restores every port it patched — but **only from the
-  same A5 context it patched them in**. See below.
+- Otherwise restores every port it patched — but **only from the same A5
+  context it patched them in**. See below.
+
+## Arming names its target
+
+A request is three fields in the shared block, and `arm` alone is not one of
+them:
+
+| field | written by | meaning |
+| --- | --- | --- |
+| `arm_a5` | reader | the **only** A5 world we will patch |
+| `arm_expiry` | reader | `TickCount` after which the request lapses |
+| `arm` | reader (commit) / probe (to zero, on expiry) | request stands |
+
+`arm` is the commit word: **write `arm_a5` and `arm_expiry` first, `arm` last;
+to disarm, write `arm` first.** A jGNE pass can land between any two stores, and
+that order is what stops a live `arm` from ever pairing with the previous
+request's target.
+
+**Arming with no target named does nothing.** The obvious reading of a bare
+`arm` is "instrument everything"; the fail-closed reading is "instrument
+nothing", and this is the repo's habit for good reason. A request that does not
+say whose ports it wants has not asked for anything we are willing to do. Both
+refusals — no target, and wrong context — are counted per pass, so a
+misaddressed request is loud rather than silent.
+
+### Why this changed
+
+The first draft patched whichever port happened to be current while armed,
+first-come, capped at 8, with no identity check at all. The cap bounded how
+*many* ports; it never bounded *whose*. The sibling Portal INIT measured the
+same defect shape in the actuator case (`mirror`, `d9db2c4`,
+`docs/PORTAL-PLAN.md`, 2026-07-31): its `MenuSelect` patch was single-flight and
+self-disarming, and with a request armed a real user press on a *different* menu
+ran the armed command **18/20**. The patch that additionally required the
+request to name its exact `ControlHandle` hijacked **0/20**. The general lesson,
+and it is the reason this file changed:
+
+> **A bound on time or count is not a bound on scope.** Disarming says the patch
+> fires once. It says nothing about *whose* call it fires on.
+
+### Why A5
+
+It is what both sides can actually hold. `LMGetCurrentA5()` is a single
+low-memory read from resident code in any context — no Process Manager call,
+nothing that moves memory — and NOW's anchor plane already keys per-process
+state the same way (`contract/peek_table.h`), so a reader that has an anchor
+already has the value to write here.
+
+Two limits, stated rather than assumed:
+
+- **A5 names an A5 *world*, not a process**, and the value can be reused after
+  an application quits. Re-arm per launch. The expiry is what bounds the window
+  in which a recycled A5 could be mistaken for the target — the honest reason to
+  keep a deadline even though it guards nothing about scope.
+- **A background target never arms.** Our hook only runs when the target runs,
+  and a suspended process does not pump its event loop. Upstream measured this
+  directly: **6/6 timeouts** arming a backgrounded application (`mirror`,
+  `docs/STATUS.md`). Identity-scoped arming can only ever reach a target that is
+  alive and pumping. That is a real bound on what this probe can observe, not a
+  bug to be fixed here.
+
+### The expiry is secondary, and is not the guard
+
+The dead-man's switch exists because upstream also measured that **the guest
+never ages a request out** — only the host verb's exit path cleared `armed`, so
+an agent that died mid-verb left a patch armed indefinitely, and a safety
+property should not depend on the caller surviving. It is fail-closed (a request
+with no deadline is expired on sight) and wrap-safe (signed tick difference).
+
+It bounds a request's **duration, not its scope**. Its one real virtue is
+independence: it fires in whatever process pumps next, so retiring a request
+needs neither the target nor the reader to still be alive. Nothing about it
+substitutes for the identity check.
+
+### What disarm can and cannot guarantee
+
+The asymmetry is not fixable from inside the probe, so it is stated instead:
+
+- **Guaranteed, promptly:** we stop patching anything new. The refusals are
+  decided by whoever pumps, so they take effect in every process at once, and
+  the expiry path does not need the target alive.
+- **Not guaranteed:** that the instrumentation is already gone. A port can only
+  be restored from the context that patched it (see below), so a disarm reaches
+  the target's ports only when the **target next pumps events**. A target that
+  is suspended, wedged, or quit keeps its patch until it runs again — or
+  forever, which is the leaked-entry case rule 3 accepts on purpose.
 
 ## The dangerous part, stated plainly
 
@@ -126,7 +224,10 @@ Per the charter, in order, saying which rung a claim sits on:
 | PowerBook 1400c, attended | not run — emulator first, and not without asking |
 
 There is no reader yet: the counters are published through Gestalt `'QDpr'` and
-nothing reads them. That is the next rung, not an oversight.
+nothing reads them, and nothing writes a request either — so on a machine that
+booted this today, `arm_a5` is zero and the probe refuses every pass. That is
+the next rung, not an oversight, and the reader's first job is the three-field
+commit order above rather than a single `arm` poke.
 
 ## Build
 
