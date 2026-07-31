@@ -191,6 +191,15 @@ run_c now-guest-68k test_swlist.c       "" src/software/n68_swlist.c \
 # Every test file must be in the manifest above. Grepping this script for the
 # filename is crude and deliberate: it is the check that cannot itself go
 # stale, because it reads the same text a human reads.
+#
+# Two things it cannot see, from the gate audit of 2026-07-31. It greps THIS
+# FILE, comments included, so a basename mentioned in a comment satisfies it
+# with no run_c line at all - the same defect that hollowed three gates in
+# the Swift suite, one shell script over. And "$base" is a grep PATTERN, so a
+# name is also satisfied by any line containing it as a substring. No
+# basename currently sits only in a comment (checked), which is the whole
+# reason this is a note and not a fix: the loophole is open and unused, and
+# closing it properly means a manifest this script parses rather than greps.
 echo "== manifest =="
 unlisted=""
 for f in "$repo_root"/now-guest-ppc/tests/* "$repo_root"/now-guest-68k/tests/* \

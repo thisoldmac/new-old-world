@@ -46,9 +46,8 @@ final class CensusProbeRegistryTests: XCTestCase {
     /// The `k_probes[]` names in the guest, in their dispatch order - which
     /// is the rail's display order, which the host mirrors.
     private func guestProbeOrder() throws -> [String] {
-        let url = Self.repoRoot
-            .appendingPathComponent("now-guest-ppc/src/census/census_probes.c")
-        let text = try String(contentsOf: url, encoding: .utf8)
+        let text = try GateSource.guestC(
+            "now-guest-ppc/src/census/census_probes.c")
         guard let braceRange = text.range(of: "k_probes[] = {") else {
             XCTFail("no k_probes table in census_probes.c"); return []
         }
@@ -87,9 +86,8 @@ final class CensusProbeRegistryTests: XCTestCase {
 
     /// The `k_probes68[]` names in NOW-68K, read the same way.
     private func guest68KProbeOrder() throws -> [String] {
-        let url = Self.repoRoot
-            .appendingPathComponent("now-guest-68k/src/census/census68.c")
-        let text = try String(contentsOf: url, encoding: .utf8)
+        let text = try GateSource.guestC(
+            "now-guest-68k/src/census/census68.c")
         guard let braceRange = text.range(of: "k_probes68[] = {") else {
             XCTFail("no k_probes68 table in census68.c"); return []
         }
@@ -142,6 +140,68 @@ final class CensusProbeRegistryTests: XCTestCase {
     func testBothGuestsOrderTheirProbesTheSameWay() throws {
         XCTAssertEqual(try guest68KProbeOrder(), try guestProbeOrder(),
                        "the two guests' probe rails are in different orders")
+    }
+
+    /// Every row in both tables gathers the probe it is NAMED after.
+    ///
+    /// Found by mutation on 2026-07-31, and it is the hole every check above
+    /// shares: they read the quoted names and never the function beside
+    /// them. Swap two gathers —
+    ///
+    ///     { "pci",       gather_scsi },
+    ///     { "scsi",      gather_pci },
+    ///
+    /// — and both guests compile, the native suite passes, and all four
+    /// checks above agree the rails match the contract, while every machine
+    /// reports its SCSI bus under PCI and its PCI bus under SCSI. Nothing
+    /// downstream can catch it either: a dossier of plausible values in the
+    /// wrong cards is exactly as well-formed as the right answer.
+    ///
+    /// (The simpler mutation — pointing one row at another's gather and
+    /// leaving the displaced one unused — is caught, but by the compiler's
+    /// `-Werror=unused-function`, not by anything here. A swap keeps both
+    /// used and walks straight through.)
+    ///
+    /// This is a naming convention, not a proof: it cannot tell whether
+    /// `gather_pci` reads PCI. What it does is make a mismatched pair
+    /// impossible to write silently, which is what happened above.
+    func testEveryProbeRowGathersTheProbeItNames() throws {
+        for (file, table) in [
+            ("now-guest-ppc/src/census/census_probes.c", "k_probes[] = {"),
+            ("now-guest-68k/src/census/census68.c", "k_probes68[] = {"),
+        ] {
+            let text = try GateSource.guestC(file)
+            guard let open = text.range(of: table),
+                  let end = text.range(of: "};", range: open.upperBound
+                                        ..< text.endIndex) else {
+                XCTFail("no \(table) table in \(file)")
+                continue
+            }
+            let body = String(text[open.upperBound..<end.lowerBound])
+            let re = try NSRegularExpression(
+                pattern: #"\{\s*"([a-z0-9]+)"\s*,\s*([A-Za-z0-9_]+)\s*\}"#)
+            let ns = body as NSString
+            let rows = re.matches(
+                in: body, range: NSRange(location: 0, length: ns.length))
+            XCTAssertFalse(
+                rows.isEmpty,
+                "\(file)'s \(table) no longer reads as "
+                    + "`{ \"name\", gather_name }` rows, so this check and "
+                    + "the three above it are reading nothing.")
+            for row in rows {
+                let name = ns.substring(with: row.range(at: 1))
+                let gather = ns.substring(with: row.range(at: 2))
+                XCTAssertEqual(
+                    gather, "gather_\(name)", """
+                    \(file): the probe named "\(name)" is gathered by \
+                    \(gather). Every other check on this table reads the \
+                    NAME and never the function beside it, so a mismatched \
+                    pair reports one card's hardware under another's — \
+                    well-formed, plausible, and wrong. If the pairing is \
+                    deliberate, the row needs a different name.
+                    """)
+            }
+        }
     }
 
     func testEveryProbeHasThreeColumnTitles() {

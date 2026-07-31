@@ -76,7 +76,16 @@ public enum HostFaceReach: Sendable {
     /// - the whole view no longer instantiated, because its module was
     ///   dropped from the sidebar registry — the file and the symbol both
     ///   survive untouched;
-    /// - the symbol surviving only inside a comment or a `#Preview`.
+    /// - the symbol surviving only inside a comment or a `#Preview`;
+    /// - **the symbol appearing SEVERAL TIMES in the file, so deleting the
+    ///   affordance the row means changes nothing.** Added 2026-07-31 after
+    ///   a gate audit: `now_list_processes` names `model.refresh()` in
+    ///   `ProcessesModuleView.swift`, which contains three of them — the
+    ///   Refresh button, an `.onAppear`, and a reconnect. Deleting the
+    ///   button outright — the one affordance a person clicks, which is
+    ///   what this case is defined to name — compiles and passes. A row
+    ///   naming a symbol its file uses more than once is proving less than
+    ///   it looks like, and picking a distinctive one is free.
     ///
     /// This is the same weakness the MCP face's check has and names: that one
     /// is textual over `NOWMCPServer`'s registry loop, so a `guard … continue`

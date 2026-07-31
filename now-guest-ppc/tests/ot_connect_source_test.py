@@ -40,6 +40,23 @@ NOWLOG = source("nowlog.c")
 
 
 def function_body(source: str, signature: str, next_signature: str) -> str:
+    """The text between two signatures - which is NOT quite a function body.
+
+    Both indexes are FIRST occurrences. wire.c carries forward declarations
+    for several of its statics, and the day one is added for start_connect
+    this window becomes the declaration plus everything up to the next
+    mention of service_connecting - which may be its own forward
+    declaration on the following line, leaving a two-line "body" that every
+    positive assertion below fails on and every `not in` assertion passes
+    on. Neither function is forward-declared today (checked 2026-07-31);
+    this is a note about what would happen, not a defect.
+
+    Nor are comments stripped, so an identifier named in the prose beside
+    the code satisfies a check the code no longer supports. That has now
+    happened three times in the host suite; the reason it is only a note
+    here is that these assertions read as a SEQUENCE, and a comment would
+    have to sit in exactly the deleted line's position to hide it.
+    """
     start = source.index(signature)
     end = source.index(next_signature, start)
     return source[start:end]

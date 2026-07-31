@@ -35,9 +35,24 @@ final class HostFaceParityTests: XCTestCase {
     private static let mcpRenderer =
         "now-host/Sources/NOWAgentCompanion/NOWMCPServer.swift"
 
+    /// The app's own source **with its comment lines removed** — see
+    /// `GateSource`.
+    ///
+    /// Every check in this file establishes a structural property by asking
+    /// whether an identifier is in a file, and a comment that names the
+    /// identifier satisfies that. Found here by mutation on 2026-07-31:
+    /// replacing `registry.projections.map` with a filtered map that drops
+    /// one capability, and leaving the original in the comment above it,
+    /// removed a row from the MCP tool list while
+    /// `testTheMCPFaceIsDerivedFromTheRenderersOwnLoop` went on reporting
+    /// that every registered row is on the MCP face structurally. It built,
+    /// and all 916 tests passed.
+    ///
+    /// That check is the premise the whole `.reachedByRegistry` claim rests
+    /// on, so it is the worst one in the file to be able to satisfy with
+    /// prose.
     private func source(_ path: String) throws -> String {
-        try String(contentsOf: Self.repoRoot.appendingPathComponent(path),
-                   encoding: .utf8)
+        try GateSource.hostSwift(path)
     }
 
     /// Every Swift file under the app UI target, which is where an

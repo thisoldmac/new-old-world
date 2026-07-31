@@ -163,20 +163,20 @@ final class CaptureProjectionTests: XCTestCase {
     /// the handler behind it. `HostFaceParityTests` checks every row this
     /// way; this asserts the two capture surfaces a person has, because the
     /// menu item is the one that has no pane to be found in.
+    /// **It carries `HostFaceReach.reached`'s limits, all of them.** This
+    /// is `file.contains(symbol)` with the same reach and the same blind
+    /// spots — a control left `.disabled(true)`, a view no longer
+    /// instantiated, or the same symbol appearing elsewhere in the file all
+    /// keep it green while a person loses the affordance. Read that doc
+    /// comment before strengthening this one; the decision not to build a
+    /// partial Swift parser was taken there and applies here unchanged.
+    /// Comments are stripped, which is the one thing that IS cheap.
     func testBothAppCaptureAffordancesExist() throws {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("now-host/Sources/Host")
-        let panel = try String(
-            contentsOf: root.appendingPathComponent(
-                "ScreenshotsModuleView.swift"), encoding: .utf8)
+        let panel = try GateSource.hostSwift(
+            "now-host/Sources/Host/ScreenshotsModuleView.swift")
         XCTAssertTrue(panel.contains("model.capture()"))
-        let menu = try String(
-            contentsOf: root.appendingPathComponent("QuickCapture.swift"),
-            encoding: .utf8)
+        let menu = try GateSource.hostSwift(
+            "now-host/Sources/Host/QuickCapture.swift")
         XCTAssertTrue(
             menu.contains("screenshots.captureToClipboard"),
             "The menu bar's Screenshot Guest no longer reaches a capture. "

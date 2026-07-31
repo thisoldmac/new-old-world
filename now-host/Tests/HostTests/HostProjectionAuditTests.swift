@@ -241,6 +241,26 @@ final class HostProjectionAuditTests: XCTestCase {
     ///
     /// Verified by mutation: restoring `projection.invoke(...)` in
     /// `NOWMCPServer.callTool` fails this test by file and line.
+    ///
+    /// **Its limit is the exclusion, and the exclusion is a NAME.** A line
+    /// is forgiven when it contains `dispatch.invoke(`, because that is how
+    /// every legitimate face spells the call — so a local variable named
+    /// `dispatch` holding a projection walks straight through:
+    ///
+    ///     if let dispatch = registry.projection(named: name) {
+    ///         _ = await dispatch.invoke(arguments, through: client)
+    ///     }
+    ///
+    /// That compiles, invokes a capability, emits nothing, and passes
+    /// (audited 2026-07-31). It is not the spelling anyone reaches for
+    /// first, and it is one shadowed binding away from being it.
+    ///
+    /// Not fixed here, because no text check can tell what a name is bound
+    /// to and a cleverer regex would only move the spelling. The real fix
+    /// is a production one and belongs on its own change: `invoke` is
+    /// `public` on `HostProjection`, which is what lets a different module
+    /// call it at all. Narrow that to the module the dispatch lives in and
+    /// the compiler enforces what this test can only ask for.
     func testNothingButTheDispatchInvokesAProjection() throws {
         let dispatch = "HostProjectionDispatch.swift"
         var offenders: [String] = []
@@ -276,11 +296,21 @@ final class HostProjectionAuditTests: XCTestCase {
     /// actually passes the sink that reaches the person's log rather than
     /// something that drops events — the compiler enforces that one exists,
     /// not that it goes anywhere.
+    ///
+    /// **Comments stripped**, and this one had the quiet direction. Mutation
+    /// on 2026-07-31: pass a sink whose `record` does nothing, and leave
+    /// `audit: LocalAuditSink()` in the comment above it. It builds, all 916
+    /// tests pass, and every agent-driven action on the machine reaches no
+    /// log a person reads — which is the entire property this test names.
+    ///
+    /// Its sibling above, `testNothingButTheDispatchInvokesAProjection`,
+    /// deliberately keeps reading RAW text: it asserts that no line calls
+    /// `.invoke(`, so a comment can only ADD an offender — a loud false
+    /// failure, never a silent pass — and its failure message reports line
+    /// NUMBERS, which stripping would shift off the real source.
     func testTheCompanionEntryPointPassesTheLocalSink() throws {
-        let text = try String(
-            contentsOf: Self.repoRoot.appendingPathComponent(
-                "now-host/Sources/NOWAgentCompanion/StdioMCP.swift"),
-            encoding: .utf8)
+        let text = try GateSource.hostSwift(
+            "now-host/Sources/NOWAgentCompanion/StdioMCP.swift")
         XCTAssertTrue(
             text.contains("audit: LocalAuditSink()"), """
             The companion's entry point does not hand the MCP face the sink \
