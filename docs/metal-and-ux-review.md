@@ -315,6 +315,42 @@ guest and not here. Both surfaces sort under an ASCII fold, which does not
 bring such a pair adjacent, so the guest only groups them when nothing sorts
 between them. Not expected to occur on a real disk; worth a glance if one ever
 does.
+### 5b. The path bar, on a volume that is actually deep (new 2026-07-31)
+
+The Files browser used to show one crumb — the last component of the share
+root — and an up button. It now shows the whole path, disk first, and every
+component inside the share is a click. Unit-tested only; **no machine has drawn
+this bar**, and the questions left are the ones a test cannot answer.
+
+| What to do | What to judge |
+|---|---|
+| Connect a real guest and look at the bar before opening anything | Does the disk read as that machine's disk? The first crumb is the volume name with an `externaldrive` beside it, and the components between the disk and the shared folder are grey and unclickable on purpose. Does "grey" read as *context*, or as *broken*? |
+| Navigate somewhere genuinely deep — `System Folder:Extensions` is only two, so go further: `Macintosh HD:Applications:Utilities:Network:…`, or point the share at the volume root and walk down | At **four or more** folders inside the share the middle folds into a `…` menu, keeping the disk, the shared folder, and the last two folders. Six elements maximum. Is the fold obvious enough to click, or does it read as the path having been *cut*? |
+| Open the `…` menu | Everything folded is listed and every enterable one jumps. Confirm nothing is missing — the fold is meant to lose nothing. |
+| Find a folder with a long name (HFS allows 31 characters — `System Folder Extensions (Disabled)` is over, but 31 is easy to hit) | Names are **never** truncated; that was deliberate, on the grounds that depth is unbounded and a name is not. On a narrow window does the bar stay on one line, or does the deliberate no-truncation choice push the actions off the right edge? That is the one thing the width ceiling was computed for and the one thing only a real window can settle. |
+| Point the share at a whole volume (`Macintosh HD:`) | One crumb, which is both the disk and where browsing starts, and it is clickable. |
+| Watch the bar **before** the first listing, and force a failure (share a folder, then delete it on the guest, then Refresh) | It never goes blank: "nothing listed yet" / "listing…" / a `not listed` warning that keeps the crumbs. Judge whether the failed state reads as *where you tried to be* rather than as *where you are*. |
+| Switch between two guests mid-browse | Each machine's bar comes back to its own path. |
+
+Names on a classic volume can contain `/`, `..` and high-MacRoman bytes; the
+splitter is `contract/share_path.h`'s rule and those are pinned in tests, but a
+volume with a folder actually named `..` is worth a look if one exists.
+
+### 5c. Double-click: download to the share, then open (new 2026-07-31)
+
+A double-click on a file now fetches it into the folder **this** Mac shares and
+opens it here. Unit-tested against a fake guest; the seams a real machine
+decides are these.
+
+| What to do | What to judge |
+|---|---|
+| Double-click a plain `TEXT` file | It lands in the shared folder — the same one "Reveal Shared Folder" opens — and opens in TextEdit. Check the **converted** text is right, not just that something opened. |
+| Double-click a **large** file (a few MB over this wire is slow on purpose) | The progress row says "*then opens here*" while it runs. Does that read as an explanation of the wait, or is the wait still long enough to feel broken? This is the judgement the row exists for. |
+| Press **Cancel** during that transfer | Nothing opens, and nothing half-written is left in the shared folder. |
+| Double-click a resource-only file or a 68K application | Nothing here can open it: it is revealed in the Finder and a grey (not red) notice says where it went. Judge whether "revealed + notice" reads as success — because it *is* one — or as a failure with the wrong colour. |
+| Double-click the same file twice | The second copy is `name (2)`; the share is never overwritten. Is silently bumping right here, or should it ask? |
+| Double-click a folder | It navigates, and 5a's bar is what confirms where it landed. |
+| Double-click while another transfer runs | The footer says the wire is busy. Previously this did nothing at all. |
 
 ## 6. Contention, which nobody has ever seen happen
 
