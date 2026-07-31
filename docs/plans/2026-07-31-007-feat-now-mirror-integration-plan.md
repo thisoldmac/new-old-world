@@ -1,6 +1,7 @@
 # Folding Mirror into NOW
 
-**Date:** 2026-07-31 · **Status:** intent, nothing built · **Namespace:** `claude/`
+**Date:** 2026-07-31 · **Status:** M1 built (TESTED, not metal-verified); M2–M6
+intent · **Namespace:** `claude/`
 
 A snapshot of intent, per [README](README.md). Where this and the code disagree,
 the code is right; where this and [open-issues.md](../open-issues.md) disagree,
@@ -119,7 +120,7 @@ that a decimated capture must never leave as a keyframe.
 
 Ordered by what is settled upstream, not by what is interesting.
 
-### M1a — `stack_base` in the anchor slot
+### M1a — `stack_base` in the anchor slot — **built 2026-07-31** (`40f2b1f`)
 
 **First because it is settled, needs no wire and no host, and is additive to a
 versioned struct with a defined absence reading.** One field: sample
@@ -135,7 +136,15 @@ mistake fails loudly at compile time rather than quietly on a PowerBook.
 Unblocked today. Mirror's `guest/extensions/axpeek` has not moved since
 2026-07-30.
 
-### M1b — the oracle, in the application
+**As built:** the slot grew to 28 bytes at format `V2`, `capture_anchor()` fills
+`stack_base` **before** committing the stamp (its position after the stamp in
+the struct says nothing about write order — the stamp is the seqlock's commit),
+and the static asserts moved with it. Building it also turned up that
+`scripts/build-guests` **had never compiled `ext/` at all**: the one piece of
+code here that runs at boot, in every process's context, and whose failure needs
+a shift-boot to recover was the one piece no gate ever built. It builds now.
+
+### M1b — the oracle, in the application — **built 2026-07-31** (`4d8bba6`)
 
 Map an anchor to the live Process Manager partition and answer **OK /
 AMBIGUOUS / MISMATCH / STALE / NOT_FOUND** rather than a pointer. Application
@@ -146,6 +155,32 @@ outcomes are the interesting part — particularly that `AMBIGUOUS` exists at
 all, which says two processes can present as one match and the honest response
 is to refuse rather than pick. That is the same instinct as everything the last
 slice landed: absence is not a value, and a guess is not an answer.
+
+**As built** — `now-guest-ppc/src/peek/peek_oracle.{c,h}`, with the mapping to
+the reader's vocabulary in `peek_read.c`:
+
+- **Toolbox-free**, taking the partition bounds as arguments rather than calling
+  the Process Manager. That was not tidiness: it is what makes all five verdicts
+  reachable from a native host test. `AMBIGUOUS` on a real machine needs a dead
+  process whose partition was reused, which no test can arrange.
+- **`STALE` is reported, never refused**, and `peek_read.c` passes no age gate at
+  all — preserving the rule that reader already followed. Window state is only
+  ever as fresh as the target's last pump; a clock cannot improve on that, so
+  the age is rendered beside the answer instead of suppressing it.
+- **`MISMATCH` is unreachable on a V1 table**, gated on the format word rather
+  than on `stack_base` being nonzero. One root cannot disagree with itself, and
+  the honest reading of an absent second root is "cannot tell", not "wrong".
+- The two new states **render as their own words** ("unclear (two matches)",
+  "stale anchor") rather than falling through the Processes module's switch
+  default to `-`, which claims no plane and would have been a third wrong answer
+  in the same path.
+
+**One assumption is unmeasured** and it is now item 11 of
+[metal-and-ux-review.md](../metal-and-ux-review.md): that a process's
+`LMGetCurStackBase()` lies within its partition. If that is wrong on metal every
+process reports `MISMATCH` — a silent, total, *polite* failure rather than a
+loud one. The containment check is deliberately loose so that only a value
+outside the partition entirely is rejected.
 
 ### M2 — QDPeek as its own plane
 
@@ -254,7 +289,15 @@ Two things NOW fixed this week that Mirror still has:
 
 ## Corpus impact
 
-`corpus_impact: none` — intent only. The measurements this rests on are already
-recorded (`postevent-modifiers-need-ppostevent`,
+`corpus_impact: none` — **no new measurement**, which is the reason rather than
+an omission. M1 is built and tested, but every claim it rests on was already
+recorded (`observe-process-local-ui`, `postevent-modifiers-need-ppostevent`,
 `now-four-face-capability-cost`), and Mirror's own findings live in its
 repository.
+
+The one claim that *would* be a finding — that a process's `LMGetCurStackBase()`
+lies within its Process Manager partition, which is what makes a second root
+worth carrying — is **assumed, not measured**. It is routed to
+[metal-and-ux-review.md](../metal-and-ux-review.md) item 11 with the exact
+observation that would settle it, and a finding is owed once that pass runs. A
+green build is not evidence about a machine.

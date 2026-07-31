@@ -185,7 +185,39 @@ Rule 3's whole point is that a person can see what an agent did. Drive one tool
 against a real machine and then **read the line out of `~/Library/Logs/now-logs`
 and out of the Agent module**. Nobody has done this end to end.
 
-## 11. Two machine-specific facts worth confirming
+## 11. The anchor oracle's one unmeasured assumption
+
+Added 2026-07-31 with the oracle (M1b). This is the highest-value single
+observation in the metal half, because it is the one place in this slice where a
+wrong guess degrades *silently into a refusal* rather than into an error.
+
+The oracle decides an anchor slot is this process's by checking two roots
+against the partition: `a5` and the new `stack_base`. The A5 half is unchanged
+and proven. The stack-base half rests on one claim nothing here has measured:
+**that `LMGetCurStackBase()` for a process falls inside `[processLocation,
+processLocation + processSize]`**, the stack growing down from the top.
+
+If that is wrong on real hardware, **every process reports Mismatch and the
+Windows row reads "stale anchor" for all of them** — the feature does not error,
+it politely declines, everywhere.
+
+**What to do:** open the Processes module, select several apps in turn — a
+foreground app, a background one, the Finder — and read the Windows row.
+
+| What you see | What it means |
+| --- | --- |
+| Counts and titles, as before | The assumption holds. Say so; it becomes a measurement. |
+| "stale anchor" on **every** process | The geometry claim is wrong. Not a crash — a false refusal. |
+| "stale anchor" on **some** | More interesting than either: the check is working and those slots are genuinely debris. |
+| "unclear (two matches)" | Two slots survived both checks. Worth capturing which app, since it is the case the oracle was written for and nobody has seen one. |
+
+The check was written **loose on purpose** — it rejects only addresses outside
+the partition entirely, and accepts `loc+size` exactly, because that is the
+normal value and the strict readability test would reject it. Tightening it
+(that the stack base sits above A5, say) wants this observation first; until
+then it stays out as a phantom constraint.
+
+## 12. Two machine-specific facts worth confirming
 
 - **`vprobe` reported `CopyBits failed` on the 1400c**, and that failure does
   **not** reproduce through `capture.request` — two clean captures. The paths
