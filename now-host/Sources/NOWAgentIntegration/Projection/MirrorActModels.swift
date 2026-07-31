@@ -181,6 +181,20 @@ public enum AgentIntegrationActDispatch:
     case dispatched
 }
 
+/// One refused call's sentence, carried as a typed failure.
+///
+/// It exists because `Result`'s failure must be an `Error` and the thing a
+/// refused caller gets is a sentence — the wording is the product here (see
+/// `HostProjectionArguments.refusalForUnknownMembers`), so it is carried
+/// rather than mapped to a code and back.
+public struct AgentIntegrationArgumentRefusal: Error, Equatable, Sendable {
+    public let text: String
+
+    public init(_ text: String) {
+        self.text = text
+    }
+}
+
 /// The four things this surface can ask of one window.
 ///
 /// Mirror runs all four through one path — the application's own
@@ -254,30 +268,30 @@ public struct AgentIntegrationWindowActRequest: Equatable, Sendable {
     /// second-most-important thing.
     public static func decode(
         _ arguments: [String: Any], tool: HostCapabilityID
-    ) -> Result<Self, String> {
+    ) -> Result<Self, AgentIntegrationArgumentRefusal> {
         guard let window = arguments["window"] as? String,
               AgentIntegrationActPolicy.isValidWindowReference(window) else {
-            return .failure(
+            return .failure(.init(
                 "\(tool.rawValue) requires window: one opaque "
                     + "\(AgentIntegrationActPolicy.windowReferencePrefix)… "
                     + "reference from a current observation. This surface "
                     + "cannot address a window any other way, and "
-                    + "deliberately has no \"frontmost\" form.")
+                    + "deliberately has no \"frontmost\" form."))
         }
         guard let actionName = arguments["action"] as? String,
               let action = AgentIntegrationWindowAction(
                 rawValue: actionName) else {
-            return .failure(
+            return .failure(.init(
                 "\(tool.rawValue) requires action: one of "
                     + AgentIntegrationWindowAction.allCases
-                        .map(\.rawValue).sorted().joined(separator: ", "))
+                        .map(\.rawValue).sorted().joined(separator: ", ")))
         }
 
         let expected = geometryKeys(for: action)
         let present = Set(arguments.keys)
             .subtracting(["window", "action"])
         guard present == expected else {
-            return .failure(
+            return .failure(.init(
                 "\(tool.rawValue) with action \(action.rawValue) takes "
                     + (expected.isEmpty
                         ? "no geometry"
@@ -285,25 +299,25 @@ public struct AgentIntegrationWindowActRequest: Equatable, Sendable {
                     + "; this call sent "
                     + (present.isEmpty
                         ? "none"
-                        : present.sorted().joined(separator: ", ")))
+                        : present.sorted().joined(separator: ", "))))
         }
 
         var decoded: [String: Int] = [:]
         for key in expected.sorted() {
             guard let value = arguments[key] as? Int else {
-                return .failure(
+                return .failure(.init(
                     "\(tool.rawValue) requires \(key) to be an integer "
-                        + "number of points")
+                        + "number of points"))
             }
             let bounded = (key == "left" || key == "top")
                 ? AgentIntegrationActPolicy.isBoundedCoordinate(value)
                 : AgentIntegrationActPolicy.isBoundedExtent(value)
             guard bounded else {
-                return .failure(
+                return .failure(.init(
                     "\(tool.rawValue) requires \(key) within "
                         + "\(AgentIntegrationActPolicy.minimumCoordinate)…"
                         + "\(AgentIntegrationActPolicy.maximumCoordinate) "
-                        + "points, the range a QuickDraw Rect can hold")
+                        + "points, the range a QuickDraw Rect can hold"))
             }
             decoded[key] = value
         }
