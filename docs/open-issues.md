@@ -50,6 +50,41 @@ disabled folder does not exist (create it, or refuse?); whether re-enabling has
 to remember where the file came from or can assume `Extensions`; and whether the
 68K guest serves it at all.
 
+## A refused `stream.start` closes its bracket (2026-07-31)
+
+The bracket is opened optimistically — `activeStreamId` is set before the guest
+has accepted — and its id is held by no pending map, so `recordGuestError` had
+nothing to match: the refusal set `lastGuestError` and the bracket stayed open
+on a stream that was never running. The 68K guest refuses `stream.start` every
+time (`send_error_reply`, `now-guest-68k/src/core/wire68.c`), which makes this
+that machine's ordinary behaviour rather than an edge case. `GuestListener` now
+recognises its own bracket id: it closes on the refusal, with the guest's own
+reason, and records the `stream.start` family through `observeFamily` in both
+directions. **Tested, and mutation-proven both ways; no part of it has met a
+Macintosh.**
+
+**Unverified:**
+
+- **Nobody has watched a real 68K Mac refuse a stream.** The whole arc is
+  proven against a fake guest that answers `not-implemented` on cue. What that
+  cannot show is what the person sees: the Screenshots page should say the
+  machine does not serve live streaming and grey the button, instead of sitting
+  on "Waiting for the first frame…". That is the gate, and it wants the
+  PowerBook rather than an emulator, because the emulated guest is the one that
+  serves the family.
+- **A guest that serves the start and refuses a STOP is reasoned about, not
+  observed.** Such a guest closes on the refusal rather than on the five-second
+  fallback, and its `stream.stop` stays `unproven` rather than being recorded as
+  a "no" — the three stream messages share one id, so the listener attributes a
+  refusal to the open rather than guessing between them. No guest on the wire
+  does this today, so the branch is untravelled.
+- **The two capability stores still both exist.** `familyObservations` on the
+  listener now has the `stream.start` answer, and `GuestCapabilityRecord` — the
+  page-side store that exists precisely because the listener could not see this
+  refusal — records it separately from `ScreenshotModuleModel`. Whether one of
+  them should now absorb the other is a question this change makes askable and
+  did not answer.
+
 ## The live stream reached the agent surface, and the bracket is a lease (2026-07-31)
 
 `now_stream_screen` closes the last three unnoticed gaps in

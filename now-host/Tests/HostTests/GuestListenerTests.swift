@@ -511,6 +511,120 @@ final class GuestPushCaptureTests: XCTestCase {
         XCTAssertNil(listener.streamEndReason)
     }
 
+    /// A guest that does not implement the stream family refuses
+    /// `stream.start`, and the bracket must close on THAT — not on the
+    /// five-second unacknowledged-stop fallback.
+    ///
+    /// This is the 68K guest's ordinary behaviour, not a contrived one: its
+    /// wire answers any message type it does not know with `error`
+    /// (`send_error_reply`, now-guest-68k/src/core/wire68.c). Before the
+    /// listener knew the bracket's own id, nothing here was routed and the
+    /// Screenshots page sat on "Waiting for the first frame…" until the page
+    /// itself noticed and asked for a stop it would also be refused.
+    ///
+    /// The test asserts the timing, because the timing is the defect: the
+    /// deadline is far under the fallback, so a pass cannot be the fallback
+    /// arriving early.
+    func testStreamStartRefusalClosesBracketWithoutFallback() async throws {
+        let guest = try await connectedGuest()
+        /* Answer stream.start the way a guest without the family does, from
+           the wire rather than from the test body, so what closes the
+           bracket is a refusal that crossed the socket. */
+        guest.onMessage = { message in
+            if case .streamStart(let start) = message {
+                try? guest.send(.error(ErrorMessage(
+                    id: start.id, code: "not-implemented",
+                    message: "stream.start is not implemented")))
+            }
+        }
+
+        let opened = Date()
+        let id = try XCTUnwrap(listener.startStream(depth: 8, origin: .person),
+                               "the bracket must open before it can be refused")
+        XCTAssertEqual(listener.activeStreamId, id)
+
+        try await waitUntil("bracket closed") {
+            self.listener.activeStreamId == nil
+        }
+        XCTAssertLessThan(
+            Date().timeIntervalSince(opened), 2,
+            "the refusal must close the bracket, not the 5s stop fallback")
+
+        // The guest's own words, so a caller can say WHY the view is dead.
+        XCTAssertEqual(listener.streamEndReason,
+                       "stream.start is not implemented")
+        // Nothing was asked to stop: there was never a stream to stop.
+        XCTAssertFalse(
+            guest.received.contains(.streamStop(StreamStop(id: id))),
+            "a refused start must not be followed by a stop")
+
+        /* And the refusal is written down, which is what stops the ledger
+           reporting stream.start `unproven` against a machine that has
+           answered the question outright. */
+        let seen = try XCTUnwrap(
+            listener.familyObservations[
+                AgentIntegrationCapabilityNames.streamStart])
+        XCTAssertFalse(seen.served)
+        XCTAssertEqual(seen.code, "not-implemented")
+    }
+
+    /// The other half of the ledger: a guest that streams has SERVED
+    /// `stream.start`, and the frame is the only thing that says so — the
+    /// bracket has no completion for the observing wrapper to sit on.
+    func testStreamFrameRecordsStartAsServed() async throws {
+        let guest = try await connectedGuest()
+        var frames: [GuestListener.CaptureDelivery] = []
+        let watch = listener.streamFrames.sink { frames.append($0) }
+        defer { watch.cancel() }
+        XCTAssertNil(listener.familyObservations[
+            AgentIntegrationCapabilityNames.streamStart],
+            "nothing is known about the family before it is asked")
+
+        let (_, send) = try await streamingGuest(guest, width: 4, height: 4)
+        try send(1, redPalette + [UInt8](repeating: 1, count: 16), "key",
+                 nil, 768, 4)
+        try await waitUntil("keyframe") { frames.count == 1 }
+
+        let seen = try XCTUnwrap(
+            listener.familyObservations[
+                AgentIntegrationCapabilityNames.streamStart])
+        XCTAssertTrue(seen.served)
+    }
+
+    /// A refused `stream.refresh` must NOT kill a stream that is running.
+    /// The three stream messages share the bracket's one id, so the naive
+    /// "any error on this id ends the bracket" would tear down a working
+    /// live view because the guest cannot serve a keyframe on demand.
+    func testRefusedRefreshLeavesRunningStreamAlone() async throws {
+        let guest = try await connectedGuest()
+        var frames: [GuestListener.CaptureDelivery] = []
+        let watch = listener.streamFrames.sink { frames.append($0) }
+        defer { watch.cancel() }
+        let (id, send) = try await streamingGuest(guest, width: 4, height: 4)
+        try send(1, redPalette + [UInt8](repeating: 1, count: 16), "key",
+                 nil, 768, 4)
+        try await waitUntil("keyframe") { frames.count == 1 }
+
+        listener.refreshStream()
+        try await waitUntil("stream.refresh") {
+            guest.received.contains(.streamRefresh(StreamRefresh(id: id)))
+        }
+        try guest.send(.error(ErrorMessage(
+            id: id, code: "not-implemented",
+            message: "stream.refresh is not implemented")))
+        try await waitUntil("the refusal is seen") {
+            self.listener.lastGuestError?.code == "not-implemented"
+        }
+
+        XCTAssertEqual(listener.activeStreamId, id,
+                       "a refused keyframe must not end the stream")
+        // And it is not evidence against the family the guest is serving.
+        let seen = try XCTUnwrap(
+            listener.familyObservations[
+                AgentIntegrationCapabilityNames.streamStart])
+        XCTAssertTrue(seen.served)
+    }
+
     func testStreamCompositesKeyDeltaAndEmptyFrames() async throws {
         let guest = try await connectedGuest()
         var frames: [GuestListener.CaptureDelivery] = []

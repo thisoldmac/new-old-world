@@ -545,10 +545,21 @@ assumes — that it outlives a single call and dies with its client. If that
 assumption is wrong, the liveness half is dead weight and the lease is doing
 all the work. Section 8 says how to find out.
 
-**`capture.request`, the census families and the three stream families read
-`unproven` in the capability ledger by construction**, because the listener records no observation for them.
+**`capture.request` and the census families read `unproven` in the capability
+ledger by construction**, because the listener records no observation for them.
 A guest that has served a capture will still report it unproven. That is honest
 and it is not evidence of a problem.
+
+`stream.start` **no longer does.** It was in that list for the same reason — the
+bracket has no completion for `observing(_:)` to wrap, so nothing wrote the
+answer down — and the listener now records it directly at the two moments that
+settle it: a frame (served) and an `error` on the bracket's own id before any
+frame (not served). `stream.stop` and `stream.refresh` are still unproven by
+construction and stay in the paragraph above: they share the bracket's one id,
+so a refusal naming it says only "one of the three", and the listener attributes
+it to the open rather than guessing between them. What that leaves is a guest
+that serves the start and refuses a stop, which reads as `unproven` for the stop
+rather than as a wrong `notServed`.
 
 **The MCP module's audit stream is per-launch and in memory.** The log
 persists; the pane does not. Someone looking for last week's activity needs the
