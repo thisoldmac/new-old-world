@@ -267,6 +267,17 @@ public enum HostProjectionOutcome {
     /// The caller's arguments were refused. The text is written for that
     /// caller and says what the projection would have accepted.
     case invalidArguments(String)
+    /// **The machine declined**, so the projection never ran.
+    ///
+    /// A separate case rather than a `value` carrying an `unavailable`, and
+    /// that is the whole point of the type: `unavailable` means the machine
+    /// or the host cannot, and this means it can and its owner said no. A
+    /// caller that cannot tell those apart reports a broken capability, and
+    /// somebody spends an afternoon on a machine that is working.
+    ///
+    /// Only `HostProjectionDispatch` produces it — a projection cannot,
+    /// because the check runs before `invoke` and nothing reaches the row.
+    case deniedByConsent(HostProjectionConsentDenial)
 }
 
 /// One projection result, kept encodable without the face having to know

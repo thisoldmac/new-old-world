@@ -53,12 +53,75 @@ public struct HostProjectionDispatch {
         guard let projection = registry.projection(named: name) else {
             return nil
         }
-        let outcome = await projection.invoke(arguments, through: client)
+        let outcome: HostProjectionOutcome
+        if let denial = await consentDenial(invoking: projection,
+                                            through: client) {
+            outcome = .deniedByConsent(denial)
+        } else {
+            outcome = await projection.invoke(arguments, through: client)
+        }
         await audit.record(.init(
             capability: projection.capability,
             face: face,
             guest: selector,
             outcome: outcome))
         return outcome
+    }
+
+    /// **The machine's own ceiling, checked on the line that records the
+    /// attempt.**
+    ///
+    /// It lives here and nowhere else for the reason the audit event does:
+    /// two places to refuse is one place to forget, and the thing that writes
+    /// down what happened is the thing that decides whether it may. One check
+    /// covers every registered row, including the next one, without a per-row
+    /// opt-in that a new capability's author has to remember.
+    ///
+    /// The answer comes from the session health of the machine THIS CALL is
+    /// addressed to — the client the face hands in has already been addressed
+    /// with the selector — so a host driving several Macs applies each one's
+    /// own answer rather than the driven machine's to all of them. The cost is
+    /// one extra local round trip per invocation, over a Unix socket on this
+    /// Mac, and nothing on the guest wire.
+    ///
+    /// Returns nil when the call may proceed. Three of those are worth
+    /// stating:
+    ///
+    /// - **The machine said nothing → fail OPEN.** A guest older than the
+    ///   field looks exactly like an installer that omitted the feature, and
+    ///   every 1400c in the field today is the former. This is a RECORDED
+    ///   DECISION, not a property of the design — plan 006 makes it and the
+    ///   contract's schema states it — and the moment the installer ships,
+    ///   silence stops being the common case and this is the line that flips.
+    ///   Nothing else in this file has to change when it does.
+    /// - **No host and no guest → not a consent question.** An unreachable
+    ///   host has no machine to have answered, and the projection's own
+    ///   `unavailable` is the honest answer to give. Denying here would tell
+    ///   a caller their machine refused when nothing was ever asked of it.
+    /// - **Health that carries no guest → the same.** Nothing is connected;
+    ///   there is nobody to consent.
+    private func consentDenial(
+        invoking projection: any HostProjection.Type,
+        through client: AgentIntegrationClient
+    ) async -> HostProjectionConsentDenial? {
+        guard case .available(let health) = await client.sessionHealth(),
+              let guest = health.guest,
+              let answer = guest.agentAccess else {
+            return nil
+        }
+        let required = HostCapabilityTierDerivation.requiredTier(of: projection)
+        guard !HostConsentCeiling.ceiling(for: answer).permits(required) else {
+            return nil
+        }
+        let ground: HostProjectionConsentDenial.Ground
+        switch answer {
+        case .disabled: ground = .machineDeclines
+        case .unrecognized: ground = .unrecognizedTier
+        case .readOnly, .fullAccess: ground = .aboveGrantedTier
+        }
+        return .init(ground: ground,
+                     capability: projection.capability,
+                     requiredTier: required,
+                     machineAnswer: answer.wire)
     }
 }
