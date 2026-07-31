@@ -1612,22 +1612,64 @@ final class GuestListener: ObservableObject {
     /// Non-nil while a stream bracket is open.
     @Published private(set) var activeStreamId: Int?
 
+    /// **Who asked for the bracket that is open**, nil when none is.
+    ///
+    /// The bracket has always been host-owned and has never recorded which of
+    /// the three ways it was opened, because for two of them nobody needed to
+    /// know: a person who clicks Start Streaming is looking at the page that
+    /// says so, and a guest that asked is the machine on the screen. An agent
+    /// can now open one too, and both questions that follow need this. The
+    /// person at the host has to be able to tell an agent's stream from their
+    /// own — a live view that started by itself is otherwise indistinguishable
+    /// from a fault — and a bracket that outlives whoever opened it can only
+    /// be ended against the answer to "who opened it".
+    ///
+    /// It is set beside `activeStreamId` and cleared with it, everywhere,
+    /// because an origin without a bracket is a claim about a stream that is
+    /// not running.
+    @Published private(set) var streamOrigin: AgentIntegrationStreamOrigin?
+
+    /// What the bracket was opened with, for whoever has to describe it. The
+    /// depth is what was ASKED for — the guest answers with what its screen
+    /// actually is, and that arrives on the frame.
+    @Published private(set) var streamDepth: Int?
+    @Published private(set) var streamMinIntervalMs: Int?
+    /// When the open bracket was opened. Nil with the rest of them.
+    @Published private(set) var streamOpenedAt: Date?
+
     /// The reason the guest gave when IT ended the stream ("capture
     /// failed"); nil after a host-requested stop.
     @Published private(set) var streamEndReason: String?
 
     /// Opens a stream bracket. Frames then arrive on streamFrames until
     /// stopStream() or the guest's own stream.stopped.
+    ///
+    /// **The origin is not defaulted**, deliberately: every caller states who
+    /// it is opening on behalf of, so that a fourth way to open one cannot
+    /// arrive silently labelled as the person at the host.
+    ///
+    /// Returns the bracket's id, or nil when there was nothing to open — a
+    /// caller that has to report which happened needs that, and a person's
+    /// button does not have to read it. It used to return nothing and the two
+    /// silent failures (no connection, lane already taken) were
+    /// indistinguishable from success.
+    @discardableResult
     func startStream(depth: Int, minIntervalMs: Int? = nil,
-                     tuning: CaptureTuning = .init()) {
+                     tuning: CaptureTuning = .init(),
+                     origin: AgentIntegrationStreamOrigin) -> Int? {
         guard let session, case .connected = state,
-              activeStreamId == nil else { return }
+              activeStreamId == nil else { return nil }
         let id = nextCommandId
         nextCommandId += 1
         activeStreamId = id
+        streamOrigin = origin
+        streamDepth = depth
+        streamMinIntervalMs = minIntervalMs
+        streamOpenedAt = Date()
         streamEndReason = nil
         session.beginStream(id: id, depth: depth,
                             minIntervalMs: minIntervalMs, tuning: tuning)
+        return id
     }
 
     /// Asks the guest to send its next stream frame whole.
@@ -1646,8 +1688,8 @@ final class GuestListener: ObservableObject {
             try? await Task.sleep(nanoseconds: 5_000_000_000)
             guard !Task.isCancelled, let self,
                   self.activeStreamId == id else { return }
-            self.activeStreamId = nil
-            self.streamEndReason = "no answer to stop"
+            self.forgetStream(
+                reason: AgentIntegrationStreamFailure.unacknowledgedStop)
         }
     }
 
@@ -1655,9 +1697,23 @@ final class GuestListener: ObservableObject {
         guard stopped.id == activeStreamId else { return }
         stopFallback?.cancel()
         stopFallback = nil
-        activeStreamId = nil
-        streamEndReason = stopped.reason
+        forgetStream(reason: stopped.reason)
         captureProgress = nil
+    }
+
+    /// Drops every field that describes the open bracket, together.
+    ///
+    /// One place rather than three, because the three ways a bracket ends
+    /// used to clear `activeStreamId` and nothing else — which was correct
+    /// while it was the only field, and is the shape of the bug the moment it
+    /// is not. An origin left behind describes a stream that is not running.
+    private func forgetStream(reason: String?) {
+        activeStreamId = nil
+        streamOrigin = nil
+        streamDepth = nil
+        streamMinIntervalMs = nil
+        streamOpenedAt = nil
+        streamEndReason = reason
     }
 
     /// The guest asked for a stream: same bracket, host-owned. Accept
@@ -1673,15 +1729,14 @@ final class GuestListener: ObservableObject {
                               message: "a stream or transfer is active")
             return
         }
-        startStream(depth: request.depth)
+        startStream(depth: request.depth, origin: .guest)
     }
 
     fileprivate func streamSessionClosed() {
         guard activeStreamId != nil else { return }
         stopFallback?.cancel()
         stopFallback = nil
-        activeStreamId = nil
-        streamEndReason = "connection lost"
+        forgetStream(reason: "connection lost")
     }
 
     private var stopFallback: Task<Void, Never>?

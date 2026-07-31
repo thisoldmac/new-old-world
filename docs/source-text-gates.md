@@ -130,6 +130,51 @@ is written where the next author will read it, at the site of the claim:
   produce a loud false failure, never a quiet pass — and the first reports line
   numbers that stripping would shift off the real source.
 
+## Added 2026-07-31: the stream row's gates, and one that was theatre
+
+The live-stream projection added one source-text gate and several ordinary
+behaviour tests. All were mutation-proven and every mutation is recorded as
+having built. Two results are worth this section rather than a table row.
+
+**The new source-text gate:
+`StreamProjectionTests.testTheStreamAffordanceIsNamedByASymbolUsedExactlyOnce`.**
+It is the fifth rot mode above, turned into a check for one row. The row's
+app-UI proof names `model.toggleStream()`, and this asserts the symbol appears
+**exactly once** in the view rather than merely appearing — because a symbol
+its file uses three times is what let the process listing's Refresh button be
+deletable with every gate green. Proven by two mutations, both of which built:
+a second real call site (an `.onDisappear` ending the stream) fails it, and so
+does a trailing `//` comment naming the symbol, because `GateSource` leaves
+trailing comments alone by design. The second is a loud false positive rather
+than a hole, which is the safe direction.
+
+**And one gate that was theatre, found the way they always are.** The
+ownership rule's tests asserted negatives — "no `stream.stop` was sent" — by
+reading the fake guest's received list straight after the call. The listener
+writes asynchronously, so the assertion ran before the message it was looking
+for could have arrived and **passed whether or not one was sent**: both
+ownership guards could be deleted with the suite green. The fix is ordering,
+not sleeping. `Rig.flushWire` sends a `stream.refresh` down the same ordered
+socket and waits for the guest to have it; anything sent earlier has then
+already arrived, and the negative means something.
+
+That fix immediately paid for itself by failing on **unmutated** code, which
+is how a real defect surfaced: `renewLease()` sat below the stage guard in the
+page path, so a page fetch that missed did not renew, and an agent reading a
+large frame across an expiring lease could lose the bracket underneath its own
+read. The lease is about presence, not success; the renewal moved to the top of
+the call and `testEvenARefusedCallFromTheOwnerRenewsTheLease` pins it.
+
+Generalisable, and the reason it is written here rather than in a commit
+message: **an asynchronous negative assertion is a gate that cannot fail.** It
+belongs on the list of things a mutation is the only way to notice, beside the
+comment that satisfies a scan.
+
+Two of the ownership guards are genuinely redundant — deleting either alone
+leaves the suite green and deleting both fails it — which is recorded at the
+site rather than resolved, because they answer at different moments and only
+one of them is prompt.
+
 ## Limits inherent to reading text
 
 Stated once, because every gate above inherits them. A stripped scan still
@@ -162,6 +207,12 @@ mutation is evidence.
   not; the census reads through `GateSource`.
 - **Swapping a census probe's gather without also swapping its name.** Caught —
   but by `-Werror=unused-function`, not by any test (predecessor).
+- **A stream frame's paging could be re-staged mid-fetch and stitched.** It
+  cannot: the frame re-identifies itself on every page, and the mutation that
+  re-stages after the first page is refused as stale (2026-07-31). Recorded
+  because a live stream makes that race the normal case rather than the
+  unlucky one — a new frame every `minIntervalMs`, not only when another
+  caller asks.
 
 ## A gate added after this audit, which deliberately reads no source text
 

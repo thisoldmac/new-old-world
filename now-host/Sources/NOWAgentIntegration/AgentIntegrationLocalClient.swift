@@ -290,7 +290,43 @@ public struct AgentIntegrationLocalClient: Sendable {
             preconditionFailure("A reveal requires a target")
         case .diagnostics:
             preconditionFailure("A diagnostics request names its probe")
+        case .stream:
+            preconditionFailure(
+                "A stream request says which of its three intentions it is")
         }
+    }
+
+    // MARK: - The live-stream bracket
+
+    public func startStream(depth: Int, minIntervalMs: Int) async throws
+        -> AgentIntegrationStreamResult {
+        try await streamResult(
+            of: .streamStart(depth: depth, minIntervalMs: minIntervalMs))
+    }
+
+    public func nextStreamFrame() async throws
+        -> AgentIntegrationStreamResult {
+        try await streamResult(of: .streamFrame())
+    }
+
+    public func fetchStreamFramePage(frameID: UUID, offset: Int) async throws
+        -> AgentIntegrationStreamResult {
+        try await streamResult(
+            of: .streamFramePage(frameID: frameID, offset: offset))
+    }
+
+    public func stopStream() async throws -> AgentIntegrationStreamResult {
+        try await streamResult(of: .streamStop())
+    }
+
+    private func streamResult(of request: AgentIntegrationLocalRequest)
+        async throws -> AgentIntegrationStreamResult {
+        let response = try await send(request)
+        guard let result = response.streamResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no stream result")
+        }
+        return result
     }
 
     // MARK: - P1a: the eleven verbs
@@ -515,6 +551,21 @@ public struct AgentIntegrationLocalClient: Sendable {
             case .guestFileDownload:
                 /* A real transfer over the bulk channel. */
                 timeout = transferReceiveTimeout
+            case .stream:
+                /* Only asking for a FRAME waits on a machine, and it waits
+                   the way a capture does: the host sends stream.refresh and
+                   holds the answer until the guest's next whole frame
+                   arrives. Opening and closing the bracket are two writes
+                   and a local acknowledgement — but a page fetch cannot be
+                   told apart from the frame request it continues by the
+                   timeout switch's own vocabulary without reading two
+                   fields, so all four share the capture window. The cost of
+                   that is a page fetch against a wedged host waiting 45 s
+                   rather than 2; the cost of the other way round is a frame
+                   request timing out locally on a call that was going to
+                   succeed, which is the mistake this switch is written to
+                   avoid. */
+                timeout = captureReceiveTimeout
             case .catalogSearch, .diagnostics:
                 /* Both are MEASUREMENTS that run on the machine and are
                    bounded there rather than here: `catsearch` is ~20 s per

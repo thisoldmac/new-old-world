@@ -104,6 +104,7 @@ The test compares both against the code literally.
 | `now_list_processes` | `process.list` | `process.list` | message family |
 | `now_guest_log_tail` | `tail` | `tail` | command |
 | `now_capture_screen` | `capture.request` | `capture.request` | message family |
+| `now_stream_screen` | `stream.start`, `stream.stop`, `stream.refresh` | `stream.start`, `stream.stop`, `stream.refresh` | message family |
 | `now_catalog_search` | `catsearch` | `catsearch` | command |
 | `now_framebuffer_probe` | `vprobe` | `vprobe` | command |
 | `now_capture_diagnostics` | `shotdiag` | `shotdiag` | command |
@@ -490,9 +491,6 @@ to exist:
 | `exec.input` | message | both | deliberate | Part of the console plane excluded under rule 3 — [agent-integration.md](agent-integration.md) and the parity slice plan. |
 | `exec.request` | message | both | deliberate | The console plane. A shell is not user-initiable in any meaningful sense and is the one thing [agent-integration.md](agent-integration.md) is right to keep out. |
 | `process.shot` | message | ppc | deliberate | Excluded by name in the [parity slice plan](plans/2026-07-29-004-feat-now-tbt-classic-parity-slice-plan.md): PPC-only, and no consumer asked for a single-window capture. |
-| `stream.refresh` | message | ppc | unnoticed | Part of the live-stream bracket; see `stream.start`. |
-| `stream.start` | message | ppc | unnoticed | A stream is a continuous host-owned bracket rather than one bounded call, so it may well not belong on a tool surface at all — but **that is a hypothesis, not a decision**: nothing argues it, and the host app's live view owning it today is a fact about what exists rather than a reason. |
-| `stream.stop` | message | ppc | unnoticed | The other end of the same bracket; see `stream.start`. |
 | `overview` | probe | none | deliberate | Reachable as `now_hardware_census`'s `probe` argument, like the thirteen below it — read the probe note under this table for why `Served` says `none` for all fourteen. The synthesis, in plain words: model, CPU, RAM, System, display, storage. Both guests answer it; NOW-68K adds addressing and free memory ([contract-coverage.md](contract-coverage.md)). |
 | `identity` | probe | none | deliberate | The curated dozen — model, CPU and clock, RAM, ROM, OS, CarbonLib, QuickDraw, keyboard, networking. Both guests answer; NOW-68K adds **Addressing**, which is where the 24-bit mode fact lives rather than in a fifteenth probe ([contract-coverage.md](contract-coverage.md)). |
 | `selectors` | probe | none | deliberate | The documented Gestalt walk. **PPC answers, NOW-68K answers `refused`** — 32 KB of selector names does not fit a 384 KB partition — and an agent gets that refusal as a completed call saying the machine declined to look, never as an absence ([contract-coverage.md](contract-coverage.md)). |
@@ -521,29 +519,44 @@ to exist:
 
 ### The unnoticed rows, named together
 
-Because they are the point: `stream.start`, `stream.stop`,
-`stream.refresh`.
+**The list is empty, and that is a status rather than an achievement.** Every
+gap this document still declares is one somebody decided or costed; none is
+left that nobody has thought about.
 
-Gated against the table's own `unnoticed` column, so closing one of these is
-a two-place edit and the test names the second place. `capture.cancel` used to
-be on the list and left it by being **decided** rather than by being built —
-see its row; that is the other way a name leaves. `gestalt` left it the third
-way, by being **built**: it was the largest of them, and
-`now_machine_facts` now exposes it, so its gap row is gone rather than
-re-dispositioned. The three diagnostics left the same way and all at once —
-the framebuffer probe, the capture-provenance verb and the transfer counters
-are now three rows of their own, for the reason the section below gives.
+Gated against the table's own `unnoticed` column, so closing one is a
+two-place edit and the test names the second place. The three ways a name
+leaves this list have now all been used, and keeping them straight is what
+makes the empty list mean anything:
 
-**What is left on that list is one subsystem, and it is the one that was
-always going to be hard.** The streaming bracket is not an oversight of the
-same kind as a verb nobody projected: it is a continuous host-owned bracket
-rather than a bounded call, which is why it is still undecided rather than
-merely unbuilt.
+- **Decided.** `capture.cancel` — argued in its own row, never built, and no
+  longer a question.
+- **Built.** `gestalt` was the largest of them and `now_machine_facts` exposes
+  it; the three diagnostics went the same way and all at once.
+- **Built, last, and hardest.** The live-stream bracket — `stream.start`,
+  `stream.stop`, `stream.refresh` — closed by `now_stream_screen` on
+  2026-07-31.
 
-Every one of them is served by a guest right now. Nothing in this repository
-argued for their absence; they are absent because the question never came
-up. That is exactly the shape of the `process.list` drift
-`command-parity.md` was written for, one layer out.
+The bracket is worth a sentence on the way out, because its old row said it
+might not belong on a tool surface at all and that hypothesis turned out to be
+half right. **A stream is not one capability per message and never was**: the
+stop and the refresh take the id the start minted, so three tools would have
+been one usable one and two that cannot be reached first. It is one row with
+three intentions, the shape `now_capture_screen` already used for take, page
+and abandon. What the old row correctly saw as the hard part was not the
+messages but the *bracket* — a lane held open across calls, by an agent that
+can vanish between them — and that is answered by an ownership rule rather
+than by a tool shape: the host ends an agent's stream when the process that
+opened it goes away, and equally when it stops calling. Both, because a live
+companion that has stopped reading is just as expensive as a dead one, and
+neither check catches the other's case.
+
+An empty list is the state to be suspicious of rather than proud of: it is
+also what a stale document looks like. What keeps it honest is that the list
+is derived from the table above and the table is derived from the registry,
+the contract and both guests' dispatch — so a new guest capability nobody
+projects reappears here without anybody remembering to write it down. That is
+the `process.list` drift `command-parity.md` was written for, one layer out,
+and the mechanism rather than the list is what answers it.
 
 ### The census probes were one row and are now fourteen
 

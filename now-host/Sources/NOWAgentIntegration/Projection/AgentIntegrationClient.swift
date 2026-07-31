@@ -145,6 +145,25 @@ public protocol AgentIntegrationClient: Sendable {
     /// Abandon the host's wait for a capture in flight, releasing the
     /// connection's one transfer lane.
     func abandonGuestCapture() async -> AgentIntegrationCaptureResult
+    /// Open the live-stream bracket, on this caller's behalf.
+    ///
+    /// **The caller's identity is not a parameter and must not become one.**
+    /// The host reads it off the accepted socket (`LOCAL_PEERPID`), which is
+    /// the kernel's answer rather than a peer's claim — the same rule the uid
+    /// gate keeps. An owner a caller could name is an owner a caller could
+    /// name as somebody else.
+    func startGuestStream(depth: Int, minIntervalMs: Int) async
+        -> AgentIntegrationStreamResult
+    /// Ask the open bracket for a whole frame and return its first page.
+    /// Paged for capture's reason and by capture's machinery: a screen does
+    /// not fit in one 16 KiB local response.
+    func nextGuestStreamFrame() async -> AgentIntegrationStreamResult
+    func fetchGuestStreamFramePage(frameID: UUID, offset: Int) async
+        -> AgentIntegrationStreamResult
+    /// Close the bracket. Not restricted to the agent that opened it: ending
+    /// a stream is the one direction that needs no standing, and the person
+    /// at the host can already do it from the page they watch it on.
+    func stopGuestStream() async -> AgentIntegrationStreamResult
 }
 
 extension AgentIntegrationClient {
@@ -216,6 +235,30 @@ extension AgentIntegrationClient {
 
     public func abandonGuestCapture() async
         -> AgentIntegrationCaptureResult {
+        .hostUnavailable
+    }
+
+    /* The four stream lanes, declared with their defaults in the one edit,
+       per the rule at the top of this file. "No host" and not a closed
+       bracket: a closed bracket is a claim that a lane exists and is free,
+       and a client with nothing to ask has no lane at all. */
+
+    public func startGuestStream(depth: Int, minIntervalMs: Int) async
+        -> AgentIntegrationStreamResult {
+        .hostUnavailable
+    }
+
+    public func nextGuestStreamFrame() async
+        -> AgentIntegrationStreamResult {
+        .hostUnavailable
+    }
+
+    public func fetchGuestStreamFramePage(frameID: UUID, offset: Int) async
+        -> AgentIntegrationStreamResult {
+        .hostUnavailable
+    }
+
+    public func stopGuestStream() async -> AgentIntegrationStreamResult {
         .hostUnavailable
     }
 

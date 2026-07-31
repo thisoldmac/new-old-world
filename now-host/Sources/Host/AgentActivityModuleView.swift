@@ -33,6 +33,7 @@ struct AgentActivityModuleView: View {
             ScrollView {
                 VStack(spacing: 12) {
                     presence
+                    heldLane
                     consent
                     activity
                     endpoint
@@ -135,9 +136,67 @@ struct AgentActivityModuleView: View {
 
     // MARK: consent
 
+    // MARK: the lane an agent is holding
+
+    /// **The one thing an agent does that is not over when the call is.**
+    ///
+    /// Every other row on this page is history: the list below says what was
+    /// done, in the past tense, because every other capability answers and is
+    /// finished. A live stream is a bracket an agent holds open across calls,
+    /// and while it is open the Macintosh is capturing its screen and the
+    /// person's own Capture button does not work. An audit line saying a
+    /// stream was started an hour ago cannot say whether it is still running,
+    /// so this is a STATE and not an event, and it is drawn only when there
+    /// is one.
+    ///
+    /// It is here as well as on the Screenshots page rather than instead of
+    /// it: the Screenshots page is where somebody notices, and this is where
+    /// somebody who came to ask what an agent is doing gets the answer
+    /// without having to know which page a stream lives on.
+    @ViewBuilder
+    private var heldLane: some View {
+        if listener.streamOrigin == .agent {
+            card {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "dot.radiowaves.left.and.right")
+                        .font(.system(size: 22))
+                        .foregroundStyle(.orange)
+                        .frame(width: 30)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("An agent is streaming this Mac's screen")
+                            .font(.title3.weight(.semibold))
+                        Text(heldLaneDetail)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
+    private var heldLaneDetail: String {
+        var sentence = "The screen is being captured continuously"
+        if let interval = listener.streamMinIntervalMs, interval > 0 {
+            /* Written as an interval rather than converted to a frame rate.
+               It is a CEILING on the machine's work — the guest may be
+               slower — and "up to 1 fps" invites reading it as a
+               measurement of what is happening. */
+            sentence += ", at most one frame every "
+                + "\(interval) ms"
+        }
+        sentence += ". The Screenshots page shows it and its Stop Streaming "
+            + "button ends it, whoever started it. New Old World also ends "
+            + "it by itself if the agent that opened it goes away or stops "
+            + "reading."
+        return sentence
+    }
+
+    // MARK: consent
+
     /// The machine's own answer, one row per connected Mac. Read back, not
     /// offered — there is no control here by design.
-    @ViewBuilder
     private var consent: some View {
         card {
             VStack(alignment: .leading, spacing: 8) {

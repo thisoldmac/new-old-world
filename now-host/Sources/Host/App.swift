@@ -673,26 +673,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     }
                     return .diagnostics(
                         await agentIntegration.runDiagnostic(probe))
-                    /* P1a landed the SERIALIZATION for eleven capabilities
-                       and none of their adapters (plan 005): eleven agents
-                       each
-                       adding a verb to the same three list tails is eleven
-                       conflicts, so the verbs went in as one commit and the
-                       capabilities follow one row at a time.
+                case .stream:
+                    /* The bracket. The codec has already refused every
+                       crossed shape — a stop carrying a depth, a page
+                       naming an offset and no frame — so this branch reads
+                       validated fields and refuses only the request that
+                       named no intention, which never reached a machine.
 
-                       A typed refusal and not an empty success. Nothing can
-                       reach this from a face — a verb with no projection row
-                       is unreachable from all four — so the only caller is
-                       a process composing the request itself, and what it
-                       must be told is that this host does not serve the
-                       operation YET. An empty answer would read as a fact
-                       about the Mac.
-
-                       WIRING ONE: replace its case here with the adapter
-                       call, and add its projection row. Nothing else in
-                       this file needs to change. */
-                    return .notImplemented(
-                        .notWired(request.operation.rawValue))
+                       Note which of the four does NOT return here directly:
+                       a frame request is the only one that waits on the
+                       Macintosh, because it sends stream.refresh and holds
+                       the answer for the frame that follows. */
+                    guard let intention = request.streamIntention else {
+                        return .stream(.refused(.init(
+                            code: "now-stream-intention-invalid",
+                            message:
+                                "The stream request named no intention")))
+                    }
+                    switch intention {
+                    case .start:
+                        guard let depth = request.streamDepth,
+                              let interval = request.streamMinIntervalMs
+                        else {
+                            return .stream(.refused(.init(
+                                code: "now-stream-start-invalid",
+                                message: "The stream start named no depth "
+                                    + "and pace")))
+                        }
+                        return .stream(
+                            agentIntegration.startStream(
+                                depth: depth, minIntervalMs: interval))
+                    case .frame:
+                        if let frameID = request.streamFrameID,
+                           let offset = request.streamFrameOffset {
+                            return .stream(
+                                agentIntegration.streamFramePage(
+                                    frameID: frameID, offset: offset))
+                        }
+                        return .stream(
+                            await agentIntegration.nextStreamFrame())
+                    case .stop:
+                        return .stream(agentIntegration.stopStream())
+                    }
+                    /* P1a's `notWired` fallback used to sit here, and it is
+                       GONE rather than moved: it was already unreachable —
+                       the last of the eleven adapters landed and every
+                       operation has a case — and it was stranded inside the
+                       diagnostics case where nothing could reach it at all.
+                       The switch's own exhaustiveness now carries what that
+                       comment asked for: a new operation is a compile error
+                       here, which is a better instruction than a paragraph.
+                       `AgentIntegrationUnavailable.notWired` stays; it is
+                       still the honest answer for a host older than a verb,
+                       and the codec round-trip tests still exercise it. */
                 }
             }
             try server.start()

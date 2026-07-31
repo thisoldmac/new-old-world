@@ -53,10 +53,8 @@ struct ScreenshotsModuleView: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(!model.canCapture)
 
-                Button(model.isStreaming ? "Stop Streaming"
-                                         : "Start Streaming") {
-                    model.isStreaming ? model.stopStream()
-                                      : model.startStream()
+                Button(model.streamButtonTitle) {
+                    model.toggleStream()
                 }
                 .disabled(!model.canStream)
 
@@ -74,6 +72,17 @@ struct ScreenshotsModuleView: View {
                         .foregroundStyle(.red)
                         .font(.callout)
                 }
+            }
+
+            /* Said in a sentence rather than left to be inferred from a
+               Capture button that has quietly gone grey. A live view that
+               started by itself is otherwise indistinguishable from a
+               fault, and the person's own next click — Capture — is the one
+               the open bracket refuses. */
+            if let note = model.streamOwnerNote {
+                Label(note, systemImage: "person.wave.2")
+                    .foregroundStyle(.secondary)
+                    .font(.callout)
             }
 
             settingsDisclosure

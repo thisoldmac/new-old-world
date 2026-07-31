@@ -9,6 +9,62 @@ wrong thing) versus **unverified** (it may well be right, but no one has
 watched it work on the PowerBook). Unverified is not a lesser problem —
 several of tonight's bugs lived in code that looked obviously correct.
 
+## The live stream reached the agent surface, and the bracket is a lease (2026-07-31)
+
+`now_stream_screen` closes the last three unnoticed gaps in
+[mcp-coverage.md](mcp-coverage.md) — `stream.start`, `stream.stop`,
+`stream.refresh` — as **one row with three intentions**, so that list is now
+empty. **Tested throughout; no part of it has met a Macintosh.**
+
+**Unverified, and the first one decides whether the row should exist:**
+
+- **Nobody has measured whether a frame is cheaper than a capture.** The whole
+  premise is that an open bracket has the guest capturing continuously, so a
+  frame is *waiting* rather than *starting* — against a capture measured at
+  0.5–0.6 s on the 1400c. If it is not clearly cheaper on metal, the row's
+  reason for existing is wrong. The procedure is section 8 of
+  [metal-and-ux-review.md](metal-and-ux-review.md).
+- **The default pace of 1000 ms was argued, not measured.** It exists because
+  the contract's absent-means-the-guest's-floor (~15 fps) is a Macintosh
+  grabbing fifteen screens a second for a caller that reads one per call. The
+  right number is a measurement nobody has taken.
+- **The ownership rule has never met a real companion.** Both halves are
+  mutation-proven against injected values — a pid set and a movable clock —
+  and both rest on an assumption about a real MCP companion's process: that it
+  outlives a single call and dies with its client. If that is wrong, the
+  liveness half is dead weight and the lease is doing all the work.
+- **Nobody has seen contention happen.** An agent's stream turns the person's
+  live view on and greys out their Capture button; the sentences that explain
+  that, on the Screenshots page and on the Agent page, have not been in front
+  of anybody.
+
+**Three decisions worth revisiting rather than defects:**
+
+- **`readOnlyHint: true`, so the row sits at the Read Only consent tier.** It
+  is honest — a stream observes and changes nothing — and it means a machine
+  that consented to being *read* has consented to a bracket that keeps
+  reading, for as long as an agent keeps calling. **The two tiers cannot
+  express duration**, which is the same gap `now_reveal_item` fell into from
+  the other side, and more evidence for the middle tier. Declaring the row
+  non-read-only to buy Full Access was rejected: it would corrupt the
+  annotation agents actually read.
+- **No maximum duration.** An agent that keeps asking for frames is watching,
+  and a ceiling would be a number with nothing behind it. The person can end
+  any stream in one click. The cost is real and stated: a calling agent can
+  hold a 1400c's screen lane indefinitely.
+- **Capture does not end an agent's stream.** The person wins by clicking Stop
+  Streaming, not by pressing Capture — a button that says Capture and also
+  silently ends somebody else's work does two things and shows one. If the UX
+  pass finds that annoying enough, the other design is a small change.
+
+**One lesson that generalises past this row**, recorded in
+[source-text-gates.md](source-text-gates.md): **an asynchronous negative
+assertion is a gate that cannot fail.** Two ownership guards were deletable
+with the suite green because "no `stream.stop` was sent" was read off the fake
+guest immediately after the call, before the message could have arrived. The
+cure is ordering against the wire, not sleeping — and applying it failed on
+unmutated code, which is how a real lease-renewal defect was found.
+
 ## The agent surface can be seen, and refused (2026-07-31)
 
 [Plan 006](plans/2026-07-30-006-feat-now-mcp-module-and-guest-consent-plan.md)
