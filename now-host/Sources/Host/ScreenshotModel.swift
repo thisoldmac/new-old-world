@@ -429,14 +429,15 @@ final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
             by: connection.key, code: problem.code, message: problem.message)
         lastError = "\(connection.peerLabel) does not serve live streaming: "
             + problem.message
-        /* The bracket was opened optimistically and the guest never took it,
-           so nothing will ever close it — the page would sit on "Waiting for
-           the first frame…" for the rest of the session. Asking to stop is
-           what un-wedges it: this guest refuses that too, and the listener's
-           own unacknowledged-stop fallback then clears the bracket. */
-        if listener.activeStreamId == id {
-            listener.stopStream()
-        }
+        /* Closing the bracket is NOT this page's job and no longer happens
+           here. It used to: the refusal reached `lastGuestError` and nothing
+           else, so the page asked for a stop the same guest would also refuse
+           and let the listener's five-second fallback do the clearing —
+           a wedge cleared late, by a timer, under a reason ("no answer to
+           stop") that described neither what happened nor what the machine
+           said. The listener now recognises its own bracket id and has closed
+           it before this line runs, with the guest's own reason, for every
+           opener rather than only for the one page that could correlate. */
     }
 
     func stopStream() {
