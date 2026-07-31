@@ -120,7 +120,7 @@ struct ProcessesModuleView: View {
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
-            if let note = model.bringToFrontNote {
+            if let note = model.bringToFrontNote(for: model.selectedEntry) {
                 /* Beside the buttons, not only in a tooltip. A greyed control
                    with nothing next to it is indistinguishable from a bug,
                    and this one is dark for a reason nothing else on the page

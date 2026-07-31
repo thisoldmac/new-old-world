@@ -70,8 +70,12 @@ final class ProcessesModel: ObservableObject, GuestScopedModel {
     /// while it works — including for the merely unproven case, which stays
     /// enabled and does not get to nag. Nil with nothing selected: a control
     /// dark for want of a selection is explained by the empty selection.
-    var bringToFrontNote: String? {
-        guard let entry = selectedEntry else { return nil }
+    ///
+    /// Takes the row rather than reading `selectedEntry` itself, so the answer
+    /// is a function of what the page is showing and can be asked without a
+    /// wire, a listing, or a Mac.
+    func bringToFrontNote(for entry: ProcessEntry?) -> String? {
+        guard let entry else { return nil }
         let decision = bringToFrontGate(entry)
         guard decision.deservesAVisibleReason else { return nil }
         return decision.explanation
