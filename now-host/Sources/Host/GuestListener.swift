@@ -1641,6 +1641,23 @@ final class GuestListener: ObservableObject {
     /// failed"); nil after a host-requested stop.
     @Published private(set) var streamEndReason: String?
 
+    /// **Whether the guest has ever answered the open bracket with a frame.**
+    ///
+    /// `stream.start`, `stream.stop` and `stream.refresh` all carry the
+    /// bracket's one id, so an `error` bearing that id says only "one of the
+    /// three", and which one decides both what may be recorded about the
+    /// machine and whether the bracket dies. A frame is the proof that
+    /// `stream.start` was served: before one, the refusal can only be of the
+    /// open itself; after one, the family is answered and a later refusal
+    /// belongs to whichever request came second.
+    private var streamAccepted = false
+
+    /// Whether a stop has been asked for and not yet answered. A refusal
+    /// while this is set is a refused STOP, which ends the bracket now
+    /// instead of on the five-second fallback — but it is not evidence
+    /// about `stream.start`, which this guest plainly served.
+    private var streamStopRequested = false
+
     /// Opens a stream bracket. Frames then arrive on streamFrames until
     /// stopStream() or the guest's own stream.stopped.
     ///
@@ -1667,6 +1684,8 @@ final class GuestListener: ObservableObject {
         streamMinIntervalMs = minIntervalMs
         streamOpenedAt = Date()
         streamEndReason = nil
+        streamAccepted = false
+        streamStopRequested = false
         session.beginStream(id: id, depth: depth,
                             minIntervalMs: minIntervalMs, tuning: tuning)
         return id
@@ -1680,6 +1699,7 @@ final class GuestListener: ObservableObject {
 
     func stopStream() {
         guard let id = activeStreamId else { return }
+        streamStopRequested = true
         session?.requestStreamStop(id: id)
         // Self-heal: a guest that never answers (dead app, dead wire the
         // socket hasn't noticed) must not wedge the bracket open forever.
@@ -1691,6 +1711,22 @@ final class GuestListener: ObservableObject {
             self.forgetStream(
                 reason: AgentIntegrationStreamFailure.unacknowledgedStop)
         }
+    }
+
+    /// A frame on the open bracket: the machine served `stream.start`.
+    ///
+    /// Recorded on the FIRST one only, and recorded at all because the
+    /// bracket has no completion for `observing(_:)` to wrap — the family
+    /// whose answer arrives as a stream of frames rather than as a reply is
+    /// exactly the one that would otherwise read `unproven` against a guest
+    /// that has been streaming to the screen for a minute.
+    private func noteStreamFrame(_ delivery: CaptureDelivery) {
+        if !streamAccepted {
+            streamAccepted = true
+            observeFamily(AgentIntegrationCapabilityNames.streamStart,
+                          served: true)
+        }
+        streamFrames.send(delivery)
     }
 
     fileprivate func streamEnded(_ stopped: StreamStopped) {
@@ -1714,6 +1750,47 @@ final class GuestListener: ObservableObject {
         streamMinIntervalMs = nil
         streamOpenedAt = nil
         streamEndReason = reason
+        streamAccepted = false
+        streamStopRequested = false
+    }
+
+    /// **An `error` bearing the open bracket's id.**
+    ///
+    /// The bracket is opened optimistically — `startStream` sets
+    /// `activeStreamId` before the guest has said anything — and its id is
+    /// held by no pending map, so until this existed the one answer a guest
+    /// without the stream family can give went nowhere: `recordGuestError`
+    /// routed six maps, matched none of them, and left the bracket open on a
+    /// stream that was never running. The 68K guest refuses `stream.start`
+    /// every time (`send_error_reply`, now-guest-68k/src/core/wire68.c), so
+    /// this is not an edge case on that machine; it is what happens.
+    ///
+    /// Returns whether the bracket was closed, which is the caller's test for
+    /// "somebody was actually answered".
+    private func refuseStream(_ problem: ErrorMessage) -> Bool {
+        /* Before the first frame the id can only be the open's, so this is
+           evidence about `stream.start` and is written down as such. After
+           one it is a refusal of a stop or a refresh — the machine served
+           the family, and recording a "no" then would be a claim about a
+           guest that is streaming as it is made. */
+        if !streamAccepted {
+            observeFamily(AgentIntegrationCapabilityNames.streamStart,
+                          served: false, code: problem.code,
+                          message: problem.message)
+        }
+        /* A refused REFRESH is the one case that leaves the bracket alone:
+           the frames are still coming, and tearing down a working stream
+           because the guest cannot serve a keyframe on demand would be a
+           worse bug than the one this function fixes. */
+        guard !streamAccepted || streamStopRequested else { return false }
+        stopFallback?.cancel()
+        stopFallback = nil
+        /* The guest's own words, not ours. "no answer to stop" was the only
+           reason a caller could ever read here, and it is untrue of a
+           machine that answered immediately and said why. */
+        forgetStream(reason: problem.message)
+        captureProgress = nil
+        return true
     }
 
     /// The guest asked for a stream: same bracket, host-owned. Accept
@@ -1893,6 +1970,9 @@ final class GuestListener: ObservableObject {
             waiting.completion(ExecOutcome(
                 text: waiting.text, ok: false, code: problem.code,
                 message: problem.message, gap: waiting.gap))
+        }
+        if id == activeStreamId, refuseStream(problem) {
+            routed = true
         }
         // Only now, and only if somebody was actually answered. Clearing
         // the watchdog first looked tidier and was a trap: a waiter this
@@ -2098,7 +2178,7 @@ final class GuestListener: ObservableObject {
             },
             onStreamFrame: { [weak self] delivery in
                 guard fromActive() else { return }
-                self?.streamFrames.send(delivery)
+                self?.noteStreamFrame(delivery)
             },
             onStreamStopped: { [weak self] stopped in
                 guard fromActive() else { return }
