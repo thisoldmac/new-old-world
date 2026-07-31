@@ -166,6 +166,24 @@ frame — which is precisely the decision a serving layer has to make.
 So `src/scene/` is compiled into the guest and has no caller yet. That is a
 stated, one-commit-wide gap, not a forgotten one.
 
+**Closed 2026-07-31.** The gap was exactly one commit wide, and it closed the
+way the paragraph above said it would have to: the contract, the guest's
+`scene.request` handler and the host's decoder landed together, because the
+conformance gate makes any other order red. `serve_scene` in `wire.c` is the
+caller — it walks, sizes, encodes, and answers on the bulk lane with
+`scene.begin` / frames / `scene.end`, borrowing capture's transfer machinery
+whole rather than inventing a second one. The transport learned a single new
+fact: which terminal message closes a transfer (`xfer_end_type`). See
+[streaming-a-scene.md](streaming-a-scene.md) for why a one-shot transfer and
+not a bracket, and `now-host/Tests/HostTests/SceneWireTests.swift` for the
+host half — including the assertion that the version gate runs *before* the
+parser, which is the only one that can tell a compliant decoder from a
+plausible one.
+
+What is still open is the **projection**: no MCP row asks for a scene yet.
+That is M6, and it is declared as a planned gap in
+[mcp-coverage.md](mcp-coverage.md) rather than left to be discovered.
+
 ## Gates, and what was watched failing
 
 `scripts/test-native`: **40 passed, 0 failed** (38 before this work). Every
