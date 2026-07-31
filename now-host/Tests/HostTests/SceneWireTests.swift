@@ -327,6 +327,42 @@ final class SceneWireTests: XCTestCase {
         XCTAssertNil(r.chunkKb, "an unsent tuning key is not a default of 0")
     }
 
+    /// A scene transfer closes with `scene.end`, and is armed as its own
+    /// transfer kind.
+    ///
+    /// Nothing else in either suite can see this. The end message's type is
+    /// COMPUTED from the transfer kind (`xfer_end_type`), so a scene that
+    /// ended with `capture.end` would decode perfectly, satisfy the
+    /// conformance gate, and correlate against a transfer id the host is
+    /// holding a scene for — a mis-typed terminal message that every
+    /// existing check waves through.
+    ///
+    /// It reads text, with the limits that always carries: it proves the
+    /// two statements are written, not that they run. What it does catch is
+    /// the plausible regression — folding the scene kind back into
+    /// capture's branch — which is the one a reviewer would not see either.
+    func testASceneTransferEndsWithSceneEnd() throws {
+        let wire = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("now-guest-ppc/src/core/wire.c"),
+            encoding: .utf8)
+        // Comments stripped: a gate that demands text is satisfied by a
+        // comment naming it, which this suite has been bitten by four
+        // times.
+        let text = GateSource.withoutCComments(wire)
+
+        XCTAssertTrue(text.contains("case kXferScene:"),
+                      "a scene is not its own transfer kind")
+        XCTAssertTrue(text.contains("return \"scene\";"),
+                      "a scene transfer does not close with scene.end")
+        XCTAssertTrue(text.contains("kXferScene)"),
+                      "serve_scene does not arm the transfer as a scene")
+    }
+
     /// `irVersion` is what makes the ordered gate possible at all: the
     /// major has to be readable without the body. A scene.begin that could
     /// omit it would push the version check back behind the transfer,

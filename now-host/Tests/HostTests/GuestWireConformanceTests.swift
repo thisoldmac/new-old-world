@@ -290,7 +290,10 @@ final class GuestWireConformanceTests: XCTestCase {
     /// waved through — and a NEW computed type fails until someone lists it,
     /// which is the same bargain `piecemealCoverage` strikes.
     private static let computedTypes: [String: [String]] = [
-        "X.end": ["file.end", "capture.end"],
+        // `xfer_end_type` maps a transfer kind onto the message that closes
+        // it, and a scene rides the same lane and the same sender as a
+        // capture — so `%s.end` now stands for three types, not two.
+        "X.end": ["file.end", "capture.end", "scene.end"],
     ]
 
     /// Every whole message the guest can send decodes on this side.
