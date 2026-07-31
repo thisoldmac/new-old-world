@@ -22,3 +22,6 @@ xcuserdata/
 # tree and screendumps. Disposable by construction, and the disk alone
 # would dwarf the repository.
 .q800/
+
+# Python bytecode from the asset generators in assets/.
+__pycache__/
