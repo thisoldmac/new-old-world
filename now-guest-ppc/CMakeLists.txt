@@ -56,6 +56,9 @@ add_application(now-guest-ppc
     src/workshop/workshop_layout.c
     src/workshop/workshop_sidebar.c
     src/workshop/workshop_window.c
+    src/scene/scene_build.c
+    src/scene/scene_json.c
+    src/scene/scene_collect.c
     resources/app.r
     # The application icon family, generated from the artwork by
     # assets/icons/classic/rez.py and shared with any other target that

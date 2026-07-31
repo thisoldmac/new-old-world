@@ -132,6 +132,20 @@ int now_scene_add_process(NowScene *s, long psn_hi, unsigned long psn_lo,
 int now_scene_add_window(NowScene *s, int proc, const char *title,
                          short t, short l, short b, short r, int visible);
 
+/* The anchor's capture tick for a process, learned during the walk
+   rather than before it (the reader reports the stamp with the window
+   list). Re-derives that row's staleness against the scene's clock, so
+   the age gate works the same whether the stamp arrives with the row or
+   after it. No-op for an out-of-range row. */
+void now_scene_set_process_stamp(NowScene *s, int proc,
+                                 unsigned long stamp_ticks);
+
+/* meta.plane - a freeform note for a human reading a capture. Its VALUE
+   vocabulary is explicitly not frozen upstream (IR-V1.md), so nothing
+   may branch on it; what it is for is saying which planes a scene had
+   available at all. Bounded copy; a longer note is truncated. */
+void now_scene_set_plane(NowScene *s, const char *plane);
+
 /* Whether a verdict admits window data at all. Ok and Stale do (Stale is
    reported, not refused); NoWindows does trivially - it IS the empty
    answer; every other verdict does not. */

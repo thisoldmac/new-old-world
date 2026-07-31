@@ -71,6 +71,20 @@ const char *now_scene_proc_error(const NowSceneProc *p)
     return p->stale ? now_scene_stale_error() : NULL;
 }
 
+/* Staleness is DERIVED, not passed: the reader runs with no age gate
+   (peek_read.c states why), so an old anchor arrives as Ok with an old
+   stamp and this is the only place the age is looked at. A zero window
+   disables it; a stamp in the future - a clock that moved backwards - is
+   not stale, it is zero-aged. */
+static void derive_stale(const NowScene *s, NowSceneProc *p)
+{
+    p->stale = (s->stale_after_ticks != 0
+                && now_scene_anchor_admits_windows(p->anchor)
+                && s->now_ticks > p->stamp_ticks
+                && s->now_ticks - p->stamp_ticks > s->stale_after_ticks)
+        ? 1 : 0;
+}
+
 void now_scene_begin(NowScene *s, long seq, double captured_at,
                      const char *source, short screen_w, short screen_h,
                      unsigned long now_ticks, unsigned long stale_after_ticks)
@@ -113,17 +127,25 @@ int now_scene_add_process(NowScene *s, long psn_hi, unsigned long psn_lo,
     p->front = front ? 1 : 0;
     p->anchor = anchor;
     p->stamp_ticks = stamp_ticks;
-    /* Staleness is derived, not passed: the reader runs with no age gate
-       (peek_read.c states why), so an old anchor arrives as Ok with an
-       old stamp and this is the only place the age is looked at. A zero
-       window disables it; a stamp in the future - a clock that moved
-       backwards - is not stale, it is zero-aged. */
-    if (s->stale_after_ticks != 0 && now_scene_anchor_admits_windows(anchor)
-        && s->now_ticks > stamp_ticks
-        && s->now_ticks - stamp_ticks > s->stale_after_ticks) {
-        p->stale = 1;
-    }
+    derive_stale(s, p);
     return s->proc_count++;
+}
+
+void now_scene_set_process_stamp(NowScene *s, int proc,
+                                 unsigned long stamp_ticks)
+{
+    if (s == NULL || proc < 0 || proc >= s->proc_count) {
+        return;
+    }
+    s->procs[proc].stamp_ticks = stamp_ticks;
+    derive_stale(s, &s->procs[proc]);
+}
+
+void now_scene_set_plane(NowScene *s, const char *plane)
+{
+    if (s != NULL) {
+        copy_bounded(s->plane, (long)sizeof s->plane, plane);
+    }
 }
 
 int now_scene_add_window(NowScene *s, int proc, const char *title,
@@ -161,9 +183,19 @@ int now_scene_add_window(NowScene *s, int proc, const char *title,
        window of the front process, and nothing else is front. */
     w->front = (p->front && w->z == 0) ? 1 : 0;
     /* "<psn>/<title>#<idx>" - upstream's own id form (SceneBuilder), so
-       an id minted here means the same thing as one minted there. */
-    snprintf(w->id, sizeof w->id, "%ld.%lu/%s#%d", p->psn.hi, p->psn.lo,
-             w->title, (int)w->z);
+       an id minted here means the same thing as one minted there.
+       Formatted through a local: writing into w->id while reading
+       w->title is one object's fields feeding snprintf's restrict-
+       qualified destination, and Retro68's GCC rejects it outright
+       (-Wrestrict, -Werror) - correctly, since the two do overlap as far
+       as the compiler can prove. */
+    {
+        char id[kNowSceneIdMax];
+
+        snprintf(id, sizeof id, "%ld.%lu/%s#%d", p->psn.hi, p->psn.lo,
+                 w->title, (int)w->z);
+        copy_bounded(w->id, (long)sizeof w->id, id);
+    }
     ++p->window_count;
     ++s->window_count;
     return 1;

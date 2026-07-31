@@ -168,6 +168,35 @@ static void test_stale_is_reported_not_refused(void)
                               50000);
     check(!s.procs[p].stale,
           "a stamp in the future is a moved clock, not an old anchor");
+
+    /* The stamp arrives with the walk, so it can also arrive after the
+       row - and the age must settle the same way either way. */
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 10000, 600);
+    p = now_scene_add_process(&s, 0, 33, "Late", 0, 0, kNowSceneAnchorOk, 0);
+    now_scene_set_process_stamp(&s, p, 9900);
+    check(!s.procs[p].stale, "a fresh stamp learned late clears the age");
+    now_scene_set_process_stamp(&s, p, 1000);
+    check(s.procs[p].stale, "and an old one sets it");
+    now_scene_set_process_stamp(&s, 99, 1000);        /* no such row */
+    now_scene_set_process_stamp(NULL, 0, 1000);
+    check(s.proc_count == 1, "a bad row changes nothing");
+}
+
+static void test_plane_note(void)
+{
+    NowScene s;
+    char over_long[200];
+
+    begin(&s);
+    check(s.plane[0] == '\0', "no plane note by default");
+    now_scene_set_plane(&s, "peek anchors: processes + windows, no menus");
+    check(strcmp(s.plane, "peek anchors: processes + windows, no menus") == 0,
+          "the note is carried");
+    memset(over_long, 'p', sizeof over_long - 1);
+    over_long[sizeof over_long - 1] = '\0';
+    now_scene_set_plane(&s, over_long);
+    check((long)strlen(s.plane) == kNowScenePlaneMax - 1,
+          "and bounded by its field");
 }
 
 /* z is the stacking index WITHIN a process - the chain order, which is
@@ -281,6 +310,7 @@ int main(void)
     test_refused_anchors_admit_no_windows();
     test_ambiguous_is_not_empty();
     test_stale_is_reported_not_refused();
+    test_plane_note();
     test_z_and_front();
     test_truncation_is_recorded();
     test_bounds();
