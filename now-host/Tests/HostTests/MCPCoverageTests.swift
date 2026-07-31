@@ -23,6 +23,31 @@ import XCTest
 /// registry, the contract side is the contract file, the guest side is the
 /// guests' own dispatch, and the document is a fourth artifact compared
 /// against all three.
+///
+/// ## Which half of this file is which
+///
+/// A reader could not tell before, and the two halves are worth very
+/// different amounts:
+///
+/// | Test | Evidence |
+/// | --- | --- |
+/// | `…ExposedCapabilitiesAreAlwaysRequiredOnes` | live registry only |
+/// | `…TheProjectionTableMatchesTheRegistry` | live registry × document |
+/// | `…EveryRequirementResolvesToTheContract` | live registry × contract text × document |
+/// | `…EveryFamilyRequirementHasALedgerRow` | live registry × live ledger × contract text × document |
+/// | `…TheRequiredNotExposedTableIsExactlyThoseRows` | live registry × document |
+/// | `…TheGapTableIsExactlyWhatNoProjectionReaches` | live registry × contract text × document |
+/// | `…EveryGapRowStatesTheDerivedKindAndServingGuests` | contract text × **guest C, by regex** × document |
+/// | `…TheUnnoticedRowsNamedTogetherMatchTheTable` | document against itself |
+/// | `…ADeliberateGapCitesItsArgumentAndAPlannedGapItsPlanItem` | document against itself |
+/// | `…MostUnreachedCapabilityIsAlreadyServedBySomeGuest` | document against itself |
+///
+/// The last three read only `docs/mcp-coverage.md`: they keep the document
+/// internally consistent and prove nothing about the system. The Served
+/// column is the one place a guest's source is read, through four regexes
+/// this file borrows from `docs/contract-coverage.md` — so `served` means
+/// "a dispatch arm compares this name", not "the guest answers it", and a
+/// verb whose arm returns immediately reads as served.
 final class MCPCoverageTests: XCTestCase {
 
     // MARK: - The document's own vocabulary
@@ -416,11 +441,17 @@ final class MCPCoverageTests: XCTestCase {
     /// expensive kind.
     func testEveryGapRowStatesTheDerivedKindAndServingGuests() throws {
         let contract = try Contract(text: read("contract/asyncapi.yaml"))
+        // guestC, not read: a dispatch arm commented out but left in the
+        // text still matched these regexes, so a capability could stop
+        // being served while the Served column went on saying `both`.
         let guests = try GuestDispatch(
-            ppcMessages: read("now-guest-ppc/src/core/wire.c"),
-            k68Messages: read("now-guest-68k/src/core/wire68.c"),
-            ppcCommands: read("now-guest-ppc/src/commands/commands.c"),
-            k68Commands: read("now-guest-68k/src/commands/commands68.c"))
+            ppcMessages: GateSource.guestC("now-guest-ppc/src/core/wire.c"),
+            k68Messages: GateSource.guestC(
+                "now-guest-68k/src/core/wire68.c"),
+            ppcCommands: GateSource.guestC(
+                "now-guest-ppc/src/commands/commands.c"),
+            k68Commands: GateSource.guestC(
+                "now-guest-68k/src/commands/commands68.c"))
 
         for row in try table(under: Self.gapSection) {
             let name = try backticked(row[0], row: row)

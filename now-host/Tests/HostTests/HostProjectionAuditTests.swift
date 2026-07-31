@@ -241,6 +241,26 @@ final class HostProjectionAuditTests: XCTestCase {
     ///
     /// Verified by mutation: restoring `projection.invoke(...)` in
     /// `NOWMCPServer.callTool` fails this test by file and line.
+    ///
+    /// **Its limit is the exclusion, and the exclusion is a NAME.** A line
+    /// is forgiven when it contains `dispatch.invoke(`, because that is how
+    /// every legitimate face spells the call — so a local variable named
+    /// `dispatch` holding a projection walks straight through:
+    ///
+    ///     if let dispatch = registry.projection(named: name) {
+    ///         _ = await dispatch.invoke(arguments, through: client)
+    ///     }
+    ///
+    /// That compiles, invokes a capability, emits nothing, and passes
+    /// (audited 2026-07-31). It is not the spelling anyone reaches for
+    /// first, and it is one shadowed binding away from being it.
+    ///
+    /// Not fixed here, because no text check can tell what a name is bound
+    /// to and a cleverer regex would only move the spelling. The real fix
+    /// is a production one and belongs on its own change: `invoke` is
+    /// `public` on `HostProjection`, which is what lets a different module
+    /// call it at all. Narrow that to the module the dispatch lives in and
+    /// the compiler enforces what this test can only ask for.
     func testNothingButTheDispatchInvokesAProjection() throws {
         let dispatch = "HostProjectionDispatch.swift"
         var offenders: [String] = []
