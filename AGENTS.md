@@ -209,6 +209,27 @@ agents branch in their own worktrees — so the shared checkout stays on
   should have avoided by branching. The namespaces in use are
   `claude/`, `codex/`, `thread/` and `fork/` — pick the one that says
   who is working.
+- **Commit early and often — a session can end without warning.** Commit
+  a checkpoint as soon as you have something coherent, and again as you
+  go. Do not save it all for the end, and above all do not wait for the
+  gate: an unverified checkpoint labelled as one is worth far more than
+  a clean tree nobody can recover, and you can always commit again once
+  it is green.
+
+  This is not tidiness, it is the most-paid-for lesson in this
+  repository. On 2026-07-30 a twelve-capability arc lost six agents to
+  host crashes and upstream API errors. **Every one died with work
+  uncommitted**, and the difference was stark: the agents that had
+  banked nothing needed a full salvage by hand, or were lost outright,
+  while the last one died at the same point having already committed
+  implementation, module, docs and tests — so finishing it meant running
+  one gate. Same failure, minutes apart in cost.
+
+  Two corollaries. A checkpoint's message should say plainly that it is
+  unverified, so whoever finds it knows what they have. And if you are
+  resuming someone else's interrupted work, **commit their tree before
+  you touch it** — it is one careless checkout from oblivion, and it is
+  not yours to lose.
 - **`main` is the head — keep the shared checkout on it.** Land a
   finished thread by fast-forward or merge (`git -C <path> merge
   --ff-only <branch>`), or move the ref without disturbing a working
