@@ -32,14 +32,12 @@ static Boolean g_visible;
 static ControlRef g_group;
 static ControlRef g_radios[kMcpTierCount];
 
-/* What this launch has actually said. The wire sends `hello` once per
-   connection and the contract has no message that revises it, so a tier
-   changed mid-session is this Mac's position and not yet the other Mac's
-   understanding. Nothing on the wire reports what was sent, so the page
-   records it at the moment it sees the link come up - which is the only
-   honest source available on this side. */
-static Boolean g_sent_known;
-static AgentAccessTier g_sent;
+/* What this link has actually been told is asked of the wire, not tracked
+   here: `agent.access` now revises the tier mid-session, so the page would
+   otherwise be modelling a conversation it does not conduct. It used to
+   record the tier when it saw the link come up and call that "what hello
+   carried" - true every time anyone tried it, and still this file
+   inferring another file's behaviour. */
 static Boolean g_shown_connected;
 
 /* Repaint caches: idle runs every pass, unslept during a transfer, so
@@ -51,8 +49,7 @@ static void current_answer(McpAnswer *out)
     memset(out, 0, sizeof *out);
     out->tier = now_agent_access_tier();
     out->connected = conn_is_connected();
-    out->sent_known = g_sent_known;
-    out->sent = g_sent;
+    out->sent_known = now_wire_agent_access_told(&out->sent);
     if (out->connected) {
         conn_peer_label(out->peer, sizeof out->peer);
     }
@@ -133,14 +130,9 @@ static OSErr mcp_create(WindowRef owner, const Rect *body)
         }
     }
     sync_radios();
+    /* Only for noticing the link CHANGE below; what was said comes from
+       the wire, which knows it whether this page was open or not. */
     g_shown_connected = conn_is_connected();
-    /* A link already up when the page is first opened carried whatever
-       the tier was at connect time, which - nothing else having set it -
-       is what it still is. */
-    if (g_shown_connected) {
-        g_sent_known = true;
-        g_sent = now_agent_access_tier();
-    }
     return noErr;
 }
 
@@ -274,14 +266,10 @@ static void mcp_idle(void)
     }
     connected = conn_is_connected();
     if (connected != g_shown_connected) {
+        /* The link changed, so the account below has changed with it. What
+           it says was told is the wire's to report, not this page's to
+           deduce from having watched this moment. */
         g_shown_connected = connected;
-        if (connected) {
-            /* The link just came up, so hello went out carrying whatever
-               the tier is now. This is the only place that fact is
-               observable from this side. */
-            g_sent_known = true;
-            g_sent = now_agent_access_tier();
-        }
     }
     if (!g_visible) {
         return;                       /* hidden pages cost nothing */

@@ -143,23 +143,41 @@ static void test_pending_change(void)
           "a connected page names the peer");
     check(strstr(line, "Ada") != NULL, "the peer's name is the peer's");
 
+    /* The stale case, which `agent.access` now makes rare rather than
+       routine: the announcement did not fit the control queue, so what the
+       host is enforcing and what this page shows have parted company. That
+       gap is the whole reason the message exists, so it gets a line. */
     check(mcp_answer_line(&answer, 2, line, (long)sizeof line) > 0,
-          "a tier changed since hello is reported");
+          "a tier the wire has not carried is reported");
     check(strstr(line, "full") != NULL,
           "and says what the other Mac still believes");
 
-    /* Same tier as was sent: nothing to report, and the line goes away
-       rather than saying "no change", which is a counter of zero. */
+    /* Up to date, and it SAYS so. This reverses the older page, where
+       agreement showed no line at all on the grounds that it was a counter
+       of zero. That reading held while the switch could not take effect
+       until the next connection - the person had nothing to be reassured
+       about. Now that it does take effect, the affirmative sentence is the
+       reassurance this whole change exists to deliver, and its absence
+       would read as "nothing happened". */
     answer.sent = kAgentAccessDisabled;
-    check(mcp_answer_line(&answer, 2, line, (long)sizeof line) == 0,
-          "no line when the other Mac is up to date");
+    check(mcp_answer_line(&answer, 2, line, (long)sizeof line) > 0,
+          "agreement is stated, not left to silence");
+    check(strstr(line, "told") != NULL,
+          "and it claims only that the host was TOLD");
+    /* Deliberately absent: nothing acknowledges `agent.access`, so this Mac
+       cannot say the host is enforcing it. Claiming so would be the same
+       class of false comfort the message was added to remove. */
+    check(strstr(line, "enforc") == NULL,
+          "never a claim about what the host then did");
 
-    /* Connected but this launch has sent no hello we observed: the page
-       must not claim to know what was said. */
+    /* Connected, but the wire reports having told this link nothing. The
+       page must not fill that in from the tier it can see. */
     answer.sent_known = 0;
     answer.sent = kAgentAccessFull;
-    check(mcp_answer_line(&answer, 2, line, (long)sizeof line) == 0,
-          "no claim about a hello nothing observed");
+    check(mcp_answer_line(&answer, 2, line, (long)sizeof line) > 0,
+          "an untold link says so");
+    check(strstr(line, "not been told") != NULL,
+          "and does not pass silence off as agreement");
 }
 
 static void test_status_text(void)
