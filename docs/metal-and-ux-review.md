@@ -15,6 +15,23 @@ Two audiences, one pass:
 Read [68k-metal-runbook.md](68k-metal-runbook.md) before any metal work. Its
 rules are not ceremony: they were written after a run nobody could attribute.
 
+## Three questions that are one experiment
+
+Added 2026-07-31, once it became clear they had converged. Three separate pieces
+of this slice each owe **a number from the same machine**, and none of them is a
+yes/no:
+
+| # | The question | What the answer decides |
+|---|---|---|
+| 12 | Does a process's `LMGetCurStackBase()` fall inside its partition? | If not, **every** process reports `MISMATCH` and the Windows row reads "stale anchor" everywhere — a silent, total, *polite* refusal rather than a fault |
+| 8 | Is a frame off an open bracket cheaper than a 0.5–0.6 s capture? | The streaming row's entire premise. If it is not clearly cheaper, the row's reason for existing is wrong and should be reported as such |
+| — | What does a **semantic scene walk** cost on the 1400c? | Whether Mirror scenes reuse the bracket or stay one-shot ([streaming-a-scene.md](streaming-a-scene.md)). Above roughly 200 ms the bracket earns its keep |
+
+They want the same setup — one machine, one connected session, a stopwatch on
+the wire — so running them separately would be three setups for one afternoon's
+answers. **The whole slice is being held for a single unified pass** rather than
+verified piecemeal, which is also why nothing below has been struck off yet.
+
 ## Before anything
 
 **Ask before each pass.** Per-action, not per-session. The machines are shared

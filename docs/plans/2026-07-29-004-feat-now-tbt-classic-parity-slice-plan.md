@@ -1,6 +1,6 @@
 # NOW ↔ TBT-classic capability parity — slice plan
 
-**Date:** 2026-07-29 · **Status:** intent, nothing built · **Namespace:** `claude/`
+**Date:** 2026-07-29 · **Status:** BUILT and TESTED, not metal-verified (updated 2026-07-31) · **Namespace:** `claude/`
 
 A snapshot of intent, per [README](README.md). Where this and the code
 disagree, the code is right.

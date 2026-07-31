@@ -1,7 +1,14 @@
 # Folding Mirror into NOW
 
-**Date:** 2026-07-31 · **Status:** M1 built (TESTED, not metal-verified); M2–M6
-intent · **Namespace:** `claude/`
+**Date:** 2026-07-31 · **Status:** M1 built, M2 spiked to *packages*, M3 built,
+M4 analysed — all TESTED, none metal-verified; M5–M6 intent ·
+**Namespace:** `claude/`
+
+**The fold-in itself is deliberately held.** Upstream has three chips left
+(`text_get`, `text_set`, `window_act`, plus Finder-window rendering); as they
+land they merge into the Mirror worktree, and only then does this plan's wire
+work begin. Nothing here is blocked on that — M1 through M4 were all reachable
+without it, which was the point of sequencing by what is settled.
 
 A snapshot of intent, per [README](README.md). Where this and the code disagree,
 the code is right; where this and [open-issues.md](../open-issues.md) disagree,
