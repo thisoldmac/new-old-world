@@ -15,6 +15,19 @@
  * froze a PowerBook once already getting that distinction wrong.
  *
  * So: one bottleneck, a counter, and a disposable clone.
+ *
+ * Arming is IDENTITY-SCOPED: a request names the A5 world it wants
+ * instrumented, and a pass in any other context patches nothing. That is
+ * not caution, it is a measured lesson from the sibling Portal INIT
+ * (mirror, d9db2c4, docs/PORTAL-PLAN.md): a guard that bounds a patch's
+ * COUNT or DURATION does not bound its SCOPE. Its MenuSelect patch was
+ * single-flight and self-disarming, and still answered whichever call
+ * arrived first - a real user press on an unrelated menu ran the armed
+ * command 18/20. The sibling patch that additionally required the request
+ * to name its exact ControlHandle hijacked 0/20. Same shape here, in the
+ * observer case rather than the actuator case: without an identity check
+ * we instrument whichever process happens to pump next, which is a
+ * process nobody asked us to instrument.
  */
 
 #include <Gestalt.h>
@@ -35,7 +48,8 @@ enum {
     kQDProbeMagic = (long)QDPROBE_4CC('Q', 'D', 'p', 'r'),
 
     /* Ports patched at once. Small on purpose: this is a spike, and a
-       bigger table would only mean more to unwind if it goes wrong. */
+       bigger table would only mean more to unwind if it goes wrong.
+       Bounded by identity too - all 8 belong to one A5 world. */
     kQDProbeMaxPorts = 8
 };
 
@@ -49,18 +63,59 @@ typedef struct {
 } QDProbePort;
 
 /* Published through Gestalt. Plain 32-bit fields, big-endian machine,
-   one writer - the same discipline as NOW's table, minus the versioning,
-   because nothing ships this. */
+   and one writer per field - the same discipline as NOW's table, minus
+   the versioning, because nothing ships this.
+
+   The request fields (arm / arm_a5 / arm_expiry) are the READER's, with
+   one exception stated below, and `arm` is their commit word:
+
+     to arm    write arm_a5 and arm_expiry FIRST, then arm LAST;
+     to disarm write arm FIRST.
+
+   A jGNE pass can land between any two of those stores, so the order is
+   what keeps a live `arm` from ever being paired with a target from the
+   previous request. The one field the resident code writes back is
+   `arm`, and only to zero it when the deadline passes - a dead-man's
+   switch whose whole point is that the reader may be gone.
+
+   The target is keyed by A5 because that is what both sides can actually
+   hold: LMGetCurrentA5() is a single low-memory read from resident code
+   in any context, needs no Process Manager call and nothing that moves
+   memory, and NOW's anchor plane already keys per-process state the same
+   way (contract/peek_table.h), so a reader that has an anchor already
+   has the value to write here. Two limits, stated where a reader will
+   trip over them:
+
+   - A5 names an A5 WORLD, not a process, and the value can be reused
+     after an application quits. Re-arm per launch; the expiry is what
+     bounds the window in which a recycled A5 could be mistaken for the
+     target, which is the honest reason to keep a deadline even though
+     it guards nothing about scope.
+   - A background target never arms at all. Our hook only runs when the
+     target runs, and a suspended process does not pump its event loop -
+     upstream measured exactly this and got 6/6 timeouts trying to arm a
+     backgrounded application (mirror, docs/STATUS.md). Identity-scoped
+     arming can therefore only ever reach a target that is alive and
+     pumping, which is a real bound on what this probe can observe, not
+     a bug to be fixed here. */
 typedef struct {
     unsigned long magic;
     unsigned long heartbeat;      /* TickCount at last jGNE pass */
-    unsigned long arm;            /* WRITTEN BY A READER: nonzero = patch */
+    unsigned long arm;            /* READER (commit): nonzero = patch */
+    unsigned long arm_a5;         /* READER: the ONLY A5 world we patch */
+    unsigned long arm_expiry;     /* READER: TickCount after which arm lapses */
     unsigned long armed_ports;    /* entries currently patched */
     unsigned long rect_calls;     /* THE ANSWER: calls through our proc */
     unsigned long patches;        /* successful installs */
     unsigned long restores;       /* successful removals */
     unsigned long skipped;        /* ports we declined to patch */
     unsigned long stranded;       /* entries we refused to restore */
+    /* Refusals, as passes rather than as distinct processes - these
+       climb once per event-loop pass while a bad request stands, which
+       is exactly what makes a misaddressed request visible. */
+    unsigned long unscoped;       /* armed with no target named: refused */
+    unsigned long foreign;        /* armed, but this is not the target */
+    unsigned long expiries;       /* requests the dead-man's switch retired */
 } QDProbeShared;
 
 static QDProbeShared *gShared = NULL;
@@ -125,8 +180,11 @@ static short find_port(unsigned long port)
     return -1;
 }
 
-/* Patch the current port, if it is one we can safely patch. */
-static void patch_current_port(void)
+/* Patch the current port, if it is one we can safely patch. Called ONLY
+   after the caller has established that `a5` is the armed target - the
+   identity check does not live here, so that there is exactly one place
+   in this file that decides whose ports we may touch. */
+static void patch_current_port(unsigned long a5)
 {
     GrafPtr gp;
     CGrafPtr cp;
@@ -183,7 +241,10 @@ static void patch_current_port(void)
     e->procs.rectProc = NewQDRectUPP(qdprobe_rect);
     e->port = (unsigned long)cp;
     e->saved_procs = (unsigned long)cp->grafProcs;
-    e->a5 = (unsigned long)LMGetCurrentA5();
+    /* The caller's A5, which the identity gate has already matched against
+       the request. Recording it here is what lets restore_ports() refuse
+       to touch this port from any other context. */
+    e->a5 = a5;
     /* Published last: until grafProcs points at us, nothing can call our
        proc, and our entry must be complete before it can. */
     cp->grafProcs = &e->procs;
@@ -192,8 +253,13 @@ static void patch_current_port(void)
     gShared->armed_ports = (unsigned long)gPortCount;
 }
 
-/* Un-patch every port we patched FROM THIS CONTEXT. The A5 gate is the
-   whole safety story: a port lives in its application's heap, and when
+/* Un-patch every port we patched FROM THIS CONTEXT. Every entry now
+   belongs to one armed target by construction, so in the common case
+   this loop either restores all of them or none - but the gate is per
+   entry regardless, because a request can be re-armed at a different
+   target while an old entry is still stranded.
+
+   The A5 gate is the whole safety story: a port lives in its application's heap, and when
    that application quits the heap is gone. Reaching into it to tidy up
    would be a write through freed memory in a process that no longer
    exists. So an entry belonging to another context is left alone here
@@ -228,18 +294,73 @@ static void restore_ports(void)
     gShared->armed_ports = (unsigned long)gPortCount;
 }
 
+/* Has the standing request outlived its deadline? Compared as a SIGNED
+   difference so a TickCount wrap (~2 years of uptime) reads as "not yet"
+   rather than "expired forever". A request with no deadline is expired on
+   sight: same fail-closed rule as a request with no target. */
+static Boolean request_expired(void)
+{
+    unsigned long now = (unsigned long)LMGetTicks();
+
+    if (gShared->arm_expiry == 0) {
+        return true;
+    }
+    return (long)(now - gShared->arm_expiry) >= 0;
+}
+
 /* Called from the shim on every GetNextEvent/WaitNextEvent, in whatever
    process is pumping - the same position NOW's core uses, and the only
-   moment a foreign process's port is legitimately current. */
+   moment a foreign process's port is legitimately current.
+
+   "Whatever process is pumping" is the hazard this function exists to
+   contain. Being here says nothing about whether anyone asked for this
+   process to be instrumented, so every path below is a refusal except
+   the one where the caller IS the named target. */
 void qdprobe_gne_apply(void)
 {
+    unsigned long a5;
+
     if (gShared == NULL) {
         return;
     }
     gShared->heartbeat = (unsigned long)LMGetTicks();
+
+    /* Dead-man's switch, first, so an expired request cannot be acted on
+       even once more. It bounds a request's DURATION, not its scope -
+       the identity gate below is the only thing that bounds scope, and
+       nothing here may be read as a substitute for it. Its one real
+       virtue is independence: it fires in whatever process pumps next,
+       so retiring a request does not need the target, or the reader,
+       to still be alive. Upstream measured the absence of this: the
+       Portal's guest never aged a request out, so an agent that died
+       mid-verb left a patch armed indefinitely. */
+    if (gShared->arm != 0 && request_expired()) {
+        gShared->arm = 0;
+        ++gShared->expiries;
+    }
+
     if (gShared->arm != 0) {
-        patch_current_port();
+        a5 = (unsigned long)LMGetCurrentA5();
+        if (gShared->arm_a5 == 0) {
+            /* Armed at nobody. This is the whole defect in one branch:
+               the obvious reading of a bare `arm` is "instrument
+               everything", and the fail-closed reading is "instrument
+               nothing". A request that does not say whose ports it wants
+               has not asked for anything we are willing to do. */
+            ++gShared->unscoped;
+        } else if (a5 != gShared->arm_a5) {
+            ++gShared->foreign;       /* somebody else's event loop */
+        } else {
+            patch_current_port(a5);
+        }
     } else if (gPortCount > 0) {
+        /* Disarmed. Note the asymmetry, and it is not fixable from here:
+           the refusals above take effect in every process immediately,
+           because they are decided by whoever pumps. Un-patching is not -
+           a port can only be restored from the context that patched it,
+           so a disarm reaches the target's ports only when the target
+           next pumps events. Disarm stops us instrumenting anything new;
+           it does not promise the instrumentation is already gone. */
         restore_ports();
     }
 }
@@ -272,9 +393,14 @@ void _start(void)
     }
     shared->magic = (unsigned long)kQDProbeMagic;
     shared->heartbeat = (unsigned long)LMGetTicks();
-    /* Dark on arrival. An INIT that starts patching every port it sees
-       at boot is a machine you cannot shift-boot out of fast enough. */
+    /* Dark on arrival, and unaddressed on arrival. An INIT that starts
+       patching every port it sees at boot is a machine you cannot
+       shift-boot out of fast enough; NewPtrSysClear has already zeroed
+       these, and they are restated because the zero VALUE is the safe
+       one in all three cases - not armed, no target, already expired. */
     shared->arm = 0;
+    shared->arm_a5 = 0;
+    shared->arm_expiry = 0;
     gShared = shared;
 
     gestalt_upp = NewSelectorFunctionUPP(qdprobe_gestalt);
