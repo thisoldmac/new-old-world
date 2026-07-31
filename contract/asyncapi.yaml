@@ -220,6 +220,7 @@ channels:
       processResult: { $ref: "#/components/messages/processResult" }
       softwareList: { $ref: "#/components/messages/softwareList" }
       softwareListing: { $ref: "#/components/messages/softwareListing" }
+      agentAccess: { $ref: "#/components/messages/agentAccess" }
   bulk:
     address: "1"
     description: >
@@ -727,6 +728,9 @@ components:
     softwareListing:
       name: software.listing
       payload: { $ref: "#/components/schemas/SoftwareListing" }
+    agentAccess:
+      name: agent.access
+      payload: { $ref: "#/components/schemas/AgentAccess" }
 
   schemas:
     Hello:
@@ -782,6 +786,11 @@ components:
             A tier this receiver does not recognise is likewise NOT consent —
             it is a newer sender, and a receiver that cannot name the ceiling
             cannot claim to be under it.
+            This is the answer AT CONNECT TIME, and it is not the last word:
+            `agent.access` revises it mid-session, and a receiver that holds
+            this value must hold the revision in the same place. A receiver
+            that treats hello as the permanent answer enforces a tier the
+            machine has already withdrawn.
         name:
           type: string
           description: Human-facing machine name, e.g. "Power Mac G3".
@@ -795,6 +804,57 @@ components:
           description: >
             Sender's preferred bulk chunk size in bytes; the connection uses
             the smaller of the two sides' preferences. Default 8192.
+    AgentAccess:
+      type: object
+      required: [type, agent]
+      additionalProperties: false
+      description: >
+        GUEST TO HOST ONLY, unsolicited: the sending machine has changed its
+        mind about whether a companion agent may drive it, and says so on the
+        link already up. `hello.agent` is the same fact at connect time; this
+        is that fact revised, and the two carry identical tokens because they
+        are one answer, not two.
+
+        WHY IT EXISTS. `hello` is sent once per connection and nothing
+        revised it, so a person who set Read Only mid-session kept being
+        driven at the tier they had just withdrawn until the link was
+        rebuilt. That is the one place in this product where a stale belief
+        has a safety edge — the person believes they have restricted the
+        machine, and the receiver goes on permitting what they restricted.
+
+        THE GUEST INITIATES, always. There is deliberately no host-to-guest
+        form and no request that sets this: a tier the far end could raise is
+        not consent. The receiver may read this value and must never write
+        it.
+
+        NOT ACKNOWLEDGED, and carries no `id`. The sender learns that it
+        said this, never that the receiver acted on it — the same standing
+        `hello.agent` has, and the guest's page is worded to claim only what
+        it said. An ack would be a new host-to-guest message and is not
+        needed for the receiver to enforce, which it does on receipt.
+
+        ADDITIVE — no revision bump. Both shipping halves ignore a control
+        message they cannot decode once the handshake is past (the host logs
+        it and keeps the wire; the guest's reader falls through), so an older
+        receiver misses the revision and goes on enforcing the connect-time
+        answer, which is exactly today's behaviour and no worse than it.
+
+        A receiver that never got a `hello.agent` (a sender predating that
+        field) and then gets one of these has been given an answer where it
+        had silence, and must use it: absence means "did not say", and this
+        message is the machine saying.
+      properties:
+        type: { const: agent.access }
+        agent:
+          enum: [disabled, read-only, full]
+          description: >
+            The machine's answer now, spelled exactly as `hello.agent` spells
+            it and meaning exactly the same thing — including that the values
+            are ORDERED and that a tier a receiver does not recognise is not
+            consent. REQUIRED here, unlike in hello: a message whose only
+            purpose is to state the answer has no reading in which the answer
+            is absent, and a receiver must ignore one that omits it rather
+            than inventing a tier.
     Refuse:
       type: object
       required: [type, contract, reason]
