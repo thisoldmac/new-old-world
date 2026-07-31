@@ -229,6 +229,50 @@ Move, trash, restore, mkdir, and download. The confirmation sheet and the
 fifty-deep Undo are the human half of a destructive capability an agent can also
 reach. Judge whether the wording makes it clear what will happen and to what.
 
+## 5a. The Software page's sweep budget and its duplicate groups
+
+Added 2026-07-31. The page used to re-run the guest's whole Applications sweep
+every time it was opened, and again on every domain-picker flip. It now sweeps
+**once per machine per domain per connection**, and the only thing that re-asks
+a domain the Mac has already answered is the **Rescan** button. Duplicates
+gather under a container row, by the guest's own `compute_groups` rule.
+
+Tested on the host only — a scripted guest over loopback. **Nothing here has
+met a real Mac**, and three of the four things worth judging are things a build
+cannot answer:
+
+- **Is once-per-connection the right budget on real hardware?** The saving is
+  real (a ~4 s disk crawl per open, on a machine doing nothing else while it
+  runs), but a listing now survives every visit to the page for the life of the
+  connection. If a person installs something on the guest and comes back, the
+  page is wrong until they press Rescan. Judge whether the footer's "as of
+  14:02:11 (23 minutes ago)" is enough of a prompt, or whether the page should
+  volunteer a rescan past some age.
+- **Does the age phrase read as stale, or as broken?** The relative age is
+  computed as the page draws, so it sharpens on the next interaction rather
+  than ticking. Sitting on the page for ten minutes shows an age that does not
+  move. The absolute time beside it is always right; the question is whether
+  the frozen phrase reads as a bug.
+- **The disclosure triangle is hand-drawn.** `Table` cannot draw a real outline
+  before macOS 14 and this app ships to 13, so a group's chevron is a plain
+  button in the Name cell and members are indented by a spacer. On a real disk
+  with several SimpleTexts, judge whether it reads as an outline or as a row
+  with a stray button — and whether clicking the chevron feels like disclosure
+  when the row deliberately refuses to select (the guest refuses too).
+- **The two surfaces have never been compared side by side.** The grouping rule
+  is ported from the guest's source and pinned by tests, but nobody has put the
+  host's Software page and the guest's Workshop Software page next to each
+  other on the same disk and checked that they gather the same items into the
+  same groups. That comparison is the only thing that proves the port, and it
+  needs one real Mac with real duplicates on it.
+
+One known divergence, stated rather than smoothed over: two names differing
+only in the case of a **non-ASCII** Mac Roman letter (`é`/`É`) may group on the
+guest and not here. Both surfaces sort under an ASCII fold, which does not
+bring such a pair adjacent, so the guest only groups them when nothing sorts
+between them. Not expected to occur on a real disk; worth a glance if one ever
+does.
+
 ## 6. Contention, which nobody has ever seen happen
 
 Added 2026-07-31 with `now_stream_screen`. **Two sentences a person reads only
