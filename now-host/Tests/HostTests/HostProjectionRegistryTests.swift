@@ -171,6 +171,10 @@ private enum DuplicateHealthProjection: HostProjection {
     static let capability = SessionHealthProjection.capability
     static let requires: [String] = []
     static let exposes: [String] = []
+    /// Stated for the same reason `faces` is, and by the same rule: the
+    /// protocol gives no default, so a row that has not thought about its
+    /// key namespace does not compile. Including this one.
+    static let acceptedArguments: Set<String> = []
     /// Nothing registers it, so no face reaches it. Stated rather than
     /// defaulted, because the protocol deliberately has no default: a row
     /// that says nothing about a face is the drift HostFaceParityTests is
