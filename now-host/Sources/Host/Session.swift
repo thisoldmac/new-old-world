@@ -251,6 +251,35 @@ final class Session {
         onHealth(h)
     }
 
+    /// The machine changed its mind about agent control; the host's copy
+    /// changes with it.
+    ///
+    /// This writes the SAME field `hello.agent` wrote, deliberately. It is
+    /// what the projection layer's consent check reads before every call
+    /// (`HostProjectionDispatch.consentDenial`, through session health), so
+    /// storing it here is the enforcement — a revision kept anywhere else
+    /// would update a label while the old tier went on being permitted,
+    /// which is the defect this message exists to close.
+    ///
+    /// Not acknowledged: the contract gives the guest no answer to wait
+    /// for. It IS logged, because a permission changing under a person who
+    /// is driving this machine should be findable afterwards, and the log
+    /// is where the connect-time answer was already written.
+    private func applyAgentAccess(_ answer: AgentIntegrationGuestAccess) {
+        guard var h = health else { return }
+        let previous = h.guestAgentAccess
+        guard previous != answer else { return }
+        h.guestAgentAccess = answer
+        health = h
+        onHealth(h)
+        /* Named "now" rather than "changed to": the sentence a person reads
+           while wondering why an agent stopped being able to act should say
+           what is true, not require diffing it against an earlier line. */
+        let was = previous.map { $0.displayName } ?? "not stated"
+        onLog("\(guestName) now says agent \(answer.displayName)"
+              + " (was \(was))", "wire", .info)
+    }
+
     private func consume(_ data: Data) {
         let frames: [Frame]
         do {
@@ -349,6 +378,8 @@ final class Session {
         case .ping(let id):
             send(.pong(id: id))
             touchHealth(pingsDelta: 1)
+        case .agentAccess(let revision):
+            applyAgentAccess(revision.agent)
         case .commandResult(let result):
             onCommandResult(result)
         case .execOutput(let output):
