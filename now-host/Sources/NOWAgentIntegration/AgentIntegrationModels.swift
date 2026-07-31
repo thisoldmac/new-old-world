@@ -158,6 +158,15 @@ public struct AgentIntegrationSessionHealth: Codable, Equatable, Sendable {
         /// about that guest and NOT a claim about its build; a caller must not
         /// fall back to `version` to fill it in.
         public let build: String?
+        /// What this machine answered at `hello` about whether a companion
+        /// agent may drive it, and how far.
+        ///
+        /// Nil means the guest never said — a build older than the field —
+        /// and that is a fact about the guest, NOT an answer. A caller must
+        /// not read it as consent and must not fill it in: a machine that
+        /// refuses says `.disabled` out loud precisely so that silence and
+        /// refusal stay two different things on this wire.
+        public let agentAccess: AgentIntegrationGuestAccess?
         public let operatingSystem: String?
         public let connectedAt: Date?
         public let lastTraffic: Date?
@@ -167,6 +176,7 @@ public struct AgentIntegrationSessionHealth: Codable, Equatable, Sendable {
 
         public init(reference: AgentIntegrationGuestReference? = nil,
                     name: String, version: String?, build: String? = nil,
+                    agentAccess: AgentIntegrationGuestAccess? = nil,
                     operatingSystem: String?, connectedAt: Date?,
                     lastTraffic: Date?, quietFor: TimeInterval?,
                     pingsAnswered: Int?, framesReceived: Int?) {
@@ -174,6 +184,7 @@ public struct AgentIntegrationSessionHealth: Codable, Equatable, Sendable {
             self.name = name
             self.version = version
             self.build = build
+            self.agentAccess = agentAccess
             self.operatingSystem = operatingSystem
             self.connectedAt = connectedAt
             self.lastTraffic = lastTraffic

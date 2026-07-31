@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import NOWAgentIntegration
 
 /// Which machine is on the other end — in three parts, because there are
 /// three different questions and one string used to answer all of them.
@@ -225,6 +226,9 @@ struct ConnectedGuest: Identifiable, Equatable, Sendable {
     /// The build this machine reported at `hello`, when it reported one.
     /// Nil is "did not say", not "same as the last one".
     var build: String? = nil
+    /// This machine's answer at `hello` about being driven by an agent.
+    /// Nil is "did not say", which is not the same as a yes.
+    var agentAccess: AgentIntegrationGuestAccess? = nil
     var operatingSystem: String?
     var connectedAt: Date
     /// True for the one the single-guest API — the console, the modules,

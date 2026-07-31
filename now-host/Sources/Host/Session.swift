@@ -1238,7 +1238,8 @@ final class Session {
         let now = Date()
         health = GuestListener.SessionHealth(
             guestName: guestName, guestVersion: hello.version,
-            guestBuild: hello.build, guestOS: hello.os,
+            guestBuild: hello.build, guestAgentAccess: hello.agent,
+            guestOS: hello.os,
             connectedAt: now, lastTraffic: now,
             pingsAnswered: 0, framesReceived: 1)
         onHealth(health)
@@ -1258,6 +1259,15 @@ final class Session {
                 line += " build \(build)"
             }
             line += hello.os.map { ", OS \($0))" } ?? ")"
+        }
+        /* What the machine said about agents driving it, in the same line a
+           person reads to find out what connected. Written only when it
+           said something: a guest older than the field gets no clause,
+           because "agent: —" would be this log inventing an answer nobody
+           gave. Outside the version parenthesis on purpose — this is not a
+           property of the build, it is the machine's position. */
+        if let access = hello.agent {
+            line += " — agent \(access.displayName)"
         }
         onLog(line, "wire", .info)
         onActive(self)

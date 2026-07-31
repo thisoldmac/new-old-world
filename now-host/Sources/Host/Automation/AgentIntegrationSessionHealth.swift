@@ -130,6 +130,7 @@ final class AgentIntegrationHostAdapter {
                 name: health?.guestName ?? guestName,
                 version: health?.guestVersion,
                 build: health?.guestBuild,
+                agentAccess: health?.guestAgentAccess,
                 operatingSystem: health?.guestOS,
                 connectedAt: health?.connectedAt,
                 lastTraffic: health?.lastTraffic,

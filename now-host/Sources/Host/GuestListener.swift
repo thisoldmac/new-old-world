@@ -54,6 +54,10 @@ final class GuestListener: ObservableObject {
         /// standing in, because two builds sharing a version is the whole
         /// reason this is here (docs/open-issues.md, 2026-07-30).
         var guestBuild: String? = nil
+        /// What this machine answered at `hello` about agents driving it.
+        /// Nil is "did not say" — a guest older than the field — and is
+        /// not consent; the machine that means no says `.disabled`.
+        var guestAgentAccess: AgentIntegrationGuestAccess? = nil
         var guestOS: String?
         var connectedAt: Date
         var lastTraffic: Date
@@ -329,6 +333,7 @@ final class GuestListener: ObservableObject {
                 address: live.guestAddress,
                 version: record.guestVersion,
                 build: record.guestBuild,
+                agentAccess: record.guestAgentAccess,
                 operatingSystem: record.guestOS,
                 connectedAt: record.connectedAt,
                 isActive: key == activeKey)

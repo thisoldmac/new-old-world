@@ -1,4 +1,9 @@
 import Foundation
+/* For AgentIntegrationGuestAccess — hello.agent decodes straight into the
+   contract's own vocabulary rather than a String this layer hands on for
+   somebody else to interpret. One definition, in the module that already
+   owns the agent-facing models. */
+import NOWAgentIntegration
 
 /// Control-channel messages from contract/asyncapi.yaml. One JSON object per
 /// control frame, discriminated by `type`.
@@ -72,6 +77,12 @@ struct Hello: Codable, Equatable, Sendable {
     /// because a version equal across two builds is the failure this exists
     /// for.
     var build: String? = nil
+    /// The sending machine's own answer to whether a companion agent may
+    /// drive it. Nil means it never said — a sender that predates the
+    /// field — and that is NOT consent, never `.fullAccess` filled in
+    /// here. A machine that refuses says `.disabled` out loud, which is
+    /// the only thing separating it from one that is simply older.
+    var agent: AgentIntegrationGuestAccess? = nil
     var name: String?
     var os: String?
     var chunk: Int?
