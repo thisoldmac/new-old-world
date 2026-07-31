@@ -296,11 +296,21 @@ final class HostProjectionAuditTests: XCTestCase {
     /// actually passes the sink that reaches the person's log rather than
     /// something that drops events — the compiler enforces that one exists,
     /// not that it goes anywhere.
+    ///
+    /// **Comments stripped**, and this one had the quiet direction. Mutation
+    /// on 2026-07-31: pass a sink whose `record` does nothing, and leave
+    /// `audit: LocalAuditSink()` in the comment above it. It builds, all 916
+    /// tests pass, and every agent-driven action on the machine reaches no
+    /// log a person reads — which is the entire property this test names.
+    ///
+    /// Its sibling above, `testNothingButTheDispatchInvokesAProjection`,
+    /// deliberately keeps reading RAW text: it asserts that no line calls
+    /// `.invoke(`, so a comment can only ADD an offender — a loud false
+    /// failure, never a silent pass — and its failure message reports line
+    /// NUMBERS, which stripping would shift off the real source.
     func testTheCompanionEntryPointPassesTheLocalSink() throws {
-        let text = try String(
-            contentsOf: Self.repoRoot.appendingPathComponent(
-                "now-host/Sources/NOWAgentCompanion/StdioMCP.swift"),
-            encoding: .utf8)
+        let text = try GateSource.hostSwift(
+            "now-host/Sources/NOWAgentCompanion/StdioMCP.swift")
         XCTAssertTrue(
             text.contains("audit: LocalAuditSink()"), """
             The companion's entry point does not hand the MCP face the sink \
