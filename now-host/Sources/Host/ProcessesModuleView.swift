@@ -120,6 +120,16 @@ struct ProcessesModuleView: View {
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
+            if let note = model.bringToFrontNote {
+                /* Beside the buttons, not only in a tooltip. A greyed control
+                   with nothing next to it is indistinguishable from a bug,
+                   and this one is dark for a reason nothing else on the page
+                   says out loud. */
+                Label(note, systemImage: "minus.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             HStack(spacing: 12) {
                 Button {
                     model.refresh()
@@ -147,16 +157,28 @@ struct ProcessesModuleView: View {
     /// The three drive verbs, one host→guest arrow. Enabled only when a
     /// process is selected that named itself with a PSN (an old guest that
     /// sends no PSN cannot be driven), and nothing else is in flight.
+    ///
+    /// **Bring to Front carries one more condition than the other two**, and
+    /// it is a different kind of condition: whether fronting means anything
+    /// for the selected process at all. A faceless background process has no
+    /// windows and no menu bar, so there is nothing to bring forward — a fact
+    /// about the item rather than about the Mac, which is why it comes from
+    /// `GuestCapabilityGate` and not from a `kind == "background"` test
+    /// written into this view.
     private var actionButtons: some View {
         let entry = model.selectedEntry
         let enabled = entry?.isDrivable == true
             && model.canBrowse && !model.actionInFlight
+        let front = entry.map { model.bringToFrontGate($0) }
         return Group {
             Button {
                 if let entry { model.bringToFront(entry) }
             } label: {
                 Label("Bring to Front", systemImage: "arrow.up.forward.app")
             }
+            .disabled(front?.isEnabled == false)
+            .help(front?.explanation
+                  ?? "Bring the selected process to the front over there.")
             Button {
                 if let entry { model.askToQuit(entry) }
             } label: {
