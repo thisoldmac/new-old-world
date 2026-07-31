@@ -9,6 +9,34 @@ wrong thing) versus **unverified** (it may well be right, but no one has
 watched it work on the PowerBook). Unverified is not a lesser problem —
 several of tonight's bugs lived in code that looked obviously correct.
 
+## The machine's vote is carried, and nothing counts it yet (2026-07-31)
+
+`hello` now has an optional `agent` field — `disabled`, `read-only`,
+`full`, or nothing — and the host decodes it, keeps it on the session
+health record, the roster row and
+`AgentIntegrationSessionHealth.Guest`, and writes it into the connect
+log line when the machine said something. That is section 2 of
+[plan 006](plans/2026-07-30-006-feat-now-mcp-module-and-guest-consent-plan.md).
+**Tested**; nothing here has met a Macintosh.
+
+The three unfinished things, and they are unfinished on purpose:
+
+- **Nothing enforces it.** No caller consults the field. Enforcement
+  belongs at `HostProjectionDispatch`, on the same line as the audit
+  event, and is a separate slice — one place to refuse, per the plan's
+  stop conditions. Until it lands, a machine can send `disabled` and be
+  driven anyway.
+- **Absence fails OPEN**, which is a decision recorded in the schema and
+  not a property of the field. It matches today's default-on behaviour
+  and keeps every deployed machine working. The moment to revisit is when
+  the installer ships and silence stops being the common case.
+- **Nothing on either machine can change the answer.** The PowerPC guest
+  answers `full` from `now_agent_access()`, a function with no
+  preference and no switch behind it yet; the guest toggle, the mid-call
+  prompt and the installer's AI-BAD path all land there. NOW-68K sends
+  no `agent` at all — it has no switch to report and no installer, so it
+  is a guest that has not been asked rather than one that answered.
+
 ## The parity slice's capture lane and addressing met the PowerBook (2026-07-30)
 
 Two capabilities of the [parity
