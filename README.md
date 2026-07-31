@@ -117,7 +117,7 @@ enforces it.
 | `now-guest-shared/` | Source compiled by **both** guests, one file per unit rather than a copy each. Only for logic that is genuinely identical on both machines — see docs/naming.md for the bar. |
 | `now-host/` | Swift package (`GuestListener` + modules) and `NewOldWorld.xcodeproj` for signed builds. |
 | `ext/` | The optional resident 68K component. Always optional — the product degrades honestly without it. |
-| `assets/` | Art the guests ship, with the generator that draws it. `assets/icons/` is the application icon as a classic icon family (`ICN#`/`icl4`/`icl8`/`ics#`/`ics4`/`ics8`), drawn at 32×32 and 16×16 rather than scaled down. Not wired into a build yet — see its README. |
+| `assets/` | Art the product ships, each pack with the generator that draws it. `assets/icons/classic/` is the guests' icon as a classic family (`ICN#`/`icl4`/`icl8`/`ics#`/`ics4`/`ics8`), drawn at 32×32 and 16×16 rather than scaled down, and not wired into a build yet. `assets/icons/macos/` is the host app icon, which generates the asset catalog the Xcode target builds. |
 | `docs/` | Architecture, measurements, and the ledgers. `docs/local/` is gitignored scratch. |
 | `spikes/` | Throwaway feasibility probes, kept for their findings. |
 

@@ -25,3 +25,10 @@ xcuserdata/
 
 # Python bytecode from the asset generators in assets/.
 __pycache__/
+
+# xcodebuild default output when the app is built from the command line
+# rather than Xcode, which uses DerivedData.
+now-host/build/
+
+# iconutil build intermediate; appicon.py regenerates it each run.
+assets/icons/macos/NewOldWorld.iconset/
