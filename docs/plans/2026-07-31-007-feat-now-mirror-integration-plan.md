@@ -267,6 +267,44 @@ The exclusivity answer bites here too: a Mirror session holds the one lane, so
 design around rather than an open question — but it is a product statement, and
 it should be said out loud before it is discovered.
 
+**Analysed 2026-07-31 in [streaming-a-scene.md](../streaming-a-scene.md), and
+the answer is neither of the two options above.** The recommendation is to give a
+scene the pair capture already has — a bounded one-shot, plus (only if a
+measurement demands it) the *same* bracket with its subject fixed at
+`stream.start` — and to build the one-shot first. A per-frame union fails because
+the bracket's vocabulary is pixel-shaped: `stream.start` *requires* `depth`, and
+`pack` / `predictive` / `interlace` are meaningless for structure, so a scene
+start would have to fill a required field with a lie. A second bracket fails
+because ownership is the hard part, and it is either shared — in which case it
+was never a second mechanism — or re-derived.
+
+Two findings underneath it, both checked against the sources:
+
+- **The bracket's premise does not transfer.** A picture bracket exists so a
+  frame is *waiting* rather than *starting*, against a capture measured at
+  0.5–0.6 s. Upstream measures its semantic walk at **~2.1 ms**. A bracket that
+  amortises nothing is a mode with no payoff.
+- **A scene is a transfer, not a control message.** The control cap is 4096
+  bytes; upstream's own trace reads `axtree (13980 B, 2.1 ms, 1 window, 11
+  controls, 8 menus)`. Fourteen kilobytes for a **one-window** scene, three and a
+  half times the cap, at the small end of what a real desktop presents. The doc
+  lists "do realistic scenes fit in a control frame" as an open question that
+  would dissolve the whole problem; that same measured line answers it **no** with
+  room to spare, and the question should be treated as closed rather than open.
+
+The non-obvious argument is **the lease**. An agent reading a scene acts on it —
+click, wait, read again — so a 90 s gap is ordinary, and the shared 60 s lease
+would kill the bracket mid-session. The tempting fix, a longer lease for scenes,
+is a second ownership policy wearing the first's name. The pair avoids it: the
+sparse agent uses the one-shot, the continuous consumer (a human watching a live
+mirror) renews naturally.
+
+**What would change it:** one metal number — what a semantic walk costs on the
+1400c. Above roughly 200 ms with the guest able to walk ahead of demand, the
+bracket earns its keep and becomes primary rather than conditional. That is the
+same experiment M3's own unmeasured premise already owes, with two subjects
+instead of one.
+
 ### M4 — scene families on the wire
 
 Mirror-shaped, NOW-conventioned. The IR is the thing being carried; read
