@@ -146,8 +146,14 @@ mean this seam learning the shape of a dozen result types and going stale
 behind the thirteenth.
 
 The MCP face reports over the same per-uid private socket everything else
-uses (local schema v8's `audit` operation), and the host writes the line under
-the `agent` area of [logging.md](logging.md#the-agent-area-who-asked). The
+uses (local schema v8's `audit` operation), and the host writes the event to
+**both** places a person can read it, from one call and one composition: the
+line under the `agent` area of
+[logging.md](logging.md#the-agent-area-who-asked), and the **Agent** page's
+stream. One seam rather than two, because the visible half of this rule went
+missing for twelve capabilities precisely by being a second thing to
+remember. The page adds nothing to what the event carries — the same refusal
+to record arguments holds there. The
 host validates rather than transcribes: an event naming a capability no row
 claims is refused, the face is a closed enum, the refusal sentence is bounded
 and its control bytes are escaped. A same-uid process can already cause real
@@ -256,7 +262,9 @@ V0 deliberately trusts processes running as the same macOS user. This protects a
 - Approval staging lives in a per-host-launch mode-`0700` directory. A selected source must be one directly opened, single-link regular file no larger than 4 MiB. The sealed copy is mode `0400`, expires after ten minutes, is bound to the current guest session and approved Files destination, and is consumed on its first redemption attempt. Final open follows no links and rechecks owner, inode, device, link count, size, timestamps, mode, and digest.
 - The MCP cannot mint an approval, list staging, choose a destination, or recover the original path. A user may deliberately select a file from anywhere the native picker can reach, but that grants only the staged copy; it does not expose or make the MCP a side door into a CodeKitten project tree. Same-user malicious code remains outside V0's stated protection.
 
-The local socket is not the guest wire. It creates no TCP listener, guest connection, protocol message, guest module, dashboard item, daemon, launch agent, or second app.
+The local socket is not the guest wire. It creates no TCP listener, guest connection, protocol message, guest module, daemon, launch agent, or second app.
+
+**It does create one thing on this side, and that changed deliberately: a page in the host app.** The earlier wording promised no dashboard item either, and that promise was about the *guest* — the vintage Mac gains nothing, which still holds — but it was written broadly enough to cover the host, and the host now needs one. Rule 3 asks that what a person cannot initiate they can at least see; the audit line satisfied that into a log file, where a person has to already suspect something to go and read it. The **Agent** page (`AgentActivityModuleView`) is the visible half: companion presence from the ledger above, the audit stream as it happens, the machine's own `hello` consent answer read back, and the endpoint's own path. It **displays and does not decide** — there is no control on it over what an agent may do, and specifically none over the guest's consent, because that answer belongs to the machine being driven and a host-side override would defeat the point of asking for it. What may happen is settled in one place, at the dispatch.
 
 ## Operational prerequisites
 
