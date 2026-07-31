@@ -4,17 +4,57 @@
 M4 analysed — all TESTED, none metal-verified; M5–M6 intent ·
 **Namespace:** `claude/`
 
-**The fold-in itself is deliberately held.** Upstream has three chips left
-(`text_get`, `text_set`, `window_act`, plus Finder-window rendering); as they
-land they merge into the Mirror worktree, and only then does this plan's wire
-work begin. Nothing here is blocked on that — M1 through M4 were all reachable
-without it, which was the point of sequencing by what is settled.
+**Upstream landed 2026-07-31** — all four lanes on Mirror's `main`, IR frozen at
+v1 and declared. M4's blocker is gone; see the section immediately below. What
+remains held is **verification**, not work: the whole slice is waiting on one
+unified metal pass rather than being struck off piecemeal
+([metal-and-ux-review.md](../metal-and-ux-review.md)).
 
 A snapshot of intent, per [README](README.md). Where this and the code disagree,
 the code is right; where this and [open-issues.md](../open-issues.md) disagree,
 the ledger is right.
 
-## The upstream is still moving
+## The upstream has landed — 2026-07-31
+
+**Superseded, and the section below is kept because its caution was the right
+call and its reasons still explain the sequencing.** All four lanes are merged
+to Mirror's `main`, and the thing this plan was actually waiting on has
+happened: **the scene IR is frozen at v1 and *declared*.**
+
+That was the gate, stated as a stop condition — *"the scene IR is designed
+against upstream's moving copy rather than against a version it has declared."*
+It now has a version it has declared:
+
+- `irVersion` is a **top-level key of the result**, beside the payload, so a
+  consumer reads the gate without decoding the thing it guards. The scene body
+  carries the same number as its self-stamp and the two cannot diverge without
+  editing source.
+- The **consumer duty is written down in order**: read `irVersion`, refuse an
+  unknown major, *then* decode. NOW's families should say the same thing the
+  same way rather than inventing a second discipline.
+- Frozen / additive-within-v1 / breaking are each defined, with the additive
+  case explicitly *not* bumping the version — the same accretive rule
+  `peek_table.h` already applies to the in-memory seam.
+
+**The act plane is now metal-shaped end to end**, which is the single most
+important consequence for us. `WINDOW_ACT` moves, resizes, zooms and closes by
+answering the application's own `FindWindow` call — guarded and armed like
+`MenuSelect` and `TrackControl` — with **no simulated mouse motion anywhere**,
+and QMP is out of the act plane entirely. 20/20 on each of four ops, re-verified
+on the *merged* build rather than the branch build. That removes the last
+emulator-only mechanism, so M6's act projections do not inherit an emulator
+dependency and do not collide with this project's no-host-side-cheating rule.
+
+Also landed: `TEXT_GET`/`TEXT_SET` (20/20, no-hijack 0/20), folder windows as *a
+model rather than a photograph* (40/40 against the Finder's own oracle), and an
+`apple-event` verb.
+
+**One gap upstream states about itself, and it is ours too:** no fixture
+exercises the content plane (`windows[].display[]`). That is the same
+QuickDraw-op territory our P3 probe (M2) exists to reach, so the two meet there
+rather than in the parts already covered.
+
+## The upstream was still moving — kept for its reasoning
 
 **Mirror lives in its own repository** (`timbottu/mirror`) and is under active
 work in another worktree. As of 2026-07-31 the churn is concentrated in
