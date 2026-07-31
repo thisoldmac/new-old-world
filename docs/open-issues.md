@@ -9,7 +9,105 @@ wrong thing) versus **unverified** (it may well be right, but no one has
 watched it work on the PowerBook). Unverified is not a lesser problem —
 several of tonight's bugs lived in code that looked obviously correct.
 
-## The machine's vote is carried, and nothing counts it yet (2026-07-31)
+## The agent surface can be seen, and refused (2026-07-31)
+
+[Plan 006](plans/2026-07-30-006-feat-now-mcp-module-and-guest-consent-plan.md)
+is built except its guest-side half. The host tracks companions, an **Agent**
+module shows what they have done, and `HostProjectionDispatch` refuses a call
+the connected machine has not consented to. **Tested throughout; no part of it
+has met a Macintosh, and no person has looked at the pane.**
+
+**Unverified, and the list is the point:**
+
+- **Nobody has seen the module.** Everything asserted about it is about the
+  model's words, not how they land in a window. The state most worth looking at
+  is `.neverAttached`, because it is what the pane says on most machines for
+  most of their lives. A screenshot on the host Mac closes this.
+- **No real companion has ever attached.** Presence, the 120-second active
+  window and the `LOCAL_PEERPID` identity are all reasoned rather than observed
+  against real agent traffic. Pid reuse can merge two short-lived companions
+  into one — it undercounts rather than inventing, and is documented where it
+  happens.
+- **The ceiling has never met a guest that answers.** No guest sends
+  `hello.agent` yet except the PPC guest's hardcoded `full`, so `disabled` and
+  `read-only` have been exercised only against fixtures.
+- **The audit stream is per-launch and in memory**, unlike the log, which can
+  persist. A person looking for last week's agent activity needs the log.
+
+**Two decisions worth revisiting rather than defects:**
+
+- **`now_reveal_item` derives Full Access, against plan 006's stated intent
+  that reveal is safe.** Not a bug and not a slip: the row publishes
+  `readOnlyHint: false` because it takes over the screen of whoever is sitting
+  there, and the tier derives from the published annotation rather than a
+  hand-maintained list — which is one of that plan's own stop conditions. The
+  real cause is that **two tiers cannot express reveal**: derive from
+  `readOnlyHint` and it is Full Access, derive from `destructiveHint` and so is
+  *upload*, which writes to somebody's disk. Reveal is the case that fell in
+  the gap when read / safe-write / full collapsed to two, and it is the
+  evidence for reinstating the middle tier when something has actually used the
+  first two.
+- **Silence still fails open.** Recorded in the schema as a decision, not a
+  property, with the installer's arrival named as the moment to revisit.
+
+**One known skew:** a host built before this change rejects an audit report
+carrying the new `denied` outcome. It costs one log line on a mixed install and
+never a failed call — deliberately cheaper than bumping the local protocol
+version, which would make such a host reject every request instead.
+
+## Debts the parity phase left behind (2026-07-31)
+
+Twelve capabilities landed across twenty-six projection rows. These are the
+things that arc noticed and did not stop to fix, collected here rather than
+left in twelve agents' reports.
+
+**Gates that were not what they claimed:**
+
+- **Two source-scanning gates were decorative and nobody knew.** The `hello`
+  seam gate and the `build` gate each searched raw source for identifiers that
+  their own explanatory comments also contained, so a mutation deleting the
+  real call left each gate reading its own prose and passing. The `build` gate
+  shipped that morning, mutation-proven at the time, and was hollow by lunch.
+  Both now share a comment-stripping reader. **Whether a third exists is being
+  audited**; the result belongs beside this entry.
+- **`MCPCoverageTests` catches an omission and not its inverse.** A capability
+  that fails to add a `familyPolicy` row is named loudly. One that adds a row
+  for a *command*, which needs none, passes in silence. Found by the machine-
+  facts row, which has a test whose docstring claims the asymmetry and
+  demonstrates it.
+- **The guest-identity guard fires on prose.** It scans `Projection/` for guest
+  names with comments included and has rejected **doc comments four times this
+  week**, once per agent, costing an amend each. It is right about the rule and
+  over-broad about the medium.
+
+**Timeouts classified wrong, twice:**
+
+The batched verb edit assigned each new operation a local receive window, and
+two were wrong in the same direction — a host bound shorter than the work it
+was waiting on. `guest_file_mutation` took the 2-second read-only window
+against a 20-second guest-side change watchdog, so a slow `PBCatMove` could
+time out locally on a call the machine then completed. `census` took the same
+2-second window although its `overview` probe synthesizes every other probe.
+Both were patched by whoever tripped over them. **The whole table deserves one
+pass**, because the third instance will present as a machine fault.
+
+**Unexercised:**
+
+Ten of the twelve capabilities have never crossed a real wire — only capture
+and addressing are metal-verified. The capability ledger reads `unproven` on
+every guest by construction for several families, because the listener records
+no observation for them. That is honest and it means the first real call is
+also the first evidence.
+
+**Still open by decision:**
+
+Streaming (`stream.start`/`.stop`/`.refresh`) is the last unnoticed gap and the
+one genuinely undecided item. The 68K half of download stays a planned gap
+until `HostProjection` can express a **disjunctive** requirement — `requires` is
+a conjunction today, so a row needing "`file.get` or the `put` verb" cannot say
+so.
+
+## The machine's vote is carried (2026-07-31)
 
 `hello` now has an optional `agent` field — `disabled`, `read-only`,
 `full`, or nothing — and the host decodes it, keeps it on the session
@@ -21,11 +119,11 @@ log line when the machine said something. That is section 2 of
 
 The three unfinished things, and they are unfinished on purpose:
 
-- **Nothing enforces it.** No caller consults the field. Enforcement
-  belongs at `HostProjectionDispatch`, on the same line as the audit
-  event, and is a separate slice — one place to refuse, per the plan's
-  stop conditions. Until it lands, a machine can send `disabled` and be
-  driven anyway.
+- ~~**Nothing enforces it.**~~ **Enforcement landed the same day** — see
+  "The agent surface can be seen, and refused" below. It went exactly
+  where this entry said it belonged: `HostProjectionDispatch`, on the
+  same line as the audit event. A machine sending `disabled` is now
+  refused.
 - **Absence fails OPEN**, which is a decision recorded in the schema and
   not a property of the field. It matches today's default-on behaviour
   and keeps every deployed machine working. The moment to revisit is when
