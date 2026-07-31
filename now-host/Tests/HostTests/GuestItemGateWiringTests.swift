@@ -341,6 +341,58 @@ final class GuestItemGateWiringTests: XCTestCase {
             for: DiagnosticState(diagnostic: vprobe)), reason)
     }
 
+    // MARK: - the controls actually spend the answer
+
+    /* A decision no control consumes is a decision that changes nothing, and
+       the model tests above cannot see the difference: they ask the gate
+       directly. So each pane is read for the two things that make the answer
+       reach a person — the call, and the `disabled` it feeds.
+
+       Read through `GateSource`, which strips comments, because the prose
+       beside each of these names the very symbols being looked for. Its
+       stated limit applies here too: this proves the text is present and
+       cannot prove the control is reachable. That is what the manual pass in
+       docs/metal-and-ux-review.md §4c is for. */
+
+    private func pane(_ file: String) throws -> String {
+        try GateSource.hostSwift("now-host/Sources/Host/\(file)")
+    }
+
+    func testTheSoftwarePageSpendsTheLaunchDecision() throws {
+        let view = try pane("SoftwareModuleView.swift")
+        XCTAssertTrue(view.contains("model.launchGate(entry)"))
+        XCTAssertTrue(view.contains("!launch.isEnabled"),
+                      "the Launch button no longer disables on the gate")
+        XCTAssertTrue(view.contains("model.launchUnavailableNote(entry)"),
+                      "a dark Launch button with nothing beside it reads as "
+                      + "a bug")
+    }
+
+    func testTheProcessesPageSpendsTheFrontDecision() throws {
+        let view = try pane("ProcessesModuleView.swift")
+        XCTAssertTrue(view.contains("model.bringToFrontGate($0)"))
+        XCTAssertTrue(view.contains("front?.isEnabled == false"),
+                      "Bring to Front no longer disables on the gate")
+        XCTAssertTrue(view.contains("model.bringToFrontNote("))
+        // The other two verbs are NOT gated on this axis: quitting a faceless
+        // process is a real thing to do, and screenshotting one is the guest's
+        // own refusal to make.
+        XCTAssertFalse(view.contains("askToQuitGate"))
+        XCTAssertFalse(view.contains("screenshotAppGate"))
+    }
+
+    func testTheDiagnosticsCardsSpendTheirDecisionAndKeepTheirButton() throws {
+        let view = try pane("DiagnosticsModuleView.swift")
+        XCTAssertTrue(view.contains("model.gate(for: state.diagnostic)"))
+        XCTAssertTrue(view.contains("!decision.isEnabled"))
+        XCTAssertTrue(view.contains("model.unavailableNote(for: state)"))
+        /* Present-and-dark, not absent. The button used to be replaced by an
+           `EmptyView()` on a verb the machine does not serve, which moved
+           every card below it as machines came and went. */
+        XCTAssertFalse(view.contains("EmptyView()"),
+                       "the Run button is missing again on some card")
+    }
+
     /// One machine's refusal must not darken another's card — the record is
     /// keyed per Mac, and a page reading it must pass the key it is showing.
     func testARefusedDiagnosticBelongsToTheMachineThatRefusedIt() {
