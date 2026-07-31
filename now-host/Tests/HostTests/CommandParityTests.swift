@@ -28,9 +28,59 @@ final class CommandParityTests: XCTestCase {
             .deletingLastPathComponent()
     }
 
+    /// A guest source **with its comments removed** — see `GateSource`.
+    ///
+    /// Not tidiness, and not free of history: on 2026-07-31 the
+    /// `proc_list_rows` check below was found to be satisfied entirely by
+    /// the comment above `show_processes`, whose text is "proc_list_rows()
+    /// is the one implementation." NOW-68K's console could be given a
+    /// second, divergent process walk — a change that builds, that the
+    /// native suite passes, and that the whole host suite passes — while
+    /// this file's own failure message, "two process walks that can
+    /// disagree", described exactly what had happened.
+    ///
+    /// Every identifier this file looks for is an identifier worth
+    /// explaining in a comment beside the code, so the prose reliably
+    /// names it. That is the third time this defect has been found here.
     private func source(_ path: String) throws -> String {
-        try String(contentsOf: Self.repoRoot.appendingPathComponent(path),
-                   encoding: .utf8)
+        try GateSource.guestC(path)
+    }
+
+    /// The contract, read as written: YAML's comments are not C's, and no
+    /// gate here scans it for an identifier.
+    private func contractText() throws -> String {
+        try GateSource.raw("contract/asyncapi.yaml")
+    }
+
+    /// The premise of the four message-family checks below: NOW-68K's wire
+    /// still serves the capability whose console face they are about.
+    ///
+    /// **This used to be `guard … else { return }`** — the test evaporated,
+    /// silently, and the run stayed green. Mutation on 2026-07-31: renaming
+    /// `strcmp(type, "process.list")` in wire68.c to anything else takes
+    /// away the capability this entire file was written for, builds clean,
+    /// passes the native suite, and passes all 913 host tests. The reasoning
+    /// behind the `return` was sound — a capability the wire has dropped has
+    /// no console face to check — but "the premise stopped holding" is news,
+    /// not a reason to say nothing.
+    ///
+    /// A guest that deliberately stops serving one of these answers here, by
+    /// deleting the check with the rest of the capability. That is the same
+    /// shape as `consoleOnly`: a divergence is legal, and quietly *becoming*
+    /// one is not.
+    private func wireStillServes(
+        _ evidence: String, in wire: String, _ capability: String,
+        file: StaticString = #filePath, line: UInt = #line) -> Bool {
+        if wire.contains(evidence) { return true }
+        XCTFail("""
+            NOW-68K's wire no longer serves \(capability): wire68.c does \
+            not name \(evidence). This test's premise was that it did, and \
+            everything it checks about the console face is now moot — so \
+            it is checking nothing, which is worth saying out loud. If the \
+            capability was dropped on purpose, delete this test with it; \
+            if it was renamed, follow it here.
+            """, file: file, line: line)
+        return false
     }
 
     /// Every `strcmp(name, "verb")` in a file — how both guests dispatch.
@@ -116,7 +166,15 @@ final class CommandParityTests: XCTestCase {
         // anti-drift property, and it is stronger than any list this test
         // could compare: a verb added to commands68.c reaches the console
         // the moment it exists, with nobody having to remember.
-        XCTAssertTrue(consoleText.contains("now68k_commands_run"), """
+        //
+        // The trailing `(` is load-bearing. `now68k_commands_run` alone is
+        // a PREFIX of `now68k_commands_run_rows`, which the same function
+        // calls twenty lines earlier for the table-shaped verbs — so the
+        // delegation this check exists for could be deleted outright and
+        // the row call kept the string alive. Found by mutation on
+        // 2026-07-31, on the one assertion the comment above calls "the
+        // whole anti-drift property".
+        XCTAssertTrue(consoleText.contains("now68k_commands_run("), """
             n68_exec.c no longer delegates to now68k_commands_run, so the \
             console and the wire now have separate command paths that can \
             disagree. That is the defect class this project has paid the \
@@ -207,9 +265,8 @@ final class CommandParityTests: XCTestCase {
         let wire = try source("now-guest-68k/src/core/wire68.c")
         let console = try source("now-guest-68k/src/commands/n68_exec.c")
 
-        guard wire.contains("\"process.list\"") else {
-            return   // if the guest ever stops serving it, this is moot
-        }
+        guard wireStillServes("\"process.list\"", in: wire,
+                              "process.list") else { return }
         XCTAssertTrue(console.contains("\"ps\""), """
             NOW-68K serves process.list on the wire, so the host can ask \
             what is running — but its console cannot. That is the exact \
@@ -233,9 +290,8 @@ final class CommandParityTests: XCTestCase {
         let wire = try source("now-guest-68k/src/core/wire68.c")
         let console = try source("now-guest-68k/src/commands/n68_exec.c")
 
-        guard wire.contains("\"file.offer\"") else {
-            return   // if the guest ever stops receiving files, this is moot
-        }
+        guard wireStillServes("\"file.offer\"", in: wire,
+                              "the file.* receive half") else { return }
         XCTAssertTrue(console.contains("\"xfer\""), """
             NOW-68K accepts a file.offer over the wire, so the host can \
             push a file to it — but its console cannot say whether one is \
@@ -273,9 +329,8 @@ final class CommandParityTests: XCTestCase {
         // first version of this test green.
         let table = dispatched(in: try source("now-guest-68k/src/commands/commands68.c"))
 
-        guard wire.contains("now68k_wire_send_file") else {
-            return   // if the guest ever stops sending files, this is moot
-        }
+        guard wireStillServes("now68k_wire_send_file", in: wire,
+                              "the file.* send half") else { return }
         XCTAssertTrue(console.contains("now68k_wire_send_status"), """
             NOW-68K can send a file, but its console cannot say whether \
             one is going out or what became of the last one. A person who \
@@ -310,9 +365,8 @@ final class CommandParityTests: XCTestCase {
         let console = try source("now-guest-68k/src/commands/n68_exec.c")
         let table = dispatched(in: try source("now-guest-68k/src/commands/commands68.c"))
 
-        guard wire.contains("\"file.list\"") else {
-            return   // if the guest ever stops serving it, this is moot
-        }
+        guard wireStillServes("\"file.list\"", in: wire,
+                              "file.list") else { return }
         XCTAssertTrue(table.contains("ls"), """
             NOW-68K serves file.list on the wire, so the host can see \
             what is on the machine — but `ls` is not in commands68.c's \
@@ -350,7 +404,7 @@ final class CommandParityTests: XCTestCase {
     /// contract's registry is the source of truth; a guest inventing one
     /// is how a host learns to ask for something no schema describes.
     func testNeitherGuestInventsCommandsTheContractDoesNotDeclare() throws {
-        let contract = try source("contract/asyncapi.yaml")
+        let contract = try contractText()
         let declared: Set<String> = {
             guard let start = contract.range(of: "\n  x-commands:") else {
                 return []
