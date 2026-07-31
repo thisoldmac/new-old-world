@@ -118,9 +118,17 @@ one thing no measurement replaces.
 
 # Part two — metal test
 
-## 7. The ten capabilities that have never crossed a wire
+## 7. The eleven capabilities that have never crossed a wire
 
-Capture and addressing are done. These are not:
+**Exactly one capability has met a Macintosh: capture.** Addressing is verified
+too, but addressing is a property of every call rather than a capability of its
+own. Everything else in the twelve is unrun — including the three diagnostics
+rows, which an earlier draft of this file left out of its own count.
+
+Note the axis, because two documents look like they disagree and do not: a
+**guest verb** being metal-verified is not its **host projection row** being
+metal-verified. `vprobe` has run on the 180c; `now_framebuffer_probe` has never
+crossed a wire. The verb is the machine's; the row is the surface's.
 
 | Capability | Watch for |
 |---|---|
@@ -134,6 +142,9 @@ Capture and addressing are done. These are not:
 | `now_guest_files_download` | 4 MiB ceiling refused *before* the wire, re-checked on arrival |
 | `now_guest_files_mutate` | the `PBCatMove` rename-first path on a real volume; a Trash that must be created; whether `trashedAs` comes back |
 | `now_transfer_cancel` | cancelling nothing must answer, not error |
+| `now_framebuffer_probe` | both guests. The verb is metal-verified; this row is not |
+| `now_capture_diagnostics` | 68K only — so the 180c, not the 1400c |
+| `now_transfer_diagnostics` | PPC only. Three rows rather than one because these three do not co-occur on any guest, which is the thing to confirm on metal: each machine offers exactly the ones it serves |
 
 **Two known hazards while doing this:**
 
