@@ -110,8 +110,8 @@ public struct HostProjectionConsentDenial: Equatable, Sendable {
         case .unrecognizedTier:
             return "\(capability) was not attempted: the Macintosh answered "
                 + "\"\(machineAnswer)\", a consent tier this host does not "
-                + "recognise, so this host cannot tell what it was granted. "
-                + "This is consent, not capability. It reads as a NEWER "
+                + "recognise, so this host has no reading of what it was "
+                + "granted. This is consent, not capability. It reads as a NEWER "
                 + "Macintosh than this host — update the host rather than "
                 + "the machine."
         }

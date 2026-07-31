@@ -144,6 +144,10 @@ final class HostProjectionRegistryTests: XCTestCase {
                 XCTAssertEqual(message, "\(name) accepts no arguments")
             case .value:
                 XCTFail("\(name) accepted an argument it does not take.")
+            case .deniedByConsent:
+                /* Unreachable by construction: the consent check runs in the
+                   dispatch, before `invoke`, so a row cannot produce this. */
+                XCTFail("\(name) produced a consent denial of its own.")
             }
             for raw in [nil, [String: Any]()] as [Any?] {
                 switch await projection.invoke(
@@ -153,6 +157,8 @@ final class HostProjectionRegistryTests: XCTestCase {
                 case .invalidArguments(let message):
                     XCTFail("\(name) refused \(String(describing: raw)): "
                         + message)
+                case .deniedByConsent:
+                    XCTFail("\(name) produced a consent denial of its own.")
                 }
             }
         }
