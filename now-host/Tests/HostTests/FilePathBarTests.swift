@@ -44,14 +44,18 @@ final class FilePathBarTests: XCTestCase {
     func testNothingSharedYetStillRendersARoot() {
         let crumbs = FilePathBar.crumbs(shareRoot: nil, breadcrumb: [])
         XCTAssertEqual(crumbs.count, 1)
-        XCTAssertTrue(crumbs[0].isPlaceholder,
-                      "absence is a fact to render, not a blank bar")
-        XCTAssertFalse(crumbs[0].isVolume,
+        // Subscripting a bar that regressed to empty would take the whole
+        // test process down with it, so this asks rather than indexes.
+        guard let root = crumbs.first else {
+            return XCTFail("absence is a fact to render, not a blank bar")
+        }
+        XCTAssertTrue(root.isPlaceholder)
+        XCTAssertFalse(root.isVolume,
                        "we were not told a disk name, so we invent none")
-        XCTAssertEqual(crumbs[0].depth, -1)
+        XCTAssertEqual(root.depth, -1)
         // An empty string is the same absence spelled differently.
-        XCTAssertTrue(FilePathBar.crumbs(shareRoot: "",
-                                         breadcrumb: [])[0].isPlaceholder)
+        XCTAssertEqual(FilePathBar.crumbs(shareRoot: "", breadcrumb: [])
+                        .first?.isPlaceholder, true)
     }
 
     // MARK: - Depths are what a click will actually do
@@ -83,12 +87,24 @@ final class FilePathBarTests: XCTestCase {
         // file system.
         let awkward = ["Read/Me", "..", ".", "Système", "My Documents",
                        String(repeating: "N", count: 31)]
-        let crumbs = FilePathBar.crumbs(shareRoot: "Macintosh HD:",
+        // The share root is the half that arrives as TEXT from the other
+        // machine and has to be split here, so the awkward names belong
+        // on that side of the seam as well as in the breadcrumb, which
+        // arrives already in pieces.
+        let root = "Macintosh HD:Read/Me:..:Système:"
+        let crumbs = FilePathBar.crumbs(shareRoot: root,
                                         breadcrumb: awkward)
-        XCTAssertEqual(Array(crumbs.dropFirst()).map(\.name), awkward)
+        XCTAssertEqual(Array(crumbs.prefix(4)).map(\.name),
+                       ["Macintosh HD", "Read/Me", "..", "Système"],
+                       "a slash is an ordinary character in an HFS name, "
+                       + "and dot-dot is a folder rather than an ascent")
+        XCTAssertEqual(Array(crumbs.dropFirst(4)).map(\.name), awkward)
         XCTAssertEqual(crumbs.last?.name.count, 31,
                        "31 characters is what HFS can name, and the bar "
                        + "shows all of them")
+        XCTAssertEqual(FilePathBar.fullPath(shareRoot: root,
+                                            breadcrumb: ["Read/Me"]),
+                       "Macintosh HD:Read/Me:..:Système:Read/Me")
     }
 
     func testTheFullPathIsSpelledTheWayThatMachineSpellsIt() {
