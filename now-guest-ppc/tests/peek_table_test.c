@@ -48,6 +48,21 @@ int main(void)
     t.magic = (NowPeekU32)kNowPeekTableMagic;
     t.ext_major = kNowPeekExtMajor;
 
+    /* V2 appended stack_base. The seqlock's stamp must NOT have moved:
+       a V1 reader looks for it at 20, and a silent shift there pairs a
+       fresh stamp with fields it does not cover.
+
+       The static asserts in the header catch this at compile time in all
+       three toolchains, which is the stronger gate. These are here for
+       the case the asserts are ever relaxed - watched failing with them
+       removed, and they named both halves. */
+    check(offsetof(NowPeekAnchorSlot, stamp_ticks) == 20,
+          "V2 left the seqlock stamp where V1 reads it");
+    check(offsetof(NowPeekAnchorSlot, stack_base) == 24,
+          "stack_base was appended, not inserted");
+    check(kNowPeekAnchorFormatV2 > kNowPeekAnchorFormatV1,
+          "anchor formats are ordered, so >= is a valid gate");
+
     /* A core-only M0 table: prelude published, no anchor plane. */
     t.length = offsetof(NowPeekTable, anchors);
     t.anchor_format = kNowPeekAnchorFormatNone;

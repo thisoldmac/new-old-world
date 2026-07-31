@@ -113,6 +113,14 @@ static void capture_anchor(void)
     slot->a5 = a5;
     slot->window_list = (NowPeekU32)LMGetWindowList();
     slot->menu_list = (NowPeekU32)LMGetMenuList();
+    /* V2. Sits AFTER the stamp in the struct and BEFORE it in the write,
+       which is the whole point: the stamp is this seqlock's commit, so
+       anything written after it can be read paired with a stamp that does
+       not cover it. Bounds an A5 world from the other end - the heap
+       grows up from a5, the stack down from here - which is what lets a
+       reader tell an address genuinely inside this process from one that
+       merely looks like it. */
+    slot->stack_base = (NowPeekU32)LMGetCurStackBase();
     slot->psn_high = 0;               /* the extension never fills PSN; */
     slot->psn_low = 0;                /* the app correlates A5 to PSN */
     slot->stamp_ticks = (NowPeekU32)LMGetTicks();   /* commit last */
@@ -189,7 +197,7 @@ void _start(void)
     table->heartbeat = table->boot_ticks;
     table->arm_request = 0;
     table->arm_active = 0;
-    table->anchor_format = kNowPeekAnchorFormatV1;
+    table->anchor_format = kNowPeekAnchorFormatV2;
     table->anchor_count = 0;
     /* Magic last: a reader that somehow sees the address early finds it
        only once the table is fully formed. */

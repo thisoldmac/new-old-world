@@ -79,4 +79,16 @@ if [ "$which" = both ] || [ "$which" = 68k ]; then
         "${NOW68K_TOOLCHAIN:-}" m68k
 fi
 
+# The extension, and it was missing from this script entirely until
+# 2026-07-31 - so the one piece of code here that runs at BOOT, in every
+# process's context, and whose failure needs a shift-boot to recover was
+# the one piece no gate ever compiled. It is 68K even on a PowerPC
+# machine, because an INIT is; that is a property of classic Mac OS
+# rather than a choice, so it builds with the 68K toolchain beside the
+# 68K guest.
+if [ "$which" = both ] || [ "$which" = 68k ]; then
+    build_guest "ext (NOW Extension, 68K INIT)" ext \
+        "${NOW68K_TOOLCHAIN:-}" ext
+fi
+
 exit $rc
