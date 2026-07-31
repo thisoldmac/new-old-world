@@ -75,6 +75,22 @@ public struct HostProjectionAuditEvent: Codable, Equatable, Sendable {
         /// The projection refused the caller's arguments. Nothing was asked
         /// of the host, and nothing reached the machine.
         case refused
+        /// **The machine's own ceiling refused it.** Its own outcome and not
+        /// a shade of `refused`, for the same reason the typed denial is not
+        /// an `unavailable`: to the person at the machine these are two
+        /// different events, and only one of them says somebody tried to do
+        /// something their machine had already said no to. That is the line
+        /// they most want to be able to find.
+        ///
+        /// It extends the value space of an existing v8 field rather than
+        /// changing the shape, so the local protocol version does NOT move.
+        /// The skew it leaves, stated rather than discovered: a host built
+        /// before this case rejects an audit report carrying it, which costs
+        /// one log line on a mixed install and never a call — the reporting
+        /// path is already best-effort. Bumping to v9 instead would make
+        /// that host reject EVERY request from this companion, which is a
+        /// far worse trade for one enum value.
+        case denied
     }
 
     /// The bound on the refusal sentence. A row's refusal text is a written
@@ -118,6 +134,12 @@ public struct HostProjectionAuditEvent: Codable, Equatable, Sendable {
         case .invalidArguments(let message):
             self.init(capability: capability, face: face, guest: guest,
                       outcome: .refused, reason: message)
+        case .deniedByConsent(let denial):
+            /* The SHORT sentence, not the one written for the agent: this
+               line is read by the person standing at the Macintosh, who does
+               not need to be told what their own machine answered at length. */
+            self.init(capability: capability, face: face, guest: guest,
+                      outcome: .denied, reason: denial.reason)
         }
     }
 
@@ -140,7 +162,7 @@ public struct HostProjectionAuditEvent: Codable, Equatable, Sendable {
     }
 
     public var level: HostProjectionAuditLevel {
-        outcome == .refused ? .warn : .info
+        outcome == .answered ? .info : .warn
     }
 
     /// Control bytes are legal in an HFS name and reach this side inside

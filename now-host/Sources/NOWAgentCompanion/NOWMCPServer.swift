@@ -209,6 +209,16 @@ actor NOWMCPServer {
             return toolResponse(id: id, value: value)
         case .invalidArguments(let message):
             return errorResponse(id: id, code: -32602, message: message)
+        case .deniedByConsent(let denial):
+            /* Its own code and its own `data`, so a caller tells "the owner
+               said no" from "the machine cannot" without reading either
+               sentence: incapacity comes back as a successful RESULT whose
+               payload says `unavailable`, and this is an ERROR. Not -32602 —
+               the caller's arguments were fine. */
+            return errorResponse(id: id,
+                                 code: HostProjectionConsentDenial.jsonRPCCode,
+                                 message: denial.message,
+                                 data: denial.errorData)
         case nil:
             // No row claims the name. The guard above says the same thing
             // first; this is the dispatch's own answer, not a second policy.
@@ -279,12 +289,19 @@ actor NOWMCPServer {
         ])
     }
 
-    private func errorResponse(id: Any, code: Int,
-                               message: String) -> Data {
-        jsonData([
+    /// `data` is optional and carries machine-readable fields beside the
+    /// sentence, for the one error class a caller is expected to BRANCH on
+    /// rather than surface: a consent denial.
+    private func errorResponse(id: Any, code: Int, message: String,
+                               data: [String: Any]? = nil) -> Data {
+        var error: [String: Any] = ["code": code, "message": message]
+        if let data {
+            error["data"] = data
+        }
+        return jsonData([
             "jsonrpc": "2.0",
             "id": id,
-            "error": ["code": code, "message": message],
+            "error": error,
         ])
     }
 

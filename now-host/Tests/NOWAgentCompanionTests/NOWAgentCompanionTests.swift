@@ -535,6 +535,46 @@ final class NOWAgentCompanionTests: XCTestCase {
         XCTAssertEqual(error["code"] as? Int, -32602)
     }
 
+    /// **A consent denial does not wear the invalid-params code.**
+    ///
+    /// An agent that reads -32602 retries with different arguments, and
+    /// these arguments were fine. So the denial arrives under its own code
+    /// with typed `data`, which is how a caller tells "the owner said no"
+    /// from "the machine cannot" without reading either sentence —
+    /// incapacity comes back as a successful RESULT whose payload says
+    /// `unavailable`, never as an error.
+    ///
+    /// Verified by mutation: rendering it as -32602 with no `data` fails
+    /// here on both assertions.
+    func testAConsentDenialIsItsOwnErrorWithTypedData() async throws {
+        var client = StubAgentIntegrationClient()
+        client.healthResult = .available(.init(
+            state: .connected,
+            observedAt: Date(timeIntervalSince1970: 0),
+            listeningPort: 1400, sessionID: nil,
+            guest: .init(name: "pb1400c", version: "0.1.0",
+                         agentAccess: .disabled,
+                         operatingSystem: "Mac OS 9.1", connectedAt: nil,
+                         lastTraffic: nil, quietFor: nil,
+                         pingsAnswered: nil, framesReceived: nil),
+            failure: nil))
+        let server = try await initializedServer(client: client)
+
+        let response = try Self.object(await server.handle(try Self.request(
+            id: 2,
+            method: "tools/call",
+            params: ["name": "now_list_processes", "arguments": [:]])))
+        let error = try XCTUnwrap(response["error"] as? [String: Any])
+
+        XCTAssertEqual(error["code"] as? Int,
+                       HostProjectionConsentDenial.jsonRPCCode)
+        let data = try XCTUnwrap(error["data"] as? [String: Any])
+        XCTAssertEqual(data["kind"] as? String, "consent")
+        XCTAssertEqual(data["reason"] as? String, "machine-declines")
+        XCTAssertEqual(data["machineAnswer"] as? String, "disabled")
+        XCTAssertEqual(data["requiredTier"] as? String, "read-only")
+    }
+
     func testLaunchRequiresExactlyOneBoundedOpaqueSelection()
         async throws {
         let server = try await initializedServer(

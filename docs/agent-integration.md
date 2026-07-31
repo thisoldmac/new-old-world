@@ -135,7 +135,7 @@ to; the next capability's author gets the behaviour by adding a row.
 | which capability, by the one name the registry keys on | the arguments — no path, receipt, reference, chunk or name |
 | which face asked (`mcp` today) | anything about the caller beyond its face |
 | which machine it concerned — the selector as given, or the driven machine's id, resolved by the host | the guest's address, which is not on this surface at all |
-| the outcome: `answered`, or `refused` with the projection's own sentence | which flavour of unavailable an answered result reported; that lives in the result |
+| the outcome: `answered`, `refused` with the projection's own sentence, or `denied` when the machine's own ceiling turned the call away | which flavour of unavailable an answered result reported; that lives in the result |
 
 **A refused invocation emits.** An attempt that was denied is the more
 interesting event of the two, and it is the one class of outcome the host
@@ -177,6 +177,75 @@ Two tests hold it, and both were verified by mutation:
 dispatch calls a projection's `invoke`, and
 `NOWAgentAuditTests.testAToolCallReportsItselfToTheHost` drives the real MCP
 entry point and reads what arrived at the host end of the socket.
+
+## The machine's own ceiling
+
+**Consent is the guest's; enforcement is the host's.** A guest states how far
+a companion may drive it in one optional `hello.agent` field, and the host
+refuses above that line — so the guest never has to tell agent traffic from
+app traffic, and a person clicking a button in the app is untouched by any of
+this.
+
+The check is in `HostProjectionDispatch`, on the same line as the audit event:
+the thing that records what happened is the thing that decides whether it may.
+One check covers every registered row, and there is no per-row opt-in to
+forget.
+
+| `hello.agent` | What the host does |
+| --- | --- |
+| `disabled` | refuses everything |
+| `read-only` | runs the read-only rows, refuses the rest |
+| `full` | runs everything |
+| absent | **runs everything** — a recorded decision, not a property |
+| anything else | refuses everything |
+
+**Absence fails open** because a guest older than the field and an installer
+that omitted the feature look identical on the wire, and today every machine
+in the field is the former. That flips when the installer lands, and the line
+that flips it is in `HostProjectionDispatch.consentDenial`.
+
+**An unrecognised token refuses.** Unlike silence the machine *did* answer: it
+named a limit this build cannot evaluate, and a receiver that cannot name the
+ceiling cannot claim to be under it. The alternative would make an older host
+the way around a newer machine's narrower tier.
+
+**The tier is derived, never declared.** A row needs Read Only if its
+published MCP annotations say `readOnlyHint: true`, and Full Access otherwise
+— no fourth per-row field, because this arc has already collapsed four
+hand-maintained capability lists and a fifth would be the same mistake.
+`destructiveHint` moves nothing (with two tiers it cannot) and is used to
+CONTRADICT: a row claiming to be read-only and destructive at once fails the
+gate. `HostProjectionConsentTests` holds both halves, over the registry rather
+than a list, so row twenty-seven is covered the day it lands.
+
+Two consequences worth knowing before reading the tiers off a row:
+
+- **`now_reveal_item` is Full Access**, not Read Only as
+  [plan 006](plans/2026-07-30-006-feat-now-mcp-module-and-guest-consent-plan.md)
+  expected. Its own row declares `readOnlyHint: false` and argues why — it
+  takes over the screen of whoever is sitting at the machine. Moving it would
+  mean either publishing an annotation an agent reads and that is not true, or
+  adding the field the plan forbids.
+- **The upload trio is Full Access**, because putting a file on somebody's
+  machine is not reading it, whatever `destructiveHint` says.
+
+**A refusal by consent is not an unavailability, and does not borrow its
+words.** This surface is already fluent in *"this guest cannot"* —
+`unavailable`, `unproven`, the family ledger, `not-implemented` — and a
+consent refusal routed through any of them reaches an agent as a broken
+capability. So it is a typed outcome (`HostProjectionOutcome
+.deniedByConsent`) with its own vocabulary, and a caller tells the two apart
+by shape rather than by prose:
+
+| | incapacity | consent |
+| --- | --- | --- |
+| MCP shape | a RESULT, `isError: false`, whose payload says `unavailable` | a JSON-RPC ERROR, code `-32010` |
+| how to branch | the row's own output schema | `error.data.kind == "consent"`, plus `reason`, `requiredTier` and `machineAnswer` |
+| audit line | `answered` | `denied`, at `warn` |
+
+A denied call still emits — it is the more interesting event to the person at
+the machine, and the only outcome class the host would otherwise never see,
+because nothing is sent when consent is missing.
 
 ## Implemented slices
 
