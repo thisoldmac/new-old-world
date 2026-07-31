@@ -176,7 +176,7 @@ static void draw_card(int index)
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
     /* The verb, quietly, after the name: it is what a person types in the
        Console and what the other Mac's page calls the same measurement. */
-    DrawString("\p  ");
+    DrawString((ConstStr255Param)"\p  ");
     CopyCStringToPascal(diag_probe_verb((DiagProbe)index), pas);
     DrawString(pas);
 
