@@ -364,6 +364,45 @@ NOW's guest app gains what Mirror's guest agent does: map an AXPeek sample to
 the live Process Manager partition, walk **only** validated regions, serve the
 scene. The largest piece, and it depends on M1 and M4.
 
+**Scoped 2026-07-31 by finding out what the guest can honestly walk today.** The
+obvious first rung looked like the menu walk — `now_peek_menu_titles` is a
+declared stub, the anchor already captures `menu_list`, and IR v1 wants
+`menus[]`. It is blocked, for a reason worth writing down.
+
+**The menu-list layout is not citable from anything we have.** `MenuInfo` is:
+Universal Interfaces 3.4 `Menus.h` gives `menuID` / `menuWidth` / `menuHeight` /
+`menuProc` / `enableFlags` / `menuData`, putting the title at **offset 14** —
+which is independently asserted upstream
+(`mirror`, `guest/app/src/mirrorverbs.c`, `_Static_assert(offsetof(MenuInfo,
+menuData) == 14)`). But the structure `LMGetMenuList()` actually returns — the
+header with the entry array of `MenuHandle` + left edge — appears in **no header
+in this toolchain**: not the universal `Menus.h`, not the multiversal one, not
+`LowMem.h`. It is an internal structure documented in Inside Macintosh and
+nowhere we can cite.
+
+That matters because of the rule, not the inconvenience: *every magic number
+cites a document, a measurement, or an artifact — or is explicitly marked a
+guess awaiting evidence, and a named TODO beats a plausible fill.* Writing an
+entry stride from memory would be a phantom constant in code that dereferences
+**another process's heap**, which is the worst possible place for one. Answering
+from recollection is also the specific habit this project has ruled out.
+
+So the menu walk waits on one of: the Inside Macintosh page, a `MenuBarHeader`
+in some other interfaces set, or a measurement off a live machine.
+
+**The rung that is not blocked** is the scene envelope itself, and it is the
+better first piece anyway. NOW can already validly walk processes and windows —
+`now_peek_windows_for_psn` returns bounds and titles through the validation
+layer, and `processes_module` enumerates the Process Manager. Against IR v1 that
+covers `version` / `seq` / `capturedAt` / `source`, `screen.{w,h}`,
+`processes[].{psn,name,front}`, `windows[].{id,app,psn,title,rect,front,z,visible}`
+and `meta`. The deeper walks — `menus[]`, `controls[]`, `text`, `display[]` —
+are **absent keys, not empty ones**, which is this repo's own rule for an
+unknown and happens to be exactly what IR v1's additive discipline expects a
+partial producer to do.
+
+That ordering also front-loads the part M6 needs: a scene shape to project.
+
 ### M6 — the host module and its projections
 
 `MirrorKit` (headless core) and `MirrorKitUI` (Platinum renderer) become a NOW
