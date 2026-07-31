@@ -19,6 +19,10 @@ public enum ListProcessesProjection: HostProjection {
 
     /* The Processes page IS this listing: its Refresh button asks for
        process.list and the table renders the rows. */
+    /* Takes no arguments at all, so the strict answer is the empty set
+       rather than an absence of one. */
+    public static let acceptedArguments: Set<String> = []
+
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "ProcessesModuleView.swift",
                          symbol: "model.refresh()"),

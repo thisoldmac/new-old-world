@@ -22,6 +22,8 @@ public enum GuestFilesUploadCommitProjection: HostProjection {
        private stage). This is the row that makes the begin/append pair's
        app-UI divergence honest: the CAPABILITY, creating a file on the
        guest, is reachable from the app. */
+    public static let acceptedArguments: Set<String> = ["uploadID"]
+
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "FilesModuleView.swift",
                          symbol: "model.send(url)"),
@@ -56,7 +58,7 @@ public enum GuestFilesUploadCommitProjection: HostProjection {
         through client: AgentIntegrationClient
     ) async -> HostProjectionOutcome {
         guard let arguments = arguments.object,
-              Set(arguments.keys) == ["uploadID"],
+              Set(arguments.keys) == acceptedArguments,
               let rawID = arguments["uploadID"] as? String,
               let uploadID = UUID(uuidString: rawID) else {
             return .invalidArguments(

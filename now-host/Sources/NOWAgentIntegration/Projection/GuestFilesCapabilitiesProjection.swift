@@ -16,6 +16,10 @@ public enum GuestFilesCapabilitiesProjection: HostProjection {
        covered through `now_guest_files_list`. */
     public static let exposes: [String] = []
 
+    /* Takes no arguments at all, so the strict answer is the empty set
+       rather than an absence of one. */
+    public static let acceptedArguments: Set<String> = []
+
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .notReached(because:
             "What it reports is the agent-facing guestRoot policy — that "

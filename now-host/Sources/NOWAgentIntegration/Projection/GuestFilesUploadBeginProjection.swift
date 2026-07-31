@@ -16,6 +16,14 @@ public enum GuestFilesUploadBeginProjection: HostProjection {
        reaches no machine. */
     public static let exposes: [String] = []
 
+    /* Three of the seven are optional, which is the shape a dropped key hides
+       in: a misspelled `fileType` leaves a file typed as whatever the guest
+       defaults to rather than refusing. */
+    public static let acceptedArguments: Set<String> = [
+        "destinationPath", "bytes", "sha256", "container",
+        "fileType", "creator", "modified",
+    ]
+
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .notReached(because:
             "Staging exists because an MCP caller has BYTES and no path the "
@@ -89,11 +97,7 @@ public enum GuestFilesUploadBeginProjection: HostProjection {
     private static func declaration(
         _ arguments: [String: Any]
     ) -> AgentIntegrationGuestFileUploadBegin? {
-        let allowed = Set([
-            "destinationPath", "bytes", "sha256", "container",
-            "fileType", "creator", "modified",
-        ])
-        guard Set(arguments.keys).isSubset(of: allowed),
+        guard Set(arguments.keys).isSubset(of: acceptedArguments),
               let destination = arguments["destinationPath"] as? String,
               !destination.isEmpty,
               AgentIntegrationGuestFilePolicy.isBoundedPath(destination),

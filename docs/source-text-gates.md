@@ -163,6 +163,47 @@ mutation is evidence.
 - **Swapping a census probe's gather without also swapping its name.** Caught —
   but by `-Werror=unused-function`, not by any test (predecessor).
 
+## A gate added after this audit, which deliberately reads no source text
+
+2026-07-31, `HostProjectionArgumentStrictnessTests`, on branch
+`fork/param-strict`. Recorded here because the obvious way to build it was as
+a member of this family, and it is not one — the reasoning is the useful part.
+
+The property it gates: every host projection's `acceptedArguments` — the key
+namespace the dispatch now enforces — equals the `properties` of the
+`inputSchema` that row publishes. The declaration exists so a caller who
+writes `destinationPath` where the row's name is `toPath` gets a refusal
+naming both spellings instead of a guess; the gate exists because a
+hand-written accepted set that has drifted from the published schema is the
+same fail-open surface with better manners.
+
+The source-text version of that check is easy to picture and would have been
+wrong twice over. It would have had to find each row's schema literal by
+regex, which puts it squarely under this file's standing limits — a key
+spelled in a comment counts, a key composed rather than quoted does not
+appear, and seven rows state parts of their schema through shared fragments
+(`GuestFilesSchema.path`, `HostProjectionSchema.emptyInput`) that no scan can
+resolve. `HostProjectionConsentTests` had already met exactly this and says
+so: it reads the **rendered descriptor** rather than the source, because rows
+declaring their annotations through a shared fragment "look silent to a
+`grep`".
+
+So the gate calls `mcpDescriptor` and compares dictionaries. `Set` equality is
+not a proxy for the property; it *is* the property, and it holds for a
+fragment-composed schema as readily as a literal one.
+
+**The general rule this suggests, for the next gate in this repository:** scan
+source text only when the thing being asserted has no run-time representation.
+Reach, dispatch sites and hot paths have none — a call site is not an object
+you can ask a question of, which is why those gates read text and why they
+carry the limits above. A schema, an annotation, or a declared set *is* an
+object at run time, and reading it costs nothing and inherits none of them.
+
+Mutation-checked, all three built and ran: deleting the shared gate turned 3
+test cases red (25 assertions); dropping the envelope exemption turned 1 red;
+misspelling one row's declaration turned 3 red, including that row's own
+pre-existing behaviour test. Full counts in the commit message.
+
 ## On the question of whether stripping comments weakens the identity guard
 
 Asked deliberately, and answered: **no.**

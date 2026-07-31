@@ -222,6 +222,8 @@ public enum SoftwareInventoryProjection: HostProjection {
        rather than an affordance added to satisfy a gate. The footer already
        shows the guest's `note` verbatim, so the 48-item and root-only bounds
        reach the person at the machine by the same route they reach an agent. */
+    public static let acceptedArguments: Set<String> = ["domain", "cursor"]
+
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "SoftwareModuleView.swift",
                          symbol: "model.refresh()"),
@@ -393,7 +395,7 @@ public enum SoftwareInventoryProjection: HostProjection {
         through client: AgentIntegrationClient
     ) async -> HostProjectionOutcome {
         guard let arguments = arguments.object,
-              Set(arguments.keys).isSubset(of: ["domain", "cursor"]),
+              Set(arguments.keys).isSubset(of: acceptedArguments),
               let raw = arguments["domain"] as? String,
               let domain = AgentIntegrationSoftwareDomain(rawValue: raw)
         else {

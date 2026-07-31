@@ -65,6 +65,10 @@ public enum TransferCancelProjection: HostProjection {
        row: `FilesModel.cancelTransfer()` reaches the same
        `GuestListener.cancelFile()`, which is why rule 3 costs this
        capability nothing on the initiable half. */
+    /* Takes no arguments at all, so the strict answer is the empty set
+       rather than an absence of one. */
+    public static let acceptedArguments: Set<String> = []
+
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
         .appUI: .reached(file: "FilesModuleView.swift",
                          symbol: "model.cancelTransfer()"),
