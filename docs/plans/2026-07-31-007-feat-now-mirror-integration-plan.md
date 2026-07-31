@@ -482,14 +482,43 @@ Two things NOW fixed this week that Mirror still has:
 - **`portal` gets folded while still in flight.**
 - **The scene IR is designed against upstream's moving copy** rather than
   against a version it has declared.
-- **A Mirror mechanism is copied rather than fitted.** The instruction is
-  Mirror-shaped families in NOW's conventions; a transliteration passes review
-  and rots at the first divergence.
+- **A Mirror *protocol* is transliterated rather than fitted.** The instruction
+  is Mirror-shaped families in NOW's conventions; a transliterated wire passes
+  review and rots at the first divergence.
+
+  **Narrowed 2026-07-31, and the earlier wording was wrong.** This said "a Mirror
+  *mechanism*", and it was applied to the guest's walk — which sent M5 off to
+  reimplement, from scratch and without hardware, ~8500 lines of foreign-memory
+  archaeology that already exists in the same language, on the same Retro68 PPC
+  toolchain family, **metal-proven**. The cost showed up immediately: the menu
+  walk was declared blocked because `LMGetMenuList()`'s structure is in no header
+  in this toolchain, while `mirror/guest/app/src/axmenu.c` has carried the layout
+  all along (`AX_MENU_LIST_HEADER 6`, `AX_MENU_LIST_ENTRY 6`,
+  `AX_MENU_INFO_HEADER 14` — and that last one was independently verified here
+  against Universal Interfaces 3.4 before Mirror was consulted, which is what
+  makes the other two credible rather than assumed).
+
+  The two things the original wording conflated:
+
+  | | Rule |
+  |---|---|
+  | **The wire** | ours. NOW's conventions, NOW's families. A transliterated protocol is the defect this stop condition exists to prevent. |
+  | **The archaeology** | **port it.** Struct offsets, walk order, validation boundaries — this is expensive knowledge paid for once on real hardware, and re-deriving it without a machine is not rigour, it is waste. |
+
+  Michelle's framing, 2026-07-31, which settles it: *"the entire mirror repo was
+  a test bed for something destined for NOW anyway."* Mirror is not a third-party
+  source to be held at arm's length; it is this project's own prototype, and the
+  provenance charter's line — facts cross, expression does not — was written for
+  reverse-engineered *foreign* binaries, not for our own proving ground.
 
 ## Open questions
 
-- Does the guest app's walk live in NOW's guest, or does NOW's guest gain a
-  Mirror *module*? The guest already has modules; this may be one.
+- ~~Does the guest app's walk live in NOW's guest, or does NOW's guest gain a
+  Mirror *module*?~~ **Answered 2026-07-31: a module, ported rather than
+  rewritten.** `axwalk` / `axmenu` / `axtext` / `axref` / `axresolve` /
+  `axoracle` come across as a guest module under NOW's own validation layer,
+  keeping their measured offsets and walk order; NOW writes its own wire on top.
+  See the narrowed stop condition above for why the earlier answer was wrong.
 - Does the Mirror module's agent surface reuse the twenty-six-row projection
   registry, or does a scene need something the row model cannot express? The
   act verbs look like ordinary rows; the scene stream does not.
