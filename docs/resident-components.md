@@ -184,8 +184,21 @@ gets at least one deliberate boot before "verified" is claimed.
   alone).
 - **P3 — content**: QuickDraw bottleneck hooks, the full Timbuktu
   move. The riskiest class we would ever ship; dark until the mirror
-  needs interiors better than pixel fill, armed per-port, separate
-  failure domain in everything but the file.
+  needs interiors better than pixel fill, **armed per-target and
+  per-port within it**, separate failure domain in everything but the
+  file.
+
+  *Amended 2026-07-31.* This said "armed per-port", which is necessary
+  and not sufficient — it bounds how much gets instrumented and says
+  nothing about **whose**. A sibling project measured the same shape in
+  its actuator: disarming after one use meant the patch fired once and
+  fired on **whichever call arrived first**, so an armed request rode the
+  user's own press 18/20, while the variant that required the request to
+  name its exact target hijacked 0/20. The general rule, and it is the
+  one to carry into any future plane: **a bound on count or duration is
+  not a bound on scope.** The spike
+  ([prototypes/qdprobe](../prototypes/qdprobe/README.md)) now names its
+  target and refuses an unscoped request rather than reading it as "all".
 
 ## Charter amendment
 
