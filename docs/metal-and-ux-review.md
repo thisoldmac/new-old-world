@@ -70,14 +70,17 @@ Everything else below is unexercised.
 
 These need eyes. None of them has been looked at by a person.
 
-## 1. The Agent module's resting state
+## 1. The MCP module's resting state
+
+*(Renamed 2026-07-31: the **Agent** pane is now **MCP**, and it also owns the
+server's Start/Stop. Everything below still applies to its presence half.)*
 
 **The single most important thing in this document.** On most machines, for most
 of their lives, no companion has ever attached — so this is the sentence the
 pane spends its existence saying, and it is the state most likely to read as
 *broken* rather than as *idle*.
 
-Open **Agent** in the sidebar on a host that has never run a companion. It
+Open **MCP** in the sidebar on a host that has never run a companion. It
 should say `No agent has attached`, explain that nothing is driving this Mac but
 you, say there is nothing to switch on, and describe what *would* appear here.
 It should show **no counters at all** — deliberately, because "0 companions,
@@ -88,6 +91,33 @@ Judge: does it read as *nothing has happened yet*, or as *something is wrong*?
 Then, if a companion has ever run: does presence decay honestly from active to
 idle **while you watch and do nothing**? It re-derives on a 5-second tick
 because that transition has no event behind it.
+
+## 1a. The MCP server card — nobody has pressed either button
+
+New on 2026-07-31 and **tested but never eyeballed**: the MCP pane's first card
+is the server itself — a running dot, one line (`Running` / `Stopped` /
+`Not started` / `Did not start`), one button (**Start** or **Stop**, never
+both), and the socket path with its Copy button beside them.
+
+What only a person can settle:
+
+- **Stop, with a client connected.** There is deliberately no confirmation
+  sheet: stopping is one click to undo and its consequence is the safe
+  direction. Judge whether that is right *while a companion is mid-session* —
+  if the answer is "that needed a warning", say so.
+- **Start after a stop.** The path should come back the same, and a client
+  should reconnect without the app being relaunched. Not verified: only the
+  model transition is under test, not the socket actually reopening.
+- **`Stopped` vs `Not started` vs `Did not start`** should read as three
+  different situations, not three spellings of "off". The person reading them
+  is usually the one whose client just failed to connect.
+- Does the card belong at the **top** of the pane? It is the control; the rest
+  is history. The alternative — history first, control last, where the endpoint
+  card used to be — was rejected without a person looking at either.
+
+Also worth one glance: a saved selection of the old `agent` id forwards to this
+pane, so **a person who was last on the Agent page should land here on the next
+launch**, not on Screenshots.
 
 ## 2. The guest's icon on a real Finder
 
@@ -119,6 +149,30 @@ only, `putstat` PPC only. Judge what a card says when the connected machine does
 **not** serve that probe: it must not imply the machine is broken, and it must
 not present a button that silently does nothing.
 
+### 4a. `putstat` on a Mac that has received nothing (new 2026-07-31)
+
+The Transfer Diagnostics card used to answer eleven rows of `0` on a Mac that
+had received no file — the same visual shape §1 calls the worst defect this
+product has. It now says so in words and shows only the three live counters
+(`Rcv backlog`, `Rcv peak`, `Loop passes`), which are the evidence the probe
+answered.
+
+Eyeball, on a freshly launched guest, in this order:
+
+1. **Run it before sending anything.** Does it read as *nothing has arrived
+   yet* rather than *the probe failed*? The live counters are still on screen —
+   do they help, or do three lone numbers under a sentence look like debris?
+2. **Send a file, then run it again.** All eleven rows should come back as one
+   table, in the guest's order, with nothing hidden.
+3. The split is by label (`now-guest-ppc/src/commands/commands.c ::
+   run_putstat`). If a guest build renames a row, an unrecognised label counts
+   as a transfer counter — so a renamed live counter would show up as a card
+   that never reaches the never-run state. Worth noticing if the wording ever
+   looks wrong after a guest change.
+
+Not settled by any test: whether the sentence is the *right* sentence, and
+whether "Live on the connection right now" earns its caption.
+
 ## 5. The Files page's new verbs
 
 Move, trash, restore, mkdir, and download. The confirmation sheet and the
@@ -144,7 +198,7 @@ with `intention: start` while you watch.
   end an agent's stream as a side effect of being pressed. Judge whether one
   click is enough, or whether being unable to just take a screenshot is
   annoying enough to want the other design.
-- The **Agent** page should carry the same fact as a standing state — an
+- The **MCP** page should carry the same fact as a standing state — an
   orange card naming the held lane — for someone who came to that page to ask
   what an agent is doing. Judge whether the two sentences say the same thing
   in the two places without contradicting each other.
@@ -241,7 +295,7 @@ ceiling you need a build that answers otherwise.
 - Silence → everything allowed (a recorded decision, revisited when the
   installer lands).
 
-Confirm a refusal **emits an audit event** and appears in the Agent module.
+Confirm a refusal **emits an audit event** and appears in the MCP module.
 
 ## 10. The fifth addressing case
 
@@ -254,7 +308,7 @@ already verified.
 
 Rule 3's whole point is that a person can see what an agent did. Drive one tool
 against a real machine and then **read the line out of `~/Library/Logs/now-logs`
-and out of the Agent module**. Nobody has done this end to end.
+and out of the MCP module**. Nobody has done this end to end.
 
 ## 12. The anchor oracle's one unmeasured assumption
 
@@ -323,7 +377,7 @@ all the work. Section 8 says how to find out.
 A guest that has served a capture will still report it unproven. That is honest
 and it is not evidence of a problem.
 
-**The Agent module's audit stream is per-launch and in memory.** The log
+**The MCP module's audit stream is per-launch and in memory.** The log
 persists; the pane does not. Someone looking for last week's activity needs the
 log.
 
