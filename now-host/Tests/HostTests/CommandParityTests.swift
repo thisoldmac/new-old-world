@@ -106,6 +106,35 @@ final class CommandParityTests: XCTestCase {
         "now-guest-68k/src/console/conwin.c": "console",
     ]
 
+    /// Files that match this file's `strcmp(name,` heuristic and dispatch
+    /// **no verb**, with what they actually do.
+    ///
+    /// The heuristic is a substring search, and it cannot tell a verb from a
+    /// parameter that happens to be called `name`. Both entries below map an
+    /// argument's VALUE onto an enum — a window action, an Apple Event
+    /// mnemonic — inside a Toolbox-free half that never sees a wire message.
+    ///
+    /// This is kept apart from `dispatchSites` rather than folded into it
+    /// with a made-up face, because they are different claims. That map says
+    /// "this file answers verbs on this face", and everything else here
+    /// reads it and means it. Calling `act_args.c` a face would put a file
+    /// with no faces at all into the two-face rule, and the first check to
+    /// read it would compare a window action against a command table.
+    ///
+    /// An entry here is a statement that the heuristic misfired, so it costs
+    /// a sentence saying what the file really does. If one of these ever
+    /// grows a real dispatch, the sentence is what makes that visible.
+    private static let argumentVocabularies: [String: String] = [
+        "now-guest-ppc/src/act/act_args.c":
+            "maps winact's `action` and `zoom` arguments onto enums; the "
+          + "parameter is called `name` because it names an ACTION, not a "
+          + "command",
+        "now-guest-ppc/src/input/input_args.c":
+            "maps aesend's `event` argument onto one of the four core Apple "
+          + "Events. The vocabulary is closed by design (input_args.h), so "
+          + "this is exactly a value lookup and never a dispatch",
+    ]
+
     /// NOW-68K's console face, which is **two** files: the shared dispatch in
     /// `n68_exec.c` that the wire's exec plane reaches too, and the
     /// window-local arm in `conwin.c` that runs before the delegation.
@@ -142,13 +171,34 @@ final class CommandParityTests: XCTestCase {
                 found.insert("\(half)/\(n)")
             }
         }
-        XCTAssertEqual(found, Set(Self.dispatchSites.keys), """
-            The set of files that dispatch a verb changed. Every check in \
-            this file reads a NAMED list, so a site missing from it is a \
-            face the two-face rule quietly stopped applying to — add it to \
-            dispatchSites with the face it answers, and make sure the checks \
-            below actually read it.
+        XCTAssertTrue(
+            Set(Self.dispatchSites.keys)
+                .isDisjoint(with: Self.argumentVocabularies.keys), """
+            A file is listed both as a dispatch site and as a file that \
+            dispatches nothing. Those are different claims and at most one \
+            is true.
             """)
+        XCTAssertEqual(found, Set(Self.dispatchSites.keys)
+            .union(Self.argumentVocabularies.keys), """
+            The set of files matching this file's dispatch heuristic \
+            changed. Every check here reads a NAMED list, so a site missing \
+            from it is a face the two-face rule quietly stopped applying to \
+            — add it to dispatchSites with the face it answers, and make \
+            sure the checks below actually read it. If the file dispatches \
+            no verb at all and merely has a parameter called `name`, say so \
+            in argumentVocabularies with what it really does.
+            """)
+        // Every file claimed to dispatch nothing must still be a file this
+        // heuristic finds. An entry for a file that never matched is a
+        // subtraction that hides nothing but itself, and would survive the
+        // file being deleted.
+        for path in Self.argumentVocabularies.keys {
+            XCTAssertTrue(found.contains(path), """
+                \(path) is listed as a file that matches the dispatch \
+                heuristic without dispatching, and it does not match it. \
+                Delete the entry.
+                """)
+        }
     }
 
     /// Every `strcmp(name, "verb")` in a file — how both guests dispatch.
@@ -199,6 +249,64 @@ final class CommandParityTests: XCTestCase {
             """,
     ]
 
+    /// Verbs with no console face because **a person cannot usefully type
+    /// one**, as the contract itself says.
+    ///
+    /// This is a different fact from `wireOnly` above and is kept apart from
+    /// it for that reason. `putstat` is a verb a person COULD type and has
+    /// no reason to; every verb here takes an opaque reference, or a
+    /// coordinate a scene supplies, or answers with references no one can
+    /// read back — a console line cannot carry any of them. The distinction
+    /// is not decorative: one is a judgement about usefulness that could be
+    /// revisited, the other is a property of the argument.
+    ///
+    /// **The reason is not this file's to assert.** Each entry is checked
+    /// against the contract's own `x-line`, which must say NOT TYPEABLE —
+    /// so an exemption here cannot outlive the declaration that justifies
+    /// it, and a verb given a real console grammar later fails this rather
+    /// than sitting exempt. That check is
+    /// `testTheNotTypeableExemptionsAreTheContractsOwn`.
+    private static let notTypeable: [String: String] = [
+        "winact": "takes an opaque window reference",
+        "textget": "takes an opaque element reference",
+        "textset": "takes an opaque element reference",
+        "ctlact": "takes an opaque element reference and a part code",
+        "menuact": "the identity check is a coordinate the scene supplies",
+        "handle": "takes an opaque reference",
+        "observe": "answers with references no person can read or retype",
+        "axtree": "the same walk, so the same answer",
+        "elements": "the same walk aimed at one process",
+    ]
+
+    /// Verbs a person **could** usefully type at the guest and cannot,
+    /// with what each is waiting on.
+    ///
+    /// **A debt, not a resting place** — the same shape and the same rule as
+    /// `CommandRegistryTests.servedByNoGuestYet`. Everything here is a
+    /// capability the host can reach and a person standing at the machine
+    /// cannot, which is the exact defect this file was written for; naming
+    /// them as "wire-only" would have been a lie, because their arguments
+    /// are numbers and words a person has.
+    ///
+    /// All seven arrived on 2026-07-31, when six verbs that had been built
+    /// and dispatched by nothing were registered, and `axsnap` — which
+    /// takes no arguments at all — was found to have been in the same
+    /// position since the reference layer landed. The console face for them
+    /// is a `console_model.c` change and is not in the emulator-readiness
+    /// scope; it is written down here rather than smuggled into the map
+    /// above, so that the next person reads a list of seven owed console
+    /// verbs instead of a settled asymmetry.
+    private static let consoleDebt: [String: String] = [
+        "axsnap": "takes nothing and answers about the front process; owed "
+                + "since the reference layer landed",
+        "activate": "takes two serial numbers",
+        "actselftest": "takes nothing, or two serial numbers",
+        "mouseloc": "takes nothing",
+        "script": "takes the script source, which is the rest of the line",
+        "aesend": "takes an event name, two serials and a path",
+        "qdtrace": "takes an op and its arguments",
+    ]
+
     /// The PowerPC guest: `commands.c` answers the wire, `console_model.c`
     /// answers the Console page. Two lists, so two chances to drift.
     func testThePowerPCGuestsTwoFacesAgree() throws {
@@ -207,11 +315,17 @@ final class CommandParityTests: XCTestCase {
 
         let missingFromConsole = wire.subtracting(console)
             .subtracting(Self.wireOnly.keys)
+            .subtracting(Self.notTypeable.keys)
+            .subtracting(Self.consoleDebt.keys)
         XCTAssertTrue(missingFromConsole.isEmpty, """
             the PowerPC guest answers \(missingFromConsole.sorted()) over \
             the wire but not in its own console. A person at the machine \
             cannot reach what the host can. Add it to console_model.c, or \
-            name it in wireOnly with the reason it does not belong there.
+            name it in ONE of the three maps above — notTypeable if a \
+            console line cannot carry its argument (and say so in the \
+            contract's x-line), consoleDebt if it could and the face is \
+            owed, wireOnly if a person would have nothing to do with the \
+            answer.
             """)
 
         let missingFromWire = console.subtracting(wire)
@@ -221,6 +335,79 @@ final class CommandParityTests: XCTestCase {
             but the wire does not. Add it to commands.c and the contract's \
             x-commands, or name it in consoleOnly with its reason.
             """)
+    }
+
+    /// The three exemption maps are three different claims, and the
+    /// `notTypeable` one is the contract's claim rather than this file's.
+    ///
+    /// Without this, "not typeable" is an assertion a test author makes
+    /// about a verb, in a test, where nobody looking at the verb would find
+    /// it. With it, the exemption is the contract's `x-line` — the same
+    /// prose the guest's own console implementation reads — and a verb that
+    /// is given a real grammar later cannot stay exempt: the moment its
+    /// `x-line` stops saying NOT TYPEABLE, this goes red and the verb moves
+    /// to `consoleDebt` or grows the console face it now describes.
+    func testTheNotTypeableExemptionsAreTheContractsOwn() throws {
+        let contract = try contractText()
+
+        for maps in [(Self.notTypeable, Self.consoleDebt),
+                     (Self.notTypeable, Self.wireOnly),
+                     (Self.consoleDebt, Self.wireOnly)] {
+            XCTAssertTrue(Set(maps.0.keys).isDisjoint(with: maps.1.keys), """
+                A verb is exempted twice, under two claims that cannot both \
+                be true: overlap between \(maps.0.keys.sorted()) and \
+                \(maps.1.keys.sorted()).
+                """)
+        }
+
+        for (name, reason) in Self.notTypeable {
+            XCTAssertFalse(
+                reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                "\"\(name)\" is exempted as not typeable with no reason.")
+            guard let start = contract.range(of: "\n    \(name):\n") else {
+                XCTFail("""
+                    "\(name)" is exempted as not typeable and the contract's \
+                    x-commands does not declare it at all.
+                    """)
+                continue
+            }
+            let rest = contract[start.upperBound...]
+            let end = rest.range(of: "\n    [a-z]",
+                                 options: .regularExpression)?.lowerBound
+                ?? rest.endIndex
+            let row = String(rest[..<end])
+            guard let line = row.range(of: "x-line:") else {
+                XCTFail("""
+                    "\(name)" is exempted here as not typeable and its \
+                    contract row states no x-line at all. The exemption \
+                    rests on a declaration that is not there.
+                    """)
+                continue
+            }
+            XCTAssertTrue(
+                row[line.upperBound...]
+                    .contains("NOT TYPEABLE"), """
+                "\(name)" is exempted from having a console face because a \
+                person cannot type it, and the contract's x-line for it no \
+                longer says NOT TYPEABLE. One of the two is now wrong: give \
+                the verb its console face and move it out of notTypeable, \
+                or say in the contract why a line cannot carry its argument.
+                """)
+        }
+
+        for (name, reason) in Self.consoleDebt {
+            XCTAssertFalse(
+                reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                "\"\(name)\" is recorded as a console debt with no reason.")
+            let console = dispatched(
+                in: try source("now-guest-ppc/src/console/console_model.c"))
+            XCTAssertFalse(console.contains(name), """
+                the PowerPC guest's console now answers "\(name)", which is \
+                recorded here as a console face it still owes. Delete the \
+                entry — this is the good outcome, and leaving it means the \
+                two faces stop being compared for that verb.
+                """)
+        }
     }
 
     /// NOW-68K: `commands68.c` is the command table both faces share, and
