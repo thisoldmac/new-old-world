@@ -47,8 +47,27 @@ NOW_METAL=1 NOW_METAL_PORT=5251 NOW_METAL_MACHINE=<addr>
   reading a quiet listener as a failure.
 - **One `swift test` at a time on this Mac.** `HostAppStateWiringTests` binds a
   fixed port 52981; `HostLogTests` and `LoggingSpecTests` share
-  `~/Library/Logs/now-logs`. Exactly those three failing means contention, not
-  a defect.
+  `~/Library/Logs/now-logs`.
+- **Quit the host app before running the suite**, and this is the bigger one —
+  found 2026-07-31 after a wrong diagnosis. `AgentIntegrationUnixSocket` derives
+  its path as `dev.newoldworld.now-agent-<uid>/host.sock`: **fixed per user, not
+  per process.** A running `New Old World.app` holds it (confirmed with `lsof`),
+  and it also holds a log file in `now-logs`. Any test that stands up an
+  `AgentIntegrationLocalServer` is then competing with a live app for a resource
+  only one process can have.
+- **The failure does not name its cause.** It presents as socket-bound tests
+  timing out — `AgentIntegrationLaunchTests`, `AgentIntegrationQuitTests`,
+  `GuestIdentityTests` — with messages like *"timed out waiting for second guest
+  connected"*. Those tests bind `port: 0` and read `boundPort`, so **the port in
+  the message is never the problem**; the shared thing is the agent socket
+  underneath. The count also moves run to run (6, then 12), which reads like
+  flakiness and is not.
+
+  **The list of three above is therefore too narrow.** It was written before this
+  was understood, and "exactly those three failing means contention" is what sent
+  the first diagnosis to machine load instead of a running app. If
+  `AgentIntegration*` or `GuestIdentityTests` time out, check `lsof -nP -p $(pgrep
+  -f 'New Old World')` before believing anything about the code.
 - **Do not trust the version string to tell you which build answered.**
   `PRODUCT_VERSION` is `"0.1.0"` in current source *and* was on the stale build
   deployed to the 1400c. That cost a wrong diagnosis on 2026-07-29. `hello` now
