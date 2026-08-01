@@ -106,3 +106,84 @@ they need this Mac's TCC grants, and what only a signed-in,
 access-granted machine can prove is ledgered in
 [open-issues.md](open-issues.md). The rest of the family is
 metal-verified yet.
+
+## Designed, not built: Photos browsing and Messages
+
+Two arcs discussed and settled 2026-08-01, recorded here so the next
+session starts from decisions instead of re-deriving them. Neither is
+implemented; the fan-out in flight (view seam, drive tree, contacts,
+search, photos list/download) is their substrate.
+
+### Photos: thumbnails and downloads are two different questions
+
+The two obvious approaches — a thumbnail browser, or the host
+resizing everything on a configurable basis — are the two halves of
+one design, split by WHEN processing happens:
+
+- **Thumbnails are always host-rendered, tiny, and lazy.** The host
+  dithers/resizes to the guest's actual depth (the census already
+  says; 1-bit for a 68K someday, which will look charming) and the
+  guest CopyBits raw indexed pixels — "conversion is the host's job"
+  applied to pixels, and host-side it is exactly what
+  PHCachingImageManager exists for: per-asset small-target requests,
+  never a walk of the library. The arithmetic that makes it work: a
+  64x64 8-bit thumb is 4 KB; a listing page of 16 as ONE bulk
+  transfer — a thumbnail atlas with a control-frame manifest mapping
+  item to offset — is ~64 KB, ~0.2 s at the measured 300 KiB/s.
+  Guest-side, infinite scroll is a sliding window with eviction: the
+  6 MB partition holds a few screens of thumbs, not a library, and
+  re-fetching a 64 KB page is invisible.
+- **Downloads are processed per request, with a configurable
+  default.** The per-photo dropdown's options (original / fit
+  640x480 / fit to screen / dithered PICT) are host-side processing
+  selections; the host's iCloud page sets the default so a casual
+  double-click does the sane thing. Estimated size is exact for
+  uncompressed targets (dimensions x depth) and a labelled "~"
+  heuristic for JPEG — show both, pretend precision for neither.
+- **The preview pane** fetches one medium preview (~200x200 at guest
+  depth, ~40 KB) on selection rather than scaling the tiny thumb,
+  and evicts on every selection change so exactly one lives in
+  memory.
+- **The lane rule bites here**: bulk is one transfer wide, so thumb
+  and preview fetches queue behind an in-flight download. Fine if
+  the UI says so ("thumbnails resume after the download"); deadly to
+  the feel if it does not.
+- Contract: additive — a cloud.thumbs ask answered by a bulk
+  transfer plus manifest. The current no-previews version stays the
+  honest floor.
+
+### Messages (iMessage/SMS): the first live-event push
+
+The plumbing realities decide v0 almost completely:
+
+- **Send** has exactly one sanctioned path: Apple Events into
+  Messages.app (the AppleScript send verb). Covers iMessage, and SMS
+  when the iPhone forwards texts. Needs the Automation TCC grant —
+  the same consent pattern as Photos and Contacts, one more prompt.
+- **Receive** has no API at all. The workable path is reading
+  ~/Library/Messages/chat.db — SQLite, polled by ROWID watermark
+  every few seconds while a guest is connected and the service is
+  on. Needs Full Disk Access, the heaviest grant yet; the host page
+  should say so plainly. Known sharp edge: modern macOS often leaves
+  the text column null and stores content in attributedBody (a
+  typedstream blob), so the host needs a small decoder — and when
+  the schema drifts someday, the service degrades to an honest
+  no-access/unavailable rather than going silently deaf.
+- **Wire shape**: the first host-initiated push of live events. The
+  cloud family is ask/answer; messages want msg.send {to, text}
+  guest-to-host (answered sent/refused, the refusal carrying
+  Messages.app's actual failure — often the only diagnostic there
+  is) plus msg.incoming {from, text, when} pushed host-to-guest
+  while connected. Three or four messages, additive.
+- **No backfill in v0, by design**: semantics are "since this
+  connection", stated plainly; disconnection drops messages on the
+  floor. Guest v0 UI is a session transcript — incoming lines
+  appending live, recipient field, text field, Send — with a
+  Notification Manager mark or sidebar badge for incoming while on
+  another page, because "your iPhone buzzed a System 7 machine" is
+  the demo and should not require staring at the page. The Contacts
+  service is the natural recipient picker later.
+- **Plaintext v0**: the wire is a desk-local LAN, the standing
+  threat model. But this is the first family carrying live personal
+  correspondence — when release thinking happens, messages are the
+  forcing function for the encryption story, not files.
