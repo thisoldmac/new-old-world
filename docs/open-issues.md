@@ -383,6 +383,17 @@ geometry at all. The drag path this constant serves is emulator-only, so the
 blast radius is bounded — but a number that is wrong by 30 px two-thirds of the
 way down a menu will find a way to be believed.
 
+**Resolved 2026-08-01, on `audit/menu-honesty`.** The ruling in
+`docs/input-plane-decisions.md` §3 was "measure the rows, or delete a
+computation nothing performs" — and by the time this branch landed,
+`menuSelect` already routed every item through `.menuInvoke`, so nothing
+performed it. `menuRowHeight`, `ActionModel.menuItemPoint`, and the
+`MirrorAction.menuDrag` case that was their only reader are deleted; no code
+path in `now-host` computes a menu-item pixel point from a row-height
+constant, live or dead. `menugeom` stays unported (still the riskiest call
+in upstream's file, still serving nothing) — re-open only if a caller needs
+an on-screen menu-item rect, per the re-open condition already on record.
+
 ## Proposed: an extension is a thing you enable, not a thing you launch (2026-07-31)
 
 **Proposal, nothing built.** From the manual review pass, and recorded here

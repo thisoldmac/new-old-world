@@ -160,7 +160,6 @@ final class NoSecondWireTests: XCTestCase {
         .drag(x0: 0, y0: 0, x1: 4, y1: 4),
         .qmpClick(x: 5, y: 5),
         .qmpDoubleClick(x: 5, y: 5),
-        .menuDrag(menuLeft: 38, itemIndex: 2),
         .menuInvoke(menuID: 130, itemIndex: 2, titleLeft: 38),
         .thumbDrag(x0: 0, y0: 0, x1: 0, y1: 40),
     ]

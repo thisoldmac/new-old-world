@@ -161,8 +161,8 @@ struct MirrorActionDriver {
                     + "there is nothing to substitute.")
 
         case .key, .type, .click, .drag, .qmpClick, .qmpDoubleClick,
-             .menuDrag, .thumbDrag:
-            /* Unreachable: `availability` refuses all eight above. Spelled
+             .thumbDrag:
+            /* Unreachable: `availability` refuses all seven above. Spelled
                out rather than defaulted so that an act promoted to
                `available` without a route here fails to compile instead of
                falling into a silent nothing. */

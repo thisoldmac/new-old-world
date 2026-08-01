@@ -327,7 +327,6 @@ final class HitActionTests: XCTestCase {
             .thumbDrag(x0: 0, y0: 0, x1: 0, y1: 40),
             .qmpClick(x: 5, y: 5),
             .qmpDoubleClick(x: 5, y: 5),
-            .menuDrag(menuLeft: 38, itemIndex: 6),
         ]
         for action in injected {
             guard case .unavailable(let reason)
