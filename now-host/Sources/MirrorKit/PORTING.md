@@ -73,7 +73,7 @@ upstream's *does this target have a QMP socket*. Three answers, all typed:
 | `menuInvoke`, `activate` | `.available("menuact")` / `.available("activate")` — a scene carries the whole target |
 | `axdo` | `.needsObservation("ctlact"/"textset")` — addressed by an opaque reference only an observation mints, and NOW's scene producer emits controls with `ref` empty |
 | `key`, `type`, `click` | `.unavailable` — NOW's contract declares no keystroke and no positional click. A **hole**, not a rule. |
-| `drag`, `thumbDrag`, `qmpClick`, `qmpDoubleClick`, `menuDrag` | `.unavailable` — injected mouse motion. `winact`'s move/resize is the shape NOW would use, against a window reference. |
+| `drag`, `thumbDrag`, `qmpClick`, `qmpDoubleClick` | `.unavailable` — injected mouse motion. `winact`'s move/resize is the shape NOW would use, against a window reference. |
 
 `NoSecondWireTests` holds the property rather than the prose: no socket API,
 no request envelope, those files stay deleted, and every command name checked
@@ -139,3 +139,23 @@ file's header.
 
 Item 4 stands: NOW's guest now fills `menubar`, `controls`, `text` and `kind`
 conditionally (Phase 1.3), and still no `display`, `desktopItems` or `items`.
+
+## Addendum, 2026-08-01 — `.menuDrag` and its geometry are gone, not just dead
+
+The `menuDrag` executor row above was deleted with the transport on
+2026-07-31; the `MirrorAction.menuDrag` **case**, and the
+`ActionModel.menuRowHeight` / `menuItemPoint` constant it existed to
+address, survived a further day as dead vocabulary. They are deleted now.
+
+The reason is not tidiness: `menuRowHeight = 16` was the exact assumption
+upstream's Mirror project measured as a ~30 px accumulated-error bug — the
+guest's own MDEF draws separators at 6 px against 16 px items, uniform math
+disagrees, and by mid-menu the wrong row gets clicked. `menuSelect` already
+routed every item through `.menuInvoke` (identity-addressed, no geometry),
+so the constant had no live caller — but a known-wrong constant with no
+caller is a landmine, not a null. See
+`docs/input-plane-decisions.md` §3 and `docs/mirror-act-plane.md` for the
+standing ruling: measure the rows from the guest (`menugeom`, not ported —
+it would mean calling a foreign, application-supplied MDEF, the riskiest
+read in upstream's file, to serve a computation nothing performs) or delete
+the computation. This lane deletes it.

@@ -180,7 +180,6 @@ final class MirrorActionDriverTests: XCTestCase {
             .drag(x0: 0, y0: 0, x1: 10, y1: 10),
             .qmpClick(x: 4, y: 4),
             .qmpDoubleClick(x: 4, y: 4),
-            .menuDrag(menuLeft: 38, itemIndex: 2),
             .thumbDrag(x0: 0, y0: 0, x1: 0, y1: 40),
         ] {
             guard case .unavailable(let reason) =

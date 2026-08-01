@@ -42,21 +42,19 @@ public enum MirrorAction: Equatable {
     /// press-releases without repositioning between, so the guest sees a
     /// genuine double-click (opens icons). EMU-ONLY.
     case qmpDoubleClick(x: Int, y: Int)
-    /// Select a shortcut-less menu item: press on the menubar title, drag
-    /// down the guest-drawn menu to the item row, release. EMU-ONLY.
-    case menuDrag(menuLeft: Int, itemIndex: Int)
 
     /// Perform a menu command through the Portal: the guest's in-process agent
     /// answers the application's own MenuSelect with this item, so the app runs
     /// its real command handler. No menu is drawn, no tracking loop runs, and
-    /// no QMP is involved — which is what makes it metal-shaped where the drag
-    /// below is emulator-only. This is the path for a shortcut-less item; a ⌘
-    /// item should still go as a keystroke, which needs no patch at all.
+    /// no QMP is involved — which is what makes it metal-shaped, unlike the
+    /// injected-motion acts above. This is the route for EVERY menu item, ⌘
+    /// or not — see the retraction on `menuSelect` below for why a ⌘ item no
+    /// longer goes as a keystroke.
     case menuInvoke(menuID: Int, itemIndex: Int, titleLeft: Int)
     /// A scrollbar thumb drag. Distinct from `drag` because the DROP POSITION
-    /// is the value: TrackControl live-tracks the thumb, so this needs the
-    /// precise (unity-compensated) motion a menu drag needs — the 1.6x a
-    /// window drag wants would overshoot and slam the thumb to the end.
+    /// is the value: TrackControl live-tracks the thumb, so this needs
+    /// precise (unity-compensated) motion — the 1.6x a window drag wants
+    /// would overshoot and slam the thumb to the end.
     case thumbDrag(x0: Int, y0: Int, x1: Int, y1: Int)
 }
 
@@ -190,8 +188,8 @@ public enum ActionModel {
                 + "through the guest instead. A window move or resize is "
                 + "winact's move/resize against a window reference; a "
                 + "scroll-bar drag is ctlact against the indicator part.")
-        case .qmpClick, .qmpDoubleClick, .menuDrag:
-            /* The three that came across as QMP calls. Their executor is
+        case .qmpClick, .qmpDoubleClick:
+            /* The pair that came across as QMP calls. Their executor is
                deleted and is not coming back. */
             return .unavailable(reason:
                 "this crossed as emulator mouse injection over QMP — events "
@@ -222,21 +220,23 @@ public enum ActionModel {
             != nil
     }
 
-    // MARK: - Guest menu geometry (menu-drag targeting)
-
-    /// OS 9 standard menu rows are 16 px tall, drawn directly below the
-    /// 20 px menubar. Item i (1-based) centers at menubarBottom + (i-1)*16
-    /// + 8. Calibrated live (see the slice-7 commit) — a wrong row height
-    /// selects the wrong item, so treat changes as behavior changes.
-    public static let menuRowHeight = 16
-    public static let menubarHeight = HitTester.menubarHeight
-
-    static func menuItemPoint(menuLeft: Int, itemIndex: Int) -> (x: Int, y: Int) {
-        (menuLeft + 20,
-         menubarHeight + 1 + (itemIndex - 1) * menuRowHeight + menuRowHeight / 2)
-    }
-
     // MARK: - Gesture → actions
+    //
+    // There is deliberately no guest-menu-geometry section here. Upstream's
+    // host assumed uniform 16 px menu rows; the guest's own MDEF draws
+    // separators at 6 px against 16 px items, and that mismatch accumulates
+    // into ~30 px of error by mid-menu — enough to select the wrong item.
+    // NOW does not correct that constant (which would mean porting
+    // `menugeom` — a call into a foreign, application-supplied MDEF, the
+    // riskiest read in upstream's file, to serve a release point nothing
+    // here needs). It deletes the computation instead: `menuSelect` below
+    // routes every menu item, shortcut or not, through `.menuInvoke`, which
+    // is addressed by identity (menu ID, item index, title-left) and computes
+    // no pixel point at all. See docs/input-plane-decisions.md §3 and
+    // docs/mirror-act-plane.md for the ruling. If a future caller needs an
+    // on-screen menu-item rect — a mirror that draws menus itself, say — it
+    // must ask the guest for one; it may not reconstruct it from a row-height
+    // constant.
 
     /// A primary click on a hit target. Returns the action sequence to
     /// dispatch in order (a background-window click activates first), or
