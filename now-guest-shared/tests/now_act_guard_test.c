@@ -148,6 +148,59 @@ static void test_menu_identity(void)
               != 0, "the selftest is deliberately unguarded on the point");
 }
 
+/* ---- what the point CANNOT tell apart -------------------------------
+ *
+ * A CHARACTERISATION test, not an assertion that the code is right. It
+ * pins the premise of the probe's `collide` case
+ * (scripts/probes/nohijack-probe.py, docs/no-hijack-criterion.md §4) so
+ * that a later change either keeps the premise or breaks this test and
+ * says so out loud.
+ *
+ * The menu guard's identity is a POINT, and a point is not unique. There
+ * is no serial on the request and nothing on the Event Manager's queue
+ * element that says which request queued a press, so two presses at the
+ * same coordinates are the same press as far as this code can see. That
+ * is not a leak by itself: the resident half queues the request's own
+ * press from inside the target's context at the moment of arming
+ * (ext/src/now_ext_act.c), so it is normally the first press to arrive
+ * AFTER arming and normally the one answered.
+ *
+ * The case it does not cover is a press already in the queue when the
+ * arm happens - which the Event Manager hands over first, and which this
+ * guard accepts. The number for that is unmeasured; the probe's
+ * `collide` case is written to get it and has never run.
+ *
+ * If a future guard learns to tell its own press from a stranger's - a
+ * cookie in evtQModifiers, a serial in the cell, anything - the two
+ * checks below flip and MUST be rewritten rather than deleted. Deleting
+ * them would erase the reason they existed. */
+
+static void test_menu_press_is_anonymous(void)
+{
+    NowPeekActCell cell;
+
+    /* A press at the arm point is answered. The guard is not told, and
+       cannot ask, who queued it - so this is the same call whether the
+       press came from the resident half or from a hand on the mouse. */
+    arm_menu(&cell, 52, 10);
+    check_long(now_act_menu_answer(&cell, kTargetA5, (long)point_of(52, 10),
+                                   7UL),
+               ((long)130 << 16) | 3,
+               "a press at the arm point is answered, whoever queued it");
+
+    /* And the SECOND press at that same point is not, because answering
+       disarmed. This is the bound on the exposure above: the window is
+       one press wide, not "until the request is withdrawn". Disarming is
+       not the guard - it never was - but it is what keeps this case from
+       being every press at that point for the next five seconds. */
+    check(cell.armed == kNowPeekActArmNone, "answering disarmed");
+    check_long(now_act_menu_answer(&cell, kTargetA5, (long)point_of(52, 10),
+                                   8UL),
+               0, "the second press at the same point is not answered");
+    check_long((long)cell.served_ticks, 7L,
+               "and the declined press did not restamp the answer");
+}
+
 /* ---- the control guard: the 0/20 half of the same measurement -------- */
 
 static void test_control_identity(void)
@@ -699,6 +752,7 @@ static void test_text_take(void)
 int main(void)
 {
     test_menu_identity();
+    test_menu_press_is_anonymous();
     test_control_identity();
     test_window_stages();
     test_age_out();
