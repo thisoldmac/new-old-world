@@ -397,6 +397,16 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
         load(path: path, resetRows: false, cursor: cursor)
     }
 
+    /// The most rows one folder will accumulate.
+    ///
+    /// Not a display limit — it is a bound on what a single reply chain
+    /// may spend of this process's memory when a folder is pathological
+    /// or a guest's cursor misbehaves. A classic Mac folder is nowhere
+    /// near this; a System Folder is a few hundred. Reaching it is
+    /// reported, never silent, because a listing that quietly stops is
+    /// the defect this whole change exists to fix.
+    static let rowCeiling = 4000
+
     private func load(path: String, resetRows: Bool, cursor: Int? = nil) {
         guard canBrowse else { return }
         if resetRows {
@@ -418,10 +428,48 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
                 self.rows += listing.entries.map {
                     FileRow(entry: $0, path: prefix + $0.name)
                 }
-                self.pageCursor = listing.more ? listing.cursor : nil
                 if let root = listing.root, !root.isEmpty {
                     self.shareRoot = root
                 }
+
+                /* THE GUEST PAGES AT 16 PER FRAME, because a control
+                   frame caps at 4 KB — so one reply is one PAGE, never
+                   one folder. Until 2026-08-01 nothing asked for the
+                   rest: `loadMoreIfNeeded` existed and no view called
+                   it, so a browser showed the first sixteen entries of
+                   every folder and gave no sign there were more. A file
+                   browser that silently truncates is worse than one that
+                   fails, because the person believes what they see.
+
+                   So the pages are followed here rather than left to a
+                   view's scroll position: what is on screen is a whole
+                   folder or an explicit reason it is not. */
+                guard listing.more, let next = listing.cursor else {
+                    self.pageCursor = nil
+                    return
+                }
+
+                /* A cursor that does not advance would spin this forever
+                   against a guest that answers `more` without moving.
+                   Stop and say so: a wire is allowed to be wrong, and
+                   this side is not allowed to hang because of it. */
+                if let asked = cursor, next <= asked {
+                    self.pageCursor = nil
+                    self.lastNotice = "This Mac repeated the same listing "
+                        + "position, so the folder is shown as far as it got "
+                        + "(\(self.rows.count) items)."
+                    return
+                }
+                if self.rows.count >= Self.rowCeiling {
+                    self.pageCursor = nil
+                    self.lastNotice = "Showing the first \(self.rows.count) "
+                        + "items; this folder has more than this browser "
+                        + "will hold at once."
+                    return
+                }
+
+                self.pageCursor = next
+                self.load(path: listing.path, resetRows: false, cursor: next)
             case .failure(let failure):
                 self.lastError = failure.message
                 self.pageCursor = nil
