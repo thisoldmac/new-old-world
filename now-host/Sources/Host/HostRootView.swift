@@ -94,6 +94,8 @@ struct HostRootView: View {
             ScreenshotsModuleView(model: state.screenshots)
         case "files":
             FilesModuleView(model: state.files)
+        case "icloud":
+            CloudModuleView(model: state.cloudModule)
         case "processes":
             ProcessesModuleView(model: state.processes)
         case "mirror":

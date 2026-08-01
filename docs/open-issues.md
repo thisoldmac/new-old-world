@@ -14,6 +14,29 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## The cloud.* family: real providers are untested, and the guest half does not exist (2026-08-01)
+
+**Unverified / unfinished, deliberately.** The host serves
+`cloud.services`/`list`/`detail`/`get` from a provider registry
+(`now-host/Sources/Host/CloudServices.swift`), tested over a loopback
+wire with FAKE providers only (`CloudServingTests`). Still unproven:
+
+- **PhotosCloudProvider and ContactsCloudProvider have never run
+  granted.** They need this Mac's TCC consent (usage strings are in the
+  Xcode project; the iCloud page has the grant buttons). First run:
+  turn each on in the host's iCloud page, grant, and ask over the wire
+  — `cloud.list` paging against a real multi-thousand-photo library,
+  the JPEG/HEIC transcode, and the busy-then-bytes path for an
+  un-materialized original are all claims from code reading.
+- **The guest module does not exist yet.** One Workshop page, service
+  dropdown, per-service render (docs/icloud.md). Until it lands, the
+  family is host-only and nothing exercises it end to end; when it
+  lands, the guest's emitted cloud.* messages owe fixtures to
+  GuestWireFixtureTests, and contract-coverage.md gains the family's
+  guest rows.
+- **cloud.get on a busy lane** refuses busy by unit-tested logic, but
+  no test drives a real concurrent capture/stream against it.
+
 ## iCloud Drive sharing is tested against fabricated stubs only (2026-08-01)
 
 **Unverified.** The share now sees a directory logically — iCloud
