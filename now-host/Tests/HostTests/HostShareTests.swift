@@ -114,7 +114,7 @@ final class HostShareTests: XCTestCase {
 
         let listing = FileListing(id: 1, path: "", entries: page.entries,
                                   more: page.more, cursor: page.next,
-                                  root: root.path)
+                                  root: share.rootDisplayName)
         let encoded = try ControlMessageCodec.encode(.fileListing(listing))
         XCTAssertLessThanOrEqual(encoded.count, 4096,
                                  "a listing must fit the control cap")
@@ -158,7 +158,8 @@ final class HostShareTests: XCTestCase {
 
         let encoded = try ControlMessageCodec.encode(.fileListing(
             FileListing(id: 1, path: "", entries: page.entries,
-                        more: page.more, cursor: page.next, root: root.path)))
+                        more: page.more, cursor: page.next,
+                        root: share.rootDisplayName)))
         XCTAssertLessThanOrEqual(encoded.count, 900,
                                  "and what it serves fits the cap it was given")
 
@@ -173,12 +174,14 @@ final class HostShareTests: XCTestCase {
     /// it is browsing. A person recognises "iCloud Drive"; nobody
     /// recognises /Users/me/Library/Mobile Documents/com~apple~CloudDocs,
     /// and the classic side would have to draw every byte of it.
-    func testRootIsNamedForAPersonNotAsAPath() {
-        XCTAssertEqual(share.rootDisplayName,
-                       FileManager.default.displayName(atPath: root.path))
+    func testRootIsNamedForAPersonNotAsAPath() throws {
+        let drop = root.appendingPathComponent("Drop Box")
+        try FileManager.default.createDirectory(
+            at: drop, withIntermediateDirectories: false)
+        share.root = drop
+        XCTAssertEqual(share.rootDisplayName, "Drop Box")
         XCTAssertFalse(share.rootDisplayName.contains("/"),
                        "a display name, not a POSIX path")
-        XCTAssertFalse(share.rootDisplayName.isEmpty)
     }
 
     /// The name rides the wire to a machine that draws MacRoman, so it

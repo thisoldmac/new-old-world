@@ -115,8 +115,10 @@ final class HostServingTests: XCTestCase {
         guard case .fileListing(let listing)? = guest.received.last(where: {
             if case .fileListing = $0 { return true } else { return false }
         }) else { return XCTFail("no listing") }
-        XCTAssertEqual(listing.root, root.path,
+        XCTAssertEqual(listing.root, listener.share.rootDisplayName,
                        "the asker can name the place it is looking at")
+        XCTAssertFalse(listing.root?.hasPrefix("/") ?? true,
+                       "a name a person recognises, not a POSIX path")
     }
 
     // MARK: - Pulling
