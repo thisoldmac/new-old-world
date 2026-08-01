@@ -196,11 +196,19 @@ final class MirrorActionDriverTests: XCTestCase {
         guard case .dispatched(let sentence) = outcomes.first else {
             return XCTFail("a plain keystroke reaches key: \(outcomes)")
         }
-        for claimed in ["typed", "acted"] {
-            XCTAssertFalse(sentence.contains(claimed),
-                          "posted means queued, never typed — the driver "
-                              + "must not claim more than the guest did")
-        }
+        /* "posted means queued, never typed" — still the rule. But the ban
+           is on "typed" only, and "acted" is deliberately NOT in this list:
+           the shared sentence denies the claim USING that word ("Whether it
+           acted on it is a question for the next scene"), so a substring
+           test cannot tell a claim from its own denial. Banning it made a
+           correctly-worded disclaimer read as an overclaim. Assert the
+           positive instead — the sentence must say what actually happened. */
+        XCTAssertFalse(sentence.contains("typed"),
+                       "posted means queued, never typed — the driver must "
+                           + "not claim more than the guest did")
+        XCTAssertTrue(sentence.contains("dispatched"),
+                      "the driver reports dispatch, which is the only thing "
+                          + "the guest's reply establishes")
     }
 
     /// A NAMED key (Return, an arrow, …) sends `name` and no code/char —

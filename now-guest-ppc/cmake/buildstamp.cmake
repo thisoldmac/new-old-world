@@ -45,8 +45,13 @@ set(_stamp_body
 #ifndef NOW_BUILDSTAMP_H
 #define NOW_BUILDSTAMP_H
 
-/* SHA-1 over every src/*.{c,h,r} and src/*/*.{c,h,r}, name-sorted.
- * Changing ANY source moves it; changing none reproduces it. */
+/* SHA-1 over every .c, .h and .r under src/, at the top level and one
+ * directory below it, name-sorted. Changing ANY source moves the hash;
+ * changing none reproduces it.
+ *
+ * The globs are spelled in words on purpose: writing the second one
+ * literally puts a star-slash inside this comment, which ENDS it, and
+ * the next line then compiles as C. That is what it did. */
 #define NOW_SRC_HASH \"${_stamp_short}\"
 #define NOW_BUILT_AT \"${_stamp_when}Z\"
 
