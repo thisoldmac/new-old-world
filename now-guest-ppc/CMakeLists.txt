@@ -180,3 +180,19 @@ else()
         "python3 not found: skipping the canonical 'New Old World.bin' "
         "stamp; deploy now-guest-ppc.bin renamed by hand (see AGENTS.md).")
 endif()
+
+# P3's READER - the content plane's application half (src/content/).
+#
+# Appended with target_sources rather than added to the add_application
+# list above, because that list is held by another lane while this is
+# written and an append cannot collide with an edit. The include path
+# needs no change: NOW_GUEST_SRC_DIRS globs every directory under src/,
+# which is what makes a new domain cost one commit instead of two.
+#
+# qdtrace_read.c and qdtrace_json.c are Toolbox-free and are run by
+# scripts/test-native against rings the real writer builds;
+# qdtrace_cmd.c is the only Toolbox in the plane's reader.
+target_sources(now-guest-ppc PRIVATE
+    src/content/qdtrace_read.c
+    src/content/qdtrace_json.c
+    src/content/qdtrace_cmd.c)
