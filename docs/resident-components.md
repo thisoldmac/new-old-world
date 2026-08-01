@@ -188,6 +188,21 @@ gets at least one deliberate boot before "verified" is claimed.
   per-port within it**, separate failure domain in everything but the
   file.
 
+  *Wired 2026-07-31.* It is in the extension now — `now_content_boot`
+  between `anchor_count` and `magic`, so no reader can see a valid table
+  without the content cap while the plane is present, and
+  `now_content_gne` from the jGNE applier, because only the process
+  pumping can say whether it is the A5 world a request named. It is
+  **compiled and dark**, which is the same state P4 is in and for the
+  same reason: capabilities are bits, never inferred from a version, so
+  a plane ships in the binary before it has earned metal verification.
+  Its capability bit is `1u << 3`, **not** the `1u << 2` its own header
+  asked for while it was written — P4 already held that, and the two
+  lanes could not see each other. An offset collision would have failed
+  the compile; that bit collision would have armed six trap patches in
+  another process while the caller believed it had armed a QuickDraw
+  reader. Both numbers now live in `contract/peek_table.h` with asserts.
+
   *Amended 2026-07-31.* This said "armed per-port", which is necessary
   and not sufficient — it bounds how much gets instrumented and says
   nothing about **whose**. A sibling project measured the same shape in
