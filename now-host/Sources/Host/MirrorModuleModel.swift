@@ -462,6 +462,18 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
             lastAction = Self.nothingToSend(target, named: named)
             return
         }
+        /* The vocabulary is asked before the lane is, and in that order for a
+           reason: whether an act can be carried at all is a fact about NOW's
+           contract, not about whether this window happens to have a wire
+           behind it. A page with no lane that reported "no lane" for a
+           positional click would name the wrong missing half — the click
+           names nothing, and would be refused with a lane. */
+        if case .unavailable(let reason) =
+            ActionModel.availability(actions[0]) {
+            lastAction = ActionReport(outcome: .unavailable, target: named,
+                                      sentence: reason)
+            return
+        }
         guard let driver else {
             lastAction = ActionReport(
                 outcome: .unavailable, target: named,
