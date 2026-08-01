@@ -249,6 +249,131 @@ final class CloudServingTests: XCTestCase {
             if case .fileOffer = $0 { return true } else { return false }
         }, "no offer may exist for a refused get")
     }
+
+    // MARK: - Hardened for an enormous library
+
+    /// Paging math at a scale no fixture short of a real library
+    /// exercises: 10,000 rows, walked entirely by cursor, must land
+    /// exactly once each — the same shape a 40,000-photo library forces
+    /// on PhotosCloudProvider's caching, proven here against a fake so
+    /// the claim does not depend on this Mac's own Photos library.
+    func testListingWalksTenThousandRowsExactlyOnceEach() async throws {
+        let photos = FakeProvider("photos")
+        photos.rows = (1...10_000).map {
+            CloudEntry(item: "asset-\($0)", title: "Photo \($0)",
+                       subtitle: nil, bytes: nil, modified: nil)
+        }
+        listener.cloud.register(photos)
+        let guest = try await connectedGuest()
+
+        var seen: [String] = []
+        var cursor: Int? = nil
+        var askID = 100
+        // The server pins the page size to 16 regardless of what a
+        // provider would hand back, so a 10,000-row walk takes exactly
+        // 625 round trips; a bound well past that catches a paging bug
+        // without hanging the suite on one that never terminates.
+        for _ in 0..<700 {
+            try guest.send(.cloudList(CloudList(id: askID,
+                                                service: "photos",
+                                                cursor: cursor)))
+            let listing = try await lastReceived(on: guest) {
+                if case .cloudListing(let l) = $0, l.id == askID { return l }
+                else { return nil }
+            }
+            seen.append(contentsOf: listing.entries.map(\.item))
+            askID += 1
+            if !listing.more { break }
+            cursor = listing.cursor
+        }
+        XCTAssertEqual(seen.count, 10_000)
+        XCTAssertEqual(Set(seen).count, 10_000, "no row served twice")
+        XCTAssertEqual(seen.first, "asset-1")
+        XCTAssertEqual(seen.last, "asset-10000")
+    }
+
+    /// A page is bounded by MEASURED encoded bytes (boundedCloudPage),
+    /// never by row count alone — proven by rows whose titles are long
+    /// enough that 16 of them would blow the wire's 4KB control-frame
+    /// budget.
+    func testAPageNeverExceedsTheFourKilobyteBound() async throws {
+        let photos = FakeProvider("photos")
+        let longTitle = String(repeating: "x", count: 200)
+        photos.rows = (1...64).map {
+            CloudEntry(item: "asset-\($0)", title: "\(longTitle)-\($0)",
+                       subtitle: String(repeating: "y", count: 200),
+                       bytes: nil, modified: nil)
+        }
+        listener.cloud.register(photos)
+        let guest = try await connectedGuest()
+        try guest.send(.cloudList(CloudList(id: 20, service: "photos",
+                                            cursor: nil)))
+        let listing = try await lastReceived(on: guest) {
+            if case .cloudListing(let l) = $0 { return l } else { return nil }
+        }
+        let encoded = try ControlMessageCodec.encode(
+            .cloudListing(listing))
+        XCTAssertLessThanOrEqual(encoded.count, 4096,
+            "a page must fit the same bound a Files listing keeps")
+        XCTAssertLessThan(listing.entries.count, 16,
+            "wide rows must trim the page below the row cap, not just up to it")
+        XCTAssertTrue(listing.more,
+            "truncating for size must not read as the end of the list")
+        // The trimmed remainder is still reachable: the cursor accounts
+        // for exactly the rows actually sent, not the 16 asked for.
+        XCTAssertEqual(listing.cursor, listing.entries.count + 1)
+    }
+
+    /// cloud.get at photo scale: a multi-MB plan rides the ordinary
+    /// offer/accept/begin/bulk/end lane, the same one a small file uses
+    /// — proving the path that matters is exercised at the size photos
+    /// actually are, not just at the few bytes the other get tests use.
+    func testAMultiMegabytePhotoRidesTheOrdinaryTransferLane() async throws {
+        let photos = FakeProvider("photos")
+        var generator = SystemRandomNumberGenerator()
+        var bytes = Data(count: 3 * 1024 * 1024)
+        bytes.withUnsafeMutableBytes { buffer in
+            for i in buffer.indices {
+                buffer[i] = UInt8.random(in: 0...255, using: &generator)
+            }
+        }
+        photos.plan = OutboundFile.Plan(
+            name: "IMG_5678.jpg", container: "data", bytes: bytes,
+            fileType: "JPEG", creator: "ogle", modified: nil, note: nil)
+        listener.cloud.register(photos)
+        let guest = try await connectedGuest()
+
+        try guest.send(.cloudGet(CloudGet(id: 30, service: "photos",
+                                          item: "asset-99")))
+        var offerId: Int?
+        try await waitUntil("file.offer") {
+            for message in guest.received {
+                if case .fileOffer(let offer) = message {
+                    offerId = offer.id
+                    return offer.bytes == bytes.count
+                }
+            }
+            return false
+        }
+        let id = try XCTUnwrap(offerId)
+
+        try guest.send(.fileAccept(FileAccept(id: id)))
+        try await waitUntil("file.begin", timeout: 15) {
+            guest.received.contains {
+                if case .fileBegin(let begin) = $0 {
+                    return begin.id == id && begin.bytes == bytes.count
+                }
+                return false
+            }
+        }
+        try await waitUntil("bulk + end", timeout: 15) {
+            guest.bulkReceived == bytes
+                && guest.received.contains {
+                    if case .fileEnd(let end) = $0 { return end.ok }
+                    return false
+                }
+        }
+    }
 }
 
 /// The drive provider's report, which is a claim about configuration,
