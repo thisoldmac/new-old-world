@@ -55,6 +55,15 @@ extern void now_ext_gne_filter(void);
    core knows one entry point and nothing else about it. */
 extern void now_ext_act_apply(NowPeekTable *table);
 
+/* The content plane (now_content.c), P3. Two entry points rather than
+   P4's one, and the split is the plane's own: boot allocates and
+   publishes, which may only happen at INIT time in the system heap, and
+   gne decides the arm verdict, which may only happen in the process
+   being asked about. Same rule otherwise - planes talk through the core
+   and never to each other. */
+extern void now_content_boot(NowPeekTable *table);
+extern void now_content_gne(NowPeekTable *table);
+
 /* Fast-path cache: consecutive GetNextEvent calls are usually the same
    front app, so an A5 match skips the slot scan. Lives in the resident
    relocated BSS (fixed system-heap address), valid from any context. */
@@ -232,6 +241,13 @@ void now_ext_gne_apply(void)
     } else if (table->arm_active & kNowPeekTableCapAct) {
         table->arm_active &= ~(NowPeekU32)kNowPeekTableCapAct;
     }
+    /* P3, the content plane. Unlike the two above, the arm handshake is
+       not decided here: this plane's request names an A5 world, and only
+       the process pumping can say whether it is the one named - so the
+       whole verdict, arm and disarm both, lives in now_content_gne and
+       this is the call that lets it run. Disarmed it is a load, a null
+       check and a return. */
+    now_content_gne(table);
 }
 
 /* Gestalt hands any caller the table's address. Uses a real UPP
@@ -287,6 +303,15 @@ void _start(void)
     table->arm_active = 0;
     table->anchor_format = kNowPeekAnchorFormatV3;
     table->anchor_count = 0;
+    /* P3, and the position in this sequence is the point. It allocates
+       its block, installs its QuickDraw procs, and publishes both the
+       block's address and its capability bit - so it must run AFTER the
+       fields above are set and BEFORE `magic` commits, or a reader that
+       sees the table the instant it becomes valid could find it without
+       the content cap while the plane is in fact present. A plane that
+       exists and does not advertise is worse than one that is absent:
+       absent is a state the product handles. */
+    now_content_boot(table);
     /* P4's own format word, and the buffer size THIS binary allocated.
        Both are what an application gates on before it writes a request:
        an extension that predates the plane reports a shorter `length`,

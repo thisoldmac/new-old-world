@@ -51,33 +51,32 @@ typedef SInt16 NowContentS16;
 typedef NowPeekU16 NowContentU16;
 typedef NowPeekU32 NowContentU32;
 
-/* TWO ADDITIONS TO peek_table.h THAT THIS PLANE NEEDS, and cannot make
-   itself (that header is owned by another lane right now):
+/* THE TWO ADDITIONS TO peek_table.h THIS PLANE NEEDED landed 2026-07-31,
+   and the shim that stood in for the first is gone - it did retire
+   itself on the `#define NOW_PEEK_TABLE_HAS_CAP_CONTENT`, and is deleted
+   here rather than left standing, because a stand-in nobody compiles is
+   a definition nobody checks.
 
-     1. a plane capability bit,
-            kNowPeekTableCapContent = 1u << 2,
-        beside kNowPeekTableCapAnchors and kNowPeekTableCapTree, and
-            #define NOW_PEEK_TABLE_HAS_CAP_CONTENT 1
-        so the shim below retires itself;
+   NEITHER LANDED AT THE NUMBER THIS FILE ASKED FOR, and the correction is
+   worth stating rather than quietly absorbing. This header asked for
+   `1u << 2` and for the appended field at 36 + 60 * kNowPeekMaxAnchors.
+   The act plane (P4) had taken both while this one was being written -
+   two lanes each picking the next free bit and the next free offset from
+   the version of the header they could see. So P3 is `1u << 3`, and
+   content_block is appended after P4's cell.
 
-     2. one appended field at the END of NowPeekTable,
-            NowPeekU32 content_block;   / * P3 block address, 0 = absent * /
-        with _Static_assert(offsetof(NowPeekTable, content_block)
-                            == 36 + 60 * kNowPeekMaxAnchors)
-        and the table-size assert grown by 4.
+   The offset collision would have been loud: an offsetof assert fails at
+   compile time. The BIT collision would have been silent and much worse
+   - an application arming the content plane would have armed P4's six
+   trap patches instead, inside another process. That is the reason
+   peek_table.h states every bit and offset in one place, and the reason
+   both numbers are asserted there rather than described here.
 
-   The second is how the application FINDS this block: the extension
-   allocates it in the system heap and publishes its address there. It is
-   appended, so it is accretive under the header's own prefs-record rule -
-   a reader that predates it gates on `length` and never looks. No
-   existing offset moves, so no existing reader changes.
-
-   Until (1) lands, the shim keeps this plane compiling and testable. It
-   is written to disappear on its own the moment the real bit arrives,
-   rather than to become a second definition nobody notices. */
-#ifndef NOW_PEEK_TABLE_HAS_CAP_CONTENT
-enum { kNowPeekTableCapContent = 1u << 2 };
-#endif
+   What the field is for is unchanged: it is how the application FINDS
+   this block. The extension allocates it in the system heap and
+   publishes its address there, 0 meaning absent. Appended, so accretive
+   under the header's own prefs-record rule - a reader that predates it
+   gates on `length` and never looks, and no existing offset moved. */
 
 enum {
     /* 'NWcb' - the block's own magic, distinct from the table's. */
