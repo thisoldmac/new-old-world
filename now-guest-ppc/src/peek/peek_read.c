@@ -5,6 +5,8 @@
 
 #include <string.h>
 
+#include "axmenu.h"
+#include "axprocess.h"
 #include "peek.h"
 #include "peek_oracle.h"
 #include "peek_validate.h"
@@ -287,6 +289,7 @@ NowPeekReadStatus now_peek_windows_for_psn(const ProcessSerialNumber *psn,
             break;                    /* chain left the readable zones */
         }
         memset(&w, 0, sizeof w);
+        w.address = wl;               /* so a second reader can return */
         if (read_bounds(&z, wl, &w)) {
             read_title(&z, wl, w.title, sizeof w.title);
             if (out->count < kNowPeekMaxWindows) {
@@ -344,11 +347,55 @@ NowPeekReadStatus now_peek_menu_titles(const ProcessSerialNumber *psn,
                                        char titles[][32], int max,
                                        int *count)
 {
-    (void)psn;
-    (void)titles;
-    (void)max;
-    /* Stub: the anchor captures menu_list, but this walk is a later
-       pass. The wiring is here so adding it stays app-only. */
+    NowAxContext ctx;
+    NowAxMenuList list;
+    NowPeekReadStatus st;
+    ProcessSerialNumber self;
+    Boolean is_self = false;
+    unsigned int i;
+
+    if (count == NULL) {
+        return kNowPeekReadNoAnchor;
+    }
     *count = 0;
-    return kNowPeekReadStub;
+    if (psn == NULL || titles == NULL || max <= 0) {
+        return kNowPeekReadNoAnchor;
+    }
+    if (GetCurrentProcess(&self) == noErr) {
+        (void)SameProcess(psn, &self, &is_self);
+    }
+    if (is_self) {
+        /* Not a failure and not an empty menu bar: NOW has one, and
+           reading it wants the Toolbox rather than this walk. */
+        return kNowPeekReadStub;
+    }
+    /* One bind, one vocabulary: now_ax_bind_process answers in the same
+       words this file's other two calls do, so a caller needs no second
+       set of names for the same five anchor outcomes. */
+    st = now_ax_bind_process(psn, &ctx);
+    if (st != kNowPeekReadOk) {
+        return st;
+    }
+    if (now_ax_open_menu_list(&ctx.memory, ctx.menu_list, &list) != kNowAxOk) {
+        return kNowPeekReadUnreadable;
+    }
+    for (i = 0; i < list.count && *count < max; ++i) {
+        NowAxMenu menu;
+        int n = 0;
+
+        if (now_ax_read_menu(&ctx.memory, &list, i, &menu) != kNowAxOk) {
+            /* A bar reported short reads as a complete bar. Refuse the
+               whole answer rather than return a prefix of it. */
+            *count = 0;
+            return kNowPeekReadUnreadable;
+        }
+        while (menu.title[n] != '\0' && n < 31) {
+            titles[*count][n] = menu.title[n];
+            ++n;
+        }
+        titles[*count][n] = '\0';
+        ++*count;
+    }
+    /* Ok with zero titles is a real answer here - see the header. */
+    return kNowPeekReadOk;
 }

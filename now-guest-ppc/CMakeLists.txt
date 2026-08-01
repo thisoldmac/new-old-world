@@ -64,6 +64,7 @@ add_application(now-guest-ppc
     src/scene/scene_build.c
     src/scene/scene_json.c
     src/scene/scene_collect.c
+    src/scene/scene_walk.c
     # The foreign-memory walk, ported from this project's own prototype
     # (timbottu/mirror). Pure parsers plus one Toolbox binding; see
     # src/axwalk/axwalk.h for why its constants are evidence.
