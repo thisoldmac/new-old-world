@@ -657,11 +657,16 @@ scene with the ported Platinum renderer. **Every line of it is a UX judgement**
 — tests can say which state it selects and what words that state carries, and
 nothing more.
 
-**It renders replayed scene documents, not the live wire.** The scene family is
-in the contract but nothing on this side asks for one yet, so the only way to
-put something on screen is *Open Scene…* and a recorded JSON document. That is
-deliberate (the renderer can be judged before the wire exists) and it is the
-first thing to check for honesty.
+**It renders replayed documents AND fetched ones** (updated 2026-07-31, was
+"replayed only"). The wire learned to ask: *Look Now* sends `scene.request` and
+draws what comes back, banner-marked as that Mac rather than as a recording.
+*Open Scene…* still replays a file, and both go through the pane's one door.
+
+**A fetch happens because a person pressed something** — not on appearance and
+not on a timer. A scene is a transfer on the one bulk lane screenshots and file
+transfers share, so a poll would take that lane at intervals nobody chose. That
+is a product decision, and it is the first thing to judge here: is a page that
+shows nothing until asked worse than one that shows a stale scene by itself?
 
 What only a person can settle:
 
@@ -672,12 +677,16 @@ What only a person can settle:
   as *nothing has happened yet*, or as *something is wrong*?** Only the
   unreadable-document state is drawn as a fault; if any of the other five
   reads like an error, that is the defect, not a nitpick.
-  - Reaching them today needs the test seams (`record(extensionEvidence:)`,
-    `record(planeEvidence:)`) — nothing probes a real Mac for the extension
-    yet, so on a live desk the page rests on *Not Looked Yet* and stays there.
-    **Judge that too**: is a page that can never leave that rung worse than no
-    page? It is the strongest argument for holding this module back until the
-    wire lands.
+  - **A live desk can leave *Not Looked Yet* now** (updated 2026-07-31): a
+    scene that arrives is proof of both rungs at once and records them. What a
+    person still has to judge is the pair the ask added — *Looking* while a
+    walk is running, and *Not This Time* when the Mac declines. The second is
+    **not** drawn as a fault, because the commonest reason is the Mac being
+    busy with the other thing its one lane carries. Does it read that way?
+  - *Not Looked Yet* remains the resting state on a fresh connection, because
+    asking is a person's decision. Judge whether its new last line — "Look Now
+    asks … to walk its screen" — makes that read as an invitation rather than
+    as a page that failed to load.
 - **The replay banner.** A recorded Finder window drawn full-size is
   indistinguishable from this Mac right now, except for one line in the header:
   *"Replayed from 07-….json — a recording, not this Mac now"*. Is one line, in

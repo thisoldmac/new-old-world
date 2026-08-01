@@ -129,14 +129,20 @@ for a distinction to survive a codebase.
 ### Gates at close
 
 **1317 tests** across all bundles / 0 failures · **51 native tests** · 3/3 guest
-cross-builds. Nothing has run on a Macintosh.
+cross-builds. Nothing has run on a Macintosh. (The scene caller took this to
+**1332 / 0** on 2026-07-31; the guest cross-builds were not re-run — no
+toolchain in that worktree — so 3/3 is Phase 2's number, not a fresh one.)
 
-### The open question Phase 2 asked and did not answer
+### The open question Phase 2 asked, answered 2026-07-31
 
-`GuestListener` has **no scene path** — the family exists only as contract message
-types. So the Mirror pane replays documents, and on a live desk it can never leave
-*Not Looked Yet*. Whether that ships before the wire learns to ask for a scene is
-a product call, recorded in review §15.
+`GuestListener` had **no scene path**. It has one now: `requestScene` sends
+`scene.request`, collects the transfer the guest answers with, and hands the
+undecoded bytes plus the envelope's `irVersion` to the pane's one door. A
+person presses *Look Now*; nothing polls, because a scene is a transfer on the
+lane screenshots and file transfers share. Two resting states were added
+(*Looking*, *Not This Time*) and three changed meaning. Nothing has fetched a
+scene from a Macintosh — the whole path is exercised against a fake guest on
+loopback.
 
 ## Phase 3 — the emulator pass
 
