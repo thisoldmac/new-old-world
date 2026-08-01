@@ -55,7 +55,13 @@ static void put_num(Sink *k, long v)
    to parse on the modern side. */
 static void put_str(Sink *k, const char *s)
 {
-    char esc[4 * kNowSceneIdMax];
+    /* Sized for the LONGEST string any plane carries (a window's text),
+       times the six bytes a MacRoman byte can become as `\uXXXX`, plus
+       the terminator. One buffer rather than a per-caller size, because
+       a caller that picked the wrong one would silently ship a truncated
+       title - and this is a leaf function, so the stack cost is paid
+       once. */
+    char esc[6 * kNowSceneTextMax + 8];
 
     now_json_escape(s != NULL ? s : "", esc, (long)sizeof esc);
     put(k, "\"");
@@ -152,6 +158,110 @@ static void put_processes(Sink *k, const NowScene *s)
     put(k, "]");
 }
 
+/* The menu bar, and only when the front process's walk produced one.
+   `menubar` absent means this scene does not report a menu bar;
+   `menubar` present with an empty `menus` means the front process has
+   none, which a faceless background application genuinely does not.
+
+   `menus[].apple` is NOT emitted. IR v1 carries it, but nothing this
+   walk reads says which menu is the Apple menu - a title byte or a menu
+   id could be made to look like evidence and would be a guess - so the
+   key stays absent rather than becoming a plausible false claim. A
+   menu's `items` is absent when its item walk did not complete, per the
+   retraction rule. */
+static void put_menubar(Sink *k, const NowScene *s)
+{
+    short i;
+    short j;
+
+    if (!s->menubar_present) {
+        return;
+    }
+    put(k, ",\"menubar\":{\"app\":");
+    put_str(k, (s->menubar_proc >= 0 && s->menubar_proc < s->proc_count)
+            ? s->procs[s->menubar_proc].name : "");
+    put(k, ",\"menus\":[");
+    for (i = 0; i < s->menu_count; ++i) {
+        const NowSceneMenu *m = &s->menus[i];
+
+        put(k, i > 0 ? ",{\"title\":" : "{\"title\":");
+        put_str(k, m->title);
+        put(k, ",\"id\":");
+        put_num(k, m->id);
+        put(k, ",\"left\":");
+        put_num(k, m->left);
+        if (m->items_present) {
+            put(k, ",\"items\":[");
+            for (j = 0; j < m->item_count; ++j) {
+                const NowSceneMenuItem *it =
+                    &s->menu_items[m->first_item + j];
+
+                put(k, j > 0 ? ",{\"title\":" : "{\"title\":");
+                put_str(k, it->title);
+                put(k, ",\"index\":");
+                put_num(k, it->index);
+                put(k, ",\"separator\":");
+                put(k, it->separator ? "true" : "false");
+                put(k, ",\"enabled\":");
+                put(k, it->enabled ? "true" : "false");
+                put(k, ",\"mark\":");
+                put(k, it->mark ? "true" : "false");
+                /* `cmd` is absent when the item has no command key, not
+                   an empty string: the key says there is one. */
+                if (it->cmd != '\0') {
+                    char one[2];
+
+                    one[0] = it->cmd;
+                    one[1] = '\0';
+                    put(k, ",\"cmd\":");
+                    put_str(k, one);
+                }
+                put(k, "}");
+            }
+            put(k, "]");
+        }
+        put(k, "}");
+    }
+    put(k, "]}");
+}
+
+/* A window's controls, and only for a window whose whole chain was
+   walked. `ref`, `role` and `checked` are absent throughout: the walk
+   reads a ControlRecord, not its defProc, so it cannot say what KIND of
+   control this is, and `checked` is meaningless without that. */
+static void put_controls(Sink *k, const NowScene *s, const NowSceneWindow *w)
+{
+    short i;
+
+    if (!w->controls_present) {
+        return;
+    }
+    put(k, ",\"controls\":[");
+    for (i = 0; i < w->control_count; ++i) {
+        const NowSceneControl *c = &s->controls[w->first_control + i];
+        char rect[64];
+
+        put(k, i > 0 ? ",{\"title\":" : "{\"title\":");
+        put_str(k, c->title);
+        snprintf(rect, sizeof rect, ",\"rect\":{\"l\":%d,\"t\":%d,\"r\":%d,"
+                 "\"b\":%d}", (int)c->rect.l, (int)c->rect.t, (int)c->rect.r,
+                 (int)c->rect.b);
+        put(k, rect);
+        put(k, ",\"enabled\":");
+        put(k, c->enabled ? "true" : "false");
+        put(k, ",\"visible\":");
+        put(k, c->visible ? "true" : "false");
+        put(k, ",\"value\":");
+        put_num(k, c->value);
+        put(k, ",\"min\":");
+        put_num(k, c->min);
+        put(k, ",\"max\":");
+        put_num(k, c->max);
+        put(k, "}");
+    }
+    put(k, "]");
+}
+
 static void put_windows(Sink *k, const NowScene *s)
 {
     short i;
@@ -180,9 +290,31 @@ static void put_windows(Sink *k, const NowScene *s)
         put_num(k, w->z);
         put(k, ",\"visible\":");
         put(k, w->visible ? "true" : "false");
-        /* No `controls`, no `text`, no `kind`, no `display`: this
-           producer does not report them, and an empty array would say it
-           looked and found none. */
+        /* The walked sub-planes, each present only for the rows whose
+           walk ran and completed. `display` and `items` are still absent
+           everywhere: this producer does not report them at all, and an
+           empty array would say it looked and found none. */
+        if (w->kind_known) {
+            put(k, ",\"kind\":");
+            put_num(k, w->kind);
+        }
+        put_controls(k, s, w);
+        if (w->text >= 0 && w->text < s->text_count) {
+            const NowSceneText *x = &s->texts[w->text];
+
+            put(k, ",\"text\":{\"content\":");
+            put_str(k, x->content);
+            put(k, ",\"active\":");
+            put(k, x->active ? "true" : "false");
+            /* Not IR v1's field set: `truncated` is this producer saying
+               the content is a PREFIX, which the IR has no word for and
+               a consumer must not have to infer from a length. Additive,
+               so the version does not move (IR-V1.md). */
+            if (x->truncated) {
+                put(k, ",\"truncated\":true");
+            }
+            put(k, "}");
+        }
         put(k, "}");
     }
     put(k, "]");
@@ -220,6 +352,44 @@ static void put_meta(Sink *k, const NowScene *s)
         put(k, first ? "" : ",");
         put_str(k, "windows truncated: the machine had more than this "
                 "scene carries");
+        first = 0;
+    }
+    if (s->menubar_refused) {
+        put(k, first ? "" : ",");
+        put_str(k, "menubar omitted: the front process's menu list did not "
+                "parse, so no menu bar is reported rather than an empty one");
+        first = 0;
+    }
+    if (s->menus_truncated) {
+        put(k, first ? "" : ",");
+        put_str(k, "menus truncated: the menu bar had more than this "
+                "scene carries");
+        first = 0;
+    }
+    /* The three retraction notices. Each says the same thing in its own
+       plane's words: a list stopped early, and rather than ship a short
+       one that reads as complete, the key was dropped for that owner.
+       Without these a retracted plane would be indistinguishable from a
+       plane that was never walked, which is the one confusion the whole
+       present-vs-absent split exists to prevent. */
+    if (s->controls_truncated) {
+        put(k, first ? "" : ",");
+        put_str(k, "controls omitted: a window's control list hit a bound "
+                "or failed validation, so that window reports no controls "
+                "rather than some of them");
+        first = 0;
+    }
+    if (s->menu_items_truncated) {
+        put(k, first ? "" : ",");
+        put_str(k, "menu items omitted: a menu's item list hit a bound or "
+                "failed validation, so that menu reports no items rather "
+                "than some of them");
+        first = 0;
+    }
+    if (s->texts_truncated) {
+        put(k, first ? "" : ",");
+        put_str(k, "window text omitted: more windows carried editable text "
+                "than this scene carries");
         first = 0;
     }
     put(k, "]");
@@ -266,6 +436,7 @@ NowSceneEncodeStatus now_scene_encode(const NowScene *s, char *out, long cap,
     put(&k, "}");
     put_apps(&k, s);
     put_processes(&k, s);
+    put_menubar(&k, s);
     put_windows(&k, s);
     put_meta(&k, s);
     put(&k, "}");

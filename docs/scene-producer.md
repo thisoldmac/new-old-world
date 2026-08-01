@@ -2,7 +2,8 @@
 
 **Date:** 2026-07-31 · **Status:** built and natively tested; **never run on a
 Macintosh** · **Code of record:** `now-guest-ppc/src/scene/`, gates in
-`now-guest-ppc/tests/scene_build_test.c` and `scene_json_test.c`
+`now-guest-ppc/tests/scene_build_test.c`, `scene_json_test.c` and
+`scene_walk_test.c`
 
 M5 of [the fold-in plan](plans/2026-07-31-007-feat-now-mirror-integration-plan.md):
 NOW's guest producing Mirror's frozen v1 scene IR (`mirror/docs/IR-V1.md`) over
@@ -21,8 +22,10 @@ travel; this note records what was built and what it refuses to claim.
 | `processes[].{psn,name,front,signature}` | produced (Process Manager) |
 | `windows[].{id,app,psn,title,rect,front,z,visible}` | produced (validated anchor walk) |
 | `meta.{errors,plane,latencyMs}` | produced; `meta.bytes` absent |
-| `menubar`, `menus[]` | **absent** — the walk is blocked, see below |
-| `windows[].controls[]`, `.text`, `.kind`, `.display[]`, `.items` | **absent** |
+| `menubar.{app,menus[]}`, `menus[].items[]` | **conditional** — the front process only, when its bind and its menu list both succeeded |
+| `windows[].controls[]`, `.text`, `.kind` | **conditional** — per window, when that window's walk ran and completed |
+| `menus[].apple`, `controls[].{ref,role,checked}` | **absent** — nothing this walk reads determines them |
+| `windows[].display[]`, `.items[]` | **absent** |
 | `desktopItems[]` | **absent** |
 
 **Absent, not empty, and the difference is the whole point.** An empty
@@ -39,19 +42,88 @@ shipped `"controls":[]` and taught every consumer a false fact.
 unreported plane: it is the list of things that went wrong during a walk that
 did happen, and zero of them is a real answer.
 
-### Why there are no menus
+### Conditional is a third state, and it is the hard one
 
-The obvious first rung looked like the menu walk, and it is blocked for a
-citation reason rather than an effort one. `MenuInfo` is citable — Universal
-Interfaces 3.4 puts `menuData` at offset 14 — but the structure
-`LMGetMenuList()` returns, the header with the entry array of `MenuHandle` plus
-left edge, appears in no header in this toolchain. Writing its stride from
-memory would be a phantom constant in code that dereferences **another
-process's heap**, which is the worst place in the product for one. It waits on
-the Inside Macintosh page, a `MenuBarHeader` in some other interfaces set, or a
-measurement off a live machine. `now_peek_menu_titles` remains the declared
-stub it was, and a process reached through it reports `now_not_walked` rather
-than an empty menu bar.
+Two states were easy: a plane is produced, or it is absent. The walk introduced
+a third, and it is where a producer most easily starts lying. `controls` on one
+window and no `controls` on the next are **both correct** in the same scene, and
+which one appears is a fact about what the walk could do, not about which
+version of the code is running.
+
+So each row carries a *presence bit* beside its contents, and the three states
+are three different documents:
+
+| The row's state | Encoded | Means |
+|---|---|---|
+| walked, has some | `"controls":[…]` | these are all of them |
+| walked, has none | `"controls":[]` | **this window has no controls** |
+| not walked | *(no key)* | this producer did not report them here |
+
+`scene_json_test.c`'s `test_conditional_planes` builds all three **in one
+scene**, because an encoder that emitted the same thing everywhere would
+satisfy any one of them alone.
+
+Two rows never contribute: **our own process**, because NOW is Carbon and its
+records are not at these classic offsets (`axprocess.h` says the same about the
+walk it belongs to, and `scene_collect.c` skips self explicitly rather than
+letting a wrong read fail closed by luck); and any process whose anchor verdict
+does not admit data, which `now_scene_open_menubar` refuses *independently* of
+the collector the way `now_scene_add_window` already did.
+
+### A truncation that cannot be attributed is retracted, not reported short
+
+`meta.errors` can say *"windows truncated"* because a scene has one `windows`
+array for the notice to be about. It cannot say **which window's** controls
+stopped early, and a short list with nothing beside it reads as a complete one.
+
+So when a window's control chain hits its bound, cycles, or meets a pointer that
+fails validation, the whole sub-plane is **dropped for that window** — the key
+goes absent — and a `meta.errors` line records that a drop happened. Same for a
+menu's items, and for the menu bar itself when its list will not parse. The
+retraction always reports; a drop nobody can see would be exactly the partial
+walk delivered as a complete one that the whole design refuses.
+
+### Why there are menus now
+
+The menu walk was blocked for a **citation** reason rather than an effort one:
+`MenuInfo`'s `menuData` at offset 14 is citable (Universal Interfaces 3.4), but
+the structure `LMGetMenuList()` returns — the header plus the entry array —
+appears in no header in this toolchain, and writing its stride from memory would
+have been a phantom constant in code that dereferences another process's heap.
+
+The port closed it with a measurement rather than a guess: `timbottu/mirror`'s
+`axmenu.c` carries a 6-byte header and 6-byte entries, measured against a live
+Mac OS 9.1 Finder, with the `14` this project had already confirmed from
+published documentation as the independent check on the other two. Those
+constants live in `src/axwalk/axmenu.c` beside the code that uses them, and
+`axmenu_test.c` pins them by value.
+
+**`now_peek_menu_titles` is no longer a stub** (2026-07-31). It binds through
+the same anchor plane the window walk uses and answers in the same five words.
+Two things about its contract differ from the window calls and are deliberate:
+`kNowPeekReadOk` with **zero** titles is a real answer, because a faceless
+process genuinely has no menu bar and there is no `NoMenus` in this vocabulary
+to spend on it; and **self returns `kNowPeekReadStub`**, precisely — NOW's own
+menu bar exists and wants the Toolbox, so *"a plane whose walk is not built
+yet"* is exactly true of it. `now_not_walked` still reaches the wire, now
+meaning something narrower than it did.
+
+### What the walked planes still do not assert
+
+- **A control's role.** The walk reads a `ControlRecord`, not its `contrlDefProc`,
+  so it cannot say whether a control is a button, a checkbox or a scroll bar.
+  `role` and `ref` are absent, and `checked` with them — it is meaningless
+  without knowing which. A role inferred from a min/max range would be a guess
+  wearing a fact's clothes.
+- **Which menu is the Apple menu.** IR v1 carries `menus[].apple`; nothing this
+  walk reads determines it, so the key is absent rather than plausible.
+- **Text on a non-dialog window.** A `DialogRecord`'s `TEHandle` is at 160,
+  *past* the end of a 156-byte `WindowRecord`, so the text read is gated on
+  `kind == 2` (`dialogKind`). Without that gate an ordinary window's read would
+  interpret whatever follows its record as a TextEdit handle, and the reader's
+  coherence checks only catch that most of the time. This is the one place where
+  emitting `kind` earns its keep twice: it is IR v1's dialog discriminator *and*
+  the guard in front of the text read.
 
 ## How the oracle's five verdicts survive
 
@@ -142,11 +214,14 @@ produces:
 | Scene | Encoded |
 |---|---|
 | 4 processes, 3 windows | **1193 B** |
-| 24 processes, 32 windows | **9214 B** |
+| 24 processes, 32 windows, unwalked | **9214 B** |
+| the same desktop **walked** — 64 controls, 6 menus of 8 items | **21541 B** |
+| every pool full — this producer's **ceiling** | **46946 B** |
 
 The control-frame cap is 4096 bytes. An idle desktop fits; an ordinary working
-one does not, and this producer does not yet emit menus or controls — the planes
-that made upstream's one-window trace 13980 B. The open question
+one does not — and the walked planes cost 2.3× the same desktop without them,
+which is roughly the gap between our unwalked scene and upstream's 13980 B
+one-window trace, from the other side. The open question
 [streaming-a-scene.md](streaming-a-scene.md) listed as the one that would
 dissolve the whole problem ("do realistic scenes fit in a control frame") is
 answered **no** in our own bytes, and can be treated as closed.
@@ -203,6 +278,37 @@ assertion below was watched failing under a deliberate mutation, then reverted.
 
 `scripts/build-guests`: all three targets green.
 
+### Wiring the walk in, 2026-07-31 (Phase 1.3)
+
+`scripts/test-native`: **49 passed, 0 failed** (48 before). One new file,
+`scene_walk_test.c`, covering `src/scene/scene_walk.c` — the bridge between the
+ported walk and these rules. It is Toolbox-free for the same reason
+`scene_build.c` is: it takes a **bound `NowAxMemory` seam as an argument**, so
+the layer that turns a parser result into a *claim* runs on the host against the
+axwalk fixture's synthetic big-endian arena. The impure half is one
+`now_ax_bind_process` call in `scene_collect.c`, and that call is the only part
+of this plane a Macintosh is needed to exercise.
+
+**The two readers are matched by address, not by position.** `peek_read.c`
+produces the window rows (its rect is the *structure* region — the frame a
+person sees) and now reports each row's `WindowRecord`; the walk returns to that
+exact record for the controls, the kind and the text. Counting along both chains
+would have misfiled every control after the first window `peek_read.c` skipped
+for insane bounds — a quiet, plausible, permanently-wrong scene.
+
+| Mutation | Result |
+|---|---|
+| encoder emits `"controls":[]` on every window (presence guard removed) | 1 red — the conditional-plane gate. The old absence gate could not have caught this: `controls` is now allowed to appear |
+| `now_scene_open_menubar` ignores the anchor verdict | 2 red — assembly's independent refusal, and the bridge's |
+| the misfile invariant (`block_is_tail`) always true | 1 red — two windows interleaving controls, and the second silently taking the first's |
+| the dialog-text read loses its `kind == 2` gate | 1 red — an ordinary window reporting text parsed from the bytes *after* its record |
+| a retracted control plane stops setting its flag | 2 red — a drop nobody can see |
+| `w->text` left at `memset`'s 0 instead of −1 | 3 red — every window claiming text row 0 |
+| the hyphen separator rule removed | 1 red |
+| `cmdChar` marker bytes (< 0x20) reported as command keys | 1 red — a hierarchical-menu marker offered to a person as a keyboard shortcut |
+| a refused control link leaves the short list standing instead of retracting | 1 red — the retraction rule, stated as a mutation |
+| an unparsable menu list reads as an empty menu bar | 1 red — "this app has no menus" where "we could not read them" is true |
+
 **Nothing here has been run by a Macintosh.** No emulator, no metal, no
 `NOW_METAL`. Everything above is *built* and *tested*; nothing is verified. In
 particular the collector — the whole Toolbox half — has never executed, so the
@@ -224,6 +330,14 @@ first live scene is as likely to teach us something as to confirm anything.
    (decode-if-present with an empty default) or NOW's guest cannot be a source
    for MirrorKit at all. Same question for `apps`, `windows` and `meta.errors`,
    which we do emit, so only `controls` bites today.
+
+   **Sharper since the walk landed, not softer.** The guest now emits `controls`
+   on some windows and omits it on others *in the same scene*, so a decoder that
+   cannot express absence does not merely reject an edge case — it rejects a
+   scene of an ordinary desktop. NOW's own host decoder
+   (`AgentIntegrationSceneModels.swift`) already models `menubar`, `menus`,
+   `controls` and `text` as optional, so this side needed no change; the
+   collision is entirely upstream's, and Phase 2.2 owns it.
 4. **A number from a real machine.** What the walk costs on a 1400c is what
    decides whether a scene ever wants the streaming bracket
    ([streaming-a-scene.md](streaming-a-scene.md)); `meta.latencyMs` is emitted

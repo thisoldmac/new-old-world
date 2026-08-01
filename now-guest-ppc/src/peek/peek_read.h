@@ -27,6 +27,16 @@ typedef struct {
     short bottom;
     short right;
     char title[kNowPeekTitleMax]; /* may be empty */
+    /* The WindowRecord this row was read from, so a SECOND reader can
+       return to the same window without re-deriving which one it is.
+       The scene's control and text planes need exactly that, and
+       matching by chain position instead would silently misfile every
+       control after the first window this reader skipped.
+       ZERO FOR OUR OWN WINDOWS: self is read through the Window Manager
+       (see read_own_windows), where there is no classic record to name,
+       and a foreign-offset walk over a Carbon window would be wrong
+       rather than merely unavailable. */
+    unsigned long address;
 } NowPeekWindow;
 
 typedef struct {
@@ -80,10 +90,23 @@ NowPeekReadStatus now_peek_windows_for_psn(const ProcessSerialNumber *psn,
 NowPeekReadStatus now_peek_window_count(const ProcessSerialNumber *psn,
                                         short *count);
 
-/* Menu-bar titles - STUB for a later pass. The anchor already captures
-   each process's MenuList; this walk is not built yet, so it always
-   reports kNowPeekReadStub with *count 0. The wiring exists so adding
-   the real walk later is app-only. */
+/* Menu-bar titles for a given process - the walk that used to be a
+   declared stub and is one no longer (2026-07-31). It binds the process
+   through the same anchor plane the window walk uses and reads the Menu
+   Manager's list through src/axwalk/, so every byte crosses the same
+   validated boundary.
+
+   Returns kNowPeekReadOk with *count possibly ZERO: unlike the window
+   calls, an empty answer here is success, because a faceless process
+   genuinely has no menu bar and there is no NoMenus in this vocabulary
+   to spend on it. A list that will not parse is kNowPeekReadUnreadable;
+   the anchor verdicts come back unchanged.
+
+   SELF REPORTS kNowPeekReadStub, precisely. NOW is a Carbon application,
+   so its own menu structures are not at the classic offsets this walk
+   reads - and "a plane whose walk is not built yet" is exactly true of
+   NOW's own menu bar, which would need the Toolbox rather than a
+   foreign-memory walk. */
 NowPeekReadStatus now_peek_menu_titles(const ProcessSerialNumber *psn,
                                        char titles[][32], int max,
                                        int *count);

@@ -93,6 +93,7 @@ void now_scene_begin(NowScene *s, long seq, double captured_at,
         return;
     }
     memset(s, 0, sizeof *s);
+    s->menubar_proc = -1;             /* memset would say "process 0" */
     s->version = NOW_SCENE_IR_VERSION;
     s->seq = seq;
     s->captured_at = captured_at;
@@ -171,6 +172,7 @@ int now_scene_add_window(NowScene *s, int proc, const char *title,
     }
     w = &s->windows[s->window_count];
     memset(w, 0, sizeof *w);
+    w->text = -1;                     /* memset would say "text row 0" */
     w->proc = (short)proc;
     copy_bounded(w->title, (long)sizeof w->title, title);
     w->rect.t = t;
@@ -199,4 +201,239 @@ int now_scene_add_window(NowScene *s, int proc, const char *title,
     ++p->window_count;
     ++s->window_count;
     return 1;
+}
+
+/* --- the walked sub-planes --------------------------------------------- */
+
+int now_scene_last_window(const NowScene *s)
+{
+    if (s == NULL || s->window_count <= 0) {
+        return -1;
+    }
+    return s->window_count - 1;
+}
+
+static NowSceneWindow *window_at(NowScene *s, int window)
+{
+    if (s == NULL || window < 0 || window >= s->window_count) {
+        return NULL;
+    }
+    return &s->windows[window];
+}
+
+void now_scene_set_window_kind(NowScene *s, int window, short kind)
+{
+    NowSceneWindow *w = window_at(s, window);
+
+    if (w != NULL) {
+        w->kind = kind;
+        w->kind_known = 1;
+    }
+}
+
+int now_scene_open_controls(NowScene *s, int window)
+{
+    NowSceneWindow *w = window_at(s, window);
+
+    if (w == NULL) {
+        return 0;
+    }
+    if (!w->controls_present) {
+        w->controls_present = 1;
+        w->first_control = s->control_count;
+        w->control_count = 0;
+    }
+    return 1;
+}
+
+/* The pool is filled one owner at a time, so an owner's block is always
+   the tail while it is being filled. Anything else means two owners are
+   interleaving, and an entry appended then would silently belong to the
+   wrong one - which is a misattribution, not an overflow, so it is
+   refused rather than flagged. */
+static int block_is_tail(short first, short count, short total)
+{
+    return (int)first + (int)count == (int)total;
+}
+
+int now_scene_add_control(NowScene *s, int window, const char *title,
+                          short t, short l, short b, short r,
+                          int enabled, int visible,
+                          short value, short min, short max)
+{
+    NowSceneWindow *w = window_at(s, window);
+    NowSceneControl *c;
+
+    if (w == NULL || !now_scene_open_controls(s, window)) {
+        return 0;
+    }
+    if (!block_is_tail(w->first_control, w->control_count, s->control_count)) {
+        return 0;
+    }
+    if (s->control_count >= kNowSceneMaxControls) {
+        s->controls_truncated = 1;
+        return 0;
+    }
+    c = &s->controls[s->control_count];
+    memset(c, 0, sizeof *c);
+    copy_bounded(c->title, (long)sizeof c->title, title);
+    c->rect.t = t;
+    c->rect.l = l;
+    c->rect.b = b;
+    c->rect.r = r;
+    c->enabled = enabled ? 1 : 0;
+    c->visible = visible ? 1 : 0;
+    c->value = value;
+    c->min = min;
+    c->max = max;
+    ++w->control_count;
+    ++s->control_count;
+    return 1;
+}
+
+void now_scene_retract_controls(NowScene *s, int window)
+{
+    NowSceneWindow *w = window_at(s, window);
+
+    if (w == NULL || !w->controls_present) {
+        return;
+    }
+    if (!block_is_tail(w->first_control, w->control_count, s->control_count)) {
+        return;
+    }
+    s->control_count = w->first_control;
+    w->controls_present = 0;
+    w->control_count = 0;
+    w->first_control = 0;
+    s->controls_truncated = 1;        /* never a silent drop */
+}
+
+void now_scene_set_window_text(NowScene *s, int window, const char *content,
+                               int active, int truncated)
+{
+    NowSceneWindow *w = window_at(s, window);
+    NowSceneText *x;
+    long len;
+
+    if (w == NULL || w->text >= 0) {
+        return;
+    }
+    if (s->text_count >= kNowSceneMaxTexts) {
+        s->texts_truncated = 1;
+        return;
+    }
+    x = &s->texts[s->text_count];
+    memset(x, 0, sizeof *x);
+    copy_bounded(x->content, (long)sizeof x->content, content);
+    x->active = active ? 1 : 0;
+    /* Truncated is the OR of two clips: the reader's own (the TERec was
+       longer than it carries) and this one. Either way the consumer is
+       told the text is a prefix. */
+    len = (content != NULL) ? (long)strlen(content) : 0;
+    x->truncated = (truncated || len >= (long)sizeof x->content) ? 1 : 0;
+    w->text = s->text_count;
+    ++s->text_count;
+}
+
+int now_scene_open_menubar(NowScene *s, int proc)
+{
+    if (s == NULL || proc < 0 || proc >= s->proc_count) {
+        return 0;
+    }
+    /* The same independent refusal the window rule makes. A menu bar
+       read under a refused anchor is the coin-flip walk the validation
+       layer exists to decline. */
+    if (!now_scene_anchor_admits_windows(s->procs[proc].anchor)) {
+        return 0;
+    }
+    s->menubar_present = 1;
+    s->menubar_proc = (short)proc;
+    return 1;
+}
+
+void now_scene_retract_menubar(NowScene *s)
+{
+    if (s == NULL || !s->menubar_present) {
+        return;
+    }
+    s->menubar_refused = 1;           /* never a silent drop */
+    s->menubar_present = 0;
+    s->menubar_proc = -1;
+    s->menu_count = 0;
+    s->menu_item_count = 0;
+}
+
+int now_scene_add_menu(NowScene *s, const char *title, short id, short left)
+{
+    NowSceneMenu *m;
+
+    if (s == NULL || !s->menubar_present) {
+        return -1;
+    }
+    if (s->menu_count >= kNowSceneMaxMenus) {
+        s->menus_truncated = 1;
+        return -1;
+    }
+    m = &s->menus[s->menu_count];
+    memset(m, 0, sizeof *m);
+    copy_bounded(m->title, (long)sizeof m->title, title);
+    m->id = id;
+    m->left = left;
+    m->first_item = s->menu_item_count;
+    return s->menu_count++;
+}
+
+int now_scene_add_menu_item(NowScene *s, int menu, const char *title,
+                            short index, int separator, int enabled,
+                            int mark, char cmd)
+{
+    NowSceneMenu *m;
+    NowSceneMenuItem *it;
+
+    if (s == NULL || menu < 0 || menu >= s->menu_count) {
+        return 0;
+    }
+    m = &s->menus[menu];
+    if (!m->items_present) {
+        m->items_present = 1;
+        m->first_item = s->menu_item_count;
+        m->item_count = 0;
+    }
+    if (!block_is_tail(m->first_item, m->item_count, s->menu_item_count)) {
+        return 0;
+    }
+    if (s->menu_item_count >= kNowSceneMaxMenuItems) {
+        s->menu_items_truncated = 1;
+        return 0;
+    }
+    it = &s->menu_items[s->menu_item_count];
+    memset(it, 0, sizeof *it);
+    copy_bounded(it->title, (long)sizeof it->title, title);
+    it->index = index;
+    it->separator = separator ? 1 : 0;
+    it->enabled = enabled ? 1 : 0;
+    it->mark = mark ? 1 : 0;
+    it->cmd = cmd;
+    ++m->item_count;
+    ++s->menu_item_count;
+    return 1;
+}
+
+void now_scene_retract_menu_items(NowScene *s, int menu)
+{
+    NowSceneMenu *m;
+
+    if (s == NULL || menu < 0 || menu >= s->menu_count) {
+        return;
+    }
+    m = &s->menus[menu];
+    if (!m->items_present
+        || !block_is_tail(m->first_item, m->item_count, s->menu_item_count)) {
+        return;
+    }
+    s->menu_item_count = m->first_item;
+    m->items_present = 0;
+    m->item_count = 0;
+    m->first_item = 0;
+    s->menu_items_truncated = 1;      /* never a silent drop */
 }
