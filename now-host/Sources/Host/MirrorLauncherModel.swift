@@ -194,8 +194,16 @@ struct MirrorInstallation: Equatable {
     /// it. A marker inside the thing being located, not a name match.
     private static let marker = "host/MirrorKit/Package.swift"
 
+    /// A remembered checkout, so a COPIED app can still find Mirror. The walk
+    /// below only holds while the binary sits inside the repository, which
+    /// stops being true the moment the app is dragged to a Desktop — measured
+    /// 2026-08-01, the first time a person clicked this page and got "Mirror
+    /// was not found" from a perfectly good build.
+    static let rememberedRepoKey = "NOWMirrorRepoRoot"
+
     static func locate(override: String?,
                        startingAt start: URL,
+                       defaults: UserDefaults? = .standard,
                        fileManager: FileManager = .default) -> MirrorInstallation? {
         func isMirror(_ url: URL) -> Bool {
             fileManager.fileExists(
@@ -204,6 +212,14 @@ struct MirrorInstallation: Equatable {
         if let override, !override.isEmpty {
             let url = URL(fileURLWithPath: override).standardizedFileURL
             return isMirror(url) ? MirrorInstallation(root: url) : nil
+        }
+        /* Second in line, deliberately: an explicit environment override
+           still wins, and a remembered path that no longer holds Mirror
+           falls through to the walk rather than refusing outright. */
+        if let remembered = defaults?.string(forKey: rememberedRepoKey),
+           !remembered.isEmpty {
+            let url = URL(fileURLWithPath: remembered).standardizedFileURL
+            if isMirror(url) { return MirrorInstallation(root: url) }
         }
         /* Walk up from the running binary looking for a repository with a
            `mirror/` in it. `swift run` puts the executable at

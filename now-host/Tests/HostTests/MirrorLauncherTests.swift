@@ -75,7 +75,8 @@ final class MirrorLauncherTests: XCTestCase {
            repository root, which is the only reason the walk exists. */
         let executable = root.appendingPathComponent("now-host/.build/debug/Host")
         XCTAssertEqual(
-            MirrorInstallation.locate(override: nil, startingAt: executable)?.root
+            MirrorInstallation.locate(override: nil, startingAt: executable,
+                                      defaults: nil)?.root
                 .standardizedFileURL,
             mirror.standardizedFileURL)
     }
@@ -88,7 +89,34 @@ final class MirrorLauncherTests: XCTestCase {
             at: root.appendingPathComponent("mirror"),
             withIntermediateDirectories: true)
         XCTAssertNil(MirrorInstallation.locate(
-            override: nil, startingAt: root.appendingPathComponent("now-host")))
+            override: nil, startingAt: root.appendingPathComponent("now-host"),
+            defaults: nil))
+    }
+
+    /// A COPIED app — dragged to a Desktop — has no checkout above it, so
+    /// the walk finds nothing and the remembered checkout is the only thing
+    /// that can answer. This is the case a person hit first.
+    func testARememberedCheckoutFindsMirrorFromACopiedApp() {
+        let mirror = makeMirror()
+        let defaults = UserDefaults(suiteName: "MirrorLauncherTests.remembered")!
+        defaults.removePersistentDomain(forName: "MirrorLauncherTests.remembered")
+        defaults.set(mirror.path, forKey: MirrorInstallation.rememberedRepoKey)
+        XCTAssertEqual(
+            MirrorInstallation.locate(override: nil,
+                                      startingAt: URL(fileURLWithPath: "/Users/someone/Desktop"),
+                                      defaults: defaults)?.root.standardizedFileURL,
+            mirror.standardizedFileURL)
+
+        /* A remembered path that no longer holds Mirror must not refuse — it
+           falls through to the walk, which is what makes the fallback safe
+           to leave behind after a checkout moves. */
+        defaults.set(root.appendingPathComponent("gone").path,
+                     forKey: MirrorInstallation.rememberedRepoKey)
+        XCTAssertNil(
+            MirrorInstallation.locate(override: nil,
+                                      startingAt: URL(fileURLWithPath: "/Users/someone/Desktop"),
+                                      defaults: defaults))
+        defaults.removePersistentDomain(forName: "MirrorLauncherTests.remembered")
     }
 
     func testOverrideNamesMirrorDirectly() {
@@ -96,12 +124,12 @@ final class MirrorLauncherTests: XCTestCase {
         let elsewhere = URL(fileURLWithPath: "/")
         XCTAssertEqual(
             MirrorInstallation.locate(override: mirror.path,
-                                      startingAt: elsewhere)?.root
+                                      startingAt: elsewhere, defaults: nil)?.root
                 .standardizedFileURL,
             mirror.standardizedFileURL)
         XCTAssertNil(MirrorInstallation.locate(
             override: root.appendingPathComponent("nowhere").path,
-            startingAt: elsewhere))
+            startingAt: elsewhere, defaults: nil))
     }
 
     // MARK: - The host app
