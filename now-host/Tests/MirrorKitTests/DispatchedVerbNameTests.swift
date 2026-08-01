@@ -62,7 +62,7 @@ final class DispatchedVerbNameTests: XCTestCase {
         "qdtrace": "contract",
         "script": "contract",
         "axdo": "toolkit",
-        "key": "toolkit",
+        "key": "contract",
         "type": "toolkit",
         "click": "toolkit",
         "video": "toolkit",

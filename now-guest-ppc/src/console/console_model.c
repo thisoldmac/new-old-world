@@ -20,6 +20,7 @@
 #include "catsearch.h"
 #include "software.h"
 #include "proc_actions.h"
+#include "input_cmds.h"
 #include "wire.h"
 
 enum {
@@ -466,6 +467,21 @@ static void console_model_dispatch(const char *input)
             ++raw_args;
         }
         (void)now_proc_front_by_name(raw_args, msg, sizeof msg);
+        snprintf(line, sizeof line, "%.120s", msg);
+        console_model_append(line);
+        return;
+    }
+    if (strcmp(name, "key") == 0) {
+        char msg[240];
+
+        /* Whole rest of the line, like launch and front: the grammar is
+           one or two short tokens and it lives once, in
+           now_key_parse_line, so this face and the wire's cannot come to
+           disagree about what `key n` means. */
+        while (*raw_args == ' ') {
+            ++raw_args;
+        }
+        now_input_key_console(raw_args, msg, sizeof msg);
         snprintf(line, sizeof line, "%.120s", msg);
         console_model_append(line);
         return;

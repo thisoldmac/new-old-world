@@ -155,6 +155,17 @@ judgement to make with the ported code in front of us, not now** — the one
 corner-cut this document forbids is deciding a verb is unnecessary before its
 dependencies are in.
 
+**Three of them were judged on 2026-07-31, with the act plane and the
+reference layer in front of us** — which is the condition this section set.
+The arguments are in [input-plane-decisions.md](input-plane-decisions.md);
+the verdicts:
+
+| Verb | Verdict |
+|---|---|
+| `key` | **crossed**, as `key` — and it **refuses `mods`** rather than dropping it. CarbonLib has no `PPostEvent`, so this guest cannot stamp modifiers on the queue element |
+| `click` | **does not cross.** The h2 folder-item probes already have a click on the emulator (QMP) and want an *identity*, not a coordinate — the Finder's own item names through `script`. A guest-side click is the one mechanism that would let a no-hijack probe forge its own evidence |
+| `menugeom` | **does not cross.** Its only consumer is a release point for a menu drag `ActionModel` no longer emits; `menuact` computes no geometry. Calling a foreign MDEF — the riskiest call in upstream's file — to make a dead computation accurate buys nothing |
+
 ### The standing rule
 
 **Check Mirror before deriving anything.** Its new home is this repository. If a

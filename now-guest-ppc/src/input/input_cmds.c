@@ -133,7 +133,17 @@ static int arg_int(const char *json, const char *key, long *out)
  * OUTSIDE the guest CPU (QMP), because that is the only way to produce a
  * click the guest cannot tell from a person's - which is the whole
  * premise of the no-hijack measurement. A guest-side mouse-move would
- * give every one of those probes a way to fake its own control. */
+ * give every one of those probes a way to fake its own control.
+ *
+ * RE-DECIDED 2026-07-31, WITH THE THING THAT WANTED IT NAMED, so that
+ * the next reader gets an argument rather than a preference. The claim
+ * against this rule is that the h2 folder-item probes need a positional
+ * click. They do not need one HERE: on the emulator they already have
+ * QMP and call it, and what they are actually after is a folder ITEM,
+ * which `elements` cannot mint (an icon has no ControlHandle and no trap
+ * in the act plane answers for it) and which the Finder names for free
+ * through `script`. The full ruling, and what to do if a click verb is
+ * ever built anyway, is docs/input-plane-decisions.md. */
 void now_input_run_mouseloc(const char *request_json, long id,
                             char *out, long cap)
 {
@@ -149,6 +159,137 @@ void now_input_run_mouseloc(const char *request_json, long id,
     row_addl(&rows, "x", (long)where.h);
     row_addl(&rows, "y", (long)where.v);
     reply_rows(out, cap, id, "mouseloc", &rows);
+}
+
+/* ---- key --------------------------------------------------------------
+ *
+ * PostEvent, twice, and NOTHING ELSE - because nothing else is available
+ * here. The whole argument for the shape of this verb is in
+ * input_args.h; what this half adds is which return value is
+ * load-bearing, which is the other thing upstream paid for:
+ *
+ *   - The keyDown's OSErr is the one that matters. A keystroke whose
+ *     down half never entered the queue did not happen, and saying ok
+ *     would be the same class of lie as dropping a modifier.
+ *   - The keyUp's is NOT. keyUp is not enabled in the system event mask
+ *     on classic Mac OS, so PostEvent declines it with evtNotEnb (1) on
+ *     every call - measured upstream on every trial including the ones
+ *     that actuated correctly. Treating that as a failure turned a
+ *     working verb into one that errored 20 times in 20 while still
+ *     typing. It is REPORTED as a row and never as a refusal.
+ *   - It is still posted. An application that does watch key-up sees the
+ *     pair when the mask allows it, and posting it costs one call.
+ *
+ * The result reports both halves of the message and whether each was
+ * derived rather than sent. A caller whose application matches on the
+ * virtual code needs to know the code came from a character table and
+ * not from the caller.
+ *
+ * The pair is posted in ONE place, so the wire's face and the Console
+ * page's cannot come to post different events for the same key. */
+static OSErr key_post(const NowKeyRequest *req, OSErr *up_err)
+{
+    UInt32 msg = (UInt32)now_key_message(req);
+    OSErr  down = PostEvent(keyDown, msg);
+    OSErr  up = PostEvent(keyUp, msg);
+
+    if (up_err != NULL) {
+        *up_err = up;
+    }
+    return down;
+}
+
+void now_input_run_key(const char *request_json, long id,
+                       char *out, long cap)
+{
+    char          name[kNowKeyNameMax + 1];
+    long          code = 0;
+    long          ch = 0;
+    long          mods = 0;
+    int           code_present;
+    int           char_present;
+    int           mods_present;
+    NowKeyStatus  status;
+    NowKeyRequest req;
+    OSErr         down_err;
+    OSErr         up_err;
+    InputRows     rows;
+    char          message[96];
+
+    name[0] = '\0';
+    /* find_string and not find_text: a key name is a protocol token,
+       ASCII by contract - the same reading aesend's `event` gets, and the
+       opposite of its `path`. */
+    (void)now_json_find_string(request_json, "name", name,
+                               (long)sizeof name);
+    code_present = arg_int(request_json, "code", &code);
+    char_present = arg_int(request_json, "char", &ch);
+    mods_present = arg_int(request_json, "mods", &mods);
+
+    status = now_key_check(name, code, code_present, ch, char_present,
+                           mods, mods_present, &req);
+    if (status != kNowKeyOk) {
+        reply_error(out, cap, id, now_key_status_code(status),
+                    now_key_status_message(status));
+        return;
+    }
+
+    down_err = key_post(&req, &up_err);
+    if (down_err != noErr) {
+        snprintf(message, sizeof message,
+                 "the event queue refused the keystroke (PostEvent %d), so "
+                 "nothing was typed", (int)down_err);
+        reply_error(out, cap, id, "act-not-taken", message);
+        return;
+    }
+
+    rows_reset(&rows);
+    row_addl(&rows, "code", (long)req.code);
+    row_addl(&rows, "char", (long)req.ch);
+    row_add(&rows, "codeFromCaller", req.code_known && code_present
+                                     ? "true" : "false");
+    row_add(&rows, "charFromCaller", req.char_known && char_present
+                                     ? "true" : "false");
+    row_add(&rows, "codeKnown", req.code_known ? "true" : "false");
+    row_add(&rows, "charKnown", req.char_known ? "true" : "false");
+    /* evtNotEnb (1) here is the NORMAL answer and not a fault. It is a
+       row so that a reader can see it rather than a silence that looks
+       like a working key-up. */
+    row_addl(&rows, "keyUpErr", (long)up_err);
+    row_add(&rows, "mods", "none");
+    /* `posted`, never `typed`. The keystroke entered this Mac's event
+       queue; which application dequeues it, and what it does with it, is
+       the caller's to read back. Same rule as aesend's `sent`. */
+    row_add(&rows, "posted", "true");
+    row_add(&rows, "mechanism", "post-event");
+    row_add(&rows, "availability", "metal-safe");
+    reply_rows(out, cap, id, "key", &rows);
+}
+
+void now_input_key_console(const char *args, char *msg, long cap)
+{
+    NowKeyRequest req;
+    NowKeyStatus  status;
+    OSErr         down_err;
+    OSErr         up_err = noErr;
+
+    status = now_key_parse_line(args, &req);
+    if (status != kNowKeyOk) {
+        snprintf(msg, (size_t)cap, "key: %s", now_key_status_message(status));
+        return;
+    }
+    down_err = key_post(&req, &up_err);
+    if (down_err != noErr) {
+        snprintf(msg, (size_t)cap,
+                 "key: the event queue refused the keystroke (PostEvent %d)",
+                 (int)down_err);
+        return;
+    }
+    /* The typed answer says `posted` for the same reason the wire's does:
+       the keystroke is in the queue, and whether anything acted on it is
+       a different reading. */
+    snprintf(msg, (size_t)cap, "key: posted code %d char %d, no modifiers",
+             req.code, req.ch);
 }
 
 /* ---- script -----------------------------------------------------------

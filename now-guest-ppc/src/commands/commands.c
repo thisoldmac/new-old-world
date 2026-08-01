@@ -1349,11 +1349,17 @@ void now_command_run(const char *name, const char *request_json, long id,
         return;
     }
     /* The input plane. `mouseloc` is a READ and is the instrument every
-       hop calibration in the probes closes its loop against; `script` and
-       `aesend` are the two ways to ask an application to do something
-       without an element reference at all. See input_cmds.h. */
+       hop calibration in the probes closes its loop against; `key` is the
+       one verb here that drives the machine without addressing an
+       element, and it is honest about the one thing it cannot do;
+       `script` and `aesend` are the two ways to ask an application to do
+       something without an element reference at all. See input_cmds.h. */
     if (strcmp(name, "mouseloc") == 0) {
         now_input_run_mouseloc(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "key") == 0) {
+        now_input_run_key(request_json, id, out, cap);
         return;
     }
     if (strcmp(name, "script") == 0) {

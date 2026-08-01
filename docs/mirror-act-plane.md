@@ -108,6 +108,16 @@ land on the wrong item.
 The honest fix is per-item rects **from the guest** — the Menu Manager
 knows each item's height — rather than the host assuming a row height.
 
+**NOW's ruling, 2026-07-31: neither. Delete the computation.** The
+uniform-16 assumption survives in `ActionModel.menuRowHeight`, and its
+only consumer is a release point for a menu drag `ActionModel.menuSelect`
+no longer emits — every menu item now goes through `menuact`, which is
+addressed by identity and computes no geometry at all. Porting
+`menugeom` would mean calling a foreign MDEF, the riskiest call in
+upstream's file, to make a dead computation accurate. The reasoning and
+the re-open condition are in
+[input-plane-decisions.md](input-plane-decisions.md).
+
 ## Control part codes — the constant that was wrong in a comment
 
 `CONTROL_INVOKE` was reported broken. It was not; the caller was sending
