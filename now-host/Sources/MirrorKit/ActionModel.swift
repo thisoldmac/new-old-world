@@ -140,18 +140,39 @@ public enum ActionModel {
         case .activate:
             /* A process serial, which the scene carries for every window. */
             return .available(command: "activate")
-        case .axdo(_, _, _, let text):
-            /* The act plane's addressing grammar and the scene plane's do not
-               meet yet. `ctlact`/`textset` take an opaque reference minted by
-               an observation; NOW's scene producer reads a ControlRecord and
-               cannot name one, so a scene's controls arrive with ref "". */
+        case .axdo(let ref, _, _, let text):
+            /* **The one case that reads its own target, and it has to.**
+               The other cases are functions of the act alone because what
+               they need is a fact about the CONTRACT. This one needs both
+               halves of the question this enum asks — does NOW declare a
+               command, and can a rendered scene address it — and only the
+               second half is a fact about this particular control.
+
+               It used to answer `needsObservation` unconditionally, on the
+               true observation that NOW's scene producer emits controls with
+               ref "". That baked a fact about TODAY'S PRODUCER into a
+               function, so the day a scene carries references somebody would
+               have had to remember to come here and delete it. Read off the
+               ref instead and the answer derives: a control that carries one
+               is addressable, one that does not is not, and the same control
+               in two scenes gets two honest answers.
+
+               The prefix is the act plane's own (`now-element-…`,
+               `AgentIntegrationActPolicy`), spelled here rather than
+               imported because this package deliberately depends on nothing
+               that can reach a machine. A shape check and not a resolution:
+               whether the element is still alive is the guest's to say, and
+               a host-side match would be a stale observation wearing the
+               clothes of a live one. */
             let command = text == nil ? "ctlact" : "textset"
-            return .needsObservation(command: command, reason:
-                "\(command) addresses a control by an opaque reference from a "
-                + "current observation, and a scene carries none — NOW's "
-                + "producer emits controls without refs. Rendering a control "
-                + "and acting on it are two different questions to the "
-                + "machine today.")
+            guard isElementReference(ref) else {
+                return .needsObservation(command: command, reason:
+                    "\(command) addresses a control by an opaque reference "
+                    + "from a current observation, and this control carries "
+                    + "none. Rendering a control and acting on it are two "
+                    + "different questions to the machine.")
+            }
+            return .available(command: command)
         case .click:
             /* Upstream's positional click was a toolkit-worker verb. Its NOW
                shape is ctlact against a referenced control, which is the case
@@ -178,6 +199,27 @@ public enum ActionModel {
                 + "the guest or not at all, and there is no emulator on the "
                 + "other end of a NOW connection by assumption.")
         }
+    }
+
+    /// The shape of a reference an observation minted, checked and not
+    /// resolved.
+    ///
+    /// A second spelling of `AgentIntegrationActPolicy
+    /// .isValidElementReference`, and the duplication is the lesser cost:
+    /// this package reaches no machine by construction
+    /// (`NoSecondWireTests`), and importing the integration module to share
+    /// one predicate would hand it the whole local surface. What is
+    /// duplicated is a prefix and a UUID shape, which is small enough that
+    /// the two cannot drift far, and a drift makes this side report
+    /// `needsObservation` for a reference that works — the safe direction.
+    static func isElementReference(_ value: String) -> Bool {
+        let prefix = "now-element-"
+        guard value == value.lowercased(), value.hasPrefix(prefix),
+              value.count == prefix.count + 36 else {
+            return false
+        }
+        return UUID(uuidString: String(value.dropFirst(prefix.count)))
+            != nil
     }
 
     // MARK: - Guest menu geometry (menu-drag targeting)

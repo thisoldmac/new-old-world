@@ -189,6 +189,39 @@ final class HitActionTests: XCTestCase {
                                                 titleLeft: 38)])
     }
 
+    /// **A ⌘ item goes through the Portal too**, and this is the assertion
+    /// that keeps it there.
+    ///
+    /// It used to go as a keystroke. `key` on this Mac cannot carry a
+    /// modifier at all — CarbonLib has no `PPostEvent`, so the queue
+    /// element's modifiers are unreachable — and `availability(.key)` says
+    /// so. The routing that survived the port therefore sent the ORDINARY
+    /// menu item down the one path NOW cannot serve, and the shortcut-less
+    /// one down the path it can: a person clicking File▸Open got silence
+    /// and the same person clicking File▸Page Setup… reached the machine,
+    /// with nothing to tell them which half they were in.
+    func testAShortcutItemAlsoGoesThroughThePortal() {
+        let openItem = Scene.MenuItem(title: "Open…", index: 2,
+                                      separator: false, enabled: true,
+                                      mark: false, cmd: "O")
+        let menu = Scene.Menu(title: "File", apple: false, left: 38,
+                              id: 129, items: [openItem])
+
+        let actions = ActionModel.menuSelect(menu: menu, item: openItem)
+
+        XCTAssertEqual(actions,
+                       [MirrorAction.menuInvoke(menuID: 129, itemIndex: 2,
+                                                titleLeft: 38)])
+        for action in actions {
+            XCTAssertTrue(
+                ActionModel.availability(action).isAvailable,
+                "\(action) is what a person clicking a ⌘ menu item now "
+                    + "gets, and NOW cannot send it. A route to an act the "
+                    + "contract does not carry is a silent no-op wearing a "
+                    + "menu.")
+        }
+    }
+
     func testFrontWindowWidgetsAndGrowBox() throws {
         let scene = try fixtureScene("06-axtree-all-graphcalc")
         let front = scene.windows.first { $0.front }!
