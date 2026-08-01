@@ -187,18 +187,40 @@ static pascal void qdprobe_rect(GrafVerb verb, const Rect *r)
         ++gShared->rect_calls;
     }
     for (i = 0; i < gPortCount; ++i) {
-        if (gPorts[i].port == port && gPorts[i].saved_procs != 0) {
+        if (gPorts[i].port != port) {
+            continue;
+        }
+        if (gPorts[i].saved_procs != 0) {
             CQDProcs *prev = (CQDProcs *)gPorts[i].saved_procs;
 
             if (prev->rectProc != NULL) {
                 CallQDRectProc(prev->rectProc, verb, r);
+                return;
             }
-            return;
         }
+        /* No chain under us, which is the ORDINARY case and was a bug
+           until 2026-07-31: patch_current_port only ever claims a port
+           whose grafProcs was NULL, so saved_procs is always 0, so the
+           old condition (`&& saved_procs != 0`) never matched a port we
+           had legitimately patched. Every rectangle drawn through one -
+           erases included - fell through to the "draw nothing" path
+           below, which meant that while armed the probe SILENTLY
+           REPLACED all rect drawing with nothing. This file's own header
+           says it "never replaces the drawing, only observes it"; that
+           was false for the one case that actually happens.
+
+           StdRect is what QuickDraw would have called had we not been
+           here, so calling it restores exactly that. Found by the
+           reader spike, which had to be written to tolerate the
+           behaviour before anyone noticed it was a defect. */
+        StdRect(verb, r);
+        return;
     }
     /* Our proc on a port we have no record of: draw nothing rather than
        guess at a chain we are not on. Visible as a missing rectangle,
-       which is a bug report; guessing is a corrupted screen. */
+       which is a bug report; guessing is a corrupted screen. This path
+       is now genuinely exceptional - it means our proc is installed
+       somewhere our table does not know about. */
 }
 
 static short find_port(unsigned long port)
