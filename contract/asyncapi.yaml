@@ -2992,8 +2992,13 @@ components:
         hijack number.
 
         It is a read and it stays a read. There is deliberately no
-        move-the-mouse verb beside it: the drag plane belongs to the
-        emulator's own input path, where it can be watched.
+        move-the-mouse verb and no positional click verb beside it: the
+        drag plane belongs to the emulator's own input path, where it can
+        be watched. A guest-side click is the one mechanism that would
+        let a no-hijack probe forge the evidence it exists to gather, and
+        the thing that asked for one — folder items — wants an identity
+        rather than a coordinate. Ruled on 2026-07-31; the argument is in
+        docs/input-plane-decisions.md.
       args: {}
       x-line: Nothing. It takes no arguments.
       output:

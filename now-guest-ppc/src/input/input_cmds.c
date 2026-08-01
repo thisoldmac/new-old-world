@@ -133,7 +133,17 @@ static int arg_int(const char *json, const char *key, long *out)
  * OUTSIDE the guest CPU (QMP), because that is the only way to produce a
  * click the guest cannot tell from a person's - which is the whole
  * premise of the no-hijack measurement. A guest-side mouse-move would
- * give every one of those probes a way to fake its own control. */
+ * give every one of those probes a way to fake its own control.
+ *
+ * RE-DECIDED 2026-07-31, WITH THE THING THAT WANTED IT NAMED, so that
+ * the next reader gets an argument rather than a preference. The claim
+ * against this rule is that the h2 folder-item probes need a positional
+ * click. They do not need one HERE: on the emulator they already have
+ * QMP and call it, and what they are actually after is a folder ITEM,
+ * which `elements` cannot mint (an icon has no ControlHandle and no trap
+ * in the act plane answers for it) and which the Finder names for free
+ * through `script`. The full ruling, and what to do if a click verb is
+ * ever built anyway, is docs/input-plane-decisions.md. */
 void now_input_run_mouseloc(const char *request_json, long id,
                             char *out, long cap)
 {
