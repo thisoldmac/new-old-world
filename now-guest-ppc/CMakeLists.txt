@@ -71,6 +71,7 @@ add_application(now-guest-ppc
     src/axwalk/axtext.c
     src/axwalk/axresolve.c
     src/axwalk/axbinding.c
+    src/axwalk/axprocess.c
     resources/app.r
     # The application icon family, generated from the artwork by
     # assets/icons/classic/rez.py and shared with any other target that
