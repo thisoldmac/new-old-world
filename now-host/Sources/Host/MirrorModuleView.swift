@@ -18,6 +18,11 @@ import UniformTypeIdentifiers
 /// `docs/metal-and-ux-review.md`.
 struct MirrorModuleView: View {
     @ObservedObject var model: MirrorModuleModel
+    /// Filled in by `MirrorKeyCaptureView` once it has a real `NSView` to
+    /// focus. `press(at:in:scene:)` calls it after its own gesture runs, so
+    /// a click on the drawing both addresses the guest AND hands typing
+    /// focus to the layer that will carry the next keystroke there.
+    @State private var focusKeyCapture: (() -> Void)?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -198,7 +203,27 @@ struct MirrorModuleView: View {
                             .onEnded { gesture in
                                 press(at: gesture.location,
                                       in: proxy.size, scene: scene)
+                                /* AFTER the press, deliberately — see
+                                   `MirrorKeyCaptureView`'s header for why
+                                   this is a second, later call rather than
+                                   the same mouseDown the gesture above
+                                   handles. "Focused" on this page means
+                                   "the drawing was the last thing clicked". */
+                                focusKeyCapture?()
                             })
+                    /* Overlaid, and safe to overlay only because this view
+                       is deaf to the mouse everywhere in its bounds
+                       (`hitTest` returns nil) — the gesture above is
+                       unaffected by its presence. */
+                    .overlay(
+                        MirrorKeyCaptureView(
+                            onKey: { code, characters, cmd, opt, ctrl in
+                                model.key(virtualKeyCode: code,
+                                         characters: characters,
+                                         command: cmd, option: opt,
+                                         control: ctrl)
+                            },
+                            focusRequest: $focusKeyCapture))
             }
             .aspectRatio(CGFloat(scene.screen.w) / CGFloat(scene.screen.h),
                          contentMode: .fit)

@@ -153,7 +153,7 @@ final class NoSecondWireTests: XCTestCase {
     private static let everyAction: [MirrorAction] = [
         .axdo(ref: "ax2:1"),
         .axdo(ref: "ax2:1", count: 1, mods: 0, text: "typed"),
-        .key(code: 0, char: 97, mods: 256),
+        .key(name: nil, code: 0, char: 97, mods: 256),
         .type(text: "hi"),
         .activate(psn: "1.2"),
         .click(x: 5, y: 5),
