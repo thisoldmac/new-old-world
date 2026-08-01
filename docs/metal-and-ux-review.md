@@ -257,14 +257,41 @@ any stream has run shows "Nothing has established whether … serves stream.stop
 stream.refresh". True — neither is observable until used — but judge whether it
 reads as a warning on a control that works perfectly.
 
-## 4c. An action that does not apply to the item — Software and Processes
+## 4c. An action that does not apply to the item — Software, Processes, Diagnostics
 
-The mechanism exists and is tested; **the panes have not been changed yet** (see
-the integrator note in `GuestItemApplicability.swift`). Once they are, judge on
-metal that the two greyed states are distinguishable *without hovering*: an
-extension whose Launch is dark because it is not an application, versus a
-control dark because this Mac does not serve the verb. Those lead to different
-next actions and a person must be able to tell which they are looking at.
+**Wired 2026-07-31.** The three panes the mechanism was written for now route
+through `GuestCapabilityGate` instead of deciding for themselves:
+
+| Pane | Control | What changed |
+| --- | --- | --- |
+| Software | Launch | Was live on a system extension — `isLaunchable` is only "the machine named a path" — and the guest refused it after the round trip. Now dark on anything whose Finder type is not `APPL`, with the reason beside it. **Show in Finder is deliberately untouched and rule-free.** |
+| Processes | Bring to Front | Was live on a faceless background process. Now dark on one, off the guest's own `modeOnlyBackground` classification. `isDrivable` / `isQuittable` are unchanged. |
+| Diagnostics | Run | Was **absent** on a verb the Mac does not serve; now present and dark, so the cards no longer change height as machines connect and leave. |
+
+What a person still has to judge, on metal, and a build cannot answer:
+
+- **Are the two greyed states distinguishable *without hovering*?** An extension
+  whose Launch is dark because it is not an application, versus a control dark
+  because this Mac does not serve the verb. They lead to different next actions —
+  one is answered by attaching a different Mac and the other never is — and the
+  sentences are the only thing telling them apart. Both now draw beside the
+  control rather than only in the tooltip; judge whether that reads, or whether
+  it reads as clutter on a page of ordinary rows.
+- **Does a dark control still read as damage?** That is the whole failure this
+  guards against, and it is a judgement about the sentence, not about the state.
+- **Does the Diagnostics page look better or worse for keeping the button?** The
+  trade is a stable layout against a permanently dead control on a card. The
+  argument for it is that a control which simply vanishes cannot explain itself;
+  the argument against is only visible with the three cards in front of you.
+- **Enabled-but-unproven.** `unsettled` leaves every one of these live on a Mac
+  nobody has asked yet, on purpose. Judge whether clicking one and reading the
+  machine's own refusal is a decent experience or a trap — it is the one case
+  where the app deliberately lets a click fail.
+
+The tests reach the views only by reading their source
+(`GuestItemGateWiringTests`, through `GateSource`), which proves the call is
+spelled and cannot prove the control is reachable. Seeing the buttons is this
+section's job.
 
 ## 5. The Files page's new verbs
 

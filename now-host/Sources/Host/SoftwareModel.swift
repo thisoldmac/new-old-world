@@ -1,4 +1,5 @@
 import Foundation
+import NOWAgentIntegration
 
 /// The connected Mac's installed software, pulled over the wire.
 ///
@@ -137,15 +138,45 @@ final class SoftwareModel: ObservableObject, GuestScopedModel {
     @Published private(set) var sweepCost: [SweepRow]?
 
     private let listener: GuestListener
+    /// What the machines on the wire have said they can do. Shared with every
+    /// other page that gates a control, injectable so a test gets its own.
+    let capabilities: GuestCapabilityRecord
     /// Guards against a slow page landing after a refresh or a domain
     /// switch: each load takes a token, only the current token appends.
     private var loadToken = 0
 
-    init(listener: GuestListener) {
+    init(listener: GuestListener,
+         capabilities: GuestCapabilityRecord = .shared) {
         self.listener = listener
+        self.capabilities = capabilities
     }
 
     var canBrowse: Bool { connection.canCapture }
+
+    /// **Whether Launch means anything for this item, on this Mac** — the two
+    /// questions in one answer, and they are different questions.
+    ///
+    /// `isLaunchable` is a third fact again and stays where it is: it says the
+    /// machine named a path, which is honesty about the listing rather than
+    /// about the item or the wire. What was missing is the item's own kind. A
+    /// system extension has a path, so the button was live on one, and the
+    /// guest refused it after a round trip with "not an application" — its own
+    /// rule, learned the slow way. It is the same rule, said before the trip.
+    func launchGate(_ entry: SoftwareEntry) -> GuestCapabilityGate.Decision {
+        GuestCapabilityGate.decide(
+            LaunchSoftwareProjection.self, performing: .launch,
+            on: entry.itemKind, named: entry.name,
+            in: capabilities.evidence(for: connection, listener: listener))
+    }
+
+    /// The sentence a dark Launch button owes the reader, and nil while it
+    /// works — including for the merely unproven case, which is enabled and
+    /// does not get to nag.
+    func launchUnavailableNote(_ entry: SoftwareEntry) -> String? {
+        let decision = launchGate(entry)
+        guard decision.deservesAVisibleReason else { return nil }
+        return decision.explanation
+    }
 
     var selectedEntry: SoftwareEntry? {
         rows.first { $0.id == selection }

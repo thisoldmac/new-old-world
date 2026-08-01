@@ -231,6 +231,12 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
     struct Snapshot {
         var states: [DiagnosticState]
         var askedForCommands: Bool
+        /// That machine's own command table, parked with its readings. It is
+        /// the evidence the gate decides over, and it is a fact about the
+        /// machine those readings came from — carrying one Mac's table into
+        /// another's cards is exactly the mistake the per-guest cache exists
+        /// to prevent.
+        var commandNames: Set<String>?
     }
 
     private let cache = GuestStateCache<Snapshot>()
@@ -241,15 +247,28 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
     @Published private(set) var states: [DiagnosticState]
 
     private let listener: GuestListener
+    /// What the machines on the wire have said they can do. Shared with every
+    /// other page that gates a control, injectable so a test gets its own.
+    let capabilities: GuestCapabilityRecord
     /// Per-verb run generation, so a late answer from a superseded run
     /// cannot land on top of a newer one.
     private var generation: [String: Int] = [:]
     /// Whether this connection's command table has been asked for. One ask
     /// per machine: a command table does not change inside a launch.
     private var askedForCommands = false
+    /// The connected machine's `help` table, kept as the machine wrote it.
+    ///
+    /// **Nil is "it has not answered yet", never "it has no commands"** — the
+    /// distinction `GuestCapabilityEvidence.commandNames` is built on. It is
+    /// held here so the gate can be handed the table this page already asked
+    /// for: a second `help` per card would be this side asking a machine
+    /// something it has already answered.
+    private var commandNames: Set<String>?
 
-    init(listener: GuestListener) {
+    init(listener: GuestListener,
+         capabilities: GuestCapabilityRecord = .shared) {
         self.listener = listener
+        self.capabilities = capabilities
         states = GuestDiagnostics.all.map { DiagnosticState(diagnostic: $0) }
     }
 
@@ -260,6 +279,39 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
 
     func state(id: String) -> DiagnosticState? {
         states.first { $0.id == id }
+    }
+
+    /// **Whether the machine on the wire serves one diagnostic verb**, and the
+    /// sentence to show when it does not.
+    ///
+    /// One requirement — the verb itself — because that is genuinely all this
+    /// card needs; there is no projection row per diagnostic and inventing one
+    /// to have something to name would be a second answer about the same
+    /// machine. The command table is the one this page already asked for, so a
+    /// dark button costs no extra `help`.
+    ///
+    /// A machine that has not listed its commands leaves this `unsettled`,
+    /// which is ENABLED: unproven is not a no, and the run is what settles it.
+    func gate(for diagnostic: GuestDiagnostic) -> GuestCapabilityGate.Decision {
+        GuestCapabilityGate.decide(
+            requiring: [diagnostic.verb],
+            in: capabilities.evidence(for: connection, listener: listener,
+                                      commandNames: commandNames))
+    }
+
+    /// The sentence a dark Run button owes the reader, when the card is not
+    /// already saying it in better words.
+    ///
+    /// Nil for `notServed`, deliberately: the card's own body writes that case
+    /// (`notServedSentence`) and names the sibling guest that answers the verb,
+    /// which is more than the gate can know. This covers the rest — a machine
+    /// that refused the verb by name, or none attached at all — so that no
+    /// greyed button on this page is ever left standing beside nothing.
+    func unavailableNote(for state: DiagnosticState) -> String? {
+        let decision = gate(for: state.diagnostic)
+        guard decision.deservesAVisibleReason,
+              state.serving != .notServed else { return nil }
+        return decision.explanation
     }
 
     /// Run one diagnostic, replacing whatever it held.
@@ -301,6 +353,15 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
                        "broken". */
                     self.states[idx].serving = .notServed
                     self.states[idx].refusal = nil
+                    /* Written down where the gate can read it, in the
+                       machine's own words. Without this the card would say
+                       "not available on this Mac" underneath a Run button that
+                       still worked: `help` had listed the verb, so the gate
+                       would go on answering `allowed` while the machine had
+                       already refused it by name. */
+                    self.capabilities.noteRefusal(
+                        verb, by: self.connection.key,
+                        code: code, message: result.error?.message)
                     return
                 }
                 self.states[idx].serving = .served
@@ -309,6 +370,9 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
                 return
             }
             self.states[idx].serving = .served
+            // It answered. The strongest evidence there is that it serves the
+            // verb, and the gate should not need `help` to have said so.
+            self.capabilities.noteServed(verb, by: self.connection.key)
             self.states[idx].rows = rows.enumerated().map { pair in
                 DiagnosticRow(index: pair.offset,
                               label: pair.element.first ?? "",
@@ -337,6 +401,7 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
             guard result.ok, let rows = result.output?["help"] else { return }
             let names = Set(rows.compactMap { $0.first })
             guard !names.isEmpty else { return }
+            self.commandNames = names
             for i in self.states.indices {
                 /* Only a POSITIVE answer moves a card off `unknown` in this
                    direction as well: a table that came back without the verb
@@ -361,7 +426,8 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
                     states: GuestDiagnostics.all.map {
                         DiagnosticState(diagnostic: $0)
                     },
-                    askedForCommands: false)
+                    askedForCommands: false,
+                    commandNames: nil)
             // A run in flight belonged to the machine we left; the listener
             // has already failed whatever request was outstanding.
             states = fresh.states.map { state in
@@ -370,6 +436,7 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
                 return state
             }
             askedForCommands = fresh.askedForCommands
+            commandNames = fresh.commandNames
             askWhatThisMacServes()
             return
         }
@@ -387,6 +454,7 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
            and a served set carried across that would be this page asserting
            something it has not asked. */
         askedForCommands = false
+        commandNames = nil
     }
 
     /// A machine leaving the roster takes its readings with it.
@@ -402,6 +470,7 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
     }
 
     private func snapshot() -> Snapshot {
-        Snapshot(states: states, askedForCommands: askedForCommands)
+        Snapshot(states: states, askedForCommands: askedForCommands,
+                 commandNames: commandNames)
     }
 }

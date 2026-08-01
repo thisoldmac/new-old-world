@@ -1,32 +1,29 @@
 import Foundation
 import NOWAgentIntegration
 
-/*  Integrator note, 2026-07-31 — where this is NOT applied yet.
+/*  Integrator note, 2026-07-31 — applied, and where.
 
-    The mechanism landed on a branch that owned neither of the two panes it
-    was written for, so three views still decide for themselves. Each is one
-    call, and none changes a layout:
+    The mechanism landed on a branch that owned none of the panes it was
+    written for, so for a day three views still decided for themselves. They
+    no longer do. What each spends, so the next reader can find them:
 
-    - `SoftwareModuleView.swift`, the Launch button. Today:
-      `.disabled(!entry.isLaunchable || …)`, where `isLaunchable` is only
-      `!path.isEmpty` — a path-honesty check that says nothing about type, so
-      the button is live on an extension and the guest refuses it after the
-      round trip. Add `entry.itemKind` through
-      `GuestCapabilityGate.decide(LaunchSoftwareProjection.self,
-      performing: .launch, on: entry.itemKind, named: entry.name, in: …)`,
-      disable on `!decision.isEnabled`, and show `decision.explanation` where
-      `deservesAVisibleReason`. Reveal needs no rule and must not get one.
-    - `ProcessesModuleView.swift`, the Bring to Front button, with
-      `entry.itemKind` and `.bringToFront`. `isDrivable`/`isQuittable` stay:
-      they are a third fact (this row sent no PSN) and are not restated here.
-    - `DiagnosticsModuleView.swift`, the three cards — the capability axis
-      only. That page hides the Run button entirely when a verb is absent
-      (`action(_:)` returns `EmptyView()` for `.notServed`); the finding asks
-      for present-and-dark instead, which is `.disabled(!decision.isEnabled)`
-      plus the sentence it already writes in `notServedSentence`.
-      `DiagnosticsModel` already holds a command table, so pass it as
-      `commandNames:` to `GuestCapabilityRecord.evidence(...)` and the gate
-      resolves `vprobe`/`shotdiag`/`putstat` with no second `help`.          */
+    - `SoftwareModel.launchGate(_:)` → the Software page's Launch button.
+      That is the reported defect closed: `isLaunchable` is only
+      `!path.isEmpty`, so Launch was live on a system extension and the guest
+      refused it after the round trip. **Reveal was left rule-free and must
+      stay that way** — it opens nothing.
+    - `ProcessesModel.bringToFrontGate(_:)` → the Processes page's Bring to
+      Front. `isDrivable`/`isQuittable` are untouched: "this row sent no PSN"
+      is a third fact about the listing and is not restated through here.
+    - `DiagnosticsModel.gate(for:)` → each Diagnostics card's Run button, the
+      capability axis only, over the `help` table that page already asked for
+      (`commandNames:`), so no card costs a second `help`. The button used to
+      be ABSENT on a verb the machine does not serve; it is now present and
+      dark, because a control that vanishes moves the cards below it and
+      cannot explain itself.
+
+    Reached-ness is gated in `GuestItemGateWiringTests`; what a person still
+    has to judge is docs/metal-and-ux-review.md §4c.                         */
 
 /// **The second reason a control is dark, and it is not the first one.**
 ///

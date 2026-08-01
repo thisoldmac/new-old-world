@@ -11,10 +11,15 @@ import SwiftUI
 /// diagnostic measures, what it costs before anyone spends it, and either a
 /// button or the sentence explaining why there is none.
 ///
-/// **A card for a verb this Mac does not serve shows no button.** A disabled
-/// control with no explanation is the thing this page must not be: it reads
-/// as broken. The card says which Mac model answers it instead, so the
-/// absence reads as what it is.
+/// **A card for a verb this Mac does not serve shows the button dark, never
+/// missing.** The two failures are different and this page has to avoid both:
+/// a disabled control with no explanation reads as broken, and a control that
+/// vanishes moves the card underneath it every time a machine connects or
+/// leaves. So the button stays where it was and the card says why it will not
+/// respond — which Mac model answers the verb instead — so the darkness reads
+/// as what it is. Whether it responds is `GuestCapabilityGate`'s answer, the
+/// same one every other page gets about the same machine, never this page's
+/// private reading.
 struct DiagnosticsModuleView: View {
     @ObservedObject var model: DiagnosticsModel
 
@@ -106,32 +111,51 @@ struct DiagnosticsModuleView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             body(state)
+            if let note = model.unavailableNote(for: state) {
+                /* The catch-all beside a dark button the body has no sentence
+                   for. The `notServed` case writes its own, richer one below;
+                   this is what keeps every OTHER way the gate can go dark from
+                   leaving a greyed control standing next to nothing. */
+                Label(note, systemImage: "minus.circle")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(12)
         .background(.quaternary.opacity(0.35),
                     in: RoundedRectangle(cornerRadius: 8))
     }
 
-    /// The button, or the sentence that replaces it.
-    @ViewBuilder
+    /// The button — **present on every card, dark on the ones this Mac does
+    /// not serve.**
+    ///
+    /// It used to be absent there, and absence is the wrong shape: the three
+    /// cards then changed height as machines came and went, and a control that
+    /// is simply not drawn cannot tell anyone why. Dark-with-a-sentence says
+    /// the same thing in the place the eye is already going, and the layout
+    /// holds still across a reconnect.
+    ///
+    /// Enablement comes off the gate rather than this page's own reading of
+    /// `serving`, so the answer here is the same answer every other page gets
+    /// about the same machine.
     private func action(_ state: DiagnosticState,
                         run: @escaping () -> Void) -> some View {
-        switch state.serving {
-        case .notServed:
-            EmptyView()
-        case .served, .unknown:
-            HStack(spacing: 6) {
-                if state.isRunning {
-                    ProgressView().controlSize(.small)
-                }
-                Button {
-                    run()
-                } label: {
-                    Label(state.hasRun ? "Run Again" : "Run",
-                          systemImage: "play.fill")
-                }
-                .disabled(!model.isConnected || state.isRunning)
+        let decision = model.gate(for: state.diagnostic)
+        return HStack(spacing: 6) {
+            if state.isRunning {
+                ProgressView().controlSize(.small)
             }
+            Button {
+                run()
+            } label: {
+                Label(state.hasRun ? "Run Again" : "Run",
+                      systemImage: "play.fill")
+            }
+            .disabled(!decision.isEnabled || !model.isConnected
+                      || state.isRunning)
+            .help(decision.explanation
+                  ?? "Runs \(state.diagnostic.verb) on this Mac.")
         }
     }
 
