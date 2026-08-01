@@ -63,9 +63,21 @@ face** can ask for, gap by gap. Neither restates the other's tables.
 > but the PowerPC guest now SENDS two fields the 68K guest does not: a
 > build stamp, and `agent`, the machine's own answer about what an agent
 > companion may do to it (`disabled` / `read-only` / `full`, ordered,
-> optional). The PowerPC guest's answer is a hardcoded `full` from
-> `now_agent_access()`; NOW-68K sends no `agent` field at all, and absence
-> is not consent — it is a fact about the sender. The host's ceiling and
+> optional). The PowerPC guest's answer comes from its preferences file
+> by way of `now_agent_access()`, and a person sets it on the MCP page of
+> the Workshop; NOW-68K sends no `agent` field at all, and absence is not
+> consent — it is a fact about the sender.
+>
+> **And `hello` is no longer the last word on it (2026-07-31).** The
+> PowerPC guest also SENDS `agent.access`, which revises that answer on a
+> link already up — `hello` is sent once per connection, so before it a
+> tier changed mid-session did not reach the host until the link was
+> rebuilt, and the host went on permitting what the person had just
+> withdrawn. NOW-68K sends no revision because it has no switch to
+> revise: no MCP module, no consent page, and nothing that could change
+> the answer it never gives. That is a declared asymmetry and not a gap
+> to close — a revision message on a guest with no tier to revise would
+> be a verb with nothing behind it. The host's ceiling and
 > what absence currently means are host-side and live in
 > [mcp-coverage.md](mcp-coverage.md) and
 > [agent-integration.md](agent-integration.md). **No guest has ever sent
@@ -113,6 +125,7 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 | `capture.request` | ✅ | ✅ | 68K stages to disk, packs, then sends — `screenshot` verb too |
 | `capture.accept` / `capture.refuse` / `capture.cancel` | ✅ | ❌ | the guest-OFFERS-a-capture handshake; 68K only answers requests |
 | `stream.start` / `stream.stop` / `stream.refresh` | ✅ | ❌ | |
+| `agent.access` | ❌ | ❌ | neither guest HANDLES one — it is guest-to-host only, and a host never sends it. PPC SENDS it when its consent tier changes; 68K has no tier to change |
 
 PPC handles 37 inbound types; NOW-68K handles 23. **That count
 understates the difference** — see the next two sections, where two of
