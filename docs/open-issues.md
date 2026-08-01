@@ -54,6 +54,30 @@ not shrinks: the page has never been drawn on any screen (emulator
 pass owed first, then metal), the TCC-granted providers are still
 untried, and no end-to-end ask has crossed a real wire.
 
+Update 2026-08-01, later: the metal-verified drive browser above is
+now a full-width flat list rather than the narrower list-beside-card
+layout it was verified in — `cloud_layout.c` gained a drive-mode
+variant (full width list, detail/save collapse to an anti-rect, a new
+`up_btn` in the toolbar row) and the card pane's per-row detail and
+pull progress both moved to the status placard
+(`cloud_drive_view.c`'s draw is now NULL). **TESTED, not
+metal-verified**: `scripts/test-all` is green (74 native tests
+including new `cloud_layout_test.c` drive-mode cases, both guest
+cross-builds, host gate), and the new geometry was watched failing via
+a deliberate mutation, but nobody has driven this exact layout on the
+PowerBook or the emulator — the metal pass this arc references above
+predates this change. Before it: Data Browser's hierarchical/container
+surface (disclosure triangles, a real tree) was investigated and found
+**not proven viable** for this runtime — declared in the headers and
+compiles clean against a real container-callback call
+(`spikes/databrowser-container-probe`), but the container-specific
+entry points were never in `spikes/databrowser`'s runtime symbol check
+against CarbonLib 1.6.0 on the PB1400c, so the drive view stays the
+flat, replace-on-navigate list it already had rather than adopt an
+unverified tree. Reopening that is a rerun of the runtime probe with
+four more symbol names, not another compile check — see
+`spikes/databrowser-container-probe/README.md`.
+
 ## iCloud Drive sharing is tested against fabricated stubs only (2026-08-01)
 
 **Unverified.** The share now sees a directory logically — iCloud

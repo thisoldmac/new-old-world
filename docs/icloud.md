@@ -98,6 +98,10 @@ strikes for file.begin.
 to end for Drive — cloud.services across a real wire, the dropdown,
 and the in-page drive browser (list, descend, Up, double-click fetch)
 against the host's iCloud Drive share, fingerprinted names included.
+That pass predates the full-width drive layout below (**tested, not
+re-verified on metal**): the browsing logic it exercised is unchanged,
+but the geometry and the Up control's position are not the ones the
+PowerBook watched.
 
 Photos and Contacts serving is **tested** (`CloudServingTests`, fake
 providers over a loopback wire; refusal-code mutation watched
