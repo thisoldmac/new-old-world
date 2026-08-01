@@ -93,7 +93,12 @@ static void malformed_is_refused(void)
         "",
         "now-element-",
         "now-element-0123456789abcdef0123456789abcdef",   /* no dashes */
-        "now-element-0123456789ABCDEF-0123-0123-0123456789ab", /* uppercase */
+        /* Correctly SHAPED and uppercase, so this case tests the case
+           rule rather than the layout rule. The host requires lowercase
+           (isValidReference compares against value.lowercased()), so a
+           guest that minted or accepted mixed case would mint references
+           the other side rejects. */
+        "now-element-01234567-89AB-CDEF-0123-456789ABCDEF",
         "now-element-0123456g-0123-0123-0123-0123456789ab",    /* not hex */
         "now-element-01234567-0123-0123-0123-0123456789ab-",   /* too long */
         "now-elemen-01234567-0123-0123-0123-0123456789ab",     /* prefix */
@@ -256,6 +261,25 @@ static void eviction_refuses_rather_than_reassigns(void)
                          strlen(oldest)) == NULL,
           "the evicted token no longer resolves - to anything");
     check(registry.evicted > 0, "and the eviction was counted");
+
+    /* Every slot must be reachable by the cursor, and each exactly once
+       per pass. A cursor that wrapped one short would leave one slot
+       never written and another written twice as often - the first is a
+       reference that outlives the bound, which is the bound not
+       existing, and neither shows up as a failed lookup. Counting is how
+       it shows up. */
+    now_obs_registry_init(&registry, 1UL, 2UL);
+    for (i = 0; i < 2 * kNowObsRegistryMax; i++) {
+        identity_for(&id, 0x00101000UL + (unsigned long)i * 0x10UL,
+                     0x00108000UL + (unsigned long)i * 0x10UL, "Save", "OK");
+        check(now_obs_mint(&registry, kNowObsKindElement, &id, token,
+                           sizeof(token)) == 1, "fill the table twice");
+    }
+    check(registry.minted == (unsigned long)(2 * kNowObsRegistryMax),
+          "every mint was counted");
+    check(registry.evicted == (unsigned long)kNowObsRegistryMax,
+          "two full passes evicted exactly one slot's worth - the cursor "
+          "visits every slot, and each once");
 }
 
 /* The recycled-PSN discriminator. Everything about a relaunched
