@@ -133,14 +133,20 @@ through the ordinary file family, and that stays the only bulk path.
 
 ## What is and is not proven
 
-**Metal-verified 2026-08-01** on the PowerBook 1400c: the module end
-to end for Drive — cloud.services across a real wire, the dropdown,
+**Metal-verified 2026-08-01** on the PowerBook 1400c, in two
+sessions. First: the module end to end for Drive — cloud.services across a real wire, the dropdown,
 and the in-page drive browser (list, descend, Up, double-click fetch)
 against the host's iCloud Drive share, fingerprinted names included.
 That pass predates the full-width drive layout below (**tested, not
 re-verified on metal**): the browsing logic it exercised is unchanged,
 but the geometry and the Up control's position are not the ones the
 PowerBook watched.
+
+Second, the same evening: with the entitlements fix in, the grant
+prompts fire, and Michelle reports the granted services — Photos and
+Contacts over the fan-out's views — working as intended against the
+real machine. Detailed notes pending; itemized claims below stay at
+their tested level until they arrive.
 
 Photos and Contacts serving is **tested** (`CloudServingTests`, fake
 providers over a loopback wire; refusal-code mutation watched

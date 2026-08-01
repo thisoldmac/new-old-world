@@ -37,6 +37,16 @@ wire with FAKE providers only (`CloudServingTests`). Still unproven:
 - **cloud.get on a busy lane** refuses busy by unit-tested logic, but
   no test drives a real concurrent capture/stream against it.
 
+Update 2026-08-01, late: the entitlements fix is METAL-ADJACENT
+VERIFIED — with the hardened-runtime personal-information
+entitlements signed in, the Grant Access buttons surface macOS's real
+prompts, and with the grants given Michelle reports the granted
+services working as intended against the PowerBook, fan-out included
+("functional enough"; her detailed notes are pending and may reopen
+items here). Narrower claims that remain untested by suites: the
+Photos fetch cache against a real library-change event, non-English
+Birthday parsing, unclipped long card values.
+
 Update 2026-08-01, night: the fan-out landed (view seam, full-width
 drive browser + Up, contacts card view, photos hardening, live
 search) and its adversarial review's four must-fixes are in. Still
