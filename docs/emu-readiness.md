@@ -1,9 +1,13 @@
 # Emulator readiness
 
-**Date:** 2026-07-31 · **Status:** an operator's document. Written on a
-bench with no hardware and no VM, against the tree as it stands on
-`thread/emu-ready`. Nothing described here has been run against a
-Macintosh, emulated or real.
+**Date:** 2026-07-31, revised 2026-08-01 · **Status:** an operator's
+document. Written on a bench with no hardware and no VM. Nothing
+described here has been run against a Macintosh, emulated or real.
+
+The 2026-08-01 revision is section 5 and the rows it touches: the four
+probe cases that were waiting on a menu bar now read one, from a scene,
+and the paragraph explaining why that was not a small addition is now the
+paragraph explaining what was built.
 
 This is not a summary of what was built. It answers four questions an
 operator has and nothing else does:
@@ -57,7 +61,8 @@ live in `scripts/probes/`, and every one of them refuses unless
 | Act: text | `textget`, `textset` | `textops-probe.py`, `textops-explore.py` | reading and replacing one addressed text element |
 | Act: Apple Events | `aesend` | `apple-event-probe.py` | the four-event closed vocabulary, **and its refusal** of an event outside it |
 | Act: the whole plane in order | `observe` + `winact` + `ctlact` + `launch` + `ps` | `drive-sequence.py` | all-or-nothing, in sequence, against one machine — the only harness that reports on the plane as a plane |
-| No-hijack | `observe`, `mouseloc`, `ctlact` | `nohijack-probe.py --case control` / `--case text` / `--case baseline` | the 18/20 → 0/19 measurement the contract's own act-plane preamble cites as the reason an act must name one element |
+| No-hijack | `observe`, `mouseloc`, `ctlact`, `menuact` + `scene.request` | `nohijack-probe.py`, all six cases | the 18/20 → 0/19 measurement the contract's own act-plane preamble cites as the reason an act must name one element |
+| Scene | `scene.request` (a transfer, not a verb) | `g1-probe.py --case menus`, and the four menu cases of `nohijack-probe.py` | that the guest walks and ships a menu bar, and that its menus carry the id / index / `left` that `menuact` addresses. The cheapest read is `--case menus`: one transfer, nothing armed, nothing changed |
 | Finder geometry | `script`, `observe`, `mouseloc` + QMP | `h2-items-probe.py` | whether a click computed from an item's reported position selects that item. **Emulator-only** — it needs a QMP socket |
 | Instrument | `mouseloc` | every closed-loop positioner in the above | that the cursor is where it was asked to be. It is the instrument the act plane is measured *with*, not part of it |
 
@@ -193,7 +198,11 @@ it.
 
 **Step 7 — the measurement this whole directory exists for.**
 `nohijack-probe.py --case baseline`, then `--case control`, then `--case
-text`. Its three menu cases cannot run; section 5.
+text`, then `--case menu` and `--case stale`. The menu cases need the
+Finder frontmost with its own menu bar and they read a scene to find it;
+`g1-probe.py --case menus` is the cheap way to see that the bar is
+readable on this machine before spending twenty trials on it. `--case
+window` is a calibration sweep, not a finding, and is worth running last.
 
 **Step 8 — geometry, if there is a QMP socket.** `h2-items-probe.py`.
 
@@ -248,23 +257,25 @@ before the word "verified" is used about coexistence
 
 ## 5. Which harnesses still refuse, and what each needs
 
-Re-derived 2026-07-31 against the guest's registered verb set. **No
-harness in `scripts/probes/` is now blocked on a missing verb** — that
-was true of six of them until this week and every "refuses on `observe`"
-verdict in that directory's README was stale.
+Re-derived 2026-07-31 against the guest's registered verb set, revised
+2026-08-01. **No harness in `scripts/probes/` is blocked on a missing
+verb** — that was true of six of them until this week and every "refuses
+on `observe`" verdict in that directory's README was stale. **And no
+probe case is blocked on the menu bar any more**: the four that wanted
+one read a scene.
 
 | Harness | State | What it needs |
 |---|---|---|
-| `g1-probe.py` | 2 of 3 cases run | `menus` reads a menu bar from `observe`. See below |
-| `nohijack-probe.py` | 3 of 6 cases run | `menu`, `stale` and `window` need the same menu bar |
+| `g1-probe.py` | 3 of 3 cases have a path to a number | nothing missing. `menus` reads a scene; it refuses by name if this guest does not serve one |
+| `nohijack-probe.py` | 6 of 6 cases have a path to a number | nothing missing. `menu`, `stale`, `window` and `baseline` read the same scene, and gate on the scene plane |
 | `h2-items-probe.py` | emulator only | a QMP socket. On metal it needs a click at a computed point, which NOW has no mechanism for — no click verb, no host-side positional dispatcher |
 | `apple-event-probe.py` | runs, less one case | its `dirty` case has no way to dirty a document and says so |
 | `winact-probe.py`, `ctlinvoke-probe.py`, `textops-probe.py`, `textops-explore.py`, `drive-sequence.py` | run | nothing |
 
-### The menu bar, and why it is not a small addition
+### The menu bar: a ruling, and what was built because of it
 
-Four cases across two harnesses want a menu bar out of `observe`, and
-`observe` emits none — there is no `menus` key in `observe.c`. It looks
+Four cases across two harnesses wanted a menu bar out of `observe`, and
+`observe` emits none — there is no `menus` key in `observe.c`. It looked
 like an omission. It is a ruling.
 
 - **The menu bar is already walked.** `src/axwalk/axmenu.c` carries the
@@ -280,14 +291,47 @@ like an omission. It is a ruling.
 - **A second walk would be a second producer of one fact**, which is the
   defect [command-parity.md](command-parity.md) exists to refuse.
 
-So the four cases are waiting on a **scene read in the harness**, not on
-a wider `observe`. That is real work — `nowwire.py` is a control-plane
-listener and a scene arrives as `scene.begin`, bulk frames, `scene.end` —
-and it is a different piece of work from the one it looks like.
+So the four cases needed a **scene read in the harness**, not a wider
+`observe` — a different piece of work from the one it looked like, since
+`nowwire.py` was a control-plane listener and a scene arrives as
+`scene.begin`, bulk frames, `scene.end`.
 
-Half of the mismatch *was* a plain bug and is fixed: `menuact` declares
-`menu` as an integer id and `nohijack-probe.py` passed a reference,
-because that is the shape upstream's `menuinvoke` took.
+**That read exists as of 2026-08-01** (`scripts/probes/scene.py`,
+`nowwire.GuestLink.scene()`). Four things an operator should know about
+it:
+
+- **Where the fetch sits.** Once per case, in the case's setup while
+  nothing is armed; re-read at the *top* of a trial, before the act goes
+  out, only when the cached bar has stopped describing the machine — the
+  front process changed, the bar's own `menubar.app` disagrees with it,
+  or it aged past two minutes. **Never inside an armed window.** A scene
+  is ~21.5 KB on the one-wide transfer lane plus a walk inside the
+  guest's cooperative event loop; upstream's probes could ask for a menu
+  bar in a bounded reply and this port cannot.
+- **The counting did not change.** No trial is dropped or scored on
+  account of a scene. Same drop reasons, same denominator, `tally.py`
+  untouched. Three bookkeeping keys (`sceneSeq`, `sceneRefetched`,
+  `sceneBar`) are additive.
+- **A new refusal exists.** `scene.request` is a typed control message,
+  so it is in no verb list and `require_verbs` structurally cannot check
+  it. A guest that does not serve the scene plane answers *nothing*, and
+  silence is not a refusal — so the harnesses ask once and exit 2 by name
+  (`MissingScenePlane`) rather than hanging or reporting an empty
+  machine. A NOW-68K guest is exactly this case: it serves neither scene
+  nor act.
+- **Absent is not empty.** `menubar` absent means the producer retracted
+  the whole plane (its `meta.errors` says why); `menubar` present with an
+  empty `menus` means the front process genuinely has none. The harness
+  refuses the first as a precondition failure instead of reporting a
+  machine with no menus. Both halves are tested and both tests have been
+  watched to fail — `scripts/probes/tests/scene_test.py` and
+  `scenewire_test.py`, in `scripts/test-native` (65 → 67).
+
+The other half of the mismatch *was* a plain bug and is fixed: `menuact`
+declares `menu` as an integer id — "as the scene reports it" — and
+`nohijack-probe.py` passed a reference, because that is the shape
+upstream's `menuinvoke` took. **The contract was right and the probe was
+wrong**; the id now comes from the producer the contract names.
 
 ## What changed on the way to this document
 
@@ -300,6 +344,8 @@ Recorded because two of the five were not what their symptom said.
 | `CommandParityTests` listed sixteen verbs with no console face | Not one fact. Nine cannot be typed and the contract already says so; seven take numbers a person has and are a console face the guest owes. Two maps, two claims |
 | `ActionDispatcher` sent `menuinvoke` with `menuID` | A request no guest would answer, in ported code, on `main`, with every test green. The probes had been reconciled to the contract's spelling the same week; this module had not |
 | `observe` emits no menu bar | A ruling, not an omission. Above |
+| Four probe cases "blocked on a menu bar" (2026-08-01) | Blocked on a **transfer reader**, which nothing in `scripts/probes/` had. The bar was already walked and shipped; what was missing was a client that could read `scene.begin` → bulk → `scene.end`, and a decision about where a 20 KB read belongs in a trial loop. Both exist now |
+| `nohijack-probe.py` said `winact` was "served by no guest" (2026-08-01) | Stale in the same way the six `observe` verdicts were. `cmd_help.c` registers it and `commands.c` dispatches it |
 
 ## Is this ready for an emulator run?
 
@@ -324,3 +370,7 @@ be: its writer has never run, `qdtrace` will answer
 correct answer rather than a fault to chase. And four probe cases and the
 whole of MirrorKit remain out of reach for reasons that are now written
 down rather than discovered mid-run.
+
+*(2026-08-01: four of those five are no longer out of reach — the probe
+cases read a scene now. MirrorKit still is, and for the unchanged reason:
+it does not speak NOW's contract.)*

@@ -109,8 +109,11 @@ disagrees with the guest is itself a finding, but the verdict is the guest's.
     textget        the text case's two verbs, and its two INDEPENDENT read
     textset        paths. SERVED.
 
-    winact         DECLARED in NOW's contract, served by no guest. No case
-                   here uses it; winact-probe.py is where it is measured.
+    winact         SERVED (cmd_help.c registers it, commands.c dispatches
+                   it). This file said "served by no guest" until 2026-08-01,
+                   which was the same stale reading as the six "refuses on
+                   observe" verdicts. No case here uses it — winact-probe.py
+                   is where it is measured.
 
 The Desktop-folder oracle needs NOTHING further: it is built on `ls` and
 `file.trash`, which NOW already serves. See oracles.py — upstream needed a
