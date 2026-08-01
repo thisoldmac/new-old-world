@@ -14,8 +14,11 @@
    a token would not overflow anything - copy_ref refuses a reference
    that does not fit - it would silently drop EVERY reference in every
    scene, and the symptom would be "the guest stopped minting". */
+/* The casts are not decoration: the two constants belong to different
+   anonymous enums, and Retro68's GCC treats comparing them as an error
+   under -Werror=enum-compare. */
 typedef char now_scene_ref_pin[
-    (kNowSceneRefMax >= kNowObsTokenMax) ? 1 : -1];
+    ((int)kNowSceneRefMax >= (int)kNowObsTokenMax) ? 1 : -1];
 
 enum {
     /* windowKind for a Dialog Manager window. Inside Macintosh:

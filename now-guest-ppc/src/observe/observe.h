@@ -65,6 +65,11 @@
 
 #include <Carbon.h>
 
+/* axprocess.h, not axwalk.h: the scene walk's door below takes a BOUND
+   context (a partition, a window list, a validated seam), and binding is
+   the one part of this that needs a Macintosh. It is already a
+   Carbon-flavoured header, which this one is too. */
+#include "axprocess.h"
 #include "obsmint.h"
 #include "obsresolve.h"
 
