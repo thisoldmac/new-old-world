@@ -312,6 +312,41 @@ public enum AgentIntegrationCapabilityNames {
     /// guest only, by derivation from `help`.
     public static let putstatCommand = "putstat"
 
+    /* The act plane's three, folded here from `MirrorActModels.swift` when
+       the rows were registered (2026-07-31).
+
+       All three are COMMANDS, not message families, and the choice is the
+       whole reason the act rows need no ISA check. A command's availability
+       is resolved against the connected guest's own `help` table, so a guest
+       whose table has no `winact` row reports the row unavailable BY
+       DERIVATION — exactly how `reveal`, `catsearch`, `gestalt` and `tail`
+       are PowerPC-only today with nothing on this side naming a guest.
+       Mirror's act plane is PowerPC-only upstream; NOW expresses that as a
+       fact the machine answers rather than as a branch we write.
+
+       NO GUEST SERVES THEM YET, and the contract declares them anyway
+       (`x-commands`, additive by that file's own rule: an older peer answers
+       `unknown-command` cleanly). That is what makes the three rows read
+       `unavailable` on every machine as a DERIVED fact — the ledger asks
+       `help` and the machine says no — rather than as an unresolvable
+       requirement, which fails nowhere and reports the same sentence for a
+       completely different reason. `CommandRegistryTests.servedByNoGuestYet`
+       is the one place that difference is written down. */
+
+    /// Move, resize, zoom or close one addressed window, by answering the
+    /// owning application's own `FindWindow`.
+    public static let windowActCommand = "winact"
+    /// Read the text of one addressed text element.
+    public static let textGetCommand = "textget"
+    /// Replace the text of one addressed text element.
+    public static let textSetCommand = "textset"
+
+    /// The three above, as a set — the act plane's whole requirement
+    /// surface, for the tests that check no act row requires anything else.
+    public static let actPlane: Set<String> = [
+        windowActCommand, textGetCommand, textSetCommand,
+    ]
+
     /// Every name above, as a set.
     ///
     /// It exists so a projection's `requires` can be checked against the
@@ -332,7 +367,7 @@ public enum AgentIntegrationCapabilityNames {
         fileMkdir, censusRequest, captureRequest, streamStart, streamStop,
         streamRefresh, launchCommand, revealCommand, catsearchCommand,
         gestaltCommand, tailCommand, vprobeCommand, shotdiagCommand,
-        putstatCommand,
+        putstatCommand, windowActCommand, textGetCommand, textSetCommand,
     ]
 
     /// Refusal codes that mean "this guest does not implement that", as

@@ -63,6 +63,23 @@ public enum HostProjectionCatalog {
         RevealItemProjection.self,
         BringToFrontProjection.self,
         RequestQuitProjection.self,
+        /* The act plane, with the process drive verbs and after them: the
+           same class of thing — a row that changes the machine rather than
+           reads it — one reach further in. The drive verbs above address a
+           PROCESS and can say only which application is in front; these
+           three address a piece of an application's own interface. Read in
+           order, the list goes from the machine, to its processes, to what
+           is inside one of them.
+
+           The read sits between the two writes rather than with the
+           observations, and that is deliberate: it is an act-plane row that
+           happens to change nothing, sharing the identity grammar, the
+           reference vocabulary and the availability of its two neighbours.
+           Its readOnlyHint puts it a consent tier below them, which is the
+           thing the three rows exist to make expressible. */
+        WindowActProjection.self,
+        TextGetProjection.self,
+        TextSetProjection.self,
         TransferApprovedArtifactProjection.self,
         /* Beside the transfer it can end, and before the Files family:
            it ends a transfer in EITHER direction, so it belongs to

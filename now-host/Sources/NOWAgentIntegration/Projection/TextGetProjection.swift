@@ -46,13 +46,12 @@ public enum TextGetProjection: HostProjection {
                 + "select one from, so there is nothing for a person to "
                 + "click. The pane lands with the scene view that mints the "
                 + "references this row takes."),
-        .mcp: .notReached(
-            because: "Written and not yet registered in "
-                + "HostProjectionCatalog. NOW's contract declares no act "
-                + "plane, so a registered row would publish a tool whose "
-                + "requirement resolves to nothing and which reports itself "
-                + "unavailable against every guest that exists. See "
-                + "MirrorActProjections for the exact registration steps."),
+        /* Registered 2026-07-31, with the contract's x-commands entry and
+           the folded requirement name in the one edit. The row is published
+           and reads `unavailable` on every machine — because no guest's
+           `help` table has the command, which is a derived fact rather than
+           an unresolvable requirement. */
+        .mcp: .reachedByRegistry,
         .appIntents: .appIntentsFaceNotBuiltYet,
     ]
 

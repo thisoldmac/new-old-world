@@ -2606,6 +2606,142 @@ components:
         properties:
           vers: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
 
+    # The act plane: winact / textget / textset. Declared 2026-07-31,
+    # AHEAD OF ANY GUEST, which is legal by this file's own rule — adding a
+    # command is additive and a peer that does not serve one answers
+    # unknown-command cleanly. Declaring them is what lets the host publish
+    # the three capabilities that project them and have each report itself
+    # unavailable BY DERIVATION from the machine's own help table, rather
+    # than from a requirement nothing can resolve. The 68K guest is
+    # expected never to serve them; Mirror's act plane is PowerPC-only, and
+    # nothing on the host side asks which guest answered.
+    #
+    # WHAT MAKES THESE ONE PLANE rather than three unrelated verbs: all
+    # three address ONE element by an opaque reference the RESPONDER
+    # minted, all three revalidate that reference against a live element
+    # before acting, and none of them can express "whatever is frontmost".
+    # That refusal is a measurement, not taste — upstream's request that
+    # merely disarmed after one use rode the user's own press 18 times in
+    # 20; the variant that had to name its exact target rode 0 in 20.
+    #
+    # AND WHAT THEY DO NOT CLAIM: an ok reply means the event was handed to
+    # the addressed element's own application, never that the window moved
+    # or the text changed. Whoever wants to know that reads the element
+    # back. There is deliberately no "performed" field for a responder to
+    # set true.
+    winact:
+      description: >
+        Move, resize, zoom or close ONE window, by answering the owning
+        application's own FindWindow. No mouse is simulated and no
+        emulator is involved: the application is handed the answer it
+        would have got had a person dragged the window, so it does what
+        it would have done, and applications that police their own
+        geometry keep policing it.
+
+        The window is named by an opaque reference this responder minted
+        for an element it observed, and revalidated here against a live
+        WindowPtr before anything is dispatched. A reference for a window
+        that has closed is refused; it is never resolved to a
+        neighbouring one.
+
+        move and resize carry their own geometry and the other two carry
+        none. zoom takes none because the standard state is the
+        application's to compute — a caller that supplied one would be
+        deciding what the window is for. close takes none and is
+        destructive: an application may lose unsaved work, or may put up
+        a save dialog nothing on this wire can answer.
+      args:
+        type: object
+        required: [window, action]
+        properties:
+          window:
+            type: string
+            description: >
+              The opaque reference, "now-window-" and a UUID. Not a
+              WindowPtr: a pointer into another process's heap is
+              forgeable and means nothing once the window dies.
+          action:
+            type: string
+            enum: [move, resize, zoom, close]
+          left:
+            type: integer
+            description: Content origin, for move. QuickDraw Rect range.
+          top:
+            type: integer
+          width:
+            type: integer
+            description: Content size, for resize. At least 1 point.
+          height:
+            type: integer
+      x-line: >
+        NOT TYPEABLE, and that is the point. A console line cannot carry
+        an opaque reference a human never saw, and a grammar that let one
+        name a window by title would be the target-free form this plane
+        refuses. Typed callers only.
+      output:
+        type: object
+        properties:
+          winact: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    textget:
+      description: >
+        Read the text of ONE addressed text element. The read half of the
+        act plane and the only third of it that changes nothing, which is
+        why it is its own command: a machine whose owner consented to
+        being read can serve this while refusing the two that drive it.
+
+        Nothing is clicked or selected to read a field. The answer is a
+        READING and is dated as one, and it says whether the element held
+        more than the reply could carry — a caller that cannot tell a
+        short field from a clipped one has been told nothing useful.
+      args:
+        type: object
+        required: [element]
+        properties:
+          element:
+            type: string
+            description: >
+              The opaque reference, "now-element-" and a UUID, minted by
+              the observation that saw the element and revalidated here.
+      x-line: >
+        NOT TYPEABLE. Same reason as winact: the argument is a reference
+        no human has.
+      output:
+        type: object
+        properties:
+          textget: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    textset:
+      description: >
+        Replace the whole contents of ONE addressed text element. A
+        replacement and not an edit: there is no offset and no append
+        form, because an offset into text the caller has not read is a
+        write it cannot predict.
+
+        An ok reply means the change was dispatched into the
+        application's own text path. It is not a claim that the element
+        now holds the new text — the application may refuse it, reformat
+        it, or be modal elsewhere. Read it back with textget to learn
+        that.
+      args:
+        type: object
+        required: [element, text]
+        properties:
+          element:
+            type: string
+            description: The opaque reference, as textget takes it.
+          text:
+            type: string
+            description: >
+              The element's whole new contents. The host caps what it
+              will send far inside the 16 KiB control frame; a responder
+              that holds less says so in its own refusal rather than
+              writing a truncated half.
+      x-line: >
+        NOT TYPEABLE. Same reason as winact and textget.
+      output:
+        type: object
+        properties:
+          textset: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+
   # The census probe registry: the CLOSED, DECLARED set of probes a side may
   # be asked about, and the outcome vocabulary every report speaks. Adding a
   # probe is additive (an older peer answers outcome "refused",
