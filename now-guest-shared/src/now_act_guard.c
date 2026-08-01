@@ -223,22 +223,29 @@ void now_act_serve_commit(NowPeekActCell *cell, unsigned long error)
  * `ticks` is the CURRENT trap call's tick, from the same LMGetTicks() the
  * caller already reads to answer with. Compared against served_ticks -
  * the tick this stage was armed at - it is the resident half's own
- * age-out: unsigned subtraction so a TickCount wraparound mid-session
- * still yields the true forward distance. A cell that ages out is
- * cleared HERE, not merely declined, so a second late call does not pay
- * the same stale check again and does not find a patch still nominally
- * "ready" for a request that has already been given up on. */
+ * age-out: subtraction done in exactly 32 bits (NowPeekU32, what
+ * TickCount and this table's fields actually are) so a wraparound
+ * mid-session still yields the true forward distance regardless of how
+ * wide `unsigned long` is on the compiler doing the subtracting - 32
+ * bits on the 68K/PPC guest this runs on, 64 on the host cc that builds
+ * this file's own test. A cell that ages out is cleared HERE, not merely
+ * declined, so a second late call does not pay the same stale check
+ * again and does not find a patch still nominally "ready" for a request
+ * that has already been given up on. */
 static NowPeekActCell *armed_for(NowPeekActCell *cell, unsigned long op,
                                  unsigned long stage, unsigned long current_a5,
                                  unsigned long ticks)
 {
+    NowPeekU32 age;
+
     if (cell == NULL || cell->armed != (NowPeekU32)stage) {
         return NULL;
     }
     if (cell->op != (NowPeekU32)op) {
         return NULL;
     }
-    if ((ticks - cell->served_ticks) > (unsigned long)kNowActArmTicksMax) {
+    age = (NowPeekU32)ticks - cell->served_ticks;
+    if (age > (NowPeekU32)kNowActArmTicksMax) {
         /* Nobody is coming back for this one. Clear it so the patch
            stops matching and the next caller sees an idle, honest cell
            rather than one "armed" for a request that timed out with no
