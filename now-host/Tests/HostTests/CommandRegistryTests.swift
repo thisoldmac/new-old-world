@@ -195,37 +195,25 @@ final class CommandRegistryTests: XCTestCase {
     /// the ledger falls through to the command table, misses, and reports the
     /// tool permanently unavailable in a sentence that reads as a fact about
     /// the Macintosh (`MCPCoverageTests.testEveryRequirementResolvesToTheContract`).
-    /// Declared, the same three names resolve as commands and each row is
-    /// unavailable because the machine's own `help` said no — which is the
-    /// fact, and which is what makes the plane PowerPC-only later without
-    /// anything on the host side naming a guest.
+    /// Declared, such a name resolves as a command and its row is unavailable
+    /// because the machine's own `help` said no — which is the fact, and
+    /// which is what makes a plane PowerPC-only later without anything on the
+    /// host side naming a guest.
     ///
     /// **An entry here is a debt, not a resting place.** It is the one list
     /// that says a verb was published with nothing behind it, so a name that
     /// stays here is a question somebody should be asked.
-    private static let servedByNoGuestYet: [String: String] = [
-        "winact": """
-            The act plane's window verb, declared 2026-07-31 with the three \
-            host rows that project it. Nothing serves it: the guest work is \
-            not started, and what it needs is written down in \
-            MirrorActProjections — an element observation that MINTS the \
-            references it takes, revalidation at the guest before dispatch, \
-            and a dispatch that answers the application's own FindWindow \
-            rather than synthesising a click. See docs/mcp-coverage.md, \
-            "Three rows are published and no machine serves them".
-            """,
-        "textget": """
-            The act plane's read, declared with winact and unserved for the \
-            same reason. It is its own command rather than a mode of \
-            textset because availability and CONSENT are both per command: \
-            a machine whose owner agreed to be read can serve this while \
-            refusing the two verbs that drive it.
-            """,
-        "textset": """
-            The act plane's write, declared with winact and unserved for the \
-            same reason.
-            """,
-    ]
+    ///
+    /// **It is empty as of 2026-07-31, because the act plane landed.**
+    /// `winact`, `textget` and `textset` sat here from the morning of that
+    /// day, when the contract declared them ahead of any guest; the PowerPC
+    /// guest now answers all three, so the exemptions came out and the three
+    /// halves are compared for those verbs again — which is exactly what the
+    /// debt was for. The map and its two gates stay: emptiness is the state
+    /// this list should normally be in, and the machinery is what makes the
+    /// NEXT declared-ahead verb cost a reason rather than a silent
+    /// subtraction.
+    private static let servedByNoGuestYet: [String: String] = [:]
 
     func testTheThreeHalvesAgreeOnTheCommandSet() throws {
         let declared = try declared()
@@ -258,6 +246,13 @@ final class CommandRegistryTests: XCTestCase {
     /// verb claiming both to be a deliberate split between two guests and to
     /// be unimplemented by either, and the subtraction would hide whichever
     /// was wrong.
+    ///
+    /// With `servedByNoGuestYet` empty (2026-07-31) the loop below runs zero
+    /// times and only the disjointness assertion does any work. That is the
+    /// gate having done its job rather than the gate being pointless: it is
+    /// what failed when the guest started answering `winact`, `textget` and
+    /// `textset`, and it is what will fail again for the next name added
+    /// here and left behind.
     func testTheUnservedDeclarationsAreStillUnserved() throws {
         let declared = try declared()
         let ppc = try answered()
