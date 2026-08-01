@@ -3387,6 +3387,19 @@ components:
                     windows. ok, no-process, no-plane, no-anchor,
                     ambiguous, mismatch, unreadable.
                 stampTicks: { type: integer }
+                a5:
+                  type: string
+                  description: >
+                    The process's A5 world, as an "0x"-prefixed hex string
+                    — the same value `qdtrace start`'s `arm_a5` takes, and
+                    the only wire source for it. ABSENT, not zero, unless
+                    the anchor oracle's verdict for this row was strictly
+                    Ok: `bind` reads "ok" for the oracle's Ok AND Stale
+                    verdicts alike, but a5 is narrower and omits it on
+                    Stale too — arming tracing against a process that has
+                    not pumped its event loop since the anchor was
+                    captured is a risk observing it is not. Never present
+                    alongside a `bind` other than "ok".
                 windows:
                   type: array
                   items:
@@ -3561,6 +3574,13 @@ components:
                   front: { type: boolean }
                   bind: { type: string }
                   stampTicks: { type: integer }
+                  a5:
+                    type: string
+                    description: >
+                      Same field and same absence rule as
+                      `observe`'s x-axTree.processes[].a5 — present only
+                      when `bind` is "ok" AND the anchor oracle's verdict
+                      was strictly Ok, never on its Stale twin.
                   hasWindows: { type: boolean }
                   hasMenus: { type: boolean }
               references:
