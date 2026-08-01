@@ -1,0 +1,112 @@
+#!/bin/sh
+# Cross-build both guests, which nothing else in this tree does.
+#
+#     scripts/build-guests           # both
+#     scripts/build-guests ppc       # only the PowerPC Carbon guest
+#     scripts/build-guests 68k       # only NOW-68K (and the two 68K
+#                                    # resident-family artifacts)
+#     scripts/build-guests pump      # only the act pump
+#
+# "both" builds FOUR artifacts, not two: the two guests, the NOW
+# Extension and now-pump. The names are historical - a guest is a
+# machine's worth of code and the other two ship beside one - and the
+# rule that matters is that everything cross-compiled is built here or
+# nowhere.
+#
+# Until this existed, the only thing that compiled a guest was a person
+# about to deploy one. Every other gate here - 556 host tests, 31 native
+# tests, both Xcode configurations - can be green while neither guest
+# builds at all, because none of them invokes a cross-compiler. That is
+# the same shape as the defect this project has paid for most: a gate
+# that looks like coverage and never touched the thing it names.
+#
+# A build proves the code COMPILES and nothing whatever about behaviour
+# (AGENTS.md: verification is a status, not an adjective). It is the
+# cheapest possible check and it is not one of the three levels.
+#
+# Toolchains come from .env.lab - see docs/lab-setup.md. Absent, this
+# skips with a message and exit 0: a contributor with no Retro68 install
+# is not failing, they simply cannot run this gate. `scripts/test-all`
+# reports the skip rather than hiding it.
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_root=$(dirname "$script_dir")
+which=${1:-both}
+
+if [ -f "$repo_root/.env.lab" ]; then
+    set -a
+    . "$repo_root/.env.lab"
+    set +a
+fi
+
+# Keyed to THIS checkout. Build products stay outside the repository
+# (AGENTS.md), but a single shared path outside it is worse than useless
+# here: this project runs many worktrees at once, and CMake caches the
+# source directory in its build tree, so the second worktree to run this
+# fails with "does not match the source used to generate cache" - which
+# reads like a broken checkout rather than two of them sharing a drawer.
+# Found by building a merge trial in a scratch worktree.
+out_root=${TMPDIR:-/tmp}/now-guest-builds/$(printf '%s' "$repo_root" \
+    | shasum | cut -c1-12)
+rc=0
+
+have () { [ -n "${1:-}" ] && [ -f "$1" ]; }
+
+# build_guest <label> <source-dir> <toolchain-file> <build-subdir>
+build_guest() {
+    label=$1; src=$2; toolchain=$3; sub=$4
+    if ! have "$toolchain"; then
+        echo "== $label: SKIPPED (no toolchain; see docs/lab-setup.md)"
+        return 0
+    fi
+    dir="$out_root/$sub"
+    log="$dir/build.log"
+    mkdir -p "$dir"
+    # Configure quietly; a failure prints the log rather than a bare
+    # non-zero, because "cmake failed" with no output is a bug report
+    # nobody can act on.
+    if ! cmake -S "$repo_root/$src" -B "$dir" -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$toolchain" >"$log" 2>&1 \
+        || ! cmake --build "$dir" >>"$log" 2>&1; then
+        echo "== $label: FAILED"
+        tail -30 "$log"
+        rc=1
+        return 0
+    fi
+    echo "== $label: ok"
+}
+
+if [ "$which" = both ] || [ "$which" = ppc ]; then
+    build_guest "now-guest-ppc (PowerPC Carbon)" now-guest-ppc \
+        "${NOW_PPC_TOOLCHAIN:-}" ppc
+fi
+
+if [ "$which" = both ] || [ "$which" = 68k ]; then
+    build_guest "now-guest-68k (68K, System 7.1)" now-guest-68k \
+        "${NOW68K_TOOLCHAIN:-}" m68k
+fi
+
+# The extension, and it was missing from this script entirely until
+# 2026-07-31 - so the one piece of code here that runs at BOOT, in every
+# process's context, and whose failure needs a shift-boot to recover was
+# the one piece no gate ever compiled. It is 68K even on a PowerPC
+# machine, because an INIT is; that is a property of classic Mac OS
+# rather than a choice, so it builds with the 68K toolchain beside the
+# 68K guest.
+if [ "$which" = both ] || [ "$which" = 68k ]; then
+    build_guest "ext (NOW Extension, 68K INIT)" ext \
+        "${NOW68K_TOOLCHAIN:-}" ext
+fi
+
+# The act plane's posting context, and 68K for the same reason the
+# extension is: it is a CLASSIC application, which is the whole property
+# being bought (now-pump/src/main.c). It ships beside the PowerPC
+# application on a PowerPC machine, so nothing about "the 68K guest" as a
+# machine covers it - it is a fourth artifact, built here or nowhere.
+if [ "$which" = both ] || [ "$which" = 68k ] || [ "$which" = pump ]; then
+    build_guest "now-pump (act pump, 68K background app)" now-pump \
+        "${NOW68K_TOOLCHAIN:-}" pump
+fi
+
+exit $rc

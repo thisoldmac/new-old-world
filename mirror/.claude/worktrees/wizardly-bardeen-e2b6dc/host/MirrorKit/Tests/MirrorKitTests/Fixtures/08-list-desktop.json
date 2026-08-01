@@ -1,0 +1,211 @@
+{
+ "count": 18,
+ "items": [
+  {
+   "creator": "aplt",
+   "flags": 34048,
+   "kind": "file",
+   "loc": {
+    "h": 716,
+    "v": 187
+   },
+   "name": "Browse the Internet",
+   "size": 0,
+   "type": "adrp"
+  },
+  {
+   "flags": 992,
+   "kind": "folder",
+   "loc": {
+    "h": 608,
+    "v": 476
+   },
+   "name": "DevHarness"
+  },
+  {
+   "creator": "????",
+   "flags": 256,
+   "kind": "file",
+   "loc": {
+    "h": 608,
+    "v": 540
+   },
+   "name": "From Claude.txt",
+   "size": 499,
+   "type": "TEXT"
+  },
+  {
+   "creator": "????",
+   "flags": 256,
+   "kind": "file",
+   "loc": {
+    "h": 480,
+    "v": 28
+   },
+   "name": "harness",
+   "size": 1752663,
+   "type": "APPL"
+  },
+  {
+   "creator": "????",
+   "flags": 256,
+   "kind": "file",
+   "loc": {
+    "h": 736,
+    "v": 92
+   },
+   "name": "harness.log",
+   "size": 662,
+   "type": "TEXT"
+  },
+  {
+   "creator": "ttxt",
+   "flags": 256,
+   "kind": "file",
+   "loc": {
+    "h": 608,
+    "v": 92
+   },
+   "name": "HELLO_CLAUDE.txt",
+   "size": 42,
+   "type": "TEXT"
+  },
+  {
+   "creator": "????",
+   "flags": 256,
+   "kind": "file",
+   "loc": {
+    "h": 608,
+    "v": 348
+   },
+   "name": "HelloWorld",
+   "size": 1693622,
+   "type": "APPL"
+  },
+  {
+   "creator": "aplt",
+   "flags": 34048,
+   "kind": "file",
+   "loc": {
+    "h": 716,
+    "v": 268
+   },
+   "name": "Mail",
+   "size": 0,
+   "type": "adrp"
+  },
+  {
+   "creator": "TVOD",
+   "flags": 33024,
+   "kind": "file",
+   "loc": {
+    "h": 716,
+    "v": 349
+   },
+   "name": "QuickTime Player",
+   "size": 0,
+   "type": "adrp"
+  },
+  {
+   "creator": "aplt",
+   "flags": 34048,
+   "kind": "file",
+   "loc": {
+    "h": 716,
+    "v": 430
+   },
+   "name": "Register with Apple",
+   "size": 0,
+   "type": "adrp"
+  },
+  {
+   "creator": "Rmps",
+   "flags": 33024,
+   "kind": "file",
+   "loc": {
+    "h": 559,
+    "v": 289
+   },
+   "name": "Rumpus 2.0 PRO (Classic)",
+   "size": 0,
+   "type": "adrp"
+  },
+  {
+   "flags": 992,
+   "kind": "folder",
+   "loc": {
+    "h": 608,
+    "v": 156
+   },
+   "name": "Rumpus_Pro2.0 Folder"
+  },
+  {
+   "creator": "SITx",
+   "flags": 256,
+   "kind": "file",
+   "loc": {
+    "h": 608,
+    "v": 412
+   },
+   "name": "Rumpus_Pro2.0.sit",
+   "size": 1315312,
+   "type": "SITD"
+  },
+  {
+   "creator": "????",
+   "flags": 256,
+   "kind": "file",
+   "loc": {
+    "h": 480,
+    "v": 156
+   },
+   "name": "runner.debug",
+   "size": 1,
+   "type": "TEXT"
+  },
+  {
+   "creator": "????",
+   "flags": 256,
+   "kind": "file",
+   "loc": {
+    "h": 480,
+    "v": 220
+   },
+   "name": "runner.port",
+   "size": 4,
+   "type": "TEXT"
+  },
+  {
+   "creator": "fndf",
+   "flags": 33024,
+   "kind": "file",
+   "loc": {
+    "h": 557,
+    "v": 26
+   },
+   "name": "Sherlock 2",
+   "size": 0,
+   "type": "adrp"
+  },
+  {
+   "flags": 992,
+   "kind": "folder",
+   "loc": {
+    "h": 480,
+    "v": 92
+   },
+   "name": "TBTRunner"
+  },
+  {
+   "flags": 992,
+   "kind": "folder",
+   "loc": {
+    "h": 608,
+    "v": 220
+   },
+   "name": "untitled folder"
+  }
+ ],
+ "path": "Macintosh HD:Desktop Folder",
+ "truncated": false
+}

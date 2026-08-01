@@ -1,0 +1,800 @@
+import AppKit
+import MirrorKit
+import MirrorKitUI
+import SwiftUI
+import UniformTypeIdentifiers
+
+/// The Mirror page: the other Mac's screen, drawn from what it says is there.
+///
+/// The whole page is `model.state`. There is no second source of truth in
+/// here and no combination of flags — one closed set of states, one branch,
+/// and the resting words come from the model as data (`MirrorRestingCopy`) so
+/// they can be read by a test rather than only by an eye.
+///
+/// **What a person still has to judge**, because no test here can: whether
+/// each resting state reads as *idle* rather than as *broken*, and whether
+/// the replay banner is loud enough that a recorded Finder window is never
+/// mistaken for this Mac right now. Both are in
+/// `docs/metal-and-ux-review.md`.
+struct MirrorModuleView: View {
+    @ObservedObject var model: MirrorModuleModel
+    /// True only for the pane's own standalone window's copy of this view.
+    /// The embedded copy (in the module list) offers Break Away and, once
+    /// detached, shows a placeholder instead of drawing at all; the
+    /// detached window's copy draws normally and offers neither — asking
+    /// to detach an already-detached pane has no meaning, and the window
+    /// itself, not a button inside it, is what "bring back" is about.
+    var isDetachedWindow = false
+    /// Opens (or raises) the standalone window sharing this model. Nil
+    /// where there is nowhere to open one: the detached window's own copy
+    /// of this view, and any preview or test with no window management to
+    /// offer.
+    var detach: (() -> Void)? = nil
+    /// Filled in by `MirrorKeyCaptureView` once it has a real `NSView` to
+    /// focus. `press(at:in:scene:)` calls it after its own gesture runs, so
+    /// a click on the drawing both addresses the guest AND hands typing
+    /// focus to the layer that will carry the next keystroke there.
+    @State private var focusKeyCapture: (() -> Void)?
+
+    /// The drag ghost, while a window is being moved or resized. View state
+    /// and not model state: it is a picture of a gesture in progress, and
+    /// nothing outside this view has any business knowing about it.
+    @State private var dragOutline: Rect?
+    /// When and where the last press landed, for telling a double-click from
+    /// two singles. Also view state — a double-click is a fact about a
+    /// person's hand, not about the Macintosh.
+    @State private var lastClick: (at: Date, x: Int, y: Int)?
+    /// Whether the config area is disclosed. View state — it is how this
+    /// page is laid out, not a fact the model has any reason to remember.
+    @State private var showConfig = false
+
+    var body: some View {
+        /* Detached AND this is the embedded copy: the pane lives in its
+           own window now, and drawing it here too would be two views
+           fighting over one gesture stream for a person who can only look
+           at one of them at a time. The standalone window's own copy of
+           this view (`isDetachedWindow == true`) never takes this branch —
+           it is exactly where the pane belongs while detached. */
+        if model.isDetached, !isDetachedWindow {
+            detachedPlaceholder
+        } else {
+            VStack(spacing: 0) {
+                header
+                sessionStatusLine
+                refusalNote
+                liveNote
+                contentNote
+                pixelIslandNote
+                Divider()
+                content
+            }
+        }
+    }
+
+    /// What the embedded module page shows instead of the pane while it is
+    /// living in a standalone window. Named and worded the same way every
+    /// other resting state on this page is — what is true, and what would
+    /// change it — rather than a bare "detached" label.
+    private var detachedPlaceholder: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "rectangle.on.rectangle")
+                .font(.system(size: 40))
+                .foregroundStyle(.secondary)
+            Text("Mirror Is In Its Own Window")
+                .font(.title3.weight(.semibold))
+            Text("The session keeps running: same wire, same scene loop, "
+                 + "same held pixels — one session, not two.")
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 420)
+            Button("Bring Back") { model.reattach() }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+
+    // MARK: header
+
+    /// **The whole control surface: Start, Stop, config.** Everything else
+    /// this page used to offer a button for — a Live/Paused toggle, a Look
+    /// Now/Look Again ask — was a smaller and more confusing way to say
+    /// "begin updating" and "stop updating", and both are retired in favour
+    /// of the one switch the session state names honestly below.
+    @ViewBuilder
+    private var header: some View {
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Mirror")
+                    .font(.headline)
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                /* When the drawing arrived, counting up on its own. The
+                   page dates the scene rather than implying it is live —
+                   a fetched scene is a moment that has passed even when
+                   the loop is running. */
+                if let arrived = model.lastSceneAt, model.state.hasScene {
+                    HStack(spacing: 4) {
+                        Text("Scene from")
+                        Text(arrived, style: .relative)
+                        Text("ago")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                }
+            }
+            Spacer()
+            if model.state.hasScene {
+                Button("Close Scene") { model.clearScene() }
+            }
+            sessionButton
+            Button {
+                showConfig.toggle()
+            } label: {
+                Label("Config", systemImage: "gearshape")
+            }
+            .help("Probe pace, refresh ceiling, how long a window's "
+                  + "content is held after it disappears from the scene, "
+                  + "and whether window pixels are drawn at all.")
+            /* Never offered from inside the standalone window itself — see
+               `isDetachedWindow`'s header. */
+            if !isDetachedWindow {
+                Button {
+                    detach?()
+                } label: {
+                    Label("Break Away", systemImage: "rectangle.on.rectangle")
+                }
+                .disabled(detach == nil)
+                .help("Opens this pane in its own window. Same session, "
+                      + "same wire, same scene loop — nothing about the "
+                      + "mirror doubles.")
+            }
+            Button {
+                openScene()
+            } label: {
+                Label("Open Scene…", systemImage: "doc.badge.plus")
+            }
+            .help("Open a recorded scene document (the JSON a guest sends) "
+                  + "and draw it here.")
+        }
+        .padding(12)
+        if showConfig {
+            configArea
+        }
+    }
+
+    /// **Start / Stop, and nothing in between.** The label says which
+    /// action pressing it takes, not which state the session is in — that
+    /// is `sessionStatusLine`'s job, read separately so a control that reads
+    /// as its own status is never the only place a person can check it.
+    @ViewBuilder
+    private var sessionButton: some View {
+        switch model.sessionState {
+        case .notStarted, .stopped, .guestGone:
+            Button {
+                model.startSession()
+            } label: {
+                Label("Start Mirror", systemImage: "play.fill")
+            }
+            .disabled(!model.canStartSession)
+            .help("Begins live updating: a cheap \"what is in front\" "
+                  + "question runs on its own pace, and a whole scene is "
+                  + "asked for when the answer changes or the drawing goes "
+                  + "stale.")
+        case .starting, .streaming:
+            Button {
+                model.stopSession()
+            } label: {
+                Label("Stop Mirror", systemImage: "stop.fill")
+            }
+            .help("Stops live updating. The last scene stays on screen.")
+        }
+    }
+
+    /// The config area: the two loop knobs the brief asked to be
+    /// configurable, plus the content-hold policy since exposing it here is
+    /// cheap. A `Stepper` bound through the model's own setters, never
+    /// through a locally-stored value the model could drift from.
+    private var configArea: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Divider()
+            Toggle("Draw window pixels", isOn: pixelDrawBinding)
+            LabeledContent("Probe every") {
+                Stepper(value: probeIntervalBinding, in: 0.1...10, step: 0.1) {
+                    Text(String(format: "%.1fs", model.probeInterval))
+                }
+            }
+            LabeledContent("Refresh ceiling") {
+                Stepper(value: refreshCeilingBinding, in: 1...60, step: 1) {
+                    Text("\(Int(model.refreshCeiling))s")
+                }
+            }
+            LabeledContent("Hold a window's content for") {
+                Stepper(value: contentGraceBinding, in: 1...200, step: 1) {
+                    Text("\(model.contentGraceFetches) fetches")
+                }
+            }
+            Text("The probe is a cheap control message; the refresh ceiling "
+                 + "is how stale the drawing may get before a whole scene is "
+                 + "asked for anyway. A window's held content survives being "
+                 + "out of front this many fetches before it is dropped.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+            Text("Drawing window pixels is the fallback for a program this "
+                 + "host has no semantic reading for — a folder window's "
+                 + "items never need it, so this changes nothing for the "
+                 + "ordinary case. Off, no capture request for any window "
+                 + "leaves this Mac, for anyone: the guarantee a normal app "
+                 + "already gets from having a semantic source, extended to "
+                 + "the fallback underneath it. Each one costs roughly a "
+                 + "second on the wire per window — the expensive thing on "
+                 + "a slow link or a real PowerBook.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
+    }
+
+    private var pixelDrawBinding: Binding<Bool> {
+        Binding(get: { model.pixelDrawEnabled },
+               set: { model.setPixelDrawEnabled($0) })
+    }
+
+    private var probeIntervalBinding: Binding<Double> {
+        Binding(get: { model.probeInterval },
+               set: { model.setProbeInterval($0) })
+    }
+
+    private var refreshCeilingBinding: Binding<Double> {
+        Binding(get: { model.refreshCeiling },
+               set: { model.setRefreshCeiling($0) })
+    }
+
+    private var contentGraceBinding: Binding<Double> {
+        Binding(get: { Double(model.contentGraceFetches) },
+               set: { model.setContentGraceFetches(Int($0)) })
+    }
+
+    /// Session state, said plainly: not-started, starting, streaming,
+    /// stopped, guest-gone — and, beside it, a named refusal when the guest
+    /// cannot do something the session asked (the act-plane pump, today).
+    @ViewBuilder
+    private var sessionStatusLine: some View {
+        HStack(spacing: 6) {
+            Image(systemName: sessionSymbol)
+            Text(sessionSentence)
+            Spacer()
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
+        if let pumpNote = model.pumpNote {
+            HStack(spacing: 6) {
+                Image(systemName: "bolt.horizontal.circle")
+                Text(pumpNote)
+                Spacer()
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
+        }
+    }
+
+    private var sessionSymbol: String {
+        switch model.sessionState {
+        case .notStarted: return "circle.dashed"
+        case .starting: return "hourglass"
+        case .streaming: return "dot.radiowaves.left.and.right"
+        case .stopped: return "pause.circle"
+        case .guestGone: return "bolt.horizontal.circle"
+        }
+    }
+
+    private var sessionSentence: String {
+        switch model.sessionState {
+        case .notStarted:
+            return "Not started."
+        case .starting:
+            return "Starting: the first scene is on its way."
+        case .streaming:
+            return "Streaming: updating on its own."
+        case .stopped:
+            return "Stopped. Start Mirror to begin updating again."
+        case .guestGone:
+            return "The Mac disconnected while this session was running. "
+                + "Start Mirror again once it reconnects."
+        }
+    }
+
+    /// The header says what is on screen, and where it came from. A page
+    /// showing a replay says so in the second line a person reads, not in a
+    /// tooltip.
+    private var subtitle: String {
+        model.provenance?.banner
+            ?? "What is on the other Mac's screen, drawn from what it says "
+            + "is there rather than from its pixels."
+    }
+
+    /// A refused ask, said out loud even when the page has a scene to draw.
+    ///
+    /// Without this the one case `MirrorPaneState` cannot carry would be
+    /// silent: a scene is on screen, Look Again was pressed, and the Mac said
+    /// no. The refusal must not blank the good scene — so it goes here, from
+    /// the same stored value the `.refused` state is derived from.
+    @ViewBuilder
+    private var refusalNote: some View {
+        if model.state.hasScene, let note = model.fetchNote {
+            HStack(spacing: 6) {
+                Image(systemName: "bubble.left")
+                Text("The last ask was not answered with a scene. \(note)")
+                Spacer()
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
+        }
+    }
+
+    /// Why the loop is doing what it is doing, when that is worth saying:
+    /// backed off behind somebody else's transfer, stopped because the Mac
+    /// refused, running without the cheap question. Idle silence is the
+    /// normal case and gets no line.
+    @ViewBuilder
+    private var liveNote: some View {
+        if let note = model.liveNote {
+            HStack(spacing: 6) {
+                Image(systemName: model.isLive ? "clock.arrow.circlepath"
+                                               : "pause.circle")
+                Text(note)
+                Spacer()
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
+        }
+    }
+
+    /// What became of the last content join.
+    ///
+    /// **Shown whenever there was one, success included.** An empty window
+    /// interior has at least six causes — nothing armed, armed in count mode,
+    /// nothing drawn, two ports and no way to tell them apart, an overrun, a
+    /// plane the extension carries dark — and a blank rectangle is the same
+    /// picture for all of them. This line is where they stop being the same
+    /// picture. The commonest of them, today, is that this host cannot arm
+    /// the plane at all (`MirrorContentJoin.armGap`).
+    @ViewBuilder
+    private var contentNote: some View {
+        if let note = model.contentNote {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "scribble")
+                Text(note)
+                Spacer()
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
+        }
+    }
+
+    /// What became of the last pixel-island pass. Kept apart from
+    /// `contentNote` (the join above this plane) since a person reading
+    /// "no interior" needs to know whether nothing was ever drawn there or
+    /// the toggle says not to ask — collapsing the two into one line loses
+    /// exactly the distinction the toggle exists to state.
+    @ViewBuilder
+    private var pixelIslandNote: some View {
+        if let note = model.islandNote {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "photo")
+                Text(note)
+                Spacer()
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
+        }
+    }
+
+    // MARK: content
+
+    @ViewBuilder
+    private var content: some View {
+        switch model.state {
+        case .showing(let scene, _):
+            drawing(scene)
+        default:
+            if let copy = model.state.resting {
+                resting(copy, isFault: model.state.isFault)
+            }
+        }
+    }
+
+    /// The renderer, fitted. `SceneView` does the aspect fit itself
+    /// (`FitTransform`), so this only has to give it a box with the guest's
+    /// own proportions — a canvas stretched to the pane would put every
+    /// window in the wrong place.
+    private func drawing(_ scene: MirrorKit.Scene) -> some View {
+        VStack(spacing: 0) {
+            GeometryReader { proxy in
+                SceneView(scene: scene,
+                          openMenu: model.openMenu,
+                          openMenuGeometry: model.openMenuGeometry,
+                          /* The mirror's own selection, drawn the way the
+                             Finder draws one — through the icon's pixels, not
+                             as a box behind it. It is feedback for a gesture
+                             and not a reading of the machine; the model's
+                             `selectedItem` says so at length. */
+                          selectedItem: model.selectedItem,
+                          dragOutline: dragOutline)
+                    /* The gesture's coordinates and the drawing's must come
+                       from ONE box. `proxy.size` is the box the Canvas was
+                       given, and `MirrorPointMapping` inverts the same fit
+                       the renderer applied to it — a click computed against
+                       any other rectangle lands near-but-wrong, which reads
+                       as the Macintosh misbehaving.
+
+                       A zero-distance drag rather than a tap gesture: it
+                       reports where it ended on every platform this ships
+                       to, and a press with no movement is a click. */
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { gesture in
+                                outline(from: gesture.startLocation,
+                                        to: gesture.location,
+                                        in: proxy.size, scene: scene)
+                            }
+                            .onEnded { gesture in
+                                dragOutline = nil
+                                /* `gestureEnded` rather than `press`: it is
+                                   the same click path generalised to tell a
+                                   drag from a click, so it subsumes the
+                                   press the key lane was written against. */
+                                gestureEnded(from: gesture.startLocation,
+                                             to: gesture.location,
+                                             in: proxy.size, scene: scene)
+                                /* AFTER the act, deliberately — see
+                                   `MirrorKeyCaptureView`'s header for why
+                                   this is a second, later call rather than
+                                   the same mouseDown the gesture above
+                                   handles. "Focused" on this page means
+                                   "the drawing was the last thing clicked". */
+                                focusKeyCapture?()
+                            })
+                    /* Overlaid, and safe to overlay only because this view
+                       is deaf to the mouse everywhere in its bounds
+                       (`hitTest` returns nil) — the gesture above is
+                       unaffected by its presence. */
+                    .overlay(
+                        MirrorKeyCaptureView(
+                            onKey: { code, characters, cmd, opt, ctrl in
+                                model.key(virtualKeyCode: code,
+                                         characters: characters,
+                                         command: cmd, option: opt,
+                                         control: ctrl)
+                            },
+                            focusRequest: $focusKeyCapture))
+            }
+            .aspectRatio(CGFloat(scene.screen.w) / CGFloat(scene.screen.h),
+                         contentMode: .fit)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(12)
+            Divider()
+            actionNote
+            liveProcesses(scene)
+            sceneFooter(scene)
+        }
+    }
+
+    /// Host chrome, not canvas: what the guest says is running, beside the
+    /// drawing rather than painted over it.
+    ///
+    /// This used to be `SceneRenderer.drawShelf`, a 92pt band the renderer
+    /// laid directly over the bottom of the guest scene. The canvas draws
+    /// only the guest's own screen now (see `SceneRenderer.draw(in:size:)`)
+    /// — this section is where that information lives instead, in the
+    /// module's own chrome, so it can never overlay the guest's pixels
+    /// again.
+    @ViewBuilder
+    private func liveProcesses(_ scene: MirrorKit.Scene) -> some View {
+        if let procs = scene.processes, !procs.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("LIVE PROCESSES · \(procs.count) running")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(Array(procs.enumerated()), id: \.offset) { _, proc in
+                            processGlyph(proc)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 4)
+            .padding(.bottom, 8)
+            Divider()
+        }
+    }
+
+    /// One process's glyph, front process highlighted the same way the old
+    /// canvas shelf did (a filled selection-colored badge vs. a plain one).
+    ///
+    /// **A real per-app icon when the scene names one, a monogram
+    /// otherwise.** `Scene.ProcessRef.signature` is the process's creator
+    /// OSType, on the wire since IR v1 (`now-guest-ppc/src/scene
+    /// /scene_json.c`'s own comment on `processes[].signature`) — this was
+    /// simply never read on this side. `IconAtlas.icon(forProcessSignature:)`
+    /// keys the same extracted `creator__APPL` pack `icon(for:)` already
+    /// uses for desktop items; an empty signature (`0`, the guest's "we
+    /// could not read this process's creator") or a creator the pack has no
+    /// icon for both fall back to the monogram — never a guessed icon for
+    /// an app this pack was not measured against.
+    private func processGlyph(_ proc: MirrorKit.Scene.ProcessRef) -> some View {
+        VStack(spacing: 3) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(proc.front ? Color.accentColor
+                                     : Color.secondary.opacity(0.15))
+                if let icon = IconAtlas.icon(forProcessSignature: proc.signature) {
+                    Image(decorative: icon, scale: 1)
+                        .resizable()
+                        .interpolation(.none)
+                        .frame(width: 24, height: 24)
+                } else {
+                    Text(SceneRenderer.glyph(for: proc.name))
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(proc.front ? Color.white : Color.primary)
+                }
+            }
+            .frame(width: 32, height: 32)
+            Text(proc.name)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(width: 60)
+        }
+    }
+
+    /// One gesture on the drawing, once it has ended.
+    ///
+    /// The view's whole share of this is **which box, which point, and how
+    /// many** — a press or a drag, once or twice. What the point MEANS is the
+    /// hit tester's, what may be sent is the vocabulary's, and whether it
+    /// reached the machine is the driver's. Nothing here decides what a
+    /// target is or what it can be sent as.
+    private func gestureEnded(from start: CGPoint, to end: CGPoint,
+                              in size: CGSize, scene: MirrorKit.Scene) {
+        guard let began = MirrorPointMapping.guestPoint(start, in: size,
+                                                        scene: scene) else {
+            model.clickedOffScreen()
+            return
+        }
+        guard let ended = MirrorPointMapping.guestPoint(end, in: size,
+                                                        scene: scene) else {
+            /* A gesture that left the drawing. Refused rather than clamped
+               to the edge, for the same reason a press in the letterbox is:
+               the nearest point on the screen is not the point the person
+               indicated, and a window moved to an invented place is worse
+               than a window not moved. */
+            model.clickedOffScreen()
+            return
+        }
+        if abs(ended.x - began.x) + abs(ended.y - began.y) >= Self.dragSlop {
+            model.drag(from: began, to: ended)
+            return
+        }
+        model.click(x: began.x, y: began.y, count: clickCount(at: began))
+    }
+
+    /// The classic dotted outline, while a window is being dragged or
+    /// resized. It is **this side's drawing and nothing else** — the guest
+    /// knows nothing about the gesture until it ends, exactly as a real
+    /// DragWindow shows an outline and moves the window on release.
+    private func outline(from start: CGPoint, to end: CGPoint,
+                         in size: CGSize, scene: MirrorKit.Scene) {
+        guard let began = MirrorPointMapping.guestPoint(start, in: size,
+                                                        scene: scene),
+              let ended = MirrorPointMapping.guestPoint(end, in: size,
+                                                        scene: scene),
+              abs(ended.x - began.x) + abs(ended.y - began.y)
+                  >= Self.dragSlop else {
+            dragOutline = nil
+            return
+        }
+        let dx = ended.x - began.x, dy = ended.y - began.y
+        switch HitTester.hitTest(scene, x: began.x, y: began.y) {
+        case .titlebar(let id, _, _, _):
+            guard let r = scene.windows.first(where: { $0.id == id })?.rect
+            else { dragOutline = nil; return }
+            dragOutline = Rect(l: r.l + dx, t: r.t + dy,
+                               r: r.r + dx, b: r.b + dy)
+        case .growBox(let id, _, _):
+            guard let r = scene.windows.first(where: { $0.id == id })?.rect
+            else { dragOutline = nil; return }
+            /* The floor is the outline's own, and it is drawing rather than
+               policy: what the window's real minimum is, is the
+               application's to enforce when it answers the resize. */
+            dragOutline = Rect(l: r.l, t: r.t,
+                               r: max(r.l + 80, r.r + dx),
+                               b: max(r.t + 60, r.b + dy))
+        default:
+            dragOutline = nil
+        }
+    }
+
+    /// A press and a drag, told apart in the guest's own pixels.
+    ///
+    /// 6 px, from upstream's live mirror (`LiveMirror.mouseGesture`), where
+    /// it was arrived at by using the thing: a hand on a trackpad moves a
+    /// point or two during a click, and a window drag that reads as a click
+    /// leaves the window where it was with no explanation.
+    private static let dragSlop = 6
+
+    /// One click or two, by the same rule upstream's mirror used: within 0.4
+    /// seconds and 6 px of the last one (`LiveMirror.clickCount`). Deliberately
+    /// not the host's own double-click interval — this is a gesture on a
+    /// drawing of another Macintosh, and the number that matters is the one
+    /// the two mirrors agree on.
+    ///
+    /// The pair is consumed on the second click so three rapid presses read
+    /// as a double and a single, rather than as two doubles.
+    private func clickCount(at point: (x: Int, y: Int)) -> Int {
+        let now = Date()
+        defer { lastClick = (now, point.x, point.y) }
+        if let last = lastClick, now.timeIntervalSince(last.at) < 0.4,
+           abs(last.x - point.x) + abs(last.y - point.y) < Self.dragSlop {
+            lastClick = nil
+            return 2
+        }
+        return 1
+    }
+
+    /// What became of the last press. **Always shown when there was one**,
+    /// including — especially — when nothing could be sent: a person
+    /// clicking a control the scene cannot address must be told that, not
+    /// left to conclude the Mac ignored them.
+    @ViewBuilder
+    private var actionNote: some View {
+        if let report = model.lastAction {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: symbol(for: report.outcome))
+                Text("\(report.target): \(report.sentence)")
+                Spacer()
+                Button("Dismiss") { model.clearLastAction() }
+                    .buttonStyle(.link)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+        }
+    }
+
+    private func symbol(for outcome: MirrorModuleModel.ActionReport.Outcome)
+        -> String {
+        switch outcome {
+        /* Not a checkmark. The event was handed to the application and
+           nothing here saw what it did with it — a tick would be this page
+           claiming more than the machine did. */
+        case .dispatched: return "paperplane"
+        case .refused: return "bubble.left"
+        case .unavailable: return "slash.circle"
+        case .inert: return "circle.dashed"
+        case .asking: return "hourglass"
+        case .offScreen: return "rectangle.dashed"
+        }
+    }
+
+    /// What the scene did and did not report, in the page's own words.
+    ///
+    /// **A sparse scene is normal here.** NOW's guest reports no QuickDraw
+    /// content at all, so a window drawn as empty chrome is the expected
+    /// picture and not a rendering failure — this line is what keeps a person
+    /// from reading it as one. Absent and empty are printed differently for
+    /// the same reason the adapter keeps them apart.
+    private func sceneFooter(_ scene: MirrorKit.Scene) -> some View {
+        HStack(spacing: 14) {
+            Label(plural(scene.windows.count, "window", "windows",
+                         present: scene.windowsPresent),
+                  systemImage: "macwindow")
+            Label(plural(scene.apps.count, "program", "programs",
+                         present: scene.appsPresent),
+                  systemImage: "app.dashed")
+            Label(menubarSummary(scene), systemImage: "menubar.rectangle")
+            if scene.meta.errorsPresent, !scene.meta.errors.isEmpty {
+                Label("\(scene.meta.errors.count) noted",
+                      systemImage: "exclamationmark.bubble")
+                    .help(scene.meta.errors.joined(separator: "\n"))
+            }
+            Spacer()
+            Text("IR v\(scene.version)")
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+
+    /// "not reported" is a different sentence from "none": one is silence,
+    /// the other is an answer.
+    private func plural(_ n: Int, _ one: String, _ many: String,
+                        present: Bool) -> String {
+        guard present else { return "\(many) not reported" }
+        return n == 1 ? "1 \(one)" : "\(n) \(many)"
+    }
+
+    private func menubarSummary(_ scene: MirrorKit.Scene) -> String {
+        guard let bar = scene.menubar else { return "no menu bar reported" }
+        guard bar.menusPresent else { return "menus not reported" }
+        return bar.menus.count == 1 ? "1 menu" : "\(bar.menus.count) menus"
+    }
+
+    /// The resting state. Deliberately the same shape the rest of the app
+    /// uses (glyph, title, sentence) — plus one line saying what would change
+    /// it, which is the difference between a page that looks idle and a page
+    /// that looks broken.
+    private func resting(_ copy: MirrorRestingCopy,
+                         isFault: Bool) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: copy.symbol)
+                .font(.system(size: 40))
+                .foregroundStyle(isFault ? AnyShapeStyle(Color.orange)
+                                         : AnyShapeStyle(HierarchicalShapeStyle.secondary))
+            Text(copy.title).font(.title3.weight(.semibold))
+            Text(copy.message)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 460)
+            Text(copy.next)
+                .font(.callout)
+                .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 460)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+
+    // MARK: opening a recorded scene
+
+    /// Reads a scene document off this Mac. The IR major comes from the
+    /// document's own `version` here, because a file has no envelope to carry
+    /// it — the gate still runs before the body is decoded, on the number the
+    /// file itself declares.
+    private func openScene() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose a recorded scene document."
+        guard panel.runModal() == .OK, let url = panel.url,
+              let data = try? Data(contentsOf: url) else { return }
+        model.show(document: data,
+                   irVersion: MirrorSceneFile.declaredVersion(in: data) ?? 0,
+                   provenance: .fixture(name: url.lastPathComponent))
+    }
+}
+
+/// Reading a scene out of a file rather than off the wire.
+///
+/// On the wire the IR major arrives in `scene.begin` and the body is refused
+/// before it is parsed. A file has no envelope, so this peeks at exactly one
+/// key — `version` — and hands that to the same gate. A file that does not
+/// declare one yields nil, which the gate then refuses: an undeclared version
+/// is not a licence to guess 1.
+enum MirrorSceneFile {
+    static func declaredVersion(in data: Data) -> Int? {
+        (try? JSONSerialization.jsonObject(with: data))
+            .flatMap { $0 as? [String: Any] }
+            .flatMap { $0["version"] as? Int }
+    }
+}

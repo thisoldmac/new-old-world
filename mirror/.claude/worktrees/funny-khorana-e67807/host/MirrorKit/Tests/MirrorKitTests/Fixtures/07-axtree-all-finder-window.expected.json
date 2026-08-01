@@ -1,0 +1,1085 @@
+{
+ "apps": [
+  {
+   "error": "ax_oracle_not_found",
+   "front": false,
+   "name": "Control Strip Extension",
+   "psn": "0.29491201"
+  },
+  {
+   "error": "ax_oracle_not_found",
+   "front": false,
+   "name": "DVD AutoLauncher",
+   "psn": "0.29622273"
+  },
+  {
+   "error": "ax_oracle_not_found",
+   "front": false,
+   "name": "FBC Indexing Scheduler",
+   "psn": "0.29687809"
+  },
+  {
+   "error": "ax_oracle_not_found",
+   "front": false,
+   "name": "Folder Actions",
+   "psn": "0.29753345"
+  },
+  {
+   "error": null,
+   "front": true,
+   "name": "Finder",
+   "psn": "0.29884417"
+  },
+  {
+   "error": "ax_oracle_stale",
+   "front": false,
+   "name": "tbt-runner",
+   "psn": "0.31588353"
+  },
+  {
+   "error": null,
+   "front": false,
+   "name": "Graphing Calculator",
+   "psn": "0.32309251"
+  },
+  {
+   "error": null,
+   "front": false,
+   "name": "SimpleText",
+   "psn": "0.32505859"
+  },
+  {
+   "error": "ax_invalid",
+   "front": false,
+   "name": "tbt-worker",
+   "psn": "0.32571394"
+  },
+  {
+   "error": null,
+   "front": false,
+   "name": "tbt-worker",
+   "psn": "0.32964609"
+  }
+ ],
+ "capturedAt": 1000000000.0,
+ "menubar": {
+  "app": "Finder",
+  "menus": [
+   {
+    "apple": true,
+    "id": 256,
+    "items": [
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 1,
+      "mark": false,
+      "separator": false,
+      "title": "About This Computer"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 2,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 3,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000AirPort"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 4,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Apple DVD Player"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 5,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Apple System Profiler"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 6,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Calculator"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 7,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Chooser"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 8,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Control Panels"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 9,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Favorites"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 10,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Key Caps"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 11,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Network Browser"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 12,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Recent Applications"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 13,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Recent Documents"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 14,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Remote Access Status"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 15,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Scrapbook"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 16,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Sherlock 2"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 17,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Speakable Items"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 18,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Stickies"
+     }
+    ],
+    "left": 10,
+    "title": ""
+   },
+   {
+    "apple": false,
+    "id": 257,
+    "items": [
+     {
+      "cmd": "N",
+      "enabled": true,
+      "index": 1,
+      "mark": false,
+      "separator": false,
+      "title": "New Folder"
+     },
+     {
+      "cmd": "O",
+      "enabled": true,
+      "index": 2,
+      "mark": false,
+      "separator": false,
+      "title": "Open"
+     },
+     {
+      "cmd": "P",
+      "enabled": false,
+      "index": 3,
+      "mark": false,
+      "separator": false,
+      "title": "Print"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 4,
+      "mark": false,
+      "separator": false,
+      "title": "Move To Trash"
+     },
+     {
+      "cmd": "W",
+      "enabled": false,
+      "index": 5,
+      "mark": false,
+      "separator": false,
+      "title": "Close Window"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 6,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 7,
+      "mark": true,
+      "separator": false,
+      "title": "Get Info"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 8,
+      "mark": true,
+      "separator": false,
+      "title": "Label"
+     },
+     {
+      "cmd": "D",
+      "enabled": true,
+      "index": 9,
+      "mark": false,
+      "separator": false,
+      "title": "Duplicate"
+     },
+     {
+      "cmd": "M",
+      "enabled": true,
+      "index": 10,
+      "mark": false,
+      "separator": false,
+      "title": "Make Alias"
+     },
+     {
+      "cmd": "T",
+      "enabled": true,
+      "index": 11,
+      "mark": false,
+      "separator": false,
+      "title": "Add To Favorites"
+     },
+     {
+      "cmd": "Y",
+      "enabled": true,
+      "index": 12,
+      "mark": false,
+      "separator": false,
+      "title": "Put Away"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 13,
+      "mark": false,
+      "separator": false,
+      "title": "Encrypt"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 14,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "F",
+      "enabled": true,
+      "index": 15,
+      "mark": false,
+      "separator": false,
+      "title": "Find\ufffd"
+     },
+     {
+      "cmd": "H",
+      "enabled": true,
+      "index": 16,
+      "mark": false,
+      "separator": false,
+      "title": "Search Internet\ufffd"
+     },
+     {
+      "cmd": "R",
+      "enabled": false,
+      "index": 17,
+      "mark": false,
+      "separator": false,
+      "title": "Show Original"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 18,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 19,
+      "mark": false,
+      "separator": false,
+      "title": "Page Setup\ufffd"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 20,
+      "mark": false,
+      "separator": false,
+      "title": "Print Desktop\ufffd"
+     }
+    ],
+    "left": 38,
+    "title": "File"
+   },
+   {
+    "apple": false,
+    "id": 258,
+    "items": [
+     {
+      "cmd": "Z",
+      "enabled": false,
+      "index": 1,
+      "mark": false,
+      "separator": false,
+      "title": "Undo"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 2,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "X",
+      "enabled": true,
+      "index": 3,
+      "mark": false,
+      "separator": false,
+      "title": "Cut"
+     },
+     {
+      "cmd": "C",
+      "enabled": true,
+      "index": 4,
+      "mark": false,
+      "separator": false,
+      "title": "Copy"
+     },
+     {
+      "cmd": "V",
+      "enabled": false,
+      "index": 5,
+      "mark": false,
+      "separator": false,
+      "title": "Paste"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 6,
+      "mark": false,
+      "separator": false,
+      "title": "Clear"
+     },
+     {
+      "cmd": "A",
+      "enabled": true,
+      "index": 7,
+      "mark": false,
+      "separator": false,
+      "title": "Select All"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 8,
+      "mark": false,
+      "separator": false,
+      "title": "Show Clipboard"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 9,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 10,
+      "mark": false,
+      "separator": false,
+      "title": "Preferences\ufffd"
+     }
+    ],
+    "left": 73,
+    "title": "Edit"
+   },
+   {
+    "apple": false,
+    "id": 259,
+    "items": [
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 1,
+      "mark": true,
+      "separator": false,
+      "title": "as Icons"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 2,
+      "mark": false,
+      "separator": false,
+      "title": "as Buttons"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 3,
+      "mark": false,
+      "separator": false,
+      "title": "as List"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 4,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 5,
+      "mark": false,
+      "separator": false,
+      "title": "as Window"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 6,
+      "mark": false,
+      "separator": false,
+      "title": "as Pop-up Window"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 7,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 8,
+      "mark": false,
+      "separator": false,
+      "title": "Clean Up"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 9,
+      "mark": true,
+      "separator": false,
+      "title": "Arrange"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 10,
+      "mark": false,
+      "separator": false,
+      "title": "Reset Column Positions"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 11,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "J",
+      "enabled": true,
+      "index": 12,
+      "mark": false,
+      "separator": false,
+      "title": "View Options\ufffd"
+     }
+    ],
+    "left": 110,
+    "title": "View"
+   },
+   {
+    "apple": false,
+    "id": 261,
+    "items": [
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 1,
+      "mark": true,
+      "separator": false,
+      "title": "\u0000Desktop"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 2,
+      "mark": true,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 3,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000Macintosh HD"
+     }
+    ],
+    "left": 154,
+    "title": "Window"
+   },
+   {
+    "apple": false,
+    "id": 260,
+    "items": [
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 1,
+      "mark": false,
+      "separator": false,
+      "title": "Empty Trash\ufffd"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 2,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "E",
+      "enabled": false,
+      "index": 3,
+      "mark": false,
+      "separator": false,
+      "title": "Eject"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 4,
+      "mark": false,
+      "separator": false,
+      "title": "Erase Disk\ufffd"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 5,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 6,
+      "mark": false,
+      "separator": false,
+      "title": "Sleep"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 7,
+      "mark": false,
+      "separator": false,
+      "title": "Restart"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 8,
+      "mark": false,
+      "separator": false,
+      "title": "Shut Down "
+     }
+    ],
+    "left": 218,
+    "title": "Special"
+   },
+   {
+    "apple": false,
+    "id": -16490,
+    "items": [
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 1,
+      "mark": false,
+      "separator": false,
+      "title": "Help Center"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 2,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 3,
+      "mark": false,
+      "separator": false,
+      "title": "Show Balloons"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 4,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "?",
+      "enabled": true,
+      "index": 5,
+      "mark": false,
+      "separator": false,
+      "title": "Mac Help"
+     }
+    ],
+    "left": 277,
+    "title": "Help"
+   }
+  ]
+ },
+ "meta": {
+  "bytes": null,
+  "errors": [
+   "Control Strip Extension: ax_oracle_not_found",
+   "DVD AutoLauncher: ax_oracle_not_found",
+   "FBC Indexing Scheduler: ax_oracle_not_found",
+   "Folder Actions: ax_oracle_not_found",
+   "tbt-runner: ax_oracle_stale",
+   "tbt-worker: ax_invalid"
+  ],
+  "latencyMs": null
+ },
+ "screen": {
+  "h": 600,
+  "w": 800
+ },
+ "seq": 1,
+ "source": "axtree",
+ "version": 1,
+ "windows": [
+  {
+   "app": "Finder",
+   "controls": [
+    {
+     "checked": false,
+     "enabled": true,
+     "max": 60,
+     "min": -4,
+     "rect": {
+      "b": 204,
+      "l": 389,
+      "r": 405,
+      "t": 20
+     },
+     "ref": "ax2/0000000001C80001/window:Macintosh%20HD#0/control:#0/node:64606BDB",
+     "role": "scrollbar",
+     "title": "",
+     "value": 55,
+     "visible": true
+    },
+    {
+     "checked": false,
+     "enabled": true,
+     "max": -33,
+     "min": -33,
+     "rect": {
+      "b": 219,
+      "l": -1,
+      "r": 390,
+      "t": 203
+     },
+     "ref": "ax2/0000000001C80001/window:Macintosh%20HD#0/control:#1/node:C36CEB7E",
+     "role": "control",
+     "title": "",
+     "value": -33,
+     "visible": true
+    },
+    {
+     "checked": false,
+     "enabled": true,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 18,
+      "l": 2,
+      "r": 18,
+      "t": 2
+     },
+     "ref": "ax2/0000000001C80001/window:Macintosh%20HD#0/control:#2/node:17C0521C",
+     "role": "control",
+     "title": "",
+     "value": 0,
+     "visible": false
+    }
+   ],
+   "front": true,
+   "id": "0.29884417/Macintosh HD#1",
+   "kind": 20,
+   "psn": "0.29884417",
+   "rect": {
+    "b": 321,
+    "l": 48,
+    "r": 452,
+    "t": 83
+   },
+   "text": null,
+   "title": "Macintosh HD",
+   "visible": true,
+   "z": 0
+  },
+  {
+   "app": "Graphing Calculator",
+   "controls": [
+    {
+     "checked": false,
+     "enabled": false,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 528,
+      "l": 131,
+      "r": 287,
+      "t": 508
+     },
+     "ref": "ax2/0000000001ED0003/window:Untitled#0/control:#0/node:335F8ECC",
+     "role": "control",
+     "title": "",
+     "value": 0,
+     "visible": false
+    },
+    {
+     "checked": false,
+     "enabled": false,
+     "max": 1000,
+     "min": 0,
+     "rect": {
+      "b": 527,
+      "l": 226,
+      "r": 286,
+      "t": 509
+     },
+     "ref": "ax2/0000000001ED0003/window:Untitled#0/control:#1/node:8172303C",
+     "role": "scrollbar",
+     "title": "",
+     "value": 100,
+     "visible": false
+    },
+    {
+     "checked": false,
+     "enabled": false,
+     "max": 10,
+     "min": 0,
+     "rect": {
+      "b": 527,
+      "l": 138,
+      "r": 226,
+      "t": 509
+     },
+     "ref": "ax2/0000000001ED0003/window:Untitled#0/control:#2/node:8CFA6191",
+     "role": "scrollbar",
+     "title": "",
+     "value": 1,
+     "visible": false
+    },
+    {
+     "checked": false,
+     "enabled": false,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 528,
+      "l": 112,
+      "r": 132,
+      "t": 508
+     },
+     "ref": "ax2/0000000001ED0003/window:Untitled#0/control:#3/node:56FE4F68",
+     "role": "control",
+     "title": "",
+     "value": 0,
+     "visible": false
+    },
+    {
+     "checked": false,
+     "enabled": false,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 528,
+      "l": 93,
+      "r": 113,
+      "t": 508
+     },
+     "ref": "ax2/0000000001ED0003/window:Untitled#0/control:#4/node:4D3FE9A4",
+     "role": "control",
+     "title": "",
+     "value": 0,
+     "visible": false
+    },
+    {
+     "checked": false,
+     "enabled": false,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 528,
+      "l": 14,
+      "r": 34,
+      "t": 508
+     },
+     "ref": "ax2/0000000001ED0003/window:Untitled#0/control:#5/node:D6310834",
+     "role": "control",
+     "title": "",
+     "value": 0,
+     "visible": false
+    },
+    {
+     "checked": false,
+     "enabled": false,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 528,
+      "l": 33,
+      "r": 53,
+      "t": 508
+     },
+     "ref": "ax2/0000000001ED0003/window:Untitled#0/control:#6/node:57127964",
+     "role": "control",
+     "title": "",
+     "value": 0,
+     "visible": false
+    },
+    {
+     "checked": false,
+     "enabled": true,
+     "max": 100,
+     "min": 0,
+     "rect": {
+      "b": 18,
+      "l": 2,
+      "r": 77,
+      "t": 0
+     },
+     "ref": "ax2/0000000001ED0003/window:Untitled#0/control:#7/node:E3EBD3AF",
+     "role": "scrollbar",
+     "title": "",
+     "value": 30,
+     "visible": false
+    },
+    {
+     "checked": false,
+     "enabled": false,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 528,
+      "l": 63,
+      "r": 83,
+      "t": 508
+     },
+     "ref": "ax2/0000000001ED0003/window:Untitled#0/control:#8/node:91DFF6CB",
+     "role": "control",
+     "title": "",
+     "value": 0,
+     "visible": false
+    },
+    {
+     "checked": false,
+     "enabled": false,
+     "max": 1,
+     "min": 0,
+     "rect": {
+      "b": 528,
+      "l": 558,
+      "r": 618,
+      "t": 508
+     },
+     "ref": "ax2/0000000001ED0003/window:Untitled#0/control:Graph#0/node:51449D27",
+     "role": "control",
+     "title": "Graph",
+     "value": 0,
+     "visible": true
+    },
+    {
+     "checked": false,
+     "enabled": true,
+     "max": 0,
+     "min": 0,
+     "rect": {
+      "b": 492,
+      "l": 619,
+      "r": 635,
+      "t": 5
+     },
+     "ref": "ax2/0000000001ED0003/window:Untitled#0/control:#9/node:46D11253",
+     "role": "control",
+     "title": "",
+     "value": 0,
+     "visible": false
+    }
+   ],
+   "front": false,
+   "id": "0.32309251/Untitled#0",
+   "kind": 8,
+   "psn": "0.32309251",
+   "rect": {
+    "b": 590,
+    "l": 6,
+    "r": 646,
+    "t": 24
+   },
+   "text": null,
+   "title": "Untitled",
+   "visible": true,
+   "z": 1
+  },
+  {
+   "app": "SimpleText",
+   "controls": [
+    {
+     "checked": false,
+     "enabled": true,
+     "max": 0,
+     "min": 0,
+     "rect": {
+      "b": 527,
+      "l": 600,
+      "r": 616,
+      "t": -1
+     },
+     "ref": "ax2/0000000001F00003/window:untitled#0/control:#0/node:61962E88",
+     "role": "control",
+     "title": "",
+     "value": 0,
+     "visible": false
+    }
+   ],
+   "front": false,
+   "id": "0.32505859/untitled#0",
+   "kind": 8,
+   "psn": "0.32505859",
+   "rect": {
+    "b": 581,
+    "l": 4,
+    "r": 619,
+    "t": 20
+   },
+   "text": null,
+   "title": "untitled",
+   "visible": true,
+   "z": 2
+  },
+  {
+   "app": "Finder",
+   "controls": [],
+   "front": false,
+   "id": "0.29884417/Desktop#0",
+   "kind": 20,
+   "psn": "0.29884417",
+   "rect": {
+    "b": 600,
+    "l": 506,
+    "r": 800,
+    "t": 0
+   },
+   "text": null,
+   "title": "Desktop",
+   "visible": true,
+   "z": 3
+  }
+ ]
+}

@@ -1,0 +1,1378 @@
+{
+ "bytes": null,
+ "capturedAt": 1000000000.0,
+ "latencyMs": null,
+ "result": {
+  "budgetExceeded": false,
+  "elapsedTicks": 0,
+  "front": {
+   "front": true,
+   "name": "SimpleText",
+   "serialHi": 0,
+   "serialLo": 32636930,
+   "signature": "ttxt"
+  },
+  "locator": {
+   "bytesScanned": 0,
+   "sampleAgeTicks": 2,
+   "sampleFresh": true,
+   "sampleTicks": 24908,
+   "strategy": "axpeek-context"
+  },
+  "menus": [
+   {
+    "enabled": true,
+    "id": 128,
+    "items": [
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 1,
+      "mark": 0,
+      "style": 0,
+      "title": "About SimpleText\ufffd"
+     },
+     {
+      "command": 0,
+      "enabled": false,
+      "icon": 0,
+      "index": 2,
+      "mark": 0,
+      "style": 0,
+      "title": "-"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 3,
+      "mark": 0,
+      "style": 0,
+      "title": "\u0000\u0000AirPort"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 4,
+      "mark": 0,
+      "style": 0,
+      "title": "\u0000\u0000Apple DVD Player"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 5,
+      "mark": 0,
+      "style": 0,
+      "title": "\u0000\u0000Apple System Profiler"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 6,
+      "mark": 0,
+      "style": 0,
+      "title": "\u0000\u0000Calculator"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 7,
+      "mark": 0,
+      "style": 0,
+      "title": "\u0000\u0000Chooser"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 8,
+      "mark": 0,
+      "style": 0,
+      "title": "\u0000\u0000Control Panels"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 9,
+      "mark": 0,
+      "style": 0,
+      "title": "\u0000\u0000Favorites"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 10,
+      "mark": 0,
+      "style": 0,
+      "title": "\u0000\u0000Key Caps"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 11,
+      "mark": 0,
+      "style": 0,
+      "title": "\u0000\u0000Network Browser"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 12,
+      "mark": 0,
+      "style": 0,
+      "title": "\u0000\u0000Recent Applications"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 13,
+      "mark": 0,
+      "style": 0,
+      "title": "\u0000\u0000Recent Documents"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 14,
+      "mark": 0,
+      "style": 0,
+      "title": "\u0000\u0000Remote Access Status"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 15,
+      "mark": 0,
+      "style": 0,
+      "title": "\u0000\u0000Scrapbook"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 16,
+      "mark": 0,
+      "style": 0,
+      "title": "\u0000\u0000Sherlock 2"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 17,
+      "mark": 0,
+      "style": 0,
+      "title": "\u0000\u0000Speakable Items"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 18,
+      "mark": 0,
+      "style": 0,
+      "title": "\u0000\u0000Stickies"
+     }
+    ],
+    "itemsTruncated": false,
+    "left": 10,
+    "title": "\u0014"
+   },
+   {
+    "enabled": true,
+    "id": 129,
+    "items": [
+     {
+      "command": 78,
+      "enabled": true,
+      "icon": 0,
+      "index": 1,
+      "mark": 0,
+      "style": 0,
+      "title": "New"
+     },
+     {
+      "command": 79,
+      "enabled": true,
+      "icon": 0,
+      "index": 2,
+      "mark": 0,
+      "style": 0,
+      "title": "Open\ufffd"
+     },
+     {
+      "command": 0,
+      "enabled": false,
+      "icon": 0,
+      "index": 3,
+      "mark": 0,
+      "style": 0,
+      "title": "-"
+     },
+     {
+      "command": 87,
+      "enabled": true,
+      "icon": 0,
+      "index": 4,
+      "mark": 0,
+      "style": 0,
+      "title": "Close"
+     },
+     {
+      "command": 83,
+      "enabled": true,
+      "icon": 0,
+      "index": 5,
+      "mark": 0,
+      "style": 0,
+      "title": "Save"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 6,
+      "mark": 0,
+      "style": 0,
+      "title": "Save As\ufffd"
+     },
+     {
+      "command": 0,
+      "enabled": false,
+      "icon": 0,
+      "index": 7,
+      "mark": 0,
+      "style": 0,
+      "title": "-"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 8,
+      "mark": 0,
+      "style": 0,
+      "title": "Page Setup\ufffd"
+     },
+     {
+      "command": 80,
+      "enabled": true,
+      "icon": 0,
+      "index": 9,
+      "mark": 0,
+      "style": 0,
+      "title": "Print\ufffd"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 10,
+      "mark": 0,
+      "style": 0,
+      "title": "Print One Copy"
+     },
+     {
+      "command": 0,
+      "enabled": false,
+      "icon": 0,
+      "index": 11,
+      "mark": 0,
+      "style": 0,
+      "title": "-"
+     },
+     {
+      "command": 81,
+      "enabled": true,
+      "icon": 0,
+      "index": 12,
+      "mark": 0,
+      "style": 0,
+      "title": "Quit"
+     }
+    ],
+    "itemsTruncated": false,
+    "left": 38,
+    "title": "File"
+   },
+   {
+    "enabled": true,
+    "id": 130,
+    "items": [
+     {
+      "command": 90,
+      "enabled": true,
+      "icon": 0,
+      "index": 1,
+      "mark": 0,
+      "style": 0,
+      "title": "Undo"
+     },
+     {
+      "command": 0,
+      "enabled": false,
+      "icon": 0,
+      "index": 2,
+      "mark": 0,
+      "style": 0,
+      "title": "-"
+     },
+     {
+      "command": 88,
+      "enabled": false,
+      "icon": 0,
+      "index": 3,
+      "mark": 0,
+      "style": 0,
+      "title": "Cut"
+     },
+     {
+      "command": 67,
+      "enabled": false,
+      "icon": 0,
+      "index": 4,
+      "mark": 0,
+      "style": 0,
+      "title": "Copy"
+     },
+     {
+      "command": 86,
+      "enabled": false,
+      "icon": 0,
+      "index": 5,
+      "mark": 0,
+      "style": 0,
+      "title": "Paste"
+     },
+     {
+      "command": 0,
+      "enabled": false,
+      "icon": 0,
+      "index": 6,
+      "mark": 0,
+      "style": 0,
+      "title": "Clear"
+     },
+     {
+      "command": 0,
+      "enabled": false,
+      "icon": 0,
+      "index": 7,
+      "mark": 0,
+      "style": 0,
+      "title": "-"
+     },
+     {
+      "command": 65,
+      "enabled": true,
+      "icon": 0,
+      "index": 8,
+      "mark": 0,
+      "style": 0,
+      "title": "Select All"
+     },
+     {
+      "command": 0,
+      "enabled": false,
+      "icon": 0,
+      "index": 9,
+      "mark": 0,
+      "style": 0,
+      "title": "-"
+     },
+     {
+      "command": 70,
+      "enabled": true,
+      "icon": 0,
+      "index": 10,
+      "mark": 0,
+      "style": 0,
+      "title": "Find\ufffd"
+     },
+     {
+      "command": 71,
+      "enabled": false,
+      "icon": 0,
+      "index": 11,
+      "mark": 0,
+      "style": 0,
+      "title": "Find Again"
+     },
+     {
+      "command": 72,
+      "enabled": false,
+      "icon": 0,
+      "index": 12,
+      "mark": 0,
+      "style": 0,
+      "title": "Find Selection"
+     },
+     {
+      "command": 82,
+      "enabled": true,
+      "icon": 0,
+      "index": 13,
+      "mark": 0,
+      "style": 0,
+      "title": "Replace\ufffd"
+     },
+     {
+      "command": 68,
+      "enabled": false,
+      "icon": 0,
+      "index": 14,
+      "mark": 0,
+      "style": 0,
+      "title": "Replace Again"
+     },
+     {
+      "command": 0,
+      "enabled": false,
+      "icon": 0,
+      "index": 15,
+      "mark": 0,
+      "style": 0,
+      "title": "-"
+     },
+     {
+      "command": 61,
+      "enabled": false,
+      "icon": 0,
+      "index": 16,
+      "mark": 0,
+      "style": 0,
+      "title": "Next Page"
+     },
+     {
+      "command": 45,
+      "enabled": false,
+      "icon": 0,
+      "index": 17,
+      "mark": 0,
+      "style": 0,
+      "title": "Previous Page"
+     },
+     {
+      "command": 0,
+      "enabled": false,
+      "icon": 0,
+      "index": 18,
+      "mark": 0,
+      "style": 0,
+      "title": "Go to Page\ufffd"
+     },
+     {
+      "command": 0,
+      "enabled": false,
+      "icon": 0,
+      "index": 19,
+      "mark": 0,
+      "style": 0,
+      "title": "-"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 20,
+      "mark": 0,
+      "style": 0,
+      "title": "Show Clipboard  "
+     }
+    ],
+    "itemsTruncated": false,
+    "left": 73,
+    "title": "Edit"
+   },
+   {
+    "enabled": true,
+    "id": 131,
+    "items": [
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 1,
+      "mark": 0,
+      "style": 0,
+      "title": "Andale Mono"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 2,
+      "mark": 0,
+      "style": 0,
+      "title": "Apple Chancery"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 3,
+      "mark": 0,
+      "style": 0,
+      "title": "Arial"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 4,
+      "mark": 0,
+      "style": 0,
+      "title": "Arial Black"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 5,
+      "mark": 0,
+      "style": 0,
+      "title": "Capitals"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 6,
+      "mark": 0,
+      "style": 0,
+      "title": "Charcoal"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 7,
+      "mark": 0,
+      "style": 0,
+      "title": "Chicago"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 8,
+      "mark": 0,
+      "style": 0,
+      "title": "Comic Sans MS"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 9,
+      "mark": 0,
+      "style": 0,
+      "title": "Courier"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 10,
+      "mark": 0,
+      "style": 0,
+      "title": "Courier New"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 11,
+      "mark": 0,
+      "style": 0,
+      "title": "Gadget"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 12,
+      "mark": 18,
+      "style": 0,
+      "title": "Geneva"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 13,
+      "mark": 0,
+      "style": 0,
+      "title": "Georgia"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 14,
+      "mark": 0,
+      "style": 0,
+      "title": "Helvetica"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 15,
+      "mark": 0,
+      "style": 0,
+      "title": "Hoefler Text"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 16,
+      "mark": 0,
+      "style": 0,
+      "title": "Hoefler Text Ornaments"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 17,
+      "mark": 0,
+      "style": 0,
+      "title": "Impact"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 18,
+      "mark": 0,
+      "style": 0,
+      "title": "Monaco"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 19,
+      "mark": 0,
+      "style": 0,
+      "title": "New York"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 20,
+      "mark": 0,
+      "style": 0,
+      "title": "Palatino"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 21,
+      "mark": 0,
+      "style": 0,
+      "title": "Sand"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 22,
+      "mark": 0,
+      "style": 0,
+      "title": "Skia"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 23,
+      "mark": 0,
+      "style": 0,
+      "title": "Symbol"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 24,
+      "mark": 0,
+      "style": 0,
+      "title": "Techno"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 25,
+      "mark": 0,
+      "style": 0,
+      "title": "Textile"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 26,
+      "mark": 0,
+      "style": 0,
+      "title": "Times"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 27,
+      "mark": 0,
+      "style": 0,
+      "title": "Times New Roman"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 28,
+      "mark": 0,
+      "style": 0,
+      "title": "Trebuchet MS"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 29,
+      "mark": 0,
+      "style": 0,
+      "title": "Verdana"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 30,
+      "mark": 0,
+      "style": 0,
+      "title": "Webdings"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 31,
+      "mark": 0,
+      "style": 0,
+      "title": "VT100"
+     }
+    ],
+    "itemsTruncated": false,
+    "left": 110,
+    "title": "Font"
+   },
+   {
+    "enabled": true,
+    "id": 132,
+    "items": [
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 1,
+      "mark": 0,
+      "style": 8,
+      "title": "9 Point"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 2,
+      "mark": 0,
+      "style": 8,
+      "title": "10 Point"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 3,
+      "mark": 18,
+      "style": 8,
+      "title": "12 Point"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 4,
+      "mark": 0,
+      "style": 8,
+      "title": "14 Point"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 5,
+      "mark": 0,
+      "style": 8,
+      "title": "18 Point"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 6,
+      "mark": 0,
+      "style": 8,
+      "title": "24 Point"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 7,
+      "mark": 0,
+      "style": 8,
+      "title": "36 Point"
+     }
+    ],
+    "itemsTruncated": false,
+    "left": 150,
+    "title": "Size"
+   },
+   {
+    "enabled": true,
+    "id": 133,
+    "items": [
+     {
+      "command": 84,
+      "enabled": true,
+      "icon": 0,
+      "index": 1,
+      "mark": 18,
+      "style": 0,
+      "title": "Plain Text"
+     },
+     {
+      "command": 66,
+      "enabled": true,
+      "icon": 0,
+      "index": 2,
+      "mark": 0,
+      "style": 1,
+      "title": "Bold"
+     },
+     {
+      "command": 73,
+      "enabled": true,
+      "icon": 0,
+      "index": 3,
+      "mark": 0,
+      "style": 2,
+      "title": "Italic"
+     },
+     {
+      "command": 85,
+      "enabled": true,
+      "icon": 0,
+      "index": 4,
+      "mark": 0,
+      "style": 4,
+      "title": "Underline"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 5,
+      "mark": 0,
+      "style": 8,
+      "title": "Outline"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 6,
+      "mark": 0,
+      "style": 16,
+      "title": "Shadow"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 7,
+      "mark": 0,
+      "style": 32,
+      "title": "Condensed"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 8,
+      "mark": 0,
+      "style": 64,
+      "title": "Extended"
+     }
+    ],
+    "itemsTruncated": false,
+    "left": 189,
+    "title": "Style"
+   },
+   {
+    "enabled": true,
+    "id": 134,
+    "items": [
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 1,
+      "mark": 0,
+      "style": 0,
+      "title": "Record\ufffd"
+     },
+     {
+      "command": 0,
+      "enabled": false,
+      "icon": 0,
+      "index": 2,
+      "mark": 0,
+      "style": 0,
+      "title": "Play"
+     },
+     {
+      "command": 0,
+      "enabled": false,
+      "icon": 0,
+      "index": 3,
+      "mark": 0,
+      "style": 0,
+      "title": "Erase"
+     },
+     {
+      "command": 0,
+      "enabled": false,
+      "icon": 0,
+      "index": 4,
+      "mark": 0,
+      "style": 0,
+      "title": "-"
+     },
+     {
+      "command": 74,
+      "enabled": true,
+      "icon": 0,
+      "index": 5,
+      "mark": 0,
+      "style": 0,
+      "title": "Speak All"
+     },
+     {
+      "command": 46,
+      "enabled": false,
+      "icon": 0,
+      "index": 6,
+      "mark": 0,
+      "style": 0,
+      "title": "Stop Speaking"
+     },
+     {
+      "command": 27,
+      "enabled": true,
+      "icon": 0,
+      "index": 7,
+      "mark": 135,
+      "style": 0,
+      "title": "Voices"
+     }
+    ],
+    "itemsTruncated": false,
+    "left": 233,
+    "title": "Sound"
+   },
+   {
+    "enabled": true,
+    "id": -16490,
+    "items": [
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 1,
+      "mark": 0,
+      "style": 0,
+      "title": "Help Center"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 2,
+      "mark": 0,
+      "style": 0,
+      "title": "-"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 3,
+      "mark": 0,
+      "style": 0,
+      "title": "Show/Hide Balloons"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 4,
+      "mark": 0,
+      "style": 0,
+      "title": "-"
+     },
+     {
+      "command": 63,
+      "enabled": true,
+      "icon": 0,
+      "index": 5,
+      "mark": 0,
+      "style": 0,
+      "title": "SimpleText Guide"
+     }
+    ],
+    "itemsTruncated": false,
+    "left": 285,
+    "title": "Help"
+   },
+   {
+    "enabled": true,
+    "id": -16489,
+    "items": [
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 1,
+      "mark": 0,
+      "style": 0,
+      "title": "Hide SimpleText"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 2,
+      "mark": 0,
+      "style": 0,
+      "title": "Hide Others"
+     },
+     {
+      "command": 28,
+      "enabled": false,
+      "icon": 0,
+      "index": 3,
+      "mark": 0,
+      "style": 0,
+      "title": "Show All"
+     },
+     {
+      "command": 28,
+      "enabled": true,
+      "icon": 0,
+      "index": 4,
+      "mark": 0,
+      "style": 0,
+      "title": "-"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 5,
+      "mark": 0,
+      "style": 0,
+      "title": "Finder"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 6,
+      "mark": 18,
+      "style": 0,
+      "title": "SimpleText"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 7,
+      "mark": 0,
+      "style": 0,
+      "title": "tbt-runner"
+     },
+     {
+      "command": 0,
+      "enabled": true,
+      "icon": 0,
+      "index": 8,
+      "mark": 0,
+      "style": 0,
+      "title": "tbt-worker"
+     }
+    ],
+    "itemsTruncated": false,
+    "left": 687,
+    "title": "\u0001\u001f\u0000\u037c"
+   }
+  ],
+  "menusTruncated": false,
+  "source": "ram",
+  "timing": {
+   "identityTicks": 0,
+   "oracleTicks": 0,
+   "walkAndSerializeTicks": 0
+  },
+  "truncated": false,
+  "windows": [
+   {
+    "controls": [
+     {
+      "checked": false,
+      "enabled": true,
+      "max": 0,
+      "min": 0,
+      "rect": [
+       239,
+       97,
+       457,
+       116
+      ],
+      "ref": "ax2/0000000001F20002/window:#0/control:o%BFdns#0/node:4582F264",
+      "role": "control",
+      "title": "o\ufffddns",
+      "value": 1,
+      "visible": true
+     },
+     {
+      "checked": false,
+      "enabled": true,
+      "max": 11,
+      "min": 0,
+      "rect": [
+       441,
+       120,
+       457,
+       266
+      ],
+      "ref": "ax2/0000000001F20002/window:#0/control:#0/node:B420E0AC",
+      "role": "scrollbar",
+      "title": "",
+      "value": 0,
+      "visible": true
+     },
+     {
+      "checked": false,
+      "enabled": true,
+      "max": 1,
+      "min": 0,
+      "rect": [
+       515,
+       287,
+       563,
+       319
+      ],
+      "ref": "ax2/0000000001F20002/window:#0/control:#1/node:E0C14378",
+      "role": "control",
+      "title": "",
+      "value": 0,
+      "visible": true
+     },
+     {
+      "checked": true,
+      "enabled": true,
+      "max": 1,
+      "min": 0,
+      "rect": [
+       459,
+       287,
+       507,
+       319
+      ],
+      "ref": "ax2/0000000001F20002/window:#0/control:#2/node:DAD80F8C",
+      "role": "control",
+      "title": "",
+      "value": 1,
+      "visible": true
+     },
+     {
+      "checked": false,
+      "enabled": true,
+      "max": 1,
+      "min": 0,
+      "rect": [
+       479,
+       178,
+       559,
+       198
+      ],
+      "ref": "ax2/0000000001F20002/window:#0/control:New#0/node:98DA8410",
+      "role": "control",
+      "title": "New",
+      "value": 0,
+      "visible": true
+     },
+     {
+      "checked": false,
+      "enabled": false,
+      "max": 1,
+      "min": 0,
+      "rect": [
+       479,
+       151,
+       559,
+       171
+      ],
+      "ref": "ax2/0000000001F20002/window:#0/control:Desktop#0/node:BC03786C",
+      "role": "control",
+      "title": "Desktop",
+      "value": 0,
+      "visible": true
+     },
+     {
+      "checked": false,
+      "enabled": false,
+      "max": 1,
+      "min": 0,
+      "rect": [
+       479,
+       123,
+       559,
+       143
+      ],
+      "ref": "ax2/0000000001F20002/window:#0/control:Eject#0/node:AC9F56F0",
+      "role": "control",
+      "title": "Eject",
+      "value": 0,
+      "visible": true
+     },
+     {
+      "checked": false,
+      "enabled": true,
+      "max": 1,
+      "min": 0,
+      "rect": [
+       479,
+       221,
+       559,
+       241
+      ],
+      "ref": "ax2/0000000001F20002/window:#0/control:Cancel#0/node:47DDA804",
+      "role": "control",
+      "title": "Cancel",
+      "value": 0,
+      "visible": true
+     },
+     {
+      "checked": false,
+      "enabled": true,
+      "max": 1,
+      "min": 0,
+      "rect": [
+       479,
+       252,
+       559,
+       272
+      ],
+      "ref": "ax2/0000000001F20002/window:#0/control:Save#0/node:1F2CD188",
+      "role": "control",
+      "title": "Save",
+      "value": 0,
+      "visible": true
+     }
+    ],
+    "controlsTruncated": false,
+    "kind": 2,
+    "rect": [
+     227,
+     91,
+     571,
+     329
+    ],
+    "textEdit": {
+     "active": true,
+     "length": 8,
+     "returned": 8,
+     "selection": [
+      0,
+      8
+     ],
+     "text": "untitled",
+     "truncated": false
+    },
+    "title": "",
+    "visible": true,
+    "z": 0
+   },
+   {
+    "controls": [
+     {
+      "checked": false,
+      "enabled": true,
+      "max": 0,
+      "min": 0,
+      "rect": [
+       604,
+       39,
+       620,
+       567
+      ],
+      "ref": "ax2/0000000001F20002/window:untitled#0/control:#0/node:783FC88F",
+      "role": "control",
+      "title": "",
+      "value": 0,
+      "visible": true
+     }
+    ],
+    "controlsTruncated": false,
+    "kind": 8,
+    "rect": [
+     4,
+     40,
+     619,
+     581
+    ],
+    "title": "untitled",
+    "visible": true,
+    "z": 1
+   }
+  ],
+  "windowsTruncated": false
+ },
+ "screen": {
+  "h": 600,
+  "w": 800
+ },
+ "seq": 1,
+ "source": "axtree"
+}

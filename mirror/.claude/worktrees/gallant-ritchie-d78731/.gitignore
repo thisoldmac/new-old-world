@@ -1,0 +1,20 @@
+# Swift build output
+.build/
+*.xcodeproj/xcuserdata/
+
+# Retro68 / CMake build output (guest app + extension)
+build/
+build-*/
+*.o
+*.a
+
+# Emulator run scratch (staging dirs, session clones, sockets)
+run/
+*.qcow2
+*.dsk
+
+.DS_Store
+
+# Python bytecode from the rig scripts
+__pycache__/
+*.pyc

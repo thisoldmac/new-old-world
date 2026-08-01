@@ -1,0 +1,1442 @@
+{
+ "clut": "generated system 8-bit CLUT (validated vs guest desktop render)",
+ "copyright": "Apple bitmap/font data \u2014 private repo only; do not publish.",
+ "cursors": {
+  "count": 40
+ },
+ "extracted": "2026-07-16",
+ "extractor": "prototypes/mirror/extract-assets/extract.py",
+ "fonts": {
+  "notes": {
+   "Charcoal": "no NFNT bitmap strike in suitcase (TrueType-only face); Tier-1 TTF only \u2014 render from the .ttf at runtime"
+  },
+  "sheets": {
+   "chicago-12": {
+    "glyphs": 95,
+    "size": 12,
+    "style": 0
+   },
+   "geneva-10": {
+    "glyphs": 95,
+    "size": 10,
+    "style": 0
+   },
+   "geneva-12": {
+    "glyphs": 95,
+    "size": 12,
+    "style": 0
+   },
+   "geneva-14": {
+    "glyphs": 95,
+    "size": 14,
+    "style": 0
+   },
+   "geneva-18": {
+    "glyphs": 95,
+    "size": 18,
+    "style": 0
+   },
+   "geneva-20": {
+    "glyphs": 95,
+    "size": 20,
+    "style": 0
+   },
+   "geneva-24": {
+    "glyphs": 95,
+    "size": 24,
+    "style": 0
+   },
+   "geneva-9": {
+    "glyphs": 95,
+    "size": 9,
+    "style": 0
+   },
+   "geneva-9-italic": {
+    "glyphs": 95,
+    "size": 9,
+    "style": 2
+   }
+  },
+  "ttf": {
+   "Charcoal": {
+    "bytes": 86136,
+    "coretext_valid": true
+   },
+   "Chicago": {
+    "bytes": 97856,
+    "coretext_valid": true
+   },
+   "Geneva": {
+    "bytes": 100936,
+    "coretext_valid": true
+   }
+  }
+ },
+ "icons": {
+  "count": 127
+ },
+ "pack": "platinum-pack",
+ "patterns": {
+  "PAT": [
+   {
+    "file": "pat_15.png",
+    "id": 15
+   },
+   {
+    "file": "pat_16.png",
+    "id": 16
+   },
+   {
+    "file": "pat_17.png",
+    "id": 17
+   },
+   {
+    "file": "pat_18.png",
+    "id": 18
+   },
+   {
+    "file": "pat_19.png",
+    "id": 19
+   }
+  ],
+  "desktop_ppat_id": 16,
+  "ppat": [
+   {
+    "file": "desktop.png",
+    "h": 128,
+    "id": 16,
+    "name": "Mac OS Default",
+    "w": 128
+   },
+   {
+    "file": "ppat_18.png",
+    "h": 8,
+    "id": 18,
+    "name": null,
+    "w": 8
+   },
+   {
+    "file": "ppat_42.png",
+    "h": 16,
+    "id": 42,
+    "name": null,
+    "w": 16
+   }
+  ]
+ },
+ "provenance": [
+  {
+   "asset": "cursors/CURS_-20161.png",
+   "id": -20161,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-20486.png",
+   "id": -20486,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-20487.png",
+   "id": -20487,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-20488.png",
+   "id": -20488,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-20701.png",
+   "id": -20701,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-20702.png",
+   "id": -20702,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-20703.png",
+   "id": -20703,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-20704.png",
+   "id": -20704,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-20705.png",
+   "id": -20705,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-20706.png",
+   "id": -20706,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-20707.png",
+   "id": -20707,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-20708.png",
+   "id": -20708,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-20709.png",
+   "id": -20709,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-20710.png",
+   "id": -20710,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-20711.png",
+   "id": -20711,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-20712.png",
+   "id": -20712,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-20713.png",
+   "id": -20713,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-20714.png",
+   "id": -20714,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-20715.png",
+   "id": -20715,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-20716.png",
+   "id": -20716,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-20717.png",
+   "id": -20717,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-20718.png",
+   "id": -20718,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-20719.png",
+   "id": -20719,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-20720.png",
+   "id": -20720,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-20721.png",
+   "id": -20721,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-20850.png",
+   "id": -20850,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-20851.png",
+   "id": -20851,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-20852.png",
+   "id": -20852,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-5760.png",
+   "id": -5760,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-6072.png",
+   "id": -6072,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-6073.png",
+   "id": -6073,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-6074.png",
+   "id": -6074,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-6075.png",
+   "id": -6075,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-6076.png",
+   "id": -6076,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-6077.png",
+   "id": -6077,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_-6078.png",
+   "id": -6078,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_1.png",
+   "id": 1,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_2.png",
+   "id": 2,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_3.png",
+   "id": 3,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "cursors/CURS_4.png",
+   "id": 4,
+   "source": "System Folder:System",
+   "type": "CURS"
+  },
+  {
+   "asset": "fonts/chicago-12.json",
+   "id": 4502,
+   "source": "System Folder:Fonts:Chicago",
+   "type": "NFNT"
+  },
+  {
+   "asset": "fonts/chicago-12.png",
+   "id": 4502,
+   "source": "System Folder:Fonts:Chicago",
+   "type": "NFNT"
+  },
+  {
+   "asset": "fonts/geneva-10.json",
+   "id": 28416,
+   "source": "System Folder:Fonts:Geneva",
+   "type": "NFNT"
+  },
+  {
+   "asset": "fonts/geneva-10.png",
+   "id": 28416,
+   "source": "System Folder:Fonts:Geneva",
+   "type": "NFNT"
+  },
+  {
+   "asset": "fonts/geneva-12.json",
+   "id": 1902,
+   "source": "System Folder:Fonts:Geneva",
+   "type": "NFNT"
+  },
+  {
+   "asset": "fonts/geneva-12.png",
+   "id": 1902,
+   "source": "System Folder:Fonts:Geneva",
+   "type": "NFNT"
+  },
+  {
+   "asset": "fonts/geneva-14.json",
+   "id": 8681,
+   "source": "System Folder:Fonts:Geneva",
+   "type": "NFNT"
+  },
+  {
+   "asset": "fonts/geneva-14.png",
+   "id": 8681,
+   "source": "System Folder:Fonts:Geneva",
+   "type": "NFNT"
+  },
+  {
+   "asset": "fonts/geneva-18.json",
+   "id": 14368,
+   "source": "System Folder:Fonts:Geneva",
+   "type": "NFNT"
+  },
+  {
+   "asset": "fonts/geneva-18.png",
+   "id": 14368,
+   "source": "System Folder:Fonts:Geneva",
+   "type": "NFNT"
+  },
+  {
+   "asset": "fonts/geneva-20.json",
+   "id": 24636,
+   "source": "System Folder:Fonts:Geneva",
+   "type": "NFNT"
+  },
+  {
+   "asset": "fonts/geneva-20.png",
+   "id": 24636,
+   "source": "System Folder:Fonts:Geneva",
+   "type": "NFNT"
+  },
+  {
+   "asset": "fonts/geneva-24.json",
+   "id": 27558,
+   "source": "System Folder:Fonts:Geneva",
+   "type": "NFNT"
+  },
+  {
+   "asset": "fonts/geneva-24.png",
+   "id": 27558,
+   "source": "System Folder:Fonts:Geneva",
+   "type": "NFNT"
+  },
+  {
+   "asset": "fonts/geneva-9-italic.json",
+   "id": 769,
+   "source": "System Folder:Fonts:Geneva",
+   "type": "NFNT"
+  },
+  {
+   "asset": "fonts/geneva-9-italic.png",
+   "id": 769,
+   "source": "System Folder:Fonts:Geneva",
+   "type": "NFNT"
+  },
+  {
+   "asset": "fonts/geneva-9.json",
+   "id": 18766,
+   "source": "System Folder:Fonts:Geneva",
+   "type": "NFNT"
+  },
+  {
+   "asset": "fonts/geneva-9.png",
+   "id": 18766,
+   "source": "System Folder:Fonts:Geneva",
+   "type": "NFNT"
+  },
+  {
+   "asset": "fonts/ttf/Charcoal.ttf",
+   "id": 9719,
+   "source": "System Folder:Fonts:Charcoal",
+   "type": "sfnt"
+  },
+  {
+   "asset": "fonts/ttf/Chicago.ttf",
+   "id": 4027,
+   "source": "System Folder:Fonts:Chicago",
+   "type": "sfnt"
+  },
+  {
+   "asset": "fonts/ttf/Geneva.ttf",
+   "id": 12489,
+   "source": "System Folder:Fonts:Geneva",
+   "type": "sfnt"
+  },
+  {
+   "asset": "icons/About_this_Computer..._icl8_-16396_32.png",
+   "id": -16396,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/Edition_File_icl8_-3989_32.png",
+   "id": -3989,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/Finder_ics8_-16491_16.png",
+   "id": -16491,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/Finder_ics8_-16492_16.png",
+   "id": -16492,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/Shared_Library_icl8_-3967_32.png",
+   "id": -3967,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/com1_icl8_-20192_32.png",
+   "id": -20192,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/com1_ics8_-20192_16.png",
+   "id": -20192,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/com2_icl8_-20194_32.png",
+   "id": -20194,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/com2_ics8_-20194_16.png",
+   "id": -20194,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/icl8_-16415_32.png",
+   "id": -16415,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-16482_32.png",
+   "id": -16482,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-16494_32.png",
+   "id": -16494,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-16506_32.png",
+   "id": -16506,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-16509_32.png",
+   "id": -16509,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-20024_32.png",
+   "id": -20024,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-20725_32.png",
+   "id": -20725,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-20776_32.png",
+   "id": -20776,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-20958_32.png",
+   "id": -20958,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-20959_32.png",
+   "id": -20959,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-20962_32.png",
+   "id": -20962,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-20982_32.png",
+   "id": -20982,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-32507_32.png",
+   "id": -32507,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-32508_32.png",
+   "id": -32508,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-32509_32.png",
+   "id": -32509,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-32511_32.png",
+   "id": -32511,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-32512_32.png",
+   "id": -32512,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3773_32.png",
+   "id": -3773,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3774_32.png",
+   "id": -3774,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3968_32.png",
+   "id": -3968,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3970_32.png",
+   "id": -3970,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3971_32.png",
+   "id": -3971,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3972_32.png",
+   "id": -3972,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3973_32.png",
+   "id": -3973,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3974_32.png",
+   "id": -3974,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3975_32.png",
+   "id": -3975,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3976_32.png",
+   "id": -3976,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3977_32.png",
+   "id": -3977,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3978_32.png",
+   "id": -3978,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3979_32.png",
+   "id": -3979,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3980_32.png",
+   "id": -3980,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3981_32.png",
+   "id": -3981,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3982_32.png",
+   "id": -3982,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3983_32.png",
+   "id": -3983,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3984_32.png",
+   "id": -3984,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3985_32.png",
+   "id": -3985,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3987_32.png",
+   "id": -3987,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3988_32.png",
+   "id": -3988,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3991_32.png",
+   "id": -3991,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3993_32.png",
+   "id": -3993,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3994_32.png",
+   "id": -3994,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3996_32.png",
+   "id": -3996,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3997_32.png",
+   "id": -3997,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3998_32.png",
+   "id": -3998,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-3999_32.png",
+   "id": -3999,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_-4000_32.png",
+   "id": -4000,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/icl8_3_32.png",
+   "id": 3,
+   "mask": "ICN#",
+   "source": "System Folder:System",
+   "type": "icl8"
+  },
+  {
+   "asset": "icons/ics8_-16386_16.png",
+   "id": -16386,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-16396_16.png",
+   "id": -16396,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-16415_16.png",
+   "id": -16415,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-16482_16.png",
+   "id": -16482,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-16490_16.png",
+   "id": -16490,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-16494_16.png",
+   "id": -16494,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-16506_16.png",
+   "id": -16506,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-16509_16.png",
+   "id": -16509,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-16541_16.png",
+   "id": -16541,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-16569_16.png",
+   "id": -16569,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-16570_16.png",
+   "id": -16570,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-16571_16.png",
+   "id": -16571,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-16572_16.png",
+   "id": -16572,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-16573_16.png",
+   "id": -16573,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-16574_16.png",
+   "id": -16574,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-16575_16.png",
+   "id": -16575,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-16580_16.png",
+   "id": -16580,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-16581_16.png",
+   "id": -16581,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-16582_16.png",
+   "id": -16582,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-16583_16.png",
+   "id": -16583,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-20024_16.png",
+   "id": -20024,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-20271_16.png",
+   "id": -20271,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-20448_16.png",
+   "id": -20448,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-20725_16.png",
+   "id": -20725,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-20776_16.png",
+   "id": -20776,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-20958_16.png",
+   "id": -20958,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-20959_16.png",
+   "id": -20959,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-20962_16.png",
+   "id": -20962,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-20982_16.png",
+   "id": -20982,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-32507_16.png",
+   "id": -32507,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-32508_16.png",
+   "id": -32508,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-32509_16.png",
+   "id": -32509,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-32511_16.png",
+   "id": -32511,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-32512_16.png",
+   "id": -32512,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3773_16.png",
+   "id": -3773,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3774_16.png",
+   "id": -3774,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3813_16.png",
+   "id": -3813,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3814_16.png",
+   "id": -3814,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3815_16.png",
+   "id": -3815,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3816_16.png",
+   "id": -3816,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3967_16.png",
+   "id": -3967,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3968_16.png",
+   "id": -3968,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3970_16.png",
+   "id": -3970,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3971_16.png",
+   "id": -3971,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3972_16.png",
+   "id": -3972,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3973_16.png",
+   "id": -3973,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3974_16.png",
+   "id": -3974,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3975_16.png",
+   "id": -3975,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3976_16.png",
+   "id": -3976,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3977_16.png",
+   "id": -3977,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3978_16.png",
+   "id": -3978,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3979_16.png",
+   "id": -3979,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3980_16.png",
+   "id": -3980,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3981_16.png",
+   "id": -3981,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3982_16.png",
+   "id": -3982,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3983_16.png",
+   "id": -3983,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3984_16.png",
+   "id": -3984,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3985_16.png",
+   "id": -3985,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3987_16.png",
+   "id": -3987,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3988_16.png",
+   "id": -3988,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3989_16.png",
+   "id": -3989,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3991_16.png",
+   "id": -3991,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3993_16.png",
+   "id": -3993,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3994_16.png",
+   "id": -3994,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3996_16.png",
+   "id": -3996,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3997_16.png",
+   "id": -3997,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3998_16.png",
+   "id": -3998,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-3999_16.png",
+   "id": -3999,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_-4000_16.png",
+   "id": -4000,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_129_16.png",
+   "id": 129,
+   "mask": null,
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "icons/ics8_3_16.png",
+   "id": 3,
+   "mask": "ics#",
+   "source": "System Folder:System",
+   "type": "ics8"
+  },
+  {
+   "asset": "patterns/desktop.png",
+   "id": 16,
+   "source": "System Folder:System",
+   "type": "ppat"
+  },
+  {
+   "asset": "patterns/pat_15.png",
+   "id": 15,
+   "source": "System Folder:System",
+   "type": "PAT "
+  },
+  {
+   "asset": "patterns/pat_16.png",
+   "id": 16,
+   "source": "System Folder:System",
+   "type": "PAT "
+  },
+  {
+   "asset": "patterns/pat_17.png",
+   "id": 17,
+   "source": "System Folder:System",
+   "type": "PAT "
+  },
+  {
+   "asset": "patterns/pat_18.png",
+   "id": 18,
+   "source": "System Folder:System",
+   "type": "PAT "
+  },
+  {
+   "asset": "patterns/pat_19.png",
+   "id": 19,
+   "source": "System Folder:System",
+   "type": "PAT "
+  },
+  {
+   "asset": "patterns/ppat_18.png",
+   "id": 18,
+   "source": "System Folder:System",
+   "type": "ppat"
+  },
+  {
+   "asset": "patterns/ppat_42.png",
+   "id": 42,
+   "source": "System Folder:System",
+   "type": "ppat"
+  }
+ ],
+ "source_image": "os91-runner.qcow2",
+ "version": "0.1.0",
+ "worker_version": {
+  "channel": "alpha",
+  "current": false,
+  "expected": "0.5a",
+  "gitRev": "59b7d8c5",
+  "uptimeTicks": 672534,
+  "version": "0.4a"
+ }
+}

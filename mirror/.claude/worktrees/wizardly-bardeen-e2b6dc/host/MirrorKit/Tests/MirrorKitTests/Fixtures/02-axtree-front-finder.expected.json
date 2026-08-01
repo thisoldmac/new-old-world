@@ -1,0 +1,696 @@
+{
+ "apps": [
+  {
+   "error": null,
+   "front": true,
+   "name": "Finder",
+   "psn": "0.29884417"
+  }
+ ],
+ "capturedAt": 1000000000.0,
+ "menubar": {
+  "app": "Finder",
+  "menus": [
+   {
+    "apple": true,
+    "id": 256,
+    "items": [
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 1,
+      "mark": false,
+      "separator": false,
+      "title": "About This Computer"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 2,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 3,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000AirPort"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 4,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Apple DVD Player"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 5,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Apple System Profiler"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 6,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Calculator"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 7,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Chooser"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 8,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Control Panels"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 9,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Favorites"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 10,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Key Caps"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 11,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Network Browser"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 12,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Recent Applications"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 13,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Recent Documents"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 14,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Remote Access Status"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 15,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Scrapbook"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 16,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Sherlock 2"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 17,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Speakable Items"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 18,
+      "mark": false,
+      "separator": false,
+      "title": "\u0000\u0000Stickies"
+     }
+    ],
+    "left": 10,
+    "title": ""
+   },
+   {
+    "apple": false,
+    "id": 257,
+    "items": [
+     {
+      "cmd": "N",
+      "enabled": true,
+      "index": 1,
+      "mark": false,
+      "separator": false,
+      "title": "New Folder"
+     },
+     {
+      "cmd": "O",
+      "enabled": true,
+      "index": 2,
+      "mark": false,
+      "separator": false,
+      "title": "Open"
+     },
+     {
+      "cmd": "P",
+      "enabled": false,
+      "index": 3,
+      "mark": false,
+      "separator": false,
+      "title": "Print"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 4,
+      "mark": false,
+      "separator": false,
+      "title": "Move To Trash"
+     },
+     {
+      "cmd": "W",
+      "enabled": false,
+      "index": 5,
+      "mark": false,
+      "separator": false,
+      "title": "Close Window"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 6,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 7,
+      "mark": true,
+      "separator": false,
+      "title": "Get Info"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 8,
+      "mark": true,
+      "separator": false,
+      "title": "Label"
+     },
+     {
+      "cmd": "D",
+      "enabled": false,
+      "index": 9,
+      "mark": false,
+      "separator": false,
+      "title": "Duplicate"
+     },
+     {
+      "cmd": "M",
+      "enabled": true,
+      "index": 10,
+      "mark": false,
+      "separator": false,
+      "title": "Make Alias"
+     },
+     {
+      "cmd": "T",
+      "enabled": true,
+      "index": 11,
+      "mark": false,
+      "separator": false,
+      "title": "Add To Favorites"
+     },
+     {
+      "cmd": "Y",
+      "enabled": true,
+      "index": 12,
+      "mark": false,
+      "separator": false,
+      "title": "Put Away"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 13,
+      "mark": false,
+      "separator": false,
+      "title": "Encrypt"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 14,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "F",
+      "enabled": true,
+      "index": 15,
+      "mark": false,
+      "separator": false,
+      "title": "Find\ufffd"
+     },
+     {
+      "cmd": "H",
+      "enabled": true,
+      "index": 16,
+      "mark": false,
+      "separator": false,
+      "title": "Search Internet\ufffd"
+     },
+     {
+      "cmd": "R",
+      "enabled": false,
+      "index": 17,
+      "mark": false,
+      "separator": false,
+      "title": "Show Original"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 18,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 19,
+      "mark": false,
+      "separator": false,
+      "title": "Page Setup\ufffd"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 20,
+      "mark": false,
+      "separator": false,
+      "title": "Print Desktop\ufffd"
+     }
+    ],
+    "left": 38,
+    "title": "File"
+   },
+   {
+    "apple": false,
+    "id": 258,
+    "items": [
+     {
+      "cmd": "Z",
+      "enabled": false,
+      "index": 1,
+      "mark": false,
+      "separator": false,
+      "title": "Undo"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 2,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "X",
+      "enabled": false,
+      "index": 3,
+      "mark": false,
+      "separator": false,
+      "title": "Cut"
+     },
+     {
+      "cmd": "C",
+      "enabled": true,
+      "index": 4,
+      "mark": false,
+      "separator": false,
+      "title": "Copy"
+     },
+     {
+      "cmd": "V",
+      "enabled": false,
+      "index": 5,
+      "mark": false,
+      "separator": false,
+      "title": "Paste"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 6,
+      "mark": false,
+      "separator": false,
+      "title": "Clear"
+     },
+     {
+      "cmd": "A",
+      "enabled": true,
+      "index": 7,
+      "mark": false,
+      "separator": false,
+      "title": "Select All"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 8,
+      "mark": false,
+      "separator": false,
+      "title": "Show Clipboard"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 9,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 10,
+      "mark": false,
+      "separator": false,
+      "title": "Preferences\ufffd"
+     }
+    ],
+    "left": 73,
+    "title": "Edit"
+   },
+   {
+    "apple": false,
+    "id": 259,
+    "items": [
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 1,
+      "mark": true,
+      "separator": false,
+      "title": "as Icons"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 2,
+      "mark": false,
+      "separator": false,
+      "title": "as Buttons"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 3,
+      "mark": false,
+      "separator": false,
+      "title": "as List"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 4,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 5,
+      "mark": false,
+      "separator": false,
+      "title": "as Window"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 6,
+      "mark": false,
+      "separator": false,
+      "title": "as Pop-up Window"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 7,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 8,
+      "mark": false,
+      "separator": false,
+      "title": "Clean Up"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 9,
+      "mark": true,
+      "separator": false,
+      "title": "Arrange"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 10,
+      "mark": false,
+      "separator": false,
+      "title": "Reset Column Positions"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 11,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "J",
+      "enabled": true,
+      "index": 12,
+      "mark": false,
+      "separator": false,
+      "title": "View Options\ufffd"
+     }
+    ],
+    "left": 110,
+    "title": "View"
+   },
+   {
+    "apple": false,
+    "id": 261,
+    "items": [
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 1,
+      "mark": true,
+      "separator": false,
+      "title": "\u0000Desktop"
+     }
+    ],
+    "left": 154,
+    "title": "Window"
+   },
+   {
+    "apple": false,
+    "id": 260,
+    "items": [
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 1,
+      "mark": false,
+      "separator": false,
+      "title": "Empty Trash\ufffd"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 2,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "E",
+      "enabled": false,
+      "index": 3,
+      "mark": false,
+      "separator": false,
+      "title": "Eject"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 4,
+      "mark": false,
+      "separator": false,
+      "title": "Erase Disk\ufffd"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 5,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 6,
+      "mark": false,
+      "separator": false,
+      "title": "Sleep"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 7,
+      "mark": false,
+      "separator": false,
+      "title": "Restart"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 8,
+      "mark": false,
+      "separator": false,
+      "title": "Shut Down "
+     }
+    ],
+    "left": 218,
+    "title": "Special"
+   },
+   {
+    "apple": false,
+    "id": -16490,
+    "items": [
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 1,
+      "mark": false,
+      "separator": false,
+      "title": "Help Center"
+     },
+     {
+      "cmd": "",
+      "enabled": false,
+      "index": 2,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 3,
+      "mark": false,
+      "separator": false,
+      "title": "Show/Hide Balloons"
+     },
+     {
+      "cmd": "",
+      "enabled": true,
+      "index": 4,
+      "mark": false,
+      "separator": true,
+      "title": "-"
+     },
+     {
+      "cmd": "?",
+      "enabled": true,
+      "index": 5,
+      "mark": false,
+      "separator": false,
+      "title": "Mac Help"
+     }
+    ],
+    "left": 277,
+    "title": "Help"
+   }
+  ]
+ },
+ "meta": {
+  "bytes": null,
+  "errors": [],
+  "latencyMs": null
+ },
+ "screen": {
+  "h": 600,
+  "w": 800
+ },
+ "seq": 1,
+ "source": "axtree",
+ "version": 1,
+ "windows": [
+  {
+   "app": "Finder",
+   "controls": [],
+   "front": false,
+   "id": "0.29884417/Desktop#0",
+   "kind": 20,
+   "psn": "0.29884417",
+   "rect": {
+    "b": 600,
+    "l": 0,
+    "r": 800,
+    "t": 0
+   },
+   "text": null,
+   "title": "Desktop",
+   "visible": true,
+   "z": 0
+  }
+ ]
+}

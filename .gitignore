@@ -23,6 +23,12 @@ xcuserdata/
 # would dwarf the repository.
 .q800/
 
+# Emulator session scratch: a cloned disk image, the QMP socket, the pid and
+# port files a spin-up writes. Same reasoning as .q800 — the clone alone is
+# hundreds of megabytes. mirror/ ignores its own run/ separately, because a
+# vendored project keeps its own rules.
+run/
+
 # Python bytecode from the asset generators in assets/.
 __pycache__/
 

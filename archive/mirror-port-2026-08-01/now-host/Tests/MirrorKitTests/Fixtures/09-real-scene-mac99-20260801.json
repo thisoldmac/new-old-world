@@ -1,0 +1,1189 @@
+{
+ "version": 1,
+ "seq": 70,
+ "capturedAt": 1785561801.0,
+ "source": "peek",
+ "screen": {
+  "w": 800,
+  "h": 600
+ },
+ "apps": [
+  {
+   "psn": "0.29360131",
+   "name": "New Old World",
+   "front": false
+  },
+  {
+   "psn": "0.29491201",
+   "name": "Control Strip Extension",
+   "front": false,
+   "error": "ax_oracle_not_found"
+  },
+  {
+   "psn": "0.29622273",
+   "name": "DVD AutoLauncher",
+   "front": false,
+   "error": "ax_oracle_not_found"
+  },
+  {
+   "psn": "0.29687809",
+   "name": "FBC Indexing Scheduler",
+   "front": false,
+   "error": "ax_oracle_not_found"
+  },
+  {
+   "psn": "0.29753345",
+   "name": "Folder Actions",
+   "front": false,
+   "error": "ax_oracle_not_found"
+  },
+  {
+   "psn": "0.29818881",
+   "name": "tbt-appe",
+   "front": false,
+   "error": "ax_oracle_not_found"
+  },
+  {
+   "psn": "0.29949953",
+   "name": "Finder",
+   "front": true
+  },
+  {
+   "psn": "0.30736386",
+   "name": "tbt-worker",
+   "front": false,
+   "error": "ax_oracle_not_found"
+  }
+ ],
+ "processes": [
+  {
+   "psn": "0.29360131",
+   "name": "New Old World",
+   "front": false,
+   "signature": "NOWo"
+  },
+  {
+   "psn": "0.29491201",
+   "name": "Control Strip Extension",
+   "front": false,
+   "signature": "sdev"
+  },
+  {
+   "psn": "0.29622273",
+   "name": "DVD AutoLauncher",
+   "front": false,
+   "signature": "dval"
+  },
+  {
+   "psn": "0.29687809",
+   "name": "FBC Indexing Scheduler",
+   "front": false,
+   "signature": "fbcb"
+  },
+  {
+   "psn": "0.29753345",
+   "name": "Folder Actions",
+   "front": false,
+   "signature": "ssrv"
+  },
+  {
+   "psn": "0.29818881",
+   "name": "tbt-appe",
+   "front": false,
+   "signature": "TbtL"
+  },
+  {
+   "psn": "0.29949953",
+   "name": "Finder",
+   "front": true,
+   "signature": "MACS"
+  },
+  {
+   "psn": "0.30736386",
+   "name": "tbt-worker",
+   "front": false,
+   "signature": "TbNW"
+  }
+ ],
+ "menubar": {
+  "app": "Finder",
+  "menus": [
+   {
+    "title": "\u0014",
+    "id": 256,
+    "left": 10,
+    "items": [
+     {
+      "title": "About This Computer",
+      "index": 1,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "-",
+      "index": 2,
+      "separator": true,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "AirPort",
+      "index": 3,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "Apple DVD Player",
+      "index": 4,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "Apple System Profiler",
+      "index": 5,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "Calculator",
+      "index": 6,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "Chooser",
+      "index": 7,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "Control Panels",
+      "index": 8,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "Favorites",
+      "index": 9,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "Key Caps",
+      "index": 10,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "Network Browser",
+      "index": 11,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "Recent Applications",
+      "index": 12,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "Recent Documents",
+      "index": 13,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "Remote Access Status",
+      "index": 14,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "Scrapbook",
+      "index": 15,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "Sherlock 2",
+      "index": 16,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "Speakable Items",
+      "index": 17,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "Stickies",
+      "index": 18,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     }
+    ]
+   },
+   {
+    "title": "File",
+    "id": 257,
+    "left": 38,
+    "items": [
+     {
+      "title": "New Folder",
+      "index": 1,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": "N"
+     },
+     {
+      "title": "Open",
+      "index": 2,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": "O"
+     },
+     {
+      "title": "Print",
+      "index": 3,
+      "separator": false,
+      "enabled": false,
+      "mark": false,
+      "cmd": "P"
+     },
+     {
+      "title": "Move To Trash",
+      "index": 4,
+      "separator": false,
+      "enabled": false,
+      "mark": false
+     },
+     {
+      "title": "Close Window",
+      "index": 5,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": "W"
+     },
+     {
+      "title": "-",
+      "index": 6,
+      "separator": true,
+      "enabled": false,
+      "mark": false
+     },
+     {
+      "title": "Get Info",
+      "index": 7,
+      "separator": false,
+      "enabled": true,
+      "mark": true
+     },
+     {
+      "title": "Label",
+      "index": 8,
+      "separator": false,
+      "enabled": true,
+      "mark": true
+     },
+     {
+      "title": "Duplicate",
+      "index": 9,
+      "separator": false,
+      "enabled": false,
+      "mark": false,
+      "cmd": "D"
+     },
+     {
+      "title": "Make Alias",
+      "index": 10,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": "M"
+     },
+     {
+      "title": "Add To Favorites",
+      "index": 11,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": "T"
+     },
+     {
+      "title": "Put Away",
+      "index": 12,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": "Y"
+     },
+     {
+      "title": "Encrypt",
+      "index": 13,
+      "separator": false,
+      "enabled": false,
+      "mark": false
+     },
+     {
+      "title": "-",
+      "index": 14,
+      "separator": true,
+      "enabled": false,
+      "mark": false
+     },
+     {
+      "title": "Find\u2026",
+      "index": 15,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": "F"
+     },
+     {
+      "title": "Search Internet\u2026",
+      "index": 16,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": "H"
+     },
+     {
+      "title": "Show Original",
+      "index": 17,
+      "separator": false,
+      "enabled": false,
+      "mark": false,
+      "cmd": "R"
+     },
+     {
+      "title": "-",
+      "index": 18,
+      "separator": true,
+      "enabled": false,
+      "mark": false
+     },
+     {
+      "title": "Page Setup\u2026",
+      "index": 19,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "Print Window\u2026",
+      "index": 20,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     }
+    ]
+   },
+   {
+    "title": "Edit",
+    "id": 258,
+    "left": 73,
+    "items": [
+     {
+      "title": "Undo",
+      "index": 1,
+      "separator": false,
+      "enabled": false,
+      "mark": false,
+      "cmd": "Z"
+     },
+     {
+      "title": "-",
+      "index": 2,
+      "separator": true,
+      "enabled": false,
+      "mark": false
+     },
+     {
+      "title": "Cut",
+      "index": 3,
+      "separator": false,
+      "enabled": false,
+      "mark": false,
+      "cmd": "X"
+     },
+     {
+      "title": "Copy",
+      "index": 4,
+      "separator": false,
+      "enabled": false,
+      "mark": false,
+      "cmd": "C"
+     },
+     {
+      "title": "Paste",
+      "index": 5,
+      "separator": false,
+      "enabled": false,
+      "mark": false,
+      "cmd": "V"
+     },
+     {
+      "title": "Clear",
+      "index": 6,
+      "separator": false,
+      "enabled": false,
+      "mark": false
+     },
+     {
+      "title": "Select All",
+      "index": 7,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": "A"
+     },
+     {
+      "title": "Show Clipboard",
+      "index": 8,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "-",
+      "index": 9,
+      "separator": true,
+      "enabled": false,
+      "mark": false
+     },
+     {
+      "title": "Preferences\u2026",
+      "index": 10,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     }
+    ]
+   },
+   {
+    "title": "View",
+    "id": 259,
+    "left": 110,
+    "items": [
+     {
+      "title": "as Icons",
+      "index": 1,
+      "separator": false,
+      "enabled": true,
+      "mark": true
+     },
+     {
+      "title": "as Buttons",
+      "index": 2,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "as List",
+      "index": 3,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "-",
+      "index": 4,
+      "separator": true,
+      "enabled": false,
+      "mark": false
+     },
+     {
+      "title": "as Window",
+      "index": 5,
+      "separator": false,
+      "enabled": true,
+      "mark": true
+     },
+     {
+      "title": "as Pop-up Window",
+      "index": 6,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "-",
+      "index": 7,
+      "separator": true,
+      "enabled": false,
+      "mark": false
+     },
+     {
+      "title": "Clean Up",
+      "index": 8,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "Arrange",
+      "index": 9,
+      "separator": false,
+      "enabled": true,
+      "mark": true
+     },
+     {
+      "title": "Reset Column Positions",
+      "index": 10,
+      "separator": false,
+      "enabled": false,
+      "mark": false
+     },
+     {
+      "title": "-",
+      "index": 11,
+      "separator": true,
+      "enabled": false,
+      "mark": false
+     },
+     {
+      "title": "View Options\u2026",
+      "index": 12,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": "J"
+     }
+    ]
+   },
+   {
+    "title": "Window",
+    "id": 261,
+    "left": 154,
+    "items": [
+     {
+      "title": "Desktop",
+      "index": 1,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "-",
+      "index": 2,
+      "separator": true,
+      "enabled": true,
+      "mark": true
+     },
+     {
+      "title": "Macintosh HD",
+      "index": 3,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "TBTRunner",
+      "index": 4,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "TimBotTu",
+      "index": 5,
+      "separator": false,
+      "enabled": true,
+      "mark": true
+     }
+    ]
+   },
+   {
+    "title": "Special",
+    "id": 260,
+    "left": 218,
+    "items": [
+     {
+      "title": "Empty Trash\u2026",
+      "index": 1,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "-",
+      "index": 2,
+      "separator": true,
+      "enabled": false,
+      "mark": false
+     },
+     {
+      "title": "Eject",
+      "index": 3,
+      "separator": false,
+      "enabled": false,
+      "mark": false,
+      "cmd": "E"
+     },
+     {
+      "title": "Erase Disk\u2026",
+      "index": 4,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "-",
+      "index": 5,
+      "separator": true,
+      "enabled": false,
+      "mark": false
+     },
+     {
+      "title": "Sleep",
+      "index": 6,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "Restart",
+      "index": 7,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "Shut Down ",
+      "index": 8,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     }
+    ]
+   },
+   {
+    "title": "Help",
+    "id": -16490,
+    "left": 277,
+    "items": [
+     {
+      "title": "Help Center",
+      "index": 1,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "-",
+      "index": 2,
+      "separator": true,
+      "enabled": false,
+      "mark": false
+     },
+     {
+      "title": "Show Balloons",
+      "index": 3,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "-",
+      "index": 4,
+      "separator": true,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "Mac Help",
+      "index": 5,
+      "separator": false,
+      "enabled": true,
+      "mark": false,
+      "cmd": "?"
+     }
+    ]
+   },
+   {
+    "title": "\u0001\u001f@\u201c\u00cf",
+    "id": -16489,
+    "left": 716,
+    "items": [
+     {
+      "title": "Hide Finder",
+      "index": 1,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "Hide Others",
+      "index": 2,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "Show All",
+      "index": 3,
+      "separator": false,
+      "enabled": false,
+      "mark": false
+     },
+     {
+      "title": "-",
+      "index": 4,
+      "separator": true,
+      "enabled": true,
+      "mark": false
+     },
+     {
+      "title": "Finder",
+      "index": 5,
+      "separator": false,
+      "enabled": true,
+      "mark": true
+     },
+     {
+      "title": "New Old World",
+      "index": 6,
+      "separator": false,
+      "enabled": true,
+      "mark": false
+     }
+    ]
+   }
+  ]
+ },
+ "windows": [
+  {
+   "id": "0.29949953/TimBotTu#0",
+   "app": "Finder",
+   "psn": "0.29949953",
+   "title": "TimBotTu",
+   "rect": {
+    "l": 15,
+    "t": 47,
+    "r": 432,
+    "b": 294
+   },
+   "front": true,
+   "z": 0,
+   "visible": true,
+   "ref": "now-window-9556f00c-f3e7-75dd-aa63-9bca19df1e03",
+   "kind": 20,
+   "controls": [
+    {
+     "title": "",
+     "rect": {
+      "l": 410,
+      "t": 89,
+      "r": 426,
+      "b": 273
+     },
+     "enabled": true,
+     "visible": true,
+     "value": -4,
+     "min": -4,
+     "max": 252,
+     "ref": "now-element-b903bede-8ace-7e7f-cdf9-49388341b5f9"
+    },
+    {
+     "title": "",
+     "rect": {
+      "l": 20,
+      "t": 272,
+      "r": 411,
+      "b": 288
+     },
+     "enabled": true,
+     "visible": true,
+     "value": -64,
+     "min": -64,
+     "max": -64,
+     "ref": "now-element-810e4047-7022-5a56-601d-194d71e2a30c"
+    },
+    {
+     "title": "",
+     "rect": {
+      "l": 23,
+      "t": 71,
+      "r": 39,
+      "b": 87
+     },
+     "enabled": true,
+     "visible": false,
+     "value": 0,
+     "min": 0,
+     "max": 1,
+     "ref": "now-element-1ceb61c8-be57-d471-039e-16aa3e6d7cab"
+    }
+   ]
+  },
+  {
+   "id": "0.29949953/Macintosh HD#1",
+   "app": "Finder",
+   "psn": "0.29949953",
+   "title": "Macintosh HD",
+   "rect": {
+    "l": 42,
+    "t": 81,
+    "r": 459,
+    "b": 328
+   },
+   "front": false,
+   "z": 1,
+   "visible": true,
+   "ref": "now-window-91d4bcae-c96e-37f7-a9df-1028984b0cd1",
+   "kind": 20,
+   "controls": [
+    {
+     "title": "",
+     "rect": {
+      "l": 437,
+      "t": 123,
+      "r": 453,
+      "b": 307
+     },
+     "enabled": true,
+     "visible": true,
+     "value": -4,
+     "min": -4,
+     "max": 60,
+     "ref": "now-element-cac10f9a-afef-1bef-1c02-6624551bf681"
+    },
+    {
+     "title": "",
+     "rect": {
+      "l": 47,
+      "t": 306,
+      "r": 438,
+      "b": 322
+     },
+     "enabled": true,
+     "visible": true,
+     "value": -33,
+     "min": -33,
+     "max": -33,
+     "ref": "now-element-d80e3969-7f9c-1a94-9099-615339ded65e"
+    },
+    {
+     "title": "",
+     "rect": {
+      "l": 50,
+      "t": 105,
+      "r": 66,
+      "b": 121
+     },
+     "enabled": true,
+     "visible": false,
+     "value": 0,
+     "min": 0,
+     "max": 1,
+     "ref": "now-element-00f8e844-d2b1-520d-e52b-44bae48d7313"
+    }
+   ]
+  },
+  {
+   "id": "0.29949953/TBTRunner#2",
+   "app": "Finder",
+   "psn": "0.29949953",
+   "title": "TBTRunner",
+   "rect": {
+    "l": 7,
+    "t": 25,
+    "r": 424,
+    "b": 272
+   },
+   "front": false,
+   "z": 2,
+   "visible": true,
+   "ref": "now-window-7e194968-4523-df6d-099a-273a7a30359f",
+   "kind": 20,
+   "controls": [
+    {
+     "title": "",
+     "rect": {
+      "l": 402,
+      "t": 67,
+      "r": 418,
+      "b": 251
+     },
+     "enabled": true,
+     "visible": true,
+     "value": -4,
+     "min": -4,
+     "max": -4,
+     "ref": "now-element-56d290cc-a54d-4e69-1e34-74262d0ef8b3"
+    },
+    {
+     "title": "",
+     "rect": {
+      "l": 12,
+      "t": 250,
+      "r": 403,
+      "b": 266
+     },
+     "enabled": true,
+     "visible": true,
+     "value": -18,
+     "min": -18,
+     "max": -18,
+     "ref": "now-element-3358905a-4613-2edb-54fb-e0d42cb1645d"
+    },
+    {
+     "title": "",
+     "rect": {
+      "l": 15,
+      "t": 49,
+      "r": 31,
+      "b": 65
+     },
+     "enabled": true,
+     "visible": false,
+     "value": 0,
+     "min": 0,
+     "max": 1,
+     "ref": "now-element-504b07ae-2ef5-756b-2b11-764c77e97f89"
+    }
+   ]
+  },
+  {
+   "id": "0.29360131/New Old World#0",
+   "app": "New Old World",
+   "psn": "0.29360131",
+   "title": "New Old World",
+   "rect": {
+    "l": 22,
+    "t": 48,
+    "r": 779,
+    "b": 555
+   },
+   "front": false,
+   "z": 0,
+   "visible": true
+  }
+ ],
+ "desktopItems": [
+  {
+   "name": "Browse the Internet",
+   "kind": "file",
+   "type": "adrp",
+   "creator": "aplt",
+   "x": 716,
+   "y": 187,
+   "placed": true,
+   "alias": true,
+   "invisible": false
+  },
+  {
+   "name": "DevHarness",
+   "kind": "folder",
+   "x": 608,
+   "y": 476,
+   "placed": true,
+   "alias": false,
+   "invisible": false
+  },
+  {
+   "name": "From Claude.txt",
+   "kind": "file",
+   "type": "TEXT",
+   "creator": "????",
+   "x": 608,
+   "y": 540,
+   "placed": true,
+   "alias": false,
+   "invisible": false
+  },
+  {
+   "name": "harness",
+   "kind": "file",
+   "type": "APPL",
+   "creator": "????",
+   "x": 480,
+   "y": 28,
+   "placed": true,
+   "alias": false,
+   "invisible": false
+  },
+  {
+   "name": "harness.log",
+   "kind": "file",
+   "type": "TEXT",
+   "creator": "????",
+   "x": 736,
+   "y": 92,
+   "placed": true,
+   "alias": false,
+   "invisible": false
+  },
+  {
+   "name": "HELLO_CLAUDE.txt",
+   "kind": "file",
+   "type": "TEXT",
+   "creator": "ttxt",
+   "x": 608,
+   "y": 92,
+   "placed": true,
+   "alias": false,
+   "invisible": false
+  },
+  {
+   "name": "HelloWorld",
+   "kind": "file",
+   "type": "APPL",
+   "creator": "????",
+   "x": 608,
+   "y": 348,
+   "placed": true,
+   "alias": false,
+   "invisible": false
+  },
+  {
+   "name": "Mail",
+   "kind": "file",
+   "type": "adrp",
+   "creator": "aplt",
+   "x": 716,
+   "y": 268,
+   "placed": true,
+   "alias": true,
+   "invisible": false
+  },
+  {
+   "name": "QuickTime Player",
+   "kind": "file",
+   "type": "adrp",
+   "creator": "TVOD",
+   "x": 716,
+   "y": 349,
+   "placed": true,
+   "alias": true,
+   "invisible": false
+  },
+  {
+   "name": "Register with Apple",
+   "kind": "file",
+   "type": "adrp",
+   "creator": "aplt",
+   "x": 716,
+   "y": 430,
+   "placed": true,
+   "alias": true,
+   "invisible": false
+  },
+  {
+   "name": "Rumpus 2.0 PRO (Classic)",
+   "kind": "file",
+   "type": "adrp",
+   "creator": "Rmps",
+   "x": 559,
+   "y": 289,
+   "placed": true,
+   "alias": true,
+   "invisible": false
+  },
+  {
+   "name": "Rumpus_Pro2.0 Folder",
+   "kind": "folder",
+   "x": 608,
+   "y": 156,
+   "placed": true,
+   "alias": false,
+   "invisible": false
+  },
+  {
+   "name": "Rumpus_Pro2.0.sit",
+   "kind": "file",
+   "type": "SITD",
+   "creator": "SITx",
+   "x": 608,
+   "y": 412,
+   "placed": true,
+   "alias": false,
+   "invisible": false
+  },
+  {
+   "name": "runner.debug",
+   "kind": "file",
+   "type": "TEXT",
+   "creator": "????",
+   "x": 480,
+   "y": 156,
+   "placed": true,
+   "alias": false,
+   "invisible": false
+  },
+  {
+   "name": "runner.port",
+   "kind": "file",
+   "type": "TEXT",
+   "creator": "????",
+   "x": 480,
+   "y": 220,
+   "placed": true,
+   "alias": false,
+   "invisible": false
+  },
+  {
+   "name": "Sherlock 2",
+   "kind": "file",
+   "type": "adrp",
+   "creator": "fndf",
+   "x": 557,
+   "y": 26,
+   "placed": true,
+   "alias": true,
+   "invisible": false
+  },
+  {
+   "name": "TBTRunner",
+   "kind": "folder",
+   "x": 480,
+   "y": 92,
+   "placed": true,
+   "alias": false,
+   "invisible": false
+  },
+  {
+   "name": "Macintosh HD",
+   "kind": "disk",
+   "x": 0,
+   "y": 0,
+   "placed": false,
+   "alias": false,
+   "invisible": false
+  }
+ ],
+ "meta": {
+  "errors": [
+   "Control Strip Extension: ax_oracle_not_found",
+   "DVD AutoLauncher: ax_oracle_not_found",
+   "FBC Indexing Scheduler: ax_oracle_not_found",
+   "Folder Actions: ax_oracle_not_found",
+   "tbt-appe: ax_oracle_not_found",
+   "tbt-worker: ax_oracle_not_found"
+  ],
+  "plane": "peek anchors: processes, windows, controls, dialog text, and th",
+  "latencyMs": 0
+ }
+}
