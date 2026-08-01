@@ -149,6 +149,15 @@ run_c now-guest-ppc json_native_test.c       ""  src/core/json.c
 run_c now-guest-ppc peek_table_test.c \
       "-DNOW_PEEK_TABLE_HOST"
 run_c now-guest-ppc peek_validate_test.c     ""  src/peek/peek_validate.c
+# The act plane's ABI selftest, read. The plane has SERVED
+# kNowPeekActOpSelfTest since it landed and had no caller; this is the
+# reading half of the verb that calls it. It is here rather than beside
+# the other act tests because the failure it watches for is the one the
+# rest of the plane cannot see - a wrong result slot reports success
+# through every counter we own - so the reading must never round a
+# mismatch, a cleared `fired`, or an unreached request up to agreement.
+run_c now-guest-ppc mach_selftest_report_test.c \
+      "-DNOW_PEEK_TABLE_HOST" src/machine/mach_selftest_report.c
 # The content plane (P3) - the extension's QuickDraw hooks. Its SOURCE
 # lives under ext/src, not under a guest, because it is resident 68K code;
 # the decisions it makes before it touches anything are split into a
