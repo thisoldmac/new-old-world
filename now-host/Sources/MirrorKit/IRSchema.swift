@@ -217,7 +217,22 @@ public enum IRSchema {
     ]
 
     /// Declared properties added after the freeze (wire-bearing or not).
-    public static let v1AdditionalProperties: Set<String> = []
+    public static let v1AdditionalProperties: Set<String> = [
+        // The NOW port, 2026-07-31. Five flags recording which of a plane's
+        // three states arrived — absent, empty, populated — because this
+        // package's producers do not all walk every plane, and the decode
+        // that turns absence into `[]` throws away the difference. Declared
+        // but **not on the wire**: they are what the decoder learned, not
+        // something the guest said, so `wirePaths` must never see them. That
+        // they show up here and not in `v1Frozen`/`v1Additions` is the gate
+        // doing its job, not an oversight. See `Scene`'s header.
+        "Scene.appsPresent",
+        "Scene.windowsPresent",
+        "Scene.Menubar.menusPresent",
+        "Scene.Menu.itemsPresent",
+        "Scene.Window.controlsPresent",
+        "Scene.Meta.errorsPresent",
+    ]
 
     // MARK: - What the gate compares against
 
