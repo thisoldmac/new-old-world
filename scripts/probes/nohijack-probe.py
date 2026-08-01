@@ -1051,6 +1051,13 @@ def case_collide(link, qmp, n: int) -> dict:
     same question - can a press that belongs to somebody else satisfy this
     guard? - asked of the shape the code actually has.
     """
+    # menu_setup for its PRECONDITIONS, not for its aim: the Finder frontmost,
+    # the scene gate, and the refusal when the bar is absent rather than empty.
+    # Its learned hop goes unused here — this case closes the loop onto the arm
+    # point per trial instead, because a replayed hop is blind and the landing
+    # has to be inside 2 px of a point the guard will then compare against.
+    # Sharing the setup keeps the preconditions identical to the other menu
+    # cases, which is worth more than the calibration it wastes.
     aim = menu_setup(link, qmp)
     print(f"\n=== pending-press collide (press the SAME title, first), N={n}")
     trials = []
