@@ -3,7 +3,10 @@
 
 Ported from `timbottu/mirror/tests/drive-sequence.py`.
 
-## STATUS ON NOW TODAY: REFUSES
+## STATUS ON NOW TODAY: gated on the machine, no longer on a name
+
+Every verb it needs is declared and served. Whether a given guest answers is
+the gate's business, not this docstring's.
 
 ## What it proves that a per-verb probe cannot
 
@@ -28,16 +31,18 @@ back to back, and it is why this file is not redundant with them.
 
 Everything the act plane needs, plus the reference layer:
 
-    observe    to see the machine and mint references         (Wave 2A)
-    winact     declared, unserved — the close step
-    ctlinvoke  unported — the control step                    (Wave 3)
+    observe    to see the machine and mint references
+    winact     the move and close steps
+    ctlact     the control step. This file asked for `ctlinvoke`, Mirror's
+               spelling, until 2026-07-31; NOW serves the same capability as
+               `ctlact` and had done since the act plane landed. See the
+               note in ctlinvoke-probe.py.
     launch     SERVED TODAY
     ps         SERVED TODAY
 
-So two of the six steps below can already run, which is not enough for a
-sequence: the value of this harness is precisely that the steps run in ORDER
-against one machine. Running the two that work would be a subset with a
-sequence's name on it.
+The value of this harness is precisely that the steps run in ORDER against one
+machine. Running only the subset that works would be a subset with a
+sequence's name on it, so the gate below is all-or-nothing.
 
 Usage:
 
@@ -59,17 +64,22 @@ from nowwire import (GuestError, add_link_args, link_from_args,   # noqa: E402
                      refuse_without_metal)
 
 PROBE = "drive-sequence"
-REQUIRED = ("observe", "winact", "ctlinvoke", "launch", "ps")
+# `ctlact`, not Mirror's `ctlinvoke`: same capability, and this list is the
+# one that decides whether the harness refuses. See ctlinvoke-probe.py.
+REQUIRED = ("observe", "winact", "ctlact", "launch", "ps")
 
 SIMPLETEXT = "Macintosh HD:Applications (Mac OS 9):SimpleText"
 
 GATE_NOTE = """\
-This harness's value is that its steps run IN ORDER against one machine. Two
-of its six steps (launch, ps) work on this guest today, and running only those
-would be a subset carrying a sequence's name - which is the failure mode this
-directory's README calls out.
+This harness's value is that its steps run IN ORDER against one machine, so it
+is all-or-nothing: running only the subset that works would be a subset
+carrying a sequence's name, which is the failure mode this directory's README
+calls out.
 
-Blocked on Wave 2A (observe) and the act plane."""
+If `ctlact` is the missing one, note that this file asked for Mirror's
+`ctlinvoke` until 2026-07-31 and a guest serving the capability was refused by
+name alone. It asks for `ctlact` now. A guest that serves neither predates
+NOW's act plane."""
 
 
 def observe(link, scope="all"):
@@ -159,7 +169,7 @@ def main() -> int:
             return False, "no live control with a readable value"
         c = live[0]
         before = c["value"]
-        link.command("ctlinvoke", {"element": c["ref"], "part": 23})
+        link.command("ctlact", {"element": c["ref"], "part": 23})
         time.sleep(1.2)
         after = next((x.get("value") for w in observe(link).get("windows", [])
                       for x in w.get("controls", [])
