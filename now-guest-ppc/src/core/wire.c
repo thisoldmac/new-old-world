@@ -1525,10 +1525,16 @@ static void serve_scene(const char *request)
         scene_fail(id, xfer, "a transfer is already in flight");
         return;
     }
-    /* The scene is ~11 KB of struct. A classic Mac stack is 24-32 KB and
-       this is called from the event loop with the whole wire machine
-       above it, so it goes in the heap - the same reason a capture blob
-       does. */
+    /* The scene is ~27 KB of struct - it was ~11 KB before the menubar,
+       controls, text and kind planes (scene.h sizes them). A classic Mac
+       stack is 24-32 KB and this is called from the event loop with the
+       whole wire machine above it, so it goes in the heap - the same
+       reason a capture blob does.
+
+       At that size the failure below is a real outcome, not a formality:
+       one contiguous 27 KB block out of a small application partition is
+       exactly what a fragmented heap cannot serve. It refuses by name
+       rather than walking a smaller machine. */
     scene = (NowScene *)NewPtr((Size)sizeof(NowScene));
     if (scene == NULL) {
         scene_fail(id, xfer, "not enough memory to walk the machine");
