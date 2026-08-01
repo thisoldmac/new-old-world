@@ -22,6 +22,7 @@
 #include "prefs.h"
 #include "proc_actions.h"
 #include "product_identity.h"
+#include "scene_collect.h"
 #include "software.h"
 
 enum {
@@ -773,8 +774,25 @@ static struct {
 
 typedef enum {
     kXferCapture = 0,                 /* ends with capture.end */
-    kXferFile                         /* ends with file.end */
+    kXferFile,                        /* ends with file.end */
+    kXferScene                        /* ends with scene.end */
 } XferKind;
+
+/* The terminal message's type for a transfer kind. A scene rides the
+   SAME lane and the same incremental sender as a capture - it differs
+   only in what the bytes mean and which end message closes them - so
+   the kind is the one thing the transport needs to know about it. */
+static const char *xfer_end_type(XferKind kind)
+{
+    switch (kind) {
+    case kXferFile:
+        return "file";
+    case kXferScene:
+        return "scene";
+    default:
+        return "capture";
+    }
+}
 
 static struct {
     Boolean active;
@@ -892,7 +910,7 @@ static void xfer_finish(Boolean ok)
         snprintf(json, sizeof json,
                  "{\"type\":\"%s.end\",\"id\":%ld,\"transfer\":%u,"
                  "\"ok\":%s,\"sendMs\":%ld}",
-                 g_xfer.kind == kXferFile ? "file" : "capture",
+                 xfer_end_type(g_xfer.kind),
                  g_xfer.id, g_xfer.xfer, ok ? "true" : "false",
                  (long)((TickCount() - g_xfer.started) * 1000 / 60));
     }
@@ -1369,6 +1387,128 @@ static void capture_fail(long id)
 static void shot_drop(void)
 {
     g_shot.active = false;
+}
+
+/* --- the scene plane ---------------------------------------------------
+   A scene is Mirror's IR v1 - semantic structure, not pixels - and it is
+   a TRANSFER for a measured reason: this producer encodes 9214 bytes for
+   24 processes and 32 windows against a 4096-byte control cap, before
+   menus or controls exist at all. So it borrows capture's pair
+   (scene.begin, bulk frames, scene.end) rather than inventing anything,
+   and deliberately does NOT borrow the stream bracket: a bracket exists
+   to amortise a half-second capture, and a semantic walk has no such
+   cost to amortise (docs/streaming-a-scene.md).
+
+   THE FAILURE IS WHOLE. A walk that would not fit its buffer, or a scene
+   that could not be allocated, is scene.end ok:false with a reason and
+   NO bulk. The encoder already fails closed for the same reason: half a
+   JSON document is the worst form of a partial answer because it does
+   not even parse, and "a partial or failed walk must never be delivered
+   as a complete scene" is the rule this whole path exists to keep. */
+
+static long g_scene_seq;
+
+/* The one failure shape a scene owes the host, so it never waits on a
+   transfer that will not come. `reason` is prose for a human; nothing
+   branches on it. */
+static void scene_fail(long id, unsigned short xfer, const char *reason)
+{
+    char json[256];
+
+    snprintf(json, sizeof json,
+             "{\"type\":\"scene.end\",\"id\":%ld,\"transfer\":%u,"
+             "\"ok\":false,\"reason\":\"%s\"}", id, xfer, reason);
+    send_control(json);
+}
+
+/* Walks the machine, encodes IR v1, announces scene.begin and arms the
+   incremental sender. Returns immediately - the bytes go out from
+   service_transfer, exactly as a capture's do. */
+static void serve_scene(const char *request)
+{
+    NowPrefs prefs;
+    char json[512];
+    long id = now_json_find_int(request, "id", 0);
+    long stale_ms = now_json_find_int(request, "staleAfterMs", 0);
+    unsigned long stale_ticks;
+    unsigned short xfer;
+    long chunk;
+    short pace_ms;
+    Boolean pack;
+    NowScene *scene;
+    Handle doc;
+    long needed = 0;
+    unsigned long t_start = TickCount();
+    long walk_ms;
+
+    xfer = next_xfer();
+    if (g_stream.active) {
+        scene_fail(id, xfer, "a stream owns the transfer lane");
+        return;
+    }
+    if (g_xfer.active) {
+        scene_fail(id, xfer, "a transfer is already in flight");
+        return;
+    }
+    /* The scene is ~11 KB of struct. A classic Mac stack is 24-32 KB and
+       this is called from the event loop with the whole wire machine
+       above it, so it goes in the heap - the same reason a capture blob
+       does. */
+    scene = (NowScene *)NewPtr((Size)sizeof(NowScene));
+    if (scene == NULL) {
+        scene_fail(id, xfer, "not enough memory to walk the machine");
+        return;
+    }
+    if (stale_ms < 0) {
+        stale_ms = 0;
+    }
+    stale_ticks = (unsigned long)((stale_ms * 60L) / 1000L);
+    if (stale_ms > 0 && stale_ticks == 0) {
+        stale_ticks = 1;              /* a window shorter than a tick is
+                                         still a window, not "disabled" */
+    }
+    now_scene_collect(scene, ++g_scene_seq, stale_ticks);
+
+    /* Size, then allocate, then encode. One walk, two answers: the
+       encoder counts always and writes only while it fits, so asking for
+       the size costs a pass and never a second walk. */
+    needed = now_scene_encoded_size(scene);
+    doc = NewHandle((Size)needed);
+    if (doc == NULL) {
+        DisposePtr((Ptr)scene);
+        scene_fail(id, xfer, "not enough memory to encode the scene");
+        return;
+    }
+    HLock(doc);
+    if (now_scene_encode(scene, *doc, needed, &needed) != kNowSceneEncodeOk) {
+        HUnlock(doc);
+        DisposeHandle(doc);
+        DisposePtr((Ptr)scene);
+        scene_fail(id, xfer, "the scene did not fit its buffer");
+        return;
+    }
+    HUnlock(doc);
+    walk_ms = (long)((TickCount() - t_start) * 1000UL / 60UL);
+
+    now_prefs_load(&prefs);
+    tuning_from_json(request, &prefs, &chunk, &pace_ms, &pack);
+
+    /* The terminator is NOT sent: `bytes` is the document, and a JSON
+       parser wants a length rather than a C string. needed counts it. */
+    snprintf(json, sizeof json,
+             "{\"type\":\"scene.begin\",\"id\":%ld,\"transfer\":%u,"
+             "\"bytes\":%ld,\"irVersion\":%d,\"seq\":%ld,"
+             "\"capturedAt\":%.1f,\"source\":\"%s\",\"walkMs\":%ld}",
+             id, xfer, needed - 1, NOW_SCENE_IR_VERSION, scene->seq,
+             scene->captured_at, scene->source, walk_ms);
+    DisposePtr((Ptr)scene);
+    if (!send_control(json)
+        || !arm_blob_transfer(id, xfer, doc, needed - 1, chunk, pace_ms,
+                              kXferScene)) {
+        DisposeHandle(doc);
+        scene_fail(id, xfer, "could not start the transfer");
+        return;
+    }
 }
 
 /* "Screenshot App": front the target, then arm the deferred capture. No
@@ -4450,6 +4590,10 @@ static int handle_frame(const char *reply)
     }
     if (now_json_type_is(reply, "capture.cancel")) {
         xfer_abort();
+        return 1;
+    }
+    if (now_json_type_is(reply, "scene.request")) {
+        serve_scene(reply);
         return 1;
     }
     if (now_json_type_is(reply, "file.list")) {

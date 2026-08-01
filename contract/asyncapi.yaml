@@ -212,6 +212,9 @@ channels:
       captureRefuse: { $ref: "#/components/messages/captureRefuse" }
       captureBegin: { $ref: "#/components/messages/captureBegin" }
       captureEnd: { $ref: "#/components/messages/captureEnd" }
+      sceneRequest: { $ref: "#/components/messages/sceneRequest" }
+      sceneBegin: { $ref: "#/components/messages/sceneBegin" }
+      sceneEnd: { $ref: "#/components/messages/sceneEnd" }
       processList: { $ref: "#/components/messages/processList" }
       processListing: { $ref: "#/components/messages/processListing" }
       processFront: { $ref: "#/components/messages/processFront" }
@@ -224,11 +227,12 @@ channels:
     address: "1"
     description: >
       Raw payload bytes on channel 1, correlated by the frame header's
-      transfer id. Two payload kinds ride it: capture pixel data (rows
+      transfer id. Three payload kinds ride it: capture pixel data (rows
       top-to-bottom, rowBytes apart; depth 8 uses the guest's palette;
-      16 is RGB555 big-endian; 32 is xRGB8888 big-endian) and file
-      content (file.begin describes the container). The control message
-      that began the transfer says which.
+      16 is RGB555 big-endian; 32 is xRGB8888 big-endian), file content
+      (file.begin describes the container), and a scene document
+      (scene.begin: UTF-8 JSON, the Mirror IR whose major is irVersion).
+      The control message that began the transfer says which.
 
 operations:
   hostExecutesLine:
@@ -280,6 +284,40 @@ operations:
       capture), and sends capture.begin only after the host answers
       capture.accept. Either way the frames and capture.end are identical;
       one transfer at a time still holds across both origins.
+  hostRequestsScene:
+    action: receive
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/sceneRequest"
+    description: >
+      Host asks for one scene. Bounded and one-shot: the answer is a
+      transfer (scene.begin, bulk frames, scene.end), never a control
+      message, because a scene does not fit 4096 bytes. It takes the one
+      transfer lane for the tens of milliseconds the document takes, and
+      is refused with scene.end ok:false while a stream or another
+      transfer holds it — the same one-at-a-time invariant capture obeys,
+      with no second ownership rule invented for scenes.
+      There is no scene bracket and no scene.cancel: a scene transfer is
+      short enough that abandoning it costs more than finishing it.
+  guestServesScene:
+    action: send
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/sceneBegin"
+      - $ref: "#/channels/control/messages/sceneEnd"
+    description: >
+      Guest announces and completes a scene transfer, correlated to the
+      request by id exactly as a capture is. scene.begin carries the IR
+      major so the host can refuse an unknown one before decoding; the
+      bulk bytes are the IR document; scene.end says whether all of them
+      arrived. A scene that will not fit its buffer, or a walk that
+      failed, is scene.end ok:false with a reason and NO bulk — a partial
+      walk is never delivered as a complete scene, and half a JSON
+      document is the worst form of that lie because it does not parse.
+      What the document omits is a claim in itself: an absent
+      windows[].controls says "this producer does not report controls",
+      not "this window has none", and a consumer must not read absence as
+      emptiness.
   hostControlsStream:
     action: receive
     channel: { $ref: "#/channels/control" }
@@ -703,6 +741,15 @@ components:
     captureEnd:
       name: capture.end
       payload: { $ref: "#/components/schemas/CaptureEnd" }
+    sceneRequest:
+      name: scene.request
+      payload: { $ref: "#/components/schemas/SceneRequest" }
+    sceneBegin:
+      name: scene.begin
+      payload: { $ref: "#/components/schemas/SceneBegin" }
+    sceneEnd:
+      name: scene.end
+      payload: { $ref: "#/components/schemas/SceneEnd" }
     processList:
       name: process.list
       payload: { $ref: "#/components/schemas/ProcessList" }
@@ -1867,6 +1914,102 @@ components:
         id: { type: integer }
         transfer: { type: integer }
         ok: { type: boolean }
+        sendMs:
+          type: integer
+          description: Guest-side time spent streaming the bulk chunks.
+
+    # THE SCENE FAMILY. A scene is Mirror's IR v1 — semantic structure, not
+    # pixels — and it is a TRANSFER, not a control message, because it does
+    # not fit a control frame: NOW's own producer encodes 1193 B for 4
+    # processes / 3 windows and 9214 B for 24 / 32, against a 4096-byte cap
+    # (wire_limits.h), before menus or controls exist at all.
+    # docs/streaming-a-scene.md argues the shape; the short form is that a
+    # scene gets the pair capture already has, and only the BOUNDED HALF of
+    # that pair is built here. There is deliberately no scene bracket: a
+    # picture bracket exists to amortise a 0.5-0.6 s capture, and a semantic
+    # walk has no such cost to amortise. If a metal measurement ever says
+    # otherwise, the bracket gains a subject at stream.start — it does not
+    # gain a second ownership model.
+    SceneRequest:
+      type: object
+      required: [type, id]
+      additionalProperties: false
+      properties:
+        type: { const: scene.request }
+        id: { type: integer }
+        chunkKb: { type: integer, minimum: 1, maximum: 32 }
+        paceMs: { type: integer, minimum: 0, maximum: 100 }
+        staleAfterMs:
+          type: integer
+          minimum: 0
+          description: >
+            How old an anchor sample may be and still be reported clean.
+            An older-but-otherwise-valid anchor is REPORTED stale
+            (apps[].error "now_anchor_stale"), never silently dropped and
+            never a refusal. 0 or absent disables the age gate.
+    SceneBegin:
+      type: object
+      required: [type, id, transfer, bytes, irVersion]
+      additionalProperties: false
+      properties:
+        type: { const: scene.begin }
+        id:
+          type: integer
+          description: The scene.request id this answers.
+        transfer: { type: integer, minimum: 1, maximum: 65535 }
+        bytes:
+          type: integer
+          minimum: 1
+          description: >
+            Total bulk bytes of UTF-8 JSON to expect — the encoded IR
+            document, terminator excluded.
+        irVersion:
+          type: integer
+          minimum: 1
+          description: >
+            The scene IR major version, the SAME number the document's own
+            `version` carries (mirror/docs/IR-V1.md, "one number, two
+            places"); the guest copies both from one constant. It is
+            repeated HERE so a consumer can refuse an unknown major before
+            it has spent a transfer decoding the body. That order — read
+            the version, refuse an unknown major, then decode — is the
+            consumer duty IR-V1.md states, and the envelope is what makes
+            it possible to obey.
+        seq:
+          type: integer
+          description: The producer's monotonic scene counter.
+        capturedAt:
+          type: number
+          description: >
+            Guest-clock Unix epoch seconds at the walk. Present so a
+            consumer can say "same scene, newer moment" without diffing.
+        source:
+          type: string
+          maxLength: 16
+          description: >
+            The plane the scene was walked from ("peek" for NOW). IR v1
+            promoted it precisely so a consumer can tell "no windows" from
+            "windows not visible from here".
+        walkMs:
+          type: integer
+          description: Guest-side time spent walking and encoding, for tuning.
+    SceneEnd:
+      type: object
+      required: [type, id, transfer, ok]
+      additionalProperties: false
+      properties:
+        type: { const: scene.end }
+        id: { type: integer }
+        transfer: { type: integer }
+        ok: { type: boolean }
+        reason:
+          type: string
+          description: >
+            Why a scene could not be served, on ok:false. The failure is
+            whole: a scene that would not fit its buffer, or a walk that
+            went wrong, ends the transfer rather than delivering a partial
+            document — a partial walk must never arrive as a complete
+            scene.
         sendMs:
           type: integer
           description: Guest-side time spent streaming the bulk chunks.

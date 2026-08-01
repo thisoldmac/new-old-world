@@ -57,6 +57,9 @@ enum ControlMessage: Equatable, Sendable {
     case captureCancel(CaptureCancel)
     case captureBegin(CaptureBegin)
     case captureEnd(CaptureEnd)
+    case sceneRequest(SceneRequest)
+    case sceneBegin(SceneBegin)
+    case sceneEnd(SceneEnd)
     case processList(ProcessList)
     case processListing(ProcessListing)
     case softwareList(SoftwareList)
@@ -613,6 +616,50 @@ struct CaptureEnd: Codable, Equatable, Sendable {
     var sendMs: Int?
 }
 
+/// Ask for one scene. The answer is a TRANSFER — scene.begin, bulk
+/// frames, scene.end — never a control message, because NOW's own
+/// producer encodes 9214 bytes for 24 processes and 32 windows against a
+/// 4096-byte control cap. There is no scene bracket and no scene.cancel:
+/// the transfer is tens of milliseconds, and abandoning it costs more
+/// than finishing it (docs/streaming-a-scene.md).
+struct SceneRequest: Codable, Equatable, Sendable {
+    var id: Int
+    var chunkKb: Int?
+    var paceMs: Int?
+    /// How old an anchor sample may be and still be reported clean. An
+    /// older-but-otherwise-valid anchor is *reported* stale in
+    /// `apps[].error`, never silently dropped and never a refusal.
+    var staleAfterMs: Int?
+}
+
+struct SceneBegin: Codable, Equatable, Sendable {
+    var id: Int
+    var transfer: Int
+    /// Bulk bytes of UTF-8 JSON to expect, terminator excluded.
+    var bytes: Int
+    /// The IR major, repeated HERE — the same number the document's own
+    /// `version` carries — so a consumer can refuse an unknown major
+    /// **before** spending a decode on the body. That order is IR-V1.md's
+    /// stated consumer duty, and only an envelope makes obeying it
+    /// possible; `NOWSceneCodec.decode` is the half that obeys it.
+    var irVersion: Int
+    var seq: Int?
+    var capturedAt: Double?
+    var source: String?
+    var walkMs: Int?
+}
+
+struct SceneEnd: Codable, Equatable, Sendable {
+    var id: Int
+    var transfer: Int
+    var ok: Bool
+    /// Why a scene could not be served, on ok:false. Prose for a human;
+    /// nothing branches on it. A failed or oversized walk ends here with
+    /// NO bulk — a partial walk is never delivered as a complete scene.
+    var reason: String?
+    var sendMs: Int?
+}
+
 enum ControlMessageError: Error, Equatable {
     case notAnObject
     case missingType
@@ -749,6 +796,14 @@ enum ControlMessageCodec {
                 try decoder.decode(CaptureBegin.self, from: data))
         case "capture.end":
             return .captureEnd(try decoder.decode(CaptureEnd.self, from: data))
+        case "scene.request":
+            return .sceneRequest(
+                try decoder.decode(SceneRequest.self, from: data))
+        case "scene.begin":
+            return .sceneBegin(
+                try decoder.decode(SceneBegin.self, from: data))
+        case "scene.end":
+            return .sceneEnd(try decoder.decode(SceneEnd.self, from: data))
         case "process.list":
             return .processList(
                 try decoder.decode(ProcessList.self, from: data))
@@ -832,6 +887,9 @@ enum ControlMessageCodec {
         case .captureCancel(let m): return try tagged("capture.cancel", m)
         case .captureBegin(let m): return try tagged("capture.begin", m)
         case .captureEnd(let m): return try tagged("capture.end", m)
+        case .sceneRequest(let m): return try tagged("scene.request", m)
+        case .sceneBegin(let m): return try tagged("scene.begin", m)
+        case .sceneEnd(let m): return try tagged("scene.end", m)
         case .processList(let m): return try tagged("process.list", m)
         case .processListing(let m): return try tagged("process.listing", m)
         case .softwareList(let m): return try tagged("software.list", m)
