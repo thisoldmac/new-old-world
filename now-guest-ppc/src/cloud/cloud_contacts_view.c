@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "cloud_contacts_card.h"
+#include "cloud_filter.h"
 
 /* The Contacts card, drawn in the classic Address Book's own shape:
    a right-aligned label column, values starting at a fixed left
@@ -127,6 +128,22 @@ static void view_draw(const CloudLayout *r, const CloudStore *store,
     }
 }
 
+/* The name list is the shell's shared rows too (title = display name,
+   subtitle = whatever the host chose to show under it) — same
+   predicate cloud_list_view.c uses, same reason: the two fields the
+   Data Browser already shows. */
+static Boolean view_row_matches(int index, const CloudStore *store,
+                                const char *needle)
+{
+    const CloudRow *row;
+
+    if (store == NULL || index < 0 || index >= store->row_count) {
+        return false;
+    }
+    row = &store->rows[index];
+    return cloud_filter_matches_either(row->title, row->subtitle, needle);
+}
+
 static const CloudViewOps k_ops = {
     NULL,                              /* create */
     NULL,                              /* show */
@@ -135,7 +152,8 @@ static const CloudViewOps k_ops = {
     NULL,                              /* click: no button is ever shown */
     NULL,                              /* key: generic HandleControlKey */
     NULL,                              /* idle: nothing to watch */
-    NULL                               /* reset_for_service: ask_rows(1) */
+    NULL,                              /* reset_for_service: ask_rows(1) */
+    view_row_matches
 };
 
 const CloudViewOps *cloud_contacts_view_ops(void)

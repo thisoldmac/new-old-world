@@ -27,6 +27,14 @@ typedef struct CloudDriveHost {
     void (*invalidate_detail)(void);
     void (*set_status)(const char *line);
     void (*set_loading)(Boolean loading);
+
+    /* [first_index, first_index + count) just landed in this view's own
+       row storage (g_drive_rows) — the shell decides which of them the
+       live search currently admits and adds only those to the Data
+       Browser it owns, exactly as it does for its own rows in
+       note_listing. Without this hook a page arriving while a search
+       is typed would show rows the field says it is hiding. */
+    void (*add_rows)(int first_index, int count);
 } CloudDriveHost;
 
 /* One-time wiring, called from cloud_create() right after the shell's
@@ -55,6 +63,12 @@ void cloud_drive_view_activate(Boolean active);
 /* True once browsing has moved off the share root — the shell's Save
    button wears "Up" in drive mode and is enabled by exactly this. */
 Boolean cloud_drive_view_at_root(void);
+
+/* How many rows the current folder holds — the shell's live-search
+   rebuild/refilter need this the way they need CloudStore's row_count
+   for every other view, and this view keeps its own count instead of
+   the shared store's. */
+int cloud_drive_view_row_count(void);
 
 /* Row text for the shell's shared Data Browser while this view is
    active. `item` is 1-based, matching AddDataBrowserItems' IDs.

@@ -5,6 +5,7 @@
 
 #include "cloud_contacts_view.h"
 #include "cloud_drive_view.h"
+#include "cloud_filter.h"
 #include "cloud_layout.h"
 #include "cloud_list_view.h"
 #include "cloud_model.h"
@@ -67,6 +68,20 @@ static Boolean g_loading;
 static Boolean g_asked_once;
 static Boolean g_in_rebuild;
 static char g_status[128];
+
+/* The live search: a hand-drawn field driven from key(), the same
+   reason software_module.c's is (this WaitNextEvent app cannot host an
+   inline edit-text control). Filters whichever view is active, on
+   every keystroke, over rows already fetched — never wire traffic.
+   g_in_view is the diff base every add/remove against the shared Data
+   Browser reads, indexed the same way item ids already are (index+1);
+   it applies to whichever storage the active view reads (the shell's
+   own g_store.rows outside drive mode, cloud_drive_view's own rows in
+   it) because only one is ever shown at a time. */
+static char g_search[48];
+static Boolean g_search_focus;
+static unsigned char g_in_view[kCloudMaxRows];
+static int g_shown_rows;
 
 /* Drive mode: the chosen service is drive and the share serves it.
    g_drive_mode is chrome bookkeeping only now (the button's title, the
@@ -196,11 +211,114 @@ static void ask_save(void)
 static void clear_list(void)
 {
     g_selected = -1;
+    g_shown_rows = 0;
+    memset(g_in_view, 0, sizeof g_in_view);
     if (g_browser != NULL) {
         g_in_rebuild = true;
         RemoveDataBrowserItems(g_browser, kDataBrowserNoItem, 0, NULL,
                                kDataBrowserItemNoProperty);
         g_in_rebuild = false;
+    }
+}
+
+/* --- the live search -------------------------------------------------- */
+
+/* How many rows the active view's own storage holds — the shell's
+   shared g_store.rows outside drive mode, cloud_drive_view's own count
+   in it (that view keeps rows the shell's CloudStore never sees). */
+static int active_row_count(void)
+{
+    if (g_drive_mode) {
+        return cloud_drive_view_row_count();
+    }
+    return g_store.row_count;
+}
+
+/* Whichever view is active decides whether row `index` matches; NULL
+   means "matches everything" (see cloud_view.h). */
+static Boolean row_matches(int index, const char *needle)
+{
+    if (g_view == NULL || g_view->row_matches == NULL) {
+        return true;
+    }
+    return g_view->row_matches(index, &g_store, needle);
+}
+
+/* [first, first + n) just arrived in the active view's row storage —
+   note_listing's own rows, or (through CloudDriveHost.add_rows) Drive's.
+   Adds to the shared Data Browser only the ones the live search
+   currently admits, and marks them in g_in_view so a later keystroke's
+   refilter_browser() can diff against them. `n` is capped at 16, the
+   page size both callers already assume (note_listing's old inline
+   buffer and cloud_drive_view.c's page loop share the same bound). */
+static void filter_and_add(int first, int n)
+{
+    DataBrowserItemID ids[16];
+    char needle[48];
+    UInt32 got = 0;
+    int i;
+
+    cloud_filter_lower(g_search, needle, sizeof needle);
+    for (i = 0; i < n && i < 16; ++i) {
+        int idx = first + i;
+
+        if (idx < 0 || idx >= kCloudMaxRows) {
+            continue;
+        }
+        if (row_matches(idx, needle)) {
+            g_in_view[idx] = 1;
+            ids[got++] = (DataBrowserItemID)(idx + 1);
+            ++g_shown_rows;
+        } else {
+            g_in_view[idx] = 0;
+        }
+    }
+    if (got > 0 && g_browser != NULL) {
+        AddDataBrowserItems(g_browser, kDataBrowserNoItem, got, ids,
+                            kDataBrowserItemNoProperty);
+    }
+}
+
+/* The keystroke path: adjust the browser by DIFF against g_in_view —
+   remove rows whose match just ended, add rows whose match just began
+   — rather than a full rebuild, the same redraw-economy reason
+   software_module.c's refilter_browser exists. A selection whose row
+   left the view clears; the notification that would otherwise do that
+   is suppressed by g_in_rebuild (RemoveDataBrowserItems fires a
+   deselect the rebuild itself caused, not the person), so this clears
+   it explicitly instead. */
+static void refilter_browser(void)
+{
+    char needle[48];
+    int count = active_row_count();
+    int i;
+
+    if (g_browser == NULL) {
+        return;
+    }
+    cloud_filter_lower(g_search, needle, sizeof needle);
+    g_in_rebuild = true;
+    for (i = 0; i < count && i < kCloudMaxRows; ++i) {
+        DataBrowserItemID id = (DataBrowserItemID)(i + 1);
+        Boolean want = row_matches(i, needle);
+
+        if (want && !g_in_view[i]) {
+            AddDataBrowserItems(g_browser, kDataBrowserNoItem, 1, &id,
+                                kDataBrowserItemNoProperty);
+            g_in_view[i] = 1;
+            g_shown_rows += 1;
+        } else if (!want && g_in_view[i]) {
+            RemoveDataBrowserItems(g_browser, kDataBrowserNoItem, 1, &id,
+                                   kDataBrowserItemNoProperty);
+            g_in_view[i] = 0;
+            g_shown_rows -= 1;
+        }
+    }
+    g_in_rebuild = false;
+    if (g_selected >= 0 && !(g_selected < count && g_in_view[g_selected])) {
+        g_selected = -1;
+        cloud_store_reset_card(&g_store);
+        invalidate_detail();
     }
 }
 
@@ -364,20 +482,12 @@ static void note_report(const char *reply)
 
 static void note_listing(const char *reply)
 {
-    DataBrowserItemID ids[16];
     int before = g_store.row_count;
     int added;
-    int i;
 
     g_loading = false;
     added = cloud_parse_listing(reply, &g_store);
-    for (i = 0; i < added && i < 16; ++i) {
-        ids[i] = (DataBrowserItemID)(before + i + 1);
-    }
-    if (i > 0 && g_browser != NULL) {
-        AddDataBrowserItems(g_browser, kDataBrowserNoItem,
-                            (UInt32)i, ids, kDataBrowserItemNoProperty);
-    }
+    filter_and_add(before, added);
     if (g_store.more && g_store.row_count < kCloudMaxRows) {
         ask_rows(g_store.cursor);
         return;
@@ -571,6 +681,10 @@ static OSErr cloud_create(WindowRef owner, const Rect *body)
     g_status[0] = '\0';
     g_shown_status[0] = '\0';
     g_shown_save_on = false;
+    g_search[0] = '\0';
+    g_search_focus = false;
+    memset(g_in_view, 0, sizeof g_in_view);
+    g_shown_rows = 0;
 
     /* The dropdown's menu: a placeholder resource the report rewrites.
        The popup CDEF inserts it into the hierarchical list, which is
@@ -622,6 +736,7 @@ static OSErr cloud_create(WindowRef owner, const Rect *body)
     host.invalidate_detail = invalidate_detail;
     host.set_status = set_status;
     host.set_loading = set_loading;
+    host.add_rows = filter_and_add;
     cloud_drive_view_bind(g_browser, &host);
     cloud_drive_view_activate(false);
 
@@ -754,6 +869,99 @@ static void draw_at(short x, short y, const char *s)
     DrawString(t);
 }
 
+/* The search field: software_module.c's hand-drawn shape exactly — a
+   framed white well, a plain focus ring (not Aqua) when it has focus,
+   the placeholder word when it does not and is empty. Fore-painted
+   only, never a background change (RGBBackColor is port state on the
+   one shared Workshop window). */
+static void draw_search(void)
+{
+    Rect f = g_r.toolbar_search;
+    RGBColor black = { 0, 0, 0 };
+    RGBColor white = { 0xFFFF, 0xFFFF, 0xFFFF };
+
+    RGBForeColor(&black);
+    FrameRect(&f);
+    if (g_search_focus) {
+        Rect ring = f;
+
+        InsetRect(&ring, -2, -2);
+        FrameRect(&ring);
+    }
+    InsetRect(&f, 1, 1);
+    RGBForeColor(&white);
+    PaintRect(&f);
+    RGBForeColor(&black);
+    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    if (g_search[0] == '\0' && !g_search_focus) {
+        RGBColor gray = { 0x9999, 0x9999, 0x9999 };
+
+        RGBForeColor(&gray);
+        draw_at((short)(f.left + 3), (short)(f.bottom - 4), "search");
+        RGBForeColor(&black);
+    } else {
+        char shown[64];
+
+        snprintf(shown, sizeof shown, "%s%s", g_search,
+                 g_search_focus ? "|" : "");
+        draw_at((short)(f.left + 3), (short)(f.bottom - 4), shown);
+    }
+}
+
+/* Echo a keystroke into the field directly — the redraw contract's
+   immediate-feedback exception, typing echo being its canonical case
+   (software_module.c's echo_search_delta, same shape). Erases only from
+   the end of the unchanged prefix to the field's right edge, so nothing
+   is invalidated: a real update reproduces these exact pixels from
+   g_search, and a whole-field invalidate reads as a white blink per key
+   on metal. */
+static void echo_search_delta(const char *old_text)
+{
+    Rect f = g_r.toolbar_search;
+    RGBColor black = { 0, 0, 0 };
+    RGBColor white = { 0xFFFF, 0xFFFF, 0xFFFF };
+    RgnHandle saved_clip;
+    Rect tail;
+    long prefix = 0;
+    short x;
+
+    if (g_owner == NULL || !g_visible) {
+        return;
+    }
+    SetPortWindowPort(g_owner);
+    saved_clip = NewRgn();
+    if (saved_clip == NULL) {
+        InvalWindowRect(g_owner, &g_r.toolbar_search);
+        return;
+    }
+    GetClip(saved_clip);
+    InsetRect(&f, 1, 1);
+    ClipRect(&f);
+    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    while (old_text[prefix] != '\0' && g_search[prefix] != '\0'
+           && old_text[prefix] == g_search[prefix]) {
+        ++prefix;
+    }
+    x = (short)(f.left + 3 + TextWidth(g_search, 0, (short)prefix));
+    tail = f;
+    if (x > tail.left) {
+        tail.left = x;
+    }
+    RGBForeColor(&white);
+    PaintRect(&tail);
+    RGBForeColor(&black);
+    MoveTo(x, (short)(f.bottom - 4));
+    if (g_search[prefix] != '\0') {
+        DrawText(g_search, (short)prefix,
+                 (short)(strlen(g_search) - prefix));
+    }
+    if (g_search_focus) {
+        DrawText("|", 0, 1);
+    }
+    SetClip(saved_clip);
+    DisposeRgn(saved_clip);
+}
+
 static void cloud_draw(void)
 {
     const CloudService *service = current_service();
@@ -764,6 +972,8 @@ static void cloud_draw(void)
     /* The status line. */
     draw_at((short)(g_r.status.left + 2),
             (short)(g_r.status.bottom - 3), g_status);
+
+    draw_search();
 
     /* The card pane: whichever view is active draws it. */
     if (g_view != NULL && g_view->draw != NULL) {
@@ -777,6 +987,17 @@ static Boolean cloud_click(const EventRecord *event, Point local)
 
     if (g_owner == NULL || !g_visible) {
         return false;
+    }
+    if (PtInRect(local, &g_r.toolbar_search)) {
+        if (!g_search_focus) {
+            g_search_focus = true;
+            InvalWindowRect(g_owner, &g_r.toolbar_search);
+        }
+        return true;
+    }
+    if (g_search_focus) {
+        g_search_focus = false;
+        InvalWindowRect(g_owner, &g_r.toolbar_search);
     }
     if (g_browser != NULL && PtInRect(local, &g_r.list)) {
         HandleControlClick(g_browser, local, event->modifiers, NULL);
@@ -793,7 +1014,12 @@ static Boolean cloud_click(const EventRecord *event, Point local)
            the menu loop already does (nested-loops.md). */
         TrackControl(control, local, (ControlActionUPP)-1L);
         if (GetControlValue(g_popup) != before) {
+            /* A new service's rows are not what the old search text
+               was about — software_module.c clears its own search the
+               same way on a domain switch. */
+            g_search[0] = '\0';
             choose_service(GetControlValue(g_popup) - 1);
+            InvalWindowRect(g_owner, &g_r.toolbar_search);
         }
         return true;
     }
@@ -819,7 +1045,34 @@ static Boolean cloud_key(const EventRecord *event)
 {
     ControlRef focus = NULL;
 
-    if (g_browser == NULL || !g_visible) {
+    if (g_owner == NULL || !g_visible) {
+        return false;
+    }
+    if (g_search_focus) {
+        char ch = (char)(event->message & charCodeMask);
+        char old_text[48];
+        long n;
+
+        memcpy(old_text, g_search, sizeof old_text);
+        if (ch == '\b' || ch == 0x7F) {
+            n = (long)strlen(g_search);
+            if (n > 0) {
+                g_search[n - 1] = '\0';
+            }
+        } else if (ch >= ' ' && ch < 0x7F) {
+            n = (long)strlen(g_search);
+            if (n < (long)sizeof g_search - 1) {
+                g_search[n] = ch;
+                g_search[n + 1] = '\0';
+            }
+        } else {
+            return false;              /* arrows and kin are not ours */
+        }
+        refilter_browser();
+        echo_search_delta(old_text);
+        return true;
+    }
+    if (g_browser == NULL) {
         return false;
     }
     if (GetKeyboardFocus(g_owner, &focus) != noErr || focus != g_browser) {

@@ -84,6 +84,22 @@ typedef struct CloudViewOps {
        ask_rows(1) is enough (today's list view; drive's browsing has
        no shell-level equivalent, so it always supplies this). */
     void (*reset_for_service)(const CloudService *service);
+
+    /* The live search's per-view half: does row `index` (0-based —
+       DataBrowserItemID is index+1, the convention every row storage
+       here already uses) match `needle`, already lowercased
+       (cloud_filter_lower)? `store` is the shell's shared listing —
+       list and contacts read its rows and title+subtitle through it
+       (cloud_filter_matches_either); Drive ignores it and reads its
+       own row storage instead, the same split cloud_drive_view_row_text
+       already draws for item_data. The shell (cloud_module.c) owns the
+       Data Browser and calls this on every keystroke and on every
+       arriving page, never mutating the store — filtering is a VIEW of
+       the fetched rows. NULL means "matches everything": a view with
+       nothing filterable never withholds a row the shell would
+       otherwise show. */
+    Boolean (*row_matches)(int index, const CloudStore *store,
+                           const char *needle);
 } CloudViewOps;
 
 #endif /* NOW_CLOUD_VIEW_H */

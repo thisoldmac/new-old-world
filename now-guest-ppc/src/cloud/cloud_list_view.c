@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "cloud_filter.h"
+
 /* The generic listing+card render, moved out of cloud_module.c's
    cloud_draw whole. Behaviour is unchanged. */
 
@@ -54,6 +56,21 @@ static void view_draw(const CloudLayout *r, const CloudStore *store,
     }
 }
 
+/* The shell's shared rows (CloudRow), searched by title and subtitle —
+   the two fields the Data Browser's own columns already show, so a
+   match is never a surprise once someone reads the row it kept. */
+static Boolean view_row_matches(int index, const CloudStore *store,
+                                const char *needle)
+{
+    const CloudRow *row;
+
+    if (store == NULL || index < 0 || index >= store->row_count) {
+        return false;
+    }
+    row = &store->rows[index];
+    return cloud_filter_matches_either(row->title, row->subtitle, needle);
+}
+
 static const CloudViewOps k_ops = {
     NULL,                              /* create */
     NULL,                              /* show */
@@ -62,7 +79,8 @@ static const CloudViewOps k_ops = {
     NULL,                              /* click: the shell's ask_save() */
     NULL,                              /* key: generic HandleControlKey */
     NULL,                              /* idle: nothing to watch */
-    NULL                               /* reset_for_service: ask_rows(1) */
+    NULL,                              /* reset_for_service: ask_rows(1) */
+    view_row_matches
 };
 
 const CloudViewOps *cloud_list_view_ops(void)

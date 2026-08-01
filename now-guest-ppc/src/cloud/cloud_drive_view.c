@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "cloud_filter.h"
 #include "wire.h"
 
 /* Everything the shell used to keep as g_drive_*, moved here whole.
@@ -91,7 +92,7 @@ void cloud_drive_listing(const char *path, const FileEntry *entries,
                          int count, Boolean more, long cursor,
                          const char *root, const char *error)
 {
-    DataBrowserItemID ids[16];
+    int first = g_drive_count;
     int i;
 
     (void)root;
@@ -109,11 +110,14 @@ void cloud_drive_listing(const char *path, const FileEntry *entries,
     }
     for (i = 0; i < count && g_drive_count < kCloudMaxRows; ++i) {
         g_drive_rows[g_drive_count] = entries[i];
-        ids[i] = (DataBrowserItemID)(++g_drive_count);
+        ++g_drive_count;
     }
-    if (i > 0 && g_browser != NULL) {
-        AddDataBrowserItems(g_browser, kDataBrowserNoItem, (UInt32)i,
-                            ids, kDataBrowserItemNoProperty);
+    /* The shell decides which of these the live search currently
+       admits — the same filter its own note_listing applies to its
+       own rows, so a page arriving mid-search never shows a row the
+       field says it is hiding. */
+    if (i > 0 && g_host.add_rows != NULL) {
+        g_host.add_rows(first, i);
     }
     if (more && g_drive_count < kCloudMaxRows) {
         drive_request(g_drive_path, cursor);
@@ -200,6 +204,11 @@ void cloud_drive_view_activate(Boolean active)
 Boolean cloud_drive_view_at_root(void)
 {
     return g_drive_path[0] == '\0';
+}
+
+int cloud_drive_view_row_count(void)
+{
+    return g_drive_count;
 }
 
 void cloud_drive_view_dispose(void)
@@ -307,6 +316,19 @@ static void view_reset_for_service(const CloudService *service)
     drive_request("", 1);
 }
 
+/* This view's own row storage, searched by name — the one field the
+   Data Browser's Item column shows here (Detail is a description
+   computed from the entry, not free text worth matching). */
+static Boolean view_row_matches(int index, const CloudStore *store,
+                                const char *needle)
+{
+    (void)store;
+    if (index < 0 || index >= g_drive_count) {
+        return false;
+    }
+    return cloud_filter_matches(g_drive_rows[index].name, needle);
+}
+
 static const CloudViewOps k_ops = {
     view_create,
     NULL,                              /* show */
@@ -315,7 +337,8 @@ static const CloudViewOps k_ops = {
     view_click,
     view_key,
     view_idle,
-    view_reset_for_service
+    view_reset_for_service,
+    view_row_matches
 };
 
 const CloudViewOps *cloud_drive_view_ops(void)
