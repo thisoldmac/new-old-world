@@ -19,6 +19,15 @@ import UniformTypeIdentifiers
 struct MirrorModuleView: View {
     @ObservedObject var model: MirrorModuleModel
 
+    /// The drag ghost, while a window is being moved or resized. View state
+    /// and not model state: it is a picture of a gesture in progress, and
+    /// nothing outside this view has any business knowing about it.
+    @State private var dragOutline: Rect?
+    /// When and where the last press landed, for telling a double-click from
+    /// two singles. Also view state — a double-click is a fact about a
+    /// person's hand, not about the Macintosh.
+    @State private var lastClick: (at: Date, x: Int, y: Int)?
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -181,7 +190,14 @@ struct MirrorModuleView: View {
     private func drawing(_ scene: MirrorKit.Scene) -> some View {
         VStack(spacing: 0) {
             GeometryReader { proxy in
-                SceneView(scene: scene)
+                SceneView(scene: scene,
+                          /* The mirror's own selection, drawn the way the
+                             Finder draws one — through the icon's pixels, not
+                             as a box behind it. It is feedback for a gesture
+                             and not a reading of the machine; the model's
+                             `selectedItem` says so at length. */
+                          selectedItem: model.selectedItem,
+                          dragOutline: dragOutline)
                     /* The gesture's coordinates and the drawing's must come
                        from ONE box. `proxy.size` is the box the Canvas was
                        given, and `MirrorPointMapping` inverts the same fit
@@ -195,9 +211,16 @@ struct MirrorModuleView: View {
                     .contentShape(Rectangle())
                     .gesture(
                         DragGesture(minimumDistance: 0)
+                            .onChanged { gesture in
+                                outline(from: gesture.startLocation,
+                                        to: gesture.location,
+                                        in: proxy.size, scene: scene)
+                            }
                             .onEnded { gesture in
-                                press(at: gesture.location,
-                                      in: proxy.size, scene: scene)
+                                dragOutline = nil
+                                gestureEnded(from: gesture.startLocation,
+                                             to: gesture.location,
+                                             in: proxy.size, scene: scene)
                             })
             }
             .aspectRatio(CGFloat(scene.screen.w) / CGFloat(scene.screen.h),
@@ -210,19 +233,98 @@ struct MirrorModuleView: View {
         }
     }
 
-    /// One press on the drawing.
+    /// One gesture on the drawing, once it has ended.
     ///
-    /// The view's whole share of this is the mapping — which box, which
-    /// point. What the point MEANS is the hit tester's, what may be sent is
-    /// the vocabulary's, and whether it reached the machine is the driver's.
-    private func press(at point: CGPoint, in size: CGSize,
-                       scene: MirrorKit.Scene) {
-        guard let guest = MirrorPointMapping.guestPoint(point, in: size,
+    /// The view's whole share of this is **which box, which point, and how
+    /// many** — a press or a drag, once or twice. What the point MEANS is the
+    /// hit tester's, what may be sent is the vocabulary's, and whether it
+    /// reached the machine is the driver's. Nothing here decides what a
+    /// target is or what it can be sent as.
+    private func gestureEnded(from start: CGPoint, to end: CGPoint,
+                              in size: CGSize, scene: MirrorKit.Scene) {
+        guard let began = MirrorPointMapping.guestPoint(start, in: size,
                                                         scene: scene) else {
             model.clickedOffScreen()
             return
         }
-        model.click(x: guest.x, y: guest.y)
+        guard let ended = MirrorPointMapping.guestPoint(end, in: size,
+                                                        scene: scene) else {
+            /* A gesture that left the drawing. Refused rather than clamped
+               to the edge, for the same reason a press in the letterbox is:
+               the nearest point on the screen is not the point the person
+               indicated, and a window moved to an invented place is worse
+               than a window not moved. */
+            model.clickedOffScreen()
+            return
+        }
+        if abs(ended.x - began.x) + abs(ended.y - began.y) >= Self.dragSlop {
+            model.drag(from: began, to: ended)
+            return
+        }
+        model.click(x: began.x, y: began.y, count: clickCount(at: began))
+    }
+
+    /// The classic dotted outline, while a window is being dragged or
+    /// resized. It is **this side's drawing and nothing else** — the guest
+    /// knows nothing about the gesture until it ends, exactly as a real
+    /// DragWindow shows an outline and moves the window on release.
+    private func outline(from start: CGPoint, to end: CGPoint,
+                         in size: CGSize, scene: MirrorKit.Scene) {
+        guard let began = MirrorPointMapping.guestPoint(start, in: size,
+                                                        scene: scene),
+              let ended = MirrorPointMapping.guestPoint(end, in: size,
+                                                        scene: scene),
+              abs(ended.x - began.x) + abs(ended.y - began.y)
+                  >= Self.dragSlop else {
+            dragOutline = nil
+            return
+        }
+        let dx = ended.x - began.x, dy = ended.y - began.y
+        switch HitTester.hitTest(scene, x: began.x, y: began.y) {
+        case .titlebar(let id, _, _, _):
+            guard let r = scene.windows.first(where: { $0.id == id })?.rect
+            else { dragOutline = nil; return }
+            dragOutline = Rect(l: r.l + dx, t: r.t + dy,
+                               r: r.r + dx, b: r.b + dy)
+        case .growBox(let id, _, _):
+            guard let r = scene.windows.first(where: { $0.id == id })?.rect
+            else { dragOutline = nil; return }
+            /* The floor is the outline's own, and it is drawing rather than
+               policy: what the window's real minimum is, is the
+               application's to enforce when it answers the resize. */
+            dragOutline = Rect(l: r.l, t: r.t,
+                               r: max(r.l + 80, r.r + dx),
+                               b: max(r.t + 60, r.b + dy))
+        default:
+            dragOutline = nil
+        }
+    }
+
+    /// A press and a drag, told apart in the guest's own pixels.
+    ///
+    /// 6 px, from upstream's live mirror (`LiveMirror.mouseGesture`), where
+    /// it was arrived at by using the thing: a hand on a trackpad moves a
+    /// point or two during a click, and a window drag that reads as a click
+    /// leaves the window where it was with no explanation.
+    private static let dragSlop = 6
+
+    /// One click or two, by the same rule upstream's mirror used: within 0.4
+    /// seconds and 6 px of the last one (`LiveMirror.clickCount`). Deliberately
+    /// not the host's own double-click interval — this is a gesture on a
+    /// drawing of another Macintosh, and the number that matters is the one
+    /// the two mirrors agree on.
+    ///
+    /// The pair is consumed on the second click so three rapid presses read
+    /// as a double and a single, rather than as two doubles.
+    private func clickCount(at point: (x: Int, y: Int)) -> Int {
+        let now = Date()
+        defer { lastClick = (now, point.x, point.y) }
+        if let last = lastClick, now.timeIntervalSince(last.at) < 0.4,
+           abs(last.x - point.x) + abs(last.y - point.y) < Self.dragSlop {
+            lastClick = nil
+            return 2
+        }
+        return 1
     }
 
     /// What became of the last press. **Always shown when there was one**,

@@ -97,9 +97,17 @@ final class HostAppState: ObservableObject {
     /// rendered scene and the acts NOW's contract declares. The page still
     /// refuses everything the vocabulary calls unsendable — the driver is a
     /// route, not a permission.
+    ///
+    /// The driver takes the window resolver too, and it is the same listener
+    /// on purpose: a window act is addressed by a reference only an
+    /// observation of that Mac can mint, so the ask goes down the control
+    /// plane beside the act itself — never the transfer lane, which the
+    /// stream drawing the scene is already holding.
     private(set) lazy var mirror = MirrorModuleModel(
         listener: listener,
-        actions: MirrorActionDriver(adapter: agentIntegration))
+        actions: MirrorActionDriver(
+            adapter: agentIntegration,
+            windows: MirrorWindowResolver(listener: listener)))
     private(set) lazy var census = CensusModuleModel(listener: listener)
     private(set) lazy var diagnostics = DiagnosticsModel(listener: listener)
     private(set) lazy var software = SoftwareModel(listener: listener)
