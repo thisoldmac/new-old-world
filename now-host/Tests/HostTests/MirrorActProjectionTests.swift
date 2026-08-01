@@ -2,20 +2,20 @@ import Foundation
 import XCTest
 @testable import NOWAgentIntegration
 
-/// **The act plane's rows, held to the published rows' standard before they
-/// are published.**
+/// **The act plane's rows, held to the properties that are about the PLANE
+/// rather than about any one row.**
 ///
-/// `WindowActProjection`, `TextGetProjection` and `TextSetProjection` are not
-/// in `HostProjectionCatalog` — NOW's contract declares no act plane, so a
-/// registered row would publish a tool whose requirement resolves to nothing
-/// (`MirrorActProjections` says why in full). Every registry-wide gate
-/// therefore skips them, which would leave three unwatched rows in the tree.
+/// `WindowActProjection`, `TextGetProjection` and `TextSetProjection` are in
+/// `HostProjectionCatalog` as of 2026-07-31, so every registry-wide gate now
+/// sees them — this file is no longer standing in for those. What it holds
+/// is what a registry-wide gate cannot express: one addressing grammar
+/// across three rows, one dispatch vocabulary, and one refusal that the
+/// three share and that the other twenty-odd rows have no opinion about.
 ///
-/// So this file runs those properties over `MirrorActProjections.pending`
-/// itself, and — where it matters most — through the REAL
-/// `HostProjectionDispatch` over a registry built from those three rows, so
-/// consent, the shared argument gate and the audit line are exercised rather
-/// than asserted about.
+/// It runs those properties over `MirrorActProjections.rows` and — where it
+/// matters most — through the REAL `HostProjectionDispatch` over a registry
+/// built from those three rows, so consent, the shared argument gate and the
+/// audit line are exercised rather than asserted about.
 ///
 /// Two upstream MEASUREMENTS are what the interesting half of this file
 /// checks, and they are properties of the design rather than of the code:
@@ -36,15 +36,32 @@ import XCTest
 /// | `TextSetProjection.invoke` checks the text before the target | `…TheTargetIsRefusedBeforeTheText` |
 /// | a `performed` case added to `AgentIntegrationActDispatch` | `…AnActCanOnlyClaimDispatch` |
 /// | `present == expected` relaxed to `isSuperset(of:)` in the window decode | `…AnActionIsRefusedGeometryItDoesNotTake` |
-/// | `WindowActProjection` registered in `HostProjectionCatalog` without folding its constant | `…ARowIsRegisteredExactlyWhenItsRequirementIsAKnownName` (and `MCPCoverageTests.testEveryRequirementResolvesToTheContract`, which is the reason these rows are unregistered) |
+/// | `WindowActProjection` registered in `HostProjectionCatalog` without folding its constant | `…ARowIsRegisteredExactlyWhenItsRequirementIsAKnownName` (and `MCPCoverageTests.testEveryRequirementResolvesToTheContract`, which is the reason these rows were unregistered) |
+///
+/// **And again at the fold, 2026-07-31, in both directions:**
+///
+/// | Mutation | Failed |
+/// | --- | --- |
+/// | `WindowActProjection` removed from `HostProjectionCatalog`, constant left folded | `…ARowIsRegisteredExactlyWhenItsRequirementIsAKnownName` |
+/// | `windowActCommand` removed from `AgentIntegrationCapabilityNames.all`, row left registered | the same test, from the other side |
+/// | `winact:` removed from the contract's `x-commands` | `MCPCoverageTests.testEveryRequirementResolvesToTheContract` |
+/// | the three exempted in `CommandRegistryTests.servedByNoGuestYet` deleted | `…TheThreeHalvesAgreeOnTheCommandSet` |
+/// | the act defaults returned to `.hostUnavailable` | `…AnActAgainstALiveHostSaysWhatIsMissing` |
+/// | `now_text_set`'s row deleted from `docs/mcp-coverage.md` | `MCPCoverageTests.testTheProjectionTableMatchesTheRegistry` |
+/// | `winact` listed in BOTH command-registry exemption maps | `CommandRegistryTests.testTheUnservedDeclarationsAreStillUnserved` |
+/// | `reveal` — a verb the PowerPC guest does serve — added to `servedByNoGuestYet` | the same test, which is what keeps that list a debt rather than a drawer |
+///
+/// The three rows are registered, so the registry-wide gates cover them too:
+/// `frontmost` added to `acceptedArguments` now fails
+/// `HostProjectionArgumentStrictnessTests` as well as the two here.
 final class MirrorActProjectionTests: XCTestCase {
 
     private var rows: [any HostProjection.Type] {
-        MirrorActProjections.pending
+        MirrorActProjections.rows
     }
 
     private func registry() throws -> HostProjectionRegistry {
-        try HostProjectionRegistry(MirrorActProjections.pending)
+        try HostProjectionRegistry(MirrorActProjections.rows)
     }
 
     private func schema(
@@ -617,6 +634,67 @@ final class MirrorActProjectionTests: XCTestCase {
                 json.contains("\"outcome\":\"unavailable\""),
                 "\(row.capability) answered something other than typed "
                     + "unavailability with no lane to ask: \(json)")
+        }
+    }
+
+    /// **A published row against a REACHABLE host says what is actually
+    /// missing**, rather than blaming a host that is up.
+    ///
+    /// This is the one thing registration changed about the act lanes'
+    /// behaviour and it is worth a gate of its own. While the rows were
+    /// unregistered, the only client that could reach these defaults was a
+    /// stub with no host, and `.hostUnavailable` — "New Old World host is
+    /// unavailable" — was true. Registering them made the same defaults
+    /// reachable from the real local client, where the app is running and a
+    /// Macintosh is connected, and the sentence became false about the one
+    /// thing a caller could check.
+    ///
+    /// The outcome is unchanged and must stay so: typed `unavailable`, never
+    /// a refusal, never an empty success. Only the reason moved.
+    func testAnActAgainstALiveHostSaysWhatIsMissing() async throws {
+        let calls: [(any HostProjection.Type, [String: Any])] = [
+            (WindowActProjection.self, [
+                "window": AgentIntegrationActPolicy.makeWindowReference(),
+                "action": "zoom",
+            ]),
+            (TextGetProjection.self, [
+                "element": AgentIntegrationActPolicy.makeElementReference(),
+            ]),
+            (TextSetProjection.self, [
+                "element": AgentIntegrationActPolicy.makeElementReference(),
+                "text": "hello",
+            ]),
+        ]
+        for (row, arguments) in calls {
+            let outcome = await HostProjectionDispatch(
+                face: .mcp, registry: try registry(), audit: ActAuditSpy()
+            ).invoke(
+                row.capability.rawValue,
+                arguments: .init(raw: arguments),
+                guest: "pb1400c",
+                through: ConsentActClient(access: .fullAccess))
+            guard case .value(let value) = outcome else {
+                XCTFail(
+                    "\(row.capability) did not answer a well-formed call "
+                        + "against a consenting machine: "
+                        + "\(String(describing: outcome))")
+                continue
+            }
+            let json = String(
+                decoding: try value.encoded(using: JSONEncoder()),
+                as: UTF8.self)
+            XCTAssertTrue(
+                json.contains("\"outcome\":\"unavailable\""),
+                "\(row.capability) answered something other than typed "
+                    + "unavailability: \(json)")
+            XCTAssertTrue(
+                json.contains("now-act-lane-absent"),
+                "\(row.capability) is unavailable for some reason other "
+                    + "than the missing act lane: \(json)")
+            XCTAssertFalse(
+                json.contains(AgentIntegrationUnavailable.host.code),
+                "\(row.capability) blamed an unreachable host while the "
+                    + "host answered its session health: \(json)")
         }
     }
 

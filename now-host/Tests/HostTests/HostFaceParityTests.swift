@@ -87,6 +87,17 @@ final class HostFaceParityTests: XCTestCase {
         "now_guest_files_capabilities",
         "now_guest_files_upload_begin",
         "now_guest_files_upload_append",
+        /* The act plane, registered 2026-07-31. Its divergence is the one
+           kind this ledger is least worried about and it is still owed: the
+           three rows take an opaque reference minted by an observation of a
+           window or a text element, and NOW has no such observation and no
+           pane that could show one. There is nothing for a person to click
+           because there is nothing for them to click ON. The affordance
+           lands with the scene view that mints these references — not
+           waived, and each row's own `.appUI` reason says so. */
+        "now_window_act",
+        "now_text_get",
+        "now_text_set",
     ]
 
     /// Long enough that "later" and "TODO" cannot pass as a justification.

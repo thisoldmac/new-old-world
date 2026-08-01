@@ -178,9 +178,59 @@ final class CommandRegistryTests: XCTestCase {
             """,
     ]
 
+    /// Commands the registry declares that **no guest serves yet**, with the
+    /// reason — a different category from `notOnThePowerPCGuest` and kept
+    /// apart from it on purpose.
+    ///
+    /// That map says "one guest answers this and the other deliberately does
+    /// not", which is a statement about a split. This one says "the contract
+    /// went first", which is a statement about a schedule, and folding the
+    /// second into the first would let a verb no machine implements read as
+    /// a settled division of labour between two that do.
+    ///
+    /// **Declaring ahead of a guest is legal by the contract's own rule** —
+    /// adding a command is additive, and a peer that does not serve one
+    /// answers `unknown-command` cleanly. It is done here for one reason:
+    /// a host capability's requirement must resolve to a contract name, or
+    /// the ledger falls through to the command table, misses, and reports the
+    /// tool permanently unavailable in a sentence that reads as a fact about
+    /// the Macintosh (`MCPCoverageTests.testEveryRequirementResolvesToTheContract`).
+    /// Declared, the same three names resolve as commands and each row is
+    /// unavailable because the machine's own `help` said no — which is the
+    /// fact, and which is what makes the plane PowerPC-only later without
+    /// anything on the host side naming a guest.
+    ///
+    /// **An entry here is a debt, not a resting place.** It is the one list
+    /// that says a verb was published with nothing behind it, so a name that
+    /// stays here is a question somebody should be asked.
+    private static let servedByNoGuestYet: [String: String] = [
+        "winact": """
+            The act plane's window verb, declared 2026-07-31 with the three \
+            host rows that project it. Nothing serves it: the guest work is \
+            not started, and what it needs is written down in \
+            MirrorActProjections — an element observation that MINTS the \
+            references it takes, revalidation at the guest before dispatch, \
+            and a dispatch that answers the application's own FindWindow \
+            rather than synthesising a click. See docs/mcp-coverage.md, \
+            "Three rows are published and no machine serves them".
+            """,
+        "textget": """
+            The act plane's read, declared with winact and unserved for the \
+            same reason. It is its own command rather than a mode of \
+            textset because availability and CONSENT are both per command: \
+            a machine whose owner agreed to be read can serve this while \
+            refusing the two verbs that drive it.
+            """,
+        "textset": """
+            The act plane's write, declared with winact and unserved for the \
+            same reason.
+            """,
+    ]
+
     func testTheThreeHalvesAgreeOnTheCommandSet() throws {
         let declared = try declared()
             .subtracting(Self.notOnThePowerPCGuest.keys)
+            .subtracting(Self.servedByNoGuestYet.keys)
         let answered = try answered()
         let documented = try documented()
 
@@ -197,6 +247,54 @@ final class CommandRegistryTests: XCTestCase {
             missing from cmd_help.c works and cannot be found, and one \
             listed there but not declared is offered and then refused.
             """)
+    }
+
+    /// **The debt list is still a debt.** Every name exempted above is
+    /// declared by the contract and answered by NEITHER guest — so the day
+    /// somebody implements one, this fails and the exemption comes out
+    /// rather than sitting there describing a verb that now works.
+    ///
+    /// It also holds the two exemption maps apart. An overlap would be one
+    /// verb claiming both to be a deliberate split between two guests and to
+    /// be unimplemented by either, and the subtraction would hide whichever
+    /// was wrong.
+    func testTheUnservedDeclarationsAreStillUnserved() throws {
+        let declared = try declared()
+        let ppc = try answered()
+        let k68 = try answered68K()
+
+        XCTAssertTrue(
+            Set(Self.servedByNoGuestYet.keys)
+                .isDisjoint(with: Self.notOnThePowerPCGuest.keys), """
+            A command is exempted as both "the PowerPC guest deliberately \
+            does not answer it" and "no guest answers it yet". Those are \
+            different claims and at most one is true.
+            """)
+
+        for (name, reason) in Self.servedByNoGuestYet {
+            XCTAssertTrue(declared.contains(name), """
+            "\(name)" is exempted as declared-ahead-of-any-guest and the \
+            contract's x-commands does not declare it. The exemption is a \
+            subtraction from the registry; a name that is not in the \
+            registry subtracts nothing and hides nothing but itself.
+            """)
+            XCTAssertFalse(ppc.contains(name), """
+            The PowerPC guest now answers "\(name)", which is exempted here \
+            as served by no guest. Delete the exemption — this is the good \
+            outcome, and leaving it in place means the three halves stop \
+            being compared for that verb.
+            """)
+            XCTAssertFalse(k68.contains(name), """
+            NOW-68K now answers "\(name)", which is exempted here as served \
+            by no guest. Delete the exemption; a verb one guest serves \
+            belongs in notOnThePowerPCGuest with the reason for the split, \
+            if that is what it is.
+            """)
+            XCTAssertFalse(
+                reason.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .isEmpty,
+                "\"\(name)\" is exempted with no reason.")
+        }
     }
 
     /// Verbs NOW-68K's dispatch answers — `now68k_commands_run` and the

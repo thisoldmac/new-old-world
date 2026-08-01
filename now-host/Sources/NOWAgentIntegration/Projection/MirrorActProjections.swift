@@ -1,30 +1,35 @@
 import Foundation
 
-/// **The act plane's rows, written and not yet registered — with the exact
-/// reason, and the exact steps that register them.**
+/// **The act plane's rows, as one group — registered 2026-07-31, and served
+/// by no Macintosh.**
 ///
 /// `HostProjectionCatalog` is the published surface: a row in it is a tool an
-/// agent can call. These three are not in it, and that is a decision rather
-/// than an oversight.
+/// agent can call. These three are in it now. What they answer, on every
+/// machine that exists, is `unavailable`.
 ///
-/// ## Why they are not registered
+/// ## Why that is the honest state and not the trap it resembles
 ///
-/// NOW's contract declares no act plane. `contract/asyncapi.yaml` has no
-/// `winact` / `textget` / `textset` among its commands, and no guest
-/// dispatches them. A registered row would therefore be a published tool
-/// whose requirement resolves to nothing in the capability ledger — which
-/// fails nowhere at run time and is the specific trap `MCPCoverageTests
-/// .testEveryRequirementResolvesToTheContract` was written to catch: the
-/// ledger falls through to the command table, misses, and the tool reports
-/// itself permanently unavailable against every guest, in a sentence that
-/// reads as a fact about the Macintosh.
+/// These rows landed built and UNREGISTERED, deliberately, and the reason was
+/// exact: NOW's contract declared no act plane, so a registered row would
+/// have published a tool whose requirement resolved to nothing. That failure
+/// is invisible at run time — the capability ledger looks the name up among
+/// the message families, misses, falls through to the guest's command table,
+/// misses again, and reports the tool permanently unavailable in a sentence
+/// that reads as a fact about the Macintosh. `MCPCoverageTests
+/// .testEveryRequirementResolvesToTheContract` exists to catch exactly that,
+/// and it did.
 ///
-/// Registering them would not make the capability real; it would make the
-/// gate that says it is not real go red. So the rows land complete and
-/// unregistered, and this list is what keeps them gated in the meantime:
-/// `MirrorActProjectionTests` runs the registry's own properties over these
-/// three, so they are held to the published rows' standard before they are
-/// published.
+/// The fold closed it from the other end. `winact`, `textget` and `textset`
+/// are now declared in `contract/asyncapi.yaml` under `x-commands` — legal by
+/// that file's own rule, which makes adding a command additive and has a peer
+/// that does not serve one answer `unknown-command` cleanly. So the three
+/// names resolve as COMMANDS, and a command's availability is settled against
+/// the connected guest's own `help` table. The row is unavailable **because
+/// the machine said so**. Same words to a caller, entirely different fact,
+/// and it is the fact that makes the plane PowerPC-only later by derivation —
+/// exactly as `reveal`, `gestalt` and `tail` are today, with nothing on this
+/// side asking which guest answered. **There is no ISA check anywhere in this
+/// slice and none is owed.**
 ///
 /// ## What the guest must implement
 ///
@@ -34,8 +39,9 @@ import Foundation
 ///
 /// 1. **Three commands in its `help` table** — `winact`, `textget`,
 ///    `textset` — because that table is how the capability ledger settles a
-///    command, and it is what makes the act plane PowerPC-only by derivation
-///    rather than by an ISA check anyone writes.
+///    command. Until then, `CommandRegistryTests.servedByNoGuestYet` carries
+///    the debt with its reason, and fails the day one of the three is served
+///    and the exemption is not removed.
 /// 2. **An identity-addressed element observation that MINTS the
 ///    references** these rows take (`now-window-…`, `now-element-…`) and can
 ///    map one back to a live `WindowPtr` / `ControlHandle`. Without it there
@@ -54,23 +60,12 @@ import Foundation
 /// 5. **A reply that claims only dispatch.** No `performed: true` meaning
 ///    "and it worked" — see `AgentIntegrationActDispatch`.
 ///
-/// ## What registering them takes, once the guest serves them
+/// The HOST also still owes a lane: the three client methods are protocol
+/// requirements whose defaults answer `AgentIntegrationUnavailable.noActLane`
+/// because no local operation carries an act. That is the second half, and it
+/// is worth building only after the first.
 ///
-/// - Move the three constants out of the extension in `MirrorActModels.swift`
-///   into `AgentIntegrationCapabilityNames`, and add them to its `all` set.
-/// - Declare the three commands in `contract/asyncapi.yaml` under
-///   `x-commands`. They are COMMANDS, so no `familyPolicy` row is owed.
-/// - Promote the three client methods from extension methods to protocol
-///   requirements on `AgentIntegrationClient`, keeping the present bodies as
-///   their defaults — one edit, no conformer broken.
-/// - Add the three types to `HostProjectionCatalog.projections`, beside the
-///   process drive verbs.
-/// - Flip each row's `.mcp` face to `.reachedByRegistry`, and add a row per
-///   capability to `docs/mcp-coverage.md`.
-/// - The `.appUI` face stays `notReached` with its stated reason until a
-///   pane can select an element; rule 3 is owed, not waived.
-///
-/// ## What is deliberately absent
+/// ## What is still deliberately absent
 ///
 /// - **A menu row.** Upstream's `MENU_INVOKE` is its own defect 0 and was
 ///   actively being worked on 2026-07-31; the plan's stop condition is
@@ -85,10 +80,22 @@ import Foundation
 ///   is a row whose arguments cannot bound what it does, which is the
 ///   opposite of the property the other three are built on. It wants its own
 ///   design pass, not a slot in this list.
+/// - **A pane.** Each row's `.appUI` face is `notReached` with its reason,
+///   and the three are in `HostFaceParityTests.appUIDivergences`. Rule 3 is
+///   owed, not waived: the affordance lands with the scene view that mints
+///   the references these rows take, because there is nothing for a person
+///   to click until there is something to click ON.
 public enum MirrorActProjections {
-    /// The three rows, in the order they would be registered: the window
-    /// act beside the other drive verbs, then the read, then the write.
-    public static let pending: [any HostProjection.Type] = [
+    /// The three rows, in the order they are registered: the window act
+    /// beside the other drive verbs, then the read, then the write.
+    ///
+    /// Kept as a group after registration rather than dissolved into the
+    /// catalog, because the properties in `MirrorActProjectionTests` are
+    /// about the PLANE — one addressing grammar, one dispatch vocabulary,
+    /// one refusal of a target-free selector — and a test that had to
+    /// re-derive which catalog rows are act rows would be a second spelling
+    /// of this list.
+    public static let rows: [any HostProjection.Type] = [
         WindowActProjection.self,
         TextGetProjection.self,
         TextSetProjection.self,

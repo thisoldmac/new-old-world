@@ -127,38 +127,12 @@ public enum AgentIntegrationActPolicy {
     }
 }
 
-/// The act plane's requirements, spelled once.
-///
-/// Declared as an extension on the existing namespace rather than as a
-/// second one: two spellings of one identity is the drift that namespace
-/// exists to remove, and the day these land they are three lines MOVED into
-/// `AgentIntegrationCapabilityModels.swift` beside `revealCommand`, not
-/// three lines rewritten.
-///
-/// **All three are COMMANDS, not message families, and the choice is the
-/// whole reason these rows need no ISA check.** A command's availability is
-/// resolved against the connected guest's own `help` table, so a guest whose
-/// table has no `winact` row reports the row unavailable BY DERIVATION —
-/// which is exactly how `reveal`, `catsearch`, `gestalt` and `tail` are
-/// PowerPC-only today with nothing on this side naming a guest. Mirror's act
-/// plane is PowerPC-only upstream; NOW expresses that as a fact the machine
-/// answers rather than as a branch we write.
-extension AgentIntegrationCapabilityNames {
-    /// Move, resize, zoom or close one addressed window, by answering the
-    /// owning application's own `FindWindow`.
-    public static let windowActCommand = "winact"
-    /// Read the text of one addressed text element.
-    public static let textGetCommand = "textget"
-    /// Replace the text of one addressed text element.
-    public static let textSetCommand = "textset"
-
-    /// The three above, as a set — the act plane's whole requirement
-    /// surface, for the tests that check it and for the integrator who folds
-    /// it into `all`.
-    public static let actPlane: Set<String> = [
-        windowActCommand, textGetCommand, textSetCommand,
-    ]
-}
+/* The act plane's three requirement names USED to live here, as an
+   extension on `AgentIntegrationCapabilityNames`, because the rows were
+   built and deliberately unregistered. They were folded into that namespace
+   proper on 2026-07-31 when the rows were registered, and the argument for
+   why they are COMMANDS rather than message families moved with them —
+   `AgentIntegrationCapabilityNames.actPlane` is where it is now. */
 
 /// **What an act row is allowed to claim it did.**
 ///
@@ -407,38 +381,29 @@ public typealias AgentIntegrationTextReadingResult =
 public typealias AgentIntegrationTextSetResult =
     AgentIntegrationProjectedResult<AgentIntegrationTextSetReceipt>
 
-/// **The act lane on the client, declared as extension methods rather than
-/// as protocol requirements — deliberately, and only until a lane exists.**
-///
-/// The rule at the top of `AgentIntegrationClient.swift` is that a new
-/// protocol requirement arrives with its default in the same edit. These
-/// three go one step further and are not requirements at all, because there
-/// is nothing for a conformer to implement: no host lane carries an act, no
-/// contract message names one, and a requirement no client can answer would
-/// be a hole in the protocol that reads like a lane.
-///
-/// So every call statically dispatches here and answers "no host" — the
-/// truthful answer for a client with no act plane to ask. The day the guest
-/// serves the three commands, these move up into the protocol WITH these
-/// bodies as their defaults, which is one edit and breaks no conformer.
-extension AgentIntegrationClient {
-    /// Act on one addressed window. The reference is the caller's; the guest
-    /// revalidates it against a live window before anything is dispatched.
-    public func windowAct(
-        _ request: AgentIntegrationWindowActRequest
-    ) async -> AgentIntegrationWindowActResult {
-        .hostUnavailable
-    }
-
-    /// Read one addressed text element.
-    public func getElementText(element: String) async
-        -> AgentIntegrationTextReadingResult {
-        .hostUnavailable
-    }
-
-    /// Replace one addressed text element's contents.
-    public func setElementText(element: String, text: String) async
-        -> AgentIntegrationTextSetResult {
-        .hostUnavailable
+extension AgentIntegrationUnavailable {
+    /// **No host lane carries an act yet**, said as a fact about this host
+    /// rather than about the Macintosh or about the socket.
+    ///
+    /// The three act lanes' protocol defaults answered `.host` — "New Old
+    /// World host is unavailable" — while the rows were unregistered, and
+    /// that was true of the only clients that could reach them: stubs with
+    /// no host at all. Registration made the defaults reachable from the
+    /// real local client, where a running app and a connected Macintosh are
+    /// the ordinary case, and the sentence stopped being true. So the fold
+    /// that published the rows also replaced their reason: same typed
+    /// `unavailable` outcome, a reason that names the missing half.
+    ///
+    /// Distinct from `.guest`, which says nothing is connected, and from
+    /// `notWired`, which is about an operation this host's local protocol
+    /// DOES carry. Neither describes a capability whose host lane has never
+    /// been built.
+    public static func noActLane(_ command: String)
+        -> AgentIntegrationUnavailable {
+        AgentIntegrationUnavailable(
+            code: "now-act-lane-absent",
+            message: "This host carries no act lane for \(command) yet, so "
+                + "nothing was asked of any machine. The capability is "
+                + "published and its guest half is unbuilt.")
     }
 }

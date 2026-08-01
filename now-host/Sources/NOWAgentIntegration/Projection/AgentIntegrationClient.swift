@@ -164,6 +164,19 @@ public protocol AgentIntegrationClient: Sendable {
     /// a stream is the one direction that needs no standing, and the person
     /// at the host can already do it from the page they watch it on.
     func stopGuestStream() async -> AgentIntegrationStreamResult
+    /// Act on one addressed window — move, resize, zoom or close — by
+    /// answering the owning application's own `FindWindow`. The reference is
+    /// the caller's; the guest revalidates it against a live window before
+    /// anything is dispatched. See `WindowActProjection`.
+    func windowAct(_ request: AgentIntegrationWindowActRequest) async
+        -> AgentIntegrationWindowActResult
+    /// Read one addressed text element. See `TextGetProjection`.
+    func getElementText(element: String) async
+        -> AgentIntegrationTextReadingResult
+    /// Replace one addressed text element's contents. A replacement and not
+    /// an append: there is no offset form. See `TextSetProjection`.
+    func setElementText(element: String, text: String) async
+        -> AgentIntegrationTextSetResult
 }
 
 extension AgentIntegrationClient {
@@ -323,6 +336,46 @@ extension AgentIntegrationClient {
     public func cancelTransfer() async
         -> AgentIntegrationTransferCancelResult {
         .hostUnavailable
+    }
+
+    /* The three act lanes, promoted from extension methods to requirements
+       in the fold that registered their rows (2026-07-31), with the bodies
+       they already had as their defaults — per the rule at the top of this
+       file, and breaking no conformer.
+
+       ONE THING CHANGED WITH THE PROMOTION, and it is the reason this is
+       not a pure move. The old bodies answered `.hostUnavailable`, which
+       was true of every client that could reach them: nothing was
+       registered, so only stub clients with no host called these. A
+       registered row is reachable from the real local client, where the app
+       is running and a Macintosh is connected — and "New Old World host is
+       unavailable" is then a false sentence about a host that is up. The
+       reason is now `noActLane`, which says what is actually missing. The
+       OUTCOME is unchanged and deliberately so: typed `unavailable`, never
+       a refusal and never an empty success.
+
+       These stay defaults, and no conformer overrides one, because there is
+       still no host lane to carry an act. The day one lands, the local
+       client implements the three and these defaults keep the stub
+       conformers in the test tree compiling. */
+
+    public func windowAct(
+        _ request: AgentIntegrationWindowActRequest
+    ) async -> AgentIntegrationWindowActResult {
+        .unavailable(.noActLane(
+            AgentIntegrationCapabilityNames.windowActCommand))
+    }
+
+    public func getElementText(element: String) async
+        -> AgentIntegrationTextReadingResult {
+        .unavailable(.noActLane(
+            AgentIntegrationCapabilityNames.textGetCommand))
+    }
+
+    public func setElementText(element: String, text: String) async
+        -> AgentIntegrationTextSetResult {
+        .unavailable(.noActLane(
+            AgentIntegrationCapabilityNames.textSetCommand))
     }
 
     /// Nothing to address: this client answers "no host" to everything.
