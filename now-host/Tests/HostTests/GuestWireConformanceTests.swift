@@ -353,6 +353,104 @@ final class GuestWireConformanceTests: XCTestCase {
                              "found suspiciously few messages to check")
     }
 
+    /// The object-shaped `command.result` outputs decode, and their contents
+    /// survive.
+    ///
+    /// **The test above could not see these, and they were broken.** Every
+    /// reply here assembles itself piecemeal with `append`/`emit` rather than
+    /// as one `snprintf`, so no whole template exists for the scanner to
+    /// find — and the host's `CommandResult.output` was
+    /// `[String: [[String]]]?`, which cannot hold any of them. A host that
+    /// cannot decode a frame drops the connection, so asking a guest to
+    /// `observe` — the verb the entire act plane is aimed through — would
+    /// have taken the link down, and the contract has declared these shapes
+    /// (`x-axTree`) since the reference layer landed.
+    ///
+    /// `qdtrace` is what surfaced it, by being the first object-shaped reply
+    /// written as a single template. It was reported as a qdtrace defect and
+    /// was never one.
+    ///
+    /// Written as literal fixtures rather than scanned, on purpose: the
+    /// scanner is what missed this, so a check that depends on it inherits
+    /// the blind spot. These are hand-copied from the emitters in
+    /// `observe.c` and `qdtrace_json.c`.
+    func testObjectShapedCommandOutputsDecodeAndKeepTheirContents() throws {
+        let cases: [(String, String, String)] = [
+            ("axsnap", "observe.c", #"""
+            {"type":"command.result","id":1,"ok":true,"output":{"axsnap":\#
+            {"front":{"name":"Finder"},"hasWindows":true,"hasMenus":true,\#
+            "references":{"live":3,"minted":9,"evicted":6,"capacity":64}}}}
+            """#),
+            ("observe", "observe.c", #"""
+            {"type":"command.result","id":2,"ok":true,"output":{"observe":\#
+            {"scope":"front","processes":[],"count":0,"truncated":false,\#
+            "live":0}}}
+            """#),
+            ("handle", "observe.c", #"""
+            {"type":"command.result","id":3,"ok":true,"output":{"handle":\#
+            {"ref":"now-element-0","verdict":"stale","reason":"gone",\#
+            "resolved":false}}}
+            """#),
+            ("qdtrace status", "qdtrace_json.c", #"""
+            {"type":"command.result","id":4,"ok":true,"output":{"qdtrace":\#
+            {"cmd":"status","ring":{"writeCursor":4096,"seq":2,\#
+            "overrun":false},"ops":{"total":0,"text":0}}}}
+            """#),
+        ]
+        for (verb, file, json) in cases {
+            let message: ControlMessage
+            do {
+                message = try ControlMessageCodec.decode(Data(json.utf8))
+            } catch {
+                XCTFail("""
+                    \(file): the host cannot decode \(verb)'s reply, which \
+                    the contract declares as an object: \(error)
+                    """)
+                continue
+            }
+            guard case .commandResult(let result) = message else {
+                XCTFail("\(verb) did not decode as a command.result")
+                continue
+            }
+            // Decoding is half of it. A decoder that quietly dropped the
+            // object would pass a decodes-without-throwing check and lose
+            // the whole answer, which is the failure mode a lenient decoder
+            // invites — so the payload is read back.
+            guard case .object(let payload)? = result.outputObjects?[
+                verb.split(separator: " ").first.map(String.init) ?? verb]
+            else {
+                XCTFail("""
+                    \(verb) decoded and its output object is gone. A \
+                    decoder that skips what it cannot type has lost the \
+                    reply while reporting success.
+                    """)
+                continue
+            }
+            XCTAssertFalse(payload.isEmpty, "\(verb)'s output object is empty")
+        }
+    }
+
+    /// A row-array output still lands in `output`, where every reader looks.
+    ///
+    /// The other half of the split above: if the lenient decoder put rows in
+    /// `outputObjects` too, every consumer in the app would go quietly blind
+    /// while this file stayed green.
+    func testRowArrayOutputsStillLandInTheRowProperty() throws {
+        let json = #"""
+        {"type":"command.result","id":5,"ok":true,"output":{"gestalt":\#
+        [["Model","Power Macintosh"],["RAM","64 MB"]]}}
+        """#
+        guard case .commandResult(let result) =
+            try ControlMessageCodec.decode(Data(json.utf8)) else {
+            return XCTFail("not a command.result")
+        }
+        XCTAssertEqual(result.output?["gestalt"],
+                       [["Model", "Power Macintosh"], ["RAM", "64 MB"]])
+        XCTAssertNil(result.outputObjects,
+                     "a row array must not be diverted to outputObjects")
+        XCTAssertEqual(result.rows("gestalt"), result.output?["gestalt"])
+    }
+
     /// Every whole message carries the fields the contract requires.
     /// This is the check that was missing: `file.offer` shipped without
     /// `path` for a day, and nothing anywhere said so.
