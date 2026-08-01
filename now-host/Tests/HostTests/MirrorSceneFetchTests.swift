@@ -314,11 +314,19 @@ final class MirrorSceneFetchTests: XCTestCase {
         listener.requestScene { result in
             if case .failure(let f) = result { refusal = f.message }
         }
-        try await waitUntil("the refusal") { refusal != nil }
+        /* A refusal that never comes is itself the regression: without the
+           guard the ask goes to a Mac that is busy, and this waits out its
+           whole timeout for an answer the host should have given at once. */
+        try await waitUntil("the refusal, which the host owes immediately") {
+            refusal != nil
+        }
 
         let said = try XCTUnwrap(refusal)
         XCTAssertTrue(said.contains("screenshot"),
                       "the refusal does not name what holds the lane: \(said)")
+        // Ordered twice over: the refusal has already come back, and this
+        // settle gives a request that leaked out late its chance to arrive.
+        try await Task.sleep(nanoseconds: 150_000_000)
         XCTAssertEqual(sceneRequestCount(in: guest), 0,
                        "a scene.request went out over a held lane")
 
