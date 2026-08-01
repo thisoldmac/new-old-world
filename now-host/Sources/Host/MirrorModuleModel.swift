@@ -15,25 +15,46 @@ import NOWAgentIntegration
 /// drawing, because a replayed Finder window that reads as *this Mac, now* is
 /// the worst thing this page could do.
 ///
-/// **A fetch happens because a person asked for one.** `fetchScene()` is
-/// called from the page's button and from nowhere else — not on appearance,
-/// and not on a timer. Three reasons, in order of weight:
+/// **A scene arrives because something changed, or because a person asked.**
+/// `fetchScene()` has two callers: the page's button, and the watch loop
+/// below.
 ///
-/// 1. **The Mac moves one thing at a time.** A scene is a transfer on the one
-///    bulk lane that screenshots, streams and file transfers share. A poll
-///    would take that lane at intervals nobody chose, and the person whose
-///    download it interrupted would have no way to connect the two.
-/// 2. **A walk is real work on the machine being walked** — every process and
-///    window, through a resident extension, on hardware where that is not
-///    free. Selecting a tab is not a request for it.
-/// 3. **Rule 3 says a person can initiate what an agent can.** There is no
-///    scene projection row yet, so today the person is the *only* caller and
-///    their button is the entire surface. When an agent verb lands it calls
-///    `GuestListener.requestScene` alongside this, and the lane guard already
-///    handles the two of them colliding.
+/// **RESTORED 2026-08-01, and it is a retraction.** This header used to argue
+/// that a fetch happens on a button press *and on nothing else* — no timer —
+/// because a scene is a transfer on the one bulk lane and "a poll would take
+/// that lane at intervals nobody chose". The argument was tidy and it was
+/// wrong about the product: a mirror that only ever shows the moment somebody
+/// last pressed a button is a screenshot viewer. Upstream shipped a 0.5 s poll
+/// and had already measured what this header was guessing about — fetch-on-
+/// change ran at **one fetch per four polls**, 4.5 s against a 3.8 s baseline.
+/// A theory that loses to a number is not a design decision.
 ///
-/// The cost of choosing the button is that a scene on screen is a moment in
-/// the past, so the page dates it rather than implying it is live.
+/// What survives from that argument is the *cost* half, and it is what shapes
+/// the loop:
+///
+/// 1. **The Mac moves one thing at a time.** A scene transfer takes the bulk
+///    lane. So the loop does not transfer on every tick: it asks a **control**
+///    question first (`axsnap` — the contract's own "the one call on this
+///    surface that is safe to poll"), which takes no bulk lane at all, and
+///    only spends a transfer when the answer differs from the last one, or
+///    when the scene on screen is older than the ceiling.
+/// 2. **A walk is real work on the machine being walked.** Same answer: the
+///    walk runs when the cheap question says something moved, not on a
+///    metronome.
+/// 3. **A person can stop it.** It is their Mac and their lane. Live is the
+///    default because a mirror that is not live is not a mirror, and `pause()`
+///    is one press away and visible on the page.
+///
+/// **What the probe can and cannot see, stated rather than implied.**
+/// `axsnap` reports the front process and whether it has windows and menus at
+/// all. It therefore catches an application switch, a launch, a quit, the
+/// first window of a program appearing — and it does **not** catch a window
+/// moving inside one application. That is why the ceiling exists: an
+/// unseen change costs bounded staleness, never permanent staleness. A probe
+/// that pretended to be complete would be worse than no probe.
+///
+/// A scene on screen is still a moment in the past — the page dates it and
+/// says so.
 ///
 /// ## The resting states are the hard part
 ///
@@ -105,7 +126,9 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
         case refused(String)
     }
 
-    @Published var connection: GuestConnectionState = .disconnected
+    @Published var connection: GuestConnectionState = .disconnected {
+        didSet { updateWatch() }
+    }
     @Published private(set) var fetch: Fetch = .idle
 
     /// The wire. Optional so a test or a preview gets a model that can render
@@ -113,8 +136,26 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
     /// cannot fetch, rather than fetching into a stub that always fails.
     private let listener: GuestListener?
 
-    init(listener: GuestListener? = nil) {
+    /// The act lane, for a gesture on the drawing. Optional for the same
+    /// reason the listener is: a model without one refuses a click with a
+    /// sentence rather than dispatching into a stub.
+    private let actions: MirrorActionDriver?
+
+    /// The pace of the watch loop. Injected so a test drives `watchTick()`
+    /// itself — a suite whose assertions depend on a real half-second is a
+    /// suite that fails on a busy machine.
+    let watch: WatchPolicy
+
+    init(listener: GuestListener? = nil,
+         actions: MirrorActionDriver? = nil,
+         watch: WatchPolicy = .live) {
         self.listener = listener
+        self.actions = actions
+        self.watch = watch
+    }
+
+    deinit {
+        ticker?.invalidate()
     }
 
     /// Whether the button is offered at all. A page with no wire, or no Mac,
@@ -122,12 +163,14 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
     var canFetch: Bool { listener != nil && isConnected }
 
     /// Asks the connected Mac for one scene. **The only producer of a live
-    /// scene on this page**, and it runs because a person pressed something.
+    /// scene on this page**, called by the person's button and by the watch
+    /// loop.
     ///
     /// A second press while one is in flight is ignored rather than queued:
     /// the listener would refuse it against its own lane guard anyway, and
     /// turning an impatient click into a visible refusal would teach a person
-    /// that the page is broken when it is merely working.
+    /// that the page is broken when it is merely working. The watch loop
+    /// relies on the same guard — it never queues either.
     func fetchScene() {
         guard let listener, isConnected, fetch != .looking else { return }
         fetch = .looking
@@ -136,6 +179,16 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
             switch result {
             case .success(let delivery):
                 self.fetch = .idle
+                /* A scene arrived, so the lane was free and the guest
+                   answered: whatever the loop had backed off from is over.
+                   `lastSceneAt` is the ceiling's clock and is stamped from
+                   ARRIVAL rather than from `capturedAt` — the guest's clock
+                   is its own and this side's ceiling is about how stale the
+                   PAGE is. */
+                self.backoff = 0
+                self.holdUntil = nil
+                self.lastSceneAt = Date()
+                self.lastSeq = delivery.seq
                 /* A scene that arrived is proof of both rungs of the ladder
                    at once: only the extension can walk other programs'
                    windows, and only an armed plane runs the walk. Recorded
@@ -159,7 +212,185 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
                    a refusal would let a busy moment be recorded as a missing
                    extension. */
                 self.fetch = .refused(failure.message)
+                self.watchNoted(failure)
             }
+        }
+    }
+
+    // MARK: - The watch loop
+
+    /// How often the cheap question is asked, how stale the drawing may get,
+    /// and how far a collision backs off.
+    ///
+    /// `automatic` is what a test turns off. It does not change a single
+    /// decision — `watchTick()` is the same function either way — it only
+    /// decides whether a `Timer` calls it or the test does.
+    struct WatchPolicy: Equatable, Sendable {
+        var probeInterval: TimeInterval
+        /// The oldest the drawing may be before a scene is fetched whether
+        /// or not the probe saw anything. This is what bounds the staleness
+        /// of a change the probe cannot see — a window moved inside one
+        /// application — and it is why the probe is allowed to be a partial
+        /// signal instead of having to be a complete one.
+        var refreshCeiling: TimeInterval
+        var maxBackoff: TimeInterval
+        var automatic: Bool
+
+        static let live = WatchPolicy(probeInterval: 0.5, refreshCeiling: 5,
+                                      maxBackoff: 8, automatic: true)
+        /// For a test: the same decisions, driven by hand.
+        static let manual = WatchPolicy(probeInterval: 0.5, refreshCeiling: 5,
+                                        maxBackoff: 8, automatic: false)
+    }
+
+    /// Whether the page is keeping itself up to date. Live by default,
+    /// because a mirror that only updates when pressed is a screenshot
+    /// viewer — and stoppable, because it is somebody else's Mac and one
+    /// transfer lane.
+    @Published private(set) var isLive = true
+    /// Why the loop is in the state it is in, when that is worth a sentence:
+    /// backed off, stopped because the guest said no, running without a
+    /// probe. Nil when there is nothing to say.
+    @Published private(set) var liveNote: String?
+    /// When the drawing on screen arrived. The ceiling's clock, and the
+    /// "updated N ago" the header shows.
+    @Published private(set) var lastSceneAt: Date?
+    /// The producer's counter for the scene on screen, kept because it is
+    /// the guest's own answer to "is this the same scene, newer moment" and
+    /// a later change signal will want it. Never used to decide anything
+    /// today — a value this side does not act on is recorded, not invented.
+    private(set) var lastSeq: Int?
+
+    private var ticker: Timer?
+    private var lastProbe: String?
+    private var probing = false
+    /// False once the guest has told us it does not serve the probe. Then
+    /// the ceiling is the whole loop, which is honest and slower rather
+    /// than a poll dressed up as change detection.
+    private(set) var probeUsable = true
+    private var backoff: TimeInterval = 0
+    private var holdUntil: Date?
+
+    /// The person's switch.
+    func setLive(_ on: Bool) {
+        guard on != isLive else { return }
+        isLive = on
+        if on {
+            /* Resuming forgives whatever stopped it. The reason it stopped
+               was true when it was written and is not a fact about the Mac
+               now — leaving it on screen beside a running loop would be the
+               page contradicting itself. */
+            liveNote = nil
+            backoff = 0
+            holdUntil = nil
+            probeUsable = true
+            lastProbe = nil
+        }
+        updateWatch()
+        if on { watchTick() }
+    }
+
+    /// One turn of the loop: the cheap question, and a transfer only when
+    /// something says to spend one.
+    ///
+    /// Order matters and is the whole design. The ceiling is checked BEFORE
+    /// the probe, so a page that has gone stale refreshes even on a guest
+    /// whose probe answers "nothing moved" — the probe cannot see a window
+    /// drag, and a loop that trusted it completely would sit on a wrong
+    /// picture forever while reporting itself live.
+    func watchTick(now: Date = Date()) {
+        guard isLive, canFetch, fetch != .looking, !probing else { return }
+        if let holdUntil, now < holdUntil { return }
+        let age = lastSceneAt.map { now.timeIntervalSince($0) }
+        if scene == nil || age == nil || age! >= watch.refreshCeiling {
+            fetchScene()
+            return
+        }
+        guard probeUsable else { return }
+        probeForChange()
+    }
+
+    /// The cheap question. A **control** message, not a transfer: it does not
+    /// take the bulk lane, which is what makes asking it ten times per scene
+    /// cheaper than fetching a scene once.
+    private func probeForChange() {
+        guard let listener else { return }
+        probing = true
+        listener.runCommand(MirrorSceneProbe.command) { [weak self] result in
+            guard let self else { return }
+            self.probing = false
+            switch MirrorSceneProbe.read(result) {
+            case .token(let token):
+                defer { self.lastProbe = token }
+                /* The first answer establishes the baseline; it is not a
+                   change. Fetching on it would put a transfer on the wire
+                   for the fact that we had never asked before, which the
+                   ceiling has already covered. */
+                guard let last = self.lastProbe else { return }
+                if token != last { self.fetchScene() }
+            case .unsupported(let reason):
+                self.probeUsable = false
+                self.liveNote =
+                    "This Mac does not answer the cheap \"what is in front\" "
+                    + "question (\(reason)), so live updating asks for a "
+                    + "whole scene every "
+                    + "\(Int(self.watch.refreshCeiling.rounded())) seconds "
+                    + "instead of only when something moves."
+            case .unanswered:
+                /* Silence or a dropped connection. Says nothing about
+                   whether the guest serves the probe, so nothing is
+                   recorded and the next tick asks again. */
+                break
+            }
+        }
+    }
+
+    /// What a refused fetch does to the loop.
+    ///
+    /// Two refusals, two answers, and collapsing them is how a page ends up
+    /// hammering a Mac that already said no:
+    ///
+    /// - **This side refused** ("the Mac can move one thing at a time and a
+    ///   file is coming from the Mac"): a collision with somebody else's
+    ///   transfer. Back off — doubling, capped — and let the page say so.
+    ///   Nothing is queued; the tick after the hold asks again.
+    /// - **The guest refused**: it was asked, it answered, and the answer was
+    ///   no. Repeating that every ceiling is not persistence, it is a loop
+    ///   asking a machine the same question until somebody notices. Live
+    ///   updating STOPS, with the reason, and Look Now still asks by hand.
+    private func watchNoted(_ failure: GuestListener.SceneFailure) {
+        guard isLive else { return }
+        if failure.refusedByGuest {
+            isLive = false
+            updateWatch()
+            liveNote = "Live updating stopped: this Mac answered the last "
+                + "ask with a refusal rather than a scene. Look Now asks "
+                + "again, and Live starts the loop back up."
+            return
+        }
+        backoff = backoff == 0
+            ? watch.probeInterval * 2
+            : min(backoff * 2, watch.maxBackoff)
+        holdUntil = Date().addingTimeInterval(backoff)
+        liveNote = "The last ask collided with something else on the Mac's "
+            + "one transfer lane. Live updating waits "
+            + String(format: "%.1f", backoff)
+            + "s and asks again — nothing is queued."
+    }
+
+    /// Starts and stops the timer. The loop exists only while there is a
+    /// machine to ask and a person who wants it asking.
+    private func updateWatch() {
+        let wanted = isLive && canFetch && watch.automatic
+        guard wanted != (ticker != nil) else { return }
+        if wanted {
+            ticker = Timer.scheduledTimer(
+                withTimeInterval: watch.probeInterval, repeats: true) { _ in
+                Task { @MainActor [weak self] in self?.watchTick() }
+            }
+        } else {
+            ticker?.invalidate()
+            ticker = nil
         }
     }
 
@@ -234,7 +465,22 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
            the listener settles an in-flight scene with a disconnect reason,
            and that answer describes a connection that no longer exists. */
         fetch = .idle
+        /* The loop's whole memory is about the machine that left: what was
+           in front of it, when its last scene landed, what it collided
+           with. None of that describes the next Mac on the wire, and a
+           stale probe token carried across would make the first tick of the
+           next connection report a change that is really a change of
+           MACHINE. `isLive` is deliberately NOT reset — it is the person's
+           setting, not the guest's. */
+        lastProbe = nil
+        lastSceneAt = nil
+        lastSeq = nil
+        probeUsable = true
+        backoff = 0
+        holdUntil = nil
+        liveNote = nil
         if provenance?.isLive == true { clearScene() }
+        updateWatch()
     }
 
     private func fail(_ reason: String, provenance: Provenance) {
