@@ -3,6 +3,38 @@
 **Date:** 2026-07-31 · **Status:** built, ladder not run · **Disposition:** delete
 when its questions are answered
 
+> **RETIRED 2026-07-31 — the real plane is `ext/src/now_content.c`.**
+>
+> This probe was built to answer *"can a 68K INIT's drawing bottleneck be called
+> by a PowerPC application's QuickDraw?"*. That question had already been
+> answered live, on a mac99 guest, by this project's own prototype:
+> `timbottu/mirror`, `docs/QDPEEK-SPEC.md`, milestone M0 — **and the answer is
+> the opposite of what this file braced for.** `NewQDxxxUPP` alone works; no
+> hand-built `M68K` routine descriptor and no `RTS` thunk were needed. The
+> install/uninstall state machine, the re-entrancy guard and the op-rate table
+> came with it, so the ladder below is not the cheapest way to learn any of it.
+>
+> qdpeek has now been ported into the NOW Extension as plane **P3 — content**
+> (`contract/content_table.h`, `ext/src/now_content.c`,
+> `ext/src/now_content_logic.c`), keeping the measured mechanism and writing
+> NOW's own arm protocol around it. **What this probe contributed, and the port
+> kept:** the identity discipline — arming names its target, an unscoped request
+> instruments nothing, `arm_a5`/`arm_expiry` are written before the commit word
+> — and the three rules under "the dangerous part", which are quoted in
+> `now_content.c` where they are enforced.
+>
+> Its one loose end is answered too, and in the binary rather than on paper.
+> The note below about `qdprobe_rect` drawing nothing when there is no chain to
+> tail-call **does not carry over**: the plane's hooks call a saved copy of the
+> *standard* procs (`SetStdCProcs`), never the port's previous `grafProcs`, so
+> the NULL case is exactly the case it installs into and drawing still happens.
+> Verified in the object file — both branches of the rect hook tail-call
+> `gStd+8` — and the boot path refuses to create the plane at all if
+> `SetStdCProcs` left any of the ten procs null.
+>
+> **Deleting this directory is a separate decision, deliberately not taken
+> here.** Nothing depends on it; it is redundant, not wrong.
+
 This is the P3 spike from [resident-components.md](../../docs/resident-components.md)
 and M2 of [plan 007](../../docs/plans/2026-07-31-007-feat-now-mirror-integration-plan.md).
 It is **deliberately not part of NOW**, and the charter is why:

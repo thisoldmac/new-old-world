@@ -3,6 +3,19 @@
 **Date:** 2026-07-31 · **Status:** builds and packages, ladder not run ·
 **Disposition:** delete with QD Probe
 
+> **RETIRED 2026-07-31, with QD Probe.** The probe's question was already
+> answered live upstream, and qdpeek has been ported into the NOW Extension as
+> plane **P3 — content** — see [`../qdprobe/README.md`](../qdprobe/README.md)
+> for the full note. The plane's counters are read through the shared table the
+> application already reads, so a second throwaway reader has nothing left to
+> observe. What this reader established and the port kept: gating on `magic`
+> **and** version as one check, and refusing every write on a mismatch. The
+> plane's block carries a format word for that reason, and its arm commit word
+> is a four-character constant rather than a `1`, so uninitialised memory can
+> never read as a permission.
+>
+> Deleting this directory is a separate decision, not taken here.
+
 [QD Probe](../qdprobe/README.md) publishes its counters through Gestalt
 `'QDpr'` and **nothing read them**, which is why its ladder stopped at
 *packages*: with no reader, "loaded at boot" cannot be told from "did not
