@@ -194,6 +194,95 @@ final class AgentIntegrationActControl {
         }
     }
 
+    // MARK: - key
+
+    /// Post one keystroke into the guest's event queue, through the input
+    /// plane's own verb rather than the act plane's four — `key` answers no
+    /// `Dispatch` row (`now-guest-ppc/src/input/input_cmds.c`), so this
+    /// does not go through `dispatch()` below; it reads `posted` instead,
+    /// the same shape `getElementText` reads `Text`/`Truncated`.
+    ///
+    /// **Not a claim that the front application acted on it.** `posted`
+    /// means the guest's `PostEvent(keyDown, …)` returned `noErr` — the
+    /// keystroke is in the queue. What dequeues it and what it does with it
+    /// is the caller's to verify against a fresh observation, the same rule
+    /// every other act on this lane states for itself.
+    ///
+    /// **`mods` is forwarded exactly as given, and refused by the GUEST if
+    /// it is anything but 0** — never smoothed over here. CarbonLib has no
+    /// `PPostEvent`, so the guest cannot say what was held down while a key
+    /// was posted, and posting anyway would be the silent-modifier defect
+    /// this project's contract was written to refuse
+    /// (`contract/asyncapi.yaml:key`, `docs/input-plane-decisions.md`).
+    /// `ActionModel.availability(.key)` refuses a non-zero `mods` before a
+    /// request is even built; this is the second reading, for a caller that
+    /// reached the adapter directly.
+    func key(_ request: AgentIntegrationKeyRequest) async
+        -> AgentIntegrationKeyResult {
+        guard request.isWellFormed else {
+            return .refused(Self.failure(
+                "now-key-invalid",
+                "A key act names a key by `name`, by `code`, by `char`, or "
+                    + "any combination — but at least one of the three"))
+        }
+        guard let sessionID = currentSessionID() else {
+            return .unavailable(.guest)
+        }
+        var args: [String: String] = ["mods": String(request.mods)]
+        if let name = request.name, !name.isEmpty { args["name"] = name }
+        if let code = request.code { args["code"] = String(code) }
+        if let char = request.char { args["char"] = String(char) }
+
+        let outcome = await run(verb: "key", args: args)
+        guard currentSessionID() == sessionID else {
+            audit(.warn, "key: the paired guest changed while the "
+                      + "keystroke was in progress")
+            return .unavailable(Self.failure(
+                "now-key-outcome-unknown",
+                "The paired guest changed while the keystroke was in "
+                    + "progress").asUnavailable)
+        }
+        switch outcome {
+        case .timedOut:
+            audit(.warn, "key: no answer in time")
+            return .refused(Self.failure(
+                "now-key-outcome-unknown",
+                "The paired guest did not answer the keystroke in time"))
+        case .result(let result) where !result.ok:
+            /* The guest's own sentence — `unsupported` for a refused
+               modifier, `act-not-taken` for a queue that would not take the
+               keyDown — forwarded rather than replaced. */
+            audit(.warn, "key refused: "
+                      + Self.sanitized(result.error?.message ?? ""))
+            return .refused(Self.failure(
+                "now-key-refused",
+                Self.bounded(result.error?.message
+                    ?? "The paired guest refused the keystroke")))
+        case .result(let result):
+            /* The `key` verb's own rows are lower-case (`code`, `char`,
+               `posted`, …) — the input plane's convention, distinct from
+               the act plane's capitalized `Window`/`Dispatch` rows read
+               above. Reading the wrong case is a silent miss, not a type
+               error, so this is spelled out rather than shared with
+               `rows(from:verb:)`'s callers above. */
+            let rows = Self.rows(from: result, verb: "key")
+            guard let posted = rows["posted"] else {
+                audit(.warn, "key: the guest answered without a posted row")
+                return .refused(Self.failure(
+                    "now-key-outcome-unknown",
+                    "The paired guest answered the keystroke without "
+                        + "saying whether it was posted"))
+            }
+            let code = Int(rows["code"] ?? "") ?? request.code ?? 0
+            let char = Int(rows["char"] ?? "") ?? request.char ?? 0
+            audit(.info, "key code \(code) char \(char): "
+                      + (posted == "true" ? "posted" : "not posted"))
+            return .completed(.init(
+                code: code, char: char,
+                posted: posted == "true", postedAt: clock()))
+        }
+    }
+
     // MARK: - textget
 
     /// The one third of the act plane that changes nothing, and the only

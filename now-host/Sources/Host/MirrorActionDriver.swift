@@ -34,10 +34,12 @@ import NOWAgentIntegration
 ///   arrive. Until it does, this refuses with the reason rather than
 ///   sending a reference the guest would reject — and the refusal names
 ///   which half is missing.
-/// - **Everything else → the vocabulary's own refusal**, forwarded. A
-///   keystroke is a declared, planned gap (`docs/mcp-coverage.md`, W3) and
-///   `key` cannot carry a modifier at all because CarbonLib has no
-///   `PPostEvent`. This driver does not paper over that with a click at a
+/// - **`.key` → `key`, when `mods == 0`.** A plain keystroke posts through
+///   the guest's input plane. A MODIFIED one is refused, here and at
+///   `ActionModel.availability`, because CarbonLib has no `PPostEvent` and
+///   the guest cannot say what was held down while a key was posted.
+/// - **Everything else → the vocabulary's own refusal**, forwarded. This
+///   driver does not paper over an unavailable act with a click at a
 ///   coordinate, which is the shape the papering-over would take.
 ///
 /// ## What it deliberately does NOT do
@@ -160,9 +162,26 @@ struct MirrorActionDriver {
                     + "not the opaque reference bring-to-front takes, so "
                     + "there is nothing to substitute.")
 
-        case .key, .type, .click, .drag, .qmpClick, .qmpDoubleClick,
+        case .key(let name, let code, let char, let mods):
+            /* Reachable only when `availability` says `mods == 0` — see
+               `ActionModel.availability(.key)`. Re-checked here for the
+               same reason `.axdo`'s reference is: `availability` is a
+               function of the ACT and cannot have looked at this one's
+               `mods` twice, so a caller that reached this case some other
+               way gets the same refusal rather than a request the guest
+               would answer `unsupported` to. */
+            guard mods == 0 else {
+                return .unavailable(
+                    "A modified keystroke cannot be sent — see "
+                        + "ActionModel.availability(.key).")
+            }
+            return report(await adapter.key(.init(
+                name: name, code: code, char: char, mods: mods)),
+                describing: name.map { "key \($0)" } ?? "key code \(code)")
+
+        case .type, .click, .drag, .qmpClick, .qmpDoubleClick,
              .menuDrag, .thumbDrag:
-            /* Unreachable: `availability` refuses all eight above. Spelled
+            /* Unreachable: `availability` refuses all seven above. Spelled
                out rather than defaulted so that an act promoted to
                `available` without a route here fails to compile instead of
                falling into a silent nothing. */

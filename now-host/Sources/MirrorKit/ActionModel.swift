@@ -25,7 +25,11 @@ public enum MirrorAction: Equatable {
     case axdo(ref: String, count: Int = 1, mods: Int = 0, text: String? = nil)
     /// Keystroke. Menu shortcuts MUST carry the virtual keycode — Finder's
     /// MenuEvent matches the code, not the char (CONTROL-SURFACE.md).
-    case key(code: Int, char: Int, mods: Int)
+    /// `name` is the guest's own named-key vocabulary (return, tab, the
+    /// arrows, …) for the keys `code`/`char` cannot express meaningfully on
+    /// their own — nil for an ordinary character key, which sends `code`
+    /// and `char` as it always did.
+    case key(name: String?, code: Int, char: Int, mods: Int)
     /// Type ASCII text into the current focus.
     case type(text: String)
     /// Bring a process forward (PSN as the scene's "hi.lo" string).
@@ -128,15 +132,53 @@ public enum ActionModel {
                is the identity check that distinguishes this press from the
                one made by the person sitting at the machine. */
             return .available(command: "menuact")
-        case .key, .type:
-            /* A keystroke is how a ⌘-item is meant to travel, and there is
-               nothing in the contract that carries one. Named rather than
-               folded into the case below, because this is a hole in NOW's
-               surface and not a rule against it: nothing about a keystroke
-               is host-side cheating. */
+        case .key(_, _, _, let mods):
+            /* CHANGED 2026-08-01, with the host lane that makes the
+               distinction matter. `key` is no longer a blanket hole: the
+               guest's `key` verb posts an UNMODIFIED keystroke fine — the
+               `mods` argument is accepted only as 0 — and `mcp-coverage.md`
+               row W3 was "planned" for exactly that reason, not for the
+               modified half. So this is a function of `mods`, the same way
+               `.axdo` is a function of its own reference:
+
+                 - `mods == 0` — the ordinary case, a pane keystroke with
+                   no modifier held — the guest can post it and does.
+                 - `mods != 0` — a ⌘/⌥/⌃-held keystroke — remains the true
+                   hole. An event's modifiers live on the Event Manager's
+                   queue element; the only call that hands that element
+                   back is `PPostEvent`, and CarbonLib does not have it
+                   (`CALL_NOT_IN_CARBON`). Posting the keystroke and
+                   dropping the modifier would type a bare character and
+                   answer `ok` — the defect upstream's act plane exists to
+                   refuse — so the guest refuses `mods != 0` outright
+                   (`contract/asyncapi.yaml:key`,
+                   `now-guest-ppc/src/input/input_args.c`) and this side
+                   says so before a call is even built rather than sending
+                   one the guest will reject.
+
+               `menuSelect` still routes every menu item through `menuact`
+               regardless (see its own comment) — this case is about a
+               PLAIN keystroke typed at the pane, which a menu press never
+               was. */
+            guard mods == 0 else {
+                return .unavailable(reason:
+                    "A modified keystroke cannot be sent: an event's "
+                    + "modifiers live on the Event Manager's queue element, "
+                    + "and the only call that hands that element back is "
+                    + "PPostEvent, which CarbonLib does not have. The guest "
+                    + "refuses any key whose mods is not 0 rather than "
+                    + "posting it bare and reporting success.")
+            }
+            return .available(command: "key")
+        case .type:
+            /* `type` writes text through a control's own setter (`textset`)
+               and needs an addressed, referenced control — see `.axdo`. A
+               bare `.type` names none, so it stays unavailable; `typeInto`
+               below is the reachable route. */
             return .unavailable(reason:
-                "NOW's contract declares no keystroke command. A ⌘ menu item "
-                + "is the ordinary use, and it cannot be sent from here.")
+                "NOW's contract writes text through textset against a "
+                + "referenced control (see typeInto), not through a typed "
+                + "action with no target.")
         case .activate:
             /* A process serial, which the scene carries for every window. */
             return .available(command: "activate")
@@ -392,9 +434,10 @@ public enum ActionModel {
     /// **No longer a route.** `menuSelect` sends every item through
     /// `menuInvoke` (see the retraction there); this stays because it is a
     /// correct statement of what the keystroke for an item is, and because
-    /// `availability(.key)` is the place NOW's missing keystroke command is
-    /// named. Deleting it would delete the only expression of a gap that is
-    /// declared and owed.
+    /// it is `mods: cmdKey` — non-zero — so `availability(.key)` refuses it
+    /// exactly the way the guest itself would, which is what the retraction
+    /// argues from. Deleting it would delete the only expression of a gap
+    /// that is declared and owed.
     public static func menuItem(_ item: Scene.MenuItem) -> [MirrorAction] {
         // No `item.enabled` gate — see menuSelect: the resting enable flag is
         // not authoritative for app menus. A ⌘ keystroke to a truly disabled
@@ -402,7 +445,7 @@ public enum ActionModel {
         guard !item.separator, !item.cmd.isEmpty,
               let ch = item.cmd.lowercased().first,
               let ascii = ch.asciiValue else { return [] }
-        return [.key(code: keycodes[ch] ?? 0, char: Int(ascii),
+        return [.key(name: nil, code: keycodes[ch] ?? 0, char: Int(ascii),
                      mods: cmdKey)]
     }
 
@@ -413,4 +456,66 @@ public enum ActionModel {
         guard ctl.enabled, !ctl.ref.isEmpty else { return [] }
         return [.axdo(ref: ctl.ref, count: 1, mods: 0, text: text)]
     }
+
+    // MARK: - Pane keystrokes → the guest's front app
+
+    /// One pane keystroke, translated from an ordinary key press (a virtual
+    /// key code, the character(s) it produced, and which of Command /
+    /// Option / Control were held) into the act this host can send — or the
+    /// reason it refuses to send anything.
+    ///
+    /// **Shift is never folded into `mods`.** The guest's own key table is
+    /// case-sensitive on the CHARACTER, not on a modifier bit — `key
+    /// {char:'N'}` types an upper-case N by carrying the character, not by
+    /// setting a shift bit the guest has nowhere to put
+    /// (`now-guest-ppc/src/input/input_args.c`'s own comment on
+    /// `g_key_chars`). So a Shift-held press reaches here as an ordinary
+    /// character (`characters` already reflects it) and is sent as one;
+    /// only Command, Option and Control become `mods` bits, and any of them
+    /// being held is what `ActionModel.availability(.key)` goes on to
+    /// refuse — this function does not refuse it itself, so the one place
+    /// that decides what NOW's contract can carry stays the one place that
+    /// decides it.
+    ///
+    /// Returns nil for a key this vocabulary cannot express at all — a
+    /// function key, a character outside the guest's US table — which is
+    /// an honest "nothing to send" rather than a guess at a code the guest
+    /// was never measured to answer.
+    public static func paneKeystroke(
+        virtualKeyCode: Int, characters: String?,
+        command: Bool, option: Bool, control: Bool
+    ) -> MirrorAction? {
+        let mods = (command ? cmdKey : 0) | (option ? 2048 : 0)
+                 | (control ? 4096 : 0)
+        if let name = namedKeyCodes[virtualKeyCode] {
+            return .key(name: name, code: virtualKeyCode, char: 0,
+                       mods: mods)
+        }
+        guard let ch = characters?.first, let ascii = ch.asciiValue,
+              ascii >= 32, ascii < 127 else {
+            /* Not a Mac Roman printable ASCII character this host can
+               name a code for — a function key, a dead key still
+               composing, a non-Latin input source. Nothing sent, rather
+               than a code guessed from a table that does not cover it. */
+            return nil
+        }
+        let code = keycodes[Character(ch.lowercased())] ?? 0
+        return .key(name: nil, code: code, char: Int(ascii), mods: mods)
+    }
+
+    /// Virtual key codes for `namedKeys`, in the classic Mac numbering the
+    /// guest's own table uses and modern Mac keyboards still send
+    /// (`now-guest-ppc/src/input/input_args.c:g_key_named`; also Carbon's
+    /// published `HIToolbox/Events.h` `kVK_*` constants, P-DOC, which is
+    /// where a host-side reader can cross-check them without a Macintosh).
+    /// Kept separate from `g_key_named` on purpose: that table also carries
+    /// the CHARACTER half, which is the guest's derivation to make, not
+    /// this host's to duplicate — `paneKeystroke` sends the name and lets
+    /// the guest resolve both halves itself.
+    static let namedKeyCodes: [Int: String] = [
+        36: "return", 76: "enter", 48: "tab", 49: "space", 51: "delete",
+        53: "escape", 114: "help", 115: "home", 117: "fwddelete",
+        119: "end", 116: "pageup", 121: "pagedown",
+        123: "left", 124: "right", 125: "down", 126: "up",
+    ]
 }
