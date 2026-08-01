@@ -37,6 +37,15 @@
       required together); `actselftest` takes the same pair, OPTIONAL,
       and means the front process when they are absent.
 
+   4. docs/contract-coverage.md gains a row for each in the same commit
+      that registers them - AGENTS.md's rule, and these are exactly the
+      case it is for: the guest COMPILES both today and SERVES neither,
+      so the inventory would be wrong in either direction if it moved
+      before the dispatch chain does.
+
+   The verdicts for the other five verbs this fold-in considered, and the
+   evidence behind them, are in docs/mirror-wave3-verdicts.md.
+
    WHY THE WIRE NAMES ARE THESE. `activate` is the name MirrorKit's
    ActionDispatcher already sends, with those two argument names, so the
    host's Application-menu switch reaches a guest without a host edit.
