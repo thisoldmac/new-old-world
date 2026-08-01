@@ -41,19 +41,21 @@ final class MirrorLauncherTests: XCTestCase {
     }
 
     /// The minimum that makes a directory Mirror at all.
-    private func makeMirror() -> URL {
-        write("mirror/host/MirrorKit/Package.swift")
-        return root.appendingPathComponent("mirror")
+    private func makeMirror(at path: String = "mirror") -> URL {
+        write("\(path)/host/MirrorKit/Package.swift")
+        return root.appendingPathComponent(path)
     }
 
     /// Everything `spin-up.sh` needs, so a test can remove exactly one thing
-    /// and see it named.
-    private func makeCompleteGuestRig() {
-        write("mirror/tools/spin-up.sh", executable: true)
-        write("mirror/guest/extensions/axpeek/build/AXPeek.bin")
-        write("mirror/guest/extensions/qdpeek/build/QDPeek.bin")
-        write("mirror/guest/extensions/portal/build/Portal.bin")
-        write("mirror/guest/app/build/mirror-agent.bin")
+    /// and see it named. `at` places Mirror somewhere other than directly
+    /// inside the lab — the vendored geometry, where the lab is a
+    /// grandparent and Mirror's parent carries none of the instruments.
+    private func makeCompleteGuestRig(at mirror: String = "mirror") {
+        write("\(mirror)/tools/spin-up.sh", executable: true)
+        write("\(mirror)/guest/extensions/axpeek/build/AXPeek.bin")
+        write("\(mirror)/guest/extensions/qdpeek/build/QDPeek.bin")
+        write("\(mirror)/guest/extensions/portal/build/Portal.bin")
+        write("\(mirror)/guest/app/build/mirror-agent.bin")
         write("tools/lib.sh", executable: true)
         write("tools/qmp", executable: true)
         write("mcp-classic/marker")
@@ -171,16 +173,85 @@ final class MirrorLauncherTests: XCTestCase {
         XCTAssertEqual(invocation.extraEnvironment["MIRROR_DISPLAY"], "1")
     }
 
+    func testTheLabIsFoundAboveMirrorsOwnParent() throws {
+        /* The geometry vendoring produced: Mirror inside NOW inside the lab.
+           Resolving the lab as Mirror's parent lands on `now/`, which has
+           none of the emulator plumbing — so the preflight blocked a run
+           that the script itself, which walks up, performs happily. Both
+           sides walk now, and this is the case that says so. */
+        _ = makeMirror(at: "now/mirror")
+        makeCompleteGuestRig(at: "now/mirror")
+
+        let installation = MirrorInstallation(
+            root: root.appendingPathComponent("now/mirror"))
+        XCTAssertEqual(installation.lab(completeEnvironment)?.path,
+                       root.standardizedFileURL.path)
+        let plan = installation.plan(.guestSession,
+                                     environment: completeEnvironment)
+        XCTAssertNotNil(plan.invocation, plan.blockers.map(\.what).description)
+    }
+
+    func testTheResolvedLabIsHandedToTheScript() throws {
+        _ = makeMirror(at: "now/mirror")
+        makeCompleteGuestRig(at: "now/mirror")
+        /* The script accepts MIRROR_LAB_ROOT rather than only computing one.
+           Passing what the preflight checked is what keeps a green page and
+           a failed run from being able to disagree about which lab was
+           meant. */
+        let plan = MirrorInstallation(root: root.appendingPathComponent("now/mirror"))
+            .plan(.guestSession, environment: completeEnvironment)
+        XCTAssertEqual(
+            try XCTUnwrap(plan.invocation).extraEnvironment[MirrorInstallation.labRootKey],
+            root.standardizedFileURL.path)
+    }
+
+    func testAnExplicitLabRootOverridesTheWalk() throws {
+        _ = makeMirror(at: "now/mirror")
+        makeCompleteGuestRig(at: "now/mirror")
+        /* A lab that is nowhere above Mirror — the reason the variable
+           exists, since a walk can only ever find an ancestor. */
+        write("elsewhere/tools/lib.sh", executable: true)
+        write("elsewhere/tools/qmp", executable: true)
+        write("elsewhere/mcp-classic/marker")
+        write("elsewhere/qemu/build/qemu-system-ppc", executable: true)
+
+        var environment = completeEnvironment
+        environment[MirrorInstallation.labRootKey] =
+            root.appendingPathComponent("elsewhere").path
+        let plan = MirrorInstallation(root: root.appendingPathComponent("now/mirror"))
+            .plan(.guestSession, environment: environment)
+        XCTAssertNotNil(plan.invocation, plan.blockers.map(\.what).description)
+    }
+
+    func testNoLabAnywhereAboveMirrorIsNamedWithItsOverride() throws {
+        _ = makeMirror()
+        makeCompleteGuestRig()
+        /* Remove the marker both sides walk for and there is no lab at all.
+           The script stops here with the same advice, and the page has to
+           reach it too — otherwise the click produces bash errors about
+           files the reader has no reason to have heard of. */
+        try FileManager.default.removeItem(at: root.appendingPathComponent("tools/lib.sh"))
+
+        let installation = MirrorInstallation(root: root.appendingPathComponent("mirror"))
+        XCTAssertNil(installation.lab(completeEnvironment))
+        let plan = installation.plan(.guestSession, environment: completeEnvironment)
+        XCTAssertNil(plan.invocation)
+        let why = try XCTUnwrap(plan.blockers.first {
+            $0.what.contains("lab checkout")
+        }).why
+        XCTAssertTrue(why.contains(MirrorInstallation.labRootKey), why)
+        XCTAssertTrue(why.contains("tools/lib.sh"), why)
+    }
+
     func testMissingLabInstrumentsAreNamed() throws {
         _ = makeMirror()
         makeCompleteGuestRig()
-        /* The blocker a Mirror vendored inside NOW actually hits:
-           spin-up.sh resolves the lab as its own parent, which here is a
-           repository that has none of the emulator plumbing. Without this
-           check the click produces bash errors about a file the reader has
-           no reason to have heard of. */
-        try FileManager.default.removeItem(at: root.appendingPathComponent("tools/lib.sh"))
+        /* A directory can carry the marker the walk stops at and still be
+           missing the rest, so finding a lab is not the same as finding the
+           instruments. Naming the pieces is what turns this into a fixable
+           report rather than "something about the emulator". */
         try FileManager.default.removeItem(at: root.appendingPathComponent("mcp-classic"))
+        try FileManager.default.removeItem(at: root.appendingPathComponent("tools/qmp"))
 
         let plan = MirrorInstallation(root: root.appendingPathComponent("mirror"))
             .plan(.guestSession, environment: completeEnvironment)
@@ -188,9 +259,9 @@ final class MirrorLauncherTests: XCTestCase {
         let why = try XCTUnwrap(plan.blockers.first {
             $0.what.contains("lab instruments")
         }).why
-        XCTAssertTrue(why.contains("tools/lib.sh"), why)
         XCTAssertTrue(why.contains("mcp-classic"), why)
-        XCTAssertFalse(why.contains("tools/qmp"), "present, so not a blocker")
+        XCTAssertTrue(why.contains("tools/qmp"), why)
+        XCTAssertFalse(why.contains("tools/lib.sh"), "present, so not a blocker")
     }
 
     func testMissingGuestArtifactsAreNamedAsBuildsRatherThanAsErrors() throws {
@@ -214,11 +285,15 @@ final class MirrorLauncherTests: XCTestCase {
     func testEveryMissingPrerequisiteIsReportedAtOnce() {
         _ = makeMirror()
         /* Nothing staged at all. A launcher that reports the first missing
-           thing makes a person discover the list one click at a time. */
+           thing makes a person discover the list one click at a time.
+
+           Four, not five: with no lab found there is no default path for
+           qemu to be missing FROM, so it folds into the lab blocker rather
+           than naming a directory that was never the right one to look in. */
         let plan = MirrorInstallation(root: root.appendingPathComponent("mirror"))
             .plan(.guestSession, environment: ["MIRROR_BASE": "/nonexistent"])
         XCTAssertNil(plan.invocation)
-        XCTAssertEqual(plan.blockers.count, 5, plan.blockers.map(\.what).description)
+        XCTAssertEqual(plan.blockers.count, 4, plan.blockers.map(\.what).description)
     }
 
     func testQemuAndBaseImageHonourTheScriptsOwnOverrides() throws {

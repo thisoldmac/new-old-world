@@ -232,11 +232,49 @@ struct MirrorInstallation: Equatable {
     /// collide.
     var runDirectory: URL { root.appendingPathComponent("run") }
 
-    /// The lab checkout `spin-up.sh` borrows its emulator instruments from.
-    /// The script derives it as its own parent, so this must too — a
-    /// different answer here would report a prerequisite the script never
-    /// looks for.
-    var lab: URL { root.deletingLastPathComponent() }
+    /// `spin-up.sh` reads this to be told the lab outright rather than
+    /// search for it. The launcher passes its own answer down, so the
+    /// preflight and the run cannot disagree about which lab was meant.
+    static let labRootKey = "MIRROR_LAB_ROOT"
+
+    /// The file that proves a directory is the lab. Same marker the script
+    /// walks for, so both stop at the same place.
+    private static let labMarker = "tools/lib.sh"
+
+    /// The lab checkout `spin-up.sh` borrows its emulator instruments from,
+    /// resolved the way the script resolves it. It used to be Mirror's
+    /// parent, and that stopped being true the day Mirror was vendored into
+    /// NOW: the parent is then `now/`, which carries none of the
+    /// instruments. So walk up from the parent until a directory actually
+    /// holds one. `nil` means no lab above Mirror at all.
+    ///
+    /// This must keep agreeing with the script. An answer of its own would
+    /// have the page check a prerequisite the script never looks for — or,
+    /// the worse direction, pass a preflight the run then fails.
+    func lab(_ environment: [String: String],
+             _ fileManager: FileManager = .default) -> URL? {
+        /* Taken as given, exactly as the script takes it: an override that
+           names the wrong directory is then caught by the instrument check
+           below, which says which piece is missing and where it looked. */
+        if let override = environment[Self.labRootKey], !override.isEmpty {
+            return URL(fileURLWithPath: override, isDirectory: true)
+                .standardizedFileURL
+        }
+        var dir = root.deletingLastPathComponent().standardizedFileURL
+        while true {
+            if fileManager.fileExists(
+                atPath: dir.appendingPathComponent(Self.labMarker).path) {
+                /* Always a directory URL, whichever branch produced it, and
+                   without consulting the filesystem to decide: URL spells
+                   the same directory with or without a trailing slash, and
+                   the two do not compare equal. */
+                return URL(fileURLWithPath: dir.path, isDirectory: true)
+            }
+            let parent = dir.deletingLastPathComponent().standardizedFileURL
+            if parent == dir { return nil }
+            dir = parent
+        }
+    }
 
     func plan(_ half: MirrorLauncherModel.Half,
               environment: [String: String],
@@ -325,12 +363,27 @@ struct MirrorInstallation: Equatable {
                 why: "nothing executable at \(spinUp.path)."))
         }
 
+        /* Everything below hangs off the lab, so resolve it first and say so
+           when there isn't one — the script's own first failure, and the
+           only one it can report without a directory to look in. */
+        let lab = self.lab(environment, fileManager)
+        if lab == nil {
+            blockers.append(MirrorBlocker(
+                what: "The TimBotTu lab checkout",
+                why: "no directory above \(root.deletingLastPathComponent().path) "
+                   + "carries \(Self.labMarker). spin-up.sh borrows the "
+                   + "emulator and its tools from the lab and finds it by "
+                   + "walking up; set \(Self.labRootKey) to the checkout "
+                   + "that has them."))
+        }
+
         /* The two the script checks and names itself, checked here with the
            same defaults so the reason arrives before the run rather than as
-           its first line of output. */
+           its first line of output. Without a lab there is no default path
+           to name, and the blocker above already says why. */
         let qemu = environment["TIMBOTTU_QEMU"].map(URL.init(fileURLWithPath:))
-            ?? lab.appendingPathComponent("qemu/build/qemu-system-ppc")
-        if !fileManager.isExecutableFile(atPath: qemu.path) {
+            ?? lab?.appendingPathComponent("qemu/build/qemu-system-ppc")
+        if let qemu, !fileManager.isExecutableFile(atPath: qemu.path) {
             blockers.append(MirrorBlocker(
                 what: "qemu-system-ppc",
                 why: "not executable at \(qemu.path). Set TIMBOTTU_QEMU."))
@@ -344,23 +397,25 @@ struct MirrorInstallation: Equatable {
                 why: "no file at \(base.path). Set MIRROR_BASE."))
         }
 
-        /* The instruments the script BORROWS rather than ships: it cds to its
-           own parent and sources the lab's emulator library from there. NOW
-           is not that lab, so a Mirror vendored inside NOW resolves them
-           against a checkout that has none of them — a real blocker, and one
-           whose failure mode without this check is a wall of bash errors
-           about a file the reader has no reason to have heard of. */
-        let borrowed = ["tools/lib.sh", "tools/qmp", "mcp-classic"]
-            .filter { !fileManager.fileExists(
-                atPath: lab.appendingPathComponent($0).path) }
-        if !borrowed.isEmpty {
-            blockers.append(MirrorBlocker(
-                what: "The lab instruments spin-up.sh borrows",
-                why: "missing under \(lab.path): "
-                   + borrowed.joined(separator: ", ")
-                   + ". The script resolves them as its own parent directory, "
-                   + "which is this repository rather than the TimBotTu "
-                   + "checkout they live in."))
+        /* The instruments the script BORROWS rather than ships: it cds to
+           the lab and sources its emulator library from there. A directory
+           can carry the marker and still be missing the rest — most easily
+           when MIRROR_LAB_ROOT names the wrong one — and the failure mode
+           without this check is a wall of bash errors about files the
+           reader has no reason to have heard of. */
+        if let lab {
+            let borrowed = ["tools/lib.sh", "tools/qmp", "mcp-classic"]
+                .filter { !fileManager.fileExists(
+                    atPath: lab.appendingPathComponent($0).path) }
+            if !borrowed.isEmpty {
+                blockers.append(MirrorBlocker(
+                    what: "The lab instruments spin-up.sh borrows",
+                    why: "missing under \(lab.path): "
+                       + borrowed.joined(separator: ", ")
+                       + ". That directory is where the lab was resolved to; "
+                       + "set \(Self.labRootKey) to the TimBotTu checkout "
+                       + "the instruments actually live in."))
+            }
         }
 
         /* Mirror's guest halves are built artifacts, and its .gitignore keeps
@@ -382,14 +437,24 @@ struct MirrorInstallation: Equatable {
                    + "and are not committed; see mirror/guest/app/README.md."))
         }
 
-        guard blockers.isEmpty else { return .blocked(blockers) }
+        // `lab` is non-nil whenever there are no blockers; the bind is what
+        // lets the invocation carry it.
+        guard blockers.isEmpty, let lab else { return .blocked(blockers) }
         return .ready(MirrorInvocation(
             executable: URL(fileURLWithPath: "/bin/bash"),
             arguments: [spinUp.path],
             workingDirectory: root,
-            // The cocoa window beside the mirror — the comparison is the
-            // whole point of a test drive (mirror/docs/TEST-DRIVE.md).
-            extraEnvironment: ["MIRROR_DISPLAY": "1"]))
+            extraEnvironment: [
+                // The cocoa window beside the mirror — the comparison is the
+                // whole point of a test drive (mirror/docs/TEST-DRIVE.md).
+                "MIRROR_DISPLAY": "1",
+                /* Hand the script the lab this preflight actually checked.
+                   Both sides resolve it the same way, so this changes no
+                   outcome today — it removes the possibility of a later
+                   drift between them being discovered as a green preflight
+                   in front of a failed run. */
+                Self.labRootKey: lab.path,
+            ]))
     }
 }
 
