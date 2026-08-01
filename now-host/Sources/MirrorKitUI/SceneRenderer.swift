@@ -648,10 +648,15 @@ public struct SceneRenderer {
                 y: content.minY + CGFloat(area.t),
                 width: CGFloat(max(0, area.r - area.l)),
                 height: CGFloat(max(0, area.b - area.t)))))
-            for item in items where item.placed {
+            /* Visible as well as placed, and selected the same way a desktop
+               icon is — the two icon fields are one presentation, and a
+               folder item that inverted only on the desktop would be the
+               pane telling two different stories about one gesture. */
+            for item in items where item.placed && !item.invisible {
                 drawIcon(iconCtx, item,
                          at: CGPoint(x: content.minX + CGFloat(item.x),
-                                     y: content.minY + CGFloat(item.y)))
+                                     y: content.minY + CGFloat(item.y)),
+                         selected: selectedItem == item.name)
             }
         }
         // Grow box sits on top of the content, at the window corner.

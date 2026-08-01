@@ -668,11 +668,25 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
                     + "controls at rest, so this is not proof it would "
                     + "refuse — but nothing was sent.")
         case .growBox:
+            /* Not "a drag cannot be carried" any more — it can, as
+               `winact resize`, which is geometry rather than mouse motion.
+               What is true is narrower: a grow box does nothing on a PRESS,
+               here or on a Macintosh. */
             return ActionReport(
                 outcome: .inert, target: named,
-                sentence: "The grow box resizes on a drag, and a drag is "
-                    + "injected mouse motion this project solves through "
-                    + "the guest instead.")
+                sentence: "The grow box resizes on a drag rather than a "
+                    + "press. Drag it and the Mac is asked for the new size.")
+        case .widget(_, let kind, _, _):
+            /* Reached only for the windowshade: close and zoom both produce
+               an act. `winact` has four actions and collapse is not one, so
+               naming `zoom` for it would be this side deciding two different
+               behaviours are alike. */
+            return ActionReport(
+                outcome: .inert, target: named,
+                sentence: "NOW's window verb moves, resizes, zooms and "
+                    + "closes a window. Rolling one up is a fifth thing it "
+                    + "does not carry, and zoom is not a near-enough "
+                    + "substitute to send in its place.")
         case .scrollbar:
             return ActionReport(
                 outcome: .inert, target: named,
