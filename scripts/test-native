@@ -208,7 +208,8 @@ run_c now-guest-ppc scene_json_test.c        ""  src/scene/scene_build.c \
 # against the same synthetic arena the axwalk tests use.
 run_c now-guest-ppc scene_walk_test.c        ""  src/scene/scene_walk.c \
       src/scene/scene_build.c src/axwalk/axwalk.c src/axwalk/axmenu.c \
-      src/axwalk/axtext.c src/peek/peek_validate.c
+      src/axwalk/axtext.c src/peek/peek_validate.c src/axwalk/axresolve.c \
+      src/observe/obsmint.c src/observe/obsref.c src/observe/obsresolve.c
 # The ported foreign-memory walk (src/axwalk/, from timbottu/mirror). The
 # first automated coverage this archaeology has ever had: upstream proved
 # the offsets on a real machine and had no host test, so these pin the
@@ -248,6 +249,15 @@ run_c now-guest-ppc obsresolve_test.c       ""  src/observe/obsresolve.c \
 # leaves every test above green. Measured, not assumed. This is the gate
 # that fails instead.
 run_py now-guest-ppc one_minter_source_test.py
+# The seam the SCENE walk mints through. It is the one test in the tree
+# that mints a reference and then RESOLVES it, which is the only way to
+# tell an address from a decoration: a `ref` that is well formed and
+# resolves to nothing renders a button whose every act is refused, which
+# is the state the scene was already in. The duplicate-title case is the
+# one with no symptom on either side - one button acting for another.
+run_c now-guest-ppc obsmint_test.c          ""  src/observe/obsmint.c \
+      src/observe/obsref.c src/observe/obsresolve.c src/axwalk/axresolve.c \
+      src/axwalk/axwalk.c src/peek/peek_validate.c
 # The act plane's application half. There used to be two deciding parts
 # here; act_ref.c was the second minter of the same token shape the
 # reference layer above mints, and it is gone - what it pinned (a

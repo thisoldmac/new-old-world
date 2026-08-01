@@ -126,6 +126,9 @@ typedef struct {
     unsigned char  kind;
     char           token[kNowObsTokenMax];
     NowObsIdentity identity;
+    /* The walk epoch that last minted or reused this entry, or 0 for an
+       entry no epoch has touched. See now_obs_epoch_begin. */
+    unsigned long  epoch;
 } NowObsEntry;
 
 typedef struct {
@@ -136,6 +139,9 @@ typedef struct {
     unsigned long next;             /* round-robin eviction cursor */
     unsigned long minted;           /* statistics, for the diagnostics */
     unsigned long evicted;
+    unsigned long reused;           /* interned rather than minted */
+    unsigned long epoch;            /* the OPEN walk, or 0 for none */
+    unsigned long epochs;           /* walks opened so far */
 } NowObsRegistry;
 
 /* The process-identity fingerprint - the thing a PSN is not.
@@ -183,11 +189,71 @@ const char *now_obs_kind_prefix(NowObsKind kind);
 int now_obs_token_valid(NowObsKind kind, const char *text, size_t len);
 
 /* Mints a reference for `identity` and writes its token to `out`.
-   Returns 1 on success, 0 if out is too small or an argument is NULL.
+   Returns 1 on success, 0 if out is too small, an argument is NULL, or
+   an open walk epoch has already spoken for every slot (see below).
    Every call mints a NEW token, even for an identity already in the
-   table: a reference is a receipt for one observation, not a name. */
+   table: a reference is a receipt for one observation, not a name. The
+   caller that wants the other reading asks for now_obs_intern. */
 int now_obs_mint(NowObsRegistry *registry, NowObsKind kind,
                  const NowObsIdentity *identity, char *out, size_t cap);
+
+/* --- a walk epoch, and interning ---------------------------------------
+
+   WHY THESE EXIST, and it is a capacity argument rather than a taste
+   one. The registry holds kNowObsRegistryMax references. A SCENE carries
+   up to 64 windows and 96 controls, and a person refreshes a scene by
+   pressing a button - so a producer that minted a fresh token for every
+   element of every scene would (a) evict the front of a large scene
+   while still encoding its back, handing out references that were
+   already dead when the JSON left, and (b) invalidate the whole of the
+   previous scene on every refresh, which is the scene the person is
+   looking at when they click.
+
+   Neither is fixed by making the table bigger; both are fixed by the two
+   calls below.
+
+   INTERNING. now_obs_intern reuses the entry whose identity is EXACTLY
+   this one - same process, same fingerprints, same addresses, same title
+   and occurrence, same text route - and mints only when there is none.
+   That is not a weakening of "a reference is minted by an observation":
+   the identity it matches was written by a walk that saw the element,
+   the token is still unguessable, and resolution still re-proves the
+   identity from foreign memory and still refuses rather than repairs.
+   What it drops is the older "a reference is a receipt for ONE
+   observation" reading - deliberately, and only for the caller that
+   asks for it. now_obs_mint still mints unconditionally, and the
+   observe walk still uses it: a caller enumerating a tree for a human
+   wants a receipt, and a caller re-reading the same desktop twelve
+   times a minute wants the same address to keep the same name.
+
+   Note what interning does NOT freshen: the reused entry keeps the
+   minted_ticks of the observation that first saw the element, because
+   that is when this reference was minted.
+
+   THE EPOCH. Round-robin eviction has no idea that the mint it is about
+   to overwrite happened four elements ago in the SAME walk. Between
+   now_obs_epoch_begin and now_obs_epoch_end, a slot minted or reused
+   under the open epoch is not an eviction candidate; when every slot is
+   spoken for, now_obs_mint REFUSES (returns 0) instead of eating its own
+   walk. A caller that gets 0 has no reference for that element and must
+   leave the key absent - which reads as "not minted", which is true.
+   Epoch 0 means no walk is open and eviction is the plain round robin,
+   so a caller that never opens one behaves exactly as before. */
+
+/* Opens a walk epoch and returns its number (never 0). A second call
+   without an end simply renumbers - there is one cooperative thread
+   here, so nested walks are a bug rather than a case to serve. */
+unsigned long now_obs_epoch_begin(NowObsRegistry *registry);
+
+/* Closes the open epoch. The entries keep their stamp; what changes is
+   that they become evictable again. */
+void now_obs_epoch_end(NowObsRegistry *registry);
+
+/* Mints, or hands back the token of the entry that already names this
+   exact identity. Returns 1 with `out` set, or 0 - and then there is NO
+   reference for this element and its key belongs absent. */
+int now_obs_intern(NowObsRegistry *registry, NowObsKind kind,
+                   const NowObsIdentity *identity, char *out, size_t cap);
 
 /* The entry this token names, or NULL - never minted, evicted, or the
    wrong kind. Exact match; no prefix, fuzzy or nearest-neighbour

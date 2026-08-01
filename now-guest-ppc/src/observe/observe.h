@@ -65,6 +65,12 @@
 
 #include <Carbon.h>
 
+/* axprocess.h, not axwalk.h: the scene walk's door below takes a BOUND
+   context (a partition, a window list, a validated seam), and binding is
+   the one part of this that needs a Macintosh. It is already a
+   Carbon-flavoured header, which this one is too. */
+#include "axprocess.h"
+#include "obsmint.h"
 #include "obsresolve.h"
 
 /* Arms the session registry. Call once, at startup, before anything can
@@ -104,6 +110,30 @@ void now_observe_resolve_window(const char *reference, long len,
                                 NowObsHandle *out);
 void now_observe_resolve_element(const char *reference, long len,
                                  NowObsHandle *out);
+
+/* --- the OTHER walk's door onto this registry ---------------------------
+
+   The scene walk (src/scene/) traverses the same machine to produce IR
+   v1 and, until 2026-08-01, could name nothing it found: it emitted
+   controls with no `ref`, so a rendered scene drew buttons whose every
+   act was refused as "needs observation". These three calls hand it the
+   ONE registry rather than letting it grow a second - which is the
+   act_ref.c defect from the other direction and the reason the whole
+   layer was unified.
+
+   The impure part is all that lives here: the session registry is
+   private to this file, the process fingerprint comes from the Process
+   Manager, and the clock is TickCount. Everything that DECIDES - which
+   addresses may be named, what they are called, what happens when the
+   table is full - is in obsmint.c and has a host test.
+
+   Bracket one SCENE, not one process: begin once, aim per process, end
+   once. The epoch that protects a walk from evicting its own references
+   is the whole scene's, because the scene is what gets rendered. */
+void now_observe_walk_begin(NowObsWalk *walk);
+void now_observe_walk_aim(NowObsWalk *walk, const ProcessSerialNumber *psn,
+                          const NowAxContext *context);
+void now_observe_walk_end(NowObsWalk *walk);
 
 /* The five command surfaces. Each writes ONE complete command.result
    JSON message into out, echoing id, exactly as commands.c's own

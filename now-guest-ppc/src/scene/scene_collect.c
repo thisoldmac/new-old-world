@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "axprocess.h"
+#include "observe.h"
 #include "peek_read.h"
 #include "scene_walk.h"
 
@@ -77,7 +78,8 @@ static void screen_size(short *w, short *h)
    and the ax walk would not, so counting along both chains would misfile
    every control after the first such skip. */
 static void collect_process(NowScene *s, int row,
-                            const ProcessSerialNumber *psn, Boolean is_self)
+                            const ProcessSerialNumber *psn, Boolean is_self,
+                            NowObsWalk *refs)
 {
     NowPeekWindowList list;
     NowAxContext ctx;
@@ -94,6 +96,14 @@ static void collect_process(NowScene *s, int row,
        record address; its sub-planes stay absent. */
     bound = !is_self
         && now_ax_bind_process(psn, &ctx) == kNowPeekReadOk;
+    if (bound) {
+        /* The minting seam is aimed at THIS process before anything is
+           read from it, because a reference names its own target: the
+           chain it counts occurrences along and the fingerprint it is
+           minted against both belong to this partition and to no
+           other. */
+        now_observe_walk_aim(refs, psn, &ctx);
+    }
 
     memset(&list, 0, sizeof list);
     if (now_peek_windows_for_psn(psn, &list) == kNowPeekReadOk) {
@@ -117,7 +127,8 @@ static void collect_process(NowScene *s, int row,
             }
             if (bound && w->address != 0) {
                 now_scene_walk_window(s, now_scene_last_window(s),
-                                      &ctx.memory, w->address);
+                                      &ctx.memory, w->address,
+                                      bound ? refs : NULL);
             }
         }
         if (list.more) {
@@ -143,6 +154,7 @@ void now_scene_collect(NowScene *out, long seq,
     Boolean selves[kSceneCollectMaxPsns];
     Boolean have_self;
     Boolean have_front;
+    NowObsWalk refs;
     short w = 0, h = 0;
     unsigned long t_start = TickCount();
     int rows = 0;
@@ -153,6 +165,11 @@ void now_scene_collect(NowScene *out, long seq,
         return;
     }
     screen_size(&w, &h);
+    /* ONE epoch for the whole scene, not one per process. What it bounds
+       is how much of a SCENE stays addressable, and a scene is what the
+       person is looking at when they click; a per-process epoch would
+       let the last application walked evict the first one's buttons. */
+    now_observe_walk_begin(&refs);
     now_scene_begin(out, seq, captured_at_now(), "peek", w, h,
                     (unsigned long)TickCount(), stale_after_ticks);
     now_scene_set_plane(out, "peek anchors: processes, windows, controls, "
@@ -216,9 +233,10 @@ void now_scene_collect(NowScene *out, long seq,
     for (pass = 0; pass < 2; ++pass) {
         for (i = 0; i < rows; ++i) {
             if ((pass == 0) == (out->procs[i].front != 0)) {
-                collect_process(out, i, &psns[i], selves[i]);
+                collect_process(out, i, &psns[i], selves[i], &refs);
             }
         }
     }
+    now_observe_walk_end(&refs);
     out->latency_ms = (long)((TickCount() - t_start) * 1000UL / 60UL);
 }

@@ -26,9 +26,37 @@
    is Carbon and its records are not at these classic offsets
    (axprocess.h says the same thing about the walk it belongs to).
 
+   THE REFERENCE PLANE, added 2026-08-01, is the fifth conditional one
+   and the one that makes a scene ACTABLE. `windows[].ref` and
+   `controls[].ref` carry a token minted by the observation registry
+   (src/observe/), resolvable by now_observe_resolve_window /
+   now_observe_resolve_element - so a control a renderer drew can be
+   named back to this guest. Without it the scene drew buttons whose
+   `ref` was empty, and every act against one was refused as
+   "needs observation": chrome, titles, menus and controls all rendered,
+   and nothing was clickable.
+
+   IT IS CONDITIONAL LIKE THE OTHERS AND FOR A SHARPER REASON. A
+   reference is minted only for an element a resolution could actually
+   reach, and the registry holds a bounded number of them. When the walk
+   cannot name an element - past the resolver's own chain bounds, off the
+   chain, or the registry has no slot left for this scene - the key is
+   ABSENT. Absent means NOT MINTED, which is true; an empty string would
+   mean "the producer has no reference layer", which is a different and
+   false claim (the host's own adapter already reads `ref: ""` that way).
+   Nothing here invents, shortens or re-derives a token: this plane is a
+   copy of what src/observe/obsmint.c handed over, or it is missing.
+
+   `windows[].ref` is an ADDITION to IR v1's window field set (which
+   lists id/app/psn/title/rect/front/z/visible/kind/controls/text), taken
+   under the accretive rule: additive fields do not move the version
+   number. `controls[].ref` is not an addition at all - IR v1 promotes
+   `windows[].controls[].*` - it is a declared field this producer had
+   been leaving empty.
+
    EVERYTHING ELSE IS AN ABSENT KEY, NOT AN EMPTY ONE.
    `windows[].display[]`, `windows[].items[]`, `desktopItems[]`,
-   `controls[].{ref,role,checked}`, `menus[].apple` and `meta.bytes` are
+   `controls[].{role,checked}`, `menus[].apple` and `meta.bytes` are
    omitted, because an empty array asserts "this window has no controls"
    and absence says "this producer does not report controls". Those are
    different claims and the difference is the point (AGENTS.md: record
@@ -100,7 +128,20 @@ enum {
        stack of a leaf function called from the event loop; a dialog's
        editable text is a filename or a field, and anything longer is
        reported truncated rather than carried. */
-    kNowSceneTextMax = 160
+    kNowSceneTextMax = 160,
+
+    /* An observation reference as it appears on the wire:
+       "now-element-" plus a 36-character UUID layout, plus the
+       terminator, rounded up. It is deliberately the same number as
+       kNowObsTokenMax and is NOT that constant: obsref.h would drag the
+       reference layer into every consumer of this header, including the
+       host tests that exist because assembly is Toolbox-free. The two
+       are pinned against each other at compile time in scene_walk.c,
+       which is the one file that sees both - the same trick
+       scene_collect.c uses for the anchor verdicts, and for the same
+       reason: a silently shortened reference would be a token that
+       looks well formed and resolves to nothing. */
+    kNowSceneRefMax = 56
 };
 
 typedef struct {
@@ -127,18 +168,24 @@ typedef struct {
    control's local rect by its window's content origin, so a consumer
    never has to know the local frame.
 
-   `ref`, `role` and `checked` are NOT here and are not emitted. The walk
+   `role` and `checked` are NOT here and are not emitted. The walk
    reads a ControlRecord's fields; it does not read contrlDefProc, so it
    cannot say whether a control is a button, a checkbox or a scroll bar -
    and `checked` is meaningless without knowing which. Inventing a role
    from a value range would be exactly the guess the absent-key rule
-   exists to prevent. */
+   exists to prevent.
+
+   `ref` IS here, as of 2026-08-01, and an empty one is an absent key
+   rather than an empty string on the wire. It is a copy of a token the
+   observation registry minted for this exact control; nothing in this
+   file makes one, shortens one, or can tell whether one is valid. */
 typedef struct {
     char title[kNowSceneCtlTitleMax];
     NowSceneRect rect;
     int enabled;                  /* contrlHilite != 255 */
     int visible;
     short value, min, max;
+    char ref[kNowSceneRefMax];    /* "" = not minted, key stays absent */
 } NowSceneControl;
 
 /* A window's TextEdit content. `truncated` is true when the TERec's own
@@ -174,6 +221,8 @@ typedef struct {
     short control_count;
 
     short text;                   /* index into NowScene.texts; -1 = absent */
+
+    char ref[kNowSceneRefMax];    /* "" = not minted, key stays absent */
 } NowSceneWindow;
 
 typedef struct {
@@ -313,6 +362,20 @@ int now_scene_add_control(NowScene *s, int window, const char *title,
                           short t, short l, short b, short r,
                           int enabled, int visible,
                           short value, short min, short max);
+
+/* The observation reference for a window row, and for one control of a
+   window's block (`index` counts from the start of that block, which is
+   the order the walk appended them in).
+
+   BOTH ARE COPIES AND NEITHER IS A DECISION. `ref` NULL or empty leaves
+   the key absent, which is what a walk that could not mint says. A
+   longer string than a reference can be is REFUSED rather than
+   truncated: a shortened token is well formed and resolves to nothing,
+   which is the one shape of this field that lies. No-op for an
+   out-of-range row or index. */
+void now_scene_set_window_ref(NowScene *s, int window, const char *ref);
+void now_scene_set_control_ref(NowScene *s, int window, int index,
+                               const char *ref);
 
 /* Drops a window's control plane entirely, returning its entries to the
    pool. This is the retraction rule: a chain that hit a bound or failed

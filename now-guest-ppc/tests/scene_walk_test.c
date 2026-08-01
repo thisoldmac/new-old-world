@@ -32,6 +32,7 @@
 #include <string.h>
 
 #include "axfixture.h"
+#include "obsresolve.h"
 #include "scene_walk.h"
 
 static int g_failures;
@@ -140,7 +141,7 @@ static void controls_complete(void)
     build_control(&f, kCtl2H, kCtl2, 0, "Cancel", 10, 100, 30, 170, 255, 0);
 
     one_window(&s, kNowSceneAnchorOk);
-    now_scene_walk_window(&s, 0, &m, kWin);
+    now_scene_walk_window(&s, 0, &m, kWin, NULL);
 
     check(s.windows[0].kind_known && s.windows[0].kind == 8,
           "windowKind reaches the row");
@@ -171,7 +172,7 @@ static void empty_is_not_absent(void)
     build_window(&f, 8, 0, 0, 0, 40, 60, 200, 400);
 
     one_window(&walked, kNowSceneAnchorOk);
-    now_scene_walk_window(&walked, 0, &m, kWin);
+    now_scene_walk_window(&walked, 0, &m, kWin, NULL);
     check(walked.windows[0].controls_present,
           "a null control list still opens the plane");
     check(walked.windows[0].control_count == 0, "with zero controls");
@@ -198,7 +199,7 @@ static void a_broken_chain_is_retracted(void)
     build_control(&f, kCtl1H, kCtl1, kOutside, "OK", 10, 20, 30, 90, 0, 1);
 
     one_window(&s, kNowSceneAnchorOk);
-    now_scene_walk_window(&s, 0, &m, kWin);
+    now_scene_walk_window(&s, 0, &m, kWin, NULL);
     check(s.windows[0].controls_present == 0,
           "one unreadable link retracts the whole control plane");
     check(s.control_count == 0, "and returns its entries to the pool");
@@ -219,7 +220,7 @@ static void a_cycle_is_retracted(void)
     build_control(&f, kCtl1H, kCtl1, kCtl1H, "Loop", 0, 0, 10, 10, 0, 0);
 
     one_window(&s, kNowSceneAnchorOk);
-    now_scene_walk_window(&s, 0, &m, kWin);
+    now_scene_walk_window(&s, 0, &m, kWin, NULL);
     check(s.windows[0].controls_present == 0,
           "a control chain that points at itself is bounded and retracted");
     check(s.control_count == 0, "the pool is returned");
@@ -236,7 +237,7 @@ static void an_unreadable_record_claims_nothing(void)
 
     axfix_init(&f, &m);
     one_window(&s, kNowSceneAnchorOk);
-    now_scene_walk_window(&s, 0, &m, kOutside);
+    now_scene_walk_window(&s, 0, &m, kOutside, NULL);
     check(s.windows[0].kind_known == 0, "no kind");
     check(s.windows[0].controls_present == 0, "no control plane");
     check(s.windows[0].text < 0, "no text");
@@ -271,7 +272,7 @@ static void dialog_text(void)
     }
 
     one_window(&s, kNowSceneAnchorOk);
-    now_scene_walk_window(&s, 0, &m, kWin);
+    now_scene_walk_window(&s, 0, &m, kWin, NULL);
     check(s.windows[0].text == 0, "the dialog's text row is attached");
     check(s.text_count == 1, "and is in the pool");
     check(strcmp(s.texts[0].content, "Untitled") == 0, "the content");
@@ -297,7 +298,7 @@ static void text_is_gated_on_the_kind(void)
     axfix_put_handle(&f, kTextH, kText);
 
     one_window(&s, kNowSceneAnchorOk);
-    now_scene_walk_window(&s, 0, &m, kWin);
+    now_scene_walk_window(&s, 0, &m, kWin, NULL);
     check(s.windows[0].text < 0,
           "a non-dialog window reports no text even when the bytes after "
           "its record would parse as a TextEdit handle");
@@ -469,6 +470,147 @@ static void a_refused_anchor_never_opens_the_bar(void)
     }
 }
 
+/* --- the reference plane ------------------------------------------------
+
+   THE ONLY QUESTION WORTH ASKING of a scene's `ref` is whether it
+   RESOLVES. A well-formed token that names nothing is worse than an
+   absent one: the renderer draws a clickable button, the person presses
+   it, and the act is refused - which is the exact state this whole
+   change is against. So the assertions below take the string OUT of the
+   encoded scene's row and hand it to the resolver the act plane calls,
+   against the same arena, and check which element comes back.
+
+   The two controls carry the same shape of failure the duplicate-title
+   case does one level down: if the walk filed a reference against the
+   wrong row index, both rows would still look complete and Cancel would
+   act for OK. */
+
+enum {
+    kRefPsnLo = 0x4321,
+    kRefFingerprint = 0x0FEEDBAC
+};
+
+static void ref_live(NowObsLive *live, const NowAxMemory *m)
+{
+    memset(live, 0, sizeof(*live));
+    live->bind = kNowObsBindOk;
+    live->process_fingerprint = kRefFingerprint;
+    live->window_list = kWin;
+    live->memory = m;
+}
+
+static void references_resolve(void)
+{
+    AxFixture        f;
+    NowAxMemory      m;
+    NowScene         s;
+    NowObsRegistry   registry;
+    NowObsWalk       refs;
+    NowObsLive       live;
+    NowObsResolution resolution;
+
+    axfix_init(&f, &m);
+    build_window(&f, 8, kCtl1H, 0, 0, 40, 60, 200, 400);
+    build_control(&f, kCtl1H, kCtl1, kCtl2H, "OK", 10, 20, 30, 90, 0, 1);
+    build_control(&f, kCtl2H, kCtl2, 0, "Cancel", 10, 100, 30, 170, 255, 0);
+
+    now_obs_registry_init(&registry, 0xC0FFEEUL, 0x0DDBA11UL);
+    now_obs_walk_begin(&refs, &registry);
+    now_obs_walk_aim(&refs, &m, kWin, 0, kRefPsnLo, kRefFingerprint, 900);
+    one_window(&s, kNowSceneAnchorOk);
+    now_scene_walk_window(&s, 0, &m, kWin, &refs);
+    now_obs_walk_end(&refs);
+    ref_live(&live, &m);
+
+    check(s.windows[0].ref[0] != '\0', "the window row carries a reference");
+    now_obs_resolve(&registry, kNowObsKindWindow, s.windows[0].ref,
+                    strlen(s.windows[0].ref), &live, &resolution);
+    check(resolution.verdict == kNowObsOk,
+          "and it resolves through the act plane's resolver");
+    check(resolution.resolved.window_address == kWin,
+          "to the window the scene reported");
+
+    check(s.controls[0].ref[0] != '\0' && s.controls[1].ref[0] != '\0',
+          "both control rows carry references");
+    check(strcmp(s.controls[0].ref, s.controls[1].ref) != 0,
+          "and they are two different references");
+    now_obs_resolve(&registry, kNowObsKindElement, s.controls[0].ref,
+                    strlen(s.controls[0].ref), &live, &resolution);
+    check(resolution.verdict == kNowObsOk
+          && resolution.resolved.control_handle == kCtl1H,
+          "the row titled OK resolves to the OK control");
+    now_obs_resolve(&registry, kNowObsKindElement, s.controls[1].ref,
+                    strlen(s.controls[1].ref), &live, &resolution);
+    check(resolution.verdict == kNowObsOk
+          && resolution.resolved.control_handle == kCtl2H,
+          "and the row titled Cancel to the Cancel control - the reference "
+          "is filed against the row it names");
+}
+
+/* Fetch twice, as a person pressing refresh does. The references must
+   not change: the scene the person is looking at when they click is the
+   one from the PREVIOUS fetch, so a producer that renamed everything on
+   every walk would make a rendered scene actable only until it
+   refreshed. */
+static void a_refetch_keeps_its_references(void)
+{
+    AxFixture      f;
+    NowAxMemory    m;
+    NowScene       first;
+    NowScene       second;
+    NowObsRegistry registry;
+    NowObsWalk     refs;
+
+    axfix_init(&f, &m);
+    build_window(&f, 8, kCtl1H, 0, 0, 40, 60, 200, 400);
+    build_control(&f, kCtl1H, kCtl1, kCtl2H, "OK", 10, 20, 30, 90, 0, 1);
+    build_control(&f, kCtl2H, kCtl2, 0, "Cancel", 10, 100, 30, 170, 255, 0);
+    now_obs_registry_init(&registry, 0x515EUL, 0x0BUL);
+
+    now_obs_walk_begin(&refs, &registry);
+    now_obs_walk_aim(&refs, &m, kWin, 0, kRefPsnLo, kRefFingerprint, 900);
+    one_window(&first, kNowSceneAnchorOk);
+    now_scene_walk_window(&first, 0, &m, kWin, &refs);
+    now_obs_walk_end(&refs);
+
+    now_obs_walk_begin(&refs, &registry);
+    /* A later walk reads a later clock, which must not be part of what a
+       reference means. */
+    now_obs_walk_aim(&refs, &m, kWin, 0, kRefPsnLo, kRefFingerprint, 4500);
+    one_window(&second, kNowSceneAnchorOk);
+    now_scene_walk_window(&second, 0, &m, kWin, &refs);
+    now_obs_walk_end(&refs);
+
+    check(strcmp(first.windows[0].ref, second.windows[0].ref) == 0,
+          "the window keeps its reference across a refetch");
+    check(strcmp(first.controls[0].ref, second.controls[0].ref) == 0
+          && strcmp(first.controls[1].ref, second.controls[1].ref) == 0,
+          "and so does every control");
+    check(registry.minted == 3 && registry.reused == 3,
+          "the second fetch interned rather than grew the registry");
+}
+
+/* No seam, no references - and every other claim in the row unchanged. A
+   producer without a reference layer emits a scene that draws correctly
+   and admits it can name nothing, which is the honest shape. */
+static void no_seam_means_no_references(void)
+{
+    AxFixture   f;
+    NowAxMemory m;
+    NowScene    s;
+
+    axfix_init(&f, &m);
+    build_window(&f, 8, kCtl1H, 0, 0, 40, 60, 200, 400);
+    build_control(&f, kCtl1H, kCtl1, 0, "OK", 10, 20, 30, 90, 0, 1);
+
+    one_window(&s, kNowSceneAnchorOk);
+    now_scene_walk_window(&s, 0, &m, kWin, NULL);
+    check(s.windows[0].ref[0] == '\0', "no window reference");
+    check(s.controls[0].ref[0] == '\0', "no control reference");
+    check(s.windows[0].control_count == 1 && s.windows[0].controls_present,
+          "and the control plane is reported exactly as before");
+}
+
 int main(void)
 {
     controls_complete();
@@ -482,6 +624,10 @@ int main(void)
     a_null_menu_list_is_an_empty_answer();
     an_unparsable_list_retracts_the_plane();
     a_refused_anchor_never_opens_the_bar();
+
+    references_resolve();
+    a_refetch_keeps_its_references();
+    no_seam_means_no_references();
 
     if (g_failures != 0) {
         fprintf(stderr, "%d failure(s)\n", g_failures);

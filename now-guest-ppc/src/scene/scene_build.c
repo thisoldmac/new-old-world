@@ -291,6 +291,50 @@ int now_scene_add_control(NowScene *s, int window, const char *title,
     return 1;
 }
 
+/* A reference is copied whole or not at all. `copy_bounded` truncates,
+   which is right for a title a person reads and catastrophic for a
+   token: a shortened reference is still well formed to every shape check
+   on both sides of the wire and resolves to nothing, so it would present
+   as "this element went away" rather than as a producer bug. */
+static void copy_ref(char *dst, long cap, const char *ref)
+{
+    long len;
+
+    dst[0] = '\0';
+    if (ref == NULL) {
+        return;
+    }
+    len = (long)strlen(ref);
+    if (len == 0 || len >= cap) {
+        return;
+    }
+    memcpy(dst, ref, (size_t)len + 1);
+}
+
+void now_scene_set_window_ref(NowScene *s, int window, const char *ref)
+{
+    NowSceneWindow *w = window_at(s, window);
+
+    if (w != NULL) {
+        copy_ref(w->ref, (long)sizeof w->ref, ref);
+    }
+}
+
+void now_scene_set_control_ref(NowScene *s, int window, int index,
+                               const char *ref)
+{
+    NowSceneWindow *w = window_at(s, window);
+
+    if (w == NULL || !w->controls_present) {
+        return;
+    }
+    if (index < 0 || index >= (int)w->control_count) {
+        return;
+    }
+    copy_ref(s->controls[w->first_control + index].ref,
+             (long)sizeof s->controls[0].ref, ref);
+}
+
 void now_scene_retract_controls(NowScene *s, int window)
 {
     NowSceneWindow *w = window_at(s, window);

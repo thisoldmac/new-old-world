@@ -83,6 +83,9 @@ add_application(now-guest-ppc
     # forged, and obsresolve.h on why staleness is never repaired.
     src/observe/obsref.c
     src/observe/obsresolve.c
+    # The seam the SCENE walk mints through - the second walk over this
+    # machine, and deliberately NOT a second registry (see obsmint.h).
+    src/observe/obsmint.c
     src/observe/observe.c
 
     # P4, the act plane's application half. act_args.c is Toolbox-free

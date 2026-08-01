@@ -171,6 +171,110 @@ static int format_token(char *out, size_t cap, NowObsKind kind,
     return (n > 0 && (size_t)n < cap) ? 1 : 0;
 }
 
+unsigned long now_obs_epoch_begin(NowObsRegistry *registry)
+{
+    if (registry == NULL) {
+        return 0;
+    }
+    registry->epochs++;
+    /* Never 0: 0 is the sentinel for "no walk open", and an epoch that
+       wrapped onto it would make every entry it stamped permanently
+       un-evictable. */
+    registry->epoch = registry->epochs;
+    if (registry->epoch == 0) {
+        registry->epochs = 1;
+        registry->epoch = 1;
+    }
+    return registry->epoch;
+}
+
+void now_obs_epoch_end(NowObsRegistry *registry)
+{
+    if (registry != NULL) {
+        registry->epoch = 0;
+    }
+}
+
+/* Everything a reference MEANS, compared field by field. minted_ticks is
+   excluded and is the only exclusion: it is when an observation happened,
+   not what it saw, and including it would make interning impossible -
+   every walk reads a different tick. */
+static int identity_same(const NowObsIdentity *a, const NowObsIdentity *b)
+{
+    if (a->psn_hi != b->psn_hi || a->psn_lo != b->psn_lo
+        || a->process_fingerprint != b->process_fingerprint
+        || a->node_fingerprint != b->node_fingerprint
+        || a->window_address != b->window_address
+        || a->control_handle != b->control_handle
+        || a->text_kind != b->text_kind
+        || a->te_handle != b->te_handle
+        || a->dialog_item != b->dialog_item) {
+        return 0;
+    }
+    if (a->ref.window_occurrence != b->ref.window_occurrence
+        || a->ref.control_occurrence != b->ref.control_occurrence
+        || a->ref.window_title_len != b->ref.window_title_len
+        || a->ref.control_title_len != b->ref.control_title_len) {
+        return 0;
+    }
+    if (memcmp(a->ref.window_title, b->ref.window_title,
+               a->ref.window_title_len) != 0) {
+        return 0;
+    }
+    return memcmp(a->ref.control_title, b->ref.control_title,
+                  a->ref.control_title_len) == 0;
+}
+
+/* The slot the next mint takes, or NULL when an open epoch has spoken
+   for all of them. Round-robin from the cursor, exactly as before; the
+   only new rule is that a slot this walk already minted or reused is not
+   a candidate, so a walk cannot eat its own references. */
+static NowObsEntry *evictable_slot(NowObsRegistry *registry)
+{
+    unsigned long tried;
+
+    for (tried = 0; tried < (unsigned long)kNowObsRegistryMax; tried++) {
+        NowObsEntry *slot = &registry->entries[registry->next];
+
+        registry->next = (registry->next + 1)
+                         % (unsigned long)kNowObsRegistryMax;
+        if (registry->epoch != 0 && slot->used
+            && slot->epoch == registry->epoch) {
+            continue;
+        }
+        return slot;
+    }
+    return NULL;
+}
+
+int now_obs_intern(NowObsRegistry *registry, NowObsKind kind,
+                   const NowObsIdentity *identity, char *out, size_t cap)
+{
+    unsigned long i;
+
+    if (registry == NULL || identity == NULL || out == NULL
+        || cap < kNowObsTokenMax) {
+        return 0;
+    }
+    for (i = 0; i < (unsigned long)kNowObsRegistryMax; i++) {
+        NowObsEntry *entry = &registry->entries[i];
+
+        if (!entry->used || entry->kind != (unsigned char)kind) {
+            continue;
+        }
+        if (!identity_same(&entry->identity, identity)) {
+            continue;
+        }
+        /* Stamped, so the rest of this walk cannot evict the entry it is
+           about to hand a caller. */
+        entry->epoch = registry->epoch;
+        registry->reused++;
+        memcpy(out, entry->token, strlen(entry->token) + 1);
+        return 1;
+    }
+    return now_obs_mint(registry, kind, identity, out, cap);
+}
+
 int now_obs_mint(NowObsRegistry *registry, NowObsKind kind,
                  const NowObsIdentity *identity, char *out, size_t cap)
 {
@@ -185,6 +289,15 @@ int now_obs_mint(NowObsRegistry *registry, NowObsKind kind,
         || cap < kNowObsTokenMax) {
         return 0;
     }
+    /* The slot is chosen BEFORE the counter moves. A mint that cannot be
+       filed must not consume a token number: the counter is what makes
+       two mints of the same identity differ, and burning one on a
+       refusal would make the registry's own statistics lie about how
+       many references it ever produced. */
+    slot = evictable_slot(registry);
+    if (slot == NULL) {
+        return 0;
+    }
     registry->counter++;
     w0 = token_word(0UL, registry, kind, identity);
     w1 = token_word(1UL, registry, kind, identity);
@@ -194,11 +307,11 @@ int now_obs_mint(NowObsRegistry *registry, NowObsKind kind,
         return 0;
     }
 
-    /* Round-robin, oldest slot first. An evicted token is gone, not
-       recycled: the slot is overwritten wholesale, so the old string
-       never matches again and its caller is told NotFound rather than
-       being pointed at whatever now lives there. */
-    slot = &registry->entries[registry->next];
+    /* Round-robin, oldest slot first (evictable_slot advanced the cursor
+       already). An evicted token is gone, not recycled: the slot is
+       overwritten wholesale, so the old string never matches again and
+       its caller is told NotFound rather than being pointed at whatever
+       now lives there. */
     if (slot->used) {
         registry->evicted++;
     }
@@ -207,8 +320,7 @@ int now_obs_mint(NowObsRegistry *registry, NowObsKind kind,
     slot->kind = (unsigned char)kind;
     memcpy(slot->token, token, strlen(token) + 1);
     slot->identity = *identity;
-    registry->next = (registry->next + 1)
-                     % (unsigned long)kNowObsRegistryMax;
+    slot->epoch = registry->epoch;
     registry->minted++;
 
     memcpy(out, token, strlen(token) + 1);

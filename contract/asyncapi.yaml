@@ -319,6 +319,22 @@ operations:
       windows[].controls says "this producer does not report controls",
       not "this window has none", and a consumer must not read absence as
       emptiness.
+      THE REFERENCE PLANE, added 2026-08-01 and the reason a rendered
+      scene can be acted on at all. windows[].controls[].ref is a
+      declared IR v1 field this producer had been leaving out;
+      windows[].ref is an ADDITION to IR v1's window field set, taken
+      under the accretive rule — additive fields do not move irVersion,
+      and a window is the other thing an act can name, so a scene that
+      named only controls would leave half the act plane unaddressable.
+      Both carry a token minted by the guest's observation registry, and
+      both are refused by the act plane the moment the element behind
+      them moves or the process behind them is replaced (see actWindow /
+      actElement): a reference is re-proved on use, never repaired.
+      A ref is ABSENT for an element the guest could not name — past the
+      resolver's reach, or the registry had no slot left for this scene.
+      Absent means NOT MINTED. The empty string is never sent and must
+      not be treated as one: it is the consumer's own vocabulary for "the
+      producer has no reference layer", which is a different claim.
   hostControlsStream:
     action: receive
     channel: { $ref: "#/channels/control" }

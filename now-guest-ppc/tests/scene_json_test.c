@@ -10,7 +10,17 @@
  *
  * `menubar`, `menus`, `controls`, `text` and `kind` moved from the never
  * list to the CONDITIONAL one, which is a harder thing to test and the
- * reason `test_conditional_planes` exists. Each must be absent on a row
+ * reason `test_conditional_planes` exists.
+ *
+ * `ref` moved the same way on 2026-08-01, and it is the entry on the
+ * never list whose removal had to be deliberate: it was there because the
+ * producer could not mint one, and the producer can now. What did NOT
+ * move is the shape of its absence. `ref` is emitted only for an element
+ * the reference layer actually named; the empty string must never reach
+ * the wire, because the host adapter reads a present-but-empty `ref` as
+ * "this producer has no reference layer" - a different claim from "this
+ * element was not minted", and false. `role` and `checked` stay on the
+ * never list, unmoved: the walk still does not read a defProc. Each must be absent on a row
  * whose walk did not run, present on a row whose did, and - the case
  * that carries the whole design - present-and-EMPTY on a row that was
  * walked and legitimately has none. A test that only checked "menus can
@@ -163,6 +173,13 @@ static void test_unproduced_planes_are_absent(void)
        happening; latencyMs is absent until something measures it. */
     check_absent(out, "\"bytes\"");
     check_absent(out, "latencyMs");
+    /* `ref` on a scene nothing minted for: absent everywhere, including
+       as an empty string. `build_small` walks nothing, so no element in
+       it was ever named. */
+    check_absent(out, "\"ref\"");
+    /* And the two the walk still cannot say anything about at all. */
+    check_absent(out, "role");
+    check_absent(out, "checked");
     /* But meta.errors is EMITTED even when empty: it is a list of things
        that went wrong during a walk that did happen, not a plane this
        producer declines to report. */
@@ -547,8 +564,30 @@ static void test_size_against_the_control_cap(void)
             }
         }
     }
+    /* Every row also NAMED. A reference is 48-49 bytes of JSON per
+       element and there are up to 160 of them, so a ceiling measured
+       without the reference plane understates by about a fifth of
+       itself - and this number is the one a serving layer sizes its
+       buffer from. Filling it here is what keeps the two honest. */
+    {
+        int i;
+
+        for (i = 0; i < s.window_count; ++i) {
+            now_scene_set_window_ref(&s, i,
+                "now-window-ffffffff-ffff-ffff-ffff-ffffffffffff");
+        }
+        for (i = 0; i < s.window_count; ++i) {
+            int j;
+
+            for (j = 0; j < (int)s.windows[i].control_count; ++j) {
+                now_scene_set_control_ref(&s, i, j,
+                    "now-element-ffffffff-ffff-ffff-ffff-ffffffffffff");
+            }
+        }
+    }
     ceiling = now_scene_encoded_size(&s);
-    printf("  scene ceiling: every pool full = %ld bytes\n", ceiling);
+    printf("  scene ceiling: every pool full and every row named = %ld "
+           "bytes\n", ceiling);
     /* Note the controls are only *nearly* at the cap: the pool fills
        round-robin across windows, so one window's block stops being the
        tail and assembly refuses the misfile. That is the invariant
@@ -562,11 +601,81 @@ static void test_size_against_the_control_cap(void)
     check(ceiling > walked, "and it is above what a real desktop measured");
 }
 
+/* The reference plane, which is what makes a rendered scene actable.
+   Three states again, and the middle one is the whole point: a control
+   the walk named, a control it could not, and a window carrying its own
+   reference. An encoder that emitted `"ref":""` for the second would
+   satisfy any test that only looked for the key. */
+static void test_reference_plane(void)
+{
+    NowScene s;
+    char out[16384];
+    int p;
+    const char *w0;
+    const char *w1;
+
+    now_scene_begin(&s, 1, 0.0, "peek", 640, 480, 0, 0);
+    p = now_scene_add_process(&s, 0, 9, "SimpleText", 0x74747874UL, 1,
+                              kNowSceneAnchorOk, 0);
+
+    /* Window 0: named, and one of its two controls is named. */
+    (void)now_scene_add_window(&s, p, "Save As", 40, 60, 200, 400, 1);
+    now_scene_set_window_ref(&s, 0,
+        "now-window-0123456789ab-cdef-0123-4567-89abcdef0123");
+    (void)now_scene_add_control(&s, 0, "OK", 50, 80, 70, 150, 1, 1, 1, 0, 1);
+    (void)now_scene_add_control(&s, 0, "Cancel", 50, 200, 70, 270, 1, 1, 0,
+                                0, 1);
+    now_scene_set_control_ref(&s, 0, 0,
+        "now-element-00000000-1111-2222-3333-444444444444");
+
+    /* Window 1: walked, and NOT named - the registry had nothing left, or
+       it sits past the resolver's reach. */
+    (void)now_scene_add_window(&s, p, "Palette", 10, 10, 60, 120, 1);
+    (void)now_scene_add_control(&s, 1, "Zoom", 20, 20, 40, 60, 1, 1, 0, 0, 1);
+
+    check(now_scene_encode(&s, out, sizeof out, NULL) == kNowSceneEncodeOk,
+          "the referenced scene encodes");
+    check(well_formed(out), "and is well formed");
+    check_absent(out, "\"ref\":\"\"");
+
+    check_present(out,
+        "\"ref\":\"now-element-00000000-1111-2222-3333-444444444444\"");
+    check_present(out,
+        "\"ref\":\"now-window-0123456789ab-cdef-0123-4567-89abcdef0123\"");
+
+    w0 = strstr(out, "\"title\":\"Save As\"");
+    w1 = strstr(out, "\"title\":\"Palette\"");
+    check(w0 != NULL && w1 != NULL && w0 < w1, "both windows encode");
+    if (w0 == NULL || w1 == NULL) {
+        return;
+    }
+    /* The unnamed control is emitted in full and carries no `ref` - it is
+       drawn, and it is not actable, and the scene says both. */
+    check(strstr(w0, "\"title\":\"Cancel\"") != NULL,
+          "the unnamed control is still reported");
+    check(strstr(w1, "\"ref\"") == NULL,
+          "and a window the reference layer could not name carries no ref "
+          "key - not an empty one");
+
+    /* A reference longer than one can be is refused, not truncated: a
+       shortened token is well formed to every shape check on both sides
+       and resolves to nothing. */
+    now_scene_set_control_ref(&s, 1, 0,
+        "now-element-00000000-1111-2222-3333-444444444444"
+        "-and-then-some-more-that-does-not-fit-at-all");
+    check(now_scene_encode(&s, out, sizeof out, NULL) == kNowSceneEncodeOk,
+          "the scene still encodes");
+    check(strstr(out, "\"ref\":\"now-element-00000000-1111-2222-3333-"
+                 "444444444444-") == NULL,
+          "an over-long reference is dropped rather than clipped");
+}
+
 int main(void)
 {
     test_produced_fields();
     test_unproduced_planes_are_absent();
     test_conditional_planes();
+    test_reference_plane();
     test_retractions_are_reported();
     test_verdicts_reach_the_wire();
     test_truncation_shows_up_in_meta();
