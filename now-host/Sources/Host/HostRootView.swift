@@ -97,7 +97,7 @@ struct HostRootView: View {
         case "processes":
             ProcessesModuleView(model: state.processes)
         case "mirror":
-            MirrorModuleView(model: state.mirror)
+            MirrorLauncherView(model: state.mirror)
         case "console":
             ConsoleModuleView(model: state.console, listener: state.listener)
         case "connections":

@@ -84,30 +84,16 @@ final class HostAppState: ObservableObject {
         addressing: agentIntegration,
         select: { [weak self] key in self?.selectGuest(key) ?? false })
     private(set) lazy var console = ConsoleModel(listener: listener)
-    /// The Mirror page. Guest-scoped like the rest — it is a claim about one
-    /// machine, and everything it rests in is about WHICH Mac is connected,
-    /// so it would be wrong the moment the picker moved.
+    /// The Mirror page — a launcher for Mirror, the separate application in
+    /// `mirror/`, and the one module here that is NOT guest-scoped.
     ///
-    /// It takes the listener now: the page can ask the connected Mac for a
-    /// scene, and the ask goes down the same wire and the same one transfer
-    /// lane every other page shares.
-    ///
-    /// It also takes the act lane, which is what makes the drawing
-    /// clickable: `MirrorActionDriver` is the seam between a gesture on a
-    /// rendered scene and the acts NOW's contract declares. The page still
-    /// refuses everything the vocabulary calls unsendable — the driver is a
-    /// route, not a permission.
-    ///
-    /// The driver takes the window resolver too, and it is the same listener
-    /// on purpose: a window act is addressed by a reference only an
-    /// observation of that Mac can mint, so the ask goes down the control
-    /// plane beside the act itself — never the transfer lane, which the
-    /// stream drawing the scene is already holding.
-    private(set) lazy var mirror = MirrorModuleModel(
-        listener: listener,
-        actions: MirrorActionDriver(
-            adapter: agentIntegration,
-            windows: MirrorWindowResolver(listener: listener)))
+    /// It takes no listener and appears in no guest-scoped list, because it
+    /// makes no claim about the connected Mac: Mirror drives its own guest
+    /// over its own wire, and the machine NOW happens to be talking to is
+    /// not the one Mirror's window is drawing. Wiring this page to the
+    /// picker would say the opposite, and that confusion is exactly what the
+    /// port it replaced encouraged.
+    private(set) lazy var mirror = MirrorLauncherModel()
     private(set) lazy var census = CensusModuleModel(listener: listener)
     private(set) lazy var diagnostics = DiagnosticsModel(listener: listener)
     private(set) lazy var networking = NetworkingModel(listener: listener)
@@ -138,7 +124,7 @@ final class HostAppState: ObservableObject {
     /// to one and not the other is precisely the defect this list closes.
     private var guestScopedModels: [any GuestScopedModel] {
         [screenshots, files, census, diagnostics, processes, software,
-         networking, mirror]
+         networking]
     }
 
     /// Points the whole window at another connected Mac.

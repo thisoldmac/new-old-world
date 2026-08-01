@@ -79,16 +79,16 @@ struct ModuleRegistry: Sendable {
             symbol: "cpu",
             summary: "What is running on the connected Mac"
         ),
-        /* Straight after Processes, because it answers the next question
-           about the same subject: Processes is what is running, Mirror is
-           what those programs have on screen. It sits above Console for the
-           same reason Screenshots does — both are ways of LOOKING at the
-           machine, and the pages that DO things to it come after. */
+        /* Kept where the Mirror page has always been, though it no longer
+           shows this Mac anything: it launches Mirror, the separate
+           application in `mirror/`, which drives a machine of its own over a
+           wire that is not NOW's. Moving the row would only lose it for the
+           people who know where it was. */
         ModuleDescriptor(
             id: "mirror",
             title: "Mirror",
             symbol: "macwindow.on.rectangle",
-            summary: "The other Mac's screen, drawn from what it says is there"
+            summary: "Launch Mirror, the separate app that draws a Mac's live interface"
         ),
         ModuleDescriptor(
             id: "console",
