@@ -37,6 +37,14 @@ wire with FAKE providers only (`CloudServingTests`). Still unproven:
 - **cloud.get on a busy lane** refuses busy by unit-tested logic, but
   no test drives a real concurrent capture/stream against it.
 
+Update 2026-08-01, same day: the guest module LANDED
+(`now-guest-ppc/src/cloud/`, docs/icloud.md) — parsers and geometry
+native-tested and mutation-watched, all three guests cross-compile,
+conformance gates cover the emitted asks. What remains unproven moves,
+not shrinks: the page has never been drawn on any screen (emulator
+pass owed first, then metal), the TCC-granted providers are still
+untried, and no end-to-end ask has crossed a real wire.
+
 ## iCloud Drive sharing is tested against fabricated stubs only (2026-08-01)
 
 **Unverified.** The share now sees a directory logically — iCloud

@@ -168,18 +168,12 @@ static unsigned long hex4(const char *p)
     return v;
 }
 
-int now_json_find_text(const char *json, const char *key, char *out, long cap)
+/* The decode core find_text and array_string share: v is the first
+   character AFTER an opening quote; decodes until the closing quote. */
+static void decode_body(const char *v, char *out, long cap)
 {
-    const char *v = now_json_value(json, key);
     long n = 0;
 
-    if (out == NULL || cap < 1) {
-        return 0;
-    }
-    if (v == NULL || *v != '"') {
-        return 0;
-    }
-    ++v;
     while (*v != '\0' && *v != '"' && n < cap - 1) {
         unsigned long code;
 
@@ -215,7 +209,114 @@ int now_json_find_text(const char *json, const char *key, char *out, long cap)
         out[n++] = macroman_for(code);
     }
     out[n] = '\0';
+}
+
+int now_json_find_text(const char *json, const char *key, char *out, long cap)
+{
+    const char *v = now_json_value(json, key);
+
+    if (out == NULL || cap < 1) {
+        return 0;
+    }
+    if (v == NULL || *v != '"') {
+        return 0;
+    }
+    decode_body(v + 1, out, cap);
     return 1;
+}
+
+const char *now_json_next_array(const char *p, char *out, long cap)
+{
+    long depth = 0;
+    long n = 0;
+    int in_string = 0;
+
+    if (p == NULL || out == NULL || cap < 1) {
+        return NULL;
+    }
+    while (*p != '\0' && *p != '[') {
+        if (*p == ']') {
+            return NULL;              /* end of the outer array */
+        }
+        ++p;
+    }
+    if (*p != '[') {
+        return NULL;
+    }
+    for (; *p != '\0'; ++p) {
+        if (n < cap - 1) {
+            out[n++] = *p;
+        }
+        if (in_string) {
+            if (*p == '\\' && p[1] != '\0') {
+                if (n < cap - 1) { out[n++] = p[1]; }
+                ++p;
+            } else if (*p == '"') {
+                in_string = 0;
+            }
+            continue;
+        }
+        if (*p == '"') { in_string = 1; }
+        else if (*p == '[') { ++depth; }
+        else if (*p == ']') {
+            if (--depth == 0) {
+                out[n] = '\0';
+                return p + 1;
+            }
+        }
+    }
+    out[n] = '\0';
+    return NULL;                      /* truncated: refuse rather than guess */
+}
+
+int now_json_array_string(const char *array, int idx, char *out, long cap)
+{
+    long depth = 1;
+    int elem = 0;
+    int in_string = 0;
+    const char *p = array;
+
+    if (p == NULL || out == NULL || cap < 1 || idx < 0) {
+        return 0;
+    }
+    if (*p == '[') {
+        ++p;                          /* accept the bracket or the inside */
+    }
+    for (; *p != '\0'; ++p) {
+        if (in_string) {
+            if (*p == '\\' && p[1] != '\0') {
+                ++p;
+            } else if (*p == '"') {
+                in_string = 0;
+            }
+            continue;
+        }
+        switch (*p) {
+        case '"':
+            if (depth == 1 && elem == idx) {
+                decode_body(p + 1, out, cap);
+                return 1;
+            }
+            in_string = 1;
+            break;
+        case '[': case '{':
+            ++depth;
+            break;
+        case ']': case '}':
+            if (--depth == 0) {
+                return 0;             /* array ended before idx */
+            }
+            break;
+        case ',':
+            if (depth == 1) {
+                ++elem;
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    return 0;
 }
 
 const char *now_json_array(const char *json, const char *key)

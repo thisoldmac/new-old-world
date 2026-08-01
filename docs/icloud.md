@@ -63,11 +63,30 @@ Serving is ungated past the handshake, like the share (decided
 
 ## The guest page
 
-Planned as one Workshop module with a service dropdown and a
-per-service render — list+save for Photos, list+card for Contacts, a
-pointer to Files for Drive. Not yet built; when it lands, this section
-gets rewritten from what actually shipped, and the guest's emitted
-`cloud.*` messages get fixtures in `GuestWireFixtureTests`.
+One Workshop module (`now-guest-ppc/src/cloud/`), the eleventh page:
+a service dropdown rebuilt from each `cloud.report`, a two-column Data
+Browser for the chosen service's rows (paged straight through, the
+Files browser's rule), a card pane for the selected row, and "Save to
+this Mac", which sends `cloud.get` and lets the ordinary file.offer
+machinery land the bytes in this machine's share. Drive selected shows
+the service's own words and points at the Files page — one
+implementation, two renderers.
+
+The split follows the house pattern: `cloud_model.c` (the store and
+parsers, host-cc tested in `cloud_model_test.c`, mutation-watched) and
+`cloud_layout.c` (pure geometry, `cloud_layout_test.c`) carry
+everything decidable; `cloud_module.c` owns controls and pixels;
+`wire.c` correlates ids and forwards raw frames. The guest's emitted
+asks are single-template messages, so `GuestWireConformanceTests`
+checks them against the host decoder and the contract's required
+fields without hand fixtures. json.c grew `now_json_next_array` and
+`now_json_array_string` for the card's [label, value] rows.
+
+A get's success is correlated BY ARRIVAL: the answering file.offer
+carries the host's id, not the ask's. The host only offers unprompted
+when a human there pushes, so the collision costs a wrong status line,
+never a wrong file — the same bargain the pull machinery already
+strikes for file.begin.
 
 ## What is and is not proven
 

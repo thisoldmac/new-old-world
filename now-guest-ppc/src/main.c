@@ -78,13 +78,22 @@ static const unsigned char k_view_mcp_item[] = {
 static const unsigned char k_view_diagnostics_item[] = {
     13, 'D', 'i', 'a', 'g', 'n', 'o', 's', 't', 'i', 'c', 's', '/', '8'
 };
-static const unsigned char k_view_logs_item[] = {
-    6, 'L', 'o', 'g', 's', '/', '9'
+static const unsigned char k_view_networking_item[] = {
+    12, 'N', 'e', 't', 'w', 'o', 'r', 'k', 'i', 'n', 'g', '/', '9'
 };
 /* Cmd-0 for the tenth item: the digits ran out at nine, and 0 is where a
    person looks next on a keyboard, not the letter C (already Close). */
+static const unsigned char k_view_icloud_item[] = {
+    8, 'i', 'C', 'l', 'o', 'u', 'd', '/', '0'
+};
+/* Unkeyed: eleventh and twelfth, and the digits are spent. The item
+   number must still BE the module ID — Networking landed without a menu
+   item and every entry below it selected its neighbour. */
+static const unsigned char k_view_logs_item[] = {
+    4, 'L', 'o', 'g', 's'
+};
 static const unsigned char k_view_connection_item[] = {
-    12, 'C', 'o', 'n', 'n', 'e', 'c', 't', 'i', 'o', 'n', '/', '0'
+    10, 'C', 'o', 'n', 'n', 'e', 'c', 't', 'i', 'o', 'n'
 };
 static const unsigned char k_workshop_menu_item[] = {
     8, 'W', 'o', 'r', 'k', 's', 'h', 'o', 'p'
@@ -113,6 +122,8 @@ static void create_menu_bar(void)
     AppendMenu(view_menu, k_view_software_item);
     AppendMenu(view_menu, k_view_mcp_item);
     AppendMenu(view_menu, k_view_diagnostics_item);
+    AppendMenu(view_menu, k_view_networking_item);
+    AppendMenu(view_menu, k_view_icloud_item);
     AppendMenu(view_menu, k_view_logs_item);
     AppendMenu(view_menu, k_view_connection_item);
     InsertMenu(view_menu, 0);

@@ -55,7 +55,8 @@ resource 'vers' (1) {
    129 camera (Screenshots), 130 folder (Files), 131 terminal (Console),
    132 globe (Connection), 133 row list (Processes), 134 chip (Hardware),
    135 lined page (Logs), 136 boxed app tiles (Software), 137 key (MCP),
-   138 gauge (Diagnostics). */
+   138 gauge (Diagnostics), 139 linked nodes (Networking),
+   140 cloud (iCloud). */
 resource 'ics#' (129) {
     {
         $"0000 0000 0780 7FFE 4002 43C2 4422 4812"
@@ -167,6 +168,15 @@ resource 'ics#' (139) {
         $"9241 4A22 4426 2424 1818 07E0 0000 0000",
         $"0000 07E0 1FF8 3FFC 7FFE 7FFE FFFF FFFF"
         $"FFFF 7FFE 7FFE 3FFC 1FF8 07E0 0000 0000"
+    }
+};
+
+resource 'ics#' (140) {
+    {
+        $"0000 0000 0000 03C0 0C30 1008 2004 4002"
+        $"8001 8001 8001 4002 3FFC 0000 0000 0000",
+        $"0000 0000 0000 03C0 0FF0 1FF8 3FFC 7FFE"
+        $"FFFF FFFF FFFF 7FFE 3FFC 0000 0000 0000"
     }
 };
 
@@ -287,6 +297,13 @@ resource 'MENU' (134) {
         "Control Panels", noIcon, noKey, noMark, plain;
         "Startup Items", noIcon, noKey, noMark, plain;
         "Apple Menu Items", noIcon, noKey, noMark, plain
+    }
+};
+
+resource 'MENU' (135) {
+    135, textMenuProc, allEnabled, enabled, "iCloud",
+    {
+        "(none)", noIcon, noKey, noMark, plain
     }
 };
 

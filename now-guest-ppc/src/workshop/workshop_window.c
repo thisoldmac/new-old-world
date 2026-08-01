@@ -8,6 +8,7 @@
 #include "console_module.h"
 #include "diagnostics_module.h"
 #include "network_module.h"
+#include "cloud_module.h"
 #include "files_module.h"
 #include "logs_module.h"
 #include "mcp_module.h"
@@ -68,6 +69,10 @@ static const struct {
     { "Networking",
       "This Mac's link, its address, and the network hardware it has.",
       "Networking has not moved in yet." },
+    { "iCloud",
+      "The other Mac's iCloud: its Drive, Photos and Contacts, served "
+      "one page at a time.",
+      "iCloud has not moved in yet." },
     { "Logs",
       "This launch's event log. Toggle whether it also reaches the disk.",
       "Logs has not moved in yet." },
@@ -185,6 +190,7 @@ Boolean workshop_open(void)
     g_ops[kWorkshopMCP] = mcp_module_ops();
     g_ops[kWorkshopDiagnostics] = diagnostics_module_ops();
     g_ops[kWorkshopNetworking] = network_module_ops();
+    g_ops[kWorkshopCloud] = cloud_module_ops();
     g_ops[kWorkshopLogs] = logs_module_ops();
     g_ops[kWorkshopConnection] = connection_module_ops();
     now_prefs_load(&prefs);

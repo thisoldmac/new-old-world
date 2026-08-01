@@ -61,10 +61,10 @@ everywhere.
 | every module's buttons and checkboxes | `TrackControl` | **Yes** — `now_pump_action()` | — |
 | `console_module.c` — scroll bar arrows/page | `TrackControl` | **Yes** — the action proc scrolls and calls `now_wire_pump()` | — |
 | `console_module.c` — scroll bar **thumb** | `TrackControl(…, NULL)` | No | Drag duration |
-| `connection_module.c`, `screenshots_module.c` — pop-ups | `TrackControl(…, (ControlActionUPP)-1L)` | No | Menu-down duration |
+| `connection_module.c`, `screenshots_module.c`, `cloud_module.c` — pop-ups | `TrackControl(…, (ControlActionUPP)-1L)` | No | Menu-down duration |
 | `software_module.c` — splitter drag | own `StillDown` loop | **Yes** — calls `conn_service()` every pass | — |
 | `connection_module.c` — text fields | `HandleControlClick` | No | Selection-drag duration |
-| `files_browser_view.c` — the list | `HandleControlClick` | No | Selection/sort-drag duration |
+| `files_browser_view.c`, `cloud_module.c` — the lists | `HandleControlClick` | No | Selection/sort-drag duration |
 | `main.c` | `MenuSelect`, `DragWindow`, `TrackGoAway`, `GrowWindow`, `TrackBox` | No | Mouse-down / drag duration |
 | `proc_actions.c` — `quit`'s confirmation wait | own `WaitNextEvent(0, …)` yield loop | **Yes** — `now_wire_pump()` every pass | ≤ `--wait N` (6 s default, 20 s ceiling) |
 

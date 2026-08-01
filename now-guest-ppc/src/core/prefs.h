@@ -83,8 +83,10 @@ typedef struct {
    address — 8-bit, pack on, 8K chunks, no pacing, panel open). Reads the
    v1/v2 record formats (host/port only) through v11 (the v9 layout,
    twice-renumbered for Processes and Hardware), v12 (adds log_to_disk
-   and renumbers Connection again for the Logs page), v13/v14, and v15
-   (adds agent_access and renumbers for the MCP and Diagnostics pages). */
+   and renumbers Connection again for the Logs page), v13/v14, v15
+   (adds agent_access and renumbers for the MCP and Diagnostics pages),
+   and v16/v17 (no new fields; Networking then iCloud renumber the
+   pinned pair). */
 void now_prefs_load(NowPrefs *prefs);
 OSErr now_prefs_save(const NowPrefs *prefs);
 

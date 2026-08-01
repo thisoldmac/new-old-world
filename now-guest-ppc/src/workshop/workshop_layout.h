@@ -46,7 +46,7 @@ enum {
        follows it in the struct. That is exactly what happened when
        Networking went in on 2026-08-01, and the assert below is why it
        cannot happen quietly again. */
-    kWorkshopNavRows = 9
+    kWorkshopNavRows = 10
 };
 
 typedef struct WorkshopLayout {

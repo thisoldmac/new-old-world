@@ -281,6 +281,8 @@ run_c now-guest-ppc share_path_test.c        ""
 # long at 21.5 MB, which would otherwise be found by watching a download
 # go negative two thirds of the way through.
 run_c now-guest-ppc files_pull_test.c        ""  src/files/files_pull.c
+run_c now-guest-ppc cloud_model_test.c      ""  src/cloud/cloud_model.c src/core/json.c
+run_c now-guest-ppc cloud_layout_test.c     ""  src/cloud/cloud_layout.c
 # The path row's label: the share named by the listing's own root, with
 # "Shared folder" only left for hosts predating the field, and one colon
 # at the root/path join whichever spelling of root arrived.

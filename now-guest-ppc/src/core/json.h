@@ -42,6 +42,19 @@ int now_json_find_text(const char *json, const char *key, char *out, long cap);
 const char *now_json_array(const char *json, const char *key);
 const char *now_json_next_object(const char *p, char *out, long cap);
 
+/* Walking an array of ARRAYS — cloud.card's [label, value] rows. The
+   same contract as now_json_next_object, with brackets for braces:
+   copies the next whole inner array (bracket matched, string aware)
+   into out and returns the cursor after it, or NULL at the end of the
+   outer array or on a truncated one. */
+const char *now_json_next_array(const char *p, char *out, long cap);
+
+/* The idx-th (0-based) string element of a bare array like
+   ["home","555-0100"], DECODED to MacRoman the way find_text decodes.
+   Non-string elements still count toward idx. Returns 1 when that
+   element exists and is a string. */
+int now_json_array_string(const char *array, int idx, char *out, long cap);
+
 /* Returns 1 if the message's "type" string equals type. */
 int now_json_type_is(const char *json, const char *type);
 

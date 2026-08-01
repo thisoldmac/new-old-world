@@ -2174,6 +2174,191 @@ static void service_browse(void)
     }
 }
 
+/* --- asking about the other machine's cloud ------------------------------
+   The cloud.* family, asked the way a listing is asked: one pending
+   question, a deadline, and the reply matched by id. The store that
+   PARSES the frames lives in cloud_model.c where the host cc can test
+   it; this block only correlates and forwards raw frames.
+
+   A get is its own pending beside the ask, because its success is not
+   a cloud frame: the host answers with an ordinary file.offer into
+   this machine's share. The offer carries the HOST's id, not ours, so
+   it is correlated by arrival — the host only ever offers unprompted
+   when a human there pushes, and one doing that mid-get earns a wrong
+   status line, not a wrong file. */
+
+enum { kCloudTimeoutTicks = 60 * 15 };
+
+static struct {
+    Boolean pending;
+    long id;
+    int kind;                         /* the CloudAnswerKind expected */
+    unsigned long deadline;
+} g_cloud;
+
+static struct {
+    Boolean pending;
+    long id;
+    unsigned long deadline;
+} g_cloudget;
+
+static ConnCloudNote g_cloud_hook;
+
+void conn_set_cloud_note(ConnCloudNote fn)
+{
+    g_cloud_hook = fn;
+}
+
+static void cloud_note(int kind, const char *reply)
+{
+    if (g_cloud_hook != NULL) {
+        g_cloud_hook(kind, reply);
+    }
+}
+
+static int cloud_send(const char *json, char *err, long cap)
+{
+    if (g.phase != kConnConnected) {
+        snprintf(err, (size_t)cap, "Not connected");
+        return -1;
+    }
+    if (!send_control(json)) {
+        snprintf(err, (size_t)cap, "Connection lost");
+        return -1;
+    }
+    return 0;
+}
+
+int now_wire_cloud_services(char *err, long cap)
+{
+    char json[96];
+
+    ++g.offer_seq;
+    snprintf(json, sizeof json,
+             "{\"type\":\"cloud.services\",\"id\":%ld}", g.offer_seq);
+    if (cloud_send(json, err, cap) != 0) {
+        return -1;
+    }
+    g_cloud.pending = true;
+    g_cloud.id = g.offer_seq;
+    g_cloud.kind = kCloudAnswerReport;
+    g_cloud.deadline = TickCount() + kCloudTimeoutTicks;
+    return 0;
+}
+
+int now_wire_cloud_list(const char *service, long cursor,
+                        char *err, long cap)
+{
+    char json[160];
+    char esc[48];
+
+    now_json_escape(service, esc, sizeof esc);
+    ++g.offer_seq;
+    snprintf(json, sizeof json,
+             "{\"type\":\"cloud.list\",\"id\":%ld,\"service\":\"%s\","
+             "\"cursor\":%ld}",
+             g.offer_seq, esc, cursor > 0 ? cursor : 1);
+    if (cloud_send(json, err, cap) != 0) {
+        return -1;
+    }
+    g_cloud.pending = true;
+    g_cloud.id = g.offer_seq;
+    g_cloud.kind = kCloudAnswerListing;
+    g_cloud.deadline = TickCount() + kCloudTimeoutTicks;
+    return 0;
+}
+
+int now_wire_cloud_detail(const char *service, const char *item,
+                          char *err, long cap)
+{
+    char json[288];
+    char esc_service[48];
+    char esc_item[144];
+
+    now_json_escape(service, esc_service, sizeof esc_service);
+    now_json_escape(item, esc_item, sizeof esc_item);
+    ++g.offer_seq;
+    snprintf(json, sizeof json,
+             "{\"type\":\"cloud.detail\",\"id\":%ld,\"service\":\"%s\","
+             "\"item\":\"%s\"}",
+             g.offer_seq, esc_service, esc_item);
+    if (cloud_send(json, err, cap) != 0) {
+        return -1;
+    }
+    g_cloud.pending = true;
+    g_cloud.id = g.offer_seq;
+    g_cloud.kind = kCloudAnswerCard;
+    g_cloud.deadline = TickCount() + kCloudTimeoutTicks;
+    return 0;
+}
+
+int now_wire_cloud_get(const char *service, const char *item,
+                       char *err, long cap)
+{
+    char json[288];
+    char esc_service[48];
+    char esc_item[144];
+
+    now_json_escape(service, esc_service, sizeof esc_service);
+    now_json_escape(item, esc_item, sizeof esc_item);
+    ++g.offer_seq;
+    snprintf(json, sizeof json,
+             "{\"type\":\"cloud.get\",\"id\":%ld,\"service\":\"%s\","
+             "\"item\":\"%s\"}",
+             g.offer_seq, esc_service, esc_item);
+    if (cloud_send(json, err, cap) != 0) {
+        return -1;
+    }
+    g_cloudget.pending = true;
+    g_cloudget.id = g.offer_seq;
+    g_cloudget.deadline = TickCount() + kCloudTimeoutTicks;
+    return 0;
+}
+
+/* The three typed answers share one gate: ours, and the kind we asked
+   for. A listing that arrives while a card is pending is stale by
+   definition — the ask that wanted it has been replaced. */
+static void cloud_answer(int kind, const char *reply)
+{
+    if (!g_cloud.pending || g_cloud.kind != kind
+        || now_json_find_int(reply, "id", -1) != g_cloud.id) {
+        return;
+    }
+    g_cloud.pending = false;
+    cloud_note(kind, reply);
+}
+
+static Boolean cloud_refused(const char *reply)
+{
+    char reason[96];
+    long id = now_json_find_int(reply, "id", -1);
+
+    if (g_cloud.pending && id == g_cloud.id) {
+        g_cloud.pending = false;
+    } else if (g_cloudget.pending && id == g_cloudget.id) {
+        g_cloudget.pending = false;
+    } else {
+        return false;
+    }
+    if (!now_json_find_text(reply, "reason", reason, sizeof reason)) {
+        strcpy(reason, "the other Mac refused");
+    }
+    cloud_note(kCloudAnswerError, reason);
+    return true;
+}
+
+static void service_cloud(void)
+{
+    if (g_cloud.pending && TickCount() > g_cloud.deadline) {
+        g_cloud.pending = false;
+        cloud_note(kCloudAnswerError, "no answer");
+    }
+    if (g_cloudget.pending && TickCount() > g_cloudget.deadline) {
+        g_cloudget.pending = false;
+        cloud_note(kCloudAnswerError, "no answer to the fetch");
+    }
+}
+
 /* --- pulling a file FROM the other machine -------------------------------
    The same bytes as an inbound push, asked for rather than offered, so
    the receiving machinery is the same and only the destination differs:
@@ -2951,6 +3136,14 @@ static void serve_file_offer(const char *request)
     long have;
     int rc;
 
+    /* A pending cloud.get's success arrives as this offer, correlated
+       by arrival (see the cloud block's header comment). Noted before
+       anything can refuse it, so the page's status and the outcome
+       cannot disagree about whether the host answered. */
+    if (g_cloudget.pending) {
+        g_cloudget.pending = false;
+        cloud_note(kCloudAnswerGetUnderWay, request);
+    }
     if (wire_busy()) {
         file_refuse(id, "busy", "a transfer is already in flight");
         return;
@@ -4780,6 +4973,22 @@ static int handle_frame(const char *reply)
         browse_listing(reply);
         return 1;
     }
+    if (now_json_type_is(reply, "cloud.report")) {
+        cloud_answer(kCloudAnswerReport, reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "cloud.listing")) {
+        cloud_answer(kCloudAnswerListing, reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "cloud.card")) {
+        cloud_answer(kCloudAnswerCard, reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "cloud.refuse")) {
+        cloud_refused(reply);
+        return 1;
+    }
     if (now_json_type_is(reply, "file.refuse")) {
         if (g_get.pending && now_json_find_int(reply, "id", -1) == g_get.id) {
             char reason[96];
@@ -5082,6 +5291,7 @@ void conn_service(void)
     service_send();
     service_browse();
     service_get();
+    service_cloud();
         }
         if (g.phase == kConnConnected) {
             service_stream();
