@@ -410,29 +410,45 @@ class SceneCache:
         self.envelope: dict = {}
         self.fetched_at: float | None = None
         self.fetches = 0
+        self.forced: str | None = None
 
     def put(self, scene: dict, *, now: float, envelope: dict | None = None):
         self.scene = scene
         self.envelope = envelope or {}
         self.fetched_at = now
         self.fetches += 1
+        self.forced = None
         return scene
+
+    def invalidate(self, reason: str) -> None:
+        """The caller saw something this cache cannot see.
+
+        There is one such thing and it is not hypothetical. A trial brings the
+        Finder to the front before it does anything; by the time the front
+        process is read it is "Finder" again, so comparing names can never
+        reveal that something ELSE owned the menu bar in between — and coming
+        back to the front is exactly when an application rebuilds its bar. The
+        caller knows it had to switch; this is how it says so.
+        """
+        self.forced = reason
 
     def stale_reason(self, *, now: float, front_app):
         """None when the cached scene still describes this machine.
 
         Otherwise a sentence saying what changed, which the caller records on
-        the trial and prints. Three reasons, in the order they are worth
+        the trial and prints. Four reasons, in the order they are worth
         knowing:
 
           1. nothing cached yet;
-          2. the bar belongs to another application than the one that is
-             frontmost now — the strongest signal there is, because the scene
-             names its own owner and `ps` names the current one;
-          3. age, the backstop for a change neither of those can see.
+          2. the caller invalidated it — see `invalidate`;
+          3. the bar belongs to another application than the one that is
+             frontmost now, which the scene and `ps` can be compared on;
+          4. age, the backstop for a change none of those can see.
         """
         if self.scene is None or self.fetched_at is None:
             return "no scene has been read yet"
+        if self.forced:
+            return self.forced
         owner = menubar_app(self.scene)
         if owner is None:
             return ("the cached scene reports no menu bar at all, so there is "

@@ -545,17 +545,26 @@ def press_with_tracking_probe(link, qmp, hold: float = 1.2):
         return True, (mid, True)
 
 
-def ensure_finder(link) -> str:
+def ensure_finder(link, cache=None) -> str:
     """The Finder frontmost, and the front app's name as `ps` reports it.
 
     The name is what makes the cached menu bar checkable: the scene names the
     application whose bar it walked, and this is the other half of that
     comparison. It is a round trip the trial was making anyway.
+
+    A SWITCH INVALIDATES THE CACHED BAR, and this is the only place that can
+    know one happened. By the time anything else looks, the front process is
+    "Finder" again — so comparing names would say "unchanged" about a machine
+    where another application owned the menu bar a second ago, and coming back
+    to the front is exactly when an application rebuilds its own bar.
     """
     front = oracles.front_app(link)
     if front != "Finder":
         link.command("front", line="Finder")
         time.sleep(1.5)
+        if cache is not None:
+            cache.invalidate(f"the front process was {front!r} and had to be "
+                             "switched back to the Finder")
         front = oracles.front_app(link)
     if front != "Finder":
         raise SystemExit("PRECONDITION FAILED: the Finder is not frontmost")
@@ -626,7 +635,7 @@ def menu_trial(link, qmp, click_delay: float, wait_for_reply_first: bool,
     out and disarms) BEFORE clicking, so the click lands after the guard should
     already be disarmed.
     """
-    front = ensure_finder(link)
+    front = ensure_finder(link, aim.cache)
 
     # THE SCENE READ, AND WHY IT IS HERE AND NOT A LINE LOWER.
     #
@@ -793,7 +802,7 @@ def case_baseline(link, qmp, n: int) -> dict:
     print(f"\n=== baseline (nothing armed), N={n}")
     trials = []
     for i in range(n):
-        ensure_finder(link)
+        ensure_finder(link, aim.cache)
         oracles.clear_desktop_untitled_folders(link)
         before = oracles.desktop_untitled_folders(link)
         qmpmod.replay_hop(qmp, "top-left", aim.hop)

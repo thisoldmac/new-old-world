@@ -63,6 +63,14 @@ not a test.
       -  if ... transfer != self.transfer: count         foreign/body
       +  if False: ...
 
+ 9  put() does not clear a caller's invalidation        invalidate/cleared
+      -  self.forced = None
+      +  (dropped)
+
+10  stale_reason ignores a caller's invalidation        invalidate/after
+      -  if self.forced: return self.forced
+      +  (dropped)
+
 Mutation 3 is the one worth reading twice: it passes every test about a
 well-formed scene, and it means an IR the harness does not describe gets
 decoded and measured anyway — which is the failure the version-in-the-envelope
@@ -388,6 +396,23 @@ def a_cached_scene_with_no_bar_is_not_reusable():
     c.put(doc(), now=100.0)
     check("absent/cache-unusable",
           c.stale_reason(now=100.5, front_app="Finder") is not None, True)
+
+
+def a_caller_can_invalidate_what_the_rule_cannot_see():
+    # The trial fronts the Finder before it does anything, so by the time the
+    # front process is read it is "Finder" again and comparing names can never
+    # reveal that something else owned the bar a second ago. The caller saw
+    # the switch; this is how it says so, and one re-read clears it.
+    c = scenemod.SceneCache()
+    c.put(doc(menubar=FINDER_BAR), now=100.0)
+    check("invalidate/before", c.stale_reason(now=100.5, front_app="Finder"),
+          None)
+    c.invalidate("the front process was 'SimpleText' and had to be switched")
+    why = c.stale_reason(now=100.6, front_app="Finder")
+    check("invalidate/after", "SimpleText" in (why or ""), True)
+    c.put(doc(menubar=FINDER_BAR), now=101.0)
+    check("invalidate/cleared",
+          c.stale_reason(now=101.1, front_app="Finder"), None)
 
 
 def an_unknown_front_app_does_not_invalidate_by_itself():
