@@ -147,6 +147,7 @@ void now_qdtrace_status_json(const NowQDStatus *st, long id,
                              char *out, long cap)
 {
     NowQDEmit e;
+    int ok;
 
     if (out == NULL || cap <= 0) {
         return;
@@ -182,7 +183,11 @@ void now_qdtrace_status_json(const NowQDStatus *st, long id,
         return;
     }
 
-    (void)emit(&e,
+    /* Every emit below is && -ed into one flag rather than ignored: a
+       status is a fixed shape, so a buffer that cannot hold it must
+       produce a refusal and not a JSON object that stops in the middle.
+       Half a reply is worse than none - it parses as far as it goes. */
+    ok = emit(&e,
         "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
         "\"output\":{\"qdtrace\":{\"cmd\":\"status\","
         "\"plane\":{\"format\":%lu,\"length\":%lu,\"ringCap\":%lu},",
@@ -194,17 +199,17 @@ void now_qdtrace_status_json(const NowQDStatus *st, long id,
        difference is the plane's most useful single diagnostic: a request
        nobody honoured looks identical to no request at all if only one
        of the two is reported. */
-    (void)emit(&e,
+    ok = ok && emit(&e,
         "\"request\":{\"a5\":\"0x%08lx\",\"expiry\":%lu,\"mode\":\"%s\","
         "\"committed\":%s},",
         (unsigned long)st->arm_a5, (unsigned long)st->arm_expiry,
         mode_name(st->arm_mode), jbool(st->arm_committed));
-    (void)emit(&e,
+    ok = ok && emit(&e,
         "\"active\":{\"a5\":\"0x%08lx\",\"mode\":\"%s\",\"hookedPorts\":%lu},",
         (unsigned long)st->active_a5, mode_name(st->active_mode),
         (unsigned long)st->hooked_ports);
 
-    (void)emit(&e,
+    ok = ok && emit(&e,
         "\"ring\":{\"writeCursor\":%lu,\"seq\":%lu,\"ticks\":%lu,"
         "\"committing\":%s,\"pending\":%lu,\"lostBytes\":%lu,\"overrun\":%s},",
         (unsigned long)st->write_cursor, (unsigned long)st->seq,
@@ -215,7 +220,7 @@ void now_qdtrace_status_json(const NowQDStatus *st, long id,
     /* Counters, which are the whole point of a status: "is anything
        drawing at all" is answerable here without moving one record.
        Upstream shipped exactly this much and it was useful on its own. */
-    (void)emit(&e,
+    ok = ok && emit(&e,
         "\"ops\":{\"total\":%lu,\"text\":%lu,\"line\":%lu,\"rect\":%lu,"
         "\"rrect\":%lu,\"oval\":%lu,\"arc\":%lu,\"poly\":%lu,\"rgn\":%lu,"
         "\"bits\":%lu,\"comment\":%lu,\"other\":%lu},",
@@ -227,7 +232,7 @@ void now_qdtrace_status_json(const NowQDStatus *st, long id,
         (unsigned long)st->counters.bits, (unsigned long)st->counters.comment,
         (unsigned long)st->counters.other);
 
-    (void)emit(&e,
+    ok = ok && emit(&e,
         "\"loss\":{\"dropped\":%lu,\"skippedPorts\":%lu},"
         "\"lifecycle\":{\"installs\":%lu,\"uninstalls\":%lu,\"repairs\":%lu,"
         "\"arms\":%lu,\"retires\":%lu},"
@@ -244,7 +249,11 @@ void now_qdtrace_status_json(const NowQDStatus *st, long id,
         (unsigned long)st->counters.refused_expired);
 
     e.reserve = 0;
-    (void)emit(&e, "}}}");
+    ok = ok && emit(&e, "}}}");
+    if (!ok) {
+        now_qdtrace_error_json(id, "overflow",
+                               "no room for a qdtrace status reply", out, cap);
+    }
 }
 
 /* ---- drain ----------------------------------------------------------- */
@@ -440,8 +449,12 @@ void now_qdtrace_drain_json(const NowContentBlock *block,
         e.first = 1;
     }
 
+    /* The tail always fits: every emit above held kNowQDTailReserve back,
+       and the tail is smaller than it. Checked anyway, because the day
+       that stops being true is the day the reply goes out truncated and
+       parses as far as it goes. */
     e.reserve = 0;
-    (void)emit(&e,
+    if (!emit(&e,
         "],\"cursor\":%lu,\"nextCursor\":%lu,\"writeCursor\":%lu,"
         "\"pending\":%lu,\"records\":%lu,\"wraps\":%lu,"
         "\"more\":%s,\"resync\":%s,\"torn\":%s,\"busy\":%s,"
@@ -452,5 +465,8 @@ void now_qdtrace_drain_json(const NowContentBlock *block,
         jbool(r.more), jbool(r.resync),
         jbool(r.outcome == kNowQDDrainTorn),
         jbool(r.outcome == kNowQDDrainBusy),
-        (unsigned long)r.lost_bytes, (unsigned long)r.dropped);
+        (unsigned long)r.lost_bytes, (unsigned long)r.dropped)) {
+        now_qdtrace_error_json(id, "overflow",
+                               "no room for a qdtrace drain reply", out, cap);
+    }
 }
