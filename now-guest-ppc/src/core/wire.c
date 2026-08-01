@@ -2196,6 +2196,35 @@ static void get_cleanup(Boolean keep_file)
     g_get.receiving = false;
 }
 
+/* Stop the pull in flight, from this side. Two halves, in this order:
+   tell the other Mac to stop pushing, then free this side. Local-only
+   would leave the host filling a lane one transfer wide with a file
+   nobody is writing; wire-only would leave an open temp fork here.
+
+   send_control is best effort on purpose - a stop pressed on a dead
+   wire still has to free this side, and get_cleanup(false) is the same
+   teardown the timeout, the refusal and a failed file.end already use.
+   A pull is never resumable (get_begin passes resume_token NULL), so
+   the temp is deleted and nothing appears under the real name. */
+int now_wire_get_cancel(char *err, long cap)
+{
+    char json[64];
+
+    if (!g_get.pending && !g_get.receiving) {
+        snprintf(err, (size_t)cap, "Nothing is being transferred");
+        return -1;
+    }
+    /* `transfer`, not `id`: contract/asyncapi.yaml FileCancel requires
+       {type, transfer} with additionalProperties false. */
+    snprintf(json, sizeof json,
+             "{\"type\":\"file.cancel\",\"transfer\":%ld}", g_get.id);
+    (void)send_control(json);
+    now_log(kLogInfo, "get", "#%ld stopped at %ld bytes by the person",
+            g_get.id, g_get.receiving ? g_get.rx.received : 0);
+    get_cleanup(false);
+    return 0;
+}
+
 Boolean now_wire_get_active(long *received, long *expected)
 {
     if (!g_get.pending && !g_get.receiving) {

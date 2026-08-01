@@ -169,6 +169,13 @@ int now_wire_get_host(const char *path, const char *name,
 /* True while a pull is in flight, so a window can show a bar. */
 Boolean now_wire_get_active(long *received, long *expected);
 
+/* Stop the pull in flight: file.cancel to the other Mac (best effort),
+   then abandon the receive here. 0 when a transfer was stopped, -1 with
+   a reason in `err` when there was nothing to stop. A pull is never
+   resumable, so the partial is deleted and nothing is left under the
+   real name. Registered as the Files pane's canceller (files_pull.h).*/
+int now_wire_get_cancel(char *err, long cap);
+
 /* One-line progress reports for push transfers ("Sent to host (312 ms)").
    The Screenshots panel registers itself here; a NULL fn unhooks. */
 typedef void (*ConnShotNote)(const char *line);
