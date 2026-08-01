@@ -243,17 +243,38 @@ Per the charter, in order, saying which rung a claim sits on:
 | compiles | done |
 | links | done |
 | packages (`QDProbe.bin`) | done |
+| a reader exists ([`../qdreader`](../qdreader/README.md)) | done — builds, packages |
 | loads at boot | **not run** |
 | callbacks run (the count moves) | **not run — the actual question** |
+| arm / disarm round-trips | **not run** |
 | survives boot / shift-disable / removal | **not run** |
 | per-op cost measured | not run |
 | PowerBook 1400c, attended | not run — emulator first, and not without asking |
 
-There is no reader yet: the counters are published through Gestalt `'QDpr'` and
-nothing reads them, and nothing writes a request either — so on a machine that
-booted this today, `arm_a5` is zero and the probe refuses every pass. That is
-the next rung, not an oversight, and the reader's first job is the three-field
-commit order above rather than a single `arm` poke.
+**The reader exists as of 2026-07-31 and the pair still sits at *packages*.**
+[`prototypes/qdreader`](../qdreader/README.md) is the other throwaway — its own
+name, its own creator `QDrd`, deleted with this one, and deliberately *not*
+inside the NOW guest. It gates on `magic` **and** `version` as one check and
+refuses every write on a mismatch, writes a request in the three-field commit
+order above rather than poking a bare `arm`, and drains its own ports before
+quitting.
+
+It is built **Carbon/PPC on purpose**: armed at its own A5 it is the *native
+PowerPC caller* this probe exists to ask about, so it is the experiment rather
+than a display of one. What it changes today is only observability — nothing
+below has run on a Macintosh — but "loaded at boot", "loaded and wedged" and
+"did not load" are now three different screens instead of one silence, and
+`rect_calls` can be read at all.
+
+One consequence of this file, found while building the reader and left alone
+here: we only ever patch ports whose `grafProcs` was `NULL`, so `saved_procs` is
+always 0, so `qdprobe_rect`'s "no chain to tail-call" path is taken on **every**
+patched port — every rect operation in a patched port, erases included, draws
+nothing while armed. That is this file's stated "visible as a missing rectangle"
+behaviour reached universally rather than exceptionally, and it is a *second*
+signal that the bottleneck was reached, so the reader is built to tolerate it
+rather than the probe changed to avoid it. If it ever needs to go, the fix is one
+line: call `StdRect` when there is no saved chain.
 
 ## Build
 
