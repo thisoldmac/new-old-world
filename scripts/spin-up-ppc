@@ -1,0 +1,200 @@
+#!/usr/bin/env bash
+# Put the NOW Extension and the PowerPC guest on a fresh emulator clone,
+# COLD-reboot so the INIT loads, and make the guest say whether it did.
+#
+#     scripts/spin-up-ppc                  # headless: stage, reboot, verify
+#     NOW_SPIN_DISPLAY=1 scripts/spin-up-ppc   # with a cocoa window
+#
+# This is the missing half of scripts/build-guests. That script builds
+# ext/; until tools/stage-ext.py and this file, nothing installed it, so
+# the three planes that live in the INIT (P1 anchors, P3 content, P4 act)
+# were resident on no machine anywhere and `actselftest` — the act plane's
+# only ABI oracle — had never been run.
+#
+# EMULATOR ONLY. The lab checkout beside this one owns the emulator, the
+# QMP tool and the anchor-worker client; they are INSTRUMENTS borrowed to
+# drive a deploy and NOW ships none of them. Nothing here touches physical
+# hardware and this is not a route to doing so — scripts/deploy-68k is the
+# metal path, and it is attended.
+#
+# THE FOUR RULES THIS ENCODES, each measured, none negotiable:
+#
+#   1. AN INIT LOADS AT BOOT ONLY, and OS 9 ignores QMP `system_powerdown`.
+#      So the reboot is a hard QMP `quit` and a relaunch without -loadvm.
+#      A stage that soft-reboots silently leaves the OLD extension resident.
+#   2. GIVE THE VOLUME TIME TO FLUSH before the power-off. The re-verify
+#      after the reboot is the real guardrail: if the writes never reached
+#      the qcow2, this fails loudly instead of testing yesterday's bytes.
+#   3. SESSION-PRIVATE CLONE, ALWAYS. tbt_clone_disk (APFS cp -c) is
+#      instant and free, and it is what lets parallel sessions run without
+#      image-lock collisions. The shared base stays pristine.
+#   4. COLLISION-SAFE PORTS. Another session may hold any given one, so
+#      probe and advance rather than attach to whatever answers.
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NOW="$(cd "$HERE/.." && pwd)"
+# The lab checkout is normally NOW's parent — but not from a worktree, which
+# sits several levels deeper (now/.claude/worktrees/<branch>) and whose parent
+# is a scratch directory with no tools/ in it. That failed with a bare
+# "tools/lib.sh: No such file or directory", which reads like a broken lab
+# install rather than the wrong starting point. So walk up to the checkout
+# that actually has the instruments.
+LAB="${NOW_LAB_ROOT:-}"
+if [ -z "$LAB" ]; then
+    LAB="$NOW"
+    while [ "$LAB" != / ] && [ ! -f "$LAB/tools/lib.sh" ]; do
+        LAB="$(dirname "$LAB")"
+    done
+fi
+[ -f "$LAB/tools/lib.sh" ] || {
+    echo "no lab checkout above $NOW (set NOW_LAB_ROOT to the TimBotTu clone)"
+    exit 1
+}
+cd "$LAB"                                  # lib.sh and tools/qmp are lab-relative
+. tools/lib.sh
+
+QEMU="${TIMBOTTU_QEMU:-$LAB/qemu/build/qemu-system-ppc}"
+BASE="${NOW_SPIN_BASE:-$HOME/Lab/Assets/os91-qemu/os91-runner.qcow2}"
+RUN="${NOW_SPIN_RUN:-$NOW/run}"
+DISK="$RUN/session.qcow2"
+QMP="$RUN/qmp.sock"
+
+# Build products live outside the repository and are keyed to THIS
+# checkout, exactly as scripts/build-guests keys them, so many worktrees
+# can run at once without sharing a CMake cache.
+OUT="${TMPDIR:-/tmp}/now-guest-builds/$(printf '%s' "$NOW" | shasum | cut -c1-12)"
+EXT_BIN="${NOW_EXT_BIN:-$OUT/ext/NowExt.bin}"
+APP_BIN="${NOW_APP_BIN:-$OUT/ppc/New Old World.bin}"
+
+[ -x "$QEMU" ] || { echo "no qemu-system-ppc at $QEMU (set TIMBOTTU_QEMU)"; exit 1; }
+[ -f "$BASE" ] || { echo "no base image at $BASE (set NOW_SPIN_BASE)"; exit 1; }
+[ -f "$EXT_BIN" ] || { echo "no NowExt.bin at $EXT_BIN — run scripts/build-guests 68k"; exit 1; }
+[ -f "$APP_BIN" ] || { echo "no guest app at $APP_BIN — run scripts/build-guests ppc"; exit 1; }
+
+export TBT_MACHINE_PROFILE=mac99
+tbt_select_machine_profile mac99
+mkdir -p "$RUN"
+
+# --- free ports, not assumed ones ---------------------------------------
+# ANCHOR forwards to the base image's baked worker on guest 1400 (the
+# deploy channel). WIRE is where NOW's own wire lands: the guest DIALS
+# 10.0.2.2:5250 by default (prefs.c set_defaults, contract 5250), and
+# 10.0.2.2 under user-mode networking IS this Mac's loopback, so the
+# listener binds it directly and no forward is involved.
+port_free () { ! lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
+ANCHOR="${NOW_ANCHOR_PORT:-1700}"
+if [ -z "${NOW_ANCHOR_PORT:-}" ]; then
+    tries=0
+    while ! port_free "$ANCHOR"; do
+        ANCHOR=$((ANCHOR + 2)); tries=$((tries + 1))
+        [ "$tries" -gt 30 ] && { echo "no free anchor port"; exit 1; }
+    done
+elif ! port_free "$ANCHOR"; then
+    echo "requested anchor port $ANCHOR is in use (another session?)"; exit 1
+fi
+WIRE="${NOW_WIRE_PORT:-5250}"
+port_free "$WIRE" || { echo "port $WIRE is already listening — another NOW host \
+is up, and the guest's compiled-in default would dial IT, not us"; exit 1; }
+HOSTFWD="hostfwd=tcp:127.0.0.1:${ANCHOR}-:1400"
+printf '%s %s\n' "$ANCHOR" "$WIRE" > "$RUN/ports"
+echo "ports: anchor=$ANCHOR wire=$WIRE"
+
+DISPLAY_KIND=none
+[ "${NOW_SPIN_DISPLAY:-0}" = "1" ] && DISPLAY_KIND=cocoa
+
+boot () {   # $1 = fresh | cold
+    [ "$1" = fresh ] && tbt_clone_disk "$BASE" "$DISK"
+    TIMBOTTU_QEMU="$QEMU" tbt_qemu_boot "NOW spin-up" "$DISPLAY_KIND" "$DISK" \
+        "$HOSTFWD" "" "$QMP" "$RUN/qemu.pid" "$RUN/qemu.log"
+}
+
+# Poll the anchor with a real hello, pressing Return between tries: a clone
+# booted from a hard power-off always shows the Disk First Aid modal, and
+# nothing else will dismiss it on a headless run.
+wait_anchor () {
+    python3 - "$QMP" "$ANCHOR" "$LAB" <<'PY'
+import subprocess, sys, time
+qmp, anchor, lab = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+sys.path.insert(0, f"{lab}/mcp-classic")
+from timbottu_mcp_classic.harness import Harness
+t0 = time.time()
+while time.time() - t0 < 300:
+    try:
+        if Harness(host="127.0.0.1", port=anchor,
+                   expect_backing={"worker"}).request("hello", {}).get("policyDigest"):
+            print(f"anchor ready ({int(time.time()-t0)}s)"); sys.exit(0)
+    except Exception:
+        pass
+    subprocess.run([f"{lab}/tools/qmp", qmp, "send-key",
+                    '{"keys":[{"type":"qcode","data":"ret"}]}'], capture_output=True)
+    time.sleep(6)
+sys.exit("anchor timeout")
+PY
+}
+
+echo "== boot a fresh, session-private clone =="
+boot fresh; wait_anchor
+
+echo "== stage the extension and the app =="
+NOW_ANCHOR_PORT="$ANCHOR" NOW_EXT_BIN="$EXT_BIN" NOW_APP_BIN="$APP_BIN" \
+    python3 "$NOW/tools/stage-ext.py"
+
+echo "== let OS 9 flush the staged writes (${NOW_FLUSH_WAIT:-20}s) =="
+sleep "${NOW_FLUSH_WAIT:-20}"
+
+# Rule 1. Hard quit, not system_powerdown, and relaunch without -loadvm.
+echo "== COLD reboot, which is the only way an INIT loads =="
+"$LAB/tools/qmp" "$QMP" quit >/dev/null 2>&1 || true
+sleep 3
+boot cold; wait_anchor
+
+echo "== did the staged files survive the reboot? =="
+python3 - "$ANCHOR" "$LAB" <<'PY'
+import sys
+anchor, lab = int(sys.argv[1]), sys.argv[2]
+sys.path.insert(0, f"{lab}/mcp-classic")
+from timbottu_mcp_classic.harness import Harness
+h = Harness(host="127.0.0.1", port=anchor, expect_backing={"worker"})
+for path in ("Macintosh HD:System Folder:Extensions:NOW Extension",
+             "Macintosh HD:TimBotTu:now-dev:New Old World"):
+    st = h.request("stat", {"path": path})
+    if not st.get("exists"):
+        sys.exit(f"{path} is GONE after the reboot — the write never flushed")
+    print(f"  {path.split(':')[-1]}: type={st.get('type')} "
+          f"creator={st.get('creator')} data={st.get('dataSize')} "
+          f"rsrc={st.get('rsrcSize')}")
+PY
+
+# The file surviving is NOT proof the INIT loaded — that is the whole point
+# of the next step. The guest is the oracle: `qdtrace op=status` reports the
+# content plane, which exists only if the extension published its table
+# through Gestalt 'NWex' at boot.
+echo "== launch NOW and ask the GUEST whether the extension is live =="
+python3 - "$ANCHOR" "$LAB" <<'PY'
+import sys
+anchor, lab = int(sys.argv[1]), sys.argv[2]
+sys.path.insert(0, f"{lab}/mcp-classic")
+from timbottu_mcp_classic.harness import Harness
+Harness(host="127.0.0.1", port=anchor, expect_backing={"worker"}).request(
+    "launch", {"path": "Macintosh HD:TimBotTu:now-dev:New Old World"})
+print("  launch requested")
+PY
+
+set +e
+# --retries, because a just-launched application has not been ANCHORED yet:
+# the extension captures a process's A5 world when that process first pumps
+# an event, so the very first actselftest after a launch answers
+# `no-such-process` and the identical call moments later answers
+# `abi-agreed` (measured 2026-08-01, mac99). Reporting the first answer
+# would be reporting a lie about the trap ABI, which is the exact failure
+# class this verb exists to catch.
+python3 "$NOW/tools/askguest.py" --port "$WIRE" --wait "${NOW_DIAL_WAIT:-180}" \
+    --retries 6 --retry-delay 6 \
+    qdtrace:op=status axsnap actselftest
+rc=$?
+set -e
+
+echo
+echo "anchor=127.0.0.1:$ANCHOR  wire=127.0.0.1:$WIRE  qmp=$QMP"
+echo "stop:  $LAB/tools/qmp $QMP quit     # QMP quit, never pkill"
+exit $rc

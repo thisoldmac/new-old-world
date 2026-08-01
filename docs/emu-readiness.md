@@ -543,6 +543,19 @@ down rather than discovered mid-run.
 cases read a scene now. MirrorKit still is, and for the unchanged reason:
 it does not speak NOW's contract.)*
 
+*(2026-08-01, later — **two of the paragraph's claims above are now false,
+and they were true only because nothing installed the extension**. There
+is a staging path now (`scripts/spin-up-ppc`), and on a mac99 emulator
+clone: `qdtrace op=status` answered with a real plane block rather than
+`content-plane-absent`, and `actselftest` answered `abi-agreed` — wanted
+`0x03E70007`, read back `0x03E70007`. So the act plane's trap calling
+convention holds **in that process, on that emulated machine**, which is
+the only claim that reading supports. It is not a metal result: nothing in
+this repository has executed on physical hardware, and the paragraph's
+requirements — disposable clone, shift-boot rehearsed, `actselftest`
+before any act — stand unchanged for the machine on your desk. Details and
+the verbatim answers: [staging-path.md](staging-path.md).)*
+
 **Restated 2026-08-01, with the headline in view.** Yes — and "ready" here
 means *ready to find out*, not *expected to pass*. Over 400 commits have
 landed since the last thing a Macintosh confirmed, so the base rate for
