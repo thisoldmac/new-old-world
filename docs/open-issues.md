@@ -9,6 +9,60 @@ wrong thing) versus **unverified** (it may well be right, but no one has
 watched it work on the PowerBook). Unverified is not a lesser problem —
 several of tonight's bugs lived in code that looked obviously correct.
 
+## Two planes asked for the same bit, and one collision was silent (2026-07-31)
+
+**Found and fixed during the fold-in, recorded because the near-miss is the
+lesson.** The act plane (P4) and the content plane (P3) were ported by different
+agents, in parallel, neither able to see the other's edits to
+`contract/peek_table.h`. Both appended a capability bit and a state cell. Both
+asked for **`1u << 2`** and for the offset **`36 + 60 * kNowPeekMaxAnchors`**.
+
+The offset collision would have **failed a compile** — the header's static
+asserts pin every offset, which is exactly what they are for.
+
+The bit collision would have been **silent**, and it is the dangerous one:
+arming the content plane would have armed **P4's six trap patches inside another
+process.** A person switching on a QuickDraw op counter would have been patching
+`MenuSelect`, `TrackControl` and `FindWindow` system-wide without asking for it.
+
+P3 now sits at `1u << 3`, appended after P4's cell. The shim keyed on
+`NOW_PEEK_TABLE_HAS_CAP_CONTENT` was deleted rather than left standing once it
+had retired.
+
+**What to carry forward:** the accretive discipline (`stamp_ticks` never moves,
+gate on the format word, append only) was written for **versions** — one writer
+extending a table over time. It says nothing about **two writers extending it at
+once**, and parallel ports are now normal here. A test asserting that every cap
+bit is distinct and every plane's cell offset is unique would have caught this at
+the same moment the compiler caught the other half.
+
+Related: `now_act_guard_test` went red on the append and was **right to** — it
+spelled "one byte short of the act cell" as `sizeof(table) - 1`, which is true
+only while that cell is the last field. A test written against the *end of a
+struct* is a test that fails the next time anyone appends.
+
+## `menuRowHeight` is a known-wrong constant (2026-07-31)
+
+`now-host/Sources/MirrorKit/ActionModel.swift:92` hardcodes
+`menuRowHeight = 16`, and `ActionDispatcher`'s `.menuDrag` releases on a point
+computed from it. That is the uniform-row assumption upstream **measured** as a
+**~30 px accumulated error** once a menu contains separators — the rows are not
+uniform and the error compounds down the menu.
+
+It survived the port because it is a constant rather than a mechanism, and
+nothing crossing looked at it.
+
+The fix upstream built for this is `MENU_GEOMETRY`, which the act-plane port
+deliberately left behind on the grounds that *"nothing in NOW consumes item
+rects."* **That reason has expired** — `ActionModel` consumes them implicitly, by
+assuming them. Porting it needs a new resident op (`peek_table.h`, `ext/`, the
+guard), so it is not a small change.
+
+**Until then, prefer `menuact`**, which is identity-addressed and computes no
+geometry at all. The drag path this constant serves is emulator-only, so the
+blast radius is bounded — but a number that is wrong by 30 px two-thirds of the
+way down a menu will find a way to be believed.
+
 ## Proposed: an extension is a thing you enable, not a thing you launch (2026-07-31)
 
 **Proposal, nothing built.** From the manual review pass, and recorded here
