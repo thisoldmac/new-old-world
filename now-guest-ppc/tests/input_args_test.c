@@ -1,11 +1,12 @@
 /*
  * input_args_test.c - the input plane's decisions, on a host compiler.
  *
- * `mouseloc`, `script` and `aesend` each touch the machine in a way this
- * host cannot reproduce, so what is checked here is everything they
- * decide BEFORE they touch it: the timeout clamp, the CR conversion, the
- * whole-disk-search refusal, the closed four-op vocabulary, and the
- * serials that name no process or name us.
+ * `mouseloc`, `key`, `script` and `aesend` each touch the machine in a
+ * way this host cannot reproduce, so what is checked here is everything
+ * they decide BEFORE they touch it: the modifier refusal and the key
+ * tables, the timeout clamp, the CR conversion, the whole-disk-search
+ * refusal, the closed four-op vocabulary, and the serials that name no
+ * process or name us.
  *
  * Two of these guard hazards whose failure mode is unrecoverable from
  * the guest side, which is the argument for testing them at all:
@@ -310,8 +311,185 @@ static void test_ae_gate(void)
           "and the message says why there is no general form");
 }
 
+/* ---- key --------------------------------------------------------------
+ *
+ * The verb whose most important behaviour is a REFUSAL, so that is what
+ * most of this section is about. A `key` that accepted `mods` and posted
+ * the keystroke without them would type a bare character and report
+ * success - the exact defect the upstream act plane paid for - and no
+ * test that only checked the happy path would notice.
+ */
+static void test_key_modifiers(void)
+{
+    NowKeyRequest req;
+
+    check(now_key_check(NULL, 0, 0, 'n', 1, 0x0100, 1, &req)
+          == kNowKeyModifiers,
+          "a command modifier is REFUSED, never dropped");
+    check(now_key_check("return", 0, 0, 0, 0, 0x0200, 1, &req)
+          == kNowKeyModifiers,
+          "and refused for a named key too");
+    /* Refused BEFORE any other complaint: a caller that asked for
+       Command-<nothing> is told about the modifier, not about the
+       missing key, because the modifier is the reason it will never
+       work. */
+    check(now_key_check(NULL, 0, 0, 0, 0, 0x0100, 1, &req)
+          == kNowKeyModifiers,
+          "the modifier refusal outranks every other argument complaint");
+    check(now_key_check(NULL, 999, 1, 0, 0, 0x0100, 1, &req)
+          == kNowKeyModifiers,
+          "including an out-of-range code");
+
+    check(now_key_check(NULL, 0, 0, 'n', 1, 0, 1, &req) == kNowKeyOk,
+          "mods 0 is a caller saying `none`, which is what this verb does");
+    check(now_key_check(NULL, 0, 0, 'n', 1, 0, 0, &req) == kNowKeyOk,
+          "and an absent mods is the same request");
+
+    check(strcmp(now_key_status_code(kNowKeyModifiers), "unsupported") == 0,
+          "the modifier refusal is `unsupported`, not the caller's error");
+    check(strstr(now_key_status_message(kNowKeyModifiers), "PPostEvent")
+          != NULL,
+          "and the message names the call that is missing");
+    check(strstr(now_key_status_message(kNowKeyModifiers), "menuact")
+          != NULL,
+          "and the verb to use instead");
+}
+
+static void test_key_resolution(void)
+{
+    NowKeyRequest req;
+    int           code = -1;
+    int           ch = -1;
+
+    check(now_key_check(NULL, 0, 0, 0, 0, 0, 0, &req) == kNowKeyNoKey,
+          "no name, no code and no char is not a keystroke");
+    check(now_key_check("wiggle", 0, 0, 0, 0, 0, 0, &req)
+          == kNowKeyUnknownName,
+          "a name the table does not have is refused, not guessed at");
+
+    check(now_key_named("return", &code, &ch) && code == 36 && ch == 13,
+          "return is code 36, character 13");
+    check(now_key_named("escape", &code, &ch) && code == 53 && ch == 27,
+          "escape is code 53, character 27");
+    check(now_key_named("enter", &code, &ch) && code == 76,
+          "enter is the keypad's key, 76, and is not return");
+    check(!now_key_named("Return", &code, &ch),
+          "the name table is matched exactly; the caller folds case");
+
+    /* The one number in either table that a live machine agreed with. */
+    check(now_key_code_for_char('n') == 45,
+          "n is virtual key code 45, which upstream measured");
+    check(now_key_code_for_char('N') == 45,
+          "and N is the same KEY - the difference is a modifier we "
+          "cannot send, so the code is the unshifted one");
+    check(now_key_char_for_code(45) == 'n', "and 45 reads back as n");
+    check(now_key_code_for_char('@') == -1,
+          "a character with no unshifted key of its own has no code");
+
+    /* char alone: the code half is derived, and the character is passed
+       through with its case intact - which is what makes an upper-case
+       letter type correctly with no shift. */
+    check(now_key_check(NULL, 0, 0, 'N', 1, 0, 0, &req) == kNowKeyOk
+          && req.code == 45 && req.ch == 'N'
+          && req.code_known && req.char_known,
+          "char N derives code 45 and keeps the character it was given");
+    check(now_key_check(NULL, 0, 0, '@', 1, 0, 0, &req) == kNowKeyOk
+          && req.ch == '@' && !req.code_known && req.code == 0,
+          "an underivable code is reported as unknown, not invented");
+    /* code alone: the character half is derived. */
+    check(now_key_check(NULL, 36, 1, 0, 0, 0, 0, &req) == kNowKeyOk
+          && req.ch == 13 && req.char_known,
+          "code 36 derives the carriage return it types");
+    check(now_key_check(NULL, 10, 1, 0, 0, 0, 0, &req) == kNowKeyOk
+          && req.ch == 0 && !req.char_known,
+          "a code with no character says so rather than sending one");
+    /* Both: neither is derived and neither is second-guessed. */
+    check(now_key_check(NULL, 45, 1, 3, 1, 0, 0, &req) == kNowKeyOk
+          && req.code == 45 && req.ch == 3,
+          "a caller that sent both halves gets both halves back");
+
+    check(now_key_check(NULL, -1, 1, 0, 0, 0, 0, &req) == kNowKeyCodeRange,
+          "a negative code is refused");
+    check(now_key_check(NULL, 127, 1, 0, 0, 0, 0, &req) == kNowKeyOk,
+          "127 is the last virtual key code");
+    check(now_key_check(NULL, 128, 1, 0, 0, 0, 0, &req) == kNowKeyCodeRange,
+          "128 is refused rather than masked down to 0");
+    check(now_key_check(NULL, 0, 0, 255, 1, 0, 0, &req) == kNowKeyOk,
+          "255 is the last character code");
+    check(now_key_check(NULL, 0, 0, 256, 1, 0, 0, &req) == kNowKeyCharRange,
+          "256 is refused rather than masked down to 0");
+}
+
+static void test_key_message(void)
+{
+    NowKeyRequest req;
+
+    check(now_key_check("return", 0, 0, 0, 0, 0, 0, &req) == kNowKeyOk,
+          "return resolves");
+    check(now_key_message(&req) == 0x240Du,
+          "the message is code in the second byte, character in the low");
+    check(now_key_check(NULL, 0, 0, 'n', 1, 0, 0, &req) == kNowKeyOk,
+          "n resolves");
+    check(now_key_message(&req) == 0x2D6Eu, "code 45, character 0x6E");
+    /* The bound that a masked-off shift would hide. A message built by
+       OR-ing an unmasked code would corrupt the byte above it. */
+    req.code = 0x1FF;
+    req.ch = 0x1FF;
+    check(now_key_message(&req) == 0xFFFFu,
+          "both halves are masked to a byte, so neither can climb");
+}
+
+static void test_key_console_grammar(void)
+{
+    NowKeyRequest req;
+
+    check(now_key_parse_line("", &req) == kNowKeyNoKey,
+          "an empty line names no key");
+    check(now_key_parse_line("   ", &req) == kNowKeyNoKey,
+          "and neither does whitespace");
+    check(now_key_parse_line("return", &req) == kNowKeyOk
+          && req.code == 36, "a name is a name");
+    check(now_key_parse_line("  RETURN  ", &req) == kNowKeyOk
+          && req.code == 36, "typed case and padding do not matter");
+    check(now_key_parse_line("n", &req) == kNowKeyOk
+          && req.ch == 'n' && req.code == 45,
+          "one character is that character, not a key named n");
+    check(now_key_parse_line("N", &req) == kNowKeyOk && req.ch == 'N',
+          "and the case a person typed survives the fold used to match "
+          "names");
+    check(now_key_parse_line("char 13", &req) == kNowKeyOk
+          && req.ch == 13 && req.code == 36,
+          "char N is the character, and the code follows");
+    check(now_key_parse_line("code 36", &req) == kNowKeyOk
+          && req.code == 36 && req.ch == 13,
+          "code N is the code, and the character follows");
+    check(now_key_parse_line("char", &req) == kNowKeyNoKey,
+          "char with no number is not a keystroke");
+    check(now_key_parse_line("code -1", &req) == kNowKeyNoKey,
+          "a sign is not part of this grammar");
+    check(now_key_parse_line("code 128", &req) == kNowKeyCodeRange,
+          "and the typed face gets the same bound as the wire's");
+    check(now_key_parse_line("wiggle", &req) == kNowKeyUnknownName,
+          "a word that is not a name and not one character is refused");
+
+    /* The person who types the thing this verb cannot do gets the real
+       reason rather than a list of names not containing their word. */
+    check(now_key_parse_line("cmd n", &req) == kNowKeyModifiers,
+          "cmd n is answered with the modifier wall");
+    check(now_key_parse_line("Command Q", &req) == kNowKeyModifiers,
+          "and so is Command Q");
+    check(now_key_parse_line("shift tab", &req) == kNowKeyModifiers,
+          "and shift tab");
+    check(now_key_parse_line("option x", &req) == kNowKeyModifiers,
+          "and option x");
+}
+
 int main(void)
 {
+    test_key_modifiers();
+    test_key_resolution();
+    test_key_message();
+    test_key_console_grammar();
     test_reply_budget();
     test_clamp();
     test_source_bounds();

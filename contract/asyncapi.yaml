@@ -2849,9 +2849,17 @@ components:
         Perform ONE menu command, by answering the owning
         application's own MenuSelect. No menu is drawn, no tracking
         loop runs, and nothing depends on mouse motion or timing - so
-        an item with no keyboard shortcut becomes reachable. An item
-        that HAS one should still go through key: it is simpler and
-        needs no patch at all.
+        an item with no keyboard shortcut becomes reachable.
+
+        AND SO DOES AN ITEM THAT HAS ONE. This sentence used to say the
+        opposite — that a shortcut should go through `key`, which is
+        simpler and needs no patch — and that was upstream's advice on
+        upstream's guest. It does not hold here: a menu shortcut is a
+        Command keystroke, `key` on this Mac cannot carry a modifier at
+        all (CarbonLib has no PPostEvent, so the queue element's
+        modifiers are unreachable), and the Menu Manager matches on the
+        virtual key code rather than the character even when it can. This
+        verb is the route for BOTH kinds of menu item.
 
         titleLeft is where the press will land, and it is this act's
         identity check. A menu press carries no handle to name, so the
@@ -2968,9 +2976,9 @@ components:
           actselftest: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
 
     # THE INPUT PLANE, declared 2026-07-31 with the dispatch that answers
-    # it. Three verbs that are three different kinds of thing: a READ the
-    # act plane is measured with, one AppleScript, and one of four core
-    # Apple Events. See now-guest-ppc/src/input/input_cmds.h.
+    # it. Four verbs that are four different kinds of thing: a READ the
+    # act plane is measured with, one keystroke, one AppleScript, and one
+    # of four core Apple Events. See now-guest-ppc/src/input/input_cmds.h.
     mouseloc:
       description: >
         Where this Mac's pointer IS — which is not where anything asked
@@ -2992,6 +3000,76 @@ components:
         type: object
         properties:
           mouseloc: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    key:
+      description: >
+        Post ONE keystroke into this Mac's event queue — the mechanism
+        `textset` is not, rather than a better one.
+
+        `textset` writes an addressed element's text directly, through
+        the Dialog Manager's or TextEdit's own setter. That reaches
+        further in one direction (no focus, no frontmost application) and
+        not at all in the other: a dialog that answers only keystrokes
+        never sees it, and there is no text to set for Return, Escape or
+        Tab. This verb is for the second case.
+
+        NO MODIFIERS, AND `mods` IS REFUSED RATHER THAN DROPPED. An
+        event's modifiers live on the Event Manager's queue element; the
+        only call that hands that element back is `PPostEvent`, and
+        CarbonLib does not have it — the PowerPC guest is a Carbon
+        application. Posting the keystroke without the modifier would type
+        a bare character and answer ok, which is precisely the defect this
+        contract's act plane was written to avoid, so the request is
+        refused with code `unsupported`. For a menu command use `menuact`:
+        it is addressed by identity, needs no modifier, and draws no menu.
+
+        The reply says `posted`, never `typed`. The keystroke entered the
+        queue; which application dequeues it and what it does with it is
+        the caller's to read back — the same rule as `aesend`'s `sent`.
+
+        Both halves of the message are reported, with whether each came
+        from the caller or from the guest's own key table. The virtual
+        code half matters even unmodified: the Menu Manager matches
+        shortcuts on the code and not the character.
+      args:
+        type: object
+        properties:
+          name:
+            type: string
+            enum: [return, enter, tab, space, delete, escape, help, home,
+                   fwddelete, end, pageup, pagedown, left, right, down, up]
+            description: >
+              A key with no character to type, which is the half a
+              text-writing verb cannot express at all. `enter` is the
+              keypad's key and is not `return`. Exact match; anything
+              else is a character, so send char or code.
+          char:
+            type: integer
+            description: >
+              The character code, 0..255 — the message's low byte. Sent
+              alone, the virtual code is derived from it where the US key
+              table has a row; an upper-case character keeps its case and
+              takes the unshifted key's code, because the shift is a
+              modifier this verb cannot post.
+          code:
+            type: integer
+            description: >
+              The virtual key code, 0..127 — the message's second byte.
+              Sent alone, the character is derived where the table has a
+              row.
+          mods:
+            type: integer
+            description: >
+              Accepted only as 0. Any other value is refused; see the
+              description. It exists as an argument so that a caller
+              asking for a modifier gets the true reason rather than
+              `unknown argument`.
+      x-line: >
+        A key name, or `char N`, or `code N`. A person at this machine
+        has all three.
+      output:
+        type: object
+        properties:
+          key: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
     script:
       description: >
         Run ONE AppleScript on this Mac, through its own OSA component.

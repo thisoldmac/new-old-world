@@ -4,9 +4,10 @@
 /* input_args.h - the deciding half of the input plane, with no Toolbox
    in it.
    ------------------------------------------------------------------
-   Three verbs live in src/input/: `mouseloc` reads where the pointer
-   is, `script` runs one AppleScript, and `aesend` sends one of four
-   core Apple Events to a named process. Every choice any of them makes
+   Four verbs live in src/input/: `mouseloc` reads where the pointer
+   is, `key` posts one keystroke, `script` runs one AppleScript, and
+   `aesend` sends one of four core Apple Events to a named process.
+   Every choice any of them makes
    before touching the machine is in this file, so it compiles on the
    host cc and its bounds get watched failing in
    now-guest-ppc/tests/input_args_test.c rather than discovered on a
@@ -22,6 +23,142 @@
    number compared against an `int`, which is 32 bits on both, and the
    one place a 32-bit wire value is unavoidable (a process serial) is
    taken as two `unsigned long`s and never arithmetic. */
+
+/* ---- key -------------------------------------------------------------
+
+   ONE KEYSTROKE, AND NO MODIFIERS - and the second half of that sentence
+   is the whole design, so it is stated before the arguments are.
+
+   `textset` already writes text into an addressed element, directly, by
+   the Dialog Manager's or TextEdit's own setter. It reaches further than
+   a keystroke in one direction (it does not need the element focused, or
+   the application frontmost) and not at all in the other: a dialog that
+   only answers keystrokes never sees it, and there is no text to set for
+   Return, Escape or Tab. `key` is the other mechanism, not a better one.
+
+   THE MODIFIER WALL, which is a NOW fact and inverts the usual posture
+   between the two ISAs:
+
+     - The Event Manager takes an event's modifiers from the queue
+       ELEMENT, not from the message. `PostEvent` gives a caller no
+       handle on that element; `PPostEvent` hands it back, which is how
+       upstream's guest stamped `evtQModifiers` and got a command key.
+     - `PPostEvent` is CALL_NOT_IN_CARBON (Events.h: "CarbonLib: not
+       available"). `PostEvent` is in CarbonLib. NOW's application is
+       Carbon. So this guest can queue a keystroke and CANNOT say what
+       was held down while it was typed.
+     - The resident half is 68K and not Carbon, and it does call
+       PPostEvent - that is how the act plane posts its own press
+       (ext/src/now_ext_act.c, docs/resident-components.md). A modified
+       keystroke is therefore reachable from NOW, but only through the
+       act plane's cell and an armed extension. It is not reachable from
+       the application, and this verb lives in the application.
+
+   So a `mods` argument is REFUSED here rather than dropped. That is the
+   defect upstream paid for and wrote down: an act that silently lost a
+   command modifier typed a literal character into a document and
+   answered ok. A caller that asked for Command-N and got `n` has been
+   told something false; a caller that asked for Command-N and was
+   refused knows to use `menuact`, which needs no modifier, draws no
+   menu, and is addressed by identity rather than by a shortcut.
+
+   `mods: 0` is accepted. A caller that says "no modifiers" is asking for
+   what this verb does.
+
+   WHAT IT CAN DO, which is the reason it exists: Return, Enter, Escape,
+   Tab, Space, Delete, the four arrows and the navigation cluster, and
+   any plain character - each posted with both halves of the message a
+   real keystroke carries. The `code` half matters even unmodified: the
+   Menu Manager matches shortcuts on the virtual KEY CODE and not the
+   character (upstream: `key {char:'n'}` opened New in SimpleText and
+   silently no-op'd in the Finder), so a verb that could only ever send a
+   character would be shipping that same near-miss one layer down. */
+enum {
+    kNowKeyCodeMax = 127,      /* a virtual key code is 7 bits */
+    kNowKeyCharMax = 255,      /* one byte of the message's low half */
+    kNowKeyNameMax = 16
+};
+
+typedef enum {
+    kNowKeyOk = 0,
+    kNowKeyNoKey,          /* neither name, code nor char was sent */
+    kNowKeyUnknownName,
+    kNowKeyCodeRange,
+    kNowKeyCharRange,
+    kNowKeyModifiers       /* mods were asked for; see the wall above */
+} NowKeyStatus;
+
+/* One resolved keystroke. `code_known` / `char_known` are 0 when this
+   half could not be derived and is being sent as 0 - reported on the
+   wire rather than smoothed over, because an application that matches on
+   the half we did not have will not respond and the caller needs to be
+   able to see why. */
+typedef struct {
+    int code;
+    int ch;
+    int code_known;
+    int char_known;
+} NowKeyRequest;
+
+/* The named keys, for the half of this verb `textset` cannot express at
+   all. `name` is matched exactly and in lower case; the table is the
+   standard Macintosh virtual key codes (P-DOC: Inside Macintosh: Text,
+   "Keyboard Virtual Key Codes"), cross-checked against the one number
+   upstream measured on a live machine - `n` is 45 there and 45 here.
+
+   Returns 1 and fills both halves, or 0 for a name not in the table. */
+int now_key_named(const char *name, int *code_out, int *char_out);
+
+/* The character a plain (unshifted, US) press of `code` produces, or 0
+   when the code is not one of the character keys. */
+int now_key_char_for_code(int code);
+
+/* The virtual key code that produces `ch` on a plain US press, or -1.
+   Case-folded: `N` and `n` are the same KEY held with a different
+   modifier, and the modifier is exactly what this verb cannot send - so
+   the code is right and the character is passed through unchanged, which
+   is what makes an upper-case character type correctly anyway (an
+   application reads the case out of the message's low half). */
+int now_key_code_for_char(int ch);
+
+/* The whole gate one key request passes before anything is queued.
+   `name` is the wire's `name` argument or NULL when absent; `code` and
+   `ch` are its integer arguments with their own presence flags; `mods`
+   likewise.
+
+   Checked in this order deliberately: modifiers first, so a caller that
+   asked for Command-something is told the true reason rather than a
+   complaint about some other argument it also got wrong. */
+NowKeyStatus now_key_check(const char *name,
+                           long code, int code_present,
+                           long ch, int char_present,
+                           long mods, int mods_present,
+                           NowKeyRequest *out);
+
+/* The console grammar, which is the same decision from a typed line.
+
+   `key return`, `key n`, `key char 13`, `key code 36`. A bare token one
+   character long is that character, because a person typing `key n`
+   means the letter and not a key named "n".
+
+   A leading modifier word (cmd, command, option, opt, shift, control,
+   ctrl) answers kNowKeyModifiers rather than "unknown key name". A
+   person who types `key cmd n` has run into the wall this verb has, and
+   the reason for the refusal is worth more than a list of names that
+   does not contain the word they typed. */
+NowKeyStatus now_key_parse_line(const char *args, NowKeyRequest *out);
+
+/* The Event Manager message for a resolved keystroke: key code in the
+   second byte, character in the low byte.
+
+   `unsigned int` and not `unsigned long` ON PURPOSE - the host's long is
+   64 bits and this guest's is 32, and this file's opening note says a
+   bound written against a long is decorative on one side. int is 32 bits
+   on both, and the shift below is watched failing in the native test. */
+unsigned int now_key_message(const NowKeyRequest *req);
+
+const char *now_key_status_code(NowKeyStatus status);
+const char *now_key_status_message(NowKeyStatus status);
 
 /* ---- script ----------------------------------------------------------
 

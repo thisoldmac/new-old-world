@@ -207,15 +207,32 @@ static const char *const d_actselftest[] = {
 };
 
 /* --- the input plane ---------------------------------------------------
-   Three different kinds of thing behind one heading: a read that every
-   hop calibration closes its loop against, one AppleScript, and one of
-   four core Apple Events. See src/input/input_cmds.h. */
+   Four different kinds of thing behind one heading: a read that every
+   hop calibration closes its loop against, one keystroke, one
+   AppleScript, and one of four core Apple Events. See
+   src/input/input_cmds.h. */
 static const char *const d_mouseloc[] = {
     "  Where the pointer IS, which is not where anything asked it to",
     "  go: an emulator's relative mouse is acceleration-distorted, so",
     "  a driver positions by reading this and correcting.",
     "  A read, and it stays a read - there is deliberately no",
     "  move-the-mouse verb beside it.",
+    NULL
+};
+static const char *const d_key[] = {
+    "  One keystroke into this Mac's event queue - the mechanism",
+    "  textset is not. textset writes an element's text directly and",
+    "  never reaches Return, Escape, or a dialog that answers only",
+    "  keys; this posts the event a keyboard would.",
+    "  Name a key (return, escape, tab, space, delete, enter, help,",
+    "  home, end, pageup, pagedown, fwddelete, left, right, up,",
+    "  down), or give char, or give code, or both.",
+    "  NO MODIFIERS, and mods is REFUSED rather than dropped. An",
+    "  event's modifiers live on the Event Manager's queue element;",
+    "  the only call that hands that element back is PPostEvent,",
+    "  which CarbonLib does not have, and this application is",
+    "  Carbon. For a menu command use menuact - it needs no",
+    "  modifier and draws no menu.",
     NULL
 };
 static const char *const d_script[] = {
@@ -433,6 +450,8 @@ const NowCommandDoc kNowCommandDocs[] = {
       "actselftest [serialHi serialLo]", d_actselftest },
     { "mouseloc", 1, "where this Mac's pointer actually is",
       "mouseloc", d_mouseloc },
+    { "key", 1, "post one keystroke, with no modifiers",
+      "key <name | char N | code N>", d_key },
     { "script", 1, "run one AppleScript on this Mac",
       "script <source>", d_script },
     { "aesend", 1, "send one core Apple Event to a process on this Mac",
