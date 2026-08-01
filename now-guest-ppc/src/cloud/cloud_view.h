@@ -6,6 +6,14 @@
 #include "cloud_layout.h"
 #include "cloud_model.h"
 
+/* The Data Browser's two columns, shared by both of today's views (the
+   list one draws them from CloudRow, the drive one from FileEntry) and
+   by the shell, which owns the control and its item_data callback. */
+enum {
+    kCloudColTitle = 'titl',
+    kCloudColSubtitle = 'subt'
+};
+
 /* The per-service half of the iCloud page. cloud_module.c is the
    shell — popup, Refresh, status/placard, the conn_set_cloud_note
    hook, and service choice — and renders whichever service is active
@@ -50,16 +58,20 @@ typedef struct CloudViewOps {
        but kept for symmetry with WorkshopModuleOps' click. */
     Boolean (*click)(const EventRecord *event, Point local);
 
-    /* The list control has keyboard focus and a key came in. Return
-       true if consumed (the shell then skips its own
-       HandleControlKey); NULL means "never consumed", i.e. always
-       fall through to the generic handling. */
-    Boolean (*key)(const EventRecord *event);
+    /* The list control has keyboard focus and a key came in; `selected`
+       is the shell's current row index (-1 = none), since the shell
+       owns selection across both views. Return true if consumed (the
+       shell then skips its own HandleControlKey); NULL means "never
+       consumed", i.e. always fall through to the generic handling. */
+    Boolean (*key)(const EventRecord *event, int selected);
 
     /* Every event-loop pass while the page is visible — must be
        nearly free (docs/guest-ui-start-here.md). NULL if the view has
-       nothing to watch between wire answers. */
-    void (*idle)(void);
+       nothing to watch between wire answers. Takes `r` so a view that
+       needs to invalidate its own rectangle (a running pull's byte
+       count, say) can, without the shell handing out its WindowRef
+       separately. */
+    void (*idle)(const CloudLayout *r);
 
     /* This service was just chosen (or Refresh was pressed while it
        was already current): drop whatever the last service showed and

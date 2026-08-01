@@ -43,6 +43,8 @@ add_application(now-guest-ppc
     src/cloud/cloud_layout.c
     src/cloud/cloud_model.c
     src/cloud/cloud_module.c
+    src/cloud/cloud_drive_view.c
+    src/cloud/cloud_list_view.c
     src/census/census_decode.c
     src/census/census_report.c
     src/files/files_module.c
