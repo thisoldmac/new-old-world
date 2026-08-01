@@ -39,11 +39,17 @@ static unsigned long token_word(unsigned long domain,
     hash = mix32(hash, identity->node_fingerprint);
     hash = mix32(hash, identity->window_address);
     hash = mix32(hash, identity->control_handle);
-    /* The text route is part of the identity, not decoration: two
-       element references into the same window - its OK button and its
-       editable field - differ in nothing else, and a token that did not
-       depend on the difference would be a token that could have named
-       either. */
+    /* The text route is part of the identity because it is part of the
+       identity - two element references into the same window can differ
+       in nothing else, and what a token is hashed over should be what a
+       reference means.
+
+       It is NOT what stops the two colliding, and saying so is worth the
+       line: the counter above already differs on every mint, so no two
+       tokens can be equal whatever else agrees. Removing these three
+       mixes leaves every test green, which was checked rather than
+       assumed. They are here for correctness of expression, not as a
+       guard anything can fail. */
     hash = mix32(hash, identity->text_kind);
     hash = mix32(hash, identity->te_handle);
     hash = mix32(hash, (unsigned long)identity->dialog_item);
