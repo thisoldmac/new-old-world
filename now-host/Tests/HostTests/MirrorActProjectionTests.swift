@@ -47,6 +47,13 @@ import XCTest
 /// | `winact:` removed from the contract's `x-commands` | `MCPCoverageTests.testEveryRequirementResolvesToTheContract` |
 /// | the three exempted in `CommandRegistryTests.servedByNoGuestYet` deleted | `…TheThreeHalvesAgreeOnTheCommandSet` |
 /// | the act defaults returned to `.hostUnavailable` | `…AnActAgainstALiveHostSaysWhatIsMissing` |
+/// | `now_text_set`'s row deleted from `docs/mcp-coverage.md` | `MCPCoverageTests.testTheProjectionTableMatchesTheRegistry` |
+/// | `winact` listed in BOTH command-registry exemption maps | `CommandRegistryTests.testTheUnservedDeclarationsAreStillUnserved` |
+/// | `reveal` — a verb the PowerPC guest does serve — added to `servedByNoGuestYet` | the same test, which is what keeps that list a debt rather than a drawer |
+///
+/// The three rows are registered, so the registry-wide gates cover them too:
+/// `frontmost` added to `acceptedArguments` now fails
+/// `HostProjectionArgumentStrictnessTests` as well as the two here.
 final class MirrorActProjectionTests: XCTestCase {
 
     private var rows: [any HostProjection.Type] {
