@@ -354,6 +354,12 @@ static void put_meta(Sink *k, const NowScene *s)
                 "scene carries");
         first = 0;
     }
+    if (s->menubar_refused) {
+        put(k, first ? "" : ",");
+        put_str(k, "menubar omitted: the front process's menu list did not "
+                "parse, so no menu bar is reported rather than an empty one");
+        first = 0;
+    }
     if (s->menus_truncated) {
         put(k, first ? "" : ",");
         put_str(k, "menus truncated: the menu bar had more than this "

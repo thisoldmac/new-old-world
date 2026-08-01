@@ -291,7 +291,7 @@ int now_scene_add_control(NowScene *s, int window, const char *title,
     return 1;
 }
 
-void now_scene_retract_controls(NowScene *s, int window, int truncated)
+void now_scene_retract_controls(NowScene *s, int window)
 {
     NowSceneWindow *w = window_at(s, window);
 
@@ -305,9 +305,7 @@ void now_scene_retract_controls(NowScene *s, int window, int truncated)
     w->controls_present = 0;
     w->control_count = 0;
     w->first_control = 0;
-    if (truncated) {
-        s->controls_truncated = 1;
-    }
+    s->controls_truncated = 1;        /* never a silent drop */
 }
 
 void now_scene_set_window_text(NowScene *s, int window, const char *content,
@@ -355,9 +353,10 @@ int now_scene_open_menubar(NowScene *s, int proc)
 
 void now_scene_retract_menubar(NowScene *s)
 {
-    if (s == NULL) {
+    if (s == NULL || !s->menubar_present) {
         return;
     }
+    s->menubar_refused = 1;           /* never a silent drop */
     s->menubar_present = 0;
     s->menubar_proc = -1;
     s->menu_count = 0;
@@ -420,7 +419,7 @@ int now_scene_add_menu_item(NowScene *s, int menu, const char *title,
     return 1;
 }
 
-void now_scene_retract_menu_items(NowScene *s, int menu, int truncated)
+void now_scene_retract_menu_items(NowScene *s, int menu)
 {
     NowSceneMenu *m;
 
@@ -436,7 +435,5 @@ void now_scene_retract_menu_items(NowScene *s, int menu, int truncated)
     m->items_present = 0;
     m->item_count = 0;
     m->first_item = 0;
-    if (truncated) {
-        s->menu_items_truncated = 1;
-    }
+    s->menu_items_truncated = 1;      /* never a silent drop */
 }

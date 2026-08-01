@@ -1,0 +1,484 @@
+/* Native test for the walk-to-scene bridge (src/scene/scene_walk.c).
+ *
+ *     cc -Wall -Wextra -Werror -I ../src/scene -I ../src/axwalk \
+ *        -I ../src/peek -I . scene_walk_test.c ../src/scene/scene_walk.c \
+ *        ../src/scene/scene_build.c ../src/axwalk/axwalk.c \
+ *        ../src/axwalk/axmenu.c ../src/axwalk/axtext.c \
+ *        ../src/peek/peek_validate.c -o scene_walk_test && ./scene_walk_test
+ *
+ * THIS IS THE TEST THE WIRING EXISTS FOR. The ported walk had automated
+ * coverage of its PARSERS from the day it landed; what had none was the
+ * layer that decides what a scene CLAIMS from what the parsers return -
+ * and that layer is where an honest producer and a lying one look
+ * identical from the parser's side. Every case below is one of those
+ * decisions:
+ *
+ *   - a complete chain becomes a `controls` array;
+ *   - a chain that is *complete and empty* becomes `[]`, which asserts
+ *     something true, and is not the same document as no key at all;
+ *   - a chain that stopped early - bound, cycle, or a pointer that
+ *     failed validation - becomes NO KEY, plus a notice. A short array
+ *     reads as a complete one and there is nowhere beside it to say
+ *     otherwise, so it is retracted rather than shipped;
+ *   - a menu bar under a refused anchor is never opened at all.
+ *
+ * The seam is the axwalk fixture's synthetic big-endian arena, so a
+ * "process" here is bytes at chosen addresses and the boundary can be
+ * crossed on purpose. No Macintosh is in the loop and none is needed:
+ * everything under test takes its memory as an argument.
+ */
+
+#include <stdio.h>
+#include <string.h>
+
+#include "axfixture.h"
+#include "scene_walk.h"
+
+static int g_failures;
+
+static void check(int ok, const char *what)
+{
+    if (!ok) {
+        fprintf(stderr, "FAIL: %s\n", what);
+        ++g_failures;
+    }
+}
+
+enum {
+    kWin = 0x00101000UL,          /* a WindowRecord */
+    kWinTitleH = 0x00101400UL,
+    kWinTitle = 0x00101410UL,
+    kContRgnH = 0x00101500UL,
+    kContRgn = 0x00101510UL,
+    kCtl1H = 0x00102000UL,        /* ControlHandle 1 */
+    kCtl1 = 0x00102100UL,
+    kCtl2H = 0x00102400UL,
+    kCtl2 = 0x00102500UL,
+    kTeH = 0x00103000UL,
+    kTe = 0x00103100UL,
+    kTextH = 0x00103200UL,
+    kText = 0x00103210UL,
+    kListH = 0x00104000UL,
+    kList = 0x00104100UL,
+    kMenuH0 = 0x00105000UL,
+    kMenu0 = 0x00105100UL,
+    kMenuH1 = 0x00106000UL,
+    kMenu1 = 0x00106100UL,
+
+    /* Outside both arenas: the address a validated read must refuse. */
+    kOutside = 0x00900000UL
+};
+
+/* The WindowRecord fields this walk reads, at the classic offsets
+   axwalk.c reads them from. portRect's origin plus the content region's
+   global box are what turn a control's LOCAL rect into a global one. */
+static void build_window(AxFixture *f, int kind, unsigned long controls,
+                         int port_top, int port_left,
+                         int t, int l, int b, int r)
+{
+    axfix_put16(f, kWin + 16, port_top);      /* portRect.top  (local) */
+    axfix_put16(f, kWin + 18, port_left);     /* portRect.left (local) */
+    axfix_put16(f, kWin + 108, kind);         /* windowKind */
+    axfix_put8(f, kWin + 110, 1);             /* visible */
+    axfix_put32(f, kWin + 118, kContRgnH);    /* content region handle */
+    axfix_put32(f, kWin + 134, kWinTitleH);   /* title handle */
+    axfix_put32(f, kWin + 140, controls);     /* control list */
+    axfix_put32(f, kWin + 144, 0);            /* nextWindow */
+    axfix_put_handle(f, kContRgnH, kContRgn);
+    axfix_put_region(f, kContRgn, t, l, b, r);
+    axfix_put_handle(f, kWinTitleH, kWinTitle);
+    axfix_put_pstr(f, kWinTitle, "Save As");
+}
+
+/* A ControlRecord: next, rect at 8 (LOCAL), visible/hilite at 16/17,
+   value/min/max at 18/20/22, a Str255 title at 40. */
+static void build_control(AxFixture *f, unsigned long handle,
+                          unsigned long record, unsigned long next,
+                          const char *title, int t, int l, int b, int r,
+                          int hilite, int value)
+{
+    axfix_put_handle(f, handle, record);
+    axfix_put32(f, record + 0, next);
+    axfix_put16(f, record + 8, t);
+    axfix_put16(f, record + 10, l);
+    axfix_put16(f, record + 12, b);
+    axfix_put16(f, record + 14, r);
+    axfix_put8(f, record + 16, 1);            /* visible */
+    axfix_put8(f, record + 17, (unsigned)hilite);
+    axfix_put16(f, record + 18, value);
+    axfix_put16(f, record + 20, 0);           /* min */
+    axfix_put16(f, record + 22, 1);           /* max */
+    axfix_put_pstr(f, record + 40, title);
+}
+
+/* A scene with one process and one window already admitted, which is
+   the state the collector hands the bridge. */
+static int one_window(NowScene *s, NowSceneAnchor anchor)
+{
+    int p;
+
+    now_scene_begin(s, 1, 0.0, "peek", 640, 480, 0, 0);
+    p = now_scene_add_process(s, 0, 7, "SimpleText", 0x74747874UL, 1,
+                              anchor, 0);
+    (void)now_scene_add_window(s, p, "Save As", 40, 60, 200, 400, 1);
+    return p;
+}
+
+static void controls_complete(void)
+{
+    AxFixture f;
+    NowAxMemory m;
+    NowScene s;
+
+    axfix_init(&f, &m);
+    /* Content box at (40,60); portRect origin (0,0), so a control at
+       local (10,20) is global (50,80). The translation is the walk's,
+       and getting it wrong puts every button in the wrong place on a
+       consumer's screen. */
+    build_window(&f, 8, kCtl1H, 0, 0, 40, 60, 200, 400);
+    build_control(&f, kCtl1H, kCtl1, kCtl2H, "OK", 10, 20, 30, 90, 0, 1);
+    build_control(&f, kCtl2H, kCtl2, 0, "Cancel", 10, 100, 30, 170, 255, 0);
+
+    one_window(&s, kNowSceneAnchorOk);
+    now_scene_walk_window(&s, 0, &m, kWin);
+
+    check(s.windows[0].kind_known && s.windows[0].kind == 8,
+          "windowKind reaches the row");
+    check(s.windows[0].controls_present, "the control plane is present");
+    check(s.windows[0].control_count == 2, "both controls are carried");
+    check(s.control_count == 2, "and both are in the pool");
+    check(strcmp(s.controls[0].title, "OK") == 0, "the first control's title");
+    check(s.controls[0].rect.t == 50 && s.controls[0].rect.l == 80,
+          "a control's rect is translated to global coordinates");
+    check(s.controls[0].enabled == 1, "hilite 0 is enabled");
+    check(s.controls[1].enabled == 0, "hilite 255 is disabled");
+    check(s.controls[0].value == 1 && s.controls[0].max == 1,
+          "value and max come across");
+    check(s.controls_truncated == 0, "and nothing was retracted");
+}
+
+/* The distinction the whole plane rests on: a window with a null control
+   list is reported as HAVING NO CONTROLS, which is a claim, and is a
+   different document from a window this producer did not walk. */
+static void empty_is_not_absent(void)
+{
+    AxFixture f;
+    NowAxMemory m;
+    NowScene walked;
+    NowScene unwalked;
+
+    axfix_init(&f, &m);
+    build_window(&f, 8, 0, 0, 0, 40, 60, 200, 400);
+
+    one_window(&walked, kNowSceneAnchorOk);
+    now_scene_walk_window(&walked, 0, &m, kWin);
+    check(walked.windows[0].controls_present,
+          "a null control list still opens the plane");
+    check(walked.windows[0].control_count == 0, "with zero controls");
+
+    one_window(&unwalked, kNowSceneAnchorOk);
+    check(unwalked.windows[0].controls_present == 0,
+          "a window nobody walked reports no control plane at all");
+    check(unwalked.windows[0].kind_known == 0,
+          "and no kind, because 0 is a legal kind and cannot mean absent");
+}
+
+/* A chain that stops early. All three ways of stopping produce the same
+   document - no key, plus a notice - because a caller cannot tell a
+   short list from a complete one and must not be given the chance. */
+static void a_broken_chain_is_retracted(void)
+{
+    AxFixture f;
+    NowAxMemory m;
+    NowScene s;
+
+    axfix_init(&f, &m);
+    build_window(&f, 8, kCtl1H, 0, 0, 40, 60, 200, 400);
+    /* The second control's handle points outside both arenas. */
+    build_control(&f, kCtl1H, kCtl1, kOutside, "OK", 10, 20, 30, 90, 0, 1);
+
+    one_window(&s, kNowSceneAnchorOk);
+    now_scene_walk_window(&s, 0, &m, kWin);
+    check(s.windows[0].controls_present == 0,
+          "one unreadable link retracts the whole control plane");
+    check(s.control_count == 0, "and returns its entries to the pool");
+    check(s.controls_truncated == 1, "the drop is recorded, never silent");
+    /* The kind survives: it was read from a record that DID validate,
+       and retracting the controls is not a reason to unsay it. */
+    check(s.windows[0].kind_known == 1, "the kind it did read still stands");
+}
+
+static void a_cycle_is_retracted(void)
+{
+    AxFixture f;
+    NowAxMemory m;
+    NowScene s;
+
+    axfix_init(&f, &m);
+    build_window(&f, 8, kCtl1H, 0, 0, 40, 60, 200, 400);
+    build_control(&f, kCtl1H, kCtl1, kCtl1H, "Loop", 0, 0, 10, 10, 0, 0);
+
+    one_window(&s, kNowSceneAnchorOk);
+    now_scene_walk_window(&s, 0, &m, kWin);
+    check(s.windows[0].controls_present == 0,
+          "a control chain that points at itself is bounded and retracted");
+    check(s.control_count == 0, "the pool is returned");
+    check(s.controls_truncated == 1, "and the bound is reported");
+}
+
+/* An unreadable window record claims NOTHING. The row keeps exactly what
+   peek_read.c established for it. */
+static void an_unreadable_record_claims_nothing(void)
+{
+    AxFixture f;
+    NowAxMemory m;
+    NowScene s;
+
+    axfix_init(&f, &m);
+    one_window(&s, kNowSceneAnchorOk);
+    now_scene_walk_window(&s, 0, &m, kOutside);
+    check(s.windows[0].kind_known == 0, "no kind");
+    check(s.windows[0].controls_present == 0, "no control plane");
+    check(s.windows[0].text < 0, "no text");
+    check(s.controls_truncated == 0,
+          "and no retraction notice - nothing was ever opened");
+}
+
+/* A TERec, and the kind gate in front of it. */
+static void dialog_text(void)
+{
+    AxFixture f;
+    NowAxMemory m;
+    NowScene s;
+
+    axfix_init(&f, &m);
+    build_window(&f, 2, 0, 0, 0, 40, 60, 200, 400);   /* dialogKind */
+    axfix_put32(&f, kWin + 160, kTeH);
+    axfix_put_handle(&f, kTeH, kTe);
+    axfix_put16(&f, kTe + 32, 2);                     /* selStart */
+    axfix_put16(&f, kTe + 34, 5);                     /* selEnd */
+    axfix_put16(&f, kTe + 36, 1);                     /* active */
+    axfix_put16(&f, kTe + 60, 8);                     /* teLength */
+    axfix_put32(&f, kTe + 62, kTextH);
+    axfix_put_handle(&f, kTextH, kText);
+    {
+        const char *t = "Untitled";
+        int i;
+
+        for (i = 0; i < 8; ++i) {
+            axfix_put8(&f, kText + (unsigned long)i, (unsigned char)t[i]);
+        }
+    }
+
+    one_window(&s, kNowSceneAnchorOk);
+    now_scene_walk_window(&s, 0, &m, kWin);
+    check(s.windows[0].text == 0, "the dialog's text row is attached");
+    check(s.text_count == 1, "and is in the pool");
+    check(strcmp(s.texts[0].content, "Untitled") == 0, "the content");
+    check(s.texts[0].active == 1, "and its active flag");
+    check(s.texts[0].truncated == 0, "which fit, so nothing is claimed cut");
+}
+
+/* The gate is safety, not tidiness: offset 160 is past the end of a
+   plain WindowRecord, so an ordinary window's text read would interpret
+   whatever follows it. */
+static void text_is_gated_on_the_kind(void)
+{
+    AxFixture f;
+    NowAxMemory m;
+    NowScene s;
+
+    axfix_init(&f, &m);
+    build_window(&f, 8, 0, 0, 0, 40, 60, 200, 400);   /* documentKind */
+    axfix_put32(&f, kWin + 160, kTeH);                /* a plausible handle */
+    axfix_put_handle(&f, kTeH, kTe);
+    axfix_put16(&f, kTe + 60, 4);
+    axfix_put32(&f, kTe + 62, kTextH);
+    axfix_put_handle(&f, kTextH, kText);
+
+    one_window(&s, kNowSceneAnchorOk);
+    now_scene_walk_window(&s, 0, &m, kWin);
+    check(s.windows[0].text < 0,
+          "a non-dialog window reports no text even when the bytes after "
+          "its record would parse as a TextEdit handle");
+}
+
+/* --- the menu bar ------------------------------------------------------ */
+
+static unsigned long build_menu(AxFixture *f, unsigned long handle,
+                                unsigned long record, int id,
+                                const char *title, unsigned long flags)
+{
+    size_t n = strlen(title);
+
+    axfix_put_handle(f, handle, record);
+    axfix_put16(f, record + 0, id);
+    axfix_put16(f, record + 2, 60);
+    axfix_put16(f, record + 4, 100);
+    axfix_put32(f, record + 6, 0);
+    axfix_put32(f, record + 10, flags);
+    axfix_put_pstr(f, record + 14, title);
+    return record + 14 + 1 + n;
+}
+
+static unsigned long put_item(AxFixture *f, unsigned long at,
+                              const char *text, unsigned cmd, unsigned mark)
+{
+    size_t len = strlen(text);
+    size_t i;
+
+    axfix_put8(f, at, (unsigned)len);
+    for (i = 0; i < len; i++) {
+        axfix_put8(f, at + 1 + i, (unsigned char)text[i]);
+    }
+    axfix_put8(f, at + 1 + len, 0);           /* icon */
+    axfix_put8(f, at + 2 + len, cmd);
+    axfix_put8(f, at + 3 + len, mark);
+    axfix_put8(f, at + 4 + len, 0);           /* style */
+    return at + 5 + len;
+}
+
+static void build_bar(AxFixture *f)
+{
+    unsigned long items;
+
+    axfix_put_handle(f, kListH, kList);
+    axfix_put16(f, kList, 2 * 6);             /* two menus */
+    axfix_put32(f, kList + 6, kMenuH0);
+    axfix_put16(f, kList + 10, 0);
+    axfix_put32(f, kList + 12, kMenuH1);
+    axfix_put16(f, kList + 16, 44);
+
+    items = build_menu(f, kMenuH0, kMenu0, 129, "File", 0xFFFFFFFFUL);
+    items = put_item(f, items, "New", 'N', 0);
+    items = put_item(f, items, "-", 0, 0);    /* the separator convention */
+    items = put_item(f, items, "Quit", 'Q', 0);
+    axfix_put8(f, items, 0);                  /* the list's sentinel */
+
+    items = build_menu(f, kMenuH1, kMenu1, 130, "Edit", 0xFFFFFFFDUL);
+    items = put_item(f, items, "Undo", 'Z', 0);
+    axfix_put8(f, items, 0);
+}
+
+static void menubar_complete(void)
+{
+    AxFixture f;
+    NowAxMemory m;
+    NowScene s;
+
+    axfix_init(&f, &m);
+    build_bar(&f);
+    one_window(&s, kNowSceneAnchorOk);
+    now_scene_walk_menubar(&s, 0, &m, kListH);
+
+    check(s.menubar_present, "the menu bar plane opens");
+    check(s.menubar_proc == 0, "attributed to the front process");
+    check(s.menu_count == 2, "two menus");
+    check(strcmp(s.menus[0].title, "File") == 0, "the first menu's title");
+    check(s.menus[0].id == 129 && s.menus[1].left == 44,
+          "its id and the second's left edge");
+    check(s.menus[0].items_present && s.menus[0].item_count == 3,
+          "the first menu's items");
+    check(s.menus[1].items_present && s.menus[1].item_count == 1,
+          "and the second's, in its own block");
+    check(strcmp(s.menu_items[s.menus[1].first_item].title, "Undo") == 0,
+          "each menu's items are indexed from its own first_item");
+    check(s.menu_items[1].separator == 1, "a lone hyphen is a separator");
+    check(s.menu_items[0].separator == 0, "and an ordinary item is not");
+    check(s.menu_items[0].cmd == 'N', "a command key comes across");
+    check(s.menu_items[1].cmd == '\0', "and an item without one carries none");
+    /* Edit's flags clear bit 1, so item 1 is disabled while the menu is
+       enabled - the Menu Manager's own rule, arriving intact. */
+    check(s.menu_items[s.menus[1].first_item].enabled == 0,
+          "a per-item enable bit survives the bridge");
+    check(s.menubar_refused == 0, "nothing was dropped");
+}
+
+/* A process with no menu bar: the plane opens and carries zero menus,
+   which is an ANSWER. Refusing here would say "not reported" about
+   something that was. */
+static void a_null_menu_list_is_an_empty_answer(void)
+{
+    AxFixture f;
+    NowAxMemory m;
+    NowScene s;
+
+    axfix_init(&f, &m);
+    one_window(&s, kNowSceneAnchorOk);
+    now_scene_walk_menubar(&s, 0, &m, 0);
+    check(s.menubar_present, "a null menu list still opens the plane");
+    check(s.menu_count == 0, "with no menus in it");
+    check(s.menubar_refused == 0, "and nothing is reported as dropped");
+}
+
+static void an_unparsable_list_retracts_the_plane(void)
+{
+    AxFixture f;
+    NowAxMemory m;
+    NowScene s;
+
+    axfix_init(&f, &m);
+    axfix_put_handle(&f, kListH, kList);
+    /* A header word that is not a multiple of the entry stride is not a
+       MenuList. axmenu.c refuses it; the bridge must not turn that into
+       "this application has no menus". */
+    axfix_put16(&f, kList, 7);
+
+    one_window(&s, kNowSceneAnchorOk);
+    now_scene_walk_menubar(&s, 0, &m, kListH);
+    check(s.menubar_present == 0, "an unparsable list leaves NO menubar key");
+    check(s.menubar_refused == 1, "and says so, rather than dropping it "
+          "silently");
+}
+
+/* The independent refusal. Assembly declines the plane for a process
+   whose anchor does not admit data, one layer above the code that
+   declined to make the walk - the same rule now_scene_add_window
+   enforces for windows. */
+static void a_refused_anchor_never_opens_the_bar(void)
+{
+    AxFixture f;
+    NowAxMemory m;
+    NowScene s;
+    NowSceneAnchor refused[4];
+    int i;
+
+    axfix_init(&f, &m);
+    build_bar(&f);
+    refused[0] = kNowSceneAnchorAmbiguous;
+    refused[1] = kNowSceneAnchorMismatch;
+    refused[2] = kNowSceneAnchorNotFound;
+    refused[3] = kNowSceneAnchorUnreadable;
+
+    for (i = 0; i < 4; ++i) {
+        one_window(&s, refused[i]);
+        now_scene_walk_menubar(&s, 0, &m, kListH);
+        check(s.menubar_present == 0,
+              "a refused anchor admits no menu bar");
+        check(s.menu_count == 0, "and no menus leak into the pool");
+        check(s.menubar_refused == 0,
+              "a bar that was never opened is not a bar that was dropped");
+    }
+}
+
+int main(void)
+{
+    controls_complete();
+    empty_is_not_absent();
+    a_broken_chain_is_retracted();
+    a_cycle_is_retracted();
+    an_unreadable_record_claims_nothing();
+    dialog_text();
+    text_is_gated_on_the_kind();
+    menubar_complete();
+    a_null_menu_list_is_an_empty_answer();
+    an_unparsable_list_retracts_the_plane();
+    a_refused_anchor_never_opens_the_bar();
+
+    if (g_failures != 0) {
+        fprintf(stderr, "%d failure(s)\n", g_failures);
+        return 1;
+    }
+    printf("scene_walk: ok\n");
+    return 0;
+}

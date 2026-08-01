@@ -49,13 +49,14 @@ static void walk_controls(NowScene *s, int window, const NowAxMemory *memory,
             /* Longer than a scene carries, or cyclic. Either way what
                has been collected is a PREFIX of this window's controls
                with nothing beside it to say so. */
-            now_scene_retract_controls(s, window, 1);
+            now_scene_retract_controls(s, window);
             return;
         }
         if (now_ax_read_control(memory, win, handle, &control) != kNowAxOk) {
-            /* The chain left the readable zones or failed a check. Not a
-               bound - a refusal - and the notice says so. */
-            now_scene_retract_controls(s, window, 0);
+            /* The chain left the readable zones or failed a check. A
+               refusal rather than a bound, and it drops the plane for
+               the same reason: what stands is a prefix. */
+            now_scene_retract_controls(s, window);
             return;
         }
         if (!now_scene_add_control(s, window, control.title, control.top,
@@ -63,7 +64,7 @@ static void walk_controls(NowScene *s, int window, const NowAxMemory *memory,
                                    control.right, control.enabled,
                                    control.visible, control.value,
                                    control.min, control.max)) {
-            now_scene_retract_controls(s, window, 1);
+            now_scene_retract_controls(s, window);
             return;
         }
         handle = control.next_control;
@@ -115,11 +116,11 @@ static void walk_items(NowScene *s, int menu_row, const NowAxMemory *memory,
             return;                   /* the list's own sentinel: complete */
         }
         if (rc == kNowAxTruncated) {
-            now_scene_retract_menu_items(s, menu_row, 1);
+            now_scene_retract_menu_items(s, menu_row);
             return;
         }
         if (rc != kNowAxOk) {
-            now_scene_retract_menu_items(s, menu_row, 0);
+            now_scene_retract_menu_items(s, menu_row);
             return;
         }
         if (!now_scene_add_menu_item(s, menu_row, item.title,
@@ -128,7 +129,7 @@ static void walk_items(NowScene *s, int menu_row, const NowAxMemory *memory,
                                      item.enabled, item.mark != 0,
                                      item.command >= kNowSceneFirstCmdChar
                                      ? (char)item.command : '\0')) {
-            now_scene_retract_menu_items(s, menu_row, 1);
+            now_scene_retract_menu_items(s, menu_row);
             return;
         }
     }

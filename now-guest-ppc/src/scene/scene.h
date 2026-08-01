@@ -215,6 +215,7 @@ typedef struct {
        menubar with zero menus says the front process has no menu bar,
        which a faceless background application genuinely does not. */
     int menubar_present;
+    int menubar_refused;          /* opened, then dropped: see the retract */
     short menubar_proc;           /* the process it belongs to, or -1 */
     NowSceneMenu menus[kNowSceneMaxMenus];
     short menu_count;
@@ -313,10 +314,15 @@ int now_scene_add_control(NowScene *s, int window, const char *title,
    pool. This is the retraction rule: a chain that hit a bound or failed
    validation part way through has produced a list that is short with
    nothing beside it to say so, and an absent key is the only honest
-   thing left to emit. `truncated` records WHY in meta.errors - nonzero
-   for a bound, zero for a refusal. No-op unless the window's block is
-   the tail of the pool. */
-void now_scene_retract_controls(NowScene *s, int window, int truncated);
+   thing left to emit.
+
+   ALWAYS sets controls_truncated, so the drop reaches meta.errors. A
+   retraction that reported nothing would be indistinguishable from a
+   window this producer never walked, which is the one confusion the
+   present-vs-absent split exists to prevent - the reason it happened
+   (a bound, or a refusal) is not worth a second flag, and the notice
+   says both. No-op unless the window's block is the tail of the pool. */
+void now_scene_retract_controls(NowScene *s, int window);
 
 /* A window's TextEdit content. `truncated` says the TERec was longer
    than what is carried. No-op for an out-of-range row; sets
@@ -337,7 +343,10 @@ int now_scene_open_menubar(NowScene *s, int proc);
 /* Drops the whole menu-bar plane. A menu list that failed to parse
    leaves NO menubar key rather than an empty one - the front process
    certainly has a menu bar, so "zero menus" would be false where
-   "not reported" is true. */
+   "not reported" is true. Records the drop in meta.errors, on the same
+   no-silent-drop rule as the other two retractions. No-op if the plane
+   was never opened: a menu bar that was never walked is not one that
+   was dropped. */
 void now_scene_retract_menubar(NowScene *s);
 
 /* Appends a menu to the open menu bar, returning its index or -1 when
@@ -353,8 +362,9 @@ int now_scene_add_menu_item(NowScene *s, int menu, const char *title,
                             short index, int separator, int enabled,
                             int mark, char cmd);
 
-/* Drops one menu's item list, per the retraction rule. */
-void now_scene_retract_menu_items(NowScene *s, int menu, int truncated);
+/* Drops one menu's item list, per the retraction rule. Always sets
+   menu_items_truncated, for the reason above. */
+void now_scene_retract_menu_items(NowScene *s, int menu);
 
 /* Whether a verdict admits window data at all. Ok and Stale do (Stale is
    reported, not refused); NoWindows does trivially - it IS the empty

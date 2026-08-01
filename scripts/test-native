@@ -142,6 +142,14 @@ run_c now-guest-ppc peek_oracle_test.c \
 run_c now-guest-ppc scene_build_test.c       ""  src/scene/scene_build.c
 run_c now-guest-ppc scene_json_test.c        ""  src/scene/scene_build.c \
       src/scene/scene_json.c src/core/json.c
+# The bridge between the ported walk and the scene's rules - the layer
+# the roadmap called "the ported walk has no caller". It is Toolbox-free
+# on purpose (it takes a bound memory seam as an argument), so the
+# decisions that turn a parser result into a CLAIM are reachable here,
+# against the same synthetic arena the axwalk tests use.
+run_c now-guest-ppc scene_walk_test.c        ""  src/scene/scene_walk.c \
+      src/scene/scene_build.c src/axwalk/axwalk.c src/axwalk/axmenu.c \
+      src/axwalk/axtext.c src/peek/peek_validate.c
 # The ported foreign-memory walk (src/axwalk/, from timbottu/mirror). The
 # first automated coverage this archaeology has ever had: upstream proved
 # the offsets on a real machine and had no host test, so these pin the
