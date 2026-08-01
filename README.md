@@ -38,6 +38,7 @@ noticed. Adding them: see [docs/images/README.md](docs/images/README.md).
 | Installed software: applications, extensions, control panels | yes | yes, without versions or a running flag | metal-verified (PPC); 68K tested only |
 | Hardware census (14 probes) | yes | 14 probes, 4 of them honestly `absent`/`refused` on this hardware | metal-verified (PPC); **68K's probes have never run at all** |
 | Two Macs on one port, with a picker for which one you are driving | yes | yes | tested; **never run against real hardware** |
+| iCloud: the host's Drive, Photos and Contacts served to the guest's iCloud page — drive browser, live filter-as-you-type, photo download, contact cards | yes | no | metal-verified (PPC) at working-as-intended; itemized claims and the deferred thumbnail design in [docs/icloud.md](docs/icloud.md) |
 
 The cells that say "no" are not oversights.
 [docs/contract-coverage.md](docs/contract-coverage.md) is the inventory
