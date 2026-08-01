@@ -229,9 +229,20 @@ static Boolean usable(void)
    not export LMGetCurrentA5, so this is that accessor's inline done by
    hand. Never a foreign process's A5 - there is no context in which
    this read means somebody else. */
+/* The address is held in a volatile variable rather than written as a
+   literal because GCC 14 rejects a dereference of a constant low address
+   outright (-Werror=array-bounds: "source object is likely at address
+   zero"). That diagnostic is right about ordinary C and wrong about this
+   machine; routing the address through a volatile is the narrow way to
+   say "I mean this address" without switching the warning off for the
+   whole file. */
+static volatile unsigned long g_a5_lowmem = 0x904UL;
+
 static unsigned long own_a5(void)
 {
-    return *(volatile unsigned long *)0x904UL;
+    volatile unsigned long *p = (volatile unsigned long *)g_a5_lowmem;
+
+    return *p;
 }
 
 /* --- the commit protocol ------------------------------------------------
@@ -391,15 +402,35 @@ static void build_panel(void)
     line("D disarm     T test rect    G rescan      Q quit");
 }
 
+/* Pad to a fixed width so a shorter line overwrites the longer one it
+   replaces - see draw(): we cannot rely on erasing. Done by hand rather
+   than with "%-70s", which GCC cannot prove fits. */
+enum { kPadWidth = 70 };
+
+static void draw_padded(const char *s, int y)
+{
+    Str255 text;
+    size_t n = strlen(s);
+    size_t i;
+
+    if (n > (size_t)kPadWidth) {
+        n = (size_t)kPadWidth;
+    }
+    text[0] = (unsigned char)kPadWidth;
+    memcpy(text + 1, s, n);
+    for (i = n; i < (size_t)kPadWidth; ++i) {
+        text[1 + i] = ' ';
+    }
+    MoveTo(12, y);
+    DrawString(text);
+}
+
 static void draw(void)
 {
-    Rect bounds;
-    Str255 text;
     int i;
     int y;
 
     SetPortWindowPort(g_window);
-    GetWindowPortBounds(g_window, &bounds);
     /* NOT EraseRect. While a port of ours is patched, the probe's proc
        finds saved_procs == 0 (it only ever patches ports whose grafProcs
        was NULL) and draws nothing at all - so every rect operation in
@@ -411,24 +442,12 @@ static void draw(void)
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
     y = kFirstLine;
     for (i = 0; i < g_count; ++i) {
-        char padded[80];
-
-        /* Pad so a shorter line overwrites the longer one it replaces -
-           the same reason as above: we cannot rely on erasing. */
-        snprintf(padded, sizeof padded, "%-70s", g_lines[i]);
-        MoveTo(12, y);
-        CopyCStringToPascal(padded, text);
-        DrawString(text);
+        draw_padded(g_lines[i], y);
         y += kLineHeight;
     }
     y += 4;
     for (i = 0; i < g_note_count; ++i) {
-        char padded[80];
-
-        snprintf(padded, sizeof padded, "%-70s", g_notes[i]);
-        MoveTo(12, y);
-        CopyCStringToPascal(padded, text);
-        DrawString(text);
+        draw_padded(g_notes[i], y);
         y += kLineHeight;
     }
 }
