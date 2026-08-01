@@ -178,6 +178,19 @@ run_c now-guest-ppc axtext_test.c            ""  src/axwalk/axtext.c \
 run_c now-guest-ppc axresolve_test.c         ""  src/axwalk/axresolve.c \
       src/axwalk/axwalk.c src/peek/peek_validate.c
 run_c now-guest-ppc axbinding_test.c         ""  src/axwalk/axbinding.c
+# The reference layer every act verb addresses. Mirror measured that an
+# act surface bounded by time or use count is not bounded (18/20
+# hijacked) and one bounded by NAMING its target is (0/20), so what these
+# two pin is mostly negative: that a token cannot be derived from
+# anything observable, that an unminted one matches nothing, and that
+# each way a reference can stop being true is refused DISTINCTLY rather
+# than repaired. None of those cases can be produced on demand on a real
+# machine - you cannot ask one to recycle a PSN at a chosen moment.
+run_c now-guest-ppc obsref_test.c           ""  src/observe/obsref.c \
+      src/axwalk/axresolve.c src/axwalk/axwalk.c src/peek/peek_validate.c
+run_c now-guest-ppc obsresolve_test.c       ""  src/observe/obsresolve.c \
+      src/observe/obsref.c src/axwalk/axresolve.c src/axwalk/axwalk.c \
+      src/peek/peek_validate.c
 run_c now-guest-ppc share_path_test.c        ""
 # The Files pane's pull presentation: when Stop is armed, and the line a
 # person reads while a file comes down. The percentage overflows a 32-bit

@@ -1,0 +1,687 @@
+/* The impure half of the reference layer: obtaining, never deciding.
+   See observe.h. */
+
+#include "observe.h"
+
+#include <stdarg.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "axprocess.h"
+#include "json.h"
+#include "obsref.h"
+
+enum {
+    /* Bounds on one answer. They are about the FRAME, not about the
+       machine: a reply that will not fit is a reply nobody receives, so
+       the walk stops and says it stopped. */
+    kObsMaxProcs = 24,
+    kObsMaxWindows = 12,
+    kObsMaxControls = 24,
+    /* Leave room for the tail object; below this the emitter stops
+       adding rows rather than writing a truncated one. */
+    kObsTailSlack = 512
+};
+
+static NowObsRegistry g_registry;
+static int            g_armed;
+
+/* --- the session secret ------------------------------------------------ */
+
+/* There is no CSPRNG on this machine, and pretending otherwise would be
+   worse than saying what this is: a mix of the values available at
+   startup that an outside caller cannot observe together - the tick
+   count, the microsecond clock, the Toolbox's own Random(), the date,
+   and the address of a stack frame. It is enough for the property that
+   matters (a caller cannot COMPUTE a token from what it can see about an
+   element) and it is not claimed to be enough for anything else.
+
+   It is deliberately not derived from anything on the wire. */
+void now_observe_init(void)
+{
+    UnsignedWide  micro;
+    unsigned long here = 0;
+    unsigned long seed_hi;
+    unsigned long seed_lo;
+    unsigned long now_seconds = 0;
+
+    if (g_armed) {
+        return;
+    }
+    micro.hi = 0;
+    micro.lo = 0;
+    Microseconds(&micro);
+    GetDateTime(&now_seconds);
+    here = (unsigned long)(&micro);
+    seed_hi = ((unsigned long)micro.lo)
+              ^ ((unsigned long)TickCount() << 11)
+              ^ here;
+    seed_lo = ((unsigned long)micro.hi << 7)
+              ^ ((unsigned long)(unsigned short)Random() << 16)
+              ^ ((unsigned long)(unsigned short)Random())
+              ^ now_seconds;
+    now_obs_registry_init(&g_registry, seed_hi, seed_lo);
+    g_armed = 1;
+}
+
+/* --- binding one process ----------------------------------------------- */
+
+typedef struct {
+    ProcessSerialNumber psn;
+    Str31               name;
+    OSType              signature;
+    unsigned long       process_fingerprint;
+    NowAxContext        context;
+    NowObsBindStatus    bind;
+    Boolean             is_front;
+} NowObsTarget;
+
+/* peek_read.c's vocabulary in this layer's words. One plane, two
+   spellings, and the translation lives here so the pure resolver never
+   has to include a Carbon-flavoured header. */
+static NowObsBindStatus bind_status(NowPeekReadStatus status)
+{
+    switch (status) {
+    case kNowPeekReadOk:         return kNowObsBindOk;
+    case kNowPeekReadNoPlane:    return kNowObsBindNoPlane;
+    case kNowPeekReadNoAnchor:   return kNowObsBindNoAnchor;
+    case kNowPeekReadAmbiguous:  return kNowObsBindAmbiguous;
+    case kNowPeekReadMismatch:   return kNowObsBindMismatch;
+    case kNowPeekReadUnreadable: return kNowObsBindUnreadable;
+    case kNowPeekReadNoWindows:
+    case kNowPeekReadStub:
+    default:                     break;
+    }
+    return kNowObsBindUnreadable;
+}
+
+static int bind_target(const ProcessSerialNumber *psn, NowObsTarget *out)
+{
+    ProcessInfoRec      info;
+    ProcessSerialNumber front;
+    NowPeekReadStatus   status;
+
+    memset(out, 0, sizeof(*out));
+    out->psn = *psn;
+    out->bind = kNowObsBindNoProcess;
+
+    memset(&info, 0, sizeof(info));
+    info.processInfoLength = sizeof(info);
+    info.processName = out->name;
+    info.processAppSpec = NULL;
+    out->name[0] = 0;
+    if (GetProcessInformation(psn, &info) != noErr) {
+        return 0;
+    }
+    out->signature = info.processSignature;
+    /* The launch date is the discriminator a PSN is not: it is the one
+       field a relaunch into a recycled serial number cannot inherit.
+       See now_obs_process_fingerprint. */
+    out->process_fingerprint = now_obs_process_fingerprint(
+        (unsigned long)psn->highLongOfPSN, (unsigned long)psn->lowLongOfPSN,
+        (unsigned long)info.processSignature,
+        (unsigned long)info.processLaunchDate,
+        (unsigned long)info.processLocation,
+        (unsigned long)info.processSize, out->name);
+    if (GetFrontProcess(&front) == noErr) {
+        (void)SameProcess(psn, &front, &out->is_front);
+    }
+    status = now_ax_bind_process(psn, &out->context);
+    out->bind = bind_status(status);
+    return 1;
+}
+
+static void live_from(const NowObsTarget *target, NowObsLive *live)
+{
+    memset(live, 0, sizeof(*live));
+    live->bind = target->bind;
+    live->process_fingerprint = target->process_fingerprint;
+    live->window_list = target->context.window_list;
+    live->memory = &target->context.memory;
+}
+
+/* --- resolution, for the act plane ------------------------------------- */
+
+static void resolve_kind(NowObsKind kind, const char *reference, long len,
+                         NowObsHandle *out)
+{
+    const NowObsEntry *entry;
+    NowObsTarget       target;
+    NowObsLive         live;
+    NowObsResolution   resolution;
+    size_t             length;
+
+    if (out == NULL) {
+        return;
+    }
+    memset(out, 0, sizeof(*out));
+    out->verdict = kNowObsNotFound;
+    out->why = kNowObsWhyMalformed;
+    if (reference == NULL) {
+        return;
+    }
+    length = (len > 0) ? (size_t)len : strlen(reference);
+    now_observe_init();
+
+    /* Which process to bind is read OUT of the reference, never off the
+       machine. That is the whole point: a reference names its own
+       target, so there is no path here that consults the front process
+       and no argument that could ask it to. */
+    entry = now_obs_lookup(&g_registry, kind, reference, length);
+    if (entry == NULL) {
+        out->why = now_obs_token_valid(kind, reference, length)
+                   ? kNowObsWhyUnminted : kNowObsWhyMalformed;
+        return;
+    }
+    out->psn.highLongOfPSN = (long)entry->identity.psn_hi;
+    out->psn.lowLongOfPSN = (long)entry->identity.psn_lo;
+    if (!bind_target(&out->psn, &target)) {
+        out->verdict = kNowObsNotFound;
+        out->why = kNowObsWhyNoProcess;
+        return;
+    }
+    live_from(&target, &live);
+    now_obs_resolve(&g_registry, kind, reference, length, &live, &resolution);
+    out->verdict = resolution.verdict;
+    out->why = resolution.why;
+    if (resolution.verdict != kNowObsOk) {
+        return;
+    }
+    out->detail = resolution.resolved;
+    out->window = (WindowPtr)resolution.resolved.window_address;
+    out->control = (ControlHandle)resolution.resolved.control_handle;
+}
+
+void now_observe_resolve_window(const char *reference, long len,
+                                NowObsHandle *out)
+{
+    resolve_kind(kNowObsKindWindow, reference, len, out);
+}
+
+void now_observe_resolve_element(const char *reference, long len,
+                                 NowObsHandle *out)
+{
+    resolve_kind(kNowObsKindElement, reference, len, out);
+}
+
+/* --- emitting ---------------------------------------------------------- */
+
+static int append(char *out, long cap, long *used, const char *fmt, ...)
+    __attribute__((format(printf, 4, 5)));
+
+static int append(char *out, long cap, long *used, const char *fmt, ...)
+{
+    va_list args;
+    int     n;
+
+    if (*used >= cap) {
+        return 0;
+    }
+    va_start(args, fmt);
+    n = vsnprintf(out + *used, (size_t)(cap - *used), fmt, args);
+    va_end(args);
+    if (n < 0 || n >= cap - *used) {
+        out[*used] = '\0';
+        return 0;
+    }
+    *used += n;
+    return 1;
+}
+
+static void escape_pstr(const unsigned char *pstr, char *out, long cap)
+{
+    char plain[64];
+    long n = (long)pstr[0];
+
+    if (n > (long)sizeof(plain) - 1) {
+        n = (long)sizeof(plain) - 1;
+    }
+    memcpy(plain, pstr + 1, (size_t)n);
+    plain[n] = '\0';
+    now_json_escape(plain, out, cap);
+}
+
+static void ostype_text(OSType type, char *out)
+{
+    out[0] = (char)((type >> 24) & 0xFF);
+    out[1] = (char)((type >> 16) & 0xFF);
+    out[2] = (char)((type >> 8) & 0xFF);
+    out[3] = (char)(type & 0xFF);
+    out[4] = '\0';
+}
+
+/* The bind status as a word, so a caller can see WHY a process
+   contributed no tree instead of seeing an empty array. */
+static const char *bind_name(NowObsBindStatus bind)
+{
+    switch (bind) {
+    case kNowObsBindOk:         return "ok";
+    case kNowObsBindNoProcess:  return "no-process";
+    case kNowObsBindNoPlane:    return "no-plane";
+    case kNowObsBindNoAnchor:   return "no-anchor";
+    case kNowObsBindAmbiguous:  return "ambiguous";
+    case kNowObsBindMismatch:   return "mismatch";
+    case kNowObsBindUnreadable: return "unreadable";
+    }
+    return "unreadable";
+}
+
+static int emit_process_head(char *out, long cap, long *used,
+                             const NowObsTarget *target)
+{
+    char name[128];
+    char sig[8];
+    char sig_esc[32];
+
+    escape_pstr(target->name, name, sizeof(name));
+    ostype_text(target->signature, sig);
+    now_json_escape(sig, sig_esc, sizeof(sig_esc));
+    return append(out, cap, used,
+                  "{\"name\":\"%s\",\"signature\":\"%s\","
+                  "\"serialHi\":%lu,\"serialLo\":%lu,\"front\":%s,"
+                  "\"bind\":\"%s\",\"stampTicks\":%lu",
+                  name, sig_esc,
+                  (unsigned long)target->psn.highLongOfPSN,
+                  (unsigned long)target->psn.lowLongOfPSN,
+                  target->is_front ? "true" : "false",
+                  bind_name(target->bind),
+                  (unsigned long)target->context.stamp_ticks);
+}
+
+/* One process's windows and controls, with a reference minted for each.
+
+   MINTING IS THE SIDE EFFECT THIS FUNCTION EXISTS FOR. Every row it
+   emits is also a row in the registry, and the token in the JSON is the
+   only copy of it a caller will ever get - there is no "look up the
+   reference for the window called Save" call, deliberately, because that
+   would be a way to name an element without observing it. */
+static int emit_tree(char *out, long cap, long *used, NowObsTarget *target,
+                     int *truncated)
+{
+    /* Static, not automatic: NowAxTitleEntry carries a 255-byte title, so
+       these two tables are ten kilobytes of stack in a function that runs
+       inside a classic application's modest one. Nothing here is
+       reentrant - one cooperative thread, one walk at a time - which is
+       what makes that safe rather than merely cheaper. */
+    static NowAxTitleEntry window_titles[kObsMaxWindows];
+    static NowAxTitleEntry control_titles[kObsMaxControls];
+    NowAxTitleCounter window_counter;
+    NowAxTitleCounter control_counter;
+    unsigned long     seen_windows[kObsMaxWindows];
+    unsigned long     address;
+    int               window_count = 0;
+    int               first_window = 1;
+
+    if (!append(out, cap, used, ",\"windows\":[")) {
+        return 0;
+    }
+    if (target->bind != kNowObsBindOk) {
+        return append(out, cap, used, "]");
+    }
+    now_ax_title_counter_reset(&window_counter, window_titles,
+                               kObsMaxWindows);
+    address = target->context.window_list;
+    while (address != 0 && window_count < kObsMaxWindows) {
+        NowAxWindow    window;
+        NowObsIdentity id;
+        char           token[kNowObsTokenMax];
+        char           title[512];
+        unsigned int   occurrence = 0;
+        unsigned long  control;
+        int            control_count = 0;
+        int            first_control = 1;
+        int            i;
+
+        for (i = 0; i < window_count; i++) {
+            if (seen_windows[i] == address) {
+                *truncated = 1;          /* a cycle: stop, do not loop */
+                break;
+            }
+        }
+        if (i < window_count) {
+            break;
+        }
+        seen_windows[window_count] = address;
+        if (cap - *used < kObsTailSlack) {
+            *truncated = 1;
+            break;
+        }
+        if (now_ax_read_window(&target->context.memory, address, &window)
+            != kNowAxOk) {
+            *truncated = 1;
+            break;
+        }
+        if (now_ax_title_counter_next(&window_counter, window.title,
+                                      (size_t)window.title_len, &occurrence)
+            != kNowAxOk) {
+            *truncated = 1;
+            break;
+        }
+
+        memset(&id, 0, sizeof(id));
+        id.psn_hi = (unsigned long)target->psn.highLongOfPSN;
+        id.psn_lo = (unsigned long)target->psn.lowLongOfPSN;
+        id.process_fingerprint = target->process_fingerprint;
+        id.window_address = address;
+        id.control_handle = 0;
+        id.minted_ticks = (unsigned long)TickCount();
+        id.node_fingerprint = now_ax_ref_fingerprint(id.psn_hi, id.psn_lo,
+                                                     address, 0UL);
+        id.ref.psn_hi = id.psn_hi;
+        id.ref.psn_lo = id.psn_lo;
+        memcpy(id.ref.window_title, window.title, (size_t)window.title_len);
+        id.ref.window_title_len = (size_t)window.title_len;
+        id.ref.window_occurrence = occurrence;
+        id.ref.node_fingerprint = id.node_fingerprint;
+        token[0] = '\0';
+        (void)now_obs_mint(&g_registry, kNowObsKindWindow, &id, token,
+                           sizeof(token));
+
+        now_json_escape(window.title, title, sizeof(title));
+        if (!append(out, cap, used,
+                    "%s{\"ref\":\"%s\",\"title\":\"%s\",\"occurrence\":%u,"
+                    "\"z\":%d,\"visible\":%s,\"kind\":%d,"
+                    "\"bounds\":{\"left\":%d,\"top\":%d,\"right\":%d,"
+                    "\"bottom\":%d},\"controls\":[",
+                    first_window ? "" : ",", token, title, occurrence,
+                    window_count, window.visible ? "true" : "false",
+                    (int)window.kind, (int)window.left, (int)window.top,
+                    (int)window.right, (int)window.bottom)) {
+            *truncated = 1;
+            break;
+        }
+
+        now_ax_title_counter_reset(&control_counter, control_titles,
+                                   kObsMaxControls);
+        control = window.control_list;
+        while (control != 0 && control_count < kObsMaxControls) {
+            NowAxControl item;
+            unsigned int control_occurrence = 0;
+
+            if (cap - *used < kObsTailSlack) {
+                *truncated = 1;
+                break;
+            }
+            if (now_ax_read_control(&target->context.memory, &window, control,
+                                    &item) != kNowAxOk) {
+                *truncated = 1;
+                break;
+            }
+            if (now_ax_title_counter_next(&control_counter, item.title,
+                                          (size_t)item.title_len,
+                                          &control_occurrence) != kNowAxOk) {
+                *truncated = 1;
+                break;
+            }
+            id.control_handle = control;
+            id.minted_ticks = (unsigned long)TickCount();
+            id.node_fingerprint = now_ax_ref_fingerprint(id.psn_hi, id.psn_lo,
+                                                         address, control);
+            memcpy(id.ref.control_title, item.title,
+                   (size_t)item.title_len);
+            id.ref.control_title[item.title_len] = 0;
+            id.ref.control_title_len = (size_t)item.title_len;
+            id.ref.control_occurrence = control_occurrence;
+            id.ref.node_fingerprint = id.node_fingerprint;
+            token[0] = '\0';
+            (void)now_obs_mint(&g_registry, kNowObsKindElement, &id, token,
+                               sizeof(token));
+
+            now_json_escape(item.title, title, sizeof(title));
+            if (!append(out, cap, used,
+                        "%s{\"ref\":\"%s\",\"title\":\"%s\","
+                        "\"occurrence\":%u,\"visible\":%s,\"enabled\":%s,"
+                        "\"bounds\":{\"left\":%d,\"top\":%d,\"right\":%d,"
+                        "\"bottom\":%d},\"value\":%d,\"min\":%d,\"max\":%d}",
+                        first_control ? "" : ",", token, title,
+                        control_occurrence,
+                        item.visible ? "true" : "false",
+                        item.enabled ? "true" : "false",
+                        (int)item.left, (int)item.top, (int)item.right,
+                        (int)item.bottom, (int)item.value, (int)item.min,
+                        (int)item.max)) {
+                *truncated = 1;
+                break;
+            }
+            first_control = 0;
+            control_count++;
+            control = item.next_control;
+        }
+        if (control != 0) {
+            *truncated = 1;
+        }
+        if (!append(out, cap, used, "]}")) {
+            *truncated = 1;
+            break;
+        }
+        first_window = 0;
+        window_count++;
+        address = window.next_window;
+    }
+    if (address != 0) {
+        *truncated = 1;
+    }
+    return append(out, cap, used, "]");
+}
+
+static void fail(char *out, long cap, long id, const char *code,
+                 const char *message)
+{
+    snprintf(out, (size_t)cap,
+             "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+             "\"error\":{\"code\":\"%s\",\"message\":\"%s\"}}",
+             id, code, message);
+}
+
+static int read_scope(const char *request_json, char *scope, long cap)
+{
+    strcpy(scope, "front");
+    if (request_json != NULL) {
+        (void)now_json_find_string(request_json, "scope", scope, cap);
+    }
+    return (strcmp(scope, "front") == 0 || strcmp(scope, "all") == 0);
+}
+
+/* --- observe ----------------------------------------------------------- */
+
+void now_observe_command(const char *request_json, long id, char *out,
+                         long cap)
+{
+    ProcessSerialNumber psn = { 0, kNoProcess };
+    NowObsTarget        target;
+    ProcessSerialNumber front;
+    long                used = 0;
+    int                 count = 0;
+    int                 first = 1;
+    int                 truncated = 0;
+    char                scope[16];
+
+    now_observe_init();
+    if (!read_scope(request_json, scope, sizeof(scope))) {
+        fail(out, cap, id, "bad-request", "scope must be front or all");
+        return;
+    }
+    if (!append(out, cap, &used,
+                "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                "\"result\":{\"scope\":\"%s\",\"processes\":[", id, scope)) {
+        fail(out, cap, id, "overflow", "observe header");
+        return;
+    }
+    if (strcmp(scope, "front") == 0 && GetFrontProcess(&front) != noErr) {
+        fail(out, cap, id, "no-front", "no front process");
+        return;
+    }
+    while (GetNextProcess(&psn) == noErr) {
+        long mark = used;
+
+        if (count >= kObsMaxProcs || cap - used < kObsTailSlack) {
+            truncated = 1;
+            break;
+        }
+        if (!bind_target(&psn, &target)) {
+            continue;
+        }
+        if (strcmp(scope, "front") == 0 && !target.is_front) {
+            continue;
+        }
+        if (!append(out, cap, &used, "%s", first ? "" : ",")
+            || !emit_process_head(out, cap, &used, &target)
+            || !emit_tree(out, cap, &used, &target, &truncated)
+            || !append(out, cap, &used, "}")) {
+            used = mark;
+            truncated = 1;
+            break;
+        }
+        first = 0;
+        count++;
+    }
+    if (!append(out, cap, &used,
+                "],\"count\":%d,\"truncated\":%s,\"live\":%lu}}",
+                count, truncated ? "true" : "false",
+                (unsigned long)(g_registry.minted - g_registry.evicted))) {
+        fail(out, cap, id, "overflow", "observe tail");
+    }
+}
+
+/* --- axtree ------------------------------------------------------------ */
+
+/* The read surface over the same walk. It differs from observe in what
+   it is FOR rather than in what it does: observe is the call an agent
+   makes to obtain references, axtree the one it makes to look. They
+   share an emitter so the two can never describe the same machine
+   differently - which they would, eventually, as two copies. */
+void now_observe_axtree_command(const char *request_json, long id, char *out,
+                                long cap)
+{
+    now_observe_command(request_json, id, out, cap);
+}
+
+/* --- axsnap ------------------------------------------------------------ */
+
+void now_observe_axsnap_command(const char *request_json, long id, char *out,
+                                long cap)
+{
+    ProcessSerialNumber front;
+    NowObsTarget        target;
+    long                used = 0;
+
+    (void)request_json;
+    now_observe_init();
+    if (GetFrontProcess(&front) != noErr) {
+        fail(out, cap, id, "no-front", "no front process");
+        return;
+    }
+    if (!bind_target(&front, &target)) {
+        fail(out, cap, id, "no-process", "the front process is unreadable");
+        return;
+    }
+    if (!append(out, cap, &used,
+                "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                "\"result\":{\"front\":", id)
+        || !emit_process_head(out, cap, &used, &target)
+        || !append(out, cap, &used,
+                   ",\"hasWindows\":%s,\"hasMenus\":%s},"
+                   "\"references\":{\"live\":%lu,\"minted\":%lu,"
+                   "\"evicted\":%lu,\"capacity\":%d}}}",
+                   target.context.window_list != 0 ? "true" : "false",
+                   target.context.menu_list != 0 ? "true" : "false",
+                   (unsigned long)(g_registry.minted - g_registry.evicted),
+                   (unsigned long)g_registry.minted,
+                   (unsigned long)g_registry.evicted,
+                   (int)kNowObsRegistryMax)) {
+        fail(out, cap, id, "overflow", "axsnap");
+    }
+}
+
+/* --- handle ------------------------------------------------------------ */
+
+/* One reference in, one live element or one named refusal out.
+
+   THE REFUSAL IS THE PRODUCT HERE. `ok` stays true for every verdict
+   including the four that resolve to nothing, because "your reference
+   is stale" is an ANSWER - it tells the caller to observe again - while
+   an error would read as "the call failed" and invite a retry of the
+   same reference. What is never true is `resolved`. */
+void now_observe_handle_command(const char *request_json, long id, char *out,
+                                long cap)
+{
+    NowObsHandle handle;
+    char         reference[kNowObsTokenMax];
+    char         escaped[128];
+    long         used = 0;
+
+    now_observe_init();
+    reference[0] = '\0';
+    if (request_json == NULL
+        || !now_json_find_string(request_json, "ref", reference,
+                                 (long)sizeof(reference))) {
+        fail(out, cap, id, "bad-request", "ref is required");
+        return;
+    }
+    if (strncmp(reference, "now-window-", 11) == 0) {
+        now_observe_resolve_window(reference, 0, &handle);
+    } else {
+        now_observe_resolve_element(reference, 0, &handle);
+    }
+    now_json_escape(reference, escaped, sizeof(escaped));
+
+    if (!append(out, cap, &used,
+                "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                "\"result\":{\"ref\":\"%s\",\"verdict\":\"%s\","
+                "\"reason\":\"%s\",\"resolved\":%s",
+                id, escaped, now_obs_verdict_name(handle.verdict),
+                now_obs_why_text(handle.why),
+                handle.verdict == kNowObsOk ? "true" : "false")) {
+        fail(out, cap, id, "overflow", "handle");
+        return;
+    }
+    if (handle.verdict == kNowObsOk) {
+        char window_title[512];
+        char control_title[512];
+
+        now_json_escape(handle.detail.window.title, window_title,
+                        sizeof(window_title));
+        now_json_escape(handle.detail.control.title, control_title,
+                        sizeof(control_title));
+        if (!append(out, cap, &used,
+                    ",\"serialHi\":%lu,\"serialLo\":%lu,"
+                    "\"window\":{\"title\":\"%s\",\"z\":%u,"
+                    "\"visibleZ\":%u,\"visible\":%s,"
+                    "\"bounds\":{\"left\":%d,\"top\":%d,\"right\":%d,"
+                    "\"bottom\":%d}}",
+                    (unsigned long)handle.psn.highLongOfPSN,
+                    (unsigned long)handle.psn.lowLongOfPSN,
+                    window_title, handle.detail.window_z,
+                    handle.detail.visible_window_z,
+                    handle.detail.window.visible ? "true" : "false",
+                    (int)handle.detail.window.left,
+                    (int)handle.detail.window.top,
+                    (int)handle.detail.window.right,
+                    (int)handle.detail.window.bottom)) {
+            fail(out, cap, id, "overflow", "handle window");
+            return;
+        }
+        if (handle.control != NULL
+            && !append(out, cap, &used,
+                       ",\"element\":{\"title\":\"%s\",\"visible\":%s,"
+                       "\"enabled\":%s,\"bounds\":{\"left\":%d,\"top\":%d,"
+                       "\"right\":%d,\"bottom\":%d},\"value\":%d,"
+                       "\"min\":%d,\"max\":%d}",
+                       control_title,
+                       handle.detail.control.visible ? "true" : "false",
+                       handle.detail.control.enabled ? "true" : "false",
+                       (int)handle.detail.control.left,
+                       (int)handle.detail.control.top,
+                       (int)handle.detail.control.right,
+                       (int)handle.detail.control.bottom,
+                       (int)handle.detail.control.value,
+                       (int)handle.detail.control.min,
+                       (int)handle.detail.control.max)) {
+            fail(out, cap, id, "overflow", "handle element");
+            return;
+        }
+    }
+    if (!append(out, cap, &used, "}}")) {
+        fail(out, cap, id, "overflow", "handle tail");
+    }
+}
