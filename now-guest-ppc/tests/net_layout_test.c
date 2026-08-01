@@ -39,10 +39,13 @@ static void fully_configured(NetFacts *f)
     f->link.state = kNetFactPresent;
     strcpy(f->link.peer, "10.91.5.2");
     f->link.port = 1400;
-    f->link.up_ticks = 60UL * 90UL;
-    f->link.bytes_in = 4096;
-    f->link.bytes_out = 8192;
-    f->link.resets = 0;
+    f->link.up_secs = 90UL * 60UL;
+    f->link.rtt_ms = 31;
+    f->link.rcv_window = 8192;
+    f->link.rcv_peak = 8192;
+    f->link.quiet_secs = 2;
+    f->link.has_rtt = 1;
+    f->link.has_window = 1;
 
     f->inet.state = kNetFactPresent;
     strcpy(f->inet.address, "10.91.5.115");
@@ -112,13 +115,20 @@ int main(void)
           "the hardware address comes from the ordinary client call");
     check(has_row_labelled(kNetSectionInet, &f, "MTU"), "and the MTU");
 
-    /* A reset count of zero is not a row. "Resets 0" invites a person to
-       wonder what reset; saying nothing says nothing happened. */
-    check(!has_row_labelled(kNetSectionLink, &f, "Resets"),
-          "no resets means no Resets row");
-    f.link.resets = 3;
-    check(has_row_labelled(kNetSectionLink, &f, "Resets"),
-          "a reset that happened is shown");
+    /* A round trip that has never completed is -1, and the wire keeps 0
+       for "Open Transport chose the window". Both are absences, and a
+       row reading "-1 ms" is a measurement that never happened wearing
+       the clothes of one that did. */
+    check(has_row_labelled(kNetSectionLink, &f, "Round trip"),
+          "a completed ping is shown");
+    f.link.has_rtt = 0;
+    f.link.rtt_ms = -1;
+    check(!has_row_labelled(kNetSectionLink, &f, "Round trip"),
+          "a ping that never completed shows no row");
+    f.link.has_window = 0;
+    f.link.rcv_window = 0;
+    check(!has_row_labelled(kNetSectionLink, &f, "Receive window"),
+          "and OT's default window is not a measurement either");
 
     /* ---- the link needs no Open Transport ---- */
     fully_configured(&f);

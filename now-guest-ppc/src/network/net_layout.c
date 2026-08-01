@@ -51,13 +51,17 @@ short now_net_section_rows(NetSection section, const NetFacts *facts)
     }
     switch (section) {
     case kNetSectionLink:
-        /* Peer, port, uptime, in, out — and resets only when there have
-           been some. A row reading "Resets 0" invites a person to wonder
-           what reset; its absence says nothing has. */
+        /* Peer, port, up — then the diagnostics the wire actually keeps.
+           RTT and the receive window are counted only when they exist: a
+           row reading "RTT -1" or "Window 0" is a measurement that was
+           never taken wearing the clothes of one that was. */
         if (facts->link.state != kNetFactPresent) {
             return 0;
         }
-        return (short)(5 + (facts->link.resets > 0 ? 1 : 0));
+        return (short)(3
+                       + (facts->link.has_rtt ? 1 : 0)
+                       + (facts->link.has_window ? 2 : 0)
+                       + (facts->link.quiet_secs >= 0 ? 1 : 0));
 
     case kNetSectionInet:
         if (facts->inet.state != kNetFactPresent) {
@@ -145,34 +149,46 @@ int now_net_row(NetSection section, const NetFacts *facts, short index,
             put(value, value_cap, buf);
             return 1;
         }
-        case 2: {
-            char buf[24];
-            put(label, label_cap, "Up");
-            now_net_format_uptime(facts->link.up_ticks, buf, (long)sizeof buf);
-            put(value, value_cap, buf);
-            return 1;
+        default:
+            break;
         }
-        case 3: {
-            char buf[24];
-            put(label, label_cap, "Received");
-            snprintf(buf, sizeof buf, "%lu bytes", facts->link.bytes_in);
-            put(value, value_cap, buf);
-            return 1;
-        }
-        case 4: {
-            char buf[24];
-            put(label, label_cap, "Sent");
-            snprintf(buf, sizeof buf, "%lu bytes", facts->link.bytes_out);
-            put(value, value_cap, buf);
-            return 1;
-        }
-        default: {
-            char buf[24];
-            put(label, label_cap, "Resets");
-            snprintf(buf, sizeof buf, "%lu", facts->link.resets);
-            put(value, value_cap, buf);
-            return 1;
-        }
+        {
+            const NetLink *lk = &facts->link;
+            short at = 2;
+            char buf[32];
+
+            if (index == at++) {
+                put(label, label_cap, "Up");
+                now_net_format_duration(lk->up_secs, buf, (long)sizeof buf);
+                put(value, value_cap, buf);
+                return 1;
+            }
+            if (lk->has_rtt && index == at++) {
+                put(label, label_cap, "Round trip");
+                snprintf(buf, sizeof buf, "%ld ms", lk->rtt_ms);
+                put(value, value_cap, buf);
+                return 1;
+            }
+            if (lk->has_window && index == at++) {
+                put(label, label_cap, "Receive window");
+                snprintf(buf, sizeof buf, "%ld bytes", lk->rcv_window);
+                put(value, value_cap, buf);
+                return 1;
+            }
+            if (lk->has_window && index == at++) {
+                put(label, label_cap, "Window peak");
+                snprintf(buf, sizeof buf, "%ld bytes", lk->rcv_peak);
+                put(value, value_cap, buf);
+                return 1;
+            }
+            if (lk->quiet_secs >= 0 && index == at++) {
+                put(label, label_cap, "Quiet for");
+                now_net_format_duration((unsigned long)lk->quiet_secs, buf,
+                                        (long)sizeof buf);
+                put(value, value_cap, buf);
+                return 1;
+            }
+            return 0;
         }
     }
 

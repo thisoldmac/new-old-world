@@ -103,12 +103,15 @@ typedef struct NetInterface {
    state should be a real measurement rather than an empty table. */
 typedef struct NetLink {
     NetFactState state;
-    char peer[kNetAddrMax];
+    char peer[kNetNameMax];        /* the other Mac's name, or its host */
     unsigned long port;
-    unsigned long up_ticks;        /* TickCount since the link came up */
-    unsigned long bytes_in;
-    unsigned long bytes_out;
-    unsigned long resets;
+    unsigned long up_secs;         /* connected for; the wire counts seconds */
+    long rtt_ms;                   /* last ping/pong, -1 when none yet */
+    long rcv_window;               /* the window OT granted; 0 = its default */
+    long rcv_peak;
+    long quiet_secs;               /* since inbound bytes; -1 when none */
+    Boolean has_rtt;
+    Boolean has_window;
 } NetLink;
 
 /* The whole picture, assembled by net_probe.c and rendered by the
@@ -151,10 +154,13 @@ const char *now_net_state_token(NetFactState state);
    on the first try. */
 long now_net_format_ip(unsigned long addr, char *out, long cap);
 
-/* Ticks to a short human duration ("3m", "2h 14m"). The link's uptime is
-   the page's one continuously-changing number, so its formatting is
-   pinned by test rather than eyeballed. */
-void now_net_format_uptime(unsigned long ticks, char *out, long cap);
+/* SECONDS to a short human duration ("3m", "2h 14m"). Seconds rather than
+   ticks because that is the unit the wire actually counts in
+   (ConnSnapshot.connected_secs) - converting to ticks here and back
+   there would be arithmetic in service of a unit nobody holds. The
+   link's uptime is the page's one continuously-changing number, so its
+   formatting is pinned by test rather than eyeballed. */
+void now_net_format_duration(unsigned long secs, char *out, long cap);
 
 /* Colon-separated hex for a hardware address of `len` bytes. OT gives
    fHWAddrLen alongside the pointer and does NOT promise six, so the

@@ -7,6 +7,7 @@
 #include "connection_module.h"
 #include "console_module.h"
 #include "diagnostics_module.h"
+#include "network_module.h"
 #include "files_module.h"
 #include "logs_module.h"
 #include "mcp_module.h"
@@ -64,6 +65,9 @@ static const struct {
       "What this Mac can measure about itself. Each one says what it "
       "costs before it is spent.",
       "Diagnostics has not moved in yet." },
+    { "Networking",
+      "This Mac's link, its address, and the network hardware it has.",
+      "Networking has not moved in yet." },
     { "Logs",
       "This launch's event log. Toggle whether it also reaches the disk.",
       "Logs has not moved in yet." },
@@ -180,6 +184,7 @@ Boolean workshop_open(void)
     g_ops[kWorkshopSoftware] = software_module_ops();
     g_ops[kWorkshopMCP] = mcp_module_ops();
     g_ops[kWorkshopDiagnostics] = diagnostics_module_ops();
+    g_ops[kWorkshopNetworking] = network_module_ops();
     g_ops[kWorkshopLogs] = logs_module_ops();
     g_ops[kWorkshopConnection] = connection_module_ops();
     now_prefs_load(&prefs);

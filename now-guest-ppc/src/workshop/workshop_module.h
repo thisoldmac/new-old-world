@@ -18,7 +18,8 @@ typedef enum {
     kWorkshopHardware,
     kWorkshopSoftware,
     kWorkshopMCP,
-    kWorkshopDiagnostics,    /* the last nav row, above the pinned pair */
+    kWorkshopDiagnostics,
+    kWorkshopNetworking,     /* the last nav row, above the pinned pair */
     kWorkshopLogs,
     kWorkshopConnection      /* pinned; inserting MCP and Diagnostics
                                 pushed this and Logs down again, moving
@@ -26,7 +27,7 @@ typedef enum {
                                 now_prefs_load */
 } WorkshopModuleID;
 
-enum { kWorkshopModuleCount = 10 };
+enum { kWorkshopModuleCount = 11 };
 
 typedef struct WorkshopModuleOps {
     OSErr (*create)(WindowRef owner, const Rect *body);

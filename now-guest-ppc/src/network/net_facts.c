@@ -118,9 +118,8 @@ void now_net_format_hw(const unsigned char *addr, long len,
     }
 }
 
-void now_net_format_uptime(unsigned long ticks, char *out, long cap)
+void now_net_format_duration(unsigned long secs, char *out, long cap)
 {
-    unsigned long secs;
     unsigned long mins;
     unsigned long hours;
 
@@ -128,11 +127,9 @@ void now_net_format_uptime(unsigned long ticks, char *out, long cap)
         return;
     }
     out[0] = '\0';
-    /* 60 ticks to the second on every Mac this ships to. Integer
-       division throughout: a duration that rounds up to "1m" while the
-       link has been up for four seconds is a small lie the page does not
-       need to tell. */
-    secs = ticks / 60UL;
+    /* Integer division throughout: a duration that rounds up to "1m"
+       while the link has been up for four seconds is a small lie the
+       page does not need to tell. */
     if (secs < 60UL) {
         snprintf(out, (size_t)cap, "%lus", secs);
         return;

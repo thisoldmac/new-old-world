@@ -47,24 +47,41 @@ static NetGetInterfaceInfoProc gGetInterfaceInfo;
 static NetGetIndexedPortProc gGetIndexedPort;
 static Boolean gLookedUp;
 
+/* The same fragment, the same way, as ot_carbon.c - which is
+   metal- and emu-verified (finding carbon-ot-needs-carbonlib-16). These
+   two symbols live in "Apple;Carbon;Networking" alongside the endpoint
+   calls NOW already resolves; looking them up from a DIFFERENT library
+   would be a second answer to a question that already has one, and the
+   first answer is the one that has run on a PowerBook. */
 static void lookup_once(void)
 {
-    CFragConnectionID id;
+    CFragConnectionID conn;
+    Ptr mainAddr;
+    Str255 errName;
+    Str255 pname;
+    CFragSymbolClass cls;
     Ptr addr;
-    Str255 err;
 
     if (gLookedUp) {
         return;
     }
     gLookedUp = true;
-    if (GetSharedLibrary("\pOTClientLib", kCompiledCFragArch,
-                         kLoadCFrag, &id, &addr, err) != noErr) {
+
+    if (GetSharedLibrary((ConstStr255Param)"\pApple;Carbon;Networking",
+                         kPowerPCCFragArch, kReferenceCFrag,
+                         &conn, &mainAddr, errName) != noErr) {
         return;                       /* stays NULL; probe reports no OT */
     }
-    if (FindSymbol(id, "\pOTInetGetInterfaceInfo", &addr, NULL) == noErr) {
+
+    pname[0] = (unsigned char)strlen("OTInetGetInterfaceInfo");
+    memcpy(pname + 1, "OTInetGetInterfaceInfo", pname[0]);
+    if (FindSymbol(conn, pname, &addr, &cls) == noErr) {
         gGetInterfaceInfo = (NetGetInterfaceInfoProc)addr;
     }
-    if (FindSymbol(id, "\pOTGetIndexedPort", &addr, NULL) == noErr) {
+
+    pname[0] = (unsigned char)strlen("OTGetIndexedPort");
+    memcpy(pname + 1, "OTGetIndexedPort", pname[0]);
+    if (FindSymbol(conn, pname, &addr, &cls) == noErr) {
         gGetIndexedPort = (NetGetIndexedPortProc)addr;
     }
 }
@@ -207,10 +224,16 @@ void now_net_probe(const NetLinkSample *link, NetFacts *out)
         copy_field(out->link.peer, (long)sizeof out->link.peer,
                    link->peer, (long)sizeof link->peer);
         out->link.port = link->port;
-        out->link.up_ticks = link->up_ticks;
-        out->link.bytes_in = link->bytes_in;
-        out->link.bytes_out = link->bytes_out;
-        out->link.resets = link->resets;
+        out->link.up_secs = link->up_secs;
+        out->link.rtt_ms = link->rtt_ms;
+        out->link.rcv_window = link->rcv_window;
+        out->link.rcv_peak = link->rcv_peak;
+        out->link.quiet_secs = link->quiet_secs;
+        /* -1 and 0 are the wire's "never measured" and "OT kept its
+           default". Both are absences, and the page must not print them
+           as numbers. */
+        out->link.has_rtt = (link->rtt_ms >= 0);
+        out->link.has_window = (link->rcv_window > 0);
     } else {
         out->link.state = kNetFactNotServed;
     }

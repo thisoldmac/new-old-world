@@ -47,11 +47,11 @@ static void ip_is(unsigned long addr, const char *want, const char *what)
     check_str(buf, want, what);
 }
 
-static void uptime_is(unsigned long ticks, const char *want, const char *what)
+static void uptime_is(unsigned long secs, const char *want, const char *what)
 {
     char buf[24];
 
-    now_net_format_uptime(ticks, buf, sizeof buf);
+    now_net_format_duration(secs, buf, sizeof buf);
     check_str(buf, want, what);
 }
 
@@ -88,13 +88,13 @@ int main(void)
 
     /* ---- durations, the page's one moving number ---- */
     uptime_is(0UL, "0s", "a link that just came up");
-    uptime_is(59UL * 60UL, "59s", "just under a minute stays in seconds");
-    uptime_is(60UL * 60UL, "1m", "exactly a minute");
-    uptime_is(60UL * 60UL * 90UL, "1h 30m", "hours carry their minutes");
-    uptime_is(60UL * 60UL * 60UL * 2UL, "2h", "a whole hour drops the zero");
+    uptime_is(59UL, "59s", "just under a minute stays in seconds");
+    uptime_is(60UL, "1m", "exactly a minute");
+    uptime_is(90UL * 60UL, "1h 30m", "hours carry their minutes");
+    uptime_is(2UL * 3600UL, "2h", "a whole hour drops the zero");
     /* Four seconds is not "1m". The page would rather say a small true
        thing than a rounder false one. */
-    uptime_is(4UL * 60UL, "4s", "seconds do not round up into minutes");
+    uptime_is(4UL, "4s", "seconds do not round up into minutes");
 
     /* ---- absence has a vocabulary, and the words matter ---- */
     check(now_net_state_sentence(kNetFactPresent)[0] == '\0',
@@ -170,7 +170,7 @@ int main(void)
 
         now_net_format_ip(0x0A5B0573UL, tiny, (long)sizeof tiny);
         check(tiny[sizeof tiny - 1] == '\0', "a short buffer stays terminated");
-        now_net_format_uptime(600UL, tiny, (long)sizeof tiny);
+        now_net_format_duration(600UL, tiny, (long)sizeof tiny);
         check(tiny[sizeof tiny - 1] == '\0', "uptime respects its cap too");
         now_net_format_ip(0UL, NULL, 0);      /* must not crash */
         now_net_facts_clear(NULL);            /* must not crash */

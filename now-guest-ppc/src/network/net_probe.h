@@ -13,12 +13,13 @@
    measurement beats one that is empty until a probe runs. */
 typedef struct NetLinkSample {
     Boolean connected;
-    char peer[kNetAddrMax];
+    char peer[kNetNameMax];
     unsigned long port;
-    unsigned long up_ticks;
-    unsigned long bytes_in;
-    unsigned long bytes_out;
-    unsigned long resets;
+    unsigned long up_secs;
+    long rtt_ms;          /* -1 when no ping has completed */
+    long rcv_window;      /* 0 when OT kept its default */
+    long rcv_peak;
+    long quiet_secs;      /* -1 when nothing has arrived */
 } NetLinkSample;
 
 /* Fill `out` from Open Transport plus the caller's link sample. Always
