@@ -8,6 +8,15 @@
 #include "axmenu.h"
 #include "axtext.h"
 
+/* The one file that sees both a scene's reference buffer and the
+   reference layer's own token size, pinned at compile time exactly as
+   scene_collect.c pins the anchor verdicts. A scene buffer shorter than
+   a token would not overflow anything - copy_ref refuses a reference
+   that does not fit - it would silently drop EVERY reference in every
+   scene, and the symptom would be "the guest stopped minting". */
+typedef char now_scene_ref_pin[
+    (kNowSceneRefMax >= kNowObsTokenMax) ? 1 : -1];
+
 enum {
     /* windowKind for a Dialog Manager window. Inside Macintosh:
        Macintosh Toolbox Essentials defines dialogKind = 2, and it is the
@@ -30,8 +39,40 @@ static int item_is_separator(const NowAxMenuItem *item)
     return item->title_len == 1 && item->title[0] == '-';
 }
 
+/* The reference for one element, or nothing. A seam that declines is not
+   a failure of the walk: the element keeps every other claim the walk
+   made about it and loses only its address, which is what an absent
+   `ref` says. */
+static void name_window(NowScene *s, int window, NowObsWalk *refs,
+                        unsigned long address)
+{
+    char token[kNowSceneRefMax];
+
+    if (refs == NULL) {
+        return;
+    }
+    if (now_obs_walk_window_ref(refs, address, token, sizeof token)) {
+        now_scene_set_window_ref(s, window, token);
+    }
+}
+
+static void name_control(NowScene *s, int window, int index,
+                         NowObsWalk *refs, unsigned long address,
+                         unsigned long handle)
+{
+    char token[kNowSceneRefMax];
+
+    if (refs == NULL) {
+        return;
+    }
+    if (now_obs_walk_control_ref(refs, address, handle, token,
+                                 sizeof token)) {
+        now_scene_set_control_ref(s, window, index, token);
+    }
+}
+
 static void walk_controls(NowScene *s, int window, const NowAxMemory *memory,
-                          const NowAxWindow *win)
+                          const NowAxWindow *win, NowObsWalk *refs)
 {
     NowAxControl control;
     unsigned long handle;
@@ -67,12 +108,19 @@ static void walk_controls(NowScene *s, int window, const NowAxMemory *memory,
             now_scene_retract_controls(s, window);
             return;
         }
+        /* Named AFTER it is admitted, and by its position in this
+           window's block - which is `hops`, because every hop that got
+           here appended exactly one control. A reference filed against
+           the wrong index would name a sibling, and both rows would look
+           complete. */
+        name_control(s, window, hops, refs, win->address, handle);
         handle = control.next_control;
     }
 }
 
 void now_scene_walk_window(NowScene *s, int window,
-                           const NowAxMemory *memory, unsigned long address)
+                           const NowAxMemory *memory, unsigned long address,
+                           NowObsWalk *refs)
 {
     NowAxWindow win;
     NowAxText text;
@@ -84,7 +132,8 @@ void now_scene_walk_window(NowScene *s, int window,
         return;                       /* every sub-plane stays absent */
     }
     now_scene_set_window_kind(s, window, win.kind);
-    walk_controls(s, window, memory, &win);
+    name_window(s, window, refs, address);
+    walk_controls(s, window, memory, &win, refs);
 
     /* The text read is GATED ON THE KIND, and that gate is safety rather
        than tidiness: a DialogRecord's TEHandle sits at 160, which is

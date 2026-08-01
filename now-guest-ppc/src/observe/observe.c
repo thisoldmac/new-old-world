@@ -141,6 +141,57 @@ static void live_from(const NowObsTarget *target, NowObsLive *live)
     live->memory = &target->context.memory;
 }
 
+/* --- the scene walk's door onto this registry --------------------------- */
+
+void now_observe_walk_begin(NowObsWalk *walk)
+{
+    now_observe_init();
+    now_obs_walk_begin(walk, &g_registry);
+}
+
+void now_observe_walk_aim(NowObsWalk *walk, const ProcessSerialNumber *psn,
+                          const NowAxContext *context)
+{
+    ProcessInfoRec info;
+    Str31          name;
+    unsigned long  fingerprint = 0;
+
+    if (walk == NULL || psn == NULL || context == NULL) {
+        return;
+    }
+    memset(&info, 0, sizeof(info));
+    info.processInfoLength = sizeof(info);
+    info.processName = name;
+    info.processAppSpec = NULL;
+    name[0] = 0;
+    /* The SAME tuple bind_target computes, and it has to be: a reference
+       minted against one fingerprint and re-proved against another is
+       refused as a recycled process, which would make every scene
+       reference fail with the most alarming verdict this layer has. A
+       process the Process Manager will not describe gets a zero
+       fingerprint, and every reference for it will fail that check - so
+       it is aimed with a seam it cannot mint through instead. */
+    if (GetProcessInformation(psn, &info) != noErr) {
+        now_obs_walk_aim(walk, NULL, 0, 0, 0, 0, 0);
+        return;
+    }
+    fingerprint = now_obs_process_fingerprint(
+        (unsigned long)psn->highLongOfPSN, (unsigned long)psn->lowLongOfPSN,
+        (unsigned long)info.processSignature,
+        (unsigned long)info.processLaunchDate,
+        (unsigned long)info.processLocation,
+        (unsigned long)info.processSize, name);
+    now_obs_walk_aim(walk, &context->memory, context->window_list,
+                     (unsigned long)psn->highLongOfPSN,
+                     (unsigned long)psn->lowLongOfPSN, fingerprint,
+                     (unsigned long)TickCount());
+}
+
+void now_observe_walk_end(NowObsWalk *walk)
+{
+    now_obs_walk_end(walk);
+}
+
 /* --- resolution, for the act plane ------------------------------------- */
 
 static void resolve_kind(NowObsKind kind, const char *reference, long len,

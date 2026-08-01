@@ -208,7 +208,8 @@ run_c now-guest-ppc scene_json_test.c        ""  src/scene/scene_build.c \
 # against the same synthetic arena the axwalk tests use.
 run_c now-guest-ppc scene_walk_test.c        ""  src/scene/scene_walk.c \
       src/scene/scene_build.c src/axwalk/axwalk.c src/axwalk/axmenu.c \
-      src/axwalk/axtext.c src/peek/peek_validate.c
+      src/axwalk/axtext.c src/peek/peek_validate.c src/axwalk/axresolve.c \
+      src/observe/obsmint.c src/observe/obsref.c src/observe/obsresolve.c
 # The ported foreign-memory walk (src/axwalk/, from timbottu/mirror). The
 # first automated coverage this archaeology has ever had: upstream proved
 # the offsets on a real machine and had no host test, so these pin the
