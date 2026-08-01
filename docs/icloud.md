@@ -94,10 +94,15 @@ strikes for file.begin.
 
 ## What is and is not proven
 
-Wire serving is **tested** (`CloudServingTests`, fake providers over a
-loopback wire; refusal-code mutation watched failing). The real
-providers are thin and deliberately untested here: Photos and Contacts
-cannot be exercised without this Mac's TCC grants, and what only a
-signed-in, access-granted machine can prove is ledgered in
-[open-issues.md](open-issues.md). Nothing in this family is
+**Metal-verified 2026-08-01** on the PowerBook 1400c: the module end
+to end for Drive — cloud.services across a real wire, the dropdown,
+and the in-page drive browser (list, descend, Up, double-click fetch)
+against the host's iCloud Drive share, fingerprinted names included.
+
+Photos and Contacts serving is **tested** (`CloudServingTests`, fake
+providers over a loopback wire; refusal-code mutation watched
+failing) and their real providers remain deliberately unexercised:
+they need this Mac's TCC grants, and what only a signed-in,
+access-granted machine can prove is ledgered in
+[open-issues.md](open-issues.md). The rest of the family is
 metal-verified yet.

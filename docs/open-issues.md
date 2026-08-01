@@ -37,6 +37,15 @@ wire with FAKE providers only (`CloudServingTests`). Still unproven:
 - **cloud.get on a busy lane** refuses busy by unit-tested logic, but
   no test drives a real concurrent capture/stream against it.
 
+Update 2026-08-01, evening: METAL-VERIFIED for Drive on the
+PowerBook 1400c — the cloud.services round trip, the dropdown, and
+the in-page drive browser (list, descend, Up, double-click fetch)
+all watched working. Three faults the first metal pass found are
+fixed and their fixes watched: status_text garbage, popup menu
+reachable only through GetControlData, first-ask-before-connect.
+Still unproven: Photos and Contacts with real TCC grants, and
+cloud.get end to end (no serving service had it enabled yet).
+
 Update 2026-08-01, same day: the guest module LANDED
 (`now-guest-ppc/src/cloud/`, docs/icloud.md) — parsers and geometry
 native-tested and mutation-watched, all three guests cross-compile,
