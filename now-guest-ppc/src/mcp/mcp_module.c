@@ -12,7 +12,8 @@
    The division is not this page's to revisit. The other Mac runs the MCP
    server, owns its endpoint and its lifecycle, and enforces what an agent
    may do; this Mac owns exactly one fact - whether it consents to being
-   driven, and how far - which it states in `hello` and never enforces.
+   driven, and how far - which it states in `hello`, revises with
+   `agent.access` when it changes, and never enforces.
    So the page is a three-rung ladder and a short account of what has
    been said, and it deliberately shows no counters: who is attached and
    what they have done are the host's knowledge, and a row of zeroes
@@ -208,7 +209,7 @@ static void mcp_draw(void)
 static Boolean mcp_click(const EventRecord *event, Point local)
 {
     ControlRef control = NULL;
-    int i;
+    int i, line;
 
     (void)event;
     if (g_owner == NULL || !g_visible) {
@@ -223,14 +224,18 @@ static Boolean mcp_click(const EventRecord *event, Point local)
         }
         if (TrackControl(control, local, now_pump_action()) != 0
             && now_agent_access_tier() != (AgentAccessTier)i) {
+            /* Stores, and tells a host already on the line. */
             now_agent_access_set_tier((AgentAccessTier)i);
             sync_radios();
-            /* The account below says what is now true, including that a
-               live link has not heard it yet. */
+            /* Every line, not the three that used to change: the setter
+               above now announces, so the line saying what the host has
+               been told changes on this click too. Idle would have caught
+               it a pass later, which is a flicker on the one page whose
+               job is to be believed about permissions. */
             InvalWindowRect(g_owner, &g_r.answer_heading);
-            InvalWindowRect(g_owner, &g_r.answer_lines[0]);
-            InvalWindowRect(g_owner,
-                            &g_r.answer_lines[kMcpAnswerLines - 1]);
+            for (line = 0; line < kMcpAnswerLines; ++line) {
+                InvalWindowRect(g_owner, &g_r.answer_lines[line]);
+            }
         }
         return true;
     }

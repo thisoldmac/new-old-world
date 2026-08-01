@@ -503,8 +503,9 @@ Three more things only metal answers here:
 
 ## 9. Guest consent, which has never met a machine
 
-The PPC guest sends a hardcoded `full` from `now_agent_access()`. To test the
-ceiling you need a build that answers otherwise.
+The PPC guest's answer now comes from its preferences file, and the MCP page
+of the Workshop sets it — so the ceiling is testable from the guest's own
+screen rather than needing a build that answers differently.
 
 - `disabled` → every tool refused, as a JSON-RPC error with code `-32010`, not
   as a capability being unavailable. **A caller must be able to tell those
@@ -515,6 +516,43 @@ ceiling you need a build that answers otherwise.
   installer lands).
 
 Confirm a refusal **emits an audit event** and appears in the MCP module.
+
+### 9a. A tier changed WHILE connected (`agent.access`, never metal-verified)
+
+The point of this one is that it takes effect on the link already up. Tested
+on both sides and never watched on a real machine:
+
+- With a Mac connected and an agent driving it at **Full Access**, set **Read
+  Only** on the guest's MCP page. Without touching the connection, call a
+  destructive tool. It must be **refused, by consent** (`-32010`, the same
+  refusal shape as above) — not merely greyed, and not allowed. A refusal is
+  the whole fix; anything else means the revision did not reach enforcement.
+- Set it back to **Full Access** and confirm the same tool is permitted
+  again. The field is the machine's position, not a budget it spends down.
+- Watch the host's **MCP pane consent row** follow both changes without a
+  reconnect, and the host log line (`… now says agent Read Only (was Full
+  Access)`).
+- On the guest page, the third line should read **"The Mac on the wire has
+  been told."** It deliberately never says the host is *enforcing* it —
+  nothing acknowledges `agent.access`, so that claim is not this Mac's to
+  make. If it instead says "has not yet heard this", the announcement did not
+  fit the control queue; that is the honest rare case and worth reporting
+  with what was happening at the time (a transfer? a stream?).
+- **Change the tier with nothing connected**, then connect. `hello` carries
+  the new answer and the same line should appear. This is the path that
+  worked before and must not have regressed.
+
+**A tier changed mid-call is NOT handled, deliberately.** The earlier design
+sketched warning the person that an agent operation is in flight ("Stop it
+now / Let it finish / Never mind"). The guest cannot know that: nothing on
+the wire tells it a projection call is running, and it would need a
+host-to-guest bracket around agent activity — a new message pair and a real
+design question about what "in flight" means for a call the host may have
+already answered. Not built. What happens today is that the revision is
+applied when it arrives, and a call that already passed the consent check
+runs to completion at the old tier. Worth eyeballing what that feels like
+during a long operation (a whole-volume software sweep is the easy one) so
+the decision is made against something observed.
 
 ## 10. The fifth addressing case
 
