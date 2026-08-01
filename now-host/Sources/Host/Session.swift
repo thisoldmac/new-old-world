@@ -48,6 +48,9 @@ final class Session {
         (Result<GuestListener.CaptureDelivery, GuestListener.CaptureFailure>)
         -> Void
     private let onCaptureProgress: (GuestListener.CaptureProgress?) -> Void
+    private let onScene:
+        (Result<GuestListener.SceneDelivery, GuestListener.SceneFailure>)
+        -> Void
     private let onPushedCapture: (GuestListener.CaptureDelivery) -> Void
     private let onStreamFrame: (GuestListener.CaptureDelivery) -> Void
     private let onStreamStopped: (StreamStopped) -> Void
@@ -86,6 +89,17 @@ final class Session {
     /// Non-nil while a host-requested capture is outstanding; a transfer
     /// that begins without it is a guest-initiated push.
     private var solicitedId: Int?
+    /// In-flight scene: the begin that announced it and the JSON document
+    /// its bulk frames are. Held in memory rather than staged to disk like
+    /// a file, because a scene is tens of kilobytes and the thing that
+    /// wants it is a decoder, not a path.
+    private var sceneBegin: SceneBegin?
+    private var sceneBuffer: [UInt8] = []
+    private var sceneStart = Date()
+    /// The id of the outstanding `scene.request`. There is no such thing as
+    /// a pushed scene — the guest only walks when asked — so a scene
+    /// arriving without this is a stray, not a gift.
+    private var sceneSolicitedId: Int?
     private var acceptedOfferId: Int?
     /// In-flight file pull: the begin that announced it and the bounded
     /// disk sink receiving its bulk frames.
@@ -132,6 +146,8 @@ final class Session {
          onCapture: @escaping (Result<GuestListener.CaptureDelivery,
                                       GuestListener.CaptureFailure>) -> Void,
          onCaptureProgress: @escaping (GuestListener.CaptureProgress?) -> Void,
+         onScene: @escaping (Result<GuestListener.SceneDelivery,
+                                    GuestListener.SceneFailure>) -> Void,
          onPushedCapture: @escaping (GuestListener.CaptureDelivery) -> Void,
          onStreamFrame: @escaping (GuestListener.CaptureDelivery) -> Void,
          onStreamStopped: @escaping (StreamStopped) -> Void,
@@ -173,6 +189,7 @@ final class Session {
         self.onCensusReport = onCensusReport
         self.onCapture = onCapture
         self.onCaptureProgress = onCaptureProgress
+        self.onScene = onScene
         self.onPushedCapture = onPushedCapture
         self.onStreamFrame = onStreamFrame
         self.onStreamStopped = onStreamStopped
@@ -296,6 +313,19 @@ final class Session {
             case .bulk:
                 if let discarding = discardingTransfer,
                    Int(frame.header.transfer) == discarding {
+                    break
+                }
+                /* A scene rides the same one-wide lane as a capture and a
+                   file, and is routed FIRST because it is the only user of
+                   that lane that can say which transfer it is: it matches on
+                   the transfer id `scene.begin` announced. The other two
+                   branches below claim bulk by "am I open", which is exactly
+                   right while one transfer is open at a time and is why an
+                   exact match has to be tried before them rather than after,
+                   where a still-open capture would swallow a scene's bytes. */
+                if let begin = sceneBegin,
+                   Int(frame.header.transfer) == begin.transfer {
+                    sceneBuffer.append(contentsOf: frame.payload)
                     break
                 }
                 if let inbound {
@@ -479,6 +509,16 @@ final class Session {
             }
         case .captureEnd(let end):
             finishCapture(end)
+        case .sceneBegin(let begin):
+            /* No progress is reported. A scene is tens of kilobytes and
+               tens of milliseconds; a progress bar for it would flash
+               once, and publishing into `captureProgress` would put a
+               scene's bytes on the Screenshots panel's bar. */
+            sceneBegin = begin
+            sceneBuffer = []
+            sceneBuffer.reserveCapacity(begin.bytes)
+        case .sceneEnd(let end):
+            finishScene(end)
         case .bye(let bye):
             let name = guestName
             finish(reason: byeDescription(bye, guest: name))
@@ -1243,6 +1283,76 @@ final class Session {
                     message: "could not decode the capture: \(error)")))
             }
         }
+    }
+
+    /// Settles a scene transfer.
+    ///
+    /// **The failure is whole**, on both halves. The guest sends no bulk at
+    /// all behind an `ok:false` — a partial walk is never delivered as a
+    /// complete scene — and this refuses a body that is not the length its
+    /// begin announced for the same reason: half a JSON document does not
+    /// parse, and calling it a scene would hand the decoder a fault to
+    /// report where the truth is a truncated transfer.
+    private func finishScene(_ end: SceneEnd) {
+        guard sceneSolicitedId == end.id else {
+            /* Nothing here asked for this. Dropping it is deliberate: a
+               scene nobody requested has no completion to settle, and
+               inventing a push path for it would mean a page could change
+               under a person who did not ask. */
+            sceneBegin = nil
+            sceneBuffer = []
+            onLog("ignored a scene nobody asked for", "wire", .info)
+            return
+        }
+        let begin = sceneBegin
+        sceneBegin = nil
+        sceneSolicitedId = nil
+        let blob = sceneBuffer
+        sceneBuffer = []
+        guard end.ok else {
+            onScene(.failure(.init(
+                message: end.reason ?? "the Mac would not walk its screen",
+                refusedByGuest: true)))
+            return
+        }
+        guard let begin else {
+            onScene(.failure(.init(message: "the scene ended without a begin",
+                                   refusedByGuest: false)))
+            return
+        }
+        guard blob.count == begin.bytes else {
+            onScene(.failure(.init(
+                message: "the scene arrived short: \(blob.count) of "
+                    + "\(begin.bytes) bytes",
+                refusedByGuest: false)))
+            return
+        }
+        onScene(.success(.init(
+            document: Data(blob),
+            /* The ENVELOPE's major, carried through untouched. The gate
+               that reads it runs at the decoder, on this number, before
+               the document below is parsed — so nothing on the way here
+               may substitute the body's own stamp for it. */
+            irVersion: begin.irVersion,
+            seq: begin.seq,
+            capturedAt: begin.capturedAt,
+            source: begin.source,
+            walkMs: begin.walkMs,
+            transferMs: Int(Date().timeIntervalSince(sceneStart) * 1000),
+            guestName: guestName, guestKey: guestKey)))
+    }
+
+    /// Asks for one scene. Primes the receive state the same way
+    /// `sendCaptureRequest` does, because the answer arrives the same way.
+    func sendSceneRequest(id: Int, staleAfterMs: Int?,
+                          tuning: GuestListener.CaptureTuning) {
+        sceneBegin = nil
+        sceneBuffer = []
+        sceneSolicitedId = id
+        sceneStart = Date()
+        send(.sceneRequest(SceneRequest(
+            id: id, chunkKb: tuning.chunkKb, paceMs: tuning.paceMs,
+            staleAfterMs: staleAfterMs)))
     }
 
     private func gate(_ hello: Hello) {

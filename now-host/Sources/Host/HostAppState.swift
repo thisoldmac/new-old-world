@@ -85,10 +85,13 @@ final class HostAppState: ObservableObject {
         select: { [weak self] key in self?.selectGuest(key) ?? false })
     private(set) lazy var console = ConsoleModel(listener: listener)
     /// The Mirror page. Guest-scoped like the rest — it is a claim about one
-    /// machine — even though nothing on this side asks that machine for a
-    /// scene yet, because the states it rests in are all about WHICH Mac is
-    /// connected and it would be wrong the moment the picker moved.
-    private(set) lazy var mirror = MirrorModuleModel()
+    /// machine, and everything it rests in is about WHICH Mac is connected,
+    /// so it would be wrong the moment the picker moved.
+    ///
+    /// It takes the listener now: the page can ask the connected Mac for a
+    /// scene, and the ask goes down the same wire and the same one transfer
+    /// lane every other page shares.
+    private(set) lazy var mirror = MirrorModuleModel(listener: listener)
     private(set) lazy var census = CensusModuleModel(listener: listener)
     private(set) lazy var diagnostics = DiagnosticsModel(listener: listener)
     private(set) lazy var software = SoftwareModel(listener: listener)

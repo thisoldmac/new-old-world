@@ -1881,6 +1881,130 @@ final class GuestListener: ObservableObject {
         completion?(result)
     }
 
+    // MARK: - Scenes
+
+    /// One walk of the other Mac, as the guest described it.
+    ///
+    /// The bytes are handed on **undecoded** on purpose. The IR gate's rule
+    /// is read the version, refuse an unknown major, THEN decode
+    /// (`mirror/docs/IR-V1.md`), and the only way this layer can obey it is
+    /// by not decoding at all: it carries the envelope's `irVersion` beside
+    /// the body and lets `NOWSceneCodec.decode` — the one place that
+    /// implements the order — do both steps. A convenience that parsed here
+    /// and passed a document on would have moved the gate behind a parse
+    /// while looking like an improvement.
+    ///
+    /// It also keeps absence intact for free: nothing here reads a plane, so
+    /// nothing here can turn an absent one into an empty one.
+    struct SceneDelivery {
+        /// UTF-8 JSON, exactly the bytes the guest's encoder produced.
+        var document: Data
+        /// From `scene.begin`, not from the body.
+        var irVersion: Int
+        var seq: Int?
+        var capturedAt: Double?
+        var source: String?
+        /// How long the guest spent walking, by its own clock.
+        var walkMs: Int?
+        var transferMs: Int
+        var guestName: String = Session.unnamedGuest
+        var guestKey: GuestKey?
+    }
+
+    /// A scene that could not be had. `message` is written for a human — it
+    /// lands on the Mirror page.
+    struct SceneFailure: Error {
+        var message: String
+        /// True when the GUEST declined: it was asked, it answered, and the
+        /// answer was no. False for everything this side decided (no Mac,
+        /// lane busy, silence, a short transfer).
+        ///
+        /// The page needs the difference. A refusal is evidence the scene
+        /// plane is there and answering, and asking again in a moment is a
+        /// sensible thing to suggest; a local refusal says nothing about
+        /// the other Mac at all.
+        var refusedByGuest: Bool = false
+    }
+
+    private var pendingScene:
+        ((Result<SceneDelivery, SceneFailure>) -> Void)?
+    private var sceneWatchdogId: Int?
+
+    /// Whether a scene is already on its way here.
+    var isScenePending: Bool { pendingScene != nil }
+
+    /// **The one transfer lane, as seen from this side.**
+    ///
+    /// The contract allows one bulk transfer at a time and the guest
+    /// enforces it too (`serve_scene` refuses with "a transfer is already in
+    /// flight"). Asking anyway would work — the refusal is polite and
+    /// cheap — but it would cost a round trip to be told what this side
+    /// already knows, and on the file lane it would land a refusal in the
+    /// middle of somebody's download.
+    ///
+    /// A stream is included because a bracket owns the lane for its whole
+    /// life, not just while a frame is moving.
+    private var transferLaneHolder: String? {
+        if activeStreamId != nil { return "a live stream is running" }
+        if isCapturePending { return "a screenshot is on its way" }
+        switch fileTransferInFlight {
+        case .outgoing: return "a file is going to the Mac"
+        case .incoming: return "a file is coming from the Mac"
+        case nil: break
+        }
+        if isScenePending { return "a scene is already on its way" }
+        return nil
+    }
+
+    /// Asks the connected Mac to walk its screen and send back one scene.
+    ///
+    /// Shaped exactly like `requestCapture` — one request out, one transfer
+    /// back, one completion — with one deliberate difference: this **refuses
+    /// rather than replaces**. `requestCapture` overwrites its pending
+    /// completion because the Screenshots panel guards itself and the last
+    /// ask is the one a person is looking at. A scene has more than one
+    /// possible caller (a person today, an agent when the projection row
+    /// exists), and a second caller silently orphaning the first one's
+    /// completion is how a page waits forever.
+    func requestScene(staleAfterMs: Int? = nil,
+                      tuning: CaptureTuning = .init(),
+                      completion: @escaping (Result<SceneDelivery,
+                                                    SceneFailure>) -> Void) {
+        guard let session, case .connected = state else {
+            completion(.failure(.init(message: "No Mac is connected")))
+            return
+        }
+        if let holder = transferLaneHolder {
+            completion(.failure(.init(
+                message: "The Mac can move one thing at a time and "
+                    + "\(holder). Ask again when it is done.")))
+            return
+        }
+        let id = nextCommandId
+        nextCommandId += 1
+        pendingScene = completion
+        sceneWatchdogId = id
+        /* A walk is not a screen grab: it visits every process and window
+           through the extension, on a machine whose whole job used to be
+           one thing at a time. 20s matches the capture lane, and the
+           watchdog dies of SILENCE rather than duration anyway, so a slow
+           walk that is still sending survives it. */
+        armWatchdog(id: id, seconds: 20) { [weak self] reason in
+            self?.deliverScene(.failure(.init(message: reason)))
+        }
+        session.sendSceneRequest(id: id, staleAfterMs: staleAfterMs,
+                                 tuning: tuning)
+    }
+
+    fileprivate func deliverScene(
+        _ result: Result<SceneDelivery, SceneFailure>) {
+        let completion = pendingScene
+        pendingScene = nil
+        if let id = sceneWatchdogId { clearWatchdog(id) }
+        sceneWatchdogId = nil
+        completion?(result)
+    }
+
     fileprivate func noteCaptureProgress(_ progress: CaptureProgress?) {
         captureProgress = progress
         touchWatchdogs()              /* bytes are evidence of life */
@@ -1974,6 +2098,17 @@ final class GuestListener: ObservableObject {
         if id == activeStreamId, refuseStream(problem) {
             routed = true
         }
+        /* The case this exists for is the ordinary one: NOW-68K implements
+           almost none of the contract and answers `error` for `scene.request`
+           the moment it is asked. Without this line the Mirror page would
+           spend twenty seconds looking like a wedged Mac to say what the
+           guest said instantly. */
+        if id == sceneWatchdogId, pendingScene != nil {
+            routed = true
+            deliverScene(.failure(.init(
+                message: "\(problem.message) [\(problem.code)]",
+                refusedByGuest: true)))
+        }
         // Only now, and only if somebody was actually answered. Clearing
         // the watchdog first looked tidier and was a trap: a waiter this
         // function forgets to route would then have neither an answer nor
@@ -2037,6 +2172,7 @@ final class GuestListener: ObservableObject {
                 guestCleanup: "unknown-after-disconnect")))
         }
         deliverCapture(.failure(.init(message: reason)))
+        deliverScene(.failure(.init(message: reason)))
     }
 
     private func listenerStateChanged(_ nwState: NWListener.State) {
@@ -2181,6 +2317,10 @@ final class GuestListener: ObservableObject {
             onCaptureProgress: { [weak self] progress in
                 guard fromActive() else { return }
                 self?.noteCaptureProgress(progress)
+            },
+            onScene: { [weak self] result in
+                guard fromActive() else { return }
+                self?.deliverScene(result)
             },
             /* A push is not an answer: a guest sends it unasked, and a
                background guest pushing a screenshot is a thing it is

@@ -67,6 +67,12 @@ final class MirrorModuleModelTests: XCTestCase {
             .extensionAbsent(guest: "Quadra"),
             .planeUnarmed(guest: "Quadra"),
             .armedNoSceneYet(guest: "Quadra"),
+            .looking(guest: "Quadra"),
+            /* A refusal is an ANSWER. The commonest one is the Mac being
+               busy with the other thing its single transfer lane carries,
+               which is the system working, and drawing it as a fault would
+               be this page reporting normal operation as damage. */
+            .refused(guest: "Quadra", reason: "a transfer is in flight"),
             .sceneWithoutScreen(provenance: .fixture(name: "a.json")),
         ]
         for state in idle {
@@ -92,6 +98,8 @@ final class MirrorModuleModelTests: XCTestCase {
             .extensionAbsent(guest: "Quadra"),
             .planeUnarmed(guest: "Quadra"),
             .armedNoSceneYet(guest: "Quadra"),
+            .looking(guest: "Quadra"),
+            .refused(guest: "Quadra", reason: "a transfer is in flight"),
             .sceneWithoutScreen(provenance: .fixture(name: "a.json")),
             .unreadable(reason: "bad", provenance: .fixture(name: "a.json")),
         ]
@@ -123,7 +131,9 @@ final class MirrorModuleModelTests: XCTestCase {
         for state in [MirrorPaneState.notLookedYet(guest: "Quadra"),
                       .extensionAbsent(guest: "Quadra"),
                       .planeUnarmed(guest: "Quadra"),
-                      .armedNoSceneYet(guest: "Quadra")] {
+                      .armedNoSceneYet(guest: "Quadra"),
+                      .looking(guest: "Quadra"),
+                      .refused(guest: "Quadra", reason: "busy")] {
             XCTAssertTrue(state.resting?.message.contains("Quadra") ?? false,
                           "\(state) does not name the machine it is about.")
         }

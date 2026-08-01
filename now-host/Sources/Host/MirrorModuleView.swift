@@ -22,6 +22,7 @@ struct MirrorModuleView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            refusalNote
             Divider()
             content
         }
@@ -43,6 +44,23 @@ struct MirrorModuleView: View {
             if model.state.hasScene {
                 Button("Close Scene") { model.clearScene() }
             }
+            /* The person's half of rule 3, and today the ONLY caller: no
+               agent verb projects a scene yet. It is a button and not an
+               on-appear fetch because asking makes the other Mac walk every
+               window it has, over the one transfer lane it also uses for
+               screenshots and files — see MirrorModuleModel's header. */
+            if model.canFetch {
+                Button {
+                    model.fetchScene()
+                } label: {
+                    Label(model.state.hasScene ? "Look Again" : "Look Now",
+                          systemImage: "eye")
+                }
+                .disabled(isLooking)
+                .help("Ask this Mac to walk its screen and send back what "
+                      + "it finds. It can move one thing at a time, so this "
+                      + "waits its turn behind a screenshot or a file.")
+            }
             Button {
                 openScene()
             } label: {
@@ -54,6 +72,11 @@ struct MirrorModuleView: View {
         .padding(12)
     }
 
+    private var isLooking: Bool {
+        if case .looking = model.state { return true }
+        return false
+    }
+
     /// The header says what is on screen, and where it came from. A page
     /// showing a replay says so in the second line a person reads, not in a
     /// tooltip.
@@ -61,6 +84,27 @@ struct MirrorModuleView: View {
         model.provenance?.banner
             ?? "What is on the other Mac's screen, drawn from what it says "
             + "is there rather than from its pixels."
+    }
+
+    /// A refused ask, said out loud even when the page has a scene to draw.
+    ///
+    /// Without this the one case `MirrorPaneState` cannot carry would be
+    /// silent: a scene is on screen, Look Again was pressed, and the Mac said
+    /// no. The refusal must not blank the good scene — so it goes here, from
+    /// the same stored value the `.refused` state is derived from.
+    @ViewBuilder
+    private var refusalNote: some View {
+        if model.state.hasScene, let note = model.fetchNote {
+            HStack(spacing: 6) {
+                Image(systemName: "bubble.left")
+                Text("The last ask was not answered with a scene. \(note)")
+                Spacer()
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
+        }
     }
 
     // MARK: content
