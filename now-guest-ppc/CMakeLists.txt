@@ -64,6 +64,15 @@ add_application(now-guest-ppc
     src/scene/scene_build.c
     src/scene/scene_json.c
     src/scene/scene_collect.c
+    # The foreign-memory walk, ported from this project's own prototype
+    # (timbottu/mirror). Pure parsers plus one Toolbox binding; see
+    # src/axwalk/axwalk.h for why its constants are evidence.
+    src/axwalk/axwalk.c
+    src/axwalk/axmenu.c
+    src/axwalk/axtext.c
+    src/axwalk/axresolve.c
+    src/axwalk/axbinding.c
+    src/axwalk/axprocess.c
     resources/app.r
     # The application icon family, generated from the artwork by
     # assets/icons/classic/rez.py and shared with any other target that

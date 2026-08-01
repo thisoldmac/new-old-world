@@ -142,6 +142,25 @@ run_c now-guest-ppc peek_oracle_test.c \
 run_c now-guest-ppc scene_build_test.c       ""  src/scene/scene_build.c
 run_c now-guest-ppc scene_json_test.c        ""  src/scene/scene_build.c \
       src/scene/scene_json.c src/core/json.c
+# The ported foreign-memory walk (src/axwalk/, from timbottu/mirror). The
+# first automated coverage this archaeology has ever had: upstream proved
+# the offsets on a real machine and had no host test, so these pin the
+# numbers and exercise the boundary the walk refuses to cross.
+run_c now-guest-ppc axwalk_test.c            ""  src/axwalk/axwalk.c \
+      src/peek/peek_validate.c
+# The Menu Manager layout in particular: its header size and entry stride
+# are in NO header this toolchain ships, so before this test the only
+# thing that could catch a wrong one was a Macintosh.
+run_c now-guest-ppc axmenu_test.c            ""  src/axwalk/axmenu.c \
+      src/axwalk/axwalk.c src/peek/peek_validate.c
+run_c now-guest-ppc axtext_test.c            ""  src/axwalk/axtext.c \
+      src/axwalk/axwalk.c src/peek/peek_validate.c
+# The resolver's policy - occurrences, cycles, bounds, staleness - and
+# the lifetime binding. Both are pure, and both cover cases a real
+# machine cannot be asked to produce on demand.
+run_c now-guest-ppc axresolve_test.c         ""  src/axwalk/axresolve.c \
+      src/axwalk/axwalk.c src/peek/peek_validate.c
+run_c now-guest-ppc axbinding_test.c         ""  src/axwalk/axbinding.c
 run_c now-guest-ppc share_path_test.c        ""
 # The Files pane's pull presentation: when Stop is armed, and the line a
 # person reads while a file comes down. The percentage overflows a 32-bit
