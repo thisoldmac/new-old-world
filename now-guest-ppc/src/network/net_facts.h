@@ -63,9 +63,11 @@ typedef enum {
    what the Mac has, which is most of "networking hardware as a
    first-class thing" for the price of one loop. */
 typedef struct NetPort {
-    char name[kNetNameMax];        /* the port's own name, e.g. "enet" */
-    char device[kNetNameMax];      /* module/device name */
+    char name[kNetNameMax];        /* fPortName, e.g. "enet" */
+    char device[kNetNameMax];      /* fModuleName */
+    char slot[16];                 /* fSlotID - where the card physically is */
     unsigned long ref;             /* OTPortRef, opaque, for correlation */
+    unsigned long capabilities;    /* fCapabilities, rendered by the module */
     Boolean active;
 } NetPort;
 
@@ -77,10 +79,21 @@ typedef struct NetInterface {
     NetFactState state;
     char address[kNetAddrMax];
     char netmask[kNetAddrMax];
+    char broadcast[kNetAddrMax];
     char gateway[kNetAddrMax];     /* empty when there is none */
     char dns[kNetAddrMax];         /* empty when there is none */
+    /* The hardware address and MTU come from InetInterfaceInfo's
+       fHWAddr/fHWAddrLen and fIfMTU - the ORDINARY client call, not
+       DLPI. The survey had these filed under a driver-facing rung; they
+       are not, and that is a strictly better answer (see the correction
+       in docs/ot-networking-surface.md). */
+    char hw_address[kNetNameMax];  /* "00:05:02:1a:2b:3c", empty if none */
+    unsigned long mtu;
+    char domain[kNetNameMax];      /* fDomainName, empty when unset */
     Boolean has_gateway;
     Boolean has_dns;
+    Boolean has_hw;
+    Boolean has_mtu;
 } NetInterface;
 
 /* What the CONNECTION we are already on is doing. This is the one part
@@ -142,5 +155,14 @@ long now_net_format_ip(unsigned long addr, char *out, long cap);
    the page's one continuously-changing number, so its formatting is
    pinned by test rather than eyeballed. */
 void now_net_format_uptime(unsigned long ticks, char *out, long cap);
+
+/* Colon-separated hex for a hardware address of `len` bytes. OT gives
+   fHWAddrLen alongside the pointer and does NOT promise six, so the
+   length is an argument rather than an assumption - a Mac with a
+   non-Ethernet link is the case that would otherwise read six bytes off
+   the end of a four-byte address. Writes "" when len is 0 or the buffer
+   cannot hold the result. */
+void now_net_format_hw(const unsigned char *addr, long len,
+                       char *out, long cap);
 
 #endif /* NOW_NET_FACTS_H */

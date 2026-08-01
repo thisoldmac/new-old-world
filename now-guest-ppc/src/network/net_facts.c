@@ -91,6 +91,33 @@ long now_net_format_ip(unsigned long addr, char *out, long cap)
     return n;
 }
 
+void now_net_format_hw(const unsigned char *addr, long len,
+                       char *out, long cap)
+{
+    long i;
+    long need;
+
+    if (out == NULL || cap <= 0) {
+        return;
+    }
+    out[0] = '\0';
+    if (addr == NULL || len <= 0) {
+        return;
+    }
+    /* Two hex digits and a separator per byte, less the trailing
+       separator, plus the terminator. Checked BEFORE writing rather than
+       truncating mid-address: half a hardware address looks like a whole
+       one and there is no way for a reader to tell. */
+    need = len * 3;
+    if (need > cap) {
+        return;
+    }
+    for (i = 0; i < len; ++i) {
+        snprintf(out + i * 3, (size_t)(cap - i * 3),
+                 i + 1 < len ? "%02x:" : "%02x", (unsigned)addr[i]);
+    }
+}
+
 void now_net_format_uptime(unsigned long ticks, char *out, long cap)
 {
     unsigned long secs;

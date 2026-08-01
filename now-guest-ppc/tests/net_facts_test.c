@@ -135,6 +135,35 @@ int main(void)
         }
     }
 
+    /* ---- hardware addresses, where the length is not six ---- */
+    {
+        static const unsigned char enet[6] =
+            { 0x00, 0x05, 0x02, 0x1A, 0x2B, 0x3C };
+        static const unsigned char shortaddr[4] = { 0xDE, 0xAD, 0xBE, 0xEF };
+        char buf[kNetNameMax];
+        char small[8];
+
+        now_net_format_hw(enet, 6, buf, sizeof buf);
+        check_str(buf, "00:05:02:1a:2b:3c", "a six-byte Ethernet address");
+
+        /* OT hands fHWAddrLen alongside the pointer and does not promise
+           six. A formatter that assumes Ethernet reads two bytes past a
+           four-byte address, which is a read off the end of somebody
+           else's memory rather than a cosmetic bug. */
+        now_net_format_hw(shortaddr, 4, buf, sizeof buf);
+        check_str(buf, "de:ad:be:ef", "a four-byte address stops at four");
+
+        /* Half an address is indistinguishable from a whole one, so a
+           buffer that cannot hold the result yields nothing at all. */
+        now_net_format_hw(enet, 6, small, (long)sizeof small);
+        check_str(small, "", "a too-small buffer refuses rather than truncates");
+
+        now_net_format_hw(NULL, 6, buf, sizeof buf);
+        check_str(buf, "", "no address is an empty string, not a crash");
+        now_net_format_hw(enet, 0, buf, sizeof buf);
+        check_str(buf, "", "a zero-length address writes nothing");
+    }
+
     /* Degenerate inputs fail closed rather than writing past a buffer. */
     {
         char tiny[4];
