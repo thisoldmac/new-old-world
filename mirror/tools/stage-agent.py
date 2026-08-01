@@ -17,7 +17,14 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MIRROR = os.path.abspath(os.path.join(HERE, ".."))       # this repo
-LAB = os.path.abspath(os.path.join(MIRROR, ".."))        # the lab checkout
+LAB = os.environ.get("MIRROR_LAB_ROOT") or ""
+if not LAB:
+    # Walk up for the checkout that actually carries the instruments: the
+    # parent stopped being the lab when Mirror was vendored under NOW.
+    _p = os.path.abspath(os.path.join(MIRROR, ".."))
+    while _p != "/" and not os.path.isdir(os.path.join(_p, "mcp-classic")):
+        _p = os.path.dirname(_p)
+    LAB = _p        # the lab checkout
 # The anchor harness client is a lab INSTRUMENT used to drive a deploy — it is
 # not shipped and nothing under host/ or guest/ imports it (AGENTS.md).
 sys.path.insert(0, os.path.join(LAB, "mcp-classic"))
