@@ -179,6 +179,14 @@ run_c now-guest-ppc axtext_test.c            ""  src/axwalk/axtext.c \
 run_c now-guest-ppc axresolve_test.c         ""  src/axwalk/axresolve.c \
       src/axwalk/axwalk.c src/peek/peek_validate.c
 run_c now-guest-ppc axbinding_test.c         ""  src/axwalk/axbinding.c
+# The act plane's application half, the two parts of it that decide
+# anything. act_ref is why the plane cannot express "whatever is
+# frontmost" - a reference is one this guest minted, and one whose
+# element has MOVED is refused rather than resolved to the neighbour
+# that answers to the same title. act_args is the same rule in
+# miniature: an action takes exactly its own geometry keys.
+run_c now-guest-ppc act_ref_test.c           ""  src/act/act_ref.c
+run_c now-guest-ppc act_args_test.c          ""  src/act/act_args.c
 run_c now-guest-ppc share_path_test.c        ""
 # The Files pane's pull presentation: when Stop is armed, and the line a
 # person reads while a file comes down. The percentage overflows a 32-bit
