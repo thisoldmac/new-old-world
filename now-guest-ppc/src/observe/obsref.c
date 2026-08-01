@@ -39,6 +39,14 @@ static unsigned long token_word(unsigned long domain,
     hash = mix32(hash, identity->node_fingerprint);
     hash = mix32(hash, identity->window_address);
     hash = mix32(hash, identity->control_handle);
+    /* The text route is part of the identity, not decoration: two
+       element references into the same window - its OK button and its
+       editable field - differ in nothing else, and a token that did not
+       depend on the difference would be a token that could have named
+       either. */
+    hash = mix32(hash, identity->text_kind);
+    hash = mix32(hash, identity->te_handle);
+    hash = mix32(hash, (unsigned long)identity->dialog_item);
     return hash & 0xffffffffUL;
 }
 

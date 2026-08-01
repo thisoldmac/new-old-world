@@ -15,6 +15,7 @@
 #include "screenshots_module.h"
 #include "prefs.h"
 #include "wire.h"
+#include "observe.h"
 #include "workshop_layout.h"
 #include "workshop_window.h"
 
@@ -377,6 +378,13 @@ int main(void)
         now_prefs_load(&log_prefs);
         now_log_set_disk(log_prefs.log_to_disk);
     }
+    /* Arm the reference registry before anything can ask for a
+       reference. Every entry point arms it lazily too, so this is not
+       required for correctness - it is for the SEED: at startup the
+       clock, the stack address and Random() are further apart than they
+       will be at the first request, and the seed is the whole reason a
+       reference cannot be computed from what a caller can see. */
+    now_observe_init();
     conn_init();
     conn_set_shot_note(screenshots_module_note);
     conn_set_file_note(files_share_note);

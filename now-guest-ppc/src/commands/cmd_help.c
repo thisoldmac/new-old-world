@@ -181,6 +181,47 @@ static const char *const d_menuact[] = {
     NULL
 };
 
+/* --- the reference layer -----------------------------------------------
+   The half that MINTS what the act plane takes. `elements` above is the
+   same walk aimed by a process rather than by a scope: there is exactly
+   one thing on this Mac that creates a reference, and these are doors
+   onto it rather than second opinions about it. */
+static const char *const d_observe[] = {
+    "  Walks and MINTS a reference for every window and control seen.",
+    "  The only thing here that creates one - which is what makes",
+    "  \"observation-minted\" a fact about the mechanism rather than a",
+    "  wish. A token carries no identity: it is a key into a table only",
+    "  a walk writes, hashed over a secret this session made and no",
+    "  caller sees.",
+    "  scope front (the default) or all.",
+    "  NOW itself is NOT observable: it is a Carbon application and its",
+    "  own window records are not where a classic walk reads.",
+    NULL
+};
+static const char *const d_handle[] = {
+    "  One reference back to a live element, or a named refusal.",
+    "  ok stays true for every verdict including the four that resolve",
+    "  to nothing: \"your reference is stale\" is an ANSWER, and an error",
+    "  would invite a retry of the same reference. What is never true",
+    "  is resolved.",
+    "  Staleness is refused, never repaired - a window that closed and",
+    "  reopened is a different window wearing the same title.",
+    NULL
+};
+static const char *const d_axtree[] = {
+    "  The read surface over observe's walk: the same emitter, so the",
+    "  two can never describe this Mac differently. It mints too -",
+    "  there is no read-only spelling of this tree, and pretending",
+    "  otherwise would be a second, quieter minter.",
+    NULL
+};
+static const char *const d_axsnap[] = {
+    "  Who is front, whether the reference layer can see it, and how",
+    "  many references are live. No walk, so no minting - the one call",
+    "  on this surface that is safe to poll.",
+    NULL
+};
+
 static const char *const d_front[] = {
     "  The name is the whole rest of the line and there",
     "  are no flags. Names it by what \"ps\" shows.",
@@ -310,6 +351,14 @@ const NowCommandDoc kNowCommandDocs[] = {
       "ctlact <element> <part>", d_ctlact },
     { "menuact", 1, "perform one menu command",
       "menuact <menu> <item> <titleLeft>", d_menuact },
+    { "observe", 1, "walk this Mac's elements and mint a reference for each",
+      "observe [scope]", d_observe },
+    { "handle", 1, "take one reference back to a live element",
+      "handle <ref>", d_handle },
+    { "axtree", 1, "the same walk, to look at rather than to act on",
+      "axtree [scope]", d_axtree },
+    { "axsnap", 1, "who is front, and how many references are live",
+      "axsnap", d_axsnap },
     { "help", 1, "list commands (\"help <cmd>\" for one)",
       "help [command]", d_help },
     { "clear", 0, "clear the console scrollback",
