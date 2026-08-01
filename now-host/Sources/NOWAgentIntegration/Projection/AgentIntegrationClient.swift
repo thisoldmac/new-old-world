@@ -177,6 +177,23 @@ public protocol AgentIntegrationClient: Sendable {
     /// an append: there is no offset form. See `TextSetProjection`.
     func setElementText(element: String, text: String) async
         -> AgentIntegrationTextSetResult
+    /// Act on one addressed control by answering the owning application's own
+    /// `TrackControl` with a part code, so the application runs its real
+    /// mouse-down handler. See `ControlActProjection`.
+    func controlAct(_ request: AgentIntegrationControlActRequest) async
+        -> AgentIntegrationControlActResult
+    /// Perform one menu command by answering the owning application's own
+    /// `MenuSelect`. Nothing is drawn and no tracking loop runs, so an item
+    /// with no keyboard shortcut becomes reachable. See `MenuActProjection`.
+    func menuAct(_ request: AgentIntegrationMenuActRequest) async
+        -> AgentIntegrationMenuActResult
+    /// Walk one process's on-screen elements and mint a reference for each.
+    /// Nil observes the frontmost application, which is the contract's own
+    /// default — and is a default for the WALK, never for an act: nothing
+    /// downstream of this may address "whatever is frontmost". See
+    /// `ObserveElementsProjection`.
+    func observeElements(process: AgentIntegrationProcessSerial?) async
+        -> AgentIntegrationElementObservationResult
 }
 
 extension AgentIntegrationClient {
@@ -376,6 +393,38 @@ extension AgentIntegrationClient {
         -> AgentIntegrationTextSetResult {
         .unavailable(.noActLane(
             AgentIntegrationCapabilityNames.textSetCommand))
+    }
+
+    /* The two acts added beside `winact` on 2026-07-31, and the observation
+       that mints what all of them take. Same defaults, same reason: the
+       PowerPC guest now serves all three verbs, and this host still carries
+       no lane to ask them down. That the guest half exists and this one does
+       not is precisely what these two codes distinguish — a caller reading
+       `now-act-lane-absent` or `now-observation-lane-absent` has been told
+       the missing piece is HERE, which is a different thing from a machine
+       that answered "I do not serve that". */
+
+    public func controlAct(
+        _ request: AgentIntegrationControlActRequest
+    ) async -> AgentIntegrationControlActResult {
+        .unavailable(.noActLane(
+            AgentIntegrationCapabilityNames.controlActCommand))
+    }
+
+    public func menuAct(
+        _ request: AgentIntegrationMenuActRequest
+    ) async -> AgentIntegrationMenuActResult {
+        .unavailable(.noActLane(
+            AgentIntegrationCapabilityNames.menuActCommand))
+    }
+
+    /// The observation, and its own reason rather than the acts': nothing
+    /// here acts, so "no act lane" would be a sentence about the wrong half.
+    public func observeElements(
+        process: AgentIntegrationProcessSerial?
+    ) async -> AgentIntegrationElementObservationResult {
+        .unavailable(.noObservationLane(
+            AgentIntegrationCapabilityNames.elementsCommand))
     }
 
     /// Nothing to address: this client answers "no host" to everything.
