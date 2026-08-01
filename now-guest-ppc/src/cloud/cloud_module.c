@@ -345,19 +345,10 @@ static void note_listing(const char *reply)
         ask_rows(g_store.cursor);
         return;
     }
-    if (g_store.more) {
+    {
         char line[64];
 
-        snprintf(line, sizeof line, "%d rows (more not shown)",
-                 g_store.row_count);
-        set_status(line);
-    } else if (g_store.row_count == 0) {
-        set_status("Empty");
-    } else {
-        char line[64];
-
-        snprintf(line, sizeof line, "%d row%s", g_store.row_count,
-                 g_store.row_count == 1 ? "" : "s");
+        cloud_listing_status(&g_store, line, sizeof line);
         set_status(line);
     }
 }

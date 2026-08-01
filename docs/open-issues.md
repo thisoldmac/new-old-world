@@ -54,6 +54,23 @@ not shrinks: the page has never been drawn on any screen (emulator
 pass owed first, then metal), the TCC-granted providers are still
 untried, and no end-to-end ask has crossed a real wire.
 
+Update 2026-08-01, later: Photos hardened for an enormous library
+against FAKES only (docs/icloud.md > Hardened for an enormous
+library) — `PhotosCloudProvider`'s PHAsset fetch cached per instance
+and invalidated by `PHPhotoLibraryChangeObserver`, a 10,000-row paging
+walk and the 4KB page bound proven and mutation-watched
+(`CloudServingTests`), a 3MB photo riding the ordinary transfer lane
+end to end, and the guest's cap-hit status wording made honest
+(`cloud_listing_status`, native-tested and mutation-watched). None of
+this touched a real PHPhotoLibrary: the cache's invalidation path, the
+real fetch's actual cost at 40,000+ photos, and whether Photos'
+authorization APIs behave as read on this Mac are all still claims
+from code reading, folded into the TCC-grant item above rather than
+duplicated here. `PHAssetResource`'s byte size stayed out of scope —
+no public API exposes it short of downloading the resource — so
+`CloudEntry.bytes` stays unstated for photos, deliberately, not as an
+oversight.
+
 ## iCloud Drive sharing is tested against fabricated stubs only (2026-08-01)
 
 **Unverified.** The share now sees a directory logically — iCloud

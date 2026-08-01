@@ -92,6 +92,39 @@ when a human there pushes, so the collision costs a wrong status line,
 never a wrong file — the same bargain the pull machinery already
 strikes for file.begin.
 
+## Hardened for an enormous library
+
+A photo library can hold tens of thousands of rows; two decisions keep
+that honest without spending memory this machine does not have:
+
+- **The host's PHAsset fetch is cached per `PhotosCloudProvider`
+  instance**, not re-run on every 16-row page, and is dropped only on
+  a `PHPhotoLibraryChangeObserver` notification — a library that never
+  changes pays for one query no matter how many pages a person turns.
+  `entry()`'s count and `card`/`get`'s lookup share the same cache.
+  `PHAssetResource` exposes no public byte-size property short of
+  downloading the resource, so a listing's `bytes` field stays unstated
+  for photos rather than reaching for the private `fileSize` KVC key
+  some apps use undocumented.
+- **`kCloudMaxRows` (128) does not rise for a large library.** 128
+  `CloudRow` entries cost under 24KB — trivial next to the 6MB
+  partition — but raising the cap only postpones the same problem at a
+  bigger number; a 40,000-photo library was never going to fit in the
+  Data Browser at once. What has to change instead is the wording: a
+  page that hits the cap while the host still has more reads as
+  "128 of many, newest first" (Photos, whose order this store knows)
+  or "128 of many (more not shown)" (any other listable service),
+  never as "128 rows" — the difference between a bounded prefix and a
+  claim of completeness. `cloud_listing_status()` in `cloud_model.c`
+  is the decision, host-cc tested in `cloud_model_test.c` and
+  mutation-watched.
+
+**Explicitly out of scope**, and not planned for this arc: thumbnails,
+previews, resizing, and dithering. Nothing may pull a whole library at
+photo-library scale (potentially 100GB+) onto a machine with a 6MB
+partition — `cloud.get` moves exactly one photo at a time, on request,
+through the ordinary file family, and that stays the only bulk path.
+
 ## What is and is not proven
 
 **Metal-verified 2026-08-01** on the PowerBook 1400c: the module end
@@ -101,8 +134,10 @@ against the host's iCloud Drive share, fingerprinted names included.
 
 Photos and Contacts serving is **tested** (`CloudServingTests`, fake
 providers over a loopback wire; refusal-code mutation watched
-failing) and their real providers remain deliberately unexercised:
-they need this Mac's TCC grants, and what only a signed-in,
-access-granted machine can prove is ledgered in
-[open-issues.md](open-issues.md). The rest of the family is
-metal-verified yet.
+failing), now including a 10,000-row paging walk, the 4KB page bound
+under wide rows, and a 3MB photo riding the ordinary offer/accept/
+begin/bulk/end transfer lane — all against fakes, all mutation-watched.
+The real providers remain deliberately unexercised: they need this
+Mac's TCC grants, and what only a signed-in, access-granted machine can
+prove is ledgered in [open-issues.md](open-issues.md). The rest of the
+family is metal-verified yet.
