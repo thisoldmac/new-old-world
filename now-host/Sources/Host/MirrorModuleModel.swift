@@ -139,7 +139,7 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
     /// The act lane, for a gesture on the drawing. Optional for the same
     /// reason the listener is: a model without one refuses a click with a
     /// sentence rather than dispatching into a stub.
-    private let actions: MirrorActionDriver?
+    private let driver: MirrorActionDriver?
 
     /// The pace of the watch loop. Injected so a test drives `watchTick()`
     /// itself — a suite whose assertions depend on a real half-second is a
@@ -150,7 +150,7 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
          actions: MirrorActionDriver? = nil,
          watch: WatchPolicy = .live) {
         self.listener = listener
-        self.actions = actions
+        self.driver = actions
         self.watch = watch
     }
 
@@ -394,6 +394,201 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
         }
     }
 
+    // MARK: - Clicking the drawing
+
+    /// What became of one gesture, in the page's words.
+    ///
+    /// Five outcomes and not three, because the two extra ones are the two a
+    /// person is most likely to produce by accident and the two silence would
+    /// hurt most: a press in the letterbox, and a press on something the
+    /// scene draws but cannot address.
+    struct ActionReport: Equatable {
+        enum Outcome: Equatable {
+            /// The act reached the machine and it answered. **The only claim
+            /// this page makes about a click**, and it is the driver's word
+            /// read off the guest's reply — never synthesised here, and never
+            /// upgraded to "it worked".
+            case dispatched
+            /// The machine was asked and said no.
+            case refused
+            /// Nothing was asked, and this says which half is missing.
+            case unavailable
+            /// The gesture meant nothing to send.
+            case inert
+            /// The press was not on the guest's screen at all.
+            case offScreen
+
+            var isDispatched: Bool { self == .dispatched }
+        }
+
+        var outcome: Outcome
+        /// What was pressed, named the way the scene names it.
+        var target: String
+        var sentence: String
+    }
+
+    /// The last gesture's outcome, for the pane to show. **A click that
+    /// cannot be dispatched says so**; silence is the failure mode this
+    /// product keeps paying for.
+    @Published private(set) var lastAction: ActionReport?
+
+    func clearLastAction() { lastAction = nil }
+
+    /// A press in the letterbox. Reported rather than swallowed: the black
+    /// margin looks like part of the picture, and a person pressing it twice
+    /// with nothing happening has been told nothing.
+    func clickedOffScreen() {
+        lastAction = ActionReport(
+            outcome: .offScreen, target: "the border",
+            sentence: "That point is outside the Mac's screen — the drawing "
+                + "keeps the guest's own proportions, so the pane's margins "
+                + "are not part of it.")
+    }
+
+    /// A primary press at a point on the guest's screen.
+    ///
+    /// **Identity addressing only.** Every target here is resolved from the
+    /// scene by the hit tester, and what goes on the wire is what the act
+    /// names — a menu and item, a control reference. Nothing on this path
+    /// falls back to a coordinate or to "whatever is in front", and the
+    /// acts that could only be carried that way report themselves
+    /// unavailable rather than being approximated.
+    func click(x: Int, y: Int, count: Int = 1, mods: Int = 0) {
+        guard let scene else { return }
+        let target = HitTester.hitTest(scene, x: x, y: y)
+        let named = Self.describe(target)
+        let actions = ActionModel.click(on: target, count: count, mods: mods)
+        guard !actions.isEmpty else {
+            lastAction = Self.nothingToSend(target, named: named)
+            return
+        }
+        guard let driver else {
+            lastAction = ActionReport(
+                outcome: .unavailable, target: named,
+                sentence: "This window has no act lane — it is showing a "
+                    + "scene without a machine behind it.")
+            return
+        }
+        lastAction = ActionReport(
+            outcome: .inert, target: named,
+            sentence: "Asking the Mac…")
+        Task { @MainActor in
+            let outcomes = await driver.drive(actions)
+            self.lastAction = Self.report(outcomes, on: named)
+            /* A dispatched act is a reason to look again, and the driver's
+               own sentence says why: whether the application acted on it is
+               a question for the NEXT scene. Forgetting the probe's baseline
+               is what makes the next tick fetch one. */
+            if self.lastAction?.outcome.isDispatched == true {
+                self.lastProbe = nil
+                self.holdUntil = nil
+            }
+        }
+    }
+
+    /// The report for a gesture that produced no act. The distinction that
+    /// matters — and the one the brief for this page is built on — is
+    /// between *there was nothing to send* and *this thing cannot be
+    /// addressed*. A control the scene drew but carries no reference for is
+    /// the second, and it gets the vocabulary's own sentence rather than a
+    /// new one written here.
+    private static func nothingToSend(_ target: HitTester.Target,
+                                      named: String) -> ActionReport {
+        switch target {
+        case .control(_, let control) where control.enabled:
+            /* `ActionModel.click` answered [] for an enabled control, which
+               leaves exactly one reason: no reference. Asked of the
+               vocabulary rather than asserted here, so the two cannot drift
+               into disagreeing about the same control. */
+            if case .needsObservation(let command, let reason) =
+                ActionModel.availability(
+                    .axdo(ref: control.ref, count: 1, mods: 0, text: nil)) {
+                return ActionReport(
+                    outcome: .unavailable, target: named,
+                    sentence: "\(reason) The host lane for \(command) is "
+                        + "built; what is missing is a reference on the "
+                        + "rendered control.")
+            }
+            return ActionReport(
+                outcome: .inert, target: named,
+                sentence: "Nothing was sent for this press.")
+        case .control:
+            return ActionReport(
+                outcome: .inert, target: named,
+                sentence: "This control reads as disabled in the scene the "
+                    + "Mac sent. A classic application often disables its "
+                    + "controls at rest, so this is not proof it would "
+                    + "refuse — but nothing was sent.")
+        case .growBox:
+            return ActionReport(
+                outcome: .inert, target: named,
+                sentence: "The grow box resizes on a drag, and a drag is "
+                    + "injected mouse motion this project solves through "
+                    + "the guest instead.")
+        case .scrollbar:
+            return ActionReport(
+                outcome: .inert, target: named,
+                sentence: "A scroll bar's thumb moves on a drag, not a "
+                    + "press.")
+        case .menuTitle, .appMenu:
+            return ActionReport(
+                outcome: .inert, target: named,
+                sentence: "Opening a menu is this page's own drawing, and "
+                    + "this page does not draw one yet. Nothing was sent to "
+                    + "the Mac.")
+        default:
+            return ActionReport(
+                outcome: .inert, target: named,
+                sentence: "Nothing was sent for this press.")
+        }
+    }
+
+    /// One report from a sequence's outcomes. The sequence stops at the
+    /// first act that did not dispatch, so the LAST outcome is the one that
+    /// decided how it ended.
+    private static func report(_ outcomes: [MirrorActionDriver.Outcome],
+                               on named: String) -> ActionReport {
+        guard let last = outcomes.last else {
+            return ActionReport(outcome: .inert, target: named,
+                                sentence: "Nothing was sent for this press.")
+        }
+        switch last {
+        case .dispatched(let sentence):
+            return ActionReport(outcome: .dispatched, target: named,
+                                sentence: sentence)
+        case .refused(let sentence):
+            return ActionReport(outcome: .refused, target: named,
+                                sentence: sentence)
+        case .unavailable(let sentence):
+            return ActionReport(outcome: .unavailable, target: named,
+                                sentence: sentence)
+        case .inert:
+            return ActionReport(outcome: .inert, target: named,
+                                sentence: "Nothing was sent for this press.")
+        }
+    }
+
+    /// What was pressed, in a phrase a person can check against what they
+    /// pressed. Names come off the scene — never invented, never a
+    /// coordinate dressed up as an identity.
+    private static func describe(_ target: HitTester.Target) -> String {
+        switch target {
+        case .menuTitle(let index): return "menu title \(index + 1)"
+        case .appMenu: return "the Application menu"
+        case .appMenuItem(_, let name): return name
+        case .widget(_, let kind, _, _): return "the \(kind) box"
+        case .growBox: return "the grow box"
+        case .control(_, let control):
+            return control.title.isEmpty ? "a control" : "\"\(control.title)\""
+        case .scrollbar: return "a scroll bar"
+        case .titlebar: return "the title bar"
+        case .content: return "the window"
+        case .desktop: return "the desktop"
+        case .windowItem(_, let name, _, _): return "\"\(name)\""
+        case .desktopItem(let name, _, _): return "\"\(name)\""
+        }
+    }
+
     @Published private(set) var extensionEvidence: ExtensionEvidence = .unasked
     @Published private(set) var planeEvidence: PlaneEvidence = .unasked
     @Published private(set) var scene: MirrorKit.Scene?
@@ -479,6 +674,9 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
         backoff = 0
         holdUntil = nil
         liveNote = nil
+        /* A gesture's outcome is a claim about a machine's answer. The
+           machine is gone; the claim goes with it. */
+        lastAction = nil
         if provenance?.isLive == true { clearScene() }
         updateWatch()
     }

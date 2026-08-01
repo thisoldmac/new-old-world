@@ -23,6 +23,7 @@ struct MirrorModuleView: View {
         VStack(spacing: 0) {
             header
             refusalNote
+            liveNote
             Divider()
             content
         }
@@ -39,16 +40,48 @@ struct MirrorModuleView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
+                /* When the drawing arrived, counting up on its own. The
+                   page dates the scene rather than implying it is live —
+                   a fetched scene is a moment that has passed even when
+                   the loop is running. */
+                if let arrived = model.lastSceneAt, model.state.hasScene {
+                    HStack(spacing: 4) {
+                        Text("Scene from")
+                        Text(arrived, style: .relative)
+                        Text("ago")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                }
             }
             Spacer()
             if model.state.hasScene {
                 Button("Close Scene") { model.clearScene() }
             }
-            /* The person's half of rule 3, and today the ONLY caller: no
-               agent verb projects a scene yet. It is a button and not an
-               on-appear fetch because asking makes the other Mac walk every
-               window it has, over the one transfer lane it also uses for
-               screenshots and files — see MirrorModuleModel's header. */
+            /* The switch. It is the person's Mac and their one transfer
+               lane, so live-by-default comes with a visible way to stop —
+               and the label says which state it is IN, not which button it
+               is, because a control that reads as its own action is the
+               commonest way a status gets misread. */
+            if model.canFetch {
+                Button {
+                    model.setLive(!model.isLive)
+                } label: {
+                    Label(model.isLive ? "Live" : "Paused",
+                          systemImage: model.isLive
+                              ? "dot.radiowaves.left.and.right" : "pause.circle")
+                }
+                .help(model.isLive
+                      ? "Updating on its own: this Mac is asked a cheap "
+                        + "question about twice a second, and asked for a "
+                        + "whole scene only when the answer changes. Press "
+                        + "to stop."
+                      : "Not updating. Look Now still asks once. Press to "
+                        + "start the loop.")
+            }
+            /* The person's half of rule 3, and still the only caller that
+               happens because somebody decided to: the loop below asks
+               because something moved, this asks because they said so. */
             if model.canFetch {
                 Button {
                     model.fetchScene()
@@ -107,6 +140,26 @@ struct MirrorModuleView: View {
         }
     }
 
+    /// Why the loop is doing what it is doing, when that is worth saying:
+    /// backed off behind somebody else's transfer, stopped because the Mac
+    /// refused, running without the cheap question. Idle silence is the
+    /// normal case and gets no line.
+    @ViewBuilder
+    private var liveNote: some View {
+        if let note = model.liveNote {
+            HStack(spacing: 6) {
+                Image(systemName: model.isLive ? "clock.arrow.circlepath"
+                                               : "pause.circle")
+                Text(note)
+                Spacer()
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
+        }
+    }
+
     // MARK: content
 
     @ViewBuilder
@@ -127,13 +180,83 @@ struct MirrorModuleView: View {
     /// window in the wrong place.
     private func drawing(_ scene: MirrorKit.Scene) -> some View {
         VStack(spacing: 0) {
-            SceneView(scene: scene)
-                .aspectRatio(CGFloat(scene.screen.w) / CGFloat(scene.screen.h),
-                             contentMode: .fit)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(12)
+            GeometryReader { proxy in
+                SceneView(scene: scene)
+                    /* The gesture's coordinates and the drawing's must come
+                       from ONE box. `proxy.size` is the box the Canvas was
+                       given, and `MirrorPointMapping` inverts the same fit
+                       the renderer applied to it — a click computed against
+                       any other rectangle lands near-but-wrong, which reads
+                       as the Macintosh misbehaving.
+
+                       A zero-distance drag rather than a tap gesture: it
+                       reports where it ended on every platform this ships
+                       to, and a press with no movement is a click. */
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onEnded { gesture in
+                                press(at: gesture.location,
+                                      in: proxy.size, scene: scene)
+                            })
+            }
+            .aspectRatio(CGFloat(scene.screen.w) / CGFloat(scene.screen.h),
+                         contentMode: .fit)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(12)
             Divider()
+            actionNote
             sceneFooter(scene)
+        }
+    }
+
+    /// One press on the drawing.
+    ///
+    /// The view's whole share of this is the mapping — which box, which
+    /// point. What the point MEANS is the hit tester's, what may be sent is
+    /// the vocabulary's, and whether it reached the machine is the driver's.
+    private func press(at point: CGPoint, in size: CGSize,
+                       scene: MirrorKit.Scene) {
+        guard let guest = MirrorPointMapping.guestPoint(point, in: size,
+                                                        scene: scene) else {
+            model.clickedOffScreen()
+            return
+        }
+        model.click(x: guest.x, y: guest.y)
+    }
+
+    /// What became of the last press. **Always shown when there was one**,
+    /// including — especially — when nothing could be sent: a person
+    /// clicking a control the scene cannot address must be told that, not
+    /// left to conclude the Mac ignored them.
+    @ViewBuilder
+    private var actionNote: some View {
+        if let report = model.lastAction {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: symbol(for: report.outcome))
+                Text("\(report.target): \(report.sentence)")
+                Spacer()
+                Button("Dismiss") { model.clearLastAction() }
+                    .buttonStyle(.link)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+        }
+    }
+
+    private func symbol(for outcome: MirrorModuleModel.ActionReport.Outcome)
+        -> String {
+        switch outcome {
+        /* Not a checkmark. The event was handed to the application and
+           nothing here saw what it did with it — a tick would be this page
+           claiming more than the machine did. */
+        case .dispatched: return "paperplane"
+        case .refused: return "bubble.left"
+        case .unavailable: return "slash.circle"
+        case .inert: return "circle.dashed"
+        case .offScreen: return "rectangle.dashed"
         }
     }
 
