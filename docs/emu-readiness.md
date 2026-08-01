@@ -4,10 +4,41 @@
 document. Written on a bench with no hardware and no VM. Nothing
 described here has been run against a Macintosh, emulated or real.
 
-The 2026-08-01 revision is section 5 and the rows it touches: the four
-probe cases that were waiting on a menu bar now read one, from a scene,
-and the paragraph explaining why that was not a small addition is now the
-paragraph explaining what was built.
+## The headline, before anything else
+
+**Over 400 commits and 67 merges landed between 2026-07-29 and
+2026-08-01, and not one instruction from any of them has executed on a
+Macintosh — emulated or real.**
+
+That is not a criticism of the arc. It is the single fact an operator
+needs before reading anything below, because every other sentence in this
+repository describes something that is *tested*, and tested here means
+tested against fixtures, fakes and loopback.
+
+The only things in this product that a Macintosh has ever confirmed
+**predate this arc**:
+
+| Metal-verified | When | Where |
+|---|---|---|
+| `now_capture_screen`, end to end from the agent face | 2026-07-29 | PB1400c (10.91.5.47) |
+| The four addressing outcomes — answered / not-connected / session-ended / unaddressed | 2026-07-29 | PB1400c, `MetalAddressingTests` |
+
+Everything else — the act plane, the reference layer, the scene plane,
+the content plane, MirrorKit, the Mirror pane, the act lane, every act
+verb, `actselftest` — has met no machine. The first emulator run of any
+of it is a **first run**.
+
+Convert that into a habit rather than a caveat: **the interesting outcome
+of the next session is a refutation, not a green tick.** A design that
+survives contact is worth less than one that fails in a way we can name,
+because nothing here has yet been given the chance to fail.
+
+## What this document is for
+
+The 2026-08-01 revisions are the headline above, section 5 and the rows it
+touches (the four probe cases that were waiting on a menu bar now read
+one, from a scene), and section 6 on the two things that landed after this
+document was first written.
 
 This is not a summary of what was built. It answers four questions an
 operator has and nothing else does:
@@ -70,6 +101,17 @@ Two verbs registered this week appear in no harness: `activate` and
 `actselftest`. `activate` is exercised incidentally by anything that
 switches processes. `actselftest` should be run by hand, first, on any
 machine that is about to be driven — section 4 says why.
+
+**`activate` has a second problem that is not about harnesses.** The guest
+serves it and the contract declares it, but **this host carries no lane
+for it**: `MirrorActionDriver` refuses rather than substituting
+`bringToFront`, because a scene's bare `"hi.lo"` process serial is not the
+opaque `now-process-…` reference that front/quit family validates by
+re-listing and matching full observed identity. Meanwhile
+`ActionModel.availability` still answers `.available` for it. So it is the
+one act in the vocabulary that reports sendable and has no route — see
+[open-issues.md](open-issues.md). Nothing in the pass depends on it; do
+not read a refusal there as a machine fault.
 
 ## 2. What an emulator run cannot exercise
 
@@ -208,6 +250,22 @@ window` is a calibration sweep, not a finding, and is worth running last.
 
 ## 4. Before the extension is installed at all
 
+> **The four-line version, for the machine you are standing at.**
+>
+> 1. **Disposable clone.** On an emulator, clone the image and boot the
+>    clone. On metal there is no clone — which is the whole reason the
+>    emulator run comes first.
+> 2. **Shift-boot rehearsed.** Not "known to work in general." Done once,
+>    on *this* machine, *before* the extension goes in.
+> 3. **`actselftest` before any act.** Not after the first surprise.
+> 4. **Because a wrong trap ABI does not crash — it lies.** Every counter
+>    the plane owns reports success while the application reads a value
+>    that was never the one we wrote and takes the other branch.
+>    `actselftest` is the only instrument that reads the *caller's* side.
+>
+> The four paragraphs below are the same four points with their reasons.
+> If the summary and the detail ever disagree, the detail is right.
+
 The NOW Extension is now **four planes**: core (P0), anchors (P1),
 content (P3) and act (P4). The act plane is the first that can **write
 into another process**, and it patches **six system-wide traps** —
@@ -251,6 +309,25 @@ by the extension since the plane landed and nothing reached it; the one
 instrument that catches a lying ABI from inside was unreachable from the
 wire. It is a verb now.
 
+**How to read its answer.** The hook writes the expected value *itself*,
+in the target's context (`mach_selftest.c:85-92`), so the asking
+application is not the source of the answer it checks. The reply always
+carries **both** numbers — *Answered* and *Read back* — on the good path
+too, so a pass is legible rather than a bare yes. An unproven convention
+comes back as an **error**, never `ok: true`. Five verdicts
+(`mach_selftest_report.c`):
+
+| Verdict | What it means |
+|---|---|
+| `Unreached` | the client never got to the extension. Read this one first — everything else is a statement about a plane you did not reach |
+| `Abi` | **the bad one.** The patch fired and the caller read junk. Stop; do not run an act |
+| `NotTaken` | armed, and the trap did not route through the patch |
+| `NoPatch` | no patch installed at all (discriminated from `NotTaken` by whether the expected value was written) |
+| `Refused` | the plane declined — e.g. a half-specified PSN, which it refuses rather than guessing |
+
+With no PSN it tests the front process. It is the one op on this plane
+that rides no user click.
+
 **4. One deliberate boot beside era-typical third-party residents**
 before the word "verified" is used about coexistence
 ([resident-components.md](resident-components.md)).
@@ -271,6 +348,48 @@ one read a scene.
 | `h2-items-probe.py` | emulator only | a QMP socket. On metal it needs a click at a computed point, which NOW has no mechanism for — no click verb, no host-side positional dispatcher |
 | `apple-event-probe.py` | runs, less one case | its `dirty` case has no way to dirty a document and says so |
 | `winact-probe.py`, `ctlinvoke-probe.py`, `textops-probe.py`, `textops-explore.py`, `drive-sequence.py` | run | nothing |
+
+**Re-derived again 2026-08-01, against both guests' dispatch tables rather
+than against this table.** The verdicts above hold, with one thing this
+table did not say and an operator will need on the first morning:
+
+**Every harness here is PowerPC-only, and the reason is structural.** The
+required verbs were checked one at a time against
+`now-guest-ppc/src/commands/commands.c` (33 dispatch arms) and
+`now-guest-68k/src/commands/commands68.c` (13 verbs across three seams).
+
+| | |
+|---|---|
+| PPC serves | `help` `gestalt` `screenshot` `vprobe` `putstat` `ls` `tail` `ps` `census` `catsearch` `sw` `launch` `quit` `front` `reveal` `vers` `elements` `winact` `textget` `textset` `ctlact` `menuact` `activate` `actselftest` `mouseloc` `key` `script` `aesend` `qdtrace` `observe` `handle` `axtree` `axsnap` |
+| 68K serves | `help` `ls` `sw` `census` `put` `cancel` `vprobe` `screenshot` `shotdiag` `ps` `launch` `quit` `front` |
+
+NOW-68K has **no act plane, no reference layer, no scene plane and no
+`qdtrace`**. So of the nine harnesses, exactly two cases can be pointed at
+a 68K guest at all — `g1-probe.py --case stamp` (which requires no verb)
+and `--case launch` (`launch` + `ps`) — and every other case refuses by
+name rather than reporting an empty machine. That is the correct
+behaviour and it is not a defect to chase on that machine.
+
+Per-harness requirements, as the gates actually read them
+(`nowwire.GuestLink.require_verbs`, plus `require_scene_plane` where a
+case reads a scene):
+
+| Harness | Requires | Runnable today, PPC |
+|---|---|---|
+| `g1-probe.py` | `stamp`: nothing · `launch`: `launch`, `ps` · `menus`: scene plane | 3 of 3 |
+| `winact-probe.py` | `observe`, `winact` | yes |
+| `ctlinvoke-probe.py` | `observe`, `ctlact` | yes |
+| `textops-probe.py` | `observe`, `textget`, `textset` | yes |
+| `textops-explore.py` | `observe`, `textget` | yes |
+| `apple-event-probe.py` | `observe`, `aesend` | yes, less `dirty` |
+| `drive-sequence.py` | `observe`, `winact`, `ctlact`, `launch`, `ps` | yes |
+| `nohijack-probe.py` | `observe`, `mouseloc` + per case `ctlact` / `menuact` / `textget`+`textset`; scene plane for `menu`, `stale`, `window`, `baseline` | 6 of 6 |
+| `h2-items-probe.py` | `script`, `observe`, `mouseloc` **+ a QMP socket** | emulator only |
+
+**One stale list survives and is not in this directory's control.**
+`scripts/probes/README.md:21` still carries the "refuses on `observe`"
+verdicts that section 5 exists to have retired. An operator reading the
+README instead of this page will still conclude there is nothing to run.
 
 ### The menu bar: a ruling, and what was built because of it
 
@@ -333,6 +452,55 @@ declares `menu` as an integer id — "as the scene reports it" — and
 upstream's `menuinvoke` took. **The contract was right and the probe was
 wrong**; the id now comes from the producer the contract names.
 
+## 6. Two things landed after this document was written (2026-08-01)
+
+Both are real capability and both change what an operator should expect to
+see. Neither has met a machine.
+
+### The act lane reaches a guest, and an act does not queue behind a stream
+
+The host now has a lane for the act rows: `MirrorActionDriver` plus
+`AgentIntegrationActControl`, reached through the local agent surface. An
+act call no longer answers `now-act-lane-absent`; it goes out. It also
+does not wait behind an open stream bracket — that was the second half of
+the same change.
+
+**What this means for the pass:** the MCP act rows in section 1 are
+callable end to end from an agent as of this build. They were not, on
+2026-07-31, and any note in this repository older than that saying the
+lane is missing is describing a real state that has passed.
+
+### A scene names what it draws
+
+The guest's scene now carries `windows[].ref` and
+`windows[].controls[].ref` — opaque references minted by the observation
+layer, bounded by a registry epoch, valid for the guest session only. A
+scene that named menus and controls and had nothing clickable in it now
+names what an act can address.
+
+**Operator consequence, and it is the one worth knowing:** an absent `ref`
+means *not addressable*, and it is load-bearing. It is **not** the same as
+an empty `ref`, which would mean *this producer has no reference layer*. A
+control drawn with no reference is a control that will refuse, and it will
+refuse honestly.
+
+### The gap both of them leave, which will look like a bug on the day
+
+**A person clicking a rendered control in the Mirror pane does nothing.**
+Not a refusal, not a log line — nothing. The renderer has no hit-testing
+wired into it, so no gesture ever becomes an act, and the driver that
+would receive one has no caller. The host models also discard
+`windows[].ref`, so even a wired pane could not address a window yet.
+
+This is unfinished, not broken, and it is written up in
+[open-issues.md](open-issues.md) ("The last functional gap"). **Do not file
+it during the pass.** The five act rows' `.appUI` faces are declared
+`notReached` with their reasons, which is the state gate saying the same
+thing.
+
+So the honest summary for the session: **an agent can drive this Macintosh
+through MCP; a person cannot drive it by clicking the picture of it.**
+
 ## What changed on the way to this document
 
 Recorded because two of the five were not what their symptom said.
@@ -374,3 +542,16 @@ down rather than discovered mid-run.
 *(2026-08-01: four of those five are no longer out of reach — the probe
 cases read a scene now. MirrorKit still is, and for the unchanged reason:
 it does not speak NOW's contract.)*
+
+**Restated 2026-08-01, with the headline in view.** Yes — and "ready" here
+means *ready to find out*, not *expected to pass*. Over 400 commits have
+landed since the last thing a Macintosh confirmed, so the base rate for
+the first run of any of it is unknown rather than good. Steps 1 through 3
+are the ones worth doing regardless of how the rest goes: they change
+nothing or almost nothing, they take minutes, and they would settle
+whether the transport, the process plane and the reference layer work
+against a real Macintosh — which no one knows. Everything past step 4 is a
+first run of code that patches six system-wide traps inside another
+process, on a machine whose Toolbox is in ROM, and the only reason it is
+safe to attempt is that the target is disposable and `actselftest` reads
+the caller's side. **Bring a refutation back and the pass worked.**
