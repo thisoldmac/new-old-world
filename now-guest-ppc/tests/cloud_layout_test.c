@@ -57,6 +57,15 @@ static void check_body(short left, short top, short right, short bottom)
     /* Up belongs to drive mode only; outside it, it is the anti-rect,
        not a button parked somewhere unreachable. */
     assert(is_empty(r.up_btn));
+
+    /* The search field: real in both modes, in the toolbar row,
+       between the popup and whatever sits right of it, wide enough to
+       type into. */
+    assert(!is_empty(r.toolbar_search));
+    assert(r.toolbar_search.left >= r.popup.right);
+    assert(r.toolbar_search.right <= r.refresh_btn.left);
+    assert(r.toolbar_search.bottom <= r.list.top);
+    assert(r.toolbar_search.right - r.toolbar_search.left >= 80);
 }
 
 /* Drive mode against the same body a list-mode call would take:
@@ -103,6 +112,11 @@ static void check_drive_body(short left, short top, short right,
     assert(drive_r.up_btn.bottom <= drive_r.list.top);
     assert(drive_r.up_btn.right <= drive_r.refresh_btn.left);
     assert(drive_r.up_btn.left >= body.left);
+
+    /* The search field yields to Up in drive mode instead of
+       overlapping it. */
+    assert(!is_empty(drive_r.toolbar_search));
+    assert(drive_r.toolbar_search.right <= drive_r.up_btn.left);
 }
 
 int main(void)

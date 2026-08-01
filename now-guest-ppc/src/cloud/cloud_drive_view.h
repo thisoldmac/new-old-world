@@ -83,6 +83,10 @@ Boolean cloud_drive_view_row_text(DataBrowserItemID item,
    toggled g_selected and an invalidate, no drive-specific state. */
 void cloud_drive_view_row_opened(int index);
 
+/* Selection changed (-1 = deselected). The placard carries the card
+   pane's old affordance line — there is no card in drive mode. */
+void cloud_drive_view_row_selected(int index);
+
 /* The wire's listing answer (conn_set_listing), reclaimed inside this
    file's own request function the instant it asks, exactly as
    files_browser_view.c's is. */

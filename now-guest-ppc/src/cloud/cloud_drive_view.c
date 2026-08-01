@@ -251,12 +251,31 @@ static OSErr view_create(WindowRef owner)
 
 /* No draw() any more: cloud_layout.c's drive variant makes r->detail
    the anti-rect (no card pane, full-width list instead), so there is
-   nowhere left for this to draw into. What it used to say - the
-   selected row's kind/size/date, "double-click fetches it" - was a
-   convenience the flat file list's own Detail column already restates
-   per row (files_browser_view.c's item_data pattern, shared here via
-   now_files_describe); it is not lost, just no longer duplicated in a
-   pane that does not exist. */
+   nowhere left for this to draw into. The Detail column restates the
+   card's FACTS (kind/size/date, via now_files_describe) - but the
+   card also carried the AFFORDANCE, "double-click fetches it", which
+   a column of sizes does not. That moved to the placard: selecting a
+   file row states it (cloud_drive_view_row_selected), which is the
+   one line of the old card a person actually needed. */
+
+void cloud_drive_view_row_selected(int index)
+{
+    if (index < 0 || index >= g_drive_count) {
+        /* Deselected: back to the folder's own news. */
+        host_status(g_folder_status);
+        return;
+    }
+    if (g_drive_rows[index].folder) {
+        host_status("Double-click opens it.");
+    } else {
+        char line[96];
+
+        snprintf(line, sizeof line,
+                 "Double-click fetches \"%.40s\" to this Mac.",
+                 g_drive_rows[index].name);
+        host_status(line);
+    }
+}
 
 static Boolean view_click(const EventRecord *event, Point local)
 {

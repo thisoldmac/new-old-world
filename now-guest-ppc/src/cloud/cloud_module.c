@@ -248,9 +248,11 @@ static Boolean row_matches(int index, const char *needle)
    note_listing's own rows, or (through CloudDriveHost.add_rows) Drive's.
    Adds to the shared Data Browser only the ones the live search
    currently admits, and marks them in g_in_view so a later keystroke's
-   refilter_browser() can diff against them. `n` is capped at 16, the
-   page size both callers already assume (note_listing's old inline
-   buffer and cloud_drive_view.c's page loop share the same bound). */
+   refilter_browser() can diff against them. The batch buffer is 16
+   wide but the LOOP is not capped: nothing shared states that a
+   caller's page is 16, and rows a bigger page put in the store but
+   never in the browser were invisible until a keystroke's refilter
+   silently revealed them. */
 static void filter_and_add(int first, int n)
 {
     DataBrowserItemID ids[16];
@@ -259,7 +261,7 @@ static void filter_and_add(int first, int n)
     int i;
 
     cloud_filter_lower(g_search, needle, sizeof needle);
-    for (i = 0; i < n && i < 16; ++i) {
+    for (i = 0; i < n; ++i) {
         int idx = first + i;
 
         if (idx < 0 || idx >= kCloudMaxRows) {
@@ -269,6 +271,11 @@ static void filter_and_add(int first, int n)
             g_in_view[idx] = 1;
             ids[got++] = (DataBrowserItemID)(idx + 1);
             ++g_shown_rows;
+            if (got == 16 && g_browser != NULL) {
+                AddDataBrowserItems(g_browser, kDataBrowserNoItem, got,
+                                    ids, kDataBrowserItemNoProperty);
+                got = 0;
+            }
         } else {
             g_in_view[idx] = 0;
         }
@@ -423,6 +430,14 @@ static void choose_service(int index)
     g_service = index;
     service = &g_store.services[g_service];
     cloud_store_reset_rows(&g_store, service->service);
+    /* A new service means a new list; a needle typed against the old
+       one filtering it invisibly is the stale-search bug the popup
+       click path used to clear on its own. Cleared HERE, where every
+       route to a service change converges — Refresh and the first
+       report included. */
+    g_search[0] = '\0';
+    g_shown_rows = 0;
+    memset(g_in_view, 0, sizeof g_in_view);
     g_drive_mode = strcmp(service->service, "drive") == 0
         && strcmp(service->state, "serving") == 0;
     cloud_drive_view_activate(g_drive_mode);
@@ -604,15 +619,21 @@ static void item_notify(ControlRef browser, DataBrowserItemID item,
     if (message == kDataBrowserItemSelected) {
         g_selected = (int)item - 1;
         if (g_drive_mode) {
-            invalidate_detail();      /* the card is composed by the view */
+            /* No card pane in drive mode, so the placard carries the
+               affordance the card used to state. */
+            cloud_drive_view_row_selected(g_selected);
         } else {
             ask_card();
         }
     } else if (message == kDataBrowserItemDeselected
                && g_selected == (int)item - 1) {
         g_selected = -1;
-        cloud_store_reset_card(&g_store);
-        invalidate_detail();
+        if (g_drive_mode) {
+            cloud_drive_view_row_selected(-1);
+        } else {
+            cloud_store_reset_card(&g_store);
+            invalidate_detail();
+        }
     }
 }
 
@@ -798,6 +819,11 @@ static Boolean action_applies(void)
 static void cloud_show(Boolean visible)
 {
     g_visible = visible;
+    if (!visible) {
+        /* A hidden page holds no focus; keys typed on the next page
+           must not land in this one's search field. */
+        g_search_focus = false;
+    }
     show_control(g_popup, visible);
     show_control(g_refresh, visible);
     show_control(g_save, visible && action_applies());
@@ -1151,6 +1177,13 @@ static void cloud_status_text(char *out, long cap)
     out[0] = '\0';
     if (g_loading) {
         snprintf(out, (size_t)cap, "Asking...");
+    } else if (g_search[0] != '\0'
+               && g_shown_rows < active_row_count()) {
+        /* The filter's truth outranks the listing's news: a placard
+           saying "128 of many" over a three-row list is the page
+           contradicting itself. software_module's rule, verbatim. */
+        snprintf(out, (size_t)cap, "%d of %d shown", g_shown_rows,
+                 active_row_count());
     } else if (g_status[0] != '\0') {
         snprintf(out, (size_t)cap, "%.120s", g_status);
     } else if (service != NULL) {

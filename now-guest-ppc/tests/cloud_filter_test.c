@@ -2,10 +2,11 @@
      cc -Wall -Wextra -Werror -I ../src -I ../src/cloud \
         cloud_filter_test.c ../src/cloud/cloud_filter.c -o /tmp/t && /tmp/t
 
-   Watched failing once by mutation before trusting it: flip
-   cloud_filter_matches's `hn - qn` bound to `hn` and the "needle
-   longer than haystack" case below stops refusing — the loop reads
-   past the end of a short haystack instead. */
+   Watched failing by mutation before trusting it (re-verified
+   2026-08-01, replacing an earlier claim that did not reproduce):
+   make cloud_filter_lower the identity and the case-insensitivity
+   cases fail; make the match a prefix-only compare and the
+   mid-string cases fail. */
 
 #include <assert.h>
 #include <stdio.h>

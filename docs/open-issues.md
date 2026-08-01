@@ -37,6 +37,16 @@ wire with FAKE providers only (`CloudServingTests`). Still unproven:
 - **cloud.get on a busy lane** refuses busy by unit-tested logic, but
   no test drives a real concurrent capture/stream against it.
 
+Update 2026-08-01, night: the fan-out landed (view seam, full-width
+drive browser + Up, contacts card view, photos hardening, live
+search) and its adversarial review's four must-fixes are in. Still
+open from that review: PhotosCloudProvider's fetch cache has no test
+(needs a granted library or a PHPhotoLibrary fake); contacts
+Birthday parsing matches English month names only (non-English hosts
+fall back to echoing text); long contact card values draw unclipped.
+Native tests now number 76; everything since the last metal pass —
+the whole fan-out — is tested, not metal-verified.
+
 Update 2026-08-01, evening: METAL-VERIFIED for Drive on the
 PowerBook 1400c — the cloud.services round trip, the dropdown, and
 the in-page drive browser (list, descend, Up, double-click fetch)

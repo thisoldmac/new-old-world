@@ -163,6 +163,24 @@ its proven shape: full-width flat list, replace-on-navigate, Up button
 metal-verified. See `spikes/databrowser-container-probe/README.md` and
 docs/guest-ui-start-here.md's proven/disproven list.
 
+### Live search, and the review that followed
+
+Every view filters as you type — the software module's field and
+refilter shape copied deliberately (a second search idiom is drift
+waiting to happen), the pure predicate in cloud_filter.c with its own
+native test. An adversarial review of the whole fan-out (2026-08-01)
+confirmed the gates, the guest discipline and the container-probe's
+evidence, and found four real faults, all fixed the same day: the
+placard now says "N of M shown" while a filter hides rows (the rule
+software_module already kept); the filter test's mutation-provenance
+claim was false and is rewritten from mutations actually watched
+failing; drive mode's double-click affordance — lost with the card
+pane — moved to the placard on selection; and a service change now
+clears the needle on every route, not just the popup click. Known
+smalls, ledgered not hidden: the Photos provider's fetch cache is
+untested against a real library, contacts Birthday parsing is
+English-month-only, long card values draw unclipped.
+
 ## Designed, not built: Photos browsing and Messages
 
 Two arcs discussed and settled 2026-08-01, recorded here so the next
