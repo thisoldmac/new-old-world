@@ -491,7 +491,14 @@ final class MCPCoverageTests: XCTestCase {
     /// word costs a reference; "planned" costs a plan item number.
     func testADeliberateGapCitesItsArgumentAndAPlannedGapItsPlanItem()
         throws {
-        let planItem = try NSRegularExpression(pattern: #"\bW\d"#)
+        // `W1 #4` is the parity slice's numbering and was the only one
+        // when this gate was written. The mirror integration plan numbers
+        // its items `M1`…`M6`, so a genuinely planned gap could not cite
+        // its plan item in the one vocabulary this pattern accepted — and
+        // the choice a writer is then left with is to mark a scheduled gap
+        // "unnoticed", which empties the word that section exists to
+        // protect. The demand is unchanged: a number, not a wish.
+        let planItem = try NSRegularExpression(pattern: #"\b[WM]\d"#)
         for row in try table(under: Self.gapSection) {
             let name = try backticked(row[0], row: row)
             let disposition = row[3].trimmingCharacters(in: .whitespaces)

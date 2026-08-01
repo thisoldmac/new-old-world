@@ -23,8 +23,8 @@ yes/no:
 
 | # | The question | What the answer decides |
 |---|---|---|
-| 12 | Does a process's `LMGetCurStackBase()` fall inside its partition? | If not, **every** process reports `MISMATCH` and the Windows row reads "stale anchor" everywhere — a silent, total, *polite* refusal rather than a fault |
-| 8 | Is a frame off an open bracket cheaper than a 0.5–0.6 s capture? | The streaming row's entire premise. If it is not clearly cheaper, the row's reason for existing is wrong and should be reported as such |
+| 13 | Does a process's `LMGetCurStackBase()` fall inside its partition? | If not, **every** process reports `MISMATCH` and the Windows row reads "stale anchor" everywhere — a silent, total, *polite* refusal rather than a fault |
+| 9 | Is a frame off an open bracket cheaper than a 0.5–0.6 s capture? | The streaming row's entire premise. If it is not clearly cheaper, the row's reason for existing is wrong and should be reported as such |
 | — | What does a **semantic scene walk** cost on the 1400c? | Whether Mirror scenes reuse the bracket or stay one-shot ([streaming-a-scene.md](streaming-a-scene.md)). Above roughly 200 ms the bracket earns its keep |
 
 They want the same setup — one machine, one connected session, a stopwatch on
@@ -47,8 +47,27 @@ NOW_METAL=1 NOW_METAL_PORT=5251 NOW_METAL_MACHINE=<addr>
   reading a quiet listener as a failure.
 - **One `swift test` at a time on this Mac.** `HostAppStateWiringTests` binds a
   fixed port 52981; `HostLogTests` and `LoggingSpecTests` share
-  `~/Library/Logs/now-logs`. Exactly those three failing means contention, not
-  a defect.
+  `~/Library/Logs/now-logs`.
+- **Quit the host app before running the suite**, and this is the bigger one —
+  found 2026-07-31 after a wrong diagnosis. `AgentIntegrationUnixSocket` derives
+  its path as `dev.newoldworld.now-agent-<uid>/host.sock`: **fixed per user, not
+  per process.** A running `New Old World.app` holds it (confirmed with `lsof`),
+  and it also holds a log file in `now-logs`. Any test that stands up an
+  `AgentIntegrationLocalServer` is then competing with a live app for a resource
+  only one process can have.
+- **The failure does not name its cause.** It presents as socket-bound tests
+  timing out — `AgentIntegrationLaunchTests`, `AgentIntegrationQuitTests`,
+  `GuestIdentityTests` — with messages like *"timed out waiting for second guest
+  connected"*. Those tests bind `port: 0` and read `boundPort`, so **the port in
+  the message is never the problem**; the shared thing is the agent socket
+  underneath. The count also moves run to run (6, then 12), which reads like
+  flakiness and is not.
+
+  **The list of three above is therefore too narrow.** It was written before this
+  was understood, and "exactly those three failing means contention" is what sent
+  the first diagnosis to machine load instead of a running app. If
+  `AgentIntegration*` or `GuestIdentityTests` time out, check `lsof -nP -p $(pgrep
+  -f 'New Old World')` before believing anything about the code.
 - **Do not trust the version string to tell you which build answered.**
   `PRODUCT_VERSION` is `"0.1.0"` in current source *and* was on the stale build
   deployed to the 1400c. That cost a wrong diagnosis on 2026-07-29. `hello` now
@@ -257,14 +276,41 @@ any stream has run shows "Nothing has established whether … serves stream.stop
 stream.refresh". True — neither is observable until used — but judge whether it
 reads as a warning on a control that works perfectly.
 
-## 4c. An action that does not apply to the item — Software and Processes
+## 4c. An action that does not apply to the item — Software, Processes, Diagnostics
 
-The mechanism exists and is tested; **the panes have not been changed yet** (see
-the integrator note in `GuestItemApplicability.swift`). Once they are, judge on
-metal that the two greyed states are distinguishable *without hovering*: an
-extension whose Launch is dark because it is not an application, versus a
-control dark because this Mac does not serve the verb. Those lead to different
-next actions and a person must be able to tell which they are looking at.
+**Wired 2026-07-31.** The three panes the mechanism was written for now route
+through `GuestCapabilityGate` instead of deciding for themselves:
+
+| Pane | Control | What changed |
+| --- | --- | --- |
+| Software | Launch | Was live on a system extension — `isLaunchable` is only "the machine named a path" — and the guest refused it after the round trip. Now dark on anything whose Finder type is not `APPL`, with the reason beside it. **Show in Finder is deliberately untouched and rule-free.** |
+| Processes | Bring to Front | Was live on a faceless background process. Now dark on one, off the guest's own `modeOnlyBackground` classification. `isDrivable` / `isQuittable` are unchanged. |
+| Diagnostics | Run | Was **absent** on a verb the Mac does not serve; now present and dark, so the cards no longer change height as machines connect and leave. |
+
+What a person still has to judge, on metal, and a build cannot answer:
+
+- **Are the two greyed states distinguishable *without hovering*?** An extension
+  whose Launch is dark because it is not an application, versus a control dark
+  because this Mac does not serve the verb. They lead to different next actions —
+  one is answered by attaching a different Mac and the other never is — and the
+  sentences are the only thing telling them apart. Both now draw beside the
+  control rather than only in the tooltip; judge whether that reads, or whether
+  it reads as clutter on a page of ordinary rows.
+- **Does a dark control still read as damage?** That is the whole failure this
+  guards against, and it is a judgement about the sentence, not about the state.
+- **Does the Diagnostics page look better or worse for keeping the button?** The
+  trade is a stable layout against a permanently dead control on a card. The
+  argument for it is that a control which simply vanishes cannot explain itself;
+  the argument against is only visible with the three cards in front of you.
+- **Enabled-but-unproven.** `unsettled` leaves every one of these live on a Mac
+  nobody has asked yet, on purpose. Judge whether clicking one and reading the
+  machine's own refusal is a decent experience or a trap — it is the one case
+  where the app deliberately lets a click fail.
+
+The tests reach the views only by reading their source
+(`GuestItemGateWiringTests`, through `GateSource`), which proves the call is
+spelled and cannot prove the control is reachable. Seeing the buttons is this
+section's job.
 
 ## 5. The Files page's new verbs
 
@@ -272,7 +318,44 @@ Move, trash, restore, mkdir, and download. The confirmation sheet and the
 fifty-deep Undo are the human half of a destructive capability an agent can also
 reach. Judge whether the wording makes it clear what will happen and to what.
 
-## 5a. The Software page's sweep budget and its duplicate groups
+### 5a. The path bar, on a volume that is actually deep (new 2026-07-31)
+
+The Files browser used to show one crumb — the last component of the share
+root — and an up button. It now shows the whole path, disk first, and every
+component inside the share is a click. Unit-tested only; **no machine has drawn
+this bar**, and the questions left are the ones a test cannot answer.
+
+| What to do | What to judge |
+|---|---|
+| Connect a real guest and look at the bar before opening anything | Does the disk read as that machine's disk? The first crumb is the volume name with an `externaldrive` beside it, and the components between the disk and the shared folder are grey and unclickable on purpose. Does "grey" read as *context*, or as *broken*? |
+| Navigate somewhere genuinely deep — `System Folder:Extensions` is only two, so go further: `Macintosh HD:Applications:Utilities:Network:…`, or point the share at the volume root and walk down | At **four or more** folders inside the share the middle folds into a `…` menu, keeping the disk, the shared folder, and the last two folders. Six elements maximum. Is the fold obvious enough to click, or does it read as the path having been *cut*? |
+| Open the `…` menu | Everything folded is listed and every enterable one jumps. Confirm nothing is missing — the fold is meant to lose nothing. |
+| Find a folder with a long name (HFS allows 31 characters — `System Folder Extensions (Disabled)` is over, but 31 is easy to hit) | Names are **never** truncated; that was deliberate, on the grounds that depth is unbounded and a name is not. On a narrow window does the bar stay on one line, or does the deliberate no-truncation choice push the actions off the right edge? That is the one thing the width ceiling was computed for and the one thing only a real window can settle. |
+| Point the share at a whole volume (`Macintosh HD:`) | One crumb, which is both the disk and where browsing starts, and it is clickable. |
+| Watch the bar **before** the first listing, and force a failure (share a folder, then delete it on the guest, then Refresh) | It never goes blank: "nothing listed yet" / "listing…" / a `not listed` warning that keeps the crumbs. Judge whether the failed state reads as *where you tried to be* rather than as *where you are*. |
+| Switch between two guests mid-browse | Each machine's bar comes back to its own path. |
+
+Names on a classic volume can contain `/`, `..` and high-MacRoman bytes; the
+splitter is `contract/share_path.h`'s rule and those are pinned in tests, but a
+volume with a folder actually named `..` is worth a look if one exists.
+
+### 5b. Double-click: download to the share, then open (new 2026-07-31)
+
+A double-click on a file now fetches it into the folder **this** Mac shares and
+opens it here. Unit-tested against a fake guest; the seams a real machine
+decides are these.
+
+| What to do | What to judge |
+|---|---|
+| Double-click a plain `TEXT` file | It lands in the shared folder — the same one "Reveal Shared Folder" opens — and opens in TextEdit. Check the **converted** text is right, not just that something opened. |
+| Double-click a **large** file (a few MB over this wire is slow on purpose) | The progress row says "*then opens here*" while it runs. Does that read as an explanation of the wait, or is the wait still long enough to feel broken? This is the judgement the row exists for. |
+| Press **Cancel** during that transfer | Nothing opens, and nothing half-written is left in the shared folder. |
+| Double-click a resource-only file or a 68K application | Nothing here can open it: it is revealed in the Finder and a grey (not red) notice says where it went. Judge whether "revealed + notice" reads as success — because it *is* one — or as a failure with the wrong colour. |
+| Double-click the same file twice | The second copy is `name (2)`; the share is never overwritten. Is silently bumping right here, or should it ask? |
+| Double-click a folder | It navigates, and 5a's bar is what confirms where it landed. |
+| Double-click while another transfer runs | The footer says the wire is busy. Previously this did nothing at all. |
+
+## 6. The Software page's sweep budget and its duplicate groups
 
 Added 2026-07-31. The page used to re-run the guest's whole Applications sweep
 every time it was opened, and again on every domain-picker flip. It now sweeps
@@ -315,44 +398,8 @@ guest and not here. Both surfaces sort under an ASCII fold, which does not
 bring such a pair adjacent, so the guest only groups them when nothing sorts
 between them. Not expected to occur on a real disk; worth a glance if one ever
 does.
-### 5b. The path bar, on a volume that is actually deep (new 2026-07-31)
 
-The Files browser used to show one crumb — the last component of the share
-root — and an up button. It now shows the whole path, disk first, and every
-component inside the share is a click. Unit-tested only; **no machine has drawn
-this bar**, and the questions left are the ones a test cannot answer.
-
-| What to do | What to judge |
-|---|---|
-| Connect a real guest and look at the bar before opening anything | Does the disk read as that machine's disk? The first crumb is the volume name with an `externaldrive` beside it, and the components between the disk and the shared folder are grey and unclickable on purpose. Does "grey" read as *context*, or as *broken*? |
-| Navigate somewhere genuinely deep — `System Folder:Extensions` is only two, so go further: `Macintosh HD:Applications:Utilities:Network:…`, or point the share at the volume root and walk down | At **four or more** folders inside the share the middle folds into a `…` menu, keeping the disk, the shared folder, and the last two folders. Six elements maximum. Is the fold obvious enough to click, or does it read as the path having been *cut*? |
-| Open the `…` menu | Everything folded is listed and every enterable one jumps. Confirm nothing is missing — the fold is meant to lose nothing. |
-| Find a folder with a long name (HFS allows 31 characters — `System Folder Extensions (Disabled)` is over, but 31 is easy to hit) | Names are **never** truncated; that was deliberate, on the grounds that depth is unbounded and a name is not. On a narrow window does the bar stay on one line, or does the deliberate no-truncation choice push the actions off the right edge? That is the one thing the width ceiling was computed for and the one thing only a real window can settle. |
-| Point the share at a whole volume (`Macintosh HD:`) | One crumb, which is both the disk and where browsing starts, and it is clickable. |
-| Watch the bar **before** the first listing, and force a failure (share a folder, then delete it on the guest, then Refresh) | It never goes blank: "nothing listed yet" / "listing…" / a `not listed` warning that keeps the crumbs. Judge whether the failed state reads as *where you tried to be* rather than as *where you are*. |
-| Switch between two guests mid-browse | Each machine's bar comes back to its own path. |
-
-Names on a classic volume can contain `/`, `..` and high-MacRoman bytes; the
-splitter is `contract/share_path.h`'s rule and those are pinned in tests, but a
-volume with a folder actually named `..` is worth a look if one exists.
-
-### 5c. Double-click: download to the share, then open (new 2026-07-31)
-
-A double-click on a file now fetches it into the folder **this** Mac shares and
-opens it here. Unit-tested against a fake guest; the seams a real machine
-decides are these.
-
-| What to do | What to judge |
-|---|---|
-| Double-click a plain `TEXT` file | It lands in the shared folder — the same one "Reveal Shared Folder" opens — and opens in TextEdit. Check the **converted** text is right, not just that something opened. |
-| Double-click a **large** file (a few MB over this wire is slow on purpose) | The progress row says "*then opens here*" while it runs. Does that read as an explanation of the wait, or is the wait still long enough to feel broken? This is the judgement the row exists for. |
-| Press **Cancel** during that transfer | Nothing opens, and nothing half-written is left in the shared folder. |
-| Double-click a resource-only file or a 68K application | Nothing here can open it: it is revealed in the Finder and a grey (not red) notice says where it went. Judge whether "revealed + notice" reads as success — because it *is* one — or as a failure with the wrong colour. |
-| Double-click the same file twice | The second copy is `name (2)`; the share is never overwritten. Is silently bumping right here, or should it ask? |
-| Double-click a folder | It navigates, and 5a's bar is what confirms where it landed. |
-| Double-click while another transfer runs | The footer says the wire is busy. Previously this did nothing at all. |
-
-## 6. Contention, which nobody has ever seen happen
+## 7. Contention, which nobody has ever seen happen
 
 Added 2026-07-31 with `now_stream_screen`. **Two sentences a person reads only
 when an agent is doing something to their Mac**, and neither has been in front
@@ -381,7 +428,7 @@ should be refused with a sentence naming *you*, not a bare "busy". You cannot
 see that one — it goes to the agent — but the wording is worth reading in the
 tool's answer.
 
-## 7. Platinum fidelity — deferred
+## 8. Platinum fidelity — deferred
 
 Named here so it is not lost, but it belongs to the Mirror fold-in rather than
 this slice. Whether the rendered desktop *looks* right is a human call and the
@@ -391,7 +438,7 @@ one thing no measurement replaces.
 
 # Part two — metal test
 
-## 8. The eleven capabilities that have never crossed a wire
+## 9. The eleven capabilities that have never crossed a wire
 
 **Exactly one capability has met a Macintosh: capture.** Addressing is verified
 too, but addressing is a property of every call rather than a capability of its
@@ -455,10 +502,11 @@ Three more things only metal answers here:
   the exact wedge `cancel` exists to prevent, and the app's own Cancel button
   has it too.
 
-## 9. Guest consent, which has never met a machine
+## 10. Guest consent, which has never met a machine
 
-The PPC guest sends a hardcoded `full` from `now_agent_access()`. To test the
-ceiling you need a build that answers otherwise.
+The PPC guest's answer now comes from its preferences file, and the MCP page
+of the Workshop sets it — so the ceiling is testable from the guest's own
+screen rather than needing a build that answers differently.
 
 - `disabled` → every tool refused, as a JSON-RPC error with code `-32010`, not
   as a capability being unavailable. **A caller must be able to tell those
@@ -470,20 +518,57 @@ ceiling you need a build that answers otherwise.
 
 Confirm a refusal **emits an audit event** and appears in the MCP module.
 
-## 10. The fifth addressing case
+### 9a. A tier changed WHILE connected (`agent.access`, never metal-verified)
+
+The point of this one is that it takes effect on the link already up. Tested
+on both sides and never watched on a real machine:
+
+- With a Mac connected and an agent driving it at **Full Access**, set **Read
+  Only** on the guest's MCP page. Without touching the connection, call a
+  destructive tool. It must be **refused, by consent** (`-32010`, the same
+  refusal shape as above) — not merely greyed, and not allowed. A refusal is
+  the whole fix; anything else means the revision did not reach enforcement.
+- Set it back to **Full Access** and confirm the same tool is permitted
+  again. The field is the machine's position, not a budget it spends down.
+- Watch the host's **MCP pane consent row** follow both changes without a
+  reconnect, and the host log line (`… now says agent Read Only (was Full
+  Access)`).
+- On the guest page, the third line should read **"The Mac on the wire has
+  been told."** It deliberately never says the host is *enforcing* it —
+  nothing acknowledges `agent.access`, so that claim is not this Mac's to
+  make. If it instead says "has not yet heard this", the announcement did not
+  fit the control queue; that is the honest rare case and worth reporting
+  with what was happening at the time (a transfer? a stream?).
+- **Change the tier with nothing connected**, then connect. `hello` carries
+  the new answer and the same line should appear. This is the path that
+  worked before and must not have regressed.
+
+**A tier changed mid-call is NOT handled, deliberately.** The earlier design
+sketched warning the person that an agent operation is in flight ("Stop it
+now / Let it finish / Never mind"). The guest cannot know that: nothing on
+the wire tells it a projection call is running, and it would need a
+host-to-guest bracket around agent activity — a new message pair and a real
+design question about what "in flight" means for a call the host may have
+already answered. Not built. What happens today is that the revision is
+applied when it arrives, and a call that already passed the consent check
+runs to completion at the old tier. Worth eyeballing what that feels like
+during a long operation (a whole-volume software sweep is the easy one) so
+the decision is made against something observed.
+
+## 11. The fifth addressing case
 
 `now-guest-not-addressed` means *connected but not driven*, which **one machine
 cannot be**. It needs a second guest live on the same listener — a second real
 Mac, or a QEMU guest dialling the same port. Everything else in that family is
 already verified.
 
-## 11. The agent audit line has never been read on a real run
+## 12. The agent audit line has never been read on a real run
 
 Rule 3's whole point is that a person can see what an agent did. Drive one tool
 against a real machine and then **read the line out of `~/Library/Logs/now-logs`
 and out of the MCP module**. Nobody has done this end to end.
 
-## 12. The anchor oracle's one unmeasured assumption
+## 13. The anchor oracle's one unmeasured assumption
 
 Added 2026-07-31 with the oracle (M1b). This is the highest-value single
 observation in the metal half, because it is the one place in this slice where a
@@ -515,7 +600,7 @@ normal value and the strict readability test would reject it. Tightening it
 (that the stack base sits above A5, say) wants this observation first; until
 then it stays out as a phantom constraint.
 
-## 13. Two machine-specific facts worth confirming
+## 14. Two machine-specific facts worth confirming
 
 - **`vprobe` reported `CopyBits failed` on the 1400c**, and that failure does
   **not** reproduce through `capture.request` — two clean captures. The paths
@@ -564,6 +649,86 @@ rather than as a wrong `notServed`.
 **The MCP module's audit stream is per-launch and in memory.** The log
 persists; the pane does not. Someone looking for last week's activity needs the
 log.
+
+## 15. The Mirror module, which no eye has ever met (new 2026-07-31)
+
+A new page in the sidebar, between Processes and Console. It draws a guest
+scene with the ported Platinum renderer. **Every line of it is a UX judgement**
+— tests can say which state it selects and what words that state carries, and
+nothing more.
+
+**It renders replayed documents AND fetched ones** (updated 2026-07-31, was
+"replayed only"). The wire learned to ask: *Look Now* sends `scene.request` and
+draws what comes back, banner-marked as that Mac rather than as a recording.
+*Open Scene…* still replays a file, and both go through the pane's one door.
+
+**The page keeps itself up to date** (updated 2026-08-01, and this paragraph
+is a retraction). It used to say a fetch happens *only* because a person
+pressed something — not on appearance and not on a timer — on the argument
+that a scene is a transfer on the one bulk lane screenshots and file transfers
+share. The question it left for a person to judge was *"is a page that shows
+nothing until asked worse than one that shows a stale scene by itself?"*, and
+the answer is that both options were bad: a mirror that only updates when
+pressed is a screenshot viewer, and a blind poll is what the lane argument was
+actually against.
+
+What runs now is neither. About twice a second the page asks `axsnap` — a
+**control** message, which the contract names as the one call on that surface
+safe to poll — and spends a bulk transfer only when the front process changed
+or the drawing has aged past a five-second ceiling. *Look Now* still asks by
+hand, and **Live/Paused** is a visible switch in the header.
+
+What a person still has to judge here: whether the header makes it obvious
+which of the two states it is in, whether "Scene from N ago" reads as honest
+dating rather than as lag, and whether the back-off line ("the last ask
+collided with something else on the Mac's one transfer lane") reads as the
+system working rather than as a fault.
+
+What only a person can settle:
+
+- **The four resting states, in the order a real desk meets them.** No Mac
+  connected → connected but nobody has asked → no NOW Extension → extension
+  present, scene plane dormant. Each says what is true, why that is ordinary,
+  and what would change it. **Judge each one the way §1 is judged: does it read
+  as *nothing has happened yet*, or as *something is wrong*?** Only the
+  unreadable-document state is drawn as a fault; if any of the other five
+  reads like an error, that is the defect, not a nitpick.
+  - **A live desk can leave *Not Looked Yet* now** (updated 2026-07-31): a
+    scene that arrives is proof of both rungs at once and records them. What a
+    person still has to judge is the pair the ask added — *Looking* while a
+    walk is running, and *Not This Time* when the Mac declines. The second is
+    **not** drawn as a fault, because the commonest reason is the Mac being
+    busy with the other thing its one lane carries. Does it read that way?
+  - *Not Looked Yet* remains the resting state on a fresh connection, because
+    asking is a person's decision. Judge whether its new last line — "Look Now
+    asks … to walk its screen" — makes that read as an invitation rather than
+    as a page that failed to load.
+- **The replay banner.** A recorded Finder window drawn full-size is
+  indistinguishable from this Mac right now, except for one line in the header:
+  *"Replayed from 07-….json — a recording, not this Mac now"*. Is one line, in
+  the header's second row, loud enough? If not, say so — this is the page's
+  worst possible failure and the cheapest to make worse by being tasteful.
+- **A sparse scene is normal here, and must not look broken.** NOW's guest
+  reports no QuickDraw content at all, so a window is drawn as empty chrome
+  with a title and nothing inside. The footer line under the drawing is what is
+  supposed to keep that legible ("2 windows · programs not reported · menus not
+  reported"). Look at a real scene and judge whether the empty content reads as
+  *this producer does not send content* or as *the renderer failed*.
+- **"not reported" vs "none" in that footer.** The distinction is carried
+  faithfully all the way from the guest (absent key) through the adapter to
+  those words. Does a person reading them understand that they are different
+  claims, or does it read as pedantry?
+- **A scene with no screen size.** The producer can omit `screen`; the page then
+  says so rather than drawing a canvas of an invented size. Confirm that reads
+  as a limitation of the recording and not as a broken file.
+- **Where it sits, and whether it belongs yet.** Placed after Processes on the
+  argument that Processes is what is running and Mirror is what those programs
+  have on screen. A person who does not have the extension installed will meet
+  this page every time they scan the sidebar.
+
+Not verified by anything here: that a scene the *real* guest produces renders
+correctly. The fixtures that crossed with MirrorKit are upstream's, recorded
+off a different producer; no NOW-produced scene has been drawn by this pane.
 
 ## Recording what you find
 

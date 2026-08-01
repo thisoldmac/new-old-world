@@ -3,6 +3,7 @@
 
 #include <Carbon.h>
 
+#include "agent_access.h"
 #include "fileshare.h"
 
 /* The persistent connection to the host. The guest holds one TCP connection
@@ -98,6 +99,28 @@ long conn_last_rtt_ms(void);
 
 /* --- guest-initiated screenshot push ----------------------------------- */
 
+/* Tells the host this machine's agent-access answer changed (agent.access),
+   because hello stated it once and a tier changed since then would
+   otherwise not reach the host until the link was rebuilt — leaving it
+   enforcing a permission the person had already withdrawn.
+
+   Call it AFTER the new tier is stored, never instead of storing it: this
+   reports the fact, it does not carry it. Does nothing when no link is up,
+   where the next hello is what says it. Call it through
+   now_agent_access_set_tier rather than directly — that is the one place
+   the tier changes, and so the one place that owes the host a word. */
+void now_wire_announce_agent_access(void);
+
+/* What THIS connection has been told about agent access, which is not the
+   same question as what the tier is: they part company when a send did not
+   happen (no link up, or a full control queue). False means this link has
+   been told nothing, and `out` is untouched.
+
+   The page shows the difference rather than assuming it away — and asks
+   here rather than inferring it from watching the link come up, which is
+   what it used to do. */
+Boolean now_wire_agent_access_told(AgentAccessTier *out);
+
 /* Captures at the panel's depth and offers it to the host (capture.offer).
    Returns 0 once the offer is on the wire; -1 with a reason in err if the
    guest cannot offer right now. The outcome — accepted and sent, refused,
@@ -143,8 +166,29 @@ void conn_set_get_note(ConnGetNote fn);
 int now_wire_get_host(const char *path, const char *name,
                       char *err, long cap);
 
-/* True while a pull is in flight, so a window can show a bar. */
-Boolean now_wire_get_active(long *received, long *expected);
+/* Which half of a pull is in flight. Asked and receiving-nothing-yet are
+   different facts about the same machine, and one boolean could not tell
+   them apart: a sender that has neither given a size nor delivered a
+   byte looked exactly like a question nobody answered, so the pane had
+   to infer from the counts and was late into Receiving by design. The
+   wire knows; it says so. */
+typedef enum {
+    kWireGetNone = 0,
+    kWireGetAsked,                    /* file.get is out, no answer yet */
+    kWireGetReceiving                 /* file.begin seen; bytes landing */
+} WireGetPhase;
+
+/* True while a pull is in flight, so a window can show a bar. Every
+   out-parameter is optional. */
+Boolean now_wire_get_active(long *received, long *expected,
+                            WireGetPhase *phase);
+
+/* Stop the pull in flight: file.cancel to the other Mac (best effort),
+   then abandon the receive here. 0 when a transfer was stopped, -1 with
+   a reason in `err` when there was nothing to stop. A pull is never
+   resumable, so the partial is deleted and nothing is left under the
+   real name. Registered as the Files pane's canceller (files_pull.h).*/
+int now_wire_get_cancel(char *err, long cap);
 
 /* One-line progress reports for push transfers ("Sent to host (312 ms)").
    The Screenshots panel registers itself here; a NULL fn unhooks. */

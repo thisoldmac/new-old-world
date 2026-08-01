@@ -63,9 +63,21 @@ face** can ask for, gap by gap. Neither restates the other's tables.
 > but the PowerPC guest now SENDS two fields the 68K guest does not: a
 > build stamp, and `agent`, the machine's own answer about what an agent
 > companion may do to it (`disabled` / `read-only` / `full`, ordered,
-> optional). The PowerPC guest's answer is a hardcoded `full` from
-> `now_agent_access()`; NOW-68K sends no `agent` field at all, and absence
-> is not consent — it is a fact about the sender. The host's ceiling and
+> optional). The PowerPC guest's answer comes from its preferences file
+> by way of `now_agent_access()`, and a person sets it on the MCP page of
+> the Workshop; NOW-68K sends no `agent` field at all, and absence is not
+> consent — it is a fact about the sender.
+>
+> **And `hello` is no longer the last word on it (2026-07-31).** The
+> PowerPC guest also SENDS `agent.access`, which revises that answer on a
+> link already up — `hello` is sent once per connection, so before it a
+> tier changed mid-session did not reach the host until the link was
+> rebuilt, and the host went on permitting what the person had just
+> withdrawn. NOW-68K sends no revision because it has no switch to
+> revise: no MCP module, no consent page, and nothing that could change
+> the answer it never gives. That is a declared asymmetry and not a gap
+> to close — a revision message on a guest with no tier to revise would
+> be a verb with nothing behind it. The host's ceiling and
 > what absence currently means are host-side and live in
 > [mcp-coverage.md](mcp-coverage.md) and
 > [agent-integration.md](agent-integration.md). **No guest has ever sent
@@ -113,10 +125,11 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 | `capture.request` | ✅ | ✅ | 68K stages to disk, packs, then sends — `screenshot` verb too |
 | `capture.accept` / `capture.refuse` / `capture.cancel` | ✅ | ❌ | the guest-OFFERS-a-capture handshake; 68K only answers requests |
 | `stream.start` / `stream.stop` / `stream.refresh` | ✅ | ❌ | |
+| `agent.access` | ❌ | ❌ | neither guest HANDLES one — it is guest-to-host only, and a host never sends it. PPC SENDS it when its consent tier changes; 68K has no tier to change |
 
 PPC handles 37 inbound types; NOW-68K handles 23. **That count
 understates the difference** — see the next two sections, where two of
-these rows open into 19 command verbs and 14 hardware probes.
+these rows open into 35 command verbs and 14 hardware probes.
 
 (An earlier version of this file said 33 for the PowerPC guest and was
 wrong: the number had been hand-counted. It is derived now, and that is
@@ -136,7 +149,11 @@ hides most of what a machine can be asked — the hardware, network, RAM
 and ROM facts do not have message types of their own. They live behind
 `gestalt` and `census`, one row each above and a whole subsystem below.
 
-The registry is `x-commands` in the contract: **19 verbs.**
+The registry is `x-commands` in the contract: **35 verbs.** Sixteen of
+them landed on 2026-07-31 and are grouped at the foot of the table: the
+act plane, the reference layer that mints what it addresses, two verbs
+about the machine's own state, the input plane's three, and the content
+plane's reader.
 
 | Verb | What it asks the machine | PPC | 68K |
 |---|---|:--:|:--:|
@@ -159,17 +176,56 @@ The registry is `x-commands` in the contract: **19 verbs.**
 | `put` | send a file from the guest | console only | ✅ |
 | `cancel` | stop the transfer in flight, either way | via UI / `file.cancel` | ✅ |
 | `putstat` | transfer diagnostics | ✅ | ❌ |
+| `observe` | walk the elements on screen, minting a reference for each | ✅ | ❌ |
+| `axtree` | the same walk, to look at rather than to act on | ✅ | ❌ |
+| `axsnap` | who is front, and how many references are live | ✅ | ❌ |
+| `handle` | take one reference back to a live element, or refuse | ✅ | ❌ |
+| `elements` | the act plane's door onto that walk, aimed at one process | ✅ | ❌ |
+| `winact` | move, resize, zoom or close one window | ✅ | ❌ |
+| `textget` | read one addressed text element | ✅ | ❌ |
+| `textset` | replace one addressed text element's contents | ✅ | ❌ |
+| `ctlact` | act on one control | ✅ | ❌ |
+| `menuact` | perform one menu command | ✅ | ❌ |
+| `activate` | bring one process forward, by serial number | ✅ | ❌ |
+| `actselftest` | prove the act plane's trap ABI in one process | ✅ | ❌ |
+| `mouseloc` | where the pointer actually is | ✅ | ❌ |
+| `script` | run one AppleScript | ✅ | ❌ |
+| `aesend` | send one of four core Apple Events | ✅ | ❌ |
+| `qdtrace` | what is drawing, from the content plane's ring | ✅ | ❌ |
 
-**PPC serves 16 of 19.** `put` is console-only there and `cancel` is
+Ten of those sixteen — the act plane and the reference layer — are one
+mechanism and are served together or not at all. They are PowerPC-only
+today by derivation rather than by an ISA check: they read another
+process's window records through the anchor plane, and nothing on the
+host asks which guest answered. **Served is not proven** — this table's
+own rule — and no NOW machine has been watched performing one of the
+five acts.
+
+The six added at the foot on 2026-07-31 were **built, compiled, and
+dispatched by nothing** until that day: each porting agent left its
+registration written out in a header rather than performing it, because
+the three halves are one shared surface. They are now reachable. That is
+a statement about the dispatch chain and about nothing else — `qdtrace`
+in particular reads a ring **whose writer has never run on a
+Macintosh**, so a `status` on any machine today answers
+`content-plane-absent`, correctly, and that is the whole of what it has
+been seen to do.
+
+**PPC serves 32 of 35.** `put` is console-only there and `cancel` is
 not a verb at all, both deliberately: the host reaches those
 capabilities through the `file.*` families and that guest's own
 Workshop. `shotdiag` is the third, and the newest: it diagnoses a raw
 framebuffer walk the PowerPC guest does not have.
 
-**NOW-68K serves 13 of 19** — `help`, `ls`, `sw`, `census`, `put`,
+**NOW-68K serves 13 of 35** — `help`, `ls`, `sw`, `census`, `put`,
 `cancel`, `vprobe`, `screenshot`, `shotdiag`, `ps`, `launch`, `quit`,
-`front`. The six it does not: `gestalt`, `catsearch`, `tail`, `reveal`,
-`vers`, `putstat`.
+`front`. The twenty-two it does not: `gestalt`, `catsearch`, `tail`,
+`reveal`, `vers`, `putstat`, the ten of the act plane and the reference
+layer, and the six registered on 2026-07-31 — `activate`,
+`actselftest`, `mouseloc`, `script`, `aesend`, `qdtrace`. The last six
+are not a 68K debt: four of them reach for OSA, Apple Events or a
+content-plane ring that guest does not carry, and no one has asked for
+them there.
 
 Every asymmetry is argued in [command-parity.md](command-parity.md) and
 named with its reason in `CommandRegistryTests.notOnThePowerPCGuest`.
@@ -441,9 +497,19 @@ catch, is [source-text-gates.md](source-text-gates.md). It is the reason
 this file's own future gate should be planned as a bounded check with its
 blind spots written down rather than as a guarantee.
 
+Updated **2026-07-31** on `thread/p2-unify-refs`, by hand and not by
+re-derivation: the act plane and the reference layer took the verb count
+from 19 to 29 and the PowerPC guest's from 16 to 26. Updated again the
+same day on `thread/emu-ready`, also by hand: registering the six verbs
+that were built and dispatched by nothing took the registry from 29 to
+35 and the PowerPC guest from 26 to 32. The counts above are therefore
+owed a run of the commands at the top of this file before anyone quotes
+them as derived.
+
 Last re-derived: **2026-07-31**, on `claude/tbt-parity-slice`, by running
-the commands above. Every count in this file still checked out — 37 and
-23 inbound types, 19 verbs, 16 and 13 served, 14 probes — and one
+the commands above. Every count in this file still checked out as it
+stood then — 37 and 23 inbound types, 19 verbs, 16 and 13 served, 14
+probes — and one
 grouped row did not: `file.list` / `file.listing` had been a single ✅/✅
 row, and NOW-68K handles no `file.listing` inbound. They are two rows
 now. What changed since the previous derivation is what each guest

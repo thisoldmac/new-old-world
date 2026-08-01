@@ -1,0 +1,608 @@
+/*
+ * content_plane_test.c - the content plane's decisions, on a host cc.
+ *
+ *   cc -Wall -Wextra -Werror -DNOW_PEEK_TABLE_HOST -I contract \
+ *      -I ext/src now-guest-ppc/tests/content_plane_test.c \
+ *      ext/src/now_content_logic.c -o /tmp/t && /tmp/t
+ *
+ * (scripts/test-native runs exactly that; the line is here because every
+ * test in this tree carries its own.)
+ *
+ * WHAT THIS COVERS AND WHAT IT CANNOT. The plane's hooks run at draw time
+ * inside another process, and nothing short of a Macintosh executes them.
+ * What a host CAN execute is every decision that precedes a hook: whether
+ * to arm at all, where a record lands, and what changed. Those are in
+ * ext/src/now_content_logic.c for that reason - the peek_oracle.c split.
+ *
+ * NOT covered here, and not covered anywhere yet: installing a CQDProcs on
+ * a live port, the re-entrancy guard, tail-calling the standard procs, and
+ * the WindowList walk. Those are now_content.c and they are Toolbox to the
+ * last line.
+ *
+ * The arm cases are the ones to read first. The plane's whole safety story
+ * is that a request which does not name its target instruments NOTHING,
+ * and a test suite that only checked the happy path would pass with that
+ * property removed.
+ */
+
+#include "content_table.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static int failures;
+
+static void check(int cond, const char *what)
+{
+    if (!cond) {
+        printf("FAIL %s\n", what);
+        failures++;
+    }
+}
+
+static void check_eq(long got, long want, const char *what)
+{
+    if (got != want) {
+        printf("FAIL %s: got %ld want %ld\n", what, got, want);
+        failures++;
+    }
+}
+
+/* ---- arming ---------------------------------------------------------- */
+
+static NowContentRequest good_request(void)
+{
+    NowContentRequest r;
+
+    r.plane_bits = (NowContentU32)kNowPeekTableCapContent;
+    r.arm_commit = (NowContentU32)kNowContentArmCommit;
+    r.arm_a5 = 0x00123456u;
+    r.arm_expiry = 5000u;
+    r.mode = (NowContentU32)kNowContentModeRecord;
+    return r;
+}
+
+static void test_arm_happy_path(void)
+{
+    NowContentRequest r = good_request();
+
+    check_eq(now_content_arm_verdict(&r, 0x00123456u, 4999u),
+             kNowContentVerdictArmed, "named target inside deadline arms");
+    r.mode = (NowContentU32)kNowContentModeCount;
+    check_eq(now_content_arm_verdict(&r, 0x00123456u, 1u),
+             kNowContentVerdictArmed, "count mode arms too");
+}
+
+/* THE case. A commit word with no target must instrument nothing. The
+   obvious reading of a bare arm is "everything"; a sibling spike measured
+   what that costs (docs/resident-components.md, P3 amendment). */
+static void test_arm_without_a_target_refuses(void)
+{
+    NowContentRequest r = good_request();
+
+    r.arm_a5 = 0;
+    check_eq(now_content_arm_verdict(&r, 0x00123456u, 1u),
+             kNowContentVerdictNoTarget, "no target named is a refusal");
+    /* And it stays a refusal from EVERY context, which is the property -
+       an unscoped request must not become armed merely by being read
+       somewhere. */
+    check_eq(now_content_arm_verdict(&r, 0u, 1u),
+             kNowContentVerdictNoTarget, "no target, no A5 world either");
+    check_eq(now_content_arm_verdict(&r, 0xDEADBEEFu, 1u),
+             kNowContentVerdictNoTarget, "no target, unrelated context");
+}
+
+static void test_arm_wrong_context_refuses(void)
+{
+    NowContentRequest r = good_request();
+
+    check_eq(now_content_arm_verdict(&r, 0x00999999u, 1u),
+             kNowContentVerdictOtherContext, "a different A5 world refuses");
+    /* A context with no A5 world at all is not the target either. */
+    check_eq(now_content_arm_verdict(&r, 0u, 1u),
+             kNowContentVerdictOtherContext, "no A5 world refuses");
+}
+
+static void test_arm_commit_word_is_required(void)
+{
+    NowContentRequest r = good_request();
+
+    r.arm_commit = 0;
+    check_eq(now_content_arm_verdict(&r, 0x00123456u, 1u),
+             kNowContentVerdictIdle, "a zeroed block is not armed");
+    /* The reason the commit word is not 1: a stale or scribbled block must
+       not read as a permission. */
+    r.arm_commit = 1u;
+    check_eq(now_content_arm_verdict(&r, 0x00123456u, 1u),
+             kNowContentVerdictIdle, "a bare 1 is not the commit word");
+    r.arm_commit = 0xFFFFFFFFu;
+    check_eq(now_content_arm_verdict(&r, 0x00123456u, 1u),
+             kNowContentVerdictIdle, "all-ones is not the commit word");
+}
+
+static void test_arm_plane_bit_gates_everything(void)
+{
+    NowContentRequest r = good_request();
+
+    r.plane_bits = 0;
+    check_eq(now_content_arm_verdict(&r, 0x00123456u, 1u),
+             kNowContentVerdictIdle, "plane bit clear means idle");
+    /* Another plane's bit is not this plane's bit. */
+    r.plane_bits = (NowContentU32)kNowPeekTableCapAnchors;
+    check_eq(now_content_arm_verdict(&r, 0x00123456u, 1u),
+             kNowContentVerdictIdle, "the anchor bit does not arm content");
+}
+
+static void test_arm_mode_is_fail_closed(void)
+{
+    NowContentRequest r = good_request();
+
+    r.mode = (NowContentU32)kNowContentModeOff;
+    check_eq(now_content_arm_verdict(&r, 0x00123456u, 1u),
+             kNowContentVerdictIdle, "mode off does not arm");
+    r.mode = 3u;
+    check_eq(now_content_arm_verdict(&r, 0x00123456u, 1u),
+             kNowContentVerdictIdle, "an unknown mode does not arm");
+    r.mode = 0xFFFFFFFFu;
+    check_eq(now_content_arm_verdict(&r, 0x00123456u, 1u),
+             kNowContentVerdictIdle, "a garbage mode does not arm");
+}
+
+static void test_arm_expiry(void)
+{
+    NowContentRequest r = good_request();
+
+    r.arm_expiry = 0;
+    check_eq(now_content_arm_verdict(&r, 0x00123456u, 1u),
+             kNowContentVerdictExpired, "no deadline is expired on sight");
+    /* And at EVERY tick, which is not the same statement. An absent
+       deadline is zero, and the signed difference against zero is
+       negative - "in the future" - for the whole upper half of the tick
+       range. So a machine up for more than ~414 days would arm a request
+       that named no deadline at all, if the early return above were not
+       there. Found by mutation: deleting that return survived a suite
+       that only ever asked at low tick counts. */
+    check_eq(now_content_arm_verdict(&r, 0x00123456u, 0x80000000u),
+             kNowContentVerdictExpired, "no deadline is expired late too");
+    check_eq(now_content_arm_verdict(&r, 0x00123456u, 0xFFFFFFFFu),
+             kNowContentVerdictExpired, "no deadline is expired at the wrap");
+
+    r.arm_expiry = 5000u;
+    check_eq(now_content_arm_verdict(&r, 0x00123456u, 5000u),
+             kNowContentVerdictExpired, "the deadline tick itself is expired");
+    check_eq(now_content_arm_verdict(&r, 0x00123456u, 5001u),
+             kNowContentVerdictExpired, "past the deadline is expired");
+
+    /* Expiry is decided BEFORE context, so a lapsed request retires in
+       whatever process pumps next rather than waiting for the target to
+       run again. A target that quit must not be able to keep a request
+       alive by never pumping. */
+    check_eq(now_content_arm_verdict(&r, 0x00999999u, 6000u),
+             kNowContentVerdictExpired,
+             "a lapsed request expires in a NON-target context");
+
+    /* TickCount wraps at 2^32. A signed difference keeps a deadline just
+       across the wrap in the future, where an unsigned one would read it
+       as ancient history and retire a live request. */
+    r.arm_expiry = 0x00000064u;              /* 100 ticks after the wrap */
+    check_eq(now_content_arm_verdict(&r, 0x00123456u, 0xFFFFFFF0u),
+             kNowContentVerdictArmed, "a deadline across the tick wrap is future");
+    r.arm_expiry = 0xFFFFFFF0u;
+    check_eq(now_content_arm_verdict(&r, 0x00123456u, 0x00000064u),
+             kNowContentVerdictExpired, "a deadline before the wrap is past");
+}
+
+static void test_arm_null_request(void)
+{
+    check_eq(now_content_arm_verdict(NULL, 0x123u, 1u),
+             kNowContentVerdictIdle, "a null request is idle");
+}
+
+/* ---- the ring -------------------------------------------------------- */
+
+/* A block with a SMALL ring, which is the only way the wrap and tail paths
+   are reachable at all: a 64 KiB ring needs thousands of records to reach
+   its end, and a test that needs thousands of records to touch a branch is
+   a test nobody trusts. ring_cap is a field for this reason. */
+typedef struct {
+    NowContentBlock block;
+} TestBlock;
+
+static TestBlock *make_block(NowContentU32 cap)
+{
+    TestBlock *tb = calloc(1, sizeof(TestBlock));
+
+    if (tb == NULL) {
+        printf("FAIL out of memory\n");
+        exit(1);
+    }
+    tb->block.ring_cap = cap;
+    tb->block.ticks = 1234u;
+    return tb;
+}
+
+/* Walk the ring the way a reader does - step by each record's own size -
+   and report how many records it sees before it has consumed `bytes`.
+   Returns -1 if it ever lands on a record whose size cannot be right,
+   which is exactly the corruption the tail invariant exists to prevent. */
+static int walk_records(const NowContentBlock *b, NowContentU32 from,
+                        NowContentU32 to, int *ops, int max_ops)
+{
+    NowContentU32 c = from;
+    int n = 0;
+
+    while (c < to) {
+        NowContentU32 pos = c % b->ring_cap;
+        const NowContentRecHeader *h;
+
+        if (b->ring_cap - pos < sizeof(NowContentRecHeader)) {
+            return -1;                  /* a tail too short to hold a header */
+        }
+        h = (const NowContentRecHeader *)(const void *)&b->ring[pos];
+        if (h->size < sizeof(NowContentRecHeader)) {
+            return -1;                  /* a size that cannot be a record */
+        }
+        if (pos + h->size > b->ring_cap) {
+            return -1;                  /* a record that crosses the end */
+        }
+        if (n < max_ops) {
+            ops[n] = h->op;
+        }
+        n++;
+        c += h->size;
+        if (n > 4096) {
+            return -1;                  /* runaway */
+        }
+    }
+    return c == to ? n : -1;
+}
+
+static void test_ring_basic_append(void)
+{
+    TestBlock *tb = make_block(4096u);
+    NowContentLinePayload pl;
+    const NowContentRecHeader *h;
+
+    memset(&pl, 0, sizeof(pl));
+    pl.from_h = 10; pl.from_v = 20; pl.to_h = 30; pl.to_v = 40;
+
+    check_eq(now_content_ring_put(&tb->block, kNowContentOpLine, 0,
+                                  0x00ABCDEFu, &pl, sizeof(pl)),
+             1, "a line record commits");
+    check_eq((long)tb->block.write_cursor, 24, "header + 12-byte payload");
+    h = (const NowContentRecHeader *)(const void *)&tb->block.ring[0];
+    check_eq(h->op, kNowContentOpLine, "op recorded");
+    check_eq((long)h->port, 0x00ABCDEF, "port recorded");
+    check_eq((long)h->ticks, 1234, "ticks stamped from the block");
+    check(memcmp(&tb->block.ring[sizeof(NowContentRecHeader)], &pl,
+                 sizeof(pl)) == 0, "payload copied verbatim");
+    check_eq((long)(tb->block.seq % 2), 0, "seqlock ends even");
+    check_eq((long)tb->block.counters.dropped, 0, "nothing dropped");
+    free(tb);
+}
+
+static void test_ring_odd_payload_pads_even(void)
+{
+    TestBlock *tb = make_block(4096u);
+    unsigned char pl[13];
+    const NowContentRecHeader *h;
+
+    memset(pl, 0xA5, sizeof(pl));
+    check_eq(now_content_ring_put(&tb->block, kNowContentOpText, 0, 1u,
+                                  pl, sizeof(pl)),
+             1, "an odd payload commits");
+    h = (const NowContentRecHeader *)(const void *)&tb->block.ring[0];
+    check_eq(h->size, 26, "12 + 13 rounds up to 26, not 25");
+    check_eq((long)(tb->block.write_cursor % 2), 0, "cursor stays even");
+    free(tb);
+}
+
+static void test_ring_oversize_is_dropped_not_wrapped(void)
+{
+    TestBlock *tb = make_block(64u);
+    unsigned char pl[128];
+
+    memset(pl, 0, sizeof(pl));
+    check_eq(now_content_ring_put(&tb->block, kNowContentOpText, 0, 1u,
+                                  pl, sizeof(pl)),
+             0, "a record larger than the ring is dropped");
+    check_eq((long)tb->block.counters.dropped, 1, "and counted");
+    check_eq((long)tb->block.write_cursor, 0, "and the cursor does not move");
+    check_eq((long)(tb->block.seq % 2), 0, "seqlock not left odd");
+    free(tb);
+}
+
+/* The tail-absorb path: a record that would leave fewer bytes than a
+   header grows to swallow them, so the ring ends exactly full and the
+   next record starts at zero with no pad needed. */
+static void test_ring_absorbs_a_short_tail(void)
+{
+    TestBlock *tb = make_block(128u);
+    NowContentLinePayload pl;
+    const NowContentRecHeader *h;
+    int ops[32];
+    int n;
+    int i;
+
+    memset(&pl, 0, sizeof(pl));
+    /* 24 bytes each: four reach 96, and the fifth would leave 8 - too few
+       for a header - so it absorbs them and becomes 32. */
+    for (i = 0; i < 5; ++i) {
+        check_eq(now_content_ring_put(&tb->block, kNowContentOpLine, 0,
+                                      (NowContentU32)i, &pl, sizeof(pl)),
+                 1, "fill record commits");
+    }
+    check_eq((long)tb->block.write_cursor, 128,
+             "the fifth record absorbed the 8-byte tail");
+    h = (const NowContentRecHeader *)(const void *)&tb->block.ring[96];
+    check_eq(h->size, 32, "and says so in its own size field");
+    check_eq(h->op, kNowContentOpLine, "an absorbed record is still its op");
+
+    n = walk_records(&tb->block, 0, 128u, ops, 32);
+    check_eq(n, 5, "a reader sees exactly five records in the lap");
+
+    /* The sixth starts at 0 with no WRAP record, because there is no tail
+       left to pad. */
+    check_eq(now_content_ring_put(&tb->block, kNowContentOpLine, 0, 99u,
+                                  &pl, sizeof(pl)),
+             1, "the sixth record commits at the ring start");
+    h = (const NowContentRecHeader *)(const void *)&tb->block.ring[0];
+    check_eq((long)h->port, 99, "the ring start now holds the sixth record");
+    free(tb);
+}
+
+/* The WRAP path proper: a tail big enough to hold a header but too small
+   for the record that wants it gets a WRAP record, and the real record
+   starts at zero. This is reachable only when a LARGER record follows
+   smaller ones, which is why it needs its own case. */
+static void test_ring_pads_a_usable_tail_with_wrap(void)
+{
+    TestBlock *tb = make_block(128u);
+    NowContentLinePayload line;
+    unsigned char big[36];
+    const NowContentRecHeader *h;
+    int ops[32];
+    int n;
+    int i;
+
+    memset(&line, 0, sizeof(line));
+    memset(big, 0x3C, sizeof(big));
+    for (i = 0; i < 4; ++i) {
+        (void)now_content_ring_put(&tb->block, kNowContentOpLine, 0,
+                                   (NowContentU32)i, &line, sizeof(line));
+    }
+    check_eq((long)tb->block.write_cursor, 96, "four 24-byte records");
+    n = walk_records(&tb->block, 0, 96u, ops, 32);
+    check_eq(n, 4, "and a reader walks all four");
+
+    /* 12 + 36 = 48 wanted, 32 available: too big to fit, and the tail is
+       big enough to hold a WRAP record. */
+    check_eq(now_content_ring_put(&tb->block, kNowContentOpBits, 0, 77u,
+                                  big, sizeof(big)),
+             1, "the oversized-for-the-tail record commits");
+    h = (const NowContentRecHeader *)(const void *)&tb->block.ring[96];
+    check_eq(h->op, kNowContentOpWrap, "the tail holds a WRAP record");
+    check_eq(h->size, 32, "sized to the tail exactly");
+    h = (const NowContentRecHeader *)(const void *)&tb->block.ring[0];
+    check_eq(h->op, kNowContentOpBits, "and the real record restarted at 0");
+    check_eq((long)tb->block.write_cursor, 128 + 48,
+             "cursor covers the pad and the record");
+
+    /* The wrapping record is 48 bytes at ring[0], so it has overwritten
+       the first two records of the lap - which is what a ring does, and
+       what the overrun counter on the reader's side is for. What must
+       still hold is that a reader whose cursor is BEHIND the damage walks
+       cleanly to the end of the lap: two records and the pad. */
+    n = walk_records(&tb->block, 48u, 128u, ops, 32);
+    check_eq(n, 3, "a reader behind the overwrite walks to the lap's end");
+    check_eq(ops[2], kNowContentOpWrap, "ending on the pad");
+    /* And walking the NEW lap finds the record that caused all this. */
+    n = walk_records(&tb->block, 128u, 128u + 48u, ops, 32);
+    check_eq(n, 1, "the new lap holds the wrapping record");
+    check_eq(ops[0], kNowContentOpBits, "which is the one that did not fit");
+    free(tb);
+}
+
+/*
+ * THE TAIL INVARIANT, and the reason this port diverges from upstream.
+ *
+ * Upstream's ring advanced its cursor past a tail too short to hold a
+ * header WITHOUT writing anything into it. A reader stepping record by
+ * record then reads those bytes as a header: twelve bytes of whatever was
+ * there, whose `size` field decides where it goes next. That path never
+ * ran anywhere - the milestone that would have exercised it did not pass -
+ * so it is a defect to fix, not a measurement to preserve.
+ *
+ * This drives a ring to every tail width a header could straddle and
+ * checks that a reader can walk the whole thing. With the absorb removed,
+ * walk_records returns -1.
+ */
+static void test_ring_never_leaves_a_short_tail(void)
+{
+    NowContentU32 cap;
+    int payload;
+
+    for (cap = 64u; cap <= 160u; cap += 2u) {
+        for (payload = 0; payload <= 24; ++payload) {
+            TestBlock *tb = make_block(cap);
+            unsigned char pl[32];
+            NowContentU32 lap;
+            int ops[512];
+            int r;
+            int i;
+
+            memset(pl, 0x5A, sizeof(pl));
+            /* Fill well past one lap so every alignment is reached. */
+            for (i = 0; i < 40; ++i) {
+                (void)now_content_ring_put(&tb->block, kNowContentOpRect, 0,
+                                           (NowContentU32)i, pl,
+                                           (NowContentU16)payload);
+                /* After EVERY commit, the tail is zero or a whole header. */
+                lap = tb->block.write_cursor % cap;
+                if (lap != 0 && cap - lap < sizeof(NowContentRecHeader)) {
+                    printf("FAIL short tail: cap %lu payload %d rem %lu\n",
+                           (unsigned long)cap, payload,
+                           (unsigned long)(cap - lap));
+                    failures++;
+                    break;
+                }
+            }
+            /* And a reader can walk the last complete lap. */
+            r = walk_records(&tb->block,
+                             (tb->block.write_cursor / cap) * cap,
+                             tb->block.write_cursor, ops, 512);
+            if (r < 0) {
+                printf("FAIL unwalkable ring: cap %lu payload %d\n",
+                       (unsigned long)cap, payload);
+                failures++;
+            }
+            free(tb);
+        }
+    }
+}
+
+static void test_ring_null_block(void)
+{
+    check_eq(now_content_ring_put(NULL, kNowContentOpLine, 0, 1u, NULL, 0),
+             0, "a null block commits nothing");
+}
+
+/* A ring too small to hold two headers has no honest wrap behaviour, so it
+   refuses rather than inventing one. */
+static void test_ring_degenerate_cap(void)
+{
+    TestBlock *tb = make_block(16u);
+
+    check_eq(now_content_ring_put(&tb->block, kNowContentOpLine, 0, 1u, NULL, 0),
+             0, "a ring under two headers refuses");
+    check_eq((long)tb->block.counters.dropped, 1, "and counts the drop");
+    free(tb);
+}
+
+/* ---- state deltas ---------------------------------------------------- */
+
+static NowContentPortState a_state(void)
+{
+    NowContentPortState s;
+
+    s.clip_l = 0; s.clip_t = 0; s.clip_r = 400; s.clip_b = 300;
+    s.origin_h = 0; s.origin_v = 0;
+    s.fg_r = 0; s.fg_g = 0; s.fg_b = 0;
+    s.bg_r = 0xFFFF; s.bg_g = 0xFFFF; s.bg_b = 0xFFFF;
+    return s;
+}
+
+static void test_state_first_time_emits_everything(void)
+{
+    NowContentPortState shadow = a_state();
+    NowContentPortState live = a_state();
+
+    check_eq((long)now_content_state_deltas(&shadow, 0, &live),
+             kNowContentDeltaOrigin | kNowContentDeltaClip
+             | kNowContentDeltaFg | kNowContentDeltaBg,
+             "an unrecorded port emits all four, identical or not");
+    check_eq((long)now_content_state_deltas(NULL, 1, &live),
+             kNowContentDeltaOrigin | kNowContentDeltaClip
+             | kNowContentDeltaFg | kNowContentDeltaBg,
+             "no shadow at all emits all four");
+}
+
+static void test_state_unchanged_emits_nothing(void)
+{
+    NowContentPortState shadow = a_state();
+    NowContentPortState live = a_state();
+
+    check_eq((long)now_content_state_deltas(&shadow, 1, &live), 0,
+             "a steady redraw emits no state at all");
+}
+
+static void test_state_each_field_alone(void)
+{
+    NowContentPortState shadow = a_state();
+    NowContentPortState live;
+
+    live = a_state(); live.origin_h = 5;
+    check_eq((long)now_content_state_deltas(&shadow, 1, &live),
+             kNowContentDeltaOrigin, "origin h alone");
+    live = a_state(); live.origin_v = 5;
+    check_eq((long)now_content_state_deltas(&shadow, 1, &live),
+             kNowContentDeltaOrigin, "origin v alone");
+    live = a_state(); live.clip_l = 1;
+    check_eq((long)now_content_state_deltas(&shadow, 1, &live),
+             kNowContentDeltaClip, "clip left alone");
+    live = a_state(); live.clip_b = 1;
+    check_eq((long)now_content_state_deltas(&shadow, 1, &live),
+             kNowContentDeltaClip, "clip bottom alone");
+    live = a_state(); live.fg_g = 0x8000;
+    check_eq((long)now_content_state_deltas(&shadow, 1, &live),
+             kNowContentDeltaFg, "fg green alone");
+    live = a_state(); live.bg_b = 0;
+    check_eq((long)now_content_state_deltas(&shadow, 1, &live),
+             kNowContentDeltaBg, "bg blue alone");
+
+    /* Negative coordinates are ordinary here - a scrolled port's origin
+       goes negative, which is the MoveBits case the host relies on. */
+    live = a_state(); live.origin_v = -33;
+    check_eq((long)now_content_state_deltas(&shadow, 1, &live),
+             kNowContentDeltaOrigin, "a negative origin is a change");
+}
+
+static void test_state_null_live(void)
+{
+    NowContentPortState shadow = a_state();
+
+    check_eq((long)now_content_state_deltas(&shadow, 1, NULL), 0,
+             "no live state means no deltas");
+}
+
+/* ---- the layout itself ----------------------------------------------- */
+
+/* The static asserts in the header do the real work at compile time on all
+   three compilers. This checks the two numbers a reader on the wire has to
+   agree with us about, so a change to them fails here as well as there. */
+static void test_layout(void)
+{
+    check_eq((long)sizeof(NowContentRecHeader), 12, "record header is 12");
+    check_eq((long)sizeof(NowContentBlock), 140 + kNowContentRingCap,
+             "block is header + ring");
+    check_eq((long)kNowContentArmCommit, 0x4E576361L, "'NWca'");
+    check_eq((long)kNowContentBlockMagic, 0x4E576362L, "'NWcb'");
+    check(kNowContentArmCommit != 1 && kNowContentArmCommit != 0,
+          "the commit word is not a value zeroed memory produces");
+}
+
+int main(void)
+{
+    test_arm_happy_path();
+    test_arm_without_a_target_refuses();
+    test_arm_wrong_context_refuses();
+    test_arm_commit_word_is_required();
+    test_arm_plane_bit_gates_everything();
+    test_arm_mode_is_fail_closed();
+    test_arm_expiry();
+    test_arm_null_request();
+
+    test_ring_basic_append();
+    test_ring_odd_payload_pads_even();
+    test_ring_oversize_is_dropped_not_wrapped();
+    test_ring_absorbs_a_short_tail();
+    test_ring_pads_a_usable_tail_with_wrap();
+    test_ring_never_leaves_a_short_tail();
+    test_ring_null_block();
+    test_ring_degenerate_cap();
+
+    test_state_first_time_emits_everything();
+    test_state_unchanged_emits_nothing();
+    test_state_each_field_alone();
+    test_state_null_live();
+
+    test_layout();
+
+    if (failures != 0) {
+        printf("%d failed\n", failures);
+        return 1;
+    }
+    printf("content plane ok\n");
+    return 0;
+}

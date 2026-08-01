@@ -1,5 +1,11 @@
 #include "commands.h"
+
+#include "act_cmds.h"
+#include "input_cmds.h"
+#include "mach_verbs.h"
 #include "nowlog.h"
+#include "observe.h"
+#include "qdtrace.h"
 
 #include <Carbon.h>
 
@@ -12,6 +18,7 @@
 #include "census.h"
 #include "cmd_help.h"
 #include "cmd_line.h"
+#include "gestalt_json.h"
 #include "json.h"
 #include "prefs.h"
 #include "fileshare.h"
@@ -365,16 +372,6 @@ int now_process_gather(ProcRow *rows, int max)
 
 /* --- wire path: serialize the rows to grouped JSON ---------------------- */
 
-static void append_escaped(char *out, long cap, long *pos, const char *s)
-{
-    while (*s != '\0' && *pos + 2 < cap) {
-        if (*s == '"' || *s == '\\') {
-            out[(*pos)++] = '\\';
-        }
-        out[(*pos)++] = *s++;
-    }
-}
-
 /* The group a gestalt console flag selects, or NULL. The guest's own
    console reads the same mapping (console_model.c's flag_to_group); this is
    the wire's copy of one grammar, and the reason the host has none. */
@@ -392,8 +389,6 @@ static void run_gestalt(const char *request_json, long id, char *out, long cap)
 {
     GestaltRow rows[kGestaltMaxRows];
     int count = now_gestalt_gather(rows, kGestaltMaxRows);
-    long pos = 0;
-    int i;
     /* every group, in a stable order, snapshot first */
     static const char *const all_groups[] = {
         "snapshot", "cpu", "memory", "os", "network", "hw", NULL
@@ -403,8 +398,6 @@ static void run_gestalt(const char *request_json, long id, char *out, long cap)
     const char *one[2];
     char line[128];
     char word[32];
-    int g;
-    Boolean first_group = true;
 
     /* No line: a typed caller, which gets every group as it always has.
        A line: a human, who asked for a slice — and the slice is chosen HERE,
@@ -440,46 +433,11 @@ static void run_gestalt(const char *request_json, long id, char *out, long cap)
         }
     }
 
-    pos += snprintf(out, cap,
-                    "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
-                    "\"output\":{", id);
-    for (g = 0; groups[g] != NULL; ++g) {
-        Boolean first_row = true;
-        for (i = 0; i < count; ++i) {
-            if (strcmp(rows[i].group, groups[g]) != 0) {
-                continue;
-            }
-            if (first_row) {
-                if (!first_group) {
-                    out[pos++] = ',';
-                }
-                pos += snprintf(out + pos, cap - pos, "\"%s\":[", groups[g]);
-                first_group = false;
-                first_row = false;
-            } else {
-                out[pos++] = ',';
-            }
-            out[pos++] = '[';
-            out[pos++] = '"';
-            append_escaped(out, cap, &pos, rows[i].label);
-            out[pos++] = '"';
-            out[pos++] = ',';
-            out[pos++] = '"';
-            append_escaped(out, cap, &pos, rows[i].value);
-            out[pos++] = '"';
-            out[pos++] = ']';
-        }
-        if (!first_row) {
-            out[pos++] = ']';
-        }
-    }
-    if (pos + 3 < cap) {
-        out[pos++] = '}';
-        out[pos++] = '}';
-        out[pos] = '\0';
-    } else {
-        out[cap - 1] = '\0';
-    }
+    /* The serialization itself lives next door, in pure C the host cc can
+       compile and gestalt_json_test.c can drive at a cap small enough to
+       overflow — which is not a hypothetical shape here: kGestaltMaxRows is
+       48 rows of 96 bytes, and the wire's result buffer is 3072. */
+    (void)now_gestalt_result_json(id, rows, count, groups, out, cap);
 }
 
 static void run_screenshot(const char *request_json, long id,
@@ -1340,6 +1298,102 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "vers") == 0) {
         run_vers(request_json, id, out, cap);
+        return;
+    }
+    /* The act plane (P4). Six commands, one mechanism: an element this
+       Mac observed, revalidated here before anything is dispatched, and
+       a reply that claims the event went and never that it worked. The
+       handlers live in src/act/ rather than here because the plane is
+       its own domain with its own Toolbox-free half - see act_cmds.h. */
+    /* elements is the reference layer's walk aimed by a process rather
+       than by a scope. It lives with observe and not with the act verbs
+       because minting is one mechanism with one implementation: two
+       verbs that both produced references would be two systems making
+       one token shape, and a caller holding one could not tell which. */
+    if (strcmp(name, "elements") == 0) {
+        now_observe_elements_command(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "winact") == 0) {
+        now_act_run_winact(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "textget") == 0) {
+        now_act_run_textget(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "textset") == 0) {
+        now_act_run_textset(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "ctlact") == 0) {
+        now_act_run_ctlact(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "menuact") == 0) {
+        now_act_run_menuact(request_json, id, out, cap);
+        return;
+    }
+    /* Two verbs about the MACHINE rather than about an element, folded in
+       from timbottu/mirror (docs/mirror-wave3-verdicts.md). They sit with
+       the act plane because that is what they are about: `activate` is
+       the switch a driver performs between two acts, and `actselftest` is
+       the only instrument that reads the act plane's trap ABI from the
+       CALLER's side - see mach_verbs.h. */
+    if (strcmp(name, "activate") == 0) {
+        now_mach_run_activate(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "actselftest") == 0) {
+        now_mach_run_actselftest(request_json, id, out, cap);
+        return;
+    }
+    /* The input plane. `mouseloc` is a READ and is the instrument every
+       hop calibration in the probes closes its loop against; `key` is the
+       one verb here that drives the machine without addressing an
+       element, and it is honest about the one thing it cannot do;
+       `script` and `aesend` are the two ways to ask an application to do
+       something without an element reference at all. See input_cmds.h. */
+    if (strcmp(name, "mouseloc") == 0) {
+        now_input_run_mouseloc(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "key") == 0) {
+        now_input_run_key(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "script") == 0) {
+        now_input_run_script(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "aesend") == 0) {
+        now_input_run_aesend(request_json, id, out, cap);
+        return;
+    }
+    /* The content plane's reader (P3). Four subcommands behind one verb,
+       selected by `op` - see qdtrace.h on why a drain is a bounded
+       control answer and not a transfer. */
+    if (strcmp(name, "qdtrace") == 0) {
+        now_qdtrace_run(request_json, id, out, cap);
+        return;
+    }
+    /* The reference layer. Each of these writes its whole command.result
+       itself, so registering one is a table row and a call - see
+       observe.h, which states this list exactly. */
+    if (strcmp(name, "observe") == 0) {
+        now_observe_command(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "handle") == 0) {
+        now_observe_handle_command(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "axtree") == 0) {
+        now_observe_axtree_command(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "axsnap") == 0) {
+        now_observe_axsnap_command(request_json, id, out, cap);
         return;
     }
     snprintf(out, cap,

@@ -3,6 +3,38 @@
 **Date:** 2026-07-31 · **Status:** built, ladder not run · **Disposition:** delete
 when its questions are answered
 
+> **RETIRED 2026-07-31 — the real plane is `ext/src/now_content.c`.**
+>
+> This probe was built to answer *"can a 68K INIT's drawing bottleneck be called
+> by a PowerPC application's QuickDraw?"*. That question had already been
+> answered live, on a mac99 guest, by this project's own prototype:
+> `timbottu/mirror`, `docs/QDPEEK-SPEC.md`, milestone M0 — **and the answer is
+> the opposite of what this file braced for.** `NewQDxxxUPP` alone works; no
+> hand-built `M68K` routine descriptor and no `RTS` thunk were needed. The
+> install/uninstall state machine, the re-entrancy guard and the op-rate table
+> came with it, so the ladder below is not the cheapest way to learn any of it.
+>
+> qdpeek has now been ported into the NOW Extension as plane **P3 — content**
+> (`contract/content_table.h`, `ext/src/now_content.c`,
+> `ext/src/now_content_logic.c`), keeping the measured mechanism and writing
+> NOW's own arm protocol around it. **What this probe contributed, and the port
+> kept:** the identity discipline — arming names its target, an unscoped request
+> instruments nothing, `arm_a5`/`arm_expiry` are written before the commit word
+> — and the three rules under "the dangerous part", which are quoted in
+> `now_content.c` where they are enforced.
+>
+> Its one loose end is answered too, and in the binary rather than on paper.
+> The note below about `qdprobe_rect` drawing nothing when there is no chain to
+> tail-call **does not carry over**: the plane's hooks call a saved copy of the
+> *standard* procs (`SetStdCProcs`), never the port's previous `grafProcs`, so
+> the NULL case is exactly the case it installs into and drawing still happens.
+> Verified in the object file — both branches of the rect hook tail-call
+> `gStd+8` — and the boot path refuses to create the plane at all if
+> `SetStdCProcs` left any of the ten procs null.
+>
+> **Deleting this directory is a separate decision, deliberately not taken
+> here.** Nothing depends on it; it is redundant, not wrong.
+
 This is the P3 spike from [resident-components.md](../../docs/resident-components.md)
 and M2 of [plan 007](../../docs/plans/2026-07-31-007-feat-now-mirror-integration-plan.md).
 It is **deliberately not part of NOW**, and the charter is why:
@@ -243,17 +275,38 @@ Per the charter, in order, saying which rung a claim sits on:
 | compiles | done |
 | links | done |
 | packages (`QDProbe.bin`) | done |
+| a reader exists ([`../qdreader`](../qdreader/README.md)) | done — builds, packages |
 | loads at boot | **not run** |
 | callbacks run (the count moves) | **not run — the actual question** |
+| arm / disarm round-trips | **not run** |
 | survives boot / shift-disable / removal | **not run** |
 | per-op cost measured | not run |
 | PowerBook 1400c, attended | not run — emulator first, and not without asking |
 
-There is no reader yet: the counters are published through Gestalt `'QDpr'` and
-nothing reads them, and nothing writes a request either — so on a machine that
-booted this today, `arm_a5` is zero and the probe refuses every pass. That is
-the next rung, not an oversight, and the reader's first job is the three-field
-commit order above rather than a single `arm` poke.
+**The reader exists as of 2026-07-31 and the pair still sits at *packages*.**
+[`prototypes/qdreader`](../qdreader/README.md) is the other throwaway — its own
+name, its own creator `QDrd`, deleted with this one, and deliberately *not*
+inside the NOW guest. It gates on `magic` **and** `version` as one check and
+refuses every write on a mismatch, writes a request in the three-field commit
+order above rather than poking a bare `arm`, and drains its own ports before
+quitting.
+
+It is built **Carbon/PPC on purpose**: armed at its own A5 it is the *native
+PowerPC caller* this probe exists to ask about, so it is the experiment rather
+than a display of one. What it changes today is only observability — nothing
+below has run on a Macintosh — but "loaded at boot", "loaded and wedged" and
+"did not load" are now three different screens instead of one silence, and
+`rect_calls` can be read at all.
+
+One consequence of this file, found while building the reader and left alone
+here: we only ever patch ports whose `grafProcs` was `NULL`, so `saved_procs` is
+always 0, so `qdprobe_rect`'s "no chain to tail-call" path is taken on **every**
+patched port — every rect operation in a patched port, erases included, draws
+nothing while armed. That is this file's stated "visible as a missing rectangle"
+behaviour reached universally rather than exceptionally, and it is a *second*
+signal that the bottleneck was reached, so the reader is built to tolerate it
+rather than the probe changed to avoid it. If it ever needs to go, the fix is one
+line: call `StdRect` when there is no saved chain.
 
 ## Build
 

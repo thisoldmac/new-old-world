@@ -1,4 +1,5 @@
 import Foundation
+import NOWAgentIntegration
 
 /// The connected Mac's running processes, pulled over the wire.
 ///
@@ -29,12 +30,17 @@ final class ProcessesModel: ObservableObject, GuestScopedModel {
     var onScreenshotApp: ((Int, Int) -> Void)?
 
     private let listener: GuestListener
+    /// What the machines on the wire have said they can do. Shared with every
+    /// other page that gates a control, injectable so a test gets its own.
+    let capabilities: GuestCapabilityRecord
     /// Guards against a slow page landing after the human hit Refresh:
     /// each refresh takes a token, and only the current token may append.
     private var loadToken = 0
 
-    init(listener: GuestListener) {
+    init(listener: GuestListener,
+         capabilities: GuestCapabilityRecord = .shared) {
         self.listener = listener
+        self.capabilities = capabilities
     }
 
     var canBrowse: Bool { connection.canCapture }
@@ -42,6 +48,37 @@ final class ProcessesModel: ObservableObject, GuestScopedModel {
     /// The row a person has selected, if it is still in the list.
     var selectedEntry: ProcessEntry? {
         rows.first { $0.id == selection }
+    }
+
+    /// **Whether bringing this process forward means anything, on this Mac.**
+    ///
+    /// The kind is the guest's own classification, not a type code read on
+    /// this side: a faceless process has no windows and no menu bar, so there
+    /// is nothing to bring forward whichever Mac is attached. `isDrivable` is
+    /// a third fact and stays where it is — it says this ROW arrived without a
+    /// PSN, which is about the listing rather than the process or the wire,
+    /// and is not restated here.
+    func bringToFrontGate(_ entry: ProcessEntry)
+        -> GuestCapabilityGate.Decision {
+        GuestCapabilityGate.decide(
+            BringToFrontProjection.self, performing: .bringToFront,
+            on: entry.itemKind, named: entry.name,
+            in: capabilities.evidence(for: connection, listener: listener))
+    }
+
+    /// The sentence a dark Bring to Front button owes the reader, and nil
+    /// while it works — including for the merely unproven case, which stays
+    /// enabled and does not get to nag. Nil with nothing selected: a control
+    /// dark for want of a selection is explained by the empty selection.
+    ///
+    /// Takes the row rather than reading `selectedEntry` itself, so the answer
+    /// is a function of what the page is showing and can be asked without a
+    /// wire, a listing, or a Mac.
+    func bringToFrontNote(for entry: ProcessEntry?) -> String? {
+        guard let entry else { return nil }
+        let decision = bringToFrontGate(entry)
+        guard decision.deservesAVisibleReason else { return nil }
+        return decision.explanation
     }
 
     /// Two buckets a person reads at a glance: what has a face, and what

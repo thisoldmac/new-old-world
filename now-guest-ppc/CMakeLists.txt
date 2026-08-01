@@ -7,6 +7,7 @@ add_application(now-guest-ppc
     src/commands/cmd_help.c
     src/commands/cmd_line.c
     src/commands/commands.c
+    src/commands/gestalt_json.c
     src/console/console_model.c
     src/console/console_module.c
     # Not under src/: one implementation both guests compile, the way
@@ -40,6 +41,7 @@ add_application(now-guest-ppc
     src/files/files_module.c
     src/files/files_browser_view.c
     src/files/files_share_view.c
+    src/files/files_pull.c
     src/workshop/confirm.c
     src/core/ot_carbon.c
     src/core/json.c
@@ -63,6 +65,64 @@ add_application(now-guest-ppc
     src/scene/scene_build.c
     src/scene/scene_json.c
     src/scene/scene_collect.c
+    src/scene/scene_walk.c
+    # The foreign-memory walk, ported from this project's own prototype
+    # (timbottu/mirror). Pure parsers plus one Toolbox binding; see
+    # src/axwalk/axwalk.h for why its constants are evidence.
+    src/axwalk/axwalk.c
+    src/axwalk/axmenu.c
+    src/axwalk/axtext.c
+    src/axwalk/axresolve.c
+    src/axwalk/axbinding.c
+    src/axwalk/axprocess.c
+    # The reference layer over that walk: minting the opaque references
+    # every act verb addresses, and resolving one back to a live element
+    # or refusing with the reason. The deciding half (obsref.c,
+    # obsresolve.c) is Toolbox-free and natively tested; observe.c only
+    # obtains. See src/observe/obsref.h on why a reference cannot be
+    # forged, and obsresolve.h on why staleness is never repaired.
+    src/observe/obsref.c
+    src/observe/obsresolve.c
+    # The seam the SCENE walk mints through - the second walk over this
+    # machine, and deliberately NOT a second registry (see obsmint.h).
+    src/observe/obsmint.c
+    src/observe/observe.c
+
+    # P4, the act plane's application half. act_args.c is Toolbox-free
+    # and natively tested; act_client.c is the thin Toolbox layer;
+    # act_cmds.c is the five act commands - the sixth, `elements`, is
+    # served by the reference layer above, because minting is one
+    # mechanism and act_ref.c was a second one. now_act_guard.c is SHARED
+    # with the 68K extension - one file, both sides of the seam, which is
+    # what lets the host cc test the guard that runs inside other
+    # people's applications.
+    src/act/act_args.c
+    src/act/act_client.c
+    src/act/act_cmds.c
+    ../now-guest-shared/src/now_act_guard.c
+
+    # Two verbs about the machine's own state, folded in from the parked
+    # upstream project (docs/mirror-foldin-inventory.md, wave 3):
+    # `activate`, which fronts a process by the identity an observation
+    # minted rather than by name, and `actselftest`, which is the first
+    # caller the act plane's ABI selftest has ever had. Same split as the
+    # act plane itself - the parse and both verdicts are Toolbox-free and
+    # natively tested; the two .c files that include Carbon decide
+    # nothing.
+    src/machine/mach_activate_args.c
+    src/machine/mach_selftest_report.c
+    src/machine/mach_reply.c
+    src/machine/mach_activate.c
+    src/machine/mach_selftest.c
+    # The input plane: mouseloc (a read, and the instrument the act plane
+    # is measured with), script (OSADoScript) and aesend (four core Apple
+    # Events, a closed vocabulary rather than a class/id pipe).
+    # input_args.c is Toolbox-free and natively tested - it holds the
+    # timeout clamp, the CR conversion classic AppleScript needs, the
+    # `entire contents` refusal, and the serials aesend will not address;
+    # input_cmds.c is the thin Toolbox layer over it.
+    src/input/input_args.c
+    src/input/input_cmds.c
     resources/app.r
     # The application icon family, generated from the artwork by
     # assets/icons/classic/rez.py and shared with any other target that
@@ -96,16 +156,26 @@ target_compile_options(now-guest-ppc PRIVATE
     -Werror
 )
 
+# Include the build output directory so build_stamp.c can find build_stamp_gen.h
+target_include_directories(now-guest-ppc PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+
 
 # The probe times tight read loops; at -O0 loop overhead pollutes the
 # bandwidth numbers.
 set_source_files_properties(src/census/vprobe.c PROPERTIES COMPILE_OPTIONS "-O2")
 
-# The build stamp is only honest if it is recompiled every build.
-add_custom_target(touch_build_stamp ALL
-    COMMAND ${CMAKE_COMMAND} -E touch_nocreate
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/core/build_stamp.c)
-add_dependencies(now-guest-ppc touch_build_stamp)
+# Generate the build stamp on every build. The buildstamp.cmake script hashes
+# all sources and produces a header with NOW_SRC_HASH and NOW_BUILT_AT. The
+# header is rewritten only when the hash changes, so an unchanged tree does
+# not force a universal recompile. See cmake/buildstamp.cmake for rationale.
+set(_buildstamp_header ${CMAKE_CURRENT_BINARY_DIR}/build_stamp_gen.h)
+add_custom_target(generate_buildstamp ALL
+    COMMAND ${CMAKE_COMMAND}
+            -DSRC_DIR=${CMAKE_CURRENT_SOURCE_DIR}/src
+            -DOUT=${_buildstamp_header}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/buildstamp.cmake
+    VERBATIM)
+add_dependencies(now-guest-ppc generate_buildstamp)
 
 # The canonical deploy artifact carries the product's real name, spaces
 # and all: "New Old World.bin", to match "New Old World.app" on the host.
@@ -133,3 +203,19 @@ else()
         "python3 not found: skipping the canonical 'New Old World.bin' "
         "stamp; deploy now-guest-ppc.bin renamed by hand (see AGENTS.md).")
 endif()
+
+# P3's READER - the content plane's application half (src/content/).
+#
+# Appended with target_sources rather than added to the add_application
+# list above, because that list is held by another lane while this is
+# written and an append cannot collide with an edit. The include path
+# needs no change: NOW_GUEST_SRC_DIRS globs every directory under src/,
+# which is what makes a new domain cost one commit instead of two.
+#
+# qdtrace_read.c and qdtrace_json.c are Toolbox-free and are run by
+# scripts/test-native against rings the real writer builds;
+# qdtrace_cmd.c is the only Toolbox in the plane's reader.
+target_sources(now-guest-ppc PRIVATE
+    src/content/qdtrace_read.c
+    src/content/qdtrace_json.c
+    src/content/qdtrace_cmd.c)

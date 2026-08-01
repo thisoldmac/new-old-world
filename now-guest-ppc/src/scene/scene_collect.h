@@ -13,10 +13,13 @@
    what a scene claims; it collects and delegates.
 
    Foreign memory is never touched here either. Every window read goes
-   through now_peek_windows_for_psn, which validates each pointer inside
-   the process's partition or the system heap before dereferencing it
-   (docs/resident-components.md). This file cannot weaken that even by
-   accident, because it never holds a foreign pointer. */
+   through now_peek_windows_for_psn, and every control, menu and text
+   read through src/axwalk/ by way of scene_walk.c - both of which
+   validate each pointer inside the process's partition or the system
+   heap before dereferencing it (docs/resident-components.md). This file
+   holds foreign ADDRESSES, to hand one reader's window record back to
+   the other; it never dereferences one, so it cannot weaken the
+   boundary even by accident. */
 
 #include <Carbon.h>
 

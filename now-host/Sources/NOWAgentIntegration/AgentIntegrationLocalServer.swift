@@ -322,6 +322,26 @@ public final class AgentIntegrationLocalServer {
                 response = .init(
                     requestID: request.requestID,
                     streamResult: result)
+            case .windowAct(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    windowActResult: result)
+            case .controlAct(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    controlActResult: result)
+            case .menuAct(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    menuActResult: result)
+            case .textGet(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    textGetResult: result)
+            case .textSet(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    textSetResult: result)
             case .notImplemented(let unavailable):
                 response = .init(
                     requestID: request.requestID,

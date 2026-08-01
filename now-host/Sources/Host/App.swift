@@ -593,6 +593,70 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     }
                     return .revealItem(
                         await agentIntegration.revealItem(target: target))
+                case .windowAct:
+                    /* THE ACT LANE, arriving. The codec has already refused
+                       every malformed act — a bare-string window reference,
+                       a close carrying a width, a coordinate outside a
+                       QuickDraw Rect — so this branch reads a validated
+                       request and refuses only the one that named no act at
+                       all, which never reached a machine and is therefore
+                       the request's refusal rather than the guest's.
+
+                       What a completed answer MEANS lives in
+                       AgentIntegrationActControl: the event was handed to
+                       the window's own application. Nothing here, and
+                       nothing anywhere on this side, may say the window
+                       moved. */
+                    guard let act = request.windowActRequest else {
+                        return .windowAct(.refused(.init(
+                            code: "now-window-act-invalid",
+                            message:
+                                "The request named no window act")))
+                    }
+                    return .windowAct(
+                        await agentIntegration.windowAct(act))
+                case .controlAct:
+                    guard let act = request.controlActRequest else {
+                        return .controlAct(.refused(.init(
+                            code: "now-control-act-invalid",
+                            message:
+                                "The request named no control act")))
+                    }
+                    return .controlAct(
+                        await agentIntegration.controlAct(act))
+                case .menuAct:
+                    guard let act = request.menuActRequest else {
+                        return .menuAct(.refused(.init(
+                            code: "now-menu-act-invalid",
+                            message: "The request named no menu act")))
+                    }
+                    return .menuAct(await agentIntegration.menuAct(act))
+                case .textGet:
+                    guard let element = request.actElement else {
+                        return .textGet(.refused(.init(
+                            code: "now-text-get-invalid",
+                            message:
+                                "The request named no text element")))
+                    }
+                    return .textGet(
+                        await agentIntegration.getElementText(
+                            element: element))
+                case .textSet:
+                    /* Both fields, and the text may be empty: emptying a
+                       field is a real act, so `actText == ""` is a request
+                       and an absent key is not. The codec draws the same
+                       line; this is the shape check a strict key list
+                       cannot express. */
+                    guard let element = request.actElement,
+                          let text = request.actText else {
+                        return .textSet(.refused(.init(
+                            code: "now-text-set-invalid",
+                            message:
+                                "The request named no element and replacement")))
+                    }
+                    return .textSet(
+                        await agentIntegration.setElementText(
+                            element: element, text: text))
                 case .transferCancel:
                     /* Says only its own name, and the codec has already
                        refused a request carrying anything else. There is

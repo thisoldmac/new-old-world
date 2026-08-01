@@ -24,11 +24,16 @@ typedef enum {
 
 AgentAccessTier now_agent_access_tier(void);
 
-/* Persists, and takes effect on the NEXT connection: `hello` is sent once
-   at handshake and the contract carries no message that revises it, so a
-   tier changed mid-session is this Mac's answer to the next host, not to
-   the one already on the wire. The page says that rather than implying
-   otherwise. */
+/* Persists, and tells a host already on the line (`agent.access`), because
+   `hello` states this once per connection and a tier changed after it
+   would otherwise not reach the host until the link was rebuilt — leaving
+   the host enforcing a permission this machine had already withdrawn.
+
+   This is the ONE place the tier changes, which is why it is also the one
+   place that announces: a future setter gets the announcement by calling
+   here. The guest learns that it SAID this, never that the host acted on
+   it — there is no acknowledgement — so the page is worded to claim only
+   the first. */
 void now_agent_access_set_tier(AgentAccessTier tier);
 
 #endif /* NOW_AGENT_ACCESS_H */

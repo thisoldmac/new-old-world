@@ -27,7 +27,24 @@ struct HostRootView: View {
             // sits inside the sidebar's material instead of on top of it.
             .safeAreaInset(edge: .bottom, spacing: 0) { footer }
         } detail: {
+            // The sidebar declares its own ideal width one line above; the
+            // detail never declared anything, and that asymmetry is what let
+            // MCP and Diagnostics open the window wider than the display.
+            //
+            // A ScrollView reports its content's ideal width as its own, so a
+            // module whose content has no natural width - MCP's tool payloads,
+            // Diagnostics' monospaced probe output - proposed an unbounded
+            // ideal and the window sized to it. The `.fixedSize(horizontal:
+            // false, vertical: true)` those modules already carry wraps text
+            // only once something upstream proposes a FINITE width. Nothing
+            // did. This is that proposal, and it belongs here rather than in
+            // each module: a module must not be able to drive the window.
+            //
+            // maxWidth stays infinite on purpose - this bounds what the window
+            // ASKS for, never what a person can resize it to.
             detail
+                .frame(minWidth: 480, idealWidth: 820,
+                       maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -68,6 +85,8 @@ struct HostRootView: View {
             FilesModuleView(model: state.files)
         case "processes":
             ProcessesModuleView(model: state.processes)
+        case "mirror":
+            MirrorModuleView(model: state.mirror)
         case "console":
             ConsoleModuleView(model: state.console, listener: state.listener)
         case "connections":

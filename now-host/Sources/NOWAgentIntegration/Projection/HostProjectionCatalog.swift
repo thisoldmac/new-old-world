@@ -23,6 +23,15 @@ public enum HostProjectionCatalog {
            both rows and in docs/mcp-coverage.md. */
         MachineFactsProjection.self,
         ListProcessesProjection.self,
+        /* Immediately after the process listing, because it is the next
+           question a caller asks with the answer in hand: what is INSIDE
+           one of those processes. It is an observation and belongs here
+           rather than with the act rows below — it changes nothing, it sits
+           a consent tier below every act, and it is the only thing in the
+           product that mints the references those acts require. Read in
+           order, the observations go from the machine, to its processes, to
+           the elements of one of them. */
+        ObserveElementsProjection.self,
         /* With the observations rather than beside the Files family: it
            reads what the guest wrote about itself, changes nothing, and
            names no file — the nearest neighbour of a process listing, not
@@ -63,6 +72,26 @@ public enum HostProjectionCatalog {
         RevealItemProjection.self,
         BringToFrontProjection.self,
         RequestQuitProjection.self,
+        /* The act plane, with the process drive verbs and after them: the
+           same class of thing — a row that changes the machine rather than
+           reads it — one reach further in. The drive verbs above address a
+           PROCESS and can say only which application is in front; these five
+           address a piece of an application's own interface, and every one
+           of them takes a reference `now_observe_elements` minted.
+
+           Ordered by what they reach: the window, then the control inside
+           it, then the menu bar above it, then the text. The read sits
+           between the write and its neighbours rather than with the
+           observations, and that is deliberate: it is an act-plane row that
+           happens to change nothing, sharing the identity grammar, the
+           reference vocabulary and the availability of the rows around it.
+           Its readOnlyHint puts it a consent tier below them, which is the
+           thing that split makes expressible. */
+        WindowActProjection.self,
+        ControlActProjection.self,
+        MenuActProjection.self,
+        TextGetProjection.self,
+        TextSetProjection.self,
         TransferApprovedArtifactProjection.self,
         /* Beside the transfer it can end, and before the Files family:
            it ends a transfer in EITHER direction, so it belongs to

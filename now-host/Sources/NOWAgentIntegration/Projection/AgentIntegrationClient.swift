@@ -164,6 +164,36 @@ public protocol AgentIntegrationClient: Sendable {
     /// a stream is the one direction that needs no standing, and the person
     /// at the host can already do it from the page they watch it on.
     func stopGuestStream() async -> AgentIntegrationStreamResult
+    /// Act on one addressed window — move, resize, zoom or close — by
+    /// answering the owning application's own `FindWindow`. The reference is
+    /// the caller's; the guest revalidates it against a live window before
+    /// anything is dispatched. See `WindowActProjection`.
+    func windowAct(_ request: AgentIntegrationWindowActRequest) async
+        -> AgentIntegrationWindowActResult
+    /// Read one addressed text element. See `TextGetProjection`.
+    func getElementText(element: String) async
+        -> AgentIntegrationTextReadingResult
+    /// Replace one addressed text element's contents. A replacement and not
+    /// an append: there is no offset form. See `TextSetProjection`.
+    func setElementText(element: String, text: String) async
+        -> AgentIntegrationTextSetResult
+    /// Act on one addressed control by answering the owning application's own
+    /// `TrackControl` with a part code, so the application runs its real
+    /// mouse-down handler. See `ControlActProjection`.
+    func controlAct(_ request: AgentIntegrationControlActRequest) async
+        -> AgentIntegrationControlActResult
+    /// Perform one menu command by answering the owning application's own
+    /// `MenuSelect`. Nothing is drawn and no tracking loop runs, so an item
+    /// with no keyboard shortcut becomes reachable. See `MenuActProjection`.
+    func menuAct(_ request: AgentIntegrationMenuActRequest) async
+        -> AgentIntegrationMenuActResult
+    /// Walk one process's on-screen elements and mint a reference for each.
+    /// Nil observes the frontmost application, which is the contract's own
+    /// default — and is a default for the WALK, never for an act: nothing
+    /// downstream of this may address "whatever is frontmost". See
+    /// `ObserveElementsProjection`.
+    func observeElements(process: AgentIntegrationProcessSerial?) async
+        -> AgentIntegrationElementObservationResult
 }
 
 extension AgentIntegrationClient {
@@ -323,6 +353,93 @@ extension AgentIntegrationClient {
     public func cancelTransfer() async
         -> AgentIntegrationTransferCancelResult {
         .hostUnavailable
+    }
+
+    /* The three act lanes, promoted from extension methods to requirements
+       in the fold that registered their rows (2026-07-31), with the bodies
+       they already had as their defaults — per the rule at the top of this
+       file, and breaking no conformer.
+
+       ONE THING CHANGED WITH THE PROMOTION, and it is the reason this is
+       not a pure move. The old bodies answered `.hostUnavailable`, which
+       was true of every client that could reach them: nothing was
+       registered, so only stub clients with no host called these. A
+       registered row is reachable from the real local client, where the app
+       is running and a Macintosh is connected — and "New Old World host is
+       unavailable" is then a false sentence about a host that is up. The
+       reason is now `noActLane`, which says what is actually missing. The
+       OUTCOME is unchanged and deliberately so: typed `unavailable`, never
+       a refusal and never an empty success.
+
+       CORRECTED 2026-08-01 — the last paragraph used to read "these stay
+       defaults, and no conformer overrides one, because there is still no
+       host lane to carry an act. The day one lands, the local client
+       implements the three and these defaults keep the stub conformers in
+       the test tree compiling."
+
+       That day is this one, and the sentence held exactly as written: the
+       local protocol grew `window_act`, `control_act`, `menu_act`,
+       `text_get` and `text_set`; `AgentIntegrationLocalClient` implements
+       all five; and `SocketAgentIntegrationClient` overrides them. These
+       bodies are now the answer for the SEVEN STUB CONFORMERS ONLY, which
+       is what they were reserved for, and `noActLane` is no longer reachable
+       from the real local client.
+
+       They are kept rather than deleted for that reason, and the reason is
+       worth stating because "no host lane" now reads like stale text: a stub
+       named for another capability has no host at all, and a requirement
+       without a default is seven compile errors in seven files. What a stub
+       must NOT answer is an empty success. */
+
+    public func windowAct(
+        _ request: AgentIntegrationWindowActRequest
+    ) async -> AgentIntegrationWindowActResult {
+        .unavailable(.noActLane(
+            AgentIntegrationCapabilityNames.windowActCommand))
+    }
+
+    public func getElementText(element: String) async
+        -> AgentIntegrationTextReadingResult {
+        .unavailable(.noActLane(
+            AgentIntegrationCapabilityNames.textGetCommand))
+    }
+
+    public func setElementText(element: String, text: String) async
+        -> AgentIntegrationTextSetResult {
+        .unavailable(.noActLane(
+            AgentIntegrationCapabilityNames.textSetCommand))
+    }
+
+    /* The two acts added beside `winact` on 2026-07-31, and the observation
+       that mints what all of them take. Same defaults, same reason: the
+       PowerPC guest now serves all three verbs, and this host still carries
+       no lane to ask them down. That the guest half exists and this one does
+       not is precisely what these two codes distinguish — a caller reading
+       `now-act-lane-absent` or `now-observation-lane-absent` has been told
+       the missing piece is HERE, which is a different thing from a machine
+       that answered "I do not serve that". */
+
+    public func controlAct(
+        _ request: AgentIntegrationControlActRequest
+    ) async -> AgentIntegrationControlActResult {
+        .unavailable(.noActLane(
+            AgentIntegrationCapabilityNames.controlActCommand))
+    }
+
+    public func menuAct(
+        _ request: AgentIntegrationMenuActRequest
+    ) async -> AgentIntegrationMenuActResult {
+        .unavailable(.noActLane(
+            AgentIntegrationCapabilityNames.menuActCommand))
+    }
+
+    /// The observation, and its own reason rather than the acts': nothing
+    /// here acts, so "no act lane" would be a sentence about the wrong half.
+    public func observeElements(
+        process: AgentIntegrationProcessSerial?
+    ) async -> AgentIntegrationElementObservationResult {
+        .unavailable(.noObservationLane(
+            AgentIntegrationCapabilityNames.elementsCommand))
     }
 
     /// Nothing to address: this client answers "no host" to everything.

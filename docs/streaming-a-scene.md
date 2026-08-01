@@ -43,7 +43,7 @@ Facts, with where they come from. Everything else in this note is marked.
 | Ownership is a 5 s pid-liveness poll **and** a 60 s lease renewed by any stream call | `dda5615`, `55b6f3e` | decided, tested, never met a companion |
 | Default `minIntervalMs` is 1000; absent is not offered on the agent row | `5733b5d`, `71d1adc` | decided; the number itself was argued, not measured |
 | **Control frames cap at 4 KB** | `contract/wire_limits.h`, `asyncapi.yaml` (file listings paginate for this reason) | decided, enforced both sides |
-| A capture costs **0.5–0.6 s** on the 1400c | `docs/metal-and-ux-review.md` §8 | measured, metal |
+| A capture costs **0.5–0.6 s** on the 1400c | `docs/metal-and-ux-review.md` §9 | measured, metal |
 | Whether a frame off an open bracket is cheaper than that capture | — | **unmeasured, and it is the bracket's entire premise** |
 | Mirror's semantic walk costs **~2.1 ms per poll**, a scene of **13980 B** | `mirror/docs/STATUS.md`, on a session-private mac99 clone | measured, **emulator**, **and it is upstream's guest, not NOW's** |
 | Encoded scenes in upstream's fixture corpus run **1.9 KB – 23.7 KB** (raw guest replies to 70 KB) | `mirror/host/MirrorKit/Tests/.../Fixtures/*` | observed |
@@ -278,5 +278,5 @@ The claim that *would* be a finding — how much a semantic scene walk costs on 
 PowerBook 1400c, which is what decides whether a scene ever wants a bracket — is
 **unmeasured**, by us and by upstream on metal. A finding is owed the moment
 that number exists, and it belongs beside the one M3 already owes
-(`metal-and-ux-review.md` §8): the two are the same experiment run against two
+(`metal-and-ux-review.md` §9): the two are the same experiment run against two
 subjects, and running them together would cost one session rather than two.

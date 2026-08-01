@@ -122,6 +122,22 @@ run_py() {
 echo "== now-guest-shared (both guests compile these) =="
 run_c now-guest-shared console_history_test.c \
       "-I $repo_root/now-guest-ppc/src/console"  src/console_history.c
+# The act plane's guard (P4), compiled by the 68K extension AND the
+# PowerPC application, so it belongs to neither's section either. It is
+# the ONE thing in the port a host can check that matters: the guard is
+# what separates "the request drove the element it named" from "the
+# patch rode the user's own click", and upstream measured that gap at
+# 18/20 against 0/20. The resident half it serves runs inside every
+# process that pumps events, which is the worst place in this project to
+# discover a comparison was backwards.
+run_c now-guest-shared now_act_guard_test.c \
+      "-DNOW_PEEK_TABLE_HOST"  src/now_act_guard.c
+# The six trap trampolines' result-slot ABI, read out of the assembly.
+# A source test, and normally the weakest kind - but a Pascal Boolean
+# answered as 0x0001 writes FALSE while the patch reports firing, and
+# every instrument on our side agrees with it. That failure cannot be
+# executed here and must not be left to a comment.
+run_py now-guest-shared act_patch_abi_source_test.py
 
 echo "== now-guest-ppc (PowerPC Carbon) =="
 run_c now-guest-ppc census_decode_test.c     ""  src/census/census_decode.c
@@ -133,8 +149,51 @@ run_c now-guest-ppc json_native_test.c       ""  src/core/json.c
 run_c now-guest-ppc peek_table_test.c \
       "-DNOW_PEEK_TABLE_HOST"
 run_c now-guest-ppc peek_validate_test.c     ""  src/peek/peek_validate.c
+# The act plane's ABI selftest, read. The plane has SERVED
+# kNowPeekActOpSelfTest since it landed and had no caller; this is the
+# reading half of the verb that calls it. It is here rather than beside
+# the other act tests because the failure it watches for is the one the
+# rest of the plane cannot see - a wrong result slot reports success
+# through every counter we own - so the reading must never round a
+# mismatch, a cleared `fired`, or an unreached request up to agreement.
+run_c now-guest-ppc mach_selftest_report_test.c \
+      "-DNOW_PEEK_TABLE_HOST" src/machine/mach_selftest_report.c
+# `activate` - fronting a process by IDENTITY rather than by name. The
+# parse is here because half a PSN, or one wider than 32 bits, names a
+# DIFFERENT live process rather than nothing; the verdict is here
+# because a cooperative switch that was accepted is not a switch that
+# happened, and only a re-read can tell them apart.
+run_c now-guest-ppc mach_activate_args_test.c ""  \
+      src/machine/mach_activate_args.c src/core/json.c
+# The content plane (P3) - the extension's QuickDraw hooks. Its SOURCE
+# lives under ext/src, not under a guest, because it is resident 68K code;
+# the decisions it makes before it touches anything are split into a
+# Toolbox-free file so this host cc can execute them. That split is the
+# only reason draw-time resident code has any automated gate at all, and
+# the arm verdict in particular is the plane's whole safety story.
+run_c now-guest-ppc content_plane_test.c \
+      "-DNOW_PEEK_TABLE_HOST -I $repo_root/ext/src" \
+      ../ext/src/now_content_logic.c
 run_c now-guest-ppc peek_oracle_test.c \
       "-DNOW_PEEK_TABLE_HOST" src/peek/peek_oracle.c src/peek/peek_validate.c
+# The content plane's READER (src/content/) - the half NOW owns. The ring
+# it walks is written by resident draw-time code in another process, so
+# the fixtures here are built by linking the REAL writer
+# (ext/src/now_content_logic.c) and calling it; the malformed rings are
+# poked in by hand, because the writer cannot produce them and the reader
+# must survive them anyway. Nothing in this plane has run on a Macintosh
+# on either side of the contract, which is precisely why the decode is
+# Toolbox-free.
+run_c now-guest-ppc qdtrace_read_test.c \
+      "-DNOW_PEEK_TABLE_HOST -I $repo_root/ext/src" \
+      src/content/qdtrace_read.c ../ext/src/now_content_logic.c
+run_c now-guest-ppc qdtrace_json_test.c \
+      "-DNOW_PEEK_TABLE_HOST -I $repo_root/ext/src" \
+      src/content/qdtrace_json.c src/content/qdtrace_read.c \
+      src/core/json.c ../ext/src/now_content_logic.c
+# The arm protocol is an ORDER, and an order is invisible to a test that
+# inspects the block afterwards. Gated as source text for that reason.
+run_py now-guest-ppc qdtrace_arm_order_source_test.py
 # The scene envelope's Toolbox-free halves. Assembly is where the anchor
 # verdicts become claims about the machine, and the encoder is where an
 # unproduced plane is an ABSENT key rather than an empty one - both are
@@ -142,7 +201,79 @@ run_c now-guest-ppc peek_oracle_test.c \
 run_c now-guest-ppc scene_build_test.c       ""  src/scene/scene_build.c
 run_c now-guest-ppc scene_json_test.c        ""  src/scene/scene_build.c \
       src/scene/scene_json.c src/core/json.c
+# The bridge between the ported walk and the scene's rules - the layer
+# the roadmap called "the ported walk has no caller". It is Toolbox-free
+# on purpose (it takes a bound memory seam as an argument), so the
+# decisions that turn a parser result into a CLAIM are reachable here,
+# against the same synthetic arena the axwalk tests use.
+run_c now-guest-ppc scene_walk_test.c        ""  src/scene/scene_walk.c \
+      src/scene/scene_build.c src/axwalk/axwalk.c src/axwalk/axmenu.c \
+      src/axwalk/axtext.c src/peek/peek_validate.c src/axwalk/axresolve.c \
+      src/observe/obsmint.c src/observe/obsref.c src/observe/obsresolve.c
+# The ported foreign-memory walk (src/axwalk/, from timbottu/mirror). The
+# first automated coverage this archaeology has ever had: upstream proved
+# the offsets on a real machine and had no host test, so these pin the
+# numbers and exercise the boundary the walk refuses to cross.
+run_c now-guest-ppc axwalk_test.c            ""  src/axwalk/axwalk.c \
+      src/peek/peek_validate.c
+# The Menu Manager layout in particular: its header size and entry stride
+# are in NO header this toolchain ships, so before this test the only
+# thing that could catch a wrong one was a Macintosh.
+run_c now-guest-ppc axmenu_test.c            ""  src/axwalk/axmenu.c \
+      src/axwalk/axwalk.c src/peek/peek_validate.c
+run_c now-guest-ppc axtext_test.c            ""  src/axwalk/axtext.c \
+      src/axwalk/axwalk.c src/peek/peek_validate.c
+# The resolver's policy - occurrences, cycles, bounds, staleness - and
+# the lifetime binding. Both are pure, and both cover cases a real
+# machine cannot be asked to produce on demand.
+run_c now-guest-ppc axresolve_test.c         ""  src/axwalk/axresolve.c \
+      src/axwalk/axwalk.c src/peek/peek_validate.c
+run_c now-guest-ppc axbinding_test.c         ""  src/axwalk/axbinding.c
+# The reference layer every act verb addresses. Mirror measured that an
+# act surface bounded by time or use count is not bounded (18/20
+# hijacked) and one bounded by NAMING its target is (0/20), so what these
+# two pin is mostly negative: that a token cannot be derived from
+# anything observable, that an unminted one matches nothing, and that
+# each way a reference can stop being true is refused DISTINCTLY rather
+# than repaired. None of those cases can be produced on demand on a real
+# machine - you cannot ask one to recycle a PSN at a chosen moment.
+run_c now-guest-ppc obsref_test.c           ""  src/observe/obsref.c \
+      src/axwalk/axresolve.c src/axwalk/axwalk.c src/peek/peek_validate.c
+run_c now-guest-ppc obsresolve_test.c       ""  src/observe/obsresolve.c \
+      src/observe/obsref.c src/axwalk/axresolve.c src/axwalk/axwalk.c \
+      src/peek/peek_validate.c
+# The property those two CANNOT see: that one registry is bound to all five
+# wire surfaces. observe.c touches Carbon on every line and has no host
+# test, so pointing its resolver at a second table - the exact shape of the
+# two-minter defect this layer was unified to remove - compiles clean and
+# leaves every test above green. Measured, not assumed. This is the gate
+# that fails instead.
+run_py now-guest-ppc one_minter_source_test.py
+# The seam the SCENE walk mints through. It is the one test in the tree
+# that mints a reference and then RESOLVES it, which is the only way to
+# tell an address from a decoration: a `ref` that is well formed and
+# resolves to nothing renders a button whose every act is refused, which
+# is the state the scene was already in. The duplicate-title case is the
+# one with no symptom on either side - one button acting for another.
+run_c now-guest-ppc obsmint_test.c          ""  src/observe/obsmint.c \
+      src/observe/obsref.c src/observe/obsresolve.c src/axwalk/axresolve.c \
+      src/axwalk/axwalk.c src/peek/peek_validate.c
+# The act plane's application half. There used to be two deciding parts
+# here; act_ref.c was the second minter of the same token shape the
+# reference layer above mints, and it is gone - what it pinned (a
+# reference cannot be forged, an evicted one resolves to nothing, an
+# element that MOVED is refused rather than resolved to the neighbour
+# answering to the same title) is pinned by obsref_test and
+# obsresolve_test, against the one registry that is left. act_args is
+# the same rule in miniature: an action takes exactly its own geometry
+# keys.
+run_c now-guest-ppc act_args_test.c          ""  src/act/act_args.c
 run_c now-guest-ppc share_path_test.c        ""
+# The Files pane's pull presentation: when Stop is armed, and the line a
+# person reads while a file comes down. The percentage overflows a 32-bit
+# long at 21.5 MB, which would otherwise be found by watching a download
+# go negative two thirds of the way through.
+run_c now-guest-ppc files_pull_test.c        ""  src/files/files_pull.c
 run_c now-guest-ppc proc_quit_args_test.c    ""  src/processes/proc_quit_args.c
 run_c now-guest-ppc processes_layout_test.c  ""  src/processes/processes_layout.c
 run_c now-guest-ppc software_layout_test.c   ""  src/software/software_layout.c
@@ -150,7 +281,47 @@ run_c now-guest-ppc sw_vers_parse_test.c     ""  src/software/sw_vers_parse.c
 run_c now-guest-ppc workshop_layout_test.c   ""  src/workshop/workshop_layout.c
 run_c now-guest-ppc cmd_help_test.c         ""  src/commands/cmd_help.c
 run_c now-guest-ppc cmd_line_test.c         ""  src/commands/cmd_line.c src/core/json.c
+# The gestalt reply's serializer, driven at caps the real machine never
+# reaches. See the test's header: the bug it pins could not have been found
+# on hardware, because no machine answers enough selectors to overflow.
+run_c now-guest-ppc gestalt_json_test.c     ""  src/commands/gestalt_json.c
+# The input plane's decisions (mouseloc / script / aesend). Two of the
+# hazards it guards have no error path once crossed: an `entire contents`
+# Finder search wedged a real machine for twelve minutes, and a core Apple
+# Event addressed at our own serial answers the caller with a dropped
+# socket. Neither can be reported after the fact, so the refusal is the
+# only chance and it gets watched failing here.
+run_c now-guest-ppc input_args_test.c       ""  src/input/input_args.c
+# `key`'s ordering, which the C test above cannot see: PostEvent is Toolbox
+# and does not exist on a host cc, so nothing there can observe whether the
+# handler stopped at a refusal or posted first and explained afterwards. A
+# key that posted first would type a command modifier's bare character and
+# then refuse it, which is the upstream defect this verb exists not to
+# repeat.
+run_py now-guest-ppc key_refusal_source_test.py
 run_py now-guest-ppc ot_connect_source_test.py
+# The other half of the Stop button, and the link teardown it shares a file
+# with. wire.c does not compile on the host (g_get is private to it, and
+# every path through it is Toolbox-bound), so what a host can check is what
+# the source says: the cancel frame's shape, both halves in order, and one
+# drop list rather than two that drift.
+run_py now-guest-ppc get_cancel_source_test.py
+
+# The probe harnesses (scripts/probes/, ported from timbottu/mirror/tests).
+# Those harnesses drive a LIVE Macintosh and none of them can run here - but
+# the arithmetic that turns trials into a number is pure, and it is the one
+# defect that would poison every number they produce. tally.py holds it alone
+# for exactly that reason. See the test's header for the mutations it has been
+# watched to fail under.
+echo "== scripts/probes (host-side, machineless half) =="
+run_py scripts/probes tally_test.py
+# The scene read four probe cases stand on. `observe` reports no menu bar and
+# deliberately will not - the bar is a TRANSFER, walked by scene_walk.c over
+# scene.request - so the harness reads a scene. Two halves, two tests: the
+# pure one drives reassembly, the IR gate's ORDER and the absent/empty split;
+# the wire one drives what only a socket can get wrong, over a socketpair.
+run_py scripts/probes scene_test.py
+run_py scripts/probes scenewire_test.py
 
 echo "== now-guest-68k (68K, System 7.1) =="
 run_c now-guest-68k connfields_test.c  "-std=c99 -pedantic"  src/connection/connfields.c
@@ -214,7 +385,7 @@ run_c now-guest-68k test_swlist.c       "" src/software/n68_swlist.c \
 echo "== manifest =="
 unlisted=""
 for f in "$repo_root"/now-guest-ppc/tests/* "$repo_root"/now-guest-68k/tests/* \
-         "$repo_root"/now-guest-shared/tests/*; do
+         "$repo_root"/now-guest-shared/tests/* "$repo_root"/scripts/probes/tests/*; do
     case "$f" in *.c|*.py) ;; *) continue ;; esac
     base=$(basename "$f")
     grep -q -- "$base" "$0" || unlisted="$unlisted $base"

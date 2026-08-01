@@ -22,6 +22,7 @@
 #include "prefs.h"
 #include "proc_actions.h"
 #include "product_identity.h"
+#include "scene_collect.h"
 #include "software.h"
 
 enum {
@@ -104,6 +105,7 @@ static void put_drop(void);
 static void stream_drop(void);
 static void shot_drop(void);
 static void note_shot(const char *line);
+static void get_cleanup(Boolean keep_file);
 
 /* Only the connect operation runs asynchronously: on the physical
    PowerBook a synchronous OTConnect to an unreachable address blocks
@@ -254,17 +256,30 @@ static void close_endpoint(void)
     g.bulk_remaining = 0;
 }
 
-/* Move to backoff after a failure; status keeps the reason already set. */
-static void enter_backoff(void)
+/* Everything in flight, dropped. ONE list, because there were two and
+   they had already drifted: enter_backoff() dropped five things and
+   conn_disconnect() dropped none, so disconnecting mid-pull left
+   g_get.receiving true over an open temp fork. A leaving link ends every
+   transfer for the same reason whichever way it leaves, so the reason is
+   written once. Every call here is idle-safe and touches no wire — none
+   of them can be told to a machine that is going away. */
+static void link_drop_transfers(void)
 {
-    now_log(kLogWarn, "wire", "disconnected from %s:%u: %.60s",
-            g.host, g.port, g.last_fail);
     xfer_cleanup();                   /* a dropped link cancels any transfer */
     offer_cleanup();
     stream_drop();                    /* no stopped message on a dead wire */
     shot_drop();                      /* no deferred capture across a drop */
     put_drop();                       /* no half-written file left behind */
+    get_cleanup(false);               /* nor half a file coming the other way */
     ctlq_clear();
+}
+
+/* Move to backoff after a failure; status keeps the reason already set. */
+static void enter_backoff(void)
+{
+    now_log(kLogWarn, "wire", "disconnected from %s:%u: %.60s",
+            g.host, g.port, g.last_fail);
+    link_drop_transfers();
     close_endpoint();
     if (!g.want_connection) {
         g.phase = kConnIdle;
@@ -342,6 +357,19 @@ static long g_rcv_peak = -3;
    means the loop is healthy and the bytes are simply not arriving. */
 static long g_service_passes = 0;
 
+/* What this connection has actually TOLD the host about agent access, as
+   opposed to what the tier currently is. They differ exactly when a send
+   did not happen — no link, or a full control queue — and the page's job
+   is to show that difference rather than assume it away.
+
+   It lives here because this is the only code that knows: the page used to
+   infer "hello went out carrying whatever the tier is now" from seeing the
+   link come up, which was right in every case anyone tried and still an
+   inference about another file's behaviour. Cleared when a connection
+   starts, because it is a fact about one link. */
+static Boolean g_told_known;
+static AgentAccessTier g_told;
+
 /* The connect completed (either path); the rest of the protocol is
    written synchronously, so the endpoint goes back to that mode with
    the notifier gone before the first hello leaves. */
@@ -368,6 +396,8 @@ static void start_connect(void)
     g.rx_len = 0;
     g.bulk_remaining = 0;
     g.pings_sent = 0;
+    /* A fact about one link, and this is a different one. */
+    g_told_known = false;
 
     if (!parse_ipv4(g.host, &g.address)) {
         fail("Enter a numeric address like 10.0.2.2");
@@ -503,7 +533,53 @@ static void send_hello(void)
              now_agent_access(), esc, kNowDefaultChunk);
     if (!send_control(json)) {
         fail("Sending hello failed");
+        return;
     }
+    /* hello carried the tier, so this link has now been told it. Recorded
+       after the send rather than before: the page's whole value is
+       distinguishing what was said from what is merely true here. */
+    g_told_known = true;
+    g_told = now_agent_access_tier();
+}
+
+/* The same answer as hello's `agent`, said again because it changed.
+
+   hello states this once per connection, so before this existed a tier
+   changed mid-session did not reach the host until the link was rebuilt -
+   and the host went on permitting what the person had just withdrawn.
+   That is the one place in this product where being out of date has a
+   safety edge, which is why this is a message and not a note on the page.
+
+   Silent when nothing is connected, and that is the whole error handling:
+   there is no host to tell, the tier is already in prefs, and the next
+   hello carries it. Same for a send that does not fit the queue - the
+   caller is a person clicking a radio button, and a modal complaint about
+   a control frame would be noise about something the next connection
+   fixes. It returns nothing for that reason.
+
+   Not escaped: mcp_tier_token returns one of three contract tokens. */
+void now_wire_announce_agent_access(void)
+{
+    char json[64];
+
+    if (g.phase != kConnConnected) {
+        return;
+    }
+    snprintf(json, sizeof json,
+             "{\"type\":\"agent.access\",\"agent\":\"%s\"}",
+             now_agent_access());
+    if (send_control(json)) {
+        g_told_known = true;
+        g_told = now_agent_access_tier();
+    }
+}
+
+Boolean now_wire_agent_access_told(AgentAccessTier *out)
+{
+    if (g_told_known && out != NULL) {
+        *out = g_told;
+    }
+    return g_told_known;
 }
 
 /* --- receive ------------------------------------------------------------ */
@@ -773,8 +849,25 @@ static struct {
 
 typedef enum {
     kXferCapture = 0,                 /* ends with capture.end */
-    kXferFile                         /* ends with file.end */
+    kXferFile,                        /* ends with file.end */
+    kXferScene                        /* ends with scene.end */
 } XferKind;
+
+/* The terminal message's type for a transfer kind. A scene rides the
+   SAME lane and the same incremental sender as a capture - it differs
+   only in what the bytes mean and which end message closes them - so
+   the kind is the one thing the transport needs to know about it. */
+static const char *xfer_end_type(XferKind kind)
+{
+    switch (kind) {
+    case kXferFile:
+        return "file";
+    case kXferScene:
+        return "scene";
+    default:
+        return "capture";
+    }
+}
 
 static struct {
     Boolean active;
@@ -892,7 +985,7 @@ static void xfer_finish(Boolean ok)
         snprintf(json, sizeof json,
                  "{\"type\":\"%s.end\",\"id\":%ld,\"transfer\":%u,"
                  "\"ok\":%s,\"sendMs\":%ld}",
-                 g_xfer.kind == kXferFile ? "file" : "capture",
+                 xfer_end_type(g_xfer.kind),
                  g_xfer.id, g_xfer.xfer, ok ? "true" : "false",
                  (long)((TickCount() - g_xfer.started) * 1000 / 60));
     }
@@ -1369,6 +1462,134 @@ static void capture_fail(long id)
 static void shot_drop(void)
 {
     g_shot.active = false;
+}
+
+/* --- the scene plane ---------------------------------------------------
+   A scene is Mirror's IR v1 - semantic structure, not pixels - and it is
+   a TRANSFER for a measured reason: this producer encodes 9214 bytes for
+   24 processes and 32 windows against a 4096-byte control cap, before
+   menus or controls exist at all. So it borrows capture's pair
+   (scene.begin, bulk frames, scene.end) rather than inventing anything,
+   and deliberately does NOT borrow the stream bracket: a bracket exists
+   to amortise a half-second capture, and a semantic walk has no such
+   cost to amortise (docs/streaming-a-scene.md).
+
+   THE FAILURE IS WHOLE. A walk that would not fit its buffer, or a scene
+   that could not be allocated, is scene.end ok:false with a reason and
+   NO bulk. The encoder already fails closed for the same reason: half a
+   JSON document is the worst form of a partial answer because it does
+   not even parse, and "a partial or failed walk must never be delivered
+   as a complete scene" is the rule this whole path exists to keep. */
+
+static long g_scene_seq;
+
+/* The one failure shape a scene owes the host, so it never waits on a
+   transfer that will not come. `reason` is prose for a human; nothing
+   branches on it. */
+static void scene_fail(long id, unsigned short xfer, const char *reason)
+{
+    char json[256];
+
+    snprintf(json, sizeof json,
+             "{\"type\":\"scene.end\",\"id\":%ld,\"transfer\":%u,"
+             "\"ok\":false,\"reason\":\"%s\"}", id, xfer, reason);
+    send_control(json);
+}
+
+/* Walks the machine, encodes IR v1, announces scene.begin and arms the
+   incremental sender. Returns immediately - the bytes go out from
+   service_transfer, exactly as a capture's do. */
+static void serve_scene(const char *request)
+{
+    NowPrefs prefs;
+    char json[512];
+    long id = now_json_find_int(request, "id", 0);
+    long stale_ms = now_json_find_int(request, "staleAfterMs", 0);
+    unsigned long stale_ticks;
+    unsigned short xfer;
+    long chunk;
+    short pace_ms;
+    Boolean pack;
+    NowScene *scene;
+    Handle doc;
+    long needed = 0;
+    unsigned long t_start = TickCount();
+    long walk_ms;
+
+    xfer = next_xfer();
+    if (g_stream.active) {
+        scene_fail(id, xfer, "a stream owns the transfer lane");
+        return;
+    }
+    if (g_xfer.active) {
+        scene_fail(id, xfer, "a transfer is already in flight");
+        return;
+    }
+    /* The scene is ~27 KB of struct - it was ~11 KB before the menubar,
+       controls, text and kind planes (scene.h sizes them). A classic Mac
+       stack is 24-32 KB and this is called from the event loop with the
+       whole wire machine above it, so it goes in the heap - the same
+       reason a capture blob does.
+
+       At that size the failure below is a real outcome, not a formality:
+       one contiguous 27 KB block out of a small application partition is
+       exactly what a fragmented heap cannot serve. It refuses by name
+       rather than walking a smaller machine. */
+    scene = (NowScene *)NewPtr((Size)sizeof(NowScene));
+    if (scene == NULL) {
+        scene_fail(id, xfer, "not enough memory to walk the machine");
+        return;
+    }
+    if (stale_ms < 0) {
+        stale_ms = 0;
+    }
+    stale_ticks = (unsigned long)((stale_ms * 60L) / 1000L);
+    if (stale_ms > 0 && stale_ticks == 0) {
+        stale_ticks = 1;              /* a window shorter than a tick is
+                                         still a window, not "disabled" */
+    }
+    now_scene_collect(scene, ++g_scene_seq, stale_ticks);
+
+    /* Size, then allocate, then encode. One walk, two answers: the
+       encoder counts always and writes only while it fits, so asking for
+       the size costs a pass and never a second walk. */
+    needed = now_scene_encoded_size(scene);
+    doc = NewHandle((Size)needed);
+    if (doc == NULL) {
+        DisposePtr((Ptr)scene);
+        scene_fail(id, xfer, "not enough memory to encode the scene");
+        return;
+    }
+    HLock(doc);
+    if (now_scene_encode(scene, *doc, needed, &needed) != kNowSceneEncodeOk) {
+        HUnlock(doc);
+        DisposeHandle(doc);
+        DisposePtr((Ptr)scene);
+        scene_fail(id, xfer, "the scene did not fit its buffer");
+        return;
+    }
+    HUnlock(doc);
+    walk_ms = (long)((TickCount() - t_start) * 1000UL / 60UL);
+
+    now_prefs_load(&prefs);
+    tuning_from_json(request, &prefs, &chunk, &pace_ms, &pack);
+
+    /* The terminator is NOT sent: `bytes` is the document, and a JSON
+       parser wants a length rather than a C string. needed counts it. */
+    snprintf(json, sizeof json,
+             "{\"type\":\"scene.begin\",\"id\":%ld,\"transfer\":%u,"
+             "\"bytes\":%ld,\"irVersion\":%d,\"seq\":%ld,"
+             "\"capturedAt\":%.1f,\"source\":\"%s\",\"walkMs\":%ld}",
+             id, xfer, needed - 1, NOW_SCENE_IR_VERSION, scene->seq,
+             scene->captured_at, scene->source, walk_ms);
+    DisposePtr((Ptr)scene);
+    if (!send_control(json)
+        || !arm_blob_transfer(id, xfer, doc, needed - 1, chunk, pace_ms,
+                              kXferScene)) {
+        DisposeHandle(doc);
+        scene_fail(id, xfer, "could not start the transfer");
+        return;
+    }
 }
 
 /* "Screenshot App": front the target, then arm the deferred capture. No
@@ -1995,9 +2216,42 @@ static void get_cleanup(Boolean keep_file)
     g_get.receiving = false;
 }
 
-Boolean now_wire_get_active(long *received, long *expected)
+/* Stop the pull in flight, from this side. Two halves, in this order:
+   tell the other Mac to stop pushing, then free this side. Local-only
+   would leave the host filling a lane one transfer wide with a file
+   nobody is writing; wire-only would leave an open temp fork here.
+
+   send_control is best effort on purpose - a stop pressed on a dead
+   wire still has to free this side, and get_cleanup(false) is the same
+   teardown the timeout, the refusal and a failed file.end already use.
+   A pull is never resumable (get_begin passes resume_token NULL), so
+   the temp is deleted and nothing appears under the real name. */
+int now_wire_get_cancel(char *err, long cap)
+{
+    char json[64];
+
+    if (!g_get.pending && !g_get.receiving) {
+        snprintf(err, (size_t)cap, "Nothing is being transferred");
+        return -1;
+    }
+    /* `transfer`, not `id`: contract/asyncapi.yaml FileCancel requires
+       {type, transfer} with additionalProperties false. */
+    snprintf(json, sizeof json,
+             "{\"type\":\"file.cancel\",\"transfer\":%ld}", g_get.id);
+    (void)send_control(json);
+    now_log(kLogInfo, "get", "#%ld stopped at %ld bytes by the person",
+            g_get.id, g_get.receiving ? g_get.rx.received : 0);
+    get_cleanup(false);
+    return 0;
+}
+
+Boolean now_wire_get_active(long *received, long *expected,
+                            WireGetPhase *phase)
 {
     if (!g_get.pending && !g_get.receiving) {
+        if (phase != NULL) {
+            *phase = kWireGetNone;
+        }
         return false;
     }
     if (received != NULL) {
@@ -2005,6 +2259,11 @@ Boolean now_wire_get_active(long *received, long *expected)
     }
     if (expected != NULL) {
         *expected = g_get.expected;
+    }
+    if (phase != NULL) {
+        /* The distinction the counts could not carry: pending is a
+           question with no answer, receiving is an open file. */
+        *phase = g_get.receiving ? kWireGetReceiving : kWireGetAsked;
     }
     return true;
 }
@@ -4452,6 +4711,10 @@ static int handle_frame(const char *reply)
         xfer_abort();
         return 1;
     }
+    if (now_json_type_is(reply, "scene.request")) {
+        serve_scene(reply);
+        return 1;
+    }
     if (now_json_type_is(reply, "file.list")) {
         serve_file_list(reply);
         return 1;
@@ -4877,7 +5140,9 @@ void conn_disconnect(void)
         }
         gNowOT.sndOrderlyDisconnect(g.ep);
     }
-    ctlq_clear();
+    /* After the bye is flushed, not before: the queue drain above is the
+       last thing this link is asked to carry. */
+    link_drop_transfers();
     close_endpoint();
     g.want_connection = false;
     g.phase = kConnIdle;

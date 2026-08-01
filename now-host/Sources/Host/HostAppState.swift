@@ -84,6 +84,30 @@ final class HostAppState: ObservableObject {
         addressing: agentIntegration,
         select: { [weak self] key in self?.selectGuest(key) ?? false })
     private(set) lazy var console = ConsoleModel(listener: listener)
+    /// The Mirror page. Guest-scoped like the rest — it is a claim about one
+    /// machine, and everything it rests in is about WHICH Mac is connected,
+    /// so it would be wrong the moment the picker moved.
+    ///
+    /// It takes the listener now: the page can ask the connected Mac for a
+    /// scene, and the ask goes down the same wire and the same one transfer
+    /// lane every other page shares.
+    ///
+    /// It also takes the act lane, which is what makes the drawing
+    /// clickable: `MirrorActionDriver` is the seam between a gesture on a
+    /// rendered scene and the acts NOW's contract declares. The page still
+    /// refuses everything the vocabulary calls unsendable — the driver is a
+    /// route, not a permission.
+    ///
+    /// The driver takes the window resolver too, and it is the same listener
+    /// on purpose: a window act is addressed by a reference only an
+    /// observation of that Mac can mint, so the ask goes down the control
+    /// plane beside the act itself — never the transfer lane, which the
+    /// stream drawing the scene is already holding.
+    private(set) lazy var mirror = MirrorModuleModel(
+        listener: listener,
+        actions: MirrorActionDriver(
+            adapter: agentIntegration,
+            windows: MirrorWindowResolver(listener: listener)))
     private(set) lazy var census = CensusModuleModel(listener: listener)
     private(set) lazy var diagnostics = DiagnosticsModel(listener: listener)
     private(set) lazy var software = SoftwareModel(listener: listener)
@@ -112,7 +136,8 @@ final class HostAppState: ObservableObject {
     /// switch — the two used to be separate assignments, and a module added
     /// to one and not the other is precisely the defect this list closes.
     private var guestScopedModels: [any GuestScopedModel] {
-        [screenshots, files, census, diagnostics, processes, software]
+        [screenshots, files, census, diagnostics, processes, software,
+         mirror]
     }
 
     /// Points the whole window at another connected Mac.

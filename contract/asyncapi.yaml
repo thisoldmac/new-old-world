@@ -212,6 +212,9 @@ channels:
       captureRefuse: { $ref: "#/components/messages/captureRefuse" }
       captureBegin: { $ref: "#/components/messages/captureBegin" }
       captureEnd: { $ref: "#/components/messages/captureEnd" }
+      sceneRequest: { $ref: "#/components/messages/sceneRequest" }
+      sceneBegin: { $ref: "#/components/messages/sceneBegin" }
+      sceneEnd: { $ref: "#/components/messages/sceneEnd" }
       processList: { $ref: "#/components/messages/processList" }
       processListing: { $ref: "#/components/messages/processListing" }
       processFront: { $ref: "#/components/messages/processFront" }
@@ -220,15 +223,17 @@ channels:
       processResult: { $ref: "#/components/messages/processResult" }
       softwareList: { $ref: "#/components/messages/softwareList" }
       softwareListing: { $ref: "#/components/messages/softwareListing" }
+      agentAccess: { $ref: "#/components/messages/agentAccess" }
   bulk:
     address: "1"
     description: >
       Raw payload bytes on channel 1, correlated by the frame header's
-      transfer id. Two payload kinds ride it: capture pixel data (rows
+      transfer id. Three payload kinds ride it: capture pixel data (rows
       top-to-bottom, rowBytes apart; depth 8 uses the guest's palette;
-      16 is RGB555 big-endian; 32 is xRGB8888 big-endian) and file
-      content (file.begin describes the container). The control message
-      that began the transfer says which.
+      16 is RGB555 big-endian; 32 is xRGB8888 big-endian), file content
+      (file.begin describes the container), and a scene document
+      (scene.begin: UTF-8 JSON, the Mirror IR whose major is irVersion).
+      The control message that began the transfer says which.
 
 operations:
   hostExecutesLine:
@@ -280,6 +285,56 @@ operations:
       capture), and sends capture.begin only after the host answers
       capture.accept. Either way the frames and capture.end are identical;
       one transfer at a time still holds across both origins.
+  hostRequestsScene:
+    action: receive
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/sceneRequest"
+    description: >
+      Host asks for one scene. Bounded and one-shot: the answer is a
+      transfer (scene.begin, bulk frames, scene.end), never a control
+      message, because a scene does not fit 4096 bytes. It takes the one
+      transfer lane for the tens of milliseconds the document takes, and
+      is refused with scene.end ok:false while a stream or another
+      transfer holds it — the same one-at-a-time invariant capture obeys,
+      with no second ownership rule invented for scenes.
+      There is no scene bracket and no scene.cancel: a scene transfer is
+      short enough that abandoning it costs more than finishing it.
+  guestServesScene:
+    action: send
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/sceneBegin"
+      - $ref: "#/channels/control/messages/sceneEnd"
+    description: >
+      Guest announces and completes a scene transfer, correlated to the
+      request by id exactly as a capture is. scene.begin carries the IR
+      major so the host can refuse an unknown one before decoding; the
+      bulk bytes are the IR document; scene.end says whether all of them
+      arrived. A scene that will not fit its buffer, or a walk that
+      failed, is scene.end ok:false with a reason and NO bulk — a partial
+      walk is never delivered as a complete scene, and half a JSON
+      document is the worst form of that lie because it does not parse.
+      What the document omits is a claim in itself: an absent
+      windows[].controls says "this producer does not report controls",
+      not "this window has none", and a consumer must not read absence as
+      emptiness.
+      THE REFERENCE PLANE, added 2026-08-01 and the reason a rendered
+      scene can be acted on at all. windows[].controls[].ref is a
+      declared IR v1 field this producer had been leaving out;
+      windows[].ref is an ADDITION to IR v1's window field set, taken
+      under the accretive rule — additive fields do not move irVersion,
+      and a window is the other thing an act can name, so a scene that
+      named only controls would leave half the act plane unaddressable.
+      Both carry a token minted by the guest's observation registry, and
+      both are refused by the act plane the moment the element behind
+      them moves or the process behind them is replaced (see actWindow /
+      actElement): a reference is re-proved on use, never repaired.
+      A ref is ABSENT for an element the guest could not name — past the
+      resolver's reach, or the registry had no slot left for this scene.
+      Absent means NOT MINTED. The empty string is never sent and must
+      not be treated as one: it is the consumer's own vocabulary for "the
+      producer has no reference layer", which is a different claim.
   hostControlsStream:
     action: receive
     channel: { $ref: "#/channels/control" }
@@ -703,6 +758,15 @@ components:
     captureEnd:
       name: capture.end
       payload: { $ref: "#/components/schemas/CaptureEnd" }
+    sceneRequest:
+      name: scene.request
+      payload: { $ref: "#/components/schemas/SceneRequest" }
+    sceneBegin:
+      name: scene.begin
+      payload: { $ref: "#/components/schemas/SceneBegin" }
+    sceneEnd:
+      name: scene.end
+      payload: { $ref: "#/components/schemas/SceneEnd" }
     processList:
       name: process.list
       payload: { $ref: "#/components/schemas/ProcessList" }
@@ -727,6 +791,9 @@ components:
     softwareListing:
       name: software.listing
       payload: { $ref: "#/components/schemas/SoftwareListing" }
+    agentAccess:
+      name: agent.access
+      payload: { $ref: "#/components/schemas/AgentAccess" }
 
   schemas:
     Hello:
@@ -782,6 +849,11 @@ components:
             A tier this receiver does not recognise is likewise NOT consent —
             it is a newer sender, and a receiver that cannot name the ceiling
             cannot claim to be under it.
+            This is the answer AT CONNECT TIME, and it is not the last word:
+            `agent.access` revises it mid-session, and a receiver that holds
+            this value must hold the revision in the same place. A receiver
+            that treats hello as the permanent answer enforces a tier the
+            machine has already withdrawn.
         name:
           type: string
           description: Human-facing machine name, e.g. "Power Mac G3".
@@ -795,6 +867,57 @@ components:
           description: >
             Sender's preferred bulk chunk size in bytes; the connection uses
             the smaller of the two sides' preferences. Default 8192.
+    AgentAccess:
+      type: object
+      required: [type, agent]
+      additionalProperties: false
+      description: >
+        GUEST TO HOST ONLY, unsolicited: the sending machine has changed its
+        mind about whether a companion agent may drive it, and says so on the
+        link already up. `hello.agent` is the same fact at connect time; this
+        is that fact revised, and the two carry identical tokens because they
+        are one answer, not two.
+
+        WHY IT EXISTS. `hello` is sent once per connection and nothing
+        revised it, so a person who set Read Only mid-session kept being
+        driven at the tier they had just withdrawn until the link was
+        rebuilt. That is the one place in this product where a stale belief
+        has a safety edge — the person believes they have restricted the
+        machine, and the receiver goes on permitting what they restricted.
+
+        THE GUEST INITIATES, always. There is deliberately no host-to-guest
+        form and no request that sets this: a tier the far end could raise is
+        not consent. The receiver may read this value and must never write
+        it.
+
+        NOT ACKNOWLEDGED, and carries no `id`. The sender learns that it
+        said this, never that the receiver acted on it — the same standing
+        `hello.agent` has, and the guest's page is worded to claim only what
+        it said. An ack would be a new host-to-guest message and is not
+        needed for the receiver to enforce, which it does on receipt.
+
+        ADDITIVE — no revision bump. Both shipping halves ignore a control
+        message they cannot decode once the handshake is past (the host logs
+        it and keeps the wire; the guest's reader falls through), so an older
+        receiver misses the revision and goes on enforcing the connect-time
+        answer, which is exactly today's behaviour and no worse than it.
+
+        A receiver that never got a `hello.agent` (a sender predating that
+        field) and then gets one of these has been given an answer where it
+        had silence, and must use it: absence means "did not say", and this
+        message is the machine saying.
+      properties:
+        type: { const: agent.access }
+        agent:
+          enum: [disabled, read-only, full]
+          description: >
+            The machine's answer now, spelled exactly as `hello.agent` spells
+            it and meaning exactly the same thing — including that the values
+            are ORDERED and that a tier a receiver does not recognise is not
+            consent. REQUIRED here, unlike in hello: a message whose only
+            purpose is to state the answer has no reading in which the answer
+            is absent, and a receiver must ignore one that omits it rather
+            than inventing a tier.
     Refuse:
       type: object
       required: [type, contract, reason]
@@ -1871,6 +1994,102 @@ components:
           type: integer
           description: Guest-side time spent streaming the bulk chunks.
 
+    # THE SCENE FAMILY. A scene is Mirror's IR v1 — semantic structure, not
+    # pixels — and it is a TRANSFER, not a control message, because it does
+    # not fit a control frame: NOW's own producer encodes 1193 B for 4
+    # processes / 3 windows and 9214 B for 24 / 32, against a 4096-byte cap
+    # (wire_limits.h), before menus or controls exist at all.
+    # docs/streaming-a-scene.md argues the shape; the short form is that a
+    # scene gets the pair capture already has, and only the BOUNDED HALF of
+    # that pair is built here. There is deliberately no scene bracket: a
+    # picture bracket exists to amortise a 0.5-0.6 s capture, and a semantic
+    # walk has no such cost to amortise. If a metal measurement ever says
+    # otherwise, the bracket gains a subject at stream.start — it does not
+    # gain a second ownership model.
+    SceneRequest:
+      type: object
+      required: [type, id]
+      additionalProperties: false
+      properties:
+        type: { const: scene.request }
+        id: { type: integer }
+        chunkKb: { type: integer, minimum: 1, maximum: 32 }
+        paceMs: { type: integer, minimum: 0, maximum: 100 }
+        staleAfterMs:
+          type: integer
+          minimum: 0
+          description: >
+            How old an anchor sample may be and still be reported clean.
+            An older-but-otherwise-valid anchor is REPORTED stale
+            (apps[].error "now_anchor_stale"), never silently dropped and
+            never a refusal. 0 or absent disables the age gate.
+    SceneBegin:
+      type: object
+      required: [type, id, transfer, bytes, irVersion]
+      additionalProperties: false
+      properties:
+        type: { const: scene.begin }
+        id:
+          type: integer
+          description: The scene.request id this answers.
+        transfer: { type: integer, minimum: 1, maximum: 65535 }
+        bytes:
+          type: integer
+          minimum: 1
+          description: >
+            Total bulk bytes of UTF-8 JSON to expect — the encoded IR
+            document, terminator excluded.
+        irVersion:
+          type: integer
+          minimum: 1
+          description: >
+            The scene IR major version, the SAME number the document's own
+            `version` carries (mirror/docs/IR-V1.md, "one number, two
+            places"); the guest copies both from one constant. It is
+            repeated HERE so a consumer can refuse an unknown major before
+            it has spent a transfer decoding the body. That order — read
+            the version, refuse an unknown major, then decode — is the
+            consumer duty IR-V1.md states, and the envelope is what makes
+            it possible to obey.
+        seq:
+          type: integer
+          description: The producer's monotonic scene counter.
+        capturedAt:
+          type: number
+          description: >
+            Guest-clock Unix epoch seconds at the walk. Present so a
+            consumer can say "same scene, newer moment" without diffing.
+        source:
+          type: string
+          maxLength: 16
+          description: >
+            The plane the scene was walked from ("peek" for NOW). IR v1
+            promoted it precisely so a consumer can tell "no windows" from
+            "windows not visible from here".
+        walkMs:
+          type: integer
+          description: Guest-side time spent walking and encoding, for tuning.
+    SceneEnd:
+      type: object
+      required: [type, id, transfer, ok]
+      additionalProperties: false
+      properties:
+        type: { const: scene.end }
+        id: { type: integer }
+        transfer: { type: integer }
+        ok: { type: boolean }
+        reason:
+          type: string
+          description: >
+            Why a scene could not be served, on ok:false. The failure is
+            whole: a scene that would not fit its buffer, or a walk that
+            went wrong, ends the transfer rather than delivering a partial
+            document — a partial walk must never arrive as a complete
+            scene.
+        sendMs:
+          type: integer
+          description: Guest-side time spent streaming the bulk chunks.
+
   # The console command registry: the CLOSED set of commands a guest serves.
   # Every entry declares its args and output; the guest's dispatch table and
   # its own console are views of this list. The HOST console is not: it is a
@@ -1927,6 +2146,16 @@ components:
         description: >
           Grouped, ordered rows. Each group maps to an array of [label, value]
           string pairs, preserving order (unlike a plain object).
+
+          `notice` is not a group of facts about the machine: it is the
+          reply's account of itself, and today carries one row —
+          ["truncated", "<n> rows omitted - reply buffer full"] — when the
+          gather did not fit the responder's result buffer. It exists
+          because without it a truncated reply and a machine with fewer
+          facts to report are indistinguishable, and the difference matters:
+          one is a limit of the wire, the other is the answer. A reader that
+          treats every key as a group will show it as one, which is
+          harmless; a reader that cares should look for it by name.
         properties:
           snapshot: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
           cpu: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
@@ -1934,6 +2163,7 @@ components:
           os: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
           network: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
           hw: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+          notice: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
       x-rowArray:
         type: array
         items:
@@ -2402,6 +2632,964 @@ components:
         type: object
         properties:
           vers: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+
+    # The act plane: winact / textget / textset. Declared 2026-07-31,
+    # AHEAD OF ANY GUEST, which is legal by this file's own rule — adding a
+    # command is additive and a peer that does not serve one answers
+    # unknown-command cleanly. Declaring them is what lets the host publish
+    # the three capabilities that project them and have each report itself
+    # unavailable BY DERIVATION from the machine's own help table, rather
+    # than from a requirement nothing can resolve. The 68K guest is
+    # expected never to serve them; Mirror's act plane is PowerPC-only, and
+    # nothing on the host side asks which guest answered.
+    #
+    # WHAT MAKES THESE ONE PLANE rather than three unrelated verbs: all
+    # three address ONE element by an opaque reference the RESPONDER
+    # minted, all three revalidate that reference against a live element
+    # before acting, and none of them can express "whatever is frontmost".
+    # That refusal is a measurement, not taste — upstream's request that
+    # merely disarmed after one use rode the user's own press 18 times in
+    # 20; the variant that had to name its exact target rode 0 in 20.
+    #
+    # AND WHAT THEY DO NOT CLAIM: an ok reply means the event was handed to
+    # the addressed element's own application, never that the window moved
+    # or the text changed. Whoever wants to know that reads the element
+    # back. There is deliberately no "performed" field for a responder to
+    # set true.
+    winact:
+      description: >
+        Move, resize, zoom or close ONE window, by answering the owning
+        application's own FindWindow. No mouse is simulated and no
+        emulator is involved: the application is handed the answer it
+        would have got had a person dragged the window, so it does what
+        it would have done, and applications that police their own
+        geometry keep policing it.
+
+        The window is named by an opaque reference this responder minted
+        for an element it observed, and revalidated here against a live
+        WindowPtr before anything is dispatched. A reference for a window
+        that has closed is refused; it is never resolved to a
+        neighbouring one.
+
+        move and resize carry their own geometry and the other two carry
+        none. zoom takes none because the standard state is the
+        application's to compute — a caller that supplied one would be
+        deciding what the window is for. close takes none and is
+        destructive: an application may lose unsaved work, or may put up
+        a save dialog nothing on this wire can answer.
+      args:
+        type: object
+        required: [window, action]
+        properties:
+          window:
+            type: string
+            description: >
+              The opaque reference, "now-window-" and a UUID. Not a
+              WindowPtr: a pointer into another process's heap is
+              forgeable and means nothing once the window dies.
+          action:
+            type: string
+            enum: [move, resize, zoom, close]
+          left:
+            type: integer
+            description: Content origin, for move. QuickDraw Rect range.
+          top:
+            type: integer
+          width:
+            type: integer
+            description: Content size, for resize. At least 1 point.
+          height:
+            type: integer
+      x-line: >
+        NOT TYPEABLE, and that is the point. A console line cannot carry
+        an opaque reference a human never saw, and a grammar that let one
+        name a window by title would be the target-free form this plane
+        refuses. Typed callers only.
+      output:
+        type: object
+        properties:
+          winact: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    textget:
+      description: >
+        Read the text of ONE addressed text element. The read half of the
+        act plane and the only third of it that changes nothing, which is
+        why it is its own command: a machine whose owner consented to
+        being read can serve this while refusing the two that drive it.
+
+        Nothing is clicked or selected to read a field. The answer is a
+        READING and is dated as one, and it says whether the element held
+        more than the reply could carry — a caller that cannot tell a
+        short field from a clipped one has been told nothing useful.
+      args:
+        type: object
+        required: [element]
+        properties:
+          element:
+            type: string
+            description: >
+              The opaque reference, "now-element-" and a UUID, minted by
+              the observation that saw the element and revalidated here.
+      x-line: >
+        NOT TYPEABLE. Same reason as winact: the argument is a reference
+        no human has.
+      output:
+        type: object
+        properties:
+          textget: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    textset:
+      description: >
+        Replace the whole contents of ONE addressed text element. A
+        replacement and not an edit: there is no offset and no append
+        form, because an offset into text the caller has not read is a
+        write it cannot predict.
+
+        An ok reply means the change was dispatched into the
+        application's own text path. It is not a claim that the element
+        now holds the new text — the application may refuse it, reformat
+        it, or be modal elsewhere. Read it back with textget to learn
+        that.
+      args:
+        type: object
+        required: [element, text]
+        properties:
+          element:
+            type: string
+            description: The opaque reference, as textget takes it.
+          text:
+            type: string
+            description: >
+              The element's whole new contents. The host caps what it
+              will send far inside the 16 KiB control frame; a responder
+              that holds less says so in its own refusal rather than
+              writing a truncated half.
+      x-line: >
+        NOT TYPEABLE. Same reason as winact and textget.
+      output:
+        type: object
+        properties:
+          textset: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+
+    # The other half of the act plane, declared 2026-07-31 WITH a guest
+    # that serves them. These three complete the mechanism the three
+    # above depend on and cannot do without:
+    #
+    #   elements is the observation that MINTS the references the other
+    #   five take. Without it the plane has no legal argument to send,
+    #   and the only remaining way to address anything would be "the
+    #   frontmost one" - the target-free form this plane refuses on the
+    #   strength of a measurement.
+    #
+    #   ctlact and menuact are the same mechanism aimed at the other two
+    #   things a person clicks. They are here rather than deferred
+    #   because both are complete on the guest; the host rows that
+    #   project them are owed, and a command a host does not yet project
+    #   is an ordinary state for this file - the reverse of the three
+    #   above, which were declared ahead of any guest.
+    elements:
+      description: >
+        Name this Mac's on-screen elements, so that they can be acted
+        on. Answers with an opaque, short-lived reference for each
+        window, control and text field the walk can read, plus enough
+        of the element's own title to tell them apart.
+
+        Nothing else can produce these references, and that is the
+        point rather than an inconvenience: an act addresses an element
+        this Mac observed and revalidated, never a pointer a caller
+        supplied and never "whatever is frontmost".
+
+        THE SAME WALK AS `observe`, aimed by a process instead of by a
+        scope, and answering in the same shape — one minter, one walk,
+        one emitter, three doors. Two verbs that both produced
+        references would be two systems making one token shape, and a
+        caller holding one could not tell which it held.
+
+        Defaults to the frontmost application. A reference ages out of
+        a bounded table; one that has been recycled reads the same as
+        one whose window closed, and both are true.
+      args:
+        type: object
+        properties:
+          serialHi:
+            type: integer
+            description: The process to observe. Omit for the frontmost.
+          serialLo:
+            type: integer
+      x-line: >
+        NOT TYPEABLE usefully. It takes no arguments a person has and
+        answers with references no person can read.
+      output:
+        type: object
+        properties:
+          elements: { $ref: "#/components/x-commands/observe/x-axTree" }
+    ctlact:
+      description: >
+        Act on ONE control, by answering the owning application's own
+        TrackControl with the part code named. The application then
+        runs its real mouse-down handler, and a control that policed
+        its own behaviour keeps policing it.
+
+        The request must name the control, and that requirement is a
+        measurement rather than a preference: upstream's variant that
+        merely disarmed after one use rode a real user's press 18 times
+        in 20, and the variant that had to name its exact target rode
+        it 0 in 20.
+
+        An ok reply means the event was dispatched. A control with a
+        live range also carries its re-read position, because for those
+        the machine itself can be quoted; a push button has no such
+        range and gets no such row.
+      args:
+        type: object
+        required: [element, part]
+        properties:
+          element:
+            type: string
+            description: >
+              The opaque reference, "now-element-" and a UUID, minted
+              by elements and revalidated by the responder.
+          part:
+            type: integer
+            description: >
+              A Control Manager part code. The button parts are 10 and
+              11; a scroll bar's are 20 up, 21 down, 22 page-up, 23
+              page-down; 129 is the indicator.
+      x-line: >
+        NOT TYPEABLE. Same reason as winact: the argument is a
+        reference no human has.
+      output:
+        type: object
+        properties:
+          ctlact: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    menuact:
+      description: >
+        Perform ONE menu command, by answering the owning
+        application's own MenuSelect. No menu is drawn, no tracking
+        loop runs, and nothing depends on mouse motion or timing - so
+        an item with no keyboard shortcut becomes reachable.
+
+        AND SO DOES AN ITEM THAT HAS ONE. This sentence used to say the
+        opposite — that a shortcut should go through `key`, which is
+        simpler and needs no patch — and that was upstream's advice on
+        upstream's guest. It does not hold here: a menu shortcut is a
+        Command keystroke, `key` on this Mac cannot carry a modifier at
+        all (CarbonLib has no PPostEvent, so the queue element's
+        modifiers are unreachable), and the Menu Manager matches on the
+        virtual key code rather than the character even when it can. This
+        verb is the route for BOTH kinds of menu item.
+
+        titleLeft is where the press will land, and it is this act's
+        identity check. A menu press carries no handle to name, so the
+        identity checked is the press itself: a press anywhere else
+        belongs to the person at the machine and is passed through
+        untouched.
+
+        An ok reply means the application's MenuSelect returned this
+        item. What its command handler then did is the caller's to
+        verify against this Mac's own state.
+      args:
+        type: object
+        required: [menu, item, titleLeft]
+        properties:
+          menu:
+            type: integer
+            description: The menu's id, as the scene reports it.
+          item:
+            type: integer
+            description: Its 1-based position in that menu.
+          titleLeft:
+            type: integer
+            description: >
+              The x of that menu's title in the menu bar. Required,
+              not derived: without it there is no way to tell this
+              act's press from the user's.
+          serialHi:
+            type: integer
+            description: The application. Omit for the frontmost.
+          serialLo:
+            type: integer
+      x-line: >
+        NOT TYPEABLE. The identity check is a coordinate the scene
+        supplies, not one a person types.
+      output:
+        type: object
+        properties:
+          menuact: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+
+    # THE MACHINE'S OWN STATE. Two verbs folded in from the parked
+    # timbottu/mirror project (docs/mirror-wave3-verdicts.md), declared
+    # 2026-07-31 with the dispatch that answers them. They sit beside the
+    # act plane because that is what they are about, but neither takes an
+    # element: one names a PROCESS, the other names nothing at all.
+    activate:
+      description: >
+        Bring ONE process forward, named by its process serial number.
+
+        Not a second `front`. `front` takes a NAME and refuses when
+        several match; this takes the identity an observation minted,
+        which is what a driver holds and what the host's own action
+        dispatcher already sends. Underneath both reach the single
+        SetFrontProcess in the guest — this verb does not add a second.
+
+        The reply reports whether the switch is OBSERVABLE, never merely
+        that it was accepted. A cooperative switch lands when the
+        answering application yields, so "asked" and "is now frontmost"
+        are two readings and keep two words.
+      args:
+        type: object
+        required: [serialHi, serialLo]
+        properties:
+          serialHi:
+            type: integer
+            description: >
+              The high half of the process serial. Required WITH
+              serialLo: half a serial names no process, and the two are
+              refused apart rather than defaulted together.
+          serialLo:
+            type: integer
+      x-line: The two serial numbers, high then low, separated by a space.
+      output:
+        type: object
+        properties:
+          activate: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    actselftest:
+      description: >
+        Prove the act plane's trap calling convention, in one process,
+        from inside the machine.
+
+        It matters more than its size. A patch whose result lands in the
+        wrong slot does not crash — it LIES: it reports firing, every
+        counter the plane owns says success, and the application reads a
+        value that was never the one we wrote and takes the other
+        branch. Every other instrument on this plane reads OUR side of
+        the call; this one reads the caller's, by making a real
+        MenuSelect at a point outside the menu bar, answering its own
+        call, and comparing.
+
+        Side-effect free by construction. Point (0,0) is outside the
+        menu bar, so an unanswered call returns 0 immediately without
+        drawing or tracking anything, and the arm point is negative —
+        the one op on this plane that rides no user click at all.
+
+        NOT `portalselftest`. Upstream's name is after a component this
+        product does not have; what is tested here is NOW's act plane.
+      args:
+        type: object
+        properties:
+          serialHi:
+            type: integer
+            description: >
+              OPTIONAL, and optional as a PAIR: both absent means the
+              front process, which is what a caller who just wants the
+              ABI answered means.
+          serialLo:
+            type: integer
+      x-line: >
+        Empty for the front process, or the two serial numbers, high
+        then low.
+      output:
+        type: object
+        properties:
+          actselftest: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+
+    # THE INPUT PLANE, declared 2026-07-31 with the dispatch that answers
+    # it. Four verbs that are four different kinds of thing: a READ the
+    # act plane is measured with, one keystroke, one AppleScript, and one
+    # of four core Apple Events. See now-guest-ppc/src/input/input_cmds.h.
+    mouseloc:
+      description: >
+        Where this Mac's pointer IS — which is not where anything asked
+        it to go.
+
+        The instrument the act plane is measured WITH rather than a part
+        of it. An emulator's relative mouse is acceleration-distorted, so
+        QMP can say where it asked the pointer to go and that is not
+        where it went; every hop calibration in scripts/probes closes its
+        loop against this verb. Getting it wrong quietly poisons every
+        hijack number.
+
+        It is a read and it stays a read. There is deliberately no
+        move-the-mouse verb and no positional click verb beside it: the
+        drag plane belongs to the emulator's own input path, where it can
+        be watched. A guest-side click is the one mechanism that would
+        let a no-hijack probe forge the evidence it exists to gather, and
+        the thing that asked for one — folder items — wants an identity
+        rather than a coordinate. Ruled on 2026-07-31; the argument is in
+        docs/input-plane-decisions.md.
+      args: {}
+      x-line: Nothing. It takes no arguments.
+      output:
+        type: object
+        properties:
+          mouseloc: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    key:
+      description: >
+        Post ONE keystroke into this Mac's event queue — the mechanism
+        `textset` is not, rather than a better one.
+
+        `textset` writes an addressed element's text directly, through
+        the Dialog Manager's or TextEdit's own setter. That reaches
+        further in one direction (no focus, no frontmost application) and
+        not at all in the other: a dialog that answers only keystrokes
+        never sees it, and there is no text to set for Return, Escape or
+        Tab. This verb is for the second case.
+
+        NO MODIFIERS, AND `mods` IS REFUSED RATHER THAN DROPPED. An
+        event's modifiers live on the Event Manager's queue element; the
+        only call that hands that element back is `PPostEvent`, and
+        CarbonLib does not have it — the PowerPC guest is a Carbon
+        application. Posting the keystroke without the modifier would type
+        a bare character and answer ok, which is precisely the defect this
+        contract's act plane was written to avoid, so the request is
+        refused with code `unsupported`. For a menu command use `menuact`:
+        it is addressed by identity, needs no modifier, and draws no menu.
+
+        The reply says `posted`, never `typed`. The keystroke entered the
+        queue; which application dequeues it and what it does with it is
+        the caller's to read back — the same rule as `aesend`'s `sent`.
+
+        Both halves of the message are reported, with whether each came
+        from the caller or from the guest's own key table. The virtual
+        code half matters even unmodified: the Menu Manager matches
+        shortcuts on the code and not the character.
+      args:
+        type: object
+        properties:
+          name:
+            type: string
+            enum: [return, enter, tab, space, delete, escape, help, home,
+                   fwddelete, end, pageup, pagedown, left, right, down, up]
+            description: >
+              A key with no character to type, which is the half a
+              text-writing verb cannot express at all. `enter` is the
+              keypad's key and is not `return`. Exact match; anything
+              else is a character, so send char or code.
+          char:
+            type: integer
+            description: >
+              The character code, 0..255 — the message's low byte. Sent
+              alone, the virtual code is derived from it where the US key
+              table has a row; an upper-case character keeps its case and
+              takes the unshifted key's code, because the shift is a
+              modifier this verb cannot post.
+          code:
+            type: integer
+            description: >
+              The virtual key code, 0..127 — the message's second byte.
+              Sent alone, the character is derived where the table has a
+              row.
+          mods:
+            type: integer
+            description: >
+              Accepted only as 0. Any other value is refused; see the
+              description. It exists as an argument so that a caller
+              asking for a modifier gets the true reason rather than
+              `unknown argument`.
+      x-line: >
+        A key name, or `char N`, or `code N`. A person at this machine
+        has all three.
+      output:
+        type: object
+        properties:
+          key: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    script:
+      description: >
+        Run ONE AppleScript on this Mac, through its own OSA component.
+
+        The bounds are facts rather than preferences. Source is capped
+        at 2048 bytes (upstream's measured figure) and the RESULT at
+        1024 pre-escape, because the guest assembles a command.result in
+        a 3072-byte buffer — a larger answer would be cut at whatever
+        byte the buffer ran out and reported as a whole one.
+
+        A whole-disk Finder search (`entire contents`) is REFUSED, not
+        warned about. Such a script wedged a real machine for about
+        twelve minutes, and the wedge is not recoverable from this side,
+        so there is no error path that could report it after the fact.
+
+        The source's line endings are converted to CR. Classic
+        AppleScript's terminator is CR, so a source arriving from a
+        modern host with LF endings parses as one very long line.
+      args:
+        type: object
+        required: [source]
+        properties:
+          source:
+            type: string
+            description: >
+              The script, at most 2048 bytes. TEXT, not a protocol
+              token: it crosses as the caller wrote it.
+          timeoutMs:
+            type: integer
+            description: >
+              Clamped to 500..60000, default 15000. A caller that sends
+              nothing and one that sends the default are the same
+              request; one that sends 0 asked for something and gets the
+              floor. The ceiling is hard because this Mac answers
+              serially — a script's timeout is every other caller's
+              wait.
+      x-line: The script source, which is the whole rest of the line.
+      output:
+        type: object
+        properties:
+          script: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    aesend:
+      description: >
+        Send ONE core Apple Event to a process named by its serial.
+
+        A CLOSED VOCABULARY OF FOUR — quit, oapp, odoc, pdoc — and not
+        a class/id pipe. The wire names an op; it does not name an event
+        class and an event id. That is the whole difference between a
+        row whose arguments bound what it does and one whose arguments
+        do not, and each of the four has an effect statable in one line,
+        which is the test a fifth would have to pass.
+
+        The four names are upstream's four-character mnemonics rather
+        than longer words, because the ported probe's whitelist and its
+        off-whitelist refusal check are written against them.
+
+        Addressing the guest's OWN serial is refused rather than sent.
+        A quit event to ourselves takes the guest down mid-reply, so the
+        caller would see a dropped connection where the truthful answer
+        is "you asked me to quit myself".
+      args:
+        type: object
+        required: [event, serialHi, serialLo]
+        properties:
+          event:
+            type: string
+            enum: [quit, oapp, odoc, pdoc]
+            description: >
+              Exact match only. A truncated or padded name is not a near
+              miss to be forgiven; it is a name this plane does not
+              serve.
+          serialHi:
+            type: integer
+            description: >
+              Required WITH serialLo. (0, 0) is kNoProcess by
+              definition and is refused here rather than sent and left
+              to come back as procNotFound.
+          serialLo:
+            type: integer
+          path:
+            type: string
+            description: >
+              REQUIRED for odoc and pdoc, meaningless for the other two.
+              A classic HFS path, at most 256 bytes — a Str255. TEXT,
+              not a protocol token.
+      x-line: >
+        The event name, then the two serial numbers, then the path for
+        odoc and pdoc.
+      output:
+        type: object
+        properties:
+          aesend: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+
+    # THE CONTENT PLANE'S READER (P3), declared 2026-07-31 with the
+    # dispatch that answers it. One verb, four subcommands behind `op`.
+    qdtrace:
+      description: >
+        What is DRAWING on this Mac — read from a ring the NOW
+        Extension's resident half fills at draw time inside an armed
+        application.
+
+        `status` (the default) counts without moving one record: it is
+        the cheap question — "is anything drawing at all, and at whom?"
+        — and a reader that could not answer it without a drain would
+        have made the cheap question expensive. `start` arms ONE A5
+        world for a bounded time in one of two modes; `stop` disarms;
+        `drain` reads records from a cursor.
+
+        `start` answers `requested: true, armed: false`, and that is not
+        pessimism. Nothing is hooked until the extension's own pass runs
+        INSIDE the target process and agrees, so this reply claims a
+        request was written and never that it was honoured. `status`
+        reports the extension's own word for what happened, beside the
+        request, so a misaddressed arm is VISIBLE as a mismatch rather
+        than as an absence.
+
+        A DRAIN IS A BOUNDED CONTROL ANSWER, NOT A TRANSFER — the
+        opposite of the ruling in docs/streaming-a-scene.md, for a
+        stated reason. A scene is a TREE whose parts mean something only
+        reassembled; a ring is a LOG whose every record is
+        self-contained and ordered, whose writer already maintains the
+        resume point, and whose unread records are still in the ring
+        rather than lost. A prefix of a log is a complete answer about a
+        shorter interval. The price is that a SHORT answer must say why
+        it is short, and four different reasons end a drain — `more`,
+        `resync`, `torn`, `busy` — because "fewer records than you
+        expected" quietly covering an overrun is exactly the quiet
+        machine.
+
+        DEFAULTING TO `status` IS DELIBERATE. It is the only subcommand
+        that neither writes nor moves a record; a default that armed
+        something would be a plane armed by a typo.
+      args:
+        type: object
+        properties:
+          op:
+            type: string
+            enum: [status, start, stop, drain]
+            description: Absent means status.
+          a5:
+            type: string
+            description: >
+              start only, and REQUIRED there. The A5 world of the ONE
+              process to instrument. A STRING (decimal or 0x-prefixed),
+              not an integer: an A5 routinely has its top bit set and
+              the guest's `long` is 32 bits, so 0x80000000 would arrive
+              as a negative number. Zero is refused at the near end —
+              the plane reads it as "hook nothing", and a caller who
+              believed it meant "everything" is told no by name.
+          mode:
+            type: string
+            enum: [count, record]
+            description: >
+              start only. Absent means count — the cheap mode, chosen as
+              the default because the expensive one should be asked for
+              by name.
+          ttlTicks:
+            type: integer
+            description: >
+              start only. 60..36000, default 3600 (60 ticks = 1 second).
+              A deadline exists so an agent that dies mid-request does
+              not leave hooks installed forever. These bounds are a
+              JUDGEMENT, not a measurement, and should move once someone
+              has watched a real drain.
+          cursor:
+            type: string
+            description: >
+              status and drain. A monotonic byte count, so it exceeds
+              2^31 after two gigabytes of records — a string for the
+              same reason `a5` is one.
+          maxBytes:
+            type: integer
+            description: drain only. 0 or absent means the whole ring.
+          maxRecords:
+            type: integer
+            description: drain only. 0 or absent means no record bound.
+      x-line: >
+        The op, then its arguments. Empty is status from cursor 0.
+      output:
+        type: object
+        description: >
+          NOT A ROW ARRAY, and the exception is declared rather than
+          discovered. Every value here is a NUMBER a caller does
+          arithmetic on — a cursor it passes back, a byte count it
+          compares, a counter it differences — and the row array is a
+          string pair for a human to read. Flattening these to
+          `["ring.writeCursor", "4096"]` would make every consumer parse
+          its way back to the number it started from, and the one place
+          a reply about loss must not be lossy is the reply about loss.
+
+          The reference layer (`observe`, `axtree`, `elements`,
+          `handle`, `axsnap`) already answers with objects for the same
+          reason; this is the second family to do so, not the first.
+        properties:
+          qdtrace:
+            type: object
+            required: [cmd]
+            description: >
+              Discriminated by `cmd`, which is the op that answered.
+              `status` carries plane / request / active / ring / ops /
+              loss / lifecycle / refused; `drain` carries the cursor
+              accounting and an `ops` array of records; `start` and
+              `stop` carry what was requested. A subcommand that cannot
+              answer at all — no extension, a block this build does not
+              read — refuses with `ok: false` and a code, and never with
+              an empty object.
+            properties:
+              cmd:
+                type: string
+                enum: [status, start, stop, drain]
+
+    # THE REFERENCE LAYER, declared 2026-07-31 with the guest that serves
+    # it. These four are not a second act plane; they are the half that
+    # MINTS what the act plane takes, and the reason `elements` above is
+    # spelled as a scoped observation rather than as its own walk: there
+    # is exactly ONE thing in this product that creates a reference, and
+    # `observe`, `axtree` and `elements` are three doors onto it.
+    #
+    # A token carries no identity. It is a lookup key into a guest-side
+    # registry whose only writer is a walk that actually saw the element,
+    # and whose 128 bits are hashed over a per-session secret the caller
+    # never sees. Knowing an element's title, bounds, WindowPtr and PSN
+    # does not let anyone compute its token — which is why there is
+    # deliberately no "give me the reference for the window called X".
+    observe:
+      description: >
+        Walk this Mac's on-screen elements and MINT an opaque reference
+        for each one seen. The only thing in the product that creates a
+        reference, which is what makes "observation-minted" a fact about
+        the mechanism rather than an aspiration.
+
+        Answers with the tree: processes, their windows, the controls in
+        each, and the reference minted for every one. A reference is
+        short-lived and lives in a bounded table; one that has aged out
+        reads exactly like one whose window closed, and both are true.
+
+        SELF IS NOT OBSERVABLE. NOW is a Carbon application and its own
+        window records are not where a classic walk reads. Asking for
+        NOW's own process binds and walks to nothing; that is a limit
+        stated, not hidden.
+      args:
+        type: object
+        properties:
+          scope:
+            type: string
+            enum: [front, all]
+            description: >
+              front (the default) observes the frontmost application
+              only; all walks every process the Process Manager lists.
+      x-line: >
+        NOT TYPEABLE usefully. It answers with references no person can
+        read or retype.
+      output:
+        type: object
+        properties:
+          observe: { $ref: "#/components/x-commands/observe/x-axTree" }
+      x-bounds:
+        type: object
+        required: [left, top, right, bottom]
+        properties:
+          left: { type: integer }
+          top: { type: integer }
+          right: { type: integer }
+          bottom: { type: integer }
+      x-axTree:
+        type: object
+        required: [scope, processes, count, truncated, live]
+        description: >
+          `truncated` is a fact about the REPLY, not about the machine: a
+          reader that cannot tell a short tree from a clipped one has been
+          told nothing useful. `live` is how many references are currently
+          resolvable, which is the real bound on how much of a walk stays
+          addressable.
+        properties:
+          scope: { type: string }
+          count: { type: integer }
+          truncated: { type: boolean }
+          live: { type: integer }
+          processes:
+            type: array
+            items:
+              type: object
+              properties:
+                name: { type: string }
+                signature: { type: string }
+                serialHi: { type: integer }
+                serialLo: { type: integer }
+                front: { type: boolean }
+                bind:
+                  type: string
+                  description: >
+                    Why a process contributed no tree, in one word — so an
+                    empty array is never mistaken for a machine with no
+                    windows. ok, no-process, no-plane, no-anchor,
+                    ambiguous, mismatch, unreadable.
+                stampTicks: { type: integer }
+                a5:
+                  type: string
+                  description: >
+                    The process's A5 world, as an "0x"-prefixed hex string
+                    — the same value `qdtrace start`'s `arm_a5` takes, and
+                    the only wire source for it. ABSENT, not zero, unless
+                    the anchor oracle's verdict for this row was strictly
+                    Ok: `bind` reads "ok" for the oracle's Ok AND Stale
+                    verdicts alike, but a5 is narrower and omits it on
+                    Stale too — arming tracing against a process that has
+                    not pumped its event loop since the anchor was
+                    captured is a risk observing it is not. Never present
+                    alongside a `bind` other than "ok".
+                windows:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      ref:
+                        type: string
+                        description: >
+                          The opaque reference, "now-window-" and a UUID.
+                      title: { type: string }
+                      occurrence: { type: integer }
+                      z: { type: integer }
+                      visible: { type: boolean }
+                      kind: { type: integer }
+                      bounds:
+                        $ref: "#/components/x-commands/observe/x-bounds"
+                      text:
+                        type: object
+                        description: >
+                          Present only for a window whose own TextEdit
+                          record this walk could read — a dialog's. A
+                          document window's TEHandle is not discoverable
+                          from a foreign walk, and that gap is stated
+                          rather than papered over: such a window carries
+                          no text reference and gets no row here.
+                        properties:
+                          ref:
+                            type: string
+                            description: >
+                              An element reference, "now-element-" and a
+                              UUID. It names a text element, so textget
+                              and textset take it and ctlact refuses it.
+                          length: { type: integer }
+                      controls:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            ref:
+                              type: string
+                              description: >
+                                The opaque reference, "now-element-" and
+                                a UUID.
+                            title: { type: string }
+                            occurrence: { type: integer }
+                            visible: { type: boolean }
+                            enabled: { type: boolean }
+                            bounds:
+                              $ref: "#/components/x-commands/observe/x-bounds"
+                            value: { type: integer }
+                            min: { type: integer }
+                            max: { type: integer }
+    handle:
+      description: >
+        Take ONE reference back to a live element, or refuse — precisely.
+
+        THE REFUSAL IS THE PRODUCT. `ok` stays true for every verdict
+        including the four that resolve to nothing, because "your
+        reference is stale" is an ANSWER: it tells the caller to observe
+        again. An error would read as "the call failed" and invite a
+        retry of the same reference. What is never true is `resolved`.
+
+        Staleness is refused, never repaired. A window that closed and
+        reopened is a DIFFERENT window even wearing the same title in the
+        same place, and a resolver that quietly re-aimed at the new one
+        would be the "whatever is frontmost" surface a reference exists
+        to prevent, hidden behind a reference-shaped argument.
+      args:
+        type: object
+        required: [ref]
+        properties:
+          ref:
+            type: string
+            description: >
+              One reference, "now-window-" or "now-element-" and a UUID,
+              minted by an observation on THIS machine in THIS session.
+      x-line: >
+        NOT TYPEABLE. The argument is a reference no human has.
+      output:
+        type: object
+        properties:
+          handle:
+            type: object
+            required: [ref, verdict, reason, resolved]
+            properties:
+              ref: { type: string }
+              verdict:
+                type: string
+                enum: [ok, not-found, ambiguous, mismatch, stale]
+                description: >
+                  Five words, taken from the anchor oracle's vocabulary
+                  rather than invented: this plane already has one set of
+                  words for "the honest answer is not a pointer".
+              reason:
+                type: string
+                description: >
+                  Which check stopped it, as a sentence a person can act
+                  on. A resolve that could not say WHICH check failed
+                  would leave "it didn't work" indistinguishable from
+                  "you named the wrong thing", and only one of those is
+                  the caller's bug.
+              resolved: { type: boolean }
+              serialHi: { type: integer }
+              serialLo: { type: integer }
+              window:
+                type: object
+                properties:
+                  title: { type: string }
+                  z: { type: integer }
+                  visibleZ: { type: integer }
+                  visible: { type: boolean }
+                  bounds:
+                    $ref: "#/components/x-commands/observe/x-bounds"
+              element:
+                type: object
+                description: Absent for a window reference, by construction.
+                properties:
+                  title: { type: string }
+                  visible: { type: boolean }
+                  enabled: { type: boolean }
+                  bounds:
+                    $ref: "#/components/x-commands/observe/x-bounds"
+                  value: { type: integer }
+                  min: { type: integer }
+                  max: { type: integer }
+    axtree:
+      description: >
+        The read surface over the same walk `observe` performs. It
+        differs in what it is FOR rather than in what it does: observe is
+        the call an agent makes to OBTAIN references, axtree the one it
+        makes to LOOK. They share one emitter on the guest, so the two
+        can never describe the same machine differently — which two
+        copies eventually would.
+
+        Because it is the same walk, it mints too. There is no read-only
+        spelling of this tree, and pretending otherwise would be a
+        second, quieter minter.
+      args:
+        type: object
+        properties:
+          scope:
+            type: string
+            enum: [front, all]
+      x-line: >
+        NOT TYPEABLE usefully. Same reason as observe.
+      output:
+        type: object
+        properties:
+          axtree: { $ref: "#/components/x-commands/observe/x-axTree" }
+    axsnap:
+      description: >
+        The cheap one: who is front, whether the reference layer can see
+        it, and how many references are live. No walk, so no minting —
+        the one call on this surface that is safe to poll.
+      args: {}
+      x-line: >
+        Takes nothing. The answer is about the machine's front process
+        and the reference table, both of which a person can read.
+      output:
+        type: object
+        properties:
+          axsnap:
+            type: object
+            properties:
+              front:
+                type: object
+                properties:
+                  name: { type: string }
+                  signature: { type: string }
+                  serialHi: { type: integer }
+                  serialLo: { type: integer }
+                  front: { type: boolean }
+                  bind: { type: string }
+                  stampTicks: { type: integer }
+                  a5:
+                    type: string
+                    description: >
+                      Same field and same absence rule as
+                      `observe`'s x-axTree.processes[].a5 — present only
+                      when `bind` is "ok" AND the anchor oracle's verdict
+                      was strictly Ok, never on its Stale twin.
+                  hasWindows: { type: boolean }
+                  hasMenus: { type: boolean }
+              references:
+                type: object
+                properties:
+                  live: { type: integer }
+                  minted: { type: integer }
+                  evicted: { type: integer }
+                  capacity: { type: integer }
 
   # The census probe registry: the CLOSED, DECLARED set of probes a side may
   # be asked about, and the outcome vocabulary every report speaks. Adding a

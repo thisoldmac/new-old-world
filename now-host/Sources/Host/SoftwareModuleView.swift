@@ -7,6 +7,12 @@ import SwiftUI
 /// page. Launch and Show in Finder both act by the entry's path, the
 /// listing's launch key, so the guest's name-ambiguity refusal can
 /// never fire from this page.
+///
+/// **Launch is the one gated control here.** What the item IS decides whether
+/// launching it means anything — an extension is loaded at startup, not
+/// opened — and that is `GuestCapabilityGate`'s answer, off the type code the
+/// machine already sent, rather than a type test written into this view.
+/// Show in Finder is deliberately left rule-free: see `detailActions`.
 struct SoftwareModuleView: View {
     @ObservedObject var model: SoftwareModel
 
@@ -228,7 +234,16 @@ struct SoftwareModuleView: View {
         .padding(16)
     }
 
+    /// Launch and Show in Finder, and they are deliberately not gated alike.
+    ///
+    /// **Launch goes through the gate; Show in Finder does not, and must not.**
+    /// Revealing opens nothing — any item the machine can name can be shown in
+    /// its own Finder, extension or not — so giving it a rule would grey out a
+    /// control that works, which is the failure this whole axis exists to
+    /// avoid, only pointed the other way.
+    @ViewBuilder
     private func detailActions(_ entry: SoftwareEntry) -> some View {
+        let launch = model.launchGate(entry)
         HStack(spacing: 10) {
             Button {
                 model.launch(entry)
@@ -236,7 +251,8 @@ struct SoftwareModuleView: View {
                 Label("Launch", systemImage: "arrow.up.forward.app")
             }
             .disabled(!entry.isLaunchable || !model.canBrowse
-                      || model.actionInFlight)
+                      || model.actionInFlight || !launch.isEnabled)
+            .help(launch.explanation ?? "Launch this on \(peerLabel).")
 
             Button {
                 model.reveal(entry)
@@ -250,7 +266,18 @@ struct SoftwareModuleView: View {
                 ProgressView().controlSize(.small)
             }
         }
+        if let note = model.launchUnavailableNote(entry) {
+            /* Beside the button rather than only in its tooltip: a greyed
+               control a person has to hover to understand is one they read as
+               broken first. */
+            Label(note, systemImage: "minus.circle")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
+
+    private var peerLabel: String { model.connection.peerLabel }
 
     private var detailEmpty: some View {
         VStack(spacing: 8) {

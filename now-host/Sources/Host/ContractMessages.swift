@@ -57,6 +57,9 @@ enum ControlMessage: Equatable, Sendable {
     case captureCancel(CaptureCancel)
     case captureBegin(CaptureBegin)
     case captureEnd(CaptureEnd)
+    case sceneRequest(SceneRequest)
+    case sceneBegin(SceneBegin)
+    case sceneEnd(SceneEnd)
     case processList(ProcessList)
     case processListing(ProcessListing)
     case softwareList(SoftwareList)
@@ -65,6 +68,7 @@ enum ControlMessage: Equatable, Sendable {
     case processQuit(ProcessQuit)
     case processShot(ProcessShot)
     case processResult(ProcessResult)
+    case agentAccess(AgentAccess)
 }
 
 struct Hello: Codable, Equatable, Sendable {
@@ -122,6 +126,75 @@ struct CommandRequest: Codable, Equatable, Sendable {
     var line: String?
 }
 
+/// Any JSON value, kept whole.
+///
+/// It exists for exactly one job — see `CommandResult.outputObjects` — and
+/// deliberately does not grow past it: this is not an escape hatch for typing
+/// a message properly. A family that needs a shape gets a struct.
+enum JSONValue: Codable, Equatable, Sendable {
+    case null
+    case bool(Bool)
+    case number(Double)
+    case string(String)
+    case array([JSONValue])
+    case object([String: JSONValue])
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if c.decodeNil() { self = .null; return }
+        if let v = try? c.decode(Bool.self) { self = .bool(v); return }
+        if let v = try? c.decode(Double.self) { self = .number(v); return }
+        if let v = try? c.decode(String.self) { self = .string(v); return }
+        if let v = try? c.decode([JSONValue].self) { self = .array(v); return }
+        if let v = try? c.decode([String: JSONValue].self) {
+            self = .object(v)
+            return
+        }
+        throw DecodingError.dataCorruptedError(
+            in: c, debugDescription: "not a JSON value")
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        switch self {
+        case .null: try c.encodeNil()
+        case .bool(let v): try c.encode(v)
+        case .number(let v):
+            // Whole numbers re-encode as integers. A cursor that went out as
+            // 4096 and came back as 4096.0 is the same number and a
+            // different string, and this type sits under a byte-for-byte
+            // fixture comparison.
+            if v == v.rounded(), abs(v) < 9.007199254740992e15 {
+                try c.encode(Int(v))
+            } else {
+                try c.encode(v)
+            }
+        case .string(let v): try c.encode(v)
+        case .array(let v): try c.encode(v)
+        case .object(let v): try c.encode(v)
+        }
+    }
+
+    /// The row-array reading of this value, or nil when it is not one.
+    /// `[[String]]` is the house shape and most values are one.
+    var rows: [[String]]? {
+        guard case .array(let outer) = self else { return nil }
+        var out: [[String]] = []
+        out.reserveCapacity(outer.count)
+        for row in outer {
+            guard case .array(let cells) = row else { return nil }
+            var strings: [String] = []
+            strings.reserveCapacity(cells.count)
+            for cell in cells {
+                guard case .string(let s) = cell else { return nil }
+                strings.append(s)
+            }
+            out.append(strings)
+        }
+        return out
+    }
+}
+
 struct CommandResult: Codable, Equatable, Sendable {
     struct CommandError: Codable, Equatable, Sendable {
         var code: String
@@ -132,8 +205,93 @@ struct CommandResult: Codable, Equatable, Sendable {
     var ok: Bool
     /// Grouped, ordered rows: group name -> [[label, value], ...]. gestalt
     /// returns snapshot/cpu/memory/os/network/hw; the console shows a slice.
+    ///
+    /// **The row array is the house shape and not the only one.** This
+    /// property holds the groups that ARE rows; a group whose value is any
+    /// other JSON lands in `outputObjects` instead, and neither is thrown
+    /// away. See that property for what this cost before it existed.
     var output: [String: [[String]]]?
+    /// The groups whose value is NOT a row array, kept whole.
+    ///
+    /// **This is a fix for a live defect, not a generality.** The contract
+    /// has declared object-shaped outputs since the reference layer landed
+    /// (`observe`, `axtree`, `elements`, `handle`, `axsnap` all answer
+    /// `output.<name>` as an OBJECT — `x-axTree` in the contract says so),
+    /// and this side could not decode one. A host that cannot decode a frame
+    /// drops the connection, so asking a guest to `observe` — the verb the
+    /// whole act plane is aimed through — would have taken the link down.
+    ///
+    /// It went unnoticed because those emitters assemble their reply
+    /// piecemeal, and `GuestWireConformanceTests` reads whole `snprintf`
+    /// templates. `qdtrace` was the first object-shaped reply written as one
+    /// template, so the gate saw it and reported it as a qdtrace problem; it
+    /// was never qdtrace's. That verb's contract row states why its numbers
+    /// are not rows.
+    ///
+    /// Two properties rather than one heterogeneous dictionary because every
+    /// existing reader wants rows and should keep saying so. `rows(_:)`
+    /// below is for a reader that does not care which half a group is in.
+    var outputObjects: [String: JSONValue]?
     var error: CommandError?
+
+    /// One group's rows, from whichever half holds it.
+    func rows(_ group: String) -> [[String]]? {
+        output?[group] ?? outputObjects?[group]?.rows
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, ok, output, error
+    }
+
+    init(id: Int, ok: Bool, output: [String: [[String]]]? = nil,
+         outputObjects: [String: JSONValue]? = nil,
+         error: CommandError? = nil) {
+        self.id = id
+        self.ok = ok
+        self.output = output
+        self.outputObjects = outputObjects
+        self.error = error
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int.self, forKey: .id)
+        ok = try c.decode(Bool.self, forKey: .ok)
+        error = try c.decodeIfPresent(CommandError.self, forKey: .error)
+
+        guard let raw = try c.decodeIfPresent(
+            [String: JSONValue].self, forKey: .output) else {
+            output = nil
+            outputObjects = nil
+            return
+        }
+        var rows: [String: [[String]]] = [:]
+        var objects: [String: JSONValue] = [:]
+        for (key, value) in raw {
+            if let r = value.rows { rows[key] = r } else { objects[key] = value }
+        }
+        // An `output` that was present and empty stays present and empty:
+        // "the machine answered with no groups" is not "the machine sent no
+        // output", and gestalt's `notice` row exists because that difference
+        // has mattered before.
+        output = objects.isEmpty ? rows : (rows.isEmpty ? nil : rows)
+        outputObjects = objects.isEmpty ? nil : objects
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(ok, forKey: .ok)
+        try c.encodeIfPresent(error, forKey: .error)
+
+        if output == nil && outputObjects == nil { return }
+        var merged: [String: JSONValue] = [:]
+        for (key, rows) in output ?? [:] {
+            merged[key] = .array(rows.map { .array($0.map { .string($0) }) })
+        }
+        for (key, value) in outputObjects ?? [:] { merged[key] = value }
+        try c.encode(merged, forKey: .output)
+    }
 }
 
 /// The exec plane: a line this side does not read, and text it does not
@@ -318,6 +476,24 @@ struct ProcessListing: Codable, Equatable, Sendable {
 /// Symmetric in meaning, one direction in implementation — the
 /// process.list precedent: the host asks, the guest serves, and the
 /// host ignores a software.list rather than serving one.
+/// The guest revising the consent answer it gave at `hello`.
+///
+/// Guest-to-host only, unsolicited, and never acknowledged. `hello.agent`
+/// states this once per connection; before this message existed, a person
+/// who set Read Only mid-session went on being driven at the tier they had
+/// just withdrawn until the link was rebuilt.
+///
+/// `agent` is non-optional here and optional in `Hello` on purpose: in a
+/// hello, absence means "this sender predates the field" and must never be
+/// read as consent, whereas a message whose only purpose is to carry the
+/// answer has no reading in which the answer is missing. A malformed one
+/// fails to decode and is dropped by the same path as any other unreadable
+/// control frame, which is the right outcome — better no revision than an
+/// invented tier.
+struct AgentAccess: Codable, Equatable, Sendable {
+    var agent: AgentIntegrationGuestAccess
+}
+
 struct SoftwareList: Codable, Equatable, Sendable {
     var id: Int
     var domain: String
@@ -613,6 +789,50 @@ struct CaptureEnd: Codable, Equatable, Sendable {
     var sendMs: Int?
 }
 
+/// Ask for one scene. The answer is a TRANSFER — scene.begin, bulk
+/// frames, scene.end — never a control message, because NOW's own
+/// producer encodes 9214 bytes for 24 processes and 32 windows against a
+/// 4096-byte control cap. There is no scene bracket and no scene.cancel:
+/// the transfer is tens of milliseconds, and abandoning it costs more
+/// than finishing it (docs/streaming-a-scene.md).
+struct SceneRequest: Codable, Equatable, Sendable {
+    var id: Int
+    var chunkKb: Int?
+    var paceMs: Int?
+    /// How old an anchor sample may be and still be reported clean. An
+    /// older-but-otherwise-valid anchor is *reported* stale in
+    /// `apps[].error`, never silently dropped and never a refusal.
+    var staleAfterMs: Int?
+}
+
+struct SceneBegin: Codable, Equatable, Sendable {
+    var id: Int
+    var transfer: Int
+    /// Bulk bytes of UTF-8 JSON to expect, terminator excluded.
+    var bytes: Int
+    /// The IR major, repeated HERE — the same number the document's own
+    /// `version` carries — so a consumer can refuse an unknown major
+    /// **before** spending a decode on the body. That order is IR-V1.md's
+    /// stated consumer duty, and only an envelope makes obeying it
+    /// possible; `NOWSceneCodec.decode` is the half that obeys it.
+    var irVersion: Int
+    var seq: Int?
+    var capturedAt: Double?
+    var source: String?
+    var walkMs: Int?
+}
+
+struct SceneEnd: Codable, Equatable, Sendable {
+    var id: Int
+    var transfer: Int
+    var ok: Bool
+    /// Why a scene could not be served, on ok:false. Prose for a human;
+    /// nothing branches on it. A failed or oversized walk ends here with
+    /// NO bulk — a partial walk is never delivered as a complete scene.
+    var reason: String?
+    var sendMs: Int?
+}
+
 enum ControlMessageError: Error, Equatable {
     case notAnObject
     case missingType
@@ -749,6 +969,14 @@ enum ControlMessageCodec {
                 try decoder.decode(CaptureBegin.self, from: data))
         case "capture.end":
             return .captureEnd(try decoder.decode(CaptureEnd.self, from: data))
+        case "scene.request":
+            return .sceneRequest(
+                try decoder.decode(SceneRequest.self, from: data))
+        case "scene.begin":
+            return .sceneBegin(
+                try decoder.decode(SceneBegin.self, from: data))
+        case "scene.end":
+            return .sceneEnd(try decoder.decode(SceneEnd.self, from: data))
         case "process.list":
             return .processList(
                 try decoder.decode(ProcessList.self, from: data))
@@ -773,6 +1001,8 @@ enum ControlMessageCodec {
         case "software.listing":
             return .softwareListing(
                 try decoder.decode(SoftwareListing.self, from: data))
+        case "agent.access":
+            return .agentAccess(try decoder.decode(AgentAccess.self, from: data))
         default:
             throw ControlMessageError.unknownType(probe.type)
         }
@@ -832,6 +1062,9 @@ enum ControlMessageCodec {
         case .captureCancel(let m): return try tagged("capture.cancel", m)
         case .captureBegin(let m): return try tagged("capture.begin", m)
         case .captureEnd(let m): return try tagged("capture.end", m)
+        case .sceneRequest(let m): return try tagged("scene.request", m)
+        case .sceneBegin(let m): return try tagged("scene.begin", m)
+        case .sceneEnd(let m): return try tagged("scene.end", m)
         case .processList(let m): return try tagged("process.list", m)
         case .processListing(let m): return try tagged("process.listing", m)
         case .softwareList(let m): return try tagged("software.list", m)
@@ -840,6 +1073,7 @@ enum ControlMessageCodec {
         case .processQuit(let m): return try tagged("process.quit", m)
         case .processShot(let m): return try tagged("process.shot", m)
         case .processResult(let m): return try tagged("process.result", m)
+        case .agentAccess(let m): return try tagged("agent.access", m)
         }
     }
 }
