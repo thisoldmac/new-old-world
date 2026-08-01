@@ -67,7 +67,19 @@ enum {
 
     kNowPeekAnchorFormatNone = 0, /* plane P1 absent (core-only M0) */
     kNowPeekAnchorFormatV1 = 1,   /* a5, window_list, menu_list */
-    kNowPeekAnchorFormatV2 = 2    /* + stack_base */
+    kNowPeekAnchorFormatV2 = 2,   /* + stack_base */
+    kNowPeekAnchorFormatV3 = 3,   /* + cur_ap_name */
+
+    /* Low memory's CurApName is a Str31 - one length byte plus up to 31
+       characters - so 32 bytes holds it whole, with no truncation rule
+       to get wrong on either side of the seam. 32 is also the only
+       width that costs nothing: it is a multiple of 4, so the field
+       after it stays naturally aligned and no compiler has to insert
+       padding to reach it. A shorter field (say 28) would have to
+       define what happens to a longer name, and every such definition
+       is a way for two sides to disagree about identity - which is the
+       one thing this field exists to settle. */
+    kNowPeekAnchorNameSize = 32
 };
 
 /* Plane capability bits (caps, arm_request, arm_active). The guest's
@@ -98,6 +110,26 @@ typedef struct {
        other field, or a reader could pair a fresh stamp with a stale
        stack base and never know. */
     NowPeekU32 stack_base;    /* LMGetCurStackBase for that context */
+    /* V3. Appended again, by the same rule and for the same reason: the
+       seqlock's stamp keeps offset 20, stack_base keeps 24, and a V1 or
+       V2 reader finds every field it knows exactly where it left it.
+
+       The process's own name (low-memory CurApName), captured in the
+       same context as A5 - which is what makes it worth carrying. A5
+       and stack_base are both ADDRESSES, so a recycled slot left behind
+       by a dead application whose partition was reused can satisfy both
+       and still be debris. The name is not an address: it survives the
+       reuse and names the dead application, which is a discriminator
+       neither root can supply.
+
+       A Pascal string: cur_ap_name[0] is the length, 0 meaning the
+       extension had none to give. Written BEFORE the stamp commits,
+       like every other field.
+
+       Not a promise of uniqueness - two copies of the same application
+       share a name - so it can only ever REFUTE a slot, never elect
+       one. The oracle uses it that way. */
+    unsigned char cur_ap_name[kNowPeekAnchorNameSize];
 } NowPeekAnchorSlot;
 
 typedef struct {
@@ -117,13 +149,23 @@ typedef struct {
 
 /* The offsets ARE the contract; a drift here is a defect on the other
    side of a compiler, not a build detail. */
-_Static_assert(sizeof(NowPeekAnchorSlot) == 28, "slot size");
+_Static_assert(sizeof(NowPeekAnchorSlot) == 60, "slot size");
 /* Unchanged from V1 on purpose: this offset is the seqlock's, and moving
    it would break a V1 reader silently rather than loudly. */
 _Static_assert(offsetof(NowPeekAnchorSlot, stamp_ticks) == 20,
                "slot stamp offset");
 _Static_assert(offsetof(NowPeekAnchorSlot, stack_base) == 24,
                "slot stack base offset");
+/* V3's field is appended, so V2's two offsets above are unchanged and
+   this one is the only new number. 32 bytes of unsigned char at a
+   4-aligned offset leaves the slot 4-aligned and 60 bytes wide on every
+   one of the three compilers - no padding anywhere, which is the whole
+   layout rule stated at the top of this file. */
+_Static_assert(offsetof(NowPeekAnchorSlot, cur_ap_name) == 28,
+               "slot name offset");
+_Static_assert(sizeof(((NowPeekAnchorSlot *)0)->cur_ap_name)
+                   == kNowPeekAnchorNameSize,
+               "slot name width");
 _Static_assert(offsetof(NowPeekTable, ext_major) == 4, "major offset");
 _Static_assert(offsetof(NowPeekTable, ext_minor) == 6, "minor offset");
 _Static_assert(offsetof(NowPeekTable, length) == 8, "length offset");
@@ -141,7 +183,7 @@ _Static_assert(offsetof(NowPeekTable, anchor_format) == 32,
 _Static_assert(offsetof(NowPeekTable, anchor_count) == 34,
                "anchor count offset");
 _Static_assert(offsetof(NowPeekTable, anchors) == 36, "anchors offset");
-_Static_assert(sizeof(NowPeekTable) == 36 + 28 * kNowPeekMaxAnchors,
+_Static_assert(sizeof(NowPeekTable) == 36 + 60 * kNowPeekMaxAnchors,
                "table size");
 
 #endif /* NOW_PEEK_TABLE_H */
