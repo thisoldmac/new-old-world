@@ -1,0 +1,213 @@
+/*
+ * now_content_logic.c - the content plane's decisions, with no Toolbox in
+ * them.
+ *
+ * This file exists because of what the rest of the plane is: draw-time
+ * resident code inside another process, which no gate short of a Macintosh
+ * can execute. peek_oracle.c and scene_build.c are the precedent - the
+ * decisions get separated from the calls that can only be made on the
+ * machine, so a host cc can run them. Everything here is reachable from
+ * now-guest-ppc/tests/content_plane_test.c.
+ *
+ * Three decisions live here, and they are the three that can hurt:
+ *
+ *   1. WHETHER TO HOOK AT ALL (now_content_arm_verdict). Fail-closed in
+ *      every direction: a request with no target instruments nothing, not
+ *      everything.
+ *   2. WHERE A RECORD GOES (now_content_ring_put). Bounded arithmetic over
+ *      a fixed buffer; the one path in the plane that upstream shipped but
+ *      never ran.
+ *   3. WHAT STATE CHANGED (now_content_state_deltas). Pure comparison.
+ *
+ * The Toolbox half (now_content.c) reads ports and installs procs and does
+ * nothing else it could have done here.
+ */
+
+#include "content_table.h"
+
+/* The whole point of the commit word: a request is a request only when
+   every field of it is one. Order of checks is the order of severity, so
+   the counter that gets bumped names the most specific thing wrong. */
+int now_content_arm_verdict(const NowContentRequest *req,
+                            NowContentU32 current_a5,
+                            NowContentU32 now_ticks)
+{
+    NowContentU32 mode;
+
+    if (req == NULL) {
+        return kNowContentVerdictIdle;
+    }
+    /* The plane's own capability bit in the shared table gates everything
+       below it. P1's shape, deliberately: one place says "this plane may
+       run at all", the block says "on whom". */
+    if ((req->plane_bits & (NowContentU32)kNowPeekTableCapContent) == 0) {
+        return kNowContentVerdictIdle;
+    }
+    if (req->arm_commit != (NowContentU32)kNowContentArmCommit) {
+        return kNowContentVerdictIdle;
+    }
+    mode = req->mode;
+    if (mode != (NowContentU32)kNowContentModeCount
+        && mode != (NowContentU32)kNowContentModeRecord) {
+        /* Includes mode off, and anything outside the enum. A mode we do
+           not recognise is not a mode we act on. */
+        return kNowContentVerdictIdle;
+    }
+
+    /* A commit word with no target is the defect this plane was rewritten
+       to remove, so it gets its own verdict rather than falling through to
+       a context mismatch. */
+    if (req->arm_a5 == 0) {
+        return kNowContentVerdictNoTarget;
+    }
+
+    /* Expiry before context: a lapsed request must retire in WHATEVER
+       process pumps next, or retiring it would depend on the target still
+       being alive - which is the failure the deadline exists to cover.
+       Absent deadline = expired on sight. Signed difference is
+       TickCount-wrap safe. */
+    if (req->arm_expiry == 0) {
+        return kNowContentVerdictExpired;
+    }
+    /* The signed comparison is written out rather than cast through a
+       signed type, because `long` is 32 bits on the 68K that runs this and
+       64 bits on the host cc that tests it - and a 64-bit cast of a 32-bit
+       unsigned difference is never negative, so the wrap test would pass
+       on the machine and be dead on the gate. Top bit of the difference
+       clear means now >= expiry. */
+    if (((now_ticks - req->arm_expiry) & 0x80000000UL) == 0) {
+        return kNowContentVerdictExpired;
+    }
+
+    /* current_a5 == 0 is a context with no A5 world; it can never be the
+       named target, and arm_a5 is already known nonzero. */
+    if (req->arm_a5 != current_a5) {
+        return kNowContentVerdictOtherContext;
+    }
+    return kNowContentVerdictArmed;
+}
+
+/*
+ * Append one record to the ring.
+ *
+ * The invariant, and it is the reason this differs from upstream: after
+ * every call, the bytes remaining at the ring's end are either zero or at
+ * least a whole header. A reader walks records by stepping over each
+ * record's own `size`, so a tail too short to hold a header would be read
+ * AS a header - twelve bytes of whatever was there before, whose `size`
+ * field then decides where the reader goes next. Upstream's ring advanced
+ * its cursor past such a tail without writing anything into it. That path
+ * never ran anywhere (its milestone did not pass), so it is a defect this
+ * port fixes rather than a measurement it preserves.
+ *
+ * The fix keeps the reader's rule intact instead of adding a case to it:
+ * a record that would leave a too-short tail absorbs it, so `size` can
+ * exceed header + payload and the trailing bytes are simply skipped.
+ *
+ * Bounded, allocation-free, no memory movement: the rules the jGNE
+ * fast path is written under, and this runs somewhere stricter.
+ */
+int now_content_ring_put(NowContentBlock *block,
+                         unsigned char op, unsigned char flags,
+                         NowContentU32 port,
+                         const void *payload, NowContentU16 payload_len)
+{
+    NowContentU32 cap;
+    NowContentU32 pos;
+    NowContentU32 remain;
+    NowContentU32 rec_size;
+    NowContentRecHeader *h;
+    unsigned char *dst;
+    NowContentU16 i;
+
+    if (block == NULL) {
+        return 0;
+    }
+    cap = block->ring_cap;
+    if (cap < (NowContentU32)(2 * sizeof(NowContentRecHeader))) {
+        block->counters.dropped++;
+        return 0;
+    }
+    rec_size = (NowContentU32)sizeof(NowContentRecHeader) + payload_len;
+    rec_size = (rec_size + 1u) & ~1u;              /* even */
+    if (rec_size > cap) {
+        block->counters.dropped++;
+        return 0;
+    }
+
+    block->seq++;                                  /* seqlock -> odd */
+
+    pos = block->write_cursor % cap;
+    remain = cap - pos;
+    if (rec_size > remain) {
+        /* Pad to the end with a WRAP record. The invariant guarantees
+           remain is a whole header or more, so this always fits. */
+        h = (NowContentRecHeader *)(void *)&block->ring[pos];
+        h->size = (NowContentU16)remain;
+        h->op = kNowContentOpWrap;
+        h->flags = 0;
+        h->port = 0;
+        h->ticks = block->ticks;
+        block->write_cursor += remain;
+        pos = 0;
+        remain = cap;
+    }
+    /* Absorb a tail too short to hold the next header, so the invariant
+       holds for the NEXT call rather than being repaired by it. */
+    if (remain - rec_size != 0
+        && remain - rec_size < (NowContentU32)sizeof(NowContentRecHeader)) {
+        rec_size = remain;
+    }
+
+    h = (NowContentRecHeader *)(void *)&block->ring[pos];
+    h->size = (NowContentU16)rec_size;
+    h->op = op;
+    h->flags = flags;
+    h->port = port;
+    h->ticks = block->ticks;
+    if (payload_len > 0 && payload != NULL) {
+        dst = &block->ring[pos + sizeof(NowContentRecHeader)];
+        for (i = 0; i < payload_len; ++i) {
+            dst[i] = ((const unsigned char *)payload)[i];
+        }
+    }
+    block->write_cursor += rec_size;
+
+    block->seq++;                                  /* seqlock -> even */
+    return 1;
+}
+
+/* Which STATE records the live port state needs relative to what was last
+   recorded. Does not touch the shadow: the caller commits it only after
+   the records are actually in the ring, so a dropped record can never
+   leave the shadow claiming a state the host never saw. */
+NowContentU32 now_content_state_deltas(const NowContentPortState *shadow,
+                                       int valid,
+                                       const NowContentPortState *live)
+{
+    NowContentU32 out = 0;
+
+    if (live == NULL) {
+        return 0;
+    }
+    if (!valid || shadow == NULL) {
+        return (NowContentU32)(kNowContentDeltaOrigin | kNowContentDeltaClip
+                               | kNowContentDeltaFg | kNowContentDeltaBg);
+    }
+    if (live->origin_h != shadow->origin_h || live->origin_v != shadow->origin_v) {
+        out |= (NowContentU32)kNowContentDeltaOrigin;
+    }
+    if (live->clip_l != shadow->clip_l || live->clip_t != shadow->clip_t
+        || live->clip_r != shadow->clip_r || live->clip_b != shadow->clip_b) {
+        out |= (NowContentU32)kNowContentDeltaClip;
+    }
+    if (live->fg_r != shadow->fg_r || live->fg_g != shadow->fg_g
+        || live->fg_b != shadow->fg_b) {
+        out |= (NowContentU32)kNowContentDeltaFg;
+    }
+    if (live->bg_r != shadow->bg_r || live->bg_g != shadow->bg_g
+        || live->bg_b != shadow->bg_b) {
+        out |= (NowContentU32)kNowContentDeltaBg;
+    }
+    return out;
+}

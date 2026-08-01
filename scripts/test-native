@@ -133,6 +133,15 @@ run_c now-guest-ppc json_native_test.c       ""  src/core/json.c
 run_c now-guest-ppc peek_table_test.c \
       "-DNOW_PEEK_TABLE_HOST"
 run_c now-guest-ppc peek_validate_test.c     ""  src/peek/peek_validate.c
+# The content plane (P3) - the extension's QuickDraw hooks. Its SOURCE
+# lives under ext/src, not under a guest, because it is resident 68K code;
+# the decisions it makes before it touches anything are split into a
+# Toolbox-free file so this host cc can execute them. That split is the
+# only reason draw-time resident code has any automated gate at all, and
+# the arm verdict in particular is the plane's whole safety story.
+run_c now-guest-ppc content_plane_test.c \
+      "-DNOW_PEEK_TABLE_HOST -I $repo_root/ext/src" \
+      ../ext/src/now_content_logic.c
 run_c now-guest-ppc peek_oracle_test.c \
       "-DNOW_PEEK_TABLE_HOST" src/peek/peek_oracle.c src/peek/peek_validate.c
 # The scene envelope's Toolbox-free halves. Assembly is where the anchor
