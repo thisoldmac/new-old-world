@@ -73,48 +73,70 @@ cross-builds. Nothing has run on a Macintosh.
 - The probe's `saved_procs` is structurally always 0, so the chaining branch is
   dead code kept for the day the probe learns to patch an already-patched port.
 
-## Phase 2 — finish the MirrorKit port
+## Phase 2 — finish the MirrorKit port — **DONE 2026-07-31**
 
-M6's other half, and the last of the fold-in. **Startable immediately** — it
-does not depend on Phase 1.
+All of it on `main`. What it changed about the *shape* of the fold-in matters more
+than the file count.
 
-### 2.1 MirrorKit as a NOW module
+| | Outcome |
+|---|---|
+| **2.1** MirrorKit + MirrorKitUI as NOW targets | **Done.** 29 files plus the golden fixture corpus and both upstream test targets. `MirrorApp` did not cross — NOW's host app is the app. |
+| **2.2** the `controls` decode defect | **Done, and it was six fields, not one.** Fixed in *our* copy — see below. |
+| **2.3** the oracle's missing discriminator | **Done.** Anchor format **V3** carries `cur_ap_name`; a recycled partition stops winning. |
+| **2.4** the adapter and the pane | **Done.** `MirrorSceneAdapter` + a **Mirror** module with eight resting states. |
 
-`MirrorKit` (headless core) and `MirrorKitUI` (Platinum renderer) become a NOW
-module. The host split maps cleanly: `NOWAgentIntegration` is already a local
-package product and the module pattern now has several precedents. This is Swift
-against a settled IR — the cheapest remaining piece of the whole fold-in
-relative to its value, because it is the half a person *sees*.
+### The upstream repo was never touched, and did not need to be
 
-Open question the module must answer, and it was the hardest thing to get right
-last time: **what it shows when the extension is absent or its planes are
-unarmed.** Four states, and the Agent module's resting state took three attempts.
+The roadmap listed the `controls` relaxation as a change owed in `timbottu/mirror`.
+Porting made that moot: the fix belongs in **our** copy, which is better, because
+NOW's guest omits four planes *conditionally* and only one of them was `controls`.
+The port relaxed **six** non-optional collections — `apps`, `windows`,
+`menubar.menus`, menu items, `controls`, `meta.errors` — five of which were the
+same defect waiting for the next plane our guest learns to omit.
 
-### 2.2 Two changes that belong upstream, in `timbottu/mirror`
+### Absence now survives three boundaries
 
-- **`Scene.Window.controls` must decode-if-present.** It is a non-optional
-  `[Control]` with no custom `init(from:)`, so a scene that legitimately omits
-  the key **fails to decode**. IR v1 froze the field set and defined how a
-  consumer ignores keys it does not know — but nothing for a producer reporting
-  *fewer*. NOW's guest cannot be a MirrorKit source until this changes. Two
-  lines. NOW's own decoder already does the right thing and a mutation proves it.
-- Consider whether the same shape bites any other non-optional collection.
+The three-state rule — **absent** (this producer does not report it) / **empty**
+(walked, found none) / **populated** — began as a producer discipline in Phase 1.3.
+It now holds at every hand-off:
 
-### 2.3 The oracle's missing discriminator
+| Boundary | How |
+|---|---|
+| guest encoder | omits the key; a test fails if certain names appear at all |
+| host decode | `value` + a `…Present` sibling, because `decodeIfPresent ?? []` launders *nobody looked* into *looked, found none* |
+| adapter | one primitive returning a **tuple**, so dropping the presence bit is deliberate rather than a `?? []` away |
 
-The walk port surfaced a real capability gap rather than a defect.
-Upstream's `ax_oracle` captures the process's **`CurApName` in the same context
-as A5** and checks it against the Process Manager's name before accepting a
-match. That is an independent discriminator: **a recycled slot whose A5 *and*
-stack base both land inside a live partition still carries the dead
-application's name.** Ours refuses that case as `AMBIGUOUS` where upstream
-resolves it — the safe direction, and a genuine loss of resolution.
+Each boundary has a mutation that collapses it and goes red. That is the same
+claim defended three times by three different mechanisms, which is what it takes
+for a distinction to survive a codebase.
 
-Closing it means a name field in `contract/peek_table.h` — an anchor format
-**V3**, additive, with the same accretive discipline V2 used. It is the
-extension owner's call, which is why the port did not smuggle it in.
+### Findings worth carrying
 
----
+- **A width can be right for a reason the size assert cannot see.** V3's name
+  field is 32 bytes because `Str31` fits whole. Mutating it to 30 **still built
+  and still satisfied the size assert — the compiler silently padded the slot
+  back to 60.** Only the alignment check caught it.
+- **Ordering is the argument.** The name check sits last because A5 decides
+  candidacy and `stack_base` bounds the same address space from the other end —
+  and *both can be satisfied by a partition that was recycled.* The name cannot.
+- **`-Warray-bounds` refuses low-memory address constants** under `-Werror`
+  (`0x0910`, `0x904`), twice today. Route through a `volatile`. Anyone writing a
+  resident that reads a low-memory array will hit it.
+- **A resting state needs four fields, not three**: glyph, headline, what is true,
+  and **what would change it**. The fourth is the difference between idle and
+  broken.
+
+### Gates at close
+
+**1317 tests** across all bundles / 0 failures · **51 native tests** · 3/3 guest
+cross-builds. Nothing has run on a Macintosh.
+
+### The open question Phase 2 asked and did not answer
+
+`GuestListener` has **no scene path** — the family exists only as contract message
+types. So the Mirror pane replays documents, and on a live desk it can never leave
+*Not Looked Yet*. Whether that ships before the wire learns to ask for a scene is
+a product call, recorded in review §15.
 
 ## Phase 3 — the emulator pass
 
