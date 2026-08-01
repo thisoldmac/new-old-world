@@ -110,6 +110,7 @@ final class HostAppState: ObservableObject {
             windows: MirrorWindowResolver(listener: listener)))
     private(set) lazy var census = CensusModuleModel(listener: listener)
     private(set) lazy var diagnostics = DiagnosticsModel(listener: listener)
+    private(set) lazy var networking = NetworkingModel(listener: listener)
     private(set) lazy var software = SoftwareModel(listener: listener)
     private(set) lazy var processes: ProcessesModel = {
         let model = ProcessesModel(listener: listener)
@@ -137,7 +138,7 @@ final class HostAppState: ObservableObject {
     /// to one and not the other is precisely the defect this list closes.
     private var guestScopedModels: [any GuestScopedModel] {
         [screenshots, files, census, diagnostics, processes, software,
-         mirror]
+         networking, mirror]
     }
 
     /// Points the whole window at another connected Mac.

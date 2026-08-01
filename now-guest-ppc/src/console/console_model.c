@@ -1,5 +1,8 @@
 #include "console_model.h"
 
+#include "net_layout.h"
+#include "net_probe.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -654,6 +657,71 @@ static void console_model_dispatch(const char *input)
         }
         if (pn == 0) {
             console_model_append("  (no processes read)");
+        }
+        return;
+    }
+    if (strcmp(name, "net") == 0) {
+        NetFacts facts;
+        NetLinkSample link;
+        int sec;
+
+        /* The same probe and the same rows the Networking page draws and
+           the wire verb sends. Three faces, one producer - a console that
+           computed its own would be a third answer to drift against. */
+        memset(&link, 0, sizeof link);
+        link.rtt_ms = -1;
+        link.quiet_secs = -1;
+        if (conn_is_connected()) {
+            ConnSnapshot snap;
+
+            conn_snapshot(&snap);
+            link.connected = true;
+            conn_peer_label(link.peer, (long)sizeof link.peer);
+            link.port = (unsigned long)snap.port;
+            link.up_secs = snap.connected_secs > 0
+                ? (unsigned long)snap.connected_secs : 0UL;
+            link.quiet_secs = snap.quiet_secs;
+            link.rtt_ms = conn_last_rtt_ms();
+            link.rcv_window = conn_rcv_window();
+            link.rcv_peak = conn_rcv_peak();
+        }
+        now_net_probe(&link, &facts);
+
+        for (sec = 0; sec < (int)kNetSectionCount; ++sec) {
+            short rows = now_net_section_rows((NetSection)sec, &facts);
+            short ri;
+
+            console_model_append(now_net_section_title((NetSection)sec));
+            if (rows == 0) {
+                NetFactState st = kNetFactNotServed;
+
+                switch ((NetSection)sec) {
+                case kNetSectionLink:        st = facts.link.state; break;
+                case kNetSectionInet:        st = facts.inet.state; break;
+                case kNetSectionPorts:       st = facts.ports_state; break;
+                case kNetSectionConnections: st = facts.connections; break;
+                case kNetSectionCount:       break;
+                }
+                snprintf(line, sizeof line, "  %s",
+                         now_net_state_sentence(st));
+                console_model_append(line);
+                continue;
+            }
+            for (ri = 0; ri < rows; ++ri) {
+                char label[32];
+                char value[64];
+
+                if (!now_net_row((NetSection)sec, &facts, ri,
+                                 label, sizeof label, value, sizeof value)) {
+                    break;
+                }
+                /* Bounded to what a console line holds: the row model
+                   allows longer values than this face does, and a
+                   truncation the compiler can prove is a truncation the
+                   reader should choose rather than discover. */
+                snprintf(line, sizeof line, "  %-18.18s %.60s", label, value);
+                console_model_append(line);
+            }
         }
         return;
     }

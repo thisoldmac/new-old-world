@@ -46,6 +46,14 @@ static const char *const d_tail[] = {
     NULL
 };
 
+static const char *const d_net[] = {
+    "  This Mac's link, its TCP/IP configuration and the",
+    "  network ports it has, as four groups of rows.",
+    "  The last group says why a connection list is not",
+    "  among them: Open Transport publishes no way to ask.",
+    NULL
+};
+
 static const char *const d_putstat[] = {
     "  Bytes, chunk and write counts, and the milliseconds",
     "  spent inside FSWrite against the whole receive path.",
@@ -401,6 +409,8 @@ const NowCommandDoc kNowCommandDocs[] = {
       "put <full path>", d_put },
     { "tail", 1, "the last lines of this launch's log",
       "tail [lines]   (default 20, most 40)", d_tail },
+    { "net", 1, "this Mac's link, address and network hardware",
+      "net", d_net },
     { "putstat", 1, "where the last file received spent its time",
       "putstat", d_putstat },
     { "mv", 0, "move or rename something in the shared files",

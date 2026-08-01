@@ -95,6 +95,8 @@ struct HostRootView: View {
             CensusModuleView(model: state.census)
         case "diagnostics":
             DiagnosticsModuleView(model: state.diagnostics)
+        case "networking":
+            NetworkingModuleView(model: state.networking)
         case "software":
             SoftwareModuleView(model: state.software)
         case "mcp":

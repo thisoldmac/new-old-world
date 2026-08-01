@@ -124,6 +124,17 @@ struct ModuleRegistry: Sendable {
             symbol: "stethoscope",
             summary: "Measure this Mac's screen reads and transfers"
         ),
+        /* Beside Diagnostics rather than beside Connections: this page
+           is what the OTHER Mac says about its networking, which is a
+           measurement of that machine - the footer's Connections page is
+           about which Macs this host is talking to. Different questions,
+           and putting them together would suggest one answer. */
+        ModuleDescriptor(
+            id: "networking",
+            title: "Networking",
+            symbol: "network",
+            summary: "The connected Mac's link, address and network hardware"
+        ),
         ModuleDescriptor(
             id: "software",
             title: "Software",
