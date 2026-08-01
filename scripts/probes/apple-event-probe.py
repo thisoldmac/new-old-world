@@ -46,7 +46,7 @@ LEAVING the process table.
           and passes either way, because forcing it would mean discarding a
           document.
   refuse  the refusals: an event outside the quit/oapp/odoc/pdoc whitelist,
-          missing serials, and a PSN that no longer names a process.
+          missing serials, half a serial, and one that names no process.
 
 The `dirty` case is the one most likely to be quietly broken in a port,
 because "passes either way" is one careless edit from "always passes". It
@@ -61,7 +61,7 @@ guests — there is a parity test). So the `quit` CASE below could be re-pointed
 at NOW's verb today and would measure something real.
 
 It is NOT re-pointed, deliberately. This harness measures the general
-apple-event verb — an arbitrary event to an arbitrary PSN, and its REFUSALS,
+event verb — any of the four events to any process, and its REFUSALS,
 which is where a general event sender is dangerous and where NOW's narrow
 `quit` has nothing to say. Collapsing the two would produce a harness that
 passes while testing a quarter of what it names. If NOW wants a quit
@@ -70,9 +70,9 @@ file is the one that gates a general event verb.
 
 ## What this needs from NOW
 
-    observe      to find the target's PSN and to see it leave.
-                 (`ps` is a partial substitute and is used for the process
-                 list, but a PSN is not on NOW's wire today.)
+    observe      to find the target's serial and to see it leave. (`ps` is
+                 a partial substitute and is used for the process list, but
+                 it carries no serial - observe's process rows do.)
     aesend       four core events (quit/oapp/odoc/pdoc) to a named serial.
                  A closed vocabulary, not a class/id pipe.
 

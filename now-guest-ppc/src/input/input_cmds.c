@@ -201,8 +201,13 @@ void now_input_run_script(const char *request_json, long id,
     char              message[80];
 
     source[0] = '\0';
-    if (!now_json_find_string(request_json, "source", source,
-                              (long)sizeof source)) {
+    /* find_TEXT for the same reason as aesend's path: an AppleScript
+       source is authored text, not a protocol token, and it routinely
+       carries a file or window name a person typed. Left undecoded, a
+       host's UTF-8 reaches the OSA component as bytes this machine cannot
+       read and the script fails on a name that is right. */
+    if (!now_json_find_text(request_json, "source", source,
+                            (long)sizeof source)) {
         source_len = -1;
     } else {
         source_len = (int)strlen(source);
@@ -337,8 +342,13 @@ void now_input_run_aesend(const char *request_json, long id,
     (void)now_json_find_string(request_json, "event", event,
                                (long)sizeof event);
     path[0] = '\0';
-    path_len = now_json_find_string(request_json, "path", path,
-                                    (long)sizeof path)
+    /* find_TEXT, not find_string: `path` is an HFS name that goes to the
+       File Manager, and the host sends UTF-8. Undecoded, an accented
+       document name does not resolve and the caller is told the file does
+       not exist. `event` above is the opposite case - a protocol token,
+       ASCII by contract - and takes find_string. */
+    path_len = now_json_find_text(request_json, "path", path,
+                                  (long)sizeof path)
                ? (int)strlen(path) : -1;
     serial_present = arg_int(request_json, "serialHi", &hi)
                      && arg_int(request_json, "serialLo", &lo);
