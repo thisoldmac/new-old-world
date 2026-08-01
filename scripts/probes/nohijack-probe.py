@@ -15,11 +15,18 @@ NOW is porting the act plane on the strength of that number and, until this
 file existed, had no way to reproduce it. That is the whole reason this port
 was worth doing before the verbs it drives exist.
 
-## STATUS ON NOW TODAY: REFUSES
+## STATUS ON NOW TODAY: NOTHING HERE HAS MEASURED ANYTHING
 
-Every case needs verbs no NOW guest serves. It refuses at the top, names them,
-and exits 2. It does not connect-and-report-0/0, which would read as a guard
-holding and would be a lie. See "What this needs from NOW" below.
+Every case now has a machine-shaped path to a number, and no case has been
+run. The verbs it drives are served, and the menu bar its three menu cases
+address is read from a SCENE (`scene.request`) rather than from `observe`,
+which does not report one and deliberately will not.
+
+It still refuses rather than reporting 0/0 when the machine cannot be
+measured: missing verbs exit 2 by name, and a guest that does not answer
+`scene.request` exits 2 by name too — a separate refusal, because a scene is a
+typed control message that appears in no verb list. A connect-and-report-0/0
+would read as a guard holding and would be a lie.
 
 ## The question, and why it gates everything after it
 
@@ -68,30 +75,45 @@ oracle is a folder on disk — the strongest oracle this project has.
 `ok:true` is never evidence here. It is recorded, because a reply that
 disagrees with the guest is itself a finding, but the verdict is the guest's.
 
-## What this needs from NOW to become runnable
+## What this needs from NOW, and what it now has
 
-    observe        mint element/window/control references, and report the
-                   process list, the menu bar, and each window's controls with
-                   their rect / value / min / max. Wave 2A of the fold-in.
-                   NOTHING here can be addressed without it: NOW's act plane
-                   takes "now-window-<uuid>" and "now-element-<uuid>", and only
-                   an observation can mint one.
+    observe        mints the element/window/control references the control and
+                   text cases address, and reports each window's controls with
+                   their rect / value / min / max. NOTHING positional can be
+                   addressed without it: NOW's act plane takes
+                   "now-window-<uuid>" and "now-element-<uuid>", and only an
+                   observation can mint one. SERVED.
+    scene.request  the MENU BAR — menu ids and title `left`s, for the menu,
+                   stale, window and baseline cases. Not a verb: a typed
+                   control message answered with a transfer
+                   (scene.begin -> bulk -> scene.end). `observe` reports no
+                   menu bar and will not; docs/streaming-a-scene.md ruled a
+                   tree is a transfer, the bar is already walked by
+                   src/scene/scene_walk.c, and a second walk behind a bounded
+                   reply would be two producers of one fact. Read here through
+                   nowwire.GuestLink.scene(); see scripts/probes/scene.py for
+                   where the fetch sits in a trial and why.
     mouseloc       read the guest's cursor. Every hop calibration is a closed
                    loop against it, and there is no substitute: QMP can tell
                    you what it ASKED for, and acceleration means that is not
-                   where the cursor went.
+                   where the cursor went. SERVED.
     ctlact         the control op, for the control and text cases. This
                    file asked for Mirror's `ctlinvoke` until 2026-07-31,
                    against a guest that had served `ctlact` all along -
-                   see ctlinvoke-probe.py for the reconciliation.
+                   see ctlinvoke-probe.py for the reconciliation. SERVED.
     menuact        the menu op, for the menu, stale and window cases.
                    Same story, and the same day: Mirror spells it
-                   `menuinvoke`.
+                   `menuinvoke`. SERVED - and its `menu` argument is an
+                   INTEGER ID, not a reference; see menu_trial.
 
-    winact         DECLARED in NOW's contract, served by no guest. Not used by
-    textget        the three headline cases, but the text case below is the
-    textset        one lane that could run first, since two of its three verbs
-                   are already through design review.
+    textget        the text case's two verbs, and its two INDEPENDENT read
+    textset        paths. SERVED.
+
+    winact         SERVED (cmd_help.c registers it, commands.c dispatches
+                   it). This file said "served by no guest" until 2026-08-01,
+                   which was the same stale reading as the six "refuses on
+                   observe" verdicts. No case here uses it — winact-probe.py
+                   is where it is measured.
 
 The Desktop-folder oracle needs NOTHING further: it is built on `ls` and
 `file.trash`, which NOW already serves. See oracles.py — upstream needed a
@@ -112,7 +134,16 @@ Preserved deliberately, and the places it could have been lost:
   * N defaults to 20, the arm delay to 1.5 s and the stale delay to 10 s —
     upstream's values. Changing any of them changes what the number means.
   * the per-trial record keys are upstream's, so a run here can be diffed
-    field-for-field against `upstream/p2-nohijack.json`.
+    field-for-field against `upstream/p2-nohijack.json`. The scene adds three
+    keys (`sceneSeq`, `sceneRefetched`, `sceneBar`) and they are additive
+    bookkeeping — nothing in tally.py reads them.
+  * **the scene read did not become a way to lose a trial.** It happens in a
+    case's setup and, when the cached bar goes stale, at the TOP of a trial
+    before anything is armed. There is no new drop reason, no new denominator
+    and no new scored condition; a trial that had to re-read a scene is
+    counted exactly like one that did not. If that ever stops being true, the
+    numbers here have stopped being comparable to upstream's and whoever
+    changes it owes a loud note here saying so.
 
 WHAT IS NOT COMPARABLE, and must be said before anyone lines up two tables:
 upstream measured a trap-patch Portal on Mirror's guest. NOW's act plane is
@@ -140,6 +171,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import oracles                                                    # noqa: E402
 import qmp as qmpmod                                              # noqa: E402
+import scene as scenelib                                          # noqa: E402
 import tally                                                      # noqa: E402
 from nowwire import (GuestError, add_link_args, link_from_args,   # noqa: E402
                      refuse_without_metal)
@@ -186,6 +218,14 @@ REQUIRED = {
     "text": ("observe", "textget", "textset"),
 }
 
+# The cases that address a MENU, and therefore need the scene plane on top of
+# the verbs above. It is a separate table because it is a separate kind of
+# fact: `scene.request` is a typed control message, so it is in no verb list
+# and `require_verbs` structurally cannot check it. These four (baseline
+# included — it presses the same Apple menu) go through the scene gate
+# instead, on their first fetch.
+SCENE_CASES = ("menu", "stale", "window", "baseline")
+
 GATE_NOTE = """\
 This is the harness behind 18/20 -> 0/19, the measurement NOW's own contract
 cites in the act plane's preamble as the reason winact/textget/textset address
@@ -193,20 +233,32 @@ one element by a minted reference. NOW is building that plane now and cannot
 yet reproduce the number that justifies it.
 
 `observe` WAS the blocker for every case and is no longer: the guest serves
-it, along with mouseloc, ctlact, menuact, textget and textset, so this
-harness's verb gate now passes for every case. What each case is waiting on
-from here is a runtime precondition rather than a missing verb, and they are
-not the same wait:
+it, along with mouseloc, ctlact, menuact, textget and textset. The menu bar
+`observe` does NOT report is no longer a blocker either - this harness reads
+it from a scene, which is where the guest already ships it and where the
+contract says a caller gets a menu id from.
 
-  control / text / baseline  nothing but a machine and the right window.
-  menu / stale / window      a menu bar, which `observe` does not report and
-                             deliberately will not - the menu bar is a scene,
-                             and the scene plane already walks it. See the
-                             note in case_menu below and docs/emu-readiness.md.
+What each case waits on now is a runtime precondition, not a surface:
+
+  control / text  a machine, and a window with the controls the case needs.
+  menu / stale    a machine whose Finder is frontmost with its own menu bar,
+  window          and a QMP socket for the real mouse.
+  baseline        the same, with nothing armed.
 
 The Desktop-folder oracle is NOT blocked - it is built on `ls` and
 `file.trash`, which this guest already serves. Upstream needed a second guest
 process for that read; see scripts/probes/oracles.py."""
+
+SCENE_GATE_NOTE = """\
+The menu cases of this harness are what needs it. They address a menu by ID,
+which the contract says comes "from the scene", and they aim a real press at a
+menu title's `left`, which the scene is the only producer of. A guest that
+does not answer scene.request has no menu bar this harness can read.
+
+The other cases do not need it: --case control, --case text and --case
+baseline never look at a menu bar. If this machine is a NOW-68K guest, note
+that it serves no act plane either, so the menu cases have nothing to drive
+even with a bar."""
 
 
 # --- guest-state readers -----------------------------------------------------
@@ -224,11 +276,14 @@ def mouseloc(link) -> tuple:
 def observe(link, scope: str = "front") -> dict:
     """One observation. Mints the references everything else addresses.
 
-    Shape assumed: an `observe` output carrying processes, windows (each with
-    controls) and the menu bar, with an opaque `ref` per element. That is what
-    the reference layer is specified to produce (fold-in Wave 2A) and what
-    NOW's act plane requires as input. If it lands with a different shape,
-    THIS function is the only place that has to change.
+    Processes, windows, each window's controls and elements, with an opaque
+    `ref` per element — the reference layer, and what NOW's act plane requires
+    as input.
+
+    NOT the menu bar. `observe` reports none and deliberately will not; a
+    caller that wants one asks for a scene. This function is the only place
+    the observation's shape is assumed, so it is the only place that changes
+    if that shape moves.
     """
     return link.command("observe", {"scope": scope})
 
@@ -392,7 +447,7 @@ def case_control(link, qmp, n: int, arm_delay: float) -> dict:
 
 # --- case: menu cross-fire ---------------------------------------------------
 
-def apple_title_point(link) -> tuple:
+def apple_title_point(scene_doc) -> tuple:
     """A point ON the Apple menu's title.
 
     Aimed near its LEFT edge, not at the midpoint to the next menu's `left`:
@@ -400,18 +455,62 @@ def apple_title_point(link) -> tuple:
     there opens no menu at all. MEASURED, not assumed — upstream, with the
     Apple title at x=10 and File at x=38, presses at x=27..30 selected nothing
     while presses at x=18 worked every time.
+
+    Which menu is the Apple menu is an INFERENCE and `scene.leftmost_menu`
+    says so: the producer refuses to emit `menus[].apple` because nothing it
+    reads proves it. Geometry is the pick; the title character is recorded as
+    corroboration and is not the gate.
     """
-    menus = observe(link).get("menus") or []
-    if not menus:
-        raise SystemExit("PRECONDITION FAILED: no menus in the bar")
-    return (int(menus[0]["left"]) + 8, 9)
+    apple = scenelib.leftmost_menu(scene_doc)
+    if apple is None:
+        raise SystemExit(
+            "PRECONDITION FAILED: the scene's menu bar is EMPTY. The front "
+            "process reports no menus at all — which is a real state (a "
+            "faceless background application has none) and not the same as a "
+            "bar nobody walked.")
+    return (int(apple["left"]) + 8, 9)
 
 
-def finder_menu(link, title: str):
-    for m in observe(link).get("menus") or []:
-        if m.get("title") == title:
-            return m
-    return None
+def finder_menu(scene_doc, title: str):
+    """One menu of the front process's bar, by title, out of a scene.
+
+    NOT out of `observe`: `observe` emits no menu bar and deliberately will
+    not. See scene.py's docstring for the ruling and for why the fetch sits
+    where it sits.
+    """
+    return scenelib.menu_by_title(scene_doc, title)
+
+
+def fetch_scene(link, cache, *, front, why: str, quiet: bool = False):
+    """Read a scene into `cache` when — and only when — it is stale.
+
+    Returns `(scene_doc, refetched)`. Every caller is outside an armed window
+    by construction: this is called during a case's setup, or at the top of a
+    trial BEFORE the act request goes out. It is never called while a request
+    is armed, and the transfer it may start is why.
+    """
+    reason = cache.stale_reason(now=time.time(), front_app=front)
+    if reason is None:
+        return cache.scene, False
+    if cache.scene is None:
+        # THE GATE IS THE FIRST FETCH. `scene.request` is a typed control
+        # message and never appears in `help`, so `require_verbs` above cannot
+        # see it and a guest with no scene plane (NOW-68K serves neither scene
+        # nor act) would otherwise reach the trial loop and address nothing.
+        # Asking is the only way to know, and the answer is the scene this
+        # case needed anyway.
+        doc, env = link.require_scene_plane(PROBE, note=SCENE_GATE_NOTE)
+    else:
+        doc, env = link.scene()
+    cache.put(doc, now=time.time(), envelope=env)
+    if not quiet:
+        print(f"    scene #{env.get('seq')} read ({why}: {reason}); "
+              f"{env.get('bytes')} bytes, walk {env.get('walkMs')}ms, "
+              f"bar {scenelib.menubar_app(doc)!r}, "
+              f"{scenelib.menubar_state(doc)}")
+        for err in scenelib.scene_errors(doc):
+            print(f"      scene says: {err}")
+    return doc, True
 
 
 def press_with_tracking_probe(link, qmp, hold: float = 1.2):
@@ -446,27 +545,118 @@ def press_with_tracking_probe(link, qmp, hold: float = 1.2):
         return True, (mid, True)
 
 
-def menu_setup(link, qmp) -> tuple:
-    """Everything that needs feedback, done while the wire is still free."""
-    read = lambda: mouseloc(link)          # noqa: E731
-    hop = qmpmod.learn_hop(read, qmp, "top-left", apple_title_point(link))
-    drag = qmpmod.learn_drag(read, qmp, hop, "top-left", MENU_ITEM1_Y)
-    return hop, drag
+def ensure_finder(link, cache=None) -> str:
+    """The Finder frontmost, and the front app's name as `ps` reports it.
+
+    The name is what makes the cached menu bar checkable: the scene names the
+    application whose bar it walked, and this is the other half of that
+    comparison. It is a round trip the trial was making anyway.
+
+    A SWITCH INVALIDATES THE CACHED BAR, and this is the only place that can
+    know one happened. By the time anything else looks, the front process is
+    "Finder" again — so comparing names would say "unchanged" about a machine
+    where another application owned the menu bar a second ago, and coming back
+    to the front is exactly when an application rebuilds its own bar.
+    """
+    front = oracles.front_app(link)
+    if front != "Finder":
+        link.command("front", line="Finder")
+        time.sleep(1.5)
+        if cache is not None:
+            cache.invalidate(f"the front process was {front!r} and had to be "
+                             "switched back to the Finder")
+        front = oracles.front_app(link)
+    if front != "Finder":
+        raise SystemExit("PRECONDITION FAILED: the Finder is not frontmost")
+    return front
+
+
+class MenuAim:
+    """The learned stimulus, and the scene it was learned against.
+
+    Held together because they are one fact: a hop is a calibration TO A
+    POINT, and the point comes out of the menu bar. If a re-read moves the
+    Apple menu's title, the hop no longer aims anywhere known and has to be
+    re-learned — the same rule `case_control` already applies when its window
+    moves.
+    """
+
+    def __init__(self, cache):
+        self.cache = cache
+        self.hop = None
+        self.drag = None
+        self.target = None
+        self.relearns = 0
+
+    def calibrate(self, link, qmp, scene_doc, *, relearn: bool = False):
+        target = apple_title_point(scene_doc)
+        if self.hop is not None and target == self.target and not relearn:
+            return
+        if self.hop is not None:
+            self.relearns += 1
+            print(f"    the Apple menu's title moved {self.target} -> "
+                  f"{target}; re-learning the hop")
+        read = lambda: mouseloc(link)          # noqa: E731
+        self.target = target
+        self.hop = qmpmod.learn_hop(read, qmp, "top-left", target)
+        self.drag = qmpmod.learn_drag(read, qmp, self.hop, "top-left",
+                                      MENU_ITEM1_Y)
+
+
+def menu_setup(link, qmp) -> MenuAim:
+    """Everything that needs feedback, done while the wire is still free.
+
+    This is also where the case's ONE scene read happens, and the two belong
+    together: both are calibrations against a machine that is holding still,
+    both are worthless if the front process is not the one the trials will
+    address, and neither may happen while a request is armed.
+    """
+    front = ensure_finder(link)
+    cache = scenelib.SceneCache()
+    doc, _ = fetch_scene(link, cache, front=front, why="case setup")
+    if scenelib.menubar_state(doc) == scenelib.ABSENT:
+        raise SystemExit(
+            "PRECONDITION FAILED: this scene reports NO MENU BAR. That is "
+            "absent, not empty: the producer retracts the whole plane when "
+            "the front process's menu list does not parse, rather than ship "
+            "a short one. meta.errors above says which. Nothing here can "
+            "address a menu on this machine, and scoring trials against it "
+            "would report a guard holding over a bar nobody read.")
+    aim = MenuAim(cache)
+    aim.calibrate(link, qmp, doc)
+    return aim
 
 
 def menu_trial(link, qmp, click_delay: float, wait_for_reply_first: bool,
-               hop: tuple, drag: int) -> dict:
+               aim: MenuAim) -> dict:
     """One armed Finder File/New Folder, one real Apple-menu selection.
 
     `wait_for_reply_first` is the stale case: read the verb's reply (it times
     out and disarms) BEFORE clicking, so the click lands after the guard should
     already be disarmed.
     """
-    if oracles.front_app(link) != "Finder":
-        link.command("front", line="Finder")
-        time.sleep(1.5)
-    if oracles.front_app(link) != "Finder":
-        raise SystemExit("PRECONDITION FAILED: the Finder is not frontmost")
+    front = ensure_finder(link, aim.cache)
+
+    # THE SCENE READ, AND WHY IT IS HERE AND NOT A LINE LOWER.
+    #
+    # A scene is a TRANSFER on the one-wide bulk lane — ~21.5 KB with menus,
+    # against a 4096-byte control cap — and its walk costs guest time inside
+    # the cooperative event loop. So it happens BEFORE anything is armed, and
+    # only when the cached bar has stopped describing this machine
+    # (scene.SceneCache.stale_reason: the front process changed, its own
+    # `menubar.app` disagrees, or it aged out). Upstream could ask for a menu
+    # bar in a bounded reply and re-read it per trial; this port cannot, and
+    # putting a 20 KB transfer a second before every arm would be a different
+    # experiment.
+    #
+    # It changes NOTHING about how a trial is counted. No trial is dropped
+    # because a scene was read or not read; the drop reasons are still
+    # upstream's, and `tally.py` never learns this happened.
+    scene_doc, refetched = fetch_scene(link, aim.cache, front=front,
+                                       why="mid-case")
+    if refetched:
+        aim.calibrate(link, qmp, scene_doc)
+
     oracles.clear_desktop_untitled_folders(link)
     folders_before = oracles.desktop_untitled_folders(link)
     if folders_before:
@@ -475,34 +665,33 @@ def menu_trial(link, qmp, click_delay: float, wait_for_reply_first: bool,
         return {"valid": False, "why": "desktop was not clean",
                 "hijacked": False, "chained": False}
 
-    file_menu = finder_menu(link, "File")
+    file_menu = finder_menu(scene_doc, "File")
     if file_menu is None:
-        raise SystemExit("PRECONDITION FAILED: the Finder's File menu is not "
-                         "in the observation")
+        raise SystemExit(
+            "PRECONDITION FAILED: the Finder's File menu is not in the "
+            "scene's menu bar. The bar itself IS reported "
+            f"({scenelib.menubar_state(scene_doc)}, "
+            f"{len(scenelib.menus(scene_doc))} menus) — so this is a Finder "
+            "that does not have a File menu, or a bar belonging to something "
+            "else, not a producer that did not look.")
 
     # The Apple menu's title, near the top-left corner — which is why the
     # trial pins THERE: the replayed hop is a dozen pixels long.
-    target = apple_title_point(link)
+    target = aim.target
+    hop, drag = aim.hop, aim.drag
 
-    # The ARGUMENT is now the contract's: `menuact` declares `menu` as an
-    # INTEGER, the menu's id, and this used to pass a reference because that
-    # is the shape upstream's `menuinvoke` took. Half of that mismatch is
-    # fixed here; the other half is not this line's to fix.
+    # THE ARGUMENT IS THE CONTRACT'S, and the contract was the one that was
+    # right. `menuact` declares `menu` as an INTEGER — "The menu's id, as the
+    # scene reports it" — and the guest agrees in its own words: "the scene's
+    # menu bar is where a caller gets this number" (act_cmds.c). This file
+    # used to pass a REFERENCE, because that is the shape upstream's
+    # `menuinvoke` took, and a reference is not a thing `menuact` has ever
+    # accepted. The probe was wrong; nothing in the contract needs changing.
     #
-    # STILL NOT RUNNABLE, and the reason is a RULING rather than an omission.
-    # `observe` emits no menu bar — grep observe.c, there is no "menus" key —
-    # so `finder_menu` above returns None and the precondition fires first.
-    # That is not an oversight to be closed by adding menus to `observe`:
-    # docs/streaming-a-scene.md settled that a tree whose parts mean
-    # something only reassembled is a TRANSFER, and the menu bar is walked
-    # and shipped that way already, by the scene plane
-    # (src/scene/scene_walk.c → now_scene_walk_menubar, over scene.request).
-    # A second menu walk behind a bounded control reply would be two
-    # producers of one fact, which is the defect docs/command-parity.md
-    # exists to refuse.
-    #
-    # So what these three cases are waiting on is a SCENE read in this
-    # harness, not a wider `observe`. See docs/emu-readiness.md.
+    # The id now comes from where the contract says it comes from. `titleLeft`
+    # stays off-screen on purpose: it is this act's identity check, so a press
+    # nowhere near it is never claimed by the act — which is exactly what
+    # keeps the request armed for the full wait while the real click lands.
     mid = link.send_async("menuact", {"menu": int(file_menu["id"]), "item": 1,
                                       "titleLeft": OFFSCREEN_TITLE_LEFT})
     reply = None
@@ -562,16 +751,24 @@ def menu_trial(link, qmp, click_delay: float, wait_for_reply_first: bool,
         "chained": about,
         "selected": about,
         "target": list(target), "landed": list(landed), "valid": valid,
+        # BOOKKEEPING, NOT SCORING. These say which bar the trial addressed
+        # and whether it had to be re-read, so a reader of the JSON can see
+        # the scene's part in the run. Nothing in tally.py reads them, and a
+        # trial is neither dropped nor scored on account of any of them.
+        "menu": int(file_menu["id"]), "menuTitleLeft": int(file_menu["left"]),
+        "sceneSeq": (aim.cache.envelope or {}).get("seq"),
+        "sceneRefetched": refetched,
+        "sceneBar": scenelib.menubar_app(scene_doc),
     }
 
 
 def _run_menu_cases(link, qmp, n: int, delay: float, stale: bool,
                     name: str) -> dict:
-    hop, drag = menu_setup(link, qmp)
-    print(f"\n=== {name}, N={n} (hop {hop}, drag {drag})")
+    aim = menu_setup(link, qmp)
+    print(f"\n=== {name}, N={n} (hop {aim.hop}, drag {aim.drag})")
     trials = []
     for i in range(n):
-        t = menu_trial(link, qmp, delay, stale, hop, drag)
+        t = menu_trial(link, qmp, delay, stale, aim)
         t["trial"] = i + 1
         trials.append(t)
         sys.stdout.write("!" if not t.get("valid", True) else
@@ -601,18 +798,16 @@ def case_baseline(link, qmp, n: int) -> dict:
     an unfalsified assumption about my own stimulus. This case is excluded from
     the exit status for that reason: it measures the STIMULUS.
     """
-    hop, drag = menu_setup(link, qmp)
+    aim = menu_setup(link, qmp)
     print(f"\n=== baseline (nothing armed), N={n}")
     trials = []
     for i in range(n):
-        if oracles.front_app(link) != "Finder":
-            link.command("front", line="Finder")
-            time.sleep(1.5)
+        ensure_finder(link, aim.cache)
         oracles.clear_desktop_untitled_folders(link)
         before = oracles.desktop_untitled_folders(link)
-        qmpmod.replay_hop(qmp, "top-left", hop)
+        qmpmod.replay_hop(qmp, "top-left", aim.hop)
         starved, pending = press_with_tracking_probe(link, qmp)
-        qmp.rel(0, drag, step=3, pace=0.004)
+        qmp.rel(0, aim.drag, step=3, pace=0.004)
         time.sleep(0.6)
         qmp.button(False)
         time.sleep(2.5)
@@ -639,11 +834,11 @@ def case_window(link, qmp, delays: list) -> dict:
     Excluded from the exit status: this case is SUPPOSED to hijack at short
     delays. That is what it measures.
     """
-    hop, drag = menu_setup(link, qmp)
+    aim = menu_setup(link, qmp)
     print(f"\n=== disarm window sweep, delays={delays}")
     trials = []
     for d in delays:
-        t = menu_trial(link, qmp, d, False, hop, drag)
+        t = menu_trial(link, qmp, d, False, aim)
         t["delay"] = d
         trials.append(t)
         print(f"    +{d:4.1f}s  hijacked={t['hijacked']!s:5} "

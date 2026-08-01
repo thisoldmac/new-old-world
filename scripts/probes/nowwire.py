@@ -35,6 +35,14 @@ What did NOT change, and must not:
     turns them into U+FFFD. The contract says `exec.output.text` is MacRoman
     and pins `é` = 0x8E.
 
+One thing this client does that upstream's did not have to: **it reads a
+transfer.** Mirror's `observe` answered with the menu bar in a bounded reply,
+so its probes never touched the bulk plane. NOW ships a menu bar only as part
+of a scene — `scene.begin`, bulk frames, `scene.end` — so `scene()` here is
+what four probe cases stand on. The reassembly, the IR gate and the staleness
+rule live in `scene.py`, where a test can drive them; this file holds only the
+socket half.
+
 Sources for the transport half: `contract/wire_limits.h`,
 `contract/asyncapi.yaml` (preamble), `now-host/Sources/Host/Session.swift`
 (`gate`), `tools/fakeguest.py` (the framing, which is symmetric).
@@ -48,6 +56,8 @@ import socket
 import struct
 import sys
 import time
+
+from scene import SceneReader, SceneUnavailable
 
 # contract/wire_limits.h. Restated here rather than parsed because a probe is
 # not part of the build, and a probe that silently followed a changed constant
@@ -76,6 +86,14 @@ HELLO_REPLY_BUDGET = 8.0
 # own cadence, so the harness waits rather than connecting. 90s is generous on
 # purpose: the claim under test is never 'it comes back fast'."
 GUEST_DIAL_BUDGET = 90.0
+
+# How long one scene may take, walk and transfer together. Generous on
+# purpose: the producer's own note sizes the document at ~21.5 KB with menus,
+# the walk runs inside a cooperative event loop with the whole wire machine
+# above it, and `scene.begin` reports `walkMs` precisely because nobody has
+# measured that time on a real Macintosh yet. A budget tight enough to be
+# interesting would be a budget that fails a healthy machine.
+SCENE_BUDGET = 60.0
 
 
 class GuestError(Exception):
@@ -142,6 +160,52 @@ class MissingVerbs(SystemExit):
         # cannot be passed to it: `SystemExit("text")` prints the text and
         # exits 1, which is the status a FINDING uses. A machine that cannot
         # be measured is not a finding, and the two must not share a code.
+        print(self.report, file=sys.stderr)
+        super().__init__(2)
+
+
+class MissingScenePlane(SystemExit):
+    """This guest does not answer `scene.request`, so its menu bar is unreadable.
+
+    A sibling of `MissingVerbs` and for the same reason: a harness that
+    connected, found no scene plane, and reported 0/0 would read as a guard
+    holding. Exit status 2, again so "this machine cannot be measured" is
+    distinguishable from "the measurement found something".
+
+    It is a SEPARATE refusal from a missing verb because it is a separate
+    fact. `scene.request` is a typed control message and never appears in
+    `help`, so no verb list can carry it: NOW-68K serves `observe` and would
+    pass a verb gate while having no scene plane and no act plane at all.
+    """
+
+    def __init__(self, probe: str, detail: str, note: str = ""):
+        lines = [
+            "",
+            f"{probe}: REFUSING TO RUN — this guest does not serve the SCENE "
+            "plane.",
+            "",
+            f"    {detail}",
+            "",
+            "The menu bar comes from a scene and from nowhere else: `observe` "
+            "does not",
+            "report one, deliberately (docs/streaming-a-scene.md ruled that a "
+            "tree is a",
+            "TRANSFER, and src/scene/scene_walk.c already walks the bar over "
+            "scene.request).",
+            "A guest with no scene plane therefore has no menu bar this "
+            "harness can read,",
+            "and every menu case would be measuring a machine it could not "
+            "address.",
+            "",
+            "`scene.request` is a typed control message, not a command, so it "
+            "is not in",
+            "`help` and the verb gate above cannot see it. This is the only "
+            "way to know.",
+            "",
+        ]
+        if note:
+            lines += [note, ""]
+        self.report = "\n".join(lines)
         print(self.report, file=sys.stderr)
         super().__init__(2)
 
@@ -281,38 +345,52 @@ class GuestLink:
                 "both guests' control receive buffers are 4096 bytes")
         self.sock.sendall(frame(payload))
 
-    def _read_message(self) -> dict:
-        """Read one CONTROL frame's JSON object.
+    def _read_frame(self) -> tuple:
+        """One frame: (channel, flags, transfer, payload). Blocks.
 
-        Bulk frames are consumed and discarded with a note: no probe ported
-        here measures the bulk plane, and silently interleaving them into the
-        control stream would corrupt a reply.
+        Split out from `_read_message` when the scene read landed: a scene is
+        a TRANSFER, so one caller in this file needs the bulk frames rather
+        than the control stream, and both need the same header parse. One
+        parser, two readers.
         """
         while True:
-            while len(self._buf) >= FRAME_HEADER_BYTES:
+            if len(self._buf) >= FRAME_HEADER_BYTES:
                 channel, flags, transfer, length = struct.unpack(
                     ">BBHI", self._buf[:FRAME_HEADER_BYTES])
-                if len(self._buf) < FRAME_HEADER_BYTES + length:
-                    break
-                payload = self._buf[FRAME_HEADER_BYTES:
-                                    FRAME_HEADER_BYTES + length]
-                self._buf = self._buf[FRAME_HEADER_BYTES + length:]
-                if channel == CHANNEL_BULK:
-                    continue          # not this instrument's plane
-                if channel != CHANNEL_CONTROL:
-                    raise ConnectionError(f"unknown channel {channel}")
-                _ = flags, transfer
-                text = _decode(payload)
-                try:
-                    return json.loads(text)
-                except ValueError as exc:
-                    raise ConnectionError(
-                        f"guest sent unparseable control JSON: {exc}: "
-                        f"{text[:200]!r}")
+                if len(self._buf) >= FRAME_HEADER_BYTES + length:
+                    payload = self._buf[FRAME_HEADER_BYTES:
+                                        FRAME_HEADER_BYTES + length]
+                    self._buf = self._buf[FRAME_HEADER_BYTES + length:]
+                    if channel not in (CHANNEL_CONTROL, CHANNEL_BULK):
+                        raise ConnectionError(f"unknown channel {channel}")
+                    return channel, flags, transfer, payload
             chunk = self.sock.recv(65536)
             if not chunk:
                 raise ConnectionError("guest closed the link")
             self._buf += chunk
+
+    @staticmethod
+    def _control_json(payload: bytes) -> dict:
+        text = _decode(payload)
+        try:
+            return json.loads(text)
+        except ValueError as exc:
+            raise ConnectionError(
+                f"guest sent unparseable control JSON: {exc}: {text[:200]!r}")
+
+    def _read_message(self) -> dict:
+        """Read one CONTROL frame's JSON object.
+
+        Bulk frames are consumed and discarded with a note: no probe reads the
+        bulk plane through THIS path, and silently interleaving them into the
+        control stream would corrupt a reply. `scene()` reads its own
+        transfer whole, synchronously, so a scene's bytes never reach here.
+        """
+        while True:
+            channel, _flags, _transfer, payload = self._read_frame()
+            if channel == CHANNEL_BULK:
+                continue              # not this instrument's plane
+            return self._control_json(payload)
 
     def _pump(self, want_id: int | None, deadline: float | None) -> dict:
         """Read until the reply for `want_id` arrives, servicing the link.
@@ -333,26 +411,37 @@ class GuestLink:
                         f"no reply for id {want_id} within the trial's budget")
                 self.sock.settimeout(left)
             msg = self._read_message()
-            kind = msg.get("type")
-            if kind == "ping":
-                self._send({"type": "pong", "id": msg.get("id")})
-                continue
-            if kind == "bye":
-                raise ConnectionError(
-                    f"guest said bye: {msg.get('code')}")
-            if kind in ("command.result", "exec.result"):
-                mid = msg.get("id")
-                if mid is None:
-                    self._unsolicited.append(msg)
-                    continue
-                self._pending[mid] = msg
-                continue
-            if kind == "error" and msg.get("id") is not None:
-                self._pending[msg["id"]] = msg
+            if self._route(msg):
                 continue
             self._unsolicited.append(msg)
             if want_id is None:
                 return msg
+
+    def _route(self, msg: dict) -> bool:
+        """Service one control message. True when this consumed it.
+
+        The link's own housekeeping, in one place because two readers need it:
+        `_pump`, which waits for a command's reply, and `scene()`, which waits
+        for a transfer and must not swallow a command reply that arrives
+        mid-scene — an act request is often still in flight, and its reply is
+        the trial's.
+        """
+        kind = msg.get("type")
+        if kind == "ping":
+            self._send({"type": "pong", "id": msg.get("id")})
+            return True
+        if kind == "bye":
+            raise ConnectionError(f"guest said bye: {msg.get('code')}")
+        if kind in ("command.result", "exec.result"):
+            mid = msg.get("id")
+            if mid is None:
+                return False
+            self._pending[mid] = msg
+            return True
+        if kind == "error" and msg.get("id") is not None:
+            self._pending[msg["id"]] = msg
+            return True
+        return False
 
     # --- the command plane ---------------------------------------------
 
@@ -400,6 +489,95 @@ class GuestLink:
             raise GuestError(err.get("code") or reply.get("code") or "error",
                              err.get("message") or reply.get("message") or "")
         return reply.get("output") or {}
+
+    # --- the scene plane (a TRANSFER, not a command) --------------------
+
+    def scene(self, *, stale_after_ms: int | None = None,
+              chunk_kb: int | None = None, pace_ms: int | None = None,
+              timeout: float = SCENE_BUDGET) -> tuple:
+        """Ask for one walk of the machine and read it whole.
+
+        Returns `(document, envelope)`: the decoded IR v1 object and what
+        `scene.begin` said about the walk. Raises `scene.SceneUnavailable`
+        when there is no document — including when the GUEST refused, which
+        is a different fact and is flagged on the exception.
+
+        Synchronous and blocking, by the same argument as everything else in
+        this file: a probe is a measurement instrument, and a background
+        reader would make the moment a frame arrived unobservable. It reads
+        its own transfer to the end, which is also why `_read_message`'s
+        bulk-discarding path can never see a scene's bytes.
+
+        Commands whose replies arrive during the transfer are STASHED, not
+        dropped (`_route`). That is not a nicety: the menu cases hold an armed
+        act while they work, and a scene read that ate its reply would turn a
+        measured trial into a timeout.
+        """
+        self._id += 1
+        req: dict = {"type": "scene.request", "id": self._id}
+        if stale_after_ms is not None:
+            req["staleAfterMs"] = int(stale_after_ms)
+        if chunk_kb is not None:
+            req["chunkKb"] = int(chunk_kb)
+        if pace_ms is not None:
+            req["paceMs"] = int(pace_ms)
+        self._send(req)
+
+        reader = SceneReader(self._id)
+        deadline = time.time() + timeout
+        # SILENCE IS NOT A REFUSAL, and the two must not arrive here as the
+        # same exception. A guest that serves the plane and cannot serve this
+        # scene says `scene.end ok:false`; a guest that does not serve the
+        # plane says nothing at all, because `scene.request` is a control
+        # message it does not recognise.
+        silent = SceneUnavailable(
+            f"no scene.end within {timeout:.0f}s. A guest that serves the "
+            "scene plane answers a scene it cannot give with scene.end "
+            "ok:false, so silence here is not a refusal — it is a guest with "
+            "no scene plane, or one whose walk did not return.")
+        try:
+            while not reader.done:
+                left = deadline - time.time()
+                if left <= 0:
+                    raise silent
+                self.sock.settimeout(left)
+                try:
+                    channel, flags, transfer, payload = self._read_frame()
+                except socket.timeout:
+                    raise silent
+                if channel == CHANNEL_BULK:
+                    reader.on_bulk(transfer, payload, bool(flags & FLAG_END))
+                    continue
+                msg = self._control_json(payload)
+                if self._route(msg):
+                    continue
+                reader.on_control(msg)
+                if msg.get("type") not in ("scene.begin", "scene.end"):
+                    self._unsolicited.append(msg)
+        finally:
+            self.sock.settimeout(None)
+        return reader.result(), reader.envelope()
+
+    def require_scene_plane(self, probe: str, note: str = "",
+                            timeout: float = SCENE_BUDGET) -> tuple:
+        """Refuse unless this guest serves scenes — and keep the first one.
+
+        `scene.request` is a typed control message, NOT a command, so it does
+        not appear in `help` and `require_verbs` cannot see it. The only way
+        to know is to ask: a guest that serves the plane answers `scene.begin`
+        or an honest `scene.end ok:false`, and one that does not (NOW-68K
+        serves neither scene nor act) answers nothing at all.
+
+        The ask is not wasted. The gate IS the case's first fetch, and the
+        caller keeps the document.
+        """
+        try:
+            return self.scene(timeout=timeout)
+        except SceneUnavailable as exc:
+            if exc.refused_by_guest:
+                # It answered. The plane is there; this moment was wrong.
+                raise
+            raise MissingScenePlane(probe, str(exc), note)
 
     # --- the typed message planes (file.*, process.*) -------------------
     #
