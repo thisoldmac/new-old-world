@@ -106,3 +106,20 @@ they need this Mac's TCC grants, and what only a signed-in,
 access-granted machine can prove is ledgered in
 [open-issues.md](open-issues.md). The rest of the family is
 metal-verified yet.
+
+**Drive stays a flat list, not a tree — Data Browser containers are
+declared but unproven.** `spikes/databrowser-container-probe` compiles
+a real call to the hierarchical surface (`AddDataBrowserItems` with a
+container parent, `OpenDataBrowserContainer`/`CloseDataBrowserContainer`,
+`SetDataBrowserListViewDisclosureColumn`, the container item-data
+properties and notification messages) clean against this toolchain,
+but none of those four symbols were in the 22 the original
+`spikes/databrowser` probe confirmed CarbonLib 1.6.0 actually EXPORTS
+on the PB1400c — that probe only ever asked about the flat list. A
+clean compile is Level 1 (Builds); it proves nothing about whether the
+real machine's CarbonLib answers those calls. Until someone reruns the
+runtime probe with the container symbols added, the drive view keeps
+its proven shape: full-width flat list, replace-on-navigate, Up button
+— the same browsing model `files_browser_view.c` already carries
+metal-verified. See `spikes/databrowser-container-probe/README.md` and
+docs/guest-ui-start-here.md's proven/disproven list.

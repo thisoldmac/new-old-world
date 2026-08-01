@@ -91,6 +91,29 @@ to it. Finding: `carbon-databrowser-usable-carbonlib-16`.
   spoken interruption. `confirm.c` is the pattern, including pumping the
   wire while the question waits.
 
+## What is declared but NOT proven — do not assume header presence is enough
+
+- **Data Browser CONTAINERS** (hierarchical/tree mode: disclosure
+  triangles, `AddDataBrowserItems` with a real container parent,
+  `OpenDataBrowserContainer`/`CloseDataBrowserContainer`,
+  `SetDataBrowserListViewDisclosureColumn`,
+  `kDataBrowserItemIsContainerProperty` and friends) are declared in
+  this toolchain's headers and compile clean against a real call
+  (`spikes/databrowser-container-probe`), but were never in the 22
+  entry points `spikes/databrowser/main.c` checked with
+  `GetSharedLibrary`+`FindSymbol` on the real PB1400c — that probe only
+  ever exercised the FLAT list surface (`kDataBrowserNoItem` as every
+  parent). Declared-and-compiles is not the same evidence as
+  proven-exported, and this project has been burned by that gap before
+  (`carbon-databrowser-usable-carbonlib-16` is the mirror finding: a
+  header CAN lie about absence; it can equally fail to prove presence
+  where it was never asked). Until someone extends that runtime probe
+  with the four container-specific symbols and reruns it on metal or
+  the emulator, treat hierarchical Data Browser as **not viable** here.
+  The iCloud Drive browser (`cloud_drive_view.c`) stays a flat,
+  replace-on-navigate list for this reason — see
+  `spikes/databrowser-container-probe/README.md` and docs/icloud.md.
+
 ## How to not lose two hours
 
 Put it on the machine before it is finished. The Workshop shell went to
