@@ -129,6 +129,7 @@ NowPeekReadStatus now_ax_bind_process(const ProcessSerialNumber *psn,
     out->stamp_ticks = match.stamp_ticks;
     out->window_list = (unsigned long)match.window_list;
     out->menu_list = (unsigned long)match.menu_list;
+    out->a5 = (unsigned long)match.a5;
 
     out->memory.read = now_ax_direct_read;
     out->memory.ctx = NULL;

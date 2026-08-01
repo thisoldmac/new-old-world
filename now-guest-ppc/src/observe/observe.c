@@ -330,20 +330,48 @@ static int emit_process_head(char *out, long cap, long *used,
     char name[128];
     char sig[8];
     char sig_esc[32];
+    int  ok;
 
     escape_pstr(target->name, name, sizeof(name));
     ostype_text(target->signature, sig);
     now_json_escape(sig, sig_esc, sizeof(sig_esc));
-    return append(out, cap, used,
-                  "{\"name\":\"%s\",\"signature\":\"%s\","
-                  "\"serialHi\":%lu,\"serialLo\":%lu,\"front\":%s,"
-                  "\"bind\":\"%s\",\"stampTicks\":%lu",
-                  name, sig_esc,
-                  (unsigned long)target->psn.highLongOfPSN,
-                  (unsigned long)target->psn.lowLongOfPSN,
-                  target->is_front ? "true" : "false",
-                  bind_name(target->bind),
-                  (unsigned long)target->context.stamp_ticks);
+    ok = append(out, cap, used,
+                "{\"name\":\"%s\",\"signature\":\"%s\","
+                "\"serialHi\":%lu,\"serialLo\":%lu,\"front\":%s,"
+                "\"bind\":\"%s\",\"stampTicks\":%lu",
+                name, sig_esc,
+                (unsigned long)target->psn.highLongOfPSN,
+                (unsigned long)target->psn.lowLongOfPSN,
+                target->is_front ? "true" : "false",
+                bind_name(target->bind),
+                (unsigned long)target->context.stamp_ticks);
+    if (!ok) {
+        return 0;
+    }
+    /* a5 is the target application's A5 world - the one thing
+       `qdtrace start`'s mandatory `arm_a5` needs and no verb used to
+       emit. It rides on THIS row rather than a new one because the
+       oracle read that fills it is the same read that fills `bind`.
+
+       Strictly `kNowPeekAnchorOk`, not the collapsed `bind` word: `bind`
+       reads "ok" for both the oracle's Ok and Stale verdicts (see
+       axprocess.c's verdict_status), but a Stale anchor names a process
+       that has not pumped its event loop since the plane was armed, and
+       handing that A5 to a caller who will feed it straight into an ARM
+       call is a different risk than handing it to a caller who is only
+       looking. Absence, not zero, on every other verdict - zero is a
+       legal (if impossible in practice) A5 value and would read as a
+       real answer instead of "cannot tell". The decision itself is not
+      made here: now_peek_anchor_a5_arm_trusted is the one place that
+      says which verdict earns a caller the right to arm with this
+      value, and it is host-tested against peek_oracle.h's own verdict
+      enum (peek_oracle_test.c) since this file has no host test of its
+      own. */
+    if (now_peek_anchor_a5_arm_trusted(target->context.verdict)) {
+        return append(out, cap, used, ",\"a5\":\"0x%08lx\"",
+                      target->context.a5);
+    }
+    return 1;
 }
 
 /* A window's own editable text, and the element reference that names it.

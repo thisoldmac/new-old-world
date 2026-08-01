@@ -38,6 +38,15 @@ typedef struct {
     unsigned long partition_lo;
     unsigned long partition_size;
     NowPeekAnchorVerdict verdict; /* the oracle's answer, carried through */
+    /* The anchor's own a5, straight from the oracle - filled whenever
+       `verdict` is Ok or Stale, zero otherwise (matching peek_oracle.h's
+       "no honest value to put in them" rule for the other three
+       verdicts). A caller that wants to ARM something with this value,
+       rather than merely observe with it, must check `verdict ==
+       kNowPeekAnchorOk` itself: Stale is filled here exactly like Ok is,
+       but a caller putting a5 on the wire for arming purposes should
+       treat Stale as absent too - see observe.c's emit_process_head. */
+    unsigned long a5;
 } NowAxContext;
 
 /* Resolves `psn` to a bound context. Returns the reader vocabulary

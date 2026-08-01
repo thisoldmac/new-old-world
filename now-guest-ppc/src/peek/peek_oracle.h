@@ -131,4 +131,18 @@ NowPeekAnchorVerdict now_peek_anchor_match(const NowPeekTable *table,
    log lines. Never NULL, never allocates. */
 const char *now_peek_anchor_verdict_name(NowPeekAnchorVerdict v);
 
+/* Whether a MATCH carrying this verdict is trustworthy enough to hand its
+   a5 to a caller that will ARM something with it (qdtrace's `arm_a5`,
+   today) rather than merely display it.
+
+   Narrower than "the match's fields are filled": Ok and Stale both fill
+   `a5` (see the verdict's own doc comment above), but only Ok passes
+   here. A Stale match names a process that has not pumped its event loop
+   since the plane was armed, and an anchor that old is a live risk for
+   ARMING even though it remains a fine one for OBSERVING - so the
+   distinction this function draws is deliberately stricter than the
+   oracle's own "filled vs not" line, not a restatement of it. NotFound,
+   Mismatch and Ambiguous were already untrustworthy for either purpose. */
+int now_peek_anchor_a5_arm_trusted(NowPeekAnchorVerdict v);
+
 #endif /* NOW_PEEK_ORACLE_H */

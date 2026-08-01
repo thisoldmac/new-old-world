@@ -270,3 +270,12 @@ const char *now_peek_anchor_verdict_name(NowPeekAnchorVerdict v)
     }
     return "unknown";
 }
+
+int now_peek_anchor_a5_arm_trusted(NowPeekAnchorVerdict v)
+{
+    /* Spelled as the single case that is trusted, not as the four that
+       are not: a fifth verdict added later defaults to untrusted rather
+       than silently inheriting whichever bucket an else-branch happened
+       to fall into. */
+    return v == kNowPeekAnchorOk;
+}
