@@ -311,12 +311,23 @@ void now_prefs_load(NowPrefs *prefs)
                 module = 10;          /* Logs */
             }
         }
-        /* 11 rather than kWorkshopModuleCount: prefs is core and the
+        /* Mirror went in as id 10 (the last nav row), pushing Logs
+           10 -> 11 and Connection 11 -> 12. Same shape and the same
+           ordering trap as every insert above it: Connection moves
+           first, so 10 -> 11 cannot then run on into 12. */
+        if (record.format <= 16) {
+            if (module == 11) {
+                module = 12;          /* Connection */
+            } else if (module == 10) {
+                module = 11;          /* Logs */
+            }
+        }
+        /* 12 rather than kWorkshopModuleCount: prefs is core and the
            module id list is UI, so this file does not include the
            Workshop's header. The number is a literal here for the same
            reason it always was, and the remaps above are what keep it
            meaningful. */
-        if (module >= 1 && module <= 11) {
+        if (module >= 1 && module <= 12) {
             prefs->workshop_module = module;
         }
         prefs->workshop_rect = v9.workshop_rect;
@@ -354,7 +365,7 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 
     memset(&record, 0, sizeof record);
     record.magic = kPrefsMagic;
-    record.format = 16;               /* Networking inserted as nav id 9,
+    record.format = 17;               /* Mirror inserted as nav id 10,
                                          shifting Logs and Connection down;
                                          layout unchanged since 15 */
     record.port = prefs->port;

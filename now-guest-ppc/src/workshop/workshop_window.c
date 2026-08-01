@@ -11,6 +11,7 @@
 #include "files_module.h"
 #include "logs_module.h"
 #include "mcp_module.h"
+#include "mirror_module.h"
 #include "processes_module.h"
 #include "screenshots_module.h"
 #include "software_module.h"
@@ -68,6 +69,10 @@ static const struct {
     { "Networking",
       "This Mac's link, its address, and the network hardware it has.",
       "Networking has not moved in yet." },
+    { "Mirror",
+      "Mirror's own extensions and agent on this Mac. NOW reads them; it "
+      "installs nothing.",
+      "Mirror has not moved in yet." },
     { "Logs",
       "This launch's event log. Toggle whether it also reaches the disk.",
       "Logs has not moved in yet." },
@@ -185,6 +190,7 @@ Boolean workshop_open(void)
     g_ops[kWorkshopMCP] = mcp_module_ops();
     g_ops[kWorkshopDiagnostics] = diagnostics_module_ops();
     g_ops[kWorkshopNetworking] = network_module_ops();
+    g_ops[kWorkshopMirror] = mirror_module_ops();
     g_ops[kWorkshopLogs] = logs_module_ops();
     g_ops[kWorkshopConnection] = connection_module_ops();
     now_prefs_load(&prefs);

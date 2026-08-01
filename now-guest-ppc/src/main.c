@@ -78,13 +78,29 @@ static const unsigned char k_view_mcp_item[] = {
 static const unsigned char k_view_diagnostics_item[] = {
     13, 'D', 'i', 'a', 'g', 'n', 'o', 's', 't', 'i', 'c', 's', '/', '8'
 };
-static const unsigned char k_view_logs_item[] = {
-    6, 'L', 'o', 'g', 's', '/', '9'
+/* The item NUMBER is the module id (see the handler below), so every
+   module needs an item and they must appear in enum order. Networking
+   had no item at all, which silently made Cmd-9 "Logs" select Networking
+   and Cmd-0 "Connection" select Logs, and left Connection unreachable
+   from this menu; adding Mirror without repairing that would have moved
+   the mismatch along rather than fixed it.
+
+   Cmd-0 goes to the tenth item because the digits run out at nine and 0
+   is where a person looks next, not the letter C (already Close). The
+   last two carry no equivalent: the keys are gone, and one invented from
+   a letter would collide with File's before it helped anyone. Both are
+   one click away in the rail. */
+static const unsigned char k_view_networking_item[] = {
+    12, 'N', 'e', 't', 'w', 'o', 'r', 'k', 'i', 'n', 'g', '/', '9'
 };
-/* Cmd-0 for the tenth item: the digits ran out at nine, and 0 is where a
-   person looks next on a keyboard, not the letter C (already Close). */
+static const unsigned char k_view_mirror_item[] = {
+    8, 'M', 'i', 'r', 'r', 'o', 'r', '/', '0'
+};
+static const unsigned char k_view_logs_item[] = {
+    4, 'L', 'o', 'g', 's'
+};
 static const unsigned char k_view_connection_item[] = {
-    12, 'C', 'o', 'n', 'n', 'e', 'c', 't', 'i', 'o', 'n', '/', '0'
+    10, 'C', 'o', 'n', 'n', 'e', 'c', 't', 'i', 'o', 'n'
 };
 static const unsigned char k_workshop_menu_item[] = {
     8, 'W', 'o', 'r', 'k', 's', 'h', 'o', 'p'
@@ -103,8 +119,8 @@ static void create_menu_bar(void)
     AppendMenu(file_menu, k_quit_menu_item);
     InsertMenu(file_menu, 0);
     /* View selects a Workshop module (Cmd-1..9 then Cmd-0, the item number
-       IS the module ID); Windows reopens the one window. Every module
-       lives in the Workshop now. */
+       IS the module ID, and the last two have no key); Windows reopens
+       the one window. Every module lives in the Workshop now. */
     AppendMenu(view_menu, k_view_screenshots_item);
     AppendMenu(view_menu, k_view_files_item);
     AppendMenu(view_menu, k_view_console_item);
@@ -113,6 +129,8 @@ static void create_menu_bar(void)
     AppendMenu(view_menu, k_view_software_item);
     AppendMenu(view_menu, k_view_mcp_item);
     AppendMenu(view_menu, k_view_diagnostics_item);
+    AppendMenu(view_menu, k_view_networking_item);
+    AppendMenu(view_menu, k_view_mirror_item);
     AppendMenu(view_menu, k_view_logs_item);
     AppendMenu(view_menu, k_view_connection_item);
     InsertMenu(view_menu, 0);

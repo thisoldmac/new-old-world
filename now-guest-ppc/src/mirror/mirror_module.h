@@ -1,0 +1,8 @@
+#ifndef NOW_MIRROR_MODULE_H
+#define NOW_MIRROR_MODULE_H
+
+#include "workshop_module.h"
+
+const WorkshopModuleOps *mirror_module_ops(void);
+
+#endif /* NOW_MIRROR_MODULE_H */

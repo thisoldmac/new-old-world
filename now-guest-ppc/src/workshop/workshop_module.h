@@ -19,15 +19,16 @@ typedef enum {
     kWorkshopSoftware,
     kWorkshopMCP,
     kWorkshopDiagnostics,
-    kWorkshopNetworking,     /* the last nav row, above the pinned pair */
+    kWorkshopNetworking,
+    kWorkshopMirror,         /* the last nav row, above the pinned pair */
     kWorkshopLogs,
-    kWorkshopConnection      /* pinned; inserting MCP and Diagnostics
-                                pushed this and Logs down again, moving
-                                the prefs format to 15 - see
-                                now_prefs_load */
+    kWorkshopConnection      /* pinned; every nav row inserted above has
+                                pushed this and Logs down again, and each
+                                time the prefs format moved with them -
+                                Mirror takes it to 17. See now_prefs_load */
 } WorkshopModuleID;
 
-enum { kWorkshopModuleCount = 11 };
+enum { kWorkshopModuleCount = 12 };
 
 typedef struct WorkshopModuleOps {
     OSErr (*create)(WindowRef owner, const Rect *body);

@@ -170,6 +170,19 @@ resource 'ics#' (139) {
     }
 };
 
+/* 140: Mirror. A framed pane with a diagonal highlight across it - the
+   glancing reflection a mirror or a screen shows, and the one shape at
+   this size that is not already 138's dial, 135's document or 136's
+   tiles. */
+resource 'ics#' (140) {
+    {
+        $"0000 0000 3FFC 200C 2014 2024 2044 2084"
+        $"2104 2204 2404 2804 3004 3FFC 0000 0000",
+        $"0000 0000 3FFC 3FFC 3FFC 3FFC 3FFC 3FFC"
+        $"3FFC 3FFC 3FFC 3FFC 3FFC 3FFC 0000 0000"
+    }
+};
+
 resource 'SIZE' (-1) {
     reserved,
     acceptSuspendResumeEvents,

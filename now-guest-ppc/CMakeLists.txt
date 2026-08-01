@@ -40,6 +40,9 @@ add_application(now-guest-ppc
     src/network/net_layout.c
     src/network/net_probe.c
     src/network/network_module.c
+    src/mirror/mirror_layout.c
+    src/mirror/mirror_probe.c
+    src/mirror/mirror_module.c
     src/census/census_decode.c
     src/census/census_report.c
     src/files/files_module.c

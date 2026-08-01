@@ -46,7 +46,7 @@ enum {
        follows it in the struct. That is exactly what happened when
        Networking went in on 2026-08-01, and the assert below is why it
        cannot happen quietly again. */
-    kWorkshopNavRows = 9
+    kWorkshopNavRows = 10
 };
 
 typedef struct WorkshopLayout {
@@ -54,7 +54,8 @@ typedef struct WorkshopLayout {
     Rect rail_list;     /* one framed white panel holding every row */
     Rect nav_rows[kWorkshopNavRows];  /* Screenshots, Files, Console,
                                          Processes, Hardware, Software,
-                                         MCP, Diagnostics, Networking */
+                                         MCP, Diagnostics, Networking,
+                                         Mirror */
     Rect conn_divider;  /* one-pixel rule above the pinned pair */
     Rect logs_row;      /* Logs, pinned just above Connection */
     Rect conn_row;      /* Connection, pinned at the panel's bottom */
