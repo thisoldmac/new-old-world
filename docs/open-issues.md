@@ -46,12 +46,31 @@ closed a window 10/10" and "a person can close a window in the mirror" are
 different claims, and the gate only ever checked the first — so it stayed
 green for two days while the product did nothing.
 
-Still open, and not answered by the reversal: `mirror/tools/spin-up.sh`
-resolves the lab it borrows its emulator instruments from as its own
-parent directory, which inside NOW is this repository rather than the
-TimBotTu checkout that has them. The launcher NAMES that as a missing
-prerequisite rather than failing into bash errors, but nothing has yet
-made Mirror's guest spin-up work from here.
+**Closed 2026-08-01: the guest spin-up works from here.** It used to
+resolve the lab it borrows its emulator instruments from as its own parent
+directory, which inside NOW is this repository rather than the TimBotTu
+checkout that has them. Both scripts and both Python stagers now honour
+`MIRROR_LAB_ROOT` and otherwise walk up until a directory actually holds
+`tools/lib.sh`; `MirrorInstallation.lab` resolves it the same way and
+passes its answer down, so the preflight and the run cannot disagree.
+
+Emulator-verified, not merely built: `MIRROR_DISPLAY=1 tools/spin-up.sh`
+from `now/mirror/` booted a fresh mac99 clone (anchor at 90s), staged all
+three INITs, cold-rebooted with all three surviving, and the agent
+answered — `oracle=ok v4`, `observe` 9 processes front=Finder, `axtree`
+walking. Both preflight halves then read green against this checkout.
+
+Two things it left behind:
+
+- `stop-mirror.sh` had a worse version of the same bug and now refuses
+  rather than proceed: with no lab found, `LAB` resolved to `/`, the QMP
+  quit failed into its own `||` branch reporting "VM may already be down",
+  and the `rm` then unlinked the session disk out from under a QEMU that
+  was still running it.
+- The standalone `timbottu/mirror` repository still carries the old
+  resolution in all four files. It is not broken there — its parent really
+  is the lab — but the vendored copy and the origin have diverged, and the
+  walk-up version is the one that works in both geometries.
 
 ## The last functional gap: a person cannot click the mirror (2026-08-01)
 
