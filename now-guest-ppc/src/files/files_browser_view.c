@@ -26,6 +26,13 @@ static char g_count[48];          /* listing state, for the path row */
 static char g_note[128];          /* transfer talk and errors, placard */
 static Boolean g_loading;
 
+/* The pull in flight, and the one-shot that says one just started here.
+   The state is folded from now_wire_get_active() rather than counted
+   again: there is one notion of "a transfer is running" on this side and
+   this is a view of it, not a second copy. */
+static PullView g_pull;
+static Boolean g_pull_began;
+
 static void invalidate_chrome(void)
 {
     /* The path row and status placard both read this view's state; the
@@ -100,9 +107,17 @@ static void open_row(int index)
             snprintf(full, sizeof full, "%.200s:%.31s", g_path,
                      g_rows[index].name);
         }
+        /* Said before it is asked for, so the pane is already describing
+           the transfer when the module paints the Stop button into this
+           same click. */
+        now_pull_asked(&g_pull, g_rows[index].name);
         if (now_wire_get_host(full, g_rows[index].name, err,
                               sizeof err) < 0) {
+            now_pull_reset(&g_pull);
             snprintf(g_note, sizeof g_note, "%.110s", err);
+        } else {
+            g_pull_began = true;
+            g_note[0] = '\0';         /* the last transfer's news is stale */
         }
         invalidate_chrome();
         return;
@@ -412,31 +427,75 @@ void files_browser_activate(Boolean active)
 }
 
 /* Every event-loop pass while a pull is running, so the count moves
-   instead of the pane looking hung. Reads memory only, repaints only
-   when the number changed. */
+   instead of the pane looking hung. Reads memory only, and recomposes
+   the line only when now_pull_step says something a person could see has
+   changed - over MacTCP a chunk arrives thousands of times per file. */
+static char g_pull_note[128];
+
 void files_browser_idle(void)
 {
     long received = 0, expected = 0;
-    static long last_shown = -1;
+    Boolean active;
+    static long last_step = -1;
 
     if (g_owner == NULL || !g_visible) {
         return;
     }
-    if (!now_wire_get_active(&received, &expected)) {
-        last_shown = -1;
+    active = now_wire_get_active(&received, &expected);
+    now_pull_observe(&g_pull, active, received, expected);
+    if (!active) {
+        last_step = -1;
+        g_pull_note[0] = '\0';
         return;
     }
-    if (received / 4096 == last_shown) {
+    if (now_pull_step(&g_pull) == last_step) {
         return;
     }
-    last_shown = received / 4096;
-    if (expected > 0) {
-        snprintf(g_note, sizeof g_note, "Getting... %ld%% of %ld K",
-                 received * 100 / expected, expected / 1024);
-    } else {
-        snprintf(g_note, sizeof g_note, "Getting... %ld K",
-                 received / 1024);
+    last_step = now_pull_step(&g_pull);
+    now_pull_note(&g_pull, g_pull_note, sizeof g_pull_note);
+}
+
+Boolean files_browser_pull(PullView *out)
+{
+    if (out != NULL) {
+        *out = g_pull;
     }
+    return (Boolean)(g_pull.phase != kPullIdle);
+}
+
+Boolean files_browser_pull_began(void)
+{
+    Boolean began = g_pull_began;
+
+    g_pull_began = false;
+    return began;
+}
+
+Boolean files_browser_stop_pull(char *err, long cap)
+{
+    if (!now_pull_can_stop(&g_pull)) {
+        if (err != NULL && cap > 0) {
+            snprintf(err, (size_t)cap, "Nothing is being transferred.");
+        }
+        return false;
+    }
+    now_pull_stopping(&g_pull);
+    /* The line goes up before the wire is touched, so the pane is
+       already saying "Stopping" if the teardown takes a pass. */
+    now_pull_note(&g_pull, g_pull_note, sizeof g_pull_note);
+    if (now_pull_cancel(err, cap) != 0) {
+        /* The wire refused. The pull is whatever it was; let the next
+           idle pass re-derive it from now_wire_get_active rather than
+           guess here. */
+        return false;
+    }
+    /* What is left behind, said out loud: a pull is never resumable, so
+       the temp is deleted and nothing appears under the real name. The
+       person cannot check that without walking to the downloads folder,
+       so the pane says it. */
+    now_pull_stopped_note(&g_pull, g_note, sizeof g_note);
+    invalidate_chrome();
+    return true;
 }
 
 void files_browser_path_text(char *out, long cap)
@@ -457,6 +516,13 @@ void files_browser_count_text(char *out, long cap)
 
 void files_browser_note_text(char *out, long cap)
 {
+    /* A live transfer outranks the last one's news: "Got Report.cwk"
+       left standing while the next file comes down is the pane telling
+       a person the wrong thing about right now. */
+    if (g_pull.phase != kPullIdle && g_pull_note[0] != '\0') {
+        snprintf(out, (size_t)cap, "%s", g_pull_note);
+        return;
+    }
     snprintf(out, (size_t)cap, "%s", g_note);
 }
 
