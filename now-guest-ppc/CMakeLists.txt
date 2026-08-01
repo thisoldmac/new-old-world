@@ -36,6 +36,10 @@ add_application(now-guest-ppc
     src/mcp/mcp_module.c
     src/diagnostics/diag_layout.c
     src/diagnostics/diagnostics_module.c
+    src/network/net_facts.c
+    src/network/net_layout.c
+    src/network/net_probe.c
+    src/network/network_module.c
     src/census/census_decode.c
     src/census/census_report.c
     src/files/files_module.c
@@ -186,6 +190,7 @@ add_dependencies(now-guest-ppc generate_buildstamp)
 # preferences (and the real host, not the 10.0.2.2 emulator gateway) off
 # that process name. now-guest-ppc.bin stays for dev / side-by-side testing;
 # "New Old World.bin" is the one that goes to metal and lands on main.
+
 find_program(PYTHON3_EXECUTABLE NAMES python3 python)
 if(PYTHON3_EXECUTABLE)
     add_custom_command(

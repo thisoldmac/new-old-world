@@ -62,6 +62,17 @@ struct HostRootView: View {
                 }
             }
         }
+        /* OPAQUE, and this is not decoration. `safeAreaInset` insets the
+           scroll view's safe area but list rows still SCROLL UNDERNEATH
+           the inset - that is what it is for, and it is only legible if
+           the inset has something behind it. Without this the footer's
+           text and a scrolled row render on top of each other.
+
+           It did not show until 2026-08-01 because the module list was
+           short enough never to scroll. Adding Networking made it
+           scroll, and a latent bug became a visible one - so this is a
+           fix for every module added after it, not for that one. */
+        .background(.bar)
     }
 
     /// The List only knows about the modules it draws; a footer selection
@@ -95,6 +106,8 @@ struct HostRootView: View {
             CensusModuleView(model: state.census)
         case "diagnostics":
             DiagnosticsModuleView(model: state.diagnostics)
+        case "networking":
+            NetworkingModuleView(model: state.networking)
         case "software":
             SoftwareModuleView(model: state.software)
         case "mcp":

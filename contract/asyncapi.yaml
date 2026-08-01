@@ -2245,6 +2245,31 @@ components:
         type: object
         properties:
           cancel: { type: string }
+    net:
+      description: >
+        What the guest can say about its own networking, as four groups
+        of rows: the link it is holding to this host, its TCP/IP
+        configuration, the network ports the machine has, and — last —
+        why a list of that Mac's connections is not among them. Open
+        Transport publishes no documented way to enumerate them
+        (docs/ot-networking-surface.md), so that group answers with a
+        reason rather than an empty list, which a caller would read as
+        "none".
+
+        The rows are the same ones the guest's own Networking page draws,
+        from the same code, so the two surfaces cannot disagree about
+        what a machine's networking looks like. A group header is a row
+        whose value is empty; rows inside a group are indented by two
+        spaces; a group with nothing to show sends one row whose label is
+        its reason in parentheses and whose value is the sentence.
+
+        PowerPC only: it is built on Open Transport, and the 68K guest
+        speaks MacTCP.
+      args: {}
+      output:
+        type: object
+        properties:
+          net: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
     putstat:
       description: >
         Where the last file the guest RECEIVED spent its time: bytes,

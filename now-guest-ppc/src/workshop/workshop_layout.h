@@ -39,7 +39,14 @@ enum {
 
     /* Non-pinned modules; Logs and Connection are pinned below the
        divider and are not among these. */
-    kWorkshopNavRows = 8
+    /* Every module except the two pinned at the foot (Logs and
+       Connection). Adding a module and forgetting this is not a cosmetic
+       slip: row_rect() indexes nav_rows[module - 1], so a count one
+       short reads PAST THE ARRAY and lays the new row out over whatever
+       follows it in the struct. That is exactly what happened when
+       Networking went in on 2026-08-01, and the assert below is why it
+       cannot happen quietly again. */
+    kWorkshopNavRows = 9
 };
 
 typedef struct WorkshopLayout {
@@ -47,7 +54,7 @@ typedef struct WorkshopLayout {
     Rect rail_list;     /* one framed white panel holding every row */
     Rect nav_rows[kWorkshopNavRows];  /* Screenshots, Files, Console,
                                          Processes, Hardware, Software,
-                                         MCP, Diagnostics */
+                                         MCP, Diagnostics, Networking */
     Rect conn_divider;  /* one-pixel rule above the pinned pair */
     Rect logs_row;      /* Logs, pinned just above Connection */
     Rect conn_row;      /* Connection, pinned at the panel's bottom */

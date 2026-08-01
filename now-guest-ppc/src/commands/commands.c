@@ -23,6 +23,8 @@
 #include "prefs.h"
 #include "fileshare.h"
 #include "wire.h"
+#include "net_layout.h"
+#include "net_probe.h"
 #include "screenshot.h"
 #include "vprobe.h"
 #include "catsearch.h"
@@ -658,6 +660,94 @@ static void run_putstat(long id, char *out, long cap)
              conn_rcv_peak(), conn_service_passes());
 }
 
+/* net: what this Mac can say about its own networking, as rows.
+   Reuses the [label, value] shape every other command returns, which is
+   why it needs no new wire type and no host decoder - the conformance
+   gate would redden on a type the host cannot read, and there is no
+   reason to mint one for a table.
+
+   The rows come from the same net_probe/net_layout pair the guest's own
+   Networking page draws, so the two surfaces cannot disagree about what
+   this Mac's networking looks like. In particular the Connections row
+   says what it says HERE too: a caller that asked over the wire deserves
+   the same honest answer as a person at the keyboard, rather than an
+   empty list they would read as "none". */
+static void run_net(long id, char *out, long cap)
+{
+    NetFacts facts;
+    NetLinkSample link;
+    long n;
+    int sec;
+    Boolean first = true;
+
+    memset(&link, 0, sizeof link);
+    link.rtt_ms = -1;
+    link.quiet_secs = -1;
+    if (conn_is_connected()) {
+        ConnSnapshot snap;
+
+        conn_snapshot(&snap);
+        link.connected = true;
+        conn_peer_label(link.peer, (long)sizeof link.peer);
+        link.port = (unsigned long)snap.port;
+        link.up_secs = snap.connected_secs > 0
+            ? (unsigned long)snap.connected_secs : 0UL;
+        link.quiet_secs = snap.quiet_secs;
+        link.rtt_ms = conn_last_rtt_ms();
+        link.rcv_window = conn_rcv_window();
+        link.rcv_peak = conn_rcv_peak();
+    }
+    now_net_probe(&link, &facts);
+
+    n = snprintf(out, cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                 "\"output\":{\"net\":[", id);
+
+    for (sec = 0; sec < (int)kNetSectionCount && n < cap; ++sec) {
+        short rows = now_net_section_rows((NetSection)sec, &facts);
+        short i;
+
+        /* A section header row, so the far end sees the same four
+           groups a person does rather than one flat list. */
+        n += snprintf(out + n, cap - n, "%s[\"%s\",\"\"]",
+                      first ? "" : ",", now_net_section_title((NetSection)sec));
+        first = false;
+
+        if (rows == 0) {
+            NetFactState st = kNetFactNotServed;
+
+            switch ((NetSection)sec) {
+            case kNetSectionLink:        st = facts.link.state; break;
+            case kNetSectionInet:        st = facts.inet.state; break;
+            case kNetSectionPorts:       st = facts.ports_state; break;
+            case kNetSectionConnections: st = facts.connections; break;
+            case kNetSectionCount:       break;
+            }
+            /* The token rather than the sentence: a caller matching on
+               "undocumented" should not have to parse prose, and the
+               prose is the page's job. */
+            n += snprintf(out + n, cap - n, ",[\"  (%s)\",\"%s\"]",
+                          now_net_state_token(st),
+                          now_net_state_sentence(st));
+            continue;
+        }
+        for (i = 0; i < rows && n < cap; ++i) {
+            char label[48];
+            char value[80];
+
+            if (!now_net_row((NetSection)sec, &facts, i, label, sizeof label,
+                             value, sizeof value)) {
+                break;
+            }
+            n += snprintf(out + n, cap - n, ",[\"  %s\",\"%s\"]",
+                          label, value);
+        }
+    }
+    if (n < cap) {
+        snprintf(out + n, cap - n, "]}}");
+    }
+}
+
 /* The last lines of this launch's log, one ROW per line so either
    console renders them aligned rather than as one long string. A row is
    [time, the rest] — the shape every other command returns, which is
@@ -1250,6 +1340,10 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "vprobe") == 0) {
         run_vprobe(id, out, cap);
+        return;
+    }
+    if (strcmp(name, "net") == 0) {
+        run_net(id, out, cap);
         return;
     }
     if (strcmp(name, "putstat") == 0) {

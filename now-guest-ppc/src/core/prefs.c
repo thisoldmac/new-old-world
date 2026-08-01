@@ -92,6 +92,11 @@ typedef struct {
     short agent_access;
 } PrefsRecordV15;
 
+/* Format 16 reuses the V15 layout, bumping only the number to mark that
+   Networking joined as nav id 9 (Logs and Connection shifted down
+   again). It adds no persisted field, like formats 10, 11 and 14 before
+   it - the record is identical and only the id numbering moved. */
+
 /* Preferences are per COPY of the app, not per creator. Running two
    guests at once is a real workflow — one for each host, on different
    ports — and a shared file would have them overwrite each other's port
@@ -295,7 +300,23 @@ void now_prefs_load(NowPrefs *prefs)
                 module = 9;           /* Logs */
             }
         }
-        if (module >= 1 && module <= 10) {
+        /* Networking went in as id 9 (the last nav row), pushing Logs
+           9 -> 10 and Connection 10 -> 11. Same shape as the two inserts
+           above and the same ordering trap: Connection moves first, so
+           9 -> 10 cannot then run on into 11. */
+        if (record.format <= 15) {
+            if (module == 10) {
+                module = 11;          /* Connection */
+            } else if (module == 9) {
+                module = 10;          /* Logs */
+            }
+        }
+        /* 11 rather than kWorkshopModuleCount: prefs is core and the
+           module id list is UI, so this file does not include the
+           Workshop's header. The number is a literal here for the same
+           reason it always was, and the remaps above are what keep it
+           meaningful. */
+        if (module >= 1 && module <= 11) {
             prefs->workshop_module = module;
         }
         prefs->workshop_rect = v9.workshop_rect;
@@ -333,8 +354,9 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 
     memset(&record, 0, sizeof record);
     record.magic = kPrefsMagic;
-    record.format = 15;               /* MCP and Diagnostics inserted as nav
-                                         ids 7 and 8; adds agent_access */
+    record.format = 16;               /* Networking inserted as nav id 9,
+                                         shifting Logs and Connection down;
+                                         layout unchanged since 15 */
     record.port = prefs->port;
     strncpy(record.host, prefs->host, sizeof record.host - 1);
     record.shot_depth = prefs->shot_depth;

@@ -268,6 +268,13 @@ run_c now-guest-ppc obsmint_test.c          ""  src/observe/obsmint.c \
 # the same rule in miniature: an action takes exactly its own geometry
 # keys.
 run_c now-guest-ppc act_args_test.c          ""  src/act/act_args.c
+# The networking module's value core. The OT calls cannot run here, which
+# is the point: the byte order, the durations and the vocabulary of
+# absence are what go wrong on a networking page, and all three are
+# reachable without a Macintosh.
+run_c now-guest-ppc net_facts_test.c         ""  src/network/net_facts.c
+run_c now-guest-ppc net_layout_test.c        ""  src/network/net_layout.c \
+      src/network/net_facts.c
 run_c now-guest-ppc share_path_test.c        ""
 # The Files pane's pull presentation: when Stop is armed, and the line a
 # person reads while a file comes down. The percentage overflows a 32-bit
