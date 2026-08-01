@@ -50,6 +50,7 @@ final class HostShare {
 
     enum ShareError: Error {
         case badPath, notFound, notADirectory, exists, io(String)
+        case busy(String)
 
         var code: String {
             switch self {
@@ -58,6 +59,7 @@ final class HostShare {
             case .notADirectory: return "bad-path"
             case .exists: return "exists"
             case .io: return "io-error"
+            case .busy: return "busy"
             }
         }
 
@@ -68,8 +70,105 @@ final class HostShare {
             case .notADirectory: return "that is not a folder"
             case .exists: return "a file of that name is already there"
             case .io(let why): return why
+            case .busy(let why): return why
             }
         }
+    }
+
+    // MARK: - The logical view of a folder
+
+    /* iCloud Drive keeps what is not downloaded as a hidden stub —
+       ".Report.txt.icloud" standing in for "Report.txt" — and the
+       real file appears only once someone asks for it. The other
+       machine must never see that seam: a listing shows the file
+       under the name a person knows it by, and a file.get for one
+       starts the download and says honestly that it is not here YET.
+       Nothing below is specific to iCloud Drive as a root; a share
+       with no stubs behaves exactly as it always has. */
+
+    private struct LogicalEntry {
+        /// Where the item is, or will be once materialized.
+        let url: URL
+        let name: String
+        /// The stub standing in for it, when it is not downloaded.
+        let stub: URL?
+    }
+
+    private static let stubSuffix = ".icloud"
+
+    /// A directory as the wire should see it: real items plus
+    /// placeholders under their logical names, hidden files out.
+    private static func logicalEntries(of url: URL) throws
+        -> [LogicalEntry] {
+        let contents = try FileManager.default.contentsOfDirectory(
+            at: url,
+            includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey,
+                                         .contentModificationDateKey,
+                                         .isHiddenKey],
+            options: [])
+        var real: [String: URL] = [:]
+        var stubs: [String: URL] = [:]
+        for item in contents {
+            let name = item.lastPathComponent
+            if name.hasPrefix(".") {
+                if name.hasSuffix(stubSuffix),
+                   name.count > stubSuffix.count + 1 {
+                    let logical = String(
+                        name.dropFirst().dropLast(stubSuffix.count))
+                    stubs[logical] = item
+                }
+                continue
+            }
+            if (try? item.resourceValues(forKeys: [.isHiddenKey]))?
+                .isHidden == true { continue }
+            real[name] = item
+        }
+        var entries = real.map {
+            LogicalEntry(url: $0.value, name: $0.key, stub: nil)
+        }
+        /* Both can exist for a moment mid-download; the real file is
+           the truth then. */
+        for (logical, stub) in stubs where real[logical] == nil {
+            entries.append(LogicalEntry(
+                url: url.appendingPathComponent(logical),
+                name: logical, stub: stub))
+        }
+        return entries.sorted {
+            $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
+    }
+
+    private static func logicalNames(of url: URL) -> [String] {
+        (try? logicalEntries(of: url))?.map(\.name) ?? []
+    }
+
+    /// The stub that would stand in for this item if it were not
+    /// downloaded.
+    private static func stub(for url: URL) -> URL {
+        url.deletingLastPathComponent().appendingPathComponent(
+            "." + url.lastPathComponent + stubSuffix)
+    }
+
+    /// What the placeholder knows about the item it stands in for. The
+    /// stub is a property list carrying the size; when it does not
+    /// decode, the promised-item API is asked, and failing both the
+    /// size is honestly unknown rather than invented.
+    private static func placeholderFacts(stub: URL, logical: URL)
+        -> (bytes: Int, modified: Date?) {
+        var bytes: Int?
+        if let data = try? Data(contentsOf: stub),
+           let plist = try? PropertyListSerialization.propertyList(
+               from: data, format: nil) as? [String: Any] {
+            bytes = plist["NSURLFileSizeKey"] as? Int
+        }
+        if bytes == nil {
+            bytes = (try? (logical as NSURL).promisedItemResourceValues(
+                forKeys: [.fileSizeKey]))?[.fileSizeKey] as? Int
+        }
+        let modified = (try? stub.resourceValues(
+            forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate
+        return (bytes ?? 0, modified)
     }
 
     /// Resolves a wire path against the share. Rejects anything that
@@ -115,12 +214,8 @@ final class HostShare {
         if FileManager.default.fileExists(atPath: direct.path) {
             return component
         }
-        guard let names = try? FileManager.default
-            .contentsOfDirectory(atPath: parent.path) else {
-            return component
-        }
-        return ClassicName.resolve(
-            component, among: names.filter { !$0.hasPrefix(".") })
+        return ClassicName.resolve(component,
+                                   among: logicalNames(of: parent))
             ?? component
     }
 
@@ -136,13 +231,7 @@ final class HostShare {
         else { throw ShareError.notFound }
         guard isDirectory.boolValue else { throw ShareError.notADirectory }
 
-        let contents = try FileManager.default.contentsOfDirectory(
-            at: url,
-            includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey,
-                                         .contentModificationDateKey],
-            options: [.skipsHiddenFiles])
-            .sorted { $0.lastPathComponent.localizedStandardCompare(
-                $1.lastPathComponent) == .orderedAscending }
+        let contents = try Self.logicalEntries(of: url)
 
         let start = max(0, cursor - 1)
         let end = min(start + limit, contents.count)
@@ -153,22 +242,42 @@ final class HostShare {
            a projection that collides with a sibling widens its
            fingerprint, and it can only know to do that here. */
         let classicByReal = ClassicName.projectDirectory(
-            contents.map { $0.lastPathComponent })
+            contents.map(\.name))
         let entries = contents[start..<end].map { entry -> FileEntry in
-            let values = try? entry.resourceValues(
-                forKeys: [.isDirectoryKey, .fileSizeKey,
-                          .contentModificationDateKey])
-            let attributes = try? FileManager.default.attributesOfItem(
-                atPath: entry.path)
-            let isDir = values?.isDirectory ?? false
             // The classic side names files in 31 MacRoman characters;
             // send what it can actually hold rather than a name it will
             // have to mangle on arrival.
+            let classic = classicByReal[entry.name]
+                ?? ClassicName.project(entry.name)
+            if let stub = entry.stub {
+                /* Not downloaded: a file, with the size the placeholder
+                   promises. The seam is the host's to hide — the other
+                   machine sees an ordinary file it may ask for. */
+                let facts = Self.placeholderFacts(stub: stub,
+                                                  logical: entry.url)
+                let (type, creator) =
+                    OutboundFile.classicType(for: entry.name)
+                return FileEntry(
+                    name: classic, kind: "file",
+                    fileType: type, creator: creator,
+                    dataBytes: facts.bytes, rsrcBytes: 0,
+                    modified: facts.modified
+                        .flatMap(ClassicDate.guestWireSeconds(from:)),
+                    identity: Self.observationIdentity(
+                        name: entry.name, isDirectory: false,
+                        attributes: try? FileManager.default
+                            .attributesOfItem(atPath: stub.path)))
+            }
+            let values = try? entry.url.resourceValues(
+                forKeys: [.isDirectoryKey, .fileSizeKey,
+                          .contentModificationDateKey])
+            let attributes = try? FileManager.default.attributesOfItem(
+                atPath: entry.url.path)
+            let isDir = values?.isDirectory ?? false
             let (type, creator) = isDir ? (nil, nil)
-                : OutboundFile.classicType(for: entry.lastPathComponent)
+                : OutboundFile.classicType(for: entry.name)
             return FileEntry(
-                name: classicByReal[entry.lastPathComponent]
-                    ?? ClassicName.project(entry.lastPathComponent),
+                name: classic,
                 kind: isDir ? "folder" : "file",
                 fileType: type, creator: creator,
                 dataBytes: isDir ? nil : (values?.fileSize ?? 0),
@@ -176,7 +285,7 @@ final class HostShare {
                 modified: values?.contentModificationDate
                     .flatMap(ClassicDate.guestWireSeconds(from:)),
                 identity: Self.observationIdentity(
-                    name: entry.lastPathComponent,
+                    name: entry.name,
                     isDirectory: isDir,
                     attributes: attributes))
         }
@@ -343,10 +452,8 @@ final class HostShare {
         var spelled: [String] = []
         for real in String(full.dropFirst(base.count + 1))
             .components(separatedBy: "/") {
-            let names = (try? FileManager.default
-                .contentsOfDirectory(atPath: parent.path))?
-                .filter { !$0.hasPrefix(".") } ?? []
-            spelled.append(ClassicName.projectDirectory(names)[real]
+            spelled.append(ClassicName.projectDirectory(
+                Self.logicalNames(of: parent))[real]
                 ?? ClassicName.project(real))
             parent.appendPathComponent(real)
         }
@@ -372,9 +479,24 @@ final class HostShare {
     func read(path: String, convertText: Bool) throws -> OutboundFile.Plan {
         let url = try resolve(path)
         var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: url.path,
-                                             isDirectory: &isDirectory)
-        else { throw ShareError.notFound }
+        if !FileManager.default.fileExists(atPath: url.path,
+                                           isDirectory: &isDirectory) {
+            /* Not here — but a placeholder may be standing in for it.
+               Start the download and refuse busy with the reason: the
+               wire must not wait on the weather, and the person at the
+               other machine can simply ask again. */
+            let stub = Self.stub(for: url)
+            if FileManager.default.fileExists(atPath: stub.path) {
+                if (try? FileManager.default
+                    .startDownloadingUbiquitousItem(at: url)) == nil {
+                    try? FileManager.default
+                        .startDownloadingUbiquitousItem(at: stub)
+                }
+                throw ShareError.busy(
+                    "iCloud is fetching that file; ask again shortly")
+            }
+            throw ShareError.notFound
+        }
         guard !isDirectory.boolValue else { throw ShareError.notADirectory }
         guard let data = try? Data(contentsOf: url) else {
             throw ShareError.io("could not read that file")
@@ -387,12 +509,10 @@ final class HostShare {
            with the same directory context the listing had. MacBinary is
            the exception on purpose: its plan already shed the .bin the
            name only wore for the trip. */
-        if plan.container == "data",
-           let names = try? FileManager.default.contentsOfDirectory(
-               atPath: url.deletingLastPathComponent().path) {
+        if plan.container == "data" {
             plan.name = ClassicName.projectDirectory(
-                names.filter { !$0.hasPrefix(".") })[url.lastPathComponent]
-                ?? plan.name
+                Self.logicalNames(of: url.deletingLastPathComponent()))[
+                url.lastPathComponent] ?? plan.name
         }
         /* Taken here, where the file was already resolved and read.
            Asking for it afterwards meant resolving the path a second
