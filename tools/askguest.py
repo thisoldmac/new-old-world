@@ -63,6 +63,18 @@ def main() -> int:
                     help="seconds to wait for a guest to dial in")
     ap.add_argument("--reply-timeout", type=float, default=30.0)
     ap.add_argument("--name", default="askguest")
+    # A just-launched application has not been ANCHORED yet: the extension's
+    # jGNE filter captures a process's A5 world the first time that process
+    # pumps an event, so for the first moments of its life it is invisible to
+    # the anchor plane and `actselftest` answers `no-such-process`. Measured
+    # 2026-08-01 on mac99: the very first actselftest after a launch failed
+    # that way and the identical call moments later returned `abi-agreed`.
+    # That is a settle window, not a defect, and a run that reports the first
+    # answer reports a lie about the trap ABI — which is precisely the class
+    # of failure actselftest exists to catch.
+    ap.add_argument("--retries", type=int, default=0,
+                    help="re-ask a verb that failed, this many times")
+    ap.add_argument("--retry-delay", type=float, default=6.0)
     a = ap.parse_args()
 
     srv = socket.socket()
@@ -112,35 +124,38 @@ def main() -> int:
     mid = 100
     for spec in a.verbs:
         name, args = parse_verb(spec)
-        mid += 1
-        req = {"type": "command.request", "id": mid, "name": name}
-        if args:
-            req["args"] = args
-        print(f"\n-> {json.dumps(req)}", flush=True)
-        send(req)
-        # Skip anything that is not this request's answer: the guest emits
-        # log and status traffic unprompted, and a reader that treats the
-        # first frame as the reply reports whatever happened to arrive.
-        deadline = time.monotonic() + a.reply_timeout
-        while True:
-            try:
-                msg = read_message()
-            except Exception as e:
-                print(f"<- (no reply: {e})", flush=True)
-                rc = 1
+        for attempt in range(a.retries + 1):
+            mid += 1
+            req = {"type": "command.request", "id": mid, "name": name}
+            if args:
+                req["args"] = args
+            print(f"\n-> {json.dumps(req)}", flush=True)
+            send(req)
+            # Skip anything that is not this request's answer: the guest emits
+            # log and status traffic unprompted, and a reader that treats the
+            # first frame as the reply reports whatever happened to arrive.
+            ok = False
+            while True:
+                try:
+                    msg = read_message()
+                except Exception as e:
+                    print(f"<- (no reply: {e})", flush=True)
+                    break
+                if msg.get("type") == "ping":
+                    send({"type": "pong", "id": msg.get("id", 0)})
+                    continue
+                if msg.get("id") != mid:
+                    continue
+                print("<- " + json.dumps(msg), flush=True)
+                ok = bool(msg.get("ok", msg.get("type") != "error"))
                 break
-            if msg.get("type") == "ping":
-                send({"type": "pong", "id": msg.get("id", 0)})
-                continue
-            if msg.get("id") != mid:
-                continue
-            print("<- " + json.dumps(msg), flush=True)
-            if not msg.get("ok", msg.get("type") != "error"):
-                rc = 1
-            break
-        else:
-            rc = 1
-        if time.monotonic() > deadline:
+            if ok:
+                break
+            if attempt < a.retries:
+                print(f"   (retrying in {a.retry_delay:.0f}s — "
+                      f"{a.retries - attempt} left)", flush=True)
+                time.sleep(a.retry_delay)
+        if not ok:
             rc = 1
 
     try:

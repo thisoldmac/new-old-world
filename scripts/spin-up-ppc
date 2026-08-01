@@ -181,8 +181,16 @@ print("  launch requested")
 PY
 
 set +e
+# --retries, because a just-launched application has not been ANCHORED yet:
+# the extension captures a process's A5 world when that process first pumps
+# an event, so the very first actselftest after a launch answers
+# `no-such-process` and the identical call moments later answers
+# `abi-agreed` (measured 2026-08-01, mac99). Reporting the first answer
+# would be reporting a lie about the trap ABI, which is the exact failure
+# class this verb exists to catch.
 python3 "$NOW/tools/askguest.py" --port "$WIRE" --wait "${NOW_DIAL_WAIT:-180}" \
-    qdtrace:op=status actselftest
+    --retries 6 --retry-delay 6 \
+    qdtrace:op=status axsnap actselftest
 rc=$?
 set -e
 
