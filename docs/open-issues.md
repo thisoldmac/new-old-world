@@ -14,6 +14,177 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## The cloud.* family: real providers are untested, and the guest half does not exist (2026-08-01)
+
+**Unverified / unfinished, deliberately.** The host serves
+`cloud.services`/`list`/`detail`/`get` from a provider registry
+(`now-host/Sources/Host/CloudServices.swift`), tested over a loopback
+wire with FAKE providers only (`CloudServingTests`). Still unproven:
+
+- **PhotosCloudProvider and ContactsCloudProvider have never run
+  granted.** They need this Mac's TCC consent (usage strings are in the
+  Xcode project; the iCloud page has the grant buttons). First run:
+  turn each on in the host's iCloud page, grant, and ask over the wire
+  — `cloud.list` paging against a real multi-thousand-photo library,
+  the JPEG/HEIC transcode, and the busy-then-bytes path for an
+  un-materialized original are all claims from code reading.
+- **The guest module does not exist yet.** One Workshop page, service
+  dropdown, per-service render (docs/icloud.md). Until it lands, the
+  family is host-only and nothing exercises it end to end; when it
+  lands, the guest's emitted cloud.* messages owe fixtures to
+  GuestWireFixtureTests, and contract-coverage.md gains the family's
+  guest rows.
+- **cloud.get on a busy lane** refuses busy by unit-tested logic, but
+  no test drives a real concurrent capture/stream against it.
+
+Update 2026-08-01, late: the entitlements fix is METAL-ADJACENT
+VERIFIED — with the hardened-runtime personal-information
+entitlements signed in, the Grant Access buttons surface macOS's real
+prompts, and with the grants given Michelle reports the granted
+services working as intended against the PowerBook, fan-out included
+("functional enough"; her detailed notes are pending and may reopen
+items here). Narrower claims that remain untested by suites: the
+Photos fetch cache against a real library-change event, non-English
+Birthday parsing, unclipped long card values.
+
+Update 2026-08-01, night: the fan-out landed (view seam, full-width
+drive browser + Up, contacts card view, photos hardening, live
+search) and its adversarial review's four must-fixes are in. Still
+open from that review: PhotosCloudProvider's fetch cache has no test
+(needs a granted library or a PHPhotoLibrary fake); contacts
+Birthday parsing matches English month names only (non-English hosts
+fall back to echoing text); long contact card values draw unclipped.
+Native tests now number 76; everything since the last metal pass —
+the whole fan-out — is tested, not metal-verified.
+
+Update 2026-08-01, evening: METAL-VERIFIED for Drive on the
+PowerBook 1400c — the cloud.services round trip, the dropdown, and
+the in-page drive browser (list, descend, Up, double-click fetch)
+all watched working. Three faults the first metal pass found are
+fixed and their fixes watched: status_text garbage, popup menu
+reachable only through GetControlData, first-ask-before-connect.
+Still unproven: Photos and Contacts with real TCC grants, and
+cloud.get end to end (no serving service had it enabled yet).
+
+Update 2026-08-01, same day: the guest module LANDED
+(`now-guest-ppc/src/cloud/`, docs/icloud.md) — parsers and geometry
+native-tested and mutation-watched, all three guests cross-compile,
+conformance gates cover the emitted asks. What remains unproven moves,
+not shrinks: the page has never been drawn on any screen (emulator
+pass owed first, then metal), the TCC-granted providers are still
+untried, and no end-to-end ask has crossed a real wire.
+
+Update 2026-08-01, later: the metal-verified drive browser above is
+now a full-width flat list rather than the narrower list-beside-card
+layout it was verified in — `cloud_layout.c` gained a drive-mode
+variant (full width list, detail/save collapse to an anti-rect, a new
+`up_btn` in the toolbar row) and the card pane's per-row detail and
+pull progress both moved to the status placard
+(`cloud_drive_view.c`'s draw is now NULL). **TESTED, not
+metal-verified**: `scripts/test-all` is green (74 native tests
+including new `cloud_layout_test.c` drive-mode cases, both guest
+cross-builds, host gate), and the new geometry was watched failing via
+a deliberate mutation, but nobody has driven this exact layout on the
+PowerBook or the emulator — the metal pass this arc references above
+predates this change. Before it: Data Browser's hierarchical/container
+surface (disclosure triangles, a real tree) was investigated and found
+**not proven viable** for this runtime — declared in the headers and
+compiles clean against a real container-callback call
+(`spikes/databrowser-container-probe`), but the container-specific
+entry points were never in `spikes/databrowser`'s runtime symbol check
+against CarbonLib 1.6.0 on the PB1400c, so the drive view stays the
+flat, replace-on-navigate list it already had rather than adopt an
+unverified tree. Reopening that is a rerun of the runtime probe with
+four more symbol names, not another compile check — see
+`spikes/databrowser-container-probe/README.md`.
+
+Update 2026-08-01, later: Photos hardened for an enormous library
+against FAKES only (docs/icloud.md > Hardened for an enormous
+library) — `PhotosCloudProvider`'s PHAsset fetch cached per instance
+and invalidated by `PHPhotoLibraryChangeObserver`, a 10,000-row paging
+walk and the 4KB page bound proven and mutation-watched
+(`CloudServingTests`), a 3MB photo riding the ordinary transfer lane
+end to end, and the guest's cap-hit status wording made honest
+(`cloud_listing_status`, native-tested and mutation-watched). None of
+this touched a real PHPhotoLibrary: the cache's invalidation path, the
+real fetch's actual cost at 40,000+ photos, and whether Photos'
+authorization APIs behave as read on this Mac are all still claims
+from code reading, folded into the TCC-grant item above rather than
+duplicated here. `PHAssetResource`'s byte size stayed out of scope —
+no public API exposes it short of downloading the resource — so
+`CloudEntry.bytes` stays unstated for photos, deliberately, not as an
+oversight.
+
+Update 2026-08-01, later still: the three fan-out branches above (drive
+full-width layout, Contacts card view, Photos hardening) are merged
+into one tree (`claude/swarm-icloud-integration`, base
+`claude/swarm-icloud-split`). One conflict, in `cloud_module.c`'s
+`choose_service()`: the drive branch added a layout recompute on every
+service switch, the contacts branch added per-service view dispatch —
+both intents kept, dispatch then relayout. Two more conflicts, in this
+file and docs/icloud.md, were two branches appending different ledger
+paragraphs after the same anchor line rather than true disagreement —
+both paragraphs kept. **TESTED, not metal-verified**: `scripts/test-all`
+is green post-merge (75 native tests including `cloud_contacts_card_test`,
+both guest cross-builds plus the NOW Extension, `swift test` at 1324
+tests, `xcodebuild` Debug and Release) with the exit code read directly.
+Nothing here changes what each branch's own entry above already says is
+unproven — a clean merge does not prove Photos or Contacts against a
+real TCC-granted library, or put the new drive layout or the Contacts
+card in front of anyone on the PowerBook.
+
+## iCloud Drive sharing is tested against fabricated stubs only (2026-08-01)
+
+**Unverified.** The share now sees a directory logically — iCloud
+placeholder stubs (`.name.icloud`) list under their logical names with
+the size the stub's plist promises, and a `file.get` for one calls
+`startDownloadingUbiquitousItem` and refuses `busy` with the reason
+(`now-host/Sources/Host/HostShare.swift`, `HostShareCloudTests`). Every
+test fabricates the stubs, so three claims rest on Apple keeping a shape
+no contract guarantees, and none has been tried against a signed-in
+iCloud Drive on this Mac:
+
+- the stub is a binary plist whose size lives under `NSURLFileSizeKey`
+  (the fallback chain — promised-item API, then an honest zero — makes
+  a format change degrade to "size 0", not a failure);
+- `startDownloadingUbiquitousItem(at:)` accepts the logical URL (the
+  code retries with the stub URL, and swallows the error either way —
+  the refusal is already on its way);
+- a download actually materializes the file where `resolve` will find
+  it on the retry.
+
+Trying it is cheap: sign-in, point the Sharing picker at iCloud Drive,
+browse from the emulator guest, pull an undownloaded file twice.
+Metal-verified is further still.
+
+The name bridge (`ClassicName`) closed a live defect on the way: listed
+names were mangled one way (`hfsName`) and resolved verbatim, so any
+name the projection changed was advertised and then unreachable —
+`file.get` answered `not-found` for the listing's own spelling. Covered
+by round-trip tests now (`HostShareTests`, "The name round trip"), but
+the guest-side experience of fingerprinted names (`Report#1A2B.txt` in
+the Files page, Data Browser column width, MacRoman rendering of "#")
+has not been looked at on a real screen.
+
+Related, found while mapping (2026-08-01): **the host's serving half
+has no metal coverage at all.** `HostServingTests` is loopback-only,
+and no `Metal*` suite exercises a real guest browsing this host's
+share. The browse direction guest→host is metal-verified only from the
+2026-07-20 arc, before the name bridge and placeholders landed.
+## The Files path row names the share, unverified on metal (2026-08-01)
+
+**Unverified.** `file.listing.root` now carries the host share's Finder
+display name ("iCloud Drive", "Downloads") through the standard MacRoman
+projection, instead of the raw POSIX path, and the guest's Files path
+row renders it — breadcrumbs from the share root for subfolders, with
+"Shared folder" kept only as the fallback for hosts predating the field.
+Host side is tested end-to-end over loopback (`HostServingTests
+.testTheRootListingNamesWhatIsShared`); the guest's label assembly is
+split Toolbox-free (`files_path_label.c`) and pinned natively. What
+nobody has watched: the row on a real screen — the root name arrives
+over the wire UTF-8→MacRoman via `now_json_find_text`, and an accented
+share name drawn through `DrawString` is exactly the kind of thing the
+emulator has hidden before.
 ## The Mirror page has never been on a machine (2026-08-01)
 
 **Unverified, and the whole page is unverified together.** The guest now

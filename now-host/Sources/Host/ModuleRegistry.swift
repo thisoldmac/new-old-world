@@ -73,6 +73,18 @@ struct ModuleRegistry: Sendable {
             symbol: "folder",
             summary: "Browse and download from the classic Mac's share"
         ),
+        /* Straight after Files because it is the same subject seen from
+           this side: Files is what the two machines exchange, iCloud is
+           what of THIS Mac's cloud joins that exchange. It is the one
+           list page about this side rather than the other Mac — kept in
+           the list anyway, because it is a feature a person turns on,
+           not the state of the link. */
+        ModuleDescriptor(
+            id: "icloud",
+            title: "iCloud",
+            symbol: "icloud",
+            summary: "What of this Mac's iCloud the classic Mac may browse"
+        ),
         ModuleDescriptor(
             id: "processes",
             title: "Processes",

@@ -20,15 +20,18 @@ typedef enum {
     kWorkshopMCP,
     kWorkshopDiagnostics,
     kWorkshopNetworking,
+    kWorkshopCloud,          /* landed on main */
     kWorkshopMirror,         /* the last nav row, above the pinned pair */
     kWorkshopLogs,
     kWorkshopConnection      /* pinned; every nav row inserted above has
                                 pushed this and Logs down again, and each
-                                time the prefs format moved with them -
-                                Mirror takes it to 17. See now_prefs_load */
+                                time the prefs format moved with them.
+                                iCloud took it to 17 and Mirror to 18 —
+                                two modules landed the same day and both
+                                remaps have to run. See now_prefs_load */
 } WorkshopModuleID;
 
-enum { kWorkshopModuleCount = 12 };
+enum { kWorkshopModuleCount = 13 };
 
 typedef struct WorkshopModuleOps {
     OSErr (*create)(WindowRef owner, const Rect *body);

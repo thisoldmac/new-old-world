@@ -201,6 +201,39 @@ void conn_set_shot_note(ConnShotNote fn);
 typedef void (*ConnFileNote)(const char *line);
 void conn_set_file_note(ConnFileNote fn);
 
+/* --- asking about the other machine's cloud -----------------------------
+   The cloud.* family: the modern machine's own iCloud, asked service
+   by service. One direction by definition — this machine has no cloud
+   to serve — and one question of each kind at a time; a second
+   replaces the first, the browse rule.
+
+   Replies arrive RAW through one hook and the iCloud page's store
+   parses them (cloud_model.h): wire code correlates ids and nothing
+   else, so the parsing half stays testable under the host cc. On an
+   error the hook's `reply` is a plain MacRoman reason instead of a
+   frame — kinds keep the two readings apart. */
+typedef enum {
+    kCloudAnswerReport = 0,           /* reply = the cloud.report frame */
+    kCloudAnswerListing,              /* reply = the cloud.listing frame */
+    kCloudAnswerCard,                 /* reply = the cloud.card frame */
+    kCloudAnswerGetUnderWay,          /* reply = the file.offer frame */
+    kCloudAnswerError                 /* reply = a reason, not a frame */
+} CloudAnswerKind;
+typedef void (*ConnCloudNote)(int kind, const char *reply);
+void conn_set_cloud_note(ConnCloudNote fn);
+
+/* Each returns 0 once the question is on the wire; -1 with a reason in
+   err. A cloud.get's SUCCESS is not a cloud frame at all but the
+   ordinary file.offer that follows into this machine's share; the hook
+   reports it under way, and the Files machinery narrates the rest. */
+int now_wire_cloud_services(char *err, long cap);
+int now_wire_cloud_list(const char *service, long cursor,
+                        char *err, long cap);
+int now_wire_cloud_detail(const char *service, const char *item,
+                          char *err, long cap);
+int now_wire_cloud_get(const char *service, const char *item,
+                       char *err, long cap);
+
 /* Where a file the guest is sending has got to, so the panel can show a
    moving bar rather than a line that sits still for a minute. Returns
    false when nothing is being sent. */

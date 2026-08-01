@@ -311,10 +311,10 @@ void now_prefs_load(NowPrefs *prefs)
                 module = 10;          /* Logs */
             }
         }
-        /* Mirror went in as id 10 (the last nav row), pushing Logs
-           10 -> 11 and Connection 11 -> 12. Same shape and the same
-           ordering trap as every insert above it: Connection moves
-           first, so 10 -> 11 cannot then run on into 12. */
+        /* iCloud went in as id 10 (the last nav row), pushing Logs
+           10 -> 11 and Connection 11 -> 12. Same shape, same ordering
+           trap: Connection moves first, so 10 -> 11 cannot then run on
+           into 12. */
         if (record.format <= 16) {
             if (module == 11) {
                 module = 12;          /* Connection */
@@ -322,12 +322,23 @@ void now_prefs_load(NowPrefs *prefs)
                 module = 11;          /* Logs */
             }
         }
-        /* 12 rather than kWorkshopModuleCount: prefs is core and the
+        /* Mirror went in as id 11 the same day iCloud took 10, so a
+           prefs file written between the two lands here and shifts once
+           more: Logs 11 -> 12, Connection 12 -> 13. Connection first,
+           for the same reason it always is. */
+        if (record.format <= 17) {
+            if (module == 12) {
+                module = 13;          /* Connection */
+            } else if (module == 11) {
+                module = 12;          /* Logs */
+            }
+        }
+        /* 13 rather than kWorkshopModuleCount: prefs is core and the
            module id list is UI, so this file does not include the
            Workshop's header. The number is a literal here for the same
            reason it always was, and the remaps above are what keep it
            meaningful. */
-        if (module >= 1 && module <= 12) {
+        if (module >= 1 && module <= 13) {
             prefs->workshop_module = module;
         }
         prefs->workshop_rect = v9.workshop_rect;
@@ -365,7 +376,8 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 
     memset(&record, 0, sizeof record);
     record.magic = kPrefsMagic;
-    record.format = 17;               /* Mirror inserted as nav id 10,
+    record.format = 18;               /* iCloud at nav id 10 and Mirror
+                                         at 11, two inserts the same day,
                                          shifting Logs and Connection down;
                                          layout unchanged since 15 */
     record.port = prefs->port;

@@ -55,7 +55,8 @@ resource 'vers' (1) {
    129 camera (Screenshots), 130 folder (Files), 131 terminal (Console),
    132 globe (Connection), 133 row list (Processes), 134 chip (Hardware),
    135 lined page (Logs), 136 boxed app tiles (Software), 137 key (MCP),
-   138 gauge (Diagnostics). */
+   138 gauge (Diagnostics), 139 linked nodes (Networking),
+   140 cloud (iCloud). */
 resource 'ics#' (129) {
     {
         $"0000 0000 0780 7FFE 4002 43C2 4422 4812"
@@ -170,11 +171,20 @@ resource 'ics#' (139) {
     }
 };
 
-/* 140: Mirror. A framed pane with a diagonal highlight across it - the
+resource 'ics#' (140) {
+    {
+        $"0000 0000 0000 03C0 0C30 1008 2004 4002"
+        $"8001 8001 8001 4002 3FFC 0000 0000 0000",
+        $"0000 0000 0000 03C0 0FF0 1FF8 3FFC 7FFE"
+        $"FFFF FFFF FFFF 7FFE 3FFC 0000 0000 0000"
+    }
+};
+
+/* 141: Mirror. A framed pane with a diagonal highlight across it - the
    glancing reflection a mirror or a screen shows, and the one shape at
    this size that is not already 138's dial, 135's document or 136's
-   tiles. */
-resource 'ics#' (140) {
+   tiles. 140 went to iCloud, which landed the same day. */
+resource 'ics#' (141) {
     {
         $"0000 0000 3FFC 200C 2014 2024 2044 2084"
         $"2104 2204 2404 2804 3004 3FFC 0000 0000",
@@ -300,6 +310,13 @@ resource 'MENU' (134) {
         "Control Panels", noIcon, noKey, noMark, plain;
         "Startup Items", noIcon, noKey, noMark, plain;
         "Apple Menu Items", noIcon, noKey, noMark, plain
+    }
+};
+
+resource 'MENU' (135) {
+    135, textMenuProc, allEnabled, enabled, "iCloud",
+    {
+        "(none)", noIcon, noKey, noMark, plain
     }
 };
 

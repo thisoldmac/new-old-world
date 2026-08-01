@@ -36,6 +36,16 @@ nothing about behaviour, **tested** means the suites pass, and
   and the Connection dialog are gone. Metal-verified on the PB1400c:
   all four pages, including a live listing, a pull, a capture with its
   preview, streaming start/stop, and the in-canvas Console prompt.
+- **iCloud** (2026-08-01) — the host serves its own Drive, Photos and
+  Contacts to the guest's iCloud page over the additive `cloud.*`
+  family: a full-width drive browser, photo list + one-at-a-time
+  download as ordinary file transfers, address-book cards, and live
+  filter-as-you-type in every view. Photos and Contacts are off until
+  switched on host-side and granted through macOS's own prompts
+  (hardened-runtime entitlements required — the trap and the design
+  are both in [icloud.md](icloud.md)). Metal-verified at
+  working-as-intended; thumbnails and Messages are designed, not
+  built.
 - **Persistent connection** — the guest dials the host and holds one TCP
   connection with a guest-driven heartbeat, reconnect on a cadence the
   guest picks (capped backoff, or a fixed interval from the Connection

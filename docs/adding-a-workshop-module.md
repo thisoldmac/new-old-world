@@ -57,8 +57,10 @@ appear or does not switch.
    `kWorkshopModuleCount`. The enum order **is** the View menu order and
    the sidebar order; the menu item number is the module ID.
 2. **`workshop_layout.h` / `.c`** — `nav_rows[]` is sized for the
-   non-pinned modules (5 today: Screenshots, Files, Console, Processes,
-   Hardware) via `kWorkshopNavRows`. Grow that constant; the loop in
+   non-pinned modules (10 today: Screenshots, Files, Console, Processes,
+   Hardware, Software, MCP, Diagnostics, Networking, iCloud — the enum
+   in `workshop_module.h` is the truth when this list rots, as it has
+   before) via `kWorkshopNavRows`. Grow that constant; the loop in
    `workshop_layout_compute` is already generic. `Connection` and `Logs`
    are special: both are pinned below the divider (`conn_row`, `logs_row`)
    and are not in `nav_rows`. A module placed above `Connection` renumbers

@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "files_path_label.h"
 #include "wire.h"
 
 enum {
@@ -49,6 +50,10 @@ static void request(const char *path, long cursor)
 {
     char err[96];
 
+    /* The listing hook follows the asker: the iCloud page's drive
+       browser borrows it (cloud_module.c), so every ask from here
+       claims it back. */
+    conn_set_listing(files_browser_listing);
     if (cursor <= 1) {
         g_row_count = 0;
         if (g_browser != NULL) {
@@ -503,13 +508,7 @@ Boolean files_browser_stop_pull(char *err, long cap)
 
 void files_browser_path_text(char *out, long cap)
 {
-    if (g_path[0] == '\0') {
-        snprintf(out, (size_t)cap, "%.60s",
-                 g_root[0] != '\0' ? g_root : "Shared folder");
-    } else {
-        snprintf(out, (size_t)cap, "%.60s%.100s",
-                 g_root[0] != '\0' ? g_root : "", g_path);
-    }
+    now_files_path_label(g_root, g_path, out, cap);
 }
 
 void files_browser_count_text(char *out, long cap)

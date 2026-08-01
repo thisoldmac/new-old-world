@@ -224,6 +224,14 @@ channels:
       softwareList: { $ref: "#/components/messages/softwareList" }
       softwareListing: { $ref: "#/components/messages/softwareListing" }
       agentAccess: { $ref: "#/components/messages/agentAccess" }
+      cloudServices: { $ref: "#/components/messages/cloudServices" }
+      cloudReport: { $ref: "#/components/messages/cloudReport" }
+      cloudList: { $ref: "#/components/messages/cloudList" }
+      cloudListing: { $ref: "#/components/messages/cloudListing" }
+      cloudDetail: { $ref: "#/components/messages/cloudDetail" }
+      cloudCard: { $ref: "#/components/messages/cloudCard" }
+      cloudGet: { $ref: "#/components/messages/cloudGet" }
+      cloudRefuse: { $ref: "#/components/messages/cloudRefuse" }
   bulk:
     address: "1"
     description: >
@@ -397,7 +405,7 @@ operations:
       console `put` means the guest puts a file to the host (see
       docs/files.md). Host UI affordances speak host-native
       ("Download"). Paths are RELATIVE
-      to the guest's configured share root ("" is the root; segments
+      to the RESPONDER's configured share root ("" is the root; segments
       joined with ":"): a path outside the share is inexpressible, and
       any empty segment ("::" traversal) refuses bad-path. file.get
       needs no accept - the requester is the receiver; failures answer
@@ -626,6 +634,57 @@ operations:
       applied (for quit, that the event was sent - not that the app has
       gone, which it may decline), or ok false with a reason when the PSN
       no longer names a live process or the Toolbox refused.
+  guestAsksCloud:
+    action: send
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/cloudServices"
+      - $ref: "#/channels/control/messages/cloudList"
+      - $ref: "#/channels/control/messages/cloudDetail"
+      - $ref: "#/channels/control/messages/cloudGet"
+    description: >
+      The guest asks the HOST about its cloud. One direction by
+      DEFINITION rather than by precedent: the family's subject is the
+      modern machine's iCloud, which the classic machine does not have —
+      so unlike files there is no symmetric half waiting to be
+      implemented, and none is declared. A host never sends these; a
+      side that receives one it does not serve ignores it like any
+      control message it cannot decode.
+
+      ADDITIVE family, no revision bump — the agent.access precedent:
+      both shipping halves ignore an unknown control message once the
+      handshake is past. Discovery is therefore by asking: a guest sends
+      cloud.services, and silence past its own deadline means a host
+      that predates the family. That is an ordinary outcome for the
+      module's status line, not an error.
+
+      cloud.services asks what is on offer. cloud.list pages one
+      service's rows (cursor/more, the file.listing shape of pagination,
+      inside the 4 KB control frame). cloud.detail asks for one item's
+      card. cloud.get asks for one item AS A FILE, and its success is
+      the ordinary file.offer -> file.accept -> file.begin -> bulk ->
+      file.end sequence into the guest's share — a WAY IN to that
+      family, never a second transfer mechanism (the put precedent).
+      cloud.refuse answers only what fails BEFORE an offer exists; once
+      the offer is on the wire, the file family owns the outcome,
+      including the one-transfer-wide lane.
+  hostServesCloud:
+    action: receive
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/cloudReport"
+      - $ref: "#/channels/control/messages/cloudListing"
+      - $ref: "#/channels/control/messages/cloudCard"
+      - $ref: "#/channels/control/messages/cloudRefuse"
+    description: >
+      The host's answers. Every human-readable string in them — labels,
+      titles, subtitles, card rows — is converted BEFORE sending:
+      MacRoman-expressible, composed, no code the guest would have to
+      map. Conversion is the host's job in both directions of the file
+      family, and it is the host's job here for the same reason — the
+      modern machine is the only side that can spell both alphabets.
+      The service registry, each service's row semantics, and the
+      additive rule for new services live in x-cloud below.
 
 components:
   messages:
@@ -794,6 +853,30 @@ components:
     agentAccess:
       name: agent.access
       payload: { $ref: "#/components/schemas/AgentAccess" }
+    cloudServices:
+      name: cloud.services
+      payload: { $ref: "#/components/schemas/CloudServices" }
+    cloudReport:
+      name: cloud.report
+      payload: { $ref: "#/components/schemas/CloudReport" }
+    cloudList:
+      name: cloud.list
+      payload: { $ref: "#/components/schemas/CloudList" }
+    cloudListing:
+      name: cloud.listing
+      payload: { $ref: "#/components/schemas/CloudListing" }
+    cloudDetail:
+      name: cloud.detail
+      payload: { $ref: "#/components/schemas/CloudDetail" }
+    cloudCard:
+      name: cloud.card
+      payload: { $ref: "#/components/schemas/CloudCard" }
+    cloudGet:
+      name: cloud.get
+      payload: { $ref: "#/components/schemas/CloudGet" }
+    cloudRefuse:
+      name: cloud.refuse
+      payload: { $ref: "#/components/schemas/CloudRefuse" }
 
   schemas:
     Hello:
@@ -918,6 +1001,180 @@ components:
             purpose is to state the answer has no reading in which the answer
             is absent, and a receiver must ignore one that omits it rather
             than inventing a tier.
+    CloudServices:
+      type: object
+      required: [type, id]
+      additionalProperties: false
+      properties:
+        type: { const: cloud.services }
+        id: { type: integer }
+    CloudReport:
+      type: object
+      required: [type, id, services]
+      additionalProperties: false
+      properties:
+        type: { const: cloud.report }
+        id: { type: integer }
+        services:
+          type: array
+          description: >
+            Everything the host KNOWS how to serve, whatever its state —
+            a service that is off or unauthorized is still reported, so
+            the guest's dropdown can say why a thing is missing instead
+            of not showing it. Registry and semantics in x-cloud.
+          items:
+            type: object
+            required: [service, label, state]
+            additionalProperties: false
+            properties:
+              service:
+                type: string
+                description: Registry key ("drive", "photos", ...).
+              label:
+                type: string
+                description: >
+                  What the dropdown shows, converted by the host
+                  (MacRoman-expressible, <= 31 bytes).
+              state:
+                enum: [serving, off, no-access, unavailable]
+                description: >
+                  serving answers requests. off is the host person's
+                  choice. no-access means this Mac has not granted the
+                  host app that data (the fix is at the host's screen).
+                  unavailable means the machine cannot offer it at all
+                  (not signed in, no library).
+              detail:
+                type: string
+                description: >
+                  One converted sentence of state ("Sharing iCloud
+                  Drive", "342 photos", "Open Privacy & Security on the
+                  host"). Display only.
+    CloudList:
+      type: object
+      required: [type, id, service]
+      additionalProperties: false
+      properties:
+        type: { const: cloud.list }
+        id: { type: integer }
+        service: { type: string }
+        cursor:
+          type: integer
+          description: Continue a paginated listing from this index.
+    CloudListing:
+      type: object
+      required: [type, id, service, entries, more]
+      additionalProperties: false
+      properties:
+        type: { const: cloud.listing }
+        id: { type: integer }
+        service: { type: string }
+        entries:
+          type: array
+          maxItems: 16
+          description: >
+            One page, bounded by count and by MEASURED encoded bytes so
+            the frame stays under the 4 KB control cap — the file.listing
+            discipline exactly. Row meaning is per-service (x-cloud);
+            the shape is deliberately one shape, so a guest renders any
+            service it has never heard of as title/subtitle rows.
+          items:
+            type: object
+            required: [item, title]
+            additionalProperties: false
+            properties:
+              item:
+                type: string
+                maxLength: 64
+                description: >
+                  Opaque responder-generated identity for this entry —
+                  what cloud.detail and cloud.get take back. Not a path,
+                  not a name, and not promised stable beyond the
+                  connection.
+              title:
+                type: string
+                description: Converted; the row's first line.
+              subtitle:
+                type: string
+                description: Converted; the row's second column or line.
+              bytes:
+                type: integer
+                description: >
+                  For entries a cloud.get could fetch: the size the
+                  offer would carry, so a person can decline a 40 MB
+                  original from a machine with an 800 MB disk before
+                  the offer exists.
+              modified:
+                type: integer
+                description: Classic Mac seconds since 1904.
+        more: { type: boolean }
+        cursor: { type: integer }
+    CloudDetail:
+      type: object
+      required: [type, id, service, item]
+      additionalProperties: false
+      properties:
+        type: { const: cloud.detail }
+        id: { type: integer }
+        service: { type: string }
+        item: { type: string, maxLength: 64 }
+    CloudCard:
+      type: object
+      required: [type, id, service, item, rows]
+      additionalProperties: false
+      properties:
+        type: { const: cloud.card }
+        id: { type: integer }
+        service: { type: string }
+        item: { type: string, maxLength: 64 }
+        rows:
+          type: array
+          description: >
+            [label, value] pairs, converted, in display order — the
+            census row discipline: the host decides what a contact or a
+            photo is worth saying, the guest only draws it. A card fits
+            one control frame; the host trims, never truncates
+            mid-value.
+          items:
+            type: array
+            minItems: 2
+            maxItems: 2
+            items: { type: string }
+    CloudGet:
+      type: object
+      required: [type, id, service, item]
+      additionalProperties: false
+      properties:
+        type: { const: cloud.get }
+        id: { type: integer }
+        service: { type: string }
+        item:
+          type: string
+          maxLength: 64
+          description: >
+            The entry to deliver AS A FILE. Success is the ordinary
+            file.offer sequence into the guest's share, under a name
+            the host invents (sanitized the way every host-sent name
+            is); this id correlates only the refusal path. Once the
+            offer exists, the file family owns the outcome.
+    CloudRefuse:
+      type: object
+      required: [type, id, code]
+      additionalProperties: false
+      properties:
+        type: { const: cloud.refuse }
+        id: { type: integer }
+        code:
+          enum: [unknown-service, off, no-access, unavailable,
+                 not-listable, not-found, busy, io-error]
+          description: >
+            unknown-service is the additive-registry answer, never a
+            protocol error. not-listable answers cloud.list for a
+            service whose browsing lives elsewhere (drive's transport
+            is the file family). busy mirrors the file family's: the
+            thing exists and is not ready yet — ask again.
+        reason:
+          type: string
+          description: Converted, human-readable, shown not swallowed.
     Refuse:
       type: object
       required: [type, contract, reason]
@@ -1352,11 +1609,11 @@ components:
         root:
           type: string
           description: >
-            What the responder is sharing, as that machine would write
-            it ("Macintosh HD:Lab:", "/Users/me/Downloads"). Display
-            only — never a path to send back, since everything on the
-            wire is relative to this. Sent with the root listing so the
-            asker can name the place it is looking at instead of
+            What the responder is sharing, as that machine would name
+            it to a person ("Macintosh HD:Lab:", "iCloud Drive").
+            Display only — never a path to send back, since everything
+            on the wire is relative to this. Sent with the root listing
+            so the asker can name the place it is looking at instead of
             calling it "the share".
     ProcessList:
       type: object
@@ -1586,8 +1843,9 @@ components:
         resumeToken:
           type: string
           description: >
-            The token the guest gave in the file.begin of the interrupted
-            attempt. Required whenever offset > 0: the guest recomputes
+            The token the responder gave in the file.begin of the
+            interrupted attempt. Required whenever offset > 0: the
+            responder recomputes
             its token for the file as it stands NOW and refuses `changed`
             if it differs, because appending the tail of a file onto the
             head of a different one is worse than starting over. Absent
@@ -1754,8 +2012,8 @@ components:
           description: >
             Identity of the file being sent, for the receiver to store
             beside a partial so a later attempt can prove it is the same
-            file. On a pull this is the guest's token for its own file;
-            on a push it echoes the offer's.
+            file. On a pull this is the responder's token for its own
+            file; on a push it echoes the offer's.
     FileEnd:
       type: object
       required: [type, id, transfer, ok]
@@ -3729,3 +3987,47 @@ components:
           target per page so a wedged target stalls at most one frame
           turnaround. A responder may refuse it outright; attended
           first runs on real hardware are the expected discipline.
+
+  # -----------------------------------------------------------------
+  # The cloud service registry: what cloud.services can name and what
+  # each service's rows mean. Like x-census, this is the single place
+  # both halves read; a guest module renders FROM the report and this
+  # table, never from a list it compiled.
+  #
+  # ADDING A SERVICE IS ADDITIVE (no revision bump): an older host
+  # simply never reports it, and a request naming it is refused
+  # unknown-service — a well-formed refusal, never a protocol error,
+  # which is what keeps the registry additive. Changing an existing
+  # service's row semantics is breaking and bumps the revision.
+  x-cloud:
+    services:
+      drive:
+        description: >
+          iCloud Drive, and deliberately NOT a second browser: its
+          transport is the file family against the host's share, which
+          already lists placeholders logically and fetches on demand.
+          state is serving exactly when the host's share root IS the
+          iCloud Drive folder; detail carries the share's display name.
+          cloud.list answers not-listable naming the file family —
+          one implementation, and the Files page is its renderer.
+      photos:
+        description: >
+          The photo library, newest first. title is the photo's name or
+          its date when cameras named it IMG_4021; subtitle is the
+          taken date, LongDateString-renderable; bytes is what the
+          original would cost to fetch. cloud.detail answers a card of
+          what the library knows (taken, camera, dimensions, place when
+          there is one). cloud.get delivers ONE photo as an ordinary
+          file.offer — JPEG, converted by the host from whatever
+          modern container the library holds, typed JPEG/ogle so it
+          opens by double-click on arrival.
+      contacts:
+        description: >
+          The address book, alphabetical. title is the full name;
+          subtitle the organization when there is one. cloud.detail is
+          the card — phones, emails, addresses as [label, value] rows
+          in the person's own labels ("home", "work"), converted.
+          cloud.get is refused not-listable for now: a contact AS A
+          FILE would be a vCard the classic side cannot open natively,
+          and a card on screen is the honest deliverable until
+          something over there can read one.

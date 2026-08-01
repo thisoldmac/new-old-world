@@ -703,6 +703,17 @@ final class GuestListener: ObservableObject {
     /// without anyone here doing anything.
     let share = HostShare()
 
+    /// The cloud services this Mac may offer a guest. Lazy and a var so
+    /// a test can hand it a registry of fakes; the real providers cost
+    /// nothing until a guest asks or the iCloud page looks.
+    lazy var cloud: CloudRegistry = {
+        let registry = CloudRegistry()
+        registry.register(DriveCloudProvider(share: share))
+        registry.register(PhotosCloudProvider())
+        registry.register(ContactsCloudProvider())
+        return registry
+    }()
+
     /// Text conversion for files we serve, mirroring the Files module's
     /// setting for the ones we fetch.
     var convertServedText = true
@@ -729,7 +740,7 @@ final class GuestListener: ObservableObject {
                 more: page.more, cursor: page.next,
                 /* Only the root listing names the place; a subfolder
                    listing already knows where it is. */
-                root: request.path.isEmpty ? share.root.path : nil)))
+                root: request.path.isEmpty ? share.rootDisplayName : nil)))
         } catch {
             session.refuseFile(id: request.id, error: error)
         }
@@ -1944,6 +1955,21 @@ final class GuestListener: ObservableObject {
     ///
     /// A stream is included because a bracket owns the lane for its whole
     /// life, not just while a frame is moving.
+    /// Whether a cloud.get from this asker could take the transfer lane
+    /// now: nil when it can, else the reason to refuse busy. The
+    /// delivery rides the put machinery, which drives the ACTIVE
+    /// session — an ask from any other guest cannot be served without
+    /// answering the wrong socket.
+    func transferLaneObstruction(for asker: Session) -> String? {
+        if asker !== session {
+            return "another Mac is being driven right now"
+        }
+        if let holder = transferLaneHolder {
+            return "the transfer lane is busy: " + holder
+        }
+        return nil
+    }
+
     private var transferLaneHolder: String? {
         if activeStreamId != nil { return "a live stream is running" }
         if isCapturePending { return "a screenshot is on its way" }
@@ -2462,6 +2488,10 @@ final class GuestListener: ObservableObject {
             onServeChange: { [weak self] change in
                 guard let self, let asker = origin.session else { return }
                 self.serveChange(change, on: asker)
+            },
+            onServeCloud: { [weak self] ask in
+                guard let self, let asker = origin.session else { return }
+                self.serveCloud(ask, on: asker)
             },
             onProcessListing: { [weak self] listing in
                 guard fromActive() else { return }

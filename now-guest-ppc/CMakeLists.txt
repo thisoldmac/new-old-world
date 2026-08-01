@@ -40,6 +40,14 @@ add_application(now-guest-ppc
     src/network/net_layout.c
     src/network/net_probe.c
     src/network/network_module.c
+    src/cloud/cloud_filter.c
+    src/cloud/cloud_layout.c
+    src/cloud/cloud_model.c
+    src/cloud/cloud_module.c
+    src/cloud/cloud_drive_view.c
+    src/cloud/cloud_list_view.c
+    src/cloud/cloud_contacts_card.c
+    src/cloud/cloud_contacts_view.c
     src/mirror/mirror_layout.c
     src/mirror/mirror_probe.c
     src/mirror/mirror_module.c
@@ -47,6 +55,7 @@ add_application(now-guest-ppc
     src/census/census_report.c
     src/files/files_module.c
     src/files/files_browser_view.c
+    src/files/files_path_label.c
     src/files/files_share_view.c
     src/files/files_pull.c
     src/workshop/confirm.c

@@ -484,7 +484,12 @@ struct FilesModuleView: View {
                             choose: @escaping (URL) -> Void) -> some View {
         Menu {
             ForEach(folderChoices(including: current), id: \.path) { url in
-                Button(url.lastPathComponent) { choose(url) }
+                /* The Finder's name for the folder, not the path's:
+                   iCloud Drive's directory is literally named
+                   "com~apple~CloudDocs". */
+                Button(FileManager.default.displayName(atPath: url.path)) {
+                    choose(url)
+                }
             }
             Divider()
             Button("Other…") {
@@ -497,7 +502,7 @@ struct FilesModuleView: View {
                 Image(nsImage: NSWorkspace.shared.icon(forFile: current.path))
                     .resizable()
                     .frame(width: 16, height: 16)
-                Text(current.lastPathComponent)
+                Text(FileManager.default.displayName(atPath: current.path))
             }
         }
         .menuStyle(.borderlessButton)
@@ -519,10 +524,26 @@ struct FilesModuleView: View {
         var urls = standard.compactMap {
             FileManager.default.urls(for: $0, in: .userDomainMask).first
         }
+        if let cloud = Self.iCloudDrive { urls.append(cloud) }
         if !urls.contains(where: { $0.path == current.path }) {
             urls.insert(current, at: 0)
         }
         return urls
+    }
+
+    /// The travel visa itself: share this and the classic Mac browses
+    /// iCloud Drive. Present only when this Mac is signed in — the
+    /// share already knows how to list placeholders and fetch on
+    /// demand, so no more ceremony is needed here.
+    private static var iCloudDrive: URL? {
+        let url = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(
+                "Library/Mobile Documents/com~apple~CloudDocs")
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path,
+                                             isDirectory: &isDirectory),
+              isDirectory.boolValue else { return nil }
+        return url
     }
 
     private func chooseFileToSend() {

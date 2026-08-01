@@ -80,21 +80,24 @@ static const unsigned char k_view_diagnostics_item[] = {
 };
 /* The item NUMBER is the module id (see the handler below), so every
    module needs an item and they must appear in enum order. Networking
-   had no item at all, which silently made Cmd-9 "Logs" select Networking
+   landed without one, which silently made Cmd-9 "Logs" select Networking
    and Cmd-0 "Connection" select Logs, and left Connection unreachable
-   from this menu; adding Mirror without repairing that would have moved
-   the mismatch along rather than fixed it.
+   from this menu.
 
    Cmd-0 goes to the tenth item because the digits run out at nine and 0
-   is where a person looks next, not the letter C (already Close). The
-   last two carry no equivalent: the keys are gone, and one invented from
-   a letter would collide with File's before it helped anyone. Both are
-   one click away in the rail. */
+   is where a person looks next, not the letter C (already Close). iCloud
+   and Mirror landed the same day; iCloud took the last digit, so the
+   final three carry no key — one invented from a letter would collide
+   with File's before it helped anyone, and each is one click away in
+   the rail. */
 static const unsigned char k_view_networking_item[] = {
     12, 'N', 'e', 't', 'w', 'o', 'r', 'k', 'i', 'n', 'g', '/', '9'
 };
+static const unsigned char k_view_icloud_item[] = {
+    8, 'i', 'C', 'l', 'o', 'u', 'd', '/', '0'
+};
 static const unsigned char k_view_mirror_item[] = {
-    8, 'M', 'i', 'r', 'r', 'o', 'r', '/', '0'
+    6, 'M', 'i', 'r', 'r', 'o', 'r'
 };
 static const unsigned char k_view_logs_item[] = {
     4, 'L', 'o', 'g', 's'
@@ -130,6 +133,7 @@ static void create_menu_bar(void)
     AppendMenu(view_menu, k_view_mcp_item);
     AppendMenu(view_menu, k_view_diagnostics_item);
     AppendMenu(view_menu, k_view_networking_item);
+    AppendMenu(view_menu, k_view_icloud_item);
     AppendMenu(view_menu, k_view_mirror_item);
     AppendMenu(view_menu, k_view_logs_item);
     AppendMenu(view_menu, k_view_connection_item);

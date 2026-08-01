@@ -67,6 +67,7 @@ final class Session {
     private let onServeGet: (FileGet) -> Void
     private let onAcceptOffer: (FileOffer) -> Void
     private let onServeChange: (GuestListener.ChangeRequest) -> Void
+    private let onServeCloud: (GuestListener.CloudAsk) -> Void
     private let onProcessListing: (ProcessListing) -> Void
     private let onSoftwareListing: (SoftwareListing) -> Void
     private let onProcessResult: (ProcessResult) -> Void
@@ -165,6 +166,8 @@ final class Session {
          onServeGet: @escaping (FileGet) -> Void,
          onAcceptOffer: @escaping (FileOffer) -> Void,
          onServeChange: @escaping (GuestListener.ChangeRequest) -> Void,
+         onServeCloud: @escaping (GuestListener.CloudAsk) -> Void
+             = { _ in },
          onProcessListing: @escaping (ProcessListing) -> Void,
          onSoftwareListing: @escaping (SoftwareListing) -> Void,
          onProcessResult: @escaping (ProcessResult) -> Void,
@@ -205,6 +208,7 @@ final class Session {
         self.onServeGet = onServeGet
         self.onAcceptOffer = onAcceptOffer
         self.onServeChange = onServeChange
+        self.onServeCloud = onServeCloud
         self.onProcessListing = onProcessListing
         self.onSoftwareListing = onSoftwareListing
         self.onProcessResult = onProcessResult
@@ -454,6 +458,18 @@ final class Session {
             onServeChange(.restore(request))
         case .fileMkdir(let request):
             onServeChange(.mkdir(request))
+        /* The cloud family: the guest asking about THIS Mac's iCloud.
+           One direction by definition — the host never sends these, so
+           their answers (.cloudReport and friends) stay in the default
+           arm the way every unserved inbound does. */
+        case .cloudServices(let request):
+            onServeCloud(.services(request))
+        case .cloudList(let request):
+            onServeCloud(.list(request))
+        case .cloudDetail(let request):
+            onServeCloud(.detail(request))
+        case .cloudGet(let request):
+            onServeCloud(.get(request))
         case .fileAccept(let accept):
             onFileAccept(accept)
             sendAcceptedFile(accept)

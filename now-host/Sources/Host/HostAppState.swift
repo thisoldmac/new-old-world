@@ -97,6 +97,7 @@ final class HostAppState: ObservableObject {
     private(set) lazy var census = CensusModuleModel(listener: listener)
     private(set) lazy var diagnostics = DiagnosticsModel(listener: listener)
     private(set) lazy var networking = NetworkingModel(listener: listener)
+    private(set) lazy var cloudModule = CloudModuleModel(listener: listener)
     private(set) lazy var software = SoftwareModel(listener: listener)
     private(set) lazy var processes: ProcessesModel = {
         let model = ProcessesModel(listener: listener)

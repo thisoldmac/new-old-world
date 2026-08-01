@@ -1016,23 +1016,32 @@ final class OutboundFileTests: XCTestCase {
         XCTAssertEqual(OutboundFile.hfsName("\u{F8FF} Notes"), "\u{F8FF} Notes")
     }
 
+    /// A changed name carries a fingerprint of the original — that is
+    /// what keeps two long names distinct and a listing's name usable in
+    /// a file.get. These assert the shape, not the digits; the digits
+    /// are ClassicName's own tests' business.
     func testHFSNamesFitThirtyOneCharactersKeepingTheExtension() {
         let long = String(repeating: "a", count: 40) + ".txt"
         let out = OutboundFile.hfsName(long)
         XCTAssertLessThanOrEqual(out.utf8.count, 31)
         XCTAssertTrue(out.hasSuffix(".txt"), "extension must survive")
+        XCTAssertTrue(out.contains("#"), "a truncated name is marked")
     }
 
     func testColonsAndLeadingDotsAreReplaced() {
         // ":" is HFS's path separator; a leading dot hides the file.
-        XCTAssertEqual(OutboundFile.hfsName("a:b.txt"), "a-b.txt")
-        XCTAssertEqual(OutboundFile.hfsName(".hidden"), "_hidden")
+        let colon = OutboundFile.hfsName("a:b.txt")
+        XCTAssertTrue(colon.hasPrefix("a-b#") && colon.hasSuffix(".txt"),
+                      "got \(colon)")
+        let dot = OutboundFile.hfsName(".hidden")
+        XCTAssertTrue(dot.hasPrefix("_hidden#"), "got \(dot)")
     }
 
     func testUnmappableCharactersBecomeUnderscores() {
         // Emoji have no MacRoman representation.
         let out = OutboundFile.hfsName("hello👋.txt")
-        XCTAssertEqual(out, "hello_.txt")
+        XCTAssertTrue(out.hasPrefix("hello_#") && out.hasSuffix(".txt"),
+                      "got \(out)")
         XCTAssertNotNil(out.data(using: .macOSRoman))
     }
 

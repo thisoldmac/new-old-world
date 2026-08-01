@@ -21,7 +21,13 @@ typedef unsigned char Boolean;
 
 enum {
     kWorkshopMinContentW = 620,
-    kWorkshopMinContentH = 430,
+    /* 430 fitted nine nav rows; iCloud and Mirror landed the same day and
+       took it to eleven, and at 430 the eleventh row drew INTO the pinned
+       pair below the divider - which workshop_layout_test caught, being
+       the test written the last time exactly that happened (Networking,
+       2026-08-01). 440 clears it with room to spare: the last row bottoms
+       at 362 and the divider clears it at 364. */
+    kWorkshopMinContentH = 444,
     kWorkshopStdContentW = 744,
     kWorkshopStdContentH = 478,
 
@@ -46,7 +52,7 @@ enum {
        follows it in the struct. That is exactly what happened when
        Networking went in on 2026-08-01, and the assert below is why it
        cannot happen quietly again. */
-    kWorkshopNavRows = 10
+    kWorkshopNavRows = 11
 };
 
 typedef struct WorkshopLayout {
