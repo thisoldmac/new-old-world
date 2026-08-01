@@ -218,14 +218,40 @@ void now_act_serve_commit(NowPeekActCell *cell, unsigned long error)
 /* The clause every patch shares, minus its per-op identity check. The
    bypass and the arm state are read first and cheapest: when the plane
    is not armed this is a load and a branch, and every call in the system
-   reaches the real trap exactly as it would without us. */
+   reaches the real trap exactly as it would without us.
+ *
+ * `ticks` is the CURRENT trap call's tick, from the same LMGetTicks() the
+ * caller already reads to answer with. Compared against served_ticks -
+ * the tick this stage was armed at - it is the resident half's own
+ * age-out: subtraction done in exactly 32 bits (NowPeekU32, what
+ * TickCount and this table's fields actually are) so a wraparound
+ * mid-session still yields the true forward distance regardless of how
+ * wide `unsigned long` is on the compiler doing the subtracting - 32
+ * bits on the 68K/PPC guest this runs on, 64 on the host cc that builds
+ * this file's own test. A cell that ages out is cleared HERE, not merely
+ * declined, so a second late call does not pay the same stale check
+ * again and does not find a patch still nominally "ready" for a request
+ * that has already been given up on. */
 static NowPeekActCell *armed_for(NowPeekActCell *cell, unsigned long op,
-                                 unsigned long stage, unsigned long current_a5)
+                                 unsigned long stage, unsigned long current_a5,
+                                 unsigned long ticks)
 {
+    NowPeekU32 age;
+
     if (cell == NULL || cell->armed != (NowPeekU32)stage) {
         return NULL;
     }
     if (cell->op != (NowPeekU32)op) {
+        return NULL;
+    }
+    age = (NowPeekU32)ticks - cell->served_ticks;
+    if (age > (NowPeekU32)kNowActArmTicksMax) {
+        /* Nobody is coming back for this one. Clear it so the patch
+           stops matching and the next caller sees an idle, honest cell
+           rather than one "armed" for a request that timed out with no
+           one left to say so. */
+        cell->armed = kNowPeekActArmNone;
+        cell->status = kNowPeekActStatusIdle;
         return NULL;
     }
     if (cell->target_a5 != (NowPeekU32)current_a5) {
@@ -239,12 +265,12 @@ long now_act_menu_answer(NowPeekActCell *cell, unsigned long current_a5,
 {
     NowPeekActCell *p = armed_for(cell, (unsigned long)kNowPeekActOpMenu,
                                   (unsigned long)kNowPeekActArmReady,
-                                  current_a5);
+                                  current_a5, ticks);
     long packed;
 
     if (p == NULL) {
         p = armed_for(cell, (unsigned long)kNowPeekActOpSelfTest,
-                      (unsigned long)kNowPeekActArmReady, current_a5);
+                      (unsigned long)kNowPeekActArmReady, current_a5, ticks);
     }
     if (p == NULL) {
         return 0;
@@ -285,7 +311,7 @@ short now_act_control_answer(NowPeekActCell *cell, unsigned long current_a5,
 {
     NowPeekActCell *p = armed_for(cell, (unsigned long)kNowPeekActOpControl,
                                   (unsigned long)kNowPeekActArmReady,
-                                  current_a5);
+                                  current_a5, ticks);
 
     if (out_action != NULL) {
         *out_action = 0;
@@ -339,7 +365,7 @@ short now_act_findwindow_answer(NowPeekActCell *cell, unsigned long current_a5,
 {
     NowPeekActCell *p = armed_for(cell, (unsigned long)kNowPeekActOpWindow,
                                   (unsigned long)kNowPeekActArmReady,
-                                  current_a5);
+                                  current_a5, ticks);
     short v;
     short h;
     short part;
@@ -349,7 +375,7 @@ short now_act_findwindow_answer(NowPeekActCell *cell, unsigned long current_a5,
            guard in no other direction: the point must still be the exact
            one the caller posted, in the target's A5 world. */
         p = armed_for(cell, (unsigned long)kNowPeekActOpWindow,
-                      (unsigned long)kNowPeekActArmStage2, current_a5);
+                      (unsigned long)kNowPeekActArmStage2, current_a5, ticks);
     }
     if (p == NULL || out_window == NULL) {
         return 0;
@@ -393,7 +419,7 @@ long now_act_grow_answer(NowPeekActCell *cell, unsigned long current_a5,
 {
     NowPeekActCell *p = armed_for(cell, (unsigned long)kNowPeekActOpWindow,
                                   (unsigned long)kNowPeekActArmStage2,
-                                  current_a5);
+                                  current_a5, ticks);
 
     if (p == NULL || p->window_op != kNowPeekActWinResize) {
         return 0;
@@ -415,7 +441,7 @@ int now_act_trackbox_answer(NowPeekActCell *cell, unsigned long current_a5,
 {
     NowPeekActCell *p = armed_for(cell, (unsigned long)kNowPeekActOpWindow,
                                   (unsigned long)kNowPeekActArmStage2,
-                                  current_a5);
+                                  current_a5, ticks);
 
     if (p == NULL || p->window_op != kNowPeekActWinZoom) {
         return 0;
@@ -440,7 +466,7 @@ int now_act_goaway_answer(NowPeekActCell *cell, unsigned long current_a5,
 {
     NowPeekActCell *p = armed_for(cell, (unsigned long)kNowPeekActOpWindow,
                                   (unsigned long)kNowPeekActArmStage2,
-                                  current_a5);
+                                  current_a5, ticks);
 
     if (p == NULL || p->window_op != kNowPeekActWinClose) {
         return 0;

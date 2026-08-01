@@ -89,18 +89,18 @@ static void test_menu_identity(void)
        packs it. */
     arm_menu(&cell, 52, 10);
     check_long(now_act_menu_answer(&cell, kTargetA5, (long)point_of(52, 10),
-                                   4242UL),
+                                   42UL),
                ((long)130 << 16) | 3, "menu answers its own press");
     check(cell.armed == kNowPeekActArmNone, "menu disarms after answering");
     check(cell.fired == 1, "menu records that it fired");
-    check_long((long)cell.served_ticks, 4242L, "menu stamps the answer");
+    check_long((long)cell.served_ticks, 42L, "menu stamps the answer");
 
     /* THE DEFECT THIS GUARD EXISTS FOR. A real user presses a different
        menu while the request is armed. Upstream, without this clause,
        that ran the armed command 18 times in 20. */
     arm_menu(&cell, 52, 10);
     check_long(now_act_menu_answer(&cell, kTargetA5, (long)point_of(200, 10),
-                                   4242UL),
+                                   42UL),
                0, "menu declines a press elsewhere in the bar");
     check(cell.armed == kNowPeekActArmReady,
           "a declined press leaves the request armed for its own");
@@ -288,6 +288,63 @@ static void test_window_stages(void)
     check_long(now_act_trackbox_answer(&cell, kTargetA5, 0x00300400UL,
                                        kNowPeekActInZoomOut, 6UL),
                1, "TrackBox answers the box FindWindow named");
+}
+
+/* ---- the age-out bound: the caller that never came back --------------
+ *
+ * now_act_submit's own deadline (act_client.c, 300 ticks) only runs if
+ * the calling application is still alive to reach it. This is the
+ * resident half's OWN backstop for the caller that is not: an armed
+ * cell whose served_ticks is older than kNowActArmTicksMax is cleared
+ * and declined, with no caller involved at all.
+ *
+ * MUTATION WATCHED FAILING (revert after use): change the age
+ * comparison's `>` to `>=`, or drop it, and this test's "declines"
+ * become "answers" - an armed patch answering a click on a Mac where
+ * the agent that requested it is long gone. */
+static void test_age_out(void)
+{
+    NowPeekActCell cell;
+
+    /* Just inside the bound: still live, answers normally. */
+    arm_menu(&cell, 52, 10);
+    cell.served_ticks = 1000UL;
+    check(now_act_menu_answer(&cell, kTargetA5, (long)point_of(52, 10),
+                              1000UL + kNowActArmTicksMax)
+              != 0, "an armed cell right at the edge still answers");
+
+    /* One tick past the bound: the resident half gives up on its own,
+       with no caller in the loop at all. */
+    arm_menu(&cell, 52, 10);
+    cell.served_ticks = 1000UL;
+    check_long(now_act_menu_answer(&cell, kTargetA5, (long)point_of(52, 10),
+                                   1000UL + kNowActArmTicksMax + 1UL),
+               0, "an armed cell past the bound is declined");
+    check(cell.armed == kNowPeekActArmNone,
+          "aging out clears the arm - not merely declines this call");
+    check(cell.status == kNowPeekActStatusIdle,
+          "aging out returns the cell to idle, honestly, for the next "
+          "caller to see");
+
+    /* A wrapped TickCount (>800 days uptime) must not look like a huge
+       elapsed span: unsigned subtraction gives the true forward
+       distance, so a cell armed just before the wrap still answers
+       just after it. */
+    arm_menu(&cell, 52, 10);
+    cell.served_ticks = 0xFFFFFFFFUL - 10UL;
+    check(now_act_menu_answer(&cell, kTargetA5, (long)point_of(52, 10), 5UL)
+              != 0, "the bound survives a TickCount wraparound");
+
+    /* The window plane's stage-2 arm ages out the same way, using the
+       served_ticks the FindWindow answer re-stamps at the transition. */
+    arm_window(&cell, kNowPeekActWinResize);
+    cell.armed = kNowPeekActArmStage2;
+    cell.served_ticks = 1000UL;
+    check_long(now_act_grow_answer(&cell, kTargetA5, cell.window_ptr,
+                                   1000UL + kNowActArmTicksMax + 1UL),
+               0, "a stage-2 window request also ages out on its own");
+    check(cell.armed == kNowPeekActArmNone,
+          "and clears itself rather than waiting on a caller");
 }
 
 static void test_grow_packing(void)
@@ -644,6 +701,7 @@ int main(void)
     test_menu_identity();
     test_control_identity();
     test_window_stages();
+    test_age_out();
     test_grow_packing();
     test_trap_hits();
     test_serve_begin();
