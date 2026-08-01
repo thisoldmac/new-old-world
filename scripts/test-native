@@ -207,13 +207,15 @@ run_c now-guest-ppc obsref_test.c           ""  src/observe/obsref.c \
 run_c now-guest-ppc obsresolve_test.c       ""  src/observe/obsresolve.c \
       src/observe/obsref.c src/axwalk/axresolve.c src/axwalk/axwalk.c \
       src/peek/peek_validate.c
-# The act plane's application half, the two parts of it that decide
-# anything. act_ref is why the plane cannot express "whatever is
-# frontmost" - a reference is one this guest minted, and one whose
-# element has MOVED is refused rather than resolved to the neighbour
-# that answers to the same title. act_args is the same rule in
-# miniature: an action takes exactly its own geometry keys.
-run_c now-guest-ppc act_ref_test.c           ""  src/act/act_ref.c
+# The act plane's application half. There used to be two deciding parts
+# here; act_ref.c was the second minter of the same token shape the
+# reference layer above mints, and it is gone - what it pinned (a
+# reference cannot be forged, an evicted one resolves to nothing, an
+# element that MOVED is refused rather than resolved to the neighbour
+# answering to the same title) is pinned by obsref_test and
+# obsresolve_test, against the one registry that is left. act_args is
+# the same rule in miniature: an action takes exactly its own geometry
+# keys.
 run_c now-guest-ppc act_args_test.c          ""  src/act/act_args.c
 run_c now-guest-ppc share_path_test.c        ""
 # The Files pane's pull presentation: when Stop is armed, and the line a

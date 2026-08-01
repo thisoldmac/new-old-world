@@ -6,20 +6,21 @@
 
 #include "act_args.h"
 #include "act_client.h"
-#include "act_ref.h"
 #include "axresolve.h"
-#include "axtext.h"
-#include "axwalk.h"
 #include "cmd_line.h"
 #include "json.h"
 #include "now_act_guard.h"
 #include "nowlog.h"
+#include "observe.h"
 #include "peek_table.h"
 
-/* The session's minted references. Static, and bounded by the table's
-   own slot count: this is the only state the act plane keeps between
-   commands, and every entry in it is something a caller observed. */
-static NowActRefTable g_refs;
+/* THIS PLANE KEEPS NO REFERENCES. It used to: act_ref.c held a second
+   registry, minting the same now-window-/now-element- token shape from a
+   second walk with a second staleness rule. Two systems producing one
+   token shape means a reference minted by one may not resolve in the
+   other and a caller cannot tell which it holds - so the registry, the
+   minting and the revalidation all live in src/observe/ now, and this
+   file only asks. See observe.h. */
 
 /* Big records stay off the stack - the same discipline the scene
    collector uses, and for the same reason. */
@@ -144,68 +145,51 @@ static int arg_str(const char *json, const char *key, char *out, long cap)
  * host-side match would be a stale observation wearing the clothes of a
  * live one. */
 
-enum { kActMaxWindowWalk = 64 };
-
-/* Find the window this row names: front-first down the live window list,
-   counting windows that share a title, bounded and cycle-refusing like
-   every other walk in this project. */
-static int find_window(NowActTarget *t, const NowActRefRow *row,
-                       NowAxWindow *out)
+/* The verdict as an error slug. Five verdicts, five slugs, because
+   "your reference is stale" and "nothing answers to it" send a caller to
+   different repairs and a single code would collapse them. */
+static const char *refusal_code(NowObsVerdict verdict)
 {
-    unsigned long address = t->ax.window_list;
-    unsigned long seen[kActMaxWindowWalk];
-    unsigned int  count = 0;
-    unsigned int  matches = 0;
-
-    while (address != 0 && count < kActMaxWindowWalk) {
-        NowAxWindow   w;
-        unsigned int  i;
-
-        for (i = 0; i < count; i++) {
-            if (seen[i] == address) {
-                return 0;               /* a cycle proves nothing */
-            }
-        }
-        seen[count++] = address;
-        if (now_ax_read_window(&t->ax.memory, address, &w) != kNowAxOk) {
-            return 0;
-        }
-        if ((size_t)w.title_len == row->title_len
-            && memcmp(w.title, row->title, row->title_len) == 0) {
-            if (matches++ == row->occurrence) {
-                *out = w;
-                return 1;
-            }
-        }
-        address = w.next_window;
+    switch (verdict) {
+    case kNowObsOk:        return "ok";
+    case kNowObsStale:     return "element-stale";
+    case kNowObsAmbiguous: return "element-ambiguous";
+    case kNowObsMismatch:  return "element-mismatch";
+    case kNowObsNotFound:  break;
     }
-    return 0;
+    return "element-not-found";
 }
 
 /* The whole gate an act passes before anything is dispatched: the plane
-   is usable, the reference is one we minted, the target binds, the
-   element is still there, and it is still the SAME element. Any of
-   those failing writes the reply and returns 0. */
+   is usable, the reference resolves to a live element that is still the
+   SAME element, and the process it names opens. Any of those failing
+   writes the reply and returns 0.
+
+   The middle step is not ours. now_observe_resolve_* re-proves the
+   reference from foreign memory - five verdicts, fifteen reasons, and
+   the recycled-PSN check before the walk rather than after it - and the
+   contract that comes with it is obeyed here without exception: any
+   verdict other than kNowObsOk is a REFUSAL carrying that reason. Not a
+   retry, not a re-derivation from the reference's titles, and never a
+   fall back to whatever is frontmost.
+
+   `ref_out` is the caller's own reference string, echoed back in the
+   reply: a receipt names what was asked for. */
 static int resolve_for_act(const char *json, long id, char *out, long cap,
-                           unsigned short kind, const NowActRefRow **row_out,
-                           NowAxWindow *win_out)
+                           NowObsKind kind, NowObsHandle *handle,
+                           char *ref_out)
 {
-    char                ref[kNowActRefMax];
-    const NowActRefRow *row;
-    NowActStatus        st;
-    NowAxWindow         win;
-    unsigned long       fingerprint;
+    NowActStatus st;
 
     st = now_act_ready();
     if (st != kNowActOk) {
         reply_status(out, cap, id, st);
         return 0;
     }
-    if (!arg_str(json, kind == kNowActRefWindow ? "window" : "element",
-                 ref, (long)sizeof ref)
-        || !now_act_ref_valid(kind, ref)) {
+    if (!arg_str(json, kind == kNowObsKindWindow ? "window" : "element",
+                 ref_out, (long)kNowObsTokenMax)) {
         reply_error(out, cap, id, "bad-request",
-                    kind == kNowActRefWindow
+                    kind == kNowObsKindWindow
                         ? "winact requires window: one opaque now-window- "
                           "reference from a current observation. This "
                           "surface cannot address a window any other way, "
@@ -215,243 +199,67 @@ static int resolve_for_act(const char *json, long id, char *out, long cap,
                           "that saw the element");
         return 0;
     }
-    row = now_act_ref_find(&g_refs, ref);
-    if (row == NULL) {
-        reply_error(out, cap, id, "element-not-found",
-                    "this Mac did not mint that reference, or it has aged "
-                    "out of the observation table. Observe again");
+    if (kind == kNowObsKindWindow) {
+        now_observe_resolve_window(ref_out, 0, handle);
+    } else {
+        now_observe_resolve_element(ref_out, 0, handle);
+    }
+    if (handle->verdict != kNowObsOk) {
+        /* A reference that is not even the right SHAPE is the caller's
+           bug rather than a fact about the machine, and it gets the
+           code that says so. Everything else is an answer about this
+           Mac and carries the reference layer's own sentence. */
+        if (handle->why == kNowObsWhyMalformed) {
+            reply_error(out, cap, id, "bad-request",
+                        kind == kNowObsKindWindow
+                            ? "that is not a well-formed now-window- "
+                              "reference. This surface cannot address a "
+                              "window any other way"
+                            : "that is not a well-formed now-element- "
+                              "reference");
+            return 0;
+        }
+        reply_error(out, cap, id, refusal_code(handle->verdict),
+                    now_obs_why_text(handle->why));
         return 0;
     }
-    {
-        /* The process the reference was minted against, never "the
-           front one": an act that re-resolved to whatever is frontmost
-           now would be the target-free form this plane refuses, arrived
-           at by the back door. */
-        ProcessSerialNumber psn;
-
-        psn.highLongOfPSN = (long)row->psn_hi;
-        psn.lowLongOfPSN = (unsigned long)row->psn_lo;
-        st = now_act_open(&psn, &g_target);
-    }
+    /* The process the reference was minted against, never "the front
+       one": an act that re-resolved to whatever is frontmost now would
+       be the target-free form this plane refuses, arrived at by the back
+       door. The reference layer read the PSN out of the reference; we
+       open exactly that. */
+    st = now_act_open(&handle->psn, &g_target);
     if (st != kNowActOk) {
         reply_status(out, cap, id, st);
         return 0;
-    }
-    if (!find_window(&g_target, row, &win)) {
-        reply_error(out, cap, id, "element-not-found",
-                    "that window is no longer in the target's window list. "
-                    "A reference for a window that has closed is refused, "
-                    "never resolved to a neighbouring one");
-        return 0;
-    }
-    /* THE REVALIDATION. Found by name; the fingerprint says whether it
-       is the same thing behind the name. */
-    fingerprint = now_ax_ref_fingerprint(row->psn_hi, row->psn_lo,
-                                         win.address, row->control_handle);
-    if (!now_act_ref_still_matches(row, win.address, row->control_handle,
-                                   fingerprint)) {
-        reply_error(out, cap, id, "element-stale",
-                    "that element has moved since it was observed - the "
-                    "title still resolves and the thing behind it is not "
-                    "the one you named. Observe again");
-        return 0;
-    }
-    *row_out = row;
-    if (win_out != NULL) {
-        *win_out = win;
     }
     return 1;
 }
 
-/* ---- elements: the observation that mints ----------------------------- */
-
-static void mint_window(NowActTarget *t, const NowAxWindow *w,
-                        unsigned int occurrence, ActRows *rows)
-{
-    NowActRefRow  row;
-    NowActRefRow *slot;
-    char          value[512];
-
-    memset(&row, 0, sizeof row);
-    row.kind = kNowActRefWindow;
-    row.psn_hi = (unsigned long)t->psn.highLongOfPSN;
-    row.psn_lo = (unsigned long)t->psn.lowLongOfPSN;
-    row.window_address = w->address;
-    row.occurrence = occurrence;
-    row.title_len = (size_t)w->title_len;
-    memcpy(row.title, w->title, row.title_len);
-    row.fingerprint = now_ax_ref_fingerprint(row.psn_hi, row.psn_lo,
-                                             w->address, 0);
-    slot = now_act_ref_remember(&g_refs, &row, (unsigned long)TickCount());
-    if (slot == NULL) {
-        return;
-    }
-    snprintf(value, sizeof value, "%s  %.*s", slot->ref,
-             (int)w->title_len, w->title);
-    row_add(rows, "Window", value);
-}
-
-static void mint_control(NowActTarget *t, const NowAxWindow *w,
-                         const NowAxControl *c, unsigned int win_occurrence,
-                         unsigned int occurrence, ActRows *rows)
-{
-    NowActRefRow  row;
-    NowActRefRow *slot;
-    char          value[512];
-
-    memset(&row, 0, sizeof row);
-    row.kind = kNowActRefElement;
-    row.psn_hi = (unsigned long)t->psn.highLongOfPSN;
-    row.psn_lo = (unsigned long)t->psn.lowLongOfPSN;
-    row.window_address = w->address;
-    row.control_handle = c->address;
-    row.occurrence = win_occurrence;
-    row.title_len = (size_t)w->title_len;
-    memcpy(row.title, w->title, row.title_len);
-    row.fingerprint = now_ax_ref_fingerprint(row.psn_hi, row.psn_lo,
-                                             w->address, c->address);
-    slot = now_act_ref_remember(&g_refs, &row, (unsigned long)TickCount());
-    if (slot == NULL) {
-        return;
-    }
-    snprintf(value, sizeof value, "%s  %.*s  #%u", slot->ref,
-             (int)c->title_len, c->title, occurrence);
-    row_add(rows, "Control", value);
-}
-
-/* A dialog's own live TextEdit record is the discoverable route to a
-   real TEHandle: the caller names only the window, and the resident
-   plane reports the handle it used. A document window's TEHandle is NOT
-   discoverable from here and that gap is stated rather than papered
-   over - such an element gets no reference and no row. */
-static void mint_dialog_text(NowActTarget *t, const NowAxWindow *w,
-                             unsigned int win_occurrence, ActRows *rows)
-{
-    NowAxText     text;
-    NowActRefRow  row;
-    NowActRefRow *slot;
-    char          value[512];
-
-    if (now_ax_read_dialog_text(&t->ax.memory, w->address, &text) != kNowAxOk) {
-        return;
-    }
-    memset(&row, 0, sizeof row);
-    row.kind = kNowActRefElement;
-    row.text_kind = kNowActTextDialogTe;
-    row.psn_hi = (unsigned long)t->psn.highLongOfPSN;
-    row.psn_lo = (unsigned long)t->psn.lowLongOfPSN;
-    row.window_address = w->address;
-    row.occurrence = win_occurrence;
-    row.title_len = (size_t)w->title_len;
-    memcpy(row.title, w->title, row.title_len);
-    row.fingerprint = now_ax_ref_fingerprint(row.psn_hi, row.psn_lo,
-                                             w->address, 0);
-    slot = now_act_ref_remember(&g_refs, &row, (unsigned long)TickCount());
-    if (slot == NULL) {
-        return;
-    }
-    snprintf(value, sizeof value, "%s  %u byte%s", slot->ref,
-             text.length, text.length == 1 ? "" : "s");
-    row_add(rows, "Text", value);
-}
-
-void now_act_run_elements(const char *request_json, long id,
-                          char *out, long cap)
-{
-    ActRows             rows;
-    NowActStatus        st;
-    ProcessSerialNumber psn;
-    ProcessSerialNumber *want = NULL;
-    unsigned long       address;
-    unsigned long       seen[kActMaxWindowWalk];
-    unsigned int        count = 0;
-    long                hi = 0;
-    long                lo = 0;
-    NowAxTitleEntry     titles[kActMaxWindowWalk];
-    NowAxTitleCounter   counter;
-
-    st = now_act_ready();
-    if (st != kNowActOk) {
-        reply_status(out, cap, id, st);
-        return;
-    }
-    if (arg_int(request_json, "serialHi", &hi)
-        && arg_int(request_json, "serialLo", &lo)) {
-        psn.highLongOfPSN = hi;
-        psn.lowLongOfPSN = (unsigned long)lo;
-        want = &psn;
-    }
-    st = now_act_open(want, &g_target);
-    if (st != kNowActOk) {
-        reply_status(out, cap, id, st);
-        return;
-    }
-
-    rows_reset(&rows);
-    now_ax_title_counter_reset(&counter, titles, kActMaxWindowWalk);
-    address = g_target.ax.window_list;
-    while (address != 0 && count < kActMaxWindowWalk && !rows.overflow) {
-        NowAxWindow   w;
-        unsigned int  i;
-        unsigned int  occurrence = 0;
-        unsigned long ctl;
-        unsigned int  ctl_count = 0;
-
-        for (i = 0; i < count; i++) {
-            if (seen[i] == address) {
-                address = 0;
-                break;
-            }
-        }
-        if (address == 0) {
-            break;
-        }
-        seen[count++] = address;
-        if (now_ax_read_window(&g_target.ax.memory, address, &w) != kNowAxOk) {
-            break;
-        }
-        (void)now_ax_title_counter_next(&counter, w.title,
-                                        (size_t)w.title_len, &occurrence);
-        mint_window(&g_target, &w, occurrence, &rows);
-        mint_dialog_text(&g_target, &w, occurrence, &rows);
-
-        ctl = w.control_list;
-        while (ctl != 0 && ctl_count < kNowAxResolveMaxControls
-               && !rows.overflow) {
-            NowAxControl c;
-
-            if (now_ax_read_control(&g_target.ax.memory, &w, ctl, &c)
-                != kNowAxOk) {
-                break;
-            }
-            mint_control(&g_target, &w, &c, occurrence, ctl_count, &rows);
-            ctl_count++;
-            ctl = c.next_control;
-        }
-        address = w.next_window;
-    }
-
-    if (rows.overflow) {
-        /* An honest partial: a reader that cannot tell a short list from
-           a clipped one has been told nothing useful. */
-        row_add(&rows, "Truncated",
-                "more elements existed than one reply can carry");
-    }
-    if (rows.used == 0) {
-        row_add(&rows, "Elements", "none - that process has no windows a "
-                                   "classic walk can read");
-    }
-    now_log(kLogInfo, "act", "#%ld elements a5=%lu", id, g_target.a5);
-    reply_rows(out, cap, id, "elements", &rows);
-}
+/* ---- where `elements` went --------------------------------------------
+ *
+ * The observation that MINTS the references these five verbs take is not
+ * here any more; it is now_observe_elements_command, in src/observe/. It
+ * moved because it was the second minter: it walked the same window list
+ * and produced the same now-window-/now-element- token shape from its own
+ * table with its own staleness rule, while the reference layer next door
+ * did the same thing better - a token hashed over a per-session secret, a
+ * recycled-PSN check before the walk, five verdicts instead of one
+ * boolean. Two systems producing one token shape is a reference whose
+ * provenance a caller cannot tell, so there is one now.
+ *
+ * `elements` is still a command and still means the same thing to a
+ * caller. It is the reference layer's walk aimed by a process rather
+ * than by a scope. */
 
 /* ---- winact ----------------------------------------------------------- */
 
 void now_act_run_winact(const char *request_json, long id, char *out, long cap)
 {
-    const NowActRefRow *row = NULL;
+    NowObsHandle        handle;
+    NowObsHandle        after;
     NowAxWindow         win;
-    NowAxWindow         after;
+    char                ref[kNowObsTokenMax];
     NowActWinArgs       args;
     NowPeekActCell     *cell;
     ActRows             rows;
@@ -494,10 +302,15 @@ void now_act_run_winact(const char *request_json, long id, char *out, long cap)
         }
     }
 
-    if (!resolve_for_act(request_json, id, out, cap, kNowActRefWindow,
-                         &row, &win)) {
+    if (!resolve_for_act(request_json, id, out, cap, kNowObsKindWindow,
+                         &handle, ref)) {
         return;
     }
+    /* The window record the RESOLVER read, not a second read of our own:
+       it is the one whose addresses were just proved to be the ones this
+       reference was minted against, and reading it again here would open
+       a window between the proof and the aim. */
+    win = handle.detail.window;
     cell = now_act_cell();
     if (cell == NULL) {
         reply_status(out, cap, id, kNowActNoExtension);
@@ -587,7 +400,7 @@ void now_act_run_winact(const char *request_json, long id, char *out, long cap)
     now_act_withdraw();
 
     rows_reset(&rows);
-    row_add(&rows, "Window", row->ref);
+    row_add(&rows, "Window", ref);
     row_add(&rows, "Action", action);
     /* The one word this surface is allowed to say. It means the event
        was handed to the addressed element's own application - not that
@@ -603,18 +416,21 @@ void now_act_run_winact(const char *request_json, long id, char *out, long cap)
        and this project has upstream's four retracted findings to show
        for treating it as such. A window that has gone is not a failure
        to re-read; for close it is the whole result. */
-    if (now_act_open(&g_target.psn, &g_target) == kNowActOk) {
-        if (find_window(&g_target, row, &after)) {
-            char rect[96];
+    now_observe_resolve_window(ref, 0, &after);
+    if (after.verdict == kNowObsOk) {
+        char rect[96];
 
-            snprintf(rect, sizeof rect, "%d, %d to %d, %d",
-                     (int)after.left, (int)after.top,
-                     (int)after.right, (int)after.bottom);
-            row_add(&rows, "Re-read", rect);
-        } else {
-            row_add(&rows, "Re-read", "that window is no longer in the "
-                                      "target's window list");
-        }
+        snprintf(rect, sizeof rect, "%d, %d to %d, %d",
+                 (int)after.detail.window.left, (int)after.detail.window.top,
+                 (int)after.detail.window.right,
+                 (int)after.detail.window.bottom);
+        row_add(&rows, "Re-read", rect);
+    } else {
+        /* The reference layer's own sentence, not a guess of ours: after
+           a close it says the window is gone, after a stale resolve it
+           says the addresses moved, and those are different facts a
+           reader should not have to squint at one word to tell apart. */
+        row_add(&rows, "Re-read", now_obs_why_text(after.why));
     }
     now_log(kLogInfo, "act", "#%ld winact %s dispatched", id, action);
     reply_rows(out, cap, id, "winact", &rows);
@@ -649,12 +465,14 @@ static void text_rows(ActRows *rows, const NowPeekActCell *snap)
 static void text_exchange(const char *request_json, long id, char *out,
                           long cap, int is_set)
 {
-    const NowActRefRow *row = NULL;
-    NowPeekActCell     *cell;
-    ActRows             rows;
-    char                body[kNowPeekActTextMax + 1];
-    NowActStatus        st;
-    long                body_len = 0;
+    NowObsHandle          handle;
+    const NowObsIdentity *named;
+    NowPeekActCell       *cell;
+    ActRows               rows;
+    char                  ref[kNowObsTokenMax];
+    char                  body[kNowPeekActTextMax + 1];
+    NowActStatus          st;
+    long                  body_len = 0;
 
     if (is_set) {
         if (!now_json_find_text(request_json, "text", body,
@@ -668,11 +486,16 @@ static void text_exchange(const char *request_json, long id, char *out,
         }
         body_len = (long)strlen(body);
     }
-    if (!resolve_for_act(request_json, id, out, cap, kNowActRefElement,
-                         &row, NULL)) {
+    if (!resolve_for_act(request_json, id, out, cap, kNowObsKindElement,
+                         &handle, ref)) {
         return;
     }
-    if (row->text_kind == kNowActTextNone) {
+    /* WHAT THE MINT KNEW, and not a fresh opinion about it. The route to
+       a text element - which record, which item - was decided by the
+       observation that saw it; deciding it again here would be the
+       second decider this plane was unified to remove. */
+    named = &handle.identity;
+    if (named->text_kind == kNowObsTextNone) {
         reply_error(out, cap, id, "not-text",
                     "that reference names a control, not a text element");
         return;
@@ -685,10 +508,10 @@ static void text_exchange(const char *request_json, long id, char *out,
 
     cell->op = (NowPeekU32)(is_set ? kNowPeekActOpTextSet
                                    : kNowPeekActOpTextGet);
-    cell->text_kind = (NowPeekU32)row->text_kind;
-    cell->text_window = (NowPeekU32)row->window_address;
-    cell->text_handle = (NowPeekU32)row->te_handle;
-    cell->text_item = (NowPeekI32)row->dialog_item;
+    cell->text_kind = (NowPeekU32)named->text_kind;
+    cell->text_window = (NowPeekU32)named->window_address;
+    cell->text_handle = (NowPeekU32)named->te_handle;
+    cell->text_item = (NowPeekI32)named->dialog_item;
     /* Clamped to what the RESIDENT half allocated, not to what this
        build was compiled against: the two can differ across a version
        and the memory that exists is the one that matters. */
@@ -711,7 +534,7 @@ static void text_exchange(const char *request_json, long id, char *out,
     now_act_withdraw();
 
     rows_reset(&rows);
-    row_add(&rows, "Element", row->ref);
+    row_add(&rows, "Element", ref);
     text_rows(&rows, &g_snap);
     if (is_set) {
         row_addf(&rows, "Requested scalars", "%ld", body_len);
@@ -743,10 +566,11 @@ void now_act_run_textset(const char *request_json, long id, char *out, long cap)
 
 void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
 {
-    const NowActRefRow *row = NULL;
-    NowAxWindow         win;
+    NowObsHandle        handle;
+    NowObsHandle        after;
     NowPeekActCell     *cell;
     ActRows             rows;
+    char                ref[kNowObsTokenMax];
     NowActStatus        st;
     long                part = 0;
 
@@ -758,11 +582,11 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
                     "the indicator");
         return;
     }
-    if (!resolve_for_act(request_json, id, out, cap, kNowActRefElement,
-                         &row, &win)) {
+    if (!resolve_for_act(request_json, id, out, cap, kNowObsKindElement,
+                         &handle, ref)) {
         return;
     }
-    if (row->control_handle == 0) {
+    if (handle.identity.control_handle == 0) {
         reply_error(out, cap, id, "bad-request",
                     "that reference names a text element, not a control");
         return;
@@ -777,24 +601,17 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
     /* THE IDENTITY CHECK, carried in the request: the patch answers only
        for THIS handle. It is the clause that measured 0/20 upstream
        while the menu patch without its equivalent measured 18/20. */
-    cell->control_handle = (NowPeekU32)row->control_handle;
+    cell->control_handle = (NowPeekU32)handle.identity.control_handle;
     cell->part_code = (NowPeekI32)part;
-    /* Where the resident plane will press. The centre of the control if
-       we can read it, else the centre of its window - and either way it
-       decides nothing, because the patch answers for the handle the
-       request names and declines every other. It only has to be
-       somewhere the application will route to a mouseDown handler. */
-    {
-        NowAxControl c;
-
-        cell->click_h = (NowPeekI32)((win.left + win.right) / 2);
-        cell->click_v = (NowPeekI32)((win.top + win.bottom) / 2);
-        if (now_ax_read_control(&g_target.ax.memory, &win,
-                                row->control_handle, &c) == kNowAxOk) {
-            cell->click_h = (NowPeekI32)((c.left + c.right) / 2);
-            cell->click_v = (NowPeekI32)((c.top + c.bottom) / 2);
-        }
-    }
+    /* Where the resident plane will press: the centre of the control the
+       RESOLVER read, which is the one whose addresses it just proved.
+       Where it lands decides nothing - the patch answers for the handle
+       the request names and declines every other - so this only has to
+       be somewhere the application will route to a mouseDown handler. */
+    cell->click_h = (NowPeekI32)((handle.detail.control.left
+                                  + handle.detail.control.right) / 2);
+    cell->click_v = (NowPeekI32)((handle.detail.control.top
+                                  + handle.detail.control.bottom) / 2);
 
     st = now_act_submit(g_target.a5, &g_snap);
     if (st == kNowActRefused) {
@@ -825,7 +642,7 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
     now_act_withdraw();
 
     rows_reset(&rows);
-    row_add(&rows, "Element", row->ref);
+    row_add(&rows, "Element", ref);
     row_addf(&rows, "Part", "%ld", part);
     row_add(&rows, "Dispatch", "dispatched");
     row_add(&rows, "Mechanism", "the application's own TrackControl");
@@ -834,20 +651,18 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
        and this proves nothing about it - its effect is whatever its own
        handler did, which only the caller can name and check. The
        stronger claim is made exactly where the guest supports it. */
-    if (now_act_open(&g_target.psn, &g_target) == kNowActOk
-        && find_window(&g_target, row, &win)) {
-        NowAxControl c;
-
-        if (now_ax_read_control(&g_target.ax.memory, &win,
-                                row->control_handle, &c) == kNowAxOk) {
-            if (c.max > c.min) {
-                row_addf(&rows, "Re-read value", "%ld", (long)c.value);
-            } else {
-                row_add(&rows, "Re-read value",
-                        "this control has no range, so its position "
-                        "answers nothing about the act");
-            }
+    now_observe_resolve_element(ref, 0, &after);
+    if (after.verdict == kNowObsOk) {
+        if (after.detail.control.max > after.detail.control.min) {
+            row_addf(&rows, "Re-read value", "%ld",
+                     (long)after.detail.control.value);
+        } else {
+            row_add(&rows, "Re-read value",
+                    "this control has no range, so its position "
+                    "answers nothing about the act");
         }
+    } else {
+        row_add(&rows, "Re-read value", now_obs_why_text(after.why));
     }
     now_log(kLogInfo, "act", "#%ld ctlact part %ld dispatched", id, part);
     reply_rows(out, cap, id, "ctlact", &rows);
