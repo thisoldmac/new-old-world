@@ -82,8 +82,12 @@ enum {
        and a per-window array of thirty would cost 64 x 30 entries to
        serve the same scene.
 
-       The scene struct they size is ~26 KB and is heap-allocated by its
-       caller for that reason; a classic Mac stack is 24-32 KB. */
+       The scene struct they size is ~27 KB measured on the host (a
+       little less on the guest, where `long` is 32-bit), up from ~11 KB
+       before the walk. It is heap-allocated by its caller for that
+       reason - a classic Mac stack is 24-32 KB - and a caller that
+       cannot get the block says so rather than walking a smaller
+       machine. */
     kNowSceneMaxMenus = 16,       /* menus in the one menu bar */
     kNowSceneMaxMenuItems = 96,   /* menu items, pooled across menus */
     kNowSceneMaxControls = 96,    /* controls, pooled across windows */
