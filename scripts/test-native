@@ -283,6 +283,11 @@ run_c now-guest-ppc share_path_test.c        ""
 run_c now-guest-ppc files_pull_test.c        ""  src/files/files_pull.c
 run_c now-guest-ppc cloud_model_test.c      ""  src/cloud/cloud_model.c src/core/json.c
 run_c now-guest-ppc cloud_layout_test.c     ""  src/cloud/cloud_layout.c
+# The Contacts card's grouping/date-parsing decisions -- kept out of
+# cloud_contacts_view.c so they run here, off a fixture, rather than
+# only ever being exercised by eye on the PowerBook.
+run_c now-guest-ppc cloud_contacts_card_test.c "" \
+      src/cloud/cloud_contacts_card.c
 # The path row's label: the share named by the listing's own root, with
 # "Shared folder" only left for hosts predating the field, and one colon
 # at the root/path join whichever spelling of root arrived.
