@@ -23,8 +23,8 @@ yes/no:
 
 | # | The question | What the answer decides |
 |---|---|---|
-| 12 | Does a process's `LMGetCurStackBase()` fall inside its partition? | If not, **every** process reports `MISMATCH` and the Windows row reads "stale anchor" everywhere — a silent, total, *polite* refusal rather than a fault |
-| 8 | Is a frame off an open bracket cheaper than a 0.5–0.6 s capture? | The streaming row's entire premise. If it is not clearly cheaper, the row's reason for existing is wrong and should be reported as such |
+| 13 | Does a process's `LMGetCurStackBase()` fall inside its partition? | If not, **every** process reports `MISMATCH` and the Windows row reads "stale anchor" everywhere — a silent, total, *polite* refusal rather than a fault |
+| 9 | Is a frame off an open bracket cheaper than a 0.5–0.6 s capture? | The streaming row's entire premise. If it is not clearly cheaper, the row's reason for existing is wrong and should be reported as such |
 | — | What does a **semantic scene walk** cost on the 1400c? | Whether Mirror scenes reuse the bracket or stay one-shot ([streaming-a-scene.md](streaming-a-scene.md)). Above roughly 200 ms the bracket earns its keep |
 
 They want the same setup — one machine, one connected session, a stopwatch on
@@ -318,7 +318,44 @@ Move, trash, restore, mkdir, and download. The confirmation sheet and the
 fifty-deep Undo are the human half of a destructive capability an agent can also
 reach. Judge whether the wording makes it clear what will happen and to what.
 
-## 5a. The Software page's sweep budget and its duplicate groups
+### 5a. The path bar, on a volume that is actually deep (new 2026-07-31)
+
+The Files browser used to show one crumb — the last component of the share
+root — and an up button. It now shows the whole path, disk first, and every
+component inside the share is a click. Unit-tested only; **no machine has drawn
+this bar**, and the questions left are the ones a test cannot answer.
+
+| What to do | What to judge |
+|---|---|
+| Connect a real guest and look at the bar before opening anything | Does the disk read as that machine's disk? The first crumb is the volume name with an `externaldrive` beside it, and the components between the disk and the shared folder are grey and unclickable on purpose. Does "grey" read as *context*, or as *broken*? |
+| Navigate somewhere genuinely deep — `System Folder:Extensions` is only two, so go further: `Macintosh HD:Applications:Utilities:Network:…`, or point the share at the volume root and walk down | At **four or more** folders inside the share the middle folds into a `…` menu, keeping the disk, the shared folder, and the last two folders. Six elements maximum. Is the fold obvious enough to click, or does it read as the path having been *cut*? |
+| Open the `…` menu | Everything folded is listed and every enterable one jumps. Confirm nothing is missing — the fold is meant to lose nothing. |
+| Find a folder with a long name (HFS allows 31 characters — `System Folder Extensions (Disabled)` is over, but 31 is easy to hit) | Names are **never** truncated; that was deliberate, on the grounds that depth is unbounded and a name is not. On a narrow window does the bar stay on one line, or does the deliberate no-truncation choice push the actions off the right edge? That is the one thing the width ceiling was computed for and the one thing only a real window can settle. |
+| Point the share at a whole volume (`Macintosh HD:`) | One crumb, which is both the disk and where browsing starts, and it is clickable. |
+| Watch the bar **before** the first listing, and force a failure (share a folder, then delete it on the guest, then Refresh) | It never goes blank: "nothing listed yet" / "listing…" / a `not listed` warning that keeps the crumbs. Judge whether the failed state reads as *where you tried to be* rather than as *where you are*. |
+| Switch between two guests mid-browse | Each machine's bar comes back to its own path. |
+
+Names on a classic volume can contain `/`, `..` and high-MacRoman bytes; the
+splitter is `contract/share_path.h`'s rule and those are pinned in tests, but a
+volume with a folder actually named `..` is worth a look if one exists.
+
+### 5b. Double-click: download to the share, then open (new 2026-07-31)
+
+A double-click on a file now fetches it into the folder **this** Mac shares and
+opens it here. Unit-tested against a fake guest; the seams a real machine
+decides are these.
+
+| What to do | What to judge |
+|---|---|
+| Double-click a plain `TEXT` file | It lands in the shared folder — the same one "Reveal Shared Folder" opens — and opens in TextEdit. Check the **converted** text is right, not just that something opened. |
+| Double-click a **large** file (a few MB over this wire is slow on purpose) | The progress row says "*then opens here*" while it runs. Does that read as an explanation of the wait, or is the wait still long enough to feel broken? This is the judgement the row exists for. |
+| Press **Cancel** during that transfer | Nothing opens, and nothing half-written is left in the shared folder. |
+| Double-click a resource-only file or a 68K application | Nothing here can open it: it is revealed in the Finder and a grey (not red) notice says where it went. Judge whether "revealed + notice" reads as success — because it *is* one — or as a failure with the wrong colour. |
+| Double-click the same file twice | The second copy is `name (2)`; the share is never overwritten. Is silently bumping right here, or should it ask? |
+| Double-click a folder | It navigates, and 5a's bar is what confirms where it landed. |
+| Double-click while another transfer runs | The footer says the wire is busy. Previously this did nothing at all. |
+
+## 6. The Software page's sweep budget and its duplicate groups
 
 Added 2026-07-31. The page used to re-run the guest's whole Applications sweep
 every time it was opened, and again on every domain-picker flip. It now sweeps
@@ -361,44 +398,8 @@ guest and not here. Both surfaces sort under an ASCII fold, which does not
 bring such a pair adjacent, so the guest only groups them when nothing sorts
 between them. Not expected to occur on a real disk; worth a glance if one ever
 does.
-### 5b. The path bar, on a volume that is actually deep (new 2026-07-31)
 
-The Files browser used to show one crumb — the last component of the share
-root — and an up button. It now shows the whole path, disk first, and every
-component inside the share is a click. Unit-tested only; **no machine has drawn
-this bar**, and the questions left are the ones a test cannot answer.
-
-| What to do | What to judge |
-|---|---|
-| Connect a real guest and look at the bar before opening anything | Does the disk read as that machine's disk? The first crumb is the volume name with an `externaldrive` beside it, and the components between the disk and the shared folder are grey and unclickable on purpose. Does "grey" read as *context*, or as *broken*? |
-| Navigate somewhere genuinely deep — `System Folder:Extensions` is only two, so go further: `Macintosh HD:Applications:Utilities:Network:…`, or point the share at the volume root and walk down | At **four or more** folders inside the share the middle folds into a `…` menu, keeping the disk, the shared folder, and the last two folders. Six elements maximum. Is the fold obvious enough to click, or does it read as the path having been *cut*? |
-| Open the `…` menu | Everything folded is listed and every enterable one jumps. Confirm nothing is missing — the fold is meant to lose nothing. |
-| Find a folder with a long name (HFS allows 31 characters — `System Folder Extensions (Disabled)` is over, but 31 is easy to hit) | Names are **never** truncated; that was deliberate, on the grounds that depth is unbounded and a name is not. On a narrow window does the bar stay on one line, or does the deliberate no-truncation choice push the actions off the right edge? That is the one thing the width ceiling was computed for and the one thing only a real window can settle. |
-| Point the share at a whole volume (`Macintosh HD:`) | One crumb, which is both the disk and where browsing starts, and it is clickable. |
-| Watch the bar **before** the first listing, and force a failure (share a folder, then delete it on the guest, then Refresh) | It never goes blank: "nothing listed yet" / "listing…" / a `not listed` warning that keeps the crumbs. Judge whether the failed state reads as *where you tried to be* rather than as *where you are*. |
-| Switch between two guests mid-browse | Each machine's bar comes back to its own path. |
-
-Names on a classic volume can contain `/`, `..` and high-MacRoman bytes; the
-splitter is `contract/share_path.h`'s rule and those are pinned in tests, but a
-volume with a folder actually named `..` is worth a look if one exists.
-
-### 5c. Double-click: download to the share, then open (new 2026-07-31)
-
-A double-click on a file now fetches it into the folder **this** Mac shares and
-opens it here. Unit-tested against a fake guest; the seams a real machine
-decides are these.
-
-| What to do | What to judge |
-|---|---|
-| Double-click a plain `TEXT` file | It lands in the shared folder — the same one "Reveal Shared Folder" opens — and opens in TextEdit. Check the **converted** text is right, not just that something opened. |
-| Double-click a **large** file (a few MB over this wire is slow on purpose) | The progress row says "*then opens here*" while it runs. Does that read as an explanation of the wait, or is the wait still long enough to feel broken? This is the judgement the row exists for. |
-| Press **Cancel** during that transfer | Nothing opens, and nothing half-written is left in the shared folder. |
-| Double-click a resource-only file or a 68K application | Nothing here can open it: it is revealed in the Finder and a grey (not red) notice says where it went. Judge whether "revealed + notice" reads as success — because it *is* one — or as a failure with the wrong colour. |
-| Double-click the same file twice | The second copy is `name (2)`; the share is never overwritten. Is silently bumping right here, or should it ask? |
-| Double-click a folder | It navigates, and 5a's bar is what confirms where it landed. |
-| Double-click while another transfer runs | The footer says the wire is busy. Previously this did nothing at all. |
-
-## 6. Contention, which nobody has ever seen happen
+## 7. Contention, which nobody has ever seen happen
 
 Added 2026-07-31 with `now_stream_screen`. **Two sentences a person reads only
 when an agent is doing something to their Mac**, and neither has been in front
@@ -427,7 +428,7 @@ should be refused with a sentence naming *you*, not a bare "busy". You cannot
 see that one — it goes to the agent — but the wording is worth reading in the
 tool's answer.
 
-## 7. Platinum fidelity — deferred
+## 8. Platinum fidelity — deferred
 
 Named here so it is not lost, but it belongs to the Mirror fold-in rather than
 this slice. Whether the rendered desktop *looks* right is a human call and the
@@ -437,7 +438,7 @@ one thing no measurement replaces.
 
 # Part two — metal test
 
-## 8. The eleven capabilities that have never crossed a wire
+## 9. The eleven capabilities that have never crossed a wire
 
 **Exactly one capability has met a Macintosh: capture.** Addressing is verified
 too, but addressing is a property of every call rather than a capability of its
@@ -501,7 +502,7 @@ Three more things only metal answers here:
   the exact wedge `cancel` exists to prevent, and the app's own Cancel button
   has it too.
 
-## 9. Guest consent, which has never met a machine
+## 10. Guest consent, which has never met a machine
 
 The PPC guest's answer now comes from its preferences file, and the MCP page
 of the Workshop sets it — so the ceiling is testable from the guest's own
@@ -554,20 +555,20 @@ runs to completion at the old tier. Worth eyeballing what that feels like
 during a long operation (a whole-volume software sweep is the easy one) so
 the decision is made against something observed.
 
-## 10. The fifth addressing case
+## 11. The fifth addressing case
 
 `now-guest-not-addressed` means *connected but not driven*, which **one machine
 cannot be**. It needs a second guest live on the same listener — a second real
 Mac, or a QEMU guest dialling the same port. Everything else in that family is
 already verified.
 
-## 11. The agent audit line has never been read on a real run
+## 12. The agent audit line has never been read on a real run
 
 Rule 3's whole point is that a person can see what an agent did. Drive one tool
 against a real machine and then **read the line out of `~/Library/Logs/now-logs`
 and out of the MCP module**. Nobody has done this end to end.
 
-## 12. The anchor oracle's one unmeasured assumption
+## 13. The anchor oracle's one unmeasured assumption
 
 Added 2026-07-31 with the oracle (M1b). This is the highest-value single
 observation in the metal half, because it is the one place in this slice where a
@@ -599,7 +600,7 @@ normal value and the strict readability test would reject it. Tightening it
 (that the stack base sits above A5, say) wants this observation first; until
 then it stays out as a phantom constraint.
 
-## 13. Two machine-specific facts worth confirming
+## 14. Two machine-specific facts worth confirming
 
 - **`vprobe` reported `CopyBits failed` on the 1400c**, and that failure does
   **not** reproduce through `capture.request` — two clean captures. The paths

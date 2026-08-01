@@ -96,7 +96,7 @@ everywhere before a scarce machine is booked, and it is free.
 4. **The anchor oracle and the Windows row.** The single most informative
    screen in the pass. *Some* processes reading "stale anchor" is the good
    outcome; **every** process reading it means the stack-base assumption is
-   wrong (review §12).
+   wrong (review §13).
 5. **A scene end to end** — request, transfer, decode — once 1.3 is wired.
 6. **The NOW Extension at boot**, on a disposable clone, with a shift-boot
    ready before the install rather than after the problem.
