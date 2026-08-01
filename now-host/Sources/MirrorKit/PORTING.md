@@ -101,3 +101,25 @@ module, and nothing has run against a Macintosh — emulated or metal.
    `controls`, `text` and `kind`, so a rendered scene would be chrome and
    titles. The renderer handles that (it is what the empty content rect is
    for), but nobody should be surprised by it.
+
+## Addendum, 2026-07-31 — items 1–3 above are done
+
+The follow-up landed the same day, on `thread/p2-mirror-module`:
+
+1. **The module pane** is `Host/MirrorModuleView.swift` + `MirrorModuleModel`,
+   registered as `mirror`.
+2. **The bridge** is `Host/MirrorSceneAdapter.swift`. NOW's optional planes
+   become this model's `value + …Present` pairs, all three states tested per
+   plane.
+3. **The input decision**: replayed scene documents, not live scenes — nothing
+   on the host asks for one yet, and the pane names its provenance so a replay
+   never reads as this Mac now.
+
+**One file was added to this target**: `SceneFactory.swift`, public static
+factories over the internal memberwise initializers, because the adapter lives
+outside this module and could not otherwise construct a `Scene`. `Scene.swift`
+is untouched; the reasoning for factories rather than public inits is in that
+file's header.
+
+Item 4 stands: NOW's guest now fills `menubar`, `controls`, `text` and `kind`
+conditionally (Phase 1.3), and still no `display`, `desktopItems` or `items`.

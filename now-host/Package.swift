@@ -40,14 +40,19 @@ let package = Package(
                             .copy("Resources/patterns"),
                             .copy("Resources/icons"),
                             .copy("Resources/appicons")]),
+        // MirrorKit and MirrorKitUI join the app here: the Mirror module's
+        // adapter turns a `NOWSceneDocument` into `MirrorKit.Scene`, and its
+        // pane draws that scene with `MirrorKitUI.SceneView`.
         .executableTarget(name: "Host",
-                          dependencies: ["NOWAgentIntegration"],
+                          dependencies: ["NOWAgentIntegration",
+                                         "MirrorKit", "MirrorKitUI"],
                           path: "Sources/Host"),
         .executableTarget(name: "NOWAgentCompanion",
                           dependencies: ["NOWAgentIntegration"],
                           path: "Sources/NOWAgentCompanion"),
         .testTarget(name: "HostTests",
-                    dependencies: ["Host", "NOWAgentIntegration"],
+                    dependencies: ["Host", "NOWAgentIntegration",
+                                   "MirrorKit"],
                     path: "Tests/HostTests"),
         .testTarget(name: "NOWAgentCompanionTests",
                     dependencies: ["NOWAgentCompanion",

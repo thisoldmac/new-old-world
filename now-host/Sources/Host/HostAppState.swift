@@ -84,6 +84,11 @@ final class HostAppState: ObservableObject {
         addressing: agentIntegration,
         select: { [weak self] key in self?.selectGuest(key) ?? false })
     private(set) lazy var console = ConsoleModel(listener: listener)
+    /// The Mirror page. Guest-scoped like the rest — it is a claim about one
+    /// machine — even though nothing on this side asks that machine for a
+    /// scene yet, because the states it rests in are all about WHICH Mac is
+    /// connected and it would be wrong the moment the picker moved.
+    private(set) lazy var mirror = MirrorModuleModel()
     private(set) lazy var census = CensusModuleModel(listener: listener)
     private(set) lazy var diagnostics = DiagnosticsModel(listener: listener)
     private(set) lazy var software = SoftwareModel(listener: listener)
@@ -112,7 +117,8 @@ final class HostAppState: ObservableObject {
     /// switch — the two used to be separate assignments, and a module added
     /// to one and not the other is precisely the defect this list closes.
     private var guestScopedModels: [any GuestScopedModel] {
-        [screenshots, files, census, diagnostics, processes, software]
+        [screenshots, files, census, diagnostics, processes, software,
+         mirror]
     }
 
     /// Points the whole window at another connected Mac.
