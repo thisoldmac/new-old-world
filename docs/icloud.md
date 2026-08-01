@@ -68,9 +68,13 @@ a service dropdown rebuilt from each `cloud.report`, a two-column Data
 Browser for the chosen service's rows (paged straight through, the
 Files browser's rule), a card pane for the selected row, and "Save to
 this Mac", which sends `cloud.get` and lets the ordinary file.offer
-machinery land the bytes in this machine's share. Drive selected shows
-the service's own words and points at the Files page — one
-implementation, two renderers.
+machinery land the bytes in this machine's share. Drive is a real
+browser IN the page: it calls the same `now_wire_list_host` the Files
+page calls (the listing hook follows whoever asked last, which is
+already the wire's replacement rule for the answer), renders
+name/kind rows, descends on double-click, fetches a double-clicked
+file through `now_wire_get_host` with the pull's progress polled into
+the card pane — one browse implementation, genuinely two renderers.
 
 The split follows the house pattern: `cloud_model.c` (the store and
 parsers, host-cc tested in `cloud_model_test.c`, mutation-watched) and

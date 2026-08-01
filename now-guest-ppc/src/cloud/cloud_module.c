@@ -10,17 +10,24 @@
 #include "wire.h"
 
 /* The iCloud page: the modern machine's cloud, browsed from this one.
-   One dropdown of services (cloud.report), one list of rows for the
-   chosen service (cloud.listing, paged straight through like the Files
-   browser), one card pane for the selected row (cloud.card), and Save,
-   which asks for the row as an ordinary file into this machine's share
-   (cloud.get -> file.offer; the Files machinery narrates the rest).
+   One dropdown of services (cloud.report), and a render tailored to
+   the chosen service. Photos and Contacts list rows (cloud.listing,
+   paged straight through like the Files browser) with a card for the
+   selected one (cloud.card) and Save, which asks for the row as an
+   ordinary file into this machine's share (cloud.get -> file.offer).
 
-   Drive is the deliberate exception: its browsing IS the Files page,
-   so choosing it here shows the service's own words and points there.
+   Drive is a real file browser HERE, not a signpost — but its
+   transport is still the file family against the share, exactly as
+   the contract's x-cloud prescribes: this page calls the same
+   now_wire_list_host the Files page calls, and the listing hook
+   follows whoever asked last ("a second request replaces the first"
+   is already the wire's rule for the answer). One implementation,
+   now genuinely two renderers. A double-clicked file pulls through
+   now_wire_get_host into the downloads folder, and the card pane
+   shows the pull moving.
 
-   All wire answers arrive through one raw-frame hook and are parsed by
-   cloud_model.c, which the host cc tests; this file owns controls,
+   All cloud answers arrive through one raw-frame hook and are parsed
+   by cloud_model.c, which the host cc tests; this file owns controls,
    rectangles and pixels, and decides nothing about the bytes. */
 
 enum {
@@ -43,14 +50,24 @@ static MenuRef g_menu;
 
 static CloudStore g_store;
 static int g_service = -1;            /* index into g_store.services */
-static int g_selected = -1;           /* index into g_store.rows */
+static int g_selected = -1;           /* row index: cloud rows, or in
+                                         drive mode g_drive_rows */
 static Boolean g_loading;
 static Boolean g_asked_once;
 static Boolean g_in_rebuild;
 static char g_status[128];
 
+/* Drive mode: the chosen service is drive and the share serves it, so
+   the list is a file browser over the share, share-relative like the
+   Files page's. */
+static Boolean g_drive_mode;
+static char g_drive_path[224];
+static FileEntry g_drive_rows[kCloudMaxRows];
+static int g_drive_count;
+
 static char g_shown_status[128];
 static Boolean g_shown_save_on;
+static char g_shown_pull[96];
 
 static void invalidate_detail(void)
 {
@@ -159,6 +176,139 @@ static void ask_save(void)
     set_status("Asking for it...");
 }
 
+/* --- drive: a real browser over the share ------------------------------- */
+
+static void clear_list(void)
+{
+    g_selected = -1;
+    if (g_browser != NULL) {
+        g_in_rebuild = true;
+        RemoveDataBrowserItems(g_browser, kDataBrowserNoItem, 0, NULL,
+                               kDataBrowserItemNoProperty);
+        g_in_rebuild = false;
+    }
+}
+
+static void drive_request(const char *path, long cursor)
+{
+    char err[96];
+
+    if (cursor <= 1) {
+        g_drive_count = 0;
+        clear_list();
+        strncpy(g_drive_path, path != NULL ? path : "",
+                sizeof g_drive_path - 1);
+        g_drive_path[sizeof g_drive_path - 1] = '\0';
+        invalidate_detail();
+    }
+    /* The listing hook follows the asker; the Files page takes it back
+       the same way the moment it asks (files_browser_view.c). */
+    conn_set_listing(cloud_drive_listing);
+    if (now_wire_list_host(g_drive_path, cursor, err, sizeof err) < 0) {
+        g_loading = false;
+        set_status(err);
+        return;
+    }
+    g_loading = true;
+    set_status("Reading...");
+}
+
+void cloud_drive_listing(const char *path, const FileEntry *entries,
+                         int count, Boolean more, long cursor,
+                         const char *root, const char *error)
+{
+    DataBrowserItemID ids[16];
+    int i;
+
+    (void)root;
+    if (g_owner == NULL || !g_drive_mode) {
+        return;
+    }
+    /* An answer to a question we have since replaced is not ours. */
+    if (path == NULL || strcmp(path, g_drive_path) != 0) {
+        return;
+    }
+    g_loading = false;
+    if (error != NULL) {
+        set_status(error);
+        return;
+    }
+    for (i = 0; i < count && g_drive_count < kCloudMaxRows; ++i) {
+        g_drive_rows[g_drive_count] = entries[i];
+        ids[i] = (DataBrowserItemID)(++g_drive_count);
+    }
+    if (i > 0 && g_browser != NULL) {
+        AddDataBrowserItems(g_browser, kDataBrowserNoItem, (UInt32)i,
+                            ids, kDataBrowserItemNoProperty);
+    }
+    if (more && g_drive_count < kCloudMaxRows) {
+        drive_request(g_drive_path, cursor);
+        return;
+    }
+    if (g_drive_count == 0) {
+        set_status("Empty");
+    } else {
+        char line[96];
+
+        snprintf(line, sizeof line, "%.60s - %d item%s",
+                 g_drive_path[0] != '\0' ? g_drive_path : "iCloud Drive",
+                 g_drive_count, g_drive_count == 1 ? "" : "s");
+        set_status(line);
+    }
+}
+
+static void drive_open_row(int index)
+{
+    const FileEntry *row;
+    char next[224];
+    char err[96];
+
+    if (index < 0 || index >= g_drive_count) {
+        return;
+    }
+    row = &g_drive_rows[index];
+    if (row->folder) {
+        if (g_drive_path[0] == '\0') {
+            snprintf(next, sizeof next, "%.31s", row->name);
+        } else {
+            snprintf(next, sizeof next, "%.180s:%.31s", g_drive_path,
+                     row->name);
+        }
+        drive_request(next, 1);
+        return;
+    }
+    if (g_drive_path[0] == '\0') {
+        snprintf(next, sizeof next, "%.31s", row->name);
+    } else {
+        snprintf(next, sizeof next, "%.180s:%.31s", g_drive_path,
+                 row->name);
+    }
+    if (now_wire_get_host(next, row->name, err, sizeof err) < 0) {
+        set_status(err);
+    } else {
+        char line[96];
+
+        snprintf(line, sizeof line, "Fetching %.40s...", row->name);
+        set_status(line);
+    }
+}
+
+static void drive_go_up(void)
+{
+    char *colon;
+
+    if (g_drive_path[0] == '\0') {
+        return;
+    }
+    colon = strrchr(g_drive_path, ':');
+    if (colon == NULL) {
+        drive_request("", 1);
+    } else {
+        *colon = '\0';
+        drive_request(g_drive_path, 1);
+    }
+}
+
 /* --- the dropdown ------------------------------------------------------- */
 
 /* The popup's menu, asked for the blessed way. Under CarbonLib the
@@ -219,6 +369,17 @@ static void rebuild_popup(void)
     }
 }
 
+static void retitle_button(void)
+{
+    Str255 text;
+
+    if (g_save == NULL) {
+        return;
+    }
+    CopyCStringToPascal(g_drive_mode ? "Up" : "Save to this Mac", text);
+    SetControlTitle(g_save, text);
+}
+
 static void choose_service(int index)
 {
     const CloudService *service;
@@ -229,16 +390,15 @@ static void choose_service(int index)
     g_service = index;
     service = &g_store.services[g_service];
     cloud_store_reset_rows(&g_store, service->service);
-    g_selected = -1;
-    if (g_browser != NULL) {
-        g_in_rebuild = true;
-        RemoveDataBrowserItems(g_browser, kDataBrowserNoItem, 0, NULL,
-                               kDataBrowserItemNoProperty);
-        g_in_rebuild = false;
-    }
+    g_drive_mode = strcmp(service->service, "drive") == 0
+        && strcmp(service->state, "serving") == 0;
+    retitle_button();
+    clear_list();
     invalidate_detail();
-    if (strcmp(service->state, "serving") == 0
-        && cloud_service_listable(service->service)) {
+    if (g_drive_mode) {
+        drive_request("", 1);
+    } else if (strcmp(service->state, "serving") == 0
+               && cloud_service_listable(service->service)) {
         ask_rows(1);
     } else {
         /* The pane's words are the service's own: state and detail from
@@ -352,10 +512,40 @@ static OSStatus item_data(ControlRef browser, DataBrowserItemID item,
 {
     const CloudRow *row;
     CFStringRef text = NULL;
+    char buf[64];
 
     (void)browser;
-    if (changeValue || item < 1
-        || item > (DataBrowserItemID)g_store.row_count) {
+    if (changeValue || item < 1) {
+        return errDataBrowserPropertyNotSupported;
+    }
+    if (g_drive_mode) {
+        const FileEntry *entry;
+
+        if (item > (DataBrowserItemID)g_drive_count) {
+            return errDataBrowserPropertyNotSupported;
+        }
+        entry = &g_drive_rows[item - 1];
+        switch (property) {
+        case kColTitle:
+            text = CFStringCreateWithCString(NULL, entry->name,
+                                             kCFStringEncodingMacRoman);
+            break;
+        case kColSubtitle:
+            now_files_describe(entry, buf, sizeof buf);
+            text = CFStringCreateWithCString(NULL, buf,
+                                             kCFStringEncodingMacRoman);
+            break;
+        default:
+            return errDataBrowserPropertyNotSupported;
+        }
+        if (text == NULL) {
+            return memFullErr;
+        }
+        SetDataBrowserItemDataText(data, text);
+        CFRelease(text);
+        return noErr;
+    }
+    if (item > (DataBrowserItemID)g_store.row_count) {
         return errDataBrowserPropertyNotSupported;
     }
     row = &g_store.rows[item - 1];
@@ -387,9 +577,17 @@ static void item_notify(ControlRef browser, DataBrowserItemID item,
     if (g_in_rebuild) {
         return;
     }
+    if (message == kDataBrowserItemDoubleClicked && g_drive_mode) {
+        drive_open_row((int)item - 1);
+        return;
+    }
     if (message == kDataBrowserItemSelected) {
         g_selected = (int)item - 1;
-        ask_card();
+        if (g_drive_mode) {
+            invalidate_detail();      /* the card is composed locally */
+        } else {
+            ask_card();
+        }
     } else if (message == kDataBrowserItemDeselected
                && g_selected == (int)item - 1) {
         g_selected = -1;
@@ -537,10 +735,15 @@ static void show_control(ControlRef control, Boolean on)
     }
 }
 
-static Boolean save_applies(void)
+/* The one action button, worn per mode: Up in the drive browser
+   (enabled off the root), Save for a selected row elsewhere. */
+static Boolean action_applies(void)
 {
     const CloudService *service = current_service();
 
+    if (g_drive_mode) {
+        return g_drive_path[0] != '\0';
+    }
     return service != NULL && g_selected >= 0
         && g_selected < g_store.row_count
         && cloud_service_listable(service->service);
@@ -551,7 +754,7 @@ static void cloud_show(Boolean visible)
     g_visible = visible;
     show_control(g_popup, visible);
     show_control(g_refresh, visible);
-    show_control(g_save, visible && save_applies());
+    show_control(g_save, visible && action_applies());
     show_control(g_browser, visible);
     if (visible && !g_asked_once && conn_is_connected()) {
         g_asked_once = true;
@@ -610,9 +813,50 @@ static void cloud_draw(void)
             (short)(g_r.status.bottom - 3), g_status);
 
     /* The card pane: the selected row's card, or the service's own
-       words when there is no list to select from (drive, off,
-       no-access, unavailable). */
+       words when there is no list to select from. In drive mode the
+       card is composed here from the row the wire already sent —
+       there is nothing else to ask. */
     y = (short)(g_r.detail_text.top + 12);
+    if (g_drive_mode) {
+        if (g_selected >= 0 && g_selected < g_drive_count) {
+            const FileEntry *entry = &g_drive_rows[g_selected];
+            char line[96];
+
+            draw_at(g_r.detail_text.left, y, entry->name);
+            y = (short)(y + 16);
+            now_files_describe(entry, line, sizeof line);
+            draw_at(g_r.detail_text.left, y, line);
+            y = (short)(y + 16);
+            if (!entry->folder) {
+                snprintf(line, sizeof line, "%ld K",
+                         (entry->data_bytes + entry->rsrc_bytes
+                          + 1023) / 1024);
+                draw_at(g_r.detail_text.left, y, line);
+                y = (short)(y + 16);
+            }
+            if (entry->modified != 0) {
+                Str255 when;
+                LongDateTime ldt = (LongDateTime)entry->modified;
+
+                LongDateString(&ldt, shortDate, when, NULL);
+                MoveTo(g_r.detail_text.left, y);
+                DrawString(when);
+                y = (short)(y + 16);
+            }
+            if (!entry->folder) {
+                draw_at(g_r.detail_text.left, y,
+                        "Double-click fetches it to this Mac.");
+            }
+        } else if (g_drive_count > 0) {
+            draw_at(g_r.detail_text.left, y,
+                    "Select an item; double-click opens it.");
+        }
+        if (g_shown_pull[0] != '\0') {
+            draw_at(g_r.detail_text.left,
+                    (short)(g_r.detail_text.bottom - 4), g_shown_pull);
+        }
+        return;
+    }
     if (g_store.card_count > 0) {
         for (i = 0; i < g_store.card_count
              && y < g_r.detail_text.bottom; ++i) {
@@ -680,7 +924,11 @@ static Boolean cloud_click(const EventRecord *event, Point local)
         return true;
     }
     if (control == g_save) {
-        ask_save();
+        if (g_drive_mode) {
+            drive_go_up();
+        } else {
+            ask_save();
+        }
         return true;
     }
     return false;
@@ -696,6 +944,12 @@ static Boolean cloud_key(const EventRecord *event)
     }
     if (GetKeyboardFocus(g_owner, &focus) != noErr || focus != g_browser) {
         return false;
+    }
+    if (g_drive_mode && (c == '\r' || c == 3)) {   /* Return opens */
+        if (g_selected >= 0) {
+            drive_open_row(g_selected);
+        }
+        return true;
     }
     HandleControlKey(g_browser,
                      (SInt16)((event->message & keyCodeMask) >> 8), c,
@@ -729,9 +983,28 @@ static void cloud_idle(void)
         g_asked_once = true;
         ask_services();
     }
+    /* A pull started from the drive browser, watched through the
+       wire's own read-only view — recomposed only when the count a
+       person could see has changed. */
+    if (g_drive_mode) {
+        long received = 0, expected = 0;
+        char line[96];
+
+        if (now_wire_get_active(&received, &expected, NULL)) {
+            snprintf(line, sizeof line, "Receiving - %ld of %ld K",
+                     received / 1024,
+                     expected > 0 ? (expected + 1023) / 1024 : 0);
+        } else {
+            line[0] = '\0';
+        }
+        if (strcmp(line, g_shown_pull) != 0) {
+            strcpy(g_shown_pull, line);
+            invalidate_detail();
+        }
+    }
     /* Show/hide is the cheap operation that is safe every pass; the
        rectangle repaints only when the answer changed. */
-    save_on = save_applies();
+    save_on = action_applies();
     if (save_on != g_shown_save_on) {
         g_shown_save_on = save_on;
         show_control(g_save, g_visible && save_on);

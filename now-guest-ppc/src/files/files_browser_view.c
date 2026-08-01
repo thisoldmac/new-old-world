@@ -50,6 +50,10 @@ static void request(const char *path, long cursor)
 {
     char err[96];
 
+    /* The listing hook follows the asker: the iCloud page's drive
+       browser borrows it (cloud_module.c), so every ask from here
+       claims it back. */
+    conn_set_listing(files_browser_listing);
     if (cursor <= 1) {
         g_row_count = 0;
         if (g_browser != NULL) {
