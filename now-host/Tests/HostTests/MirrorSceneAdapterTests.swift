@@ -310,7 +310,12 @@ final class MirrorSceneAdapterTests: XCTestCase {
                            + "does not have.")
         XCTAssertEqual(control?.checked, false)
         XCTAssertNil(scene.windows.first?.display,
-                     "NOW models no display plane; nil is 'not traced'.")
+                     "The scene DOCUMENT carries no display plane, which is "
+                         + "all nil claims here. NOW does model one — "
+                         + "`qdtrace` — but it arrives as a separate control "
+                         + "answer, not as a key on the scene, so this "
+                         + "adapter cannot produce it. MirrorContentJoin is "
+                         + "where the two meet.")
     }
 
     /// A document with no `screen` gets 0×0 rather than an invented 512×342,

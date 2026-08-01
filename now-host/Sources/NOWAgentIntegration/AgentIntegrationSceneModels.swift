@@ -187,11 +187,19 @@ public struct NOWSceneDocument: Codable, Equatable, Sendable {
     /// a consumer that reads `controls == nil` as "this window has no
     /// controls" has been told something the guest never said.
     ///
-    /// `display` is deliberately not modelled. It is upstream's content
-    /// plane (a flat 17-field op struct), no NOW producer emits it, and a
-    /// half-modelled version of it would be a worse claim than none.
-    /// Unknown keys decode harmlessly; when a producer emits one, that is
-    /// the moment to model it against a fixture rather than a table.
+    /// `display` is deliberately not modelled **here**, and the reason is
+    /// narrower than it used to read. NOW has a content plane —
+    /// `now-guest-ppc/src/content/`, the `qdtrace` verb — but it is not part
+    /// of a scene: a drain is a bounded control answer and a scene is a
+    /// transfer (`qdtrace.h` argues the distinction at length), so NOW's
+    /// SCENE producer (`scene/scene_json.c`) does not emit a `display` key
+    /// and never will. A half-modelled one on this struct would be a shelf
+    /// nothing fills.
+    ///
+    /// The op stream reaches a window through `MirrorContentJoin`, after the
+    /// scene lands. Unknown keys still decode harmlessly here; if a scene
+    /// producer ever does emit one, that is the moment to model it against a
+    /// fixture rather than a table.
     public struct Window: Codable, Equatable, Sendable {
         public var id: String
         public var app: String
