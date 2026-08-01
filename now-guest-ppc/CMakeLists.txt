@@ -190,27 +190,19 @@ add_dependencies(now-guest-ppc generate_buildstamp)
 # preferences (and the real host, not the 10.0.2.2 emulator gateway) off
 # that process name. now-guest-ppc.bin stays for dev / side-by-side testing;
 # "New Old World.bin" is the one that goes to metal and lands on main.
-#
-# SPIKE BUILD: this branch stamps "New Old World-netspike" instead, so a
-# spike cannot be mistaken for the shipping guest on a disk or in a
-# Chooser. prefs.c keys its preferences off the process name, so a
-# netspike build also gets its OWN prefs file - which is the behaviour
-# you want from a spike that bumps the prefs format to 16 and would
-# otherwise rewrite the real guest's saved page selection.
+
 find_program(PYTHON3_EXECUTABLE NAMES python3 python)
 if(PYTHON3_EXECUTABLE)
     add_custom_command(
-        OUTPUT "New Old World-netspike.bin"
+        OUTPUT "New Old World.bin"
         COMMAND ${PYTHON3_EXECUTABLE}
                 "${CMAKE_CURRENT_SOURCE_DIR}/tools/name_macbinary.py"
-                "now-guest-ppc.bin" "New Old World-netspike.bin"
-                "New Old World-netspike"
+                "now-guest-ppc.bin" "New Old World.bin" "New Old World"
         DEPENDS now-guest-ppc.bin
                 "${CMAKE_CURRENT_SOURCE_DIR}/tools/name_macbinary.py"
-        COMMENT "Stamping spike MacBinary: New Old World-netspike.bin"
+        COMMENT "Stamping canonical MacBinary: New Old World.bin"
         VERBATIM)
-    add_custom_target(now-guest-ppc-canonical ALL
-                      DEPENDS "New Old World-netspike.bin")
+    add_custom_target(now-guest-ppc-canonical ALL DEPENDS "New Old World.bin")
 else()
     message(WARNING
         "python3 not found: skipping the canonical 'New Old World.bin' "

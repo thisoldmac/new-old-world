@@ -355,6 +355,27 @@ decides are these.
 | Double-click a folder | It navigates, and 5a's bar is what confirms where it landed. |
 | Double-click while another transfer runs | The footer says the wire is busy. Previously this did nothing at all. |
 
+### 5c. A folder longer than sixteen items (new 2026-08-01)
+
+**A fixed bug, and the fix wants one look.** The guest pages listings at
+sixteen entries per reply (a control frame caps at 4 KB) and nothing on the
+host followed the cursor, so every folder showed its first sixteen items
+and said nothing about the rest. `loadMoreIfNeeded` existed; no view ever
+called it.
+
+Open something genuinely long — **Extensions**, or a System Folder. Judge:
+
+- Does it fill in, and does the filling-in read as *working* or as
+  *stuttering*? Pages arrive one wire round trip apart, so on the 1400c a
+  few hundred items is several seconds of visible growth. If that reads
+  badly the answer is a "loading more" line, which is deliberately not
+  there yet — better to see the real behaviour first.
+- Does the row count settle at the right number? Compare against the same
+  folder in the guest's own Files page.
+- Anything you previously believed was a short folder is worth re-opening.
+  It may not have been, and that is the part of this bug that outlived the
+  screen.
+
 ## 6. The Software page's sweep budget and its duplicate groups
 
 Added 2026-07-31. The page used to re-run the guest's whole Applications sweep
@@ -740,3 +761,34 @@ its own entry when the answer is "this reads wrong".
 
 And per AGENTS.md: **builds / tested / metal-verified**, and never "works" for
 the first two.
+
+## 16. The Networking page, both ends (new 2026-08-01)
+
+A new module on both sides, and **three faces that must agree**: the
+guest's Workshop page, the guest console's `net`, and the host's Networking
+pane. They render the same rows from the same producer, so a disagreement
+between any two is a defect rather than a difference of opinion — open two
+at once and compare.
+
+**The judgement this page exists for is its fourth card.** No documented
+Open Transport call lists a Mac's connections
+([ot-networking-surface.md](ot-networking-surface.md)), so the Connections
+card has no rows, **no button**, and one sentence blaming Open Transport
+and exonerating the machine. Judge whether it reads as *an honest limit* or
+as *a broken feature*. A greyed Refresh was deliberately not drawn, because
+it would suggest the answer is one retry away.
+
+**Absence, everywhere else.** On a flat network there should be **no Router
+row** — not one reading `0.0.0.0`. Same for a name server, a round trip
+that never completed, and a receive window Open Transport chose itself. Is
+the absence legible, or does the card just look short?
+
+**Already answered on the 1400c, 2026-08-01** — recorded here so nobody
+re-runs them: the hardware address and MTU **do** populate from the
+ordinary client call (`00:60:1d:23:2c:05`, 1500), and the machine reports
+**nine ports** including a WaveLAN.
+
+**Still open from that same screenshot:** Broadcast read `0.0.0.0`. If it
+does again, that is Open Transport leaving it unset rather than a
+formatting bug — in which case it should become an absent row like the
+others, and this note is the reminder to make it one.

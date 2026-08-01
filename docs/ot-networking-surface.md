@@ -1,8 +1,17 @@
 # What Open Transport will tell us, and what it will not
 
-**Date:** 2026-07-31 · **Status:** first-pass header survey, nothing built ·
-**Scope:** PowerPC / Open Transport only — 68K machines are offline for this
-slice, so MacTCP is deliberately unexamined.
+**Date:** 2026-07-31 · **Status:** survey done; rungs 1–2 **BUILT and TESTED,
+not metal-verified** (2026-08-01); rung 4 unstarted · **Scope:** PowerPC /
+Open Transport only — 68K machines are offline for this slice, so MacTCP is
+deliberately unexamined.
+
+> **Corrected 2026-08-01, from reading the struct rather than the prose.**
+> `InetInterfaceInfo` carries `fHWAddr`, `fHWAddrLen`, `fIfMTU` and
+> `fDomainName` — so **the hardware address and the MTU come from the
+> ordinary client call**, not from DLPI, where this document originally
+> filed them. That is a strictly better answer and it downgrades the DLPI
+> rung to *statistics only*. Both were confirmed populated on a real
+> PowerBook 1400c the same day: `00:60:1d:23:2c:05`, MTU 1500.
 
 A read-only investigation, run before designing a networking module, to answer
 one question: **is a connection table reachable, and at what cost?** The answer
@@ -146,7 +155,9 @@ be bundled:
    `bench recv` atom (`workshop/plugins/wsp_net.c`, 259 lines). One call is one
    point; the host composes the sweep. Inherits the one-transfer-lane rule.
 3. **DLPI link statistics** — Tier B, documented, but driver-facing and
-   metal-risky. Its own rung, emulator first.
+   metal-risky. Its own rung, emulator first. **Narrower than first
+   thought:** the address and MTU came from Tier A, so what is left here is
+   the counters alone.
 4. **A connection table** — archaeology. Needs a declared provenance class
    (`P-DOC` if *Inside Macintosh: Networking With Open Transport* documents it,
    `P-OBS` if measured, `P-3P` if read off someone else's source) **before any
