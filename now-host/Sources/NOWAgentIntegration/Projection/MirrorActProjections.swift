@@ -37,11 +37,19 @@ import Foundation
 ///
 /// ## What is still true, and still owed
 ///
-/// - **The host owes a lane.** All five client methods are protocol
-///   requirements whose defaults answer `AgentIntegrationUnavailable
-///   .noActLane`, because no local operation carries an act. A call today
-///   reaches no wire, and says so in a sentence that names the missing half
-///   rather than blaming a host that is up.
+/// - **The host owed a lane, and it landed 2026-08-01.** This entry used to
+///   read "the host owes a lane… a call today reaches no wire". Five local
+///   operations now carry the five acts to the guest's ordinary command
+///   dispatch — NOT the transfer lane, which would make a click in a
+///   rendered scene refuse itself for the duration of the stream drawing
+///   that scene (`AgentIntegrationActControl`). `noActLane` survives as the
+///   protocol default, reachable only by the stub clients in the test tree.
+/// - **What a row still cannot address is a SCENE's control.** The lane
+///   takes an opaque `now-element-…`; `MirrorKit.Scene.Control.ref` is where
+///   one would arrive and NOW's producer emits `""`. So the five capabilities
+///   answer, and a person clicking a rendered control is told which half is
+///   missing rather than shown a positional click
+///   (`MirrorActionDriver`).
 /// - **The guest revalidates, not the host.** A reference is checked against
 ///   a live element by the side that owns the heap. A host-side match would
 ///   be a stale observation wearing the clothes of a live one.
@@ -66,7 +74,12 @@ import Foundation
 ///   and all five are in `HostFaceParityTests.appUIDivergences`. Rule 3 is
 ///   owed, not waived: the affordance lands with the scene view that RENDERS
 ///   what `now_observe_elements` can now fetch, because there is nothing for
-///   a person to click until there is something to click ON.
+///   a person to click until there is something to click ON. Still true on
+///   2026-08-01 with the lane built: `MirrorActionDriver` is the seam a pane
+///   would call, and the Mirror page passes it no gestures yet, because the
+///   renderer has no hit-testing wired into it. A driver with no caller is
+///   the half that could be finished without a machine; the pane is the half
+///   that wants one.
 public enum MirrorActProjections {
     /// The act rows, in the order they are registered: the window, the
     /// control inside it, the menu bar above it, then the read and the write.

@@ -73,6 +73,14 @@ final class AgentIntegrationHostAdapter {
         listener: listener,
         currentSessionID: { [unowned self] in connectedSessionID() },
         commandTimeout: diagnosticsTimeout)
+    /* The act lane. Beside the reveal control rather than the capture one,
+       because it is the same kind of thing: a bounded command.request to the
+       guest's ordinary dispatch, not a bulk transfer that has to hold a lane
+       — see the head of `AgentIntegrationActControl` for why an act must not
+       contend with the stream that draws the scene it is acting on. */
+    private lazy var actControl = AgentIntegrationActControl(
+        listener: listener,
+        currentSessionID: { [unowned self] in connectedSessionID() })
     private lazy var artifactTransfer = AgentIntegrationArtifactTransfer(
         listener: listener,
         approvals: artifactApprovals,
@@ -220,6 +228,45 @@ final class AgentIntegrationHostAdapter {
     func revealItem(target: String) async
         -> AgentIntegrationGuestRowReportResult {
         await revealControl.reveal(target: target)
+    }
+
+    /// Act on one addressed window. A completed answer means the event was
+    /// DISPATCHED to the window's own application, never that the window
+    /// moved — `AgentIntegrationActControl` carries why that distinction is
+    /// the whole design and where the claim is read from.
+    func windowAct(_ request: AgentIntegrationWindowActRequest) async
+        -> AgentIntegrationWindowActResult {
+        await actControl.windowAct(request)
+    }
+
+    /// Act on one addressed control, by answering its application's own
+    /// `TrackControl` with a part code.
+    func controlAct(_ request: AgentIntegrationControlActRequest) async
+        -> AgentIntegrationControlActResult {
+        await actControl.controlAct(request)
+    }
+
+    /// Perform one menu command, by answering the application's own
+    /// `MenuSelect`. `titleLeft` is the identity check rather than a
+    /// parameter — see `AgentIntegrationMenuActRequest`.
+    func menuAct(_ request: AgentIntegrationMenuActRequest) async
+        -> AgentIntegrationMenuActResult {
+        await actControl.menuAct(request)
+    }
+
+    /// Read one addressed text element. The one third of the act plane that
+    /// changes nothing, and the one a machine can serve while refusing the
+    /// two that drive it.
+    func getElementText(element: String) async
+        -> AgentIntegrationTextReadingResult {
+        await actControl.getElementText(element: element)
+    }
+
+    /// Replace one addressed text element's whole contents. A replacement
+    /// and not an append: there is no offset form.
+    func setElementText(element: String, text: String) async
+        -> AgentIntegrationTextSetResult {
+        await actControl.setElementText(element: element, text: text)
     }
 
     /// The end of the connected machine's own log for this launch. It names
