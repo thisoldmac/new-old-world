@@ -2891,6 +2891,318 @@ components:
         properties:
           menuact: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
 
+    # THE MACHINE'S OWN STATE. Two verbs folded in from the parked
+    # timbottu/mirror project (docs/mirror-wave3-verdicts.md), declared
+    # 2026-07-31 with the dispatch that answers them. They sit beside the
+    # act plane because that is what they are about, but neither takes an
+    # element: one names a PROCESS, the other names nothing at all.
+    activate:
+      description: >
+        Bring ONE process forward, named by its process serial number.
+
+        Not a second `front`. `front` takes a NAME and refuses when
+        several match; this takes the identity an observation minted,
+        which is what a driver holds and what the host's own action
+        dispatcher already sends. Underneath both reach the single
+        SetFrontProcess in the guest — this verb does not add a second.
+
+        The reply reports whether the switch is OBSERVABLE, never merely
+        that it was accepted. A cooperative switch lands when the
+        answering application yields, so "asked" and "is now frontmost"
+        are two readings and keep two words.
+      args:
+        type: object
+        required: [serialHi, serialLo]
+        properties:
+          serialHi:
+            type: integer
+            description: >
+              The high half of the process serial. Required WITH
+              serialLo: half a serial names no process, and the two are
+              refused apart rather than defaulted together.
+          serialLo:
+            type: integer
+      x-line: The two serial numbers, high then low, separated by a space.
+      output:
+        type: object
+        properties:
+          activate: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    actselftest:
+      description: >
+        Prove the act plane's trap calling convention, in one process,
+        from inside the machine.
+
+        It matters more than its size. A patch whose result lands in the
+        wrong slot does not crash — it LIES: it reports firing, every
+        counter the plane owns says success, and the application reads a
+        value that was never the one we wrote and takes the other
+        branch. Every other instrument on this plane reads OUR side of
+        the call; this one reads the caller's, by making a real
+        MenuSelect at a point outside the menu bar, answering its own
+        call, and comparing.
+
+        Side-effect free by construction. Point (0,0) is outside the
+        menu bar, so an unanswered call returns 0 immediately without
+        drawing or tracking anything, and the arm point is negative —
+        the one op on this plane that rides no user click at all.
+
+        NOT `portalselftest`. Upstream's name is after a component this
+        product does not have; what is tested here is NOW's act plane.
+      args:
+        type: object
+        properties:
+          serialHi:
+            type: integer
+            description: >
+              OPTIONAL, and optional as a PAIR: both absent means the
+              front process, which is what a caller who just wants the
+              ABI answered means.
+          serialLo:
+            type: integer
+      x-line: >
+        Empty for the front process, or the two serial numbers, high
+        then low.
+      output:
+        type: object
+        properties:
+          actselftest: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+
+    # THE INPUT PLANE, declared 2026-07-31 with the dispatch that answers
+    # it. Three verbs that are three different kinds of thing: a READ the
+    # act plane is measured with, one AppleScript, and one of four core
+    # Apple Events. See now-guest-ppc/src/input/input_cmds.h.
+    mouseloc:
+      description: >
+        Where this Mac's pointer IS — which is not where anything asked
+        it to go.
+
+        The instrument the act plane is measured WITH rather than a part
+        of it. An emulator's relative mouse is acceleration-distorted, so
+        QMP can say where it asked the pointer to go and that is not
+        where it went; every hop calibration in scripts/probes closes its
+        loop against this verb. Getting it wrong quietly poisons every
+        hijack number.
+
+        It is a read and it stays a read. There is deliberately no
+        move-the-mouse verb beside it: the drag plane belongs to the
+        emulator's own input path, where it can be watched.
+      args: {}
+      x-line: Nothing. It takes no arguments.
+      output:
+        type: object
+        properties:
+          mouseloc: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    script:
+      description: >
+        Run ONE AppleScript on this Mac, through its own OSA component.
+
+        The bounds are facts rather than preferences. Source is capped
+        at 2048 bytes (upstream's measured figure) and the RESULT at
+        1024 pre-escape, because the guest assembles a command.result in
+        a 3072-byte buffer — a larger answer would be cut at whatever
+        byte the buffer ran out and reported as a whole one.
+
+        A whole-disk Finder search (`entire contents`) is REFUSED, not
+        warned about. Such a script wedged a real machine for about
+        twelve minutes, and the wedge is not recoverable from this side,
+        so there is no error path that could report it after the fact.
+
+        The source's line endings are converted to CR. Classic
+        AppleScript's terminator is CR, so a source arriving from a
+        modern host with LF endings parses as one very long line.
+      args:
+        type: object
+        required: [source]
+        properties:
+          source:
+            type: string
+            description: >
+              The script, at most 2048 bytes. TEXT, not a protocol
+              token: it crosses as the caller wrote it.
+          timeoutMs:
+            type: integer
+            description: >
+              Clamped to 500..60000, default 15000. A caller that sends
+              nothing and one that sends the default are the same
+              request; one that sends 0 asked for something and gets the
+              floor. The ceiling is hard because this Mac answers
+              serially — a script's timeout is every other caller's
+              wait.
+      x-line: The script source, which is the whole rest of the line.
+      output:
+        type: object
+        properties:
+          script: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    aesend:
+      description: >
+        Send ONE core Apple Event to a process named by its serial.
+
+        A CLOSED VOCABULARY OF FOUR — quit, oapp, odoc, pdoc — and not
+        a class/id pipe. The wire names an op; it does not name an event
+        class and an event id. That is the whole difference between a
+        row whose arguments bound what it does and one whose arguments
+        do not, and each of the four has an effect statable in one line,
+        which is the test a fifth would have to pass.
+
+        The four names are upstream's four-character mnemonics rather
+        than longer words, because the ported probe's whitelist and its
+        off-whitelist refusal check are written against them.
+
+        Addressing the guest's OWN serial is refused rather than sent.
+        A quit event to ourselves takes the guest down mid-reply, so the
+        caller would see a dropped connection where the truthful answer
+        is "you asked me to quit myself".
+      args:
+        type: object
+        required: [event, serialHi, serialLo]
+        properties:
+          event:
+            type: string
+            enum: [quit, oapp, odoc, pdoc]
+            description: >
+              Exact match only. A truncated or padded name is not a near
+              miss to be forgiven; it is a name this plane does not
+              serve.
+          serialHi:
+            type: integer
+            description: >
+              Required WITH serialLo. (0, 0) is kNoProcess by
+              definition and is refused here rather than sent and left
+              to come back as procNotFound.
+          serialLo:
+            type: integer
+          path:
+            type: string
+            description: >
+              REQUIRED for odoc and pdoc, meaningless for the other two.
+              A classic HFS path, at most 256 bytes — a Str255. TEXT,
+              not a protocol token.
+      x-line: >
+        The event name, then the two serial numbers, then the path for
+        odoc and pdoc.
+      output:
+        type: object
+        properties:
+          aesend: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+
+    # THE CONTENT PLANE'S READER (P3), declared 2026-07-31 with the
+    # dispatch that answers it. One verb, four subcommands behind `op`.
+    qdtrace:
+      description: >
+        What is DRAWING on this Mac — read from a ring the NOW
+        Extension's resident half fills at draw time inside an armed
+        application.
+
+        `status` (the default) counts without moving one record: it is
+        the cheap question — "is anything drawing at all, and at whom?"
+        — and a reader that could not answer it without a drain would
+        have made the cheap question expensive. `start` arms ONE A5
+        world for a bounded time in one of two modes; `stop` disarms;
+        `drain` reads records from a cursor.
+
+        `start` answers `requested: true, armed: false`, and that is not
+        pessimism. Nothing is hooked until the extension's own pass runs
+        INSIDE the target process and agrees, so this reply claims a
+        request was written and never that it was honoured. `status`
+        reports the extension's own word for what happened, beside the
+        request, so a misaddressed arm is VISIBLE as a mismatch rather
+        than as an absence.
+
+        A DRAIN IS A BOUNDED CONTROL ANSWER, NOT A TRANSFER — the
+        opposite of the ruling in docs/streaming-a-scene.md, for a
+        stated reason. A scene is a TREE whose parts mean something only
+        reassembled; a ring is a LOG whose every record is
+        self-contained and ordered, whose writer already maintains the
+        resume point, and whose unread records are still in the ring
+        rather than lost. A prefix of a log is a complete answer about a
+        shorter interval. The price is that a SHORT answer must say why
+        it is short, and four different reasons end a drain — `more`,
+        `resync`, `torn`, `busy` — because "fewer records than you
+        expected" quietly covering an overrun is exactly the quiet
+        machine.
+
+        DEFAULTING TO `status` IS DELIBERATE. It is the only subcommand
+        that neither writes nor moves a record; a default that armed
+        something would be a plane armed by a typo.
+      args:
+        type: object
+        properties:
+          op:
+            type: string
+            enum: [status, start, stop, drain]
+            description: Absent means status.
+          a5:
+            type: string
+            description: >
+              start only, and REQUIRED there. The A5 world of the ONE
+              process to instrument. A STRING (decimal or 0x-prefixed),
+              not an integer: an A5 routinely has its top bit set and
+              the guest's `long` is 32 bits, so 0x80000000 would arrive
+              as a negative number. Zero is refused at the near end —
+              the plane reads it as "hook nothing", and a caller who
+              believed it meant "everything" is told no by name.
+          mode:
+            type: string
+            enum: [count, record]
+            description: >
+              start only. Absent means count — the cheap mode, chosen as
+              the default because the expensive one should be asked for
+              by name.
+          ttlTicks:
+            type: integer
+            description: >
+              start only. 60..36000, default 3600 (60 ticks = 1 second).
+              A deadline exists so an agent that dies mid-request does
+              not leave hooks installed forever. These bounds are a
+              JUDGEMENT, not a measurement, and should move once someone
+              has watched a real drain.
+          cursor:
+            type: string
+            description: >
+              status and drain. A monotonic byte count, so it exceeds
+              2^31 after two gigabytes of records — a string for the
+              same reason `a5` is one.
+          maxBytes:
+            type: integer
+            description: drain only. 0 or absent means the whole ring.
+          maxRecords:
+            type: integer
+            description: drain only. 0 or absent means no record bound.
+      x-line: >
+        The op, then its arguments. Empty is status from cursor 0.
+      output:
+        type: object
+        description: >
+          NOT A ROW ARRAY, and the exception is declared rather than
+          discovered. Every value here is a NUMBER a caller does
+          arithmetic on — a cursor it passes back, a byte count it
+          compares, a counter it differences — and the row array is a
+          string pair for a human to read. Flattening these to
+          `["ring.writeCursor", "4096"]` would make every consumer parse
+          its way back to the number it started from, and the one place
+          a reply about loss must not be lossy is the reply about loss.
+
+          The reference layer (`observe`, `axtree`, `elements`,
+          `handle`, `axsnap`) already answers with objects for the same
+          reason; this is the second family to do so, not the first.
+        properties:
+          qdtrace:
+            type: object
+            required: [cmd]
+            description: >
+              Discriminated by `cmd`, which is the op that answered.
+              `status` carries plane / request / active / ring / ops /
+              loss / lifecycle / refused; `drain` carries the cursor
+              accounting and an `ops` array of records; `start` and
+              `stop` carry what was requested. A subcommand that cannot
+              answer at all — no extension, a block this build does not
+              read — refuses with `ok: false` and a code, and never with
+              an empty object.
+            properties:
+              cmd:
+                type: string
+                enum: [status, start, stop, drain]
+
     # THE REFERENCE LAYER, declared 2026-07-31 with the guest that serves
     # it. These four are not a second act plane; they are the half that
     # MINTS what the act plane takes, and the reason `elements` above is

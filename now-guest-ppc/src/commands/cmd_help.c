@@ -181,6 +181,82 @@ static const char *const d_menuact[] = {
     NULL
 };
 
+/* --- the machine's own state, folded in from timbottu/mirror ----------- */
+static const char *const d_activate[] = {
+    "  Not a second \"front\". front takes a NAME and refuses when",
+    "  several match; this takes the identity an observation minted,",
+    "  which is what a driver has. Both reach the one SetFrontProcess",
+    "  on this Mac.",
+    "  The reply says whether the switch is OBSERVABLE, never merely",
+    "  that it was accepted: a cooperative switch lands when this",
+    "  application yields, and the two readings keep separate words.",
+    NULL
+};
+static const char *const d_actselftest[] = {
+    "  Proves the act plane's trap calling convention from inside this",
+    "  machine, which no other instrument can: every other one reads",
+    "  OUR side of the call, and a patch whose result lands in the",
+    "  wrong slot does not crash - it LIES. Each counter reports",
+    "  success while the application reads a value we never wrote and",
+    "  takes the other branch.",
+    "  Side-effect free by construction: the point tested is outside",
+    "  the menu bar, so an unanswered call returns at once having",
+    "  drawn and tracked nothing.",
+    "  No serial means the front process.",
+    NULL
+};
+
+/* --- the input plane ---------------------------------------------------
+   Three different kinds of thing behind one heading: a read that every
+   hop calibration closes its loop against, one AppleScript, and one of
+   four core Apple Events. See src/input/input_cmds.h. */
+static const char *const d_mouseloc[] = {
+    "  Where the pointer IS, which is not where anything asked it to",
+    "  go: an emulator's relative mouse is acceleration-distorted, so",
+    "  a driver positions by reading this and correcting.",
+    "  A read, and it stays a read - there is deliberately no",
+    "  move-the-mouse verb beside it.",
+    NULL
+};
+static const char *const d_script[] = {
+    "  One AppleScript through this Mac's own OSA component. Source",
+    "  is at most 2048 bytes and the result at most 1024, because the",
+    "  reply is assembled in a 3072-byte buffer and an answer that",
+    "  did not fit would be cut silently.",
+    "  A whole-disk Finder search (\"entire contents\") is REFUSED:",
+    "  it wedged a real machine for twelve minutes, and there is no",
+    "  error path that could report that after the fact.",
+    "  timeoutMs is clamped to 500..60000; this Mac answers serially,",
+    "  so a script's timeout is every other caller's wait.",
+    NULL
+};
+static const char *const d_aesend[] = {
+    "  A CLOSED vocabulary of four - quit, oapp, odoc, pdoc - and not",
+    "  a class/id pipe. Each has an effect statable in one line,",
+    "  which is the test a fifth would have to pass.",
+    "  odoc and pdoc need a path; all four need a whole serial.",
+    "  Addressing this Mac's own NOW is refused rather than sent:",
+    "  a quit to ourselves takes the guest down mid-reply, and the",
+    "  caller would see a dropped connection instead of an answer.",
+    NULL
+};
+
+/* --- the content plane's reader ---------------------------------------- */
+static const char *const d_qdtrace[] = {
+    "  What is DRAWING on this Mac, read from the ring the NOW",
+    "  Extension's resident half fills at draw time.",
+    "  op status (the default) counts without moving one record;",
+    "  start arms ONE A5 world for a bounded time in count or record",
+    "  mode; stop disarms; drain reads records from a cursor.",
+    "  A short drain always says WHY it is short - more, resync,",
+    "  torn or busy - because fewer records than expected quietly",
+    "  covering an overrun is the whole failure this plane guards.",
+    "  start answers requested, never armed: nothing is hooked until",
+    "  the extension agrees inside the target process, and status is",
+    "  where that shows.",
+    NULL
+};
+
 /* --- the reference layer -----------------------------------------------
    The half that MINTS what the act plane takes. `elements` above is the
    same walk aimed by a process rather than by a scope: there is exactly
@@ -351,6 +427,18 @@ const NowCommandDoc kNowCommandDocs[] = {
       "ctlact <element> <part>", d_ctlact },
     { "menuact", 1, "perform one menu command",
       "menuact <menu> <item> <titleLeft>", d_menuact },
+    { "activate", 1, "bring one process forward, by serial number",
+      "activate <serialHi> <serialLo>", d_activate },
+    { "actselftest", 1, "prove the act plane's trap ABI in one process",
+      "actselftest [serialHi serialLo]", d_actselftest },
+    { "mouseloc", 1, "where this Mac's pointer actually is",
+      "mouseloc", d_mouseloc },
+    { "script", 1, "run one AppleScript on this Mac",
+      "script <source>", d_script },
+    { "aesend", 1, "send one core Apple Event to a process on this Mac",
+      "aesend <event> <serialHi> <serialLo> [path]", d_aesend },
+    { "qdtrace", 1, "what is drawing on this Mac",
+      "qdtrace [op] ...   (op = status | start | stop | drain)", d_qdtrace },
     { "observe", 1, "walk this Mac's elements and mint a reference for each",
       "observe [scope]", d_observe },
     { "handle", 1, "take one reference back to a live element",
