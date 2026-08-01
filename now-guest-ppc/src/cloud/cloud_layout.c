@@ -52,6 +52,19 @@ void cloud_layout_compute(const Rect *body, Boolean drive_mode,
         set_empty(&r->up_btn, r->refresh_btn.left, (short)(top + 1));
     }
 
+    /* The search field fills the toolbar row between the popup and
+       whatever real button sits right of it - up_btn in drive mode,
+       refresh_btn otherwise (up_btn is the anti-rect there, so using it
+       unconditionally would pin the field's right edge to the popup's
+       own left corner). Present in both modes: Drive's rows are
+       filterable by name exactly like the other views' by title. */
+    {
+        short right_of = drive_mode ? r->up_btn.left : r->refresh_btn.left;
+
+        set_rect(&r->toolbar_search, (short)(r->popup.right + 8),
+                 top, (short)(right_of - 8), (short)(top + 20));
+    }
+
     /* Status is ABOVE the bottom edge, under both panes. */
     set_rect(&r->status, left, (short)(bottom - 14), right, bottom);
     list_bottom = (short)(r->status.top - 8);

@@ -13,6 +13,12 @@ typedef unsigned char Boolean;
 
 typedef struct {
     Rect popup;                       /* the service dropdown */
+    Rect toolbar_search;              /* the live filter, beside the
+                                          popup — hand-drawn, not a
+                                          control (the WaitNextEvent app
+                                          cannot host an inline edit-text
+                                          control; software_module.c's
+                                          reason, unchanged here) */
     Rect refresh_btn;
     Rect up_btn;                      /* drive mode only: in the toolbar
                                           row, beside refresh; empty
