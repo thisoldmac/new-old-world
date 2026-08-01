@@ -275,6 +275,13 @@ run_c now-guest-ppc cmd_line_test.c         ""  src/commands/cmd_line.c src/core
 # reaches. See the test's header: the bug it pins could not have been found
 # on hardware, because no machine answers enough selectors to overflow.
 run_c now-guest-ppc gestalt_json_test.c     ""  src/commands/gestalt_json.c
+# The input plane's decisions (mouseloc / script / aesend). Two of the
+# hazards it guards have no error path once crossed: an `entire contents`
+# Finder search wedged a real machine for twelve minutes, and a core Apple
+# Event addressed at our own serial answers the caller with a dropped
+# socket. Neither can be reported after the fact, so the refusal is the
+# only chance and it gets watched failing here.
+run_c now-guest-ppc input_args_test.c       ""  src/input/input_args.c
 run_py now-guest-ppc ot_connect_source_test.py
 # The other half of the Stop button, and the link teardown it shares a file
 # with. wire.c does not compile on the host (g_get is private to it, and

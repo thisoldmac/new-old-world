@@ -80,8 +80,13 @@ disagrees with the guest is itself a finding, but the verdict is the guest's.
                    loop against it, and there is no substitute: QMP can tell
                    you what it ASKED for, and acceleration means that is not
                    where the cursor went.
-    ctlinvoke      the control op, for the control and text cases.
-    menuinvoke     the menu op, for the menu, stale and window cases.
+    ctlact         the control op, for the control and text cases. This
+                   file asked for Mirror's `ctlinvoke` until 2026-07-31,
+                   against a guest that had served `ctlact` all along -
+                   see ctlinvoke-probe.py for the reconciliation.
+    menuact        the menu op, for the menu, stale and window cases.
+                   Same story, and the same day: Mirror spells it
+                   `menuinvoke`.
 
     winact         DECLARED in NOW's contract, served by no guest. Not used by
     textget        the three headline cases, but the text case below is the
@@ -173,10 +178,10 @@ DEFAULT_STALE_DELAY = 10.0
 DISARM_SWEEP = [0.5, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 12.0]
 
 REQUIRED = {
-    "control": ("observe", "mouseloc", "ctlinvoke"),
-    "menu": ("observe", "mouseloc", "menuinvoke"),
-    "stale": ("observe", "mouseloc", "menuinvoke"),
-    "window": ("observe", "mouseloc", "menuinvoke"),
+    "control": ("observe", "mouseloc", "ctlact"),
+    "menu": ("observe", "mouseloc", "menuact"),
+    "stale": ("observe", "mouseloc", "menuact"),
+    "window": ("observe", "mouseloc", "menuact"),
     "baseline": ("observe", "mouseloc"),
     "text": ("observe", "textget", "textset"),
 }
@@ -326,7 +331,7 @@ def case_control(link, qmp, n: int, arm_delay: float) -> dict:
         b_before = bar.get("value")
         a_before = (control_by_ref(link, decoy["ref"]) or {}).get("value")
 
-        mid = link.send_async("ctlinvoke",
+        mid = link.send_async("ctlact",
                               {"element": decoy["ref"], "part": IN_PAGE_UP})
         time.sleep(arm_delay)                       # let the arm and its warp land
         qmpmod.replay_hop(qmp, "bottom-right", hop)  # undo the verb's cursor warp
@@ -471,8 +476,16 @@ def menu_trial(link, qmp, click_delay: float, wait_for_reply_first: bool,
     # trial pins THERE: the replayed hop is a dozen pixels long.
     target = apple_title_point(link)
 
-    mid = link.send_async("menuinvoke", {"menu": file_menu["ref"], "item": 1,
-                                         "titleLeft": OFFSCREEN_TITLE_LEFT})
+    # STILL NOT RUNNABLE, and not because of the name. `menuact` declares
+    # `menu` as an INTEGER — the menu's id as the scene reports it — and this
+    # line passes a reference, because that is the shape upstream's
+    # `menuinvoke` took. `observe` emits no menu bar at all today (grep
+    # observe.c: there is no "menus" key), so `finder_menu` above returns None
+    # and the precondition fires first. Left as the reference so that whoever
+    # lands the menu bar in `observe` sees both halves of the mismatch at once
+    # rather than fixing the reader and meeting this a day later.
+    mid = link.send_async("menuact", {"menu": file_menu["ref"], "item": 1,
+                                      "titleLeft": OFFSCREEN_TITLE_LEFT})
     reply = None
     if wait_for_reply_first:
         reply = link.read_result(mid, timeout=40)

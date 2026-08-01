@@ -111,6 +111,15 @@ add_application(now-guest-ppc
     src/machine/mach_reply.c
     src/machine/mach_activate.c
     src/machine/mach_selftest.c
+    # The input plane: mouseloc (a read, and the instrument the act plane
+    # is measured with), script (OSADoScript) and aesend (four core Apple
+    # Events, a closed vocabulary rather than a class/id pipe).
+    # input_args.c is Toolbox-free and natively tested - it holds the
+    # timeout clamp, the CR conversion classic AppleScript needs, the
+    # `entire contents` refusal, and the serials aesend will not address;
+    # input_cmds.c is the thin Toolbox layer over it.
+    src/input/input_args.c
+    src/input/input_cmds.c
     resources/app.r
     # The application icon family, generated from the artwork by
     # assets/icons/classic/rez.py and shared with any other target that

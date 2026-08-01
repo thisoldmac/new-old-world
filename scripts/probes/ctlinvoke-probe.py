@@ -1,17 +1,30 @@
 #!/usr/bin/env python3
-"""Probe the control op — Mirror's `ctlinvoke` — against guest state.
+"""Probe the control op — NOW's `ctlact`, Mirror's `ctlinvoke` — against state.
 
 Ported from `timbottu/mirror/tests/ctlinvoke-probe.py`.
 
-## STATUS ON NOW TODAY: REFUSES
+## STATUS ON NOW TODAY: RUNS (the verb is served)
 
-NOW's declared act plane is `winact` / `textget` / `textset`. A control op is
-NOT among them: `ctlinvoke` is on the unported list in
-docs/mirror-foldin-inventory.md (Wave 3), and the inventory is explicit that
-whether it should cross at all "is a judgement to make with the ported code in
-front of us". This harness is checked in so that judgement is made with the
-measurement available rather than re-derived, and it uses Mirror's verb name
-because NOW has not chosen one.
+NOW's act plane is `elements` / `winact` / `textget` / `textset` / `ctlact` /
+`menuact`. **The control op is `ctlact`**, and it takes exactly the arguments
+this file already sent — `element` and `part`.
+
+### The name, reconciled 2026-07-31
+
+This file shipped asking for `ctlinvoke`, Mirror's spelling, on the reasoning
+below that NOW "has not chosen one". NOW had: `ctlact` was declared in
+`contract/asyncapi.yaml` (`x-commands`), given a `cmd_help.c` row, and served
+by `now_act_run_ctlact` — by a different agent, on the same day. Neither saw
+the other, so this harness would have reported *"missing verb: ctlinvoke"*
+against a guest that serves precisely that capability: the loud-refusal
+machinery producing a confident wrong answer.
+
+The wire name moved to the guest's, because the guest's is the one that is
+already declared in the contract, carried by a help row, and owed host rows —
+four places against this file's one constant. The *result* label did not move:
+`CASE` below stays `ctlinvoke` so a run here still diffs field-for-field
+against upstream's numbers, which is what `upstream/PROVENANCE.md` exists to
+protect. The two are separate things and this is the file where they part.
 
 ## The oracle
 
@@ -35,9 +48,7 @@ it is not evidence that anything happened.
 ## What this needs from NOW
 
     observe    to mint the control reference and to read the value back.
-    ctlinvoke  a control op. NOT declared in NOW's contract. If NOW spells it
-               differently when it lands, this file's `ACT_VERB` is the one
-               line to change.
+    ctlact     the control op. Declared in NOW's contract and served.
 
 Usage:
 
@@ -60,19 +71,26 @@ from nowwire import (GuestError, add_link_args, link_from_args,   # noqa: E402
 
 PROBE = "ctlinvoke-probe"
 
-# Mirror's spelling, kept because NOW has not chosen one. One line to change.
-ACT_VERB = "ctlinvoke"
+# The WIRE name: what this guest serves. NOW's act plane spells the control op
+# `ctlact` (contract/asyncapi.yaml x-commands, cmd_help.c, act_cmds.c).
+ACT_VERB = "ctlact"
+
+# The RESULT name: what the numbers are filed under. Upstream's spelling, held
+# fixed on purpose - see the docstring. Renaming this would silently break the
+# field-for-field diff against scripts/probes/upstream/ that this port's whole
+# comparability argument rests on.
+CASE = "ctlinvoke"
+
 REQUIRED = ("observe", ACT_VERB)
 
 GATE_NOTE = """\
-A control op is NOT in NOW's declared act plane (winact/textget/textset). It
-is on the unported list in docs/mirror-foldin-inventory.md, Wave 3, where the
-inventory says explicitly that whether it should cross at all is a judgement
-to make with the ported code in front of us - not before.
+The control op is `ctlact` on this wire. If the guest does not serve it, the
+guest predates NOW's act plane (P4) rather than disagreeing about a name -
+check `help` for winact/textget/textset too.
 
-This harness carries Mirror's verb name because NOW has not picked one. When
-it lands under another name, ACT_VERB in this file is the single line to
-change."""
+The result label stays `ctlinvoke`, upstream's spelling, so the numbers remain
+comparable with scripts/probes/upstream/. Wire name and result label are
+deliberately different things here."""
 
 # Inside Macintosh, the Control Manager (ControlDefinitions.h).
 IN_BUTTON, IN_CHECKBOX = 10, 11
@@ -181,7 +199,8 @@ def main() -> int:
     link = link_from_args(args)
     link.require_verbs(PROBE, *REQUIRED, note=GATE_NOTE)
 
-    print(f"\n=== {ACT_VERB}: move a control, read its value back, N={args.n}")
+    print(f"\n=== {ACT_VERB}: move a control, read its value back, N={args.n}"
+          f"  (filed as {CASE!r} for upstream comparability)")
     trials = []
     for i in range(args.n):
         t = trial(link, i)
@@ -191,7 +210,7 @@ def main() -> int:
                           ("~" if t.get("replied") else "?")))
         sys.stdout.flush()
     print()
-    results = [tally.rate_summary(ACT_VERB, trials)]
+    results = [tally.rate_summary(CASE, trials)]
     tally.print_summary(results)
     if args.json:
         with open(args.json, "w") as fh:
