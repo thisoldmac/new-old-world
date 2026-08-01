@@ -90,7 +90,9 @@ it":
   anchors is NOW's plane, and reaching for it here is precisely the
   coupling this file exists to avoid.
 
-`X` clears the typed value; an odd A5 is refused as a typo (an A5 is a
+`X` (or DELETE) clears the typed value; `ESC` disarms — no command key may
+be a hex digit, and `D` and `F` both are, which is why disarm is `ESC` and
+arming a typed value is `RETURN`; an odd A5 is refused as a typo (an A5 is a
 pointer); an empty one is refused because **a bare arm names nothing**,
 which the probe would refuse and count as `unscoped` anyway. Catching it
 here just means a typo does not have to travel to resident code to be
@@ -177,7 +179,7 @@ Cold-booted with `QD Probe` in Extensions, then this application launched:
    drawing behaviour works is not an experiment. If it ever needs
    fixing, the fix is one line — call `StdRect` when there is no saved
    chain.
-5. **Press `D`.** `arm` drops to 0; the next pass in our context restores
+5. **Press `ESC`.** `arm` drops to 0; the next pass in our context restores
    the port, `restores` goes to 1, `armed_ports` to 0, and rectangles
    come back. Disarm reaching *our* ports promptly is a property of us
    being the target and still pumping — it is not a general guarantee.

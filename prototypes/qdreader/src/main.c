@@ -398,8 +398,8 @@ static void build_panel(void)
     line("our A5 %08lX      typed %08lX (%d digits)",
          own_a5(), g_typed, g_typed_digits);
     line("");
-    line("S arm self   0-9 A-F type   F arm typed   X clear typed");
-    line("D disarm     T test rect    G rescan      Q quit");
+    line("S arm self   0-9 A-F type a foreign A5   RETURN arm it");
+    line("ESC disarm   X/DEL clear typed   T test rect   G rescan   Q quit");
 }
 
 /* Pad to a fixed width so a shorter line overwrites the longer one it
@@ -480,6 +480,9 @@ static void key(char c)
         }
         return;
     }
+    /* No command letter may be a hex digit. D and F are, which is why
+       disarm is ESC (which also reads correctly as "stop") and arming a
+       typed value is RETURN. */
     switch (c) {
     case 'S':
         arm_at(own_a5(), "self (this application)");
@@ -487,9 +490,6 @@ static void key(char c)
     case 'X':
         g_typed = 0;
         g_typed_digits = 0;
-        break;
-    case 'D':
-        disarm();
         break;
     case 'T':
         test_rect();
@@ -582,6 +582,8 @@ int main(void)
 
                 if (c == '\r' || c == 3) {
                     commit_typed();
+                } else if (c == 27) {
+                    disarm();
                 } else if (c == 8) {
                     g_typed = 0;
                     g_typed_digits = 0;
