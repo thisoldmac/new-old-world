@@ -156,6 +156,17 @@ static void test_arm_expiry(void)
     r.arm_expiry = 0;
     check_eq(now_content_arm_verdict(&r, 0x00123456u, 1u),
              kNowContentVerdictExpired, "no deadline is expired on sight");
+    /* And at EVERY tick, which is not the same statement. An absent
+       deadline is zero, and the signed difference against zero is
+       negative - "in the future" - for the whole upper half of the tick
+       range. So a machine up for more than ~414 days would arm a request
+       that named no deadline at all, if the early return above were not
+       there. Found by mutation: deleting that return survived a suite
+       that only ever asked at low tick counts. */
+    check_eq(now_content_arm_verdict(&r, 0x00123456u, 0x80000000u),
+             kNowContentVerdictExpired, "no deadline is expired late too");
+    check_eq(now_content_arm_verdict(&r, 0x00123456u, 0xFFFFFFFFu),
+             kNowContentVerdictExpired, "no deadline is expired at the wrap");
 
     r.arm_expiry = 5000u;
     check_eq(now_content_arm_verdict(&r, 0x00123456u, 5000u),
