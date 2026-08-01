@@ -740,7 +740,7 @@ final class GuestListener: ObservableObject {
                 more: page.more, cursor: page.next,
                 /* Only the root listing names the place; a subfolder
                    listing already knows where it is. */
-                root: request.path.isEmpty ? share.root.path : nil)))
+                root: request.path.isEmpty ? share.rootDisplayName : nil)))
         } catch {
             session.refuseFile(id: request.id, error: error)
         }

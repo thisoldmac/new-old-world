@@ -75,6 +75,20 @@ has no metal coverage at all.** `HostServingTests` is loopback-only,
 and no `Metal*` suite exercises a real guest browsing this host's
 share. The browse direction guest→host is metal-verified only from the
 2026-07-20 arc, before the name bridge and placeholders landed.
+## The Files path row names the share, unverified on metal (2026-08-01)
+
+**Unverified.** `file.listing.root` now carries the host share's Finder
+display name ("iCloud Drive", "Downloads") through the standard MacRoman
+projection, instead of the raw POSIX path, and the guest's Files path
+row renders it — breadcrumbs from the share root for subfolders, with
+"Shared folder" kept only as the fallback for hosts predating the field.
+Host side is tested end-to-end over loopback (`HostServingTests
+.testTheRootListingNamesWhatIsShared`); the guest's label assembly is
+split Toolbox-free (`files_path_label.c`) and pinned natively. What
+nobody has watched: the row on a real screen — the root name arrives
+over the wire UTF-8→MacRoman via `now_json_find_text`, and an accented
+share name drawn through `DrawString` is exactly the kind of thing the
+emulator has hidden before.
 
 ## The last functional gap: a person cannot click the mirror (2026-08-01)
 
