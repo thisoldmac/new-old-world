@@ -69,9 +69,15 @@ struct CloudModuleView: View {
     @ViewBuilder
     private func controls(_ service: CloudServiceEntry) -> some View {
         if service.service == "drive" {
-            if model.canShareDrive() {
-                Button("Share iCloud Drive") { model.shareDrive() }
-            }
+            /* The same toggle as every other row. Its semantics are the
+               share: on points Sharing at iCloud Drive, off puts back
+               the folder that was shared before. */
+            Toggle("", isOn: Binding(
+                get: { model.driveShared },
+                set: { model.setDriveShared($0) }))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .disabled(!model.driveAvailable)
         } else if model.hasSwitch(service.service) {
             HStack(spacing: 8) {
                 if model.canRequestAccess(service.service) {

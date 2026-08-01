@@ -12,12 +12,16 @@ import Photos
 final class CloudModuleModel: ObservableObject {
     private let listener: GuestListener
     private let defaults: UserDefaults
+    /// Injectable so a test is not a claim about this Mac's sign-in.
+    private let driveURL: URL
 
     @Published private(set) var services: [CloudServiceEntry] = []
 
-    init(listener: GuestListener, defaults: UserDefaults = .standard) {
+    init(listener: GuestListener, defaults: UserDefaults = .standard,
+         driveURL: URL = DriveCloudProvider.iCloudDrive) {
         self.listener = listener
         self.defaults = defaults
+        self.driveURL = driveURL
     }
 
     func refresh() {
@@ -81,15 +85,43 @@ final class CloudModuleModel: ObservableObject {
 
     // MARK: - Drive
 
-    /// Drive's switch is the share itself; this is the same act as
-    /// choosing iCloud Drive in the Files footer, surfaced where the
-    /// services live.
-    func shareDrive() {
-        listener.share.root = DriveCloudProvider.iCloudDrive
-        refresh()
+    /* Drive's switch IS the share, so the row wears the same toggle as
+       every other service (a lone button here read as an inconsistency,
+       and was one). On remembers where the share pointed and moves it
+       to iCloud Drive; off puts it back — so a person can flip Drive
+       without losing the folder they had chosen. */
+
+    private static let previousRootKey = "cloud.drive.previousRoot"
+
+    var driveShared: Bool {
+        services.first { $0.service == "drive" }?.state == "serving"
     }
 
-    func canShareDrive() -> Bool {
-        services.first { $0.service == "drive" }?.state == "off"
+    var driveAvailable: Bool {
+        services.first { $0.service == "drive" }?.state != "unavailable"
+    }
+
+    func setDriveShared(_ on: Bool) {
+        if on {
+            let current = listener.share.root
+            if current.standardizedFileURL.path
+                != driveURL.standardizedFileURL.path {
+                defaults.set(current.path, forKey: Self.previousRootKey)
+            }
+            listener.share.root = driveURL
+        } else {
+            /* The remembered folder may be gone by now; the share's own
+               default (Downloads) is the honest fallback, not a share
+               that points at nothing. */
+            if let previous = defaults.string(forKey: Self.previousRootKey),
+               FileManager.default.fileExists(atPath: previous) {
+                listener.share.root = URL(fileURLWithPath: previous)
+            } else {
+                listener.share.root = FileManager.default.urls(
+                    for: .downloadsDirectory, in: .userDomainMask).first
+                    ?? URL(fileURLWithPath: NSHomeDirectory())
+            }
+        }
+        refresh()
     }
 }
