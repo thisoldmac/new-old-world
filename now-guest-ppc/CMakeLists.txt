@@ -156,16 +156,26 @@ target_compile_options(now-guest-ppc PRIVATE
     -Werror
 )
 
+# Include the build output directory so build_stamp.c can find build_stamp_gen.h
+target_include_directories(now-guest-ppc PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+
 
 # The probe times tight read loops; at -O0 loop overhead pollutes the
 # bandwidth numbers.
 set_source_files_properties(src/census/vprobe.c PROPERTIES COMPILE_OPTIONS "-O2")
 
-# The build stamp is only honest if it is recompiled every build.
-add_custom_target(touch_build_stamp ALL
-    COMMAND ${CMAKE_COMMAND} -E touch_nocreate
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/core/build_stamp.c)
-add_dependencies(now-guest-ppc touch_build_stamp)
+# Generate the build stamp on every build. The buildstamp.cmake script hashes
+# all sources and produces a header with NOW_SRC_HASH and NOW_BUILT_AT. The
+# header is rewritten only when the hash changes, so an unchanged tree does
+# not force a universal recompile. See cmake/buildstamp.cmake for rationale.
+set(_buildstamp_header ${CMAKE_CURRENT_BINARY_DIR}/build_stamp_gen.h)
+add_custom_target(generate_buildstamp ALL
+    COMMAND ${CMAKE_COMMAND}
+            -DSRC_DIR=${CMAKE_CURRENT_SOURCE_DIR}/src
+            -DOUT=${_buildstamp_header}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/buildstamp.cmake
+    VERBATIM)
+add_dependencies(now-guest-ppc generate_buildstamp)
 
 # The canonical deploy artifact carries the product's real name, spaces
 # and all: "New Old World.bin", to match "New Old World.app" on the host.
