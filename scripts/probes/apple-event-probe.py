@@ -1,14 +1,33 @@
 #!/usr/bin/env python3
-"""Probe the `apple_event` verb — the one behind "quit that application".
+"""Probe the `aesend` verb — the one behind "quit that application".
 
 Ported from `timbottu/mirror/tests/apple-event-probe.py`.
 
-## STATUS ON NOW TODAY: REFUSES
+## STATUS ON NOW TODAY: gated on `observe`, not on the verb
 
-`apple_event` is on the unported Wave 3 list in
-docs/mirror-foldin-inventory.md. NOW does serve `quit`, which reaches the same
-place for the one case that matters most — so read the note under "The overlap
-with NOW's own quit" before deciding this lane is blocked.
+### Two things this file had wrong about NOW, both fixed 2026-07-31
+
+**The name.** Upstream serves `apple_event`; NOW spells it **`aesend`**. No
+other verb on this wire carries an underscore (`winact`, `ctlact`, `menuact`,
+`textget`, `observe`), and `aesend` names the mechanism and claims exactly
+what the reply claims — the event was *sent*. One constant here.
+
+**The addressing.** This file sent `{"psn": "hi:lo"}`, upstream's shape.
+NOW's `observe` reports a process as `serialHi` / `serialLo`, two integers,
+and every other verb on this plane that names a process (`elements`,
+`menuact`) takes them that way — so `proc.get("psn")` was always None here and
+every quit trial would have been dropped as "did not come up with a PSN".
+The wire args are now the two integers. **The trial record still carries a
+`"psn"` key**, as `"hi:lo"`, so a run still diffs field-for-field against
+upstream's.
+
+### What `aesend` bounds that upstream did not
+
+NOW refuses two more requests before sending, and the `refuse` case checks
+both: `serialHi 0 / serialLo 0` is kNoProcess by definition and is answered
+locally rather than spent as an Apple Event, and **our own serial is refused**
+— a core event to ourselves takes the connection down mid-reply, so the caller
+would see a dropped socket where the truthful answer is a refusal.
 
 ## Measured against GUEST STATE, never the verb's own reply
 
@@ -54,7 +73,8 @@ file is the one that gates a general event verb.
     observe      to find the target's PSN and to see it leave.
                  (`ps` is a partial substitute and is used for the process
                  list, but a PSN is not on NOW's wire today.)
-    apple_event  not declared, not served, Wave 3.
+    aesend       four core events (quit/oapp/odoc/pdoc) to a named serial.
+                 A closed vocabulary, not a class/id pipe.
 
 Usage:
 
@@ -78,7 +98,7 @@ from nowwire import (GuestError, add_link_args, link_from_args,   # noqa: E402
                      refuse_without_metal)
 
 PROBE = "apple-event-probe"
-ACT_VERB = "apple_event"
+ACT_VERB = "aesend"
 REQUIRED = ("observe", ACT_VERB)
 
 SIMPLETEXT = "Macintosh HD:Applications (Mac OS 9):SimpleText"
@@ -90,16 +110,35 @@ WHITELIST = ("quit", "oapp", "odoc", "pdoc")
 OFF_WHITELIST = "dele"          # a real four-char code, deliberately not ours
 
 GATE_NOTE = """\
-apple_event is Wave 3 in docs/mirror-foldin-inventory.md - unported, and the
-inventory says a judgement about whether it should cross belongs with the
-ported code in front of us.
+The general event verb is `aesend` on this wire, not upstream's `apple_event`.
+A guest that serves neither predates NOW's input plane.
 
 NOW's own `quit` already sends a quit Apple Event, so the quit CASE here could
 be re-pointed at it today. That is deliberately not done: this harness's value
 is the REFUSALS (an event outside the quit/oapp/odoc/pdoc whitelist, missing
-serials, a stale PSN), which a narrow quit verb has nothing to say about.
-Collapsing them would make a harness that passes while testing a quarter of
-what it names."""
+serials, a stale serial, and NOW's own two: kNoProcess and ourselves), which a
+narrow quit verb has nothing to say about. Collapsing them would make a
+harness that passes while testing a quarter of what it names."""
+
+
+def serials(proc: dict):
+    """The two integers `observe` reports for a process, or None.
+
+    Upstream's guest took one `psn` string; NOW takes serialHi/serialLo, the
+    shape `observe` itself emits and the shape every other process-naming verb
+    on this plane uses. Kept in one function so the trial records below can go
+    on carrying upstream's single `psn` field for comparison.
+    """
+    if not proc:
+        return None
+    hi, lo = proc.get("serialHi"), proc.get("serialLo")
+    if hi is None or lo is None:
+        return None
+    return int(hi), int(lo)
+
+
+def psn_text(pair) -> str:
+    return "%d:%d" % pair if pair else ""
 
 
 def observe(link, scope: str = "all") -> dict:
@@ -142,7 +181,8 @@ def case_quit(link, app: str, n: int) -> dict:
     trials = []
     for i in range(n):
         proc = ensure_running(link, app, name)
-        if proc is None or not proc.get("psn"):
+        pair = serials(proc)
+        if pair is None:
             trials.append({"trial": i + 1, "valid": False,
                            "why": f"{name} did not come up with a window and "
                                   f"a PSN"})
@@ -152,7 +192,8 @@ def case_quit(link, app: str, n: int) -> dict:
         replied = False
         code = None
         try:
-            link.command(ACT_VERB, {"psn": proc["psn"], "event": "quit"})
+            link.command(ACT_VERB, {"serialHi": pair[0], "serialLo": pair[1],
+                                    "event": "quit"})
             replied = True
         except GuestError as exc:
             replied, code = True, exc.code
@@ -164,7 +205,7 @@ def case_quit(link, app: str, n: int) -> dict:
             if not oracles.is_running(link, name):
                 gone = True
                 break
-        trials.append({"trial": i + 1, "psn": proc.get("psn"),
+        trials.append({"trial": i + 1, "psn": psn_text(pair),
                        "replied": replied, "actuated": gone, "error": code})
         sys.stdout.write("." if gone else ("~" if replied else "?"))
         sys.stdout.flush()
@@ -186,7 +227,7 @@ def case_dirty(link, app: str, n: int) -> dict:
     trials = []
     for i in range(n):
         proc = ensure_running(link, app, name)
-        if proc is None or not proc.get("psn"):
+        if serials(proc) is None:
             trials.append({"trial": i + 1, "valid": False,
                            "why": "target not ready"})
             continue
@@ -194,7 +235,7 @@ def case_dirty(link, app: str, n: int) -> dict:
             "TODO(now): no way to DIRTY a document on NOW's wire.\n"
             "  Upstream typed into the document through a `key` verb. NOW\n"
             "  serves none, so this case cannot stage its own precondition\n"
-            "  even once apple_event exists. Named rather than filled in: a\n"
+            "  even once aesend exists. Named rather than filled in: a\n"
             "  case that silently ran against a CLEAN document would report\n"
             "  the quit case's numbers under the dirty case's name, which is\n"
             "  the worst outcome available here.")
@@ -210,13 +251,31 @@ def case_refuse(link, app: str) -> dict:
     """
     name = app.rsplit(":", 1)[-1]
     proc = ensure_running(link, app, name)
-    psn = (proc or {}).get("psn")
+    pair = serials(proc) or (0, 1)
+    named = {"serialHi": pair[0], "serialLo": pair[1]}
     checks = [
-        ("off-whitelist event", {"psn": psn, "event": OFF_WHITELIST}),
-        ("missing psn", {"event": "quit"}),
-        ("missing event", {"psn": psn}),
-        ("stale psn", {"psn": "0:0", "event": "quit"}),
+        ("off-whitelist event", dict(named, event=OFF_WHITELIST)),
+        ("missing serial", {"event": "quit"}),
+        ("half a serial", {"serialHi": pair[0], "event": "quit"}),
+        ("missing event", dict(named)),
+        # kNoProcess. Upstream sent this as the string "0:0" and let the
+        # AppleEvent Manager answer procNotFound; NOW refuses it locally,
+        # which is the same answer for no Apple Event.
+        ("stale serial", {"serialHi": 0, "serialLo": 0, "event": "quit"}),
     ]
+    # NOT CHECKED, AND SAID SO RATHER THAN FAKED: aesend refuses a core event
+    # addressed at the guest's OWN serial (now_ae_check, kNowAeSelf), which is
+    # the one refusal on this verb whose failure is unrecoverable - sent, it
+    # takes the connection down mid-reply and the probe reads a wedge. There
+    # is no way to stage it from here: `hello` carries no serial and no
+    # product name, and `observe` names processes but nothing on the wire says
+    # which of them is the guest. Guessing a name would test whichever
+    # application happened to match. The refusal is covered instead by
+    # now-guest-ppc/tests/input_args_test.c, on the host compiler, with the
+    # mutation that removes it watched failing.
+    print("    (not checked here: the self-addressed refusal. See the "
+          "comment - there is no way to learn the guest's own serial from "
+          "this side, and a guessed one would test another application)")
     print(f"\n=== refusals ({len(checks)} checks; a refusal is the PASS)")
     trials = []
     for i, (label, args) in enumerate(checks):

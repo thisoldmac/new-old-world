@@ -14,7 +14,7 @@ selected, and the position it was computed from. That file is the reason this
 lane is worth porting even while it cannot run: a future NOW run is directly
 comparable to it, trial for trial.
 
-## STATUS ON NOW TODAY: REFUSES
+## STATUS ON NOW TODAY: REFUSES — on the click, no longer on the oracle
 
 ## The methodology, which is the whole asset
 
@@ -47,17 +47,22 @@ one folder, and there is no search path in this file at all.
     script     an AppleScript verb. The oracle is the Finder's own answer to
                `selection` and `position of every item`, and there is no
                substitute — the whole design is that the probe does not
-               compute what it is checking. NOW serves no script verb; it is
-               on the Wave 3 list. THIS IS THE BLOCKER FOR THE ORACLE.
+               compute what it is checking. Built in now-guest-ppc/src/input/.
+               NOTE its cap: NOW returns 1024 bytes of output, not upstream's
+               4096, because NOW's command.result rides a 3072-byte buffer.
+               `position of every item` of a large folder can exceed that, and
+               the reply says `truncated` when it does — read that row.
+    mouseloc   the cursor read every hop calibration closes its loop against.
+               Used at line ~236 and, until 2026-07-31, MISSING FROM THIS
+               GATE: the harness would have started, run its calibration, and
+               died on an unknown-command in the middle of a trial rather
+               than refusing cleanly at the top.
     observe    the window's content rect and its scrollbars, for the icon-area
-               inset. Wave 2A.
+               inset.
     a click    something that puts a real click at a computed point. Upstream
                used QMP for the emulator; on metal it used the driver's own
                dispatch. NOW has neither a click verb nor a host-side
-               positional dispatcher today.
-
-Three missing pieces rather than one, which is why this lane is further from
-running than textops or winact despite having the richest recorded result.
+               positional dispatcher today. THIS IS THE REMAINING BLOCKER.
 
 Usage:
 
@@ -81,7 +86,7 @@ from nowwire import (GuestError, add_link_args, link_from_args,   # noqa: E402
                      refuse_without_metal)
 
 PROBE = "h2-items-probe"
-REQUIRED = ("script", "observe")
+REQUIRED = ("script", "observe", "mouseloc")
 
 # The Finder's icon box: `bounds of` an item is pos..pos+32. From h2calib.py,
 # and it is a measured constant of the Finder's icon view, not a guess.
@@ -90,8 +95,9 @@ ICON = 32
 GATE_NOTE = """\
 The oracle is the FINDER'S OWN ANSWER, obtained through an AppleScript verb.
 That is not incidental: the whole design is that the probe never computes what
-it is checking. NOW serves no `script` verb (Wave 3), no `observe` (Wave 2A),
-and nothing that places a real click at a computed point.
+it is checking. `script`, `observe` and `mouseloc` all exist now; what NOW still
+has nowhere is anything that places a real click at a computed point, and
+without that there is no trial to score.
 
 Upstream's recorded 40/40, trial by trial, is preserved at
 scripts/probes/upstream/h2-trials-result.json. A NOW run is comparable to it
@@ -114,8 +120,17 @@ def script(link, source: str, timeout_ms: int = 20000) -> str:
     if isinstance(text, str) and len(text) >= 2 \
             and text.startswith('"') and text.endswith('"'):
         text = text[1:-1]
-    if err:
-        raise GuestError("osaErr", f"{err}: {text}")
+    # `if err:` WOULD ALWAYS FIRE. NOW's x-rowArray is [label, value] STRING
+    # pairs by contract, so a clean run reports osaErr as the string "0",
+    # which is truthy in Python — upstream's guest sent a JSON number and the
+    # port did not carry that across. Every successful script would have
+    # raised, and the failure would have looked like a broken script verb.
+    try:
+        errno = int(str(err), 10) if err not in (None, "") else 0
+    except ValueError:
+        errno = -1                        # unparseable is not "no error"
+    if errno:
+        raise GuestError("osaErr", f"{errno}: {text}")
     return text
 
 

@@ -74,9 +74,9 @@ Every script in `mirror/tests/`, with its verdict.
 | `textops-explore.py` | `textops-explore.py` | **refuses** | `observe`, `textget` |
 | `ctlinvoke-probe.py` | `ctlinvoke-probe.py` | **gated on `observe`** | `observe`, and `ctlact` — which NOW serves. The filename and the result label keep upstream's spelling; only `ACT_VERB` moved |
 | `winact-probe.py` | `winact-probe.py` | **refuses** | `observe` only — `winact` is declared, with its exact args |
-| `apple-event-probe.py` | `apple-event-probe.py` | **refuses** | `observe`, `apple_event`. Its `dirty` case additionally has no way to dirty a document and says so |
+| `apple-event-probe.py` | `apple-event-probe.py` | **gated on `observe`** | `observe`, and `aesend` — NOW's spelling of the general event verb, addressed by `serialHi`/`serialLo` rather than upstream's `psn` string. Its `dirty` case additionally has no way to dirty a document and says so |
 | `g1-probe.py` | `g1-probe.py` | **runs (2 of 3 cases)** | `stamp` and `launch` run today. `menus` needs `observe` |
-| `h2-trials.py` + `h2-scroll.py` | `h2-items-probe.py` | **refuses** | `script`, `observe`, and a positional click. Three blockers, the most of any lane |
+| `h2-trials.py` + `h2-scroll.py` | `h2-items-probe.py` | **refuses** | a positional click — the last of its three blockers. `script`, `observe` and `mouseloc` all exist; `mouseloc` was missing from its gate until 2026-07-31 and would have died mid-trial rather than refusing at the top |
 | `drive-sequence.py` | `drive-sequence.py` | **gated on `observe`** | `observe`, `winact`, `ctlact`, `launch`, `ps`. All-or-nothing by design |
 | `h2-trials-result.json`, `p2-*.json` | `upstream/` | **preserved verbatim** | — see `upstream/PROVENANCE.md` |
 
