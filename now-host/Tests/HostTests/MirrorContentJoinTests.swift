@@ -181,6 +181,40 @@ final class MirrorContentJoinTests: XCTestCase {
         XCTAssertEqual(outcome, .empty(""))
     }
 
+    /// An overrun can arrive WITH records: the resync lands on the live end
+    /// and the drain reads forward from there. The ops that survived are
+    /// drawn, and the loss is said beside them rather than instead of them.
+    func testResyncWithRecordsDrawsThemAndStillReportsTheLoss() throws {
+        let model = join()
+        let (after, outcome) = model.apply(
+            try drainResult(ops: [rectOp(port: "0x1", ticks: 9)],
+                            nextCursor: 200, resync: true, lostBytes: 8192),
+            to: scene(windows: [window(id: "front", front: true)]))
+        guard case .attached(_, let ops, let note?) = outcome else {
+            return XCTFail("expected an attach with a note, got \(outcome)")
+        }
+        XCTAssertEqual(ops, 1)
+        XCTAssertEqual(after.windows.first?.display?.count, 1)
+        XCTAssertTrue(note.contains("8192"), note)
+        XCTAssertTrue(note.contains("overwritten"), note)
+    }
+
+    /// A torn read delivers nothing BY CONTRACT, and this side checks rather
+    /// than trusts: a record beside that flag describes a read that was
+    /// discarded, and drawing it would put a half-read frame in a window.
+    func testTornIsRefusedEvenIfRecordsArriveBesideIt() throws {
+        let model = join()
+        let before = scene(windows: [window(id: "front", front: true)])
+        let (after, outcome) = model.apply(
+            try drainResult(ops: [rectOp(port: "0x1", ticks: 1)],
+                            nextCursor: 32, torn: true),
+            to: before)
+        guard case .empty = outcome else {
+            return XCTFail("expected empty, got \(outcome)")
+        }
+        XCTAssertNil(after.windows.first?.display)
+    }
+
     // MARK: - what a refusal does
 
     func testGuestRefusalIsForwardedInItsOwnWords() throws {

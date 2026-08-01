@@ -178,6 +178,26 @@ forward instead of re-reading the ring.
 - `Tests/HostTests/MirrorContentJoinTests.swift` — the port rule and the
   refusals.
 
+## 8. What was actually verified, and what was not
+
+- `swift build` and `swift build --build-tests` are green for the whole
+  package (pre-existing Swift-6 concurrency warnings only).
+- `QDTraceDecode` was **executed** against the literal guest JSON above — the
+  MirrorKit sources compiled with `swiftc` into a scratch binary that
+  exercises the decoder directly. Nineteen assertions, all green: the
+  `line`-`pen` demotion, the `detail: false` census, `state/bg` and `arc`
+  landing in `undrawn`, first-seen port order, `65535` surviving as unsigned,
+  `torn` delivering nothing, a `status` reply not reading as a drain, and
+  malformed records being skipped rather than counted.
+- **The XCTest suites were not run.** This lane is one of nine sharing a Mac
+  and only one `swift test` may run at a time; the orchestrator runs the gate
+  (`scripts/test-all`) centrally. `QDTraceDecodeTests` and
+  `MirrorContentJoinTests` compile; whether every assertion in them passes is
+  the central gate's answer, not this lane's.
+- **Nothing ran on a Macintosh, real or emulated.** No guest was built, no VM
+  was booted, no drain was watched. The claim this lane makes is that the two
+  halves now speak the same vocabulary *as written in their sources*.
+
 `corpus_impact`: none from this lane directly. The durable claims here — no A5
 on the wire, `port` is not a scene key — belong in a `data/findings/` row, and
 this nested repo has no `data/` tree; the lane report hands them to the

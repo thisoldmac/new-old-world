@@ -207,11 +207,17 @@ final class MirrorContentJoin {
            re-read it forever. */
         cursor = drain.nextCursor
 
-        if let short = Self.shortness(drain), drain.records.isEmpty {
-            return (scene, .empty(short))
-        }
-        guard !drain.records.isEmpty else {
-            return (scene, .empty(""))   /* attributed by the caller */
+        /* A torn or busy drain delivers NOTHING — the guest retracts whatever
+           its sink printed before the tear. Checked here rather than trusted:
+           if a record ever arrives beside one of those flags, it is a record
+           about a read that was discarded, and drawing it would put a
+           half-read frame inside a window. */
+        if drain.torn || drain.busy || drain.records.isEmpty {
+            /* An empty result with none of the four reasons gets a blank
+               sentence on purpose — `join` fills it in from a `status`, which
+               is the only thing that can tell "nothing is armed" from
+               "nothing drew". */
+            return (scene, .empty(Self.shortness(drain) ?? ""))
         }
         let ports = drain.ports
         guard ports.count == 1, let port = ports.first else {
@@ -255,6 +261,13 @@ final class MirrorContentJoin {
     /// nothing to add — a note that always fires is a note nobody reads.
     static func note(_ drain: QDTraceDecode.Drain) -> String? {
         var parts: [String] = []
+        /* Overrun can arrive WITH records — the resync lands on the live end
+           and the drain reads forward from there. The loss is still loss and
+           is said beside the ops that survived, never instead of them. */
+        if drain.resync {
+            parts.append("\(drain.lostBytes) bytes of earlier drawing were "
+                         + "overwritten before this host read them")
+        }
         if drain.more {
             parts.append("more operations are waiting (\(drain.pending) "
                          + "bytes); press again to continue")
