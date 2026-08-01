@@ -8,8 +8,9 @@
  * liveness. The anchor plane (P1), when the application arms it,
  * additionally records each process's low-memory CurrentA5 / WindowList
  * / MenuList / CurStackBase / CurApName into the shared table while
- * that process's context is current - the only place its per-process Toolbox state is visible
- * (finding observe-process-local-ui). It reads low memory ONLY: no
+ * that process's context is current - the only place its per-process
+ * Toolbox state is visible (finding observe-process-local-ui). It
+ * reads low memory ONLY: no
  * Process Manager call, no allocation, nothing that moves memory. The
  * app correlates A5 to PSN and follows the pointers; foreign-MEMORY
  * reads never happen here (docs/resident-components.md).
@@ -84,6 +85,24 @@ static short find_anchor_slot(NowPeekU32 a5)
     return empty >= 0 ? empty : stalest;
 }
 
+/* Low memory as bytes, through a volatile the optimiser cannot fold.
+
+   LMGetCurApName is a literal address (0x0910), and gcc's array-bounds
+   pass reads a constant pointer as an object of KNOWN size - a small
+   integer address looks to it like "likely at address zero", so
+   indexing it is diagnosed as out of bounds and -Werror stops the
+   build. The bounds are real, they are simply not visible from C: this
+   is the system's own storage, not an array the compiler declared.
+   Routing the address through a volatile is the narrowest way to say
+   so, and it is honest twice over - low memory genuinely can change
+   under us, which is why every read of it should be a real load. */
+static const unsigned char *lowmem_bytes(unsigned long addr)
+{
+    volatile unsigned long opaque = addr;
+
+    return (const unsigned char *)opaque;
+}
+
 /* V3. The current context's application name, out of low memory into
    the slot.
 
@@ -104,24 +123,6 @@ static short find_anchor_slot(NowPeekU32 a5)
    a Str31 but the multiversal headers note the low-memory area may be
    34 bytes, so the copy is bounded by what we WRITE, which is the only
    bound that is ours to know. */
-/* Low memory as bytes, through a volatile the optimiser cannot fold.
-
-   LMGetCurApName is a literal address (0x0910), and gcc's array-bounds
-   pass reads a constant pointer as an object of KNOWN size - a small
-   integer address looks to it like "likely at address zero", so
-   indexing it is diagnosed as out of bounds and -Werror stops the
-   build. The bounds are real, they are simply not visible from C: this
-   is the system's own storage, not an array the compiler declared.
-   Routing the address through a volatile is the narrowest way to say
-   so, and it is honest twice over - low memory genuinely can change
-   under us, which is why every read of it should be a real load. */
-static const unsigned char *lowmem_bytes(unsigned long addr)
-{
-    volatile unsigned long opaque = addr;
-
-    return (const unsigned char *)opaque;
-}
-
 static void capture_cur_ap_name(unsigned char *dst)
 {
     const unsigned char *src = lowmem_bytes((unsigned long)LMGetCurApName());

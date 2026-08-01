@@ -9,7 +9,22 @@
    values a wire-style reader depends on (magic, selector, versioning
    gates) and exercises the accretive-read rule the way the application
    will. Mutation check: reorder any two table fields and the header's
-   own asserts refuse to build - watched once, 2026-07-21. */
+   own asserts refuse to build - watched once, 2026-07-21.
+
+   Watched again for V3, 2026-07-31, with the cross-compiler half of the
+   claim this time:
+     - insert the name field BEFORE stack_base -> the header's asserts
+       stop the build in the retrocarbon PPC compiler AND the Retro68
+       68K one, not merely in the host cc (the 68K guest does not
+       include this header; the extension does)
+     - the same shift with those asserts RELAXED -> 3 runtime checks
+       here fail, which is what this file is for: a build failure proves
+       the asserts work, not that the test does
+     - narrow the name field to 30 bytes with the size assert left
+       satisfiable -> 2 fail. Note WHY that still compiled: the compiler
+       silently padded the slot back to 60. That is precisely the drift
+       the header's layout rule forbids, and only the alignment check
+       sees it. */
 
 #include <stdio.h>
 #include <stdlib.h>

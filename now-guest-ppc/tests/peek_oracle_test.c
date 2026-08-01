@@ -20,6 +20,16 @@
  * unused and -Werror rejects it. A mutation that fails to BUILD proves
  * nothing about the test; it had to be rewritten as a swap that keeps
  * the variable live before it demonstrated anything.
+ *
+ * V3's own, each watched failing 2026-07-31:
+ *   - gate has_name on V2 (read the name bytes a V2 table left) -> 2 fail,
+ *     one of them the reclaimed-Ambiguous case going quietly Ok
+ *   - fold() becomes the identity (byte-exact compare)          -> 1 fail
+ *   - drop the empty-name guards (absence counts as disagreement)-> 2 fail
+ *   - a name refutation drops the slot without counting as a
+ *     rejection (`rejected += 0`, which keeps -Werror happy)     -> 2 fail,
+ *     both Mismatch answers collapsing to NotFound
+ *   - an impossible length byte convicts instead of abstaining   -> 1 fail
  */
 
 #include <stdio.h>
@@ -191,8 +201,8 @@ int main(void)
        mark a live app permanently stale. */
     table_init(&t, kNowPeekAnchorFormatV2);
     slot_set(&t, 0, kLoc + 0x400, kLoc + 0x800, kTop, 0xFFFFFFF0UL);
-    check_verdict(now_peek_anchor_match(&t, kLoc, kSize, NULL, 0x00000010UL, 100,
-                                        &m),
+    check_verdict(now_peek_anchor_match(&t, kLoc, kSize, NULL,
+                                        0x00000010UL, 100, &m),
                   kNowPeekAnchorOk, "age survives a TickCount wrap");
     check(m.age_ticks == 32, "wrapped age is the true elapsed count");
 
@@ -329,7 +339,8 @@ int main(void)
                   "V3 resolves the pair V2 could only refuse");
     check(m.slot == 1 && m.window_list == (NowPeekU32)(kLoc + 0x800),
           "and it resolves to the live slot, not the ghost");
-    check(pstr_eq(m.name, kFinder), "the surviving slot's name is the live one");
+    check(pstr_eq(m.name, kFinder),
+          "the surviving slot's name is the live one");
 
     /* Order must not decide it here either. */
     table_init(&t, kNowPeekAnchorFormatV3);
@@ -361,8 +372,8 @@ int main(void)
     check_verdict(now_peek_anchor_match(&t, kLoc, 0, NULL, 1000, 0, &m),
                   kNowPeekAnchorNotFound, "a zero-size partition matches "
                                           "nothing");
-    check_verdict(now_peek_anchor_match(&t, 0xFFFFF000UL, 0x00010000UL, NULL, 1000,
-                                        0, &m),
+    check_verdict(now_peek_anchor_match(&t, 0xFFFFF000UL, 0x00010000UL,
+                                        NULL, 1000, 0, &m),
                   kNowPeekAnchorNotFound, "a partition that wraps the address "
                                           "space matches nothing");
 
