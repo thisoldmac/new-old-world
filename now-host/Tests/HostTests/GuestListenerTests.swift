@@ -138,6 +138,86 @@ final class GuestListenerTests: XCTestCase {
                        "the roster row carries it too")
     }
 
+    /// A tier changed mid-session reaches the host on the link already up.
+    ///
+    /// The defect this closes: `hello` is sent once per connection and
+    /// nothing revised it, so a person who set Read Only while connected
+    /// went on being driven at Full Access until the link was rebuilt — the
+    /// one place in this product where being out of date has a safety edge.
+    ///
+    /// ORDERED, and that is the point of the first wait rather than a
+    /// politeness. Both values are asserted on the same field, so a test
+    /// that sent the revision without first establishing `.fullAccess`
+    /// would pass against a host that ignored `agent.access` entirely,
+    /// having measured a barrier it never watched arrive.
+    func testATierChangedMidSessionReachesTheHost() async throws {
+        let guest = FakeGuest(port: listener.boundPort!)
+        guest.start()
+        try guest.send(guestHello(agent: .fullAccess))
+        try await waitUntil("host hello") { !guest.received.isEmpty }
+        /* The starting position, established before the revision is sent:
+           without this, the assertion below cannot tell "the host applied
+           the revision" from "the host was already there". */
+        XCTAssertEqual(listener.health?.guestAgentAccess, .fullAccess,
+                       "precondition: the connect-time answer landed")
+
+        try guest.send(.agentAccess(AgentAccess(agent: .readOnly)))
+        try await waitUntil("the revision to land") {
+            self.listener.health?.guestAgentAccess == .readOnly
+        }
+
+        XCTAssertEqual(
+            listener.health?.guestAgentAccess, .readOnly,
+            "The machine withdrew Full Access and the host kept enforcing "
+                + "it — the stale belief this message exists to prevent.")
+        XCTAssertEqual(listener.guests.first?.agentAccess, .readOnly,
+                       "and the roster row the MCP pane renders follows it")
+    }
+
+    /// The revision can also WIDEN, and the host must not treat the
+    /// connect-time answer as a ceiling it may never rise above.
+    ///
+    /// Worth its own case because "only ever narrows" is a plausible thing
+    /// to implement and would be wrong: this field is the machine's
+    /// position, not a budget it spends down. A person who set Read Only
+    /// to do something carefully and then set Full Access back expects the
+    /// second decision to count as much as the first.
+    func testARevisionMayWidenAndNotOnlyNarrow() async throws {
+        let guest = FakeGuest(port: listener.boundPort!)
+        guest.start()
+        try guest.send(guestHello(agent: .readOnly))
+        try await waitUntil("host hello") { !guest.received.isEmpty }
+        XCTAssertEqual(listener.health?.guestAgentAccess, .readOnly,
+                       "precondition: the narrower answer landed first")
+
+        try guest.send(.agentAccess(AgentAccess(agent: .fullAccess)))
+        try await waitUntil("the widening to land") {
+            self.listener.health?.guestAgentAccess == .fullAccess
+        }
+        XCTAssertEqual(listener.health?.guestAgentAccess, .fullAccess)
+    }
+
+    /// A guest that said nothing at hello and then speaks is ANSWERING.
+    ///
+    /// Absence means "predates the field", never consent — so a first
+    /// `agent.access` from such a machine is the only answer the host has
+    /// ever been given, and must replace the silence rather than being
+    /// discarded for having no earlier value to revise.
+    func testAnAnswerAfterSilenceIsTakenAsTheAnswer() async throws {
+        let guest = FakeGuest(port: listener.boundPort!)
+        guest.start()
+        try guest.send(guestHello())
+        try await waitUntil("host hello") { !guest.received.isEmpty }
+        XCTAssertNil(listener.health?.guestAgentAccess,
+                     "precondition: this machine said nothing at hello")
+
+        try guest.send(.agentAccess(AgentAccess(agent: .disabled)))
+        try await waitUntil("the first answer to land") {
+            self.listener.health?.guestAgentAccess == .disabled
+        }
+        XCTAssertEqual(listener.health?.guestAgentAccess, .disabled)
+    }
+
     /// A machine that refuses is held as a refusal.
     ///
     /// `disabled` is the state the whole three-state design turns on: it is

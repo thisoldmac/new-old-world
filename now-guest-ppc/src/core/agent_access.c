@@ -2,6 +2,7 @@
 
 #include "mcp_layout.h"
 #include "prefs.h"
+#include "wire.h"
 
 /* This machine's answer, said out loud rather than left to silence.
 
@@ -54,6 +55,15 @@ void now_agent_access_set_tier(AgentAccessTier tier)
     now_prefs_load(&prefs);
     prefs.agent_access = (short)tier;
     (void)now_prefs_save(&prefs);
+    /* Stored first, then said. hello carries this once per connection, so
+       without the announcement a tier changed mid-session reached the host
+       only when the link was rebuilt — and until then the host went on
+       permitting what the person had just withdrawn. The announcement
+       lives HERE rather than in the page because this is the one place the
+       tier changes: a second setter (an installer, a console verb) gets
+       the announcement by using this function, which is the property the
+       one-seam rule was for. */
+    now_wire_announce_agent_access();
 }
 
 const char *now_agent_access(void)

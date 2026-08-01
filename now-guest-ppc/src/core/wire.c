@@ -343,6 +343,19 @@ static long g_rcv_peak = -3;
    means the loop is healthy and the bytes are simply not arriving. */
 static long g_service_passes = 0;
 
+/* What this connection has actually TOLD the host about agent access, as
+   opposed to what the tier currently is. They differ exactly when a send
+   did not happen — no link, or a full control queue — and the page's job
+   is to show that difference rather than assume it away.
+
+   It lives here because this is the only code that knows: the page used to
+   infer "hello went out carrying whatever the tier is now" from seeing the
+   link come up, which was right in every case anyone tried and still an
+   inference about another file's behaviour. Cleared when a connection
+   starts, because it is a fact about one link. */
+static Boolean g_told_known;
+static AgentAccessTier g_told;
+
 /* The connect completed (either path); the rest of the protocol is
    written synchronously, so the endpoint goes back to that mode with
    the notifier gone before the first hello leaves. */
@@ -369,6 +382,8 @@ static void start_connect(void)
     g.rx_len = 0;
     g.bulk_remaining = 0;
     g.pings_sent = 0;
+    /* A fact about one link, and this is a different one. */
+    g_told_known = false;
 
     if (!parse_ipv4(g.host, &g.address)) {
         fail("Enter a numeric address like 10.0.2.2");
@@ -504,7 +519,53 @@ static void send_hello(void)
              now_agent_access(), esc, kNowDefaultChunk);
     if (!send_control(json)) {
         fail("Sending hello failed");
+        return;
     }
+    /* hello carried the tier, so this link has now been told it. Recorded
+       after the send rather than before: the page's whole value is
+       distinguishing what was said from what is merely true here. */
+    g_told_known = true;
+    g_told = now_agent_access_tier();
+}
+
+/* The same answer as hello's `agent`, said again because it changed.
+
+   hello states this once per connection, so before this existed a tier
+   changed mid-session did not reach the host until the link was rebuilt -
+   and the host went on permitting what the person had just withdrawn.
+   That is the one place in this product where being out of date has a
+   safety edge, which is why this is a message and not a note on the page.
+
+   Silent when nothing is connected, and that is the whole error handling:
+   there is no host to tell, the tier is already in prefs, and the next
+   hello carries it. Same for a send that does not fit the queue - the
+   caller is a person clicking a radio button, and a modal complaint about
+   a control frame would be noise about something the next connection
+   fixes. It returns nothing for that reason.
+
+   Not escaped: mcp_tier_token returns one of three contract tokens. */
+void now_wire_announce_agent_access(void)
+{
+    char json[64];
+
+    if (g.phase != kConnConnected) {
+        return;
+    }
+    snprintf(json, sizeof json,
+             "{\"type\":\"agent.access\",\"agent\":\"%s\"}",
+             now_agent_access());
+    if (send_control(json)) {
+        g_told_known = true;
+        g_told = now_agent_access_tier();
+    }
+}
+
+Boolean now_wire_agent_access_told(AgentAccessTier *out)
+{
+    if (g_told_known && out != NULL) {
+        *out = g_told;
+    }
+    return g_told_known;
 }
 
 /* --- receive ------------------------------------------------------------ */

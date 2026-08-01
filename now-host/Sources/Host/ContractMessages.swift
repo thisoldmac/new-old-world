@@ -68,6 +68,7 @@ enum ControlMessage: Equatable, Sendable {
     case processQuit(ProcessQuit)
     case processShot(ProcessShot)
     case processResult(ProcessResult)
+    case agentAccess(AgentAccess)
 }
 
 struct Hello: Codable, Equatable, Sendable {
@@ -321,6 +322,24 @@ struct ProcessListing: Codable, Equatable, Sendable {
 /// Symmetric in meaning, one direction in implementation — the
 /// process.list precedent: the host asks, the guest serves, and the
 /// host ignores a software.list rather than serving one.
+/// The guest revising the consent answer it gave at `hello`.
+///
+/// Guest-to-host only, unsolicited, and never acknowledged. `hello.agent`
+/// states this once per connection; before this message existed, a person
+/// who set Read Only mid-session went on being driven at the tier they had
+/// just withdrawn until the link was rebuilt.
+///
+/// `agent` is non-optional here and optional in `Hello` on purpose: in a
+/// hello, absence means "this sender predates the field" and must never be
+/// read as consent, whereas a message whose only purpose is to carry the
+/// answer has no reading in which the answer is missing. A malformed one
+/// fails to decode and is dropped by the same path as any other unreadable
+/// control frame, which is the right outcome — better no revision than an
+/// invented tier.
+struct AgentAccess: Codable, Equatable, Sendable {
+    var agent: AgentIntegrationGuestAccess
+}
+
 struct SoftwareList: Codable, Equatable, Sendable {
     var id: Int
     var domain: String
@@ -828,6 +847,8 @@ enum ControlMessageCodec {
         case "software.listing":
             return .softwareListing(
                 try decoder.decode(SoftwareListing.self, from: data))
+        case "agent.access":
+            return .agentAccess(try decoder.decode(AgentAccess.self, from: data))
         default:
             throw ControlMessageError.unknownType(probe.type)
         }
@@ -898,6 +919,7 @@ enum ControlMessageCodec {
         case .processQuit(let m): return try tagged("process.quit", m)
         case .processShot(let m): return try tagged("process.shot", m)
         case .processResult(let m): return try tagged("process.result", m)
+        case .agentAccess(let m): return try tagged("agent.access", m)
         }
     }
 }

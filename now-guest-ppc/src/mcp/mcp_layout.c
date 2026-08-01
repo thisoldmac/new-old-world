@@ -87,7 +87,7 @@ long mcp_answer_line(const McpAnswer *answer, int index, char *out,
     out[0] = '\0';
     switch (index) {
     case 0:
-        snprintf(out, (size_t)cap, "This Mac says \"%s\" when it connects.",
+        snprintf(out, (size_t)cap, "This Mac's answer is \"%s\".",
                  mcp_tier_token(answer->tier));
         break;
     case 1:
@@ -106,17 +106,29 @@ long mcp_answer_line(const McpAnswer *answer, int index, char *out,
         }
         break;
     case 2:
-        /* Only when the two differ. hello is sent once per connection and
-           nothing revises it, so a tier changed since then is this Mac's
-           position and not yet the other Mac's understanding - and saying
-           so is the difference between a switch that works later and a
-           switch that looks broken now. */
-        if (answer->connected && answer->sent_known
-            && answer->sent != answer->tier) {
+        if (!answer->connected) {
+            break;
+        }
+        if (answer->sent_known && answer->sent == answer->tier) {
+            /* The ordinary case now that `agent.access` revises the tier
+               on the link already up. It says TOLD and stops there: no
+               acknowledgement comes back, so "the host is enforcing this"
+               is a claim this Mac is not in a position to make. */
+            strncpy(out, "The Mac on the wire has been told.",
+                    (size_t)cap - 1);
+            out[cap - 1] = '\0';
+        } else if (answer->sent_known) {
+            /* A send that did not fit the control queue. Rare, and worth a
+               line rather than a silence, because the gap between what
+               this page shows and what the host is enforcing is the whole
+               reason the message exists. */
             snprintf(out, (size_t)cap,
-                     "The Mac on the wire was told \"%s\" and hears this "
-                     "at the next connection.",
-                     mcp_tier_token(answer->sent));
+                     "The Mac on the wire was told \"%s\" and has not yet "
+                     "heard this.", mcp_tier_token(answer->sent));
+        } else {
+            strncpy(out, "The Mac on the wire has not been told yet.",
+                    (size_t)cap - 1);
+            out[cap - 1] = '\0';
         }
         break;
     case 3:
