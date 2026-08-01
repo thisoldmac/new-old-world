@@ -178,7 +178,7 @@ final class PhotosCloudProvider: NSObject, CloudProvider,
         }
         switch PHPhotoLibrary.authorizationStatus(for: .readWrite) {
         case .authorized, .limited:
-            let count = (try? assets())?.count ?? 0
+            let count = assets().count
             return CloudServiceEntry(
                 service: service, label: "Photos", state: "serving",
                 detail: "\(count) photo\(count == 1 ? "" : "s")")
@@ -211,7 +211,7 @@ final class PhotosCloudProvider: NSObject, CloudProvider,
 
     /// The cached fetch, (re)built on first use or after a change
     /// notification. Access must already be checked by the caller.
-    private func assets() throws -> PHFetchResult<PHAsset> {
+    private func assets() -> PHFetchResult<PHAsset> {
         if let cachedAssets { return cachedAssets }
         let options = PHFetchOptions()
         options.sortDescriptors = [NSSortDescriptor(
@@ -237,7 +237,7 @@ final class PhotosCloudProvider: NSObject, CloudProvider,
     func list(cursor: Int, limit: Int) throws
         -> (entries: [CloudEntry], more: Bool, next: Int) {
         try requireAccess()
-        let assets = try assets()
+        let assets = assets()
         let start = max(0, cursor - 1)
         guard start < assets.count else {
             return ([], false, assets.count + 1)
