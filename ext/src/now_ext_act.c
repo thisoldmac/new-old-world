@@ -54,6 +54,7 @@
  */
 
 #include <Controls.h>
+#include <Events.h>
 #include <Dialogs.h>
 #include <LowMem.h>
 #include <MacMemory.h>
@@ -465,6 +466,71 @@ static unsigned long act_serve_selftest(NowPeekActCell *cell)
     return kNowPeekActErrNone;
 }
 
+/* ---- posting the click ------------------------------------------------
+ *
+ * THE PLANE POSTS ITS OWN PRESS, and this is the one place NOW's port
+ * diverges from upstream's design rather than merely renaming it.
+ *
+ * Upstream's application posts the click, because upstream's application
+ * is a classic PPC binary. NOW's is CARBON, and PPostEvent and the
+ * low-memory mouse globals are CALL_NOT_IN_CARBON - so the application
+ * literally cannot queue an event whose `where` it controls. That is not
+ * a workaround, it is the better place for it anyway:
+ *
+ *   - The press is queued from INSIDE the target process, at the moment
+ *     of arming, so there is no window between "armed" and "pressed"
+ *     during which a user's own click could arrive first.
+ *   - `where` is stamped on the queue element rather than left to the
+ *     live mouse. The ADB (metal) or emulated mouse VBL can overwrite
+ *     MouseLocation between the set and the application's dequeue, and
+ *     the click would land wherever the real pointer happens to be -
+ *     which for this plane is not a cosmetic bug, because the point IS
+ *     the identity check.
+ *   - Nothing here injects mouse MOTION. Motion is what needed QMP and
+ *     what made a coordinate drag emulator-only; a queued press is an
+ *     ordinary Event Manager call.
+ *
+ * Returns 1 when both events were queued. A refused queue is reported as
+ * its own error rather than as "armed and never taken": nothing was
+ * asked of the application at all, and those are different repairs. */
+static int act_post_click(NowPeekActCell *cell)
+{
+    Point    pt;
+    EvQElPtr down = NULL;
+    EvQElPtr up = NULL;
+
+    if (cell->op == (NowPeekU32)kNowPeekActOpMenu) {
+        /* The menu press and the menu guard are the same point by
+           construction - the guard compares against what we queue. */
+        pt.h = (short)cell->arm_point_h;
+        pt.v = (short)cell->arm_point_v;
+    } else {
+        pt.h = (short)cell->click_h;
+        pt.v = (short)cell->click_v;
+    }
+
+    /* Cosmetic, plus applications that re-read GetMouse. The
+       authoritative location is stamped per event below. */
+    LMSetMouseTemp(pt);
+    LMSetRawMouseLocation(pt);
+    LMSetMouseLocation(pt);
+
+    LMSetMouseButtonState(0x00);              /* button down */
+    if (PPostEvent(mouseDown, 0, &down) != noErr || down == NULL) {
+        LMSetMouseButtonState(0x80);
+        return 0;
+    }
+    down->evtQWhere = pt;
+    down->evtQModifiers = 0;
+    LMSetMouseButtonState(0x80);              /* button up */
+    if (PPostEvent(mouseUp, 0, &up) != noErr || up == NULL) {
+        return 0;
+    }
+    up->evtQWhere = pt;
+    up->evtQModifiers = 0;
+    return 1;
+}
+
 /* ---- the filter's act pass --------------------------------------------
  *
  * Called from now_ext_gne_apply on every GetNextEvent/WaitNextEvent in
@@ -522,8 +588,11 @@ void now_ext_act_apply(NowPeekTable *table)
         break;
     case kNowActServeArmed:
         /* Armed in the target's own context, which proves the target is
-           alive and pumping before any patch goes live. The application
-           now posts the click that makes the app call the trap. */
+           alive and pumping before any patch goes live. Then the click
+           that makes the application call the patched trap. */
+        if (!act_post_click(cell)) {
+            error = kNowPeekActErrPostFailed;
+        }
         break;
     case kNowActServeRefused:
     default:

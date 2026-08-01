@@ -279,7 +279,11 @@ enum {
     kNowPeekActErrBadTe = 9,       /* TEHandle NULL, out of the heap, or
                                       its inPort is not the named window */
     kNowPeekActErrTextKind = 10,
-    kNowPeekActErrNotText = 11     /* the item is not editText/statText  */
+    kNowPeekActErrNotText = 11,    /* the item is not editText/statText  */
+    /* The plane posts its own click - see NowPeekActCell.click_h - and
+       the event queue can refuse it. Distinct from "armed and never
+       taken": nothing was ever asked of the application. */
+    kNowPeekActErrPostFailed = 12
 };
 
 /* How a text request names its object. Every kind requires text_window,

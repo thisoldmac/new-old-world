@@ -132,6 +132,12 @@ run_c now-guest-shared console_history_test.c \
 # discover a comparison was backwards.
 run_c now-guest-shared now_act_guard_test.c \
       "-DNOW_PEEK_TABLE_HOST"  src/now_act_guard.c
+# The six trap trampolines' result-slot ABI, read out of the assembly.
+# A source test, and normally the weakest kind - but a Pascal Boolean
+# answered as 0x0001 writes FALSE while the patch reports firing, and
+# every instrument on our side agrees with it. That failure cannot be
+# executed here and must not be left to a comment.
+run_py now-guest-shared act_patch_abi_source_test.py
 
 echo "== now-guest-ppc (PowerPC Carbon) =="
 run_c now-guest-ppc census_decode_test.c     ""  src/census/census_decode.c
