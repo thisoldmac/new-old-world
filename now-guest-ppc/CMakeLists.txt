@@ -96,6 +96,20 @@ add_application(now-guest-ppc
     src/act/act_client.c
     src/act/act_cmds.c
     ../now-guest-shared/src/now_act_guard.c
+
+    # Two verbs about the machine's own state, folded in from the parked
+    # upstream project (docs/mirror-foldin-inventory.md, wave 3):
+    # `activate`, which fronts a process by the identity an observation
+    # minted rather than by name, and `actselftest`, which is the first
+    # caller the act plane's ABI selftest has ever had. Same split as the
+    # act plane itself - the parse and both verdicts are Toolbox-free and
+    # natively tested; the two .c files that include Carbon decide
+    # nothing.
+    src/machine/mach_activate_args.c
+    src/machine/mach_selftest_report.c
+    src/machine/mach_reply.c
+    src/machine/mach_activate.c
+    src/machine/mach_selftest.c
     resources/app.r
     # The application icon family, generated from the artwork by
     # assets/icons/classic/rez.py and shared with any other target that
