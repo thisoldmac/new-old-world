@@ -74,6 +74,25 @@ static NowScriptStatus prepare(const char *src, long ms, int present)
                               ms, present, &g_req);
 }
 
+/* The result must FIT. Upstream returned 4096 bytes down a socket it
+   owned; NOW's command.result is built in a 3072-byte buffer in
+   src/core/wire.c, and an output that does not fit is not truncated
+   politely - it is cut by the serializer at whatever byte ran out and
+   sent as if it were whole. This is arithmetic rather than a
+   measurement, and that is the point: it is the kind of number that
+   drifts silently, so it fails here instead. */
+static void test_reply_budget(void)
+{
+    check(kNowScriptEscMax + kNowScriptRowOverhead <= kNowScriptReplyBudget,
+          "the escaped result plus the envelope fits wire.c's result buffer");
+    check(kNowScriptOutMax <= kNowScriptEscMax,
+          "a result that escapes 1:1 - which ASCII AppleScript output does - "
+          "always fits without truncation");
+    check(kNowScriptOutMax < 4096,
+          "and it is NOT upstream's 4096, deliberately: that number was "
+          "measured against a guest with a whole socket to write to");
+}
+
 static void test_clamp(void)
 {
     check(now_script_clamp_ms(0, 0) == kNowScriptDefaultMs,
@@ -293,6 +312,7 @@ static void test_ae_gate(void)
 
 int main(void)
 {
+    test_reply_budget();
     test_clamp();
     test_source_bounds();
     test_wrapping_and_line_endings();

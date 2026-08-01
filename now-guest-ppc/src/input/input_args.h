@@ -25,12 +25,25 @@
 
 /* ---- script ----------------------------------------------------------
 
-   Sizes are upstream's (timbottu/mirror, verb_script), which is where
-   they were measured against a real OSA component; they are carried as
-   facts, not re-derived. */
+   The source size is upstream's (timbottu/mirror, verb_script), which is
+   where it was measured against a real OSA component; it is carried as a
+   fact, not re-derived.
+
+   THE RESULT SIZE IS NOT UPSTREAM'S, and the difference is a NOW fact
+   rather than a preference. Upstream returned 4096 bytes because its
+   guest wrote one newline-terminated line straight to a socket. NOW's
+   command.result is assembled in a 3072-byte buffer in
+   src/core/wire.c (`char result[3072]`), so a 4096-byte output could
+   not be delivered - it would be silently cut by the serializer, at
+   whatever byte the buffer ran out, and reported as a whole answer.
+   The budget below is stated so that a later change to either number
+   fails a test rather than a machine. */
 enum {
     kNowScriptSrcMax = 2048,       /* source bytes accepted from the host */
-    kNowScriptOutMax = 4096,       /* result bytes returned, pre-escape */
+    kNowScriptOutMax = 1024,       /* result bytes returned, PRE-escape */
+    kNowScriptEscMax = 2560,       /* the same result, JSON-escaped */
+    kNowScriptReplyBudget = 3072,  /* src/core/wire.c's result buffer */
+    kNowScriptRowOverhead = 256,   /* envelope + the other rows, generously */
     kNowScriptWrapExtra = 64,      /* room for the `with timeout` wrapper */
     kNowScriptWrapMax = kNowScriptSrcMax + kNowScriptWrapExtra,
     kNowScriptMinMs = 500,
