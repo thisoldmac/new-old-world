@@ -119,6 +119,68 @@ static const char *const d_quit[] = {
     NULL
 };
 
+/* --- the act plane (P4) ------------------------------------------------
+   Six commands, one mechanism, and one rule that shapes all of them:
+   every act names ONE element by an opaque reference this Mac minted,
+   revalidated here against a live element before anything is
+   dispatched, and none of them can express "whatever is frontmost".
+   That refusal is a measurement rather than taste - a sibling project's
+   request that merely disarmed after one use rode a real user's press
+   18 times in 20, while the variant that had to name its exact target
+   rode it 0 times in 20.
+
+   And what they do not claim: an ok reply means the event was handed to
+   the application's own path. Never that the window moved or the text
+   changed. Read it back to learn that. */
+static const char *const d_elements[] = {
+    "  Mints the references the other five take. Nothing else can:",
+    "  a reference is short-lived, opaque, and only ever one this Mac",
+    "  made for something it saw.",
+    "  Defaults to the frontmost application; serialHi/serialLo name",
+    "  another. NOT TYPEABLE in any useful way - the output is",
+    "  references no human has.",
+    NULL
+};
+static const char *const d_winact[] = {
+    "  Answers the owning application's own FindWindow, so it does what",
+    "  it would have done had a person dragged the window. No mouse is",
+    "  simulated and no emulator is involved.",
+    "  move and resize carry their own geometry; zoom and close carry",
+    "  none. close is DESTRUCTIVE and does not promise the window",
+    "  closes - it promises the application was asked, exactly as a",
+    "  user clicking the close box asks. An unsaved document answers",
+    "  with a save dialog and the window stays open. That is correct.",
+    NULL
+};
+static const char *const d_textget[] = {
+    "  The only third of the act plane that changes nothing, which is",
+    "  why it is its own command: a Mac whose owner agreed to be read",
+    "  can serve this while refusing the two that drive it.",
+    "  Says whether the element held more than the reply could carry.",
+    NULL
+};
+static const char *const d_textset[] = {
+    "  A replacement, not an edit: no offset and no append form,",
+    "  because an offset into text the caller has not read is a write",
+    "  it cannot predict.",
+    NULL
+};
+static const char *const d_ctlact[] = {
+    "  Answers the application's own TrackControl with the part code",
+    "  you name, so the application runs its real mouse-down handler.",
+    "  Button parts are 10 and 11; a scroll bar's are 20 up, 21 down,",
+    "  22 page-up, 23 page-down, and 129 is the indicator.",
+    NULL
+};
+static const char *const d_menuact[] = {
+    "  Answers the application's own MenuSelect, so a menu item with no",
+    "  keyboard shortcut becomes reachable. No menu is drawn.",
+    "  titleLeft is where the press will land, and it is this act's",
+    "  identity check: a menu carries no handle to name, so a press",
+    "  anywhere else is somebody else's and chains through.",
+    NULL
+};
+
 static const char *const d_front[] = {
     "  The name is the whole rest of the line and there",
     "  are no flags. Names it by what \"ps\" shows.",
@@ -235,6 +297,19 @@ const NowCommandDoc kNowCommandDocs[] = {
       "reveal <name | full path | #n>", d_reveal },
     { "vers", 1, "one file's version resources",
       "vers <name | full path | #n>", d_vers },
+    { "elements", 1, "name this Mac's on-screen elements, so they can "
+      "be acted on",
+      "elements [serialHi serialLo]", d_elements },
+    { "winact", 1, "move, resize, zoom or close one window",
+      "winact <window> <action> [geometry]", d_winact },
+    { "textget", 1, "read one text element's contents",
+      "textget <element>", d_textget },
+    { "textset", 1, "replace one text element's contents",
+      "textset <element> <text>", d_textset },
+    { "ctlact", 1, "act on one control",
+      "ctlact <element> <part>", d_ctlact },
+    { "menuact", 1, "perform one menu command",
+      "menuact <menu> <item> <titleLeft>", d_menuact },
     { "help", 1, "list commands (\"help <cmd>\" for one)",
       "help [command]", d_help },
     { "clear", 0, "clear the console scrollback",

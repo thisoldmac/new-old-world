@@ -17,6 +17,11 @@ project(NowExtension C ASM)
 # The shared table contract, compiled here exactly as the app and the
 # host test compile it - the whole point of one header.
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../contract)
+# The act plane's decisions live in now-guest-shared so that the host cc
+# compiles the SAME file the extension does. It is the one part of a
+# resident component a native test can reach, and the guard it holds is
+# the plane's whole safety argument - see now_act_guard.h.
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../now-guest-shared/src)
 
 # The content plane (P3) is two translation units on purpose, and the
 # split is the charter's ("planes talk only through the core", and
@@ -29,7 +34,13 @@ add_executable(NowExt
     src/now_ext.c
     src/now_ext_gne.S
     src/now_content.c
-    src/now_content_logic.c)
+    src/now_content_logic.c
+    # P4, the act plane: its own translation unit and its own six trap
+    # trampolines. Separate files, no cross-plane calls - review enforces
+    # what tbt's sibling INIT binaries used to.
+    src/now_ext_act.c
+    src/now_ext_act_patch.S
+    ../now-guest-shared/src/now_act_guard.c)
 
 # -mcpu=68000: the extension must run on the whole 8.6-9.2.2 range,
 # including 68K-emulated PowerPC. Flat code resource, GC'd, with a map.

@@ -84,6 +84,18 @@ add_application(now-guest-ppc
     src/observe/obsref.c
     src/observe/obsresolve.c
     src/observe/observe.c
+
+    # P4, the act plane's application half. act_ref.c and act_args.c are
+    # Toolbox-free and natively tested; act_client.c is the thin Toolbox
+    # layer; act_cmds.c is the six commands. now_act_guard.c is SHARED
+    # with the 68K extension - one file, both sides of the seam, which is
+    # what lets the host cc test the guard that runs inside other
+    # people's applications.
+    src/act/act_ref.c
+    src/act/act_args.c
+    src/act/act_client.c
+    src/act/act_cmds.c
+    ../now-guest-shared/src/now_act_guard.c
     resources/app.r
     # The application icon family, generated from the artwork by
     # assets/icons/classic/rez.py and shared with any other target that

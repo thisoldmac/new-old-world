@@ -2753,6 +2753,138 @@ components:
         properties:
           textset: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
 
+    # The other half of the act plane, declared 2026-07-31 WITH a guest
+    # that serves them. These three complete the mechanism the three
+    # above depend on and cannot do without:
+    #
+    #   elements is the observation that MINTS the references the other
+    #   five take. Without it the plane has no legal argument to send,
+    #   and the only remaining way to address anything would be "the
+    #   frontmost one" - the target-free form this plane refuses on the
+    #   strength of a measurement.
+    #
+    #   ctlact and menuact are the same mechanism aimed at the other two
+    #   things a person clicks. They are here rather than deferred
+    #   because both are complete on the guest; the host rows that
+    #   project them are owed, and a command a host does not yet project
+    #   is an ordinary state for this file - the reverse of the three
+    #   above, which were declared ahead of any guest.
+    elements:
+      description: >
+        Name this Mac's on-screen elements, so that they can be acted
+        on. Answers with an opaque, short-lived reference for each
+        window, control and text field the walk can read, plus enough
+        of the element's own title to tell them apart.
+
+        Nothing else can produce these references, and that is the
+        point rather than an inconvenience: an act addresses an element
+        this Mac observed and revalidated, never a pointer a caller
+        supplied and never "whatever is frontmost".
+
+        Defaults to the frontmost application. A reference ages out of
+        a bounded table; one that has been recycled reads the same as
+        one whose window closed, and both are true.
+      args:
+        type: object
+        properties:
+          serialHi:
+            type: integer
+            description: The process to observe. Omit for the frontmost.
+          serialLo:
+            type: integer
+      x-line: >
+        NOT TYPEABLE usefully. It takes no arguments a person has and
+        answers with references no person can read.
+      output:
+        type: object
+        properties:
+          elements: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    ctlact:
+      description: >
+        Act on ONE control, by answering the owning application's own
+        TrackControl with the part code named. The application then
+        runs its real mouse-down handler, and a control that policed
+        its own behaviour keeps policing it.
+
+        The request must name the control, and that requirement is a
+        measurement rather than a preference: upstream's variant that
+        merely disarmed after one use rode a real user's press 18 times
+        in 20, and the variant that had to name its exact target rode
+        it 0 in 20.
+
+        An ok reply means the event was dispatched. A control with a
+        live range also carries its re-read position, because for those
+        the machine itself can be quoted; a push button has no such
+        range and gets no such row.
+      args:
+        type: object
+        required: [element, part]
+        properties:
+          element:
+            type: string
+            description: >
+              The opaque reference, "now-element-" and a UUID, minted
+              by elements and revalidated by the responder.
+          part:
+            type: integer
+            description: >
+              A Control Manager part code. The button parts are 10 and
+              11; a scroll bar's are 20 up, 21 down, 22 page-up, 23
+              page-down; 129 is the indicator.
+      x-line: >
+        NOT TYPEABLE. Same reason as winact: the argument is a
+        reference no human has.
+      output:
+        type: object
+        properties:
+          ctlact: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+    menuact:
+      description: >
+        Perform ONE menu command, by answering the owning
+        application's own MenuSelect. No menu is drawn, no tracking
+        loop runs, and nothing depends on mouse motion or timing - so
+        an item with no keyboard shortcut becomes reachable. An item
+        that HAS one should still go through key: it is simpler and
+        needs no patch at all.
+
+        titleLeft is where the press will land, and it is this act's
+        identity check. A menu press carries no handle to name, so the
+        identity checked is the press itself: a press anywhere else
+        belongs to the person at the machine and is passed through
+        untouched.
+
+        An ok reply means the application's MenuSelect returned this
+        item. What its command handler then did is the caller's to
+        verify against this Mac's own state.
+      args:
+        type: object
+        required: [menu, item, titleLeft]
+        properties:
+          menu:
+            type: integer
+            description: The menu's id, as the scene reports it.
+          item:
+            type: integer
+            description: Its 1-based position in that menu.
+          titleLeft:
+            type: integer
+            description: >
+              The x of that menu's title in the menu bar. Required,
+              not derived: without it there is no way to tell this
+              act's press from the user's.
+          serialHi:
+            type: integer
+            description: The application. Omit for the frontmost.
+          serialLo:
+            type: integer
+      x-line: >
+        NOT TYPEABLE. The identity check is a coordinate the scene
+        supplies, not one a person types.
+      output:
+        type: object
+        properties:
+          menuact: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+
   # The census probe registry: the CLOSED, DECLARED set of probes a side may
   # be asked about, and the outcome vocabulary every report speaks. Adding a
   # probe is additive (an older peer answers outcome "refused",

@@ -1,4 +1,6 @@
 #include "commands.h"
+
+#include "act_cmds.h"
 #include "nowlog.h"
 
 #include <Carbon.h>
@@ -1292,6 +1294,35 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "vers") == 0) {
         run_vers(request_json, id, out, cap);
+        return;
+    }
+    /* The act plane (P4). Six commands, one mechanism: an element this
+       Mac observed, revalidated here before anything is dispatched, and
+       a reply that claims the event went and never that it worked. The
+       handlers live in src/act/ rather than here because the plane is
+       its own domain with its own Toolbox-free half - see act_cmds.h. */
+    if (strcmp(name, "elements") == 0) {
+        now_act_run_elements(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "winact") == 0) {
+        now_act_run_winact(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "textget") == 0) {
+        now_act_run_textget(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "textset") == 0) {
+        now_act_run_textset(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "ctlact") == 0) {
+        now_act_run_ctlact(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "menuact") == 0) {
+        now_act_run_menuact(request_json, id, out, cap);
         return;
     }
     snprintf(out, cap,
