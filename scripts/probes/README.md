@@ -15,6 +15,15 @@ separate, attended decision. Every claim in this directory is about what the
 code *says*, and where a number appears it is upstream's, taken on upstream's
 machine.
 
+> **The ledger below was re-derived on 2026-07-31** against the guest's
+> registered verb set, after six verbs that had been built and dispatched by
+> nothing (`mouseloc`, `script`, `aesend`, `qdtrace`, `activate`,
+> `actselftest`) were registered. Every "refuses on `observe`" verdict in the
+> previous version was stale — `observe` has been served since the reference
+> layer landed. What is left is stated per harness, and none of it is a
+> missing verb. Reading order and what an emulator run can and cannot settle:
+> [../../docs/emu-readiness.md](../../docs/emu-readiness.md).
+
 ## Why the port is not a transliteration
 
 Two things did not survive the crossing, and pretending otherwise would have
@@ -66,19 +75,24 @@ Every script in `mirror/tests/`, with its verdict.
 
 ### Ported
 
-| upstream | here | verdict | needs from NOW |
+| upstream | here | verdict | what stands between it and a number |
 |---|---|---|---|
-| `nohijack-probe.py` (50 KB) | `nohijack-probe.py` | **refuses** | `observe`, `mouseloc`, `ctlact`, `menuact` (`textget`/`textset` for its text case). Its menu cases have a second, non-name blocker: `observe` emits no menu bar, and `menuact` wants a menu **id** where this file passes a ref |
+| `nohijack-probe.py` (50 KB) | `nohijack-probe.py` | **3 of 6 cases run** | Every verb it names is served. `control`, `text` and `baseline` need only a machine and the right window in front. `menu`, `stale` and `window` need a MENU BAR, which `observe` does not report and deliberately will not: the menu bar is a scene, and `scene_walk.c` already walks it over `scene.request`. They are waiting on a scene read in this harness — see the note in `case_menu` |
 | `trials.py` | `nowwire.py` + `tally.py` | **split** | the client half rewritten for NOW's transport; the **counting half ported wholesale and tested** |
-| `textops-probe.py` | `textops-probe.py` | **refuses** | `observe` only — `textget`/`textset` are already declared in NOW's contract |
-| `textops-explore.py` | `textops-explore.py` | **refuses** | `observe`, `textget` |
-| `ctlinvoke-probe.py` | `ctlinvoke-probe.py` | **gated on `observe`** | `observe`, and `ctlact` — which NOW serves. The filename and the result label keep upstream's spelling; only `ACT_VERB` moved |
-| `winact-probe.py` | `winact-probe.py` | **refuses** | `observe` only — `winact` is declared, with its exact args |
-| `apple-event-probe.py` | `apple-event-probe.py` | **gated on `observe`** | `observe`, and `aesend` — NOW's spelling of the general event verb, addressed by `serialHi`/`serialLo` rather than upstream's `psn` string. Its `dirty` case additionally has no way to dirty a document and says so |
-| `g1-probe.py` | `g1-probe.py` | **runs (2 of 3 cases)** | `stamp` and `launch` run today. `menus` needs `observe` |
-| `h2-trials.py` + `h2-scroll.py` | `h2-items-probe.py` | **refuses** | a positional click — the last of its three blockers. `script`, `observe` and `mouseloc` all exist; `mouseloc` was missing from its gate until 2026-07-31 and would have died mid-trial rather than refusing at the top |
-| `drive-sequence.py` | `drive-sequence.py` | **gated on `observe`** | `observe`, `winact`, `ctlact`, `launch`, `ps`. All-or-nothing by design |
+| `textops-probe.py` | `textops-probe.py` | **runs** | nothing. `observe`, `textget` and `textset` are all served |
+| `textops-explore.py` | `textops-explore.py` | **runs** | nothing. `observe` and `textget` are served |
+| `ctlinvoke-probe.py` | `ctlinvoke-probe.py` | **runs** | nothing. `observe` and `ctlact` are served. The filename and the result label keep upstream's spelling; only `ACT_VERB` moved |
+| `winact-probe.py` | `winact-probe.py` | **runs** | nothing. `observe` and `winact` are served, and this harness was already written against `winact`'s declared argument shape |
+| `apple-event-probe.py` | `apple-event-probe.py` | **runs, less one case** | `observe` and `aesend` are served — `aesend` since 2026-07-31, addressed by `serialHi`/`serialLo` rather than upstream's `psn` string. Its `dirty` case still has no way to dirty a document and says so |
+| `g1-probe.py` | `g1-probe.py` | **2 of 3 cases run** | `stamp` needs no verb at all and `launch` needs `launch`/`ps`. `menus` reads `observe`'s menu bar and hits the same wall as `nohijack`'s three — same reason, same fix |
+| `h2-trials.py` + `h2-scroll.py` | `h2-items-probe.py` | **runs on an emulator; refuses on metal** | `script`, `observe` and `mouseloc` are all served, and `--qmp` is required, so the computed click has a mechanism on QEMU. On METAL there is no QMP socket and NOW has no click verb, so there is no trial to score there. (Its own gate note claimed there was no click path at all, while requiring and calling one; corrected 2026-07-31) |
+| `drive-sequence.py` | `drive-sequence.py` | **runs** | nothing. `observe`, `winact`, `ctlact`, `launch` and `ps` are all served. All-or-nothing by design, so it is the one that reports on the whole act plane in order |
 | `h2-trials-result.json`, `p2-*.json` | `upstream/` | **preserved verbatim** | — see `upstream/PROVENANCE.md` |
+
+**None of these has been run against anything.** "Runs" here means its verb
+gate passes and its trial bodies have a machine-shaped path to a number — it
+does not mean a number exists. Everything in this directory is still
+unmeasured by NOW.
 
 ### Not ported
 
