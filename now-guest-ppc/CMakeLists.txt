@@ -44,6 +44,7 @@ add_application(now-guest-ppc
     src/census/census_report.c
     src/files/files_module.c
     src/files/files_browser_view.c
+    src/files/files_path_label.c
     src/files/files_share_view.c
     src/files/files_pull.c
     src/workshop/confirm.c

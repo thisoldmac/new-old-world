@@ -33,6 +33,16 @@ final class HostShare {
         set { defaults.set(newValue.path, forKey: Self.key) }
     }
 
+    /// The share as a person at the other machine should hear it named:
+    /// the Finder's display name ("iCloud Drive", "Downloads"), not the
+    /// POSIX path underneath it. It rides file.listing's display-only
+    /// `root` field, so it is projected the way every name we send is —
+    /// into characters the classic side can actually draw.
+    var rootDisplayName: String {
+        OutboundFile.hfsName(
+            FileManager.default.displayName(atPath: root.path))
+    }
+
     /// One error, mapped once. Two envelopes carry it — file.refuse for
     /// a request we will not serve, file.result for a change that
     /// failed — and both used to re-derive the same two expressions,
@@ -164,7 +174,8 @@ final class HostShare {
         for entry in entries {
             let candidate = page + [entry]
             let probe = FileListing(id: 0, path: path, entries: candidate,
-                                    more: true, cursor: 0, root: root.path)
+                                    more: true, cursor: 0,
+                                    root: rootDisplayName)
             let size = (try? ControlMessageCodec.encode(.fileListing(probe)))?
                 .count ?? Int.max
             if !page.isEmpty && size > maxListingBytes { break }

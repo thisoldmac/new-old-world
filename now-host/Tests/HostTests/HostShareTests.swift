@@ -169,6 +169,30 @@ final class HostShareTests: XCTestCase {
             .entries.count, 1)
     }
 
+    /// file.listing's `root` is how the other machine names the place
+    /// it is browsing. A person recognises "iCloud Drive"; nobody
+    /// recognises /Users/me/Library/Mobile Documents/com~apple~CloudDocs,
+    /// and the classic side would have to draw every byte of it.
+    func testRootIsNamedForAPersonNotAsAPath() {
+        XCTAssertEqual(share.rootDisplayName,
+                       FileManager.default.displayName(atPath: root.path))
+        XCTAssertFalse(share.rootDisplayName.contains("/"),
+                       "a display name, not a POSIX path")
+        XCTAssertFalse(share.rootDisplayName.isEmpty)
+    }
+
+    /// The name rides the wire to a machine that draws MacRoman, so it
+    /// gets the same projection every outbound name gets.
+    func testRootNameIsMacRomanExpressible() throws {
+        let fancy = root.appendingPathComponent("Docs \u{2192} 2026")
+        try FileManager.default.createDirectory(
+            at: fancy, withIntermediateDirectories: false)
+        share.root = fancy
+        XCTAssertNotNil(share.rootDisplayName.data(using: .macOSRoman),
+                        "every character must survive the trip")
+        XCTAssertFalse(share.rootDisplayName.contains("\u{2192}"))
+    }
+
     func testListingAFileIsRefused() throws {
         try write("Notes.txt")
         XCTAssertThrowsError(try share.list(path: "Notes.txt", cursor: 1,

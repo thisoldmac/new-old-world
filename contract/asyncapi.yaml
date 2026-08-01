@@ -1352,11 +1352,11 @@ components:
         root:
           type: string
           description: >
-            What the responder is sharing, as that machine would write
-            it ("Macintosh HD:Lab:", "/Users/me/Downloads"). Display
-            only — never a path to send back, since everything on the
-            wire is relative to this. Sent with the root listing so the
-            asker can name the place it is looking at instead of
+            What the responder is sharing, as that machine would name
+            it to a person ("Macintosh HD:Lab:", "iCloud Drive").
+            Display only — never a path to send back, since everything
+            on the wire is relative to this. Sent with the root listing
+            so the asker can name the place it is looking at instead of
             calling it "the share".
     ProcessList:
       type: object

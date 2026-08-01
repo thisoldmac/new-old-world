@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "files_path_label.h"
 #include "wire.h"
 
 enum {
@@ -503,13 +504,7 @@ Boolean files_browser_stop_pull(char *err, long cap)
 
 void files_browser_path_text(char *out, long cap)
 {
-    if (g_path[0] == '\0') {
-        snprintf(out, (size_t)cap, "%.60s",
-                 g_root[0] != '\0' ? g_root : "Shared folder");
-    } else {
-        snprintf(out, (size_t)cap, "%.60s%.100s",
-                 g_root[0] != '\0' ? g_root : "", g_path);
-    }
+    now_files_path_label(g_root, g_path, out, cap);
 }
 
 void files_browser_count_text(char *out, long cap)
