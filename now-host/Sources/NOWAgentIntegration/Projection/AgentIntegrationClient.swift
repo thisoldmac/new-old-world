@@ -371,10 +371,25 @@ extension AgentIntegrationClient {
        OUTCOME is unchanged and deliberately so: typed `unavailable`, never
        a refusal and never an empty success.
 
-       These stay defaults, and no conformer overrides one, because there is
-       still no host lane to carry an act. The day one lands, the local
-       client implements the three and these defaults keep the stub
-       conformers in the test tree compiling. */
+       CORRECTED 2026-08-01 — the last paragraph used to read "these stay
+       defaults, and no conformer overrides one, because there is still no
+       host lane to carry an act. The day one lands, the local client
+       implements the three and these defaults keep the stub conformers in
+       the test tree compiling."
+
+       That day is this one, and the sentence held exactly as written: the
+       local protocol grew `window_act`, `control_act`, `menu_act`,
+       `text_get` and `text_set`; `AgentIntegrationLocalClient` implements
+       all five; and `SocketAgentIntegrationClient` overrides them. These
+       bodies are now the answer for the SEVEN STUB CONFORMERS ONLY, which
+       is what they were reserved for, and `noActLane` is no longer reachable
+       from the real local client.
+
+       They are kept rather than deleted for that reason, and the reason is
+       worth stating because "no host lane" now reads like stale text: a stub
+       named for another capability has no host at all, and a requirement
+       without a default is seven compile errors in seven files. What a stub
+       must NOT answer is an empty success. */
 
     public func windowAct(
         _ request: AgentIntegrationWindowActRequest
