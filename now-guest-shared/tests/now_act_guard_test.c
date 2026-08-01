@@ -479,6 +479,40 @@ static void test_plane_state(void)
                "a different major is never partially trusted");
 }
 
+/* ---- the bypass switch ----------------------------------------------- */
+
+static void test_bypass(void)
+{
+    NowPeekTable table;
+
+    check(now_act_armed_cell(NULL) == NULL, "no table, no cell");
+
+    memset(&table, 0, sizeof table);
+    table.magic = (NowPeekU32)kNowPeekTableMagic;
+    check(now_act_armed_cell(&table) == NULL,
+          "a disarmed plane hands out nothing - every trap chains through");
+
+    table.arm_request = kNowPeekTableCapAnchors;
+    check(now_act_armed_cell(&table) == NULL,
+          "arming the ANCHOR plane does not arm this one");
+
+    table.arm_request = kNowPeekTableCapAnchors | kNowPeekTableCapAct;
+    check(now_act_armed_cell(&table) == &table.act,
+          "an armed plane hands out its cell");
+
+    /* arm_request, not arm_active: turning the plane off must not wait
+       for the target process to pump. */
+    table.arm_active = kNowPeekTableCapAct;
+    table.arm_request = 0;
+    check(now_act_armed_cell(&table) == NULL,
+          "disarming is immediate, and does not consult arm_active");
+
+    table.arm_request = kNowPeekTableCapAct;
+    table.magic = 0;
+    check(now_act_armed_cell(&table) == NULL,
+          "a block that is not a table is never a cell");
+}
+
 /* ---- the text ops' identity check ------------------------------------ */
 
 /* A synthetic window list: index i links to i+1, and the seam is what
@@ -596,6 +630,7 @@ int main(void)
     test_trap_hits();
     test_serve_begin();
     test_plane_state();
+    test_bypass();
     test_window_is_ours();
     test_handle_bounds();
     test_item_type();

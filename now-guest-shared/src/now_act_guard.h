@@ -56,6 +56,26 @@ enum {
  * too-short table reads exactly like an idle one. */
 int now_act_plane_state(const NowPeekTable *table);
 
+/* ---- the bypass switch -------------------------------------------------
+ *
+ * The act plane's cell, but ONLY while the application has the plane
+ * armed. Returns NULL otherwise, and every patch and the filter's serve
+ * path start here - so with the plane disarmed each of them is a load
+ * and a branch, and every MenuSelect / TrackControl / FindWindow in the
+ * system reaches the real trap exactly as it would with no extension
+ * installed.
+ *
+ * It reads arm_request - the one word the APPLICATION writes - rather
+ * than arm_active, and that is deliberate: turning the plane off has to
+ * be immediate and must not depend on the target process being alive,
+ * frontmost, or pumping its event loop. A safety switch that needs the
+ * thing it is protecting you from to cooperate is not a safety switch.
+ *
+ * The patches themselves are never removed. A patch that vanishes while
+ * a caller is inside it is worse than one that stays; disarming makes
+ * every one of them chain through instead. */
+NowPeekActCell *now_act_armed_cell(NowPeekTable *table);
+
 /* ---- the serve decision -----------------------------------------------
  *
  * What the filter should do about the pending request, decided before it

@@ -41,6 +41,17 @@ int now_act_plane_state(const NowPeekTable *table)
     return kNowActPlaneReady;
 }
 
+NowPeekActCell *now_act_armed_cell(NowPeekTable *table)
+{
+    if (table == NULL || table->magic != (NowPeekU32)kNowPeekTableMagic) {
+        return NULL;
+    }
+    if ((table->arm_request & (NowPeekU32)kNowPeekTableCapAct) == 0) {
+        return NULL;                    /* bypassed: behave as if absent */
+    }
+    return &table->act;
+}
+
 /* Does the cell name a patch that exists? A sub-op whose patch was never
    installed is refused here rather than armed: an arm that can never
    fire produces a timeout, and a timeout names the wrong repair. */

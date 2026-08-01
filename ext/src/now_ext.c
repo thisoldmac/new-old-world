@@ -51,6 +51,10 @@ GetNextEventFilterUPP gNowExtOldGNEFilter = NULL;
 /* The assembly shim (now_ext_gne.S), tail-chained onto jGNE. */
 extern void now_ext_gne_filter(void);
 
+/* The act plane (now_ext_act.c), P4. Declared rather than included: the
+   core knows one entry point and nothing else about it. */
+extern void now_ext_act_apply(NowPeekTable *table);
+
 /* Fast-path cache: consecutive GetNextEvent calls are usually the same
    front app, so an A5 match skips the slot scan. Lives in the resident
    relocated BSS (fixed system-heap address), valid from any context. */
@@ -211,6 +215,23 @@ void now_ext_gne_apply(void)
     } else if (table->arm_active & kNowPeekTableCapAnchors) {
         table->arm_active &= ~(NowPeekU32)kNowPeekTableCapAnchors;
     }
+    /* P4, the act plane. Its own translation unit, reached only from
+       here - planes talk through the core and never to each other
+       (docs/resident-components.md). Disarmed, this costs the same load
+       and branch the anchor arm above costs; the plane's own first act
+       is to return when no request names the process we are running as.
+
+       The arm bit does more work here than it does for P1: it is also
+       the plane's bypass switch, so clearing it makes six trap patches
+       chain straight through. The patches themselves are installed on
+       the first armed pass and never removed - a patch that vanishes
+       while a caller is inside it is a jump into freed code. */
+    if (table->arm_request & kNowPeekTableCapAct) {
+        now_ext_act_apply(table);
+        table->arm_active |= kNowPeekTableCapAct;
+    } else if (table->arm_active & kNowPeekTableCapAct) {
+        table->arm_active &= ~(NowPeekU32)kNowPeekTableCapAct;
+    }
 }
 
 /* Gestalt hands any caller the table's address. Uses a real UPP
@@ -254,15 +275,25 @@ void _start(void)
        covers the whole table; the app still trusts an individual slot
        only when the plane is armed and the slot's stamp is fresh. */
     table->length = (NowPeekU32)sizeof(NowPeekTable);
-    /* P1 is AVAILABLE but dark: advertised in caps, captured nothing
-       until the app writes arm_request. */
-    table->caps = kNowPeekTableCapAnchors;
+    /* P1 and P4 are AVAILABLE but dark: advertised in caps, and neither
+       captures nor patches anything until the app writes arm_request.
+       Capabilities are bits and never inferred from a version, which is
+       what lets a plane ship in a binary before it has earned metal
+       verification - and P4 has not. */
+    table->caps = kNowPeekTableCapAnchors | kNowPeekTableCapAct;
     table->boot_ticks = (NowPeekU32)LMGetTicks();
     table->heartbeat = table->boot_ticks;
     table->arm_request = 0;
     table->arm_active = 0;
     table->anchor_format = kNowPeekAnchorFormatV3;
     table->anchor_count = 0;
+    /* P4's own format word, and the buffer size THIS binary allocated.
+       Both are what an application gates on before it writes a request:
+       an extension that predates the plane reports a shorter `length`,
+       and the application refuses rather than writing off the end of a
+       system-heap block it did not size. */
+    table->act_format = kNowPeekActFormatV1;
+    table->act_text_max = (NowPeekU16)kNowPeekActTextMax;
     /* Magic last: a reader that somehow sees the address early finds it
        only once the table is fully formed. */
     table->magic = (NowPeekU32)kNowPeekTableMagic;
