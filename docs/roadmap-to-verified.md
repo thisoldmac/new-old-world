@@ -1,6 +1,7 @@
 # The road from *tested* to *verified*
 
-**Date:** 2026-07-31 · **Status:** plan, nothing built against it yet
+**Date:** 2026-07-31, **revised 2026-08-01** · **Status:** phases 1 and 2
+done; **phase 3 has not started**
 
 The parity + Mirror fold-in slice landed on `main` at `495f7b1`. It is green —
 1130 host tests, 48 native tests, three guest cross-builds — and **not one line
@@ -9,6 +10,52 @@ product that has actually met the machines it claims to drive.
 
 Four phases, in dependency order. Phase 2 can start now; the rest are sequenced
 because each one's failures would invalidate work in the next.
+
+## Where this stands, 2026-08-01
+
+| Phase | State |
+|---|---|
+| 1 — the honest gaps | **done** 2026-07-31 |
+| 2 — finish the MirrorKit port | **done** 2026-07-31, and it grew two things it did not plan for |
+| 3 — the emulator pass | **not started.** The next thing to happen |
+| 4 — the metal pass | not started |
+
+**The sentence that has not changed since this document was written:**
+*not one line of it has run on a Macintosh.* Over 400 commits later, that
+is still exactly true. The only metal-verified things in this product —
+`now_capture_screen` and the four addressing outcomes, both on the PB1400c
+on **2026-07-29** — predate the whole arc.
+
+**Gates as of this revision:** 3/3 guest cross-builds, **69 native tests**,
+0 failures. Verified today by running them.
+
+### Two things landed after Phase 2 closed
+
+Neither was in the plan; both change what Phase 3 will see.
+
+- **The act lane.** `MirrorActionDriver` plus
+  `AgentIntegrationActControl` — the act rows go out to a guest instead of
+  answering `now-act-lane-absent`, and an act does not queue behind an
+  open stream bracket.
+- **Scene references.** The guest emits `windows[].ref` and
+  `windows[].controls[].ref`, minted by the observation layer, bounded by
+  a registry epoch, valid for the guest session. A scene that named menus
+  and controls and had nothing clickable in it now names what an act can
+  address.
+
+### What is still owed, and Phase 3 does not close it
+
+**The pane.** The act path is built end to end and nothing joins a
+person's click to it: hit-testing has no caller outside the tests, the
+driver has no caller at all, and both host models discard
+`windows[].ref`. So **an agent can drive a Macintosh through MCP and a
+person cannot drive it by clicking the picture of it.**
+
+This is deliberately *not* a Phase 3 item. Phase 3 asks whether the
+mechanism works on a machine; the pane is the affordance on top of a
+mechanism nobody has watched work. Building it first would be building an
+interface to an unproven thing. Full write-up:
+[open-issues.md](open-issues.md), "The last functional gap".
 
 ---
 
@@ -144,10 +191,30 @@ lane screenshots and file transfers share. Two resting states were added
 scene from a Macintosh — the whole path is exercised against a fake guest on
 loopback.
 
-## Phase 3 — the emulator pass
+## Phase 3 — the emulator pass — **not started, and next**
 
 **What it is for:** structure, not truth. It catches the things that are broken
 everywhere before a scarce machine is booked, and it is free.
+
+> **[emu-readiness.md](emu-readiness.md) is the operator's page and it
+> wins.** It was written after this section, against the harnesses that
+> now exist, and it carries the runnable order (eight steps, with the
+> commands), which harness settles what, and the four preconditions before
+> the extension is installed anywhere. The six rungs below are the
+> *what-each-one-decides* view and are kept for that. **If the two orders
+> ever disagree, follow the operator page** — two orders for one pass is
+> the drift this repository refuses elsewhere, and this note is the fence
+> until one of them is deleted.
+>
+> Three things that page knows and this section predates:
+> - **The harnesses already exist and are ported** — nine of them, in
+>   `scripts/probes/`. This section was written as though the pass needed
+>   authoring.
+> - **Every one of them is PowerPC-only.** NOW-68K serves 13 verbs and has
+>   no act plane, no reference layer and no scene plane, so exactly two
+>   cases can be pointed at it.
+> - **`actselftest` exists and must run before any act**, because a wrong
+>   trap ABI does not crash — it lies.
 
 **Order matters** — each rung's failure invalidates the next:
 
@@ -237,12 +304,45 @@ Everything in Part One of the review doc, and the ones that cannot be delegated:
 
 ## What would change this plan
 
+Kept honest by adding rather than editing. The first three are as written
+2026-07-31; the rest were added 2026-08-01 when the act plane and the
+reference layer landed and gave the plan new ways to be wrong.
+
 - **The stack-base measurement failing.** It invalidates part of M1 and the
   Processes page's Windows row.
 - **The bracket premise failing.** It removes the streaming row and simplifies
   M4 to one-shot only, permanently.
 - **A `cis`-class wedge from the extension.** It would put P3 back behind a much
   higher bar, and the probe exists precisely so that finding out is cheap.
+- **`actselftest` returning `Abi`.** The single highest-leverage failure
+  available. It would mean the trap patches answer in the wrong slot —
+  every counter reporting success while the application takes the other
+  branch — and it invalidates the whole act plane, both generations of
+  upstream's work on it, and everything Phase 4 planned to measure with
+  it. It is also the one failure that is *cheap* to find, which is why it
+  is step 4 and not step 8.
+- **The reference layer proving unreliable on a machine.** Every act verb
+  takes a reference nothing else can produce. If `observe` mints
+  references that `handle` cannot resolve, or resolves stale ones as live,
+  then every number taken after step 3 is measuring the wrong thing and
+  none of the act harnesses mean anything. Upstream's 18/20 → 0/19 is the
+  measurement that says identity beats position; it has not been
+  reproduced here.
+- **A window reference that resolves but names the wrong window.** The
+  worse cousin of the above, and the one no counter catches: a plausible
+  answer for the wrong element. The mutation report in
+  [scene-producer.md](scene-producer.md) covers the encoder's half; the
+  machine's half is unexercised.
+- **The content plane's writer wedging a machine.** Its reader is tested
+  and its writer has never executed anywhere. `content-plane-absent` is
+  the expected answer on every machine that exists; the first time it is
+  *not*, everything about P3's risk profile becomes a live question.
+
+**What would NOT change this plan, and is worth saying:** a harness that
+refuses. Six of them read as blocked on a verb that had been served for a
+week. **A refusal is a claim about the guest, and a stale claim looks
+exactly like a real one** — check it against the dispatch table before
+treating it as a finding.
 
 ## Corpus impact
 
@@ -250,3 +350,11 @@ Everything in Part One of the review doc, and the ones that cannot be delegated:
 is already recorded (`docs/metal-and-ux-review.md`, `docs/streaming-a-scene.md`,
 plan 007, and Mirror's own findings in its repository). The three measurements
 in 4.2 each owe a finding **the moment they exist**.
+
+**2026-08-01 revision: still `none`, and the list of what owes a finding
+is longer.** The revision is phase states and cross-references; the two
+numbers it adds (69 native tests, 3/3 cross-builds) are gate counts taken
+by running them, not measurements of a machine. Owing a finding the moment
+it produces a number, in addition to 4.2's three: `actselftest`'s verdict
+on any machine, the reference layer's mint-and-resolve rate, and the first
+`qdtrace status` that does not answer `content-plane-absent`.
