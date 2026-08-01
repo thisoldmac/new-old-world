@@ -650,6 +650,61 @@ rather than as a wrong `notServed`.
 persists; the pane does not. Someone looking for last week's activity needs the
 log.
 
+## 15. The Mirror module, which no eye has ever met (new 2026-07-31)
+
+A new page in the sidebar, between Processes and Console. It draws a guest
+scene with the ported Platinum renderer. **Every line of it is a UX judgement**
+— tests can say which state it selects and what words that state carries, and
+nothing more.
+
+**It renders replayed scene documents, not the live wire.** The scene family is
+in the contract but nothing on this side asks for one yet, so the only way to
+put something on screen is *Open Scene…* and a recorded JSON document. That is
+deliberate (the renderer can be judged before the wire exists) and it is the
+first thing to check for honesty.
+
+What only a person can settle:
+
+- **The four resting states, in the order a real desk meets them.** No Mac
+  connected → connected but nobody has asked → no NOW Extension → extension
+  present, scene plane dormant. Each says what is true, why that is ordinary,
+  and what would change it. **Judge each one the way §1 is judged: does it read
+  as *nothing has happened yet*, or as *something is wrong*?** Only the
+  unreadable-document state is drawn as a fault; if any of the other five
+  reads like an error, that is the defect, not a nitpick.
+  - Reaching them today needs the test seams (`record(extensionEvidence:)`,
+    `record(planeEvidence:)`) — nothing probes a real Mac for the extension
+    yet, so on a live desk the page rests on *Not Looked Yet* and stays there.
+    **Judge that too**: is a page that can never leave that rung worse than no
+    page? It is the strongest argument for holding this module back until the
+    wire lands.
+- **The replay banner.** A recorded Finder window drawn full-size is
+  indistinguishable from this Mac right now, except for one line in the header:
+  *"Replayed from 07-….json — a recording, not this Mac now"*. Is one line, in
+  the header's second row, loud enough? If not, say so — this is the page's
+  worst possible failure and the cheapest to make worse by being tasteful.
+- **A sparse scene is normal here, and must not look broken.** NOW's guest
+  reports no QuickDraw content at all, so a window is drawn as empty chrome
+  with a title and nothing inside. The footer line under the drawing is what is
+  supposed to keep that legible ("2 windows · programs not reported · menus not
+  reported"). Look at a real scene and judge whether the empty content reads as
+  *this producer does not send content* or as *the renderer failed*.
+- **"not reported" vs "none" in that footer.** The distinction is carried
+  faithfully all the way from the guest (absent key) through the adapter to
+  those words. Does a person reading them understand that they are different
+  claims, or does it read as pedantry?
+- **A scene with no screen size.** The producer can omit `screen`; the page then
+  says so rather than drawing a canvas of an invented size. Confirm that reads
+  as a limitation of the recording and not as a broken file.
+- **Where it sits, and whether it belongs yet.** Placed after Processes on the
+  argument that Processes is what is running and Mirror is what those programs
+  have on screen. A person who does not have the extension installed will meet
+  this page every time they scan the sidebar.
+
+Not verified by anything here: that a scene the *real* guest produces renders
+correctly. The fixtures that crossed with MirrorKit are upstream's, recorded
+off a different producer; no NOW-produced scene has been drawn by this pane.
+
 ## Recording what you find
 
 A metal measurement is recorded rather than narrated — `NOWBASE` lines carry
