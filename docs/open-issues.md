@@ -14,6 +14,45 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## iCloud Drive sharing is tested against fabricated stubs only (2026-08-01)
+
+**Unverified.** The share now sees a directory logically — iCloud
+placeholder stubs (`.name.icloud`) list under their logical names with
+the size the stub's plist promises, and a `file.get` for one calls
+`startDownloadingUbiquitousItem` and refuses `busy` with the reason
+(`now-host/Sources/Host/HostShare.swift`, `HostShareCloudTests`). Every
+test fabricates the stubs, so three claims rest on Apple keeping a shape
+no contract guarantees, and none has been tried against a signed-in
+iCloud Drive on this Mac:
+
+- the stub is a binary plist whose size lives under `NSURLFileSizeKey`
+  (the fallback chain — promised-item API, then an honest zero — makes
+  a format change degrade to "size 0", not a failure);
+- `startDownloadingUbiquitousItem(at:)` accepts the logical URL (the
+  code retries with the stub URL, and swallows the error either way —
+  the refusal is already on its way);
+- a download actually materializes the file where `resolve` will find
+  it on the retry.
+
+Trying it is cheap: sign-in, point the Sharing picker at iCloud Drive,
+browse from the emulator guest, pull an undownloaded file twice.
+Metal-verified is further still.
+
+The name bridge (`ClassicName`) closed a live defect on the way: listed
+names were mangled one way (`hfsName`) and resolved verbatim, so any
+name the projection changed was advertised and then unreachable —
+`file.get` answered `not-found` for the listing's own spelling. Covered
+by round-trip tests now (`HostShareTests`, "The name round trip"), but
+the guest-side experience of fingerprinted names (`Report#1A2B.txt` in
+the Files page, Data Browser column width, MacRoman rendering of "#")
+has not been looked at on a real screen.
+
+Related, found while mapping (2026-08-01): **the host's serving half
+has no metal coverage at all.** `HostServingTests` is loopback-only,
+and no `Metal*` suite exercises a real guest browsing this host's
+share. The browse direction guest→host is metal-verified only from the
+2026-07-20 arc, before the name bridge and placeholders landed.
+
 ## The last functional gap: a person cannot click the mirror (2026-08-01)
 
 **Broken, in the sense of unfinished rather than wrong.** Every piece of

@@ -627,3 +627,58 @@ currently has no way to know. The history is not persisted across a host
 restart — the mechanism would now survive it, but a stale list of
 changes from days ago is a different feature than an undo stack, and it
 should be chosen deliberately rather than fall out of this.
+
+## The name bridge (ClassicName)
+
+The share's names cross an encoding boundary in both directions, and
+the rule is stated once, in `now-host/Sources/Host/ClassicName.swift`:
+**every name a listing shows must work when it comes back** — in a
+`file.get`, a mutation, or a destination. A listing that mangles names
+one way and looks them up verbatim advertises files the other machine
+cannot reach, which is exactly the defect the bridge replaced.
+
+- A name that already fits HFS — 31 MacRoman **bytes**, no colon, not
+  hidden — passes through untouched (composed; this file system stores
+  names decomposed and MacRoman cannot spell a combining mark).
+- Anything else is projected the way classic Mac OS itself projected
+  HFS+ long names at its 31-character APIs: stem truncated, `#` and a
+  hex fingerprint of the whole original name, extension kept. The
+  fingerprint is what keeps two long names distinct and makes a rename
+  visible.
+- Projection is deterministic and stateless. Resolution re-projects the
+  real directory and matches — there is no mapping table to persist,
+  drift, or lose across restarts.
+- A directory is projected **whole**, so a projection that collides
+  with a sibling (case-insensitively — HFS is) widens its fingerprint.
+  A name that fits as-is is never altered; only mangled names give way.
+
+`OutboundFile.hfsName` delegates to the same projection, so the name a
+push invents and the name a listing shows cannot disagree.
+
+## Sharing iCloud Drive
+
+Pointing the share at iCloud Drive is the travel visa made literal: the
+classic Mac browses the modern world's folder, and the host does all
+the crossing. The Sharing picker offers iCloud Drive whenever this Mac
+is signed in; nothing else is iCloud-specific — the share learned to
+see any folder *logically*, and a folder with no placeholders behaves
+exactly as before.
+
+- What is not downloaded exists on disk as a hidden `.name.icloud`
+  stub. A listing shows the file it stands for — logical name, the
+  size the stub promises (its plist first, the promised-item API
+  second, zero rather than an invention), one entry even mid-download.
+- A `file.get` for an unmaterialized file starts the download and
+  refuses `busy` with the reason. The wire never waits on the weather;
+  the person at the guest asks again and gets bytes. The 68K lesson
+  applies: a refusal with a reason is an answer, not a failure.
+- The name bridge composes: iCloud names are long, Unicode, and
+  occasionally coloned, and a mangled placeholder name still reaches
+  its stub.
+- Serving stays ungated (decided 2026-08-01): choosing iCloud Drive in
+  the picker is the consent act, same as any share root.
+
+Status: **tested** against fabricated stubs only. Behaviour against a
+signed-in iCloud Drive — real stub format, promised sizes, the
+download trigger — is on the open-issues ledger until tried on this
+Mac, and metal-verified is further still.

@@ -397,7 +397,7 @@ operations:
       console `put` means the guest puts a file to the host (see
       docs/files.md). Host UI affordances speak host-native
       ("Download"). Paths are RELATIVE
-      to the guest's configured share root ("" is the root; segments
+      to the RESPONDER's configured share root ("" is the root; segments
       joined with ":"): a path outside the share is inexpressible, and
       any empty segment ("::" traversal) refuses bad-path. file.get
       needs no accept - the requester is the receiver; failures answer
@@ -1586,8 +1586,9 @@ components:
         resumeToken:
           type: string
           description: >
-            The token the guest gave in the file.begin of the interrupted
-            attempt. Required whenever offset > 0: the guest recomputes
+            The token the responder gave in the file.begin of the
+            interrupted attempt. Required whenever offset > 0: the
+            responder recomputes
             its token for the file as it stands NOW and refuses `changed`
             if it differs, because appending the tail of a file onto the
             head of a different one is worse than starting over. Absent
@@ -1754,8 +1755,8 @@ components:
           description: >
             Identity of the file being sent, for the receiver to store
             beside a partial so a later attempt can prove it is the same
-            file. On a pull this is the guest's token for its own file;
-            on a push it echoes the offer's.
+            file. On a pull this is the responder's token for its own
+            file; on a push it echoes the offer's.
     FileEnd:
       type: object
       required: [type, id, transfer, ok]
