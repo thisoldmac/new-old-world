@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "cloud_contacts_view.h"
 #include "cloud_drive_view.h"
 #include "cloud_layout.h"
 #include "cloud_list_view.h"
@@ -35,11 +36,13 @@
 
    This file is the SHELL: the popup, Refresh, the status/placard, the
    conn_set_cloud_note hook, and which service is chosen. Everything
-   about how a chosen service renders — Drive's file browser, the
-   generic listing+card Photos and Contacts share — lives behind
-   CloudViewOps (cloud_view.h) in cloud_drive_view.c and
-   cloud_list_view.c, so a new service view is a new file, not a new
-   branch in this one. */
+   about how a chosen service renders — Drive's file browser, Photos'
+   generic listing+card, Contacts' address-book card — lives behind
+   CloudViewOps (cloud_view.h) in cloud_drive_view.c, cloud_list_view.c
+   and cloud_contacts_view.c, so a new service view is a new file, not
+   a new branch in this one (view_for() below is the one place that
+   still has to know the service names, the same way choosing drive
+   mode already does). */
 
 enum {
     kCloudServicesMenuID = 135
@@ -272,6 +275,22 @@ static void retitle_button(void)
     SetControlTitle(g_save, text);
 }
 
+/* Which view renders the chosen service's card: drive gets its own
+   file browser, contacts its own address-book card, everything else
+   the generic listing+card. A new tailored view is a new branch here
+   and a new file, never a change to an existing view's file. */
+static const CloudViewOps *view_for(const CloudService *service,
+                                    Boolean drive_mode)
+{
+    if (drive_mode) {
+        return cloud_drive_view_ops();
+    }
+    if (strcmp(service->service, "contacts") == 0) {
+        return cloud_contacts_view_ops();
+    }
+    return cloud_list_view_ops();
+}
+
 static void choose_service(int index)
 {
     const CloudService *service;
@@ -285,7 +304,7 @@ static void choose_service(int index)
     g_drive_mode = strcmp(service->service, "drive") == 0
         && strcmp(service->state, "serving") == 0;
     cloud_drive_view_activate(g_drive_mode);
-    g_view = g_drive_mode ? cloud_drive_view_ops() : cloud_list_view_ops();
+    g_view = view_for(service, g_drive_mode);
     retitle_button();
     clear_list();
     invalidate_detail();
@@ -634,7 +653,11 @@ static void show_control(ControlRef control, Boolean on)
 }
 
 /* The one action button, worn per mode: Up in the drive browser
-   (enabled off the root), Save for a selected row elsewhere. */
+   (enabled off the root), Save for a selected row elsewhere -- except
+   Contacts, whose cloud.get the contract refuses not-listable (x-cloud,
+   contacts): the card is the deliverable, so the button never earns a
+   place, the same way drive_mode's own listable check already keeps
+   it off Drive. */
 static Boolean action_applies(void)
 {
     const CloudService *service = current_service();
@@ -644,7 +667,8 @@ static Boolean action_applies(void)
     }
     return service != NULL && g_selected >= 0
         && g_selected < g_store.row_count
-        && cloud_service_listable(service->service);
+        && cloud_service_listable(service->service)
+        && strcmp(service->service, "contacts") != 0;
 }
 
 static void cloud_show(Boolean visible)

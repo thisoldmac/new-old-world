@@ -31,7 +31,7 @@ CloudContactsRowKind cloud_contacts_classify_row(const CloudCardRow *row);
 int cloud_contacts_order_card(const CloudCardRow *card, int card_count,
                               int order[kCloudMaxCardRows]);
 
-/* True (with *year/*month/*day filled) when value is an English long
+/* True (with year/month/day filled) when value is an English long
    date -- "<Month> <Day>, <Year>", the shape a Foundation
    DateFormatter(.long) emits and the one the Birthday row arrives in
    today. False otherwise, outs left untouched: the card still shows
