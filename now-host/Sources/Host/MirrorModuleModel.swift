@@ -476,6 +476,48 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
                 + "are not part of it.")
     }
 
+    /// One keystroke, typed while the drawing has keyboard focus.
+    ///
+    /// **Not gated on a hit test — a keystroke has no point.** It is gated
+    /// on `scene` the same way `click` is: nothing is sent to a Mac this
+    /// page is not currently showing. `ActionModel.paneKeystroke` has
+    /// already decided whether this press is even expressible (nil for one
+    /// it cannot name); a nil here is silently nothing, the same way a
+    /// disabled control's empty action list is — there was nothing to send,
+    /// which is not a defect this page can report a target for.
+    func key(virtualKeyCode: Int, characters: String?,
+            command: Bool, option: Bool, control: Bool) {
+        guard scene != nil else { return }
+        guard let action = ActionModel.paneKeystroke(
+            virtualKeyCode: virtualKeyCode, characters: characters,
+            command: command, option: option, control: control) else {
+            return
+        }
+        let named = characters.map { "key \($0)" } ?? "key \(virtualKeyCode)"
+        if case .unavailable(let reason) = ActionModel.availability(action) {
+            lastAction = ActionReport(outcome: .unavailable, target: named,
+                                      sentence: reason)
+            return
+        }
+        guard let driver else {
+            lastAction = ActionReport(
+                outcome: .unavailable, target: named,
+                sentence: "This window has no act lane — it is showing a "
+                    + "scene without a machine behind it.")
+            return
+        }
+        lastAction = ActionReport(
+            outcome: .asking, target: named, sentence: "Asking the Mac…")
+        Task { @MainActor in
+            let outcomes = await driver.drive([action])
+            self.lastAction = Self.report(outcomes, on: named)
+            if self.lastAction?.outcome.isDispatched == true {
+                self.lastProbe = nil
+                self.holdUntil = nil
+            }
+        }
+    }
+
     /// A primary press at a point on the guest's screen.
     ///
     /// **Identity addressing only.** Every target here is resolved from the

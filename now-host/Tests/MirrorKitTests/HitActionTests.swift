@@ -111,7 +111,7 @@ final class HitActionTests: XCTestCase {
         let newItem = file.items.first { $0.title.hasPrefix("New") }!
         XCTAssertEqual(newItem.cmd.lowercased(), "n")
         XCTAssertEqual(ActionModel.menuItem(newItem),
-                       [.key(code: 45, char: 110, mods: 256)])
+                       [.key(name: nil, code: 45, char: 110, mods: 256)])
     }
 
     func testBackgroundWindowClickRaisesViaRealClick() throws {
@@ -396,17 +396,87 @@ final class HitActionTests: XCTestCase {
         XCTAssertEqual(write, "textset")
     }
 
-    /// A keystroke has no home in NOW's contract, and that is a hole rather
-    /// than a rule — asserted separately so the day one lands, this fails and
-    /// says where to look.
-    func testAKeystrokeIsUnavailableAndIsNotClassifiedAsCheating() {
+    /// A MODIFIED keystroke has no home in NOW's contract, and that is a
+    /// CarbonLib fact rather than a rule this side could relax — asserted
+    /// separately so a change that starts sending `mods != 0` fails here
+    /// and says where to look. `mods == 0` is the reachable half now
+    /// (`testAPlainKeystrokeIsAvailable` below); this asserts the other.
+    func testAModifiedKeystrokeIsUnavailableAndIsNotClassifiedAsCheating() {
         guard case .unavailable(let reason)
-            = ActionModel.availability(.key(code: 0, char: 97, mods: 256)),
-              case .unavailable = ActionModel.availability(
-                .type(text: "hi")) else {
-            return XCTFail("NOW's contract declares no keystroke command")
+            = ActionModel.availability(
+                .key(name: nil, code: 0, char: 97, mods: 256)) else {
+            return XCTFail("a mods:256 key must stay unavailable — "
+                + "CarbonLib has no PPostEvent")
         }
         XCTAssertTrue(reason.contains("keystroke"),
                       "the reason must name what is missing: \(reason)")
+        guard case .unavailable = ActionModel.availability(
+            .type(text: "hi")) else {
+            return XCTFail("a bare .type with no target must stay "
+                + "unavailable — see typeInto")
+        }
+    }
+
+    /// The other half of the split above: an unmodified keystroke IS the
+    /// guest's `key` verb, straight off `ActionModel.availability`.
+    func testAPlainKeystrokeIsAvailable() {
+        XCTAssertEqual(
+            ActionModel.availability(
+                .key(name: nil, code: 45, char: 110, mods: 0)),
+            .available(command: "key"))
+    }
+
+    // MARK: - ActionModel.paneKeystroke
+
+    /// An ordinary lower-case letter: `code` off the same table
+    /// `menuItem` uses, `char` its own ASCII value, no modifiers.
+    func testPaneKeystrokeOrdinaryLetter() {
+        XCTAssertEqual(
+            ActionModel.paneKeystroke(
+                virtualKeyCode: 45, characters: "n",
+                command: false, option: false, control: false),
+            .key(name: nil, code: 45, char: 110, mods: 0))
+    }
+
+    /// **Shift folds into the character, never into `mods`.** The guest's
+    /// own key table is case-sensitive on the char, not on a bit
+    /// (`now-guest-ppc/src/input/input_args.c`'s comment on `g_key_chars`)
+    /// — an upper-case press must still be sendable, which a version of
+    /// this function that treated Shift as "a modifier" would have broken.
+    func testPaneKeystrokeShiftIsNotAModifier() {
+        XCTAssertEqual(
+            ActionModel.paneKeystroke(
+                virtualKeyCode: 45, characters: "N",
+                command: false, option: false, control: false),
+            .key(name: nil, code: 45, char: 78, mods: 0))
+    }
+
+    /// A held Command becomes `mods`, and the code/char still resolve —
+    /// `ActionModel.availability` is what refuses it, not this function.
+    func testPaneKeystrokeCommandBecomesMods() {
+        XCTAssertEqual(
+            ActionModel.paneKeystroke(
+                virtualKeyCode: 45, characters: "n",
+                command: true, option: false, control: false),
+            .key(name: nil, code: 45, char: 110, mods: ActionModel.cmdKey))
+    }
+
+    /// A named key routes by NAME — this host does not carry the guest's
+    /// own code/char derivation for Return, Tab, the arrows, …
+    func testPaneKeystrokeNamedKey() {
+        XCTAssertEqual(
+            ActionModel.paneKeystroke(
+                virtualKeyCode: 36, characters: "\r",
+                command: false, option: false, control: false),
+            .key(name: "return", code: 36, char: 0, mods: 0))
+    }
+
+    /// A key this vocabulary cannot express — no named-key code and no
+    /// printable ASCII character — sends nothing, honestly, rather than
+    /// guessing at a code the guest's table does not carry.
+    func testPaneKeystrokeUnmappableKeyIsNil() {
+        XCTAssertNil(ActionModel.paneKeystroke(
+            virtualKeyCode: 122 /* F1 */, characters: nil,
+            command: false, option: false, control: false))
     }
 }
