@@ -1,0 +1,277 @@
+{
+  "agent": {
+    "agent": "mirror",
+    "version": "0.1a",
+    "gitRev": "2deb4ef2",
+    "build": "f1d81f34b688 2026-07-31T21:19:14Z",
+    "machineType": "406",
+    "oracle": true,
+    "oracleStatus": "ok",
+    "oracleVersion": 4,
+    "portal": {
+      "present": true,
+      "enabled": true
+    },
+    "scenePlanes": [
+      "observe",
+      "axtree"
+    ],
+    "actionPlanes": [
+      "activate",
+      "click",
+      "key",
+      "axdo"
+    ]
+  },
+  "results": [
+    {
+      "case": "text",
+      "n": 20,
+      "dropped": 0,
+      "hijacks": 0,
+      "chained": 20,
+      "trials": [
+        {
+          "valid": true,
+          "namedOk": true,
+          "strayRefused": true,
+          "strayError": "element_not_found: no window at that windowZ",
+          "mine": "USERAA",
+          "theirs": "PORTALA",
+          "beforeEdit": "USERAA",
+          "afterEdit": "USERAA",
+          "hijacked": false,
+          "chained": true
+        },
+        {
+          "valid": true,
+          "namedOk": true,
+          "strayRefused": true,
+          "strayError": "element_not_found: no window at that windowZ",
+          "mine": "USERBA",
+          "theirs": "PORTALB",
+          "beforeEdit": "USERBA",
+          "afterEdit": "USERBA",
+          "hijacked": false,
+          "chained": true
+        },
+        {
+          "valid": true,
+          "namedOk": true,
+          "strayRefused": true,
+          "strayError": "element_not_found: no window at that windowZ",
+          "mine": "USERCA",
+          "theirs": "PORTALC",
+          "beforeEdit": "USERCA",
+          "afterEdit": "USERCA",
+          "hijacked": false,
+          "chained": true
+        },
+        {
+          "valid": true,
+          "namedOk": true,
+          "strayRefused": true,
+          "strayError": "element_not_found: no window at that windowZ",
+          "mine": "USERDA",
+          "theirs": "PORTALD",
+          "beforeEdit": "USERDA",
+          "afterEdit": "USERDA",
+          "hijacked": false,
+          "chained": true
+        },
+        {
+          "valid": true,
+          "namedOk": true,
+          "strayRefused": true,
+          "strayError": "element_not_found: no window at that windowZ",
+          "mine": "USEREA",
+          "theirs": "PORTALE",
+          "beforeEdit": "USEREA",
+          "afterEdit": "USEREA",
+          "hijacked": false,
+          "chained": true
+        },
+        {
+          "valid": true,
+          "namedOk": true,
+          "strayRefused": true,
+          "strayError": "element_not_found: no window at that windowZ",
+          "mine": "USERFA",
+          "theirs": "PORTALF",
+          "beforeEdit": "USERFA",
+          "afterEdit": "USERFA",
+          "hijacked": false,
+          "chained": true
+        },
+        {
+          "valid": true,
+          "namedOk": true,
+          "strayRefused": true,
+          "strayError": "element_not_found: no window at that windowZ",
+          "mine": "USERGA",
+          "theirs": "PORTALG",
+          "beforeEdit": "USERGA",
+          "afterEdit": "USERGA",
+          "hijacked": false,
+          "chained": true
+        },
+        {
+          "valid": true,
+          "namedOk": true,
+          "strayRefused": true,
+          "strayError": "element_not_found: no window at that windowZ",
+          "mine": "USERHA",
+          "theirs": "PORTALH",
+          "beforeEdit": "USERHA",
+          "afterEdit": "USERHA",
+          "hijacked": false,
+          "chained": true
+        },
+        {
+          "valid": true,
+          "namedOk": true,
+          "strayRefused": true,
+          "strayError": "element_not_found: no window at that windowZ",
+          "mine": "USERIA",
+          "theirs": "PORTALI",
+          "beforeEdit": "USERIA",
+          "afterEdit": "USERIA",
+          "hijacked": false,
+          "chained": true
+        },
+        {
+          "valid": true,
+          "namedOk": true,
+          "strayRefused": true,
+          "strayError": "element_not_found: no window at that windowZ",
+          "mine": "USERJA",
+          "theirs": "PORTALJ",
+          "beforeEdit": "USERJA",
+          "afterEdit": "USERJA",
+          "hijacked": false,
+          "chained": true
+        },
+        {
+          "valid": true,
+          "namedOk": true,
+          "strayRefused": true,
+          "strayError": "element_not_found: no window at that windowZ",
+          "mine": "USERKA",
+          "theirs": "PORTALK",
+          "beforeEdit": "USERKA",
+          "afterEdit": "USERKA",
+          "hijacked": false,
+          "chained": true
+        },
+        {
+          "valid": true,
+          "namedOk": true,
+          "strayRefused": true,
+          "strayError": "element_not_found: no window at that windowZ",
+          "mine": "USERLA",
+          "theirs": "PORTALL",
+          "beforeEdit": "USERLA",
+          "afterEdit": "USERLA",
+          "hijacked": false,
+          "chained": true
+        },
+        {
+          "valid": true,
+          "namedOk": true,
+          "strayRefused": true,
+          "strayError": "element_not_found: no window at that windowZ",
+          "mine": "USERMA",
+          "theirs": "PORTALM",
+          "beforeEdit": "USERMA",
+          "afterEdit": "USERMA",
+          "hijacked": false,
+          "chained": true
+        },
+        {
+          "valid": true,
+          "namedOk": true,
+          "strayRefused": true,
+          "strayError": "element_not_found: no window at that windowZ",
+          "mine": "USERNA",
+          "theirs": "PORTALN",
+          "beforeEdit": "USERNA",
+          "afterEdit": "USERNA",
+          "hijacked": false,
+          "chained": true
+        },
+        {
+          "valid": true,
+          "namedOk": true,
+          "strayRefused": true,
+          "strayError": "element_not_found: no window at that windowZ",
+          "mine": "USEROA",
+          "theirs": "PORTALO",
+          "beforeEdit": "USEROA",
+          "afterEdit": "USEROA",
+          "hijacked": false,
+          "chained": true
+        },
+        {
+          "valid": true,
+          "namedOk": true,
+          "strayRefused": true,
+          "strayError": "element_not_found: no window at that windowZ",
+          "mine": "USERPA",
+          "theirs": "PORTALP",
+          "beforeEdit": "USERPA",
+          "afterEdit": "USERPA",
+          "hijacked": false,
+          "chained": true
+        },
+        {
+          "valid": true,
+          "namedOk": true,
+          "strayRefused": true,
+          "strayError": "element_not_found: no window at that windowZ",
+          "mine": "USERQA",
+          "theirs": "PORTALQ",
+          "beforeEdit": "USERQA",
+          "afterEdit": "USERQA",
+          "hijacked": false,
+          "chained": true
+        },
+        {
+          "valid": true,
+          "namedOk": true,
+          "strayRefused": true,
+          "strayError": "element_not_found: no window at that windowZ",
+          "mine": "USERRA",
+          "theirs": "PORTALR",
+          "beforeEdit": "USERRA",
+          "afterEdit": "USERRA",
+          "hijacked": false,
+          "chained": true
+        },
+        {
+          "valid": true,
+          "namedOk": true,
+          "strayRefused": true,
+          "strayError": "element_not_found: no window at that windowZ",
+          "mine": "USERSA",
+          "theirs": "PORTALS",
+          "beforeEdit": "USERSA",
+          "afterEdit": "USERSA",
+          "hijacked": false,
+          "chained": true
+        },
+        {
+          "valid": true,
+          "namedOk": true,
+          "strayRefused": true,
+          "strayError": "element_not_found: no window at that windowZ",
+          "mine": "USERTA",
+          "theirs": "PORTALT",
+          "beforeEdit": "USERTA",
+          "afterEdit": "USERTA",
+          "hijacked": false,
+          "chained": true
+        }
+      ]
+    }
+  ]
+}
