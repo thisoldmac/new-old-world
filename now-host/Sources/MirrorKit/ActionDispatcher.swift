@@ -105,8 +105,25 @@ public final class ActionDispatcher {
             // call MenuSelect, and answers it. `answered` means the app's
             // MenuSelect returned our item — NOT that its handler did what the
             // caller wanted, which stays the caller's to verify.
-            return try wire.request("menuinvoke",
-                                    ["menuID": menuID, "item": itemIndex,
+            //
+            // `menuact` with `menu`, NOT upstream's `menuinvoke` with
+            // `menuID`. Reconciled 2026-07-31: this call had crossed from
+            // timbottu/mirror unchanged and named a verb no NOW guest
+            // answers, with an argument no NOW verb takes — a request that
+            // would have come back `unknown-command` from every machine
+            // that exists. The probes under scripts/probes/ were reconciled
+            // to the contract's spelling the same day and this was not; see
+            // scripts/probes/README.md, "a spelling is not a capability".
+            //
+            // The three arguments are the contract's and their meanings are
+            // unchanged, which is why only the names moved: `menu` is the
+            // menu's id as the scene reports it, `item` its 1-based
+            // position, `titleLeft` the x of the menu's title in the menu
+            // bar — required and not derived, because it is this act's
+            // identity check. A press anywhere else belongs to the person
+            // at the machine and is passed through untouched.
+            return try wire.request("menuact",
+                                    ["menu": menuID, "item": itemIndex,
                                      "titleLeft": titleLeft]).result
         case .menuDrag(let menuLeft, let itemIndex):
             // Press on the title, drag down the guest-drawn menu, release
