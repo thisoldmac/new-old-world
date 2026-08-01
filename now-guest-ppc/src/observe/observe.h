@@ -31,6 +31,45 @@
    Asking for our own PSN binds and walks to nothing. A reference to
    NOW's own UI would need the Window Manager, not a foreign walk. */
 
+/* NOTHING HERE IS REGISTERED YET, and that is deliberate rather than
+   unfinished: this layer was built while three other threads held
+   src/commands/, src/core/wire.c and contract/, and a fifth hand in
+   those files is how a fold-in produces conflicts instead of code. What
+   registration costs, exactly, in the order it has to happen:
+
+     1. contract/asyncapi.yaml, x-commands: four entries - `observe`,
+        `handle`, `axtree`, `axsnap`. A command not declared there is
+        looked up by the host's capability ledger, missed, and reported
+        permanently unavailable in a sentence that reads as a fact about
+        the Macintosh (MirrorActProjections.swift records that exact
+        failure happening). `handle` takes a required string `ref`;
+        `observe` and `axtree` an optional string `scope` of
+        "front" (default) or "all"; `axsnap` takes nothing.
+     2. src/commands/cmd_help.c: four rows with `wire` = 1. That table is
+        how the host settles whether a connected guest serves a command,
+        so a row missing here makes the verb unavailable even once it is
+        served.
+     3. src/commands/commands.c: `#include "observe.h"` and four branches
+        in now_command_run - each one call, because each function below
+        writes the whole command.result itself:
+
+            now_observe_command(request_json, id, out, cap);
+            now_observe_handle_command(request_json, id, out, cap);
+            now_observe_axtree_command(request_json, id, out, cap);
+            now_observe_axsnap_command(request_json, id, out, cap);
+
+     4. src/main.c: now_observe_init() at startup. OPTIONAL - every
+        entry point below arms the registry lazily - but doing it early
+        seeds the session secret from a wider clock than the first
+        request's, and the seed is the reason a reference cannot be
+        forged.
+
+   WHAT THE ACT PLANE CALLS is neither of the JSON surfaces: it is
+   now_observe_resolve_window / now_observe_resolve_element, below, and
+   the contract is that a verdict other than kNowObsOk means the act is
+   refused with `why` - not retried, not re-derived from the reference's
+   titles, and never aimed at whatever happens to be frontmost. */
+
 #include <Carbon.h>
 
 #include "obsresolve.h"
