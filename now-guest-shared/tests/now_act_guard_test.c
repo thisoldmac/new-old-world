@@ -89,18 +89,18 @@ static void test_menu_identity(void)
        packs it. */
     arm_menu(&cell, 52, 10);
     check_long(now_act_menu_answer(&cell, kTargetA5, (long)point_of(52, 10),
-                                   4242UL),
+                                   42UL),
                ((long)130 << 16) | 3, "menu answers its own press");
     check(cell.armed == kNowPeekActArmNone, "menu disarms after answering");
     check(cell.fired == 1, "menu records that it fired");
-    check_long((long)cell.served_ticks, 4242L, "menu stamps the answer");
+    check_long((long)cell.served_ticks, 42L, "menu stamps the answer");
 
     /* THE DEFECT THIS GUARD EXISTS FOR. A real user presses a different
        menu while the request is armed. Upstream, without this clause,
        that ran the armed command 18 times in 20. */
     arm_menu(&cell, 52, 10);
     check_long(now_act_menu_answer(&cell, kTargetA5, (long)point_of(200, 10),
-                                   4242UL),
+                                   42UL),
                0, "menu declines a press elsewhere in the bar");
     check(cell.armed == kNowPeekActArmReady,
           "a declined press leaves the request armed for its own");
@@ -146,6 +146,59 @@ static void test_menu_identity(void)
     cell.op = kNowPeekActOpSelfTest;
     check(now_act_menu_answer(&cell, kTargetA5, (long)point_of(0, 0), 1UL)
               != 0, "the selftest is deliberately unguarded on the point");
+}
+
+/* ---- what the point CANNOT tell apart -------------------------------
+ *
+ * A CHARACTERISATION test, not an assertion that the code is right. It
+ * pins the premise of the probe's `collide` case
+ * (scripts/probes/nohijack-probe.py, docs/no-hijack-criterion.md §4) so
+ * that a later change either keeps the premise or breaks this test and
+ * says so out loud.
+ *
+ * The menu guard's identity is a POINT, and a point is not unique. There
+ * is no serial on the request and nothing on the Event Manager's queue
+ * element that says which request queued a press, so two presses at the
+ * same coordinates are the same press as far as this code can see. That
+ * is not a leak by itself: the resident half queues the request's own
+ * press from inside the target's context at the moment of arming
+ * (ext/src/now_ext_act.c), so it is normally the first press to arrive
+ * AFTER arming and normally the one answered.
+ *
+ * The case it does not cover is a press already in the queue when the
+ * arm happens - which the Event Manager hands over first, and which this
+ * guard accepts. The number for that is unmeasured; the probe's
+ * `collide` case is written to get it and has never run.
+ *
+ * If a future guard learns to tell its own press from a stranger's - a
+ * cookie in evtQModifiers, a serial in the cell, anything - the two
+ * checks below flip and MUST be rewritten rather than deleted. Deleting
+ * them would erase the reason they existed. */
+
+static void test_menu_press_is_anonymous(void)
+{
+    NowPeekActCell cell;
+
+    /* A press at the arm point is answered. The guard is not told, and
+       cannot ask, who queued it - so this is the same call whether the
+       press came from the resident half or from a hand on the mouse. */
+    arm_menu(&cell, 52, 10);
+    check_long(now_act_menu_answer(&cell, kTargetA5, (long)point_of(52, 10),
+                                   7UL),
+               ((long)130 << 16) | 3,
+               "a press at the arm point is answered, whoever queued it");
+
+    /* And the SECOND press at that same point is not, because answering
+       disarmed. This is the bound on the exposure above: the window is
+       one press wide, not "until the request is withdrawn". Disarming is
+       not the guard - it never was - but it is what keeps this case from
+       being every press at that point for the next five seconds. */
+    check(cell.armed == kNowPeekActArmNone, "answering disarmed");
+    check_long(now_act_menu_answer(&cell, kTargetA5, (long)point_of(52, 10),
+                                   8UL),
+               0, "the second press at the same point is not answered");
+    check_long((long)cell.served_ticks, 7L,
+               "and the declined press did not restamp the answer");
 }
 
 /* ---- the control guard: the 0/20 half of the same measurement -------- */
@@ -288,6 +341,63 @@ static void test_window_stages(void)
     check_long(now_act_trackbox_answer(&cell, kTargetA5, 0x00300400UL,
                                        kNowPeekActInZoomOut, 6UL),
                1, "TrackBox answers the box FindWindow named");
+}
+
+/* ---- the age-out bound: the caller that never came back --------------
+ *
+ * now_act_submit's own deadline (act_client.c, 300 ticks) only runs if
+ * the calling application is still alive to reach it. This is the
+ * resident half's OWN backstop for the caller that is not: an armed
+ * cell whose served_ticks is older than kNowActArmTicksMax is cleared
+ * and declined, with no caller involved at all.
+ *
+ * MUTATION WATCHED FAILING (revert after use): change the age
+ * comparison's `>` to `>=`, or drop it, and this test's "declines"
+ * become "answers" - an armed patch answering a click on a Mac where
+ * the agent that requested it is long gone. */
+static void test_age_out(void)
+{
+    NowPeekActCell cell;
+
+    /* Just inside the bound: still live, answers normally. */
+    arm_menu(&cell, 52, 10);
+    cell.served_ticks = 1000UL;
+    check(now_act_menu_answer(&cell, kTargetA5, (long)point_of(52, 10),
+                              1000UL + kNowActArmTicksMax)
+              != 0, "an armed cell right at the edge still answers");
+
+    /* One tick past the bound: the resident half gives up on its own,
+       with no caller in the loop at all. */
+    arm_menu(&cell, 52, 10);
+    cell.served_ticks = 1000UL;
+    check_long(now_act_menu_answer(&cell, kTargetA5, (long)point_of(52, 10),
+                                   1000UL + kNowActArmTicksMax + 1UL),
+               0, "an armed cell past the bound is declined");
+    check(cell.armed == kNowPeekActArmNone,
+          "aging out clears the arm - not merely declines this call");
+    check(cell.status == kNowPeekActStatusIdle,
+          "aging out returns the cell to idle, honestly, for the next "
+          "caller to see");
+
+    /* A wrapped TickCount (>800 days uptime) must not look like a huge
+       elapsed span: unsigned subtraction gives the true forward
+       distance, so a cell armed just before the wrap still answers
+       just after it. */
+    arm_menu(&cell, 52, 10);
+    cell.served_ticks = 0xFFFFFFFFUL - 10UL;
+    check(now_act_menu_answer(&cell, kTargetA5, (long)point_of(52, 10), 5UL)
+              != 0, "the bound survives a TickCount wraparound");
+
+    /* The window plane's stage-2 arm ages out the same way, using the
+       served_ticks the FindWindow answer re-stamps at the transition. */
+    arm_window(&cell, kNowPeekActWinResize);
+    cell.armed = kNowPeekActArmStage2;
+    cell.served_ticks = 1000UL;
+    check_long(now_act_grow_answer(&cell, kTargetA5, cell.window_ptr,
+                                   1000UL + kNowActArmTicksMax + 1UL),
+               0, "a stage-2 window request also ages out on its own");
+    check(cell.armed == kNowPeekActArmNone,
+          "and clears itself rather than waiting on a caller");
 }
 
 static void test_grow_packing(void)
@@ -642,8 +752,10 @@ static void test_text_take(void)
 int main(void)
 {
     test_menu_identity();
+    test_menu_press_is_anonymous();
     test_control_identity();
     test_window_stages();
+    test_age_out();
     test_grow_packing();
     test_trap_hits();
     test_serve_begin();

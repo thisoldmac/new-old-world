@@ -25,7 +25,11 @@ public enum MirrorAction: Equatable {
     case axdo(ref: String, count: Int = 1, mods: Int = 0, text: String? = nil)
     /// Keystroke. Menu shortcuts MUST carry the virtual keycode — Finder's
     /// MenuEvent matches the code, not the char (CONTROL-SURFACE.md).
-    case key(code: Int, char: Int, mods: Int)
+    /// `name` is the guest's own named-key vocabulary (return, tab, the
+    /// arrows, …) for the keys `code`/`char` cannot express meaningfully on
+    /// their own — nil for an ordinary character key, which sends `code`
+    /// and `char` as it always did.
+    case key(name: String?, code: Int, char: Int, mods: Int)
     /// Type ASCII text into the current focus.
     case type(text: String)
     /// Bring a process forward (PSN as the scene's "hi.lo" string).
@@ -42,22 +46,111 @@ public enum MirrorAction: Equatable {
     /// press-releases without repositioning between, so the guest sees a
     /// genuine double-click (opens icons). EMU-ONLY.
     case qmpDoubleClick(x: Int, y: Int)
-    /// Select a shortcut-less menu item: press on the menubar title, drag
-    /// down the guest-drawn menu to the item row, release. EMU-ONLY.
-    case menuDrag(menuLeft: Int, itemIndex: Int)
 
     /// Perform a menu command through the Portal: the guest's in-process agent
     /// answers the application's own MenuSelect with this item, so the app runs
     /// its real command handler. No menu is drawn, no tracking loop runs, and
-    /// no QMP is involved — which is what makes it metal-shaped where the drag
-    /// below is emulator-only. This is the path for a shortcut-less item; a ⌘
-    /// item should still go as a keystroke, which needs no patch at all.
+    /// no QMP is involved — which is what makes it metal-shaped, unlike the
+    /// injected-motion acts above. This is the route for EVERY menu item, ⌘
+    /// or not — see the retraction on `menuSelect` below for why a ⌘ item no
+    /// longer goes as a keystroke.
     case menuInvoke(menuID: Int, itemIndex: Int, titleLeft: Int)
+    /// **Select ONE Finder item, by name, inside a named container.**
+    ///
+    /// The identity-addressed replacement for upstream's positional click on
+    /// an icon, and it is a ruling rather than a preference: NOW deliberately
+    /// ships `mouseloc` with no companion mover and no positional click, and
+    /// the thing that asked for one — folder items — "wants an identity rather
+    /// than a coordinate" (`contract/asyncapi.yaml`, `mouseloc`; the argument
+    /// in full is `docs/input-plane-decisions.md` §2). The route named there
+    /// is the Finder's own `select item "X" of window "Y"`, through `script`.
+    ///
+    /// The hit tester still resolves the icon from a POINT — that is what a
+    /// person gives it — but what leaves this vocabulary is a name and a
+    /// container, and nothing downstream can fall back to the coordinate
+    /// because it is not carried.
+    case finderSelect(item: String, container: FinderContainer)
+    /// Open ONE Finder item by name — the double-click. Upstream sent a real
+    /// QMP double-click; there is no emulator on the other end of a NOW
+    /// connection by assumption, so this is the Finder's own `open item …` on
+    /// the same identity route as `finderSelect`.
+    case finderOpen(item: String, container: FinderContainer)
+
+    /// **Move, resize, zoom or close ONE window.** The window is named by the
+    /// identity the SCENE has — process, title, occurrence — and the host
+    /// resolves that to the opaque `now-window-…` reference `winact` takes by
+    /// taking an observation at act time. See `WindowTarget` for why an
+    /// identity and not a reference travels in the vocabulary.
+    case windowAct(window: WindowTarget, op: WindowOp)
+
     /// A scrollbar thumb drag. Distinct from `drag` because the DROP POSITION
-    /// is the value: TrackControl live-tracks the thumb, so this needs the
-    /// precise (unity-compensated) motion a menu drag needs — the 1.6x a
-    /// window drag wants would overshoot and slam the thumb to the end.
+    /// is the value: TrackControl live-tracks the thumb, so this needs
+    /// precise (unity-compensated) motion — the 1.6x a window drag wants
+    /// would overshoot and slam the thumb to the end.
     case thumbDrag(x0: Int, y0: Int, x1: Int, y1: Int)
+}
+
+/// Where a Finder item lives, as the Finder's own scripting terminology names
+/// it. There are exactly two containers a rendered scene can produce, because
+/// there are exactly two places it draws icons.
+public enum FinderContainer: Equatable, Sendable {
+    /// The desktop. `item "X" of desktop` in the Finder's terminology.
+    case desktop
+    /// An open folder window, named by its title — which for a Finder window
+    /// IS the folder's name, and is what `window "Y"` matches.
+    case window(title: String)
+}
+
+/// One window, named the way a SCENE can name it.
+///
+/// **Why an identity and not a reference.** `winact` takes an opaque
+/// `now-window-…` that only an observation mints, and a scene carries no such
+/// thing — NOW's scene producer and the `elements` walk are two different
+/// readers of the same machine. The vocabulary therefore carries what the
+/// scene HAS, and the host resolves it against a live `elements` observation
+/// before the act is sent (`MirrorWindowResolver`). That resolution is a
+/// place to be wrong, so it refuses rather than guesses: an identity that
+/// matches no window, or several, sends nothing.
+///
+/// `occurrence` is 0-based and counted the way the GUEST counts it — over
+/// windows of the same process wearing the same title, in window-chain order,
+/// front first (`now-guest-ppc/src/observe/obsmint.c`, `locate_window`). A
+/// host that counted differently would resolve to a neighbouring window,
+/// which is the failure this field exists to prevent.
+public struct WindowTarget: Equatable, Sendable {
+    /// The scene's own window id, carried for reporting rather than for
+    /// addressing — nothing on the wire has ever heard of it.
+    public var id: String
+    /// The owning process, as the scene spells it: "hi.lo".
+    public var psn: String
+    public var title: String
+    public var occurrence: Int
+
+    public init(id: String, psn: String, title: String, occurrence: Int) {
+        self.id = id
+        self.psn = psn
+        self.title = title
+        self.occurrence = occurrence
+    }
+}
+
+/// The four things `winact` does, with exactly the geometry each takes.
+///
+/// A mirror of the contract's own enum (`contract/asyncapi.yaml`, `winact`)
+/// rather than an import of it: this package depends on nothing that can
+/// reach a machine, and the host maps these four onto
+/// `AgentIntegrationWindowActRequest` at the seam.
+///
+/// `zoom` and `close` carry no geometry, and that is the contract's rule, not
+/// an omission — the standard state is the application's to compute, and a
+/// caller that supplied one "would be deciding what the window is for".
+public enum WindowOp: Equatable, Sendable {
+    /// The window's new CONTENT origin, in guest screen coordinates.
+    case move(left: Int, top: Int)
+    /// The window's new CONTENT size, at least 1×1.
+    case resize(width: Int, height: Int)
+    case zoom
+    case close
 }
 
 /// What NOW's contract can do with one act — the typed discipline the port
@@ -128,15 +221,53 @@ public enum ActionModel {
                is the identity check that distinguishes this press from the
                one made by the person sitting at the machine. */
             return .available(command: "menuact")
-        case .key, .type:
-            /* A keystroke is how a ⌘-item is meant to travel, and there is
-               nothing in the contract that carries one. Named rather than
-               folded into the case below, because this is a hole in NOW's
-               surface and not a rule against it: nothing about a keystroke
-               is host-side cheating. */
+        case .key(_, _, _, let mods):
+            /* CHANGED 2026-08-01, with the host lane that makes the
+               distinction matter. `key` is no longer a blanket hole: the
+               guest's `key` verb posts an UNMODIFIED keystroke fine — the
+               `mods` argument is accepted only as 0 — and `mcp-coverage.md`
+               row W3 was "planned" for exactly that reason, not for the
+               modified half. So this is a function of `mods`, the same way
+               `.axdo` is a function of its own reference:
+
+                 - `mods == 0` — the ordinary case, a pane keystroke with
+                   no modifier held — the guest can post it and does.
+                 - `mods != 0` — a ⌘/⌥/⌃-held keystroke — remains the true
+                   hole. An event's modifiers live on the Event Manager's
+                   queue element; the only call that hands that element
+                   back is `PPostEvent`, and CarbonLib does not have it
+                   (`CALL_NOT_IN_CARBON`). Posting the keystroke and
+                   dropping the modifier would type a bare character and
+                   answer `ok` — the defect upstream's act plane exists to
+                   refuse — so the guest refuses `mods != 0` outright
+                   (`contract/asyncapi.yaml:key`,
+                   `now-guest-ppc/src/input/input_args.c`) and this side
+                   says so before a call is even built rather than sending
+                   one the guest will reject.
+
+               `menuSelect` still routes every menu item through `menuact`
+               regardless (see its own comment) — this case is about a
+               PLAIN keystroke typed at the pane, which a menu press never
+               was. */
+            guard mods == 0 else {
+                return .unavailable(reason:
+                    "A modified keystroke cannot be sent: an event's "
+                    + "modifiers live on the Event Manager's queue element, "
+                    + "and the only call that hands that element back is "
+                    + "PPostEvent, which CarbonLib does not have. The guest "
+                    + "refuses any key whose mods is not 0 rather than "
+                    + "posting it bare and reporting success.")
+            }
+            return .available(command: "key")
+        case .type:
+            /* `type` writes text through a control's own setter (`textset`)
+               and needs an addressed, referenced control — see `.axdo`. A
+               bare `.type` names none, so it stays unavailable; `typeInto`
+               below is the reachable route. */
             return .unavailable(reason:
-                "NOW's contract declares no keystroke command. A ⌘ menu item "
-                + "is the ordinary use, and it cannot be sent from here.")
+                "NOW's contract writes text through textset against a "
+                + "referenced control (see typeInto), not through a typed "
+                + "action with no target.")
         case .activate:
             /* A process serial, which the scene carries for every window. */
             return .available(command: "activate")
@@ -173,6 +304,44 @@ public enum ActionModel {
                     + "different questions to the machine.")
             }
             return .available(command: command)
+        case .finderSelect, .finderOpen:
+            /* **Available, and the command is `script`.**
+               NOW declares `script` and the PowerPC guest serves it; the act
+               carries a name and a container and no coordinate, which is
+               exactly what the Finder's own `select item "X" of window "Y"`
+               takes. So the vocabulary's two questions both answer yes:
+               the contract declares a command, and a rendered scene carries
+               what that command needs to address the item.
+
+               What is missing is on THIS side — the host has no `script`
+               lane — and that is deliberately not this function's answer to
+               give. `availability` is a fact about NOW's contract; whether a
+               particular host has built the local operation that carries a
+               command is a fact about the host, and `MirrorActionDriver`
+               says so in its own sentence (the same split `.activate` has
+               had since the driver was written). Answering `unavailable`
+               here would name the wrong missing half, and would go on doing
+               so after the lane lands. */
+            return .available(command: "script")
+        case .windowAct:
+            /* **Available, and the second half of the question is answered
+               by an observation this host takes.**
+               `winact` is addressed by an opaque `now-window-…`, which no
+               scene carries — so on the reading that made `.axdo` answer
+               `needsObservation`, this would too. It does not, and the
+               difference is real rather than convenient: an element
+               reference on a rendered control has NO minter (NOW's producer
+               emits ""), while a window reference has one that this host can
+               call on the spot — `elements`, aimed by the process serial the
+               scene reports for that very window. The scene carries the
+               identity; the resolution is a call, not a gap.
+
+               The call can still fail to name one window, and that is the
+               resolver's refusal to write, not this function's: see
+               `MirrorWindowResolver`. What must never happen is the third
+               thing — sending the act at "whatever is frontmost" — and no
+               value in this vocabulary can express that. */
+            return .available(command: "winact")
         case .click:
             /* Upstream's positional click was a toolkit-worker verb. Its NOW
                shape is ctlact against a referenced control, which is the case
@@ -190,8 +359,8 @@ public enum ActionModel {
                 + "through the guest instead. A window move or resize is "
                 + "winact's move/resize against a window reference; a "
                 + "scroll-bar drag is ctlact against the indicator part.")
-        case .qmpClick, .qmpDoubleClick, .menuDrag:
-            /* The three that came across as QMP calls. Their executor is
+        case .qmpClick, .qmpDoubleClick:
+            /* The pair that came across as QMP calls. Their executor is
                deleted and is not coming back. */
             return .unavailable(reason:
                 "this crossed as emulator mouse injection over QMP — events "
@@ -222,21 +391,23 @@ public enum ActionModel {
             != nil
     }
 
-    // MARK: - Guest menu geometry (menu-drag targeting)
-
-    /// OS 9 standard menu rows are 16 px tall, drawn directly below the
-    /// 20 px menubar. Item i (1-based) centers at menubarBottom + (i-1)*16
-    /// + 8. Calibrated live (see the slice-7 commit) — a wrong row height
-    /// selects the wrong item, so treat changes as behavior changes.
-    public static let menuRowHeight = 16
-    public static let menubarHeight = HitTester.menubarHeight
-
-    static func menuItemPoint(menuLeft: Int, itemIndex: Int) -> (x: Int, y: Int) {
-        (menuLeft + 20,
-         menubarHeight + 1 + (itemIndex - 1) * menuRowHeight + menuRowHeight / 2)
-    }
-
     // MARK: - Gesture → actions
+    //
+    // There is deliberately no guest-menu-geometry section here. Upstream's
+    // host assumed uniform 16 px menu rows; the guest's own MDEF draws
+    // separators at 6 px against 16 px items, and that mismatch accumulates
+    // into ~30 px of error by mid-menu — enough to select the wrong item.
+    // NOW does not correct that constant (which would mean porting
+    // `menugeom` — a call into a foreign, application-supplied MDEF, the
+    // riskiest read in upstream's file, to serve a release point nothing
+    // here needs). It deletes the computation instead: `menuSelect` below
+    // routes every menu item, shortcut or not, through `.menuInvoke`, which
+    // is addressed by identity (menu ID, item index, title-left) and computes
+    // no pixel point at all. See docs/input-plane-decisions.md §3 and
+    // docs/mirror-act-plane.md for the ruling. If a future caller needs an
+    // on-screen menu-item rect — a mirror that draws menus itself, say — it
+    // must ask the guest for one; it may not reconstruct it from a row-height
+    // constant.
 
     /// A primary click on a hit target. Returns the action sequence to
     /// dispatch in order (a background-window click activates first), or
@@ -264,22 +435,28 @@ public enum ActionModel {
             // Switching apps names a PROCESS, not a place on screen.
             // SetFrontProcess is metal-safe and already proven.
             return [.activate(psn: psn)]
-        case .windowItem(_, _, let x, let y):
-            // Identical treatment to a desktop icon, and for the same reason:
-            // the coordinates are the icon's own centre as the FINDER reports
-            // it, so the click is as good as the guest's own layout. Select
-            // with a wire click (metal-safe); open with a real double-click,
-            // which is the QMP path today.
-            if count >= 2 { return [.qmpDoubleClick(x: x, y: y)] }
-            return [.click(x: x, y: y, count: 1, mods: mods)]
-        case .desktopItem(_, let x, let y):
-            // A plain click SELECTS the icon; a double-click OPENS it. The
-            // coordinates are the icon's own centre, not where the pointer
-            // landed, so the click is as good as the position the guest itself
-            // reported. Selection is metal-safe (a posted click); opening still
-            // wants a real double-click, which is the QMP path today.
-            if count >= 2 { return [.qmpDoubleClick(x: x, y: y)] }
-            return [.click(x: x, y: y, count: 1, mods: mods)]
+        case .windowItem(_, let name, let windowTitle, _, _):
+            // Identical treatment to a desktop icon, and for the same reason
+            // — see below. The container is the folder window's own title,
+            // which is what the Finder's `window "Y"` matches.
+            return item(name, in: .window(title: windowTitle), count: count)
+        case .desktopItem(let name, _, _):
+            // A plain click SELECTS the icon; a double-click OPENS it.
+            //
+            // **CHANGED from the port, and it is a route change rather than a
+            // preference.** Upstream sent a wire click at the icon's centre
+            // and a real QMP double-click to open. NOW has neither: the
+            // contract declares no positional click (`mouseloc`'s own
+            // description says so, and `docs/input-plane-decisions.md` §2 is
+            // the ruling), and there is no emulator on the other end of a NOW
+            // connection by assumption. The route the ruling names is the
+            // Finder's own identity-addressed `select` / `open`, which is
+            // metal-safe and cannot land on a neighbouring icon.
+            //
+            // The hit tester's centre-of-the-icon arithmetic is NOT wasted by
+            // this: it is what decides WHICH icon the person meant, and the
+            // point is then dropped rather than sent.
+            return item(name, in: .desktop, count: count)
         case .titlebar(_, _, let x, let y):
             // A real click in the title bar raises the window (the guest's
             // SelectWindow) — activate/SetFrontProcess only fronts the app,
@@ -308,7 +485,123 @@ public enum ActionModel {
         }
     }
 
+    /// One icon, selected or opened by identity. One place, so the two
+    /// containers cannot drift into two spellings of the same rule.
+    private static func item(_ name: String, in container: FinderContainer,
+                             count: Int) -> [MirrorAction] {
+        count >= 2
+            ? [.finderOpen(item: name, container: container)]
+            : [.finderSelect(item: name, container: container)]
+    }
+
+    /// **A primary click, with the scene it happened in.**
+    ///
+    /// The overload exists because three of the hit tester's targets name a
+    /// window by an id and the ACT needs the window's identity — process,
+    /// title, occurrence — which only the scene has. The alternatives were
+    /// worse in the two ways this file cares about: widening the hit tester's
+    /// cases would put act-plane addressing into a geometry type, and looking
+    /// the window up inside the driver would put scene knowledge on the far
+    /// side of the seam that keeps MirrorKit unable to reach a machine.
+    ///
+    /// Everything else is delegated unchanged, so there is exactly one
+    /// mapping from a target to an act and this is a router, not a second
+    /// vocabulary.
+    public static func click(on target: HitTester.Target,
+                             in scene: Scene,
+                             count: Int = 1,
+                             mods: Int = 0) -> [MirrorAction] {
+        switch target {
+        case .widget(let windowID, let kind, _, _):
+            guard let win = scene.windows.first(where: { $0.id == windowID }),
+                  let target = self.target(for: win, in: scene) else {
+                return []
+            }
+            switch kind {
+            case .close:
+                /* Destructive, and knowingly so: the contract says an
+                   application "may lose unsaved work, or may put up a save
+                   dialog nothing on this wire can answer". The dialog is not
+                   a reason to suppress the close — it is the application's
+                   own question to its own user, and the pane's job is to let
+                   the next scene SHOW it. */
+                return [.windowAct(window: target, op: .close)]
+            case .zoom:
+                return [.windowAct(window: target, op: .zoom)]
+            case .collapse:
+                /* The windowshade box. `winact` has four actions and this is
+                   not one of them, so nothing is sent — an act that named
+                   `zoom` for a collapse would be this side deciding the two
+                   are alike, and they are not: one toggles the standard
+                   state, the other rolls the window up. */
+                return []
+            }
+        default:
+            return click(on: target, count: count, mods: mods)
+        }
+    }
+
+    /// A title-bar drag → **move**, expressed as the window's new content
+    /// origin rather than as mouse motion.
+    ///
+    /// The delta is the person's gesture; the origin is derived from the
+    /// window's own rect, which is the content port grown UP by the title bar
+    /// (`SceneBuilder.titleBarHeight`). So the content top is `rect.t +
+    /// titleBarHeight` before the drag, and the move is that point plus the
+    /// delta — the same arithmetic the guest would have done had a person
+    /// dragged the bar, with no pixel path in between.
+    public static func windowMove(_ win: Scene.Window, in scene: Scene,
+                                  by delta: (dx: Int, dy: Int))
+        -> [MirrorAction] {
+        guard let target = target(for: win, in: scene) else { return [] }
+        return [.windowAct(window: target,
+                           op: .move(left: win.rect.l + delta.dx,
+                                     top: win.rect.t + WindowChrome
+                                         .titlebarHeight + delta.dy))]
+    }
+
+    /// A grow-box drag → **resize**, expressed as the window's new content
+    /// size. Floored at 1×1 because the contract's own minimum is "at least 1
+    /// point"; a real application will apply its own larger minimum, which is
+    /// the point of asking IT to resize rather than moving a rectangle here.
+    public static func windowResize(_ win: Scene.Window, in scene: Scene,
+                                    by delta: (dx: Int, dy: Int))
+        -> [MirrorAction] {
+        guard let target = target(for: win, in: scene) else { return [] }
+        let width = win.rect.r - win.rect.l + delta.dx
+        let height = win.rect.b - (win.rect.t + WindowChrome.titlebarHeight)
+            + delta.dy
+        return [.windowAct(window: target,
+                           op: .resize(width: Swift.max(1, width),
+                                       height: Swift.max(1, height)))]
+    }
+
+    /// The window's identity as the guest counts it, or nil when the scene
+    /// cannot give it one.
+    ///
+    /// **Occurrence is counted the guest's way or not at all.** The guest
+    /// numbers a window among the same-titled windows of the same process, in
+    /// window-chain order, front first (`obsmint.c`, `locate_window`); the
+    /// scene's `z` is that chain position. Counting any other way would mint
+    /// a number that resolves to a neighbouring window — a silent wrong
+    /// target, which is the one failure mode this plane is built to refuse.
+    public static func target(for win: Scene.Window,
+                              in scene: Scene) -> WindowTarget? {
+        guard !win.psn.isEmpty else { return nil }
+        let earlier = scene.windows.filter {
+            $0.psn == win.psn && $0.title == win.title && $0.z < win.z
+        }
+        return WindowTarget(id: win.id, psn: win.psn, title: win.title,
+                            occurrence: earlier.count)
+    }
+
     /// A grow-box drag → resize (GrowWindow tracks from the grab point).
+    ///
+    /// **Not the route any more.** `windowResize` above is, because a NOW
+    /// guest is not an emulator and a pixel drag reaches nothing. Kept for
+    /// the reason `menuItem` is kept: it is a correct statement of what the
+    /// gesture IS, and `availability(.drag)` is where the reason a drag
+    /// cannot travel is written down.
     public static func growDrag(from: (x: Int, y: Int),
                                 to: (x: Int, y: Int)) -> [MirrorAction] {
         [.drag(x0: from.x, y0: from.y, x1: to.x, y1: to.y)]
@@ -392,9 +685,10 @@ public enum ActionModel {
     /// **No longer a route.** `menuSelect` sends every item through
     /// `menuInvoke` (see the retraction there); this stays because it is a
     /// correct statement of what the keystroke for an item is, and because
-    /// `availability(.key)` is the place NOW's missing keystroke command is
-    /// named. Deleting it would delete the only expression of a gap that is
-    /// declared and owed.
+    /// it is `mods: cmdKey` — non-zero — so `availability(.key)` refuses it
+    /// exactly the way the guest itself would, which is what the retraction
+    /// argues from. Deleting it would delete the only expression of a gap
+    /// that is declared and owed.
     public static func menuItem(_ item: Scene.MenuItem) -> [MirrorAction] {
         // No `item.enabled` gate — see menuSelect: the resting enable flag is
         // not authoritative for app menus. A ⌘ keystroke to a truly disabled
@@ -402,7 +696,7 @@ public enum ActionModel {
         guard !item.separator, !item.cmd.isEmpty,
               let ch = item.cmd.lowercased().first,
               let ascii = ch.asciiValue else { return [] }
-        return [.key(code: keycodes[ch] ?? 0, char: Int(ascii),
+        return [.key(name: nil, code: keycodes[ch] ?? 0, char: Int(ascii),
                      mods: cmdKey)]
     }
 
@@ -413,4 +707,66 @@ public enum ActionModel {
         guard ctl.enabled, !ctl.ref.isEmpty else { return [] }
         return [.axdo(ref: ctl.ref, count: 1, mods: 0, text: text)]
     }
+
+    // MARK: - Pane keystrokes → the guest's front app
+
+    /// One pane keystroke, translated from an ordinary key press (a virtual
+    /// key code, the character(s) it produced, and which of Command /
+    /// Option / Control were held) into the act this host can send — or the
+    /// reason it refuses to send anything.
+    ///
+    /// **Shift is never folded into `mods`.** The guest's own key table is
+    /// case-sensitive on the CHARACTER, not on a modifier bit — `key
+    /// {char:'N'}` types an upper-case N by carrying the character, not by
+    /// setting a shift bit the guest has nowhere to put
+    /// (`now-guest-ppc/src/input/input_args.c`'s own comment on
+    /// `g_key_chars`). So a Shift-held press reaches here as an ordinary
+    /// character (`characters` already reflects it) and is sent as one;
+    /// only Command, Option and Control become `mods` bits, and any of them
+    /// being held is what `ActionModel.availability(.key)` goes on to
+    /// refuse — this function does not refuse it itself, so the one place
+    /// that decides what NOW's contract can carry stays the one place that
+    /// decides it.
+    ///
+    /// Returns nil for a key this vocabulary cannot express at all — a
+    /// function key, a character outside the guest's US table — which is
+    /// an honest "nothing to send" rather than a guess at a code the guest
+    /// was never measured to answer.
+    public static func paneKeystroke(
+        virtualKeyCode: Int, characters: String?,
+        command: Bool, option: Bool, control: Bool
+    ) -> MirrorAction? {
+        let mods = (command ? cmdKey : 0) | (option ? 2048 : 0)
+                 | (control ? 4096 : 0)
+        if let name = namedKeyCodes[virtualKeyCode] {
+            return .key(name: name, code: virtualKeyCode, char: 0,
+                       mods: mods)
+        }
+        guard let ch = characters?.first, let ascii = ch.asciiValue,
+              ascii >= 32, ascii < 127 else {
+            /* Not a Mac Roman printable ASCII character this host can
+               name a code for — a function key, a dead key still
+               composing, a non-Latin input source. Nothing sent, rather
+               than a code guessed from a table that does not cover it. */
+            return nil
+        }
+        let code = keycodes[Character(ch.lowercased())] ?? 0
+        return .key(name: nil, code: code, char: Int(ascii), mods: mods)
+    }
+
+    /// Virtual key codes for `namedKeys`, in the classic Mac numbering the
+    /// guest's own table uses and modern Mac keyboards still send
+    /// (`now-guest-ppc/src/input/input_args.c:g_key_named`; also Carbon's
+    /// published `HIToolbox/Events.h` `kVK_*` constants, P-DOC, which is
+    /// where a host-side reader can cross-check them without a Macintosh).
+    /// Kept separate from `g_key_named` on purpose: that table also carries
+    /// the CHARACTER half, which is the guest's derivation to make, not
+    /// this host's to duplicate — `paneKeystroke` sends the name and lets
+    /// the guest resolve both halves itself.
+    static let namedKeyCodes: [Int: String] = [
+        36: "return", 76: "enter", 48: "tab", 49: "space", 51: "delete",
+        53: "escape", 114: "help", 115: "home", 117: "fwddelete",
+        119: "end", 116: "pageup", 121: "pagedown",
+        123: "left", 124: "right", 125: "down", 126: "up",
+    ]
 }

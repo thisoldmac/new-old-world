@@ -254,6 +254,16 @@ final class AgentIntegrationHostAdapter {
         await actControl.menuAct(request)
     }
 
+    /// Post one keystroke into the connected guest's front application, by
+    /// the input plane's `key` verb — not an act plane call, so it does not
+    /// go through `actControl.dispatch()`; `AgentIntegrationActControl.key`
+    /// carries the whole of why. `posted` means the guest queued it, never
+    /// that the application acted on it.
+    func key(_ request: AgentIntegrationKeyRequest) async
+        -> AgentIntegrationKeyResult {
+        await actControl.key(request)
+    }
+
     /// Read one addressed text element. The one third of the act plane that
     /// changes nothing, and the one a machine can serve while refusing the
     /// two that drive it.

@@ -183,10 +183,21 @@ than transcription — but `extract-assets` produced the Platinum assets
 **2026-08-01:** the *assets* half is closed —
 [mirror-assets.md](mirror-assets.md) records the extraction, and
 `MirrorKitUI/Resources` plus `assets/icons/` carry what the renderer draws
-with. The *deploy* half is untouched and deliberately so: `tools/` in this
-repository holds `fakeguest.py` and `mb_rename.py` and nothing that spins
-up a guest. With the verb layer closed, this is the biggest thing left,
-and it is judgement work rather than porting.
+with.
+
+**2026-08-01, later: the deploy half is closed too.** `tools/stage-ext.py`,
+`tools/askguest.py`, and `scripts/spin-up-ppc` are the port, and they ran:
+boot a session-private mac99 clone, stage `NowExt.bin` into
+`System Folder:Extensions` and the app beside it, wait for the volume flush,
+hard QMP `quit` and relaunch (an INIT loads at boot only), re-verify the
+files survived, launch NOW, and let the *guest* answer. See
+[staging-path.md](staging-path.md) for what it said.
+
+What was judgement rather than transcription: NOW's wire runs guest → host,
+the opposite direction from the mirror agent's, so the mirror's socket
+verifier could not be ported at all — `askguest.py` is a listener, and it is
+`fakeguest.py`'s mirror image. The staging half *is* close to transcription
+and honours all four of the mirror's hardened rules verbatim.
 
 ### 4. Documents that are findings, not prose — **crossed 2026-08-01**
 

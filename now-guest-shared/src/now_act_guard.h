@@ -112,8 +112,39 @@ void now_act_serve_commit(NowPeekActCell *cell, unsigned long error);
  * chains through with the stack untouched.
  *
  * Every one of them checks, in this order: the plane is armed at the
- * right stage, for the right op, in the A5 world running right now, AND
- * the request names THIS target. The last clause is the guard. */
+ * right stage, for the right op, in the A5 world running right now, NOT
+ * stale, AND the request names THIS target. The last clause is the
+ * guard.
+ *
+ * THE AGE-OUT BOUND. now_act_submit (act_client.c) already withdraws a
+ * request the CALLER gave up waiting on - but that withdrawal runs in
+ * the calling application's own loop, on its own stack, and upstream's
+ * arc names the exact failure mode when that stops being true: nothing
+ * else ever clears the cell, so an agent that dies between arming a
+ * patch and reaching its own withdraw leaves that patch live on the
+ * target process INDEFINITELY, with no caller left to time it out.
+ * Upstream never closed this; it stayed "only the arming verb's exit
+ * path or the bypass switch clears it."
+ *
+ * Here the resident guard itself owns a second, independent clock: every
+ * armed stage carries the tick it was armed at (served_ticks, already
+ * written by now_act_serve_begin and re-stamped at the stage-2
+ * transition), and armed_for's age check compares that against the
+ * ticks the CURRENT trap call carries - not against wall-clock time this
+ * file cannot read. A stale-by-age cell is cleared and declined exactly
+ * like a cell naming the wrong target: this side owes no explanation to
+ * a caller that is not there to hear one. kNowActArmTicksMax is set
+ * comfortably above the caller's own kNowActDeadlineTicks (act_client.c)
+ * so a live caller's own timeout always fires first; this bound exists
+ * for the caller that cannot fire its own. */
+enum {
+    /* ~20s at 60 ticks/sec (Inside Macintosh: Operating System
+       Utilities, TickCount). About 4x the caller's own 300-tick (~5s)
+       deadline - generous enough that a live, merely slow caller is
+       never pre-empted by this backstop, small enough that a dead one
+       does not leave a patch armed for the rest of the session. */
+    kNowActArmTicksMax = 1200UL
+};
 
 /* MenuSelect. Returns the packed (menuID << 16 | item) to answer with, or
  * 0 for "not ours".

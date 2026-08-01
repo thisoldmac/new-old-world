@@ -175,9 +175,23 @@ enum MirrorSceneAdapter {
                     content: $0.content ?? "", active: $0.active ?? false)
             },
             items: window.items?.map(item(from:)),
-            // NOW models no `display` plane at all — see NOWSceneDocument's
-            // header. nil is "not traced", which is what the renderer's
-            // empty content rect is for.
+            // The scene DOCUMENT carries no display plane, and that is all
+            // `nil` claims here.
+            //
+            // It used to claim more: "NOW models no display plane at all",
+            // which was false when it was written and is the reason window
+            // interiors never drew. NOW does model one — `qdtrace`
+            // (`now-guest-ppc/src/content/`) emits a QuickDraw op stream —
+            // but it is a separate COMMAND on the control lane, not a key on
+            // the scene, because a drain is a bounded control answer and a
+            // scene is a transfer (`qdtrace.h`). So it cannot arrive through
+            // this function: this one turns one document into one scene and
+            // has no wire.
+            //
+            // `MirrorContentJoin` is where the two meet, after the scene
+            // lands. `nil` here means "the document carried none", which the
+            // renderer's empty content rect is for; the join replaces it when
+            // a drain answers.
             display: nil)
     }
 
