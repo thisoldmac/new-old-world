@@ -34,14 +34,16 @@ final class AgentIntegrationHealthTests: XCTestCase {
         return (listener, try await connectGuest(to: listener))
     }
 
-    private func connectGuest(to listener: GuestListener) async throws
-        -> FakeGuest {
+    private func connectGuest(
+        to listener: GuestListener,
+        agent: AgentIntegrationGuestAccess? = nil) async throws -> FakeGuest {
         let guest = FakeGuest(port: try XCTUnwrap(listener.boundPort))
         guest.start()
         try guest.send(.hello(Hello(
             contract: Contract.revision,
             side: "guest",
             version: "0.1.0",
+            agent: agent,
             name: "PowerBook 1400",
             os: "9.1",
             chunk: 8192)))
@@ -100,6 +102,64 @@ final class AgentIntegrationHealthTests: XCTestCase {
                        accuracy: 0.001)
         XCTAssertEqual(snapshot.guest?.pingsAnswered, health.pingsAnswered)
         XCTAssertEqual(snapshot.guest?.framesReceived, health.framesReceived)
+    }
+
+    /// The machine's answer survives the last hop, onto the record an
+    /// agent-side caller actually reads.
+    ///
+    /// It is carried on the same struct as `version`, `build` and
+    /// `operatingSystem` because it is the same KIND of fact — something
+    /// this machine said about itself at hello. A fact that reaches the
+    /// listener and stops there is one the thing being governed cannot see.
+    func testTheGuestsAnswerReachesTheAgentFacingHealthRecord()
+        async throws {
+        let listener = GuestListener(
+            identity: .init(version: "0.1-test", name: "Test Host"),
+            timing: .init(idleTimeout: 60))
+        listener.start(port: 0)
+        try await waitUntil("listener ready") {
+            if case .listening = listener.state { return true }
+            return false
+        }
+        let guest = try await connectGuest(to: listener, agent: .disabled)
+        defer {
+            guest.connection.cancel()
+            listener.stop()
+        }
+        let adapter = AgentIntegrationHostAdapter(listener: listener)
+
+        guard case .available(let snapshot) =
+                adapter.sessionHealth(observedAt: Date()) else {
+            return XCTFail("a running host must be available")
+        }
+        XCTAssertEqual(
+            snapshot.guest?.agentAccess, .disabled,
+            "The machine refused and the refusal did not survive the hop "
+                + "to the agent-facing record — where it arrives as nil, "
+                + "which currently fails open, so a no would be served as "
+                + "a yes.")
+    }
+
+    /// A machine that never answered leaves it absent here too.
+    ///
+    /// Absence has to reach this record AS absence: a default filled in on
+    /// the way would be the host answering a question on behalf of a
+    /// machine that was never asked it.
+    func testAGuestThatNeverAnsweredLeavesTheRecordSilent() async throws {
+        let (listener, guest) = try await connectedListener()
+        defer {
+            guest.connection.cancel()
+            listener.stop()
+        }
+        let adapter = AgentIntegrationHostAdapter(listener: listener)
+
+        guard case .available(let snapshot) =
+                adapter.sessionHealth(observedAt: Date()) else {
+            return XCTFail("a running host must be available")
+        }
+        XCTAssertNil(snapshot.guest?.agentAccess)
+        XCTAssertNotNil(snapshot.guest?.name,
+                        "the rest of the record is populated")
     }
 
     func testDuplicateConcurrentReadsShareOneSessionIdentity() async throws {

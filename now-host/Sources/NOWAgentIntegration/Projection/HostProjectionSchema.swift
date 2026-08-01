@@ -1,159 +1,79 @@
 import Foundation
-import NOWAgentIntegration
 
-extension NOWMCPServer {
-    func guestFilesCapabilitiesTool() -> [String: Any] {
-        [
-            "name": ToolName.guestFilesCapabilities.rawValue,
-            "title": "New Old World Guest Files Capabilities",
-            "description":
-                "Reports the running NOW host's active guestRoot policy, current guest share label, bounded limits, and implemented versus deferred guest Files commands. It changes nothing.",
-            "inputSchema": emptyInputSchema,
-            "outputSchema": guestFileResultSchema(
-                value: guestFileCapabilitiesSchema),
-            "annotations": readOnlyGuestFilesAnnotations,
-        ]
-    }
+/// Schema fragments more than one projection renders.
+///
+/// A fragment belongs here when two rows would otherwise state one shape
+/// twice; anything one capability alone knows stays in that capability's
+/// file, where a reviewer reading the row can see all of it.
+public enum HostProjectionSchema {
+    public static let emptyInput: [String: Any] = [
+        "type": "object",
+        "properties": [:],
+        "additionalProperties": false,
+    ]
 
-    func guestFilesListTool() -> [String: Any] {
-        [
-            "name": ToolName.guestFilesList.rawValue,
-            "title": "List New Old World Guest Files",
-            "description":
-                "Lists one bounded page beneath the running NOW host's configured guestRoot. Paths are canonical root-relative HFS paths; the agent cannot choose or escape guestRoot.",
-            "inputSchema": [
-                "type": "object",
-                "properties": [
-                    "path": guestFilePathSchema,
-                    "cursor": [
-                        "type": "integer",
-                        "minimum": 1,
-                    ],
-                ],
-                "additionalProperties": false,
-            ],
-            "outputSchema": guestFileResultSchema(
-                value: guestFileListingSchema),
-            "annotations": readOnlyGuestFilesAnnotations,
-        ]
-    }
+    public static let readOnlyAnnotations: [String: Any] = [
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+    ]
 
-    func guestFilesStatTool() -> [String: Any] {
-        var path = guestFilePathSchema
-        path["minLength"] = 1
-        return [
-            "name": ToolName.guestFilesStat.rawValue,
-            "title": "Inspect a New Old World Guest File",
-            "description":
-                "Reads bounded metadata for one exact item beneath the running NOW host's configured guestRoot. A bounded parent scan returns explicit not-found or scan-limit outcomes instead of guessing.",
-            "inputSchema": [
-                "type": "object",
-                "properties": ["path": path],
-                "required": ["path"],
-                "additionalProperties": false,
-            ],
-            "outputSchema": guestFileResultSchema(
-                value: guestFileEntrySchema),
-            "annotations": readOnlyGuestFilesAnnotations,
-        ]
-    }
-
-    func guestFilesUploadBeginTool() -> [String: Any] {
-        [
-            "name": ToolName.guestFilesUploadBegin.rawValue,
-            "title": "Begin a New Old World Guest File Upload",
-            "description":
-                "Reserves private NOW-owned staging for one declared file beneath guestRoot. It accepts no modern-host path and sends nothing to the guest yet.",
-            "inputSchema": [
-                "type": "object",
-                "properties": [
-                    "destinationPath": guestFilePathSchema,
-                    "bytes": [
-                        "type": "integer", "minimum": 0,
-                        "maximum": Int(Int32.max),
-                    ],
-                    "sha256": [
-                        "type": "string",
-                        "pattern": "^[0-9a-f]{64}$",
-                    ],
-                    "container": [
-                        "type": "string",
-                        "enum": ["data", "macbinary"],
-                    ],
-                    "fileType": [
-                        "type": "string", "minLength": 4, "maxLength": 4,
-                    ],
-                    "creator": [
-                        "type": "string", "minLength": 4, "maxLength": 4,
-                    ],
-                    "modified": ["type": "integer", "minimum": 0],
-                ],
-                "required": [
-                    "destinationPath", "bytes", "sha256", "container",
-                ],
-                "additionalProperties": false,
-            ],
-            "outputSchema": guestFileResultSchema(
-                value: guestFileUploadStageSchema),
-            "annotations": uploadAnnotations,
-        ]
-    }
-
-    func guestFilesUploadAppendTool() -> [String: Any] {
-        [
-            "name": ToolName.guestFilesUploadAppend.rawValue,
-            "title": "Append a New Old World Guest File Upload",
-            "description":
-                "Writes one ordered, bounded base64 chunk into an existing private NOW upload stage. It sends nothing to the guest.",
-            "inputSchema": [
-                "type": "object",
-                "properties": [
-                    "uploadID": ["type": "string", "format": "uuid"],
-                    "offset": ["type": "integer", "minimum": 0],
-                    "data": [
-                        "type": "string",
-                        "contentEncoding": "base64",
-                        "maxLength": 11_000,
-                    ],
-                ],
-                "required": ["uploadID", "offset", "data"],
-                "additionalProperties": false,
-            ],
-            "outputSchema": guestFileResultSchema(
-                value: guestFileUploadStageSchema),
-            "annotations": uploadAnnotations,
-        ]
-    }
-
-    func guestFilesUploadCommitTool() -> [String: Any] {
-        [
-            "name": ToolName.guestFilesUploadCommit.rawValue,
-            "title": "Commit a New Old World Guest File Upload",
-            "description":
-                "Verifies and consumes one private stage, then asks the running NOW host to create the exact destination through its existing guest transfer lane. It never overwrites.",
-            "inputSchema": [
-                "type": "object",
-                "properties": [
-                    "uploadID": ["type": "string", "format": "uuid"],
-                ],
-                "required": ["uploadID"],
-                "additionalProperties": false,
-            ],
-            "outputSchema": guestFileResultSchema(
-                value: guestFileUploadReceiptSchema),
-            "annotations": uploadAnnotations,
-        ]
-    }
-
-    private var emptyInputSchema: [String: Any] {
+    /// One discriminated `outcome` variant, the shape the launch, quit and
+    /// artifact projections all render their results as.
+    public static func resultVariant(
+        _ outcome: String,
+        payload: String,
+        schema: [String: Any]
+    ) -> [String: Any] {
         [
             "type": "object",
-            "properties": [:],
+            "properties": [
+                "outcome": ["const": outcome],
+                payload: schema,
+            ],
+            "required": ["outcome", payload],
             "additionalProperties": false,
         ]
     }
 
-    private var guestFilePathSchema: [String: Any] {
+    /// The `unavailable` payload: a code and a sentence, both written by the
+    /// **host**.
+    ///
+    /// Unbounded on purpose, and that is the one thing worth knowing before
+    /// reusing it. A row's other failure payloads carry `maxLength`s because
+    /// the strings inside them come from a Macintosh, over a wire with a
+    /// stated cap; `unavailable` means the running host could not be reached
+    /// or the connected guest does not serve what the row requires, so both
+    /// strings are ours and there is no guest bound to declare. A row whose
+    /// unavailable payload does carry guest words wants its own fragment
+    /// rather than this one.
+    public static let unavailableFailure: [String: Any] = [
+        "type": "object",
+        "properties": [
+            "code": ["type": "string"],
+            "message": ["type": "string"],
+        ],
+        "required": ["code", "message"],
+        "additionalProperties": false,
+    ]
+
+    /// The whole `unavailable` variant, ready to sit in a `oneOf` beside a
+    /// row's own outcomes.
+    ///
+    /// Every discriminated-outcome row has this arm — it is the shared
+    /// envelope's, not any capability's — so it is stated once here. The
+    /// projections that predate this fragment render the arm with their own
+    /// richer `failure` payload instead, which is deliberate and left alone:
+    /// changing them would change a published schema to save a repetition.
+    public static let unavailableVariant: [String: Any] = resultVariant(
+        "unavailable", payload: "unavailable", schema: unavailableFailure)
+}
+
+/// The guest Files family's shared shapes. Six projections render these,
+/// which is why they are one declaration rather than six.
+enum GuestFilesSchema {
+    static var path: [String: Any] {
         [
             "type": "string",
             "maxLength":
@@ -163,16 +83,11 @@ extension NOWMCPServer {
         ]
     }
 
-    private var readOnlyGuestFilesAnnotations: [String: Any] {
-        [
-            "readOnlyHint": true,
-            "destructiveHint": false,
-            "idempotentHint": true,
-            "openWorldHint": false,
-        ]
+    static var readOnlyAnnotations: [String: Any] {
+        HostProjectionSchema.readOnlyAnnotations
     }
 
-    private var uploadAnnotations: [String: Any] {
+    static var uploadAnnotations: [String: Any] {
         [
             "readOnlyHint": false,
             "destructiveHint": false,
@@ -181,7 +96,7 @@ extension NOWMCPServer {
         ]
     }
 
-    private var guestFileFailureSchema: [String: Any] {
+    static var failure: [String: Any] {
         [
             "type": "object",
             "properties": [
@@ -189,7 +104,7 @@ extension NOWMCPServer {
                 "message": ["type": "string", "maxLength": 256],
                 "transferEvidence": [
                     "oneOf": [
-                        guestFileTransferFailureEvidenceSchema,
+                        transferFailureEvidence,
                         ["type": "null"],
                     ],
                 ],
@@ -199,7 +114,7 @@ extension NOWMCPServer {
         ]
     }
 
-    private var guestFileTransferFailureEvidenceSchema: [String: Any] {
+    static var transferFailureEvidence: [String: Any] {
         [
             "type": "object",
             "properties": [
@@ -244,7 +159,7 @@ extension NOWMCPServer {
         ]
     }
 
-    private var guestFileReceiptSchema: [String: Any] {
+    static var receipt: [String: Any] {
         [
             "type": "object",
             "properties": [
@@ -256,11 +171,7 @@ extension NOWMCPServer {
                 "policyVersion": ["type": "integer", "minimum": 1],
                 "operation": [
                     "type": "string",
-                    "enum": [
-                        "capabilities", "list", "stat", "download",
-                        "readText", "tailText", "put", "mkdir", "move",
-                        "delete", "deployTree", "prune",
-                    ],
+                    "enum": operations,
                 ],
                 "startedAt": ["type": "string", "format": "date-time"],
                 "completedAt": [
@@ -279,7 +190,7 @@ extension NOWMCPServer {
                 "affectedPaths": [
                     "type": "array",
                     "maxItems": 1,
-                    "items": guestFilePathSchema,
+                    "items": path,
                 ],
             ],
             "required": [
@@ -291,11 +202,11 @@ extension NOWMCPServer {
         ]
     }
 
-    private var guestFileEntrySchema: [String: Any] {
+    static var entry: [String: Any] {
         [
             "type": "object",
             "properties": [
-                "path": guestFilePathSchema,
+                "path": path,
                 "name": ["type": "string", "maxLength": 31],
                 "isFolder": ["type": "boolean"],
                 "fileType": [
@@ -335,15 +246,15 @@ extension NOWMCPServer {
         ]
     }
 
-    private var guestFileListingSchema: [String: Any] {
+    static var listing: [String: Any] {
         [
             "type": "object",
             "properties": [
-                "path": guestFilePathSchema,
+                "path": path,
                 "entries": [
                     "type": "array",
                     "maxItems": 16,
-                    "items": guestFileEntrySchema,
+                    "items": entry,
                 ],
                 "hasMore": ["type": "boolean"],
                 "nextCursor": [
@@ -364,16 +275,52 @@ extension NOWMCPServer {
         ]
     }
 
-    private var guestFileCapabilitiesSchema: [String: Any] {
-        let operations = [
-            "capabilities", "list", "stat", "download", "readText",
-            "tailText", "put", "mkdir", "move", "delete", "deployTree",
-            "prune",
-        ]
-        return [
+    static let operations = [
+        "capabilities", "list", "stat", "download", "readText",
+        "tailText", "put", "mkdir", "move", "delete", "trash", "restore",
+        "deployTree", "prune",
+    ]
+
+    /// What one catalog mutation did. It carries **both halves of its own
+    /// undo**: `path` says where the item is now, and a trash's `trashedAs`
+    /// is the name the Trash gave it — which is not always the name it had,
+    /// and which nothing on either side remembers.
+    static var mutationOutcome: [String: Any] {
+        [
             "type": "object",
             "properties": [
-                "guestRoot": guestFilePathSchema,
+                "mutation": [
+                    "type": "string",
+                    "enum": AgentIntegrationGuestFileMutation.allCases
+                        .map(\.rawValue),
+                ],
+                "path": [
+                    "oneOf": [path, ["type": "null"]],
+                    "description":
+                        "Where the item ended up, when the guest could express it.",
+                ],
+                "trashedAs": [
+                    "type": ["string", "null"],
+                    "maxLength":
+                        AgentIntegrationGuestFilePolicy
+                            .maximumSegmentScalars,
+                    "description":
+                        "Answering a trash: the item's name inside the Trash. KEEP IT — it is the only key a restore takes. Absent means the guest reported none, so this particular trashing cannot be restored through this surface, only by hand at the machine.",
+                ],
+                "observedAt": [
+                    "type": "string", "format": "date-time",
+                ],
+            ],
+            "required": ["mutation", "observedAt"],
+            "additionalProperties": false,
+        ]
+    }
+
+    static var capabilities: [String: Any] {
+        [
+            "type": "object",
+            "properties": [
+                "guestRoot": path,
                 "rootLabel": [
                     "type": ["string", "null"],
                     "maxLength": 128,
@@ -409,12 +356,12 @@ extension NOWMCPServer {
         ]
     }
 
-    private var guestFileUploadStageSchema: [String: Any] {
+    static var uploadStage: [String: Any] {
         [
             "type": "object",
             "properties": [
                 "uploadID": ["type": "string", "format": "uuid"],
-                "destinationPath": guestFilePathSchema,
+                "destinationPath": path,
                 "expectedBytes": ["type": "integer", "minimum": 0],
                 "receivedBytes": ["type": "integer", "minimum": 0],
                 "maximumChunkBytes": [
@@ -437,12 +384,12 @@ extension NOWMCPServer {
         ]
     }
 
-    private var guestFileUploadReceiptSchema: [String: Any] {
+    static var uploadReceipt: [String: Any] {
         [
             "type": "object",
             "properties": [
                 "uploadID": ["type": "string", "format": "uuid"],
-                "destinationPath": guestFilePathSchema,
+                "destinationPath": path,
                 "container": [
                     "type": "string", "enum": ["data", "macbinary"],
                 ],
@@ -493,16 +440,14 @@ extension NOWMCPServer {
         ]
     }
 
-    private func guestFileResultSchema(
-        value: [String: Any]
-    ) -> [String: Any] {
+    static func result(value: [String: Any]) -> [String: Any] {
         [
             "oneOf": [
                 [
                     "type": "object",
                     "properties": [
                         "hostAvailable": ["const": false],
-                        "unavailable": guestFileFailureSchema,
+                        "unavailable": failure,
                     ],
                     "required": ["hostAvailable", "unavailable"],
                     "additionalProperties": false,
@@ -511,9 +456,9 @@ extension NOWMCPServer {
                     "type": "object",
                     "properties": [
                         "hostAvailable": ["const": true],
-                        "receipt": guestFileReceiptSchema,
+                        "receipt": receipt,
                         "value": value,
-                        "failure": guestFileFailureSchema,
+                        "failure": failure,
                     ],
                     "required": ["hostAvailable", "receipt"],
                     "oneOf": [

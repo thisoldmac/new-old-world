@@ -32,6 +32,27 @@ final class LoggingSpecTests: XCTestCase {
     /// loudly: a log call in a per-chunk path costs a disk write per
     /// chunk and starves the transfer it is measuring. The File Sharing
     /// panel proved it by doing exactly that with a progress bar.
+    ///
+    /// **Two limits, both inherent, both verified rather than guessed.**
+    ///
+    /// The check is one literal, `now_log(`, so any other spelling of the
+    /// same call is invisible. Confirmed by mutation on 2026-07-31: adding
+    /// `#define NOWLOG now_log` above `take_bulk_in` and calling `NOWLOG(…)`
+    /// inside it builds clean on the PowerPC cross-compiler and passes
+    /// here, with a disk write back in the per-chunk path. A macro alias is
+    /// the whole of what it takes.
+    ///
+    /// And the hot list is three hand-written entries. A fourth per-chunk
+    /// function is unguarded until someone adds it, and NOW-68K's transfer
+    /// paths — `wire68.c`, `n68_puttx.c` — are not on it at all, though the
+    /// rule applies to them and a 68030 has less headroom to lose.
+    ///
+    /// Neither is fixed here. Catching every spelling means expanding
+    /// macros, and knowing which functions are per-chunk means a call
+    /// graph; each is a small C front end, and a check that looks like it
+    /// covers the rule while missing the next macro is worse than one whose
+    /// reach is written down. The reach is: these three functions, this one
+    /// spelling.
     func testNothingLogsInAPerChunkPath() throws {
         let hot = [
             ("now-guest-ppc/src/core/wire.c", "take_bulk_in"),
@@ -39,9 +60,7 @@ final class LoggingSpecTests: XCTestCase {
             ("now-guest-ppc/src/files/fileshare.c", "batch_write"),
         ]
         for (file, function) in hot {
-            let text = try String(
-                contentsOf: Self.repoRoot.appendingPathComponent(file),
-                encoding: .utf8)
+            let text = try GateSource.guestC(file)
             let body = try XCTUnwrap(functionBody(named: function, in: text),
                                      "could not find \(function) in \(file)")
             XCTAssertFalse(body.contains("now_log("), """

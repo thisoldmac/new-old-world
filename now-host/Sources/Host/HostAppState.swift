@@ -42,6 +42,16 @@ final class HostAppState: ObservableObject {
     /// HostAppState stays free of AppKit chrome and tests stay silent.
     var quickCaptureFeedback: ((QuickCaptureOutcome) -> Void)?
 
+    /// Starting and stopping the MCP server, set by the app delegate.
+    ///
+    /// Hooks rather than methods for the same reason as the flash above: the
+    /// server object belongs to the delegate, which is the only thing whose
+    /// lifetime matches a listening socket's, and a test or a preview that
+    /// leaves these nil gets a pane with buttons that do nothing to any real
+    /// socket instead of a host process with an endpoint it never wanted.
+    var startMCPServer: (() -> Void)?
+    var stopMCPServer: (() -> Void)?
+
     /// Drives the menu bar's connection glyph and status line.
     private(set) lazy var guestStatus = GuestStatusMonitor(listener: listener)
     let settings: SettingsModel
@@ -50,10 +60,32 @@ final class HostAppState: ObservableObject {
     let logs: LogsModel
     let listener: GuestListener
     let agentIntegration: AgentIntegrationHostAdapter
+    /// Who has been driving this host over the local agent endpoint. Fed by
+    /// the app delegate when it stands the server up; `.neverAttached` until
+    /// something does, and for good on a Mac nothing ever does.
+    let agentCompanions = AgentCompanionModel()
+    /// What those companions have DONE — the audit stream the Agent page
+    /// draws, fed from the same seam that writes the log line. Separate from
+    /// the presence ledger above on purpose: that one records who and when
+    /// and refuses to record what, and this is the what.
+    let agentActivity = AgentActivityModel()
     let guestFiles: GuestFilesCommandService
     private let artifactApprovals: AgentIntegrationArtifactApprovalStore?
+    /// The Connections page: which Macs are on the wire, which one the
+    /// window and the agent surface are pointed at, and how to tell them
+    /// apart.
+    ///
+    /// Selection routes through `selectGuest` rather than the listener
+    /// directly, so a person choosing a row moves the whole window — the
+    /// modules refocus with it — instead of moving the request plane out
+    /// from under pages still showing the other Mac's rows.
+    private(set) lazy var connections = ConnectionsModel(
+        listener: listener,
+        addressing: agentIntegration,
+        select: { [weak self] key in self?.selectGuest(key) ?? false })
     private(set) lazy var console = ConsoleModel(listener: listener)
     private(set) lazy var census = CensusModuleModel(listener: listener)
+    private(set) lazy var diagnostics = DiagnosticsModel(listener: listener)
     private(set) lazy var software = SoftwareModel(listener: listener)
     private(set) lazy var processes: ProcessesModel = {
         let model = ProcessesModel(listener: listener)
@@ -80,7 +112,7 @@ final class HostAppState: ObservableObject {
     /// switch — the two used to be separate assignments, and a module added
     /// to one and not the other is precisely the defect this list closes.
     private var guestScopedModels: [any GuestScopedModel] {
-        [screenshots, files, census, processes, software]
+        [screenshots, files, census, diagnostics, processes, software]
     }
 
     /// Points the whole window at another connected Mac.
@@ -121,7 +153,9 @@ final class HostAppState: ObservableObject {
                 integration.connectedSessionID()
             })
         let stored = defaults.string(forKey: Self.selectionKey)
-        selectedModuleID = stored.flatMap(registry.module(id:))?.id
+        /* Through the rename table, so a person whose saved selection is a
+           module's OLD id lands on it rather than on the fallback. */
+        selectedModuleID = stored.flatMap(registry.resolvingRenames(id:))?.id
             ?? registry.modules.first?.id
             ?? ""
         stateMirror = listener.$state.sink { [weak self] state in

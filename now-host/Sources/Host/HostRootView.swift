@@ -70,10 +70,20 @@ struct HostRootView: View {
             ProcessesModuleView(model: state.processes)
         case "console":
             ConsoleModuleView(model: state.console, listener: state.listener)
+        case "connections":
+            ConnectionsModuleView(model: state.connections)
         case "census":
             CensusModuleView(model: state.census)
+        case "diagnostics":
+            DiagnosticsModuleView(model: state.diagnostics)
         case "software":
             SoftwareModuleView(model: state.software)
+        case "mcp":
+            MCPModuleView(model: state.agentActivity,
+                          companions: state.agentCompanions,
+                          listener: state.listener,
+                          start: state.startMCPServer,
+                          stop: state.stopMCPServer)
         case "logs":
             LogsModuleView(model: state.logs, log: state.logs.log)
         case "settings":

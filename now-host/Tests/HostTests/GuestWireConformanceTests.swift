@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 @testable import Host
+import NOWAgentIntegration
 
 /// Every control message the guest can emit, read out of the guest's own
 /// source and put through the host's decoder and the contract's required
@@ -73,6 +74,31 @@ final class GuestWireConformanceTests: XCTestCase {
 
         XCTAssertFalse(out.isEmpty, "no guest sources under \(Self.repoRoot.path)")
         return out
+    }
+
+    /// The same sources **with their comments removed** — see `GateSource`.
+    ///
+    /// `guestSources()` above stays RAW on purpose: the literal scanner below
+    /// does its own comment skipping, and it needs the raw text to get the
+    /// character-literal parity right (the `'"'` case, whose absence once hid
+    /// `bye`). Stripping first and then scanning would work, but it would move
+    /// that hard-won logic somewhere nothing exercises it.
+    ///
+    /// A gate that reads the text DIRECTLY — `contains`, a regex — must read
+    /// through here instead, because a comment naming the identifier satisfies
+    /// a raw scan. That is the fourth time this defect has been found in this
+    /// suite: on 2026-07-31 the disk-reservation check below was satisfied
+    /// entirely by a comment. Deleting the `SetEOF` reservation from
+    /// `fileshare.c` and leaving the three pinned lines in the comment that
+    /// replaced them built both guests, passed the native suite, and passed all
+    /// 915 host tests — while every write extended the file and a full disk
+    /// became a late, misleading transfer failure, which is the exact outcome
+    /// the gate's own prose says it prevents.
+    private func guestSourcesWithoutComments() throws -> [(name: String,
+                                                           text: String)] {
+        try guestSources().map {
+            ($0.name, GateSource.withoutCComments($0.text))
+        }
     }
 
     // MARK: - Reading templates out of C
@@ -255,7 +281,34 @@ final class GuestWireConformanceTests: XCTestCase {
 
     // MARK: - The tests
 
+    /// A message whose `type` is COMPUTED rather than spelled, and the
+    /// concrete types it can be.
+    ///
+    /// `xfer_finish` writes `"{\"type\":\"%s.end\"…"` with `"file"` or
+    /// `"capture"`, so the scanner reads a type that no guest ever sends.
+    /// Naming the alternatives lets both be checked for real instead of
+    /// waved through — and a NEW computed type fails until someone lists it,
+    /// which is the same bargain `piecemealCoverage` strikes.
+    private static let computedTypes: [String: [String]] = [
+        // `xfer_end_type` maps a transfer kind onto the message that closes
+        // it, and a scene rides the same lane and the same sender as a
+        // capture — so `%s.end` now stands for three types, not two.
+        "X.end": ["file.end", "capture.end", "scene.end"],
+    ]
+
     /// Every whole message the guest can send decodes on this side.
+    ///
+    /// **This used to forgive any undecodable type that was not `file.*`.**
+    /// The carve-out read "a guest-only verb the host never receives is
+    /// fine", but every one of these is a frame the guest writes onto the
+    /// wire, so the host receives all of them — and the file's own opening
+    /// paragraph is about frames the host could not decode dropping the
+    /// connection. Probed on 2026-07-31: exactly one message reaches that
+    /// branch, and it is `X.end` — the scanner's own `%s` placeholder. So the
+    /// assertion could never fire (a placeholder never starts with `file.`)
+    /// while every genuinely undecodable non-`file.` type went through it in
+    /// silence. A computed type is now resolved to its real alternatives and
+    /// an unknown type is a failure.
     func testEveryGuestMessageDecodes() throws {
         var checked = 0
         for (file, text) in try guestSources() {
@@ -265,10 +318,28 @@ final class GuestWireConformanceTests: XCTestCase {
                 do {
                     _ = try ControlMessageCodec.decode(Data(json.utf8))
                 } catch ControlMessageError.unknownType(let type) {
-                    // A guest-only verb the host never receives is fine;
-                    // one the host DOES receive is caught below.
-                    XCTAssertFalse(type.hasPrefix("file."),
-                                   "\(file): the host cannot decode \(type)")
+                    guard let concrete = Self.computedTypes[type] else {
+                        XCTFail("""
+                            \(file): the host cannot decode \(type), a \
+                            message this guest sends. If the type is \
+                            COMPUTED from a %s, name it in computedTypes \
+                            with the types it can actually be; otherwise \
+                            the host needs a decoder for it.
+                            """)
+                        continue
+                    }
+                    // The placeholder resolved: check what it stands for.
+                    for real in concrete {
+                        let substituted = json.replacingOccurrences(
+                            of: "\"type\":\"\(type)\"",
+                            with: "\"type\":\"\(real)\"")
+                        XCTAssertNoThrow(
+                            try ControlMessageCodec.decode(
+                                Data(substituted.utf8)), """
+                            \(file): the host cannot decode \(real), which \
+                            is one of the types \(type) stands for.
+                            """)
+                    }
                 } catch {
                     XCTFail("""
                         \(file): the host cannot decode a message the guest \
@@ -320,7 +391,17 @@ final class GuestWireConformanceTests: XCTestCase {
     func testHfsPathArgumentsAreTextDecoded() throws {
         let pathKeys = ["path", "toPath", "trashedAs"]
         var checked = 0
-        for (file, text) in try guestSources() {
+        // Comments stripped. This gate's direction is the safe one — a
+        // comment can only ADD hits to a check that demands zero — but a
+        // commented-out call is then a failure about code that does not run,
+        // and the suite has paid for that shape of false positive four times
+        // in a week (see AgentIntegrationCapabilityTests).
+        //
+        // The list of keys is hand-written, and that is the real limit: a
+        // NEW key naming an HFS path is invisible here until someone adds
+        // it. Nothing in the contract marks a field as a filename, so there
+        // is nothing to derive the list from.
+        for (file, text) in try guestSourcesWithoutComments() {
             for key in pathKeys {
                 // now_json_find_string( <args, no ';'> "<key>"  — the
                 // negated class stops at the statement's semicolon, so a
@@ -345,10 +426,26 @@ final class GuestWireConformanceTests: XCTestCase {
     /// SetEOF to reserve it. Classic File Manager failures are ordinary
     /// return values; ignoring one turns a full disk into a late, misleading
     /// transfer failure.
+    ///
+    /// **Comments are stripped**, and that is not tidiness — see
+    /// `guestSourcesWithoutComments()` for the mutation that removed the
+    /// reservation outright and left this gate reading the comment that
+    /// replaced it, green, across every suite this project has.
+    ///
+    /// What it still cannot see, and no `contains` can: these are three
+    /// *lines*, pinned by their exact text. They prove the statements are
+    /// written somewhere in the file — not that they run, not that they run in
+    /// this order, and not that they run before the guest answers `file.accept`.
+    /// Reformatting any one of them across two lines fails this gate while
+    /// changing nothing, and hoisting all three into a helper that is never
+    /// called passes it. The claim in the sentence above is about REACHABILITY,
+    /// and reachability is what reading text cannot establish — the standing
+    /// decision not to grow a partial parser for it is at `HostFaceReach.reached`.
     func testGuestChecksDiskReservationBeforeAcceptingUpload()
         throws {
         let fileshare = try XCTUnwrap(
-            try guestSources().first { $0.name.hasSuffix("/fileshare.c") }?.text)
+            try guestSourcesWithoutComments()
+                .first { $0.name.hasSuffix("/fileshare.c") }?.text)
         XCTAssertTrue(fileshare.contains(
             "err = SetEOF(rx->data_ref, bytes);"))
         XCTAssertTrue(fileshare.contains(
@@ -506,5 +603,258 @@ final class GuestWireConformanceTests: XCTestCase {
         }
         XCTAssertFalse(out.isEmpty, "no properties read for \(schema)")
         return out
+    }
+    // MARK: - The build stamp rides hello
+
+    /// The PowerPC guest's hello carries a `build`, and it is the build
+    /// stamp rather than a literal.
+    ///
+    /// `PRODUCT_VERSION` is hand-edited, so two builds routinely report the
+    /// same version — on 2026-07-30 a stale guest on the 1400c failing every
+    /// exec test looked identical to a current one, and an hour of diagnosis
+    /// went to the wrong half of the system (docs/open-issues.md). What makes
+    /// the field worth anything is that nobody types its value:
+    /// `now_build_stamp()` is `__DATE__ " " __TIME__` of a file CMake touches
+    /// every build. A hello that carried a literal here, or dropped the field,
+    /// would leave a host back where it started, so both are checked.
+    func testThePowerPCGuestsHelloCarriesItsBuildStamp() throws {
+        /* Through the shared reader, which strips comments: the comment
+           beside this line names now_build_stamp(), so a raw-text scan
+           passed even with the call replaced by a literal. */
+        let body = try sendHelloBody()
+
+        XCTAssertTrue(
+            body.contains(#"\"build\":\"%s\""#),
+            "The PowerPC guest's hello no longer carries a build field. "
+                + "Without it a host cannot tell a stale guest from a "
+                + "current one, because PRODUCT_VERSION is hand-edited and "
+                + "answers the same for both.")
+        XCTAssertTrue(
+            body.contains("now_build_stamp()"),
+            "hello names a build but does not fill it from "
+                + "now_build_stamp(). A hand-written build string is the "
+                + "same defect as a hand-written version, one field over.")
+    }
+
+    /// The contract admits the field the guest writes, and does not require
+    /// it. Both directions are the point: an unadmitted field is refused by
+    /// a schema that closes `additionalProperties`, and a REQUIRED one would
+    /// break the 68K guest, which sends no build.
+    func testTheContractMakesBuildOptionalOnHello() throws {
+        XCTAssertTrue(
+            try contractProperties(of: "Hello").contains("build"),
+            "contract/asyncapi.yaml does not name `build` on Hello, and the "
+                + "schema closes additionalProperties, so a guest sending "
+                + "one is sending an illegal message.")
+        XCTAssertFalse(
+            try XCTUnwrap(requiredFields()["Hello"]).contains("build"),
+            "`build` is required on Hello. NOW-68K sends none, so requiring "
+                + "it makes every 68K hello non-conformant; absence has a "
+                + "defined reading and that is the whole design.")
+    }
+
+    // MARK: - The machine's own answer rides hello
+
+    /// The PowerPC guest's hello carries `agent`, and it comes from
+    /// `now_agent_access()` rather than a literal.
+    ///
+    /// The literal is the failure mode worth naming: the field's whole
+    /// purpose is that a machine can answer `disabled`, and a token spelled
+    /// into `send_hello` is one a switch or an installer could never change.
+    /// One function, one place for both of those to land.
+    func testThePowerPCGuestsHelloCarriesItsMachinesAnswer() throws {
+        let body = try sendHelloBody()
+
+        XCTAssertTrue(
+            body.contains(#"\"agent\":\"%s\""#),
+            "The PowerPC guest's hello no longer carries an `agent` field. "
+                + "Silence is not consent by contract — but it is also not "
+                + "refusal, so a machine that says nothing cannot refuse, "
+                + "and this guest has no other way to say `disabled`.")
+        XCTAssertTrue(
+            body.contains("now_agent_access()"),
+            "hello names an agent tier but does not fill it from "
+                + "now_agent_access(). A literal here is a machine whose "
+                + "answer nothing can ever change.")
+    }
+
+    /// `send_hello` stays ONE snprintf.
+    ///
+    /// Not style: this file reads the guest's source, and a message built
+    /// across several calls is one it cannot check — the failure text at the
+    /// top of this file says so and offers a fixture instead. `build` kept
+    /// it to one call, and `agent` is the second field to be tempted.
+    func testSendHelloIsStillASingleSnprintf() throws {
+        let body = try sendHelloBody()
+        let calls = body.components(separatedBy: "snprintf(").count - 1
+
+        XCTAssertEqual(
+            calls, 1,
+            "send_hello builds its JSON across \(calls) snprintf calls. "
+                + "This file can only read a message written in one, so "
+                + "splitting it takes hello out of the scan that proves it "
+                + "conforms — quietly, and in the one message every "
+                + "connection begins with.")
+    }
+
+    /// The two seams fill the two fields **the way round the format string
+    /// names them**.
+    ///
+    /// Found by mutation, and it is the limit of every check above: they ask
+    /// whether an identifier is somewhere in the body, which a call in the
+    /// argument list satisfies and so does one nowhere near it. Swapping the
+    /// two arguments —
+    ///
+    ///     kNowContractRevision, PRODUCT_VERSION, now_agent_access(),
+    ///     now_build_stamp(), esc, kNowDefaultChunk
+    ///
+    /// — left every gate in this file green while the guest put its access
+    /// tier in `build` and its build stamp in `agent`. That is not a subtle
+    /// wrong answer: an `agent` the host cannot decode is not consent, so
+    /// the machine would read as refusing, and the field that exists to tell
+    /// two builds apart would answer "full" for every one of them.
+    ///
+    /// C's varargs have no other way to say which value fills which `%s`, so
+    /// position IS the meaning here and pinning it is a fair check rather
+    /// than a style rule. Both seams must appear AFTER the format string —
+    /// which is what makes them arguments and not merely present — in the
+    /// order the format string names their fields, and before `esc`, which
+    /// fills the `name` that follows both.
+    func testHelloFillsBuildAndAgentFromTheirSeamsInThatOrder() throws {
+        let body = try sendHelloBody()
+
+        guard let formatEnd = body.range(of: #"\"chunk\":%d}""#),
+              let build = body.range(of: "now_build_stamp()",
+                                     range: formatEnd.upperBound
+                                        ..< body.endIndex),
+              let agent = body.range(of: "now_agent_access()",
+                                     range: formatEnd.upperBound
+                                        ..< body.endIndex),
+              let name = body.range(of: "esc,", range: formatEnd.upperBound
+                                        ..< body.endIndex) else {
+            return XCTFail(
+                "send_hello does not pass now_build_stamp(), "
+                    + "now_agent_access() and the escaped machine name as "
+                    + "arguments after its format string. A seam named in "
+                    + "the body but not in the argument list fills no "
+                    + "field, which is the hole the checks above cannot "
+                    + "see on their own.")
+        }
+        XCTAssertTrue(
+            build.upperBound < agent.lowerBound,
+            "send_hello passes now_agent_access() before now_build_stamp(), "
+                + "and the format string names `build` before `agent` — so "
+                + "the guest sends its access tier as a build stamp and its "
+                + "build stamp as an access tier. The host cannot decode "
+                + "the latter, and an undecodable tier is read as refusal.")
+        XCTAssertTrue(
+            agent.upperBound < name.lowerBound,
+            "send_hello passes the escaped machine name before "
+                + "now_agent_access(), so `agent` and `name` carry each "
+                + "other's values.")
+        XCTAssertTrue(
+            body.range(of: #"\"build\":\"%s\""#)!.lowerBound
+                < body.range(of: #"\"agent\":\"%s\""#)!.lowerBound,
+            "The format string names `agent` before `build` while the "
+                + "argument list is still in build-then-agent order, so the "
+                + "two fields carry each other's values.")
+    }
+
+    /// The contract admits `agent` on Hello and does not require it.
+    ///
+    /// Required would break `test68KFixturesCarryTheirRequiredFields`
+    /// against the 68K guest's captured hello, which is direct evidence
+    /// rather than an argument: a guest that predates the field has to stay
+    /// conformant, because absence is a defined reading and not an error.
+    func testTheContractMakesAgentOptionalOnHello() throws {
+        XCTAssertTrue(
+            try contractProperties(of: "Hello").contains("agent"),
+            "contract/asyncapi.yaml does not name `agent` on Hello, and the "
+                + "schema closes additionalProperties, so a guest sending "
+                + "one is sending an illegal message.")
+        XCTAssertFalse(
+            try XCTUnwrap(requiredFields()["Hello"]).contains("agent"),
+            "`agent` is required on Hello. NOW-68K sends none and older "
+                + "guests send none, so requiring it makes their hellos "
+                + "non-conformant — and absence having a defined reading is "
+                + "the whole design.")
+    }
+
+    /// The three tokens the contract lists and the three the host can name
+    /// are the same three.
+    ///
+    /// A tier added to one side only is the defect class this file exists
+    /// for, and it would be quiet in exactly the wrong direction: a token
+    /// the host cannot name is not consent, so a tier added to the contract
+    /// alone would read as a refusal nobody wrote.
+    func testTheContractsAgentTokensAreTheOnesTheHostNames() throws {
+        let text = try String(
+            contentsOf: Self.repoRoot.appendingPathComponent(
+                "contract/asyncapi.yaml"),
+            encoding: .utf8)
+        guard let line = text.components(separatedBy: .newlines).first(
+                where: { $0.hasPrefix("          enum: [disabled") }) else {
+            return XCTFail("contract/asyncapi.yaml no longer declares an "
+                           + "enum of agent tokens on Hello")
+        }
+        let declared = line
+            .drop { $0 != "[" }.dropFirst().prefix { $0 != "]" }
+            .components(separatedBy: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+
+        XCTAssertEqual(
+            declared, ["disabled", "read-only", "full"],
+            "The contract's agent tokens changed. Whoever changed them owes "
+                + "AgentIntegrationGuestAccess the same edit, and the "
+                + "ordering clause an explanation.")
+        for token in declared {
+            XCTAssertEqual(
+                AgentIntegrationGuestAccess(wire: token)?.wire, token,
+                "the host does not name `\(token)`, so it would decode as "
+                    + "unrecognised — which is not consent, and would read "
+                    + "as a refusal the contract never wrote")
+        }
+    }
+
+    /// `send_hello`'s body, by its DEFINITION rather than the forward
+    /// declaration above it — wire.c has both, and matching the declaration
+    /// hands back the body of whatever function happens to follow it.
+    ///
+    /// COMMENTS ARE STRIPPED, through the shared reader in `GateSource`,
+    /// and that is not tidiness. Every comment in this function names the
+    /// very identifiers these gates look for, so a scan of the raw text
+    /// passes on the prose while the code says something else: replacing
+    /// `now_agent_access()` with a literal was invisible to this gate until
+    /// the stripping went in, and the comment three lines above explaining
+    /// why a literal is wrong was what hid it.
+    ///
+    /// **Not finding the function is a FAILURE, not a skip.** It was a skip
+    /// once, and a skip here is the quietest hole in the file: renaming
+    /// `send_hello` — or writing its brace K&R-style — took three gates off
+    /// the board and left a green run reporting one more skip among fifty.
+    /// The file is in the repository; there is no environment in which its
+    /// absence is a legitimate excuse.
+    private func sendHelloBody() throws -> String {
+        let wire = try GateSource.raw("now-guest-ppc/src/core/wire.c")
+        guard let start = wire.range(of: "static void send_hello(void)\n{"),
+              let end = wire.range(of: "\n}", range: start.upperBound
+                                    ..< wire.endIndex) else {
+            throw HelloUnreadable.noDefinition
+        }
+        return GateSource.withoutCComments(
+            String(wire[start.upperBound..<end.lowerBound]))
+    }
+
+    private enum HelloUnreadable: Error, CustomStringConvertible {
+        case noDefinition
+
+        var description: String {
+            "No `static void send_hello(void)` definition in "
+                + "now-guest-ppc/src/core/wire.c. Every hello gate in this "
+                + "file reads that function by name, so a rename or a "
+                + "reformatted brace takes them all off the board at once — "
+                + "which is why this is a failure and not a skip. Point the "
+                + "reader at wherever the function went."
+        }
     }
 }

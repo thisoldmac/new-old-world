@@ -966,6 +966,16 @@ static void draw_window_facts(const ProcEntry *entry)
         case kNowPeekReadUnreadable:
             snprintf(value, sizeof value, "unreadable");
             break;
+        /* Both mean the plane is live and this process's anchor is not
+           trustworthy - a different statement from "not captured yet",
+           and the reason they stopped being folded into it. Worded for
+           someone who does not know what an anchor slot is. */
+        case kNowPeekReadAmbiguous:
+            snprintf(value, sizeof value, "unclear (two matches)");
+            break;
+        case kNowPeekReadMismatch:
+            snprintf(value, sizeof value, "stale anchor");
+            break;
         default:
             snprintf(value, sizeof value, "-");   /* no plane */
             break;

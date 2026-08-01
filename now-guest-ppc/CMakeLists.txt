@@ -17,6 +17,7 @@ add_application(now-guest-ppc
     src/files/fileshare.c
     src/core/pump.c
     src/core/build_stamp.c
+    src/core/agent_access.c
     src/screenshots/screenshot.c
     src/census/vprobe.c
     src/files/catsearch.c
@@ -30,11 +31,16 @@ add_application(now-guest-ppc
     src/census/census_probes.c
     src/census/census_trap.c
     src/logs/logs_module.c
+    src/mcp/mcp_layout.c
+    src/mcp/mcp_module.c
+    src/diagnostics/diag_layout.c
+    src/diagnostics/diagnostics_module.c
     src/census/census_decode.c
     src/census/census_report.c
     src/files/files_module.c
     src/files/files_browser_view.c
     src/files/files_share_view.c
+    src/files/files_pull.c
     src/workshop/confirm.c
     src/core/ot_carbon.c
     src/core/json.c
@@ -46,6 +52,7 @@ add_application(now-guest-ppc
     src/connection/connection_module.c
     src/peek/peek.c
     src/peek/peek_validate.c
+    src/peek/peek_oracle.c
     src/peek/peek_read.c
     src/processes/proc_actions.c
     src/processes/proc_quit_args.c
@@ -54,7 +61,25 @@ add_application(now-guest-ppc
     src/workshop/workshop_layout.c
     src/workshop/workshop_sidebar.c
     src/workshop/workshop_window.c
+    src/scene/scene_build.c
+    src/scene/scene_json.c
+    src/scene/scene_collect.c
+    # The foreign-memory walk, ported from this project's own prototype
+    # (timbottu/mirror). Pure parsers plus one Toolbox binding; see
+    # src/axwalk/axwalk.h for why its constants are evidence.
+    src/axwalk/axwalk.c
+    src/axwalk/axmenu.c
+    src/axwalk/axtext.c
+    src/axwalk/axresolve.c
+    src/axwalk/axbinding.c
+    src/axwalk/axprocess.c
     resources/app.r
+    # The application icon family, generated from the artwork by
+    # assets/icons/classic/rez.py and shared with any other target that
+    # wants it. Referenced where it is generated rather than copied in: a
+    # copy is a second definition of a file whose own header says not to
+    # hand-edit it, and the two would drift the first time the art moved.
+    ../assets/icons/classic/now-icons.r
 )
 
 # src/ is split by domain (core/, commands/, workshop/, ...), but the

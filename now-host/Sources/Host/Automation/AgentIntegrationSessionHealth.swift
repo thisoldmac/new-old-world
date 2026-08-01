@@ -10,6 +10,13 @@ import NOWAgentIntegration
 final class AgentIntegrationHostAdapter {
     private let listener: GuestListener
     private let launchCommandTimeout: TimeInterval
+    /// Injected for the same reason as the launch timeout beside it: the real
+    /// one is 42 s, and a test that had to wait it out to prove the timeout
+    /// path is a test nobody runs.
+    private let catalogSearchTimeout: TimeInterval
+    /// Injected for the reason the two above are, and one of its own: this
+    /// bound is the ONLY watchdog on a `vprobe`, since the guest has none.
+    private let diagnosticsTimeout: TimeInterval
     private let artifactApprovals: AgentIntegrationArtifactApprovalStore?
     private lazy var processControl = AgentIntegrationProcessControl(
         listener: listener,
@@ -19,9 +26,53 @@ final class AgentIntegrationHostAdapter {
         listener: listener,
         commandTimeout: launchCommandTimeout,
         currentSessionID: { [unowned self] in connectedSessionID() })
+    /// Beside the launch control, which consumes the same family and hands
+    /// back none of it — this one is the family's own caller.
+    private lazy var softwareInventoryControl =
+        AgentIntegrationSoftwareInventory(
+        listener: listener,
+        currentSessionID: { [unowned self] in connectedSessionID() })
+    private lazy var revealControl = AgentIntegrationRevealItem(
+        listener: listener,
+        currentSessionID: { [unowned self] in connectedSessionID() })
+    private lazy var logTailControl = AgentIntegrationGuestLogTail(
+        listener: listener,
+        currentSessionID: { [unowned self] in connectedSessionID() })
+    private lazy var machineFactsControl = AgentIntegrationMachineFacts(
+        listener: listener,
+        currentSessionID: { [unowned self] in connectedSessionID() })
+    private lazy var censusControl = AgentIntegrationCensus(
+        listener: listener,
+        currentSessionID: { [unowned self] in connectedSessionID() })
     private lazy var capabilityLedger = AgentIntegrationCapabilityLedger(
         listener: listener,
         currentSessionID: { [unowned self] in connectedSessionID() })
+    private lazy var captureControl = AgentIntegrationCaptureControl(
+        listener: listener,
+        currentSessionID: { [unowned self] in connectedSessionID() })
+    /* Beside the capture control, because it is the same lane seen the other
+       way round: one picture now, or the bracket that produces them until
+       somebody stops it. The ownership rule that makes the second safe lives
+       in the control, not here. */
+    private lazy var streamControl = AgentIntegrationStreamControl(
+        listener: listener,
+        currentSessionID: { [unowned self] in connectedSessionID() })
+    private lazy var transferControl = AgentIntegrationTransferControl(
+        listener: listener,
+        currentSessionID: { [unowned self] in connectedSessionID() })
+    private lazy var catalogSearch = AgentIntegrationCatalogSearch(
+        listener: listener,
+        currentSessionID: { [unowned self] in connectedSessionID() },
+        commandTimeout: catalogSearchTimeout)
+    /* Beside the catalog search, because it is the same kind of thing: a
+       measurement of the machine, bounded here because the guest does not
+       bound it. Injected timeout for the same reason as the two above — the
+       real one is 40 s and a test that waited it out is a test nobody
+       runs. */
+    private lazy var diagnostics = AgentIntegrationDiagnostics(
+        listener: listener,
+        currentSessionID: { [unowned self] in connectedSessionID() },
+        commandTimeout: diagnosticsTimeout)
     private lazy var artifactTransfer = AgentIntegrationArtifactTransfer(
         listener: listener,
         approvals: artifactApprovals,
@@ -32,10 +83,16 @@ final class AgentIntegrationHostAdapter {
     init(
         listener: GuestListener,
         launchCommandTimeout: TimeInterval = 32,
+        catalogSearchTimeout: TimeInterval =
+            AgentIntegrationCatalogSearchPolicy.commandTimeout,
+        diagnosticsTimeout: TimeInterval =
+            AgentIntegrationDiagnosticsPolicy.commandTimeout,
         artifactApprovals: AgentIntegrationArtifactApprovalStore? = nil
     ) {
         self.listener = listener
         self.launchCommandTimeout = launchCommandTimeout
+        self.catalogSearchTimeout = catalogSearchTimeout
+        self.diagnosticsTimeout = diagnosticsTimeout
         self.artifactApprovals = artifactApprovals
     }
 
@@ -79,6 +136,8 @@ final class AgentIntegrationHostAdapter {
                 reference: activeReference(),
                 name: health?.guestName ?? guestName,
                 version: health?.guestVersion,
+                build: health?.guestBuild,
+                agentAccess: health?.guestAgentAccess,
                 operatingSystem: health?.guestOS,
                 connectedAt: health?.connectedAt,
                 lastTraffic: health?.lastTraffic,
@@ -120,10 +179,123 @@ final class AgentIntegrationHostAdapter {
             reference: reference, requestedAt: requestedAt)
     }
 
+    /// Bring one observed process forward. The confirmed-versus-accepted
+    /// distinction, and why it cannot come off the wire, is in
+    /// `AgentIntegrationProcessControl`.
+    func bringToFront(reference: String, requestedAt: Date = Date()) async
+        -> AgentIntegrationFrontResult {
+        await processControl.bringToFront(
+            reference: reference, requestedAt: requestedAt)
+    }
+
+    /// What the connected machine says it is — every `gestalt` group in one
+    /// call, in the guest's own words. Adjacent to the census above rather
+    /// than composed from it: `AgentIntegrationMachineFacts` and
+    /// `MachineFactsProjection` carry the difference in plane and shape.
+    func machineFacts() async -> AgentIntegrationGuestRowReportResult {
+        await machineFactsControl.read()
+    }
+
+    /// One page of one software domain. The domain is required and there is no
+    /// all-domains form; `apps` at cursor 1 is a whole-volume sweep, and
+    /// `AgentIntegrationSoftwareInventory` carries what this side may and may
+    /// not do with what comes back.
+    func softwareInventory(
+        domain: AgentIntegrationSoftwareDomain, cursor: Int?
+    ) async -> AgentIntegrationSoftwareInventoryResult {
+        await softwareInventoryControl.page(domain: domain, cursor: cursor)
+    }
+
+    /// One page of one hardware-census probe. The probe's own outcome is a
+    /// fact about the machine and lives inside a completed result;
+    /// `AgentIntegrationCensus` carries why that is not this call's outcome.
+    func census(probe: String, cursor: Int?) async
+        -> AgentIntegrationCensusResult {
+        await censusControl.page(probe: probe, cursor: cursor)
+    }
+
+    /// Show one item in the connected machine's own Finder. A completed
+    /// answer means the machine was ASKED — the guest's Apple Event requests
+    /// no reply — and `AgentIntegrationRevealItem` carries the whole of why.
+    func revealItem(target: String) async
+        -> AgentIntegrationGuestRowReportResult {
+        await revealControl.reveal(target: target)
+    }
+
+    /// The end of the connected machine's own log for this launch. It names
+    /// no file and cannot be pointed at one; `AgentIntegrationGuestLogTail`
+    /// carries the whole of why, and what a log line can still disclose.
+    func tailGuestLog(lines: Int?) async
+        -> AgentIntegrationGuestRowReportResult {
+        await logTailControl.tail(lines: lines)
+    }
+
     func launchSoftware(_ selection: AgentIntegrationLaunchSelection,
                         observedAt: Date = Date()) async
         -> AgentIntegrationLaunchSoftwareResult {
         await softwareLaunch.launch(selection, observedAt: observedAt)
+    }
+
+    /// What a whole-volume application sweep costs on the connected machine.
+    /// The bound on the wait, and why a second one is refused rather than
+    /// queued, live in `AgentIntegrationCatalogSearch`.
+    func measureCatalogSearch(observedAt: Date = Date()) async
+        -> AgentIntegrationGuestRowReportResult {
+        await catalogSearch.measure(observedAt: observedAt)
+    }
+
+    /// Run one named diagnostic — `vprobe`, `shotdiag` or `putstat`. One
+    /// entry point for three capabilities because they are one lane and one
+    /// bound; which of them the connected machine answers is the capability
+    /// ledger's question, not this call's. `AgentIntegrationDiagnostics`
+    /// carries the bound and why a second run is refused rather than queued.
+    func runDiagnostic(_ probe: AgentIntegrationDiagnosticProbe,
+                       observedAt: Date = Date()) async
+        -> AgentIntegrationGuestRowReportResult {
+        await diagnostics.run(probe, observedAt: observedAt)
+    }
+
+    /// One picture of the connected machine's screen, staged for the pages
+    /// the local surface has to carry it in. The lane's own reasoning lives
+    /// in `AgentIntegrationCaptureControl`.
+    func capture(depth: Int) async -> AgentIntegrationCaptureResult {
+        await captureControl.capture(depth: depth)
+    }
+
+    func capturePage(captureID: UUID, offset: Int)
+        -> AgentIntegrationCaptureResult {
+        captureControl.page(captureID: captureID, offset: offset)
+    }
+
+    func abandonCapture() -> AgentIntegrationCaptureResult {
+        captureControl.abandon()
+    }
+
+    /// The live-stream bracket's four calls. Why an agent-opened bracket ends
+    /// itself, and what ends it, is `AgentIntegrationStreamControl`'s.
+    func startStream(depth: Int, minIntervalMs: Int)
+        -> AgentIntegrationStreamResult {
+        streamControl.start(depth: depth, minIntervalMs: minIntervalMs)
+    }
+
+    func nextStreamFrame() async -> AgentIntegrationStreamResult {
+        await streamControl.nextFrame()
+    }
+
+    func streamFramePage(frameID: UUID, offset: Int)
+        -> AgentIntegrationStreamResult {
+        streamControl.page(frameID: frameID, offset: offset)
+    }
+
+    func stopStream() -> AgentIntegrationStreamResult {
+        streamControl.stop()
+    }
+
+    /// Ends the file transfer in flight, either direction. The lane's own
+    /// reasoning — and why the answer says `asked` rather than `cancelled` —
+    /// lives in `AgentIntegrationTransferControl`.
+    func cancelTransfer() -> AgentIntegrationTransferCancelResult {
+        transferControl.cancel()
     }
 
     func approveArtifact(
@@ -260,6 +432,8 @@ final class AgentIntegrationHostAdapter {
         sessionID = nil
         sessionConnectedAt = nil
         capabilityLedger.forgetGuest()
+        captureControl.forgetGuest()
+        streamControl.forgetGuest()
     }
 
     func connectedSessionID() -> UUID? {

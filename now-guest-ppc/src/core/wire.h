@@ -3,6 +3,7 @@
 
 #include <Carbon.h>
 
+#include "agent_access.h"
 #include "fileshare.h"
 
 /* The persistent connection to the host. The guest holds one TCP connection
@@ -97,6 +98,28 @@ long conn_service_passes(void);
 long conn_last_rtt_ms(void);
 
 /* --- guest-initiated screenshot push ----------------------------------- */
+
+/* Tells the host this machine's agent-access answer changed (agent.access),
+   because hello stated it once and a tier changed since then would
+   otherwise not reach the host until the link was rebuilt — leaving it
+   enforcing a permission the person had already withdrawn.
+
+   Call it AFTER the new tier is stored, never instead of storing it: this
+   reports the fact, it does not carry it. Does nothing when no link is up,
+   where the next hello is what says it. Call it through
+   now_agent_access_set_tier rather than directly — that is the one place
+   the tier changes, and so the one place that owes the host a word. */
+void now_wire_announce_agent_access(void);
+
+/* What THIS connection has been told about agent access, which is not the
+   same question as what the tier is: they part company when a send did not
+   happen (no link up, or a full control queue). False means this link has
+   been told nothing, and `out` is untouched.
+
+   The page shows the difference rather than assuming it away — and asks
+   here rather than inferring it from watching the link come up, which is
+   what it used to do. */
+Boolean now_wire_agent_access_told(AgentAccessTier *out);
 
 /* Captures at the panel's depth and offers it to the host (capture.offer).
    Returns 0 once the offer is on the wire; -1 with a reason in err if the

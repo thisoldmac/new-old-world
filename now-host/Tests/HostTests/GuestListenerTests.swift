@@ -2,6 +2,7 @@ import XCTest
 import Network
 import Combine
 @testable import Host
+import NOWAgentIntegration
 
 /// A scripted guest: dials the listener over loopback, sends frames, and
 /// collects decoded control replies.
@@ -108,10 +109,188 @@ final class GuestListenerTests: XCTestCase {
         }
     }
 
-    private func guestHello(name: String = "PowerBook 1400",
-                            contract: Int = Contract.revision) -> ControlMessage {
+    private func guestHello(
+        name: String = "PowerBook 1400",
+        contract: Int = Contract.revision,
+        build: String? = nil,
+        agent: AgentIntegrationGuestAccess? = nil) -> ControlMessage {
         .hello(Hello(contract: contract, side: "guest", version: "0.1.0",
-                     name: name, os: "9.1", chunk: 8192))
+                     build: build, agent: agent, name: name, os: "9.1",
+                     chunk: 8192))
+    }
+
+    /// The answer a machine gives at hello reaches the record the host
+    /// keeps about it, and the roster row beside it.
+    ///
+    /// A vote nobody carries is a vote nobody counted. This is the whole
+    /// job of this slice: the guest states a position and the host holds
+    /// it — enforcement is elsewhere and deliberately not here.
+    func testHelloAgentAccessReachesTheHealthRecord() async throws {
+        let guest = FakeGuest(port: listener.boundPort!)
+        guest.start()
+        try guest.send(guestHello(agent: .readOnly))
+        try await waitUntil("host hello") { !guest.received.isEmpty }
+
+        XCTAssertEqual(
+            listener.health?.guestAgentAccess, .readOnly,
+            "The machine answered and the host dropped it on the floor.")
+        XCTAssertEqual(listener.guests.first?.agentAccess, .readOnly,
+                       "the roster row carries it too")
+    }
+
+    /// A tier changed mid-session reaches the host on the link already up.
+    ///
+    /// The defect this closes: `hello` is sent once per connection and
+    /// nothing revised it, so a person who set Read Only while connected
+    /// went on being driven at Full Access until the link was rebuilt — the
+    /// one place in this product where being out of date has a safety edge.
+    ///
+    /// ORDERED, and that is the point of the first wait rather than a
+    /// politeness. Both values are asserted on the same field, so a test
+    /// that sent the revision without first establishing `.fullAccess`
+    /// would pass against a host that ignored `agent.access` entirely,
+    /// having measured a barrier it never watched arrive.
+    func testATierChangedMidSessionReachesTheHost() async throws {
+        let guest = FakeGuest(port: listener.boundPort!)
+        guest.start()
+        try guest.send(guestHello(agent: .fullAccess))
+        try await waitUntil("host hello") { !guest.received.isEmpty }
+        /* The starting position, established before the revision is sent:
+           without this, the assertion below cannot tell "the host applied
+           the revision" from "the host was already there". */
+        XCTAssertEqual(listener.health?.guestAgentAccess, .fullAccess,
+                       "precondition: the connect-time answer landed")
+
+        try guest.send(.agentAccess(AgentAccess(agent: .readOnly)))
+        try await waitUntil("the revision to land") {
+            self.listener.health?.guestAgentAccess == .readOnly
+        }
+
+        XCTAssertEqual(
+            listener.health?.guestAgentAccess, .readOnly,
+            "The machine withdrew Full Access and the host kept enforcing "
+                + "it — the stale belief this message exists to prevent.")
+        XCTAssertEqual(listener.guests.first?.agentAccess, .readOnly,
+                       "and the roster row the MCP pane renders follows it")
+    }
+
+    /// The revision can also WIDEN, and the host must not treat the
+    /// connect-time answer as a ceiling it may never rise above.
+    ///
+    /// Worth its own case because "only ever narrows" is a plausible thing
+    /// to implement and would be wrong: this field is the machine's
+    /// position, not a budget it spends down. A person who set Read Only
+    /// to do something carefully and then set Full Access back expects the
+    /// second decision to count as much as the first.
+    func testARevisionMayWidenAndNotOnlyNarrow() async throws {
+        let guest = FakeGuest(port: listener.boundPort!)
+        guest.start()
+        try guest.send(guestHello(agent: .readOnly))
+        try await waitUntil("host hello") { !guest.received.isEmpty }
+        XCTAssertEqual(listener.health?.guestAgentAccess, .readOnly,
+                       "precondition: the narrower answer landed first")
+
+        try guest.send(.agentAccess(AgentAccess(agent: .fullAccess)))
+        try await waitUntil("the widening to land") {
+            self.listener.health?.guestAgentAccess == .fullAccess
+        }
+        XCTAssertEqual(listener.health?.guestAgentAccess, .fullAccess)
+    }
+
+    /// A guest that said nothing at hello and then speaks is ANSWERING.
+    ///
+    /// Absence means "predates the field", never consent — so a first
+    /// `agent.access` from such a machine is the only answer the host has
+    /// ever been given, and must replace the silence rather than being
+    /// discarded for having no earlier value to revise.
+    func testAnAnswerAfterSilenceIsTakenAsTheAnswer() async throws {
+        let guest = FakeGuest(port: listener.boundPort!)
+        guest.start()
+        try guest.send(guestHello())
+        try await waitUntil("host hello") { !guest.received.isEmpty }
+        XCTAssertNil(listener.health?.guestAgentAccess,
+                     "precondition: this machine said nothing at hello")
+
+        try guest.send(.agentAccess(AgentAccess(agent: .disabled)))
+        try await waitUntil("the first answer to land") {
+            self.listener.health?.guestAgentAccess == .disabled
+        }
+        XCTAssertEqual(listener.health?.guestAgentAccess, .disabled)
+    }
+
+    /// A machine that refuses is held as a refusal.
+    ///
+    /// `disabled` is the state the whole three-state design turns on: it is
+    /// what an installer that omitted the agent features sends, and what a
+    /// flipped switch sends, and it must not arrive looking like the
+    /// silence of a guest that predates the field.
+    func testAMachineThatRefusesIsHeldAsARefusalNotAsSilence() async throws {
+        let guest = FakeGuest(port: listener.boundPort!)
+        guest.start()
+        try guest.send(guestHello(agent: .disabled))
+        try await waitUntil("host hello") { !guest.received.isEmpty }
+
+        XCTAssertEqual(listener.health?.guestAgentAccess, .disabled)
+        XCTAssertNotNil(
+            listener.health?.guestAgentAccess,
+            "A refusal that reaches the host as nil is indistinguishable "
+                + "from a guest that never heard the question — and absence "
+                + "currently fails open, so it would be read as a yes.")
+    }
+
+    /// A guest that never answers leaves it absent.
+    ///
+    /// NOW-68K sends no `agent` and neither does any machine deployed
+    /// before this field. Absence has to survive as absence: filling it in
+    /// with a tier would be the host inventing consent on behalf of a
+    /// machine that was never asked.
+    func testAGuestThatNeverAnswersLeavesAgentAccessAbsent() async throws {
+        let guest = FakeGuest(port: listener.boundPort!)
+        guest.start()
+        try guest.send(guestHello(name: "now-68k"))
+        try await waitUntil("host hello") { !guest.received.isEmpty }
+
+        XCTAssertNil(listener.health?.guestAgentAccess)
+        XCTAssertNil(listener.guests.first?.agentAccess)
+        XCTAssertEqual(listener.health?.guestVersion, "0.1.0",
+                       "the rest of the hello is still there")
+    }
+
+    /// The build a guest reports at hello reaches the health record.
+    ///
+    /// That string is the only thing distinguishing two builds of one
+    /// hand-edited version, and it is what a host needs to answer "is this
+    /// the build I just deployed" — the question that went unanswered on the
+    /// 1400c on 2026-07-30.
+    func testHelloBuildReachesTheHealthRecord() async throws {
+        let stamp = "Jul 30 2026 01:02:58"
+        let guest = FakeGuest(port: listener.boundPort!)
+        guest.start()
+        try guest.send(guestHello(build: stamp))
+        try await waitUntil("host hello") { !guest.received.isEmpty }
+
+        XCTAssertEqual(
+            listener.health?.guestBuild, stamp,
+            "The guest named its build and the host dropped it.")
+        XCTAssertEqual(listener.health?.guestVersion, "0.1.0")
+        XCTAssertEqual(listener.guests.first?.build, stamp,
+                       "the roster row carries it too")
+    }
+
+    /// A guest that reports no build leaves it absent.
+    ///
+    /// `build` is optional and NOW-68K sends none, so absence has to survive
+    /// as absence. Backfilling it from `version` would reproduce exactly the
+    /// failure the field exists to fix.
+    func testAGuestThatReportsNoBuildLeavesItAbsent() async throws {
+        let guest = FakeGuest(port: listener.boundPort!)
+        guest.start()
+        try guest.send(guestHello(name: "now-68k"))
+        try await waitUntil("host hello") { !guest.received.isEmpty }
+
+        XCTAssertNil(listener.health?.guestBuild)
+        XCTAssertEqual(listener.health?.guestVersion, "0.1.0",
+                       "the version is still there; only the build is not")
     }
 
     func testHelloHandshakeConnectsAndAnswersWithHostHello() async throws {
@@ -369,7 +548,7 @@ final class GuestPushCaptureTests: XCTestCase {
         let watchPushed = listener.pushedCaptures.sink { _ in pushed += 1 }
         defer { watchFrames.cancel(); watchPushed.cancel() }
 
-        listener.startStream(depth: 8)
+        listener.startStream(depth: 8, origin: .person)
         var streamId: Int?
         try await waitUntil("stream.start") {
             for message in guest.received {
@@ -412,13 +591,127 @@ final class GuestPushCaptureTests: XCTestCase {
         XCTAssertNil(listener.streamEndReason)
     }
 
+    /// A guest that does not implement the stream family refuses
+    /// `stream.start`, and the bracket must close on THAT — not on the
+    /// five-second unacknowledged-stop fallback.
+    ///
+    /// This is the 68K guest's ordinary behaviour, not a contrived one: its
+    /// wire answers any message type it does not know with `error`
+    /// (`send_error_reply`, now-guest-68k/src/core/wire68.c). Before the
+    /// listener knew the bracket's own id, nothing here was routed and the
+    /// Screenshots page sat on "Waiting for the first frame…" until the page
+    /// itself noticed and asked for a stop it would also be refused.
+    ///
+    /// The test asserts the timing, because the timing is the defect: the
+    /// deadline is far under the fallback, so a pass cannot be the fallback
+    /// arriving early.
+    func testStreamStartRefusalClosesBracketWithoutFallback() async throws {
+        let guest = try await connectedGuest()
+        /* Answer stream.start the way a guest without the family does, from
+           the wire rather than from the test body, so what closes the
+           bracket is a refusal that crossed the socket. */
+        guest.onMessage = { message in
+            if case .streamStart(let start) = message {
+                try? guest.send(.error(ErrorMessage(
+                    id: start.id, code: "not-implemented",
+                    message: "stream.start is not implemented")))
+            }
+        }
+
+        let opened = Date()
+        let id = try XCTUnwrap(listener.startStream(depth: 8, origin: .person),
+                               "the bracket must open before it can be refused")
+        XCTAssertEqual(listener.activeStreamId, id)
+
+        try await waitUntil("bracket closed") {
+            self.listener.activeStreamId == nil
+        }
+        XCTAssertLessThan(
+            Date().timeIntervalSince(opened), 2,
+            "the refusal must close the bracket, not the 5s stop fallback")
+
+        // The guest's own words, so a caller can say WHY the view is dead.
+        XCTAssertEqual(listener.streamEndReason,
+                       "stream.start is not implemented")
+        // Nothing was asked to stop: there was never a stream to stop.
+        XCTAssertFalse(
+            guest.received.contains(.streamStop(StreamStop(id: id))),
+            "a refused start must not be followed by a stop")
+
+        /* And the refusal is written down, which is what stops the ledger
+           reporting stream.start `unproven` against a machine that has
+           answered the question outright. */
+        let seen = try XCTUnwrap(
+            listener.familyObservations[
+                AgentIntegrationCapabilityNames.streamStart])
+        XCTAssertFalse(seen.served)
+        XCTAssertEqual(seen.code, "not-implemented")
+    }
+
+    /// The other half of the ledger: a guest that streams has SERVED
+    /// `stream.start`, and the frame is the only thing that says so — the
+    /// bracket has no completion for the observing wrapper to sit on.
+    func testStreamFrameRecordsStartAsServed() async throws {
+        let guest = try await connectedGuest()
+        var frames: [GuestListener.CaptureDelivery] = []
+        let watch = listener.streamFrames.sink { frames.append($0) }
+        defer { watch.cancel() }
+        XCTAssertNil(listener.familyObservations[
+            AgentIntegrationCapabilityNames.streamStart],
+            "nothing is known about the family before it is asked")
+
+        let (_, send) = try await streamingGuest(guest, width: 4, height: 4)
+        try send(1, redPalette + [UInt8](repeating: 1, count: 16), "key",
+                 nil, 768, 4)
+        try await waitUntil("keyframe") { frames.count == 1 }
+
+        let seen = try XCTUnwrap(
+            listener.familyObservations[
+                AgentIntegrationCapabilityNames.streamStart])
+        XCTAssertTrue(seen.served)
+    }
+
+    /// A refused `stream.refresh` must NOT kill a stream that is running.
+    /// The three stream messages share the bracket's one id, so the naive
+    /// "any error on this id ends the bracket" would tear down a working
+    /// live view because the guest cannot serve a keyframe on demand.
+    func testRefusedRefreshLeavesRunningStreamAlone() async throws {
+        let guest = try await connectedGuest()
+        var frames: [GuestListener.CaptureDelivery] = []
+        let watch = listener.streamFrames.sink { frames.append($0) }
+        defer { watch.cancel() }
+        let (id, send) = try await streamingGuest(guest, width: 4, height: 4)
+        try send(1, redPalette + [UInt8](repeating: 1, count: 16), "key",
+                 nil, 768, 4)
+        try await waitUntil("keyframe") { frames.count == 1 }
+
+        listener.refreshStream()
+        try await waitUntil("stream.refresh") {
+            guest.received.contains(.streamRefresh(StreamRefresh(id: id)))
+        }
+        try guest.send(.error(ErrorMessage(
+            id: id, code: "not-implemented",
+            message: "stream.refresh is not implemented")))
+        try await waitUntil("the refusal is seen") {
+            self.listener.lastGuestError?.code == "not-implemented"
+        }
+
+        XCTAssertEqual(listener.activeStreamId, id,
+                       "a refused keyframe must not end the stream")
+        // And it is not evidence against the family the guest is serving.
+        let seen = try XCTUnwrap(
+            listener.familyObservations[
+                AgentIntegrationCapabilityNames.streamStart])
+        XCTAssertTrue(seen.served)
+    }
+
     func testStreamCompositesKeyDeltaAndEmptyFrames() async throws {
         let guest = try await connectedGuest()
         var frames: [GuestListener.CaptureDelivery] = []
         let watch = listener.streamFrames.sink { frames.append($0) }
         defer { watch.cancel() }
 
-        listener.startStream(depth: 8)
+        listener.startStream(depth: 8, origin: .person)
         var streamId: Int?
         try await waitUntil("stream.start") {
             for message in guest.received {
@@ -482,7 +775,7 @@ final class GuestPushCaptureTests: XCTestCase {
         async throws
         -> (id: Int, send: (Int, [UInt8], String, [[Int]]?, Int, Int) throws
                 -> Void) {
-        listener.startStream(depth: 8)
+        listener.startStream(depth: 8, origin: .person)
         var streamId: Int?
         try await waitUntil("stream.start") {
             for message in guest.received {
@@ -591,7 +884,7 @@ final class GuestPushCaptureTests: XCTestCase {
 
     func testRefreshAsksTheGuestForAKeyframe() async throws {
         let guest = try await connectedGuest()
-        listener.startStream(depth: 8)
+        listener.startStream(depth: 8, origin: .person)
         var streamId: Int?
         try await waitUntil("stream.start") {
             for message in guest.received {
@@ -612,7 +905,7 @@ final class GuestPushCaptureTests: XCTestCase {
 
     func testGuestAbortReportsItsReason() async throws {
         let guest = try await connectedGuest()
-        listener.startStream(depth: 1)
+        listener.startStream(depth: 1, origin: .person)
         var streamId: Int?
         try await waitUntil("stream.start") {
             for message in guest.received {
@@ -647,7 +940,7 @@ final class GuestPushCaptureTests: XCTestCase {
 
     func testStreamRequestWhileStreamingIsDeclined() async throws {
         let guest = try await connectedGuest()
-        listener.startStream(depth: 8)
+        listener.startStream(depth: 8, origin: .person)
         try await waitUntil("stream.start") {
             guest.received.contains {
                 if case .streamStart = $0 { return true }
@@ -673,7 +966,7 @@ final class GuestPushCaptureTests: XCTestCase {
 
     func testGuestDisconnectClosesTheBracket() async throws {
         let guest = try await connectedGuest()
-        listener.startStream(depth: 8)
+        listener.startStream(depth: 8, origin: .person)
         try await waitUntil("stream.start") {
             guest.received.contains {
                 if case .streamStart = $0 { return true }
@@ -689,7 +982,7 @@ final class GuestPushCaptureTests: XCTestCase {
 
     func testOfferDuringAStreamIsRefusedBusy() async throws {
         let guest = try await connectedGuest()
-        listener.startStream(depth: 8)
+        listener.startStream(depth: 8, origin: .person)
         try await waitUntil("stream.start") {
             guest.received.contains {
                 if case .streamStart = $0 { return true }

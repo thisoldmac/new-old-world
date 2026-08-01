@@ -151,11 +151,16 @@ final class GuestFilesCommandTests: XCTestCase {
         XCTAssertEqual(response.receipt.sessionID, sessionID)
         XCTAssertEqual(capabilities.guestRoot, "")
         XCTAssertEqual(capabilities.rootLabel, "Macintosh HD:")
+        /* `download` moved into `available` with the pull lane, and the four
+           mutations with the mutation command layer. `delete` did not and
+           will not: removal on this surface means the Trash, which is
+           reversible, so the unlink the V0.5 roadmap named stays deferred. */
         XCTAssertEqual(capabilities.availableCommands,
-                       [.capabilities, .list, .stat, .put])
+                       [.capabilities, .list, .stat, .download, .put,
+                        .mkdir, .move, .trash, .restore])
         XCTAssertEqual(capabilities.deferredCommands,
-                       [.download, .readText, .tailText, .mkdir,
-                        .move, .delete, .deployTree, .prune])
+                       [.readText, .tailText, .delete,
+                        .deployTree, .prune])
         XCTAssertEqual(capabilities.maximumPageEntries, 16)
         XCTAssertEqual(capabilities.maximumPathBytes, 223)
     }

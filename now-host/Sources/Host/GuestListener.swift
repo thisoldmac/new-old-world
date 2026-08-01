@@ -49,6 +49,15 @@ final class GuestListener: ObservableObject {
     struct SessionHealth: Equatable {
         var guestName: String
         var guestVersion: String?
+        /// The guest's build identity from `hello`, when it reports one.
+        /// Nil means it does not — never a guess, and never `guestVersion`
+        /// standing in, because two builds sharing a version is the whole
+        /// reason this is here (docs/open-issues.md, 2026-07-30).
+        var guestBuild: String? = nil
+        /// What this machine answered at `hello` about agents driving it.
+        /// Nil is "did not say" — a guest older than the field — and is
+        /// not consent; the machine that means no says `.disabled`.
+        var guestAgentAccess: AgentIntegrationGuestAccess? = nil
         var guestOS: String?
         var connectedAt: Date
         var lastTraffic: Date
@@ -323,6 +332,8 @@ final class GuestListener: ObservableObject {
                 name: live.guestName,
                 address: live.guestAddress,
                 version: record.guestVersion,
+                build: record.guestBuild,
+                agentAccess: record.guestAgentAccess,
                 operatingSystem: record.guestOS,
                 connectedAt: record.connectedAt,
                 isActive: key == activeKey)
@@ -901,6 +912,19 @@ final class GuestListener: ObservableObject {
         var modified: Int?
         var staged: InboundFileSink.StagedFile
         var transferMs: Int
+        /// The whole-stream CRC-32 the SENDER computed, when it sent one.
+        /// The sink has already verified the received bytes against it, so
+        /// a value here means checked; **nil means the guest computed none
+        /// and the bytes are UNCHECKED**, which a consumer must report as
+        /// unchecked rather than as correct (`file.end.crc32` is optional
+        /// by contract, and an older guest sends no field at all).
+        var crc32: UInt32?
+        /// The opaque source token a guest offered in `file.begin`, when it
+        /// offered one. Reverse resume is not implemented
+        /// (docs/reverse-file-streaming.md), so nothing consumes this — it
+        /// is carried because a consumer reporting a receipt should say
+        /// what the machine said, not what this host does with it.
+        var resumeToken: String?
     }
 
     /// Lists one page of a folder in the guest's share. Paths are
@@ -994,7 +1018,7 @@ final class GuestListener: ObservableObject {
         pendingProcessResults[id] = observing(
             verb == .quit
                 ? AgentIntegrationCapabilityNames.processQuit
-                : "process.front",
+                : AgentIntegrationCapabilityNames.processFront,
             completion)
         armWatchdog(id: id, seconds: 15) { [weak self] reason in
             self?.pendingProcessResults.removeValue(forKey: id)?(
@@ -1009,7 +1033,8 @@ final class GuestListener: ObservableObject {
     func moveFile(from: String, to: String, overwrite: Bool = false,
                   completion: @escaping (Result<FileResult,
                                                 FileFailure>) -> Void) {
-        sendChange(completion) { session, id in
+        sendChange(AgentIntegrationCapabilityNames.fileMove,
+                   completion) { session, id in
             session.sendFileMove(FileMove(id: id, path: from, toPath: to,
                                           overwrite: overwrite ? true : nil))
         }
@@ -1019,7 +1044,8 @@ final class GuestListener: ObservableObject {
     func trashFile(path: String,
                    completion: @escaping (Result<FileResult,
                                                  FileFailure>) -> Void) {
-        sendChange(completion) { session, id in
+        sendChange(AgentIntegrationCapabilityNames.fileTrash,
+                   completion) { session, id in
             session.sendFileTrash(FileTrash(id: id, path: path))
         }
     }
@@ -1027,7 +1053,8 @@ final class GuestListener: ObservableObject {
     func restoreFile(trashedAs: String, to path: String,
                      completion: @escaping (Result<FileResult,
                                                    FileFailure>) -> Void) {
-        sendChange(completion) { session, id in
+        sendChange(AgentIntegrationCapabilityNames.fileRestore,
+                   completion) { session, id in
             session.sendFileRestore(FileRestore(id: id, trashedAs: trashedAs,
                                                 toPath: path))
         }
@@ -1036,13 +1063,22 @@ final class GuestListener: ObservableObject {
     func makeFolder(path: String,
                     completion: @escaping (Result<FileResult,
                                                   FileFailure>) -> Void) {
-        sendChange(completion) { session, id in
+        sendChange(AgentIntegrationCapabilityNames.fileMkdir,
+                   completion) { session, id in
             session.sendFileMkdir(FileMkdir(id: id, path: path))
         }
     }
 
     /// The shared shape of the four: control-plane, one answer, watchdog.
+    ///
+    /// Each carries its own family name, so the capability ledger learns
+    /// these four from ORDINARY USE the way it learns the process and
+    /// listing families. It matters because the ledger never probes a
+    /// mutating family: without the observation, a guest that refused
+    /// `file.move` with `not-implemented` would leave the row `unproven`
+    /// forever and nothing would ever record that NOW-68K does not serve it.
     private func sendChange(
+        _ family: String,
         _ completion: @escaping (Result<FileResult, FileFailure>) -> Void,
         _ emit: (Session, Int) -> Void) {
         guard let session, case .connected = state else {
@@ -1052,7 +1088,15 @@ final class GuestListener: ObservableObject {
         }
         let id = nextCommandId
         nextCommandId += 1
-        pendingChanges[id] = completion
+        /* `resolveChange` below renders an `ok:false` answer as a `.failure`
+           carrying the guest's own code, so an ordinary refusal — `exists`,
+           `not-found` — reaches the ledger as one too. That is safe rather
+           than misleading only because the ledger moves a family to
+           `unavailable` for the contract's typed I-do-not-implement-that
+           codes alone; anything else leaves it `unproven` while recording
+           what the guest said. A guest that refused a duplicate name must
+           not read as a guest without the family. */
+        pendingChanges[id] = observing(family, completion)
         armWatchdog(id: id, seconds: 20) { [weak self] reason in
             self?.pendingChanges.removeValue(forKey: id)?(
                 .failure(.init(code: "timeout", message: reason)))
@@ -1284,6 +1328,31 @@ final class GuestListener: ObservableObject {
             putMaximumProgressGap,
             max(0, outcome.timeIntervalSince(lastActivity)))
         return Int((gap * 1_000).rounded())
+    }
+
+    /// Which way the one transfer lane is pointing, or nil when it holds no
+    /// FILE transfer.
+    ///
+    /// Read by a caller that must not guess. `cancelFile()` below is a void
+    /// method that does nothing at all when nothing is in flight, which is
+    /// right for a button — a person can see the bar is gone — and is not
+    /// enough for an agent, which has to be able to tell "stopped it" from
+    /// "there was nothing to stop" and report which.
+    ///
+    /// It answers about the FILE lane only. A capture or a live stream holds
+    /// the same one-wide lane and neither is ended by `file.cancel`;
+    /// `isCapturePending` and `activeStreamId` are their own answers.
+    enum FileTransferInFlight {
+        /// A file this host is pushing to the guest.
+        case outgoing
+        /// A file this host is pulling off it.
+        case incoming
+    }
+
+    var fileTransferInFlight: FileTransferInFlight? {
+        if pendingPut != nil { return .outgoing }
+        if pendingFile != nil { return .incoming }
+        return nil
     }
 
     /// Abandons the file transfer; settles locally for the same reason
@@ -1543,22 +1612,83 @@ final class GuestListener: ObservableObject {
     /// Non-nil while a stream bracket is open.
     @Published private(set) var activeStreamId: Int?
 
+    /// **Who asked for the bracket that is open**, nil when none is.
+    ///
+    /// The bracket has always been host-owned and has never recorded which of
+    /// the three ways it was opened, because for two of them nobody needed to
+    /// know: a person who clicks Start Streaming is looking at the page that
+    /// says so, and a guest that asked is the machine on the screen. An agent
+    /// can now open one too, and both questions that follow need this. The
+    /// person at the host has to be able to tell an agent's stream from their
+    /// own — a live view that started by itself is otherwise indistinguishable
+    /// from a fault — and a bracket that outlives whoever opened it can only
+    /// be ended against the answer to "who opened it".
+    ///
+    /// It is set beside `activeStreamId` and cleared with it, everywhere,
+    /// because an origin without a bracket is a claim about a stream that is
+    /// not running.
+    @Published private(set) var streamOrigin: AgentIntegrationStreamOrigin?
+
+    /// What the bracket was opened with, for whoever has to describe it. The
+    /// depth is what was ASKED for — the guest answers with what its screen
+    /// actually is, and that arrives on the frame.
+    @Published private(set) var streamDepth: Int?
+    @Published private(set) var streamMinIntervalMs: Int?
+    /// When the open bracket was opened. Nil with the rest of them.
+    @Published private(set) var streamOpenedAt: Date?
+
     /// The reason the guest gave when IT ended the stream ("capture
     /// failed"); nil after a host-requested stop.
     @Published private(set) var streamEndReason: String?
 
+    /// **Whether the guest has ever answered the open bracket with a frame.**
+    ///
+    /// `stream.start`, `stream.stop` and `stream.refresh` all carry the
+    /// bracket's one id, so an `error` bearing that id says only "one of the
+    /// three", and which one decides both what may be recorded about the
+    /// machine and whether the bracket dies. A frame is the proof that
+    /// `stream.start` was served: before one, the refusal can only be of the
+    /// open itself; after one, the family is answered and a later refusal
+    /// belongs to whichever request came second.
+    private var streamAccepted = false
+
+    /// Whether a stop has been asked for and not yet answered. A refusal
+    /// while this is set is a refused STOP, which ends the bracket now
+    /// instead of on the five-second fallback — but it is not evidence
+    /// about `stream.start`, which this guest plainly served.
+    private var streamStopRequested = false
+
     /// Opens a stream bracket. Frames then arrive on streamFrames until
     /// stopStream() or the guest's own stream.stopped.
+    ///
+    /// **The origin is not defaulted**, deliberately: every caller states who
+    /// it is opening on behalf of, so that a fourth way to open one cannot
+    /// arrive silently labelled as the person at the host.
+    ///
+    /// Returns the bracket's id, or nil when there was nothing to open — a
+    /// caller that has to report which happened needs that, and a person's
+    /// button does not have to read it. It used to return nothing and the two
+    /// silent failures (no connection, lane already taken) were
+    /// indistinguishable from success.
+    @discardableResult
     func startStream(depth: Int, minIntervalMs: Int? = nil,
-                     tuning: CaptureTuning = .init()) {
+                     tuning: CaptureTuning = .init(),
+                     origin: AgentIntegrationStreamOrigin) -> Int? {
         guard let session, case .connected = state,
-              activeStreamId == nil else { return }
+              activeStreamId == nil else { return nil }
         let id = nextCommandId
         nextCommandId += 1
         activeStreamId = id
+        streamOrigin = origin
+        streamDepth = depth
+        streamMinIntervalMs = minIntervalMs
+        streamOpenedAt = Date()
         streamEndReason = nil
+        streamAccepted = false
+        streamStopRequested = false
         session.beginStream(id: id, depth: depth,
                             minIntervalMs: minIntervalMs, tuning: tuning)
+        return id
     }
 
     /// Asks the guest to send its next stream frame whole.
@@ -1569,6 +1699,7 @@ final class GuestListener: ObservableObject {
 
     func stopStream() {
         guard let id = activeStreamId else { return }
+        streamStopRequested = true
         session?.requestStreamStop(id: id)
         // Self-heal: a guest that never answers (dead app, dead wire the
         // socket hasn't noticed) must not wedge the bracket open forever.
@@ -1577,18 +1708,89 @@ final class GuestListener: ObservableObject {
             try? await Task.sleep(nanoseconds: 5_000_000_000)
             guard !Task.isCancelled, let self,
                   self.activeStreamId == id else { return }
-            self.activeStreamId = nil
-            self.streamEndReason = "no answer to stop"
+            self.forgetStream(
+                reason: AgentIntegrationStreamFailure.unacknowledgedStop)
         }
+    }
+
+    /// A frame on the open bracket: the machine served `stream.start`.
+    ///
+    /// Recorded on the FIRST one only, and recorded at all because the
+    /// bracket has no completion for `observing(_:)` to wrap — the family
+    /// whose answer arrives as a stream of frames rather than as a reply is
+    /// exactly the one that would otherwise read `unproven` against a guest
+    /// that has been streaming to the screen for a minute.
+    private func noteStreamFrame(_ delivery: CaptureDelivery) {
+        if !streamAccepted {
+            streamAccepted = true
+            observeFamily(AgentIntegrationCapabilityNames.streamStart,
+                          served: true)
+        }
+        streamFrames.send(delivery)
     }
 
     fileprivate func streamEnded(_ stopped: StreamStopped) {
         guard stopped.id == activeStreamId else { return }
         stopFallback?.cancel()
         stopFallback = nil
-        activeStreamId = nil
-        streamEndReason = stopped.reason
+        forgetStream(reason: stopped.reason)
         captureProgress = nil
+    }
+
+    /// Drops every field that describes the open bracket, together.
+    ///
+    /// One place rather than three, because the three ways a bracket ends
+    /// used to clear `activeStreamId` and nothing else — which was correct
+    /// while it was the only field, and is the shape of the bug the moment it
+    /// is not. An origin left behind describes a stream that is not running.
+    private func forgetStream(reason: String?) {
+        activeStreamId = nil
+        streamOrigin = nil
+        streamDepth = nil
+        streamMinIntervalMs = nil
+        streamOpenedAt = nil
+        streamEndReason = reason
+        streamAccepted = false
+        streamStopRequested = false
+    }
+
+    /// **An `error` bearing the open bracket's id.**
+    ///
+    /// The bracket is opened optimistically — `startStream` sets
+    /// `activeStreamId` before the guest has said anything — and its id is
+    /// held by no pending map, so until this existed the one answer a guest
+    /// without the stream family can give went nowhere: `recordGuestError`
+    /// routed six maps, matched none of them, and left the bracket open on a
+    /// stream that was never running. The 68K guest refuses `stream.start`
+    /// every time (`send_error_reply`, now-guest-68k/src/core/wire68.c), so
+    /// this is not an edge case on that machine; it is what happens.
+    ///
+    /// Returns whether the bracket was closed, which is the caller's test for
+    /// "somebody was actually answered".
+    private func refuseStream(_ problem: ErrorMessage) -> Bool {
+        /* Before the first frame the id can only be the open's, so this is
+           evidence about `stream.start` and is written down as such. After
+           one it is a refusal of a stop or a refresh — the machine served
+           the family, and recording a "no" then would be a claim about a
+           guest that is streaming as it is made. */
+        if !streamAccepted {
+            observeFamily(AgentIntegrationCapabilityNames.streamStart,
+                          served: false, code: problem.code,
+                          message: problem.message)
+        }
+        /* A refused REFRESH is the one case that leaves the bracket alone:
+           the frames are still coming, and tearing down a working stream
+           because the guest cannot serve a keyframe on demand would be a
+           worse bug than the one this function fixes. */
+        guard !streamAccepted || streamStopRequested else { return false }
+        stopFallback?.cancel()
+        stopFallback = nil
+        /* The guest's own words, not ours. "no answer to stop" was the only
+           reason a caller could ever read here, and it is untrue of a
+           machine that answered immediately and said why. */
+        forgetStream(reason: problem.message)
+        captureProgress = nil
+        return true
     }
 
     /// The guest asked for a stream: same bracket, host-owned. Accept
@@ -1604,15 +1806,14 @@ final class GuestListener: ObservableObject {
                               message: "a stream or transfer is active")
             return
         }
-        startStream(depth: request.depth)
+        startStream(depth: request.depth, origin: .guest)
     }
 
     fileprivate func streamSessionClosed() {
         guard activeStreamId != nil else { return }
         stopFallback?.cancel()
         stopFallback = nil
-        activeStreamId = nil
-        streamEndReason = "connection lost"
+        forgetStream(reason: "connection lost")
     }
 
     private var stopFallback: Task<Void, Never>?
@@ -1657,6 +1858,16 @@ final class GuestListener: ObservableObject {
 
     private var pendingCapture:
         ((Result<CaptureDelivery, CaptureFailure>) -> Void)?
+
+    /// Whether a capture is already on its way here.
+    ///
+    /// Read by the agent capture lane, which must not start one while the
+    /// person at the machine is waiting on theirs: `requestCapture` REPLACES
+    /// `pendingCapture`, so a second request would leave the first
+    /// completion — the Screenshots button's — never called. The panel
+    /// guards this with its own `isCapturing`; a second initiator needs the
+    /// fact from the wire's owner rather than from one pane's state.
+    var isCapturePending: Bool { pendingCapture != nil }
     private var captureWatchdogId: Int?
     private var fileWatchdogId: Int?
 
@@ -1759,6 +1970,9 @@ final class GuestListener: ObservableObject {
             waiting.completion(ExecOutcome(
                 text: waiting.text, ok: false, code: problem.code,
                 message: problem.message, gap: waiting.gap))
+        }
+        if id == activeStreamId, refuseStream(problem) {
+            routed = true
         }
         // Only now, and only if somebody was actually answered. Clearing
         // the watchdog first looked tidier and was a trap: a waiter this
@@ -1913,7 +2127,22 @@ final class GuestListener: ObservableObject {
             onHealth: { [weak self] health in
                 guard let self else { return }
                 if let key = origin.session?.guestKey {
+                    /* The roster carries a COPY of the parts of this record
+                       it displays, so a field that changes after connect
+                       has to be pushed into it. Only agent access does:
+                       name, version and build are settled at hello and the
+                       rest of this record never reaches a roster row.
+
+                       Deliberately not an unconditional publishActive() —
+                       this closure runs on every frame, bulk ones included,
+                       so rebuilding the array here would do it thousands of
+                       times during a screen stream to carry a value that
+                       changes when somebody clicks a radio button. */
+                    let stale = self.healthByGuest[key]?.guestAgentAccess
                     self.healthByGuest[key] = health
+                    if stale != health?.guestAgentAccess {
+                        self.publishActive()
+                    }
                     guard key == self.activeKey else { return }
                 }
                 self.health = health
@@ -1964,7 +2193,7 @@ final class GuestListener: ObservableObject {
             },
             onStreamFrame: { [weak self] delivery in
                 guard fromActive() else { return }
-                self?.streamFrames.send(delivery)
+                self?.noteStreamFrame(delivery)
             },
             onStreamStopped: { [weak self] stopped in
                 guard fromActive() else { return }

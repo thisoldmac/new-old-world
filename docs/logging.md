@@ -74,9 +74,44 @@ existing tag before coining one, and add a new tag here when you do.
 | `proc` | the process family: drive verbs (front/quit/shot), the list refresh |
 | `census` | a hardware-census probe's outcome |
 | `sw` | the software family: the `catsearch` probe, and `launch` outcomes (the `sw` listing itself is a read and stays quiet) |
+| `agent` | host only: the optional agent-integration surface — one line per capability a non-user face invoked, and the local endpoint's own failures |
 
 The host writes the same tags for the same events, so the two files read
 as one log of the whole system (see *Reading both at once*).
+
+## The `agent` area: who asked
+
+The other areas answer *what happened*. This one answers *who asked for it*,
+and it exists because nothing else in either file could. The `sw` line for a
+launch and the `proc` line for a quit look identical whether the person at
+the machine clicked a row or an agent asked over MCP — so a suite of agentic
+controls could drive a Mac all afternoon and leave a log that read like
+somebody sitting at it.
+
+**One line per capability a non-user face invokes, whatever it came to:**
+
+```
+21:04:11 agent  mcp now_launch_software guest=pb1400c answered
+21:04:14 agent  ? mcp now_request_quit guest=pb1400c refused: now_request_quit accepts one current process reference
+```
+
+- **Refusals are logged, not just successes.** An attempt that was denied is
+  the more interesting event. It is also the only outcome the host would
+  otherwise never hear about: an argument refusal is decided inside the
+  companion and sends no request at all, so if it were not reported it would
+  be recorded nowhere.
+- **`answered` means a typed result was produced**, which may itself say the
+  guest was unavailable. That distinction lives in the result the caller got,
+  not in this line.
+- **Never the arguments.** A path, an upload's bytes, an approval receipt or
+  a process reference would put user content and one-use credentials in a
+  file to answer a question this line is not asking. The Files family
+  already logs its own paths under `files`, where the path *is* the event.
+- The line is composed by the host from typed fields, not accepted as text
+  from whoever reported it — the log belongs to the person at the machine.
+
+The rule and its gate live in
+[agent-integration.md](agent-integration.md#every-agent-call-leaves-a-trace).
 
 ## Levels, and what they cost
 
@@ -182,6 +217,7 @@ tidiness preference.)*
 | Guest: events — process drive verbs (front/quit/shot), census outcomes, process-list refresh | Compiled 2026-07-22; **not yet exercised on metal**. Each carries the wire id; drive-verb refusal reasons now reach the log, not only the wire. `process.list` logs once per refresh (cursor 1), never per page |
 | Host: file per launch, in the line format above | Built, **unverified on a real run** |
 | Host: `tail` of the guest's log | Built; needs `fork/logging` landed and a rebuild |
+| Guest log readable by a non-user host face | Built + tested 2026-07-30 as the `now_guest_log_tail` projection: a line count and never a path, the guest's `shown` row carried through as the bound, and one `app` line per read so the person at the machine can see their log was read. **Unverified on metal.** Scope and encoding: [mcp-coverage.md](mcp-coverage.md) |
 | `tail` output as one row per line | Built — byte-bounded, oldest dropped first, and it says so |
 | Correlation ids in both logs | Built for the file family; **capture and stream still have none** |
 | Per-chunk rule enforced by a test | Built (`LoggingSpecTests`), mutation-checked |

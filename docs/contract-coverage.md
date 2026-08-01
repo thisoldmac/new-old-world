@@ -24,10 +24,18 @@ grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
 ```
 
 Prose goes stale, which is the argument `docs/command-parity.md` makes
-for `CommandParityTests` reading the source instead. **This file has no
-such test yet** — see the last section. Until it does, treat it as
-correct on the date at the bottom and check it against the two commands
-above before relying on it.
+for `CommandParityTests` reading the source instead. **No test gates the
+tables in this file** — see the last section. What does exist is
+`MCPCoverageTests`, which reads these same four greps against the same
+guest sources for a different document
+([mcp-coverage.md](mcp-coverage.md)); the machinery is pointed at the
+same place, but nothing here fails a build. Treat this as correct on the
+date at the bottom and check it against the commands above before
+relying on it.
+
+The other half of the join lives in [mcp-coverage.md](mcp-coverage.md):
+this file says what a **guest** serves, that one says what a **host
+face** can ask for, gap by gap. Neither restates the other's tables.
 
 
 > **Guest identity and addressing changed nothing here (2026-07-28).**
@@ -35,9 +43,46 @@ above before relying on it.
 > host-observed peer address, and the agent projections that carry a guest
 > name it. All of it is host-side: the address arrives on the
 > socket and the display name is already in `hello`. No message, no verb
-> and no probe moved, and both guests are byte-identical in what they
-> serve. The row that WOULD move is a guest-minted stable id in `hello`,
-> which is deliberately not implemented — see docs/open-issues.md.
+> and no probe moved. The row that WOULD move is a guest-minted stable id
+> in `hello`, which is deliberately not implemented — see
+> docs/open-issues.md.
+>
+> That feature was also **unreachable over its own socket from 2026-07-28
+> until 2026-07-29**: the local protocol's strict allowlist decoder had
+> never learned `guestSelector` or the `notAddressed` response, so any
+> request that actually named a machine was rejected as `invalid-request`
+> and the one refusal that names the driven machine surfaced as a
+> protocol error instead. Fixed in
+> `now-host/Sources/NOWAgentIntegration/AgentIntegrationLocalProtocol.swift`;
+> the tests added with the fix read the field list off the type by
+> `Mirror` rather than naming fields, so the next field declared without a
+> place in a second list fails on its own.
+
+> **`hello` is no longer byte-identical between the guests (2026-07-30).**
+> Inbound handling still is — every row in the table below is unchanged —
+> but the PowerPC guest now SENDS two fields the 68K guest does not: a
+> build stamp, and `agent`, the machine's own answer about what an agent
+> companion may do to it (`disabled` / `read-only` / `full`, ordered,
+> optional). The PowerPC guest's answer comes from its preferences file
+> by way of `now_agent_access()`, and a person sets it on the MCP page of
+> the Workshop; NOW-68K sends no `agent` field at all, and absence is not
+> consent — it is a fact about the sender.
+>
+> **And `hello` is no longer the last word on it (2026-07-31).** The
+> PowerPC guest also SENDS `agent.access`, which revises that answer on a
+> link already up — `hello` is sent once per connection, so before it a
+> tier changed mid-session did not reach the host until the link was
+> rebuilt, and the host went on permitting what the person had just
+> withdrawn. NOW-68K sends no revision because it has no switch to
+> revise: no MCP module, no consent page, and nothing that could change
+> the answer it never gives. That is a declared asymmetry and not a gap
+> to close — a revision message on a guest with no tier to revise would
+> be a verb with nothing behind it. The host's ceiling and
+> what absence currently means are host-side and live in
+> [mcp-coverage.md](mcp-coverage.md) and
+> [agent-integration.md](agent-integration.md). **No guest has ever sent
+> anything but `full`**, so the ceiling below `full` has never met a
+> Macintosh.
 
 ## Verification status is not coverage
 
@@ -58,7 +103,7 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 
 | Message | PPC | 68K | Note |
 |---|:--:|:--:|---|
-| `hello`, `bye`, `pong`, `refuse`, `error` | ✅ | ✅ | the handshake and keepalive floor |
+| `hello`, `bye`, `pong`, `refuse`, `error` | ✅ | ✅ | the handshake and keepalive floor. What each guest SENDS in `hello` now differs — see the note above |
 | `command.request` | ✅ | ✅ | verb sets differ — see below |
 | `census.request` | ✅ | ✅ | both answer, probe by probe — the subsets differ, see below |
 | `process.list` | ✅ | ✅ | |
@@ -73,12 +118,14 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 | `file.accept` / `file.refuse` / `file.done` | ✅ | ✅ | the reply half, both directions |
 | `file.progress` | ✅ | ❌ | 68K SENDS it and handles none inbound |
 | `file.cancel` | ✅ | ✅ | either direction; 68K also has it as a `cancel` verb |
-| `file.list` / `file.listing` | ✅ | ✅ | browse; 68K also has it as an `ls` verb |
+| `file.list` | ✅ | ✅ | browse; 68K also has it as an `ls` verb |
+| `file.listing` | ✅ | ❌ | the reply half. 68K SENDS it and handles none inbound — it browses no one |
 | `file.get` | ✅ | ❌ | host-initiated pull |
 | `file.move` / `file.trash` / `file.restore` / `file.mkdir` | ✅ | ❌ | change |
 | `capture.request` | ✅ | ✅ | 68K stages to disk, packs, then sends — `screenshot` verb too |
 | `capture.accept` / `capture.refuse` / `capture.cancel` | ✅ | ❌ | the guest-OFFERS-a-capture handshake; 68K only answers requests |
 | `stream.start` / `stream.stop` / `stream.refresh` | ✅ | ❌ | |
+| `agent.access` | ❌ | ❌ | neither guest HANDLES one — it is guest-to-host only, and a host never sends it. PPC SENDS it when its consent tier changes; 68K has no tier to change |
 
 PPC handles 37 inbound types; NOW-68K handles 23. **That count
 understates the difference** — see the next two sections, where two of
@@ -91,7 +138,9 @@ the whole argument for the two `grep`s at the top.)
 **A ✅ here means the message is answered, not that both guests answer it
 identically.** `software.list` is the row where that distinction is
 sharpest and it is expanded below with the rest of the software family;
-`census.request`'s ⚠️ is the same warning made visible.
+`census.request` is the same warning, and its Note column carries it
+because the outcome differs probe by probe rather than message by
+message.
 
 ### `command.request` verbs
 
@@ -324,6 +373,15 @@ reason (`command-parity.md`, "The MCP is a client, not a face").
 
 ## How far each served thing is proven
 
+**This section is about the guest's own verbs and messages, and about
+nothing else.** A host projection row that reaches one of them is a
+separate artifact with a separate proof: `vprobe` is metal-verified on
+the 180c while `now_framebuffer_probe`, the row over it, has never
+crossed a wire. Do not read one as evidence about the other — the row
+adds a schema, a bound, a timeout and an availability rule, none of which
+the guest knows about. What has been driven from a host face, and what
+has not, is [metal-and-ux-review.md](metal-and-ux-review.md).
+
 **PPC guest** — the capture, census, files, processes and software arcs
 are metal-verified on the PowerBook 1400c; see the ledger for which
 specific paths. The **exec console plane is the exception**: built and
@@ -381,17 +439,38 @@ over, timing does not.
 The precedent is `CommandParityTests`, which reads the guests' source
 and fails the build rather than trusting prose. The same is possible
 here: parse both dispatches, compare against this table, fail on drift.
+`MCPCoverageTests` already does the reading half — it runs these greps
+and fails the build when its own tables disagree with them — so what is
+missing is a consumer for this file's tables, not a derivation.
 Until that exists, this document is a snapshot and the two `grep`
 commands at the top are the source of truth.
 
-Last derived: 2026-07-28, at the merge of `claude/68k-software-list-sw`
-and `claude/68k-census-probes`, which gave NOW-68K `sw` and the census
-section above. **Re-derived at the merge rather than taken from either
-side.** Each branch counted the roster knowing only its own new verb, so
-both said "12 of 19" with different lists; the truth is 13. That is this
-file's own rule biting exactly where it was aimed - derive it, do not
-remember it - and a merge is now a known place for it to go wrong, because
-two correct-in-isolation counts do not add up to a correct one.
+**A gate that reads source text proves less than its name suggests**, and
+six in this repository were found on 2026-07-31 not to prove what they
+claimed — including the one that keeps `MCPCoverageTests`' Served column
+honest, which had been satisfied by a `strcmp` left behind in a comment.
+They are fixed or documented; the audit, and what a text scan can never
+catch, is [source-text-gates.md](source-text-gates.md). It is the reason
+this file's own future gate should be planned as a bounded check with its
+blind spots written down rather than as a guarantee.
+
+Last re-derived: **2026-07-31**, on `claude/tbt-parity-slice`, by running
+the commands above. Every count in this file still checked out — 37 and
+23 inbound types, 19 verbs, 16 and 13 served, 14 probes — and one
+grouped row did not: `file.list` / `file.listing` had been a single ✅/✅
+row, and NOW-68K handles no `file.listing` inbound. They are two rows
+now. What changed since the previous derivation is what each guest
+**sends** in `hello`, which is recorded at the top.
+
+The previous derivation was 2026-07-28, at the merge of
+`claude/68k-software-list-sw` and `claude/68k-census-probes`, which gave
+NOW-68K `sw` and the census section above. **Re-derived at the merge
+rather than taken from either side.** Each branch counted the roster
+knowing only its own new verb, so both said "12 of 19" with different
+lists; the truth is 13. That is this file's own rule biting exactly where
+it was aimed - derive it, do not remember it - and a merge is now a known
+place for it to go wrong, because two correct-in-isolation counts do not
+add up to a correct one.
 The command registry came from `x-commands` in
 `contract/asyncapi.yaml`, the PPC verb set from `strcmp(name, ...)` in
 `now-guest-ppc/src/commands/commands.c`, the 68K verb set from the table in

@@ -66,7 +66,8 @@ enum {
     kNowPeekMaxAnchors = 32,
 
     kNowPeekAnchorFormatNone = 0, /* plane P1 absent (core-only M0) */
-    kNowPeekAnchorFormatV1 = 1
+    kNowPeekAnchorFormatV1 = 1,   /* a5, window_list, menu_list */
+    kNowPeekAnchorFormatV2 = 2    /* + stack_base */
 };
 
 /* Plane capability bits (caps, arm_request, arm_active). The guest's
@@ -88,6 +89,15 @@ typedef struct {
     NowPeekU32 window_list;   /* low-memory WindowList head */
     NowPeekU32 menu_list;     /* low-memory MenuList */
     NowPeekU32 stamp_ticks;   /* TickCount at capture; 0 = never */
+    /* V2. APPENDED, deliberately: stamp_ticks stays at offset 20 because
+       readers use it as a seqlock - stamp, fields, stamp again - and a V1
+       reader still finds it exactly where it left it.
+
+       Note the field's position says nothing about when it is WRITTEN.
+       capture_anchor fills this BEFORE committing the stamp, like every
+       other field, or a reader could pair a fresh stamp with a stale
+       stack base and never know. */
+    NowPeekU32 stack_base;    /* LMGetCurStackBase for that context */
 } NowPeekAnchorSlot;
 
 typedef struct {
@@ -107,9 +117,13 @@ typedef struct {
 
 /* The offsets ARE the contract; a drift here is a defect on the other
    side of a compiler, not a build detail. */
-_Static_assert(sizeof(NowPeekAnchorSlot) == 24, "slot size");
+_Static_assert(sizeof(NowPeekAnchorSlot) == 28, "slot size");
+/* Unchanged from V1 on purpose: this offset is the seqlock's, and moving
+   it would break a V1 reader silently rather than loudly. */
 _Static_assert(offsetof(NowPeekAnchorSlot, stamp_ticks) == 20,
                "slot stamp offset");
+_Static_assert(offsetof(NowPeekAnchorSlot, stack_base) == 24,
+               "slot stack base offset");
 _Static_assert(offsetof(NowPeekTable, ext_major) == 4, "major offset");
 _Static_assert(offsetof(NowPeekTable, ext_minor) == 6, "minor offset");
 _Static_assert(offsetof(NowPeekTable, length) == 8, "length offset");
@@ -127,7 +141,7 @@ _Static_assert(offsetof(NowPeekTable, anchor_format) == 32,
 _Static_assert(offsetof(NowPeekTable, anchor_count) == 34,
                "anchor count offset");
 _Static_assert(offsetof(NowPeekTable, anchors) == 36, "anchors offset");
-_Static_assert(sizeof(NowPeekTable) == 36 + 24 * kNowPeekMaxAnchors,
+_Static_assert(sizeof(NowPeekTable) == 36 + 28 * kNowPeekMaxAnchors,
                "table size");
 
 #endif /* NOW_PEEK_TABLE_H */

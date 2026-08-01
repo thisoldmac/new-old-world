@@ -33,7 +33,7 @@ final class NOWAgentCompanionTests: XCTestCase {
     private func initializedServer(
         client: AgentIntegrationClient
     ) async throws -> NOWMCPServer {
-        let server = NOWMCPServer(client: client)
+        let server = NOWMCPServer(client: client, audit: AuditSinkSpy())
         _ = await server.handle(try Self.request(
             id: 1,
             method: "initialize",
@@ -59,20 +59,24 @@ final class NOWAgentCompanionTests: XCTestCase {
         let result = try XCTUnwrap(response["result"] as? [String: Any])
         let tools = try XCTUnwrap(result["tools"] as? [[String: Any]])
 
-        XCTAssertEqual(tools.compactMap { $0["name"] as? String }, [
-            "now_session_health",
-            "now_session_capabilities",
-            "now_list_processes",
-            "now_launch_software",
-            "now_request_quit",
-            "now_transfer_approved_artifact",
-            "now_guest_files_capabilities",
-            "now_guest_files_list",
-            "now_guest_files_stat",
-            "now_guest_files_upload_begin",
-            "now_guest_files_upload_append",
-            "now_guest_files_upload_commit",
-        ])
+        /* The expectation is the catalog, in catalog order — not a second
+           copy of it. This is still a two-sided check: the left side is
+           what NOWMCPServer rendered and the right side is the registry, so
+           a renderer that dropped, reordered, renamed or duplicated a row
+           fails here. What it no longer does is fail merely because a row
+           was added, which is the edit every new capability was paying.
+
+           It is not the approval gate the name suggests, and never could
+           be: HostFaceParityTests.testTheMCPFaceIsDerivedFromTheRenderers-
+           OwnLoop establishes that a row cannot opt out of the MCP face, so
+           registering a projection IS exposing it. The review is therefore
+           the catalog row itself, in reviewed source, together with the
+           row's own `faces` declaration. */
+        XCTAssertEqual(
+            tools.compactMap { $0["name"] as? String },
+            HostProjectionCatalog.projections.map {
+                $0.capability.rawValue
+            })
         let processTool = try XCTUnwrap(tools.first {
             $0["name"] as? String == "now_list_processes"
         })
@@ -149,15 +153,50 @@ final class NOWAgentCompanionTests: XCTestCase {
             ($0["name"] as? String)?.hasPrefix(
                 "now_guest_files_") == true
         }
-        XCTAssertEqual(guestFileTools.count, 6)
-        let guestFileReadTools = guestFileTools.filter {
-            !($0["name"] as? String ?? "").contains("_upload_")
+        /* Derived, not counted. This assertion was three literals — 6, 3
+           and 3 — and every capability joining the family had to edit a
+           test named for something else, which is the papercut P0.1
+           collapsed everywhere it found it and missed here. What the
+           check is really for is the ANNOTATIONS below: the read side is
+           read-only-hinted, the upload side is not, and the mutation side
+           is destructive. So the counts are now the registry's own, and the
+           partition is asserted to be a partition rather than to be a
+           particular size. */
+        let registeredGuestFileTools = HostProjectionCatalog.projections
+            .filter {
+                $0.capability.rawValue.hasPrefix("now_guest_files_")
+            }
+        XCTAssertEqual(guestFileTools.count,
+                       registeredGuestFileTools.count)
+        /* Three groups, and the third arrived with the mutation row: "not an
+           upload" stopped meaning "read-only" the moment this family could
+           change the catalog, and a filter that still said so would have
+           asserted `readOnlyHint: true` of a tool that trashes things. */
+        let guestFileMutateTools = guestFileTools.filter {
+            ($0["name"] as? String) == "now_guest_files_mutate"
         }
         let guestFileUploadTools = guestFileTools.filter {
             ($0["name"] as? String ?? "").contains("_upload_")
         }
-        XCTAssertEqual(guestFileReadTools.count, 3)
-        XCTAssertEqual(guestFileUploadTools.count, 3)
+        let guestFileReadTools = guestFileTools.filter { tool in
+            let name = tool["name"] as? String ?? ""
+            return !name.contains("_upload_")
+                && name != "now_guest_files_mutate"
+        }
+        XCTAssertFalse(guestFileReadTools.isEmpty)
+        XCTAssertFalse(guestFileUploadTools.isEmpty)
+        XCTAssertEqual(guestFileMutateTools.count, 1)
+        XCTAssertEqual(
+            guestFileReadTools.count + guestFileUploadTools.count
+                + guestFileMutateTools.count,
+            guestFileTools.count)
+        XCTAssertTrue(guestFileMutateTools.allSatisfy {
+            let annotations = $0["annotations"] as? [String: Any]
+            return annotations?["readOnlyHint"] as? Bool == false
+                && annotations?["destructiveHint"] as? Bool == true
+                && annotations?["idempotentHint"] as? Bool == false
+                && annotations?["openWorldHint"] as? Bool == false
+        })
         XCTAssertTrue(guestFileReadTools.allSatisfy {
             let annotations = $0["annotations"] as? [String: Any]
             return annotations?["readOnlyHint"] as? Bool == true
@@ -318,7 +357,7 @@ final class NOWAgentCompanionTests: XCTestCase {
 
     func testMalformedJSONReturnsParseError() async throws {
         let server = NOWMCPServer(
-            client: StubAgentIntegrationClient())
+            client: StubAgentIntegrationClient(), audit: AuditSinkSpy())
 
         let response = try Self.object(
             await server.handle(Data("{nope".utf8)))
@@ -330,7 +369,7 @@ final class NOWAgentCompanionTests: XCTestCase {
 
     func testFractionalRequestIDReturnsInvalidRequest() async throws {
         let server = NOWMCPServer(
-            client: StubAgentIntegrationClient())
+            client: StubAgentIntegrationClient(), audit: AuditSinkSpy())
         let data = try JSONSerialization.data(withJSONObject: [
             "jsonrpc": "2.0",
             "id": 1.5,
@@ -378,26 +417,15 @@ final class NOWAgentCompanionTests: XCTestCase {
                 switch request.operation {
                 case .sessionHealth:
                     return .sessionHealth(.available(health))
-                case .sessionCapabilities:
-                    return .sessionCapabilities(.guestUnavailable)
-                case .listProcesses:
+                default:
+                    /* This fixture is about one operation reaching the
+                       far end of a real socket. The rest answered a typed
+                       unavailable case by case, which made every new
+                       operation an edit here; NOWAgentAuditTests next door
+                       already used a `default:` for the same reason. A
+                       fixture that reached an operation it had not handled
+                       would decode the wrong response and fail. */
                     return .processList(.guestUnavailable)
-                case .launchSoftware:
-                    return .launchSoftware(.unavailable(.guest))
-                case .requestQuit:
-                    return .requestQuit(.unavailable(.guest))
-                case .transferApprovedArtifact:
-                    return .transferApprovedArtifact(.unavailable(.guest))
-                case .guestFilesCapabilities:
-                    return .guestFilesCapabilities(.hostUnavailable(.guest))
-                case .guestFilesList:
-                    return .guestFilesList(.hostUnavailable(.guest))
-                case .guestFilesStat:
-                    return .guestFilesStat(.hostUnavailable(.guest))
-                case .guestFilesUploadBegin, .guestFilesUploadAppend:
-                    return .guestFilesUploadStage(.hostUnavailable(.guest))
-                case .guestFilesUploadCommit:
-                    return .guestFilesUploadCommit(.hostUnavailable(.guest))
                 }
             })
         try localServer.start()
@@ -505,6 +533,46 @@ final class NOWAgentCompanionTests: XCTestCase {
         let error = try XCTUnwrap(response["error"] as? [String: Any])
 
         XCTAssertEqual(error["code"] as? Int, -32602)
+    }
+
+    /// **A consent denial does not wear the invalid-params code.**
+    ///
+    /// An agent that reads -32602 retries with different arguments, and
+    /// these arguments were fine. So the denial arrives under its own code
+    /// with typed `data`, which is how a caller tells "the owner said no"
+    /// from "the machine cannot" without reading either sentence —
+    /// incapacity comes back as a successful RESULT whose payload says
+    /// `unavailable`, never as an error.
+    ///
+    /// Verified by mutation: rendering it as -32602 with no `data` fails
+    /// here on both assertions.
+    func testAConsentDenialIsItsOwnErrorWithTypedData() async throws {
+        var client = StubAgentIntegrationClient()
+        client.healthResult = .available(.init(
+            state: .connected,
+            observedAt: Date(timeIntervalSince1970: 0),
+            listeningPort: 1400, sessionID: nil,
+            guest: .init(name: "pb1400c", version: "0.1.0",
+                         agentAccess: .disabled,
+                         operatingSystem: "Mac OS 9.1", connectedAt: nil,
+                         lastTraffic: nil, quietFor: nil,
+                         pingsAnswered: nil, framesReceived: nil),
+            failure: nil))
+        let server = try await initializedServer(client: client)
+
+        let response = try Self.object(await server.handle(try Self.request(
+            id: 2,
+            method: "tools/call",
+            params: ["name": "now_list_processes", "arguments": [:]])))
+        let error = try XCTUnwrap(response["error"] as? [String: Any])
+
+        XCTAssertEqual(error["code"] as? Int,
+                       HostProjectionConsentDenial.jsonRPCCode)
+        let data = try XCTUnwrap(error["data"] as? [String: Any])
+        XCTAssertEqual(data["kind"] as? String, "consent")
+        XCTAssertEqual(data["reason"] as? String, "machine-declines")
+        XCTAssertEqual(data["machineAnswer"] as? String, "disabled")
+        XCTAssertEqual(data["requiredTier"] as? String, "read-only")
     }
 
     func testLaunchRequiresExactlyOneBoundedOpaqueSelection()

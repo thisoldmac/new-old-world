@@ -251,6 +251,35 @@ final class Session {
         onHealth(h)
     }
 
+    /// The machine changed its mind about agent control; the host's copy
+    /// changes with it.
+    ///
+    /// This writes the SAME field `hello.agent` wrote, deliberately. It is
+    /// what the projection layer's consent check reads before every call
+    /// (`HostProjectionDispatch.consentDenial`, through session health), so
+    /// storing it here is the enforcement — a revision kept anywhere else
+    /// would update a label while the old tier went on being permitted,
+    /// which is the defect this message exists to close.
+    ///
+    /// Not acknowledged: the contract gives the guest no answer to wait
+    /// for. It IS logged, because a permission changing under a person who
+    /// is driving this machine should be findable afterwards, and the log
+    /// is where the connect-time answer was already written.
+    private func applyAgentAccess(_ answer: AgentIntegrationGuestAccess) {
+        guard var h = health else { return }
+        let previous = h.guestAgentAccess
+        guard previous != answer else { return }
+        h.guestAgentAccess = answer
+        health = h
+        onHealth(h)
+        /* Named "now" rather than "changed to": the sentence a person reads
+           while wondering why an agent stopped being able to act should say
+           what is true, not require diffing it against an earlier line. */
+        let was = previous.map { $0.displayName } ?? "not stated"
+        onLog("\(guestName) now says agent \(answer.displayName)"
+              + " (was \(was))", "wire", .info)
+    }
+
     private func consume(_ data: Data) {
         let frames: [Frame]
         do {
@@ -349,6 +378,8 @@ final class Session {
         case .ping(let id):
             send(.pong(id: id))
             touchHealth(pingsDelta: 1)
+        case .agentAccess(let revision):
+            applyAgentAccess(revision.agent)
         case .commandResult(let result):
             onCommandResult(result)
         case .execOutput(let output):
@@ -1130,7 +1161,8 @@ final class Session {
             name: begin.name, container: begin.container,
             fileType: begin.fileType, creator: begin.creator,
             modified: begin.modified, staged: staged,
-            transferMs: Int(Date().timeIntervalSince(fileStart) * 1000))))
+            transferMs: Int(Date().timeIntervalSince(fileStart) * 1000),
+            crc32: end.crc32, resumeToken: begin.resumeToken)))
     }
 
     private func finishCapture(_ end: CaptureEnd) {
@@ -1237,7 +1269,9 @@ final class Session {
         let now = Date()
         health = GuestListener.SessionHealth(
             guestName: guestName, guestVersion: hello.version,
-            guestOS: hello.os, connectedAt: now, lastTraffic: now,
+            guestBuild: hello.build, guestAgentAccess: hello.agent,
+            guestOS: hello.os,
+            connectedAt: now, lastTraffic: now,
             pingsAnswered: 0, framesReceived: 1)
         onHealth(health)
         /* The handle, what the machine calls itself, and where it dialled
@@ -1247,7 +1281,24 @@ final class Session {
             + " at \(address.text)"
         if !hello.version.isEmpty {
             line += " (guest \(hello.version)"
+            /* The build, not just the version: a version is hand-edited and
+               a stale build reports the same one, which is how an hour went
+               to the wrong half of the system on 2026-07-30. Omitted rather
+               than filled in when the guest reports none — the 68K guest
+               does not. */
+            if let build = hello.build, !build.isEmpty {
+                line += " build \(build)"
+            }
             line += hello.os.map { ", OS \($0))" } ?? ")"
+        }
+        /* What the machine said about agents driving it, in the same line a
+           person reads to find out what connected. Written only when it
+           said something: a guest older than the field gets no clause,
+           because "agent: —" would be this log inventing an answer nobody
+           gave. Outside the version parenthesis on purpose — this is not a
+           property of the build, it is the machine's position. */
+        if let access = hello.agent {
+            line += " — agent \(access.displayName)"
         }
         onLog(line, "wire", .info)
         onActive(self)

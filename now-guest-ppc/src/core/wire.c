@@ -6,6 +6,8 @@
 
 #include <Processes.h>
 
+#include "agent_access.h"
+#include "build_stamp.h"
 #include "capture.h"
 #include "fileshare.h"
 #include "commands.h"
@@ -20,6 +22,7 @@
 #include "prefs.h"
 #include "proc_actions.h"
 #include "product_identity.h"
+#include "scene_collect.h"
 #include "software.h"
 
 enum {
@@ -340,6 +343,19 @@ static long g_rcv_peak = -3;
    means the loop is healthy and the bytes are simply not arriving. */
 static long g_service_passes = 0;
 
+/* What this connection has actually TOLD the host about agent access, as
+   opposed to what the tier currently is. They differ exactly when a send
+   did not happen — no link, or a full control queue — and the page's job
+   is to show that difference rather than assume it away.
+
+   It lives here because this is the only code that knows: the page used to
+   infer "hello went out carrying whatever the tier is now" from seeing the
+   link come up, which was right in every case anyone tried and still an
+   inference about another file's behaviour. Cleared when a connection
+   starts, because it is a fact about one link. */
+static Boolean g_told_known;
+static AgentAccessTier g_told;
+
 /* The connect completed (either path); the rest of the protocol is
    written synchronously, so the endpoint goes back to that mode with
    the notifier gone before the first hello leaves. */
@@ -366,6 +382,8 @@ static void start_connect(void)
     g.rx_len = 0;
     g.bulk_remaining = 0;
     g.pings_sent = 0;
+    /* A fact about one link, and this is a different one. */
+    g_told_known = false;
 
     if (!parse_ipv4(g.host, &g.address)) {
         fail("Enter a numeric address like 10.0.2.2");
@@ -481,14 +499,73 @@ static void send_hello(void)
        answer every machine running NOW would give. */
     now_machine_name(name, sizeof name);
     now_json_escape(name, esc, sizeof esc);
+    /* build carries what version cannot: PRODUCT_VERSION is hand-edited, so
+       a stale build on a machine reports the same string as the current one
+       and a host has no way to tell them apart. It cost a misdiagnosis on
+       2026-07-30. now_build_stamp() is __DATE__ " " __TIME__ of a file CMake
+       touches every build, so it differs whenever the build does. Not
+       escaped: those macros are "Mmm dd yyyy hh:mm:ss" and contain neither a
+       quote nor a backslash. */
+    /* agent is this MACHINE'S answer to whether a companion may drive it,
+       stated rather than left to silence: the contract reads an absent
+       field as "predates the feature", never as consent, so a machine that
+       consents has to say so as plainly as one that refuses. Not escaped
+       either — now_agent_access() returns one of three contract tokens. */
     snprintf(json, sizeof json,
              "{\"type\":\"hello\",\"contract\":%d,\"side\":\"guest\","
-             "\"version\":\"%s\",\"name\":\"%s\",\"os\":\"9\",\"chunk\":%d}",
-             kNowContractRevision, PRODUCT_VERSION, esc,
-             kNowDefaultChunk);
+             "\"version\":\"%s\",\"build\":\"%s\",\"agent\":\"%s\","
+             "\"name\":\"%s\",\"os\":\"9\",\"chunk\":%d}",
+             kNowContractRevision, PRODUCT_VERSION, now_build_stamp(),
+             now_agent_access(), esc, kNowDefaultChunk);
     if (!send_control(json)) {
         fail("Sending hello failed");
+        return;
     }
+    /* hello carried the tier, so this link has now been told it. Recorded
+       after the send rather than before: the page's whole value is
+       distinguishing what was said from what is merely true here. */
+    g_told_known = true;
+    g_told = now_agent_access_tier();
+}
+
+/* The same answer as hello's `agent`, said again because it changed.
+
+   hello states this once per connection, so before this existed a tier
+   changed mid-session did not reach the host until the link was rebuilt -
+   and the host went on permitting what the person had just withdrawn.
+   That is the one place in this product where being out of date has a
+   safety edge, which is why this is a message and not a note on the page.
+
+   Silent when nothing is connected, and that is the whole error handling:
+   there is no host to tell, the tier is already in prefs, and the next
+   hello carries it. Same for a send that does not fit the queue - the
+   caller is a person clicking a radio button, and a modal complaint about
+   a control frame would be noise about something the next connection
+   fixes. It returns nothing for that reason.
+
+   Not escaped: mcp_tier_token returns one of three contract tokens. */
+void now_wire_announce_agent_access(void)
+{
+    char json[64];
+
+    if (g.phase != kConnConnected) {
+        return;
+    }
+    snprintf(json, sizeof json,
+             "{\"type\":\"agent.access\",\"agent\":\"%s\"}",
+             now_agent_access());
+    if (send_control(json)) {
+        g_told_known = true;
+        g_told = now_agent_access_tier();
+    }
+}
+
+Boolean now_wire_agent_access_told(AgentAccessTier *out)
+{
+    if (g_told_known && out != NULL) {
+        *out = g_told;
+    }
+    return g_told_known;
 }
 
 /* --- receive ------------------------------------------------------------ */
@@ -758,8 +835,25 @@ static struct {
 
 typedef enum {
     kXferCapture = 0,                 /* ends with capture.end */
-    kXferFile                         /* ends with file.end */
+    kXferFile,                        /* ends with file.end */
+    kXferScene                        /* ends with scene.end */
 } XferKind;
+
+/* The terminal message's type for a transfer kind. A scene rides the
+   SAME lane and the same incremental sender as a capture - it differs
+   only in what the bytes mean and which end message closes them - so
+   the kind is the one thing the transport needs to know about it. */
+static const char *xfer_end_type(XferKind kind)
+{
+    switch (kind) {
+    case kXferFile:
+        return "file";
+    case kXferScene:
+        return "scene";
+    default:
+        return "capture";
+    }
+}
 
 static struct {
     Boolean active;
@@ -877,7 +971,7 @@ static void xfer_finish(Boolean ok)
         snprintf(json, sizeof json,
                  "{\"type\":\"%s.end\",\"id\":%ld,\"transfer\":%u,"
                  "\"ok\":%s,\"sendMs\":%ld}",
-                 g_xfer.kind == kXferFile ? "file" : "capture",
+                 xfer_end_type(g_xfer.kind),
                  g_xfer.id, g_xfer.xfer, ok ? "true" : "false",
                  (long)((TickCount() - g_xfer.started) * 1000 / 60));
     }
@@ -1354,6 +1448,128 @@ static void capture_fail(long id)
 static void shot_drop(void)
 {
     g_shot.active = false;
+}
+
+/* --- the scene plane ---------------------------------------------------
+   A scene is Mirror's IR v1 - semantic structure, not pixels - and it is
+   a TRANSFER for a measured reason: this producer encodes 9214 bytes for
+   24 processes and 32 windows against a 4096-byte control cap, before
+   menus or controls exist at all. So it borrows capture's pair
+   (scene.begin, bulk frames, scene.end) rather than inventing anything,
+   and deliberately does NOT borrow the stream bracket: a bracket exists
+   to amortise a half-second capture, and a semantic walk has no such
+   cost to amortise (docs/streaming-a-scene.md).
+
+   THE FAILURE IS WHOLE. A walk that would not fit its buffer, or a scene
+   that could not be allocated, is scene.end ok:false with a reason and
+   NO bulk. The encoder already fails closed for the same reason: half a
+   JSON document is the worst form of a partial answer because it does
+   not even parse, and "a partial or failed walk must never be delivered
+   as a complete scene" is the rule this whole path exists to keep. */
+
+static long g_scene_seq;
+
+/* The one failure shape a scene owes the host, so it never waits on a
+   transfer that will not come. `reason` is prose for a human; nothing
+   branches on it. */
+static void scene_fail(long id, unsigned short xfer, const char *reason)
+{
+    char json[256];
+
+    snprintf(json, sizeof json,
+             "{\"type\":\"scene.end\",\"id\":%ld,\"transfer\":%u,"
+             "\"ok\":false,\"reason\":\"%s\"}", id, xfer, reason);
+    send_control(json);
+}
+
+/* Walks the machine, encodes IR v1, announces scene.begin and arms the
+   incremental sender. Returns immediately - the bytes go out from
+   service_transfer, exactly as a capture's do. */
+static void serve_scene(const char *request)
+{
+    NowPrefs prefs;
+    char json[512];
+    long id = now_json_find_int(request, "id", 0);
+    long stale_ms = now_json_find_int(request, "staleAfterMs", 0);
+    unsigned long stale_ticks;
+    unsigned short xfer;
+    long chunk;
+    short pace_ms;
+    Boolean pack;
+    NowScene *scene;
+    Handle doc;
+    long needed = 0;
+    unsigned long t_start = TickCount();
+    long walk_ms;
+
+    xfer = next_xfer();
+    if (g_stream.active) {
+        scene_fail(id, xfer, "a stream owns the transfer lane");
+        return;
+    }
+    if (g_xfer.active) {
+        scene_fail(id, xfer, "a transfer is already in flight");
+        return;
+    }
+    /* The scene is ~11 KB of struct. A classic Mac stack is 24-32 KB and
+       this is called from the event loop with the whole wire machine
+       above it, so it goes in the heap - the same reason a capture blob
+       does. */
+    scene = (NowScene *)NewPtr((Size)sizeof(NowScene));
+    if (scene == NULL) {
+        scene_fail(id, xfer, "not enough memory to walk the machine");
+        return;
+    }
+    if (stale_ms < 0) {
+        stale_ms = 0;
+    }
+    stale_ticks = (unsigned long)((stale_ms * 60L) / 1000L);
+    if (stale_ms > 0 && stale_ticks == 0) {
+        stale_ticks = 1;              /* a window shorter than a tick is
+                                         still a window, not "disabled" */
+    }
+    now_scene_collect(scene, ++g_scene_seq, stale_ticks);
+
+    /* Size, then allocate, then encode. One walk, two answers: the
+       encoder counts always and writes only while it fits, so asking for
+       the size costs a pass and never a second walk. */
+    needed = now_scene_encoded_size(scene);
+    doc = NewHandle((Size)needed);
+    if (doc == NULL) {
+        DisposePtr((Ptr)scene);
+        scene_fail(id, xfer, "not enough memory to encode the scene");
+        return;
+    }
+    HLock(doc);
+    if (now_scene_encode(scene, *doc, needed, &needed) != kNowSceneEncodeOk) {
+        HUnlock(doc);
+        DisposeHandle(doc);
+        DisposePtr((Ptr)scene);
+        scene_fail(id, xfer, "the scene did not fit its buffer");
+        return;
+    }
+    HUnlock(doc);
+    walk_ms = (long)((TickCount() - t_start) * 1000UL / 60UL);
+
+    now_prefs_load(&prefs);
+    tuning_from_json(request, &prefs, &chunk, &pace_ms, &pack);
+
+    /* The terminator is NOT sent: `bytes` is the document, and a JSON
+       parser wants a length rather than a C string. needed counts it. */
+    snprintf(json, sizeof json,
+             "{\"type\":\"scene.begin\",\"id\":%ld,\"transfer\":%u,"
+             "\"bytes\":%ld,\"irVersion\":%d,\"seq\":%ld,"
+             "\"capturedAt\":%.1f,\"source\":\"%s\",\"walkMs\":%ld}",
+             id, xfer, needed - 1, NOW_SCENE_IR_VERSION, scene->seq,
+             scene->captured_at, scene->source, walk_ms);
+    DisposePtr((Ptr)scene);
+    if (!send_control(json)
+        || !arm_blob_transfer(id, xfer, doc, needed - 1, chunk, pace_ms,
+                              kXferScene)) {
+        DisposeHandle(doc);
+        scene_fail(id, xfer, "could not start the transfer");
+        return;
+    }
 }
 
 /* "Screenshot App": front the target, then arm the deferred capture. No
@@ -4435,6 +4651,10 @@ static int handle_frame(const char *reply)
     }
     if (now_json_type_is(reply, "capture.cancel")) {
         xfer_abort();
+        return 1;
+    }
+    if (now_json_type_is(reply, "scene.request")) {
+        serve_scene(reply);
         return 1;
     }
     if (now_json_type_is(reply, "file.list")) {

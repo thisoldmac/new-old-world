@@ -212,6 +212,9 @@ channels:
       captureRefuse: { $ref: "#/components/messages/captureRefuse" }
       captureBegin: { $ref: "#/components/messages/captureBegin" }
       captureEnd: { $ref: "#/components/messages/captureEnd" }
+      sceneRequest: { $ref: "#/components/messages/sceneRequest" }
+      sceneBegin: { $ref: "#/components/messages/sceneBegin" }
+      sceneEnd: { $ref: "#/components/messages/sceneEnd" }
       processList: { $ref: "#/components/messages/processList" }
       processListing: { $ref: "#/components/messages/processListing" }
       processFront: { $ref: "#/components/messages/processFront" }
@@ -220,15 +223,17 @@ channels:
       processResult: { $ref: "#/components/messages/processResult" }
       softwareList: { $ref: "#/components/messages/softwareList" }
       softwareListing: { $ref: "#/components/messages/softwareListing" }
+      agentAccess: { $ref: "#/components/messages/agentAccess" }
   bulk:
     address: "1"
     description: >
       Raw payload bytes on channel 1, correlated by the frame header's
-      transfer id. Two payload kinds ride it: capture pixel data (rows
+      transfer id. Three payload kinds ride it: capture pixel data (rows
       top-to-bottom, rowBytes apart; depth 8 uses the guest's palette;
-      16 is RGB555 big-endian; 32 is xRGB8888 big-endian) and file
-      content (file.begin describes the container). The control message
-      that began the transfer says which.
+      16 is RGB555 big-endian; 32 is xRGB8888 big-endian), file content
+      (file.begin describes the container), and a scene document
+      (scene.begin: UTF-8 JSON, the Mirror IR whose major is irVersion).
+      The control message that began the transfer says which.
 
 operations:
   hostExecutesLine:
@@ -280,6 +285,40 @@ operations:
       capture), and sends capture.begin only after the host answers
       capture.accept. Either way the frames and capture.end are identical;
       one transfer at a time still holds across both origins.
+  hostRequestsScene:
+    action: receive
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/sceneRequest"
+    description: >
+      Host asks for one scene. Bounded and one-shot: the answer is a
+      transfer (scene.begin, bulk frames, scene.end), never a control
+      message, because a scene does not fit 4096 bytes. It takes the one
+      transfer lane for the tens of milliseconds the document takes, and
+      is refused with scene.end ok:false while a stream or another
+      transfer holds it — the same one-at-a-time invariant capture obeys,
+      with no second ownership rule invented for scenes.
+      There is no scene bracket and no scene.cancel: a scene transfer is
+      short enough that abandoning it costs more than finishing it.
+  guestServesScene:
+    action: send
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/sceneBegin"
+      - $ref: "#/channels/control/messages/sceneEnd"
+    description: >
+      Guest announces and completes a scene transfer, correlated to the
+      request by id exactly as a capture is. scene.begin carries the IR
+      major so the host can refuse an unknown one before decoding; the
+      bulk bytes are the IR document; scene.end says whether all of them
+      arrived. A scene that will not fit its buffer, or a walk that
+      failed, is scene.end ok:false with a reason and NO bulk — a partial
+      walk is never delivered as a complete scene, and half a JSON
+      document is the worst form of that lie because it does not parse.
+      What the document omits is a claim in itself: an absent
+      windows[].controls says "this producer does not report controls",
+      not "this window has none", and a consumer must not read absence as
+      emptiness.
   hostControlsStream:
     action: receive
     channel: { $ref: "#/channels/control" }
@@ -703,6 +742,15 @@ components:
     captureEnd:
       name: capture.end
       payload: { $ref: "#/components/schemas/CaptureEnd" }
+    sceneRequest:
+      name: scene.request
+      payload: { $ref: "#/components/schemas/SceneRequest" }
+    sceneBegin:
+      name: scene.begin
+      payload: { $ref: "#/components/schemas/SceneBegin" }
+    sceneEnd:
+      name: scene.end
+      payload: { $ref: "#/components/schemas/SceneEnd" }
     processList:
       name: process.list
       payload: { $ref: "#/components/schemas/ProcessList" }
@@ -727,6 +775,9 @@ components:
     softwareListing:
       name: software.listing
       payload: { $ref: "#/components/schemas/SoftwareListing" }
+    agentAccess:
+      name: agent.access
+      payload: { $ref: "#/components/schemas/AgentAccess" }
 
   schemas:
     Hello:
@@ -742,6 +793,51 @@ components:
         version:
           type: string
           description: Sending app's own version, for display only.
+        build:
+          type: string
+          maxLength: 64
+          description: >
+            Opaque build identity of the sending app — a string that differs
+            between two builds of the same `version`. NOW's guests send their
+            compile timestamp ("Mmm dd yyyy hh:mm:ss"). For display and for
+            telling builds apart, never parsed and never compared for order:
+            "different" is the only question it answers.
+            ABSENT means the sender does not report one, which is a fact about
+            the sender and NOT a claim that the build is old, unknown-good or
+            the same as any other. A receiver shows nothing rather than
+            guessing, and must not fall back to `version` — a version equal
+            across two builds is exactly the failure this field exists for.
+        agent:
+          enum: [disabled, read-only, full]
+          description: >
+            The SENDING MACHINE'S OWN ANSWER to whether a companion agent may
+            drive it, and how far. Not a capability and not a negotiation: the
+            machine states its position and the receiver is what enforces it.
+            `disabled` REFUSES — the installer omitted the agent features, or
+            somebody flipped the switch. `read-only` and `full` CONSENT, to
+            that much. The values are ORDERED (disabled < read-only < full) so
+            a further tier can slot above `full` without re-shaping the field
+            or the wire; there is no such tier today and none may be invented
+            without something behind it.
+            ABSENT means the sender predates this field — a fact about the
+            sender and NOT an answer. It must never be read as consent, which
+            is why a refusing machine says `disabled` out loud rather than
+            staying silent: an installer that omits the agent features and a
+            guest older than the field would otherwise look identical here.
+            DECISION, 2026-07-30, to revisit rather than a property of the
+            field: an absent value currently fails OPEN, because that matches
+            today's default-on behaviour and keeps every already-deployed
+            machine working. The moment the installer ships is the moment
+            silence stops being the common case, and the flip gets recorded
+            here rather than drifting.
+            A tier this receiver does not recognise is likewise NOT consent —
+            it is a newer sender, and a receiver that cannot name the ceiling
+            cannot claim to be under it.
+            This is the answer AT CONNECT TIME, and it is not the last word:
+            `agent.access` revises it mid-session, and a receiver that holds
+            this value must hold the revision in the same place. A receiver
+            that treats hello as the permanent answer enforces a tier the
+            machine has already withdrawn.
         name:
           type: string
           description: Human-facing machine name, e.g. "Power Mac G3".
@@ -755,6 +851,57 @@ components:
           description: >
             Sender's preferred bulk chunk size in bytes; the connection uses
             the smaller of the two sides' preferences. Default 8192.
+    AgentAccess:
+      type: object
+      required: [type, agent]
+      additionalProperties: false
+      description: >
+        GUEST TO HOST ONLY, unsolicited: the sending machine has changed its
+        mind about whether a companion agent may drive it, and says so on the
+        link already up. `hello.agent` is the same fact at connect time; this
+        is that fact revised, and the two carry identical tokens because they
+        are one answer, not two.
+
+        WHY IT EXISTS. `hello` is sent once per connection and nothing
+        revised it, so a person who set Read Only mid-session kept being
+        driven at the tier they had just withdrawn until the link was
+        rebuilt. That is the one place in this product where a stale belief
+        has a safety edge — the person believes they have restricted the
+        machine, and the receiver goes on permitting what they restricted.
+
+        THE GUEST INITIATES, always. There is deliberately no host-to-guest
+        form and no request that sets this: a tier the far end could raise is
+        not consent. The receiver may read this value and must never write
+        it.
+
+        NOT ACKNOWLEDGED, and carries no `id`. The sender learns that it
+        said this, never that the receiver acted on it — the same standing
+        `hello.agent` has, and the guest's page is worded to claim only what
+        it said. An ack would be a new host-to-guest message and is not
+        needed for the receiver to enforce, which it does on receipt.
+
+        ADDITIVE — no revision bump. Both shipping halves ignore a control
+        message they cannot decode once the handshake is past (the host logs
+        it and keeps the wire; the guest's reader falls through), so an older
+        receiver misses the revision and goes on enforcing the connect-time
+        answer, which is exactly today's behaviour and no worse than it.
+
+        A receiver that never got a `hello.agent` (a sender predating that
+        field) and then gets one of these has been given an answer where it
+        had silence, and must use it: absence means "did not say", and this
+        message is the machine saying.
+      properties:
+        type: { const: agent.access }
+        agent:
+          enum: [disabled, read-only, full]
+          description: >
+            The machine's answer now, spelled exactly as `hello.agent` spells
+            it and meaning exactly the same thing — including that the values
+            are ORDERED and that a tier a receiver does not recognise is not
+            consent. REQUIRED here, unlike in hello: a message whose only
+            purpose is to state the answer has no reading in which the answer
+            is absent, and a receiver must ignore one that omits it rather
+            than inventing a tier.
     Refuse:
       type: object
       required: [type, contract, reason]
@@ -1827,6 +1974,102 @@ components:
         id: { type: integer }
         transfer: { type: integer }
         ok: { type: boolean }
+        sendMs:
+          type: integer
+          description: Guest-side time spent streaming the bulk chunks.
+
+    # THE SCENE FAMILY. A scene is Mirror's IR v1 — semantic structure, not
+    # pixels — and it is a TRANSFER, not a control message, because it does
+    # not fit a control frame: NOW's own producer encodes 1193 B for 4
+    # processes / 3 windows and 9214 B for 24 / 32, against a 4096-byte cap
+    # (wire_limits.h), before menus or controls exist at all.
+    # docs/streaming-a-scene.md argues the shape; the short form is that a
+    # scene gets the pair capture already has, and only the BOUNDED HALF of
+    # that pair is built here. There is deliberately no scene bracket: a
+    # picture bracket exists to amortise a 0.5-0.6 s capture, and a semantic
+    # walk has no such cost to amortise. If a metal measurement ever says
+    # otherwise, the bracket gains a subject at stream.start — it does not
+    # gain a second ownership model.
+    SceneRequest:
+      type: object
+      required: [type, id]
+      additionalProperties: false
+      properties:
+        type: { const: scene.request }
+        id: { type: integer }
+        chunkKb: { type: integer, minimum: 1, maximum: 32 }
+        paceMs: { type: integer, minimum: 0, maximum: 100 }
+        staleAfterMs:
+          type: integer
+          minimum: 0
+          description: >
+            How old an anchor sample may be and still be reported clean.
+            An older-but-otherwise-valid anchor is REPORTED stale
+            (apps[].error "now_anchor_stale"), never silently dropped and
+            never a refusal. 0 or absent disables the age gate.
+    SceneBegin:
+      type: object
+      required: [type, id, transfer, bytes, irVersion]
+      additionalProperties: false
+      properties:
+        type: { const: scene.begin }
+        id:
+          type: integer
+          description: The scene.request id this answers.
+        transfer: { type: integer, minimum: 1, maximum: 65535 }
+        bytes:
+          type: integer
+          minimum: 1
+          description: >
+            Total bulk bytes of UTF-8 JSON to expect — the encoded IR
+            document, terminator excluded.
+        irVersion:
+          type: integer
+          minimum: 1
+          description: >
+            The scene IR major version, the SAME number the document's own
+            `version` carries (mirror/docs/IR-V1.md, "one number, two
+            places"); the guest copies both from one constant. It is
+            repeated HERE so a consumer can refuse an unknown major before
+            it has spent a transfer decoding the body. That order — read
+            the version, refuse an unknown major, then decode — is the
+            consumer duty IR-V1.md states, and the envelope is what makes
+            it possible to obey.
+        seq:
+          type: integer
+          description: The producer's monotonic scene counter.
+        capturedAt:
+          type: number
+          description: >
+            Guest-clock Unix epoch seconds at the walk. Present so a
+            consumer can say "same scene, newer moment" without diffing.
+        source:
+          type: string
+          maxLength: 16
+          description: >
+            The plane the scene was walked from ("peek" for NOW). IR v1
+            promoted it precisely so a consumer can tell "no windows" from
+            "windows not visible from here".
+        walkMs:
+          type: integer
+          description: Guest-side time spent walking and encoding, for tuning.
+    SceneEnd:
+      type: object
+      required: [type, id, transfer, ok]
+      additionalProperties: false
+      properties:
+        type: { const: scene.end }
+        id: { type: integer }
+        transfer: { type: integer }
+        ok: { type: boolean }
+        reason:
+          type: string
+          description: >
+            Why a scene could not be served, on ok:false. The failure is
+            whole: a scene that would not fit its buffer, or a walk that
+            went wrong, ends the transfer rather than delivering a partial
+            document — a partial walk must never arrive as a complete
+            scene.
         sendMs:
           type: integer
           description: Guest-side time spent streaming the bulk chunks.

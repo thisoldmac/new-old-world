@@ -9,6 +9,678 @@ wrong thing) versus **unverified** (it may well be right, but no one has
 watched it work on the PowerBook). Unverified is not a lesser problem —
 several of tonight's bugs lived in code that looked obviously correct.
 
+## Proposed: an extension is a thing you enable, not a thing you launch (2026-07-31)
+
+**Proposal, nothing built.** From the manual review pass, and recorded here
+because it is a *new guest capability* rather than a UI gate — the gating half
+(never offering Launch or Bring to Front for an extension or a faceless
+background process) is being handled separately and is not this.
+
+The user's shape for it:
+
+> extensions can surface an enable / disable function that just moves the
+> extension between Extensions and Extensions (Disabled), plus a message that
+> changes will take effect after restart
+
+Three things make this worth writing down before anyone builds it.
+
+**It belongs on the guest, not composed on the host.** The mechanism is a file
+move, and NOW already has a guest move verb — so the tempting cheap version is
+the host composing "disable" out of two paths it constructs itself. That is the
+projection layer *deciding*, which rule 2 forbids, and it breaks the first time
+it meets a System Folder that is not where the host assumed: a non-English
+system, a renamed volume, a machine with no `Extensions (Disabled)` folder yet.
+The guest knows where its own System Folder is and whether the disabled folder
+exists. The host should ask for "disable this extension", not for two paths.
+
+**The restart notice is part of the capability, not decoration.** An INIT loads
+at boot and only at boot, so a disable that reports success is telling the truth
+about the file and a lie about the machine until it restarts. That gap is
+exactly the class of thing this product refuses to paper over elsewhere — it
+belongs in the *result*, not only in a label beside the button.
+
+**It is a destructive-ish capability with an easy undo**, which puts it in the
+same family as the Files verbs: it wants the same confirmation and audit
+treatment, and an agent reaching it must appear in the audit line like any other
+mutation. It is also a good candidate for the consent tiers — a read-only tier
+should not be able to disable a system extension.
+
+Open questions a builder must answer rather than assume: what happens when the
+disabled folder does not exist (create it, or refuse?); whether re-enabling has
+to remember where the file came from or can assume `Extensions`; and whether the
+68K guest serves it at all.
+
+## A refused `stream.start` closes its bracket (2026-07-31)
+
+The bracket is opened optimistically — `activeStreamId` is set before the guest
+has accepted — and its id is held by no pending map, so `recordGuestError` had
+nothing to match: the refusal set `lastGuestError` and the bracket stayed open
+on a stream that was never running. The 68K guest refuses `stream.start` every
+time (`send_error_reply`, `now-guest-68k/src/core/wire68.c`), which makes this
+that machine's ordinary behaviour rather than an edge case. `GuestListener` now
+recognises its own bracket id: it closes on the refusal, with the guest's own
+reason, and records the `stream.start` family through `observeFamily` in both
+directions. **Tested, and mutation-proven both ways; no part of it has met a
+Macintosh.**
+
+**Unverified:**
+
+- **Nobody has watched a real 68K Mac refuse a stream.** The whole arc is
+  proven against a fake guest that answers `not-implemented` on cue. What that
+  cannot show is what the person sees: the Screenshots page should say the
+  machine does not serve live streaming and grey the button, instead of sitting
+  on "Waiting for the first frame…". That is the gate, and it wants the
+  PowerBook rather than an emulator, because the emulated guest is the one that
+  serves the family.
+- **A guest that serves the start and refuses a STOP is reasoned about, not
+  observed.** Such a guest closes on the refusal rather than on the five-second
+  fallback, and its `stream.stop` stays `unproven` rather than being recorded as
+  a "no" — the three stream messages share one id, so the listener attributes a
+  refusal to the open rather than guessing between them. No guest on the wire
+  does this today, so the branch is untravelled.
+- **The two capability stores still both exist.** `familyObservations` on the
+  listener now has the `stream.start` answer, and `GuestCapabilityRecord` — the
+  page-side store that exists precisely because the listener could not see this
+  refusal — records it separately from `ScreenshotModuleModel`. Whether one of
+  them should now absorb the other is a question this change makes askable and
+  did not answer.
+
+## The live stream reached the agent surface, and the bracket is a lease (2026-07-31)
+
+`now_stream_screen` closes the last three unnoticed gaps in
+[mcp-coverage.md](mcp-coverage.md) — `stream.start`, `stream.stop`,
+`stream.refresh` — as **one row with three intentions**, so that list is now
+empty. **Tested throughout; no part of it has met a Macintosh.**
+
+**Unverified, and the first one decides whether the row should exist:**
+
+- **Nobody has measured whether a frame is cheaper than a capture.** The whole
+  premise is that an open bracket has the guest capturing continuously, so a
+  frame is *waiting* rather than *starting* — against a capture measured at
+  0.5–0.6 s on the 1400c. If it is not clearly cheaper on metal, the row's
+  reason for existing is wrong. The procedure is section 8 of
+  [metal-and-ux-review.md](metal-and-ux-review.md).
+- **The default pace of 1000 ms was argued, not measured.** It exists because
+  the contract's absent-means-the-guest's-floor (~15 fps) is a Macintosh
+  grabbing fifteen screens a second for a caller that reads one per call. The
+  right number is a measurement nobody has taken.
+- **The ownership rule has never met a real companion.** Both halves are
+  mutation-proven against injected values — a pid set and a movable clock —
+  and both rest on an assumption about a real MCP companion's process: that it
+  outlives a single call and dies with its client. If that is wrong, the
+  liveness half is dead weight and the lease is doing all the work.
+- **Nobody has seen contention happen.** An agent's stream turns the person's
+  live view on and greys out their Capture button; the sentences that explain
+  that, on the Screenshots page and on the Agent page, have not been in front
+  of anybody.
+
+**Three decisions worth revisiting rather than defects:**
+
+- **`readOnlyHint: true`, so the row sits at the Read Only consent tier.** It
+  is honest — a stream observes and changes nothing — and it means a machine
+  that consented to being *read* has consented to a bracket that keeps
+  reading, for as long as an agent keeps calling. **The two tiers cannot
+  express duration**, which is the same gap `now_reveal_item` fell into from
+  the other side, and more evidence for the middle tier. Declaring the row
+  non-read-only to buy Full Access was rejected: it would corrupt the
+  annotation agents actually read.
+- **No maximum duration.** An agent that keeps asking for frames is watching,
+  and a ceiling would be a number with nothing behind it. The person can end
+  any stream in one click. The cost is real and stated: a calling agent can
+  hold a 1400c's screen lane indefinitely.
+- **Capture does not end an agent's stream.** The person wins by clicking Stop
+  Streaming, not by pressing Capture — a button that says Capture and also
+  silently ends somebody else's work does two things and shows one. If the UX
+  pass finds that annoying enough, the other design is a small change.
+
+**One lesson that generalises past this row**, recorded in
+[source-text-gates.md](source-text-gates.md): **an asynchronous negative
+assertion is a gate that cannot fail.** Two ownership guards were deletable
+with the suite green because "no `stream.stop` was sent" was read off the fake
+guest immediately after the call, before the message could have arrived. The
+cure is ordering against the wire, not sleeping — and applying it failed on
+unmutated code, which is how a real lease-renewal defect was found.
+
+## The agent surface can be seen, and refused (2026-07-31)
+
+[Plan 006](plans/2026-07-30-006-feat-now-mcp-module-and-guest-consent-plan.md)
+is built except its guest-side half. The host tracks companions, an **Agent**
+module shows what they have done, and `HostProjectionDispatch` refuses a call
+the connected machine has not consented to. **Tested throughout; no part of it
+has met a Macintosh, and no person has looked at the pane.**
+
+**Unverified, and the list is the point:**
+
+- **Nobody has seen the module.** Everything asserted about it is about the
+  model's words, not how they land in a window. The state most worth looking at
+  is `.neverAttached`, because it is what the pane says on most machines for
+  most of their lives. A screenshot on the host Mac closes this.
+- **No real companion has ever attached.** Presence, the 120-second active
+  window and the `LOCAL_PEERPID` identity are all reasoned rather than observed
+  against real agent traffic. Pid reuse can merge two short-lived companions
+  into one — it undercounts rather than inventing, and is documented where it
+  happens.
+- **The ceiling has never met a guest that answers.** No guest sends
+  `hello.agent` yet except the PPC guest's hardcoded `full`, so `disabled` and
+  `read-only` have been exercised only against fixtures.
+- **The audit stream is per-launch and in memory**, unlike the log, which can
+  persist. A person looking for last week's agent activity needs the log.
+
+**Two decisions worth revisiting rather than defects:**
+
+- **`now_reveal_item` derives Full Access, against plan 006's stated intent
+  that reveal is safe.** Not a bug and not a slip: the row publishes
+  `readOnlyHint: false` because it takes over the screen of whoever is sitting
+  there, and the tier derives from the published annotation rather than a
+  hand-maintained list — which is one of that plan's own stop conditions. The
+  real cause is that **two tiers cannot express reveal**: derive from
+  `readOnlyHint` and it is Full Access, derive from `destructiveHint` and so is
+  *upload*, which writes to somebody's disk. Reveal is the case that fell in
+  the gap when read / safe-write / full collapsed to two, and it is the
+  evidence for reinstating the middle tier when something has actually used the
+  first two.
+- **Silence still fails open.** Recorded in the schema as a decision, not a
+  property, with the installer's arrival named as the moment to revisit.
+
+**One known skew:** a host built before this change rejects an audit report
+carrying the new `denied` outcome. It costs one log line on a mixed install and
+never a failed call — deliberately cheaper than bumping the local protocol
+version, which would make such a host reject every request instead.
+
+## Debts the parity phase left behind (2026-07-31)
+
+Twelve capabilities landed across twenty-six projection rows. These are the
+things that arc noticed and did not stop to fix, collected here rather than
+left in twelve agents' reports.
+
+**Gates that were not what they claimed:**
+
+- **Two source-scanning gates were decorative and nobody knew.** The `hello`
+  seam gate and the `build` gate each searched raw source for identifiers that
+  their own explanatory comments also contained, so a mutation deleting the
+  real call left each gate reading its own prose and passing. The `build` gate
+  shipped that morning, mutation-proven at the time, and was hollow by lunch.
+  Both now share a comment-stripping reader. **Whether a third exists is being
+  audited**; the result belongs beside this entry.
+- **`MCPCoverageTests` catches an omission and not its inverse.** A capability
+  that fails to add a `familyPolicy` row is named loudly. One that adds a row
+  for a *command*, which needs none, passes in silence. Found by the machine-
+  facts row, which has a test whose docstring claims the asymmetry and
+  demonstrates it.
+- **The guest-identity guard fires on prose.** It scans `Projection/` for guest
+  names with comments included and has rejected **doc comments four times this
+  week**, once per agent, costing an amend each. It is right about the rule and
+  over-broad about the medium.
+
+**Timeouts classified wrong, twice:**
+
+The batched verb edit assigned each new operation a local receive window, and
+two were wrong in the same direction — a host bound shorter than the work it
+was waiting on. `guest_file_mutation` took the 2-second read-only window
+against a 20-second guest-side change watchdog, so a slow `PBCatMove` could
+time out locally on a call the machine then completed. `census` took the same
+2-second window although its `overview` probe synthesizes every other probe.
+Both were patched by whoever tripped over them. **The whole table deserves one
+pass**, because the third instance will present as a machine fault.
+
+**Unexercised:**
+
+Ten of the twelve capabilities have never crossed a real wire — only capture
+and addressing are metal-verified. The capability ledger reads `unproven` on
+every guest by construction for several families, because the listener records
+no observation for them. That is honest and it means the first real call is
+also the first evidence.
+
+**Still open by decision:**
+
+Streaming (`stream.start`/`.stop`/`.refresh`) is the last unnoticed gap and the
+one genuinely undecided item. The 68K half of download stays a planned gap
+until `HostProjection` can express a **disjunctive** requirement — `requires` is
+a conjunction today, so a row needing "`file.get` or the `put` verb" cannot say
+so.
+
+## The machine's vote is carried (2026-07-31)
+
+`hello` now has an optional `agent` field — `disabled`, `read-only`,
+`full`, or nothing — and the host decodes it, keeps it on the session
+health record, the roster row and
+`AgentIntegrationSessionHealth.Guest`, and writes it into the connect
+log line when the machine said something. That is section 2 of
+[plan 006](plans/2026-07-30-006-feat-now-mcp-module-and-guest-consent-plan.md).
+**Tested**; nothing here has met a Macintosh.
+
+The three unfinished things, and they are unfinished on purpose:
+
+- ~~**Nothing enforces it.**~~ **Enforcement landed the same day** — see
+  "The agent surface can be seen, and refused" below. It went exactly
+  where this entry said it belonged: `HostProjectionDispatch`, on the
+  same line as the audit event. A machine sending `disabled` is now
+  refused.
+- **Absence fails OPEN**, which is a decision recorded in the schema and
+  not a property of the field. It matches today's default-on behaviour
+  and keeps every deployed machine working. The moment to revisit is when
+  the installer ships and silence stops being the common case.
+- **Nothing on either machine can change the answer.** The PowerPC guest
+  answers `full` from `now_agent_access()`, a function with no
+  preference and no switch behind it yet; the guest toggle, the mid-call
+  prompt and the installer's AI-BAD path all land there. NOW-68K sends
+  no `agent` at all — it has no switch to report and no installer, so it
+  is a guest that has not been asked rather than one that answered.
+
+## The parity slice's capture lane and addressing met the PowerBook (2026-07-30)
+
+Two capabilities of the [parity
+slice](plans/2026-07-29-004-feat-now-tbt-classic-parity-slice-plan.md)
+had been proven at the codec and socket layers and never on hardware.
+Both have a gate now, and both ran on the **PB1400c (10.91.5.47) on
+2026-07-29** — `MetalCaptureProjectionTests`, `MetalAddressingTests`,
+over `MetalAgentLocalSurface`. The rig is the shipped stack at every
+layer but the dispatch, which the file writes itself, mirroring
+`App.swift`.
+
+### Metal-verified
+
+`now_capture_screen`, end to end from the agent face:
+
+| | measured | notes |
+|---|---|---|
+| screen | 800x600 | |
+| PNG at 1bpp | 25,110 B in 4 pages | 8 KiB pages |
+| PNG at 8bpp | 38,833 B in 5 pages | |
+| largest local response | 11,643 of 16,384 B | the local cap, enforced by the code that enforces it in production |
+| guest-side transfer | 278–349 ms | |
+
+The claim no fake can make is the one that carries the entry: the
+reassembled bytes are decoded with ImageIO and their pixel dimensions
+checked against what the guest reported. **Mutation-checked** — one
+flipped byte in one fetched page fails the run as
+`now-capture-digest-mismatch`.
+
+Addressing, four of the five selector states:
+
+| selector | outcome | status |
+|---|---|---|
+| absent | answered by the driven machine | metal-verified |
+| the driven machine's id, and its session id | answered by that machine | metal-verified |
+| a machine that is not connected | `now-guest-not-connected` | metal-verified |
+| a session id whose connection ended | `now-guest-session-ended` | metal-verified |
+| a machine connected but not driven | `now-guest-not-addressed` | **not verified — see below** |
+
+**Mutation-checked**: bypassing the refusal has the PowerBook answer for
+a machine nobody has ever seen, which is the substitution the scheme
+exists to prevent.
+
+### Not verified: the fifth selector state
+
+`now-guest-not-addressed` means *connected but not driven*, and **one
+connection cannot be in that state** — the host refuses to re-point the
+console out from under whoever is at the machine, so the condition needs
+two live sessions to exist at all. `testAConnectedButNotDrivenMachineIsRefused`
+runs when a second peer is present and reports exactly what it needed
+when it is not.
+
+It was exercised only with a supplied second peer
+(`NOW_METAL_SECOND_PEER`), and the distinction matters: the refusal is a
+decision **the host** makes — it holds two sessions, drives one, and a
+caller named the other. Nothing about that decision depends on what the
+far end of the second socket is, only on its being there. So a run with
+`tools/fakeguest.py` as the second peer is evidence about the **host's
+addressing decision and about no guest at all**; per AGENTS.md nothing
+verified against that harness may be called metal-verified. Unconditional
+coverage wants a second real Mac — or a QEMU guest — dialling the same
+port while the run waits.
+
+### `capture.request` reads `unproven` on every guest, by construction
+
+The capability ledger cannot say more, and the reason is not the guest's:
+`GuestListener.requestCapture` is **not wrapped by `observing`/`observeFamily`**,
+so a settled capture records no family observation, and `CaptureFailure`
+carries a human sentence rather than the guest's typed refusal code, so
+there is nothing for the ledger to file even if it were wrapped. A
+capture is also deliberately not probed — it costs a whole screen grab
+and holds the connection's only transfer lane — so nothing else settles
+the row either. `unproven` is the truthful answer and leaves the
+capability callable; the note is in
+`AgentIntegrationCapabilityLedger.swift` beside the row. Fixing it is a
+behaviour change in the listener: give the capture lane a typed code and
+put the request through `observing`.
+
+### `census.request` joins it, and its page bound is unmeasured
+
+`now_hardware_census` landed against the same two gaps and neither is
+new to it.
+
+- **`unproven` on every guest, by construction.**
+  `GuestListener.requestCensus` is not wrapped by
+  `observing`/`observeFamily` either, and the listener's own failure path
+  folds a guest's typed refusal code into a `CensusReport` note
+  (`"[code] message"`) rather than keeping it typed — so there is nothing
+  for the ledger to file even if the request were wrapped. The family is
+  also not probed, and its reason is sharper than capture's: the probe
+  argument is **required**, so a probe would have to choose one, and the
+  registry's default is `overview` — the synthesis that arranges what
+  every other probe read. Same cure as capture's: a typed code plus
+  `observing` in the listener.
+- **The adapter's 30 s page bound is a guess, and declared as one.**
+  `census.request` has no guest-side watchdog, so
+  `AgentIntegrationCensus.pageTimeout` is the only bound on a probe. Not
+  one census probe has ever run against a Macintosh
+  ([contract-coverage.md](contract-coverage.md)), so the number is the
+  same order as the measurements beside it — `catsearch` ~20 s per pass,
+  the `software.list` sweep ~4 s — and the first metal run is what
+  replaces it. The local surface's window for the operation was moved off
+  the 2 s read-only one at the same time, for the same reason: a page is
+  16 rows, and what costs is the probe.
+
+### `software.list` is the family that DOES settle, and no agent has settled it
+
+Worth recording as the contrast to the two rows above rather than as a defect,
+because it is the shape those two are missing: `GuestListener.listSoftware` IS
+wrapped by `observing`, so an ordinary `now_software_inventory` call moves the
+ledger row to the guest's own answer and makes a later `probeCostly` report
+free. That is the cure capture and the census want, already working one lane
+over.
+
+What is unverified is everything downstream of it:
+
+- **No guest has served this family to an agent face.**
+  [contract-coverage.md](contract-coverage.md) already records the software
+  family as *tested only* — no guest has run the sweep for anyone — and
+  `now_software_inventory` inherits that unchanged. The 25 tests behind it are
+  over a real socket and a fake guest.
+- **The ~4 s sweep figure is one disk's.** It is metal-measured, but by
+  `catsearch` on the 1400c. NOW-68K's `apps` path has two shapes the number
+  has never covered: the 48-FSSpec cache, and the `PBCatSearch`-unusable
+  fallback that walks the volume root. Neither has been timed on that machine,
+  so nothing here knows whether the listener's 30 s watchdog is generous or
+  tight there.
+- **The `note` sentences have never crossed a real wire.** Both are asserted
+  against the guest's own literals, which proves the host carries whatever it
+  is handed; it does not prove a 68K Mac with 60 applications actually emits
+  the truncation note rather than a short page and silence.
+
+### The face-reachability proofs are textual, deliberately
+
+Three coverage gates landed with the slice, and none of them proves what
+a reader may assume:
+
+- **`HostFaceReach.reached(file:symbol:)` is `file.contains(symbol)` and
+  nothing more.** It catches the failure it was built for — the
+  affordance deleted or renamed, the file gone — and cannot catch an
+  affordance that is still *spelled* and no longer *reachable*: a call
+  site wrapped in `if false` or `#if`, a control left permanently
+  `.disabled(true)`, a symbol surviving only in a comment or a
+  `#Preview`, or the whole view no longer instantiated because its module
+  left the sidebar registry with file and symbol untouched. Documented at
+  the declaration rather than mechanised, because the mechanical version
+  is a Swift-source reachability analysis and the honest cheap gate plus a
+  stated limit beats a gate whose weakness nobody wrote down.
+- **The MCP-face check is textual over `NOWMCPServer`'s registry loop** —
+  it matches `registry.projections.map` and
+  `registry.projection(named:)`. A `guard … continue` added inside the
+  loop body would skip a row without changing any matched string. It is
+  still the stronger of the two: a loop fails uniformly, where a
+  hand-built pane fails one row at a time.
+- **`docs/mcp-coverage.md` and `MCPCoverageTests` are tested only.** No
+  part of the registry-versus-contract join has been read against a
+  guest; the `Served` column claims only what a dispatch table answers.
+  `contract-coverage.md` owns the how-far-proven axis and this file does
+  not duplicate it.
+
+### Nine served capabilities that nothing asks for
+
+`docs/mcp-coverage.md` derived the gap table and found the hand analysis
+had undercounted: **nine capabilities are `unnoticed`** — served by a
+guest right now with nothing in this repository arguing for their
+absence. They are absent because the question never came up, which is the
+`process.list` drift `command-parity.md` was written for, one layer out.
+
+`stream.start`, `stream.stop`, `stream.refresh`, `catsearch`, `gestalt`,
+`putstat`, `reveal`, `shotdiag`, `vprobe`. Two are worth naming on their
+own:
+
+- **`gestalt`** is the largest single gap: one PPC verb answering CPU,
+  memory, OS, network and hardware for the whole machine, served
+  throughout, reachable from **no face**.
+- **`shotdiag`** is the verb that found the 180c's 24-bit addressing
+  defect — precisely what someone standing at a misbehaving machine wants
+  — and is reachable from nothing.
+
+They were ten; `capture.cancel` left the list by being **decided** rather
+than by being built.
+
+**Updated 2026-07-30: all three diagnostics are now reachable, and only the
+streaming bracket is left on that list.** `vprobe`, `shotdiag` and `putstat`
+are `now_framebuffer_probe`, `now_capture_diagnostics` and
+`now_transfer_diagnostics`, plus a Diagnostics module — three rows for one
+plan item and one wire operation, because `requires` is a conjunction and no
+guest serves all three (the argument is in `docs/mcp-coverage.md`, "One
+capability is three rows"). **Tested, not metal-verified**: nothing in this
+row set has run against a Macintosh, and the two unverified things worth
+naming are that the module's per-card availability reads the connected
+machine's own `help` table (so a machine that never answers `help` leaves all
+three cards `unknown`, which is stated rather than guessed past), and that the
+host's 40 s bound on a diagnostic is the **only** watchdog in the chain —
+neither `vprobe` nor `shotdiag` has a guest-side give-up, so a 68030 slower
+than that bound would read as a refusal and nobody has timed one.
+
+### `AgentIntegrationLocalProtocol.swift` is the real serialization point
+
+Any capability needing a new client verb edits four things in that one
+file — an operation case, a result case, a response field and init
+parameter, and a strict-decode branch — at the tails of three lists.
+**Those three tails conflicted on every merge that touched them this
+slice**: the audit gate, the codec fix, its harvest, and the capture
+template. Always trivially, always needing a human decision. It belongs
+on the collision-hazard list beside `contract/asyncapi.yaml` and the
+`scripts/test-native` manifest: **one owning agent per phase**, and
+prefer batching a phase's verbs into a single edit over one agent per
+capability. W0.1's registry removed the tool-enum switch, which made the
+shared-file hazard look solved; it was displaced here.
+
+### Four hand-maintained capability lists survive the registry
+
+So "one file plus one row" is true of the **row** and not of the
+capability. Each is trivial alone; eight times over it is a serialized
+edit on shared test files.
+
+| List | Where |
+|---|---|
+| known-names set | `HostProjectionRegistryTests` |
+| approved-tool list | `NOWAgentCompanionTests` |
+| exhaustive switch over the operation enum | `AgentIntegrationSocketTests`, `NOWAgentCompanionTests` |
+| assertion matching a doc heading that names the tool **count** literally | `MCPCoverageTests` (`## What the thirteen reach`) |
+
+The last is the worst: every new capability renames a heading in
+`docs/mcp-coverage.md` and a string in a test. Worth fixing before a wide
+phase, not during one.
+
+### An integer command argument cannot ride `CommandRequest.args`
+
+`CommandRequest.args` is `[String: String]`, so every typed argument
+reaches the guest quoted. A guest reading an integer argument uses
+`now_json_find_int`, which is `strtol` on the byte after the colon —
+`strtol("\"40\"")` is 0. The failure is silent in the worst way: `tail`'s
+`run_tail` clamps 0 up to 1, so a caller asking for forty log lines gets
+**one**, with `ok:true` and nothing anywhere saying so.
+
+Nothing had met this edge because `launch`, `reveal`, `help` and the census
+all take strings; `tail` (P1 #9) is the first host-side caller whose typed
+argument is a number. It sends the count on `line` instead, which the
+contract declares for that verb (`x-commands.tail.x-line`) and which
+`run_tail` reaches precisely when no typed `lines` is present, with a test
+that fails if somebody tidies it back into `args`.
+
+**Unfixed, and it will bite the next numeric argument.** The fix is a typed
+args value on both sides of the wire, which is a `contract/asyncapi.yaml` +
+both-guests change and belongs to one owning agent, not to whichever
+capability trips over it. Until then: an integer argument goes on the line,
+and a reviewer seeing a number in an `args` dictionary should ask what the
+guest parses it with.
+
+### The guest log is readable by an agent and has not been read on metal
+
+`now_guest_log_tail` (P1 #9) is **tested, not metal-verified**. Two things
+about it are worth knowing before it is trusted on a real machine:
+
+- The audit line it writes under `app` shares the state of every other
+  agent-facing log line — see *The agent audit line has never been read on
+  a real run* below.
+- It is the first row that returns text the machine wrote, so it is the
+  first that can disclose a name from **outside** `guestRoot`: the guest's
+  own `get`, `put` and `files` lines quote the items they handled. That is
+  argued and recorded in [mcp-coverage.md](mcp-coverage.md) rather than
+  accidental, but it is a widening over the Files family's authority and a
+  reviewer should agree with it explicitly rather than inherit it.
+
+### A schema rejection surfaces as the wrong error
+
+`AgentIntegrationLocalServer` replies to a `decodeRequest` failure with
+`.init(error:)` and no request id, so the response carries
+`requestID: nil`. The client checks the id first
+(`decoded.requestID == request.requestID`), so the caller sees **"Local
+response request ID did not match"** rather than the `invalid-request`
+error anyone would grep for. Minor, and explanatory: it is why the
+`guestSelector` defect below presented as a mismatched id rather than as
+the schema rejection it was.
+
+### Dead code
+
+`AgentIntegrationLocalProtocol.strictObject(_:keys:)` — the private
+overload that also requires the keys to be *present* — has no callers.
+Both call sites use `strictObject(_:allowedKeys:)`.
+
+### `vprobe`'s `CopyBits failed` is not `capture.request`'s
+
+`MetalCaptureProjectionTests` was written expecting the guest might
+refuse, because an earlier `vprobe` on this PowerBook reported `CopyBits
+failed`. **It did not reproduce**: two clean captures at two depths. The
+two paths differ — `vprobe` measures framebuffer reads on its own bands,
+the capture lane stages through the guest's normal screen grab — so a
+`CopyBits` failure in one is not evidence about the other. Recorded so
+nobody conflates them again, and so the reverse is also clear: had the
+capture been refused for that reason, it would have been a finding about
+this machine and not a defect in the gate.
+
+**This distinction is now carried by the product rather than only by this
+ledger (2026-07-30).** `vprobe` has a face on both sides — the
+`now_framebuffer_probe` tool and the Diagnostics module's first card — so the
+misreading is available to more people than the two who wrote these
+paragraphs. The tool description states it, and the card states it **before**
+the probe is run rather than beneath a number that has already sent someone
+looking for a bug in Screenshots.
+
+## `PRODUCT_VERSION` cannot tell two builds apart (2026-07-30)
+
+### Broken
+
+`PRODUCT_VERSION` is `"0.1.0"` in
+`now-guest-ppc/src/core/product_identity.h` and was **also `"0.1.0"` on
+the build previously deployed to the 1400c**. It rides `hello` and is
+what `now_session_health` reports, so the one string a host has for "is
+this the build I just deployed" answers the same for every build there
+has ever been.
+
+This cost a real misdiagnosis on **2026-07-30**: a stale guest on the
+1400c was failing every exec test, and the version string gave no signal
+that the machine was running old code. The metal gates now assert which
+build answered from the host-observed address and from the guest's own
+verb table, **never** from `PRODUCT_VERSION` — which is the right
+workaround and not a fix.
+
+The fix is a build identity that changes when the build does. NOW already
+has `build_stamp.c`, which CMake touches at the end of every build and
+AGENTS.md already tells a human to check before believing a test result;
+putting that stamp where `hello` can carry it is the cheap version.
+(Hypothesis, not measured: the 68K guest has its own version string and
+is likely to have the same weakness.)
+
+## The agent audit line has never been read on a real run (2026-07-29)
+
+### Unverified
+
+Every capability the MCP face invokes now emits one audit event, and the
+host writes it under the `agent` area of its log
+([agent-integration.md](agent-integration.md#every-agent-call-leaves-a-trace)).
+The gate is mutation-checked and the whole path is exercised over a real
+private socket in `NOWAgentAuditTests` — but with a fake host at the far
+end. **Nobody has yet driven the running app from a real MCP client and
+read the lines out of `~/Library/Logs/now-logs`.** The host app's own
+handler for the operation (the `.audit` case in `App.swift`) is the one
+piece with no automated cover, because nothing in this tree tests that
+closure; the line's format is tested one layer in, at
+`AgentIntegrationAuditLog`.
+
+Two known gaps, stated rather than left to be discovered:
+
+- A call still waiting on a 32-second launch has not been logged yet. The
+  event is emitted once, when the outcome is known — a begun/ended pair
+  would double this face's local round-trips per call — so a launch in
+  flight is invisible until it settles, and one that takes the process
+  down is never logged at all.
+- A malformed `guest` selector is refused by the face before any
+  capability is invoked, so it names no capability and emits nothing.
+  (Still true, and now true one layer deeper: since 2026-07-29 the codec
+  refuses an empty selector as well — same consequence for the audit
+  line.)
+
+**The 2026-07-29 metal run did not touch this.** `MetalAgentLocalSurface`
+refuses `.audit` by name, along with every other operation that could
+change the machine, so nothing about the audit path was exercised on the
+PowerBook. This entry stands unchanged.
+
+## RESOLVED: local schema v7's addressing could not survive its own codec (2026-07-29)
+
+### Fixed, and metal-verified
+
+Both defects are fixed on this slice and the path is
+**metal-verified on the PB1400c (10.91.5.47), 2026-07-29** for four of
+the five selector states. The table, and why the fifth state one
+connection cannot reach, are in "The parity slice's capture lane and
+addressing met the PowerBook" above.
+
+What the fix is:
+
+- `decodeRequest` admits `guestSelector` — once, in the top-level
+  allowlist, and as a **conditional** per-operation key added only when
+  the caller actually sent it, so an absent selector stays absent rather
+  than becoming a required field on every operation.
+- An **empty** selector is now refused as its own error ("Local request
+  names an empty machine") rather than reaching the adapter as a third
+  state that is neither nil nor an id. Validated in the codec and not only
+  in the companion, because the companion is not the trust boundary: any
+  process of this uid can write that socket.
+- `decodeResponse` admits `notAddressed` **and counts it in the
+  exactly-one-of guard**, beside the operation results rather than outside
+  them — the refusal is set *instead* of an answer, so a response carrying
+  both is malformed for the same reason two results are.
+- `AgentIntegrationAddressingCodecTests` asserts, from a `Mirror` over the
+  request type and over the response type, that each allowlist admits
+  **every field on it** — derived rather than listed. That is what makes
+  the whole defect class visible rather than these two instances of it.
+
+### What was wrong, kept because the shape recurs
+
+Found while adding the audit operation; both were on `main`, both
+untested, and `grep -rn "guestSelector\|notAddressed" now-host/Tests`
+returned nothing, which is why neither was failing anything.
+
+- `decodeRequest` omitted `guestSelector` from its `allowedKeys` and from
+  every operation's `expectedKeys` — a *strict* object check — so any
+  request that actually named a machine was rejected as not matching the
+  schema. Nil selectors are omitted by the encoder, which is why the
+  single-Mac path kept working and the whole machine-id / session-id
+  scheme landed 2026-07-28 could not work through this path at all.
+- `decodeResponse` omitted `notAddressed` from its allowlist, so the
+  refusal `SocketAgentIntegrationClient` is specifically written to pass
+  through as itself arrived as `now-host-invalid-response`: a real refusal
+  wearing a protocol error.
+
+Two omissions of one shape is the lesson, not either omission: an
+allowlist and the fields it is supposed to admit are two lists that drift
+silently, in both directions, and nothing observed it here until an
+unrelated feature needed the field.
+
 ## NOW-68K has a hardware census, and none of it has run (2026-07-28)
 
 ### Unverified, in the strongest sense on this list

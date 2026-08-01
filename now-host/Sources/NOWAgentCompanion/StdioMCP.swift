@@ -53,7 +53,8 @@ struct MCPStandardOutput {
 enum NOWAgentCompanionMain {
     static func main() async {
         let server = NOWMCPServer(
-            client: SocketAgentIntegrationClient())
+            client: SocketAgentIntegrationClient(),
+            audit: LocalAuditSink())
         let output = MCPStandardOutput()
         var framer = BoundedMCPLineFramer()
 

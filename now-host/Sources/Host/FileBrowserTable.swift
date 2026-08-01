@@ -243,6 +243,14 @@ struct FileBrowserTable: NSViewRepresentable {
                 menu.addItem(withTitle: "Open", action: #selector(openRow),
                              keyEquivalent: "").target = self
             } else {
+                /* Named after where it lands, because the two commands
+                   below it land somewhere else: this one goes to the
+                   folder this Mac shares, the downloads go to the
+                   downloads folder. Same wording as the double-click,
+                   which is this item. */
+                menu.addItem(withTitle: "Open on This Mac",
+                             action: #selector(openRow),
+                             keyEquivalent: "").target = self
                 menu.addItem(withTitle: "Download",
                              action: #selector(downloadRow),
                              keyEquivalent: "").target = self

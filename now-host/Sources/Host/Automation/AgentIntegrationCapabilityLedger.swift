@@ -199,17 +199,158 @@ final class AgentIntegrationCapabilityLedger {
         }
     }
 
-    private func familyReport(probedCostly: Bool)
-        -> [AgentIntegrationFamilyCapability] {
+    /// One message family the report accounts for, and the evidence to
+    /// state about it when nothing has been observed.
+    struct FamilyPolicy {
+        let family: String
+        /// The evidence when this session observed nothing in the family —
+        /// for a probed one, that the probe never settled; for an unprobed
+        /// one, the policy that declined to ask.
+        let unobserved: AgentIntegrationCapabilityEvidence
+        /// True when `report(probeCostly: true)` pays for this family, so
+        /// on that path an unobserved answer is `probed` rather than the
+        /// policy above.
+        let probedOnRequest: Bool
+
+        init(_ family: String,
+             _ unobserved: AgentIntegrationCapabilityEvidence,
+             probedOnRequest: Bool = false) {
+            self.family = family
+            self.unobserved = unobserved
+            self.probedOnRequest = probedOnRequest
+        }
+    }
+
+    /// Every message family this report accounts for, in report order.
+    ///
+    /// **A projection requiring a family absent from this list is switched
+    /// off against every guest, silently.** `state(of:)` below looks a
+    /// requirement up here first and falls through to the COMMAND table,
+    /// which cannot contain a message family — `help` does not list them —
+    /// so the miss reads as "the guest does not have it" rather than as
+    /// "nobody declared it", and no test of the projection itself can
+    /// notice. That is what
+    /// `MCPCoverageTests.testEveryFamilyRequirementHasALedgerRow` gates:
+    /// add a family requirement without a row here and it fails naming
+    /// both the capability and the family.
+    ///
+    /// It is a declaration rather than a derivation from the registry's
+    /// requirements on purpose. The probe policy in the second column is
+    /// real knowledge about what a request costs the machine, it is not
+    /// recoverable from a requirement string, and deriving the row set
+    /// while defaulting that column would trade a named failure for a
+    /// quietly mislabelled one.
+    nonisolated static let familyPolicy: [FamilyPolicy] = {
         let names = AgentIntegrationCapabilityNames.self
         return [
-            family(names.processList, whenUnproven: .probed),
-            family(names.fileList, whenUnproven: .probed),
-            family(names.softwareList,
-                   whenUnproven: probedCostly ? .probed : .notProbedCostly),
-            family(names.processQuit, whenUnproven: .notProbedMutating),
-            family(names.filePut, whenUnproven: .notProbedMutating),
+            .init(names.processList, .probed),
+            .init(names.fileList, .probed),
+            .init(names.softwareList, .notProbedCostly,
+                  probedOnRequest: true),
+            .init(names.processQuit, .notProbedMutating),
+            /* Mutating for the same reason quit is, even though it is the
+               gentler of the two drive verbs: probing it would move a
+               window on somebody's screen to answer a question nobody
+               asked. Unproven leaves the capability callable, which is the
+               honest state. */
+            .init(names.processFront, .notProbedMutating),
+            .init(names.filePut, .notProbedMutating),
+            /* The pull direction, and NOT probed for capture's reason
+               rather than quit's: `file.get` changes nothing on the
+               machine, but the smallest request in the family is a whole
+               file off a classic disk holding the connection's one
+               transfer lane while it crosses. There is also nothing to
+               name — a probe would have to invent a path and would then be
+               settling the family with a not-found. Unproven leaves the
+               capability callable, and a guest that does not implement it
+               answers `not-implemented` on the first real call, which is
+               what moves this row to unavailable in the guest's own
+               words. */
+            .init(names.fileGet, .notProbedCostly),
+            /* Mutating in the sharpest possible sense: the smallest request
+               in this family ENDS somebody's transfer. There is also nothing
+               to read back — the contract gives `file.cancel` no reply — so a
+               probe could not settle the question even at that price, and
+               would answer it by destroying the evidence. Unproven leaves the
+               capability callable, which is the honest state. */
+            .init(names.fileCancel, .notProbedMutating),
+            /* The four catalog mutations. Mutating in the plainest sense —
+               the smallest request in each of these families moves, trashes,
+               restores or creates something on somebody's disk — so none of
+               them is probed and all four read `unproven` until a real call
+               settles them. Unproven leaves the capability callable, which is
+               the honest state: a guest that does not serve them refuses
+               instantly, `GuestListener.sendChange` records that refusal,
+               and the first real call is what turns the row `unavailable` —
+               which is a fact the guest supplied rather than a guess about
+               which guest is on the wire. */
+            .init(names.fileMove, .notProbedMutating),
+            .init(names.fileTrash, .notProbedMutating),
+            .init(names.fileRestore, .notProbedMutating),
+            .init(names.fileMkdir, .notProbedMutating),
+            /* Read-only, and NOT probed — the reason is `software.list`'s
+               rather than `process.quit`'s. A capture costs the guest a
+               whole screen grab and holds the connection's only transfer
+               lane while it does; spending that to answer a question nobody
+               asked would take the lane out from under whoever is streaming.
+               Note the honest consequence, which is narrower than the other
+               costly family's: the capture lane does not record a family
+               observation either (`GuestListener.requestCapture` is not
+               wrapped, and `CaptureFailure` carries a sentence rather than
+               the guest's typed code), so this reads `unproven` on every
+               guest until that changes. Unproven is the truthful answer and
+               leaves the capability callable; it is docs/open-issues.md
+               material rather than something to paper over here. */
+            .init(names.captureRequest, .notProbedCostly),
+            /* Read-only, and NOT probed, for capture's reason rather than
+               quit's. There is no cheap request in this family: the probe
+               argument is required, so a probe would have to CHOOSE one, and
+               the registry's own default — `overview` — is the synthesis that
+               arranges what every other probe read. Spending a whole-machine
+               walk on a question nobody asked is the `software.list` trade
+               without `software.list`'s escape, because there is no probe
+               here that a guest which serves the family answers instantly.
+
+               The same honest consequence capture's row carries applies, and
+               it is narrower than the costly families': `GuestListener
+               .requestCensus` is not wrapped in `observing`, so no census
+               call records a family observation either way and this row reads
+               `unproven` on every guest until that changes. Unproven leaves
+               the capability callable, which is the truthful state — a guest
+               that does not implement the family refuses the first real call
+               in its own words. docs/open-issues.md material rather than
+               something to paper over here. */
+            .init(names.censusRequest, .notProbedCostly),
+            /* The three halves of the live-stream bracket. Read-only, and
+               not probed for a reason sharper than capture's: the smallest
+               request in this family does not cost a screen grab, it OPENS
+               ONE AND LEAVES IT OPEN. A probe would put a machine into a
+               mode — and then have to leave it, so settling the question
+               would mean sending stream.stop as well and reporting on a
+               bracket nobody asked for. `stream.refresh` is cheaper still
+               and is unprobeable for the opposite reason: outside a bracket
+               there is nothing for it to refresh, so the only honest probe
+               of it is inside a stream this side would have had to start.
+
+               All three read `unproven` until a real call settles them,
+               which leaves the capability callable — the truthful state. A
+               guest without them refuses by name on the first real call and
+               that is what turns the row unavailable, in the guest's own
+               words rather than by a guess about which guest is on the
+               wire. */
+            .init(names.streamStart, .notProbedCostly),
+            .init(names.streamStop, .notProbedCostly),
+            .init(names.streamRefresh, .notProbedCostly),
         ]
+    }()
+
+    private func familyReport(probedCostly: Bool)
+        -> [AgentIntegrationFamilyCapability] {
+        Self.familyPolicy.map { policy in
+            family(policy.family,
+                   whenUnproven: probedCostly && policy.probedOnRequest
+                       ? .probed : policy.unobserved)
+        }
     }
 
     /// `whenUnproven` is the evidence to report when nothing was observed
@@ -259,7 +400,6 @@ final class AgentIntegrationCapabilityLedger {
         commandNames: [String]?,
         families: [AgentIntegrationFamilyCapability]
     ) -> [AgentIntegrationToolCapability] {
-        let names = AgentIntegrationCapabilityNames.self
         let byName = Dictionary(
             uniqueKeysWithValues: families.map { ($0.family, $0) })
 
@@ -272,6 +412,10 @@ final class AgentIntegrationCapabilityLedger {
                 if let family = byName[requirement] {
                     current = family.state
                 } else if let commandNames {
+                    // The fall-through that makes `familyPolicy` load-bearing:
+                    // a message family reaching here is absent from every
+                    // command table by construction, so it resolves
+                    // `unavailable` for the rest of the connection's life.
                     current = commandNames.contains(requirement)
                         ? .available : .unavailable
                 } else {
@@ -306,48 +450,14 @@ final class AgentIntegrationCapabilityLedger {
                          missing: missing, reason: reason)
         }
 
-        return [
-            .init(tool: "now_session_health", state: .available,
-                  requires: [], missing: [],
-                  reason: "Reads host-owned listener state and sends the "
-                      + "guest no message, so it is available whatever the "
-                      + "guest implements."),
-            .init(tool: "now_session_capabilities", state: .available,
-                  requires: [], missing: [],
-                  reason: "This report."),
-            tool("now_list_processes", [names.processList],
-                 "The connected guest serves process.list."),
-            // Quit needs the family, not the `quit` COMMAND. A guest with
-            // a `quit` verb and no process.quit cannot support the
-            // opaque-reference/PSN-revalidation model this tool is built
-            // on, and the fix is never to relax the model to fit.
-            tool("now_request_quit", [names.processList, names.processQuit],
-                 "The connected guest serves process.list and "
-                     + "process.quit."),
-            // Both halves matter: the `launch` command alone is not
-            // enough, because "launch exactly one exact match from the
-            // current catalog" is the entire safety story and there is no
-            // catalog without software.list.
-            tool("now_launch_software",
-                 [names.softwareList, names.launchCommand],
-                 "The connected guest serves software.list and launch."),
-            tool("now_transfer_approved_artifact", [names.filePut],
-                 "The connected guest accepts a host-driven put."),
-            tool("now_guest_files_capabilities", [names.fileList],
-                 "The connected guest serves file.list."),
-            tool("now_guest_files_list", [names.fileList],
-                 "The connected guest serves file.list."),
-            tool("now_guest_files_stat", [names.fileList],
-                 "The connected guest serves file.list."),
-            tool("now_guest_files_upload_begin", [],
-                 "Reserves private host disk and sends the guest no "
-                     + "message, so staging is available regardless; the "
-                     + "commit is where the guest's put lane is needed."),
-            tool("now_guest_files_upload_append", [],
-                 "Accepts bytes into a private host stage and sends the "
-                     + "guest no message."),
-            tool("now_guest_files_upload_commit", [names.filePut],
-                 "The connected guest accepts a host-driven put."),
-        ]
+        // One row per registered projection, and no list of tool names
+        // here at all. A projection declares the guest capabilities it
+        // cannot work without and the sentence to use when it has them;
+        // this report derives the rest. The names used to be typed twice —
+        // once in the companion's tool enum and once in a literal here —
+        // which is two places for a capability to exist in only one of.
+        return HostProjectionRegistry.hostFaces.projections.map {
+            tool($0.capability.rawValue, $0.requires, $0.availabilityNote)
+        }
     }
 }

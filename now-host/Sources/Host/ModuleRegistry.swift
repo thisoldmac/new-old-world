@@ -34,6 +34,21 @@ struct ModuleRegistry: Sendable {
         modules.first { $0.id == id }
     }
 
+    /// Module ids that have been renamed, old name to new.
+    ///
+    /// The selected module is written to preferences by id, so renaming one
+    /// silently retires whoever was last looking at it: their saved
+    /// selection stops resolving and the next launch drops them on
+    /// Screenshots with no explanation. A rename therefore leaves a
+    /// forwarding address here rather than only in the descriptor.
+    static let renamedIDs: [String: String] = ["agent": "mcp"]
+
+    /// The module a saved selection means today, following one rename.
+    func resolvingRenames(id: String) -> ModuleDescriptor? {
+        module(id: id)
+            ?? Self.renamedIDs[id].flatMap { module(id: $0) }
+    }
+
     /// The two halves of the sidebar, derived rather than stored, so id
     /// uniqueness, `module(id:)`, and the persisted selection keep reading
     /// from the one array no matter where a module is drawn.
@@ -70,17 +85,58 @@ struct ModuleRegistry: Sendable {
             symbol: "terminal",
             summary: "A shell into the connected Mac"
         ),
+        /* Above the machine-describing pages on purpose: this one is about
+           the OTHER Macs - which are connected and which is being driven -
+           where Census and Software describe the one already chosen. The
+           footer's Connection row keeps its own job (this side's port and
+           link state) and is a different question. */
+        ModuleDescriptor(
+            id: "connections",
+            title: "Connections",
+            symbol: "desktopcomputer.and.arrow.down",
+            summary: "Which Macs are connected, and which one is being driven"
+        ),
         ModuleDescriptor(
             id: "census",
             title: "Hardware",
             symbol: "cpu",
             summary: "Run and read the connected Mac's hardware census"
         ),
+        /* Immediately after Hardware, because it answers the same class of
+           question by the other route: Hardware is what the machine IS, and
+           this is what the machine can MEASURE about itself. A person
+           chasing a slow transfer or a wrong-looking screenshot reads them
+           together. */
+        ModuleDescriptor(
+            id: "diagnostics",
+            title: "Diagnostics",
+            symbol: "stethoscope",
+            summary: "Measure this Mac's screen reads and transfers"
+        ),
         ModuleDescriptor(
             id: "software",
             title: "Software",
             symbol: "shippingbox",
             summary: "What is installed on the connected Mac"
+        ),
+        /* In the footer rather than the list, and above Logs, because the
+           list is what you can do to the OTHER Mac and the footer is the
+           state of this side. This page is about this host: the server an
+           agent reaches it through, and what came in that way. It sits
+           beside Logs because part of it is the same record read a
+           different way — Logs is everything that happened, this is the
+           part of it somebody else caused.
+
+           Named for the TRANSPORT rather than for the caller, because that
+           is what the page now controls: MCP is the server this host runs
+           and this side owns its lifecycle. The audit model underneath is
+           deliberately NOT named that — see MCPModuleView. */
+        ModuleDescriptor(
+            id: "mcp",
+            title: "MCP",
+            symbol: "app.connected.to.app.below.fill",
+            summary: "The MCP server agents reach this Mac through",
+            placement: .footer
         ),
         ModuleDescriptor(
             id: "logs",

@@ -29,6 +29,24 @@ final class HostAppStateTests: XCTestCase {
             .module(id: state.selectedModuleID)?.placement, .footer)
     }
 
+    /// **A saved selection naming a module's old id lands on the module,
+    /// not on the fallback.**
+    ///
+    /// The Agent page became the MCP page. A person who was last looking at
+    /// it has `agent` in their preferences, and without the rename table
+    /// that resolves to nothing and they are silently moved to Screenshots
+    /// — which reads as the app forgetting them rather than as a rename.
+    func testAPersistedSelectionSurvivesTheModuleBeingRenamed() {
+        let suite = "HostAppStateTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("agent", forKey: "selectedModuleID")
+
+        let state = HostAppState(registry: .standard, defaults: defaults)
+
+        XCTAssertEqual(state.selectedModuleID, "mcp")
+    }
+
     func testSelectionPersists() {
         let suite = "HostAppStateTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

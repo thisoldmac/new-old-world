@@ -1,4 +1,9 @@
 import Foundation
+/* For AgentIntegrationGuestAccess — hello.agent decodes straight into the
+   contract's own vocabulary rather than a String this layer hands on for
+   somebody else to interpret. One definition, in the module that already
+   owns the agent-facing models. */
+import NOWAgentIntegration
 
 /// Control-channel messages from contract/asyncapi.yaml. One JSON object per
 /// control frame, discriminated by `type`.
@@ -52,6 +57,9 @@ enum ControlMessage: Equatable, Sendable {
     case captureCancel(CaptureCancel)
     case captureBegin(CaptureBegin)
     case captureEnd(CaptureEnd)
+    case sceneRequest(SceneRequest)
+    case sceneBegin(SceneBegin)
+    case sceneEnd(SceneEnd)
     case processList(ProcessList)
     case processListing(ProcessListing)
     case softwareList(SoftwareList)
@@ -60,12 +68,25 @@ enum ControlMessage: Equatable, Sendable {
     case processQuit(ProcessQuit)
     case processShot(ProcessShot)
     case processResult(ProcessResult)
+    case agentAccess(AgentAccess)
 }
 
 struct Hello: Codable, Equatable, Sendable {
     var contract: Int
     var side: String
     var version: String
+    /// Opaque build identity — a string that differs between two builds of
+    /// the same `version`. Nil means the sender does not report one, which
+    /// says nothing about the build; it is never filled in from `version`,
+    /// because a version equal across two builds is the failure this exists
+    /// for.
+    var build: String? = nil
+    /// The sending machine's own answer to whether a companion agent may
+    /// drive it. Nil means it never said — a sender that predates the
+    /// field — and that is NOT consent, never `.fullAccess` filled in
+    /// here. A machine that refuses says `.disabled` out loud, which is
+    /// the only thing separating it from one that is simply older.
+    var agent: AgentIntegrationGuestAccess? = nil
     var name: String?
     var os: String?
     var chunk: Int?
@@ -301,6 +322,24 @@ struct ProcessListing: Codable, Equatable, Sendable {
 /// Symmetric in meaning, one direction in implementation — the
 /// process.list precedent: the host asks, the guest serves, and the
 /// host ignores a software.list rather than serving one.
+/// The guest revising the consent answer it gave at `hello`.
+///
+/// Guest-to-host only, unsolicited, and never acknowledged. `hello.agent`
+/// states this once per connection; before this message existed, a person
+/// who set Read Only mid-session went on being driven at the tier they had
+/// just withdrawn until the link was rebuilt.
+///
+/// `agent` is non-optional here and optional in `Hello` on purpose: in a
+/// hello, absence means "this sender predates the field" and must never be
+/// read as consent, whereas a message whose only purpose is to carry the
+/// answer has no reading in which the answer is missing. A malformed one
+/// fails to decode and is dropped by the same path as any other unreadable
+/// control frame, which is the right outcome — better no revision than an
+/// invented tier.
+struct AgentAccess: Codable, Equatable, Sendable {
+    var agent: AgentIntegrationGuestAccess
+}
+
 struct SoftwareList: Codable, Equatable, Sendable {
     var id: Int
     var domain: String
@@ -596,6 +635,50 @@ struct CaptureEnd: Codable, Equatable, Sendable {
     var sendMs: Int?
 }
 
+/// Ask for one scene. The answer is a TRANSFER — scene.begin, bulk
+/// frames, scene.end — never a control message, because NOW's own
+/// producer encodes 9214 bytes for 24 processes and 32 windows against a
+/// 4096-byte control cap. There is no scene bracket and no scene.cancel:
+/// the transfer is tens of milliseconds, and abandoning it costs more
+/// than finishing it (docs/streaming-a-scene.md).
+struct SceneRequest: Codable, Equatable, Sendable {
+    var id: Int
+    var chunkKb: Int?
+    var paceMs: Int?
+    /// How old an anchor sample may be and still be reported clean. An
+    /// older-but-otherwise-valid anchor is *reported* stale in
+    /// `apps[].error`, never silently dropped and never a refusal.
+    var staleAfterMs: Int?
+}
+
+struct SceneBegin: Codable, Equatable, Sendable {
+    var id: Int
+    var transfer: Int
+    /// Bulk bytes of UTF-8 JSON to expect, terminator excluded.
+    var bytes: Int
+    /// The IR major, repeated HERE — the same number the document's own
+    /// `version` carries — so a consumer can refuse an unknown major
+    /// **before** spending a decode on the body. That order is IR-V1.md's
+    /// stated consumer duty, and only an envelope makes obeying it
+    /// possible; `NOWSceneCodec.decode` is the half that obeys it.
+    var irVersion: Int
+    var seq: Int?
+    var capturedAt: Double?
+    var source: String?
+    var walkMs: Int?
+}
+
+struct SceneEnd: Codable, Equatable, Sendable {
+    var id: Int
+    var transfer: Int
+    var ok: Bool
+    /// Why a scene could not be served, on ok:false. Prose for a human;
+    /// nothing branches on it. A failed or oversized walk ends here with
+    /// NO bulk — a partial walk is never delivered as a complete scene.
+    var reason: String?
+    var sendMs: Int?
+}
+
 enum ControlMessageError: Error, Equatable {
     case notAnObject
     case missingType
@@ -732,6 +815,14 @@ enum ControlMessageCodec {
                 try decoder.decode(CaptureBegin.self, from: data))
         case "capture.end":
             return .captureEnd(try decoder.decode(CaptureEnd.self, from: data))
+        case "scene.request":
+            return .sceneRequest(
+                try decoder.decode(SceneRequest.self, from: data))
+        case "scene.begin":
+            return .sceneBegin(
+                try decoder.decode(SceneBegin.self, from: data))
+        case "scene.end":
+            return .sceneEnd(try decoder.decode(SceneEnd.self, from: data))
         case "process.list":
             return .processList(
                 try decoder.decode(ProcessList.self, from: data))
@@ -756,6 +847,8 @@ enum ControlMessageCodec {
         case "software.listing":
             return .softwareListing(
                 try decoder.decode(SoftwareListing.self, from: data))
+        case "agent.access":
+            return .agentAccess(try decoder.decode(AgentAccess.self, from: data))
         default:
             throw ControlMessageError.unknownType(probe.type)
         }
@@ -815,6 +908,9 @@ enum ControlMessageCodec {
         case .captureCancel(let m): return try tagged("capture.cancel", m)
         case .captureBegin(let m): return try tagged("capture.begin", m)
         case .captureEnd(let m): return try tagged("capture.end", m)
+        case .sceneRequest(let m): return try tagged("scene.request", m)
+        case .sceneBegin(let m): return try tagged("scene.begin", m)
+        case .sceneEnd(let m): return try tagged("scene.end", m)
         case .processList(let m): return try tagged("process.list", m)
         case .processListing(let m): return try tagged("process.listing", m)
         case .softwareList(let m): return try tagged("software.list", m)
@@ -823,6 +919,7 @@ enum ControlMessageCodec {
         case .processQuit(let m): return try tagged("process.quit", m)
         case .processShot(let m): return try tagged("process.shot", m)
         case .processResult(let m): return try tagged("process.result", m)
+        case .agentAccess(let m): return try tagged("agent.access", m)
         }
     }
 }

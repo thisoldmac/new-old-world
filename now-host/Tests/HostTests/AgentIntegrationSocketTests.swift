@@ -3,8 +3,24 @@ import XCTest
 @testable import Host
 @testable import NOWAgentIntegration
 
+/// The private local socket, end to end.
+///
+/// Every fixture here stands up a real `AgentIntegrationLocalServer` to
+/// answer ONE operation, and its handler must still be a total function
+/// over the operation enum. The cases it does not care about answer
+/// `Self.filler` through a `default:` rather than being spelled out: an
+/// exhaustive tail meant every operation added to the protocol was an edit
+/// to every fixture in this file, on the one file a whole phase's agents
+/// share. Nothing is lost by it — a fixture that reached an operation it
+/// had not handled would decode the wrong response and fail.
 @MainActor
 final class AgentIntegrationSocketTests: XCTestCase {
+    /// The answer a fixture gives an operation it is not about. Shaped for
+    /// `sessionHealth`, so it decodes as a response only where that is what
+    /// was asked; anywhere else it is a deliberate mismatch that fails.
+    private static let filler =
+        AgentIntegrationLocalResult.sessionHealth(.hostUnavailable)
+
     private func temporaryEndpoint() throws
         -> (AgentIntegrationEndpoint, URL) {
         let root = FileManager.default.temporaryDirectory
@@ -34,22 +50,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                             probeCostly: request.probeCostly ?? false))
                 case .listProcesses:
                     return .processList(await adapter.processList())
-                case .launchSoftware:
-                    return .launchSoftware(.unavailable(.guest))
-                case .requestQuit:
-                    return .requestQuit(.unavailable(.guest))
-                case .transferApprovedArtifact:
-                    return .transferApprovedArtifact(.unavailable(.guest))
-                case .guestFilesCapabilities:
-                    return .guestFilesCapabilities(.hostUnavailable(.guest))
-                case .guestFilesList:
-                    return .guestFilesList(.hostUnavailable(.guest))
-                case .guestFilesStat:
-                    return .guestFilesStat(.hostUnavailable(.guest))
-                case .guestFilesUploadBegin, .guestFilesUploadAppend:
-                    return .guestFilesUploadStage(.hostUnavailable(.guest))
-                case .guestFilesUploadCommit:
-                    return .guestFilesUploadCommit(.hostUnavailable(.guest))
+                default:
+                    return Self.filler   /* see the class note */
                 }
             })
         try server.start()
@@ -174,22 +176,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                             probeCostly: request.probeCostly ?? false))
                 case .listProcesses:
                     return .processList(await adapter.processList())
-                case .launchSoftware:
-                    return .launchSoftware(.unavailable(.guest))
-                case .requestQuit:
-                    return .requestQuit(.unavailable(.guest))
-                case .transferApprovedArtifact:
-                    return .transferApprovedArtifact(.unavailable(.guest))
-                case .guestFilesCapabilities:
-                    return .guestFilesCapabilities(.hostUnavailable(.guest))
-                case .guestFilesList:
-                    return .guestFilesList(.hostUnavailable(.guest))
-                case .guestFilesStat:
-                    return .guestFilesStat(.hostUnavailable(.guest))
-                case .guestFilesUploadBegin, .guestFilesUploadAppend:
-                    return .guestFilesUploadStage(.hostUnavailable(.guest))
-                case .guestFilesUploadCommit:
-                    return .guestFilesUploadCommit(.hostUnavailable(.guest))
+                default:
+                    return Self.filler   /* see the class note */
                 }
             })
         try server.start()
@@ -240,22 +228,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                 case .listProcesses:
                     return .processList(
                         await state.agentIntegration.processList())
-                case .launchSoftware:
-                    return .launchSoftware(.unavailable(.guest))
-                case .requestQuit:
-                    return .requestQuit(.unavailable(.guest))
-                case .transferApprovedArtifact:
-                    return .transferApprovedArtifact(.unavailable(.guest))
-                case .guestFilesCapabilities:
-                    return .guestFilesCapabilities(.hostUnavailable(.guest))
-                case .guestFilesList:
-                    return .guestFilesList(.hostUnavailable(.guest))
-                case .guestFilesStat:
-                    return .guestFilesStat(.hostUnavailable(.guest))
-                case .guestFilesUploadBegin, .guestFilesUploadAppend:
-                    return .guestFilesUploadStage(.hostUnavailable(.guest))
-                case .guestFilesUploadCommit:
-                    return .guestFilesUploadCommit(.hostUnavailable(.guest))
+                default:
+                    return Self.filler   /* see the class note */
                 }
             })
 
@@ -285,22 +259,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                             probeCostly: request.probeCostly ?? false))
                 case .listProcesses:
                     return .processList(await adapter.processList())
-                case .launchSoftware:
-                    return .launchSoftware(.unavailable(.guest))
-                case .requestQuit:
-                    return .requestQuit(.unavailable(.guest))
-                case .transferApprovedArtifact:
-                    return .transferApprovedArtifact(.unavailable(.guest))
-                case .guestFilesCapabilities:
-                    return .guestFilesCapabilities(.hostUnavailable(.guest))
-                case .guestFilesList:
-                    return .guestFilesList(.hostUnavailable(.guest))
-                case .guestFilesStat:
-                    return .guestFilesStat(.hostUnavailable(.guest))
-                case .guestFilesUploadBegin, .guestFilesUploadAppend:
-                    return .guestFilesUploadStage(.hostUnavailable(.guest))
-                case .guestFilesUploadCommit:
-                    return .guestFilesUploadCommit(.hostUnavailable(.guest))
+                default:
+                    return Self.filler   /* see the class note */
                 }
             })
         try server.start()
@@ -429,22 +389,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     return .sessionCapabilities(.guestUnavailable)
                 case .listProcesses:
                     return .processList(.available(snapshot))
-                case .launchSoftware:
-                    return .launchSoftware(.unavailable(.guest))
-                case .requestQuit:
-                    return .requestQuit(.unavailable(.guest))
-                case .transferApprovedArtifact:
-                    return .transferApprovedArtifact(.unavailable(.guest))
-                case .guestFilesCapabilities:
-                    return .guestFilesCapabilities(.hostUnavailable(.guest))
-                case .guestFilesList:
-                    return .guestFilesList(.hostUnavailable(.guest))
-                case .guestFilesStat:
-                    return .guestFilesStat(.hostUnavailable(.guest))
-                case .guestFilesUploadBegin, .guestFilesUploadAppend:
-                    return .guestFilesUploadStage(.hostUnavailable(.guest))
-                case .guestFilesUploadCommit:
-                    return .guestFilesUploadCommit(.hostUnavailable(.guest))
+                default:
+                    return Self.filler   /* see the class note */
                 }
             })
         try server.start()
@@ -495,27 +441,8 @@ final class AgentIntegrationSocketTests: XCTestCase {
                     XCTAssertEqual(request.guestFilePath, "Logs")
                     XCTAssertEqual(request.guestFileCursor, 2)
                     return .guestFilesList(expected)
-                case .sessionHealth:
-                    return .sessionHealth(.hostUnavailable)
-                case .sessionCapabilities:
-                    return .sessionCapabilities(.guestUnavailable)
-                case .listProcesses:
-                    return .processList(.guestUnavailable)
-                case .launchSoftware:
-                    return .launchSoftware(.unavailable(.guest))
-                case .requestQuit:
-                    return .requestQuit(.unavailable(.guest))
-                case .transferApprovedArtifact:
-                    return .transferApprovedArtifact(.unavailable(.guest))
-                case .guestFilesCapabilities:
-                    return .guestFilesCapabilities(
-                        .hostUnavailable(.guest))
-                case .guestFilesStat:
-                    return .guestFilesStat(.hostUnavailable(.guest))
-                case .guestFilesUploadBegin, .guestFilesUploadAppend:
-                    return .guestFilesUploadStage(.hostUnavailable(.guest))
-                case .guestFilesUploadCommit:
-                    return .guestFilesUploadCommit(.hostUnavailable(.guest))
+                default:
+                    return Self.filler   /* see the class note */
                 }
             })
         try server.start()
@@ -627,7 +554,7 @@ final class AgentIntegrationSocketTests: XCTestCase {
                 case .guestFilesUploadCommit:
                     return .guestFilesUploadCommit(.hostUnavailable(.guest))
                 default:
-                    return .sessionHealth(.hostUnavailable)
+                    return Self.filler   /* see the class note */
                 }
             })
         try server.start()

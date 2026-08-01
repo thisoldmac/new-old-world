@@ -179,10 +179,161 @@ extension AgentIntegrationSessionCapabilitiesResult: Codable {
 public enum AgentIntegrationCapabilityNames {
     public static let processList = "process.list"
     public static let processQuit = "process.quit"
+    /// The other drive verb of the same family. Named here for the reason
+    /// the rest are: `GuestListener` records its observation under this
+    /// string and `BringToFrontProjection` requires it, and those used to
+    /// be one hand-typed literal and one constant.
+    public static let processFront = "process.front"
     public static let softwareList = "software.list"
     public static let fileList = "file.list"
+    /// The host-initiated pull — `file.get` → `file.begin` → bulk →
+    /// `file.end`. Named here beside its sibling because it is the one
+    /// requirement of `now_guest_files_download` that decides whether the
+    /// bounded-download model has anything to stand on.
+    public static let fileGet = "file.get"
     public static let filePut = "file.put"
+    /// Ending the transfer in flight, in whichever direction it is going.
+    ///
+    /// The message name, and it is required on **both** guests rather than
+    /// forked by ISA: the 68K guest's `cancel` verb is that machine's CONSOLE face
+    /// on the same body (`wire68.c :: cancel_in_flight`, reached from both
+    /// `handle_file_cancel` and `now68k_wire_cancel_transfer`), not a second
+    /// mechanism a host would have to choose between. One capability, two
+    /// guest answers, and the host sends the message either way.
+    public static let fileCancel = "file.cancel"
+    /// The four catalog mutations, named separately because the contract
+    /// names them separately — and required TOGETHER by the one row that
+    /// projects them: a guest that could trash and not restore would offer a
+    /// deletion nothing can undo, which is not the capability.
+    public static let fileMove = "file.move"
+    public static let fileTrash = "file.trash"
+    public static let fileRestore = "file.restore"
+    public static let fileMkdir = "file.mkdir"
+    /// The hardware-census family. The request half names it, as the
+    /// contract does, and one row covers all fourteen probes: a probe is an
+    /// ARGUMENT of `census.request`, never a capability the ledger could
+    /// resolve — neither the family table nor the guest's `help` command
+    /// table can hold a probe name, so requiring one would switch its
+    /// projection off against every guest.
+    public static let censusRequest = "census.request"
+    /// The screen-capture family. A contract message name, not an alias:
+    /// `capture.request` is what the host sends and both guests dispatch.
+    public static let captureRequest = "capture.request"
+    /* The live-stream bracket, named as THREE message families rather than
+       one, and the reason is the opposite of the census's.
+
+       A probe is an argument of `census.request` and could never be a
+       requirement. These three are each a message the contract declares and a
+       guest dispatches by name, so each resolves in the ledger on its own —
+       and the row that projects the bracket requires all three, because a
+       bracket you can open and cannot close is not a capability anyone should
+       be handed. The conjunction is right here where it was wrong for the
+       diagnostics: those three differ per guest, and these three arrived
+       together, are served together, and are absent together. */
+
+    /// Opens the bracket. Every frame's `capture.begin` carries the id this
+    /// message names, which is what routes a frame to the live view instead of
+    /// to the disk.
+    public static let streamStart = "stream.start"
+    /// Closes it. Always answered — `stream.stopped` is the stream's last
+    /// word — which is why the projection can report a closed bracket rather
+    /// than a hope.
+    public static let streamStop = "stream.stop"
+    /// Asks for a keyframe: the guest's next frame is sent whole. The
+    /// contract calls this belt-and-suspenders against compositing drift, and
+    /// on this surface it is load-bearing for a second reason — it is what
+    /// makes "the frame after you asked" a thing a caller can be promised.
+    public static let streamRefresh = "stream.refresh"
     public static let launchCommand = "launch"
+    /// `launch`'s read-only twin: show one item in the guest's own Finder.
+    /// A COMMAND rather than a message family — the ledger resolves it
+    /// against the guest's `help` table, which is what makes the row
+    /// PowerPC-only without anything here naming a guest.
+    public static let revealCommand = "reveal"
+    /// The whole-volume application sweep, measured on the machine. A
+    /// COMMAND and not a message family, which is the whole reason
+    /// `CatalogSearchProjection` needs no `familyPolicy` row: a command's
+    /// availability comes off `help`, free, so nothing has to decide
+    /// whether settling it is worth what it costs.
+    public static let catsearchCommand = "catsearch"
+    /// The machine's own account of itself — five domain groups and a
+    /// snapshot, in one call. A COMMAND, so the ledger resolves it against
+    /// the guest's `help` table exactly as it does `reveal`, `catsearch` and
+    /// `tail`: that is what makes `now_machine_facts` PowerPC-only by
+    /// derivation, with nothing on this side asking which guest answered.
+    ///
+    /// Note what it is NOT. There is no `gestalt.*` message family and this
+    /// name must not grow one: the census family already carries the paged,
+    /// per-probe reading of adjacent hardware facts, and a second family for
+    /// the same machine would be two mechanisms for one question.
+    public static let gestaltCommand = "gestalt"
+    /// The guest's own log for this launch. A COMMAND, like `reveal` and for
+    /// the same mechanical reason: the ledger resolves it against the
+    /// guest's `help` table, which is what makes the row PowerPC-only
+    /// without anything on this side naming a guest — the 68K guest's
+    /// command table has no `tail` row, so it resolves `unavailable` there
+    /// by derivation rather than by a fork in the code.
+    ///
+    /// Note what it is NOT: there is no `log.*` message family, and this
+    /// name must not grow one by accident. The verb reads the application's
+    /// own in-memory ring, and a family would be a second mechanism for one
+    /// capability.
+    public static let tailCommand = "tail"
+
+    /* The three diagnostics, and they are named SEPARATELY on purpose —
+       this is the whole crux of the capability that projects them.
+
+       All three are COMMANDS, so the ledger resolves each against the
+       guest's own `help` table, one at a time. That matters because their
+       availability genuinely differs: `vprobe` is served by both guests,
+       `shotdiag` by the 68K guest only, `putstat` by the Carbon guest only. A row's
+       `requires` is a CONJUNCTION, so one row requiring all three would
+       resolve `unavailable` against every guest that exists, for the life of
+       every connection, in a sentence that reads as a fact about the
+       Macintosh — the same wall `put` reported from the other side (see
+       docs/mcp-coverage.md). Three names, required one per row, is what lets
+       each be exactly as available as the machine makes it, with nothing on
+       this side asking which guest answered. */
+
+    /// What reading this machine's framebuffer costs, by access method.
+    /// Both guests serve it, so its row is available on both — the only one
+    /// of the trio that is.
+    public static let vprobeCommand = "vprobe"
+    /// Where a staged capture read from — the verb that found the 180c's
+    /// 24-bit addressing defect. The 68K guest only, by derivation from `help`.
+    ///
+    /// Note what it is NOT: it is not a capture, and it must never be
+    /// required by the capture row. It stages one down the real path, records
+    /// where the walk read, and discards the file; nothing crosses the bulk
+    /// channel. Its answer is about that walk and says nothing about whether
+    /// `capture.request` works.
+    public static let shotdiagCommand = "shotdiag"
+    /// Where the last file the guest RECEIVED spent its time. The Carbon
+    /// guest only, by derivation from `help`.
+    public static let putstatCommand = "putstat"
+
+    /// Every name above, as a set.
+    ///
+    /// It exists so a projection's `requires` can be checked against the
+    /// declaration rather than against a second copy of it typed into a
+    /// test — which is what `HostProjectionRegistryTests` used to hold, and
+    /// what every new capability had to remember to edit.
+    ///
+    /// Swift cannot enumerate an enum's static lets, so this is written by
+    /// hand; the point is that it is written *here*, beside the constant it
+    /// lists, and not in a test target. Membership is also not the only
+    /// check a requirement faces: `MCPCoverageTests`
+    /// `testEveryRequirementResolvesToTheContract` resolves the same strings
+    /// against `contract/asyncapi.yaml`, so a name that exists only in this
+    /// set still fails somewhere.
+    public static let all: Set<String> = [
+        processList, processQuit, processFront, softwareList, fileList,
+        fileGet, filePut, fileCancel, fileMove, fileTrash, fileRestore,
+        fileMkdir, censusRequest, captureRequest, streamStart, streamStop,
+        streamRefresh, launchCommand, revealCommand, catsearchCommand,
+        gestaltCommand, tailCommand, vprobeCommand, shotdiagCommand,
+        putstatCommand,
+    ]
 
     /// Refusal codes that mean "this guest does not implement that", as
     /// opposed to "that failed". The 68K guest answers `not-implemented`

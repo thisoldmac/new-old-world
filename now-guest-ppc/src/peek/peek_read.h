@@ -51,7 +51,17 @@ typedef enum {
                                  or A5<->PSN correlation miss */
     kNowPeekReadNoWindows,    /* anchor found, process has no windows */
     kNowPeekReadUnreadable,   /* anchor found, the walk failed validation */
-    kNowPeekReadStub          /* a plane whose walk is not built yet */
+    kNowPeekReadStub,         /* a plane whose walk is not built yet */
+    /* The two answers the oracle (peek_oracle.h) can give that NoAnchor
+       used to swallow. Both mean "the plane is working and this process
+       still has no usable anchor", which is a different thing to report
+       than "nothing has been captured": */
+    kNowPeekReadAmbiguous,    /* two anchors claim this partition, and
+                                 nothing distinguishes them - refused
+                                 rather than guessed */
+    kNowPeekReadMismatch      /* an anchor claims it, but its A5 and its
+                                 stack base describe different address
+                                 spaces: recycled slot, not this process */
 } NowPeekReadStatus;
 
 /* All of a GIVEN process's windows - the per-process `axtree` behaviour:

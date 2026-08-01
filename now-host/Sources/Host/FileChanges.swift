@@ -303,12 +303,36 @@ extension FilesModuleModel {
 /// the share root, and bounded by what HFS will accept.
 enum FileChangeNames {
 
+    /// The named segments of an HFS colon-path, in order.
+    ///
+    /// This is the host's ONE splitter, and everything that needs the
+    /// pieces of a path asks it rather than spelling `split` again — the
+    /// path bar included. The rule it splits by is
+    /// `contract/share_path.h` (`now_share_path_ok`), which both guests
+    /// compile and `now-guest-ppc/tests/share_path_test.c` pins:
+    ///
+    /// * `:` separates, and is therefore the one character a name cannot
+    ///   contain. Nothing else is special — `.`, `..`, `/`, spaces and
+    ///   high-MacRoman bytes are all ordinary characters in an HFS name,
+    ///   which is exactly why a POSIX-minded splitter must not be used
+    ///   here. `Lab:..:Code` is three real folders, not a traversal.
+    /// * A TRAILING colon names a folder and adds no segment, so
+    ///   `"Macintosh HD:"` is one segment, the volume.
+    /// * Any OTHER empty segment means "the parent", which the guest
+    ///   refuses outright — such a path never becomes a listing, so it
+    ///   never reaches a crumb. Dropping empties here matches that: what
+    ///   is left is the named segments, and there is nothing to name in
+    ///   an ascent the other machine would not perform.
+    static func components(_ path: String) -> [String] {
+        path.split(separator: ":").map(String.init)
+    }
+
     static func leaf(_ path: String) -> String {
-        path.split(separator: ":").last.map(String.init) ?? path
+        components(path).last ?? path
     }
 
     static func parent(_ path: String) -> String {
-        var parts = path.split(separator: ":").map(String.init)
+        var parts = components(path)
         guard parts.count > 1 else { return "" }
         parts.removeLast()
         return parts.joined(separator: ":")

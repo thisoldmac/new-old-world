@@ -28,9 +28,13 @@ final class CommandRegistryTests: XCTestCase {
             .deletingLastPathComponent().deletingLastPathComponent()
     }
 
+    /// The contract and the docs as written; guest C and host Swift with
+    /// their comments removed — see `GateSource` for why that distinction
+    /// is not cosmetic.
     private func read(_ path: String) throws -> String {
-        try String(contentsOf: Self.repoRoot.appendingPathComponent(path),
-                   encoding: .utf8)
+        if path.hasSuffix(".c") { return try GateSource.guestC(path) }
+        if path.hasSuffix(".swift") { return try GateSource.hostSwift(path) }
+        return try GateSource.raw(path)
     }
 
     /// Names under `x-commands:` in the contract — the declared spine.
@@ -62,6 +66,18 @@ final class CommandRegistryTests: XCTestCase {
     }
 
     /// Names the guest's dispatch actually answers.
+    ///
+    /// The window opens at the FIRST `void now_command_run(` and runs to
+    /// the end of the file, which works only because the definition is the
+    /// first mention and sits near the end. Add a forward declaration at
+    /// the top of `commands.c` and the window becomes the whole file, so
+    /// any `strcmp(name, "…") == 0` in an unrelated helper joins the
+    /// answered set. Nothing fails today (no such helper exists — checked
+    /// by mutation 2026-07-31), and the failure it would cause is a
+    /// mismatch against `documented()`, which reads loudly. A note rather
+    /// than a fix: anchoring the window properly means finding the closing
+    /// brace, and `LoggingSpecTests.functionBody` already does that if this
+    /// ever bites.
     private func answered() throws -> Set<String> {
         let text = try read("now-guest-ppc/src/commands/commands.c")
         guard let body = text.range(of: "void now_command_run(") else {

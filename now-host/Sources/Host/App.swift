@@ -25,6 +25,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     func applicationDidFinishLaunching(_ notification: Notification) {
         installMainMenu()
         installStatusItem()
+        /* The MCP pane's buttons, wired before the window opens so a person
+           who lands on that page cannot press a control that has not been
+           connected yet. The delegate owns the server object, so the pane
+           reaches it through the app state rather than holding it. */
+        state.startMCPServer = { [weak self] in
+            self?.startAgentIntegrationServer()
+        }
+        state.stopMCPServer = { [weak self] in
+            self?.stopAgentIntegrationServer()
+        }
         openMainWindow()
         startAgentIntegrationServer()
     }
@@ -291,6 +301,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         }
     }
 
+    /// One local mutation request, revalidated through the same failable
+    /// initialisers every other face uses.
+    ///
+    /// The codec has already checked the shape; this checks the *rules* —
+    /// non-empty paths, a move that is neither its own source nor inside it,
+    /// a trashed name that is a name — and it does so by asking the one type
+    /// that owns them rather than restating any of it here. Nil is a refusal
+    /// this host writes, not one the guest was troubled with.
+    static func mutationRequest(
+        _ mutation: AgentIntegrationGuestFileMutation,
+        path: String,
+        destination: String?,
+        trashedAs: String?
+    ) -> AgentIntegrationGuestFileMutationRequest? {
+        switch mutation {
+        case .move:
+            guard let destination, trashedAs == nil else { return nil }
+            return .move(path: path, toPath: destination)
+        case .restore:
+            guard let trashedAs, destination == nil else { return nil }
+            return .restore(trashedAs: trashedAs, toPath: path)
+        case .trash:
+            guard destination == nil, trashedAs == nil else { return nil }
+            return .trash(path: path)
+        case .mkdir:
+            guard destination == nil, trashedAs == nil else { return nil }
+            return .makeFolder(path: path)
+        }
+    }
+
     /// The header carries the connection, and — when Screenshot Guest is
     /// greyed out for a reason the connection alone does not explain (a
     /// stream or a transfer holding the one lane) — that reason too, so the
@@ -308,9 +348,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         if window == nil {
             let root = HostRootView(registry: registry, state: state)
             let controller = NSHostingController(rootView: root)
+            /* The WINDOW owns its size, not whichever pane is showing.
+               NSHostingController defaults to .preferredContentSize, which
+               republishes the SwiftUI view's ideal height as a window
+               constraint every time the content changes - so selecting a pane
+               whose ideal content is tall (Agent and Diagnostics both scroll a
+               stack of cards) resized the window past the height of the
+               display, with no way to drag it back. setContentSize below runs
+               once at creation and was simply overridden on the next pane
+               switch.
+
+               Reported from a real machine 2026-07-31; the panes that looked
+               fine were only the ones whose content happened to be short, so
+               this was never about those two views. */
+            controller.sizingOptions = []
             let newWindow = NSWindow(contentViewController: controller)
             newWindow.title = ProductIdentity.displayName
             newWindow.setContentSize(NSSize(width: 980, height: 650))
+            /* A floor, so the window cannot be dragged down to a size where
+               the sidebar and the detail pane have nothing left to render. */
+            newWindow.contentMinSize = NSSize(width: 720, height: 460)
             newWindow.setFrameAutosaveName(ProductIdentity.windowFrameName)
             newWindow.isReleasedWhenClosed = false
             newWindow.delegate = self
@@ -327,16 +384,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     /// Failure keeps the human product intact; this optional surface must
     /// never become a prerequisite for launching or pairing NOW.
     private func startAgentIntegrationServer() {
+        /* Idempotent since the MCP pane can ask: standing a second server on
+           the same path would take the socket away from the one already
+           serving, which is a worse outcome than a button that does nothing
+           because there is nothing to do. */
+        guard agentIntegrationServer == nil else { return }
         do {
-            let server = try AgentIntegrationLocalServer {
+            let server = try AgentIntegrationLocalServer(
+                /* The ledger is written on the accept thread; the pane that
+                   will draw it lives on the main one. The hop is here, at
+                   the one seam that knows about both, rather than inside a
+                   module that has no business knowing a socket exists. */
+                companionObserver: { [companions = state.agentCompanions]
+                    activity in
+                    Task { @MainActor in companions.update(activity) }
+                }
+            ) {
                 [agentIntegration = state.agentIntegration,
-                 guestFiles = state.guestFiles] request in
+                 guestFiles = state.guestFiles,
+                 activity = state.agentActivity] request in
                 /* Addressing is checked once, before any operation, so
                    no tool can be reached with a guest selector nobody
                    honoured. Session health is exempt: it is the call a
                    caller makes to DISCOVER the ids, and refusing it for
                    naming an id would be a closed loop. */
+                /* Audit is exempt for a different reason than health: it
+                   asks nothing of any guest, and a line about a call that
+                   was refused BECAUSE no machine answered is exactly the
+                   line the person needs. */
                 if request.operation != .sessionHealth,
+                   request.operation != .audit,
                    let refusal = agentIntegration.addressingRefusal(
                        request.guestSelector) {
                     return .notAddressed(refusal)
@@ -392,6 +469,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     return .guestFilesStat(
                         await guestFiles.agentStat(
                             path: request.guestFilePath ?? ""))
+                case .guestFileDownload:
+                    /* The path is the whole request, and an absent one
+                       never reached a machine — so the refusal is the
+                       path's rather than the guest's. Shaped like the two
+                       browse cases above rather than like the upload ones:
+                       the download is a Files command with the same
+                       guestRoot policy and the same receipt envelope. */
+                    return .guestFileDownload(
+                        await guestFiles.agentDownload(
+                            path: request.guestFilePath ?? ""))
                 case .guestFilesUploadBegin:
                     guard let upload = request.guestFileUpload else {
                         return .guestFilesUploadStage(.completed(
@@ -437,15 +524,271 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     return .guestFilesUploadCommit(
                         await guestFiles.agentCommitUpload(
                             uploadID: uploadID))
+                case .capture:
+                    /* Three shapes, and the codec has already refused any
+                       request that is more than one of them — so the order
+                       here is a reading of validated fields rather than a
+                       precedence. */
+                    if request.captureAbandon == true {
+                        return .capture(
+                            agentIntegration.abandonCapture())
+                    }
+                    if let captureID = request.captureID,
+                       let offset = request.captureOffset {
+                        return .capture(
+                            agentIntegration.capturePage(
+                                captureID: captureID, offset: offset))
+                    }
+                    guard let depth = request.captureDepth else {
+                        return .capture(.refused(.init(
+                            code: "now-capture-request-invalid",
+                            message: "The capture request named no depth, "
+                                + "page or abandon")))
+                    }
+                    return .capture(
+                        await agentIntegration.capture(depth: depth))
+                case .audit:
+                    /* Rule 3 of the parity slice, arriving: a face reports
+                       what it was asked to do and this side writes it where
+                       the person at the machine can read it. The line is
+                       composed HERE, from typed fields the codec has already
+                       validated, rather than accepted as text — the log is
+                       the human's, and a reporting process does not get to
+                       write arbitrary rows into it. */
+                    guard let event = request.auditEvent else {
+                        return .recorded
+                    }
+                    AgentIntegrationAuditLog.record(
+                        event,
+                        drivenGuest:
+                            agentIntegration.activeReference()?.id,
+                        stream: activity)
+                    return .recorded
+                case .bringToFront:
+                    /* The first of P1a's eleven to be wired (plan 005,
+                       P1b). Shaped like requestQuit above and for the same
+                       reason: the reference is all a caller may send, and a
+                       request without one never reached a machine, so the
+                       refusal is the reference's rather than the guest's. */
+                    guard let reference = request.processReference else {
+                        return .bringToFront(.refused(.init(
+                            code: "now-process-reference-stale",
+                            message:
+                                "The process reference is not current for this session")))
+                    }
+                    return .bringToFront(
+                        await agentIntegration.bringToFront(
+                            reference: reference))
+                case .revealItem:
+                    /* The target is all a caller may send, and a request
+                       without one never reached a machine — so the refusal
+                       is the target's rather than the guest's. The codec
+                       has already bounded it; this is the shape check that
+                       cannot be expressed in a strict key list. */
+                    guard let target = request.revealTarget else {
+                        return .revealItem(.refused(.init(
+                            code: "now-reveal-target-invalid",
+                            message:
+                                "The reveal request named no target")))
+                    }
+                    return .revealItem(
+                        await agentIntegration.revealItem(target: target))
+                case .transferCancel:
+                    /* Says only its own name, and the codec has already
+                       refused a request carrying anything else. There is
+                       nothing to read off it here: the lane is one transfer
+                       wide across both directions, so what to cancel is not
+                       a caller's to name. */
+                    return .transferCancel(
+                        agentIntegration.cancelTransfer())
+                case .guestFileMutation:
+                    /* P1 #7, and the first MUTATING guest-Files verb here.
+                       The codec has already refused every crossed shape —
+                       a move with no destination, a restore with no trashed
+                       name, either field on a trash — so this branch reads
+                       validated fields and refuses only the request that
+                       named no intention at all, which never reached a
+                       machine and so is the request's refusal rather than
+                       the guest's. The authority (guestRoot), the bounds
+                       (one item, one attempt, never an overwrite) and the
+                       receipt live in GuestFileMutationCommands. */
+                    guard let mutation = request.guestFileMutation,
+                          let path = request.guestFilePath,
+                          let composed = Self.mutationRequest(
+                            mutation,
+                            path: path,
+                            destination: request.guestFileDestinationPath,
+                            trashedAs: request.guestFileTrashName) else {
+                        return .guestFileMutation(.hostUnavailable(.init(
+                            code: "now-files-mutation-invalid",
+                            message:
+                                "The file mutation did not name one bounded item and one intention")))
+                    }
+                    return .guestFileMutation(
+                        await guestFiles.agentMutate(composed))
+                case .catalogSearch:
+                    /* Takes nothing, by the contract: `catsearch` has
+                       `args: {}` and the volume is the guest's own choice.
+                       So there is no field to validate here and no refusal
+                       this side can compose — everything a caller could get
+                       wrong was already refused by the codec's strict key
+                       list. */
+                    return .catalogSearch(
+                        await agentIntegration.measureCatalogSearch())
+                case .guestLogTail:
+                    /* P1 #9. Nothing to read off the request but a count the
+                       codec has already bounded, and nothing to refuse here:
+                       a request that named no count is a COMPLETE request —
+                       absent means the guest's own default of 20 — which is
+                       what makes this the shortest branch in the switch. */
+                    return .guestLogTail(
+                        await agentIntegration.tailGuestLog(
+                            lines: request.logLineCount))
+                case .census:
+                    /* P1 #2. The probe is REQUIRED by the contract and by
+                       the codec, so a request without one never reached a
+                       machine and the refusal is the request's rather than
+                       the guest's. The cursor is genuinely optional: absent
+                       and 0 both start the probe over, by contract. */
+                    guard let probe = request.censusProbe else {
+                        return .census(.refused(.init(
+                            code: "now-census-probe-invalid",
+                            message:
+                                "The census request named no probe")))
+                    }
+                    return .census(
+                        await agentIntegration.census(
+                            probe: probe, cursor: request.censusCursor))
+                case .machineFacts:
+                    /* P1 #10. Takes nothing, by the contract: `gestalt` has
+                       `args: {}` and a typed call with no line returns every
+                       group, so there is no field to validate here and no
+                       refusal this side can compose — everything a caller
+                       could get wrong was already refused by the codec's
+                       strict key list. */
+                    return .machineFacts(
+                        await agentIntegration.machineFacts())
+                case .softwareInventory:
+                    /* P1 #3. The domain is REQUIRED by the contract and by
+                       the codec, so a request without one never reached a
+                       machine and the refusal is the request's rather than
+                       the guest's. The cursor is optional and its FLOOR is 1,
+                       not 0 — unlike the census, absent and 0 are different
+                       here, because the cursor indexes the guest's cached
+                       inventory 1-based and 1 rebuilds it. */
+                    guard let domain = request.softwareDomain else {
+                        return .softwareInventory(.refused(.init(
+                            code: "now-software-domain-invalid",
+                            message:
+                                "The software inventory request named no domain")))
+                    }
+                    return .softwareInventory(
+                        await agentIntegration.softwareInventory(
+                            domain: domain,
+                            cursor: request.softwareCursor))
+                case .diagnostics:
+                    /* P1 #13, and the one P1a operation whose probe is a
+                       CLOSED enum: the codec has already refused a request
+                       that named none, so there is no shape left to check
+                       here and no refusal this side can compose.
+
+                       One operation, three capabilities. Which of them the
+                       connected machine answers is not decided here and
+                       cannot be: a guest without the verb refuses it by
+                       name, and the capability ledger reads the same `help`
+                       table before anyone calls. */
+                    guard let probe = request.diagnosticProbe else {
+                        return .diagnostics(.refused(.init(
+                            code: "now-diagnostic-probe-invalid",
+                            message:
+                                "The diagnostics request named no probe")))
+                    }
+                    return .diagnostics(
+                        await agentIntegration.runDiagnostic(probe))
+                case .stream:
+                    /* The bracket. The codec has already refused every
+                       crossed shape — a stop carrying a depth, a page
+                       naming an offset and no frame — so this branch reads
+                       validated fields and refuses only the request that
+                       named no intention, which never reached a machine.
+
+                       Note which of the four does NOT return here directly:
+                       a frame request is the only one that waits on the
+                       Macintosh, because it sends stream.refresh and holds
+                       the answer for the frame that follows. */
+                    guard let intention = request.streamIntention else {
+                        return .stream(.refused(.init(
+                            code: "now-stream-intention-invalid",
+                            message:
+                                "The stream request named no intention")))
+                    }
+                    switch intention {
+                    case .start:
+                        guard let depth = request.streamDepth,
+                              let interval = request.streamMinIntervalMs
+                        else {
+                            return .stream(.refused(.init(
+                                code: "now-stream-start-invalid",
+                                message: "The stream start named no depth "
+                                    + "and pace")))
+                        }
+                        return .stream(
+                            agentIntegration.startStream(
+                                depth: depth, minIntervalMs: interval))
+                    case .frame:
+                        if let frameID = request.streamFrameID,
+                           let offset = request.streamFrameOffset {
+                            return .stream(
+                                agentIntegration.streamFramePage(
+                                    frameID: frameID, offset: offset))
+                        }
+                        return .stream(
+                            await agentIntegration.nextStreamFrame())
+                    case .stop:
+                        return .stream(agentIntegration.stopStream())
+                    }
+                    /* P1a's `notWired` fallback used to sit here, and it is
+                       GONE rather than moved: it was already unreachable —
+                       the last of the eleven adapters landed and every
+                       operation has a case — and it was stranded inside the
+                       diagnostics case where nothing could reach it at all.
+                       The switch's own exhaustiveness now carries what that
+                       comment asked for: a new operation is a compile error
+                       here, which is a better instruction than a paragraph.
+                       `AgentIntegrationUnavailable.notWired` stays; it is
+                       still the honest answer for a host older than a verb,
+                       and the codec round-trip tests still exercise it. */
                 }
             }
             try server.start()
             agentIntegrationServer = server
+            state.agentActivity.endpointOpened(
+                at: server.endpoint.socketURL.path)
         } catch {
+            let reason = "\(error)"
             HostLog.shared.write(
                 .warn, "agent",
-                "local agent integration unavailable: \(error)")
+                "local agent integration unavailable: \(reason)")
+            /* The Agent page is told, because otherwise it would report
+               the honest "nothing has ever attached" beside a socket path
+               naming a file that is not there — and send somebody
+               configuring a client to look for it. */
+            state.agentActivity.endpointUnavailable(reason)
         }
+    }
+
+    /// Switched off from the MCP pane.
+    ///
+    /// The socket goes and the record stays: what an agent already did to
+    /// this Mac is not undone by closing the door it came through, so the
+    /// activity stream and the presence ledger are left exactly as they are.
+    private func stopAgentIntegrationServer() {
+        guard let server = agentIntegrationServer else { return }
+        server.stop()
+        agentIntegrationServer = nil
+        HostLog.shared.write(.info, "agent",
+                             "local agent endpoint stopped from the MCP pane")
+        state.agentActivity.endpointStopped()
     }
 }
 
