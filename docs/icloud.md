@@ -54,9 +54,15 @@ the same registry: one row per service, the exact report a guest gets,
 plus the switches. Photos and Contacts default **off**
 (`cloud.photos.enabled` / `cloud.contacts.enabled`); turning one on
 surfaces macOS's own consent prompt (the Info.plist usage strings say
-what the wire will do with the grant). Drive's switch is the share
-itself — the page's button is the same act as picking iCloud Drive in
-the Files footer.
+what the wire will do with the grant), and a denied service gets an
+Open Settings door, because the API only ever asks once. The app MUST
+sign with the hardened-runtime personal-information entitlements
+(`now-host/NewOldWorld.entitlements`): without them macOS denies
+Photos and Contacts instantly — no prompt, no System Settings row —
+which reads exactly like a broken button and cost a metal session to
+diagnose (2026-08-01). Drive's switch is the share itself — the same
+act as picking iCloud Drive in the Files footer, with the previous
+folder remembered and restored.
 
 Serving is ungated past the handshake, like the share (decided
 2026-08-01): the switches are the consent, per service.

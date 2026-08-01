@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import Contacts
 import Foundation
@@ -65,6 +66,32 @@ final class CloudModuleModel: ObservableObject {
                 == .notDetermined
         default:
             return false
+        }
+    }
+
+    /// A denial is not re-askable through the API — macOS only shows
+    /// the prompt once. The honest affordance is the door to where the
+    /// answer lives.
+    func canOpenPrivacySettings(_ service: String) -> Bool {
+        guard isEnabled(service) else { return false }
+        switch service {
+        case "photos":
+            let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+            return status == .denied || status == .restricted
+        case "contacts":
+            let status = CNContactStore.authorizationStatus(for: .contacts)
+            return status == .denied || status == .restricted
+        default:
+            return false
+        }
+    }
+
+    func openPrivacySettings(_ service: String) {
+        let pane = service == "photos" ? "Privacy_Photos" : "Privacy_Contacts"
+        if let url = URL(string:
+            "x-apple.systempreferences:com.apple.preference.security?"
+                + pane) {
+            NSWorkspace.shared.open(url)
         }
     }
 

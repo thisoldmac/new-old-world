@@ -85,6 +85,11 @@ struct CloudModuleView: View {
                         model.requestAccess(service.service)
                     }
                 }
+                if model.canOpenPrivacySettings(service.service) {
+                    Button("Open Settings…") {
+                        model.openPrivacySettings(service.service)
+                    }
+                }
                 Toggle("", isOn: Binding(
                     get: { model.isEnabled(service.service) },
                     set: { model.setEnabled(service.service, $0) }))

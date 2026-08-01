@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The app signs with the hardened runtime, under which Photos and
+	     Contacts access is DENIED WITHOUT PROMPTING unless the matching
+	     personal-information entitlement is present — no dialog, no
+	     System Settings row, just an instant .denied. Watched happening
+	     on 2026-08-01. The usage strings in the Info.plist say what the
+	     wire does with each grant; these say the app may ask at all. -->
+	<key>com.apple.security.personal-information.photos-library</key>
+	<true/>
+	<key>com.apple.security.personal-information.addressbook</key>
+	<true/>
+</dict>
+</plist>
