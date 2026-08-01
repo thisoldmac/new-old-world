@@ -104,9 +104,27 @@ static short find_anchor_slot(NowPeekU32 a5)
    a Str31 but the multiversal headers note the low-memory area may be
    34 bytes, so the copy is bounded by what we WRITE, which is the only
    bound that is ours to know. */
+/* Low memory as bytes, through a volatile the optimiser cannot fold.
+
+   LMGetCurApName is a literal address (0x0910), and gcc's array-bounds
+   pass reads a constant pointer as an object of KNOWN size - a small
+   integer address looks to it like "likely at address zero", so
+   indexing it is diagnosed as out of bounds and -Werror stops the
+   build. The bounds are real, they are simply not visible from C: this
+   is the system's own storage, not an array the compiler declared.
+   Routing the address through a volatile is the narrowest way to say
+   so, and it is honest twice over - low memory genuinely can change
+   under us, which is why every read of it should be a real load. */
+static const unsigned char *lowmem_bytes(unsigned long addr)
+{
+    volatile unsigned long opaque = addr;
+
+    return (const unsigned char *)opaque;
+}
+
 static void capture_cur_ap_name(unsigned char *dst)
 {
-    const unsigned char *src = (const unsigned char *)LMGetCurApName();
+    const unsigned char *src = lowmem_bytes((unsigned long)LMGetCurApName());
     short len;
     short i;
 

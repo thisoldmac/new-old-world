@@ -89,9 +89,10 @@ static int in_readable(const ReadableZones *z, unsigned long addr,
    construction, and the caller sees Ok with an old stamp. */
 static NowPeekReadStatus anchor_status(const NowPeekTable *table,
                                        unsigned long loc, unsigned long size,
+                                       const unsigned char *name,
                                        NowPeekAnchorMatch *match)
 {
-    switch (now_peek_anchor_match(table, loc, size, 0, 0, match)) {
+    switch (now_peek_anchor_match(table, loc, size, name, 0, 0, match)) {
     case kNowPeekAnchorOk:
     case kNowPeekAnchorStale:
         return kNowPeekReadOk;
@@ -115,6 +116,7 @@ static NowPeekReadStatus resolve(const ProcessSerialNumber *psn,
 {
     const NowPeekTable *table;
     ProcessInfoRec info;
+    Str31 name;
     THz sys;
     NowPeekAnchorMatch match;
     NowPeekReadStatus st;
@@ -129,6 +131,12 @@ static NowPeekReadStatus resolve(const ProcessSerialNumber *psn,
     }
     memset(&info, 0, sizeof info);
     info.processInfoLength = sizeof info;
+    /* The Process Manager fills processName only into a buffer the
+       CALLER supplies - a NULL there is silently "do not bother", which
+       is what this record used to hand it. The name is the oracle's V3
+       discriminator, so it is now asked for. */
+    name[0] = 0;
+    info.processName = name;
     if (GetProcessInformation(psn, &info) != noErr) {
         return kNowPeekReadNoAnchor;
     }
@@ -141,7 +149,7 @@ static NowPeekReadStatus resolve(const ProcessSerialNumber *psn,
     z->sys_lo = (unsigned long)sys;
     z->sys_hi = (sys != NULL) ? read_be32(z->sys_lo) : 0;
 
-    st = anchor_status(table, z->loc, z->size, &match);
+    st = anchor_status(table, z->loc, z->size, name, &match);
     if (st != kNowPeekReadOk) {
         return st;                    /* NoAnchor / Ambiguous / Mismatch */
     }

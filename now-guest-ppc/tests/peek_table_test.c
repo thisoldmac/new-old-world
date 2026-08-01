@@ -60,8 +60,27 @@ int main(void)
           "V2 left the seqlock stamp where V1 reads it");
     check(offsetof(NowPeekAnchorSlot, stack_base) == 24,
           "stack_base was appended, not inserted");
-    check(kNowPeekAnchorFormatV2 > kNowPeekAnchorFormatV1,
+    /* V3 appended again, under the same rule: both offsets above are
+       unchanged, and the new field starts after them. */
+    check(offsetof(NowPeekAnchorSlot, cur_ap_name) == 28,
+          "cur_ap_name was appended, not inserted");
+    check(kNowPeekAnchorFormatV2 > kNowPeekAnchorFormatV1
+              && kNowPeekAnchorFormatV3 > kNowPeekAnchorFormatV2,
           "anchor formats are ordered, so >= is a valid gate");
+
+    /* The layout rule the header states once: no compiler inserts
+       padding, which holds only while every offset stays 4-aligned. The
+       name field is bytes, so it is the one field that could break it -
+       a width of 30 would compile here and silently shift the next
+       appended field on a compiler that aligns to 4. */
+    check(kNowPeekAnchorNameSize % 4 == 0,
+          "the name width keeps the slot 4-aligned for the NEXT append");
+    check(sizeof(NowPeekAnchorSlot) % 4 == 0
+              && sizeof(NowPeekAnchorSlot) == 60,
+          "the V3 slot is 60 bytes with no padding");
+    /* A whole Str31 fits: length byte plus 31 characters, so there is
+       no truncation rule for the two sides to disagree about. */
+    check(kNowPeekAnchorNameSize == 32, "a Str31 fits the name field whole");
 
     /* A core-only M0 table: prelude published, no anchor plane. */
     t.length = offsetof(NowPeekTable, anchors);
@@ -85,9 +104,12 @@ int main(void)
     t.magic = 0;
     check(!table_usable(&t, 4), "missing magic is refused");
 
-    /* An empty slot is invalid however you look at it. */
+    /* An empty slot is invalid however you look at it - and its name is
+       an empty Pascal string, which is "the extension had none", not
+       "this process is nameless". */
     check(t.anchors[0].psn_high == 0 && t.anchors[0].psn_low == 0
-              && t.anchors[0].stamp_ticks == 0,
+              && t.anchors[0].stamp_ticks == 0
+              && t.anchors[0].cur_ap_name[0] == 0,
           "zeroed slot reads as absent");
 
     if (g_failures != 0) {

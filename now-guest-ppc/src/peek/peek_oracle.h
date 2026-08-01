@@ -18,6 +18,16 @@
    like a match. Until the V2 anchor format there was no second opinion
    available, and the reader took the first match it found.
 
+   V2's second opinion is a second ADDRESS (the stack base), and that
+   caps what it can do: a ghost slot whose two addresses both fall
+   inside the partition that was reused satisfies every containment
+   test there is, and the verdict was Ambiguous - honest, and a refusal.
+   V3 carries something that is not an address at all: the process's own
+   name, captured in the same context as A5. Memory gets recycled;
+   the name does not follow it. Passing the Process Manager's name for
+   the partition lets the oracle refute the ghost and resolve the case
+   V2 could only refuse.
+
    This layer is the second opinion. It answers with a verdict rather
    than a pointer, because three of the five answers are cases where
    returning a pointer would be a lie.
@@ -38,18 +48,30 @@ typedef enum {
        was armed - faceless background apps can sit here forever. */
     kNowPeekAnchorNotFound,
 
-    /* A slot's A5 lands in this partition but its stack base does not,
-       so the two roots describe different address spaces and the slot
-       is stale debris rather than this process. Only reachable on a V2
-       table; a V1 table has no second root to disagree with, which is a
-       degradation to state plainly rather than a case to pretend into.  */
+    /* A slot's A5 lands in this partition but something else about it
+       contradicts that: its stack base is outside the partition (V2),
+       or it carries a different application's name (V3). Either way the
+       slot describes a process this partition is not, and it is debris
+       rather than a match.
+
+       Each discriminator is only reachable on the format that carries
+       it. A V1 table has no second root to disagree with, and a V2
+       table has no name; on those formats this verdict is UNREACHABLE
+       by construction, which is a degradation to state plainly rather
+       than a case to pretend into. Absence of evidence is not
+       disagreement, and there is a test for each half. */
     kNowPeekAnchorMismatch,
 
     /* Two or more slots survive every check. One of them is this
-       process and the other is a ghost, and NOTHING in the table says
-       which - so the read is refused. Picking would mean walking a
-       foreign heap on a coin flip, and the whole point of the
-       validation layer is that we do not do that.  */
+       process and the other is a ghost, and NOTHING AVAILABLE IN THIS
+       TABLE'S FORMAT says which - so the read is refused. Picking would
+       mean walking a foreign heap on a coin flip, and the whole point
+       of the validation layer is that we do not do that.
+
+       The qualifier is load-bearing: this is the verdict each new
+       discriminator eats into. A pair of ghosts-in-a-reused-partition
+       that V2 could only refuse resolves on V3 when the caller supplies
+       a name, because only one of them wears it.  */
     kNowPeekAnchorAmbiguous,
 
     /* One clean match, last captured longer ago than the caller's
@@ -73,9 +95,24 @@ typedef struct {
     NowPeekU32 window_list;
     NowPeekU32 menu_list;
     NowPeekU32 stack_base;        /* 0 on a V1 table */
+    /* The slot's captured CurApName, a Pascal string. Empty (name[0]
+       == 0) on a pre-V3 table and whenever the extension had no name to
+       give - both of which are "cannot tell", not "no name". Copied out
+       of the slot inside the seqlock window, never a pointer into the
+       table, which the filter may rewrite at any moment. */
+    unsigned char name[kNowPeekAnchorNameSize];
 } NowPeekAnchorMatch;
 
 /* Resolve the partition [loc, loc+size) to at most one anchor slot.
+
+   `want_name` is the Process Manager's name for the process that owns
+   the partition, as a Pascal string, or NULL when the caller has none.
+   It is the V3 discriminator, and it is OPTIONAL on purpose: a caller
+   that cannot name the process gets exactly the V2 answer rather than
+   an error, and NULL is read as "cannot tell", never as "no name".
+   The check is skipped entirely unless the table is V3 AND `want_name`
+   is a nonempty string AND the slot carries one.
+
    `now_ticks` is TickCount() in the caller's frame (passed rather than
    read so this stays testable); `max_age_ticks` of 0 disables the age
    gate, and any nonzero value turns an otherwise-Ok match older than it
@@ -85,6 +122,7 @@ typedef struct {
 NowPeekAnchorVerdict now_peek_anchor_match(const NowPeekTable *table,
                                            unsigned long loc,
                                            unsigned long size,
+                                           const unsigned char *want_name,
                                            NowPeekU32 now_ticks,
                                            NowPeekU32 max_age_ticks,
                                            NowPeekAnchorMatch *out);
