@@ -106,18 +106,16 @@ void now_pull_reset(PullView *v);
 /* A file.get has just gone out for `name`. */
 void now_pull_asked(PullView *v, const char *name);
 
-/* Fold in what the wire reports. `active` is now_wire_get_active()'s
-   answer and the two counts are its out-parameters.
+/* Fold in what the wire reports: `active` and `receiving` are
+   now_wire_get_active()'s answer and its phase out-parameter
+   (kWireGetReceiving), the two counts its byte out-parameters.
 
-   Asking -> Receiving on the first evidence of an answer, which is the
-   only evidence available: `now_wire_get_active` reports pending and
-   receiving through one boolean and cannot tell them apart when the
-   sender has neither given a size nor delivered a byte. Being briefly
-   late into Receiving costs a person nothing (both lines say a fetch is
-   underway, both arm Stop); claiming Receiving early would put a
-   percentage on a transfer that had not started. */
-void now_pull_observe(PullView *v, Boolean active, long received,
-                      long expected);
+   Asking -> Receiving when the wire says a file is open, not when a
+   count first moves. The inference was there because the wire reported
+   both halves through one boolean; it no longer does, and an inference
+   kept past the fact it stood in for is a second, drifting truth. */
+void now_pull_observe(PullView *v, Boolean active, Boolean receiving,
+                      long received, long expected);
 
 /* Stop was pressed. */
 void now_pull_stopping(PullView *v);

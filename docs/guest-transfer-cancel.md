@@ -96,6 +96,39 @@ probe queued "Measuring…" and the paint landed with the answer.
 No confirmation. A pull is never resumable, so stopping loses nothing that
 existed; `confirm.c` is for the choices that cost something.
 
+## Landed 2026-07-31: the primitive, the registration, the teardown
+
+Built as specified below, on `thread/p1-wire-cancel`. `now_pull_can_stop()` is
+now true whenever a pull is live, because `files_create()` registers
+`now_wire_get_cancel` as the canceller — that one line is the whole difference
+between a Stop button that appears and one that does not.
+
+Three things changed beyond the fifteen lines:
+
+- **One teardown for a leaving link.** `enter_backoff()` and `conn_disconnect()`
+  now both call `link_drop_transfers()`, which is the old five-call list plus
+  `get_cleanup(false)` — the pull neither path used to drop. Two lists that
+  must agree had already stopped agreeing; there is one now. `conn_disconnect()`
+  calls it after the `bye` is flushed, since the queue drain is the last thing
+  that link is asked to carry.
+- **The wire says which half of a pull is in flight.** `now_wire_get_active()`
+  takes a `WireGetPhase *` (`kWireGetNone` / `kWireGetAsked` /
+  `kWireGetReceiving`), and `now_pull_observe()` takes the fact instead of
+  inferring it from the counts. One caller; the inference is deleted rather
+  than kept beside the fact it stood in for.
+- **A source-level gate**, `now-guest-ppc/tests/get_cancel_source_test.py`, in
+  the shape of `ot_connect_source_test.py`: `wire.c` does not compile on the
+  host, so what a host can check is what the source says — `transfer` and not
+  `id`, both halves in order, `send_control` not gating the teardown, one drop
+  list. It strips comments before asserting, because the prose beside this code
+  names every identifier it checks.
+
+Eleven mutations watched failing; the cancelled-pull-leaves-nothing claim below
+was re-read in `fileshare.c` rather than assumed (`resumable` false →
+`keep_partial` false → `receive_release(rx, false)` → `FSpDelete(&rx->temp)`).
+**Nothing here is tested on a machine.** All three targets cross-build and the
+native suite is 49/49; neither says a person pressed Stop and a transfer stopped.
+
 ## The one thing missing: `now_wire_get_cancel`
 
 `now_pull_can_stop()` is false until a canceller is registered, so **as merged,
@@ -149,7 +182,7 @@ own text: *"the PowerPC guest reaches the same capability from its own UI and
 from file.cancel, and declares no verb."* That sentence has been describing
 something that did not exist.
 
-## Two things noticed in passing, neither fixed here
+## Two things noticed in passing, both fixed 2026-07-31 (see above)
 
 - **`conn_disconnect()` does not clean up a pull.** `enter_backoff()` calls
   `xfer_cleanup / offer_cleanup / stream_drop / shot_drop / put_drop`, and

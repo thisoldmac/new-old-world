@@ -124,6 +124,11 @@ static OSErr files_create(WindowRef owner, const Rect *body)
 {
     Str255 text;
 
+    /* What makes the Stop button real: without a canceller registered,
+       now_pull_can_stop() is false and the button never appears. The
+       primitive lives in wire.c because g_get is private to it. */
+    now_pull_set_canceller(now_wire_get_cancel);
+
     g_owner = owner;
     g_body = *body;
     g_expanded = true;

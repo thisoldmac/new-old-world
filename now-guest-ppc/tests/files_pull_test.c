@@ -64,6 +64,16 @@ static int fake_cancel(char *err, long cap)
     return g_cancel_result;
 }
 
+/* Most of what follows is about arithmetic and wording, where the phase
+   is a receiving pull and nothing else. Those cases go through here; the
+   cases that are ABOUT the phase call now_pull_observe directly, with
+   the receiving flag spelled out. */
+static void observe_rx(PullView *v, Boolean active, long received,
+                       long expected)
+{
+    now_pull_observe(v, active, active, received, expected);
+}
+
 int main(void)
 {
     PullView v;
@@ -86,17 +96,34 @@ int main(void)
     check(now_pull_have_canceller(), "a registered canceller is reported");
     check(now_pull_can_stop(&v), "a pull that has only been asked can be stopped");
 
-    now_pull_observe(&v, 1, 8192, 65536);
-    check(v.phase == kPullReceiving, "bytes move Asking to Receiving");
+    /* A live pull the wire calls a question is still a question, however
+       long it stands there: this is the 30 s a stalled host leaves a
+       person in, and it must not read as a transfer that has started. */
+    now_pull_observe(&v, 1, 0, 0, 0);
+    check(v.phase == kPullAsking,
+          "a wire that has only asked stays Asking, whatever the counts");
+    check(now_pull_can_stop(&v), "an unanswered question can be abandoned");
+
+    now_pull_observe(&v, 1, 1, 8192, 65536);
+    check(v.phase == kPullReceiving, "the wire opening a file moves Asking to Receiving");
     check(now_pull_can_stop(&v), "a receiving pull can be stopped");
+
+    /* The fact one boolean could not carry: a file is open and not one
+       byte has landed, which used to be indistinguishable from an
+       unanswered question and read as Asking. */
+    now_pull_reset(&v);
+    now_pull_asked(&v, "Report.cwk");
+    now_pull_observe(&v, 1, 1, 0, 0);
+    check(v.phase == kPullReceiving,
+          "receiving with nothing yet is receiving, not asking");
 
     now_pull_stopping(&v);
     check(!now_pull_can_stop(&v),
           "a second press has nothing left to stop");
-    now_pull_observe(&v, 1, 12288, 65536);
+    observe_rx(&v, 1, 12288, 65536);
     check(v.phase == kPullStopping,
           "Stopping survives chunks still in flight");
-    now_pull_observe(&v, 0, 0, 0);
+    observe_rx(&v, 0, 0, 0);
     check(v.phase == kPullIdle, "the wire going quiet ends the pull");
     check(strcmp(v.name, "Report.cwk") == 0,
           "the name outlives the pull, so a closing line can name it");
@@ -105,35 +132,35 @@ int main(void)
        one lane, one transfer, and the person at the machine is the one
        who can see it. */
     now_pull_reset(&v);
-    now_pull_observe(&v, 1, 0, 0);
-    check(v.phase == kPullAsking, "a live pull with no evidence yet reads as asking");
+    now_pull_observe(&v, 1, 0, 0, 0);
+    check(v.phase == kPullAsking, "a live pull the wire has only asked reads as asking");
     now_pull_reset(&v);
-    now_pull_observe(&v, 1, 4096, 40960);
-    check(v.phase == kPullReceiving, "a live pull already moving reads as receiving");
+    now_pull_observe(&v, 1, 1, 4096, 40960);
+    check(v.phase == kPullReceiving, "a live pull already receiving reads as receiving");
 
     /* --- the percentage -------------------------------------------------- */
     now_pull_reset(&v);
     now_pull_asked(&v, "big");
     check(now_pull_percent(&v) == -1, "unknown size has no percentage");
-    now_pull_observe(&v, 1, 0, 1000);
+    observe_rx(&v, 1, 0, 1000);
     check(now_pull_percent(&v) == 0, "no bytes yet is 0%");
-    now_pull_observe(&v, 1, 500, 1000);
+    observe_rx(&v, 1, 500, 1000);
     check(now_pull_percent(&v) == 50, "half is 50%");
-    now_pull_observe(&v, 1, 1000, 1000);
+    observe_rx(&v, 1, 1000, 1000);
     check(now_pull_percent(&v) == 100, "all of it is 100%");
 
     /* 40 MB, two thirds through. received * 100 is 2.7e9 - past LONG_MAX
        on this guest's 32-bit long - and the naive form reports a
        NEGATIVE percentage here. */
-    now_pull_observe(&v, 1, 28000000L, 42000000L);
+    observe_rx(&v, 1, 28000000L, 42000000L);
     check(now_pull_percent(&v) == 66,
           "a 40 MB file does not overflow the percentage");
-    now_pull_observe(&v, 1, 2000000000L, 2000000000L);
+    observe_rx(&v, 1, 2000000000L, 2000000000L);
     check(now_pull_percent(&v) == 100, "2 GB does not overflow either");
-    now_pull_observe(&v, 1, 3000, 1000);
+    observe_rx(&v, 1, 3000, 1000);
     check(now_pull_percent(&v) == 100,
           "more bytes than promised clamps rather than printing nonsense");
-    now_pull_observe(&v, 1, 100, 0);
+    observe_rx(&v, 1, 100, 0);
     check(now_pull_percent(&v) == -1,
           "a sender that gave no size never gets a percentage");
 
@@ -148,20 +175,20 @@ int main(void)
     check_lacks(line, "0 K",
                 "asking does not report a zero that never moves");
 
-    now_pull_observe(&v, 1, 51200, 512000);
+    observe_rx(&v, 1, 51200, 512000);
     now_pull_note(&v, line, sizeof line);
     check_has(line, "Chapter 3", "the progress line names the file");
     check_has(line, "10%", "the progress line carries the percentage");
     check_has(line, "500 K", "the progress line carries the size");
 
-    now_pull_observe(&v, 1, 51200, 0);
+    observe_rx(&v, 1, 51200, 0);
     now_pull_note(&v, line, sizeof line);
     check_has(line, "50 K", "with no size, the count still moves");
     check_lacks(line, "%", "with no size, no percentage is invented");
 
     /* 900 bytes is 1 K, not 0 K: a transfer that reports zero looks like
        a transfer that never started. */
-    now_pull_observe(&v, 1, 900, 0);
+    observe_rx(&v, 1, 900, 0);
     now_pull_note(&v, line, sizeof line);
     check_has(line, "1 K", "a sub-K count rounds up rather than reading zero");
 
@@ -202,21 +229,21 @@ int main(void)
     {
         long a, b;
 
-        now_pull_observe(&v, 1, 100000, 10000000L);
+        observe_rx(&v, 1, 100000, 10000000L);
         a = now_pull_step(&v);
-        now_pull_observe(&v, 1, 104000, 10000000L);
+        observe_rx(&v, 1, 104000, 10000000L);
         check(now_pull_step(&v) == a,
               "a chunk inside the same percent does not repaint");
-        now_pull_observe(&v, 1, 200000, 10000000L);
+        observe_rx(&v, 1, 200000, 10000000L);
         check(now_pull_step(&v) != a, "a whole percent repaints");
 
         /* Unknown size falls back to 4 K buckets, which is what the pane
            animated from before any of this. */
-        now_pull_observe(&v, 1, 4096, 0);
+        observe_rx(&v, 1, 4096, 0);
         b = now_pull_step(&v);
-        now_pull_observe(&v, 1, 5000, 0);
+        observe_rx(&v, 1, 5000, 0);
         check(now_pull_step(&v) == b, "under 4 K of movement does not repaint");
-        now_pull_observe(&v, 1, 9000, 0);
+        observe_rx(&v, 1, 9000, 0);
         check(now_pull_step(&v) != b, "past 4 K repaints");
 
         /* A phase change repaints even when the counts stand still. */
@@ -254,7 +281,7 @@ int main(void)
     }
     now_pull_set_canceller(NULL);
     now_pull_reset(&v);
-    now_pull_observe(&v, 1, 1, 2);
+    observe_rx(&v, 1, 1, 2);
     check(!now_pull_can_stop(&v),
           "unregistering takes the button away again");
 
