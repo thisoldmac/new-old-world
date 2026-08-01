@@ -84,7 +84,12 @@ struct MirrorModuleView: View {
                because something moved, this asks because they said so. */
             if model.canFetch {
                 Button {
-                    model.fetchScene()
+                    /* `withContent: true` is what makes this press different
+                       from the loop's fetch. The content plane is joined on
+                       ASK and never on a timer — one extra control message
+                       for a press somebody made, and none at all for the
+                       loop's. See MirrorContentJoin's transport note. */
+                    model.fetchScene(withContent: true)
                 } label: {
                     Label(model.state.hasScene ? "Look Again" : "Look Now",
                           systemImage: "eye")

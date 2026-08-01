@@ -171,8 +171,14 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
     /// turning an impatient click into a visible refusal would teach a person
     /// that the page is broken when it is merely working. The watch loop
     /// relies on the same guard — it never queues either.
-    func fetchScene() {
+    /// `withContent` asks for the QuickDraw content plane too, once this
+    /// scene has landed. It is **not** a default and the watch loop never
+    /// passes it: `MirrorContentJoin` is fetch-on-ask by design, and a
+    /// content join on a timer would be a second thing polling somebody
+    /// else's Mac for a plane that only changes when they draw.
+    func fetchScene(withContent: Bool = false) {
         guard let listener, isConnected, fetch != .looking else { return }
+        contentAsked = withContent
         fetch = .looking
         listener.requestScene { [weak self] result in
             guard let self else { return }
@@ -203,7 +209,14 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
                              would be a parse before the gate. */
                           irVersion: delivery.irVersion,
                           provenance: .guest(name: delivery.guestName))
+                /* AFTER the scene is on screen, not instead of it. The join
+                   is a separate control round trip and may refuse; a window
+                   with chrome and no interior is strictly better than no
+                   window while the drain is in flight. */
+                if self.contentAsked { self.joinContent() }
+                self.contentAsked = false
             case .failure(let failure):
+                self.contentAsked = false
                 /* Deliberately does NOT touch the evidence ladder. A guest
                    that refuses has answered — but what it answered is "not
                    now", which is not a fact about whether the extension is
@@ -614,6 +627,47 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
     /// wrong, and only the second is drawn as a fault.
     @Published private(set) var failure: String?
 
+    /// What the last content join came to, as a sentence for the page.
+    ///
+    /// Nil until somebody asks for content. It is kept separate from
+    /// `failure` on purpose: a scene that arrived and a content plane that
+    /// could not be joined are two different states, and folding the second
+    /// into the first would draw a working mirror as a fault.
+    @Published private(set) var contentNote: String?
+
+    /// Set for exactly one fetch, by whoever asked for content. Cleared on
+    /// the way out either way — a flag left standing would make the next
+    /// fetch, including one the LOOP made, join content it never asked for.
+    private var contentAsked = false
+
+    /// Built once per listener and kept, because it holds the ring cursor
+    /// between joins. A new one each time would re-read the ring from zero.
+    private lazy var contentJoin: MirrorContentJoin? =
+        listener.map(MirrorContentJoin.init(listener:))
+
+    /// One content join against the scene on screen. Called only from
+    /// `fetchScene(withContent: true)`'s success path — never from the loop.
+    private func joinContent() {
+        guard let contentJoin, let scene else { return }
+        contentJoin.join(into: scene) { [weak self] joined, outcome in
+            guard let self else { return }
+            /* A join answers about the scene it was HANDED. If a newer scene
+               landed while the drain was in flight, these ops describe a
+               moment that is no longer on screen, and attaching them would
+               put old drawing inside a new window. */
+            guard self.scene?.seq == scene.seq,
+                  self.scene?.capturedAt == scene.capturedAt else {
+                self.contentNote =
+                    "A newer scene arrived while the drawing was on its way, "
+                    + "so it was dropped rather than drawn into a window it "
+                    + "does not describe."
+                return
+            }
+            if case .attached = outcome { self.scene = joined }
+            self.contentNote = outcome.sentence
+        }
+    }
+
     var isConnected: Bool {
         if case .connected = connection { return true }
         return false
@@ -652,6 +706,8 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
         provenance = nil
         failure = nil
         fetch = .idle
+        /* The note describes a scene that is no longer here. */
+        contentNote = nil
     }
 
     /// Seams for the probe that does not exist yet. They are `internal` and
@@ -671,6 +727,12 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
     func guestLeft(_ key: GuestKey) {
         extensionEvidence = .unasked
         planeEvidence = .unasked
+        /* A ring cursor is a byte count into ONE machine's ring. Carried
+           across, it reads against the next Mac's ring as either a colossal
+           overrun or bytes that were never written. */
+        contentJoin?.guestChanged()
+        contentAsked = false
+        contentNote = nil
         /* A refusal is a thing ONE Mac said. It does not travel to the next
            machine on the wire, and it must not outlive the one that said it:
            the listener settles an in-flight scene with a disconnect reason,
