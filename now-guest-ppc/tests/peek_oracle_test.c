@@ -390,6 +390,52 @@ int main(void)
                         "notFound") == 0,
           "every verdict has a name");
 
+    /* ---- now_peek_anchor_a5_arm_trusted: absent-vs-present for the
+       wire's a5 field (observe.c's emit_process_head) ----
+
+       Driven from peek_oracle.h's own verdict enum, not from the
+       function under test: every named verdict is listed here BY NAME,
+       so a sixth one added to the header later and left unhandled here
+       fails this loop's "every verdict was checked" count instead of
+       silently inheriting a default. Only kNowPeekAnchorOk is trusted
+       to arm with - Stale is deliberately excluded even though the
+       oracle fills its fields exactly like Ok's (see the verdict's own
+       doc comment): a caller arming qdtrace needs freshness, not merely
+       a filled struct. */
+    {
+        static const struct {
+            NowPeekAnchorVerdict verdict;
+            int                  want_trusted;
+        } kCases[] = {
+            { kNowPeekAnchorOk,        1 },
+            { kNowPeekAnchorNotFound,  0 },
+            { kNowPeekAnchorMismatch,  0 },
+            { kNowPeekAnchorAmbiguous, 0 },
+            { kNowPeekAnchorStale,     0 }
+        };
+        size_t i;
+
+        for (i = 0; i < sizeof(kCases) / sizeof(kCases[0]); ++i) {
+            int got = now_peek_anchor_a5_arm_trusted(kCases[i].verdict);
+            char what[96];
+
+            snprintf(what, sizeof what,
+                     "a5_arm_trusted(%s) should be %s",
+                     now_peek_anchor_verdict_name(kCases[i].verdict),
+                     kCases[i].want_trusted ? "trusted" : "untrusted");
+            check((got != 0) == (kCases[i].want_trusted != 0), what);
+        }
+        /* Every case above is one of the five verdicts, and there are
+           exactly five verdicts (the earlier "every verdict has a name"
+           check pins that count against the same header). A case list
+           shorter than five would still pass every check in it while
+           quietly leaving a verdict unexercised, so the count itself is
+           asserted rather than left to be noticed by omission. */
+        check(sizeof(kCases) / sizeof(kCases[0]) == 5,
+              "one case per verdict - update this list when the enum "
+              "grows");
+    }
+
     if (g_failures != 0) {
         fprintf(stderr, "%d check(s) failed\n", g_failures);
         return EXIT_FAILURE;
