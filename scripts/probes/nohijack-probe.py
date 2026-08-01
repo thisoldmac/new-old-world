@@ -192,9 +192,17 @@ cites in the act plane's preamble as the reason winact/textget/textset address
 one element by a minted reference. NOW is building that plane now and cannot
 yet reproduce the number that justifies it.
 
-`observe` is the blocker for every case: NOW's act plane addresses
-"now-window-<uuid>" and "now-element-<uuid>", and only an observation mints
-one. It is Wave 2A of docs/mirror-foldin-inventory.md.
+`observe` WAS the blocker for every case and is no longer: the guest serves
+it, along with mouseloc, ctlact, menuact, textget and textset, so this
+harness's verb gate now passes for every case. What each case is waiting on
+from here is a runtime precondition rather than a missing verb, and they are
+not the same wait:
+
+  control / text / baseline  nothing but a machine and the right window.
+  menu / stale / window      a menu bar, which `observe` does not report and
+                             deliberately will not - the menu bar is a scene,
+                             and the scene plane already walks it. See the
+                             note in case_menu below and docs/emu-readiness.md.
 
 The Desktop-folder oracle is NOT blocked - it is built on `ls` and
 `file.trash`, which this guest already serves. Upstream needed a second guest
@@ -476,15 +484,26 @@ def menu_trial(link, qmp, click_delay: float, wait_for_reply_first: bool,
     # trial pins THERE: the replayed hop is a dozen pixels long.
     target = apple_title_point(link)
 
-    # STILL NOT RUNNABLE, and not because of the name. `menuact` declares
-    # `menu` as an INTEGER — the menu's id as the scene reports it — and this
-    # line passes a reference, because that is the shape upstream's
-    # `menuinvoke` took. `observe` emits no menu bar at all today (grep
-    # observe.c: there is no "menus" key), so `finder_menu` above returns None
-    # and the precondition fires first. Left as the reference so that whoever
-    # lands the menu bar in `observe` sees both halves of the mismatch at once
-    # rather than fixing the reader and meeting this a day later.
-    mid = link.send_async("menuact", {"menu": file_menu["ref"], "item": 1,
+    # The ARGUMENT is now the contract's: `menuact` declares `menu` as an
+    # INTEGER, the menu's id, and this used to pass a reference because that
+    # is the shape upstream's `menuinvoke` took. Half of that mismatch is
+    # fixed here; the other half is not this line's to fix.
+    #
+    # STILL NOT RUNNABLE, and the reason is a RULING rather than an omission.
+    # `observe` emits no menu bar — grep observe.c, there is no "menus" key —
+    # so `finder_menu` above returns None and the precondition fires first.
+    # That is not an oversight to be closed by adding menus to `observe`:
+    # docs/streaming-a-scene.md settled that a tree whose parts mean
+    # something only reassembled is a TRANSFER, and the menu bar is walked
+    # and shipped that way already, by the scene plane
+    # (src/scene/scene_walk.c → now_scene_walk_menubar, over scene.request).
+    # A second menu walk behind a bounded control reply would be two
+    # producers of one fact, which is the defect docs/command-parity.md
+    # exists to refuse.
+    #
+    # So what these three cases are waiting on is a SCENE read in this
+    # harness, not a wider `observe`. See docs/emu-readiness.md.
+    mid = link.send_async("menuact", {"menu": int(file_menu["id"]), "item": 1,
                                       "titleLeft": OFFSCREEN_TITLE_LEFT})
     reply = None
     if wait_for_reply_first:

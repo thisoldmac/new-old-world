@@ -1,8 +1,11 @@
 #include "commands.h"
 
 #include "act_cmds.h"
+#include "input_cmds.h"
+#include "mach_verbs.h"
 #include "nowlog.h"
 #include "observe.h"
+#include "qdtrace.h"
 
 #include <Carbon.h>
 
@@ -1329,6 +1332,43 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "menuact") == 0) {
         now_act_run_menuact(request_json, id, out, cap);
+        return;
+    }
+    /* Two verbs about the MACHINE rather than about an element, folded in
+       from timbottu/mirror (docs/mirror-wave3-verdicts.md). They sit with
+       the act plane because that is what they are about: `activate` is
+       the switch a driver performs between two acts, and `actselftest` is
+       the only instrument that reads the act plane's trap ABI from the
+       CALLER's side - see mach_verbs.h. */
+    if (strcmp(name, "activate") == 0) {
+        now_mach_run_activate(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "actselftest") == 0) {
+        now_mach_run_actselftest(request_json, id, out, cap);
+        return;
+    }
+    /* The input plane. `mouseloc` is a READ and is the instrument every
+       hop calibration in the probes closes its loop against; `script` and
+       `aesend` are the two ways to ask an application to do something
+       without an element reference at all. See input_cmds.h. */
+    if (strcmp(name, "mouseloc") == 0) {
+        now_input_run_mouseloc(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "script") == 0) {
+        now_input_run_script(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "aesend") == 0) {
+        now_input_run_aesend(request_json, id, out, cap);
+        return;
+    }
+    /* The content plane's reader (P3). Four subcommands behind one verb,
+       selected by `op` - see qdtrace.h on why a drain is a bounded
+       control answer and not a transfer. */
+    if (strcmp(name, "qdtrace") == 0) {
+        now_qdtrace_run(request_json, id, out, cap);
         return;
     }
     /* The reference layer. Each of these writes its whole command.result

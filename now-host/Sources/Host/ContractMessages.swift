@@ -126,6 +126,75 @@ struct CommandRequest: Codable, Equatable, Sendable {
     var line: String?
 }
 
+/// Any JSON value, kept whole.
+///
+/// It exists for exactly one job — see `CommandResult.outputObjects` — and
+/// deliberately does not grow past it: this is not an escape hatch for typing
+/// a message properly. A family that needs a shape gets a struct.
+enum JSONValue: Codable, Equatable, Sendable {
+    case null
+    case bool(Bool)
+    case number(Double)
+    case string(String)
+    case array([JSONValue])
+    case object([String: JSONValue])
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if c.decodeNil() { self = .null; return }
+        if let v = try? c.decode(Bool.self) { self = .bool(v); return }
+        if let v = try? c.decode(Double.self) { self = .number(v); return }
+        if let v = try? c.decode(String.self) { self = .string(v); return }
+        if let v = try? c.decode([JSONValue].self) { self = .array(v); return }
+        if let v = try? c.decode([String: JSONValue].self) {
+            self = .object(v)
+            return
+        }
+        throw DecodingError.dataCorruptedError(
+            in: c, debugDescription: "not a JSON value")
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        switch self {
+        case .null: try c.encodeNil()
+        case .bool(let v): try c.encode(v)
+        case .number(let v):
+            // Whole numbers re-encode as integers. A cursor that went out as
+            // 4096 and came back as 4096.0 is the same number and a
+            // different string, and this type sits under a byte-for-byte
+            // fixture comparison.
+            if v == v.rounded(), abs(v) < 9.007199254740992e15 {
+                try c.encode(Int(v))
+            } else {
+                try c.encode(v)
+            }
+        case .string(let v): try c.encode(v)
+        case .array(let v): try c.encode(v)
+        case .object(let v): try c.encode(v)
+        }
+    }
+
+    /// The row-array reading of this value, or nil when it is not one.
+    /// `[[String]]` is the house shape and most values are one.
+    var rows: [[String]]? {
+        guard case .array(let outer) = self else { return nil }
+        var out: [[String]] = []
+        out.reserveCapacity(outer.count)
+        for row in outer {
+            guard case .array(let cells) = row else { return nil }
+            var strings: [String] = []
+            strings.reserveCapacity(cells.count)
+            for cell in cells {
+                guard case .string(let s) = cell else { return nil }
+                strings.append(s)
+            }
+            out.append(strings)
+        }
+        return out
+    }
+}
+
 struct CommandResult: Codable, Equatable, Sendable {
     struct CommandError: Codable, Equatable, Sendable {
         var code: String
@@ -136,8 +205,93 @@ struct CommandResult: Codable, Equatable, Sendable {
     var ok: Bool
     /// Grouped, ordered rows: group name -> [[label, value], ...]. gestalt
     /// returns snapshot/cpu/memory/os/network/hw; the console shows a slice.
+    ///
+    /// **The row array is the house shape and not the only one.** This
+    /// property holds the groups that ARE rows; a group whose value is any
+    /// other JSON lands in `outputObjects` instead, and neither is thrown
+    /// away. See that property for what this cost before it existed.
     var output: [String: [[String]]]?
+    /// The groups whose value is NOT a row array, kept whole.
+    ///
+    /// **This is a fix for a live defect, not a generality.** The contract
+    /// has declared object-shaped outputs since the reference layer landed
+    /// (`observe`, `axtree`, `elements`, `handle`, `axsnap` all answer
+    /// `output.<name>` as an OBJECT — `x-axTree` in the contract says so),
+    /// and this side could not decode one. A host that cannot decode a frame
+    /// drops the connection, so asking a guest to `observe` — the verb the
+    /// whole act plane is aimed through — would have taken the link down.
+    ///
+    /// It went unnoticed because those emitters assemble their reply
+    /// piecemeal, and `GuestWireConformanceTests` reads whole `snprintf`
+    /// templates. `qdtrace` was the first object-shaped reply written as one
+    /// template, so the gate saw it and reported it as a qdtrace problem; it
+    /// was never qdtrace's. That verb's contract row states why its numbers
+    /// are not rows.
+    ///
+    /// Two properties rather than one heterogeneous dictionary because every
+    /// existing reader wants rows and should keep saying so. `rows(_:)`
+    /// below is for a reader that does not care which half a group is in.
+    var outputObjects: [String: JSONValue]?
     var error: CommandError?
+
+    /// One group's rows, from whichever half holds it.
+    func rows(_ group: String) -> [[String]]? {
+        output?[group] ?? outputObjects?[group]?.rows
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, ok, output, error
+    }
+
+    init(id: Int, ok: Bool, output: [String: [[String]]]? = nil,
+         outputObjects: [String: JSONValue]? = nil,
+         error: CommandError? = nil) {
+        self.id = id
+        self.ok = ok
+        self.output = output
+        self.outputObjects = outputObjects
+        self.error = error
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int.self, forKey: .id)
+        ok = try c.decode(Bool.self, forKey: .ok)
+        error = try c.decodeIfPresent(CommandError.self, forKey: .error)
+
+        guard let raw = try c.decodeIfPresent(
+            [String: JSONValue].self, forKey: .output) else {
+            output = nil
+            outputObjects = nil
+            return
+        }
+        var rows: [String: [[String]]] = [:]
+        var objects: [String: JSONValue] = [:]
+        for (key, value) in raw {
+            if let r = value.rows { rows[key] = r } else { objects[key] = value }
+        }
+        // An `output` that was present and empty stays present and empty:
+        // "the machine answered with no groups" is not "the machine sent no
+        // output", and gestalt's `notice` row exists because that difference
+        // has mattered before.
+        output = objects.isEmpty ? rows : (rows.isEmpty ? nil : rows)
+        outputObjects = objects.isEmpty ? nil : objects
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(ok, forKey: .ok)
+        try c.encodeIfPresent(error, forKey: .error)
+
+        if output == nil && outputObjects == nil { return }
+        var merged: [String: JSONValue] = [:]
+        for (key, rows) in output ?? [:] {
+            merged[key] = .array(rows.map { .array($0.map { .string($0) }) })
+        }
+        for (key, value) in outputObjects ?? [:] { merged[key] = value }
+        try c.encode(merged, forKey: .output)
+    }
 }
 
 /// The exec plane: a line this side does not read, and text it does not

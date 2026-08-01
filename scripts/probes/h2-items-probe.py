@@ -59,10 +59,17 @@ one folder, and there is no search path in this file at all.
                than refusing cleanly at the top.
     observe    the window's content rect and its scrollbars, for the icon-area
                inset.
-    a click    something that puts a real click at a computed point. Upstream
-               used QMP for the emulator; on metal it used the driver's own
-               dispatch. NOW has neither a click verb nor a host-side
-               positional dispatcher today. THIS IS THE REMAINING BLOCKER.
+    a click    something that puts a real click at a computed point.
+               ON AN EMULATOR THIS IS SATISFIED: `--qmp` is required and
+               `qmp.click()` at line ~241 is upstream's own mechanism, so
+               this harness runs against a QEMU guest today.
+               ON METAL IT IS NOT. There is no QMP socket on a real
+               Macintosh, upstream used the driver's own dispatch there,
+               and NOW has neither a click verb nor a host-side positional
+               dispatcher. THAT is the remaining blocker, and it is a
+               metal-only one. (Corrected 2026-07-31: this paragraph read
+               as though there were no click path at all, while the file
+               below required one and called it.)
 
 Usage:
 
@@ -95,9 +102,10 @@ ICON = 32
 GATE_NOTE = """\
 The oracle is the FINDER'S OWN ANSWER, obtained through an AppleScript verb.
 That is not incidental: the whole design is that the probe never computes what
-it is checking. `script`, `observe` and `mouseloc` all exist now; what NOW still
-has nowhere is anything that places a real click at a computed point, and
-without that there is no trial to score.
+it is checking. `script`, `observe` and `mouseloc` all exist now, and on an
+emulator the click does too (`--qmp`). On METAL there is still nothing that
+places a real click at a computed point, and without that there is no trial
+to score there.
 
 Upstream's recorded 40/40, trial by trial, is preserved at
 scripts/probes/upstream/h2-trials-result.json. A NOW run is comparable to it

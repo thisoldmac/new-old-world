@@ -129,7 +129,7 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 
 PPC handles 37 inbound types; NOW-68K handles 23. **That count
 understates the difference** — see the next two sections, where two of
-these rows open into 29 command verbs and 14 hardware probes.
+these rows open into 35 command verbs and 14 hardware probes.
 
 (An earlier version of this file said 33 for the PowerPC guest and was
 wrong: the number had been hand-counted. It is derived now, and that is
@@ -149,9 +149,11 @@ hides most of what a machine can be asked — the hardware, network, RAM
 and ROM facts do not have message types of their own. They live behind
 `gestalt` and `census`, one row each above and a whole subsystem below.
 
-The registry is `x-commands` in the contract: **29 verbs.** Ten of them
-landed on 2026-07-31 and are grouped at the foot of the table: the act
-plane, and the reference layer that mints what it addresses.
+The registry is `x-commands` in the contract: **35 verbs.** Sixteen of
+them landed on 2026-07-31 and are grouped at the foot of the table: the
+act plane, the reference layer that mints what it addresses, two verbs
+about the machine's own state, the input plane's three, and the content
+plane's reader.
 
 | Verb | What it asks the machine | PPC | 68K |
 |---|---|:--:|:--:|
@@ -184,25 +186,46 @@ plane, and the reference layer that mints what it addresses.
 | `textset` | replace one addressed text element's contents | ✅ | ❌ |
 | `ctlact` | act on one control | ✅ | ❌ |
 | `menuact` | perform one menu command | ✅ | ❌ |
+| `activate` | bring one process forward, by serial number | ✅ | ❌ |
+| `actselftest` | prove the act plane's trap ABI in one process | ✅ | ❌ |
+| `mouseloc` | where the pointer actually is | ✅ | ❌ |
+| `script` | run one AppleScript | ✅ | ❌ |
+| `aesend` | send one of four core Apple Events | ✅ | ❌ |
+| `qdtrace` | what is drawing, from the content plane's ring | ✅ | ❌ |
 
-The last ten are one mechanism and are served together or not at all.
-They are PowerPC-only today by derivation rather than by an ISA check:
-they read another process's window records through the anchor plane, and
-nothing on the host asks which guest answered. **Served is not proven** —
-this table's own rule — and no NOW machine has been watched performing
-one of the five acts.
+Ten of those sixteen — the act plane and the reference layer — are one
+mechanism and are served together or not at all. They are PowerPC-only
+today by derivation rather than by an ISA check: they read another
+process's window records through the anchor plane, and nothing on the
+host asks which guest answered. **Served is not proven** — this table's
+own rule — and no NOW machine has been watched performing one of the
+five acts.
 
-**PPC serves 26 of 29.** `put` is console-only there and `cancel` is
+The six added at the foot on 2026-07-31 were **built, compiled, and
+dispatched by nothing** until that day: each porting agent left its
+registration written out in a header rather than performing it, because
+the three halves are one shared surface. They are now reachable. That is
+a statement about the dispatch chain and about nothing else — `qdtrace`
+in particular reads a ring **whose writer has never run on a
+Macintosh**, so a `status` on any machine today answers
+`content-plane-absent`, correctly, and that is the whole of what it has
+been seen to do.
+
+**PPC serves 32 of 35.** `put` is console-only there and `cancel` is
 not a verb at all, both deliberately: the host reaches those
 capabilities through the `file.*` families and that guest's own
 Workshop. `shotdiag` is the third, and the newest: it diagnoses a raw
 framebuffer walk the PowerPC guest does not have.
 
-**NOW-68K serves 13 of 29** — `help`, `ls`, `sw`, `census`, `put`,
+**NOW-68K serves 13 of 35** — `help`, `ls`, `sw`, `census`, `put`,
 `cancel`, `vprobe`, `screenshot`, `shotdiag`, `ps`, `launch`, `quit`,
-`front`. The sixteen it does not: `gestalt`, `catsearch`, `tail`, `reveal`,
-`vers`, `putstat`, and the ten of the act plane and the reference
-layer.
+`front`. The twenty-two it does not: `gestalt`, `catsearch`, `tail`,
+`reveal`, `vers`, `putstat`, the ten of the act plane and the reference
+layer, and the six registered on 2026-07-31 — `activate`,
+`actselftest`, `mouseloc`, `script`, `aesend`, `qdtrace`. The last six
+are not a 68K debt: four of them reach for OSA, Apple Events or a
+content-plane ring that guest does not carry, and no one has asked for
+them there.
 
 Every asymmetry is argued in [command-parity.md](command-parity.md) and
 named with its reason in `CommandRegistryTests.notOnThePowerPCGuest`.
@@ -476,9 +499,12 @@ blind spots written down rather than as a guarantee.
 
 Updated **2026-07-31** on `thread/p2-unify-refs`, by hand and not by
 re-derivation: the act plane and the reference layer took the verb count
-from 19 to 29 and the PowerPC guest's from 16 to 26. The counts above are
-therefore owed a run of the commands at the top of this file before
-anyone quotes them as derived.
+from 19 to 29 and the PowerPC guest's from 16 to 26. Updated again the
+same day on `thread/emu-ready`, also by hand: registering the six verbs
+that were built and dispatched by nothing took the registry from 29 to
+35 and the PowerPC guest from 26 to 32. The counts above are therefore
+owed a run of the commands at the top of this file before anyone quotes
+them as derived.
 
 Last re-derived: **2026-07-31**, on `claude/tbt-parity-slice`, by running
 the commands above. Every count in this file still checked out as it
