@@ -18,9 +18,18 @@ project(NowExtension C ASM)
 # host test compile it - the whole point of one header.
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../contract)
 
+# The content plane (P3) is two translation units on purpose, and the
+# split is the charter's ("planes talk only through the core", and
+# docs/resident-components.md's list of what is never resident):
+#   now_content_logic.c - no Toolbox, so a host cc runs its decisions
+#                         (scripts/test-native, content_plane_test.c);
+#   now_content.c       - the hooks, and nothing that could have lived
+#                         in the file above.
 add_executable(NowExt
     src/now_ext.c
-    src/now_ext_gne.S)
+    src/now_ext_gne.S
+    src/now_content.c
+    src/now_content_logic.c)
 
 # -mcpu=68000: the extension must run on the whole 8.6-9.2.2 range,
 # including 68K-emulated PowerPC. Flat code resource, GC'd, with a map.
