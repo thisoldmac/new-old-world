@@ -141,14 +141,31 @@ final class DriveCloudProvider: CloudProvider {
 /// JPEG through the ordinary file.offer flow; a photo iCloud has not
 /// materialized locally starts its download and refuses busy, the same
 /// bargain the share strikes for Drive placeholders.
+///
+/// The fetch is cached per instance: a 40,000-photo library re-run on
+/// every page (16 rows at a time, per the wire's own bound) is the
+/// difference between one PHAsset query and thousands across a single
+/// "128 of many" browse. The cache is invalidated by
+/// PHPhotoLibraryChangeObserver rather than a poll, so a library that
+/// never changes never pays for a second query either.
 @MainActor
-final class PhotosCloudProvider: CloudProvider {
+final class PhotosCloudProvider: NSObject, CloudProvider,
+    PHPhotoLibraryChangeObserver {
     let service = "photos"
     static let enabledKey = "cloud.photos.enabled"
     private let defaults: UserDefaults
+    private var cachedAssets: PHFetchResult<PHAsset>?
+    private var observing = false
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        super.init()
+    }
+
+    deinit {
+        if observing {
+            PHPhotoLibrary.shared().unregisterChangeObserver(self)
+        }
     }
 
     private var enabled: Bool { defaults.bool(forKey: Self.enabledKey) }
@@ -161,8 +178,7 @@ final class PhotosCloudProvider: CloudProvider {
         }
         switch PHPhotoLibrary.authorizationStatus(for: .readWrite) {
         case .authorized, .limited:
-            let count = PHAsset.fetchAssets(
-                with: .image, options: nil).count
+            let count = assets().count
             return CloudServiceEntry(
                 service: service, label: "Photos", state: "serving",
                 detail: "\(count) photo\(count == 1 ? "" : "s")")
@@ -179,27 +195,49 @@ final class PhotosCloudProvider: CloudProvider {
 
     /// Requests must not outrun consent: a listing against an
     /// unauthorized library is refused, not empty.
-    private func authorizedAssets() throws -> PHFetchResult<PHAsset> {
+    private func requireAccess() throws {
         guard enabled else {
             throw CloudFault.refuse(code: "off",
                                     reason: "Photos is not being shared")
         }
         switch PHPhotoLibrary.authorizationStatus(for: .readWrite) {
-        case .authorized, .limited: break
+        case .authorized, .limited: return
         default:
             throw CloudFault.refuse(
                 code: "no-access",
                 reason: "The host has not granted Photos access")
         }
+    }
+
+    /// The cached fetch, (re)built on first use or after a change
+    /// notification. Access must already be checked by the caller.
+    private func assets() -> PHFetchResult<PHAsset> {
+        if let cachedAssets { return cachedAssets }
         let options = PHFetchOptions()
         options.sortDescriptors = [NSSortDescriptor(
             key: "creationDate", ascending: false)]
-        return PHAsset.fetchAssets(with: .image, options: options)
+        let fresh = PHAsset.fetchAssets(with: .image, options: options)
+        cachedAssets = fresh
+        if !observing {
+            observing = true
+            PHPhotoLibrary.shared().register(self)
+        }
+        return fresh
+    }
+
+    /// PHPhotoLibraryChangeObserver: dropping the cache is the whole
+    /// cost of a change, not a re-fetch on the notification thread — the
+    /// next list() or entry() rebuilds it lazily.
+    nonisolated func photoLibraryDidChange(_ changeInstance: PHChange) {
+        Task { @MainActor in
+            self.cachedAssets = nil
+        }
     }
 
     func list(cursor: Int, limit: Int) throws
         -> (entries: [CloudEntry], more: Bool, next: Int) {
-        let assets = try authorizedAssets()
+        try requireAccess()
+        let assets = assets()
         let start = max(0, cursor - 1)
         guard start < assets.count else {
             return ([], false, assets.count + 1)
@@ -212,6 +250,11 @@ final class PhotosCloudProvider: CloudProvider {
                 item: asset.localIdentifier,
                 title: CloudText.displayable(Self.title(of: asset)),
                 subtitle: asset.creationDate.map(Self.shortDate),
+                /* PHAssetResource exposes no public byte-size property
+                   (no "fileSize" in its documented interface) short of
+                   downloading the resource itself, which a listing must
+                   never do — so this stays unstated rather than guessed
+                   or faked from a private KVC key. */
                 bytes: nil,
                 modified: asset.creationDate
                     .flatMap(ClassicDate.guestWireSeconds(from:))))
@@ -268,7 +311,7 @@ final class PhotosCloudProvider: CloudProvider {
     }
 
     private func asset(_ item: String) throws -> PHAsset {
-        _ = try authorizedAssets()
+        try requireAccess()
         guard let asset = PHAsset.fetchAssets(
             withLocalIdentifiers: [item], options: nil).firstObject else {
             throw CloudFault.refuse(code: "not-found",
