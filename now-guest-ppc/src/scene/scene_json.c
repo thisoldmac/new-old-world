@@ -225,10 +225,29 @@ static void put_menubar(Sink *k, const NowScene *s)
     put(k, "]}");
 }
 
+/* An observation reference, and ONLY when there is one.
+
+   The empty string is not a reference and must never reach the wire as
+   one: the host's adapter reads a present-but-empty `ref` as "this
+   producer has no reference layer" and reports the element
+   unactionable, which is a different claim from "this element was not
+   minted". Both are honest sentences; only one of them is true of an
+   element the walk could not name, and it is the one absence says. */
+static void put_ref(Sink *k, const char *ref)
+{
+    if (ref == NULL || ref[0] == '\0') {
+        return;
+    }
+    put(k, ",\"ref\":");
+    put_str(k, ref);
+}
+
 /* A window's controls, and only for a window whose whole chain was
-   walked. `ref`, `role` and `checked` are absent throughout: the walk
-   reads a ControlRecord, not its defProc, so it cannot say what KIND of
-   control this is, and `checked` is meaningless without that. */
+   walked. `role` and `checked` are absent throughout: the walk reads a
+   ControlRecord, not its defProc, so it cannot say what KIND of control
+   this is, and `checked` is meaningless without that. `ref` is present
+   for every control the reference layer could name and absent for the
+   rest. */
 static void put_controls(Sink *k, const NowScene *s, const NowSceneWindow *w)
 {
     short i;
@@ -257,6 +276,7 @@ static void put_controls(Sink *k, const NowScene *s, const NowSceneWindow *w)
         put_num(k, c->min);
         put(k, ",\"max\":");
         put_num(k, c->max);
+        put_ref(k, c->ref);
         put(k, "}");
     }
     put(k, "]");
@@ -290,6 +310,12 @@ static void put_windows(Sink *k, const NowScene *s)
         put_num(k, w->z);
         put(k, ",\"visible\":");
         put(k, w->visible ? "true" : "false");
+        /* An ADDITION to IR v1's window field set, taken under the
+           accretive rule (additive fields do not move the version). A
+           window is the other thing an act can name - `windowact` takes
+           a window reference, not a control's - so a scene that named
+           only controls would leave half the act plane unaddressable. */
+        put_ref(k, w->ref);
         /* The walked sub-planes, each present only for the rows whose
            walk ran and completed. `display` and `items` are still absent
            everywhere: this producer does not report them at all, and an
