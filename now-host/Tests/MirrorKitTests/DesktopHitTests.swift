@@ -90,9 +90,15 @@ final class DesktopHitTests: XCTestCase {
     func testDoubleClickOpensWhileSingleClickSelects() {
         let target = HitTester.Target.desktopItem(name: "HelloWorld",
                                                   x: 624, y: 364)
+        /* **The route changed, and the point is deliberately gone from the
+           act.** Upstream sent a wire click at the icon's centre and a real
+           QMP double-click; NOW declares no positional click on purpose
+           (`docs/input-plane-decisions.md` §2) and cannot assume an emulator
+           on the other end. What the icon's centre is still FOR is deciding
+           which icon was meant — the hit tester's job, asserted above. */
         XCTAssertEqual(ActionModel.click(on: target, count: 1),
-                       [.click(x: 624, y: 364, count: 1, mods: 0)])
+                       [.finderSelect(item: "HelloWorld", container: .desktop)])
         XCTAssertEqual(ActionModel.click(on: target, count: 2),
-                       [.qmpDoubleClick(x: 624, y: 364)])
+                       [.finderOpen(item: "HelloWorld", container: .desktop)])
     }
 }

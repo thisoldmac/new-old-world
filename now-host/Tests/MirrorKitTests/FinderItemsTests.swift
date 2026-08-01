@@ -157,10 +157,16 @@ final class FinderItemsTests: XCTestCase {
         let scene = Self.scene(with: win)
         // A point inside the second icon's box.
         let hit = HitTester.hitTest(scene, x: 13 + 185, y: 47 + 30)
-        guard case .windowItem(_, let name, let x, let y) = hit else {
+        guard case .windowItem(_, let name, let windowTitle,
+                               let x, let y) = hit else {
             return XCTFail("expected a windowItem, got \(hit)")
         }
         XCTAssertEqual(name, "mirror-dev")
+        /* The container travels with the item, because the ACT needs it: a
+           folder item is addressed as `item "X" of window "Y"`, and "Y" is
+           this. A target that carried only the window's id would leave the
+           action model with nothing to name the container by. */
+        XCTAssertEqual(windowTitle, "TimBotTu")
         // …and it reports the icon's OWN centre, not where the pointer landed.
         XCTAssertEqual(x, 13 + 181 + 16)
         XCTAssertEqual(y, 47 + 25 + 16)
@@ -191,10 +197,18 @@ final class FinderItemsTests: XCTestCase {
         let win = Self.folderWindow(items: [Self.item("tbt-worker", 53, 25)])
         let scene = Self.scene(with: win)
         let hit = HitTester.hitTest(scene, x: 82, y: 88)
+        /* **CHANGED with the act route, not with taste.** These used to be
+           a positional click and a QMP double-click. NOW declares no
+           positional click (`docs/input-plane-decisions.md` §2) and has no
+           emulator on the far end, so a folder item is selected and opened
+           by the Finder's own identity — `item "X" of window "Y"` — and the
+           point that resolved WHICH item is dropped rather than sent. */
         XCTAssertEqual(ActionModel.click(on: hit),
-                       [.click(x: 82, y: 88, count: 1, mods: 0)])
+                       [.finderSelect(item: "tbt-worker",
+                                      container: .window(title: "TimBotTu"))])
         XCTAssertEqual(ActionModel.click(on: hit, count: 2),
-                       [.qmpDoubleClick(x: 82, y: 88)])
+                       [.finderOpen(item: "tbt-worker",
+                                    container: .window(title: "TimBotTu"))])
     }
 
     // MARK: - The cache key

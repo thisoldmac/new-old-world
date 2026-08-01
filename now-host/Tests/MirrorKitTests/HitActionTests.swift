@@ -235,10 +235,31 @@ final class HitActionTests: XCTestCase {
                 return XCTFail("expected \(widget) at its box center")
             }
             XCTAssertEqual(kind, widget)
-            // Actuation point is the box center → QMP press-release there.
+            // What a press on the box MEANS is still a press at its centre —
+            // that is the gesture, and the base overload keeps saying so.
             XCTAssertEqual(ActionModel.click(
                 on: .widget(windowID: front.id, kind: kind, x: ax, y: ay)),
                 [.qmpClick(x: c.x, y: c.y)])
+            /* **What NOW SENDS is a window act**, and that is the overload
+               the pane calls: there is no emulator on the other end of a NOW
+               connection, and `winact` answers the application's own
+               FindWindow for exactly two of these three boxes. The
+               windowshade is the third and gets nothing — `winact` has four
+               actions and rolling a window up is not one of them, so an act
+               naming `zoom` for it would be this side deciding the two are
+               alike. */
+            let sent = ActionModel.click(
+                on: .widget(windowID: front.id, kind: kind, x: ax, y: ay),
+                in: scene)
+            let target = ActionModel.target(for: front, in: scene)!
+            switch kind {
+            case .close:
+                XCTAssertEqual(sent, [.windowAct(window: target, op: .close)])
+            case .zoom:
+                XCTAssertEqual(sent, [.windowAct(window: target, op: .zoom)])
+            case .collapse:
+                XCTAssertTrue(sent.isEmpty)
+            }
         }
         // Grow box at the bottom-right corner.
         let grow = WindowChrome.growBox(front)!
