@@ -14,6 +14,67 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## The Mirror page has never been on a machine (2026-08-01)
+
+**Unverified, and the whole page is unverified together.** The guest now
+has a Mirror page in the Workshop (`now-guest-ppc/src/mirror/`): three
+read-only rows for Mirror's resident extensions, three rows for its
+agent, and Enable / Disable for the agent alone. It builds, and its value
+core is covered by `mirror_layout_test.c`. Nothing about it has run on a
+Macintosh.
+
+What a machine has to settle, none of which a host test can:
+
+- **That Gestalt answers at all.** The three selectors and the two or
+  three longs read behind each of them (`'TBax'`, `'TBqd'`, `'TBpt'`)
+  come from Mirror's own shared headers, cited in `mirror_probe.c`. If a
+  selector answers with an address whose magic does not match, the page
+  says absent — which is the safe direction, and also indistinguishable
+  from "we read the wrong offset".
+- **That the agent is found where the page looks.**
+  `mirror/tools/stage-agent.py` puts the agent at
+  `Macintosh HD:TimBotTu:mirror-dev:mirror-agent`; the page walks the
+  boot volume to it and matches a running process by its
+  `processAppSpec`. An agent staged anywhere else reads as not installed.
+  There is no preference for the location and no browse button.
+- **That `LaunchApplication` starts a faceless background application
+  from a Carbon app**, and that a `kAEQuitApplication` reaches one that
+  owns no menu bar. Both are ordinary calls; neither has been watched
+  against this particular target.
+
+**Why the agent is matched by file and not by creator.** Mirror's agent
+is a Retro68 build with no creator override, so it carries the default
+`'????'` — read out of the MacBinary header of
+`mirror/guest/app/build/mirror-agent.bin`. So does every other Retro68
+build on the machine, including the lab's own workers, which is why a
+signature match would cheerfully report the Mirror agent running about
+something else entirely. The signature is shown on the page and matched
+on by nothing. If Mirror ever stamps a real creator, this becomes a
+one-line change and a better rule.
+
+**The three extensions are deliberately not switchable**, and the page
+says so in two lines rather than offering a control that does nothing. A
+file-move enable/disable *is* possible and is already proposed below
+("an extension is a thing you enable, not a thing you launch") — it needs
+a guest verb, a confirmation, and the restart notice in the *result*, and
+none of that is what "status and enable/disable" asked for. Deferred, not
+overlooked.
+
+**No console or wire verb.** This is a UI-only page: it adds no
+`x-commands` verb, no message type, and nothing to
+docs/contract-coverage.md. The parity rule is about capabilities the two
+faces of a guest reach, and nothing here is reachable from the wire
+because nothing here was added to it. A `mirror` console verb would be a
+real capability and would need both faces — worth doing, and not done.
+
+**The View menu was one item short, and this fixed it.** Networking went
+in on 2026-08-01 without a menu item, and the handler maps item number to
+module id: Cmd-9 read "Logs" and selected Networking, Cmd-0 read
+"Connection" and selected Logs, and Connection could not be reached from
+the menu at all. Adding Mirror without repairing that would have moved
+the mismatch along. Logs and Connection now carry no Command-key — the
+digits ran out — and are one click away in the rail.
+
 ## The Mirror port was thrown away (2026-08-01)
 
 **Settled, and it settles a great many entries below.** NOW's

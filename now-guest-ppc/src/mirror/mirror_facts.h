@@ -38,8 +38,20 @@ typedef unsigned char Boolean;
 enum {
     kMirrorExtCount = 3,       /* AXPeek, QDPeek, Portal */
     kMirrorAgentRows = 3,      /* state, program, signature */
-    kMirrorNoteLines = 2,      /* the last action's outcome, in words */
-    kMirrorNoteMax = 220,
+    kMirrorNoteLines = 3,      /* the last action's outcome, in words */
+    /* Characters a note line will hold. A budget in CHARACTERS because
+       this file has no port to measure a string in; the module still
+       passes every drawn line through TruncString, so a narrow window
+       shortens rather than overflows. 84 fits the narrowest pane the
+       Workshop allows at the small system font, with room to spare. */
+    kMirrorNoteChars = 84,
+    /* Sized so the lines can always say the whole note - three budgets
+       less what a greedy word wrap pushes onto the next line, which for
+       the longest word any of these messages uses is under twenty
+       characters a line. Silently clipping the last clause of a failure
+       message is the one truncation this page cannot afford, and the
+       native test asserts a buffer-filling note loses nothing. */
+    kMirrorNoteMax = 200,
     kMirrorPathMax = 128,
     kMirrorSigMax = 8          /* four characters and room to escape one */
 };

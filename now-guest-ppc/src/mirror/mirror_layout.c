@@ -197,12 +197,9 @@ Boolean now_mirror_can_disable(const MirrorFacts *facts)
 /* --- the note ------------------------------------------------------- */
 
 /* One line's worth of `text` from `from`, broken at a space. Returns
-   where the next line starts, or the length when there is no more. The
-   budget is characters rather than pixels because this file has no port;
-   the module still passes every drawn line through TruncString, so a
-   narrow window shortens rather than overflows. */
-enum { kMirrorNoteChars = 84 };
-
+   where the next line starts, or the length when there is no more.
+   kMirrorNoteChars is the budget, and kMirrorNoteMax is sized from it, so
+   a note that fits its buffer fits the page. */
 static long wrap_at(const char *text, long from, char *out, long cap)
 {
     long len = (long)strlen(text);
