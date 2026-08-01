@@ -24,7 +24,8 @@ travel; this note records what was built and what it refuses to claim.
 | `meta.{errors,plane,latencyMs}` | produced; `meta.bytes` absent |
 | `menubar.{app,menus[]}`, `menus[].items[]` | **conditional** — the front process only, when its bind and its menu list both succeeded |
 | `windows[].controls[]`, `.text`, `.kind` | **conditional** — per window, when that window's walk ran and completed |
-| `menus[].apple`, `controls[].{ref,role,checked}` | **absent** — nothing this walk reads determines them |
+| `windows[].ref`, `windows[].controls[].ref` | **conditional** — per element, when the reference layer could name it |
+| `menus[].apple`, `controls[].{role,checked}` | **absent** — nothing this walk reads determines them |
 | `windows[].display[]`, `.items[]` | **absent** |
 | `desktopItems[]` | **absent** |
 
@@ -108,13 +109,95 @@ menu bar exists and wants the Toolbox, so *"a plane whose walk is not built
 yet"* is exactly true of it. `now_not_walked` still reaches the wire, now
 meaning something narrower than it did.
 
+### The reference plane
+
+*Landed 2026-08-01.* `windows[].ref` and `windows[].controls[].ref` carry a
+token minted by the guest's observation registry (`now-window-…` /
+`now-element-…`), resolvable by `now_observe_resolve_window` /
+`now_observe_resolve_element`. Before it, a rendered scene drew chrome, titles,
+menus and controls and **nothing was clickable**: every control's `ref` was
+empty, so the host's act model reported `axdo` as `needsObservation` — the
+element is addressed by an opaque reference only an observation mints, and the
+scene minted none.
+
+**When it mints: during the walk, not afterwards.** This is the only moment the
+addresses exist. A control is a `ControlHandle` on a chain inside another
+process's heap; nothing downstream of the walk holds one, and a second pass that
+re-derived them would be a second thing deciding what an element is — the defect
+the reference layer was unified to remove when `act_ref.c` went away. There is
+still exactly one minter and one registry: `src/observe/obsmint.c` is a *seam*
+onto it, asserted structurally by `one_minter_source_test.py`, which also forbids
+anything under `src/scene/` from touching the table.
+
+**What a second fetch does: nothing.** The seam **interns** — an identity byte-
+identical to a live registry entry (same process, same fingerprints, same
+addresses, same title and occurrence) hands back that entry's token rather than
+minting a new one. So re-fetching an unchanged desktop returns the same
+references and the registry does not grow. That is not a convenience: the scene
+a person is *looking at* when they click is the one from the previous fetch, so a
+producer that renamed everything on every walk would make a scene actable only
+until it refreshed. Anything that actually changed — a window that moved, a
+process that relaunched, a control at a new handle — fails the identity match and
+mints fresh, and the old token still **refuses** rather than being repaired.
+
+**The lifetime and the capacity, which is what bounds all of it.**
+
+| | |
+|---|---|
+| Registry size | `kNowObsRegistryMax` = **96** live references |
+| Lifetime | the guest **session**. The seed is drawn once at startup; a reference from a previous run of the guest matches nothing (new seed, empty table) |
+| Eviction | round-robin, and an evicted token is `NotFound` — never re-pointed at whatever now occupies the slot |
+| A scene's demand | up to 64 windows + 96 controls = **160**, which is larger than the table |
+
+Two consequences follow and both are handled rather than hoped about. A walk is
+bracketed by a **registry epoch**, so eviction cannot take a reference *this
+scene* already handed out; past the table the mint refuses, and the element's
+`ref` is simply absent. And a reference is minted only for an element a
+resolution could actually **reach** — resolution walks at most
+`kNowAxResolveMaxWindows` (16) windows and `kNowAxResolveMaxControls` (32)
+controls before answering `NotFound`, so an element past either bound gets no
+reference, because one would be decoration rather than an address.
+
+**Absence is still load-bearing here, and sharply.** An absent `ref` means *not
+minted*. The empty string is never emitted: the host's own adapter reads a
+present-but-empty `ref` as *"this producer has no reference layer"* and reports
+the element unactionable, which is a different — and false — claim about an
+element the walk merely could not reach. An over-long token is dropped rather
+than clipped for the same family of reason: a shortened reference passes every
+shape check on both sides of the wire and resolves to nothing, so it would
+present as *"that element went away"* rather than as a producer bug.
+
+**Contract standing.** `windows[].controls[].ref` is not an extension at all —
+IR v1 promotes `windows[].controls[].*`, so this is a declared field the
+producer had been leaving out. `windows[].ref` **is** an addition to IR v1's
+window field set, taken deliberately under the accretive rule (additive fields
+do not move `irVersion`) and written down in `contract/asyncapi.yaml` under
+`guestServesScene`. A window is the other thing an act can name, so a scene that
+named only controls would leave half the act plane unaddressable.
+
+**Mutation report for the reference plane**, each watched failing 2026-08-01.
+The first two are the ones that matter: a `ref` that is well formed and resolves
+to nothing is *worse* than an absent one, because the renderer draws a
+clickable-looking button and every press is refused.
+
+| Mutation | Result |
+|---|---|
+| the mint's node fingerprint stops naming the addresses | 6 red — every minted reference resolves `Stale` |
+| a control's reference filed against index 0 instead of its own row | 3 red — Cancel would act for OK, and both rows still look complete |
+| the walk names the chain head instead of the window it is holding | 6 red — including the refusals for an address that is not on the chain |
+| `identity_same` forced true (everything interns) | 4 red — a moved button inheriting the reference of the one that was there |
+| the epoch's eviction guard disabled | 2 red — a walk eating the front of its own scene |
+| `put_ref` emits the empty string instead of omitting the key | 3 red — the absent/empty split, in the plane where empty means something else |
+| `copy_ref` truncates instead of refusing | 1 red — a clipped token that resolves to nothing |
+
 ### What the walked planes still do not assert
 
 - **A control's role.** The walk reads a `ControlRecord`, not its `contrlDefProc`,
   so it cannot say whether a control is a button, a checkbox or a scroll bar.
-  `role` and `ref` are absent, and `checked` with them — it is meaningless
-  without knowing which. A role inferred from a min/max range would be a guess
-  wearing a fact's clothes.
+  `role` is absent, and `checked` with it — it is meaningless without knowing
+  which. A role inferred from a min/max range would be a guess wearing a fact's
+  clothes. (`ref` used to be on this list and came off it on 2026-08-01; see
+  *The reference plane* below.)
 - **Which menu is the Apple menu.** IR v1 carries `menus[].apple`; nothing this
   walk reads determines it, so the key is absent rather than plausible.
 - **Text on a non-dialog window.** A `DialogRecord`'s `TEHandle` is at 160,
@@ -216,7 +299,7 @@ produces:
 | 4 processes, 3 windows | **1193 B** |
 | 24 processes, 32 windows, unwalked | **9214 B** |
 | the same desktop **walked** — 64 controls, 6 menus of 8 items | **21541 B** |
-| every pool full — this producer's **ceiling** | **46946 B** |
+| every pool full **and every row named** — this producer's **ceiling** | **54178 B** |
 
 The control-frame cap is 4096 bytes. An idle desktop fits; an ordinary working
 one does not — and the walked planes cost 2.3× the same desktop without them,

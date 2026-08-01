@@ -564,8 +564,30 @@ static void test_size_against_the_control_cap(void)
             }
         }
     }
+    /* Every row also NAMED. A reference is 48-49 bytes of JSON per
+       element and there are up to 160 of them, so a ceiling measured
+       without the reference plane understates by about a fifth of
+       itself - and this number is the one a serving layer sizes its
+       buffer from. Filling it here is what keeps the two honest. */
+    {
+        int i;
+
+        for (i = 0; i < s.window_count; ++i) {
+            now_scene_set_window_ref(&s, i,
+                "now-window-ffffffff-ffff-ffff-ffff-ffffffffffff");
+        }
+        for (i = 0; i < s.window_count; ++i) {
+            int j;
+
+            for (j = 0; j < (int)s.windows[i].control_count; ++j) {
+                now_scene_set_control_ref(&s, i, j,
+                    "now-element-ffffffff-ffff-ffff-ffff-ffffffffffff");
+            }
+        }
+    }
     ceiling = now_scene_encoded_size(&s);
-    printf("  scene ceiling: every pool full = %ld bytes\n", ceiling);
+    printf("  scene ceiling: every pool full and every row named = %ld "
+           "bytes\n", ceiling);
     /* Note the controls are only *nearly* at the cap: the pool fills
        round-robin across windows, so one window's block stops being the
        tail and assembly refuses the misfile. That is the invariant
