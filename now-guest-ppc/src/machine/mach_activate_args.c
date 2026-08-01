@@ -103,6 +103,25 @@ int now_mach_psn_parse(const char *request_json, const char *line,
     return out->present;
 }
 
+int now_mach_psn_offered(const char *request_json, const char *line)
+{
+    if (now_json_value(request_json, "serialHi") != NULL
+        || now_json_value(request_json, "serialLo") != NULL) {
+        return 1;
+    }
+    if (line == NULL) {
+        return 0;
+    }
+    while (*line == ' ' || *line == '\t') {
+        line++;
+    }
+    /* Anything at all on the line is an attempt to name something. A
+       word that is not a number is still an attempt, and answering it
+       with the front process would be answering a question nobody
+       asked. */
+    return *line != '\0';
+}
+
 NowMachActivateOutcome now_mach_activate_verdict(
     const NowMachActivateFacts *f)
 {

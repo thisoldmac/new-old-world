@@ -108,6 +108,26 @@ int main(void)
     check(!now_mach_psn_parse(NULL, NULL, &psn), "NULLs fail closed");
     check(!now_mach_psn_parse("{}", NULL, &psn), "a NULL line fails closed");
 
+    /* --- offered, which is not the same question as parsed ------------ *
+     * `actselftest` defaults to the front process when NO psn is given.
+     * A malformed one must not fall into that default: a confident
+     * verdict about the wrong process is the worst answer available. */
+    check(!now_mach_psn_offered("{}", ""), "nothing offered");
+    check(!now_mach_psn_offered("{}", "   "),
+          "whitespace alone is not an offer");
+    check(!now_mach_psn_offered("{}", NULL), "a NULL line is not an offer");
+    check(now_mach_psn_offered("{\"serialHi\":0}", ""),
+          "half a typed PSN IS an offer, and a broken one");
+    check(now_mach_psn_offered("{\"serialLo\":9}", ""),
+          "the other half too");
+    check(now_mach_psn_offered("{}", "8781"),
+          "one number on the line is an offer");
+    check(now_mach_psn_offered("{}", "Finder"),
+          "a word is an offer too - answering the front process instead "
+          "would answer a question nobody asked");
+    check(now_mach_psn_offered("{\"serialHi\":0,\"serialLo\":8781}", ""),
+          "a whole PSN is an offer");
+
     /* --- the verdict -------------------------------------------------- */
     f = ok_facts();
     check(now_mach_activate_verdict(&f) == kNowMachActivateDone,

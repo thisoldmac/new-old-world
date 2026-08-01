@@ -54,6 +54,16 @@ typedef struct {
 int now_mach_psn_parse(const char *request_json, const char *line,
                        NowMachPsnArg *out);
 
+/* Did the caller TRY to name a process at all?
+
+   For the verbs where a PSN is optional (`actselftest` means the front
+   process when none is given), "no PSN" and "a PSN I could not read" are
+   different requests and must not share an answer: silently testing the
+   front process because the caller's serial number was malformed
+   produces a confident verdict about the wrong process. Presence is
+   asked here, once, rather than inferred from a failed parse. */
+int now_mach_psn_offered(const char *request_json, const char *line);
+
 /* What happened, in the closed set a caller may see. The order matters
    in one place only: everything at or below kNowMachActivateAlreadyFront
    means the machine is in the asked-for state. */
