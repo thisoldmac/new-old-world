@@ -200,6 +200,59 @@ gets at least one deliberate boot before "verified" is claimed.
   ([prototypes/qdprobe](../prototypes/qdprobe/README.md)) now names its
   target and refuses an unscoped request rather than reading it as "all".
 
+- **P4 — the act plane** (2026-07-31): the first plane that does not
+  read. It lets the application ask a foreign process to *do* something,
+  which is the only reason a semantic scene is worth more than a
+  screenshot — the structure earns its cost when the host can address an
+  **element** instead of a coordinate. Ported from the sibling Mirror
+  project's Portal INIT, which is metal-proven there; none of that
+  transfers here.
+
+  Two shapes. The text ops are served outright in the hook, because a
+  TERec and a dialog's item list are per-process memory: unreachable
+  from outside and ordinary from inside. The menu, control and window
+  ops arm a **guarded trap patch**, so the application's own
+  `MenuSelect` / `TrackControl` / `FindWindow` is answered with the
+  value the request names and the application then runs its own
+  handler. Nothing simulates a user, and no mouse **motion** is injected
+  anywhere — which is what keeps the plane off the emulator and inside
+  the no-host-side-cheating rule.
+
+  It is the plane that makes the amendment above concrete, and it obeys
+  it: every op names its target (a `ControlHandle`, a `WindowPtr` plus
+  an exact click point, or — for a menu, which carries no handle — the
+  press itself), and the identity check lives in a Toolbox-free file
+  (`now-guest-shared/src/now_act_guard.c`) that the host `cc` compiles
+  and mutates. The resident half performs effects and decides nothing.
+
+  Three things it does differently from the planes above, each for a
+  reason worth carrying:
+
+  - **The arm bit is also the bypass switch.** It is the word the
+    *application* writes, so turning the plane off is immediate and does
+    not need the target process to be alive or pumping. Disarmed, all
+    six trap patches chain straight through.
+  - **Patches go in on the first armed pass and never come out.**
+    Unpatching is worse than patching: a patch that vanishes while a
+    caller is inside it is a jump into freed code.
+  - **The resident half posts its own press.** The application is
+    Carbon and `PPostEvent` is not, so it cannot queue an event whose
+    `where` it controls — and `where` is the identity check. Posting
+    from the target's own context also closes the gap between armed and
+    pressed during which a user's click could arrive first.
+
+  **A stale resident is an unguarded patch**, and this is the plane
+  where that stops being theoretical: an older extension has no room for
+  the request cell, so writing one would corrupt the shared block *and*
+  leave the caller believing a guard was armed. The refusal uses the
+  discipline already in the table rather than a second version number —
+  `act_format` plus `length` covering the cell, checked in that order,
+  because a gate whose first act is the unsafe read is not a gate.
+
+  **Attend the first metal boot, and more so than for P1.** This is the
+  first plane that can *write* into another process rather than only
+  read low memory in its context.
+
 ## Charter amendment
 
 AGENTS.md's "what this is" grows one sentence, and this note is its
