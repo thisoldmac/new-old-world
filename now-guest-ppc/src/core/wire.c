@@ -105,6 +105,7 @@ static void put_drop(void);
 static void stream_drop(void);
 static void shot_drop(void);
 static void note_shot(const char *line);
+static void get_cleanup(Boolean keep_file);
 
 /* Only the connect operation runs asynchronously: on the physical
    PowerBook a synchronous OTConnect to an unreachable address blocks
@@ -255,17 +256,30 @@ static void close_endpoint(void)
     g.bulk_remaining = 0;
 }
 
-/* Move to backoff after a failure; status keeps the reason already set. */
-static void enter_backoff(void)
+/* Everything in flight, dropped. ONE list, because there were two and
+   they had already drifted: enter_backoff() dropped five things and
+   conn_disconnect() dropped none, so disconnecting mid-pull left
+   g_get.receiving true over an open temp fork. A leaving link ends every
+   transfer for the same reason whichever way it leaves, so the reason is
+   written once. Every call here is idle-safe and touches no wire — none
+   of them can be told to a machine that is going away. */
+static void link_drop_transfers(void)
 {
-    now_log(kLogWarn, "wire", "disconnected from %s:%u: %.60s",
-            g.host, g.port, g.last_fail);
     xfer_cleanup();                   /* a dropped link cancels any transfer */
     offer_cleanup();
     stream_drop();                    /* no stopped message on a dead wire */
     shot_drop();                      /* no deferred capture across a drop */
     put_drop();                       /* no half-written file left behind */
+    get_cleanup(false);               /* nor half a file coming the other way */
     ctlq_clear();
+}
+
+/* Move to backoff after a failure; status keeps the reason already set. */
+static void enter_backoff(void)
+{
+    now_log(kLogWarn, "wire", "disconnected from %s:%u: %.60s",
+            g.host, g.port, g.last_fail);
+    link_drop_transfers();
     close_endpoint();
     if (!g.want_connection) {
         g.phase = kConnIdle;
@@ -5111,7 +5125,9 @@ void conn_disconnect(void)
         }
         gNowOT.sndOrderlyDisconnect(g.ep);
     }
-    ctlq_clear();
+    /* After the bye is flushed, not before: the queue drain above is the
+       last thing this link is asked to carry. */
+    link_drop_transfers();
     close_endpoint();
     g.want_connection = false;
     g.phase = kConnIdle;
