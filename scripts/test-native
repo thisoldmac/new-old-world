@@ -122,6 +122,16 @@ run_py() {
 echo "== now-guest-shared (both guests compile these) =="
 run_c now-guest-shared console_history_test.c \
       "-I $repo_root/now-guest-ppc/src/console"  src/console_history.c
+# The act plane's guard (P4), compiled by the 68K extension AND the
+# PowerPC application, so it belongs to neither's section either. It is
+# the ONE thing in the port a host can check that matters: the guard is
+# what separates "the request drove the element it named" from "the
+# patch rode the user's own click", and upstream measured that gap at
+# 18/20 against 0/20. The resident half it serves runs inside every
+# process that pumps events, which is the worst place in this project to
+# discover a comparison was backwards.
+run_c now-guest-shared now_act_guard_test.c \
+      "-DNOW_PEEK_TABLE_HOST"  src/now_act_guard.c
 
 echo "== now-guest-ppc (PowerPC Carbon) =="
 run_c now-guest-ppc census_decode_test.c     ""  src/census/census_decode.c
