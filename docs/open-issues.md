@@ -14,7 +14,51 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## The Mirror port was thrown away (2026-08-01)
+
+**Settled, and it settles a great many entries below.** NOW's
+re-implementation of Mirror's live-UI mirroring — `MirrorKit`,
+`MirrorKitUI`, the Mirror module's model, view, scene adapter, action
+driver, content join and window resolver, with their tests — has been
+**deleted from `now-host`**. In the built app its menu bar was mostly
+empty, its menus dropped down and did nothing, and nothing could be
+launched, clicked, moved or resized. Mirror already does all of it,
+working, on the same OS and the same emulator.
+
+Mirror is now vendored whole at `mirror/` — its own wire, its own 68K
+INITs, its own agent surface, its own SwiftPM package, built by nothing in
+`now-host` — and NOW's Mirror module is a **launcher** for its two halves
+(`MirrorLauncherModel`). The removed code is archived unchanged at
+`archive/mirror-port-2026-08-01/`, whose README says what is worth reading
+in it.
+
+**So: every entry below that names `MirrorKit`, `MirrorKitUI`,
+`MirrorModuleView`, `MirrorModuleModel`, `MirrorActionDriver`,
+`MirrorSceneAdapter` or the Mirror pane describes code that is no longer
+in this tree.** They are left standing per the rule at the top of this
+page — the shape of the mistake is the value — but none of them is a
+thing to pick up.
+
+The lesson, which is not about Mirror: every acceptance number in that
+work was measured by probe scripts against the wire verbs, and **the path
+a person actually uses was never once tested end to end**. "`winact`
+closed a window 10/10" and "a person can close a window in the mirror" are
+different claims, and the gate only ever checked the first — so it stayed
+green for two days while the product did nothing.
+
+Still open, and not answered by the reversal: `mirror/tools/spin-up.sh`
+resolves the lab it borrows its emulator instruments from as its own
+parent directory, which inside NOW is this repository rather than the
+TimBotTu checkout that has them. The launcher NAMES that as a missing
+prerequisite rather than failing into bash errors, but nothing has yet
+made Mirror's guest spin-up work from here.
+
 ## The last functional gap: a person cannot click the mirror (2026-08-01)
+
+**Retracted 2026-08-01, later the same day: the pane this describes no
+longer exists.** See "The Mirror port was thrown away" above. The
+diagnosis below is why it was thrown away rather than finished, and is
+kept for that reason.
 
 **Broken, in the sense of unfinished rather than wrong.** Every piece of
 the act path exists and is tested, and the path has no join. An agent can

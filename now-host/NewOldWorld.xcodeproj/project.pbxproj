@@ -8,8 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		A1000220 /* NOWAgentIntegration in Frameworks */ = {isa = PBXBuildFile; productRef = A1000210 /* NOWAgentIntegration */; };
-		A1000221 /* MirrorKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1000211 /* MirrorKit */; };
-		A1000222 /* MirrorKitUI in Frameworks */ = {isa = PBXBuildFile; productRef = A1000212 /* MirrorKitUI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -30,8 +28,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				A1000220 /* NOWAgentIntegration in Frameworks */,
-				A1000221 /* MirrorKit in Frameworks */,
-				A1000222 /* MirrorKitUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -75,8 +71,6 @@
 			name = "New Old World";
 			packageProductDependencies = (
 				A1000210 /* NOWAgentIntegration */,
-				A1000211 /* MirrorKit */,
-				A1000212 /* MirrorKitUI */,
 			);
 			productName = "New Old World";
 			productReference = A1000010 /* New Old World.app */;
@@ -254,14 +248,6 @@
 		A1000210 /* NOWAgentIntegration */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = NOWAgentIntegration;
-		};
-		A1000211 /* MirrorKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = MirrorKit;
-		};
-		A1000212 /* MirrorKitUI */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = MirrorKitUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -164,7 +164,7 @@ final class MirrorLauncherModel: ObservableObject {
     /// failed, so this points at the transcript rather than inventing a
     /// cause — the process already said what went wrong and paraphrasing it
     /// is how a reason gets lost.
-    static func summary(_ half: Half, status: Int32) -> String {
+    nonisolated static func summary(_ half: Half, status: Int32) -> String {
         let name = half == .hostApp ? "MirrorApp" : "spin-up.sh"
         if status == 0 {
             return half == .hostApp
