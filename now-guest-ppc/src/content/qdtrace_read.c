@@ -60,7 +60,8 @@ static int block_ok(const NowContentBlock *block)
     }
     /* The accretive rule: the block must claim at least the bytes we are
        about to read. */
-    if (block->length < (NowContentU32)(140u + cap)) {
+    if (block->length
+        < (NowContentU32)(offsetof(NowContentBlock, ring) + cap)) {
         return 0;
     }
     return 1;
