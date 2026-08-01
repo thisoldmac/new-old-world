@@ -72,6 +72,21 @@ struct MirrorActionDriver {
 
     let adapter: AgentIntegrationHostAdapter
 
+    /// The observation that mints the reference a window act is addressed by.
+    ///
+    /// Optional for the same reason the model's driver is: a driver without
+    /// one refuses a window op with a sentence naming the missing half rather
+    /// than reaching for "the frontmost window". The stub clients in the test
+    /// tree get exactly that behaviour by default, which is the behaviour a
+    /// pane in front of a machine that cannot be observed must have.
+    var windows: MirrorWindowResolver?
+
+    init(adapter: AgentIntegrationHostAdapter,
+         windows: MirrorWindowResolver? = nil) {
+        self.adapter = adapter
+        self.windows = windows
+    }
+
     /// Drive one gesture's action sequence, in order, stopping at the first
     /// thing that did not dispatch.
     ///
@@ -160,6 +175,63 @@ struct MirrorActionDriver {
                     + "not the opaque reference bring-to-front takes, so "
                     + "there is nothing to substitute.")
 
+        case .windowAct(let target, let op):
+            /* Two calls, in this order, and the first one is allowed to end
+               it. The reference is minted by the machine that owns the
+               window, so a resolution that names no window means the act is
+               not sent — never that it is sent at a neighbour. */
+            guard let windows else {
+                return .unavailable(
+                    "A window act is addressed by a reference only an "
+                        + "observation of that Mac can mint, and this window "
+                        + "has no observation lane behind it. The act plane "
+                        + "is built; what is missing is the walk that names "
+                        + "the window.")
+            }
+            switch await windows.reference(for: target) {
+            case .unresolved(let reason):
+                return .unavailable(reason)
+            case .reference(let reference):
+                return report(
+                    await adapter.windowAct(Self.request(reference, op)),
+                    describing: "\(Self.name(op)) \(target.title.isEmpty ? "the window" : "\"\(target.title)\"")")
+            }
+
+        case .finderSelect(let item, let container),
+             .finderOpen(let item, let container):
+            /* **The one act in this vocabulary NOW declares and this host
+               cannot carry**, and the sentence says which half that is.
+               `availability` already answered `available(command: "script")`
+               — correctly: the contract declares `script`, the PowerPC guest
+               serves it, and the act names an item and a container with no
+               coordinate anywhere, which is exactly what the Finder's own
+               `select item "X" of window "Y"` takes (the route ruled on
+               2026-07-31, docs/input-plane-decisions.md §2).
+
+               What does not exist is a `script` lane on this side: the local
+               protocol carries the five acts and no script op. Substituting
+               something that does exist would be the defect, not the fix —
+               `reveal` resolves a bare name by a whole-volume catalog search
+               and could select an item of the same name somewhere else
+               entirely, and a scene's desktop item carries no path to make
+               that exact. So this refuses and names both halves. */
+            let what: String
+            switch container {
+            case .desktop: what = "on the desktop"
+            case .window(let title): what = "in \"\(title)\""
+            }
+            let verb: String
+            if case .finderOpen = action { verb = "open" } else {
+                verb = "select"
+            }
+            return .unavailable(
+                "NOW's contract declares the script command, which is how "
+                    + "\"\(item)\" \(what) would be \(verb)ed — by name, "
+                    + "through the Finder's own terminology — and this host "
+                    + "carries no lane for it. Nothing was sent, and nothing "
+                    + "was sent at a coordinate instead: NOW has no "
+                    + "positional click on purpose.")
+
         case .key, .type, .click, .drag, .qmpClick, .qmpDoubleClick,
              .thumbDrag:
             /* Unreachable: `availability` refuses all seven above. Spelled
@@ -174,6 +246,35 @@ struct MirrorActionDriver {
     }
 
     // MARK: -
+
+    /// The vocabulary's four window ops onto the contract's request, with
+    /// exactly the geometry each takes. `zoom` and `close` carry none, and
+    /// the request type refuses a call that sends any — so this mapping is
+    /// total by construction rather than by care.
+    private static func request(_ reference: String, _ op: MirrorKit.WindowOp)
+        -> AgentIntegrationWindowActRequest {
+        switch op {
+        case .move(let left, let top):
+            return .init(window: reference, action: .move,
+                         left: left, top: top)
+        case .resize(let width, let height):
+            return .init(window: reference, action: .resize,
+                         width: width, height: height)
+        case .zoom:
+            return .init(window: reference, action: .zoom)
+        case .close:
+            return .init(window: reference, action: .close)
+        }
+    }
+
+    private static func name(_ op: MirrorKit.WindowOp) -> String {
+        switch op {
+        case .move: return "move"
+        case .resize: return "resize"
+        case .zoom: return "zoom"
+        case .close: return "close"
+        }
+    }
 
     private func report<Receipt: Codable & Equatable & Sendable>(
         _ result: AgentIntegrationProjectedResult<Receipt>,

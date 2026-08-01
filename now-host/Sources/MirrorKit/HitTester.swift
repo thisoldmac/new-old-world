@@ -50,7 +50,17 @@ public enum HitTester {
         /// An icon inside a Finder folder window, hit by NAME. Same discipline
         /// as `desktopItem`: the click point is the icon's OWN centre, from
         /// the Finder's live `position of`, not wherever the pointer landed.
-        case windowItem(windowID: String, name: String, x: Int, y: Int)
+        ///
+        /// `windowTitle` rides along because the ACT needs it and nothing
+        /// downstream can recover it: a folder item is addressed by the
+        /// Finder's own `item "X" of window "Y"` (the identity route ruled on
+        /// 2026-07-31, `docs/input-plane-decisions.md` §2), and "Y" is this
+        /// window's title. Carrying the id alone would force the action model
+        /// to look the window back up in a scene it is not given, or — worse —
+        /// to fall back to the coordinate, which is the target-free form this
+        /// plane refuses.
+        case windowItem(windowID: String, name: String, windowTitle: String,
+                        x: Int, y: Int)
 
         /// A desktop icon, hit by NAME rather than by where the pointer landed.
         /// The click still goes to the guest as a coordinate — the Finder has no
@@ -206,7 +216,7 @@ public enum HitTester {
             if let item = windowItem(win, x: x, y: y),
                let p = FinderItems.clickPoint(item, in: win) {
                 return .windowItem(windowID: win.id, name: item.name,
-                                   x: p.x, y: p.y)
+                                   windowTitle: win.title, x: p.x, y: p.y)
             }
             return .content(windowID: win.id, psn: win.psn,
                             front: win.front, x: x, y: y)

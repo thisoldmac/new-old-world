@@ -162,6 +162,14 @@ final class NoSecondWireTests: XCTestCase {
         .qmpDoubleClick(x: 5, y: 5),
         .menuInvoke(menuID: 130, itemIndex: 2, titleLeft: 38),
         .thumbDrag(x0: 0, y0: 0, x1: 0, y1: 40),
+        .finderSelect(item: "HelloWorld", container: .desktop),
+        .finderOpen(item: "tbt-worker", container: .window(title: "Lab")),
+        .windowAct(window: .init(id: "0.1/Lab#0", psn: "0.1", title: "Lab",
+                                 occurrence: 0),
+                   op: .move(left: 40, top: 60)),
+        .windowAct(window: .init(id: "0.1/Lab#0", psn: "0.1", title: "Lab",
+                                 occurrence: 0),
+                   op: .close),
     ]
 
     /// Every command name this module names is one the contract declares,
@@ -219,12 +227,23 @@ final class NoSecondWireTests: XCTestCase {
                 available.insert(command)
             }
         }
-        XCTAssertEqual(available, ["menuact", "activate"], """
+        XCTAssertEqual(available, ["menuact", "activate", "script", "winact"],
+            """
             The set of acts sendable straight off a rendered scene changed. \
-            Both of these are addressable because a scene carries their whole \
-            target — a menu's id, item and title x; a process serial. \
-            Anything addressed by an element reference cannot join them until \
-            a scene carries one.
+            Each is addressable because a scene carries what names its \
+            target: a menu's id, item and title x; a process serial; a \
+            Finder item's NAME and its container; a window's process, title \
+            and occurrence, which `elements` turns into the reference winact \
+            takes. Anything addressed by an element reference the scene does \
+            not carry — a control's — cannot join them until a scene carries \
+            one.
+
+            Two of these name a command NOW declares and this HOST has no \
+            lane for (`script`, and `activate`). That is deliberately not \
+            expressed here: availability is a fact about the contract, and a \
+            host that has not built a lane says so in its own sentence \
+            (`MirrorActionDriver`). Moving that fact into this function \
+            would make it lie the day the lane lands.
             """)
     }
 

@@ -171,7 +171,16 @@ public struct SceneRenderer {
 
     private func drawDesktopIcons(_ ctx: GraphicsContext) {
         guard let items = scene.desktopItems else { return }
-        for item in items where item.placed {
+        /* **Placed AND visible**, which diverges from upstream by one clause
+           and closes a hole the click plane opened. Upstream drew every
+           placed item, invisible or not, and nothing could be clicked
+           anyway. Here the hit tester refuses an invisible item on purpose —
+           it is not on the screen the person is looking at — so drawing one
+           would put an icon in the pane that silently is not a target, which
+           reads as the click plane being broken rather than as the item
+           being hidden. The renderer and the hit tester agree about what is
+           on the screen, or neither can be trusted about the other. */
+        for item in items where item.placed && !item.invisible {
             let origin = CGPoint(x: item.x, y: item.y)
             // The Finder shows selection by inverting the icon. We cannot read
             // the guest's selection — it lives only in those pixels — so this
@@ -639,10 +648,15 @@ public struct SceneRenderer {
                 y: content.minY + CGFloat(area.t),
                 width: CGFloat(max(0, area.r - area.l)),
                 height: CGFloat(max(0, area.b - area.t)))))
-            for item in items where item.placed {
+            /* Visible as well as placed, and selected the same way a desktop
+               icon is — the two icon fields are one presentation, and a
+               folder item that inverted only on the desktop would be the
+               pane telling two different stories about one gesture. */
+            for item in items where item.placed && !item.invisible {
                 drawIcon(iconCtx, item,
                          at: CGPoint(x: content.minX + CGFloat(item.x),
-                                     y: content.minY + CGFloat(item.y)))
+                                     y: content.minY + CGFloat(item.y)),
+                         selected: selectedItem == item.name)
             }
         }
         // Grow box sits on top of the content, at the window corner.

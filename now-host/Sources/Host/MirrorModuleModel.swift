@@ -248,12 +248,26 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
         var refreshCeiling: TimeInterval
         var maxBackoff: TimeInterval
         var automatic: Bool
+        /// How long a dispatched act is given to become visible before the
+        /// page asks for one scene.
+        ///
+        /// **A guess, and marked as one.** Nothing measures how long a
+        /// classic application takes to reach its event loop and redraw after
+        /// an event is handed to it — it depends on the application, on what
+        /// else is running, and on the machine. 0.6 s is chosen to be longer
+        /// than a redraw and shorter than a person's patience, and the loop's
+        /// refresh ceiling is what makes an under-guess merely slow rather
+        /// than wrong: a page that looked too early looks again within
+        /// `refreshCeiling`.
+        var settleAfterAct: TimeInterval = 0.6
 
         static let live = WatchPolicy(probeInterval: 0.5, refreshCeiling: 5,
                                       maxBackoff: 8, automatic: true)
-        /// For a test: the same decisions, driven by hand.
+        /// For a test: the same decisions, driven by hand, and no wall clock
+        /// in the act path either.
         static let manual = WatchPolicy(probeInterval: 0.5, refreshCeiling: 5,
-                                        maxBackoff: 8, automatic: false)
+                                        maxBackoff: 8, automatic: false,
+                                        settleAfterAct: 0)
     }
 
     /// Whether the page is keeping itself up to date. Live by default,
@@ -473,8 +487,97 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
     func click(x: Int, y: Int, count: Int = 1, mods: Int = 0) {
         guard let scene else { return }
         let target = HitTester.hitTest(scene, x: x, y: y)
+        note(selection: target)
+        /* The scene-aware overload, because three of the hit tester's targets
+           name a window by an id and a window act is addressed by the
+           window's IDENTITY. See `ActionModel.click(on:in:count:mods:)`. */
+        let actions = ActionModel.click(on: target, in: scene,
+                                        count: count, mods: mods)
+        perform(actions, on: target)
+    }
+
+    /// **The mirror's own selection, because the guest's is unreadable.**
+    ///
+    /// A Finder shows selection by inverting the icon and reports it nowhere
+    /// — it lives only in those pixels, and this page draws from what the Mac
+    /// SAYS rather than from what it draws. So the pane presents selection
+    /// the way the Finder would, from its own record of what was clicked.
+    ///
+    /// Two honest consequences, and neither is papered over: this is not
+    /// evidence the guest selected anything (the act's own outcome is), and a
+    /// selection made by the person sitting at the Macintosh does not appear
+    /// here. It is feedback for the gesture, not a reading of the machine.
+    @Published private(set) var selectedItem: String?
+
+    private func note(selection target: HitTester.Target) {
+        switch target {
+        case .desktopItem(let name, _, _), .windowItem(_, let name, _, _, _):
+            selectedItem = name
+        case .desktop:
+            /* Clicking the bare desktop deselects, as it does on the Mac.
+               Only the desktop: a click on a window or a menu leaves the
+               Finder's selection alone, so leaving ours alone is the
+               faithful thing. */
+            selectedItem = nil
+        default:
+            break
+        }
+    }
+
+    /// **A drag on the drawing: a window moved or resized.**
+    ///
+    /// The gesture is the person's; what crosses is geometry. A title-bar
+    /// drag becomes `winact move` with the window's new content origin and a
+    /// grow-box drag becomes `winact resize` with its new content size — the
+    /// answer the application's own `FindWindow`/`GrowWindow` would have
+    /// produced, with no pixel path and no injected mouse in between (which
+    /// is what a NOW connection cannot have: there is no emulator on the
+    /// other end by assumption).
+    ///
+    /// The starting point decides what the drag IS, which is why it is hit
+    /// tested rather than the end point: a drag that ends over another window
+    /// is still a drag of the one it started on.
+    func drag(from start: (x: Int, y: Int), to end: (x: Int, y: Int)) {
+        guard let scene else { return }
+        let target = HitTester.hitTest(scene, x: start.x, y: start.y)
+        let delta = (dx: end.x - start.x, dy: end.y - start.y)
+        let window: MirrorKit.Scene.Window?
+        let actions: [MirrorAction]
+        switch target {
+        case .titlebar(let id, _, _, _):
+            window = scene.windows.first { $0.id == id }
+            actions = window.map { ActionModel.windowMove($0, in: scene,
+                                                          by: delta) } ?? []
+        case .growBox(let id, _, _):
+            window = scene.windows.first { $0.id == id }
+            actions = window.map { ActionModel.windowResize($0, in: scene,
+                                                            by: delta) } ?? []
+        default:
+            window = nil
+            actions = []
+        }
+        guard !actions.isEmpty else {
+            /* A drag that began anywhere else. Reported rather than
+               swallowed: a person who dragged an icon expecting it to move
+               has been told nothing by silence, and moving an icon is not a
+               window act — the Finder owns that geometry and NOW's contract
+               has no verb for it. */
+            lastAction = ActionReport(
+                outcome: .inert, target: Self.describe(target),
+                sentence: "A drag moves or resizes a WINDOW here, by its "
+                    + "title bar or its grow box. Nothing else on this "
+                    + "drawing has a drag NOW's contract can carry.")
+            return
+        }
+        perform(actions, on: target)
+    }
+
+    /// One gesture's actions, driven and reported. Shared by the press and
+    /// the drag so the two cannot grow different ideas of what a refusal
+    /// looks like.
+    private func perform(_ actions: [MirrorAction],
+                         on target: HitTester.Target) {
         let named = Self.describe(target)
-        let actions = ActionModel.click(on: target, count: count, mods: mods)
         guard !actions.isEmpty else {
             lastAction = Self.nothingToSend(target, named: named)
             return
@@ -511,8 +614,37 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
             if self.lastAction?.outcome.isDispatched == true {
                 self.lastProbe = nil
                 self.holdUntil = nil
+                await self.lookAgainAfterActing()
             }
         }
+    }
+
+    /// **Act, settle, look once.**
+    ///
+    /// Forgetting the probe's baseline is enough for a page whose loop is
+    /// running, and is nothing at all for a page that is paused — which is a
+    /// person watching their click do nothing visible, on a product whose
+    /// whole claim is that it shows you the other Mac. So a dispatched act
+    /// asks for one scene on its own.
+    ///
+    /// **The settle is not politeness.** The act's own receipt says the event
+    /// was handed to the application and nothing more; the application then
+    /// has to reach its event loop and redraw. A scene fetched in the same
+    /// breath would be a picture of the machine BEFORE it acted, arriving
+    /// after the act — which reads as "the click did nothing" more
+    /// convincingly than silence does. `settleAfterAct` is the wait, it is a
+    /// GUESS at the redraw and marked as one (`WatchPolicy`), and the fetch
+    /// after it is one ask and not a loop.
+    private func lookAgainAfterActing() async {
+        guard canFetch else { return }
+        if watch.settleAfterAct > 0 {
+            try? await Task.sleep(nanoseconds:
+                UInt64(watch.settleAfterAct * 1_000_000_000))
+        }
+        /* `fetchScene` already declines while one is in flight, so an act
+           during a fetch costs nothing and queues nothing — and the ceiling
+           will bring the next one along anyway. */
+        fetchScene()
     }
 
     /// The report for a gesture that produced no act. The distinction that
@@ -549,11 +681,25 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
                     + "controls at rest, so this is not proof it would "
                     + "refuse — but nothing was sent.")
         case .growBox:
+            /* Not "a drag cannot be carried" any more — it can, as
+               `winact resize`, which is geometry rather than mouse motion.
+               What is true is narrower: a grow box does nothing on a PRESS,
+               here or on a Macintosh. */
             return ActionReport(
                 outcome: .inert, target: named,
-                sentence: "The grow box resizes on a drag, and a drag is "
-                    + "injected mouse motion this project solves through "
-                    + "the guest instead.")
+                sentence: "The grow box resizes on a drag rather than a "
+                    + "press. Drag it and the Mac is asked for the new size.")
+        case .widget(_, let kind, _, _):
+            /* Reached only for the windowshade: close and zoom both produce
+               an act. `winact` has four actions and collapse is not one, so
+               naming `zoom` for it would be this side deciding two different
+               behaviours are alike. */
+            return ActionReport(
+                outcome: .inert, target: named,
+                sentence: "NOW's window verb moves, resizes, zooms and "
+                    + "closes a window. Rolling one up is a fifth thing it "
+                    + "does not carry, and zoom is not a near-enough "
+                    + "substitute to send in its place.")
         case .scrollbar:
             return ActionReport(
                 outcome: .inert, target: named,
@@ -613,7 +759,7 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
         case .titlebar: return "the title bar"
         case .content: return "the window"
         case .desktop: return "the desktop"
-        case .windowItem(_, let name, _, _): return "\"\(name)\""
+        case .windowItem(_, let name, _, _, _): return "\"\(name)\""
         case .desktopItem(let name, _, _): return "\"\(name)\""
         }
     }

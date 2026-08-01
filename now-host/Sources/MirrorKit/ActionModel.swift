@@ -51,11 +51,102 @@ public enum MirrorAction: Equatable {
     /// or not — see the retraction on `menuSelect` below for why a ⌘ item no
     /// longer goes as a keystroke.
     case menuInvoke(menuID: Int, itemIndex: Int, titleLeft: Int)
+    /// **Select ONE Finder item, by name, inside a named container.**
+    ///
+    /// The identity-addressed replacement for upstream's positional click on
+    /// an icon, and it is a ruling rather than a preference: NOW deliberately
+    /// ships `mouseloc` with no companion mover and no positional click, and
+    /// the thing that asked for one — folder items — "wants an identity rather
+    /// than a coordinate" (`contract/asyncapi.yaml`, `mouseloc`; the argument
+    /// in full is `docs/input-plane-decisions.md` §2). The route named there
+    /// is the Finder's own `select item "X" of window "Y"`, through `script`.
+    ///
+    /// The hit tester still resolves the icon from a POINT — that is what a
+    /// person gives it — but what leaves this vocabulary is a name and a
+    /// container, and nothing downstream can fall back to the coordinate
+    /// because it is not carried.
+    case finderSelect(item: String, container: FinderContainer)
+    /// Open ONE Finder item by name — the double-click. Upstream sent a real
+    /// QMP double-click; there is no emulator on the other end of a NOW
+    /// connection by assumption, so this is the Finder's own `open item …` on
+    /// the same identity route as `finderSelect`.
+    case finderOpen(item: String, container: FinderContainer)
+
+    /// **Move, resize, zoom or close ONE window.** The window is named by the
+    /// identity the SCENE has — process, title, occurrence — and the host
+    /// resolves that to the opaque `now-window-…` reference `winact` takes by
+    /// taking an observation at act time. See `WindowTarget` for why an
+    /// identity and not a reference travels in the vocabulary.
+    case windowAct(window: WindowTarget, op: WindowOp)
+
     /// A scrollbar thumb drag. Distinct from `drag` because the DROP POSITION
     /// is the value: TrackControl live-tracks the thumb, so this needs
     /// precise (unity-compensated) motion — the 1.6x a window drag wants
     /// would overshoot and slam the thumb to the end.
     case thumbDrag(x0: Int, y0: Int, x1: Int, y1: Int)
+}
+
+/// Where a Finder item lives, as the Finder's own scripting terminology names
+/// it. There are exactly two containers a rendered scene can produce, because
+/// there are exactly two places it draws icons.
+public enum FinderContainer: Equatable, Sendable {
+    /// The desktop. `item "X" of desktop` in the Finder's terminology.
+    case desktop
+    /// An open folder window, named by its title — which for a Finder window
+    /// IS the folder's name, and is what `window "Y"` matches.
+    case window(title: String)
+}
+
+/// One window, named the way a SCENE can name it.
+///
+/// **Why an identity and not a reference.** `winact` takes an opaque
+/// `now-window-…` that only an observation mints, and a scene carries no such
+/// thing — NOW's scene producer and the `elements` walk are two different
+/// readers of the same machine. The vocabulary therefore carries what the
+/// scene HAS, and the host resolves it against a live `elements` observation
+/// before the act is sent (`MirrorWindowResolver`). That resolution is a
+/// place to be wrong, so it refuses rather than guesses: an identity that
+/// matches no window, or several, sends nothing.
+///
+/// `occurrence` is 0-based and counted the way the GUEST counts it — over
+/// windows of the same process wearing the same title, in window-chain order,
+/// front first (`now-guest-ppc/src/observe/obsmint.c`, `locate_window`). A
+/// host that counted differently would resolve to a neighbouring window,
+/// which is the failure this field exists to prevent.
+public struct WindowTarget: Equatable, Sendable {
+    /// The scene's own window id, carried for reporting rather than for
+    /// addressing — nothing on the wire has ever heard of it.
+    public var id: String
+    /// The owning process, as the scene spells it: "hi.lo".
+    public var psn: String
+    public var title: String
+    public var occurrence: Int
+
+    public init(id: String, psn: String, title: String, occurrence: Int) {
+        self.id = id
+        self.psn = psn
+        self.title = title
+        self.occurrence = occurrence
+    }
+}
+
+/// The four things `winact` does, with exactly the geometry each takes.
+///
+/// A mirror of the contract's own enum (`contract/asyncapi.yaml`, `winact`)
+/// rather than an import of it: this package depends on nothing that can
+/// reach a machine, and the host maps these four onto
+/// `AgentIntegrationWindowActRequest` at the seam.
+///
+/// `zoom` and `close` carry no geometry, and that is the contract's rule, not
+/// an omission — the standard state is the application's to compute, and a
+/// caller that supplied one "would be deciding what the window is for".
+public enum WindowOp: Equatable, Sendable {
+    /// The window's new CONTENT origin, in guest screen coordinates.
+    case move(left: Int, top: Int)
+    /// The window's new CONTENT size, at least 1×1.
+    case resize(width: Int, height: Int)
+    case zoom
+    case close
 }
 
 /// What NOW's contract can do with one act — the typed discipline the port
@@ -171,6 +262,44 @@ public enum ActionModel {
                     + "different questions to the machine.")
             }
             return .available(command: command)
+        case .finderSelect, .finderOpen:
+            /* **Available, and the command is `script`.**
+               NOW declares `script` and the PowerPC guest serves it; the act
+               carries a name and a container and no coordinate, which is
+               exactly what the Finder's own `select item "X" of window "Y"`
+               takes. So the vocabulary's two questions both answer yes:
+               the contract declares a command, and a rendered scene carries
+               what that command needs to address the item.
+
+               What is missing is on THIS side — the host has no `script`
+               lane — and that is deliberately not this function's answer to
+               give. `availability` is a fact about NOW's contract; whether a
+               particular host has built the local operation that carries a
+               command is a fact about the host, and `MirrorActionDriver`
+               says so in its own sentence (the same split `.activate` has
+               had since the driver was written). Answering `unavailable`
+               here would name the wrong missing half, and would go on doing
+               so after the lane lands. */
+            return .available(command: "script")
+        case .windowAct:
+            /* **Available, and the second half of the question is answered
+               by an observation this host takes.**
+               `winact` is addressed by an opaque `now-window-…`, which no
+               scene carries — so on the reading that made `.axdo` answer
+               `needsObservation`, this would too. It does not, and the
+               difference is real rather than convenient: an element
+               reference on a rendered control has NO minter (NOW's producer
+               emits ""), while a window reference has one that this host can
+               call on the spot — `elements`, aimed by the process serial the
+               scene reports for that very window. The scene carries the
+               identity; the resolution is a call, not a gap.
+
+               The call can still fail to name one window, and that is the
+               resolver's refusal to write, not this function's: see
+               `MirrorWindowResolver`. What must never happen is the third
+               thing — sending the act at "whatever is frontmost" — and no
+               value in this vocabulary can express that. */
+            return .available(command: "winact")
         case .click:
             /* Upstream's positional click was a toolkit-worker verb. Its NOW
                shape is ctlact against a referenced control, which is the case
@@ -264,22 +393,28 @@ public enum ActionModel {
             // Switching apps names a PROCESS, not a place on screen.
             // SetFrontProcess is metal-safe and already proven.
             return [.activate(psn: psn)]
-        case .windowItem(_, _, let x, let y):
-            // Identical treatment to a desktop icon, and for the same reason:
-            // the coordinates are the icon's own centre as the FINDER reports
-            // it, so the click is as good as the guest's own layout. Select
-            // with a wire click (metal-safe); open with a real double-click,
-            // which is the QMP path today.
-            if count >= 2 { return [.qmpDoubleClick(x: x, y: y)] }
-            return [.click(x: x, y: y, count: 1, mods: mods)]
-        case .desktopItem(_, let x, let y):
-            // A plain click SELECTS the icon; a double-click OPENS it. The
-            // coordinates are the icon's own centre, not where the pointer
-            // landed, so the click is as good as the position the guest itself
-            // reported. Selection is metal-safe (a posted click); opening still
-            // wants a real double-click, which is the QMP path today.
-            if count >= 2 { return [.qmpDoubleClick(x: x, y: y)] }
-            return [.click(x: x, y: y, count: 1, mods: mods)]
+        case .windowItem(_, let name, let windowTitle, _, _):
+            // Identical treatment to a desktop icon, and for the same reason
+            // — see below. The container is the folder window's own title,
+            // which is what the Finder's `window "Y"` matches.
+            return item(name, in: .window(title: windowTitle), count: count)
+        case .desktopItem(let name, _, _):
+            // A plain click SELECTS the icon; a double-click OPENS it.
+            //
+            // **CHANGED from the port, and it is a route change rather than a
+            // preference.** Upstream sent a wire click at the icon's centre
+            // and a real QMP double-click to open. NOW has neither: the
+            // contract declares no positional click (`mouseloc`'s own
+            // description says so, and `docs/input-plane-decisions.md` §2 is
+            // the ruling), and there is no emulator on the other end of a NOW
+            // connection by assumption. The route the ruling names is the
+            // Finder's own identity-addressed `select` / `open`, which is
+            // metal-safe and cannot land on a neighbouring icon.
+            //
+            // The hit tester's centre-of-the-icon arithmetic is NOT wasted by
+            // this: it is what decides WHICH icon the person meant, and the
+            // point is then dropped rather than sent.
+            return item(name, in: .desktop, count: count)
         case .titlebar(_, _, let x, let y):
             // A real click in the title bar raises the window (the guest's
             // SelectWindow) — activate/SetFrontProcess only fronts the app,
@@ -308,7 +443,123 @@ public enum ActionModel {
         }
     }
 
+    /// One icon, selected or opened by identity. One place, so the two
+    /// containers cannot drift into two spellings of the same rule.
+    private static func item(_ name: String, in container: FinderContainer,
+                             count: Int) -> [MirrorAction] {
+        count >= 2
+            ? [.finderOpen(item: name, container: container)]
+            : [.finderSelect(item: name, container: container)]
+    }
+
+    /// **A primary click, with the scene it happened in.**
+    ///
+    /// The overload exists because three of the hit tester's targets name a
+    /// window by an id and the ACT needs the window's identity — process,
+    /// title, occurrence — which only the scene has. The alternatives were
+    /// worse in the two ways this file cares about: widening the hit tester's
+    /// cases would put act-plane addressing into a geometry type, and looking
+    /// the window up inside the driver would put scene knowledge on the far
+    /// side of the seam that keeps MirrorKit unable to reach a machine.
+    ///
+    /// Everything else is delegated unchanged, so there is exactly one
+    /// mapping from a target to an act and this is a router, not a second
+    /// vocabulary.
+    public static func click(on target: HitTester.Target,
+                             in scene: Scene,
+                             count: Int = 1,
+                             mods: Int = 0) -> [MirrorAction] {
+        switch target {
+        case .widget(let windowID, let kind, _, _):
+            guard let win = scene.windows.first(where: { $0.id == windowID }),
+                  let target = self.target(for: win, in: scene) else {
+                return []
+            }
+            switch kind {
+            case .close:
+                /* Destructive, and knowingly so: the contract says an
+                   application "may lose unsaved work, or may put up a save
+                   dialog nothing on this wire can answer". The dialog is not
+                   a reason to suppress the close — it is the application's
+                   own question to its own user, and the pane's job is to let
+                   the next scene SHOW it. */
+                return [.windowAct(window: target, op: .close)]
+            case .zoom:
+                return [.windowAct(window: target, op: .zoom)]
+            case .collapse:
+                /* The windowshade box. `winact` has four actions and this is
+                   not one of them, so nothing is sent — an act that named
+                   `zoom` for a collapse would be this side deciding the two
+                   are alike, and they are not: one toggles the standard
+                   state, the other rolls the window up. */
+                return []
+            }
+        default:
+            return click(on: target, count: count, mods: mods)
+        }
+    }
+
+    /// A title-bar drag → **move**, expressed as the window's new content
+    /// origin rather than as mouse motion.
+    ///
+    /// The delta is the person's gesture; the origin is derived from the
+    /// window's own rect, which is the content port grown UP by the title bar
+    /// (`SceneBuilder.titleBarHeight`). So the content top is `rect.t +
+    /// titleBarHeight` before the drag, and the move is that point plus the
+    /// delta — the same arithmetic the guest would have done had a person
+    /// dragged the bar, with no pixel path in between.
+    public static func windowMove(_ win: Scene.Window, in scene: Scene,
+                                  by delta: (dx: Int, dy: Int))
+        -> [MirrorAction] {
+        guard let target = target(for: win, in: scene) else { return [] }
+        return [.windowAct(window: target,
+                           op: .move(left: win.rect.l + delta.dx,
+                                     top: win.rect.t + WindowChrome
+                                         .titlebarHeight + delta.dy))]
+    }
+
+    /// A grow-box drag → **resize**, expressed as the window's new content
+    /// size. Floored at 1×1 because the contract's own minimum is "at least 1
+    /// point"; a real application will apply its own larger minimum, which is
+    /// the point of asking IT to resize rather than moving a rectangle here.
+    public static func windowResize(_ win: Scene.Window, in scene: Scene,
+                                    by delta: (dx: Int, dy: Int))
+        -> [MirrorAction] {
+        guard let target = target(for: win, in: scene) else { return [] }
+        let width = win.rect.r - win.rect.l + delta.dx
+        let height = win.rect.b - (win.rect.t + WindowChrome.titlebarHeight)
+            + delta.dy
+        return [.windowAct(window: target,
+                           op: .resize(width: Swift.max(1, width),
+                                       height: Swift.max(1, height)))]
+    }
+
+    /// The window's identity as the guest counts it, or nil when the scene
+    /// cannot give it one.
+    ///
+    /// **Occurrence is counted the guest's way or not at all.** The guest
+    /// numbers a window among the same-titled windows of the same process, in
+    /// window-chain order, front first (`obsmint.c`, `locate_window`); the
+    /// scene's `z` is that chain position. Counting any other way would mint
+    /// a number that resolves to a neighbouring window — a silent wrong
+    /// target, which is the one failure mode this plane is built to refuse.
+    public static func target(for win: Scene.Window,
+                              in scene: Scene) -> WindowTarget? {
+        guard !win.psn.isEmpty else { return nil }
+        let earlier = scene.windows.filter {
+            $0.psn == win.psn && $0.title == win.title && $0.z < win.z
+        }
+        return WindowTarget(id: win.id, psn: win.psn, title: win.title,
+                            occurrence: earlier.count)
+    }
+
     /// A grow-box drag → resize (GrowWindow tracks from the grab point).
+    ///
+    /// **Not the route any more.** `windowResize` above is, because a NOW
+    /// guest is not an emulator and a pixel drag reaches nothing. Kept for
+    /// the reason `menuItem` is kept: it is a correct statement of what the
+    /// gesture IS, and `availability(.drag)` is where the reason a drag
+    /// cannot travel is written down.
     public static func growDrag(from: (x: Int, y: Int),
                                 to: (x: Int, y: Int)) -> [MirrorAction] {
         [.drag(x0: from.x, y0: from.y, x1: to.x, y1: to.y)]
