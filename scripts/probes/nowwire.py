@@ -137,7 +137,13 @@ class MissingVerbs(SystemExit):
             "to be by exiting 0.",
             "",
         ]
-        super().__init__("\n".join(lines))
+        self.report = "\n".join(lines)
+        # SystemExit's first argument IS its exit status, so the message
+        # cannot be passed to it: `SystemExit("text")` prints the text and
+        # exits 1, which is the status a FINDING uses. A machine that cannot
+        # be measured is not a finding, and the two must not share a code.
+        print(self.report, file=sys.stderr)
+        super().__init__(2)
 
 
 def frame(payload: bytes, channel: int = CHANNEL_CONTROL,
@@ -395,6 +401,45 @@ class GuestLink:
                              err.get("message") or reply.get("message") or "")
         return reply.get("output") or {}
 
+    # --- the typed message planes (file.*, process.*) -------------------
+    #
+    # Six of the guest's verbs are console-only (`wire=0` in cmd_help.c) and
+    # cross the wire as typed CONTROL MESSAGES rather than commands:
+    # put/mv/trash/untrash/mkdir/clear are `file.get`, `file.move`,
+    # `file.trash`, `file.restore`, `file.mkdir`. Sending
+    # `{"name":"mkdir"}` gets `unknown-command`, which a probe would then have
+    # to interpret — so the two planes are separate here, and a harness that
+    # needs the filesystem oracle uses this one.
+
+    def message(self, obj: dict) -> None:
+        """Send one typed control message. No id correlation: these planes
+        answer with their own message types, not `command.result`."""
+        self._send(obj)
+
+    def wait_for_types(self, types, timeout: float = 30.0) -> dict:
+        """Read until an unsolicited message of one of `types` arrives.
+
+        Anything else the guest sends in the meantime is kept, in order, in
+        `self._unsolicited` — a probe that discarded interleaved messages would
+        lose the one that explained why the oracle read the way it did.
+        """
+        want = set(types)
+        deadline = time.time() + timeout
+        # Anything already buffered counts, oldest first.
+        for i, msg in enumerate(self._unsolicited):
+            if msg.get("type") in want:
+                return self._unsolicited.pop(i)
+        while True:
+            left = deadline - time.time()
+            if left <= 0:
+                raise TimeoutError(f"no {sorted(want)} within {timeout:.0f}s")
+            self.sock.settimeout(left)
+            msg = self._pump(None, deadline)
+            if msg.get("type") in want:
+                if self._unsolicited and self._unsolicited[-1] is msg:
+                    self._unsolicited.pop()
+                return msg
+
     # --- reading a rowArray --------------------------------------------
     #
     # NOW answers a command with `output: {"<verb>": [[label, value], ...]}` —
@@ -441,9 +486,21 @@ class GuestLink:
         that as a measurement.
         """
         if self._verbs is None:
-            out = self.command("help")
-            self._verbs = {row[0] for row in self.rows(out, "help")
-                           if row and isinstance(row[0], str)}
+            try:
+                out = self.command("help")
+                self._verbs = {row[0] for row in self.rows(out, "help")
+                               if row and isinstance(row[0], str)}
+            except GuestError as exc:
+                # A peer that does not serve `help` cannot be asked what it
+                # serves, so it serves nothing this instrument can verify.
+                # Reported as an empty set rather than an exception, so the
+                # caller's refusal names the verbs the harness needs — which
+                # is the useful message — instead of a confusing failure in
+                # the discovery step.
+                print(f"  (this peer does not answer `help`: {exc}. Treating "
+                      f"its verb surface as unknown, which refuses "
+                      f"everything.)", file=sys.stderr)
+                self._verbs = set()
         return self._verbs
 
     def require_verbs(self, probe: str, *verbs: str, note: str = "") -> None:
