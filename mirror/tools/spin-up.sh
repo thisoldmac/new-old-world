@@ -17,7 +17,25 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIRROR="$(cd "$HERE/.." && pwd)"
-LAB="$(cd "$MIRROR/.." && pwd)"
+# The lab supplies the instruments (lib.sh, tools/qmp, mcp-classic, qemu) and
+# is NOT this project. It used to be the parent directory — which stopped
+# being true the day Mirror was vendored into NOW as a subproject, because
+# the parent is then `now/`, which carries none of them. So walk up until a
+# directory actually holds the instruments, and let MIRROR_LAB_ROOT say it
+# outright. A path that merely exists is how a spin-up sources half a lab and
+# fails three steps later.
+LAB="${MIRROR_LAB_ROOT:-}"
+if [ -z "$LAB" ]; then
+    LAB="$(cd "$MIRROR/.." && pwd)"
+    while [ "$LAB" != "/" ] && [ ! -f "$LAB/tools/lib.sh" ]; do
+        LAB="$(dirname "$LAB")"
+    done
+fi
+[ -f "$LAB/tools/lib.sh" ] || {
+    echo "spin-up: no lab checkout above $MIRROR — set MIRROR_LAB_ROOT to the" >&2
+    echo "         TimBotTu clone carrying tools/lib.sh and qemu/build." >&2
+    exit 1
+}
 cd "$LAB"                                 # lib.sh, tools/qmp, and mcp are lab-relative
 . tools/lib.sh
 

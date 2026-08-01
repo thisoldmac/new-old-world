@@ -5,7 +5,13 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIRROR="$(cd "$HERE/.." && pwd)"          # this repo
-LAB="$(cd "$MIRROR/.." && pwd)"           # the TimBotTu lab checkout (tools/qmp)
+LAB="${MIRROR_LAB_ROOT:-}"
+if [ -z "$LAB" ]; then
+    LAB="$(cd "$MIRROR/.." && pwd)"
+    while [ "$LAB" != "/" ] && [ ! -f "$LAB/tools/lib.sh" ]; do
+        LAB="$(dirname "$LAB")"
+    done
+fi           # the TimBotTu lab checkout (tools/qmp)
 RUN="$MIRROR/run"
 
 # Kill only the MirrorApp pointed at THIS run's toolkit port (spin-up.sh recorded
