@@ -69,6 +69,100 @@ enum ControlMessage: Equatable, Sendable {
     case processShot(ProcessShot)
     case processResult(ProcessResult)
     case agentAccess(AgentAccess)
+    case cloudServices(CloudServices)
+    case cloudReport(CloudReport)
+    case cloudList(CloudList)
+    case cloudListing(CloudListing)
+    case cloudDetail(CloudDetail)
+    case cloudCard(CloudCard)
+    case cloudGet(CloudGet)
+    case cloudRefuse(CloudRefuse)
+}
+
+// MARK: - The cloud family
+
+/* The guest asking about this Mac's iCloud. One direction by
+   definition — the subject is the modern machine's cloud — so unlike
+   the file family none of these has a "host asks" reading. Strings in
+   the answers are converted BEFORE sending (MacRoman-expressible,
+   composed): the modern machine is the only side that can spell both
+   alphabets. */
+
+struct CloudServices: Codable, Equatable, Sendable {
+    var id: Int
+}
+
+struct CloudServiceEntry: Codable, Equatable, Sendable, Identifiable {
+    var service: String
+    var label: String
+    /// serving | off | no-access | unavailable — reported even when not
+    /// serving, so the guest's dropdown can say WHY a thing is missing.
+    var state: String
+    var detail: String?
+
+    var id: String { service }
+}
+
+struct CloudReport: Codable, Equatable, Sendable {
+    var id: Int
+    var services: [CloudServiceEntry]
+}
+
+struct CloudList: Codable, Equatable, Sendable {
+    var id: Int
+    var service: String
+    var cursor: Int?
+}
+
+struct CloudEntry: Codable, Equatable, Sendable, Identifiable {
+    /// Opaque responder identity — what detail and get take back. Not a
+    /// path, and not promised stable beyond the connection.
+    var item: String
+    var title: String
+    var subtitle: String?
+    /// What a cloud.get's offer would carry, so a person can decline a
+    /// 40 MB original from an 800 MB disk before the offer exists.
+    var bytes: Int?
+    /// Classic Mac epoch: seconds since 1904-01-01.
+    var modified: Int?
+
+    var id: String { item }
+}
+
+struct CloudListing: Codable, Equatable, Sendable {
+    var id: Int
+    var service: String
+    var entries: [CloudEntry]
+    var more: Bool
+    var cursor: Int?
+}
+
+struct CloudDetail: Codable, Equatable, Sendable {
+    var id: Int
+    var service: String
+    var item: String
+}
+
+struct CloudCard: Codable, Equatable, Sendable {
+    var id: Int
+    var service: String
+    var item: String
+    /// [label, value] pairs in display order — the census row
+    /// discipline: the host decides what is worth saying, the guest
+    /// only draws it.
+    var rows: [[String]]
+}
+
+struct CloudGet: Codable, Equatable, Sendable {
+    var id: Int
+    var service: String
+    var item: String
+}
+
+struct CloudRefuse: Codable, Equatable, Sendable {
+    var id: Int
+    var code: String
+    var reason: String?
 }
 
 struct Hello: Codable, Equatable, Sendable {
@@ -938,6 +1032,27 @@ enum ControlMessageCodec {
         case "file.cancel":
             return .fileCancel(
                 try decoder.decode(FileCancel.self, from: data))
+        case "cloud.services":
+            return .cloudServices(
+                try decoder.decode(CloudServices.self, from: data))
+        case "cloud.report":
+            return .cloudReport(
+                try decoder.decode(CloudReport.self, from: data))
+        case "cloud.list":
+            return .cloudList(try decoder.decode(CloudList.self, from: data))
+        case "cloud.listing":
+            return .cloudListing(
+                try decoder.decode(CloudListing.self, from: data))
+        case "cloud.detail":
+            return .cloudDetail(
+                try decoder.decode(CloudDetail.self, from: data))
+        case "cloud.card":
+            return .cloudCard(try decoder.decode(CloudCard.self, from: data))
+        case "cloud.get":
+            return .cloudGet(try decoder.decode(CloudGet.self, from: data))
+        case "cloud.refuse":
+            return .cloudRefuse(
+                try decoder.decode(CloudRefuse.self, from: data))
         case "stream.request":
             return .streamRequest(
                 try decoder.decode(StreamRequest.self, from: data))
@@ -1051,6 +1166,14 @@ enum ControlMessageCodec {
         case .fileBegin(let m): return try tagged("file.begin", m)
         case .fileEnd(let m): return try tagged("file.end", m)
         case .fileCancel(let m): return try tagged("file.cancel", m)
+        case .cloudServices(let m): return try tagged("cloud.services", m)
+        case .cloudReport(let m): return try tagged("cloud.report", m)
+        case .cloudList(let m): return try tagged("cloud.list", m)
+        case .cloudListing(let m): return try tagged("cloud.listing", m)
+        case .cloudDetail(let m): return try tagged("cloud.detail", m)
+        case .cloudCard(let m): return try tagged("cloud.card", m)
+        case .cloudGet(let m): return try tagged("cloud.get", m)
+        case .cloudRefuse(let m): return try tagged("cloud.refuse", m)
         case .streamRequest(let m): return try tagged("stream.request", m)
         case .streamStart(let m): return try tagged("stream.start", m)
         case .streamStop(let m): return try tagged("stream.stop", m)
