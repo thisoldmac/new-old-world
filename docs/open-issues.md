@@ -9,6 +9,222 @@ wrong thing) versus **unverified** (it may well be right, but no one has
 watched it work on the PowerBook). Unverified is not a lesser problem —
 several of tonight's bugs lived in code that looked obviously correct.
 
+**Nothing on this page is corrected by editing it.** A claim that has
+stopped being true gets a dated line saying so, under the entry that made
+it. The history is the point: several entries here are worth more for the
+shape of the mistake than for the fix.
+
+## The last functional gap: a person cannot click the mirror (2026-08-01)
+
+**Broken, in the sense of unfinished rather than wrong.** Every piece of
+the act path exists and is tested, and the path has no join. An agent can
+drive a Macintosh through the MCP act rows today. **A person clicking a
+rendered control in the Mirror pane gets nothing** — not a refusal, not a
+log line, nothing, because no code observes the click.
+
+Three separate breaks in one chain. Each was verified against the tree on
+2026-08-01, and none of them is recorded anywhere else.
+
+### 1. The renderer has no hit-testing wired into it
+
+`HitTester.hitTest(_:x:y:)`
+(`now-host/Sources/MirrorKit/HitTester.swift:155`) has **no caller outside
+the test bundle.** Nor does `ActionModel.click(on:count:mods:)`
+(`ActionModel.swift:244`), which is the only thing that constructs a
+`MirrorAction`. So at runtime **no `MirrorAction` is ever built**.
+
+The pane draws and nothing more: `MirrorModuleView.swift` hands the scene
+to `SceneView`, which wraps a `Canvas`, and there is no `onTapGesture`,
+`DragGesture`, `.gesture(`, `onHover` or `contentShape` anywhere in
+`MirrorKitUI/`, `MirrorModuleView.swift` or `MirrorModuleModel.swift`.
+The pane's only interactive controls are *Close Scene*, *Look Now* /
+*Look Again* and *Open Scene…*.
+
+Other `HitTester` statics **are** live in production — `isDesktopBackdrop`,
+`switchableApps`, `appMenuWidth`, `menubarHeight` — which is why the type
+does not read as dead. The type is alive; the hit-testing is not.
+
+### 2. The driver that would receive the gesture has no caller
+
+`MirrorActionDriver` (`now-host/Sources/Host/MirrorActionDriver.swift:56`)
+is the seam a pane would call. It is built, it is tested
+(`MirrorActionDriverTests.swift`), and **the only thing that constructs it
+is its own test.** This is the half that could be finished without a
+machine, and it was; the pane is the half that wants one.
+
+### 3. A window has no scene-side reference host-side
+
+The guest emits `windows[].ref` — `now-guest-ppc/src/scene/scene_json.c:318`
+(`put_ref(k, w->ref)`), set by `now_scene_set_window_ref`
+(`scene_build.c:314`) off `now_obs_walk_window_ref`. It is an addition to
+IR v1's window field set, taken under the accretive rule, and the reason
+it was added is exactly this one: `winact` names a window, not a control.
+
+**Neither host model has a field to put it in.**
+`NOWSceneDocument.Window`
+(`now-host/Sources/NOWAgentIntegration/AgentIntegrationSceneModels.swift:195`)
+and `MirrorKit.Scene.Window` (`Scene.swift:155`) both carry
+`id / app / psn / title / rect / front / z / visible / kind? / controls? /
+text? / items?` and no `ref`. `NOWSceneCodec.decode` is a plain synthesized
+`Codable`, so the key **decodes without error and is discarded.**
+`MirrorSceneAdapter.window(from:)` never mentions it.
+
+Control refs do survive (`NOWSceneDocument.Control.ref`, mapped at
+`MirrorSceneAdapter.swift:188`). Window refs do not.
+
+**So `winact` has no caller from a rendered scene.** The one place that
+sends it — `AgentIntegrationActControl.swift:120` — takes its `window`
+argument from an opaque `now-window-…` minted by `now_observe_elements`,
+supplied by the agent caller. `MirrorActionDriver` has no `winact` route
+at all.
+
+**One correction to a phrasing that has been repeated:** `Scene.Window.id`
+is **not** host-synthesised. It is minted by the guest at
+`now-guest-ppc/src/scene/scene_build.c:197` as `"%ld.%lu/%s#%d"` —
+`psn.hi.psn.lo/title#z` — deliberately in upstream `SceneBuilder`'s own
+form, so an id minted here means what one minted there means. The host
+carries it through unchanged (`MirrorSceneAdapter.swift:160`). It is a
+*name*, not an address: nothing resolves it back to a `WindowPtr`.
+
+### The five faces are `notReached`, and honestly so
+
+Each act row declares `.appUI: .notReached` with its reason, and the
+ledger is enforced both ways by
+`HostFaceParityTests.appUIDivergences`:
+
+| capability | file | line |
+|---|---|---|
+| `now_window_act` | `Projection/WindowActProjection.swift` | 72 |
+| `now_control_act` | `Projection/ControlActProjection.swift` | 55 |
+| `now_menu_act` | `Projection/MenuActProjection.swift` | 59 |
+| `now_text_get` | `Projection/TextGetProjection.swift` | 43 |
+| `now_text_set` | `Projection/TextSetProjection.swift` | 48 |
+
+Eleven rows in total carry `.appUI: .notReached`; the other six are
+`now_observe_elements`, `now_session_capabilities`,
+`now_transfer_approved_artifact`, `now_guest_files_capabilities`,
+`now_guest_files_upload_begin` and `now_guest_files_upload_append`.
+
+**These declarations are the good news, not the bad.** Rule 3 is recorded
+as *owed*, not waived, and the gate would have gone red if a row had
+claimed a face it did not have. What is missing is the pane, and the pane
+was correctly sequenced behind the thing it renders.
+
+**One reason has aged, and is worth fixing when the pane lands.**
+`WindowActProjection`'s reason says *"the host has no window observation to
+select one from"*. That was true when it was written; the guest has emitted
+`windows[].ref` since 2026-08-01. The half that is still true is that the
+host model discards it.
+
+### Two stale claims in source, found while verifying this
+
+Recorded here because they are in `now-host/Sources/**` and this pass owns
+no source:
+
+- `MirrorSceneAdapter.swift:41-42` still says *"NOW's walk reads a
+  ControlRecord and cannot name a ref, so it is `""`"*. The reference plane
+  landed 2026-08-01; the code below the comment already maps
+  `control.ref ?? ""` correctly. Comment only.
+- `ActionModel.availability`'s `.key` / `.type` reason
+  (`ActionModel.swift:130-137`) says *"NOW's contract declares no keystroke
+  command."* The contract declares `key` at `contract/asyncapi.yaml:3024`.
+  What is actually missing is a host **projection row** — tracked as W3 in
+  [mcp-coverage.md](mcp-coverage.md). The refusal is right; its stated
+  reason is not.
+
+## `.activate` reports available and this host has no lane (2026-08-01)
+
+**Broken, and it is a live inconsistency rather than a gap.**
+
+`ActionModel.availability(.activate)` answers
+`.available(command: "activate")` (`ActionModel.swift:140-142`), on the
+grounds that a scene carries a process serial for every window. The
+contract agrees that the verb exists — `contract/asyncapi.yaml:2923`
+declares `activate`, taking `serialHi` / `serialLo`, described as *not a
+second `front`*.
+
+**This host carries no lane for it.** There is no `activate` case in
+`AgentIntegrationLocalProtocol.Operation`. So `MirrorActionDriver.drive(_:)`
+passes the `switch ActionModel.availability` guard — because availability
+said yes — and lands in an explicit refusal at
+`MirrorActionDriver.swift:145-155`:
+
+> NOW's contract declares the activate command and this host carries no
+> lane for it. The scene's process serial is not the opaque reference
+> bring-to-front takes, so there is nothing to substitute.
+
+**The refusal is the right call and should not be traded for a
+substitution.** `now_bring_to_front` takes an opaque `now-process-…`
+reference minted by `process.list`, validated by
+`AgentIntegrationQuitPolicy.isValidReference`, and **re-listed and matched
+by full observed identity before it acts**. A scene's bare `"hi.lo"` PSN
+string was minted by no host-side observation. Bridging the two would mean
+acting on an identity nothing on this side ever confirmed — which is the
+exact property the quit/front family was built to have.
+
+**What is actually owed** is either a lane (an `activate` operation, with
+the serial's own validation story) or an availability answer that stops
+saying yes. Today the row is the one act in the vocabulary that reports
+sendable and has no route.
+
+## `key`, `type` and `click` are unavailable by design (2026-08-01)
+
+Not a defect. Recorded because *"why can't I type into the mirror"* is the
+first question the pane will raise, and the answer is a hardware-era fact
+rather than a to-do.
+
+| act | answer | why |
+|---|---|---|
+| `key`, `type` | `.unavailable` | see below — and the `mods` half is a CarbonLib wall, not a decision |
+| `click` | `.unavailable` | NOW's contract declares no positional click. A control is acted on through `ctlact` **by reference**, not by where it is drawn |
+
+**`key` refuses modifiers outright.** An event's modifiers live on the
+Event Manager's **queue element**, not in the message, and the only call
+that hands that element back is `PPostEvent` — which CarbonLib does not
+have (`CALL_NOT_IN_CARBON`). NOW's application is Carbon. So the guest can
+queue a keystroke and cannot say what was held down while it was typed;
+`mods` with any non-zero value answers `unsupported` and names the reason,
+and `mods: 0` is accepted. The alternative — post the keystroke and drop
+the modifier — is a defect upstream already paid for: a literal character
+went into a document and the reply said success. Stated at
+`contract/asyncapi.yaml:3036-3044`, in
+[input-plane-decisions.md](input-plane-decisions.md), and in the guest at
+`now-guest-ppc/src/input/input_args.c`.
+
+**The reach exists, and only through the act plane's resident half.**
+`ext/src/now_ext_act.c` is a **68K resident**, not Carbon, so it can do
+what the application cannot: `act_post_click()`
+(`now_ext_act.c:497-533`) sets `LMSetMouseLocation` and calls `PPostEvent`
+for the press and the release itself, stamping `evtQWhere` and
+`evtQModifiers`. That inversion is worth holding onto — the older, less
+capable-looking half of this project is the half that can reach the queue
+element.
+
+## `MirrorKit.SceneIslands` kept its policy and lost its fetch (2026-08-01)
+
+**Unfinished, and it will read as dead code to the next auditor.**
+
+`SceneIslands` (`now-host/Sources/MirrorKit/SceneIslands.swift:20`) carries
+upstream's capture / hold / shift policy for pixel islands intact. The
+fetch it drives is an **injected closure** —
+`typealias Capture = (Rect) throws -> PixelIsland` (line 24), consumed by
+`attach(_:poll:capture:)` (line 53), `island(for:key:capture:)` (line 105)
+and the metered `fetch(_:_:)` (line 168).
+
+**Nothing supplies one.** The only construction site in the repository is
+`IslandLifecycleTests.swift:41`. Nothing in `Sources/**` constructs
+`SceneIslands` or calls `attach`.
+
+The file says so itself, and the reason is real rather than an oversight:
+the host's pixel path is `GuestListener.requestCapture` + `CaptureDecoder`,
+and no code joins it to a rendered scene. Joining them is a decision about
+the transfer lane — an island is a capture, and the lane is one transfer
+wide — not a wiring job.
+
+**Why it stayed:** the policy is the expensive part and it is tested. A
+closure with no supplier is an honest shape for *we ported the judgement
+and not the plumbing*; deleting it would throw away the judgement.
+
 ## Two planes asked for the same bit, and one collision was silent (2026-07-31)
 
 **Found and fixed during the fold-in, recorded because the near-miss is the
