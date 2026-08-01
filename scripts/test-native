@@ -298,6 +298,13 @@ run_py now-guest-ppc get_cancel_source_test.py
 # watched to fail under.
 echo "== scripts/probes (host-side, machineless half) =="
 run_py scripts/probes tally_test.py
+# The scene read four probe cases stand on. `observe` reports no menu bar and
+# deliberately will not - the bar is a TRANSFER, walked by scene_walk.c over
+# scene.request - so the harness reads a scene. Two halves, two tests: the
+# pure one drives reassembly, the IR gate's ORDER and the absent/empty split;
+# the wire one drives what only a socket can get wrong, over a socketpair.
+run_py scripts/probes scene_test.py
+run_py scripts/probes scenewire_test.py
 
 echo "== now-guest-68k (68K, System 7.1) =="
 run_c now-guest-68k connfields_test.c  "-std=c99 -pedantic"  src/connection/connfields.c
