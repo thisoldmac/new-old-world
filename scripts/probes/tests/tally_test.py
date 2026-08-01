@@ -16,43 +16,45 @@ nohijack-probe.py's summarize). If any assertion here has to change, the
 ported harnesses have stopped being comparable to upstream's 18/20 → 0/19 and
 somebody has to say so out loud.
 
-MUTATIONS THIS HAS BEEN SEEN TO FAIL UNDER (2026-07-31, run by hand, tree
-restored after each):
+MUTATIONS THIS HAS BEEN SEEN TO FAIL UNDER. Run 2026-07-31 against
+scripts/probes/tally.py, one at a time, tree restored from git after each —
+the same discipline as upstream's tests/h2-mutations.sh, which is where the
+habit comes from. A test nobody has watched fail is not a test.
 
-  * `summarize`: score every trial instead of only the valid ones
-        -  scored = [t for t in trials if bool(t.get("valid", True))]
-        +  scored = list(trials)
-    -> red: dropped_trials_are_not_scored, dropped_do_not_inflate_the_denominator
+    mutation                                          tests that went red
+    ------------------------------------------------  -------------------
+ 1  summarize scores every trial, not only the valid   dropped/hijacks
+      -  scored = [t for t in trials if ...valid...]   dropped/dropped
+      +  scored = list(trials)                         denominator/n
+                                                       denominator/dropped
+                                                       all-miss/n
+                                                       all-miss/dropped
+                                                       upstream/0-of-19
 
-  * `summarize`: count the denominator before dropping
-        -  n = len(scored)
-        +  n = len(trials)
-    -> red: dropped_do_not_inflate_the_denominator, a_run_of_all_misses_is_zero_of_zero
+ 2  paged_to_minimum accepts ANY decrease as the       page/one-line
+    armed action
+      -  return after <= minimum
+      +  return after < 10000
 
-  * `paged_to_minimum`: accept any decrease as the armed action
-        -  return after <= minimum
-        +  return after < 10000
-    -> red: a_one_line_move_is_not_the_armed_page
+ 3  hijacked trusts the reply and drops the oracle     hijack/oracle-only
+      -  return bool(...ok...) or bool(oracle_fired)   hijack/no-reply
+      +  return bool(...ok...)
 
-  * `paged_to_minimum`: treat unreadable state as a negative rather than
-    refusing to score
-        -  if after is None or minimum is None: return False
-        +  if after is None or minimum is None: return False  (unchanged)
-        with the caller's `valid` flag removed instead
-    -> red: an_unreadable_control_is_not_a_clean_trial
+ 4  replied treats ok:false as a non-reply             reply/ok-false
+      -  ...reply.get("type") in (...)                 reply/error-frame
+      +  ...bool(reply.get("ok"))
 
-  * `hijacked`: drop the oracle half, trusting the reply alone
-        -  return bool(...reply.get("ok")) or bool(oracle_fired)
-        +  return bool(...reply.get("ok"))
-    -> red: an_oracle_that_fires_is_a_hijack_even_if_the_reply_refused
+ 5  exit_status never reports a finding                exit/one
+      -  return 1 if total else 0
+      +  return 0 * total
 
-  * `replied`: treat ok:false as a non-reply
-        -  return isinstance(reply, dict) and reply.get("type") in (...)
-        +  return isinstance(reply, dict) and bool(reply.get("ok"))
-    -> red: ok_false_is_a_reply
+ 6  rate_summary conflates the two rates               rates/actuated
+      -  ...if t.get("actuated")
+      +  ...if t.get("replied")
 
-  * `exit_status`: return 0 unconditionally
-    -> red: a_hijack_sets_the_exit_status
+Mutation 1 is the important one and it is worth reading its red list twice:
+scoring a dropped trial turns the recorded 0-of-19 into 0-of-20, which is a
+DIFFERENT CLAIM about a machine, arrived at by a one-line tidy.
 """
 
 import os

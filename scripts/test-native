@@ -194,6 +194,15 @@ run_py now-guest-ppc ot_connect_source_test.py
 # drop list rather than two that drift.
 run_py now-guest-ppc get_cancel_source_test.py
 
+# The probe harnesses (scripts/probes/, ported from timbottu/mirror/tests).
+# Those harnesses drive a LIVE Macintosh and none of them can run here - but
+# the arithmetic that turns trials into a number is pure, and it is the one
+# defect that would poison every number they produce. tally.py holds it alone
+# for exactly that reason. See the test's header for the mutations it has been
+# watched to fail under.
+echo "== scripts/probes (host-side, machineless half) =="
+run_py scripts/probes tally_test.py
+
 echo "== now-guest-68k (68K, System 7.1) =="
 run_c now-guest-68k connfields_test.c  "-std=c99 -pedantic"  src/connection/connfields.c
 run_c now-guest-68k test_console_ring.c "" src/console/n68_console_ring.c src/console/n68_linesplit.c
@@ -256,7 +265,7 @@ run_c now-guest-68k test_swlist.c       "" src/software/n68_swlist.c \
 echo "== manifest =="
 unlisted=""
 for f in "$repo_root"/now-guest-ppc/tests/* "$repo_root"/now-guest-68k/tests/* \
-         "$repo_root"/now-guest-shared/tests/*; do
+         "$repo_root"/now-guest-shared/tests/* "$repo_root"/scripts/probes/tests/*; do
     case "$f" in *.c|*.py) ;; *) continue ;; esac
     base=$(basename "$f")
     grep -q -- "$base" "$0" || unlisted="$unlisted $base"
