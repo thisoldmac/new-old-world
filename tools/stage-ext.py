@@ -63,7 +63,14 @@ NOW = os.path.abspath(os.path.join(HERE, ".."))
 # The lab checkout that owns the emulator and the anchor client. Two roots,
 # and they are not the same: NOW owns the artifacts, the lab owns the
 # instruments. Nothing under now-guest-*/ or now-host/ imports this.
-LAB = os.environ.get("NOW_LAB_ROOT", os.path.abspath(os.path.join(NOW, "..")))
+# Normally NOW's parent — but not from a git worktree, which sits several
+# levels deeper and whose parent has no tools/ in it at all. Walk up to the
+# checkout that has the instruments.
+LAB = os.environ.get("NOW_LAB_ROOT")
+if not LAB:
+    LAB = NOW
+    while LAB != "/" and not os.path.isdir(os.path.join(LAB, "mcp-classic")):
+        LAB = os.path.dirname(LAB)
 sys.path.insert(0, os.path.join(LAB, "mcp-classic"))
 from timbottu_mcp_classic.harness import Harness, HarnessError  # noqa: E402
 

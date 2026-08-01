@@ -33,7 +33,23 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NOW="$(cd "$HERE/.." && pwd)"
-LAB="${NOW_LAB_ROOT:-$(cd "$NOW/.." && pwd)}"
+# The lab checkout is normally NOW's parent — but not from a worktree, which
+# sits several levels deeper (now/.claude/worktrees/<branch>) and whose parent
+# is a scratch directory with no tools/ in it. That failed with a bare
+# "tools/lib.sh: No such file or directory", which reads like a broken lab
+# install rather than the wrong starting point. So walk up to the checkout
+# that actually has the instruments.
+LAB="${NOW_LAB_ROOT:-}"
+if [ -z "$LAB" ]; then
+    LAB="$NOW"
+    while [ "$LAB" != / ] && [ ! -f "$LAB/tools/lib.sh" ]; do
+        LAB="$(dirname "$LAB")"
+    done
+fi
+[ -f "$LAB/tools/lib.sh" ] || {
+    echo "no lab checkout above $NOW (set NOW_LAB_ROOT to the TimBotTu clone)"
+    exit 1
+}
 cd "$LAB"                                  # lib.sh and tools/qmp are lab-relative
 . tools/lib.sh
 
