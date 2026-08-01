@@ -225,6 +225,110 @@ wide — not a wiring job.
 closure with no supplier is an honest shape for *we ported the judgement
 and not the plumbing*; deleting it would throw away the judgement.
 
+## The content plane has never run anywhere (2026-08-01)
+
+**Unverified in the strongest sense on this list, and not a fault to
+chase.**
+
+The reader is complete and natively tested against fabricated rings —
+`now-guest-ppc/src/content/qdtrace_read.c` (the ring walk and the
+seqlock), `qdtrace_json.c` (the replies), `qdtrace_cmd.c` (the only
+Toolbox, four subcommands: `status` / `start` / `stop` / `drain`),
+registered at `commands.c:1376` with a help row.
+
+**The writer has never executed on any Macintosh.** `ext/src/now_content.c`
+and `now_content_logic.c` are the resident half that fills the ring at
+draw time, and nothing has armed them — not on an emulator, not on metal,
+not upstream in this shape. No captured output, fixture or run log for an
+armed plane exists anywhere in the tree.
+
+**So `qdtrace status` answers `content-plane-absent` on every machine that
+exists, and that is correct.** The refusal is emitted at three sites
+(`qdtrace_cmd.c:198` on `start`, `:275` on `stop`, `qdtrace_json.c:420` on
+`drain`), gated on the caps bit `kNowPeekTableCapContent`
+(`contract/peek_table.h:93`, `1u << 3` after the collision described
+below). A run that gets `content-plane-absent` is not a failure. **A run
+that gets anything else is news.**
+
+One stale comment in guest source, flagged rather than fixed here:
+`qdtrace_cmd.c:11-15` still says *"REGISTRATION IS NOT OURS"*. It is
+registered.
+
+### `qdtrace`'s `torn` retraction: what is covered and what is not
+
+The brief this checkpoint was written against said `torn` was "the one
+untested line". That is close and worth stating precisely, because the two
+halves have different standing.
+
+| Layer | Path | Covered? |
+|---|---|---|
+| Read | `qdtrace_read.c:307-326` — re-sample, `seq1 != seq0` **and** the writer lapped the cursor → `kNowQDDrainTorn`, `records = 0`, `resync = 1` | **Yes.** `qdtrace_read_test.c:526-543`, driven by a deterministic `lapping_sink` |
+| JSON | `qdtrace_json.c:444-450` — rewind `e.pos` to `head`, discarding whatever ops were already serialized | **No**, and the test file names it as a gap (`qdtrace_json_test.c:19-28`) |
+
+**Why the JSON line cannot be reached from a fixture:** getting there needs
+a live writer lapping the ring *between* the seqlock sample and the
+re-sample. No host fixture can stage that, and a fixture that could would
+be staging the answer.
+
+**The nearest thing to coverage is a proxy, and it is a real one.** `Busy`
+takes the *same* retraction branch, and `test_busy_says_call_again`
+(`qdtrace_json_test.c:344-355`) asserts the reply comes back with
+`"ops":[]`. So the discard is exercised; what has never been exercised is
+the discard **after ops were written into the buffer**.
+
+**The falsifiable claim, for whoever gets the first armed run:** a `torn`
+reply is `ok: true` with `"ops": []`, `"records": 0`, `"torn": true`,
+`"resync": true`. The `"ops":[` is emitted *before* the walk
+(`qdtrace_json.c:407-409`) and the retraction rewinds only as far as
+`head`. **If a `torn` reply ever arrives carrying a non-empty `ops` array,
+that is the defect** — it means ops survived a retraction that was
+supposed to discard them, and every one of them is a reading of a ring the
+writer had already overwritten.
+
+Worth knowing about the shape: `torn` and `busy` are *successful* replies
+carrying flags; `absent`, `mismatch` and `corrupt` are `ok: false` errors.
+A caller that treats `torn` as an error will retry something that was
+telling it to call again.
+
+## Stale branches and two worktrees against a layout that is gone (2026-08-01)
+
+Housekeeping, recorded rather than swept, because deleting another
+session's work is not this pass's call.
+
+**Four branches, none merged into `main`, none checked out anywhere:**
+
+| Branch | Head | Behind main by | Unmerged commits |
+|---|---|---|---|
+| `claude/next-module-direction-02becd` | `3094e89` | 550 | 13 |
+| `claude/laughing-tesla-b4cc41` | `686aa9c` | 605 | 10 |
+| `fork/carbon-ui-cleanup` | `b185b8a` | 692 | 6 |
+| `claude/guest-installer` | `664cfd0` | 423 | 5 |
+
+**Two worktrees holding uncommitted edits against a directory layout that
+no longer exists:**
+
+- `.claude/worktrees/sweet-bouman-a714dd` — HEAD `a3f3adb`, branch
+  `claude/sweet-bouman-a714dd`. Five modified files: `docs/open-issues.md`,
+  `guest/src/commands.c`, `guest/src/wire.c`,
+  `guest/tests/json_native_test.c`,
+  `host/Tests/HostTests/GuestWireConformanceTests.swift`.
+- `.claude/worktrees/youthful-lumiere-d6e7be` — HEAD `1cd1303`, and the
+  branch checked out is **`claude/68k-pn-180c-9c0940`**, not the one the
+  worktree is named for. One modified file: `guest68k/src/wire68.c`.
+
+**Why they cannot simply be applied.** `main` has no `guest/`, `guest68k/`
+or `host/` at top level — the trees are `now-guest-ppc/`, `now-guest-68k/`
+and `now-host/`. Both worktrees sit on pre-rename commits. Salvaging an
+edit means path-mapping `guest/src/` → `now-guest-ppc/src/`,
+`guest68k/src/` → `now-guest-68k/src/`, `host/` → `now-host/`, onto files
+that have moved *and changed substantially* across roughly 600 commits.
+
+**The honest read is that these are almost certainly not worth salvaging**,
+and the reason to write them down anyway is that an uncommitted edit in a
+worktree is invisible to every other kind of audit. Whoever prunes them
+should look at the five diffs first and record `corpus_impact` for
+anything that turns out to be a finding.
+
 ## Two planes asked for the same bit, and one collision was silent (2026-07-31)
 
 **Found and fixed during the fold-in, recorded because the near-miss is the
