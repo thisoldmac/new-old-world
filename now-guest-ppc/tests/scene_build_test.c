@@ -303,9 +303,125 @@ static void test_long_strings(void)
     check(strlen(s.windows[0].id) < kNowSceneIdMax, "and the id fits");
 }
 
+/* THE MISFILE INVARIANT. The control and menu-item pools are shared
+   across owners and an owner's entries are a contiguous block, so an
+   entry appended after another owner has started its own block would
+   silently belong to the WRONG window. That is a misattribution, not an
+   overflow, and it is refused rather than flagged - a scene that put
+   the Finder's buttons in a dialog would be worse than one that omitted
+   them. */
+static void test_pooled_planes_refuse_a_misfile(void)
+{
+    NowScene s;
+    int p;
+
+    begin(&s);
+    p = now_scene_add_process(&s, 0, 1, "App", 0, 1, kNowSceneAnchorOk, 0);
+    (void)now_scene_add_window(&s, p, "A", 0, 0, 10, 10, 1);
+    (void)now_scene_add_window(&s, p, "B", 0, 0, 10, 10, 1);
+
+    check(now_scene_add_control(&s, 0, "OK", 0, 0, 5, 5, 1, 1, 0, 0, 1) == 1,
+          "window A opens its block");
+    check(now_scene_add_control(&s, 1, "Go", 0, 0, 5, 5, 1, 1, 0, 0, 1) == 1,
+          "window B starts its own");
+    check(now_scene_add_control(&s, 0, "Late", 0, 0, 5, 5, 1, 1, 0, 0, 1) == 0,
+          "and a control appended to A afterwards is REFUSED, not misfiled");
+    check(s.control_count == 2, "so the pool holds exactly the two");
+    check(s.windows[0].control_count == 1 && s.windows[1].control_count == 1,
+          "one each, and neither borrowed the other's");
+    /* Retraction is bound by the same rule: A's block is no longer the
+       tail, so retracting it would renumber B's. */
+    now_scene_retract_controls(&s, 0);
+    check(s.windows[0].controls_present == 1,
+          "a non-tail block cannot be retracted either");
+}
+
+static void test_pools_fill_and_say_so(void)
+{
+    NowScene s;
+    int p;
+    int i;
+
+    begin(&s);
+    p = now_scene_add_process(&s, 0, 1, "App", 0, 1, kNowSceneAnchorOk, 0);
+    (void)now_scene_add_window(&s, p, "A", 0, 0, 10, 10, 1);
+    for (i = 0; i < kNowSceneMaxControls; ++i) {
+        check(now_scene_add_control(&s, 0, "C", 0, 0, 5, 5, 1, 1, 0, 0, 1)
+              == 1, "the pool accepts up to its cap");
+    }
+    check(now_scene_add_control(&s, 0, "C", 0, 0, 5, 5, 1, 1, 0, 0, 1) == 0,
+          "and refuses past it");
+    check(s.controls_truncated == 1, "saying so");
+
+    begin(&s);
+    p = now_scene_add_process(&s, 0, 1, "App", 0, 1, kNowSceneAnchorOk, 0);
+    check(now_scene_open_menubar(&s, p) == 1, "the bar opens");
+    for (i = 0; i < kNowSceneMaxMenus; ++i) {
+        check(now_scene_add_menu(&s, "M", 129, 0) == i, "menus up to the cap");
+    }
+    check(now_scene_add_menu(&s, "M", 129, 0) == -1, "and no further");
+    check(s.menus_truncated == 1, "saying so");
+}
+
+/* An empty plane is a CLAIM and an absent one is not, which is the
+   distinction the whole walk turns on. Assembly is where the two are
+   made distinguishable at all. */
+static void test_empty_is_not_absent(void)
+{
+    NowScene s;
+    int p;
+
+    begin(&s);
+    p = now_scene_add_process(&s, 0, 1, "App", 0, 1, kNowSceneAnchorOk, 0);
+    (void)now_scene_add_window(&s, p, "A", 0, 0, 10, 10, 1);
+    (void)now_scene_add_window(&s, p, "B", 0, 0, 10, 10, 1);
+
+    check(s.windows[0].controls_present == 0, "no plane before it is opened");
+    check(now_scene_open_controls(&s, 0) == 1, "opening it");
+    check(s.windows[0].controls_present == 1 && s.windows[0].control_count == 0,
+          "gives a present plane with nothing in it - looked, found none");
+    check(s.windows[1].controls_present == 0,
+          "and says nothing about the window nobody looked at");
+
+    /* The text row index is -1 rather than 0, because 0 is a valid row
+       and memset would otherwise attach every window to text 0. */
+    check(s.windows[0].text == -1 && s.windows[1].text == -1,
+          "no window claims a text row it was not given");
+    check(s.menubar_proc == -1, "and the scene claims no menu bar owner");
+}
+
+/* The menu bar refuses under a non-admitting anchor, independently, the
+   way now_scene_add_window does. */
+static void test_refused_anchors_admit_no_menubar(void)
+{
+    static const NowSceneAnchor refused[] = {
+        kNowSceneAnchorNoPlane, kNowSceneAnchorNotFound,
+        kNowSceneAnchorUnreadable, kNowSceneAnchorStub,
+        kNowSceneAnchorAmbiguous, kNowSceneAnchorMismatch
+    };
+    unsigned i;
+
+    for (i = 0; i < sizeof refused / sizeof refused[0]; ++i) {
+        NowScene s;
+        int p;
+
+        begin(&s);
+        p = now_scene_add_process(&s, 0, 100, "Ghost", 0, 1, refused[i], 0);
+        check(now_scene_open_menubar(&s, p) == 0,
+              "a refused anchor admits no menu bar");
+        check(s.menubar_present == 0, "and none is carried");
+        check(now_scene_add_menu(&s, "File", 129, 0) == -1,
+              "so no menu can be added to it either");
+    }
+}
+
 int main(void)
 {
     test_version_stamp();
+    test_pooled_planes_refuse_a_misfile();
+    test_pools_fill_and_say_so();
+    test_empty_is_not_absent();
+    test_refused_anchors_admit_no_menubar();
     test_verdict_tokens();
     test_refused_anchors_admit_no_windows();
     test_ambiguous_is_not_empty();
