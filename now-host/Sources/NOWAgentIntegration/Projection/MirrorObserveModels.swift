@@ -214,7 +214,8 @@ public struct AgentIntegrationElementObservation:
 /// 32-bit halves and always has been; splitting it here is what lets the
 /// value cross JSON without a host-side encoding nobody else shares. Both
 /// halves are present or neither is: half a PSN names nothing.
-public struct AgentIntegrationProcessSerial: Equatable, Sendable {
+public struct AgentIntegrationProcessSerial:
+    Codable, Equatable, Sendable {
     public let high: Int
     public let low: Int
 
@@ -263,13 +264,23 @@ public struct AgentIntegrationProcessSerial: Equatable, Sendable {
 
 /// One validated control act: an element, and the part code to hand its
 /// application.
-public struct AgentIntegrationControlActRequest: Equatable, Sendable {
+public struct AgentIntegrationControlActRequest:
+    Codable, Equatable, Sendable {
     public let element: String
     public let part: Int
 
     public init(element: String, part: Int) {
         self.element = element
         self.part = part
+    }
+
+    /// The same grammar as `decode`, asked of an already-built value — the
+    /// reading the local socket needs now that this type is `Codable`. See
+    /// `AgentIntegrationWindowActRequest.isWellFormed` for why a synthesised
+    /// decode is not a check.
+    public var isWellFormed: Bool {
+        AgentIntegrationActPolicy.isValidElementReference(element)
+            && AgentIntegrationControlPartPolicy.isBounded(part)
     }
 
     /// Decode one call's arguments, or the sentence the caller gets back.
@@ -334,7 +345,8 @@ public enum AgentIntegrationControlPartPolicy {
 /// anywhere else belongs to the person at the machine and is passed through
 /// untouched. Without it there is no way to tell this act's press from the
 /// user's, which is the 18/20 hijack in its menu-shaped form.
-public struct AgentIntegrationMenuActRequest: Equatable, Sendable {
+public struct AgentIntegrationMenuActRequest:
+    Codable, Equatable, Sendable {
     public let menu: Int
     public let item: Int
     public let titleLeft: Int
@@ -346,6 +358,16 @@ public struct AgentIntegrationMenuActRequest: Equatable, Sendable {
         self.item = item
         self.titleLeft = titleLeft
         self.process = process
+    }
+
+    /// The same grammar as `decode`, asked of an already-built value — the
+    /// reading the local socket needs now that this type is `Codable`. The
+    /// identity check is first here too: a value whose `titleLeft` is not a
+    /// coordinate a screen could hold cannot be told from the person's own
+    /// press, and that is the failure this act is shaped against.
+    public var isWellFormed: Bool {
+        AgentIntegrationActPolicy.isBoundedCoordinate(titleLeft)
+            && item >= 1
     }
 
     /// Decode one call's arguments, or the sentence the caller gets back.

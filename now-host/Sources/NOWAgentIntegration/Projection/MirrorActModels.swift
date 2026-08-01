@@ -196,7 +196,8 @@ public enum AgentIntegrationWindowAction:
 /// The decode lives beside the vocabulary rather than in the row because it
 /// is where the argument grammar is DEFINED — `WindowActProjection` bounds
 /// and delegates, and a per-action key rule is not a second job for it.
-public struct AgentIntegrationWindowActRequest: Equatable, Sendable {
+public struct AgentIntegrationWindowActRequest:
+    Codable, Equatable, Sendable {
     public let window: String
     public let action: AgentIntegrationWindowAction
     /// Present exactly for `move`.
@@ -231,6 +232,49 @@ public struct AgentIntegrationWindowActRequest: Equatable, Sendable {
         case .resize: return ["width", "height"]
         case .zoom, .close: return []
         }
+    }
+
+    /// **The same grammar as `decode`, asked of an already-built value.**
+    ///
+    /// It exists because `decode` is not the only door any more. The request
+    /// became `Codable` when the act lane landed, so a value can now arrive
+    /// off the local socket without passing the argument grammar — and the
+    /// socket is a trust boundary (any process of this uid can write it),
+    /// not a convenience. Synthesised decoding would happily produce a
+    /// `close` carrying a width, or a window reference that is a bare
+    /// string, and this is what refuses both.
+    ///
+    /// It is deliberately a re-derivation of the same three rules rather
+    /// than a second list: the geometry set comes from `geometryKeys`, the
+    /// reference check from `AgentIntegrationActPolicy`, and the bounds from
+    /// the same two predicates `decode` uses.
+    public var isWellFormed: Bool {
+        guard AgentIntegrationActPolicy.isValidWindowReference(window) else {
+            return false
+        }
+        let expected = Self.geometryKeys(for: action)
+        var present: Set<String> = []
+        if let left { present.insert("left")
+            guard AgentIntegrationActPolicy.isBoundedCoordinate(left) else {
+                return false
+            }
+        }
+        if let top { present.insert("top")
+            guard AgentIntegrationActPolicy.isBoundedCoordinate(top) else {
+                return false
+            }
+        }
+        if let width { present.insert("width")
+            guard AgentIntegrationActPolicy.isBoundedExtent(width) else {
+                return false
+            }
+        }
+        if let height { present.insert("height")
+            guard AgentIntegrationActPolicy.isBoundedExtent(height) else {
+                return false
+            }
+        }
+        return present == expected
     }
 
     /// Decode one call's arguments, or the sentence the caller gets back.
