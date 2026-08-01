@@ -9,7 +9,15 @@
    Behaviour is unchanged from cloud_module.c before the split — this
    file just owns what it always effectively owned. The status line,
    the loading flag and the detail pane's invalidation stay shell state
-   (host, below); everything else is local. */
+   (host, below); everything else is local.
+
+   There is no card pane in drive mode (cloud_layout.c's drive variant
+   makes r->detail the anti-rect) - the browser IS the page, full body
+   width. So this view has nothing to draw() any more: view_draw is
+   NULL below, and what used to go into the card - the selected row's
+   kind/size/date, and the pull's byte count while a fetch runs - both
+   move to the ONE line this page still owns, the status placard,
+   through g_host.set_status. */
 
 static WindowRef g_owner;
 static ControlRef g_browser;
@@ -21,11 +29,27 @@ static FileEntry g_drive_rows[kCloudMaxRows];
 static int g_drive_count;
 static char g_shown_pull[96];
 
+/* The placard's last non-pull line (a folder's "N items", "Empty", or
+   an error) - kept so a finished pull can hand the placard back to
+   whatever it was saying before, the same priority rule
+   files_browser_view.c's note/pull-note pair already keeps, just with
+   one shared slot instead of two rendered ones. */
+static char g_folder_status[96];
+
 static void host_status(const char *line)
 {
     if (g_host.set_status != NULL) {
         g_host.set_status(line);
     }
+}
+
+/* Folder/error news, as opposed to a pull's transient byte count:
+   remembered so view_idle can hand the placard back when the pull
+   that was overlaying it ends. */
+static void folder_status(const char *line)
+{
+    snprintf(g_folder_status, sizeof g_folder_status, "%.90s", line);
+    host_status(line);
 }
 
 static void host_loading(Boolean loading)
@@ -56,11 +80,11 @@ static void drive_request(const char *path, long cursor)
     conn_set_listing(cloud_drive_listing);
     if (now_wire_list_host(g_drive_path, cursor, err, sizeof err) < 0) {
         host_loading(false);
-        host_status(err);
+        folder_status(err);
         return;
     }
     host_loading(true);
-    host_status("Reading...");
+    folder_status("Reading...");
 }
 
 void cloud_drive_listing(const char *path, const FileEntry *entries,
@@ -80,7 +104,7 @@ void cloud_drive_listing(const char *path, const FileEntry *entries,
     }
     host_loading(false);
     if (error != NULL) {
-        host_status(error);
+        folder_status(error);
         return;
     }
     for (i = 0; i < count && g_drive_count < kCloudMaxRows; ++i) {
@@ -96,14 +120,14 @@ void cloud_drive_listing(const char *path, const FileEntry *entries,
         return;
     }
     if (g_drive_count == 0) {
-        host_status("Empty");
+        folder_status("Empty");
     } else {
         char line[96];
 
         snprintf(line, sizeof line, "%.60s - %d item%s",
                  g_drive_path[0] != '\0' ? g_drive_path : "iCloud Drive",
                  g_drive_count, g_drive_count == 1 ? "" : "s");
-        host_status(line);
+        folder_status(line);
     }
 }
 
@@ -128,12 +152,12 @@ static void drive_open_row(int index)
         return;
     }
     if (now_wire_get_host(next, row->name, err, sizeof err) < 0) {
-        host_status(err);
+        folder_status(err);
     } else {
         char line[96];
 
         snprintf(line, sizeof line, "Fetching %.40s...", row->name);
-        host_status(line);
+        folder_status(line);
     }
 }
 
@@ -216,60 +240,14 @@ static OSErr view_create(WindowRef owner)
     return noErr;
 }
 
-static void draw_at(short x, short y, const char *s)
-{
-    Str255 t;
-
-    CopyCStringToPascal(s, t);
-    MoveTo(x, y);
-    DrawString(t);
-}
-
-static void view_draw(const CloudLayout *r, const CloudStore *store,
-                      const CloudService *service, int selected)
-{
-    short y = (short)(r->detail_text.top + 12);
-
-    (void)store;
-    (void)service;
-    if (selected >= 0 && selected < g_drive_count) {
-        const FileEntry *entry = &g_drive_rows[selected];
-        char line[96];
-
-        draw_at(r->detail_text.left, y, entry->name);
-        y = (short)(y + 16);
-        now_files_describe(entry, line, sizeof line);
-        draw_at(r->detail_text.left, y, line);
-        y = (short)(y + 16);
-        if (!entry->folder) {
-            snprintf(line, sizeof line, "%ld K",
-                     (entry->data_bytes + entry->rsrc_bytes + 1023)
-                         / 1024);
-            draw_at(r->detail_text.left, y, line);
-            y = (short)(y + 16);
-        }
-        if (entry->modified != 0) {
-            Str255 when;
-            LongDateTime ldt = (LongDateTime)entry->modified;
-
-            LongDateString(&ldt, shortDate, when, NULL);
-            MoveTo(r->detail_text.left, y);
-            DrawString(when);
-            y = (short)(y + 16);
-        }
-        if (!entry->folder) {
-            draw_at(r->detail_text.left, y,
-                    "Double-click fetches it to this Mac.");
-        }
-    } else if (g_drive_count > 0) {
-        draw_at(r->detail_text.left, y,
-                "Select an item; double-click opens it.");
-    }
-    if (g_shown_pull[0] != '\0') {
-        draw_at(r->detail_text.left, (short)(r->detail_text.bottom - 4),
-                g_shown_pull);
-    }
-}
+/* No draw() any more: cloud_layout.c's drive variant makes r->detail
+   the anti-rect (no card pane, full-width list instead), so there is
+   nowhere left for this to draw into. What it used to say - the
+   selected row's kind/size/date, "double-click fetches it" - was a
+   convenience the flat file list's own Detail column already restates
+   per row (files_browser_view.c's item_data pattern, shared here via
+   now_files_describe); it is not lost, just no longer duplicated in a
+   pane that does not exist. */
 
 static Boolean view_click(const EventRecord *event, Point local)
 {
@@ -297,6 +275,7 @@ static void view_idle(const CloudLayout *r)
     long received = 0, expected = 0;
     char line[96];
 
+    (void)r;                          /* nothing left to invalidate here */
     if (now_wire_get_active(&received, &expected, NULL)) {
         snprintf(line, sizeof line, "Receiving - %ld of %ld K",
                  received / 1024,
@@ -305,9 +284,19 @@ static void view_idle(const CloudLayout *r)
         line[0] = '\0';
     }
     if (strcmp(line, g_shown_pull) != 0) {
+        Boolean was_active = g_shown_pull[0] != '\0';
+
         strcpy(g_shown_pull, line);
-        if (g_owner != NULL) {
-            InvalWindowRect(g_owner, &r->detail);
+        if (line[0] != '\0') {
+            /* A pull's byte count overlays the placard - it outranks
+               whatever the last folder news was, the same priority
+               files_browser_view.c's note/pull-note pair keeps. */
+            host_status(line);
+        } else if (was_active) {
+            /* The pull ended; hand the placard back to the folder's
+               own news rather than leaving the last byte count
+               standing forever. */
+            host_status(g_folder_status);
         }
     }
 }
@@ -322,7 +311,7 @@ static const CloudViewOps k_ops = {
     view_create,
     NULL,                              /* show */
     NULL,                              /* layout */
-    view_draw,
+    NULL,                              /* draw: no card pane in drive mode */
     view_click,
     view_key,
     view_idle,

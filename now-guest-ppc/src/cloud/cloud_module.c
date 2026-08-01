@@ -261,6 +261,10 @@ static void rebuild_popup(void)
     }
 }
 
+/* Defined with the rest of layout, below; declared here because
+   choose_service() needs it and appears first in the file. */
+static void apply_layout(void);
+
 static void retitle_button(void)
 {
     Str255 text;
@@ -286,9 +290,23 @@ static void choose_service(int index)
         && strcmp(service->state, "serving") == 0;
     cloud_drive_view_activate(g_drive_mode);
     g_view = g_drive_mode ? cloud_drive_view_ops() : cloud_list_view_ops();
+    /* Drive and list mode use different rectangles (cloud_layout.c's
+       drive variant: full-width list, no card) - recompute and move
+       every control before anything below draws into them. */
+    apply_layout();
     retitle_button();
     clear_list();
     invalidate_detail();
+    /* The list control's own resize repaints itself, but the area a
+       shrinking control vacates is not the Toolbox's job to erase, and
+       this file draws the card pane's text by hand rather than through
+       a control - so a mode switch invalidates the whole body once
+       rather than risk stale pixels from the pane that just changed
+       shape or disappeared. Not idle-path work: this runs only on a
+       service pick. */
+    if (g_owner != NULL && g_visible) {
+        InvalWindowRect(g_owner, &g_body);
+    }
     if (g_drive_mode) {
         if (g_view != NULL && g_view->reset_for_service != NULL) {
             g_view->reset_for_service(service);
@@ -534,11 +552,11 @@ static OSErr cloud_create(WindowRef owner, const Rect *body)
 
     g_owner = owner;
     g_body = *body;
-    cloud_layout_compute(body, &g_r);
+    g_drive_mode = false;
+    cloud_layout_compute(&g_body, g_drive_mode, &g_r);
     cloud_store_reset(&g_store);
     g_service = -1;
     g_selected = -1;
-    g_drive_mode = false;
     g_view = cloud_list_view_ops();
     g_status[0] = '\0';
     g_shown_status[0] = '\0';
@@ -663,10 +681,17 @@ static void cloud_show(Boolean visible)
     }
 }
 
-static void cloud_layout(const Rect *body)
+/* Recomputes g_r from g_body/g_drive_mode and moves every shell
+   control to match — the body of the old cloud_layout() op, pulled out
+   so choose_service() can call it too: drive and list mode use
+   different rectangles (cloud_layout.c's drive variant), and a service
+   pick changes g_drive_mode without a grow/zoom event to trigger the
+   Workshop's own layout() call. */
+static void apply_layout(void)
 {
-    g_body = *body;
-    cloud_layout_compute(body, &g_r);
+    Rect action;
+
+    cloud_layout_compute(&g_body, g_drive_mode, &g_r);
     if (g_popup != NULL) {
         MoveControl(g_popup, g_r.popup.left, g_r.popup.top);
         SizeControl(g_popup, (SInt16)(g_r.popup.right - g_r.popup.left),
@@ -678,11 +703,16 @@ static void cloud_layout(const Rect *body)
                     (SInt16)(g_r.refresh_btn.right - g_r.refresh_btn.left),
                     (SInt16)(g_r.refresh_btn.bottom - g_r.refresh_btn.top));
     }
+    /* The one action button, worn per mode (see action_applies()): Up
+       rides the toolbar row in drive mode, Save sits in the card pane
+       otherwise. Its RECT moves with its title; save_btn is the
+       anti-rect while up_btn is live, and vice versa, so this needs no
+       mode check beyond picking which field. */
+    action = g_drive_mode ? g_r.up_btn : g_r.save_btn;
     if (g_save != NULL) {
-        MoveControl(g_save, g_r.save_btn.left, g_r.save_btn.top);
-        SizeControl(g_save,
-                    (SInt16)(g_r.save_btn.right - g_r.save_btn.left),
-                    (SInt16)(g_r.save_btn.bottom - g_r.save_btn.top));
+        MoveControl(g_save, action.left, action.top);
+        SizeControl(g_save, (SInt16)(action.right - action.left),
+                    (SInt16)(action.bottom - action.top));
     }
     if (g_browser != NULL) {
         MoveControl(g_browser, g_r.list.left, g_r.list.top);
@@ -692,6 +722,12 @@ static void cloud_layout(const Rect *body)
     if (g_view != NULL && g_view->layout != NULL) {
         g_view->layout(&g_r);
     }
+}
+
+static void cloud_layout(const Rect *body)
+{
+    g_body = *body;
+    apply_layout();
 }
 
 static void draw_at(short x, short y, const char *s)
@@ -815,12 +851,17 @@ static void cloud_idle(void)
         g_view->idle(&g_r);
     }
     /* Show/hide is the cheap operation that is safe every pass; the
-       rectangle repaints only when the answer changed. */
+       rectangle repaints only when the answer changed. Invalidate
+       wherever the button actually IS - up_btn in drive mode,
+       save_btn otherwise, the same choice apply_layout() made when it
+       last moved g_save there. */
     save_on = action_applies();
     if (save_on != g_shown_save_on) {
+        Rect action = g_drive_mode ? g_r.up_btn : g_r.save_btn;
+
         g_shown_save_on = save_on;
         show_control(g_save, g_visible && save_on);
-        InvalWindowRect(g_owner, &g_r.save_btn);
+        InvalWindowRect(g_owner, &action);
     }
     if (strcmp(g_status, g_shown_status) != 0) {
         strcpy(g_shown_status, g_status);

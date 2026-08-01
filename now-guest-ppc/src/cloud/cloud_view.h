@@ -25,7 +25,12 @@ enum {
    rather than supply a no-op body — list's click/key/idle/reset are
    NULL because ask_save/HandleControlKey/nothing/nothing is already
    what the shell does by default; drive's create/show/layout are NULL
-   because it owns no controls of its own. A fourth view is free to use
+   because it owns no controls of its own, and drive's draw is NULL
+   because drive mode's layout (cloud_layout.c) gives it no card pane
+   to draw into — full body width for the list instead, per-row detail
+   already in the browser's own Detail column, and a pull's progress on
+   the status placard (cloud_drive_view.c's set_status host hook)
+   rather than a pane that does not exist. A fourth view is free to use
    as many or as few as it needs. */
 
 typedef struct CloudViewOps {
