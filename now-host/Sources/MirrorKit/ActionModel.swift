@@ -1,8 +1,25 @@
 import Foundation
 
-/// The semantic action vocabulary: what the mirror can DO to the guest,
-/// element-first. Every gesture resolves to a list of these; the dispatcher
-/// turns them into wire verbs (or the QMP drag plane).
+/// The semantic action vocabulary: what a gesture on a rendered scene MEANS,
+/// element-first.
+///
+/// **This is intent, not dispatch.** There used to be an `ActionDispatcher`
+/// under it that turned each case into a `WireClient` request or a QMP mouse
+/// event. Both are gone: the first spoke the TimBotTu toolkit worker's
+/// protocol, which no NOW guest answers, and the second injected mouse events
+/// into an emulator from outside the guest CPU, which is host-side cheating by
+/// this project's rule. Nothing in this module now reaches a machine, and
+/// `NoSecondWireTests` is what keeps it that way.
+///
+/// The vocabulary itself survived the deletion, and deliberately. It is the
+/// output of the hit tester — the measured half of the port — and every case
+/// records a real thing a person can do to a Macintosh. What each case can be
+/// *carried by* is answered separately, by `ActionModel.availability`, against
+/// NOW's contract rather than against a target's flags. An act NOW cannot
+/// carry is therefore a typed refusal with a reason, which is what "degrades
+/// honestly" has always meant here — not an act quietly missing from the
+/// vocabulary, which would leave a person clicking a title bar and getting
+/// silence.
 public enum MirrorAction: Equatable {
     /// Semantic, fail-closed click on a resolved control.
     case axdo(ref: String, count: Int = 1, mods: Int = 0, text: String? = nil)
@@ -43,14 +60,39 @@ public enum MirrorAction: Equatable {
     case thumbDrag(x0: Int, y0: Int, x1: Int, y1: Int)
 }
 
-/// Per-target availability — the typed emu-only discipline (plan decision
-/// 6): the GUI grays what a target can't do, the headless head reports it
-/// as data; nothing degrades silently.
+/// What NOW's contract can do with one act — the typed discipline the port
+/// arrived with, retargeted from upstream's question to this one.
+///
+/// **The question changed.** Upstream asked "does this target have a QMP
+/// socket", because its two answers were the wire and the emulator's mouse.
+/// NOW has one wire and no mouse, so the question is now "does NOW's contract
+/// declare a command that carries this, and does a rendered scene carry what
+/// that command needs to address it" — and those are two questions, which is
+/// why there are three answers rather than two.
+///
+/// Nothing here asks which machine is connected. Whether a *particular* guest
+/// answers a command it declares is settled against that guest's own `help`
+/// table by the projection layer (`MirrorActProjections`), which is the only
+/// side that has one. A host-side guess would be a stale observation wearing
+/// the clothes of a live one.
 public enum ActionAvailability: Equatable {
-    case available
-    /// Requires the emulator's QMP input plane and this target has none
-    /// (metal, or emu launched without --qmp).
-    case emulatorOnly(reason: String)
+    /// NOW declares a command for this act, and a rendered scene carries
+    /// everything needed to address it.
+    case available(command: String)
+    /// NOW declares a command for this act, but it is addressed by an opaque
+    /// element reference that only an observation mints — and a scene from
+    /// NOW's producer carries none (`Scene.Control.ref` arrives empty; see
+    /// `Host/MirrorSceneAdapter`). Expressible, not yet addressable.
+    case needsObservation(command: String, reason: String)
+    /// Nothing in NOW's contract carries this act.
+    case unavailable(reason: String)
+
+    /// Whether this act can be sent as it stands. The GUI grays what is not,
+    /// and a caller reports the reason rather than no-opping.
+    public var isAvailable: Bool {
+        if case .available = self { return true }
+        return false
+    }
 }
 
 public enum ActionModel {
@@ -70,16 +112,71 @@ public enum ActionModel {
         "7": 26, "8": 28, "9": 25,
     ]
 
-    public static func availability(_ action: MirrorAction,
-                                    target: MirrorTarget) -> ActionAvailability {
+    /// What NOW can do with this act. A function of the act alone — see
+    /// `ActionAvailability` for why there is no target parameter.
+    ///
+    /// The command names are the contract's own spellings (`contract/
+    /// asyncapi.yaml`, `x-commands`), and `NoSecondWireTests` checks every one
+    /// of them against that registry. A name that drifts fails here rather
+    /// than on a Macintosh, which is the failure `menuinvoke` shipped as.
+    public static func availability(
+        _ action: MirrorAction) -> ActionAvailability {
         switch action {
-        case .drag, .qmpClick, .qmpDoubleClick, .menuDrag, .thumbDrag:
-            return target.qmp != nil
-                ? .available
-                : .emulatorOnly(reason: "needs the emulator QMP input plane; "
-                                + "this target has none")
-        default:
-            return .available
+        case .menuInvoke:
+            /* The one act that crosses whole. `menu`, `item` and `titleLeft`
+               all come off the scene the person is looking at, and titleLeft
+               is the identity check that distinguishes this press from the
+               one made by the person sitting at the machine. */
+            return .available(command: "menuact")
+        case .key, .type:
+            /* A keystroke is how a ⌘-item is meant to travel, and there is
+               nothing in the contract that carries one. Named rather than
+               folded into the case below, because this is a hole in NOW's
+               surface and not a rule against it: nothing about a keystroke
+               is host-side cheating. */
+            return .unavailable(reason:
+                "NOW's contract declares no keystroke command. A ⌘ menu item "
+                + "is the ordinary use, and it cannot be sent from here.")
+        case .activate:
+            /* A process serial, which the scene carries for every window. */
+            return .available(command: "activate")
+        case .axdo(_, _, _, let text):
+            /* The act plane's addressing grammar and the scene plane's do not
+               meet yet. `ctlact`/`textset` take an opaque reference minted by
+               an observation; NOW's scene producer reads a ControlRecord and
+               cannot name one, so a scene's controls arrive with ref "". */
+            let command = text == nil ? "ctlact" : "textset"
+            return .needsObservation(command: command, reason:
+                "\(command) addresses a control by an opaque reference from a "
+                + "current observation, and a scene carries none — NOW's "
+                + "producer emits controls without refs. Rendering a control "
+                + "and acting on it are two different questions to the "
+                + "machine today.")
+        case .click:
+            /* Upstream's positional click was a toolkit-worker verb. Its NOW
+               shape is ctlact against a referenced control, which is the case
+               above; a click at a coordinate names nothing. */
+            return .unavailable(reason:
+                "NOW's contract declares no positional click. A control is "
+                + "acted on through ctlact by reference, not by where it is "
+                + "drawn.")
+        case .drag, .thumbDrag:
+            /* A window move/resize IS expressible — winact takes move and
+               resize — but not as a pixel drag, and not without a window
+               reference. Saying so is more useful than "no". */
+            return .unavailable(reason:
+                "a drag is injected mouse motion, which this project solves "
+                + "through the guest instead. A window move or resize is "
+                + "winact's move/resize against a window reference; a "
+                + "scroll-bar drag is ctlact against the indicator part.")
+        case .qmpClick, .qmpDoubleClick, .menuDrag:
+            /* The three that came across as QMP calls. Their executor is
+               deleted and is not coming back. */
+            return .unavailable(reason:
+                "this crossed as emulator mouse injection over QMP — events "
+                + "advanced from outside the guest CPU. NOW solves it through "
+                + "the guest or not at all, and there is no emulator on the "
+                + "other end of a NOW connection by assumption.")
         }
     }
 
