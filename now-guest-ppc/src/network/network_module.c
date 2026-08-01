@@ -43,6 +43,11 @@ static ControlRef g_buttons[kNetSectionCount];
 static ControlActionUPP g_scroll_action_upp;
 static short g_top;
 
+/* What the link card's value column is currently SHOWING. Idle compares
+   against this and invalidates only what differs - without it, "has the
+   uptime changed" cannot be answered without redrawing to find out. */
+static char g_link_vals[kNetMaxRows][80];
+
 /* ---------------------------------------------------------------- state */
 
 /* What NOW already knows about its own link. Read from the wire rather
@@ -76,6 +81,27 @@ static void sample_link(NetLinkSample *out)
     out->rcv_peak = conn_rcv_peak();
 }
 
+/* Seed the shown-value cache from the facts as they stand, so the next
+   idle pass compares against what is on screen rather than against
+   nothing and repaints every row once. */
+static void seed_link_cache(void)
+{
+    short rows = now_net_section_rows(kNetSectionLink, &g_facts);
+    short i;
+
+    memset(g_link_vals, 0, sizeof g_link_vals);
+    for (i = 0; i < rows && i < (short)kNetMaxRows; ++i) {
+        char label[48];
+        char value[80];
+
+        if (!now_net_row(kNetSectionLink, &g_facts, i, label, sizeof label,
+                         value, sizeof value)) {
+            break;
+        }
+        strncpy(g_link_vals[i], value, sizeof g_link_vals[i] - 1);
+    }
+}
+
 static void reprobe(void)
 {
     NetLinkSample link;
@@ -83,6 +109,7 @@ static void reprobe(void)
     sample_link(&link);
     now_net_probe(&link, &g_facts);
     g_probed = true;
+    seed_link_cache();
 }
 
 /* The link half changes on its own - bytes move, the clock runs - so it
@@ -525,28 +552,75 @@ static void network_activate(Boolean active)
     }
 }
 
-/* The link counters move on their own, so idle refreshes THEM and
-   redraws only that card's rows. Open Transport is never re-asked here:
-   an idle handler that runs two OT calls every pass would be a probe
-   nobody asked for, and this project's rule is that probes run on
-   request. */
+/* The window rect of one link row's VALUE column - the only part of this
+   page that changes without anyone asking. */
+static void link_value_rect(short row, Rect *out)
+{
+    const NetSectionLayout *s = &g_r.sections[kNetSectionLink];
+    Rect content;
+
+    content.left = (short)(s->body.left + kNetLabelWidth);
+    content.right = s->body.right;
+    content.top = (short)(s->body.top + row * kNetRowHeight);
+    content.bottom = (short)(content.top + kNetRowHeight);
+    to_window(&content, out);
+}
+
+/* The link counters move on their own, so idle refreshes THEM - and
+   invalidates only the values that actually changed, the way the
+   Connection page's glance does. It does NOT redraw the canvas.
+   Repainting everything on every event-loop pass is a visible flicker on
+   this hardware and was exactly the defect reported on 2026-08-01: an
+   idle handler runs many times a second, and the finest thing this page
+   can say is a whole second, so almost every one of those repaints drew
+   the same pixels again.
+
+   Open Transport is never re-asked here either: an idle handler running
+   two OT calls per pass would be a probe nobody asked for, and this
+   project's rule is that probes run on request. */
 static void network_idle(void)
 {
     NetFactState before;
+    short rows;
+    short i;
 
-    if (!g_visible || !g_probed) {
+    if (!g_visible || !g_probed || g_owner == NULL) {
         return;
     }
     before = g_facts.link.state;
+    rows = now_net_section_rows(kNetSectionLink, &g_facts);
     refresh_link_only();
-    if (before != g_facts.link.state) {
-        /* Connected/disconnected changes the row COUNT, so the whole
-           page has to be re-laid out rather than repainted. */
+
+    if (before != g_facts.link.state
+        || rows != now_net_section_rows(kNetSectionLink, &g_facts)) {
+        /* Connecting or disconnecting changes the row COUNT, so the page
+           is re-laid out and redrawn in full. Rare, and the one case
+           where a whole repaint is the honest answer. */
         recompute();
         sync_scrollbar();
         sync_buttons();
+        InvalWindowRect(g_owner, &g_r.canvas);
+        return;
     }
-    draw_canvas();
+
+    rows = now_net_section_rows(kNetSectionLink, &g_facts);
+    for (i = 0; i < rows && i < (short)kNetMaxRows; ++i) {
+        char label[48];
+        char value[80];
+        Rect r;
+
+        if (!now_net_row(kNetSectionLink, &g_facts, i, label, sizeof label,
+                         value, sizeof value)) {
+            break;
+        }
+        if (strcmp(value, g_link_vals[i]) == 0) {
+            continue;                 /* same pixels; do not draw them */
+        }
+        strncpy(g_link_vals[i], value, sizeof g_link_vals[i] - 1);
+        g_link_vals[i][sizeof g_link_vals[i] - 1] = '\0';
+        link_value_rect(i, &r);
+        InvalWindowRect(g_owner, &r);
+    }
 }
 
 static void network_status_text(char *out, long cap)
