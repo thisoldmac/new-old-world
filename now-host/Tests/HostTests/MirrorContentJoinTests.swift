@@ -260,6 +260,20 @@ final class MirrorContentJoinTests: XCTestCase {
         XCTAssertTrue(why.contains("nothing has drawn"), why)
     }
 
+    /// The two errors are not symmetric. An A5 this side cannot parse reads
+    /// as UNARMED, because calling it armed would report "the plane is armed
+    /// and nothing drew" about a machine that never said so — and would hide
+    /// the one gap this join actually has.
+    func testAnUnparseableA5ReadsAsUnarmed() throws {
+        let status = try result(
+            "{\"type\":\"command.result\",\"id\":2,\"ok\":true,"
+            + "\"output\":{\"qdtrace\":{\"cmd\":\"status\",\"active\":"
+            + "{\"a5\":\"nonsense\",\"mode\":\"record\","
+            + "\"hookedPorts\":0}}}}")
+        XCTAssertEqual(MirrorContentJoin.attribution(status),
+                       MirrorContentJoin.armGap)
+    }
+
     /// A status that did not answer must not be read as "nothing is armed" —
     /// that would report the arm gap on a machine that never said so.
     func testUnansweredStatusSaysItCouldNotFindOut() throws {

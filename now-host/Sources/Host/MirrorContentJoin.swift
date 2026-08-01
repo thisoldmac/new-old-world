@@ -318,8 +318,15 @@ final class MirrorContentJoin {
         }
         let a5: String
         if case .string(let s)? = active["a5"] { a5 = s } else { a5 = "" }
-        let armed = !a5.isEmpty && Int(a5.dropFirst(2), radix: 16) != 0
-        if !armed {
+        /* `active.a5` is `"0x%08lx"` (qdtrace_json.c:207) and zero is the
+           extension's own word for "nothing armed". A value this side cannot
+           parse is treated as UNARMED rather than as armed: the two errors
+           are not symmetric — reading a malformed A5 as armed would report
+           "the plane is armed and nothing drew" about a machine that never
+           said so, and hide the one gap this join actually has. */
+        guard a5.hasPrefix("0x"), let value = UInt32(a5.dropFirst(2),
+                                                     radix: 16),
+              value != 0 else {
             return armGap
         }
         var mode = ""
