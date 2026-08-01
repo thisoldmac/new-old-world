@@ -114,6 +114,9 @@ The test compares both against the code literally.
 | `now_reveal_item` | `reveal` | `reveal` | command |
 | `now_bring_to_front` | `process.list`, `process.front` | `process.front` | message family |
 | `now_request_quit` | `process.list`, `process.quit` | `process.quit` | message family |
+| `now_window_act` | `winact` | `winact` | command |
+| `now_text_get` | `textget` | `textget` | command |
+| `now_text_set` | `textset` | `textset` | command |
 | `now_transfer_approved_artifact` | `file.put` | `file.put` | message family |
 | `now_transfer_cancel` | `file.cancel` | `file.cancel` | message family |
 | `now_guest_files_capabilities` | `file.list` | — | message family |
@@ -275,6 +278,38 @@ Rule 3 is carried by two lines and not by the answer: the dispatch's audit
 event (face, capability, machine, outcome) and a host line under `sw` naming
 the target, because for this capability the target **is** the event — the same
 reason the guest-Files family logs its paths.
+
+### Three rows are published and no machine serves them
+
+`now_window_act`, `now_text_get` and `now_text_set` are registered here and
+report **unavailable on every Macintosh that exists**, which sounds like the
+exact failure `testEveryRequirementResolvesToTheContract` was written to
+prevent and is its opposite. The difference is where the "no" comes from.
+
+An unresolvable requirement fails nowhere: the ledger looks the name up
+among the message families, misses, falls through to the command table,
+misses again, and the tool goes dark for the life of every connection with a
+sentence that reads as a fact about the machine. That was true of these three
+until 2026-07-31, which is why they landed built and unregistered.
+
+`winact` / `textget` / `textset` are now in the contract's `x-commands`, so
+the same three names resolve as **commands**, and a command's availability is
+settled against the connected guest's own `help` table. Every guest answers
+"I do not serve that" — the row is unavailable because the machine said so.
+The dark tool looks identical from outside and is a different fact, and the
+fact is what makes the plane PowerPC-only, later, by derivation: nothing on
+the host side asks which guest answered, exactly as with `reveal` and `tail`.
+
+Two consequences worth stating plainly:
+
+- **A call today reaches no wire.** The host has no act lane, so the three
+  protocol methods answer a typed `unavailable` naming what is missing
+  (`now-act-lane-absent`) — never a refusal, never an empty success.
+- **The contract declares three commands no guest answers**, which its own
+  preamble permits (adding a command is additive; a peer that lacks one
+  answers `unknown-command`). `CommandRegistryTests.servedByNoGuestYet` is
+  where that exemption is written down with its reason, so a verb cannot go
+  unimplemented quietly.
 
 ### One row costs four seconds of somebody's machine, and is not gated for it
 
