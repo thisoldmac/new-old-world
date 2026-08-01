@@ -1,8 +1,19 @@
 # Folding Mirror into NOW
 
-**Date:** 2026-07-31 · **Status:** M1 built, M2 spiked to *packages*, M3 built,
-M4 analysed — all TESTED, none metal-verified; M5–M6 intent ·
-**Namespace:** `claude/`
+**Date:** 2026-07-31 · **Status:** M1–M5 built, M6 half built — all **TESTED,
+none metal-verified** · **Namespace:** `claude/`
+
+| | state |
+|---|---|
+| **M1** anchor `stack_base` + oracle | built; one unmeasured assumption (review §12) |
+| **M2** P3 probe | *packages* rung; identity-scoped, versioned; **needs a reader** |
+| **M3** streaming bracket | built; its premise unmeasured |
+| **M4** scene on the wire | built — one-shot transfer, contract + guest + decoder together |
+| **M5** the guest's walk | **ported, not rewritten** — `src/axwalk/`; not yet wired to `scene_build.c` |
+| **M6** host module + projections | act rows built and **unregistered**; MirrorKit-as-module unstarted |
+
+Gates at the time of writing: **1130 host tests** / 54 skipped / 0 failures ·
+**48 native tests** · 3/3 guest cross-builds. Nothing has run on a Macintosh.
 
 **Upstream landed 2026-07-31** — all four lanes on Mirror's `main`, IR frozen at
 v1 and declared. M4's blocker is gone; see the section immediately below. What
