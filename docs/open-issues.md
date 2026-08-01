@@ -167,18 +167,37 @@ the serial's own validation story) or an availability answer that stops
 saying yes. Today the row is the one act in the vocabulary that reports
 sendable and has no route.
 
-## `key`, `type` and `click` are unavailable by design (2026-08-01)
+## `type` and `click` are unavailable by design; `key` is now mods-gated (2026-08-01, updated same day)
 
 Not a defect. Recorded because *"why can't I type into the mirror"* is the
 first question the pane will raise, and the answer is a hardware-era fact
-rather than a to-do.
+rather than a to-do for the MODIFIED half — but a plain keystroke is no
+longer one of these rows.
 
-| act | answer | why |
-|---|---|---|
-| `key`, `type` | `.unavailable` | see below — and the `mods` half is a CarbonLib wall, not a decision |
-| `click` | `.unavailable` | NOW's contract declares no positional click. A control is acted on through `ctlact` **by reference**, not by where it is drawn |
+**Updated same day: `key` split into two answers, not one.** It read
+`.unavailable` unconditionally when this section was first written; that
+was too broad. `now-guest-ppc`'s `key` verb posts an unmodified keystroke
+fine (`mods` is accepted as exactly 0) — the wall below is real for
+`mods != 0` and was never a fact about `mods == 0`. `ActionModel
+.availability(.key)` now reads:
 
-**`key` refuses modifiers outright.** An event's modifiers live on the
+| act | mods | answer | why |
+|---|---|---|---|
+| `key` | `== 0` | `.available(command: "key")` | the guest posts it; `MirrorActionDriver` routes it to `AgentIntegrationHostAdapter.key` and the pane's drawing (`MirrorModuleView` + `MirrorKeyCaptureView`) sends one on a keystroke |
+| `key` | `!= 0` | `.unavailable` | the CarbonLib wall below — unchanged |
+| `type` | any | `.unavailable` | NOW writes text through `textset` against a referenced control (`typeInto`), never through a bare typed action with no target |
+| `click` | — | `.unavailable` | NOW's contract declares no positional click. A control is acted on through `ctlact` **by reference**, not by where it is drawn |
+
+**Not verified even for `mods == 0`:** the pane's AppKit key-capture view
+(`MirrorKeyCaptureView`) has not been exercised in the running app — no
+display was attached to the work that added it. The specific, named risk
+is in `docs/pane-keys-audit.md`: whether its `hitTest`-returns-nil design
+actually leaves the drawing's existing click gesture untouched, and
+whether focus reaches it reliably after a click. `swift build` and `swift
+build --build-tests` both pass; nothing about the AppKit event path has
+run.
+
+**`key` still refuses modifiers outright.** An event's modifiers live on the
 Event Manager's **queue element**, not in the message, and the only call
 that hands that element back is `PPostEvent` — which CarbonLib does not
 have (`CALL_NOT_IN_CARBON`). NOW's application is Carbon. So the guest can
