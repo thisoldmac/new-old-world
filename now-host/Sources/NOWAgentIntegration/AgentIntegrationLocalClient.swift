@@ -293,6 +293,11 @@ public struct AgentIntegrationLocalClient: Sendable {
         case .stream:
             preconditionFailure(
                 "A stream request says which of its three intentions it is")
+        case .windowAct, .controlAct, .menuAct, .textGet, .textSet:
+            /* An act with no target is the one request this whole plane is
+               shaped to make unspellable, so there is no bare form of any
+               of the five to fall through to here. */
+            preconditionFailure("An act names what it acts on")
         }
     }
 
@@ -475,6 +480,59 @@ public struct AgentIntegrationLocalClient: Sendable {
         return result
     }
 
+    // MARK: - The act lane
+
+    public func windowAct(_ act: AgentIntegrationWindowActRequest)
+        async throws -> AgentIntegrationWindowActResult {
+        let response = try await send(.windowAct(act))
+        guard let result = response.windowActResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no window act result")
+        }
+        return result
+    }
+
+    public func controlAct(_ act: AgentIntegrationControlActRequest)
+        async throws -> AgentIntegrationControlActResult {
+        let response = try await send(.controlAct(act))
+        guard let result = response.controlActResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no control act result")
+        }
+        return result
+    }
+
+    public func menuAct(_ act: AgentIntegrationMenuActRequest)
+        async throws -> AgentIntegrationMenuActResult {
+        let response = try await send(.menuAct(act))
+        guard let result = response.menuActResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no menu act result")
+        }
+        return result
+    }
+
+    public func getElementText(element: String) async throws
+        -> AgentIntegrationTextReadingResult {
+        let response = try await send(.textGet(element: element))
+        guard let result = response.textGetResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no text reading")
+        }
+        return result
+    }
+
+    public func setElementText(element: String, text: String) async throws
+        -> AgentIntegrationTextSetResult {
+        let response = try await send(
+            .textSet(element: element, text: text))
+        guard let result = response.textSetResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no text set result")
+        }
+        return result
+    }
+
     /// A copy of this client that says which machine it is asking about.
     ///
     /// A machine id (`pb1400c`) means "whatever is connected to that Mac
@@ -520,6 +578,21 @@ public struct AgentIntegrationLocalClient: Sendable {
                    back for a host that has stopped answering. */
                 timeout = request.captureDepth != nil
                     ? captureReceiveTimeout : readOnlyReceiveTimeout
+            case .windowAct, .controlAct, .menuAct, .textGet, .textSet:
+                /* THE ACT LANE gets the launch window, not the read-only
+                   one, and the reason is the guest's own clock rather than
+                   caution. `receiveTimeoutSeconds` is SO_RCVTIMEO — an
+                   IDLE-read bound — and the host sends nothing at all while
+                   it waits on the machine. An act arms a patch and then
+                   waits for the addressed application to reach its own
+                   FindWindow / TrackControl / MenuSelect: the guest's
+                   kNowActDeadlineTicks is ~5 s and a submit can spend it
+                   twice, so a two-second idle bound would abandon, as a
+                   transport error, a call that was about to be answered
+                   normally. This window outlives the host adapter's own
+                   15 s bound, so the caller reads a typed refusal rather
+                   than a broken socket. */
+                timeout = launchReceiveTimeout
             case .bringToFront, .guestFileMutation,
                  .transferCancel, .guestLogTail, .machineFacts,
                  .revealItem:

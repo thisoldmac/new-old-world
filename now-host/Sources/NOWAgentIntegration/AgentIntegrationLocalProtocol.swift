@@ -103,6 +103,36 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         /// that opened it. Three operations would let a caller ask for a
         /// frame of a stream nothing opened.
         case stream = "stream"
+
+        /* THE ACT LANE, five operations, added as one edit for the reason
+           P1a's eleven were: every one of them touches this enum, the
+           result enum and the response's field list, and five separate
+           edits to the same three tails is five merge conflicts.
+
+           FIVE AND NOT ONE, which is the opposite of the choice `capture`,
+           `stream` and `guestFileMutation` each made — so the difference is
+           worth stating. Those three folded because their intentions are a
+           LANE: a capture page is meaningless except against the capture
+           that produced it, and `restore` consumes what `trash` answered.
+           These five share no state at all. Each is one command.request
+           with its own arguments, its own guest verb, and its own
+           capability that a machine may serve while refusing the others —
+           `textget` is explicitly the one a guest can answer while
+           declining the two that drive it. Folding them would produce one
+           operation with five argument shapes and one availability, which
+           is exactly what the row-level design refused. */
+
+        /// Move, resize, zoom or close one addressed window.
+        case windowAct = "window_act"
+        /// Answer one addressed control's own TrackControl with a part code.
+        case controlAct = "control_act"
+        /// Answer one application's own MenuSelect with a menu item.
+        case menuAct = "menu_act"
+        /// Read one addressed text element. The only one of the five that
+        /// changes nothing.
+        case textGet = "text_get"
+        /// Replace one addressed text element's whole contents.
+        case textSet = "text_set"
     }
 
     public let version: Int
@@ -205,6 +235,44 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
     /// neither is the request for the NEXT one.
     public var streamFrameID: UUID? = nil
     public var streamFrameOffset: Int? = nil
+
+    /* The act lane's arguments, carried as the TYPED requests rather than
+       as thirteen loose scalars.
+
+       The alternative was a field per argument — `actWindow`, `actAction`,
+       `actLeft`, `actTop`, `actWidth`, `actHeight`, `actElement`, `actPart`,
+       `actMenu`, `actItem`, `actTitleLeft`, `actSerialHi`, `actSerialLo` —
+       and this file already shows what that costs: the per-operation key
+       sets below would have to re-derive, in a switch, the per-action
+       geometry rule that `AgentIntegrationWindowActRequest` already states
+       once. A second spelling of a grammar is a second thing to get wrong,
+       and the one that drifts is always the copy.
+
+       It follows `launchSelection`, `guestFileUpload` and
+       `guestFileMutation`, which are typed for the same reason. And it does
+       NOT make the codec's job smaller: a synthesised decode admits a
+       `close` carrying a width, so each of these is re-checked against its
+       own `isWellFormed` on arrival. The strict key list guards the
+       envelope; the grammar guards the value. */
+
+    /// The window act's target, action and geometry. Present only on
+    /// `window_act`.
+    public var windowActRequest: AgentIntegrationWindowActRequest? = nil
+    /// The control act's element and part code. Present only on
+    /// `control_act`.
+    public var controlActRequest: AgentIntegrationControlActRequest? = nil
+    /// The menu act's item and its identity check. Present only on
+    /// `menu_act`.
+    public var menuActRequest: AgentIntegrationMenuActRequest? = nil
+    /// The addressed text element, on `text_get` and on `text_set`. One
+    /// field for both because it is one reference vocabulary: a caller that
+    /// can read an element can name it to write it, and two fields would
+    /// let a request address one element and write another.
+    public var actElement: String? = nil
+    /// The replacement contents. Present only on `text_set`, and required
+    /// there — an absent text is not an empty one. Emptying a field is a
+    /// legal act and is spelled with an empty string.
+    public var actText: String? = nil
 
     private init(requestID: UUID,
                  operation: Operation,
@@ -675,6 +743,59 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         request.streamIntention = .stop
         return request
     }
+
+    // MARK: - The act lane
+
+    /// Move, resize, zoom or close one addressed window.
+    public static func windowAct(
+        _ act: AgentIntegrationWindowActRequest,
+        requestID: UUID = UUID()
+    ) -> Self {
+        var request = projected(.windowAct, requestID: requestID)
+        request.windowActRequest = act
+        return request
+    }
+
+    /// Answer one addressed control's own `TrackControl`.
+    public static func controlAct(
+        _ act: AgentIntegrationControlActRequest,
+        requestID: UUID = UUID()
+    ) -> Self {
+        var request = projected(.controlAct, requestID: requestID)
+        request.controlActRequest = act
+        return request
+    }
+
+    /// Answer one application's own `MenuSelect`.
+    public static func menuAct(
+        _ act: AgentIntegrationMenuActRequest,
+        requestID: UUID = UUID()
+    ) -> Self {
+        var request = projected(.menuAct, requestID: requestID)
+        request.menuActRequest = act
+        return request
+    }
+
+    /// Read one addressed text element.
+    public static func textGet(
+        element: String,
+        requestID: UUID = UUID()
+    ) -> Self {
+        var request = projected(.textGet, requestID: requestID)
+        request.actElement = element
+        return request
+    }
+
+    /// Replace one addressed text element's whole contents.
+    public static func textSet(
+        element: String, text: String,
+        requestID: UUID = UUID()
+    ) -> Self {
+        var request = projected(.textSet, requestID: requestID)
+        request.actElement = element
+        request.actText = text
+        return request
+    }
 }
 
 public enum AgentIntegrationLocalResult: Equatable, Sendable {
@@ -724,6 +845,15 @@ public enum AgentIntegrationLocalResult: Equatable, Sendable {
     case diagnostics(AgentIntegrationGuestRowReportResult)
     /// The bracket's state, or one page of one frame off it.
     case stream(AgentIntegrationStreamResult)
+    /* The act lane's five, one case each — for the reason the five
+       operations are five: they share no state, and a caller reading a
+       menu act's answer out of a case that could also hold a text reading
+       would have to ask which it held. */
+    case windowAct(AgentIntegrationWindowActResult)
+    case controlAct(AgentIntegrationControlActResult)
+    case menuAct(AgentIntegrationMenuActResult)
+    case textGet(AgentIntegrationTextReadingResult)
+    case textSet(AgentIntegrationTextSetResult)
 
     /// The operation is carried by this protocol and NOTHING SERVES IT YET.
     ///
@@ -804,6 +934,16 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
     /// field beside it, and for the same reason — a frame IS a capture, so
     /// a full page still leaves the response inside the 16 KiB cap.
     public var streamResult: AgentIntegrationStreamResult? = nil
+    /* The act lane's five result fields. Named in `projectedResultKeys`
+       below, which is what puts them through BOTH of `decodeResponse`'s
+       gates — the allowlist and the exactly-one-of count — so a response
+       carrying a window act AND a text reading is malformed rather than
+       ambiguous. */
+    public var windowActResult: AgentIntegrationWindowActResult? = nil
+    public var controlActResult: AgentIntegrationControlActResult? = nil
+    public var menuActResult: AgentIntegrationMenuActResult? = nil
+    public var textGetResult: AgentIntegrationTextReadingResult? = nil
+    public var textSetResult: AgentIntegrationTextSetResult? = nil
     /// The operation exists here and no capability serves it yet. Set
     /// INSTEAD of any result, and counted with them: a response carrying
     /// both would be claiming to have answered a call it also says it
@@ -1166,6 +1306,36 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
     }
 
     public init(requestID: UUID,
+                windowActResult: AgentIntegrationWindowActResult) {
+        self.init(empty: requestID)
+        self.windowActResult = windowActResult
+    }
+
+    public init(requestID: UUID,
+                controlActResult: AgentIntegrationControlActResult) {
+        self.init(empty: requestID)
+        self.controlActResult = controlActResult
+    }
+
+    public init(requestID: UUID,
+                menuActResult: AgentIntegrationMenuActResult) {
+        self.init(empty: requestID)
+        self.menuActResult = menuActResult
+    }
+
+    public init(requestID: UUID,
+                textGetResult: AgentIntegrationTextReadingResult) {
+        self.init(empty: requestID)
+        self.textGetResult = textGetResult
+    }
+
+    public init(requestID: UUID,
+                textSetResult: AgentIntegrationTextSetResult) {
+        self.init(empty: requestID)
+        self.textSetResult = textSetResult
+    }
+
+    public init(requestID: UUID,
                 notImplemented: AgentIntegrationUnavailable) {
         self.init(empty: requestID)
         self.notImplemented = notImplemented
@@ -1202,6 +1372,9 @@ public enum AgentIntegrationLocalCodec {
         "guestLogTailResult", "machineFactsResult",
         "catalogSearchResult", "revealItemResult",
         "diagnosticsResult", "streamResult",
+        // The act lane's five, in both gates from the day they landed.
+        "windowActResult", "controlActResult", "menuActResult",
+        "textGetResult", "textSetResult",
         // Set INSTEAD of any of them, so it is counted with them.
         "notImplemented",
     ]
@@ -1248,6 +1421,9 @@ public enum AgentIntegrationLocalCodec {
             // The bracket's fields, clearing the same two gates.
             "streamIntention", "streamDepth", "streamMinIntervalMs",
             "streamFrameID", "streamFrameOffset",
+            // The act lane's fields, clearing the same two gates.
+            "windowActRequest", "controlActRequest", "menuActRequest",
+            "actElement", "actText",
             // Orthogonal to every operation, so it clears BOTH gates:
             // this allowlist, and the per-operation key set below.
             "guestSelector",
@@ -1749,6 +1925,76 @@ public enum AgentIntegrationLocalCodec {
                 break
             }
             expectedKeys = streamKeys
+
+        /* THE ACT LANE. Each of the five admits exactly its own field and
+           re-checks the VALUE against the same grammar its projection row
+           uses, because the socket is the trust boundary: any process of
+           this uid can write it, and a synthesised `Codable` decode is
+           happy to produce a `close` carrying a width or a window
+           reference that is a bare string. The strict key list guards the
+           envelope; `isWellFormed` guards what is inside it.
+
+           None of them is refused HERE for being unserved by the connected
+           machine. That is a capability question, resolved off the guest's
+           own `help` table further down, and a codec that pre-empted it
+           would be this side deciding what a Macintosh can do. */
+        case .windowAct:
+            expectedKeys = [
+                "version", "requestID", "operation", "windowActRequest",
+            ]
+            guard let act = request.windowActRequest, act.isWellFormed
+            else {
+                throw AgentIntegrationLocalTransportError.invalidMessage(
+                    "Window act does not name one window reference, one "
+                        + "action and exactly that action's geometry")
+            }
+        case .controlAct:
+            expectedKeys = [
+                "version", "requestID", "operation", "controlActRequest",
+            ]
+            guard let act = request.controlActRequest, act.isWellFormed
+            else {
+                throw AgentIntegrationLocalTransportError.invalidMessage(
+                    "Control act does not name one element reference and "
+                        + "one part code")
+            }
+        case .menuAct:
+            expectedKeys = [
+                "version", "requestID", "operation", "menuActRequest",
+            ]
+            guard let act = request.menuActRequest, act.isWellFormed else {
+                throw AgentIntegrationLocalTransportError.invalidMessage(
+                    "Menu act does not name a menu item and the titleLeft "
+                        + "that is its identity check")
+            }
+        case .textGet:
+            expectedKeys = [
+                "version", "requestID", "operation", "actElement",
+            ]
+            guard let element = request.actElement,
+                  AgentIntegrationActPolicy
+                      .isValidElementReference(element) else {
+                throw AgentIntegrationLocalTransportError.invalidMessage(
+                    "Text read does not name one element reference")
+            }
+        case .textSet:
+            expectedKeys = [
+                "version", "requestID", "operation", "actElement",
+                "actText",
+            ]
+            /* The text is REQUIRED and may be empty. Emptying a field is a
+               real act, so an empty string is a legal request and an
+               absent key is not the same thing — which is why this reads
+               `!= nil` rather than checking for content. */
+            guard let element = request.actElement,
+                  AgentIntegrationActPolicy
+                      .isValidElementReference(element),
+                  let text = request.actText,
+                  AgentIntegrationActPolicy.isBoundedText(text) else {
+                throw AgentIntegrationLocalTransportError.invalidMessage(
+                    "Text write does not name one element reference and a "
+                        + "bounded replacement")
+            }
         }
         /* Addressing belongs to no operation, so it is admitted for all of
            them rather than repeated in twelve key sets — and only when the

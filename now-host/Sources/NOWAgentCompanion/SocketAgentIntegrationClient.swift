@@ -138,6 +138,82 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
+    /* THE ACT LANE, overriding the five protocol defaults that answered
+       `noActLane`. That sentence — "this host carries no act lane yet" — was
+       true of every client that could reach them and stopped being true the
+       moment the local protocol grew the five operations. It stays as the
+       DEFAULT for the stub conformers in the test tree, which is exactly
+       what the rule at the head of `AgentIntegrationClient` reserved it for.
+
+       Each is the same four lines as the lanes above, and deliberately so:
+       there is nothing for this file to decide about an act. The grammar was
+       checked by the projection row, checked again by the codec, and checked
+       a third time by the adapter; what a completed answer may claim was
+       settled by `AgentIntegrationActControl` reading the machine's own
+       rows. This side forwards, and turns a broken socket into an
+       unavailable rather than into a refusal a machine never made. */
+
+    func windowAct(_ request: AgentIntegrationWindowActRequest) async
+        -> AgentIntegrationWindowActResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.windowAct(request)
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
+    func controlAct(_ request: AgentIntegrationControlActRequest) async
+        -> AgentIntegrationControlActResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.controlAct(request)
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
+    func menuAct(_ request: AgentIntegrationMenuActRequest) async
+        -> AgentIntegrationMenuActResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.menuAct(request)
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
+    func getElementText(element: String) async
+        -> AgentIntegrationTextReadingResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.getElementText(element: element)
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
+    func setElementText(element: String, text: String) async
+        -> AgentIntegrationTextSetResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.setElementText(
+                element: element, text: text)
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
     func cancelTransfer() async
         -> AgentIntegrationTransferCancelResult {
         guard let client else {
