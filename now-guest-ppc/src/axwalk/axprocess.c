@@ -8,18 +8,18 @@
    "which process does this pointer belong to" with nothing to break the
    tie. NOW's stays.
 
-   ONE THING UPSTREAM'S KNOWS THAT OURS DOES NOT, recorded rather than
-   quietly dropped: its sample carries the process's NAME (low-memory
-   CurApName, captured in the same context as A5), and it compares that
-   name against the Process Manager's before accepting a match. That is
-   a genuinely independent discriminator - a recycled slot whose A5 and
-   stack base both happen to land inside a live partition still has the
-   dead application's name on it. NOW's slot has no name field, so the
-   check cannot be made here without a change to contract/peek_table.h,
-   which is a decision for the extension's owner and not something to
-   smuggle in with a port. Ours refuses such a case as Ambiguous where
-   upstream's would resolve it, which is the safe direction to be wrong
-   in. */
+   THE ONE THING UPSTREAM'S KNEW THAT OURS DID NOT, since it is now
+   closed rather than merely recorded: its sample carries the process's
+   NAME (low-memory CurApName, captured in the same context as A5), and
+   it compares that name against the Process Manager's before accepting
+   a match. That is a genuinely independent discriminator - a recycled
+   slot whose A5 and stack base both happen to land inside a live
+   partition still has the dead application's name on it. The gap was a
+   missing field, not a missing check, so it was closed where it lived:
+   anchor format V3 in contract/peek_table.h carries the name, the
+   extension captures it in the same context as A5, and the oracle
+   checks it. Ours no longer refuses as Ambiguous the case upstream's
+   resolves. Still one oracle - NOW's. */
 
 #include "axprocess.h"
 
@@ -75,6 +75,7 @@ NowPeekReadStatus now_ax_bind_process(const ProcessSerialNumber *psn,
 {
     const NowPeekTable *table;
     ProcessInfoRec info;
+    Str31 name;
     NowPeekAnchorMatch match;
     NowPeekReadStatus st;
     THz sys;
@@ -95,6 +96,11 @@ NowPeekReadStatus now_ax_bind_process(const ProcessSerialNumber *psn,
 
     memset(&info, 0, sizeof info);
     info.processInfoLength = sizeof info;
+    /* processName is filled only into a caller-supplied buffer; a NULL
+       there means "do not bother". The oracle's V3 name check needs it,
+       so it is asked for. */
+    name[0] = 0;
+    info.processName = name;
     if (GetProcessInformation(psn, &info) != noErr) {
         return kNowPeekReadNoAnchor;
     }
@@ -114,7 +120,8 @@ NowPeekReadStatus now_ax_bind_process(const ProcessSerialNumber *psn,
     /* No age gate (0), per the header: stale is reported, never
        refused. */
     out->verdict = now_peek_anchor_match(table, out->partition_lo,
-                                         out->partition_size, 0, 0, &match);
+                                         out->partition_size, name, 0, 0,
+                                         &match);
     st = verdict_status(out->verdict);
     if (st != kNowPeekReadOk) {
         return st;

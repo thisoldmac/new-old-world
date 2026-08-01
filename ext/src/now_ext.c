@@ -7,9 +7,10 @@
  * every event-loop pass - proof of install, Gestalt, chaining, and
  * liveness. The anchor plane (P1), when the application arms it,
  * additionally records each process's low-memory CurrentA5 / WindowList
- * / MenuList into the shared table while that process's context is
- * current - the only place its per-process Toolbox state is visible
- * (finding observe-process-local-ui). It reads low memory ONLY: no
+ * / MenuList / CurStackBase / CurApName into the shared table while
+ * that process's context is current - the only place its per-process
+ * Toolbox state is visible (finding observe-process-local-ui). It
+ * reads low memory ONLY: no
  * Process Manager call, no allocation, nothing that moves memory. The
  * app correlates A5 to PSN and follows the pointers; foreign-MEMORY
  * reads never happen here (docs/resident-components.md).
@@ -84,6 +85,64 @@ static short find_anchor_slot(NowPeekU32 a5)
     return empty >= 0 ? empty : stalest;
 }
 
+/* Low memory as bytes, through a volatile the optimiser cannot fold.
+
+   LMGetCurApName is a literal address (0x0910), and gcc's array-bounds
+   pass reads a constant pointer as an object of KNOWN size - a small
+   integer address looks to it like "likely at address zero", so
+   indexing it is diagnosed as out of bounds and -Werror stops the
+   build. The bounds are real, they are simply not visible from C: this
+   is the system's own storage, not an array the compiler declared.
+   Routing the address through a volatile is the narrowest way to say
+   so, and it is honest twice over - low memory genuinely can change
+   under us, which is why every read of it should be a real load. */
+static const unsigned char *lowmem_bytes(unsigned long addr)
+{
+    volatile unsigned long opaque = addr;
+
+    return (const unsigned char *)opaque;
+}
+
+/* V3. The current context's application name, out of low memory into
+   the slot.
+
+   Everything this routine is allowed to do is visible in it: a bounded
+   byte loop over a fixed-size destination. No allocation, no Toolbox
+   string call, no library memcpy, nothing that could move memory - this
+   runs from the jGNE filter, inside whatever process is pumping, and
+   the rules there are the same ones the rest of capture_anchor obeys.
+   LMGetCurApName is an address constant (0x0910), not a trap, so
+   reading it costs nothing and cannot fail.
+
+   The length byte is written LAST, and cleared FIRST, for the reason
+   the stamp is: it is this field's own commit word, and a length that
+   arrives before the characters it counts describes bytes that are not
+   there yet. Belt and braces beside the stamp, and free.
+
+   Clamped to the field, never to the source: CurApName is documented as
+   a Str31 but the multiversal headers note the low-memory area may be
+   34 bytes, so the copy is bounded by what we WRITE, which is the only
+   bound that is ours to know. */
+static void capture_cur_ap_name(unsigned char *dst)
+{
+    const unsigned char *src = lowmem_bytes((unsigned long)LMGetCurApName());
+    short len;
+    short i;
+
+    dst[0] = 0;                       /* invalidate before writing */
+    if (src == NULL) {
+        return;
+    }
+    len = (short)src[0];
+    if (len > (short)(kNowPeekAnchorNameSize - 1)) {
+        len = (short)(kNowPeekAnchorNameSize - 1);
+    }
+    for (i = 1; i <= len; ++i) {
+        dst[i] = src[i];
+    }
+    dst[0] = (unsigned char)len;      /* commit */
+}
+
 /* Record the current context's anchors. Stamp is written LAST as the
    commit, and zeroed first as an invalidation, so a reader that
    double-samples the stamp can tell a torn cross-update read from a
@@ -121,6 +180,11 @@ static void capture_anchor(void)
        reader tell an address genuinely inside this process from one that
        merely looks like it. */
     slot->stack_base = (NowPeekU32)LMGetCurStackBase();
+    /* V3. Same position-says-nothing-about-write-order rule: last field
+       in the struct, still written before the stamp commits. This is the
+       one captured value that is not an address, which is exactly why it
+       can refute a slot that both addresses accept. */
+    capture_cur_ap_name(slot->cur_ap_name);
     slot->psn_high = 0;               /* the extension never fills PSN; */
     slot->psn_low = 0;                /* the app correlates A5 to PSN */
     slot->stamp_ticks = (NowPeekU32)LMGetTicks();   /* commit last */
@@ -197,7 +261,7 @@ void _start(void)
     table->heartbeat = table->boot_ticks;
     table->arm_request = 0;
     table->arm_active = 0;
-    table->anchor_format = kNowPeekAnchorFormatV2;
+    table->anchor_format = kNowPeekAnchorFormatV3;
     table->anchor_count = 0;
     /* Magic last: a reader that somehow sees the address early finds it
        only once the table is fully formed. */
