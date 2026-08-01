@@ -182,6 +182,10 @@ run_c now-guest-ppc sw_vers_parse_test.c     ""  src/software/sw_vers_parse.c
 run_c now-guest-ppc workshop_layout_test.c   ""  src/workshop/workshop_layout.c
 run_c now-guest-ppc cmd_help_test.c         ""  src/commands/cmd_help.c
 run_c now-guest-ppc cmd_line_test.c         ""  src/commands/cmd_line.c src/core/json.c
+# The gestalt reply's serializer, driven at caps the real machine never
+# reaches. See the test's header: the bug it pins could not have been found
+# on hardware, because no machine answers enough selectors to overflow.
+run_c now-guest-ppc gestalt_json_test.c     ""  src/commands/gestalt_json.c
 run_py now-guest-ppc ot_connect_source_test.py
 # The other half of the Stop button, and the link teardown it shares a file
 # with. wire.c does not compile on the host (g_get is private to it, and
