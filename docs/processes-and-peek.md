@@ -316,7 +316,8 @@ Users see one file; experiments get isolated blast radius.
   removal, repeated restarts, on emulator then metal. The Processes
   page's status line is its first consumer.
 - **P1 — anchors.** Per-process `CurrentA5`, `WindowList`, `MenuList`,
-  ticks stamp, with the cheap changed-anchor early-out (AXPeek's
+  ticks stamp — plus, appended since, the stack base and the process's
+  own name — with the cheap changed-anchor early-out (AXPeek's
   measured envelope: 0–1 tick on a 33 MHz 68040; the 1400c runs the
   filter under 68K emulation, so the early-out is not optional).
   First app payoff: front window bounds → cropped Front & Capture
@@ -342,15 +343,17 @@ first foreign-memory read. Three parts, split so the risky one is
 smallest and isolated.
 
 **What the filter captures, and how it is keyed.** The jGNE filter
-already runs in every process's context. When armed, it reads three
+already runs in every process's context. When armed, it reads the
 low-memory globals of *that* context — `LMGetCurrentA5`,
-`LMGetWindowList`, `LMGetMenuList` — and a `LMGetTicks` stamp, into an
-anchor slot. Nothing else: no Process Manager call (forbidden the
-lesson-hard way from resident code), no allocation, no toolbox that
-moves memory. Slots are **keyed by A5**, not PSN — A5 is a cheap,
-unique-per-process low-memory read, and getting the PSN would mean a
-Process Manager call this context must not make. This mirrors AXPeek
-exactly: the resident code observes A5/WindowList/MenuList; the PSN
+`LMGetWindowList`, `LMGetMenuList`, `LMGetCurStackBase` (V2) and
+`LMGetCurApName` (V3) — and a `LMGetTicks` stamp, into an anchor slot.
+Nothing else: no Process Manager call (forbidden the lesson-hard way
+from resident code), no allocation, no toolbox that moves memory. The
+stamp is written last, as the slot's commit, so every field a reader
+pairs with it was written before it. Slots are **keyed by A5**, not
+PSN — A5 is a cheap, unique-per-process low-memory read, and getting
+the PSN would mean a Process Manager call this context must not make.
+That split is AXPeek's: the resident code observes low memory; the PSN
 correlation happens later, in the application.
 
 Slot management, all O(32) scans (cheap, and the changed-anchor
@@ -359,8 +362,18 @@ take an empty slot (`a5 == 0`), else recycle the stalest. A quit
 process leaves a slot whose stamp stops advancing; the app judges it
 stale. A5 reuse by a later process is self-correcting — the next pass
 overwrites with that world's fresh `WindowList`. `anchor_format` flips
-`None → V1`; the slot's `psn_*` fields stay zero (the extension never
-fills them), which V1 documents.
+`None →` whatever format this binary publishes — V3 today; the slot's
+`psn_*` fields stay zero (the extension never fills them), which every
+format documents.
+
+The format word is the reader's only gate on the newer fields. Each
+version **appends**, never inserts: `stamp_ticks` keeps offset 20 so
+the seqlock stays where a V1 reader left it, and `stack_base` keeps 24
+across V3. So a shorter table's bytes for a field it never had are not
+absent, they are whatever the shorter struct left there — gate on
+`anchor_format`, never on a value being nonzero.
+`contract/peek_table.h` is the authority for the slot layout, the
+format enum, and that rule.
 
 **The arm handshake — the plane's first real exercise.** P1 is dormant
 until asked. The extension advertises it (`caps |= CapAnchors`) but
@@ -380,7 +393,14 @@ file copy from fixed. To get the front window's bounds:
 2. Find the anchor slot whose `a5` falls **inside that partition** and
    whose stamp is fresh. That is the PSN↔A5 correlation, validated by
    containment — an A5 outside the front process's partition is not its
-   A5, and the read fails closed.
+   A5, and the read fails closed. Since V2 the oracle checks the slot's
+   `stack_base` against the same partition, bounding the A5 world from
+   the other end; since V3 it also lets the captured `cur_ap_name`
+   **refute** a slot. Both exist to drop debris a recycled partition
+   would otherwise let through — and the name only ever refutes, never
+   elects, because two copies of one application share it. The
+   verdicts are the oracle's (`peek_oracle.c`); a slot that is present
+   but provably wrong is a different diagnosis from no slot at all.
 3. Follow `window_list` to the front `WindowRecord`, then its
    `strucRgn`/`portRect` bounding box — every dereference bounds-checked
    against the same partition (and validated SysZone for shared
