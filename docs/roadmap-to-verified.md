@@ -185,8 +185,11 @@ toolchain in that worktree — so 3/3 is Phase 2's number, not a fresh one.)
 `GuestListener` had **no scene path**. It has one now: `requestScene` sends
 `scene.request`, collects the transfer the guest answers with, and hands the
 undecoded bytes plus the envelope's `irVersion` to the pane's one door. A
-person presses *Look Now*; nothing polls, because a scene is a transfer on the
-lane screenshots and file transfers share. Two resting states were added
+person presses *Look Now* — and, since 2026-08-01, the page also keeps itself up
+to date: a control-message probe (`axsnap`) about twice a second, a bulk
+transfer only when it reports a change or the drawing has aged past its ceiling,
+and a visible Live/Paused switch. The lane argument survived as the *shape* of
+that loop rather than as a veto on it. Two resting states were added
 (*Looking*, *Not This Time*) and three changed meaning. Nothing has fetched a
 scene from a Macintosh — the whole path is exercised against a fake guest on
 loopback.
