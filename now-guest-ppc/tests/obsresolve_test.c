@@ -246,6 +246,84 @@ static void window_references_resolve(void)
 /* THE test. The window closed and reopened: same title, same
    occurrence, same process, same everything a person can see - at a new
    address. The title still resolves, which is precisely the danger. */
+/* THE CROSSING POINT, and the reason this case is worth its own test.
+   A TEXT element - a dialog's own TextEdit record - is the one element
+   an observation can mint that carries no ControlHandle: it is reached
+   through its window. Until 2026-07-31 there were two registries minting
+   the same token shape, and the text element was the only thing the act
+   plane's minter made that the reference layer's did not; unifying them
+   meant this element had to resolve HERE, through the one resolver.
+
+   It must not go down the control walk. That walk matches on a control
+   title, this element's is empty, and the first untitled control in the
+   window would answer to it - which is precisely the "something else
+   answers to the same name" failure the whole layer exists to refuse,
+   arrived at by an empty string. So the identity is what selects the
+   walk, not the kind: no control handle means the window walk, whose
+   fingerprint is computed against a zero handle - exactly what such a
+   reference was minted with. */
+static void a_text_element_resolves_through_its_window(void)
+{
+    AxFixture        f;
+    NowAxMemory      m;
+    NowObsRegistry   registry;
+    NowObsLive       live;
+    NowObsResolution got;
+    NowObsIdentity   id;
+    char             token[kNowObsTokenMax];
+
+    axfix_init(&f, &m);
+    build_scene(&f);
+    now_obs_registry_init(&registry, 0x11111111UL, 0x22222222UL);
+
+    memset(&id, 0, sizeof(id));
+    id.psn_hi = kPsnHi;
+    id.psn_lo = kPsnLo;
+    id.process_fingerprint = kProcFp;
+    id.window_address = win_at(1);
+    id.control_handle = 0;
+    id.text_kind = kNowObsTextDialogTe;
+    id.node_fingerprint = now_ax_ref_fingerprint(kPsnHi, kPsnLo, win_at(1),
+                                                 0UL);
+    id.ref.psn_hi = kPsnHi;
+    id.ref.psn_lo = kPsnLo;
+    strcpy((char *)id.ref.window_title, "Save");
+    id.ref.window_title_len = strlen("Save");
+    id.ref.window_occurrence = 0;
+    id.ref.node_fingerprint = id.node_fingerprint;
+    check(now_obs_mint(&registry, kNowObsKindElement, &id, token,
+                       sizeof(token)) == 1, "mint a text element reference");
+
+    live_ok(&live, &m);
+    now_obs_resolve(&registry, kNowObsKindElement, token, strlen(token),
+                    &live, &got);
+    check(got.verdict == kNowObsOk,
+          "an element reference with no control handle resolves");
+    check(got.resolved.window_address == win_at(1), "to its own window");
+    check(got.resolved.control_handle == 0,
+          "and names no control, because it has none");
+    /* Not the first untitled control in that window, which is what the
+       control walk would have found. The scene's controls are all
+       titled, so the sharper statement available here is that the walk
+       did not descend at all. */
+    check(got.resolved.control.title[0] == '\0',
+          "and did not descend to a control that answers to no name");
+
+    /* And it goes stale by the window's arithmetic, not a control's: the
+       same address moving is the same refusal. */
+    build_window(&f, win_at(1), "Save", 1, ctl_handle(1, 0), 0);
+    id.window_address = win_at(2);
+    id.node_fingerprint = now_ax_ref_fingerprint(kPsnHi, kPsnLo, win_at(2),
+                                                 0UL);
+    id.ref.node_fingerprint = id.node_fingerprint;
+    check(now_obs_mint(&registry, kNowObsKindElement, &id, token,
+                       sizeof(token)) == 1, "mint one against a moved window");
+    now_obs_resolve(&registry, kNowObsKindElement, token, strlen(token),
+                    &live, &got);
+    check(got.verdict == kNowObsStale && got.why == kNowObsWhyAddressesMoved,
+          "a text element whose window moved is stale, not repaired");
+}
+
 static void a_reopened_window_is_a_different_window(void)
 {
     AxFixture        f;
@@ -569,6 +647,7 @@ int main(void)
 {
     resolves();
     window_references_resolve();
+    a_text_element_resolves_through_its_window();
     a_reopened_window_is_a_different_window();
     the_two_staleness_guards_are_independent();
     every_refusal_is_told_apart();

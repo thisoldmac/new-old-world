@@ -758,10 +758,19 @@ void now_observe_handle_command(const char *request_json, long id, char *out,
         fail(out, cap, id, "bad-request", "ref is required");
         return;
     }
-    if (strncmp(reference, "now-window-", 11) == 0) {
-        now_observe_resolve_window(reference, 0, &handle);
-    } else {
-        now_observe_resolve_element(reference, 0, &handle);
+    /* Which kind, asked of the module that owns the spelling. This read
+       "now-window-" and 11 as literals until 2026-07-31 - a second copy
+       of a format obsref.c defines, in the one function whose whole job
+       is to tell the two kinds apart, and the copy that would have been
+       wrong first if either prefix ever changed. */
+    {
+        const char *window_prefix = now_obs_kind_prefix(kNowObsKindWindow);
+
+        if (strncmp(reference, window_prefix, strlen(window_prefix)) == 0) {
+            now_observe_resolve_window(reference, 0, &handle);
+        } else {
+            now_observe_resolve_element(reference, 0, &handle);
+        }
     }
     now_json_escape(reference, escaped, sizeof(escaped));
 
