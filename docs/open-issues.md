@@ -95,6 +95,24 @@ no public API exposes it short of downloading the resource — so
 `CloudEntry.bytes` stays unstated for photos, deliberately, not as an
 oversight.
 
+Update 2026-08-01, later still: the three fan-out branches above (drive
+full-width layout, Contacts card view, Photos hardening) are merged
+into one tree (`claude/swarm-icloud-integration`, base
+`claude/swarm-icloud-split`). One conflict, in `cloud_module.c`'s
+`choose_service()`: the drive branch added a layout recompute on every
+service switch, the contacts branch added per-service view dispatch —
+both intents kept, dispatch then relayout. Two more conflicts, in this
+file and docs/icloud.md, were two branches appending different ledger
+paragraphs after the same anchor line rather than true disagreement —
+both paragraphs kept. **TESTED, not metal-verified**: `scripts/test-all`
+is green post-merge (75 native tests including `cloud_contacts_card_test`,
+both guest cross-builds plus the NOW Extension, `swift test` at 1324
+tests, `xcodebuild` Debug and Release) with the exit code read directly.
+Nothing here changes what each branch's own entry above already says is
+unproven — a clean merge does not prove Photos or Contacts against a
+real TCC-granted library, or put the new drive layout or the Contacts
+card in front of anyone on the PowerBook.
+
 ## iCloud Drive sharing is tested against fabricated stubs only (2026-08-01)
 
 **Unverified.** The share now sees a directory logically — iCloud
