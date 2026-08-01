@@ -12,27 +12,66 @@ because each one's failures would invalidate work in the next.
 
 ---
 
-## Phase 1 — the honest gaps
+## Phase 1 — the honest gaps — **DONE 2026-07-31**
 
-Things this slice deliberately left incomplete, each recorded at its own site.
-None is research; all are known-shape work. **Do these before any validation
-pass**, because a pass that trips over a known hole wastes the setup.
+All six closed and on `main`. Kept in full because what each one *found* outlives
+the fix, and three of them found something the gap description had wrong.
 
-| # | Gap | Size | Where it is written down |
-|---|---|---|---|
-| 1.1 | **The guest's Stop button cannot stop a pull.** Needs `now_wire_get_cancel()` inside `wire.c`'s private `g_get`, plus one registration. `now_pull_can_stop()` is false without it, so the pane looks unchanged — no regression, no fix. | ~15 lines, specified | `docs/guest-transfer-cancel.md` |
-| 1.2 | **Three act rows are built and unregistered.** NOW's contract declares no act plane; registering one today fails the coverage test with the sentence describing a permanently-unavailable tool. | contract + 5 mechanical steps | `MirrorActProjections.swift` |
-| 1.3 | **The ported walk has no caller.** `src/axwalk/` compiles and is tested; `scene_build.c` does not use it, and `now_peek_menu_titles` is still the declared stub. | wiring | `axprocess.h` has the exact API |
-| 1.4 | **The P3 probe cannot advance past *packages*.** Its counters publish through Gestalt `'QDpr'` and nothing reads them, so "loaded at boot" cannot be told from "did not load". | a ~100-line throwaway reader | `prototypes/qdprobe/README.md` |
-| 1.5 | **`conn_disconnect()` cleans up no pull** where `enter_backoff()` cleans five — disconnecting mid-pull leaks an open temp fork. | small | found by the transfer-cancel agent |
-| 1.6 | **The Software review section is misfiled** under the Files heading in the review doc. | trivial | `metal-and-ux-review.md` |
+| # | Gap | Outcome |
+|---|---|---|
+| 1.1 | The guest's Stop button could not stop a pull | **Done.** `now_wire_get_cancel()` beside `get_cleanup`, and one registration line in `files_create()` — everything else had already been built and was inert for want of a canceller. |
+| 1.2 | Three act rows built and unregistered | **Done.** Registered with `.mcp` reached; a call now returns `now-act-lane-absent` rather than a false "host is unavailable". |
+| 1.3 | The ported walk had no caller | **Done.** `menubar`, `controls`, `text` and `kind` now cross the wire. |
+| 1.4 | The P3 probe could not be observed | **Done.** `prototypes/qdreader/` — and it is Carbon/PPC, so armed at its own A5 the reader *is* the native caller the probe's question is about. |
+| 1.5 | `conn_disconnect()` cleaned up no pull | **Done, and it was twice as wide as written** — see below. |
+| 1.6 | The Software review section was misfiled | **Done.** Promoted out of the Files heading; three cross-references updated. |
 
-**1.3 is the one that unlocks the most.** The menu walk was blocked on a citation
-for most of this slice; the port brought the layout across (`6` / `6` / `14`,
-mutation-killed by value). Wiring it turns `menus[]` from an absent key into a
-produced plane, which is the largest single increase in what a scene can say.
+### What Phase 1 found that Phase 1 did not predict
 
----
+- **1.5 was wrong in this document.** It said `enter_backoff()` cleans five things
+  where `conn_disconnect()` cleans none. True, and misleading: **none of those
+  five was `g_get`**, so a dropped link leaked the same open temp fork and only
+  the 30 s `service_get` timeout ever reached it. Both paths were broken. The fix
+  is one shared teardown list, because two lists that must agree had already
+  stopped agreeing — appending the pull to both would have rebuilt the defect one
+  entry later.
+- **The probe silently replaced all rect drawing while armed.** `qdprobe_rect`
+  tail-called the previous chain only when `saved_procs != 0`, but
+  `patch_current_port` only ever claims a port whose `grafProcs` was `NULL`, so
+  that branch never matched a port we had legitimately patched. Every rectangle,
+  erases included, fell through to "draw nothing" — while the file's header
+  claimed it "never replaces the drawing, only observes it". Fixed with
+  `StdRect`, verified as trap `0xA8A0` in the object file. **Nobody read this out
+  of the source:** the reader had to be *built to tolerate* it before it was
+  obvious the behaviour was a bug. A spike that works around its own subject is
+  telling you something.
+- **A plane has three states, not two** — absent, empty, populated. The scene
+  test builds all three in one document, because an encoder that emits the same
+  thing everywhere satisfies any single case alone.
+- **Truncation must be attributable or retracted.** `meta.errors` can say
+  "windows truncated" because there is one `windows` array; it cannot say *which*
+  window's controls stopped early, and a short list reads as a complete one. So a
+  control chain that hits its bound drops that window's `controls` key entirely,
+  and always records the drop.
+- **Window rows needed an address.** Counting along both chains would have
+  misfiled every control after the first window skipped for insane bounds —
+  quiet, plausible, permanently wrong.
+- **A registered row made a true sentence false.** The act clients returned
+  "New Old World host is unavailable", correct while only stubs could reach them
+  and a lie the moment a real client could. Registration changes what a stub is
+  allowed to say.
+
+### Gates at close
+
+**1132 host tests** / 54 skipped / 0 failures · **50 native tests** · 3/3 guest
+cross-builds. Nothing has run on a Macintosh.
+
+### Small debts opened by Phase 1
+
+- `wire.c`'s comment still calls the scene "~11 KB of struct"; the code is right,
+  the number is stale (it is ~27 KB now).
+- The probe's `saved_procs` is structurally always 0, so the chaining branch is
+  dead code kept for the day the probe learns to patch an already-patched port.
 
 ## Phase 2 — finish the MirrorKit port
 
