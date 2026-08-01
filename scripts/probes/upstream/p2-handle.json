@@ -1,0 +1,541 @@
+{
+  "agent": {
+    "agent": "mirror",
+    "version": "0.1a",
+    "gitRev": "2deb4ef2",
+    "build": "f1d81f34b688 2026-07-31T21:19:14Z",
+    "machineType": "406",
+    "oracle": true,
+    "oracleStatus": "ok",
+    "oracleVersion": 4,
+    "portal": {
+      "present": true,
+      "enabled": true
+    },
+    "scenePlanes": [
+      "observe",
+      "axtree"
+    ],
+    "actionPlanes": [
+      "activate",
+      "click",
+      "key",
+      "axdo"
+    ]
+  },
+  "results": [
+    {
+      "case": "te",
+      "n": 20,
+      "dropped": 0,
+      "readReply": 20,
+      "readCorrect": 20,
+      "readOutside": 20,
+      "writeReply": 20,
+      "writeActuated": 20,
+      "writeOutside": 20,
+      "trials": [
+        {
+          "valid": true,
+          "read": {
+            "kind": "te",
+            "want": "HGVSWVWJ",
+            "replied": true,
+            "got": "HGVSWVWJ",
+            "length": 8,
+            "itemType": 0,
+            "teHandle": 521000144,
+            "outside": "HGVSWVWJ",
+            "correct": true,
+            "agrees_outside": true
+          },
+          "write": {
+            "kind": "te",
+            "want": "OUTTMSTW",
+            "replied": true,
+            "readback": "OUTTMSTW",
+            "fresh": "OUTTMSTW",
+            "outside": "OUTTMSTW",
+            "actuated": true,
+            "agrees_outside": true
+          }
+        },
+        {
+          "valid": true,
+          "read": {
+            "kind": "te",
+            "want": "MPGIADQU",
+            "replied": true,
+            "got": "MPGIADQU",
+            "length": 8,
+            "itemType": 0,
+            "teHandle": 521000120,
+            "outside": "MPGIADQU",
+            "correct": true,
+            "agrees_outside": true
+          },
+          "write": {
+            "kind": "te",
+            "want": "IWEQXHUE",
+            "replied": true,
+            "readback": "IWEQXHUE",
+            "fresh": "IWEQXHUE",
+            "outside": "IWEQXHUE",
+            "actuated": true,
+            "agrees_outside": true
+          }
+        },
+        {
+          "valid": true,
+          "read": {
+            "kind": "te",
+            "want": "XODCZKVK",
+            "replied": true,
+            "got": "XODCZKVK",
+            "length": 8,
+            "itemType": 0,
+            "teHandle": 521000168,
+            "outside": "XODCZKVK",
+            "correct": true,
+            "agrees_outside": true
+          },
+          "write": {
+            "kind": "te",
+            "want": "FSLCSUZX",
+            "replied": true,
+            "readback": "FSLCSUZX",
+            "fresh": "FSLCSUZX",
+            "outside": "FSLCSUZX",
+            "actuated": true,
+            "agrees_outside": true
+          }
+        },
+        {
+          "valid": true,
+          "read": {
+            "kind": "te",
+            "want": "ZJRKYCWC",
+            "replied": true,
+            "got": "ZJRKYCWC",
+            "length": 8,
+            "itemType": 0,
+            "teHandle": 521000152,
+            "outside": "ZJRKYCWC",
+            "correct": true,
+            "agrees_outside": true
+          },
+          "write": {
+            "kind": "te",
+            "want": "OOSGDAZL",
+            "replied": true,
+            "readback": "OOSGDAZL",
+            "fresh": "OOSGDAZL",
+            "outside": "OOSGDAZL",
+            "actuated": true,
+            "agrees_outside": true
+          }
+        },
+        {
+          "valid": true,
+          "read": {
+            "kind": "te",
+            "want": "PUXCKIGF",
+            "replied": true,
+            "got": "PUXCKIGF",
+            "length": 8,
+            "itemType": 0,
+            "teHandle": 521000136,
+            "outside": "PUXCKIGF",
+            "correct": true,
+            "agrees_outside": true
+          },
+          "write": {
+            "kind": "te",
+            "want": "TQNRUWWB",
+            "replied": true,
+            "readback": "TQNRUWWB",
+            "fresh": "TQNRUWWB",
+            "outside": "TQNRUWWB",
+            "actuated": true,
+            "agrees_outside": true
+          }
+        },
+        {
+          "valid": true,
+          "read": {
+            "kind": "te",
+            "want": "XBVVUFOE",
+            "replied": true,
+            "got": "XBVVUFOE",
+            "length": 8,
+            "itemType": 0,
+            "teHandle": 521000112,
+            "outside": "XBVVUFOE",
+            "correct": true,
+            "agrees_outside": true
+          },
+          "write": {
+            "kind": "te",
+            "want": "WJJOCQJF",
+            "replied": true,
+            "readback": "WJJOCQJF",
+            "fresh": "WJJOCQJF",
+            "outside": "WJJOCQJF",
+            "actuated": true,
+            "agrees_outside": true
+          }
+        },
+        {
+          "valid": true,
+          "read": {
+            "kind": "te",
+            "want": "WQIEPDTX",
+            "replied": true,
+            "got": "WQIEPDTX",
+            "length": 8,
+            "itemType": 0,
+            "teHandle": 521000164,
+            "outside": "WQIEPDTX",
+            "correct": true,
+            "agrees_outside": true
+          },
+          "write": {
+            "kind": "te",
+            "want": "VGPDEOSD",
+            "replied": true,
+            "readback": "VGPDEOSD",
+            "fresh": "VGPDEOSD",
+            "outside": "VGPDEOSD",
+            "actuated": true,
+            "agrees_outside": true
+          }
+        },
+        {
+          "valid": true,
+          "read": {
+            "kind": "te",
+            "want": "EEXWJAPH",
+            "replied": true,
+            "got": "EEXWJAPH",
+            "length": 8,
+            "itemType": 0,
+            "teHandle": 521000148,
+            "outside": "EEXWJAPH",
+            "correct": true,
+            "agrees_outside": true
+          },
+          "write": {
+            "kind": "te",
+            "want": "IBWEMOKN",
+            "replied": true,
+            "readback": "IBWEMOKN",
+            "fresh": "IBWEMOKN",
+            "outside": "IBWEMOKN",
+            "actuated": true,
+            "agrees_outside": true
+          }
+        },
+        {
+          "valid": true,
+          "read": {
+            "kind": "te",
+            "want": "KVPMGYNV",
+            "replied": true,
+            "got": "KVPMGYNV",
+            "length": 8,
+            "itemType": 0,
+            "teHandle": 521000132,
+            "outside": "KVPMGYNV",
+            "correct": true,
+            "agrees_outside": true
+          },
+          "write": {
+            "kind": "te",
+            "want": "OAASCYJN",
+            "replied": true,
+            "readback": "OAASCYJN",
+            "fresh": "OAASCYJN",
+            "outside": "OAASCYJN",
+            "actuated": true,
+            "agrees_outside": true
+          }
+        },
+        {
+          "valid": true,
+          "read": {
+            "kind": "te",
+            "want": "CMHWDEOT",
+            "replied": true,
+            "got": "CMHWDEOT",
+            "length": 8,
+            "itemType": 0,
+            "teHandle": 521000108,
+            "outside": "CMHWDEOT",
+            "correct": true,
+            "agrees_outside": true
+          },
+          "write": {
+            "kind": "te",
+            "want": "GFYSGTPY",
+            "replied": true,
+            "readback": "GFYSGTPY",
+            "fresh": "GFYSGTPY",
+            "outside": "GFYSGTPY",
+            "actuated": true,
+            "agrees_outside": true
+          }
+        },
+        {
+          "valid": true,
+          "read": {
+            "kind": "te",
+            "want": "IYASGJZI",
+            "replied": true,
+            "got": "IYASGJZI",
+            "length": 8,
+            "itemType": 0,
+            "teHandle": 521000160,
+            "outside": "IYASGJZI",
+            "correct": true,
+            "agrees_outside": true
+          },
+          "write": {
+            "kind": "te",
+            "want": "PPDANWNV",
+            "replied": true,
+            "readback": "PPDANWNV",
+            "fresh": "PPDANWNV",
+            "outside": "PPDANWNV",
+            "actuated": true,
+            "agrees_outside": true
+          }
+        },
+        {
+          "valid": true,
+          "read": {
+            "kind": "te",
+            "want": "KRCNIXJL",
+            "replied": true,
+            "got": "KRCNIXJL",
+            "length": 8,
+            "itemType": 0,
+            "teHandle": 521000144,
+            "outside": "KRCNIXJL",
+            "correct": true,
+            "agrees_outside": true
+          },
+          "write": {
+            "kind": "te",
+            "want": "TQGIVEIG",
+            "replied": true,
+            "readback": "TQGIVEIG",
+            "fresh": "TQGIVEIG",
+            "outside": "TQGIVEIG",
+            "actuated": true,
+            "agrees_outside": true
+          }
+        },
+        {
+          "valid": true,
+          "read": {
+            "kind": "te",
+            "want": "MVNRTJYP",
+            "replied": true,
+            "got": "MVNRTJYP",
+            "length": 8,
+            "itemType": 0,
+            "teHandle": 521000120,
+            "outside": "MVNRTJYP",
+            "correct": true,
+            "agrees_outside": true
+          },
+          "write": {
+            "kind": "te",
+            "want": "QYNQFGIN",
+            "replied": true,
+            "readback": "QYNQFGIN",
+            "fresh": "QYNQFGIN",
+            "outside": "QYNQFGIN",
+            "actuated": true,
+            "agrees_outside": true
+          }
+        },
+        {
+          "valid": true,
+          "read": {
+            "kind": "te",
+            "want": "NMIMWINI",
+            "replied": true,
+            "got": "NMIMWINI",
+            "length": 8,
+            "itemType": 0,
+            "teHandle": 521000168,
+            "outside": "NMIMWINI",
+            "correct": true,
+            "agrees_outside": true
+          },
+          "write": {
+            "kind": "te",
+            "want": "YWEBKPCQ",
+            "replied": true,
+            "readback": "YWEBKPCQ",
+            "fresh": "YWEBKPCQ",
+            "outside": "YWEBKPCQ",
+            "actuated": true,
+            "agrees_outside": true
+          }
+        },
+        {
+          "valid": true,
+          "read": {
+            "kind": "te",
+            "want": "WIDWJOAR",
+            "replied": true,
+            "got": "WIDWJOAR",
+            "length": 8,
+            "itemType": 0,
+            "teHandle": 521000152,
+            "outside": "WIDWJOAR",
+            "correct": true,
+            "agrees_outside": true
+          },
+          "write": {
+            "kind": "te",
+            "want": "BZNYLWKH",
+            "replied": true,
+            "readback": "BZNYLWKH",
+            "fresh": "BZNYLWKH",
+            "outside": "BZNYLWKH",
+            "actuated": true,
+            "agrees_outside": true
+          }
+        },
+        {
+          "valid": true,
+          "read": {
+            "kind": "te",
+            "want": "PVEIXMGH",
+            "replied": true,
+            "got": "PVEIXMGH",
+            "length": 8,
+            "itemType": 0,
+            "teHandle": 521000136,
+            "outside": "PVEIXMGH",
+            "correct": true,
+            "agrees_outside": true
+          },
+          "write": {
+            "kind": "te",
+            "want": "HKBQWHRD",
+            "replied": true,
+            "readback": "HKBQWHRD",
+            "fresh": "HKBQWHRD",
+            "outside": "HKBQWHRD",
+            "actuated": true,
+            "agrees_outside": true
+          }
+        },
+        {
+          "valid": true,
+          "read": {
+            "kind": "te",
+            "want": "CDGMRRCB",
+            "replied": true,
+            "got": "CDGMRRCB",
+            "length": 8,
+            "itemType": 0,
+            "teHandle": 521000112,
+            "outside": "CDGMRRCB",
+            "correct": true,
+            "agrees_outside": true
+          },
+          "write": {
+            "kind": "te",
+            "want": "RYDPOADL",
+            "replied": true,
+            "readback": "RYDPOADL",
+            "fresh": "RYDPOADL",
+            "outside": "RYDPOADL",
+            "actuated": true,
+            "agrees_outside": true
+          }
+        },
+        {
+          "valid": true,
+          "read": {
+            "kind": "te",
+            "want": "QFFURGLK",
+            "replied": true,
+            "got": "QFFURGLK",
+            "length": 8,
+            "itemType": 0,
+            "teHandle": 521000164,
+            "outside": "QFFURGLK",
+            "correct": true,
+            "agrees_outside": true
+          },
+          "write": {
+            "kind": "te",
+            "want": "BQPVHHTY",
+            "replied": true,
+            "readback": "BQPVHHTY",
+            "fresh": "BQPVHHTY",
+            "outside": "BQPVHHTY",
+            "actuated": true,
+            "agrees_outside": true
+          }
+        },
+        {
+          "valid": true,
+          "read": {
+            "kind": "te",
+            "want": "AZYBPNXY",
+            "replied": true,
+            "got": "AZYBPNXY",
+            "length": 8,
+            "itemType": 0,
+            "teHandle": 521000148,
+            "outside": "AZYBPNXY",
+            "correct": true,
+            "agrees_outside": true
+          },
+          "write": {
+            "kind": "te",
+            "want": "HLGBWOHO",
+            "replied": true,
+            "readback": "HLGBWOHO",
+            "fresh": "HLGBWOHO",
+            "outside": "HLGBWOHO",
+            "actuated": true,
+            "agrees_outside": true
+          }
+        },
+        {
+          "valid": true,
+          "read": {
+            "kind": "te",
+            "want": "DKEXHDOF",
+            "replied": true,
+            "got": "DKEXHDOF",
+            "length": 8,
+            "itemType": 0,
+            "teHandle": 521000132,
+            "outside": "DKEXHDOF",
+            "correct": true,
+            "agrees_outside": true
+          },
+          "write": {
+            "kind": "te",
+            "want": "KEEJAOJN",
+            "replied": true,
+            "readback": "KEEJAOJN",
+            "fresh": "KEEJAOJN",
+            "outside": "KEEJAOJN",
+            "actuated": true,
+            "agrees_outside": true
+          }
+        }
+      ]
+    }
+  ]
+}
