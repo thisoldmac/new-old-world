@@ -114,6 +114,32 @@ typedef struct {
     unsigned long evicted;
 } NowObsRegistry;
 
+/* The process-identity fingerprint - the thing a PSN is not.
+
+   Mac OS reuses process serial numbers. A reference minted against
+   "PSN 0/12345" and resolved after that application quit and another
+   launched into the same slot would resolve CLEANLY against the wrong
+   program, which is the worst failure this layer can have: not a
+   refusal, not a crash, a confident act on a stranger. So identity is
+   the whole tuple.
+
+   `launch_date` is the discriminator that does the work. It is the
+   Process Manager's own launch timestamp, it is not derived from any
+   address, and a relaunch cannot inherit it - unlike the partition
+   bounds, the signature and the name, all of which a same-application
+   relaunch reproduces exactly. Callers with no launch date pass 0 and
+   get the weaker tuple rather than an error, in the same spirit as the
+   oracle's optional V3 name.
+
+   `name` is an optional Pascal string (NULL for none). */
+unsigned long now_obs_process_fingerprint(unsigned long psn_hi,
+                                          unsigned long psn_lo,
+                                          unsigned long signature,
+                                          unsigned long launch_date,
+                                          unsigned long partition_lo,
+                                          unsigned long partition_size,
+                                          const unsigned char *name);
+
 /* Arms a registry with this session's secret. Called once, with the
    least predictable numbers the caller can obtain; a caller that passes
    two constants gets a registry whose tokens are reproducible, which is

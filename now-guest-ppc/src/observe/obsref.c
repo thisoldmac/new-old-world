@@ -42,6 +42,33 @@ static unsigned long token_word(unsigned long domain,
     return hash & 0xffffffffUL;
 }
 
+unsigned long now_obs_process_fingerprint(unsigned long psn_hi,
+                                          unsigned long psn_lo,
+                                          unsigned long signature,
+                                          unsigned long launch_date,
+                                          unsigned long partition_lo,
+                                          unsigned long partition_size,
+                                          const unsigned char *name)
+{
+    unsigned long hash = 2166136261UL;
+    unsigned int  i;
+    unsigned int  n;
+
+    hash = mix32(hash, psn_hi);
+    hash = mix32(hash, psn_lo);
+    hash = mix32(hash, signature);
+    hash = mix32(hash, launch_date);
+    hash = mix32(hash, partition_lo);
+    hash = mix32(hash, partition_size);
+    n = (name != NULL) ? (unsigned int)name[0] : 0U;
+    hash = mix32(hash, (unsigned long)n);
+    for (i = 0; i < n; i++) {
+        hash ^= name[1 + i];
+        hash = (hash * 16777619UL) & 0xffffffffUL;
+    }
+    return hash & 0xffffffffUL;
+}
+
 void now_obs_registry_init(NowObsRegistry *registry, unsigned long seed_hi,
                            unsigned long seed_lo)
 {
