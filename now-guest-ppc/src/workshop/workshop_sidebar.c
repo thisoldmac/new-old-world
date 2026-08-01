@@ -30,8 +30,22 @@ enum {
     kLogsIconID = 135,
     kSoftwareIconID = 136,
     kMcpIconID = 137,
-    kDiagnosticsIconID = 138
+    kDiagnosticsIconID = 138,
+    kNetworkingIconID = 139
 };
+
+/* The nav rows plus the two pinned ones ARE the module list, and
+   row_rect() below indexes nav_rows[module - 1]. A count one short reads
+   PAST the array and lays a row out over whatever follows it in the
+   struct - which is precisely what happened when Networking went in on
+   2026-08-01 and the last three rows drew on top of each other.
+
+   It lives here rather than beside kWorkshopNavRows because
+   workshop_layout.h is compiled by the HOST cc for a native test and must
+   stay free of Toolbox headers; workshop_module.h is not. This file
+   already includes both, and it is the file that does the indexing. */
+_Static_assert(kWorkshopNavRows + 2 == kWorkshopModuleCount,
+               "nav rows + the two pinned rows must be every module");
 
 static WindowRef g_owner;
 static WorkshopLayout g_lay;
@@ -58,6 +72,7 @@ static const struct {
     { "Software", "What is installed", kSoftwareIconID },
     { "MCP", "Who may drive this Mac", kMcpIconID },
     { "Diagnostics", "Measure this Mac", kDiagnosticsIconID },
+    { "Networking", "Link, address and ports", kNetworkingIconID },
     { "Logs", "This launch's events", kLogsIconID },
     { "Connection", NULL, kConnectionIconID }
 };

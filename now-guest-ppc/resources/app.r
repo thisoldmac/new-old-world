@@ -159,6 +159,17 @@ resource 'ics#' (138) {
     }
 };
 
+/* 139: Networking. A globe - circle with a meridian and two parallels,
+   which reads at 16x16 where a plug or a cable does not. */
+resource 'ics#' (139) {
+    {
+        $"0000 07E0 1818 2424 4426 4A22 9241 9241"
+        $"9241 4A22 4426 2424 1818 07E0 0000 0000",
+        $"0000 07E0 1FF8 3FFC 7FFE 7FFE FFFF FFFF"
+        $"FFFF 7FFE 7FFE 3FFC 1FF8 07E0 0000 0000"
+    }
+};
+
 resource 'SIZE' (-1) {
     reserved,
     acceptSuspendResumeEvents,
