@@ -5,13 +5,25 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MIRROR="$(cd "$HERE/.." && pwd)"          # this repo
+# The TimBotTu lab checkout, whose tools/qmp is how the VM is quit. Found the
+# same way spin-up.sh finds it, and for the same reason (AGENTS.md): the lab
+# stopped being Mirror's parent when Mirror was vendored into NOW.
 LAB="${MIRROR_LAB_ROOT:-}"
 if [ -z "$LAB" ]; then
     LAB="$(cd "$MIRROR/.." && pwd)"
     while [ "$LAB" != "/" ] && [ ! -f "$LAB/tools/lib.sh" ]; do
         LAB="$(dirname "$LAB")"
     done
-fi           # the TimBotTu lab checkout (tools/qmp)
+fi
+# Stop rather than carry on without qmp. Without this the quit fails into its
+# own `||` branch, reports the VM as "may already be down", and the rm below
+# then unlinks the disk out from under a QEMU that is still running it.
+[ -x "$LAB/tools/qmp" ] || {
+    echo "stop-mirror: no lab checkout above $MIRROR — set MIRROR_LAB_ROOT to the" >&2
+    echo "             TimBotTu clone carrying tools/qmp. Refusing to remove the" >&2
+    echo "             session disk while the VM may still be up." >&2
+    exit 1
+}
 RUN="$MIRROR/run"
 
 # Kill only the MirrorApp pointed at THIS run's toolkit port (spin-up.sh recorded

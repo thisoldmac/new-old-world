@@ -10,8 +10,12 @@ surface](docs/CONTROL-SURFACE.md)).
 
 Mirror is a **nested repository inside the TimBotTu lab checkout**
 (`timbottu/mirror`), gitignored by the parent exactly like `codekitten/`,
-`now/`, and `qemu/`, carrying its own full history. Know the family before
-you reach across any boundary:
+`now/`, and `qemu/`, carrying its own full history. It is **also vendored
+into NOW** at `now/mirror/`, tracked there as ordinary files, where NOW's
+Mirror page is a launcher for these scripts. So Mirror has two homes at
+different depths, and nothing here may assume which one it is in — see
+[the lab is found, not assumed](#timbottu-is-the-lab-not-a-dependency).
+Know the family before you reach across any boundary:
 
 - **TimBotTu is the lab** — the parent: a large, deliberately messy
   research world of emulators, corpus, and instruments, where hard-won
@@ -37,10 +41,32 @@ runtime code, and never a sibling's code either.
 ### TimBotTu is the lab, not a dependency
 
 The lab's instruments — the emulator (`tools/launch`), `tools/hc`,
-`classicfmt`, `mcp-classic` — live in the parent checkout at `..`. They
+`classicfmt`, `mcp-classic` — live in the lab checkout, not here. They
 **drive tests and deploys only; nothing from there ships.** Instruments,
-not organs. Mirror must build and run with the parent checkout absent
+not organs. Mirror must build and run with the lab checkout absent
 except when standing up an emulator.
+
+**The lab is found, never assumed to be `..`.** This rule used to read
+"the parent checkout at `..`", and every script encoded it as
+`LAB="$MIRROR/.."`. Vendoring Mirror into NOW made that false in one line:
+the parent is then `now/`, which carries no `tools/lib.sh`, no `tools/qmp`,
+no `mcp-classic` and no `qemu/build`. So anything reaching for an
+instrument resolves the lab by **walking up until a directory actually
+holds `tools/lib.sh`**, and honours `MIRROR_LAB_ROOT` to be told outright —
+which is also the only way to name a lab that is not an ancestor at all.
+`tools/spin-up.sh` and `tools/stop-mirror.sh` do this, as do the Python
+stagers and NOW's launcher preflight.
+
+Two corollaries, both paid for:
+
+- **A missing lab is named, not discovered.** The walk stops and says to
+  set `MIRROR_LAB_ROOT`. The failure it replaced was a wall of bash errors
+  about files the reader had no reason to have heard of.
+- **Two resolvers must not drift.** NOW's launcher checks these paths
+  before it will run the script, so a second implementation of this rule
+  now exists. It passes its answer down as `MIRROR_LAB_ROOT` rather than
+  trusting both to agree — a green preflight in front of a failed run is
+  the shape of defect that is hardest to attribute.
 
 Two divergences are named debt, not accidents, and both are load-bearing
 to understand:
