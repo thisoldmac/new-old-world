@@ -1,5 +1,6 @@
 #include "cloud_model.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #include "json.h"
@@ -150,6 +151,33 @@ Boolean cloud_service_listable(const char *service)
        the host refuses — additive registry, so an unknown future
        service is a question, not a table entry here. */
     return strcmp(service, "drive") != 0 ? 1 : 0;
+}
+
+void cloud_listing_status(const CloudStore *store, char *out, long cap)
+{
+    if (store->more && store->row_count >= kCloudMaxRows) {
+        /* The cap was hit while the host still had rows to send. 128
+           rows is the Files browser's own bound (memory, not honesty:
+           128 CloudRow entries cost under 24KB on a 6MB partition), so
+           it does not rise for a large library - the wording carries
+           the honesty instead. "newest first" is stated only where the
+           order is actually known to this store: the registry sorts
+           photos that way (docs/icloud.md), but a future listable
+           service is not assumed to share it. */
+        if (strcmp(store->listed_service, "photos") == 0) {
+            snprintf(out, (size_t)cap, "%d of many, newest first",
+                     store->row_count);
+        } else {
+            snprintf(out, (size_t)cap, "%d of many (more not shown)",
+                     store->row_count);
+        }
+    } else if (store->row_count == 0) {
+        strncpy(out, "Empty", (size_t)cap);
+        out[cap - 1] = '\0';
+    } else {
+        snprintf(out, (size_t)cap, "%d row%s", store->row_count,
+                 store->row_count == 1 ? "" : "s");
+    }
 }
 
 int cloud_first_listable(const CloudStore *store)

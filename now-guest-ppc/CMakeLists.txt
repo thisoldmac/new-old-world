@@ -40,9 +40,14 @@ add_application(now-guest-ppc
     src/network/net_layout.c
     src/network/net_probe.c
     src/network/network_module.c
+    src/cloud/cloud_filter.c
     src/cloud/cloud_layout.c
     src/cloud/cloud_model.c
     src/cloud/cloud_module.c
+    src/cloud/cloud_drive_view.c
+    src/cloud/cloud_list_view.c
+    src/cloud/cloud_contacts_card.c
+    src/cloud/cloud_contacts_view.c
     src/census/census_decode.c
     src/census/census_report.c
     src/files/files_module.c

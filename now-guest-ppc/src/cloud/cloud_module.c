@@ -3,8 +3,13 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "cloud_contacts_view.h"
+#include "cloud_drive_view.h"
+#include "cloud_filter.h"
 #include "cloud_layout.h"
+#include "cloud_list_view.h"
 #include "cloud_model.h"
+#include "cloud_view.h"
 #include "json.h"
 #include "pump.h"
 #include "wire.h"
@@ -28,13 +33,20 @@
 
    All cloud answers arrive through one raw-frame hook and are parsed
    by cloud_model.c, which the host cc tests; this file owns controls,
-   rectangles and pixels, and decides nothing about the bytes. */
+   rectangles and pixels, and decides nothing about the bytes.
+
+   This file is the SHELL: the popup, Refresh, the status/placard, the
+   conn_set_cloud_note hook, and which service is chosen. Everything
+   about how a chosen service renders — Drive's file browser, Photos'
+   generic listing+card, Contacts' address-book card — lives behind
+   CloudViewOps (cloud_view.h) in cloud_drive_view.c, cloud_list_view.c
+   and cloud_contacts_view.c, so a new service view is a new file, not
+   a new branch in this one (view_for() below is the one place that
+   still has to know the service names, the same way choosing drive
+   mode already does). */
 
 enum {
-    kCloudServicesMenuID = 135,
-
-    kColTitle = 'titl',
-    kColSubtitle = 'subt'
+    kCloudServicesMenuID = 135
 };
 
 static WindowRef g_owner;
@@ -51,23 +63,35 @@ static MenuRef g_menu;
 static CloudStore g_store;
 static int g_service = -1;            /* index into g_store.services */
 static int g_selected = -1;           /* row index: cloud rows, or in
-                                         drive mode g_drive_rows */
+                                         drive mode the view's own rows */
 static Boolean g_loading;
 static Boolean g_asked_once;
 static Boolean g_in_rebuild;
 static char g_status[128];
 
-/* Drive mode: the chosen service is drive and the share serves it, so
-   the list is a file browser over the share, share-relative like the
-   Files page's. */
+/* The live search: a hand-drawn field driven from key(), the same
+   reason software_module.c's is (this WaitNextEvent app cannot host an
+   inline edit-text control). Filters whichever view is active, on
+   every keystroke, over rows already fetched — never wire traffic.
+   g_in_view is the diff base every add/remove against the shared Data
+   Browser reads, indexed the same way item ids already are (index+1);
+   it applies to whichever storage the active view reads (the shell's
+   own g_store.rows outside drive mode, cloud_drive_view's own rows in
+   it) because only one is ever shown at a time. */
+static char g_search[48];
+static Boolean g_search_focus;
+static unsigned char g_in_view[kCloudMaxRows];
+static int g_shown_rows;
+
+/* Drive mode: the chosen service is drive and the share serves it.
+   g_drive_mode is chrome bookkeeping only now (the button's title, the
+   Save/Up enable rule) — cloud_drive_view.c owns everything else about
+   browsing it. */
 static Boolean g_drive_mode;
-static char g_drive_path[224];
-static FileEntry g_drive_rows[kCloudMaxRows];
-static int g_drive_count;
+static const CloudViewOps *g_view;
 
 static char g_shown_status[128];
 static Boolean g_shown_save_on;
-static char g_shown_pull[96];
 
 static void invalidate_detail(void)
 {
@@ -89,6 +113,11 @@ static void set_status(const char *line)
     invalidate_status();
 }
 
+static void set_loading(Boolean loading)
+{
+    g_loading = loading;
+}
+
 static const CloudService *current_service(void)
 {
     if (g_service < 0 || g_service >= g_store.service_count) {
@@ -97,7 +126,8 @@ static const CloudService *current_service(void)
     return &g_store.services[g_service];
 }
 
-/* --- asking ------------------------------------------------------------- */
+/* --- asking (services and the list/card pair; Drive asks through its
+   own view file) -------------------------------------------------- */
 
 static void ask_services(void)
 {
@@ -176,11 +206,13 @@ static void ask_save(void)
     set_status("Asking for it...");
 }
 
-/* --- drive: a real browser over the share ------------------------------- */
+/* --- the list, shared by both views -------------------------------- */
 
 static void clear_list(void)
 {
     g_selected = -1;
+    g_shown_rows = 0;
+    memset(g_in_view, 0, sizeof g_in_view);
     if (g_browser != NULL) {
         g_in_rebuild = true;
         RemoveDataBrowserItems(g_browser, kDataBrowserNoItem, 0, NULL,
@@ -189,123 +221,104 @@ static void clear_list(void)
     }
 }
 
-static void drive_request(const char *path, long cursor)
-{
-    char err[96];
+/* --- the live search -------------------------------------------------- */
 
-    if (cursor <= 1) {
-        g_drive_count = 0;
-        clear_list();
-        strncpy(g_drive_path, path != NULL ? path : "",
-                sizeof g_drive_path - 1);
-        g_drive_path[sizeof g_drive_path - 1] = '\0';
-        invalidate_detail();
+/* How many rows the active view's own storage holds — the shell's
+   shared g_store.rows outside drive mode, cloud_drive_view's own count
+   in it (that view keeps rows the shell's CloudStore never sees). */
+static int active_row_count(void)
+{
+    if (g_drive_mode) {
+        return cloud_drive_view_row_count();
     }
-    /* The listing hook follows the asker; the Files page takes it back
-       the same way the moment it asks (files_browser_view.c). */
-    conn_set_listing(cloud_drive_listing);
-    if (now_wire_list_host(g_drive_path, cursor, err, sizeof err) < 0) {
-        g_loading = false;
-        set_status(err);
-        return;
-    }
-    g_loading = true;
-    set_status("Reading...");
+    return g_store.row_count;
 }
 
-void cloud_drive_listing(const char *path, const FileEntry *entries,
-                         int count, Boolean more, long cursor,
-                         const char *root, const char *error)
+/* Whichever view is active decides whether row `index` matches; NULL
+   means "matches everything" (see cloud_view.h). */
+static Boolean row_matches(int index, const char *needle)
+{
+    if (g_view == NULL || g_view->row_matches == NULL) {
+        return true;
+    }
+    return g_view->row_matches(index, &g_store, needle);
+}
+
+/* [first, first + n) just arrived in the active view's row storage —
+   note_listing's own rows, or (through CloudDriveHost.add_rows) Drive's.
+   Adds to the shared Data Browser only the ones the live search
+   currently admits, and marks them in g_in_view so a later keystroke's
+   refilter_browser() can diff against them. `n` is capped at 16, the
+   page size both callers already assume (note_listing's old inline
+   buffer and cloud_drive_view.c's page loop share the same bound). */
+static void filter_and_add(int first, int n)
 {
     DataBrowserItemID ids[16];
+    char needle[48];
+    UInt32 got = 0;
     int i;
 
-    (void)root;
-    if (g_owner == NULL || !g_drive_mode) {
-        return;
-    }
-    /* An answer to a question we have since replaced is not ours. */
-    if (path == NULL || strcmp(path, g_drive_path) != 0) {
-        return;
-    }
-    g_loading = false;
-    if (error != NULL) {
-        set_status(error);
-        return;
-    }
-    for (i = 0; i < count && g_drive_count < kCloudMaxRows; ++i) {
-        g_drive_rows[g_drive_count] = entries[i];
-        ids[i] = (DataBrowserItemID)(++g_drive_count);
-    }
-    if (i > 0 && g_browser != NULL) {
-        AddDataBrowserItems(g_browser, kDataBrowserNoItem, (UInt32)i,
-                            ids, kDataBrowserItemNoProperty);
-    }
-    if (more && g_drive_count < kCloudMaxRows) {
-        drive_request(g_drive_path, cursor);
-        return;
-    }
-    if (g_drive_count == 0) {
-        set_status("Empty");
-    } else {
-        char line[96];
+    cloud_filter_lower(g_search, needle, sizeof needle);
+    for (i = 0; i < n && i < 16; ++i) {
+        int idx = first + i;
 
-        snprintf(line, sizeof line, "%.60s - %d item%s",
-                 g_drive_path[0] != '\0' ? g_drive_path : "iCloud Drive",
-                 g_drive_count, g_drive_count == 1 ? "" : "s");
-        set_status(line);
-    }
-}
-
-static void drive_open_row(int index)
-{
-    const FileEntry *row;
-    char next[224];
-    char err[96];
-
-    if (index < 0 || index >= g_drive_count) {
-        return;
-    }
-    row = &g_drive_rows[index];
-    if (row->folder) {
-        if (g_drive_path[0] == '\0') {
-            snprintf(next, sizeof next, "%.31s", row->name);
-        } else {
-            snprintf(next, sizeof next, "%.180s:%.31s", g_drive_path,
-                     row->name);
+        if (idx < 0 || idx >= kCloudMaxRows) {
+            continue;
         }
-        drive_request(next, 1);
-        return;
+        if (row_matches(idx, needle)) {
+            g_in_view[idx] = 1;
+            ids[got++] = (DataBrowserItemID)(idx + 1);
+            ++g_shown_rows;
+        } else {
+            g_in_view[idx] = 0;
+        }
     }
-    if (g_drive_path[0] == '\0') {
-        snprintf(next, sizeof next, "%.31s", row->name);
-    } else {
-        snprintf(next, sizeof next, "%.180s:%.31s", g_drive_path,
-                 row->name);
-    }
-    if (now_wire_get_host(next, row->name, err, sizeof err) < 0) {
-        set_status(err);
-    } else {
-        char line[96];
-
-        snprintf(line, sizeof line, "Fetching %.40s...", row->name);
-        set_status(line);
+    if (got > 0 && g_browser != NULL) {
+        AddDataBrowserItems(g_browser, kDataBrowserNoItem, got, ids,
+                            kDataBrowserItemNoProperty);
     }
 }
 
-static void drive_go_up(void)
+/* The keystroke path: adjust the browser by DIFF against g_in_view —
+   remove rows whose match just ended, add rows whose match just began
+   — rather than a full rebuild, the same redraw-economy reason
+   software_module.c's refilter_browser exists. A selection whose row
+   left the view clears; the notification that would otherwise do that
+   is suppressed by g_in_rebuild (RemoveDataBrowserItems fires a
+   deselect the rebuild itself caused, not the person), so this clears
+   it explicitly instead. */
+static void refilter_browser(void)
 {
-    char *colon;
+    char needle[48];
+    int count = active_row_count();
+    int i;
 
-    if (g_drive_path[0] == '\0') {
+    if (g_browser == NULL) {
         return;
     }
-    colon = strrchr(g_drive_path, ':');
-    if (colon == NULL) {
-        drive_request("", 1);
-    } else {
-        *colon = '\0';
-        drive_request(g_drive_path, 1);
+    cloud_filter_lower(g_search, needle, sizeof needle);
+    g_in_rebuild = true;
+    for (i = 0; i < count && i < kCloudMaxRows; ++i) {
+        DataBrowserItemID id = (DataBrowserItemID)(i + 1);
+        Boolean want = row_matches(i, needle);
+
+        if (want && !g_in_view[i]) {
+            AddDataBrowserItems(g_browser, kDataBrowserNoItem, 1, &id,
+                                kDataBrowserItemNoProperty);
+            g_in_view[i] = 1;
+            g_shown_rows += 1;
+        } else if (!want && g_in_view[i]) {
+            RemoveDataBrowserItems(g_browser, kDataBrowserNoItem, 1, &id,
+                                   kDataBrowserItemNoProperty);
+            g_in_view[i] = 0;
+            g_shown_rows -= 1;
+        }
+    }
+    g_in_rebuild = false;
+    if (g_selected >= 0 && !(g_selected < count && g_in_view[g_selected])) {
+        g_selected = -1;
+        cloud_store_reset_card(&g_store);
+        invalidate_detail();
     }
 }
 
@@ -369,6 +382,10 @@ static void rebuild_popup(void)
     }
 }
 
+/* Defined with the rest of layout, below; declared here because
+   choose_service() needs it and appears first in the file. */
+static void apply_layout(void);
+
 static void retitle_button(void)
 {
     Str255 text;
@@ -378,6 +395,22 @@ static void retitle_button(void)
     }
     CopyCStringToPascal(g_drive_mode ? "Up" : "Save to this Mac", text);
     SetControlTitle(g_save, text);
+}
+
+/* Which view renders the chosen service's card: drive gets its own
+   file browser, contacts its own address-book card, everything else
+   the generic listing+card. A new tailored view is a new branch here
+   and a new file, never a change to an existing view's file. */
+static const CloudViewOps *view_for(const CloudService *service,
+                                    Boolean drive_mode)
+{
+    if (drive_mode) {
+        return cloud_drive_view_ops();
+    }
+    if (strcmp(service->service, "contacts") == 0) {
+        return cloud_contacts_view_ops();
+    }
+    return cloud_list_view_ops();
 }
 
 static void choose_service(int index)
@@ -392,17 +425,35 @@ static void choose_service(int index)
     cloud_store_reset_rows(&g_store, service->service);
     g_drive_mode = strcmp(service->service, "drive") == 0
         && strcmp(service->state, "serving") == 0;
+    cloud_drive_view_activate(g_drive_mode);
+    g_view = view_for(service, g_drive_mode);
+    /* Drive and list mode use different rectangles (cloud_layout.c's
+       drive variant: full-width list, no card) - recompute and move
+       every control before anything below draws into them. */
+    apply_layout();
     retitle_button();
     clear_list();
     invalidate_detail();
+    /* The list control's own resize repaints itself, but the area a
+       shrinking control vacates is not the Toolbox's job to erase, and
+       this file draws the card pane's text by hand rather than through
+       a control - so a mode switch invalidates the whole body once
+       rather than risk stale pixels from the pane that just changed
+       shape or disappeared. Not idle-path work: this runs only on a
+       service pick. */
+    if (g_owner != NULL && g_visible) {
+        InvalWindowRect(g_owner, &g_body);
+    }
     if (g_drive_mode) {
-        drive_request("", 1);
+        if (g_view != NULL && g_view->reset_for_service != NULL) {
+            g_view->reset_for_service(service);
+        }
     } else if (strcmp(service->state, "serving") == 0
                && cloud_service_listable(service->service)) {
         ask_rows(1);
     } else {
         /* The pane's words are the service's own: state and detail from
-           the report, drawn by cloud_draw. */
+           the report, drawn by the active view's draw(). */
         set_status(service->detail[0] != '\0' ? service->detail
                                               : service->state);
     }
@@ -431,37 +482,20 @@ static void note_report(const char *reply)
 
 static void note_listing(const char *reply)
 {
-    DataBrowserItemID ids[16];
     int before = g_store.row_count;
     int added;
-    int i;
 
     g_loading = false;
     added = cloud_parse_listing(reply, &g_store);
-    for (i = 0; i < added && i < 16; ++i) {
-        ids[i] = (DataBrowserItemID)(before + i + 1);
-    }
-    if (i > 0 && g_browser != NULL) {
-        AddDataBrowserItems(g_browser, kDataBrowserNoItem,
-                            (UInt32)i, ids, kDataBrowserItemNoProperty);
-    }
+    filter_and_add(before, added);
     if (g_store.more && g_store.row_count < kCloudMaxRows) {
         ask_rows(g_store.cursor);
         return;
     }
-    if (g_store.more) {
+    {
         char line[64];
 
-        snprintf(line, sizeof line, "%d rows (more not shown)",
-                 g_store.row_count);
-        set_status(line);
-    } else if (g_store.row_count == 0) {
-        set_status("Empty");
-    } else {
-        char line[64];
-
-        snprintf(line, sizeof line, "%d row%s", g_store.row_count,
-                 g_store.row_count == 1 ? "" : "s");
+        cloud_listing_status(&g_store, line, sizeof line);
         set_status(line);
     }
 }
@@ -512,32 +546,18 @@ static OSStatus item_data(ControlRef browser, DataBrowserItemID item,
 {
     const CloudRow *row;
     CFStringRef text = NULL;
-    char buf[64];
+    char buf[64];               /* matches the pre-split buffer size */
 
     (void)browser;
     if (changeValue || item < 1) {
         return errDataBrowserPropertyNotSupported;
     }
     if (g_drive_mode) {
-        const FileEntry *entry;
-
-        if (item > (DataBrowserItemID)g_drive_count) {
+        if (!cloud_drive_view_row_text(item, property, buf, sizeof buf)) {
             return errDataBrowserPropertyNotSupported;
         }
-        entry = &g_drive_rows[item - 1];
-        switch (property) {
-        case kColTitle:
-            text = CFStringCreateWithCString(NULL, entry->name,
-                                             kCFStringEncodingMacRoman);
-            break;
-        case kColSubtitle:
-            now_files_describe(entry, buf, sizeof buf);
-            text = CFStringCreateWithCString(NULL, buf,
-                                             kCFStringEncodingMacRoman);
-            break;
-        default:
-            return errDataBrowserPropertyNotSupported;
-        }
+        text = CFStringCreateWithCString(NULL, buf,
+                                         kCFStringEncodingMacRoman);
         if (text == NULL) {
             return memFullErr;
         }
@@ -550,11 +570,11 @@ static OSStatus item_data(ControlRef browser, DataBrowserItemID item,
     }
     row = &g_store.rows[item - 1];
     switch (property) {
-    case kColTitle:
+    case kCloudColTitle:
         text = CFStringCreateWithCString(NULL, row->title,
                                          kCFStringEncodingMacRoman);
         break;
-    case kColSubtitle:
+    case kCloudColSubtitle:
         text = CFStringCreateWithCString(NULL, row->subtitle,
                                          kCFStringEncodingMacRoman);
         break;
@@ -578,13 +598,13 @@ static void item_notify(ControlRef browser, DataBrowserItemID item,
         return;
     }
     if (message == kDataBrowserItemDoubleClicked && g_drive_mode) {
-        drive_open_row((int)item - 1);
+        cloud_drive_view_row_opened((int)item - 1);
         return;
     }
     if (message == kDataBrowserItemSelected) {
         g_selected = (int)item - 1;
         if (g_drive_mode) {
-            invalidate_detail();      /* the card is composed locally */
+            invalidate_detail();      /* the card is composed by the view */
         } else {
             ask_card();
         }
@@ -646,17 +666,25 @@ static OSStatus add_column(DataBrowserPropertyID id, const char *title,
 static OSErr cloud_create(WindowRef owner, const Rect *body)
 {
     DataBrowserCallbacks callbacks;
+    CloudDriveHost host;
+    const CloudViewOps *drive_ops = cloud_drive_view_ops();
     Str255 text;
 
     g_owner = owner;
     g_body = *body;
-    cloud_layout_compute(body, &g_r);
+    g_drive_mode = false;
+    cloud_layout_compute(&g_body, g_drive_mode, &g_r);
     cloud_store_reset(&g_store);
     g_service = -1;
     g_selected = -1;
+    g_view = cloud_list_view_ops();
     g_status[0] = '\0';
     g_shown_status[0] = '\0';
     g_shown_save_on = false;
+    g_search[0] = '\0';
+    g_search_focus = false;
+    memset(g_in_view, 0, sizeof g_in_view);
+    g_shown_rows = 0;
 
     /* The dropdown's menu: a placeholder resource the report rewrites.
        The popup CDEF inserts it into the hierarchical list, which is
@@ -693,13 +721,24 @@ static OSErr cloud_create(WindowRef owner, const Rect *body)
             callbacks.u.v1.itemDataCallback = g_data_upp;
             callbacks.u.v1.itemNotificationCallback = g_notify_upp;
             SetDataBrowserCallbacks(g_browser, &callbacks);
-            add_column(kColTitle, "Item", 200, 0);
-            add_column(kColSubtitle, "Detail", 130, 1);
+            add_column(kCloudColTitle, "Item", 200, 0);
+            add_column(kCloudColSubtitle, "Detail", 130, 1);
             SetDataBrowserListViewHeaderBtnHeight(g_browser, 16);
             SetDataBrowserHasScrollBars(g_browser, false, true);
             HideControl(g_browser);
         }
     }
+
+    if (drive_ops->create != NULL) {
+        drive_ops->create(owner);
+    }
+    host.clear_list = clear_list;
+    host.invalidate_detail = invalidate_detail;
+    host.set_status = set_status;
+    host.set_loading = set_loading;
+    host.add_rows = filter_and_add;
+    cloud_drive_view_bind(g_browser, &host);
+    cloud_drive_view_activate(false);
 
     conn_set_cloud_note(cloud_answers);
     return noErr;
@@ -708,6 +747,7 @@ static OSErr cloud_create(WindowRef owner, const Rect *body)
 static void cloud_dispose(void)
 {
     conn_set_cloud_note(NULL);
+    cloud_drive_view_dispose();
     /* The Data Browser goes BEFORE its UPPs: disposal fires item
        notifications through them (files_browser_view.c and the finding
        carbon-upp-is-not-a-cast-on-cfm carry the full story). */
@@ -721,6 +761,7 @@ static void cloud_dispose(void)
     g_save = NULL;
     g_menu = NULL;
     g_owner = NULL;
+    g_view = NULL;
 }
 
 static void show_control(ControlRef control, Boolean on)
@@ -736,17 +777,22 @@ static void show_control(ControlRef control, Boolean on)
 }
 
 /* The one action button, worn per mode: Up in the drive browser
-   (enabled off the root), Save for a selected row elsewhere. */
+   (enabled off the root), Save for a selected row elsewhere -- except
+   Contacts, whose cloud.get the contract refuses not-listable (x-cloud,
+   contacts): the card is the deliverable, so the button never earns a
+   place, the same way drive_mode's own listable check already keeps
+   it off Drive. */
 static Boolean action_applies(void)
 {
     const CloudService *service = current_service();
 
     if (g_drive_mode) {
-        return g_drive_path[0] != '\0';
+        return !cloud_drive_view_at_root();
     }
     return service != NULL && g_selected >= 0
         && g_selected < g_store.row_count
-        && cloud_service_listable(service->service);
+        && cloud_service_listable(service->service)
+        && strcmp(service->service, "contacts") != 0;
 }
 
 static void cloud_show(Boolean visible)
@@ -756,16 +802,26 @@ static void cloud_show(Boolean visible)
     show_control(g_refresh, visible);
     show_control(g_save, visible && action_applies());
     show_control(g_browser, visible);
+    if (g_view != NULL && g_view->show != NULL) {
+        g_view->show(visible);
+    }
     if (visible && !g_asked_once && conn_is_connected()) {
         g_asked_once = true;
         ask_services();
     }
 }
 
-static void cloud_layout(const Rect *body)
+/* Recomputes g_r from g_body/g_drive_mode and moves every shell
+   control to match — the body of the old cloud_layout() op, pulled out
+   so choose_service() can call it too: drive and list mode use
+   different rectangles (cloud_layout.c's drive variant), and a service
+   pick changes g_drive_mode without a grow/zoom event to trigger the
+   Workshop's own layout() call. */
+static void apply_layout(void)
 {
-    g_body = *body;
-    cloud_layout_compute(body, &g_r);
+    Rect action;
+
+    cloud_layout_compute(&g_body, g_drive_mode, &g_r);
     if (g_popup != NULL) {
         MoveControl(g_popup, g_r.popup.left, g_r.popup.top);
         SizeControl(g_popup, (SInt16)(g_r.popup.right - g_r.popup.left),
@@ -777,17 +833,31 @@ static void cloud_layout(const Rect *body)
                     (SInt16)(g_r.refresh_btn.right - g_r.refresh_btn.left),
                     (SInt16)(g_r.refresh_btn.bottom - g_r.refresh_btn.top));
     }
+    /* The one action button, worn per mode (see action_applies()): Up
+       rides the toolbar row in drive mode, Save sits in the card pane
+       otherwise. Its RECT moves with its title; save_btn is the
+       anti-rect while up_btn is live, and vice versa, so this needs no
+       mode check beyond picking which field. */
+    action = g_drive_mode ? g_r.up_btn : g_r.save_btn;
     if (g_save != NULL) {
-        MoveControl(g_save, g_r.save_btn.left, g_r.save_btn.top);
-        SizeControl(g_save,
-                    (SInt16)(g_r.save_btn.right - g_r.save_btn.left),
-                    (SInt16)(g_r.save_btn.bottom - g_r.save_btn.top));
+        MoveControl(g_save, action.left, action.top);
+        SizeControl(g_save, (SInt16)(action.right - action.left),
+                    (SInt16)(action.bottom - action.top));
     }
     if (g_browser != NULL) {
         MoveControl(g_browser, g_r.list.left, g_r.list.top);
         SizeControl(g_browser, (SInt16)(g_r.list.right - g_r.list.left),
                     (SInt16)(g_r.list.bottom - g_r.list.top));
     }
+    if (g_view != NULL && g_view->layout != NULL) {
+        g_view->layout(&g_r);
+    }
+}
+
+static void cloud_layout(const Rect *body)
+{
+    g_body = *body;
+    apply_layout();
 }
 
 static void draw_at(short x, short y, const char *s)
@@ -799,11 +869,102 @@ static void draw_at(short x, short y, const char *s)
     DrawString(t);
 }
 
+/* The search field: software_module.c's hand-drawn shape exactly — a
+   framed white well, a plain focus ring (not Aqua) when it has focus,
+   the placeholder word when it does not and is empty. Fore-painted
+   only, never a background change (RGBBackColor is port state on the
+   one shared Workshop window). */
+static void draw_search(void)
+{
+    Rect f = g_r.toolbar_search;
+    RGBColor black = { 0, 0, 0 };
+    RGBColor white = { 0xFFFF, 0xFFFF, 0xFFFF };
+
+    RGBForeColor(&black);
+    FrameRect(&f);
+    if (g_search_focus) {
+        Rect ring = f;
+
+        InsetRect(&ring, -2, -2);
+        FrameRect(&ring);
+    }
+    InsetRect(&f, 1, 1);
+    RGBForeColor(&white);
+    PaintRect(&f);
+    RGBForeColor(&black);
+    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    if (g_search[0] == '\0' && !g_search_focus) {
+        RGBColor gray = { 0x9999, 0x9999, 0x9999 };
+
+        RGBForeColor(&gray);
+        draw_at((short)(f.left + 3), (short)(f.bottom - 4), "search");
+        RGBForeColor(&black);
+    } else {
+        char shown[64];
+
+        snprintf(shown, sizeof shown, "%s%s", g_search,
+                 g_search_focus ? "|" : "");
+        draw_at((short)(f.left + 3), (short)(f.bottom - 4), shown);
+    }
+}
+
+/* Echo a keystroke into the field directly — the redraw contract's
+   immediate-feedback exception, typing echo being its canonical case
+   (software_module.c's echo_search_delta, same shape). Erases only from
+   the end of the unchanged prefix to the field's right edge, so nothing
+   is invalidated: a real update reproduces these exact pixels from
+   g_search, and a whole-field invalidate reads as a white blink per key
+   on metal. */
+static void echo_search_delta(const char *old_text)
+{
+    Rect f = g_r.toolbar_search;
+    RGBColor black = { 0, 0, 0 };
+    RGBColor white = { 0xFFFF, 0xFFFF, 0xFFFF };
+    RgnHandle saved_clip;
+    Rect tail;
+    long prefix = 0;
+    short x;
+
+    if (g_owner == NULL || !g_visible) {
+        return;
+    }
+    SetPortWindowPort(g_owner);
+    saved_clip = NewRgn();
+    if (saved_clip == NULL) {
+        InvalWindowRect(g_owner, &g_r.toolbar_search);
+        return;
+    }
+    GetClip(saved_clip);
+    InsetRect(&f, 1, 1);
+    ClipRect(&f);
+    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    while (old_text[prefix] != '\0' && g_search[prefix] != '\0'
+           && old_text[prefix] == g_search[prefix]) {
+        ++prefix;
+    }
+    x = (short)(f.left + 3 + TextWidth(g_search, 0, (short)prefix));
+    tail = f;
+    if (x > tail.left) {
+        tail.left = x;
+    }
+    RGBForeColor(&white);
+    PaintRect(&tail);
+    RGBForeColor(&black);
+    MoveTo(x, (short)(f.bottom - 4));
+    if (g_search[prefix] != '\0') {
+        DrawText(g_search, (short)prefix,
+                 (short)(strlen(g_search) - prefix));
+    }
+    if (g_search_focus) {
+        DrawText("|", 0, 1);
+    }
+    SetClip(saved_clip);
+    DisposeRgn(saved_clip);
+}
+
 static void cloud_draw(void)
 {
     const CloudService *service = current_service();
-    short y;
-    int i;
 
     if (g_owner == NULL || !g_visible) {
         return;
@@ -812,81 +973,11 @@ static void cloud_draw(void)
     draw_at((short)(g_r.status.left + 2),
             (short)(g_r.status.bottom - 3), g_status);
 
-    /* The card pane: the selected row's card, or the service's own
-       words when there is no list to select from. In drive mode the
-       card is composed here from the row the wire already sent —
-       there is nothing else to ask. */
-    y = (short)(g_r.detail_text.top + 12);
-    if (g_drive_mode) {
-        if (g_selected >= 0 && g_selected < g_drive_count) {
-            const FileEntry *entry = &g_drive_rows[g_selected];
-            char line[96];
+    draw_search();
 
-            draw_at(g_r.detail_text.left, y, entry->name);
-            y = (short)(y + 16);
-            now_files_describe(entry, line, sizeof line);
-            draw_at(g_r.detail_text.left, y, line);
-            y = (short)(y + 16);
-            if (!entry->folder) {
-                snprintf(line, sizeof line, "%ld K",
-                         (entry->data_bytes + entry->rsrc_bytes
-                          + 1023) / 1024);
-                draw_at(g_r.detail_text.left, y, line);
-                y = (short)(y + 16);
-            }
-            if (entry->modified != 0) {
-                Str255 when;
-                LongDateTime ldt = (LongDateTime)entry->modified;
-
-                LongDateString(&ldt, shortDate, when, NULL);
-                MoveTo(g_r.detail_text.left, y);
-                DrawString(when);
-                y = (short)(y + 16);
-            }
-            if (!entry->folder) {
-                draw_at(g_r.detail_text.left, y,
-                        "Double-click fetches it to this Mac.");
-            }
-        } else if (g_drive_count > 0) {
-            draw_at(g_r.detail_text.left, y,
-                    "Select an item; double-click opens it.");
-        }
-        if (g_shown_pull[0] != '\0') {
-            draw_at(g_r.detail_text.left,
-                    (short)(g_r.detail_text.bottom - 4), g_shown_pull);
-        }
-        return;
-    }
-    if (g_store.card_count > 0) {
-        for (i = 0; i < g_store.card_count
-             && y < g_r.detail_text.bottom; ++i) {
-            char line[168];
-
-            snprintf(line, sizeof line, "%.22s: %.128s",
-                     g_store.card[i].label, g_store.card[i].value);
-            draw_at(g_r.detail_text.left, y, line);
-            y = (short)(y + 14);
-        }
-        return;
-    }
-    if (service != NULL
-        && (strcmp(service->state, "serving") != 0
-            || !cloud_service_listable(service->service))) {
-        draw_at(g_r.detail_text.left, y, service->label);
-        y = (short)(y + 16);
-        if (service->detail[0] != '\0') {
-            draw_at(g_r.detail_text.left, y, service->detail);
-            y = (short)(y + 16);
-        }
-        if (strcmp(service->service, "drive") == 0
-            && strcmp(service->state, "serving") == 0) {
-            draw_at(g_r.detail_text.left, y,
-                    "Browse it in the Files page.");
-        }
-        return;
-    }
-    if (g_selected < 0 && g_store.row_count > 0) {
-        draw_at(g_r.detail_text.left, y, "Select an item to see its card.");
+    /* The card pane: whichever view is active draws it. */
+    if (g_view != NULL && g_view->draw != NULL) {
+        g_view->draw(&g_r, &g_store, service, g_selected);
     }
 }
 
@@ -896,6 +987,17 @@ static Boolean cloud_click(const EventRecord *event, Point local)
 
     if (g_owner == NULL || !g_visible) {
         return false;
+    }
+    if (PtInRect(local, &g_r.toolbar_search)) {
+        if (!g_search_focus) {
+            g_search_focus = true;
+            InvalWindowRect(g_owner, &g_r.toolbar_search);
+        }
+        return true;
+    }
+    if (g_search_focus) {
+        g_search_focus = false;
+        InvalWindowRect(g_owner, &g_r.toolbar_search);
     }
     if (g_browser != NULL && PtInRect(local, &g_r.list)) {
         HandleControlClick(g_browser, local, event->modifiers, NULL);
@@ -912,7 +1014,12 @@ static Boolean cloud_click(const EventRecord *event, Point local)
            the menu loop already does (nested-loops.md). */
         TrackControl(control, local, (ControlActionUPP)-1L);
         if (GetControlValue(g_popup) != before) {
+            /* A new service's rows are not what the old search text
+               was about — software_module.c clears its own search the
+               same way on a domain switch. */
+            g_search[0] = '\0';
             choose_service(GetControlValue(g_popup) - 1);
+            InvalWindowRect(g_owner, &g_r.toolbar_search);
         }
         return true;
     }
@@ -924,8 +1031,8 @@ static Boolean cloud_click(const EventRecord *event, Point local)
         return true;
     }
     if (control == g_save) {
-        if (g_drive_mode) {
-            drive_go_up();
+        if (g_view != NULL && g_view->click != NULL) {
+            g_view->click(event, local);
         } else {
             ask_save();
         }
@@ -937,22 +1044,47 @@ static Boolean cloud_click(const EventRecord *event, Point local)
 static Boolean cloud_key(const EventRecord *event)
 {
     ControlRef focus = NULL;
-    char c = (char)(event->message & charCodeMask);
 
-    if (g_browser == NULL || !g_visible) {
+    if (g_owner == NULL || !g_visible) {
+        return false;
+    }
+    if (g_search_focus) {
+        char ch = (char)(event->message & charCodeMask);
+        char old_text[48];
+        long n;
+
+        memcpy(old_text, g_search, sizeof old_text);
+        if (ch == '\b' || ch == 0x7F) {
+            n = (long)strlen(g_search);
+            if (n > 0) {
+                g_search[n - 1] = '\0';
+            }
+        } else if (ch >= ' ' && ch < 0x7F) {
+            n = (long)strlen(g_search);
+            if (n < (long)sizeof g_search - 1) {
+                g_search[n] = ch;
+                g_search[n + 1] = '\0';
+            }
+        } else {
+            return false;              /* arrows and kin are not ours */
+        }
+        refilter_browser();
+        echo_search_delta(old_text);
+        return true;
+    }
+    if (g_browser == NULL) {
         return false;
     }
     if (GetKeyboardFocus(g_owner, &focus) != noErr || focus != g_browser) {
         return false;
     }
-    if (g_drive_mode && (c == '\r' || c == 3)) {   /* Return opens */
-        if (g_selected >= 0) {
-            drive_open_row(g_selected);
-        }
+    if (g_view != NULL && g_view->key != NULL
+        && g_view->key(event, g_selected)) {
         return true;
     }
     HandleControlKey(g_browser,
-                     (SInt16)((event->message & keyCodeMask) >> 8), c,
+                     (SInt16)((event->message & keyCodeMask) >> 8),
+                     (char)(event->message & charCodeMask),
                      event->modifiers);
     return true;
 }
@@ -983,32 +1115,21 @@ static void cloud_idle(void)
         g_asked_once = true;
         ask_services();
     }
-    /* A pull started from the drive browser, watched through the
-       wire's own read-only view — recomposed only when the count a
-       person could see has changed. */
-    if (g_drive_mode) {
-        long received = 0, expected = 0;
-        char line[96];
-
-        if (now_wire_get_active(&received, &expected, NULL)) {
-            snprintf(line, sizeof line, "Receiving - %ld of %ld K",
-                     received / 1024,
-                     expected > 0 ? (expected + 1023) / 1024 : 0);
-        } else {
-            line[0] = '\0';
-        }
-        if (strcmp(line, g_shown_pull) != 0) {
-            strcpy(g_shown_pull, line);
-            invalidate_detail();
-        }
+    if (g_view != NULL && g_view->idle != NULL) {
+        g_view->idle(&g_r);
     }
     /* Show/hide is the cheap operation that is safe every pass; the
-       rectangle repaints only when the answer changed. */
+       rectangle repaints only when the answer changed. Invalidate
+       wherever the button actually IS - up_btn in drive mode,
+       save_btn otherwise, the same choice apply_layout() made when it
+       last moved g_save there. */
     save_on = action_applies();
     if (save_on != g_shown_save_on) {
+        Rect action = g_drive_mode ? g_r.up_btn : g_r.save_btn;
+
         g_shown_save_on = save_on;
         show_control(g_save, g_visible && save_on);
-        InvalWindowRect(g_owner, &g_r.save_btn);
+        InvalWindowRect(g_owner, &action);
     }
     if (strcmp(g_status, g_shown_status) != 0) {
         strcpy(g_shown_status, g_status);

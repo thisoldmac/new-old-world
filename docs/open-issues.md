@@ -54,6 +54,65 @@ not shrinks: the page has never been drawn on any screen (emulator
 pass owed first, then metal), the TCC-granted providers are still
 untried, and no end-to-end ask has crossed a real wire.
 
+Update 2026-08-01, later: the metal-verified drive browser above is
+now a full-width flat list rather than the narrower list-beside-card
+layout it was verified in — `cloud_layout.c` gained a drive-mode
+variant (full width list, detail/save collapse to an anti-rect, a new
+`up_btn` in the toolbar row) and the card pane's per-row detail and
+pull progress both moved to the status placard
+(`cloud_drive_view.c`'s draw is now NULL). **TESTED, not
+metal-verified**: `scripts/test-all` is green (74 native tests
+including new `cloud_layout_test.c` drive-mode cases, both guest
+cross-builds, host gate), and the new geometry was watched failing via
+a deliberate mutation, but nobody has driven this exact layout on the
+PowerBook or the emulator — the metal pass this arc references above
+predates this change. Before it: Data Browser's hierarchical/container
+surface (disclosure triangles, a real tree) was investigated and found
+**not proven viable** for this runtime — declared in the headers and
+compiles clean against a real container-callback call
+(`spikes/databrowser-container-probe`), but the container-specific
+entry points were never in `spikes/databrowser`'s runtime symbol check
+against CarbonLib 1.6.0 on the PB1400c, so the drive view stays the
+flat, replace-on-navigate list it already had rather than adopt an
+unverified tree. Reopening that is a rerun of the runtime probe with
+four more symbol names, not another compile check — see
+`spikes/databrowser-container-probe/README.md`.
+
+Update 2026-08-01, later: Photos hardened for an enormous library
+against FAKES only (docs/icloud.md > Hardened for an enormous
+library) — `PhotosCloudProvider`'s PHAsset fetch cached per instance
+and invalidated by `PHPhotoLibraryChangeObserver`, a 10,000-row paging
+walk and the 4KB page bound proven and mutation-watched
+(`CloudServingTests`), a 3MB photo riding the ordinary transfer lane
+end to end, and the guest's cap-hit status wording made honest
+(`cloud_listing_status`, native-tested and mutation-watched). None of
+this touched a real PHPhotoLibrary: the cache's invalidation path, the
+real fetch's actual cost at 40,000+ photos, and whether Photos'
+authorization APIs behave as read on this Mac are all still claims
+from code reading, folded into the TCC-grant item above rather than
+duplicated here. `PHAssetResource`'s byte size stayed out of scope —
+no public API exposes it short of downloading the resource — so
+`CloudEntry.bytes` stays unstated for photos, deliberately, not as an
+oversight.
+
+Update 2026-08-01, later still: the three fan-out branches above (drive
+full-width layout, Contacts card view, Photos hardening) are merged
+into one tree (`claude/swarm-icloud-integration`, base
+`claude/swarm-icloud-split`). One conflict, in `cloud_module.c`'s
+`choose_service()`: the drive branch added a layout recompute on every
+service switch, the contacts branch added per-service view dispatch —
+both intents kept, dispatch then relayout. Two more conflicts, in this
+file and docs/icloud.md, were two branches appending different ledger
+paragraphs after the same anchor line rather than true disagreement —
+both paragraphs kept. **TESTED, not metal-verified**: `scripts/test-all`
+is green post-merge (75 native tests including `cloud_contacts_card_test`,
+both guest cross-builds plus the NOW Extension, `swift test` at 1324
+tests, `xcodebuild` Debug and Release) with the exit code read directly.
+Nothing here changes what each branch's own entry above already says is
+unproven — a clean merge does not prove Photos or Contacts against a
+real TCC-granted library, or put the new drive layout or the Contacts
+card in front of anyone on the PowerBook.
+
 ## iCloud Drive sharing is tested against fabricated stubs only (2026-08-01)
 
 **Unverified.** The share now sees a directory logically — iCloud

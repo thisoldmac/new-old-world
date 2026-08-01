@@ -76,4 +76,14 @@ int cloud_first_listable(const CloudStore *store);
 /* Whether this service answers cloud.list at all. */
 Boolean cloud_service_listable(const char *service);
 
+/* The status line for a page that has finished landing (the cap was
+   hit, the host said no more, or the page is empty) — never for a page
+   still auto-paging, which sets no status of its own. kCloudMaxRows is
+   a wire/memory bound, not a claim that the store holds everything:
+   a service whose "more" survives to the cap must read as a bounded
+   PREFIX of a larger list, not as the whole of it. Pure and therefore
+   host-cc testable (cloud_model_test.c) — the wording is a decision,
+   not a drawing detail. */
+void cloud_listing_status(const CloudStore *store, char *out, long cap);
+
 #endif /* NOW_CLOUD_MODEL_H */
