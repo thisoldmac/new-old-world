@@ -19,14 +19,14 @@ final class OcclusionTests: XCTestCase {
     func testAWindowWithNothingInFrontIsNotOccluded() {
         let windows = [win("front", 0, 0, 100, 100, front: true),
                        win("back", 300, 300, 400, 400)]
-        XCTAssertFalse(ScenePoller.isOccluded(windows, index: 1),
+        XCTAssertFalse(SceneGeometry.isOccluded(windows, index: 1),
                        "disjoint rects must not read as occlusion")
     }
 
     func testAnOverlappedWindowIsOccluded() {
         let windows = [win("front", 0, 0, 350, 350, front: true),
                        win("back", 300, 300, 400, 400)]
-        XCTAssertTrue(ScenePoller.isOccluded(windows, index: 1))
+        XCTAssertTrue(SceneGeometry.isOccluded(windows, index: 1))
     }
 
     /// The strict case: even a sliver of overlap disqualifies a capture. Half
@@ -41,7 +41,7 @@ final class OcclusionTests: XCTestCase {
     func testPartialOverlapCounts() {
         let windows = [win("front", 0, 0, 305, 330, front: true),
                        win("back", 300, 300, 400, 400)]   // content t = 322
-        XCTAssertTrue(ScenePoller.isOccluded(windows, index: 1),
+        XCTAssertTrue(SceneGeometry.isOccluded(windows, index: 1),
                       "an overlap reaching into the content contaminates it")
     }
 
@@ -50,7 +50,7 @@ final class OcclusionTests: XCTestCase {
         // than incidental: we capture content, so chrome overlap is irrelevant.
         let windows = [win("front", 0, 0, 305, 305, front: true),
                        win("back", 300, 300, 400, 400)]
-        XCTAssertFalse(ScenePoller.isOccluded(windows, index: 1))
+        XCTAssertFalse(SceneGeometry.isOccluded(windows, index: 1))
     }
 
     func testOnlyWindowsInFrontOfItCount() {
@@ -58,14 +58,14 @@ final class OcclusionTests: XCTestCase {
         // occlude us however much it overlaps.
         let windows = [win("me", 300, 300, 400, 400),
                        win("behind", 0, 0, 800, 800)]
-        XCTAssertFalse(ScenePoller.isOccluded(windows, index: 0),
+        XCTAssertFalse(SceneGeometry.isOccluded(windows, index: 0),
                        "a window behind us must never count as occluding")
     }
 
     func testInvisibleWindowsDoNotOcclude() {
         let windows = [win("hidden", 0, 0, 800, 800, visible: false),
                        win("back", 300, 300, 400, 400)]
-        XCTAssertFalse(ScenePoller.isOccluded(windows, index: 1),
+        XCTAssertFalse(SceneGeometry.isOccluded(windows, index: 1),
                        "a window the guest isn't showing covers nothing")
     }
 
@@ -75,13 +75,13 @@ final class OcclusionTests: XCTestCase {
         // capture for every window on the machine.
         let backdrop = win("Desktop", 0, 0, 800, 600, app: "Finder")
         let windows = [backdrop, win("doc", 100, 100, 200, 200)]
-        XCTAssertFalse(ScenePoller.isOccluded(windows, index: 1),
+        XCTAssertFalse(SceneGeometry.isOccluded(windows, index: 1),
                        "the desktop backdrop must be ignored as an occluder")
     }
 
     func testADegenerateRectIsTreatedAsOccluded() {
         let windows = [win("empty", 50, 50, 50, 50)]
-        XCTAssertTrue(ScenePoller.isOccluded(windows, index: 0),
+        XCTAssertTrue(SceneGeometry.isOccluded(windows, index: 0),
                       "a zero-area content rect has nothing worth capturing")
     }
 }

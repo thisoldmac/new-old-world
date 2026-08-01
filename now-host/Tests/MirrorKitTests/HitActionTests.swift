@@ -276,28 +276,84 @@ final class HitActionTests: XCTestCase {
         XCTAssertEqual(fronts.first?.title, "Macintosh HD")
     }
 
-    // MARK: - Typed emu-only availability (plan decision 6)
+    // MARK: - What NOW's contract can carry
 
-    func testDragAvailability() {
-        let emu = MirrorTarget(host: "h", port: 1, machine: "mac99",
-                               qmp: "/tmp/qmp.sock")
-        let metal = MirrorTarget(host: "h", port: 1, machine: "pb1400c")
-        let qmpActions: [MirrorAction] = [
+    /// The QMP arms are unavailable, unconditionally, and their reason says
+    /// why rather than which target they are missing.
+    ///
+    /// **This test used to assert the opposite half of the same idea.** It
+    /// built a `MirrorTarget` with a `qmp` socket path and checked that the
+    /// drag arms were `.available` on it — the emulator was a *supported*
+    /// target, and the metal machine was the degraded one. NOW has no
+    /// emulator on the other end by assumption and no rule that would let it
+    /// inject a mouse if it did, so there is no target that makes these
+    /// available and no target parameter at all.
+    func testTheInjectedMouseArmsAreUnavailableWithNoTargetToMakeThemOtherwise() {
+        let injected: [MirrorAction] = [
             .drag(x0: 0, y0: 0, x1: 10, y1: 10),
+            .thumbDrag(x0: 0, y0: 0, x1: 0, y1: 40),
             .qmpClick(x: 5, y: 5),
+            .qmpDoubleClick(x: 5, y: 5),
             .menuDrag(menuLeft: 38, itemIndex: 6),
         ]
-        for action in qmpActions {
-            XCTAssertEqual(ActionModel.availability(action, target: emu),
-                           .available)
-            guard case .emulatorOnly = ActionModel.availability(
-                action, target: metal) else {
-                return XCTFail("\(action) on a QMP-less target must be "
-                               + "typed emu-only")
+        for action in injected {
+            guard case .unavailable(let reason)
+                = ActionModel.availability(action) else {
+                return XCTFail("""
+                    \(action) is host-side mouse injection and this says it \
+                    can be sent. Its executor was deleted with QmpClient; \
+                    anything that made this available again would be a \
+                    second way to touch a machine.
+                    """)
             }
-            // …and the dispatcher refuses fail-closed, before any wire I/O.
-            XCTAssertThrowsError(
-                try ActionDispatcher(target: metal).perform(action))
+            XCTAssertFalse(reason.isEmpty,
+                           "a refusal with no reason is a silent no-op")
         }
+    }
+
+    /// The one act that crosses whole, and the one that cannot be addressed.
+    ///
+    /// `menuact` takes three numbers a scene already carries. `ctlact` and
+    /// `textset` take an opaque reference an observation mints, and NOW's
+    /// scene producer emits controls with no ref — so a control can be drawn
+    /// and cannot be clicked, which is a fact about the two planes rather
+    /// than a defect in either.
+    func testTheActsNOWCarriesAreNamedAndTheOnesItCannotAddressSaySo() {
+        XCTAssertEqual(
+            ActionModel.availability(
+                .menuInvoke(menuID: 130, itemIndex: 2, titleLeft: 38)),
+            .available(command: "menuact"))
+        XCTAssertEqual(
+            ActionModel.availability(.activate(psn: "1.2")),
+            .available(command: "activate"))
+
+        guard case .needsObservation(let click, _)
+            = ActionModel.availability(.axdo(ref: "ax2:1")),
+              case .needsObservation(let write, _)
+            = ActionModel.availability(
+                .axdo(ref: "ax2:1", count: 1, mods: 0, text: "hello")) else {
+            return XCTFail("""
+                a control act reads as sendable from a scene. A scene's \
+                controls arrive with ref "" from NOW's producer, so a call \
+                built from one would be refused by the guest for naming \
+                nothing — after a person had already been shown it working.
+                """)
+        }
+        XCTAssertEqual(click, "ctlact")
+        XCTAssertEqual(write, "textset")
+    }
+
+    /// A keystroke has no home in NOW's contract, and that is a hole rather
+    /// than a rule — asserted separately so the day one lands, this fails and
+    /// says where to look.
+    func testAKeystrokeIsUnavailableAndIsNotClassifiedAsCheating() {
+        guard case .unavailable(let reason)
+            = ActionModel.availability(.key(code: 0, char: 97, mods: 256)),
+              case .unavailable = ActionModel.availability(
+                .type(text: "hi")) else {
+            return XCTFail("NOW's contract declares no keystroke command")
+        }
+        XCTAssertTrue(reason.contains("keystroke"),
+                      "the reason must name what is missing: \(reason)")
     }
 }

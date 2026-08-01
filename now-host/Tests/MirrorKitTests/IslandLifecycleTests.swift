@@ -30,12 +30,24 @@ final class IslandLifecycleTests: XCTestCase {
                     originX: 0, originY: 0, scale: 1)
     }
 
-    /// A poller pointed at a closed port: constructing one opens no socket
-    /// (WireClient connects lazily), so the pure paths are exercisable.
-    private func poller() -> ScenePoller {
-        ScenePoller(target: MirrorTarget(host: "127.0.0.1", port: 1,
-                                         scope: "front", machine: "test"),
-                    timeout: 0.2)
+    /// The policy, with no machine behind it.
+    ///
+    /// It used to be a `ScenePoller` aimed at a closed port, which worked
+    /// because `WireClient` connected lazily — a test that depended on the
+    /// transport failing to prove the transport was not used. The fetch is
+    /// now a closure, so "no capture rode this poll" is asserted directly:
+    /// `CaptureSpy` records every rect it was asked for, and the assertion
+    /// names them.
+    private func islands() -> SceneIslands { SceneIslands() }
+
+    /// A capture that must not happen. Records the call so the assertion
+    /// names the rect that was asked for rather than just failing.
+    private final class CaptureSpy {
+        private(set) var asked: [Rect] = []
+        func capture(_ rect: Rect) throws -> PixelIsland {
+            asked.append(rect)
+            throw PixelIslandError.badReply("no machine in this test")
+        }
     }
 
     // MARK: - Keying
@@ -92,7 +104,8 @@ final class IslandLifecycleTests: XCTestCase {
     /// instead of nothing, and the front window reuses its own cached island
     /// when the content signature is unchanged (no capture, no wire).
     func testUnfocusedWindowsKeepTheirLastCapturedInterior() {
-        var p = poller()
+        var p = islands()
+        let spy = CaptureSpy()
         let front = window(psn: "1.2", title: "Notes", z: 0, front: true)
         let back = window(psn: "3.4", title: "Budget", z: 1, front: false)
         let backdrop = window(psn: "5.6", title: "Nothing", z: 2, front: false)
@@ -100,13 +113,13 @@ final class IslandLifecycleTests: XCTestCase {
         let keys = IslandStore.keys(for: s.windows)
 
         // Seed: both the front and the back window have been captured before.
-        let content = ScenePoller.contentRect(front)
+        let content = SceneGeometry.contentRect(front)
         p.islands.pixels[keys[0]] = island(w: 4, h: 4, fill: 1)
         p.islands.contentKey[keys[0]] =
             "\(content.l),\(content.t),\(content.r),\(content.b)@0"
         p.islands.pixels[keys[1]] = island(w: 4, h: 4, fill: 2)
 
-        p.attachIslands(&s, poll: 1)
+        p.attach(&s, poll: 1, capture: spy.capture)
 
         XCTAssertEqual(s.windows[0].island?.rgba.first, 1,
                        "front window reuses its cached island unchanged")
@@ -114,19 +127,25 @@ final class IslandLifecycleTests: XCTestCase {
                        "an unfocused window keeps its last captured interior")
         XCTAssertNil(s.windows[2].island,
                      "a window never captured has no pixels to invent")
-        XCTAssertEqual(p.islandBytesFetched, 0, "no capture rode this poll")
+        XCTAssertEqual(p.bytesFetched, 0, "no capture rode this poll")
+        XCTAssertEqual(spy.asked, [], """
+            a capture was attempted: \(spy.asked). The front window's \
+            content signature was unchanged and the other two are held or \
+            occluded, so this poll must touch no machine at all.
+            """)
     }
 
     /// Stale geometry: a window resized while unfocused still gets its pixels
     /// (the renderer clips them at the content rect). Never blank, never scaled.
     func testResizedUnfocusedWindowStillGetsItsPixels() {
-        var p = poller()
+        var p = islands()
+        let spy = CaptureSpy()
         var back = window(psn: "3.4", title: "Budget", z: 1, front: false)
         let key = IslandStore.keys(for: [back])[0]
         p.islands.pixels[key] = island(w: 200, h: 100, fill: 7)
         back.rect = Rect(l: 10, t: 40, r: 90, b: 300)   // narrower and taller
         var s = scene([back])
-        p.attachIslands(&s, poll: 1)
+        p.attach(&s, poll: 1, capture: spy.capture)
         XCTAssertEqual(s.windows[0].island?.width, 200,
                        "held at capture size — clipped by the renderer, not scaled")
     }
@@ -157,14 +176,15 @@ final class IslandLifecycleTests: XCTestCase {
 
     /// A long session opening and closing windows must not accumulate islands.
     func testCacheStaysBoundedOverManyWindowGenerations() {
-        var p = poller()
-        p.islandGracePolls = 2
+        var p = islands()
+        let spy = CaptureSpy()
+        p.gracePolls = 2
         for generation in 0..<20 {
             var s = scene([window(psn: "1.\(generation)",
                                   title: "doc\(generation)", z: 0,
                                   front: false)])
             let key = IslandStore.keys(for: s.windows)[0]
-            p.attachIslands(&s, poll: generation + 1)
+            p.attach(&s, poll: generation + 1, capture: spy.capture)
             p.islands.pixels[key] = island(w: 2, h: 2, fill: 1)  // as if captured
         }
         XCTAssertLessThanOrEqual(p.islands.heldKeys.count, 3,

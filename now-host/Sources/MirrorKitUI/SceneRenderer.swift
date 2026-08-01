@@ -20,8 +20,10 @@ public struct SceneRenderer {
     public let openMenu: Int?
     /// 1-based index of the row under the pointer in the open menu.
     public let hoveredItem: Int?
-    /// Name of the desktop icon the mirror believes is selected. See
-    /// LiveMirrorView.selectedItem — this is our own model, not guest truth.
+    /// Name of the desktop icon the mirror believes is selected. Set by
+    /// whatever view owns the interaction — this is our own model, not guest
+    /// truth. (It used to name `LiveMirrorView`, the poll-loop front end
+    /// deleted with the transport; nothing in NOW sets it yet.)
     public let selectedItem: String?
     /// Mirror-local: the Application menu (app switcher) is open.
     public let appMenuOpen: Bool

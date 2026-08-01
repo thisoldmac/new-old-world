@@ -3,8 +3,8 @@ import Foundation
 /// **Added by the NOW port, not carried from upstream. One public door per
 /// scene type, and nothing else.**
 ///
-/// Upstream built every `Scene` *inside* this module — `SceneBuilder`,
-/// `ScenePoller`, the fixture decoder — so Swift's synthesized memberwise
+/// Upstream built every `Scene` *inside* this module — `SceneBuilder`, its
+/// poll loop, the fixture decoder — so Swift's synthesized memberwise
 /// initializers, which are **internal**, were enough and none of these types
 /// ever declared a public one. NOW's seam is outside the module:
 /// `MirrorSceneAdapter` lives in the `Host` target and turns a

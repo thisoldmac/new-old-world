@@ -66,7 +66,7 @@ final class PixelIslandTests: XCTestCase {
             bits([0, 0, 16, 17], [422, 105, 438, 122], 4),    // scrollbar arrow
             bits([4, 4, 418, 147], [4, -29, 418, 114], 5),    // THE scroll
         ]
-        let mv = ScenePoller.newestMove(captured, content: content, since: 0)
+        let mv = SceneGeometry.newestMove(captured, content: content, since: 0)
         XCTAssertEqual(mv?.dy, -33, "content scrolled up 33px")
         XCTAssertEqual(mv?.dx, 0)
         XCTAssertEqual(mv?.tick, 5)
@@ -79,18 +79,18 @@ final class PixelIslandTests: XCTestCase {
             var o = DisplayOp(op: "bits", ticks: tick); o.src = src; o.dst = dst; return o
         }
         // GWorld composite (src == dst) and a 16x16 arrow: neither is a move.
-        XCTAssertNil(ScenePoller.newestMove(
+        XCTAssertNil(SceneGeometry.newestMove(
             [bits([0, 0, 400, 300], [0, 0, 400, 300], 1),
              bits([0, 0, 16, 16], [380, 100, 396, 116], 2)],
             content: content, since: 0))
         // A real scroll: same size, displaced, a big slab of the content.
-        let mv = ScenePoller.newestMove(
+        let mv = SceneGeometry.newestMove(
             [bits([4, 4, 380, 280], [4, -29, 380, 247], 5)],
             content: content, since: 0)
         XCTAssertEqual(mv?.dy, -33)
         XCTAssertEqual(mv?.tick, 5)
         // Already accounted for -> not re-applied.
-        XCTAssertNil(ScenePoller.newestMove(
+        XCTAssertNil(SceneGeometry.newestMove(
             [bits([4, 4, 380, 280], [4, -29, 380, 247], 5)],
             content: content, since: 5))
     }
