@@ -371,14 +371,31 @@ static void test_straddling_record_is_corrupt(void)
 
     memset(&c, 0, sizeof c);
     init_block(256);
+    /* pos 240 leaves room for a header (16 bytes), so the reader gets far
+       enough to READ this record - and its size runs 4 bytes past the
+       ring's end. A tail shorter than a header is caught earlier and by a
+       different check; this is the case only the size arithmetic sees. */
+    memset(&h, 0, sizeof h);
+    h.size = 20;
+    h.op = kNowContentOpRgn;
+    memcpy(&g_block.ring[240], &h, sizeof h);   /* 240 + 20 > 256 */
+    g_block.write_cursor = 260;
+
+    now_qdtrace_drain(&g_block, 240, 0, 0, collect, &c, &r);
+    check_eq(r.outcome, kNowQDDrainCorrupt, "a straddling record is corrupt");
+    check_eq(c.n, 0, "and is not delivered on the way to saying so");
+
+    /* And the tail-too-short-for-a-header case, which the writer's own
+       invariant is supposed to make impossible. */
+    memset(&c, 0, sizeof c);
+    init_block(256);
     memset(&h, 0, sizeof h);
     h.size = 12;
     h.op = kNowContentOpRgn;
-    memcpy(&g_block.ring[250], &h, sizeof h);   /* 250 + 12 > 256 */
+    memcpy(&g_block.ring[250], &h, sizeof h);
     g_block.write_cursor = 262;
-
     now_qdtrace_drain(&g_block, 250, 0, 0, collect, &c, &r);
-    check_eq(r.outcome, kNowQDDrainCorrupt, "a straddling record is corrupt");
+    check_eq(r.outcome, kNowQDDrainCorrupt, "a tail too short is corrupt");
 }
 
 /* An odd size would put the following record at an odd offset, and every
@@ -399,6 +416,10 @@ static void test_odd_size_is_corrupt(void)
 
     now_qdtrace_drain(&g_block, 0, 0, 0, collect, &c, &r);
     check_eq(r.outcome, kNowQDDrainCorrupt, "an odd size is corrupt");
+    /* Delivering it and THEN discovering the corruption is not the same
+       thing: an odd size puts every following record at an offset the
+       writer never wrote, so the first one is already untrustworthy. */
+    check_eq(c.n, 0, "and nothing from it is delivered first");
 }
 
 /* ---- overrun: a fact, reported ---------------------------------------- */
