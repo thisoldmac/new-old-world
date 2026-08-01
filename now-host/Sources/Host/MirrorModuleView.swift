@@ -256,6 +256,7 @@ struct MirrorModuleView: View {
         case .refused: return "bubble.left"
         case .unavailable: return "slash.circle"
         case .inert: return "circle.dashed"
+        case .asking: return "hourglass"
         case .offScreen: return "rectangle.dashed"
         }
     }

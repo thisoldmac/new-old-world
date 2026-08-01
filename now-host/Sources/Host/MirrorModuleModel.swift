@@ -415,6 +415,10 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
             case unavailable
             /// The gesture meant nothing to send.
             case inert
+            /// On its way. Not an outcome — the absence of one yet, kept
+            /// distinct so an ask in flight is never read as an act that
+            /// meant nothing.
+            case asking
             /// The press was not on the guest's screen at all.
             case offScreen
 
@@ -482,7 +486,7 @@ final class MirrorModuleModel: ObservableObject, GuestScopedModel {
             return
         }
         lastAction = ActionReport(
-            outcome: .inert, target: named,
+            outcome: .asking, target: named,
             sentence: "Asking the Mac…")
         Task { @MainActor in
             let outcomes = await driver.drive(actions)

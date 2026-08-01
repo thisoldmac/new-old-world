@@ -240,7 +240,7 @@ final class MirrorGesturePathTests: XCTestCase {
 
         model.click(x: 130, y: 145)
         let deadline = Date().addingTimeInterval(5)
-        while model.lastAction?.outcome == .inert, Date() < deadline {
+        while model.lastAction?.outcome == .asking, Date() < deadline {
             try await Task.sleep(nanoseconds: 20_000_000)
         }
 
