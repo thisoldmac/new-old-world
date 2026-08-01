@@ -26,7 +26,10 @@ let package = Package(
     targets: [
         .target(name: "NOWAgentIntegration",
                 path: "Sources/NOWAgentIntegration"),
-        .target(name: "MirrorKit", path: "Sources/MirrorKit"),
+        .target(name: "MirrorKit", path: "Sources/MirrorKit",
+                // The port's own note. Excluded rather than moved so it sits
+                // beside the code it describes.
+                exclude: ["PORTING.md"]),
         // The renderer's assets are `.copy`, not `.process`: the bitmap
         // fonts and Platinum patterns are read byte-for-byte at their own
         // pixel sizes, and asset processing would be free to re-encode them.
