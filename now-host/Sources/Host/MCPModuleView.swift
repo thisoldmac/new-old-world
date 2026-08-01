@@ -223,14 +223,22 @@ struct MCPModuleView: View {
 
     /// The machine's own answer, one row per connected Mac. Read back, not
     /// offered — there is no control here by design.
+    ///
+    /// LIVE, not a connect-time snapshot: `agent.access` revises the answer
+    /// on the link already up and lands in the same session-health field
+    /// `hello.agent` filled, so these rows follow a switch thrown on the
+    /// other machine. That matters more here than as a nicety — the value
+    /// these rows display is the value the dispatch enforces, so a row that
+    /// went stale would be this pane vouching for a permission the person
+    /// had already withdrawn.
     private var consent: some View {
         card {
             VStack(alignment: .leading, spacing: 8) {
                 Text("What the other Mac has agreed to")
                     .font(.headline)
-                Text("Each machine answers this for itself when it "
-                        + "connects. It is changed on that machine, not "
-                        + "here.")
+                Text("Each machine answers this for itself, and can "
+                        + "change its answer while connected. It is "
+                        + "changed on that machine, not here.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

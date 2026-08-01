@@ -2127,7 +2127,22 @@ final class GuestListener: ObservableObject {
             onHealth: { [weak self] health in
                 guard let self else { return }
                 if let key = origin.session?.guestKey {
+                    /* The roster carries a COPY of the parts of this record
+                       it displays, so a field that changes after connect
+                       has to be pushed into it. Only agent access does:
+                       name, version and build are settled at hello and the
+                       rest of this record never reaches a roster row.
+
+                       Deliberately not an unconditional publishActive() —
+                       this closure runs on every frame, bulk ones included,
+                       so rebuilding the array here would do it thousands of
+                       times during a screen stream to carry a value that
+                       changes when somebody clicks a radio button. */
+                    let stale = self.healthByGuest[key]?.guestAgentAccess
                     self.healthByGuest[key] = health
+                    if stale != health?.guestAgentAccess {
+                        self.publishActive()
+                    }
                     guard key == self.activeKey else { return }
                 }
                 self.health = health
