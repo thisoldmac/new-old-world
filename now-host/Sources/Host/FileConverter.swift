@@ -189,32 +189,13 @@ enum OutboundFile {
         var note: String?
     }
 
-    /// HFS allows 31 characters, forbids colons (its path separator),
-    /// and stores names in MacRoman. Truncation keeps the extension,
-    /// because that is what both sides use to recognise the file.
+    /// HFS allows 31 MacRoman bytes and forbids colons (its path
+    /// separator). The projection itself — composition, substitution,
+    /// truncation with the extension kept, and the fingerprint that
+    /// keeps a mangled name addressable — is ClassicName's, so the name
+    /// a push invents and the name a listing shows cannot drift apart.
     static func hfsName(_ name: String) -> String {
-        /* This file system stores names DECOMPOSED: "café" is "cafe"
-           plus a combining accent. MacRoman has the accented letter but
-           not the combining mark, so mapping character by character
-           turns every accented name into "cafe_" — a different name,
-           silently. Composing first is what makes the round trip hold. */
-        var base = name.precomposedStringWithCanonicalMapping
-            .replacingOccurrences(of: ":", with: "-")
-        if base.hasPrefix(".") { base = "_" + base.dropFirst() }
-        base = String(base.unicodeScalars.map { scalar -> Character in
-            String(scalar).data(using: .macOSRoman) != nil
-                ? Character(scalar) : "_"
-        })
-        if base.utf8.count <= 31 { return base.isEmpty ? "Untitled" : base }
-
-        let ext = (base as NSString).pathExtension
-        let stem = (base as NSString).deletingPathExtension
-        if ext.isEmpty || ext.count > 10 {
-            return String(base.prefix(31))
-        }
-        let room = 31 - ext.count - 1
-        guard room > 0 else { return String(base.prefix(31)) }
-        return String(stem.prefix(room)) + "." + ext
+        ClassicName.project(name)
     }
 
     /// Chooses the container and converts the bytes. A .bin file is

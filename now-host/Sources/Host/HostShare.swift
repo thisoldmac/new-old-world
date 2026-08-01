@@ -87,7 +87,7 @@ final class HostShare {
                   !component.contains("/") else {
                 throw ShareError.badPath
             }
-            url.appendPathComponent(component)
+            url.appendPathComponent(Self.realComponent(component, in: url))
         }
         /* Compare what the path actually reaches, not what it says: a
            symlink inside the share can name anything on this disk, and
@@ -99,6 +99,29 @@ final class HostShare {
             throw ShareError.badPath
         }
         return url.standardizedFileURL
+    }
+
+    /// The disk name a wire component refers to. A name that exists is
+    /// itself — the common case, and it also covers composed-versus-
+    /// decomposed spelling, which this file system looks up insensitively.
+    /// Otherwise the component may be a listing's projection of a name
+    /// HFS could not hold, so re-project the directory and match. A
+    /// component that is neither is returned as it came: it may name a
+    /// folder about to be created, and if not, the caller's own
+    /// not-found is the right answer.
+    private static func realComponent(_ component: String, in parent: URL)
+        -> String {
+        let direct = parent.appendingPathComponent(component)
+        if FileManager.default.fileExists(atPath: direct.path) {
+            return component
+        }
+        guard let names = try? FileManager.default
+            .contentsOfDirectory(atPath: parent.path) else {
+            return component
+        }
+        return ClassicName.resolve(
+            component, among: names.filter { !$0.hasPrefix(".") })
+            ?? component
     }
 
     /// One page of a folder, in the shape file.listing carries. Hidden
@@ -126,6 +149,11 @@ final class HostShare {
         guard start < contents.count else {
             return ([], false, contents.count + 1)
         }
+        /* Projected with the WHOLE directory in hand, not name by name:
+           a projection that collides with a sibling widens its
+           fingerprint, and it can only know to do that here. */
+        let classicByReal = ClassicName.projectDirectory(
+            contents.map { $0.lastPathComponent })
         let entries = contents[start..<end].map { entry -> FileEntry in
             let values = try? entry.resourceValues(
                 forKeys: [.isDirectoryKey, .fileSizeKey,
@@ -139,7 +167,8 @@ final class HostShare {
             let (type, creator) = isDir ? (nil, nil)
                 : OutboundFile.classicType(for: entry.lastPathComponent)
             return FileEntry(
-                name: OutboundFile.hfsName(entry.lastPathComponent),
+                name: classicByReal[entry.lastPathComponent]
+                    ?? ClassicName.project(entry.lastPathComponent),
                 kind: isDir ? "folder" : "file",
                 fileType: type, creator: creator,
                 dataBytes: isDir ? nil : (values?.fileSize ?? 0),
@@ -303,13 +332,25 @@ final class HostShare {
     }
 
     /// A path back in the other machine's spelling, for reporting where
-    /// something actually landed.
+    /// something actually landed. Each component is projected with its
+    /// directory's context, so the answer is the same spelling a listing
+    /// of that folder would show.
     private func relativePath(of url: URL) -> String {
         let base = root.standardizedFileURL.path
         let full = url.standardizedFileURL.path
         guard full.hasPrefix(base + "/") else { return "" }
-        return String(full.dropFirst(base.count + 1))
-            .replacingOccurrences(of: "/", with: Self.separator)
+        var parent = root.standardizedFileURL
+        var spelled: [String] = []
+        for real in String(full.dropFirst(base.count + 1))
+            .components(separatedBy: "/") {
+            let names = (try? FileManager.default
+                .contentsOfDirectory(atPath: parent.path))?
+                .filter { !$0.hasPrefix(".") } ?? []
+            spelled.append(ClassicName.projectDirectory(names)[real]
+                ?? ClassicName.project(real))
+            parent.appendPathComponent(real)
+        }
+        return spelled.joined(separator: Self.separator)
     }
 
     /// The contract's control-frame cap, less room for the envelope the
@@ -340,6 +381,19 @@ final class HostShare {
         }
         var plan = OutboundFile.plan(url: url, data: data,
                                      convertText: convertText)
+        /* The name in file.begin must be the one the listing showed, or
+           the other machine receives a file it never asked for by a name
+           it has never seen. Projection is stateless, so recompute it
+           with the same directory context the listing had. MacBinary is
+           the exception on purpose: its plan already shed the .bin the
+           name only wore for the trip. */
+        if plan.container == "data",
+           let names = try? FileManager.default.contentsOfDirectory(
+               atPath: url.deletingLastPathComponent().path) {
+            plan.name = ClassicName.projectDirectory(
+                names.filter { !$0.hasPrefix(".") })[url.lastPathComponent]
+                ?? plan.name
+        }
         /* Taken here, where the file was already resolved and read.
            Asking for it afterwards meant resolving the path a second
            time — and resolve reads a default and walks symlinks. */

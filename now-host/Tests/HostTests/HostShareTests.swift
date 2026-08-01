@@ -183,6 +183,90 @@ final class HostShareTests: XCTestCase {
         XCTAssertTrue(name.hasSuffix(".txt"), "the extension identifies it")
     }
 
+    // MARK: - The name round trip
+
+    /* A listing's name is the only spelling the other machine has, so
+       every name a listing shows must work in a file.get, a mutation,
+       and a destination — or the listing advertises files that cannot
+       be reached. This was a live defect: names were mangled on the way
+       out and looked up verbatim on the way back. */
+
+    func testAListedNameFetchesTheFileItNames() throws {
+        try write("A very long file name that HFS could never store.dat",
+                  "the real bytes")
+        let listed = try XCTUnwrap(
+            try share.list(path: "", cursor: 1, limit: 16)
+                .entries.first?.name)
+        XCTAssertNotEqual(
+            listed, "A very long file name that HFS could never store.dat")
+        let plan = try share.read(path: listed, convertText: false)
+        XCTAssertEqual(String(data: plan.bytes, encoding: .utf8),
+                       "the real bytes")
+        XCTAssertEqual(plan.name, listed,
+                       "file.begin must carry the name the listing showed")
+    }
+
+    func testAListedFolderNameOpensTheFolderItNames() throws {
+        let folder = "A very long folder name that HFS cannot hold either"
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent(folder),
+            withIntermediateDirectories: true)
+        try "inside".data(using: .utf8)!.write(
+            to: root.appendingPathComponent(folder)
+                .appendingPathComponent("inner.dat"))
+        let listed = try XCTUnwrap(
+            try share.list(path: "", cursor: 1, limit: 16)
+                .entries.first?.name)
+        let page = try share.list(path: listed, cursor: 1, limit: 16)
+        XCTAssertEqual(page.entries.map(\.name), ["inner.dat"])
+        let plan = try share.read(path: listed + ":inner.dat",
+                                  convertText: false)
+        XCTAssertEqual(String(data: plan.bytes, encoding: .utf8), "inside")
+    }
+
+    func testAMutationOnAListedNameActsOnTheRealFile() throws {
+        let real = "A very long file name that HFS could never store.dat"
+        try write(real)
+        let listed = try XCTUnwrap(
+            try share.list(path: "", cursor: 1, limit: 16)
+                .entries.first?.name)
+        let landed = try share.move(from: listed, to: "kept.dat",
+                                    overwrite: false)
+        XCTAssertEqual(landed, "kept.dat")
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: root.appendingPathComponent(real).path))
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: root.appendingPathComponent("kept.dat").path))
+    }
+
+    func testADecomposedNameOnDiskIsFetchableByItsComposedSpelling() throws {
+        try write("cafe\u{301}.dat", "accented")
+        let listed = try XCTUnwrap(
+            try share.list(path: "", cursor: 1, limit: 16)
+                .entries.first?.name)
+        XCTAssertEqual(listed, "café.dat")
+        let plan = try share.read(path: listed, convertText: false)
+        XCTAssertEqual(String(data: plan.bytes, encoding: .utf8), "accented")
+    }
+
+    /// Where a mutation reports it landed must be the same spelling a
+    /// listing of that folder would show — a real path the guest cannot
+    /// spell is no use to it.
+    func testAMutationResultIsSpelledTheWayAListingWouldShowIt() throws {
+        try write("plain.dat")
+        let long = "A destination folder with a name HFS cannot hold"
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent(long),
+            withIntermediateDirectories: true)
+        let listedFolder = try XCTUnwrap(
+            try share.list(path: "", cursor: 1, limit: 16)
+                .entries.first(where: { $0.kind == "folder" })?.name)
+        let landed = try share.move(
+            from: "plain.dat", to: listedFolder + ":plain.dat",
+            overwrite: false)
+        XCTAssertEqual(landed, listedFolder + ":plain.dat")
+    }
+
     // MARK: - Reading
 
     func testReadConvertsLineEndingsForText() throws {
