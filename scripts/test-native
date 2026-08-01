@@ -160,6 +160,24 @@ run_c now-guest-ppc content_plane_test.c \
       ../ext/src/now_content_logic.c
 run_c now-guest-ppc peek_oracle_test.c \
       "-DNOW_PEEK_TABLE_HOST" src/peek/peek_oracle.c src/peek/peek_validate.c
+# The content plane's READER (src/content/) - the half NOW owns. The ring
+# it walks is written by resident draw-time code in another process, so
+# the fixtures here are built by linking the REAL writer
+# (ext/src/now_content_logic.c) and calling it; the malformed rings are
+# poked in by hand, because the writer cannot produce them and the reader
+# must survive them anyway. Nothing in this plane has run on a Macintosh
+# on either side of the contract, which is precisely why the decode is
+# Toolbox-free.
+run_c now-guest-ppc qdtrace_read_test.c \
+      "-DNOW_PEEK_TABLE_HOST -I $repo_root/ext/src" \
+      src/content/qdtrace_read.c ../ext/src/now_content_logic.c
+run_c now-guest-ppc qdtrace_json_test.c \
+      "-DNOW_PEEK_TABLE_HOST -I $repo_root/ext/src" \
+      src/content/qdtrace_json.c src/content/qdtrace_read.c \
+      src/core/json.c ../ext/src/now_content_logic.c
+# The arm protocol is an ORDER, and an order is invisible to a test that
+# inspects the block afterwards. Gated as source text for that reason.
+run_py now-guest-ppc qdtrace_arm_order_source_test.py
 # The scene envelope's Toolbox-free halves. Assembly is where the anchor
 # verdicts become claims about the machine, and the encoder is where an
 # unproduced plane is an ABSENT key rather than an empty one - both are
