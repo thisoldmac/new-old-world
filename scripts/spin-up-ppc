@@ -99,8 +99,16 @@ HOSTFWD="hostfwd=tcp:127.0.0.1:${ANCHOR}-:1400"
 printf '%s %s\n' "$ANCHOR" "$WIRE" > "$RUN/ports"
 echo "ports: anchor=$ANCHOR wire=$WIRE"
 
+# A window a person will look at comes from tbt_human_display, not from a
+# backend spelled here: cocoa shears under the pointer and SDL is what fixed
+# it (docs/05-qemu-field-notes.md in the lab checkout). lib.sh rescues a bare
+# "cocoa" anyway, but a caller should not need rescuing.
+# The fallback is not decoration: this repo and the lab checkout are versioned
+# apart, so a lab that predates tbt_human_display would otherwise leave
+# -display empty under set -e and take the boot down with it.
 DISPLAY_KIND=none
-[ "${NOW_SPIN_DISPLAY:-0}" = "1" ] && DISPLAY_KIND=cocoa
+[ "${NOW_SPIN_DISPLAY:-0}" = "1" ] \
+    && DISPLAY_KIND="$(tbt_human_display 2>/dev/null || printf 'sdl')"
 
 boot () {   # $1 = fresh | cold
     [ "$1" = fresh ] && tbt_clone_disk "$BASE" "$DISK"
