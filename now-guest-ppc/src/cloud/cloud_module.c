@@ -161,11 +161,35 @@ static void ask_save(void)
 
 /* --- the dropdown ------------------------------------------------------- */
 
+/* The popup's menu, asked for the blessed way. Under CarbonLib the
+   classic popupMenuProc procID resolves to the Appearance popup, whose
+   menu is reached through GetControlData — GetMenuHandle only finds it
+   if the CDEF put it in the menu list, which is the CDEF's business,
+   not a promise. Fall back to the menu list for older paths, and say
+   so out loud when both come up empty: a silent NULL here is a
+   dropdown stuck on "(none)" with nothing to explain it. */
+static MenuRef popup_menu(void)
+{
+    MenuRef menu = NULL;
+    Size got = 0;
+
+    if (g_popup != NULL
+        && GetControlData(g_popup, kControlEntireControl,
+                          kControlPopupButtonMenuHandleTag,
+                          sizeof menu, (Ptr)&menu, &got) == noErr
+        && got == (Size)sizeof menu && menu != NULL) {
+        return menu;
+    }
+    return GetMenuHandle(kCloudServicesMenuID);
+}
+
 static void rebuild_popup(void)
 {
     int i;
 
+    g_menu = popup_menu();
     if (g_menu == NULL) {
+        set_status("The services menu is missing (resource 135)");
         return;
     }
     while (CountMenuItems(g_menu) > 0) {
@@ -443,7 +467,7 @@ static OSErr cloud_create(WindowRef owner, const Rect *body)
     g_popup = NewControl(owner, &g_r.popup, text, false,
                          popupTitleLeftJust, kCloudServicesMenuID, 0,
                          popupMenuProc, 0);
-    g_menu = GetMenuHandle(kCloudServicesMenuID);
+    g_menu = popup_menu();
     CopyCStringToPascal("Refresh", text);
     g_refresh = NewControl(owner, &g_r.refresh_btn, text, false, 0, 0, 1,
                            pushButProc, 0);
@@ -698,6 +722,13 @@ static void cloud_idle(void)
     if (g_owner == NULL || !g_visible) {
         return;
     }
+    /* The page may have been opened before the connection finished; the
+       first ask fires as soon as there is a wire to ask on. One flag
+       check per pass, and only until it has happened once. */
+    if (!g_asked_once && conn_is_connected()) {
+        g_asked_once = true;
+        ask_services();
+    }
     /* Show/hide is the cheap operation that is safe every pass; the
        rectangle repaints only when the answer changed. */
     save_on = save_applies();
@@ -716,8 +747,18 @@ static void cloud_status_text(char *out, long cap)
 {
     const CloudService *service = current_service();
 
+    /* ALWAYS write: the Workshop hands a stack buffer, and leaving it
+       untouched drew a different garbage string every pass — watched
+       on the PowerBook. The page's own news outranks the service line,
+       because it is where errors land. */
+    if (cap < 1) {
+        return;
+    }
+    out[0] = '\0';
     if (g_loading) {
         snprintf(out, (size_t)cap, "Asking...");
+    } else if (g_status[0] != '\0') {
+        snprintf(out, (size_t)cap, "%.120s", g_status);
     } else if (service != NULL) {
         snprintf(out, (size_t)cap, "%.30s - %.60s", service->label,
                  service->detail[0] != '\0' ? service->detail
