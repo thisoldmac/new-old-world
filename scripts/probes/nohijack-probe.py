@@ -119,6 +119,34 @@ The Desktop-folder oracle needs NOTHING further: it is built on `ls` and
 `file.trash`, which NOW already serves. See oracles.py — upstream needed a
 second guest process for that read and this port does not.
 
+## `collide` — the case upstream never needed, and the one it was asked for
+
+Added 2026-08-01, and it is NOT the case the lane was briefed to write. The
+brief asked for two cells armed at once: can B's press satisfy A's guard, and
+is the identity check evaluated per-cell or on the first armed cell found?
+
+**Neither question is reachable, because NOW's act plane is single-cell too.**
+`contract/peek_table.h` declares one `NowPeekActCell` as a struct MEMBER (its
+own words: "ONE at a time by design"), `now_act_armed_cell()` returns
+`&table->act` by fixed reference with no index and no search, and every guard
+in `now_act_guard.c` takes one cell pointer. There is no set to search, so
+there is no "first armed cell found" behaviour to have, and no second cell to
+arm. What is multi-cell in NOW is the ANCHOR plane, which is a READ plane.
+
+REFUSED IN WRITING, therefore: the two-cells-armed case is not written here.
+It would measure a table that does not exist, and a green number out of it
+would be worse than no number. If the act plane ever grows an array, the case
+comes back and the brief's two questions are the right ones to ask of it.
+The reasoning is in `docs/no-hijack-criterion.md` §4.
+
+What the single cell DOES admit is the same question asked of the shape the
+code has: **can a press that belongs to nobody's request satisfy this guard?**
+Every other case in this file presses somewhere ELSE. `collide` presses the
+SAME menu title the request names, and presses it FIRST, so a press is already
+queued when the request arms. Read `case_collide` for the prediction the code
+makes and for why the discriminator is menu-tracking starvation rather than
+the Desktop folder.
+
 ## Comparability with upstream's numbers
 
 Preserved deliberately, and the places it could have been lost:
@@ -157,6 +185,15 @@ Usage (a guest must be up and dialing this host):
     NOW_METAL=1 python3 scripts/probes/nohijack-probe.py ... --case menu --n 20
     NOW_METAL=1 python3 scripts/probes/nohijack-probe.py ... --case stale
     NOW_METAL=1 python3 scripts/probes/nohijack-probe.py ... --case window
+    NOW_METAL=1 python3 scripts/probes/nohijack-probe.py ... --case collide
+
+`collide` is deliberately NOT in the default case list. Changing what a bare
+run measures would change what its number means, and this case is new here and
+unrun: it has to be asked for by name until it has been watched on a machine.
+
+NONE OF THESE HAVE BEEN RUN ON NOW. The `collide` case in particular has never
+executed against a guest - it parses, it imports, and its arguments answer
+`--help`. That is the whole extent of what has been shown about it.
 """
 
 from __future__ import annotations
@@ -203,6 +240,19 @@ OFFSCREEN_TITLE_LEFT = 4000
 # linear in the distance.
 MENU_ITEM1_Y = 28
 
+# WHERE `menuact` ARMS, and how far off a press may be and still be claimed.
+# Not this file's choices - the guest's, and they are read out of the guest so
+# the collide case aims at the guard rather than near it:
+#
+#   act_cmds.c   h = titleLeft + 4;  v = 10;   /* the bar is 20px, aim mid */
+#   now_act_guard.c   #define NOW_ACT_POINT_SLOP 2
+#
+# If either moves, this case starts measuring something adjacent to the guard
+# instead of the guard, so they are named here rather than inlined.
+MENUACT_ARM_DX = 4
+MENUACT_ARM_Y = 10
+MENU_POINT_SLOP = 2
+
 # Upstream's defaults. Each is part of what the number means.
 DEFAULT_N = 20
 DEFAULT_ARM_DELAY = 1.5         # must be INSIDE the verb's ~5s wait
@@ -216,6 +266,10 @@ REQUIRED = {
     "window": ("observe", "mouseloc", "menuact"),
     "baseline": ("observe", "mouseloc"),
     "text": ("observe", "textget", "textset"),
+    # NOT upstream's. The pending-press collide - see case_collide and
+    # docs/no-hijack-criterion.md for why it is this case and not the
+    # two-cells-armed one the lane was briefed for.
+    "collide": ("observe", "mouseloc", "menuact"),
 }
 
 # The cases that address a MENU, and therefore need the scene plane on top of
@@ -224,7 +278,7 @@ REQUIRED = {
 # and `require_verbs` structurally cannot check it. These four (baseline
 # included — it presses the same Apple menu) go through the scene gate
 # instead, on their first fetch.
-SCENE_CASES = ("menu", "stale", "window", "baseline")
+SCENE_CASES = ("menu", "stale", "window", "baseline", "collide")
 
 GATE_NOTE = """\
 This is the harness behind 18/20 -> 0/19, the measurement NOW's own contract
@@ -827,6 +881,191 @@ def case_baseline(link, qmp, n: int) -> dict:
     return tally.summarize("baseline", trials)
 
 
+# --- case: the pending-press collide (NOT upstream's; see docs) --------------
+
+def collide_trial(link, qmp, aim: MenuAim) -> dict:
+    """A user's press is ALREADY QUEUED at the point the request is about to
+    arm on. Whose press does the patch answer?
+
+    Every other case here presses somewhere ELSE. This one presses the SAME
+    menu title the request names, and presses it FIRST. That distinction is
+    the whole case, and no upstream trial ever made it.
+
+    THE PREDICTION FROM THE CODE, which this trial exists to falsify or
+    confirm with a number:
+
+      * `menuact` arms at `(titleLeft + 4, 10)` (act_cmds.c) and the guard
+        compares MenuSelect's own point against it with +/-2 px of slop
+        (NOW_ACT_POINT_SLOP, now_act_guard.c). A press at that point is
+        ACCEPTED. Nothing else about it is examined - there is no serial, no
+        sequence tag, nothing on the queue element that says which request
+        queued it. The guard cannot tell our press from an identical one.
+      * The resident half queues its own press from INSIDE the target's
+        context at the moment of arming (now_ext_act.c), so it is always
+        BEHIND a press the user made earlier. The Event Manager hands the
+        older one over first.
+      * Arming happens in the jGNE filter (now_ext_gne_apply -> P4), i.e.
+        inside the target's own GetNextEvent/WaitNextEvent - the same call
+        that is about to hand it the pending press.
+
+    So the code as written should answer the USER's press: the request fires,
+    the Finder never draws a menu, and the user gets an item they never
+    dragged to. That is a hijack by the definition this file already uses,
+    and it is NOT the failure the +/-2 px slop was chosen to avoid - the slop
+    is about a legitimate request being broken, and this is the opposite
+    direction.
+
+    THE DISCRIMINATOR is starvation, not the folder. Both a hijack and an
+    honest chain-through end with one folder on the Desktop, because the
+    request's own press fires it in the honest case - so the folder alone
+    cannot tell them apart and scoring on it would publish a leak or hide
+    one, depending on the day. What DOES separate them is whether the
+    Finder ever entered MenuSelect's tracking loop while the button was
+    held:
+
+      tracked  -> the real MenuSelect got the user's press. Not a hijack.
+      prompt   -> MenuSelect returned instantly. The patch answered a press
+                  nobody's request queued. HIJACK.
+
+    `press_with_tracking_probe` is that read and it is upstream's, reused
+    verbatim: cooperative multitasking means a tracking loop starves the
+    responder, so an unanswered round trip IS the tracking.
+
+    PRECONDITION, enforced rather than assumed: the press has to land within
+    the guard's own +/-2 px, or the trial has measured nothing and is
+    dropped. Closed-loop positioning is used and the landing is CHECKED; a
+    miss is a drop, never a quiet zero.
+    """
+    front = ensure_finder(link, aim.cache)
+    scene_doc, refetched = fetch_scene(link, aim.cache, front=front,
+                                       why="collide trial")
+    if refetched:
+        aim.calibrate(link, qmp, scene_doc)
+
+    file_menu = finder_menu(scene_doc, "File")
+    if file_menu is None:
+        raise SystemExit(
+            "PRECONDITION FAILED: the Finder's File menu is not in the "
+            "scene's menu bar. This case presses that menu's own title, so "
+            "there is nothing to aim at.")
+    title_left = int(file_menu["left"])
+    arm_pt = (title_left + MENUACT_ARM_DX, MENUACT_ARM_Y)
+
+    oracles.clear_desktop_untitled_folders(link)
+    folders_before = oracles.desktop_untitled_folders(link)
+    if folders_before:
+        return {"valid": False, "why": "desktop was not clean",
+                "hijacked": False, "chained": False}
+
+    # Closed-loop onto the ARM POINT itself - not the Apple title the other
+    # cases aim at, and not a learned hop: a hop is replayed blind and this
+    # case needs the landing to be inside 2 px of a point it will then
+    # compare against. The wire is free here; no request is armed yet.
+    landed = qmpmod.position(lambda: mouseloc(link), qmp,
+                             arm_pt[0], arm_pt[1], tolerance=1)
+    within = (abs(landed[0] - arm_pt[0]) <= MENU_POINT_SLOP
+              and abs(landed[1] - arm_pt[1]) <= MENU_POINT_SLOP)
+    if not within:
+        # A press outside the slop is a press the guard would refuse for the
+        # RIGHT reason, and counting it as "no hijack" would manufacture the
+        # false green this file exists to prevent.
+        return {"valid": False,
+                "why": f"press landed {landed}, outside +/-{MENU_POINT_SLOP} "
+                       f"of the arm point {arm_pt}",
+                "armPoint": list(arm_pt), "landed": list(landed),
+                "hijacked": False, "chained": False}
+
+    # THE ORDER IS THE EXPERIMENT. The press goes down FIRST, so it is in the
+    # queue before anything arms; the request goes out while it is still held.
+    qmp.button(True)
+    mid = link.send_async("menuact", {"menu": int(file_menu["id"]), "item": 1,
+                                      "titleLeft": title_left})
+    # Was the Finder tracking a menu while the button was down? A round trip
+    # that gets no answer is the tracking loop; a prompt one means MenuSelect
+    # returned without drawing anything.
+    probe = link.send_async("vers")
+    try:
+        link.read_result(probe, timeout=1.2)
+        starved = False
+    except (TimeoutError, OSError):
+        starved = True
+        probe_pending = True
+    else:
+        probe_pending = False
+
+    # Release WITHOUT dragging. If a menu did drop, nothing is selected and it
+    # closes; the Desktop oracle then attributes any folder to the act plane
+    # rather than to the stimulus. The baseline case is what proves a drag-free
+    # press selects nothing.
+    time.sleep(0.4)
+    qmp.button(False)
+    time.sleep(2.5)
+
+    if probe_pending:
+        try:
+            link.read_result(probe, timeout=30)
+        except TimeoutError:
+            pass
+    try:
+        reply = link.read_result(mid, timeout=40)
+    except TimeoutError:
+        reply = None
+    time.sleep(2.0)
+
+    folders_after = oracles.desktop_untitled_folders(link)
+    new_folder = bool(folders_after - folders_before)
+    return {
+        "armPoint": list(arm_pt), "landed": list(landed),
+        "menu": int(file_menu["id"]), "menuTitleLeft": title_left,
+        "newFolder": new_folder,
+        "replyOk": bool(reply and reply.get("ok")),
+        "error": ((reply or {}).get("error") or {}).get("code"),
+        "tracked": starved,
+        # SCORED ON THE STARVATION READ, and this is the one place in this
+        # file where `hijacked` is not tally.hijacked(). It cannot be: the
+        # folder appears either way (see the docstring), so the shared helper
+        # - which ORs the reply and the oracle - would call every trial a
+        # hijack. Both of its inputs are still recorded above so a reader can
+        # check this scoring against them.
+        "hijacked": bool(new_folder) and not starved,
+        "chained": starved,
+        "valid": True,
+    }
+
+
+def case_collide(link, qmp, n: int) -> dict:
+    """The case upstream never needed, and the case NOW was briefed for -
+    which are not the same case. See docs/no-hijack-criterion.md.
+
+    The brief asked for two cells armed at once: does B's press satisfy A's
+    guard, and is the identity check per-cell or on the first armed cell
+    found? NOW cannot be asked either question. `contract/peek_table.h`
+    declares ONE `NowPeekActCell` as a struct member, `now_act_armed_cell()`
+    returns `&table->act` by fixed reference, and every guard takes one cell
+    pointer - so there is no set to search and no second cell to arm. Writing
+    that case anyway would have measured a table that does not exist, and a
+    green number out of it would have been worse than no number.
+
+    What the single cell DOES admit is a collision between a request and a
+    press it did not queue, and that is what this case measures. It is the
+    same question - can a press that belongs to somebody else satisfy this
+    guard? - asked of the shape the code actually has.
+    """
+    aim = menu_setup(link, qmp)
+    print(f"\n=== pending-press collide (press the SAME title, first), N={n}")
+    trials = []
+    for i in range(n):
+        t = collide_trial(link, qmp, aim)
+        t["trial"] = i + 1
+        trials.append(t)
+        sys.stdout.write("!" if not t.get("valid", True) else
+                         ("H" if t["hijacked"] else
+                          ("." if t["chained"] else "?")))
+        sys.stdout.flush()
+    print()
+    return tally.summarize("collide", trials)
+
+
 def case_window(link, qmp, delays: list) -> dict:
     """Measure the DISARM WINDOW rather than assume it: click at increasing
     delays after arming and find where hijacking stops.
@@ -969,6 +1208,8 @@ def main() -> int:
             results.append(case_menu(link, qmp, args.n, args.arm_delay))
         elif case == "stale":
             results.append(case_stale(link, qmp, args.n, args.stale_delay))
+        elif case == "collide":
+            results.append(case_collide(link, qmp, args.n))
         elif case == "text":
             results.append(case_text(link, args.n))
         elif case == "window":
