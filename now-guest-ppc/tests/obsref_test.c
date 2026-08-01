@@ -320,6 +320,157 @@ static void process_fingerprint_separates_a_relaunch(void)
           "and the fingerprint is a function of its arguments only");
 }
 
+/* --- interning, and the walk epoch --------------------------------------
+
+   These two exist because a SCENE re-reads the same desktop whenever a
+   person presses refresh. The properties below are what make that
+   affordable; each is written as the failure it prevents. */
+
+/* Fetch the same element twice and it keeps its name - which is the
+   whole point, because the name is in the JSON the person is looking at
+   when they click. Note this is the OPPOSITE of every_mint_is_new above,
+   deliberately: mint and intern are two readings of "a reference", and
+   the caller picks. */
+static void interning_is_stable(void)
+{
+    NowObsRegistry registry;
+    NowObsIdentity id;
+    char           first[kNowObsTokenMax];
+    char           second[kNowObsTokenMax];
+
+    now_obs_registry_init(&registry, 0x0BADF00DUL, 0xFEEDFACEUL);
+    identity_for(&id, 0x00101000UL, 0x00108000UL, "Save", "OK");
+    id.minted_ticks = 100UL;
+    check(now_obs_intern(&registry, kNowObsKindElement, &id, first,
+                         sizeof(first)) == 1, "first fetch mints");
+    /* A later walk reads a later clock. If minted_ticks were part of
+       identity nothing would ever intern, and the registry would grow by
+       a whole scene on every refresh. */
+    id.minted_ticks = 900UL;
+    check(now_obs_intern(&registry, kNowObsKindElement, &id, second,
+                         sizeof(second)) == 1, "second fetch interns");
+    check(strcmp(first, second) == 0,
+          "a second fetch of the same element carries the same reference");
+    check(registry.minted == 1 && registry.reused == 1,
+          "and the registry did not grow");
+    check(now_obs_lookup(&registry, kNowObsKindElement, first,
+                         strlen(first)) != NULL,
+          "the reference the FIRST scene handed out still resolves");
+}
+
+/* What must NOT intern. Every field of the identity is part of what a
+   reference means, so a reference must never be handed to an element
+   that differs in any of them - the address that moved is the case that
+   matters, because the title and occurrence still match and only the
+   fingerprint disagrees. */
+static void interning_refuses_a_different_element(void)
+{
+    NowObsRegistry registry;
+    NowObsIdentity id;
+    char           original[kNowObsTokenMax];
+    char           other[kNowObsTokenMax];
+
+    now_obs_registry_init(&registry, 3UL, 5UL);
+    identity_for(&id, 0x00101000UL, 0x00108000UL, "Save", "OK");
+    check(now_obs_intern(&registry, kNowObsKindElement, &id, original,
+                         sizeof(original)) == 1, "mint the original");
+
+    identity_for(&id, 0x00101000UL, 0x00108000UL, "Save", "Cancel");
+    check(now_obs_intern(&registry, kNowObsKindElement, &id, other,
+                         sizeof(other)) == 1, "a different title");
+    check(strcmp(original, other) != 0, "does not inherit the reference");
+
+    identity_for(&id, 0x00101000UL, 0x00109000UL, "Save", "OK");
+    check(now_obs_intern(&registry, kNowObsKindElement, &id, other,
+                         sizeof(other)) == 1, "the same button, moved");
+    check(strcmp(original, other) != 0,
+          "gets a new reference rather than the old one repaired");
+
+    identity_for(&id, 0x00101000UL, 0x00108000UL, "Save", "OK");
+    id.process_fingerprint = 0x99999999UL;
+    check(now_obs_intern(&registry, kNowObsKindElement, &id, other,
+                         sizeof(other)) == 1, "a relaunched process");
+    check(strcmp(original, other) != 0, "does not inherit it either");
+
+    identity_for(&id, 0x00101000UL, 0x00108000UL, "Save", "OK");
+    check(now_obs_intern(&registry, kNowObsKindWindow, &id, other,
+                         sizeof(other)) == 1, "and the other KIND");
+    check(strcmp(original, other) != 0, "is a different reference");
+}
+
+/* The failure the epoch exists for: a walk longer than the registry
+   evicting its own front while it is still emitting. Without the epoch
+   the first tokens of this walk stop resolving before the walk ends, and
+   nothing says so - the JSON carries them anyway. */
+static void a_walk_does_not_evict_itself(void)
+{
+    NowObsRegistry registry;
+    NowObsIdentity id;
+    char           tokens[kNowObsRegistryMax][kNowObsTokenMax];
+    char           overflow[kNowObsTokenMax];
+    int            i;
+    int            resolvable = 0;
+
+    now_obs_registry_init(&registry, 11UL, 13UL);
+    check(now_obs_epoch_begin(&registry) != 0, "an epoch is never 0");
+    for (i = 0; i < kNowObsRegistryMax; i++) {
+        identity_for(&id, 0x00101000UL, 0x00108000UL + (unsigned long)i * 4UL,
+                     "Save", "OK");
+        check(now_obs_intern(&registry, kNowObsKindElement, &id, tokens[i],
+                             sizeof(tokens[i])) == 1, "a walk fills the table");
+    }
+    /* One past the table. It is REFUSED, and a refusal is a key the
+       producer leaves absent - not a reference that costs an earlier
+       one. */
+    identity_for(&id, 0x00101000UL, 0x00200000UL, "Save", "OK");
+    check(now_obs_intern(&registry, kNowObsKindElement, &id, overflow,
+                         sizeof(overflow)) == 0,
+          "past the table the walk gets NO reference");
+    for (i = 0; i < kNowObsRegistryMax; i++) {
+        if (now_obs_lookup(&registry, kNowObsKindElement, tokens[i],
+                           strlen(tokens[i])) != NULL) {
+            resolvable++;
+        }
+    }
+    check(resolvable == kNowObsRegistryMax,
+          "and every reference the walk did hand out still resolves");
+    now_obs_epoch_end(&registry);
+
+    /* Closed, the entries are ordinary again: the NEXT walk may evict
+       them. A registry that protected them forever would be a table that
+       fills once and then refuses everything. */
+    identity_for(&id, 0x00202000UL, 0x00202004UL, "Later", "Go");
+    check(now_obs_mint(&registry, kNowObsKindElement, &id, overflow,
+                       sizeof(overflow)) == 1,
+          "and a later walk can reuse the slots");
+}
+
+/* With no epoch open, eviction is the plain round robin it always was -
+   so the observe walk, which opens none, behaves exactly as before. */
+static void no_epoch_is_the_old_behaviour(void)
+{
+    NowObsRegistry registry;
+    NowObsIdentity id;
+    char           first[kNowObsTokenMax];
+    char           token[kNowObsTokenMax];
+    int            i;
+
+    now_obs_registry_init(&registry, 17UL, 19UL);
+    identity_for(&id, 0x00101000UL, 0x00108000UL, "Save", "OK");
+    check(now_obs_mint(&registry, kNowObsKindElement, &id, first,
+                       sizeof(first)) == 1, "the first mint");
+    for (i = 0; i < kNowObsRegistryMax; i++) {
+        identity_for(&id, 0x00101000UL,
+                     0x00300000UL + (unsigned long)i * 4UL, "Save", "OK");
+        check(now_obs_mint(&registry, kNowObsKindElement, &id, token,
+                           sizeof(token)) == 1,
+              "and a table's worth after it");
+    }
+    check(now_obs_lookup(&registry, kNowObsKindElement, first,
+                         strlen(first)) == NULL,
+          "the oldest reference was evicted, not refused");
+}
+
 int main(void)
 {
     token_shape();
@@ -330,6 +481,10 @@ int main(void)
     a_guess_matches_nothing();
     eviction_refuses_rather_than_reassigns();
     process_fingerprint_separates_a_relaunch();
+    interning_is_stable();
+    interning_refuses_a_different_element();
+    a_walk_does_not_evict_itself();
+    no_epoch_is_the_old_behaviour();
 
     if (g_failures != 0) {
         fprintf(stderr, "%d failure(s)\n", g_failures);
