@@ -356,6 +356,14 @@ final class CloudServingTests: XCTestCase {
             return false
         }
         let id = try XCTUnwrap(offerId)
+        guard case .fileOffer(let offer)? = guest.received.first(where: {
+            if case .fileOffer = $0 { return true } else { return false }
+        }) else { return XCTFail("no offer") }
+        XCTAssertEqual(offer.name, "IMG_5678.jpg")
+        XCTAssertEqual(offer.fileType, "JPEG",
+                       "typed at photo scale too, so it still opens by "
+                       + "double-click on arrival")
+        XCTAssertEqual(offer.creator, "ogle")
 
         try guest.send(.fileAccept(FileAccept(id: id)))
         try await waitUntil("file.begin", timeout: 15) {
