@@ -166,8 +166,22 @@ void conn_set_get_note(ConnGetNote fn);
 int now_wire_get_host(const char *path, const char *name,
                       char *err, long cap);
 
-/* True while a pull is in flight, so a window can show a bar. */
-Boolean now_wire_get_active(long *received, long *expected);
+/* Which half of a pull is in flight. Asked and receiving-nothing-yet are
+   different facts about the same machine, and one boolean could not tell
+   them apart: a sender that has neither given a size nor delivered a
+   byte looked exactly like a question nobody answered, so the pane had
+   to infer from the counts and was late into Receiving by design. The
+   wire knows; it says so. */
+typedef enum {
+    kWireGetNone = 0,
+    kWireGetAsked,                    /* file.get is out, no answer yet */
+    kWireGetReceiving                 /* file.begin seen; bytes landing */
+} WireGetPhase;
+
+/* True while a pull is in flight, so a window can show a bar. Every
+   out-parameter is optional. */
+Boolean now_wire_get_active(long *received, long *expected,
+                            WireGetPhase *phase);
 
 /* Stop the pull in flight: file.cancel to the other Mac (best effort),
    then abandon the receive here. 0 when a transfer was stopped, -1 with

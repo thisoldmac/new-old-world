@@ -2239,9 +2239,13 @@ int now_wire_get_cancel(char *err, long cap)
     return 0;
 }
 
-Boolean now_wire_get_active(long *received, long *expected)
+Boolean now_wire_get_active(long *received, long *expected,
+                            WireGetPhase *phase)
 {
     if (!g_get.pending && !g_get.receiving) {
+        if (phase != NULL) {
+            *phase = kWireGetNone;
+        }
         return false;
     }
     if (received != NULL) {
@@ -2249,6 +2253,11 @@ Boolean now_wire_get_active(long *received, long *expected)
     }
     if (expected != NULL) {
         *expected = g_get.expected;
+    }
+    if (phase != NULL) {
+        /* The distinction the counts could not carry: pending is a
+           question with no answer, receiving is an open file. */
+        *phase = g_get.receiving ? kWireGetReceiving : kWireGetAsked;
     }
     return true;
 }

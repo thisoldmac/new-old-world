@@ -435,14 +435,17 @@ static char g_pull_note[128];
 void files_browser_idle(void)
 {
     long received = 0, expected = 0;
+    WireGetPhase phase = kWireGetNone;
     Boolean active;
     static long last_step = -1;
 
     if (g_owner == NULL || !g_visible) {
         return;
     }
-    active = now_wire_get_active(&received, &expected);
-    now_pull_observe(&g_pull, active, received, expected);
+    active = now_wire_get_active(&received, &expected, &phase);
+    now_pull_observe(&g_pull, active,
+                     (Boolean)(phase == kWireGetReceiving),
+                     received, expected);
     if (!active) {
         last_step = -1;
         g_pull_note[0] = '\0';

@@ -69,8 +69,8 @@ void now_pull_asked(PullView *v, const char *name)
     }
 }
 
-void now_pull_observe(PullView *v, Boolean active, long received,
-                      long expected)
+void now_pull_observe(PullView *v, Boolean active, Boolean receiving,
+                      long received, long expected)
 {
     if (v == 0) {
         return;
@@ -98,11 +98,10 @@ void now_pull_observe(PullView *v, Boolean active, long received,
     if (v->phase == kPullIdle) {
         /* Live without this pane having asked: a pull started somewhere
            else this side can still show and still stop. */
-        v->phase = (received > 0 || expected > 0) ? kPullReceiving
-                                                  : kPullAsking;
+        v->phase = receiving ? kPullReceiving : kPullAsking;
         return;
     }
-    if (v->phase == kPullAsking && (received > 0 || expected > 0)) {
+    if (v->phase == kPullAsking && receiving) {
         v->phase = kPullReceiving;
     }
     /* kPullStopping is deliberately sticky while the wire still reports
