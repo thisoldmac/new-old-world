@@ -95,6 +95,46 @@ application — permitted by charter, with a bounded fail-closed reader already
 written for it. No extension is required: nothing needs to execute in another
 context, because the data is not in another context.
 
+## What kind of source would settle rung 4
+
+The negative above is now properly verified: **zero occurrences of `mib` or
+`snmp` across all 16,316 lines of the OT headers.** Nothing is *declared*. That
+does not mean nothing is *implemented*, and the distinction decides which
+sources are worth chasing.
+
+The lineage is the key fact to chase: **Open Transport is a licensed Mentat
+implementation** — Mentat Portable Streams, with a System V STREAMS TCP. So the
+structures are unlikely to be Apple inventions, and the question becomes which
+published description of *that* stack applies.
+
+Ordered by what they would cost us, and by what the charter lets us take:
+
+| # | Source | Class | Why it is worth trying |
+| --- | --- | --- | --- |
+| 1 | **Open Transport Module Developer Note / OTMDK** | `P-DOC` | A STREAMS module lives *inside* the stack, so its documentation must describe the structures. The strongest candidate by far. |
+| 2 | *Inside Macintosh: Networking With Open Transport* | `P-DOC` | Probably client-API only, but it is the book and it is unread. |
+| 3 | **Mentat's own developer documentation** | `P-DOC` | If the TCP is Mentat's, the control blocks are Mentat's. |
+| 4 | SVR4 / System V STREAMS references | `P-DOC` | The scaffolding (`queue_t`, `stdata`, `msgb`) is already exposed in `OpenTransportProtocol.h`, so this is corroboration for what we can already cite. |
+| 5 | **Solaris / illumos STREAMS TCP** | `P-3P` | The closest living relative. Read for the **pattern**, not the code: its `T_OPTMGMT_REQ` + `MIB2_TCP_CONN` mechanism is exactly the shape an undeclared OT analogue would take. |
+| 6 | Our own probe | `P-OBS` | Decisive, but needs a starting address that sources 1–5 supply. |
+| 7 | Disassembling `OpenTransportLib` | `P-BIN` | Last resort. Offsets and sequences cross the line; function bodies, control flow and identifiers do not. |
+
+### Try the call before poking the memory
+
+The cheapest experiment is not archaeology at all. If the Mentat/SVR4 lineage
+holds, OT may **implement** an option-management or ioctl path it never
+declares. That is testable with `OTOptionManagement` / `OTIoctl` against an
+ordinary TCP endpoint, using SVR4-shaped requests, and reading what comes back.
+
+It fails closed — a rejected option is an error return, not a wild pointer —
+and it costs one emulator session. **If anything answers, rung 4 collapses from
+archaeology into Tier B**, with the finding recorded as `P-OBS`: we would have
+measured that a documented call accepts an undocumented argument, which is a
+fact about this machine rather than a claim about Apple's source.
+
+That experiment should run **before** anyone reads a disassembler, and before
+any offset is written down.
+
 ## What this changes about scoping
 
 The module splits into rungs with genuinely different risk, and they should not
