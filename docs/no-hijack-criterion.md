@@ -150,36 +150,101 @@ Two consequences, and they are *different* from each other:
    stimulus escaping into the interface. It is the failure mode a single-cell
    channel has *instead of* the two-cells one.
 
-**How reachable is (2)?** `now_act_submit` blocks in `act_yield()`, which is
-`WaitNextEvent(0, &ev, 2L, NULL)` — it **pumps the calling application's own
-event loop** while waiting. Whether a second act request can be dispatched
-from inside that pump is a property of the guest app's command dispatcher, not
-of the guard, and **this thread did not establish it.** Stated as an open
-question, not as a defect:
+**How reachable is (2)? Settled by reading, and the answer is: not from one
+guest application's wire.** `now_act_submit` blocks in `act_yield()`, which is
+`WaitNextEvent(0, &ev, 2L, NULL)` — **event mask zero**, so it dequeues
+nothing, and the wire is not serviced there either: `conn_service()` is called
+only from the top of the main loop in `now-guest-ppc/src/main.c:412`, which
+`now_act_submit` has not returned to. A second act command therefore waits in
+the socket until the first verb has completed and the cell is idle. The guest
+app is cooperatively single-threaded and every act command runs
+submit-and-wait inside one dispatch, so **two requests cannot overlap.**
 
-> **OPEN — no evidence either way.** Can the NOW guest application dispatch a
-> second act command from inside the `WaitNextEvent` in `act_yield()`? If yes,
-> the cell can be overwritten mid-flight by ordinary single-user traffic and
-> `now_act_submit` needs a busy refusal. If no, the collision needs two
-> clients, which the contract says do not exist. Settle it by reading the
-> dispatcher, not by reasoning about it.
+That is worth stating precisely because of what it means: **the single cell is
+protected by the guest app's threading model, not by an interlock.** The
+protection is incidental. Nothing in `contract/peek_table.h`, `now_act_guard.c`
+or `act_client.c` enforces it, and two ordinary changes would remove it:
+
+* a **second application** on the same Mac linking `act_client` — the table
+  lives in the system heap and the extension does not authenticate its writer,
+  so "single-consumer channel" is an assumption about the *machine*, not a
+  property the code has;
+* the guest app ever servicing the wire from inside the act wait, which is a
+  plausible thing to want (a 5-second act currently freezes the app's UI).
+
+If either lands, `now_act_submit` needs a busy refusal before it writes, and
+this paragraph is the reason why.
+
+### So the collision the code DOES admit is a press, not a cell
+
+Two requests cannot collide. A request and **a press it did not queue** can,
+and that is the same question — *can something that belongs to somebody else
+satisfy this guard?* — asked of the shape the code has.
+
+The menu guard's identity is a **point**, and a point is not unique. Three
+facts, each read out of the source:
+
+1. `now_act_menu_answer` (`now_act_guard.c:237`) compares `MenuSelect`'s own
+   point against `arm_point_h/v` with ±2 px and examines **nothing else**.
+   There is no serial in the cell and nothing on the Event Manager's queue
+   element that says which request queued a press. Two presses at the same
+   coordinates are, to this code, the same press.
+2. The resident half queues the request's own press from **inside the target's
+   context at the moment of arming** (`ext/src/now_ext_act.c`, `act_post_click`
+   via `PPostEvent`). Its own comment says why: *"there is no window between
+   'armed' and 'pressed' during which a user's own click could arrive first."*
+   That holds for a press made **after** arming.
+3. Arming happens in the jGNE filter — `now_ext_gne_apply` → `now_ext_act_apply`
+   (`ext/src/now_ext.c:238`) — i.e. **inside the target's own
+   `GetNextEvent`/`WaitNextEvent`**, the same call that is about to hand it
+   whatever was already queued.
+
+Put together: a press **already in the queue** when the request arms is
+*older* than the request's own, so the Event Manager hands it over first, and
+the guard accepts it if the coordinates match. `menuact` arms at
+`(titleLeft + 4, 10)` (`act_cmds.c:735`), so the coordinates that match are
+**the menu title the request named** — exactly where a user reaching for that
+menu would press.
+
+**The prediction from the code is therefore a hijack**, deterministic rather
+than racy once a press is pending: the request fires, `MenuSelect` returns
+without drawing anything, and the user gets an item they never dragged to.
+Upstream never saw it because upstream's menu case pressed a **different**
+menu; the same-title press was never in any trial on either side.
+
+It is not the ±2 px slop's fault. The slop errs loose to avoid breaking a
+legitimate request, and this failure is in the other direction entirely.
 
 ### The probe case that follows from this
 
-`--case collide` in `scripts/probes/nohijack-probe.py` is written to the
-**single-cell** shape, because that is the shape the code has. It arms request
-A against a decoy, submits request B while A is still armed, and asks the two
-questions the single cell can actually be asked:
+`--case collide` in `scripts/probes/nohijack-probe.py` measures exactly that:
+press the File menu's title for real, **first**, then send `menuact` naming
+that menu while the button is still down.
 
-* does A's stimulus, arriving after B's submit, actuate anything? (consequence
-  2 above — the oracle is A's target, watched for an effect nobody asked for)
-* does a real user press still chain through with B armed? (consequence 1 —
-  the same oracle the `menu` case uses)
+* **The discriminator is menu-tracking starvation, not the Desktop folder.**
+  Both a hijack and an honest chain-through end with one folder — in the
+  honest case the request's own press makes it — so the folder alone cannot
+  separate them and `tally.hijacked` would call every trial a hijack. What
+  separates them is whether the Finder entered `MenuSelect`'s tracking loop
+  while the button was held: a tracking loop starves the responder, so an
+  unanswered round trip *is* the tracking. Prompt answer ⇒ `MenuSelect`
+  returned instantly ⇒ the patch answered a press nobody's request queued.
+  This is the one place in the probe where `hijacked` is not
+  `tally.hijacked()`; both of that helper's inputs are still recorded.
+* **The precondition is enforced.** The press must land within the guard's own
+  ±2 px of `(titleLeft + 4, 10)`. Positioning is closed-loop and the landing
+  is checked; a miss is a **dropped trial**, never a quiet zero.
+* It is **not** the "two cells armed" case, and the probe's own docstring says
+  so in writing.
 
-It is **not** the "two cells armed" case. Writing that case against a
-single-cell contract would have produced a probe that measures a table which
-does not exist, and a green number from it would have been worse than no
-number. That refusal is recorded in the probe's own docstring.
+The premise is pinned on the host compiler as well:
+`test_menu_press_is_anonymous` in `now-guest-shared/tests/now_act_guard_test.c`
+asserts that a press at the arm point is answered whoever queued it, and that
+the *second* press at that point is not — the exposure is one press wide, not
+"until the request is withdrawn". It is a **characterisation** test: if a
+future guard learns to tell its own press from a stranger's, those two checks
+flip and must be rewritten rather than deleted. Watched failing under a
+mutation that removes the disarm (3 of its checks fail), so it is not vacuous.
 
 ## 5. Measurement discipline
 
@@ -213,6 +278,11 @@ upstream's guest, and labelled.
 
 **Refused, with the reason.**
 
+* *The pending-press hijack as a RESULT.* §4 predicts it from the code and
+  the prediction is strong, but a prediction is not a number and this document
+  does not get to claim one. Until `--case collide` has run, the honest
+  statement is "the guard has no clause that would prevent this", not "the
+  guard leaks here".
 * *The two-cells-armed case as briefed.* Refused: `contract/peek_table.h`
   declares one act cell and `now_act_guard.c` addresses it by a fixed
   reference. There is no second cell to arm, so the case is unwritable
