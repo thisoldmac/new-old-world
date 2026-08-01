@@ -282,6 +282,13 @@ run_c now-guest-ppc gestalt_json_test.c     ""  src/commands/gestalt_json.c
 # socket. Neither can be reported after the fact, so the refusal is the
 # only chance and it gets watched failing here.
 run_c now-guest-ppc input_args_test.c       ""  src/input/input_args.c
+# `key`'s ordering, which the C test above cannot see: PostEvent is Toolbox
+# and does not exist on a host cc, so nothing there can observe whether the
+# handler stopped at a refusal or posted first and explained afterwards. A
+# key that posted first would type a command modifier's bare character and
+# then refuse it, which is the upstream defect this verb exists not to
+# repeat.
+run_py now-guest-ppc key_refusal_source_test.py
 run_py now-guest-ppc ot_connect_source_test.py
 # The other half of the Stop button, and the link teardown it shares a file
 # with. wire.c does not compile on the host (g_get is private to it, and
