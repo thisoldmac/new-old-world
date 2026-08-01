@@ -90,6 +90,32 @@ assert minters == [
     "src/observe/obsref.h",
 ], minters
 
+# A SECOND WALK arrived on 2026-08-01 and did not bring a second minter.
+# There are two walks over this machine - observe.c's, which answers a person
+# asking "what is there", and scene_walk.c's, which produces IR v1 - and the
+# scene walk used to emit controls with no reference at all, so a rendered
+# scene drew buttons nobody could name. Giving it its own table would be the
+# act_ref.c defect from the other direction, so it did not get one:
+# src/observe/obsmint.c is a seam onto the SAME registry, it lives here beside
+# it, and the scene walk calls it rather than the table.
+#
+# Which is what these two assert: the interning entry point is inside
+# src/observe/ too, and nothing under src/scene/ touches the table at all.
+interners = sorted(
+    str(p.relative_to(ROOT)) for p, t in ALL if "now_obs_intern(" in t)
+assert interners == [
+    "src/observe/obsmint.c",
+    "src/observe/obsref.c",
+    "src/observe/obsref.h",
+], interners
+
+SCENE = [(p, t) for p, t in ALL if p.parent.name == "scene"]
+assert len(SCENE) >= 6, sorted(str(p) for p, _ in SCENE)
+for path, text in SCENE:
+    for forbidden in ("NowObsRegistry", "now_obs_mint(", "now_obs_intern(",
+                      "now_obs_lookup(", "now_obs_epoch_begin("):
+        assert forbidden not in text, (str(path), forbidden)
+
 # And the resolver's own entry point is reached from exactly one place too:
 # obsresolve.c decides, observe.c asks. Anything else holding a registry
 # would be reading the table without the identity checks around it.
