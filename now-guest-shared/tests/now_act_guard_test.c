@@ -454,10 +454,28 @@ static void test_plane_state(void)
                "a resident half that predates the plane is stale");
 
     /* One byte short of the whole cell is still stale: a partial write
-       into a system-heap block is the failure this refuses. */
-    table.length = (NowPeekU32)(sizeof table - 1);
+       into a system-heap block is the failure this refuses.
+
+       Stated as the cell's own end rather than as `sizeof table - 1`,
+       which is what it said until 2026-07-31 and which quietly stopped
+       meaning it the day the content plane appended a field after the
+       cell: a length one byte short of the TABLE then covers the cell
+       whole, the gate correctly says Ready, and the test that meant to
+       watch the gate was watching the last field in the struct. Every
+       plane appended here from now on breaks that spelling again, and
+       this one does not depend on being last. */
+    table.length = (NowPeekU32)(offsetof(NowPeekTable, act)
+                                + sizeof(NowPeekActCell) - 1);
     check_long(now_act_plane_state(&table), kNowActPlaneStale,
                "a block one byte short is stale");
+    /* And the other side of that line, which is the assertion the old
+       spelling was accidentally making: a block that covers the cell but
+       stops before a LATER plane's field is Ready for this one. Planes
+       are gated separately, by design - that is what accretive means. */
+    table.length = (NowPeekU32)(offsetof(NowPeekTable, act)
+                                + sizeof(NowPeekActCell));
+    check_long(now_act_plane_state(&table), kNowActPlaneReady,
+               "a block that covers the act cell and no more is ready");
 
     table.length = (NowPeekU32)sizeof table;
     table.caps = kNowPeekTableCapAnchors;

@@ -73,6 +73,23 @@ typedef enum {
     kNowObsKindElement = 1
 } NowObsKind;
 
+/* HOW A TEXT ELEMENT IS REACHED once its reference has resolved. An
+   element reference names one of two things and the registry has to
+   remember which: a CONTROL, which carries a live ControlHandle, or a
+   TEXT element, which carries none and is reached through its window.
+   The act plane's textget/textset need the route, so the route is minted
+   with the reference rather than re-derived at act time - re-deriving it
+   would be a second thing deciding what an element is.
+
+   The values mirror the resident plane's kNowPeekActText* so nothing has
+   to translate twice. */
+enum {
+    kNowObsTextNone = 0,        /* a control, or a window */
+    kNowObsTextDitem = 1,       /* a dialog item, by 1-based index */
+    kNowObsTextTe = 2,          /* a TEHandle the observation read */
+    kNowObsTextDialogTe = 3     /* the dialog's own TextEdit record */
+};
+
 /* Everything the mint knew, so resolution can prove it again.
 
    `process_fingerprint` is the discriminator a PSN alone cannot be: Mac
@@ -92,8 +109,15 @@ typedef struct {
     unsigned long process_fingerprint;
     unsigned long node_fingerprint;
     unsigned long window_address;
-    unsigned long control_handle;   /* 0 for a window reference */
+    unsigned long control_handle;   /* 0 for a window or a text element */
     unsigned long minted_ticks;
+    /* The text route, for an element reference that names a text element
+       rather than a control. kNowObsTextNone everywhere else, which is
+       also what tells the act plane that ctlact may have this one and
+       textset may not. */
+    unsigned long text_kind;        /* kNowObsText* */
+    unsigned long te_handle;        /* kNowObsTextTe only */
+    long          dialog_item;      /* kNowObsTextDitem only, 1-based */
     NowAxRef      ref;              /* titles and occurrences */
 } NowObsIdentity;
 

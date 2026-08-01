@@ -85,13 +85,14 @@ add_application(now-guest-ppc
     src/observe/obsresolve.c
     src/observe/observe.c
 
-    # P4, the act plane's application half. act_ref.c and act_args.c are
-    # Toolbox-free and natively tested; act_client.c is the thin Toolbox
-    # layer; act_cmds.c is the six commands. now_act_guard.c is SHARED
+    # P4, the act plane's application half. act_args.c is Toolbox-free
+    # and natively tested; act_client.c is the thin Toolbox layer;
+    # act_cmds.c is the five act commands - the sixth, `elements`, is
+    # served by the reference layer above, because minting is one
+    # mechanism and act_ref.c was a second one. now_act_guard.c is SHARED
     # with the 68K extension - one file, both sides of the seam, which is
     # what lets the host cc test the guard that runs inside other
     # people's applications.
-    src/act/act_ref.c
     src/act/act_args.c
     src/act/act_client.c
     src/act/act_cmds.c

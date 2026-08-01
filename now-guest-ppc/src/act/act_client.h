@@ -4,7 +4,8 @@
 /* The act plane's application half: the Toolbox side of talking to the
    resident plane.
 
-   THE SPLIT. act_ref.c and act_args.c decide; now_act_guard.c (shared
+   THE SPLIT. act_args.c decides, and so does the reference layer
+   this plane addresses through (src/observe/); now_act_guard.c (shared
    with the extension) decides; this file does the things only a
    Macintosh can do - Gestalt, the Process Manager, the event queue, and
    waiting. It is the layer with no native test, deliberately kept as

@@ -129,7 +129,7 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 
 PPC handles 37 inbound types; NOW-68K handles 23. **That count
 understates the difference** — see the next two sections, where two of
-these rows open into 19 command verbs and 14 hardware probes.
+these rows open into 29 command verbs and 14 hardware probes.
 
 (An earlier version of this file said 33 for the PowerPC guest and was
 wrong: the number had been hand-counted. It is derived now, and that is
@@ -149,7 +149,9 @@ hides most of what a machine can be asked — the hardware, network, RAM
 and ROM facts do not have message types of their own. They live behind
 `gestalt` and `census`, one row each above and a whole subsystem below.
 
-The registry is `x-commands` in the contract: **19 verbs.**
+The registry is `x-commands` in the contract: **29 verbs.** Ten of them
+landed on 2026-07-31 and are grouped at the foot of the table: the act
+plane, and the reference layer that mints what it addresses.
 
 | Verb | What it asks the machine | PPC | 68K |
 |---|---|:--:|:--:|
@@ -172,17 +174,35 @@ The registry is `x-commands` in the contract: **19 verbs.**
 | `put` | send a file from the guest | console only | ✅ |
 | `cancel` | stop the transfer in flight, either way | via UI / `file.cancel` | ✅ |
 | `putstat` | transfer diagnostics | ✅ | ❌ |
+| `observe` | walk the elements on screen, minting a reference for each | ✅ | ❌ |
+| `axtree` | the same walk, to look at rather than to act on | ✅ | ❌ |
+| `axsnap` | who is front, and how many references are live | ✅ | ❌ |
+| `handle` | take one reference back to a live element, or refuse | ✅ | ❌ |
+| `elements` | the act plane's door onto that walk, aimed at one process | ✅ | ❌ |
+| `winact` | move, resize, zoom or close one window | ✅ | ❌ |
+| `textget` | read one addressed text element | ✅ | ❌ |
+| `textset` | replace one addressed text element's contents | ✅ | ❌ |
+| `ctlact` | act on one control | ✅ | ❌ |
+| `menuact` | perform one menu command | ✅ | ❌ |
 
-**PPC serves 16 of 19.** `put` is console-only there and `cancel` is
+The last ten are one mechanism and are served together or not at all.
+They are PowerPC-only today by derivation rather than by an ISA check:
+they read another process's window records through the anchor plane, and
+nothing on the host asks which guest answered. **Served is not proven** —
+this table's own rule — and no NOW machine has been watched performing
+one of the five acts.
+
+**PPC serves 26 of 29.** `put` is console-only there and `cancel` is
 not a verb at all, both deliberately: the host reaches those
 capabilities through the `file.*` families and that guest's own
 Workshop. `shotdiag` is the third, and the newest: it diagnoses a raw
 framebuffer walk the PowerPC guest does not have.
 
-**NOW-68K serves 13 of 19** — `help`, `ls`, `sw`, `census`, `put`,
+**NOW-68K serves 13 of 29** — `help`, `ls`, `sw`, `census`, `put`,
 `cancel`, `vprobe`, `screenshot`, `shotdiag`, `ps`, `launch`, `quit`,
-`front`. The six it does not: `gestalt`, `catsearch`, `tail`, `reveal`,
-`vers`, `putstat`.
+`front`. The sixteen it does not: `gestalt`, `catsearch`, `tail`, `reveal`,
+`vers`, `putstat`, and the ten of the act plane and the reference
+layer.
 
 Every asymmetry is argued in [command-parity.md](command-parity.md) and
 named with its reason in `CommandRegistryTests.notOnThePowerPCGuest`.
@@ -454,9 +474,16 @@ catch, is [source-text-gates.md](source-text-gates.md). It is the reason
 this file's own future gate should be planned as a bounded check with its
 blind spots written down rather than as a guarantee.
 
+Updated **2026-07-31** on `thread/p2-unify-refs`, by hand and not by
+re-derivation: the act plane and the reference layer took the verb count
+from 19 to 29 and the PowerPC guest's from 16 to 26. The counts above are
+therefore owed a run of the commands at the top of this file before
+anyone quotes them as derived.
+
 Last re-derived: **2026-07-31**, on `claude/tbt-parity-slice`, by running
-the commands above. Every count in this file still checked out — 37 and
-23 inbound types, 19 verbs, 16 and 13 served, 14 probes — and one
+the commands above. Every count in this file still checked out as it
+stood then — 37 and 23 inbound types, 19 verbs, 16 and 13 served, 14
+probes — and one
 grouped row did not: `file.list` / `file.listing` had been a single ✅/✅
 row, and NOW-68K handles no `file.listing` inbound. They are two rows
 now. What changed since the previous derivation is what each guest

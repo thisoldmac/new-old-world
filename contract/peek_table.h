@@ -89,8 +89,23 @@ enum {
 enum {
     kNowPeekTableCapAnchors = 1u << 0,  /* P1: per-process anchors */
     kNowPeekTableCapTree = 1u << 1,     /* P2: semantic-tree assist */
-    kNowPeekTableCapAct = 1u << 2       /* P4: the act plane (below) */
+    kNowPeekTableCapAct = 1u << 2,      /* P4: the act plane (below) */
+    kNowPeekTableCapContent = 1u << 3   /* P3: the content plane */
 };
+
+/* P3 asked for 1u << 2 and for its field at the head of the appended
+   region; P4 had already taken both. Two lanes built against this header
+   while it was held by a third, so each picked the next free bit and the
+   next free offset from the version it could see - and a bit collision
+   is silent in the worst possible way: an application arming P3 would
+   have armed P4's six trap patches instead, in someone else's process.
+   Recorded rather than tidied away, because the near miss is the reason
+   this file states its bits and offsets in one place. Landed 2026-07-31.
+
+   Declaring the macro is what retires content_table.h's shim: that
+   header defined the bit itself while waiting, and defined it to the
+   value P4 holds. */
+#define NOW_PEEK_TABLE_HAS_CAP_CONTENT 1
 
 /* ======================================================================
    P4 - THE ACT PLANE
@@ -499,6 +514,17 @@ typedef struct {
     NowPeekU16 act_format;    /* kNowPeekActFormat* */
     NowPeekU16 act_text_max;  /* text_buf bytes this extension allocated */
     NowPeekActCell act;
+    /* P3. Appended after P4 by the same accretive rule P4 was appended
+       after the anchors: no existing offset moves, so no existing reader
+       changes, and an extension that predates this plane simply reports
+       a shorter `length` and a reader gates on it.
+
+       This ONE WORD is the whole footprint of the content plane in this
+       table - it is the address of a block the extension allocates in the
+       system heap, and 0 means absent. The plane's own 64 KiB lives
+       there and not here, because a ring in this table would be a ring
+       every reader of every other plane has to carry past. */
+    NowPeekU32 content_block;
 } NowPeekTable;
 
 /* The offsets ARE the contract; a drift here is a defect on the other
@@ -560,8 +586,15 @@ _Static_assert(sizeof(NowPeekActCell) == 176 + kNowPeekActTextMax,
                "act cell size");
 _Static_assert(sizeof(((NowPeekActCell *)0)->text_buf) == kNowPeekActTextMax,
                "act text buffer width");
+/* P3's one offset, derived from P4's end rather than restated - it asked
+   for 36 + 60 * kNowPeekMaxAnchors, which is where P4 already is, and the
+   correction is here rather than in a comment because an assert is the
+   only form of this statement that stays true. */
+_Static_assert(offsetof(NowPeekTable, content_block)
+                   == offsetof(NowPeekTable, act) + sizeof(NowPeekActCell),
+               "content block offset");
 _Static_assert(sizeof(NowPeekTable)
-                   == 40 + 60 * kNowPeekMaxAnchors + sizeof(NowPeekActCell),
+                   == 44 + 60 * kNowPeekMaxAnchors + sizeof(NowPeekActCell),
                "table size");
 
 #endif /* NOW_PEEK_TABLE_H */

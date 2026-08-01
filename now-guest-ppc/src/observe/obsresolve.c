@@ -207,7 +207,17 @@ void now_obs_resolve(const NowObsRegistry *registry, NowObsKind kind,
         return;
     }
 
-    if (kind == kNowObsKindWindow) {
+    /* WHICH WALK, and the test is the identity rather than the kind. An
+       element reference with no control handle names a TEXT element - a
+       dialog's own TextEdit record - which is reached through its window
+       and has no control title to match on. Sending it down the control
+       walk would look for a control with an empty title and find the
+       first untitled one, which is precisely the "answers to the same
+       name" failure the fingerprint exists to refuse. So it takes the
+       window walk, whose fingerprint is computed against a zero control
+       handle - exactly what it was minted with. */
+    if (kind == kNowObsKindWindow
+        || entry->identity.control_handle == 0) {
         rc = now_obs_resolve_window(live->memory, live->window_list,
                                     &entry->identity.ref, &resolved);
     } else {

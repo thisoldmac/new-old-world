@@ -2,6 +2,7 @@
 
 #include "act_cmds.h"
 #include "nowlog.h"
+#include "observe.h"
 
 #include <Carbon.h>
 
@@ -1301,8 +1302,13 @@ void now_command_run(const char *name, const char *request_json, long id,
        a reply that claims the event went and never that it worked. The
        handlers live in src/act/ rather than here because the plane is
        its own domain with its own Toolbox-free half - see act_cmds.h. */
+    /* elements is the reference layer's walk aimed by a process rather
+       than by a scope. It lives with observe and not with the act verbs
+       because minting is one mechanism with one implementation: two
+       verbs that both produced references would be two systems making
+       one token shape, and a caller holding one could not tell which. */
     if (strcmp(name, "elements") == 0) {
-        now_act_run_elements(request_json, id, out, cap);
+        now_observe_elements_command(request_json, id, out, cap);
         return;
     }
     if (strcmp(name, "winact") == 0) {
@@ -1323,6 +1329,25 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "menuact") == 0) {
         now_act_run_menuact(request_json, id, out, cap);
+        return;
+    }
+    /* The reference layer. Each of these writes its whole command.result
+       itself, so registering one is a table row and a call - see
+       observe.h, which states this list exactly. */
+    if (strcmp(name, "observe") == 0) {
+        now_observe_command(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "handle") == 0) {
+        now_observe_handle_command(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "axtree") == 0) {
+        now_observe_axtree_command(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "axsnap") == 0) {
+        now_observe_axsnap_command(request_json, id, out, cap);
         return;
     }
     snprintf(out, cap,

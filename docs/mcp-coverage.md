@@ -102,6 +102,7 @@ The test compares both against the code literally.
 | `now_hardware_census` | `census.request` | `census.request` | message family |
 | `now_machine_facts` | `gestalt` | `gestalt` | command |
 | `now_list_processes` | `process.list` | `process.list` | message family |
+| `now_observe_elements` | `elements` | `elements` | command |
 | `now_guest_log_tail` | `tail` | `tail` | command |
 | `now_capture_screen` | `capture.request` | `capture.request` | message family |
 | `now_stream_screen` | `stream.start`, `stream.stop`, `stream.refresh` | `stream.start`, `stream.stop`, `stream.refresh` | message family |
@@ -115,6 +116,8 @@ The test compares both against the code literally.
 | `now_bring_to_front` | `process.list`, `process.front` | `process.front` | message family |
 | `now_request_quit` | `process.list`, `process.quit` | `process.quit` | message family |
 | `now_window_act` | `winact` | `winact` | command |
+| `now_control_act` | `ctlact` | `ctlact` | command |
+| `now_menu_act` | `menuact` | `menuact` | command |
 | `now_text_get` | `textget` | `textget` | command |
 | `now_text_set` | `textset` | `textset` | command |
 | `now_transfer_approved_artifact` | `file.put` | `file.put` | message family |
@@ -279,37 +282,61 @@ event (face, capability, machine, outcome) and a host line under `sw` naming
 the target, because for this capability the target **is** the event — the same
 reason the guest-Files family logs its paths.
 
-### Three rows are published and no machine serves them
+### The act plane is six rows, and the host is the half that is missing
 
-`now_window_act`, `now_text_get` and `now_text_set` are registered here and
-report **unavailable on every Macintosh that exists**, which sounds like the
-exact failure `testEveryRequirementResolvesToTheContract` was written to
-prevent and is its opposite. The difference is where the "no" comes from.
+**CORRECTED 2026-07-31.** This section was headed "Three rows are published
+and no machine serves them" for most of that day, and both halves of that
+sentence are now wrong: the plane is six rows, and the PowerPC guest serves
+every command under it. The correction is dated rather than typed over
+because the argument the old section made is still the reason these rows are
+shaped the way they are — only its status changed.
 
-An unresolvable requirement fails nowhere: the ledger looks the name up
-among the message families, misses, falls through to the command table,
-misses again, and the tool goes dark for the life of every connection with a
-sentence that reads as a fact about the machine. That was true of these three
-until 2026-07-31, which is why they landed built and unregistered.
+**What the old section argued, and still holds.** `now_window_act`,
+`now_text_get` and `now_text_set` were registered while nothing served them,
+which sounds like the exact failure
+`testEveryRequirementResolvesToTheContract` was written to prevent and is its
+opposite. The difference is where the "no" comes from. An unresolvable
+requirement fails nowhere: the ledger looks the name up among the message
+families, misses, falls through to the command table, misses again, and the
+tool goes dark for the life of every connection with a sentence that reads as
+a fact about the machine. Declared in the contract's `x-commands`, the same
+names resolve as **commands**, and a command's availability is settled
+against the connected guest's own `help` table — so the row is unavailable
+because the machine said so. That is what makes the plane PowerPC-only by
+derivation, with nothing on the host side asking which guest answered,
+exactly as with `reveal` and `tail`.
 
-`winact` / `textget` / `textset` are now in the contract's `x-commands`, so
-the same three names resolve as **commands**, and a command's availability is
-settled against the connected guest's own `help` table. Every guest answers
-"I do not serve that" — the row is unavailable because the machine said so.
-The dark tool looks identical from outside and is a different fact, and the
-fact is what makes the plane PowerPC-only, later, by derivation: nothing on
-the host side asks which guest answered, exactly as with `reveal` and `tail`.
+**What changed.** The PowerPC guest now serves `winact`, `textget`,
+`textset`, `ctlact` and `menuact`, and — the piece that was actually blocking
+— the reference layer beneath them. Three rows became six in the same day:
+
+- `now_control_act` drives one control by answering the application's own
+  `TrackControl`, so the application runs its real mouse-down handler.
+- `now_menu_act` performs one menu command by answering its `MenuSelect`. It
+  is the one row on this surface whose identity check is a coordinate rather
+  than a reference — a menu press carries no handle, so `titleLeft` makes the
+  press itself the identity, and a press anywhere else is the person's.
+- `now_observe_elements` is the observation that MINTS the references the
+  other five take. It is an observation and not an act: read-only tier,
+  registered with the observations, and deliberately outside
+  `MirrorActProjections.rows`.
 
 Two consequences worth stating plainly:
 
-- **A call today reaches no wire.** The host has no act lane, so the three
+- **A call today still reaches no wire, and the missing half has moved to
+  this side.** The host carries no act lane and no observation lane, so the
   protocol methods answer a typed `unavailable` naming what is missing
-  (`now-act-lane-absent`) — never a refusal, never an empty success.
-- **The contract declares three commands no guest answers**, which its own
-  preamble permits (adding a command is additive; a peer that lacks one
-  answers `unknown-command`). `CommandRegistryTests.servedByNoGuestYet` is
-  where that exemption is written down with its reason, so a verb cannot go
-  unimplemented quietly.
+  (`now-act-lane-absent`, `now-observation-lane-absent`) — never a refusal,
+  never an empty success. A caller reading either code has been told the gap
+  is HERE, which is a different fact from a machine that answered "I do not
+  serve that".
+- **`CommandRegistryTests.servedByNoGuestYet` is empty**, and that is what
+  the debt list was for. Its machinery stays, so the next verb declared ahead
+  of a guest costs a written reason rather than a silent subtraction.
+
+Four verbs of the reference layer — `observe`, `handle`, `axtree`, `axsnap` —
+are served and reach no row. They are in the gap table below, where they
+belong, rather than here.
 
 ### One row costs four seconds of somebody's machine, and is not gated for it
 
@@ -541,6 +568,10 @@ to exist:
 | `power` | probe | none | deliberate | The Power Manager's battery view, Gestalt-gated. Both guests; a desktop answers `absent` ([contract-coverage.md](contract-coverage.md)). |
 | `pci` | probe | none | deliberate | The Name Registry device tree. **`absent` on both** — the 1400c is pre-PCI and no 68K Mac has a Name Registry — which is a fact about the hardware and the clearest case for why `absent` is not `refused` ([contract-coverage.md](contract-coverage.md)). |
 | `scsi` | probe | none | deliberate | An INQUIRY bus scan: the contract's one declared exception to passive-by-rule, paced at one target per page. PPC answers; **NOW-68K answers `refused`** because active bus I/O is never unattended there. This is the probe a caller must read the outcome of rather than the rows ([contract-coverage.md](contract-coverage.md)). |
+| `axsnap` | command | ppc | unnoticed | The cheap one: who is front, whether the reference layer can see it, and how many references are live. It performs no walk and mints nothing, which makes it **the one call on this surface that is safe to poll** — and that is exactly what makes it a real candidate rather than a duplicate of `now_observe_elements`. Nobody has decided either way. What a row would have to settle first: whether a caller polling the front process belongs on a tool surface at all, given that `now_list_processes` already answers most of the question and this adds the reference table's own health. |
+| `axtree` | command | ppc | deliberate | The read surface over the same walk `now_observe_elements` projects — the contract's own reference-layer preamble is explicit that `observe`, `elements` and `axtree` are three doors onto ONE walk with one emitter. Projecting a second door is "two ways to name a target is not two faces" ([command-parity.md](command-parity.md)), the same rule that keeps `ls`, `ps`, `census` and `screenshot` off this surface. Note what it is NOT: it is not a read-only spelling of the tree. It performs the same walk and therefore mints, and the contract says so rather than letting a reader assume a quieter minter exists. |
+| `handle` | command | ppc | unnoticed | Take ONE reference back to a live element, or refuse precisely — and **the refusal is the product**: `ok` stays true for every verdict, including the four that resolve to nothing, because "your reference is stale" is an answer that tells the caller to observe again rather than to retry. Nobody has decided whether that belongs on this surface. The case for a row is that it is the only way to ask "is this still addressable" without acting; the case against is that every act already revalidates at the guest, so a caller that checks first has learnt something that may be false by the time it acts. That is the question a row has to answer, and it has not been asked. |
+| `observe` | command | ppc | deliberate | The scope-aimed door onto the same walk `now_observe_elements` projects by process — one minter, one walk, one emitter, three doors (the reference-layer preamble in `contract/asyncapi.yaml`). `elements` is the door a caller who is about to ACT has, because it takes the process serial an act's target lives in; `observe` takes a scope. One capability, one route per face — [command-parity.md](command-parity.md). |
 | `cancel` | command | 68k | deliberate | The 68K guest's console spelling of transfer cancel, and `now_transfer_cancel` needs the `file.cancel` **message** rather than this verb: the message is what both guests dispatch, and requiring the verb would make a capability both guests serve read as 68K-only — rule 4 of the [parity slice plan](plans/2026-07-29-004-feat-now-tbt-classic-parity-slice-plan.md). The verb exists so a person at a PowerBook whose host has stopped answering can still end a transfer, which is a reason for the GUEST to have two faces, not a second mechanism for the host to pick between — [command-parity.md](command-parity.md). |
 | `census` | command | both | deliberate | The console spelling of `census.request`, which is projected as `now_hardware_census`. `now_hardware_census` needs the **family** and not this verb, for the reason `front` and `quit` give: the verb is the flat single-page read a person types at the machine, and the family is the one that paginates and carries a per-probe outcome — which is the whole capability. One capability, one route per face — [command-parity.md](command-parity.md). |
 | `front` | command | both | deliberate | `now_bring_to_front` needs the `process.front` **family**, not this command, for the reason `quit` gives below: the command takes a NAME, and the opaque-reference and PSN-revalidation model the tool stands on has nothing to stand on without the message. The name form is the console's, by contract — one capability, one route per face ([command-parity.md](command-parity.md)). |
@@ -555,14 +586,22 @@ to exist:
 
 ### The unnoticed rows, named together
 
-**The list is empty, and that is a status rather than an achievement.** Every
-gap this document still declares is one somebody decided or costed; none is
-left that nobody has thought about.
+**`axsnap` and `handle`** — both landed with the reference layer on
+2026-07-31, both served by the PowerPC guest, and neither has been decided
+either way. Their rows above say what a decision would have to settle.
+
+**CORRECTED 2026-07-31:** this paragraph read "The list is empty, and that is
+a status rather than an achievement" until the reference layer landed four
+new verbs the same day. Two of them are argued (`observe` and `axtree` are
+other doors onto the walk `now_observe_elements` already projects) and two
+are not. The emptiness lasted about a day, which is roughly what the closing
+paragraph below predicted would happen and why the mechanism rather than the
+list is the part worth trusting.
 
 Gated against the table's own `unnoticed` column, so closing one is a
 two-place edit and the test names the second place. The three ways a name
-leaves this list have now all been used, and keeping them straight is what
-makes the empty list mean anything:
+leaves this list have all been used, and keeping them straight is what makes
+the short list mean anything:
 
 - **Decided.** `capture.cancel` — argued in its own row, never built, and no
   longer a question.
@@ -593,6 +632,13 @@ the contract and both guests' dispatch — so a new guest capability nobody
 projects reappears here without anybody remembering to write it down. That is
 the `process.list` drift `command-parity.md` was written for, one layer out,
 and the mechanism rather than the list is what answers it.
+
+**It worked, and that is the note this section most needed.** The reference
+layer landed four verbs on 2026-07-31 and two of them arrived here the same
+day, undecided, without anybody choosing to write them down —
+`MCPCoverageTests.testTheGapTableIsExactlyWhatNoProjectionReaches` named all
+four by hand and refused to pass until each had a row and a disposition. The
+list did not stay empty because it was never the list doing the work.
 
 ### The census probes were one row and are now fourteen
 

@@ -87,15 +87,24 @@ final class HostFaceParityTests: XCTestCase {
         "now_guest_files_capabilities",
         "now_guest_files_upload_begin",
         "now_guest_files_upload_append",
-        /* The act plane, registered 2026-07-31. Its divergence is the one
-           kind this ledger is least worried about and it is still owed: the
-           three rows take an opaque reference minted by an observation of a
-           window or a text element, and NOW has no such observation and no
-           pane that could show one. There is nothing for a person to click
-           because there is nothing for them to click ON. The affordance
-           lands with the scene view that mints these references — not
-           waived, and each row's own `.appUI` reason says so. */
+        /* The act plane and the observation that mints its targets, all
+           registered 2026-07-31. The divergence is the one kind this ledger
+           is least worried about and it is still owed: the acts take an
+           opaque reference to a window, control or text element, and NOW has
+           no pane that shows one. There is nothing for a person to click
+           because there is nothing for them to click ON.
+
+           CORRECTED the same day, and worth keeping straight because the
+           reason narrowed rather than went away: the note here used to say
+           NOW had "no such observation" either. It has one now —
+           `now_observe_elements` can fetch the tree — so what is missing is
+           only the VIEW that renders it. The affordance for all six lands
+           with that view; not waived, and each row's own `.appUI` reason
+           says so. */
+        "now_observe_elements",
         "now_window_act",
+        "now_control_act",
+        "now_menu_act",
         "now_text_get",
         "now_text_set",
     ]

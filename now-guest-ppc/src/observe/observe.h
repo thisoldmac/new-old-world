@@ -12,18 +12,23 @@
    the Toolbox. It is the only reason the interesting half of a
    foreign-memory reference layer is testable without a Macintosh.
 
-   THE FOUR SURFACES:
+   THE FIVE SURFACES:
 
-     observe   walk, and MINT a reference for every window and control
-               found. The only thing in the product that creates a
-               reference - which is what makes "observation-minted"
-               true rather than aspirational.
+     observe   walk, and MINT a reference for every window, control and
+               readable text element found. The only thing in the
+               product that creates a reference - which is what makes
+               "observation-minted" true rather than aspirational.
      handle    take one reference back to a live WindowPtr /
                ControlHandle, revalidating first, refusing distinctly.
      axtree    the read surface over the same walk: the tree, with the
                references already minted for it.
      axsnap    the cheap one - who is front, whether the plane can see
                it, and how many references are live. No walk.
+     elements  the act plane's door onto the same walk, aimed at one
+               process instead of at a scope. It is here and not in
+               src/act/ because minting is ONE mechanism: it used to be
+               two, and two systems producing one token shape is a
+               reference a caller cannot tell the provenance of.
 
    SELF IS NOT OBSERVABLE HERE, and it is a limit to state rather than
    hide: NOW is a Carbon application, so its own window records are not
@@ -31,38 +36,26 @@
    Asking for our own PSN binds and walks to nothing. A reference to
    NOW's own UI would need the Window Manager, not a foreign walk. */
 
-/* NOTHING HERE IS REGISTERED YET, and that is deliberate rather than
-   unfinished: this layer was built while three other threads held
-   src/commands/, src/core/wire.c and contract/, and a fifth hand in
-   those files is how a fold-in produces conflicts instead of code. What
-   registration costs, exactly, in the order it has to happen:
+/* REGISTERED 2026-07-31, all four, plus `elements`. The list this header
+   carried while it waited - the contract's x-commands entries, the
+   cmd_help.c rows with `wire` = 1, the branches in commands.c, and
+   now_observe_init() in main.c - is done, in that order, and the header
+   states it as fact rather than as a plan. What that fold also settled:
 
-     1. contract/asyncapi.yaml, x-commands: four entries - `observe`,
-        `handle`, `axtree`, `axsnap`. A command not declared there is
-        looked up by the host's capability ledger, missed, and reported
-        permanently unavailable in a sentence that reads as a fact about
-        the Macintosh (MirrorActProjections.swift records that exact
-        failure happening). `handle` takes a required string `ref`;
-        `observe` and `axtree` an optional string `scope` of
-        "front" (default) or "all"; `axsnap` takes nothing.
-     2. src/commands/cmd_help.c: four rows with `wire` = 1. That table is
-        how the host settles whether a connected guest serves a command,
-        so a row missing here makes the verb unavailable even once it is
-        served.
-     3. src/commands/commands.c: `#include "observe.h"` and four branches
-        in now_command_run - each one call, because each function below
-        writes the whole command.result itself:
+     - THE ENVELOPE. This layer was written answering under a `result`
+       key. The contract's CommandResult declares `output` and sets
+       additionalProperties false, so every reply here was off-contract
+       from the day it was written and nothing caught it, because
+       nothing had ever sent one. All four now answer
+       output.<command>, like every other command this guest serves.
 
-            now_observe_command(request_json, id, out, cap);
-            now_observe_handle_command(request_json, id, out, cap);
-            now_observe_axtree_command(request_json, id, out, cap);
-            now_observe_axsnap_command(request_json, id, out, cap);
-
-     4. src/main.c: now_observe_init() at startup. OPTIONAL - every
-        entry point below arms the registry lazily - but doing it early
-        seeds the session secret from a wider clock than the first
-        request's, and the seed is the reason a reference cannot be
-        forged.
+     - `elements` IS THIS LAYER'S FIFTH DOOR, not the act plane's own
+       walk. It came over from src/act/act_ref.c, which minted the same
+       now-window-/now-element- token shape from a second registry with
+       a second staleness rule - two systems producing one token shape,
+       so a reference minted by one might not resolve in the other and a
+       caller could not tell which it held. There is now exactly one
+       minter, one registry and one walk; act_ref.c is gone.
 
    WHAT THE ACT PLANE CALLS is neither of the JSON surfaces: it is
    now_observe_resolve_window / now_observe_resolve_element, below, and
@@ -93,6 +86,13 @@ typedef struct {
     WindowPtr           window;
     ControlHandle       control;
     NowAxResolved       detail;    /* bounds, titles, z-order; Ok only */
+    /* What the MINT knew, handed back whole on Ok: the text route in
+       particular, which says whether this element is a control ctlact
+       may drive or a text field textget/textset may read. The act plane
+       must take that from here rather than work it out again - a second
+       thing deciding what an element is, is the defect that made this
+       layer the single minter in the first place. */
+    NowObsIdentity      identity;
 } NowObsHandle;
 
 /* Resolve one reference. `len` may be 0 to mean strlen(reference).
@@ -105,14 +105,19 @@ void now_observe_resolve_window(const char *reference, long len,
 void now_observe_resolve_element(const char *reference, long len,
                                  NowObsHandle *out);
 
-/* The four command surfaces. Each writes ONE complete command.result
+/* The five command surfaces. Each writes ONE complete command.result
    JSON message into out, echoing id, exactly as commands.c's own
    handlers do - so registering them is one table row and one call each,
    with no envelope logic on the caller's side.
 
    `request_json` is the raw command.request (may be NULL). observe and
    axtree read an optional "scope" of "front" (default) or "all"; handle
-   reads a required "ref". */
+   reads a required "ref"; elements reads an optional serialHi/serialLo
+   pair naming one process, and defaults to the frontmost.
+
+   observe, axtree and elements are three doors onto ONE walk and ONE
+   emitter - they differ in what they select and in the key they answer
+   under, never in what they can say about the machine. */
 void now_observe_command(const char *request_json, long id, char *out,
                          long cap);
 void now_observe_handle_command(const char *request_json, long id, char *out,
@@ -121,5 +126,7 @@ void now_observe_axtree_command(const char *request_json, long id, char *out,
                                 long cap);
 void now_observe_axsnap_command(const char *request_json, long id, char *out,
                                 long cap);
+void now_observe_elements_command(const char *request_json, long id, char *out,
+                                  long cap);
 
 #endif /* NOW_OBSERVE_H */

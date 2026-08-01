@@ -272,6 +272,12 @@ around **broken** versus **unverified**. Every arc ends by updating it —
 including the arcs that went well, because "we shipped it and here is
 what we still do not know" is the useful half.
 
+[docs/mirror-knowledge.md](docs/mirror-knowledge.md) is the page the
+standing rule **check Mirror before deriving anything** points at — what
+the sibling project already measured, and where. NOW re-derived Mirror's
+answers twice in one day before this line existed; the rule was there and
+nothing made it cheap to follow.
+
 [docs/contract-coverage.md](docs/contract-coverage.md) is the inventory
 of **who serves what** — every message type, all 16 `x-commands` verbs
 and the census probes, per guest, with served and PROVEN kept as

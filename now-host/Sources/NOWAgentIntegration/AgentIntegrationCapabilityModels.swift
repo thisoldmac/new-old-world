@@ -324,14 +324,12 @@ public enum AgentIntegrationCapabilityNames {
        Mirror's act plane is PowerPC-only upstream; NOW expresses that as a
        fact the machine answers rather than as a branch we write.
 
-       NO GUEST SERVES THEM YET, and the contract declares them anyway
-       (`x-commands`, additive by that file's own rule: an older peer answers
-       `unknown-command` cleanly). That is what makes the three rows read
-       `unavailable` on every machine as a DERIVED fact — the ledger asks
-       `help` and the machine says no — rather than as an unresolvable
-       requirement, which fails nowhere and reports the same sentence for a
-       completely different reason. `CommandRegistryTests.servedByNoGuestYet`
-       is the one place that difference is written down. */
+       CORRECTED 2026-07-31: the paragraph that stood here said "NO GUEST
+       SERVES THEM YET", and it was true for most of a day. The PowerPC guest
+       now answers all five act commands and the reference layer beneath
+       them, so `CommandRegistryTests.servedByNoGuestYet` is empty and these
+       rows are available or not exactly as the connected machine's `help`
+       table decides. The derivation did not change — only the answer. */
 
     /// Move, resize, zoom or close one addressed window, by answering the
     /// owning application's own `FindWindow`.
@@ -340,12 +338,35 @@ public enum AgentIntegrationCapabilityNames {
     public static let textGetCommand = "textget"
     /// Replace the text of one addressed text element.
     public static let textSetCommand = "textset"
+    /// Act on one addressed control, by answering the owning application's
+    /// own `TrackControl` with a part code.
+    public static let controlActCommand = "ctlact"
+    /// Perform one menu command, by answering the owning application's own
+    /// `MenuSelect`. No menu is drawn and no tracking loop runs.
+    public static let menuActCommand = "menuact"
 
-    /// The three above, as a set — the act plane's whole requirement
-    /// surface, for the tests that check no act row requires anything else.
+    /// The five above, as a set — the act plane's whole requirement surface,
+    /// for the tests that check no act row requires anything else.
+    ///
+    /// `elements` is deliberately NOT here. It mints the references the acts
+    /// take, which makes it the act plane's precondition rather than one of
+    /// its members: it changes nothing on the machine, it sits a consent tier
+    /// below every row in this set, and a gate that asserts act-plane
+    /// properties over it would be asserting them about an observation.
     public static let actPlane: Set<String> = [
         windowActCommand, textGetCommand, textSetCommand,
+        controlActCommand, menuActCommand,
     ]
+
+    /* The reference layer, declared and served 2026-07-31. `observe`,
+       `handle`, `axtree` and `axsnap` are its other four doors and no host
+       row projects them yet — they carry gap rows in docs/mcp-coverage.md
+       rather than constants here, because a name in this namespace that no
+       row requires is a name nothing checks. */
+
+    /// Name one process's on-screen elements and MINT a reference for each.
+    /// The same walk as `observe`, aimed by a process instead of a scope.
+    public static let elementsCommand = "elements"
 
     /// Every name above, as a set.
     ///
@@ -368,6 +389,7 @@ public enum AgentIntegrationCapabilityNames {
         streamRefresh, launchCommand, revealCommand, catsearchCommand,
         gestaltCommand, tailCommand, vprobeCommand, shotdiagCommand,
         putstatCommand, windowActCommand, textGetCommand, textSetCommand,
+        controlActCommand, menuActCommand, elementsCommand,
     ]
 
     /// Refusal codes that mean "this guest does not implement that", as

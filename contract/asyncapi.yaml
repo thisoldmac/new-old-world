@@ -2781,6 +2781,12 @@ components:
         this Mac observed and revalidated, never a pointer a caller
         supplied and never "whatever is frontmost".
 
+        THE SAME WALK AS `observe`, aimed by a process instead of by a
+        scope, and answering in the same shape — one minter, one walk,
+        one emitter, three doors. Two verbs that both produced
+        references would be two systems making one token shape, and a
+        caller holding one could not tell which it held.
+
         Defaults to the frontmost application. A reference ages out of
         a bounded table; one that has been recycled reads the same as
         one whose window closed, and both are true.
@@ -2798,7 +2804,7 @@ components:
       output:
         type: object
         properties:
-          elements: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+          elements: { $ref: "#/components/x-commands/observe/x-axTree" }
     ctlact:
       description: >
         Act on ONE control, by answering the owning application's own
@@ -2884,6 +2890,275 @@ components:
         type: object
         properties:
           menuact: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+
+    # THE REFERENCE LAYER, declared 2026-07-31 with the guest that serves
+    # it. These four are not a second act plane; they are the half that
+    # MINTS what the act plane takes, and the reason `elements` above is
+    # spelled as a scoped observation rather than as its own walk: there
+    # is exactly ONE thing in this product that creates a reference, and
+    # `observe`, `axtree` and `elements` are three doors onto it.
+    #
+    # A token carries no identity. It is a lookup key into a guest-side
+    # registry whose only writer is a walk that actually saw the element,
+    # and whose 128 bits are hashed over a per-session secret the caller
+    # never sees. Knowing an element's title, bounds, WindowPtr and PSN
+    # does not let anyone compute its token — which is why there is
+    # deliberately no "give me the reference for the window called X".
+    observe:
+      description: >
+        Walk this Mac's on-screen elements and MINT an opaque reference
+        for each one seen. The only thing in the product that creates a
+        reference, which is what makes "observation-minted" a fact about
+        the mechanism rather than an aspiration.
+
+        Answers with the tree: processes, their windows, the controls in
+        each, and the reference minted for every one. A reference is
+        short-lived and lives in a bounded table; one that has aged out
+        reads exactly like one whose window closed, and both are true.
+
+        SELF IS NOT OBSERVABLE. NOW is a Carbon application and its own
+        window records are not where a classic walk reads. Asking for
+        NOW's own process binds and walks to nothing; that is a limit
+        stated, not hidden.
+      args:
+        type: object
+        properties:
+          scope:
+            type: string
+            enum: [front, all]
+            description: >
+              front (the default) observes the frontmost application
+              only; all walks every process the Process Manager lists.
+      x-line: >
+        NOT TYPEABLE usefully. It answers with references no person can
+        read or retype.
+      output:
+        type: object
+        properties:
+          observe: { $ref: "#/components/x-commands/observe/x-axTree" }
+      x-bounds:
+        type: object
+        required: [left, top, right, bottom]
+        properties:
+          left: { type: integer }
+          top: { type: integer }
+          right: { type: integer }
+          bottom: { type: integer }
+      x-axTree:
+        type: object
+        required: [scope, processes, count, truncated, live]
+        description: >
+          `truncated` is a fact about the REPLY, not about the machine: a
+          reader that cannot tell a short tree from a clipped one has been
+          told nothing useful. `live` is how many references are currently
+          resolvable, which is the real bound on how much of a walk stays
+          addressable.
+        properties:
+          scope: { type: string }
+          count: { type: integer }
+          truncated: { type: boolean }
+          live: { type: integer }
+          processes:
+            type: array
+            items:
+              type: object
+              properties:
+                name: { type: string }
+                signature: { type: string }
+                serialHi: { type: integer }
+                serialLo: { type: integer }
+                front: { type: boolean }
+                bind:
+                  type: string
+                  description: >
+                    Why a process contributed no tree, in one word — so an
+                    empty array is never mistaken for a machine with no
+                    windows. ok, no-process, no-plane, no-anchor,
+                    ambiguous, mismatch, unreadable.
+                stampTicks: { type: integer }
+                windows:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      ref:
+                        type: string
+                        description: >
+                          The opaque reference, "now-window-" and a UUID.
+                      title: { type: string }
+                      occurrence: { type: integer }
+                      z: { type: integer }
+                      visible: { type: boolean }
+                      kind: { type: integer }
+                      bounds:
+                        $ref: "#/components/x-commands/observe/x-bounds"
+                      text:
+                        type: object
+                        description: >
+                          Present only for a window whose own TextEdit
+                          record this walk could read — a dialog's. A
+                          document window's TEHandle is not discoverable
+                          from a foreign walk, and that gap is stated
+                          rather than papered over: such a window carries
+                          no text reference and gets no row here.
+                        properties:
+                          ref:
+                            type: string
+                            description: >
+                              An element reference, "now-element-" and a
+                              UUID. It names a text element, so textget
+                              and textset take it and ctlact refuses it.
+                          length: { type: integer }
+                      controls:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            ref:
+                              type: string
+                              description: >
+                                The opaque reference, "now-element-" and
+                                a UUID.
+                            title: { type: string }
+                            occurrence: { type: integer }
+                            visible: { type: boolean }
+                            enabled: { type: boolean }
+                            bounds:
+                              $ref: "#/components/x-commands/observe/x-bounds"
+                            value: { type: integer }
+                            min: { type: integer }
+                            max: { type: integer }
+    handle:
+      description: >
+        Take ONE reference back to a live element, or refuse — precisely.
+
+        THE REFUSAL IS THE PRODUCT. `ok` stays true for every verdict
+        including the four that resolve to nothing, because "your
+        reference is stale" is an ANSWER: it tells the caller to observe
+        again. An error would read as "the call failed" and invite a
+        retry of the same reference. What is never true is `resolved`.
+
+        Staleness is refused, never repaired. A window that closed and
+        reopened is a DIFFERENT window even wearing the same title in the
+        same place, and a resolver that quietly re-aimed at the new one
+        would be the "whatever is frontmost" surface a reference exists
+        to prevent, hidden behind a reference-shaped argument.
+      args:
+        type: object
+        required: [ref]
+        properties:
+          ref:
+            type: string
+            description: >
+              One reference, "now-window-" or "now-element-" and a UUID,
+              minted by an observation on THIS machine in THIS session.
+      x-line: >
+        NOT TYPEABLE. The argument is a reference no human has.
+      output:
+        type: object
+        properties:
+          handle:
+            type: object
+            required: [ref, verdict, reason, resolved]
+            properties:
+              ref: { type: string }
+              verdict:
+                type: string
+                enum: [ok, not-found, ambiguous, mismatch, stale]
+                description: >
+                  Five words, taken from the anchor oracle's vocabulary
+                  rather than invented: this plane already has one set of
+                  words for "the honest answer is not a pointer".
+              reason:
+                type: string
+                description: >
+                  Which check stopped it, as a sentence a person can act
+                  on. A resolve that could not say WHICH check failed
+                  would leave "it didn't work" indistinguishable from
+                  "you named the wrong thing", and only one of those is
+                  the caller's bug.
+              resolved: { type: boolean }
+              serialHi: { type: integer }
+              serialLo: { type: integer }
+              window:
+                type: object
+                properties:
+                  title: { type: string }
+                  z: { type: integer }
+                  visibleZ: { type: integer }
+                  visible: { type: boolean }
+                  bounds:
+                    $ref: "#/components/x-commands/observe/x-bounds"
+              element:
+                type: object
+                description: Absent for a window reference, by construction.
+                properties:
+                  title: { type: string }
+                  visible: { type: boolean }
+                  enabled: { type: boolean }
+                  bounds:
+                    $ref: "#/components/x-commands/observe/x-bounds"
+                  value: { type: integer }
+                  min: { type: integer }
+                  max: { type: integer }
+    axtree:
+      description: >
+        The read surface over the same walk `observe` performs. It
+        differs in what it is FOR rather than in what it does: observe is
+        the call an agent makes to OBTAIN references, axtree the one it
+        makes to LOOK. They share one emitter on the guest, so the two
+        can never describe the same machine differently — which two
+        copies eventually would.
+
+        Because it is the same walk, it mints too. There is no read-only
+        spelling of this tree, and pretending otherwise would be a
+        second, quieter minter.
+      args:
+        type: object
+        properties:
+          scope:
+            type: string
+            enum: [front, all]
+      x-line: >
+        NOT TYPEABLE usefully. Same reason as observe.
+      output:
+        type: object
+        properties:
+          axtree: { $ref: "#/components/x-commands/observe/x-axTree" }
+    axsnap:
+      description: >
+        The cheap one: who is front, whether the reference layer can see
+        it, and how many references are live. No walk, so no minting —
+        the one call on this surface that is safe to poll.
+      args: {}
+      x-line: >
+        Takes nothing. The answer is about the machine's front process
+        and the reference table, both of which a person can read.
+      output:
+        type: object
+        properties:
+          axsnap:
+            type: object
+            properties:
+              front:
+                type: object
+                properties:
+                  name: { type: string }
+                  signature: { type: string }
+                  serialHi: { type: integer }
+                  serialLo: { type: integer }
+                  front: { type: boolean }
+                  bind: { type: string }
+                  stampTicks: { type: integer }
+                  hasWindows: { type: boolean }
+                  hasMenus: { type: boolean }
+              references:
+                type: object
+                properties:
+                  live: { type: integer }
+                  minted: { type: integer }
+                  evicted: { type: integer }
+                  capacity: { type: integer }
 
   # The census probe registry: the CLOSED, DECLARED set of probes a side may
   # be asked about, and the outcome vocabulary every report speaks. Adding a

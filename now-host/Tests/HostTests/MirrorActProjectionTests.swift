@@ -5,17 +5,26 @@ import XCTest
 /// **The act plane's rows, held to the properties that are about the PLANE
 /// rather than about any one row.**
 ///
-/// `WindowActProjection`, `TextGetProjection` and `TextSetProjection` are in
-/// `HostProjectionCatalog` as of 2026-07-31, so every registry-wide gate now
-/// sees them — this file is no longer standing in for those. What it holds
-/// is what a registry-wide gate cannot express: one addressing grammar
-/// across three rows, one dispatch vocabulary, and one refusal that the
-/// three share and that the other twenty-odd rows have no opinion about.
+/// `WindowActProjection`, `ControlActProjection`, `MenuActProjection`,
+/// `TextGetProjection` and `TextSetProjection` are in `HostProjectionCatalog`
+/// as of 2026-07-31, so every registry-wide gate now sees them — this file is
+/// no longer standing in for those. What it holds is what a registry-wide
+/// gate cannot express: one addressing grammar across the plane, one dispatch
+/// vocabulary, and one refusal that the rows share and that the other
+/// twenty-odd have no opinion about.
+///
+/// **`now_observe_elements` is deliberately not held to these properties.**
+/// It landed the same day and every row here depends on it, but it is an
+/// observation: it has no target, answers a tree rather than a dispatch, and
+/// sits a consent tier below all of these. Running act-plane properties over
+/// it would either fail them or force each one to carve out the row it was
+/// written about. The argument is in `MirrorActProjections`; the row is
+/// covered by the registry-wide gates and by `MCPCoverageTests`.
 ///
 /// It runs those properties over `MirrorActProjections.rows` and — where it
 /// matters most — through the REAL `HostProjectionDispatch` over a registry
-/// built from those three rows, so consent, the shared argument gate and the
-/// audit line are exercised rather than asserted about.
+/// built from those rows, so consent, the shared argument gate and the audit
+/// line are exercised rather than asserted about.
 ///
 /// Two upstream MEASUREMENTS are what the interesting half of this file
 /// checks, and they are properties of the design rather than of the code:
@@ -32,7 +41,7 @@ import XCTest
 /// | Mutation | Failed |
 /// | --- | --- |
 /// | `frontmost` added to `WindowActProjection.acceptedArguments` | `…NoActRowAcceptsATargetFreeSelector`, `…AcceptedSetIsExactlyItsPublishedProperties` |
-/// | `TextGetProjection` annotations spelled `readOnlyHint: false` | `…TheReadIsReadOnlyAndTheTwoActsAreFullAccess`, `…AReadOnlyMachineRefusesTheActsAndNotTheRead` |
+/// | `TextGetProjection` annotations spelled `readOnlyHint: false` | `…TheReadsAreReadOnlyAndEveryDriveIsFullAccess` (renamed from `…TheReadIsReadOnlyAndTheTwoActsAreFullAccess` when the plane grew), `…AReadOnlyMachineRefusesTheActsAndNotTheRead` |
 /// | `TextSetProjection.invoke` checks the text before the target | `…TheTargetIsRefusedBeforeTheText` |
 /// | a `performed` case added to `AgentIntegrationActDispatch` | `…AnActCanOnlyClaimDispatch` |
 /// | `present == expected` relaxed to `isSuperset(of:)` in the window decode | `…AnActionIsRefusedGeometryItDoesNotTake` |
@@ -51,8 +60,22 @@ import XCTest
 /// | `winact` listed in BOTH command-registry exemption maps | `CommandRegistryTests.testTheUnservedDeclarationsAreStillUnserved` |
 /// | `reveal` — a verb the PowerPC guest does serve — added to `servedByNoGuestYet` | the same test, which is what keeps that list a debt rather than a drawer |
 ///
-/// The three rows are registered, so the registry-wide gates cover them too:
-/// `frontmost` added to `acceptedArguments` now fails
+/// **And once more when the plane went from three rows to five, 2026-07-31.**
+/// The first three of these were watched failing without being asked for —
+/// they went red the moment the new rows were registered, which is the
+/// stronger evidence of the two:
+///
+/// | Mutation | Failed |
+/// | --- | --- |
+/// | `ControlActProjection` and `MenuActProjection` registered before this file knew them | `…AnActWithNoTargetIsRefusedNamingTheTarget` (the menu act names `titleLeft`, not `element`) |
+/// | `now_observe_elements` registered before the ledger listed it | `HostFaceParityTests.testTheAppUIDivergenceLedgerMatchesWhatTheRowsDeclare` |
+/// | all three registered before `docs/mcp-coverage.md` had rows | `MCPCoverageTests.testTheProjectionTableMatchesTheRegistry`, `…testTheGapTableIsExactlyWhatNoProjectionReaches` |
+/// | `ControlActProjection.requires` spelled `"ctlactx"` | nine tests named it, across `MirrorActProjectionTests` (`…EveryActRequirementIsOneOfTheActCommands`, `…ARowIsRegisteredExactlyWhenItsRequirementIsAKnownName`, `…EveryActRowExposesOnlyWhatItRequires`), `HostProjectionRegistryTests` and five in `MCPCoverageTests` |
+/// | `frontmost` added to `MenuActProjection.acceptedArguments` | `…NoActRowAcceptsATargetFreeSelector`, `…EveryActRowsAcceptedSetIsExactlyItsPublishedProperties`, `HostProjectionArgumentStrictnessTests` |
+/// | `now_observe_elements`' row deleted from `docs/mcp-coverage.md` | `MCPCoverageTests.testTheProjectionTableMatchesTheRegistry`, naming it |
+///
+/// Every row is registered, so the registry-wide gates cover them too:
+/// `frontmost` added to `acceptedArguments` fails
 /// `HostProjectionArgumentStrictnessTests` as well as the two here.
 final class MirrorActProjectionTests: XCTestCase {
 
@@ -75,6 +98,66 @@ final class MirrorActProjectionTests: XCTestCase {
     ) -> [String: Any] {
         (schema(projection, "inputSchema")["properties"]
             as? [String: Any]) ?? [:]
+    }
+
+    /// One well-formed call per row, for the gates that need every row to get
+    /// past its own argument decode and reach the client.
+    ///
+    /// Declared per row rather than filtered out of a shared bag, because
+    /// what a legal call looks like is what each row's decode DEFINES: a bag
+    /// filtered by `acceptedArguments` would send `now_menu_act` no arguments
+    /// at all and read the resulting refusal as evidence about something
+    /// else. Fresh references each call — they are minted here and never
+    /// resolved, since no host lane carries one to a machine.
+    private func wellFormedArguments(
+        forCapability capability: String
+    ) -> [String: Any] {
+        switch capability {
+        case WindowActProjection.capability.rawValue:
+            return [
+                "window": AgentIntegrationActPolicy.makeWindowReference(),
+                "action": "zoom",
+            ]
+        case ControlActProjection.capability.rawValue:
+            return [
+                "element": AgentIntegrationActPolicy.makeElementReference(),
+                "part": 10,
+            ]
+        case MenuActProjection.capability.rawValue:
+            return ["menu": 128, "item": 1, "titleLeft": 8]
+        case TextGetProjection.capability.rawValue:
+            return [
+                "element": AgentIntegrationActPolicy.makeElementReference(),
+            ]
+        case TextSetProjection.capability.rawValue:
+            return [
+                "element": AgentIntegrationActPolicy.makeElementReference(),
+                "text": "hello",
+            ]
+        default:
+            XCTFail(
+                "\(capability) is in the act plane and this file does not "
+                    + "know what a legal call to it looks like, so every "
+                    + "gate below would read its argument refusal as the "
+                    + "answer it was testing for.")
+            return [:]
+        }
+    }
+
+    /// The plane's capability names, built with a plain loop.
+    ///
+    /// A `rows.map(\.capability.rawValue)` inside an `XCTAssertEqual` is what
+    /// it wants to be, and it crashes SILGen: lowering a key-path read off an
+    /// existential metatype inside the assertion's autoclosure hits an
+    /// unreachable in `Transform::transform` (Swift 6.2, watched 2026-07-31).
+    /// Hoisted out and spelled long, which is also the only reason this
+    /// helper is worth a name.
+    private func planeCapabilityNames() -> Set<String> {
+        var names: Set<String> = []
+        for row in rows {
+            names.insert(row.capability.rawValue)
+        }
+        return names
     }
 
     // MARK: - The row properties every registered row is held to
@@ -152,9 +235,13 @@ final class MirrorActProjectionTests: XCTestCase {
         }
     }
 
-    /// Every requirement is one of the three act commands, and nothing else
-    /// leaked in.
-    func testEveryActRequirementIsOneOfTheThreeActCommands() {
+    /// Every requirement is one of the act commands, and nothing else leaked
+    /// in — `elements` above all, which every row here depends on and none of
+    /// them may REQUIRE: `requires` is a conjunction, so a row requiring the
+    /// observation would switch itself off against a guest that serves the
+    /// act, which is the silent-conjunction wall the three diagnostics were
+    /// split to avoid.
+    func testEveryActRequirementIsOneOfTheActCommands() {
         for row in rows {
             for requirement in row.requires {
                 XCTAssertTrue(
@@ -222,15 +309,38 @@ final class MirrorActProjectionTests: XCTestCase {
 
     /// Every act row's target argument is an opaque reference, is required,
     /// and is published with the pattern that bounds it.
+    ///
+    /// **`now_menu_act` is the one exception and it is checked separately**,
+    /// below, rather than waived. A menu press carries no handle to name, so
+    /// its identity is the press itself; the property this test states still
+    /// holds there in the form that matters — the request must name what it
+    /// is about, and cannot be spelled without it — but the thing it names is
+    /// a coordinate rather than a reference.
     func testEveryActRowRequiresAnOpaqueReferenceAsItsTarget() {
         let targets: [(any HostProjection.Type, String, String)] = [
             (WindowActProjection.self, "window",
              AgentIntegrationActPolicy.windowReferencePattern),
+            (ControlActProjection.self, "element",
+             AgentIntegrationActPolicy.elementReferencePattern),
             (TextGetProjection.self, "element",
              AgentIntegrationActPolicy.elementReferencePattern),
             (TextSetProjection.self, "element",
              AgentIntegrationActPolicy.elementReferencePattern),
         ]
+        /* Spelled as a loop rather than a map over the tuples: SILGen
+           crashes lowering a closure that reads a member off an existential
+           metatype inside one (Swift 6.2, 2026-07-31). */
+        var addressed: Set<String> = [MenuActProjection.capability.rawValue]
+        for (row, _, _) in targets {
+            addressed.insert(row.capability.rawValue)
+        }
+        let plane = planeCapabilityNames()
+        XCTAssertEqual(
+            addressed, plane,
+            "An act row states no target here. Every row in the plane is "
+                + "either reference-addressed and listed above, or is the "
+                + "menu act whose identity check is asserted below — a row "
+                + "that is neither has a target nothing checks.")
         for (row, key, pattern) in targets {
             let required = Set(
                 (schema(row, "inputSchema")["required"] as? [String]) ?? [])
@@ -246,9 +356,60 @@ final class MirrorActProjectionTests: XCTestCase {
         }
     }
 
+    /// **The menu act names its target too, and its target is a
+    /// coordinate.**
+    ///
+    /// `titleLeft` is where the press will land, and it is required for the
+    /// same reason every other row requires a reference: without it there is
+    /// no way to tell this act's press from the one the person at the machine
+    /// is making. A host that derived it from `menu` would be guessing where
+    /// a title sits, and a wrong guess either misses or matches the user's.
+    ///
+    /// It is asserted here rather than folded into the reference test because
+    /// the two are different mechanisms with the same purpose, and a test
+    /// that called a coordinate a reference would make the exception
+    /// invisible.
+    func testTheMenuActsIdentityCheckIsRequiredAndPublished() {
+        let required = Set(
+            (schema(MenuActProjection.self, "inputSchema")["required"]
+                as? [String]) ?? [])
+        XCTAssertEqual(
+            required, ["menu", "item", "titleLeft"],
+            "now_menu_act's required keys are \(required.sorted()). Its "
+                + "identity check is titleLeft; a call that can omit it is a "
+                + "call that cannot be told from the user's own press.")
+        let property = inputProperties(MenuActProjection.self)["titleLeft"]
+            as? [String: Any]
+        XCTAssertNotNil(property?["minimum"])
+        XCTAssertNotNil(property?["maximum"])
+        XCTAssertTrue(
+            ((property?["description"] as? String) ?? "")
+                .contains("identity"),
+            "now_menu_act publishes titleLeft without saying it is the "
+                + "identity check, so a caller reads it as a coordinate to "
+                + "supply rather than the thing that keeps the act apart "
+                + "from a person's press.")
+    }
+
     /// An act with no target is refused, and the refusal is about the
     /// target.
+    ///
+    /// The expected word is declared per row rather than derived, because
+    /// what a row calls its target is exactly what this test exists to pin —
+    /// a derivation would agree with whatever the row happened to say.
     func testAnActWithNoTargetIsRefusedNamingTheTarget() async {
+        let targetWords: [String: String] = [
+            WindowActProjection.capability.rawValue: "window",
+            ControlActProjection.capability.rawValue: "element",
+            MenuActProjection.capability.rawValue: "titleLeft",
+            TextGetProjection.capability.rawValue: "element",
+            TextSetProjection.capability.rawValue: "element",
+        ]
+        let plane = planeCapabilityNames()
+        XCTAssertEqual(
+            Set(targetWords.keys), plane,
+            "An act row names no target word here, so the call below would "
+                + "assert nothing about it.")
         let client = NoHostActClient()
         for row in rows {
             let outcome = await row.invoke(.init(raw: [:]), through: client)
@@ -258,8 +419,7 @@ final class MirrorActProjectionTests: XCTestCase {
                         + "\(outcome)")
                 continue
             }
-            let key = row.capability == WindowActProjection.capability
-                ? "window" : "element"
+            let key = targetWords[row.capability.rawValue] ?? ""
             XCTAssertTrue(
                 message.contains(key),
                 "\(row.capability) refused a target-free call without "
@@ -424,18 +584,29 @@ final class MirrorActProjectionTests: XCTestCase {
         }
     }
 
-    /// The read sits below the line and the two acts sit above it. This is
-    /// what makes one row per side of the tier boundary worth having.
-    func testTheReadIsReadOnlyAndTheTwoActsAreFullAccess() {
+    /// The read sits below the line and every drive verb sits above it. This
+    /// is what makes one row per side of the tier boundary worth having.
+    ///
+    /// The observation that mints these rows' targets sits below the line
+    /// too, and is asserted here because that is the pair that makes the
+    /// tiers mean something: a machine whose owner consented to being READ
+    /// can be observed and its text read, and every act on what the
+    /// observation named is refused above it.
+    func testTheReadsAreReadOnlyAndEveryDriveIsFullAccess() {
         XCTAssertEqual(
             HostCapabilityTierDerivation.requiredTier(
                 of: TextGetProjection.self), .readOnly)
         XCTAssertEqual(
             HostCapabilityTierDerivation.requiredTier(
-                of: TextSetProjection.self), .fullAccess)
-        XCTAssertEqual(
-            HostCapabilityTierDerivation.requiredTier(
-                of: WindowActProjection.self), .fullAccess)
+                of: ObserveElementsProjection.self), .readOnly)
+        for row in rows where row.capability != TextGetProjection.capability {
+            let tier = HostCapabilityTierDerivation.requiredTier(of: row)
+            let name = row.capability.rawValue
+            XCTAssertEqual(
+                tier, .fullAccess,
+                "\(name) drives a guest application and does not sit in the "
+                    + "fullAccess tier.")
+        }
     }
 
     /// **A machine that consented to being read serves the read and refuses
@@ -462,20 +633,12 @@ final class MirrorActProjectionTests: XCTestCase {
             XCTFail("A read-only row was refused: \(denial.reason)")
         }
 
-        for row in [WindowActProjection.self as any HostProjection.Type,
-                    TextSetProjection.self] {
+        for row in rows where row.capability != TextGetProjection.capability {
             let outcome = await HostProjectionDispatch(
                 face: .mcp, registry: registry, audit: ActAuditSpy()
             ).invoke(
                 row.capability.rawValue,
-                arguments: .init(raw: [
-                    "element":
-                        AgentIntegrationActPolicy.makeElementReference(),
-                    "text": "hello",
-                    "window":
-                        AgentIntegrationActPolicy.makeWindowReference(),
-                    "action": "zoom",
-                ].filter { row.acceptedArguments.contains($0.key) }),
+                arguments: .init(raw: wellFormedArguments(forCapability: row.capability.rawValue)),
                 guest: "pb1400c",
                 through: ConsentActClient(access: .readOnly))
             guard case .deniedByConsent(let denial) = outcome else {
@@ -582,7 +745,18 @@ final class MirrorActProjectionTests: XCTestCase {
                 requestedScalars: 5,
                 dispatch: .dispatched,
                 dispatchedAt: Date(timeIntervalSince1970: 0))))
-        for payload in [window, text] {
+        let control = try encoder.encode(
+            AgentIntegrationControlActResult.completed(.init(
+                element: AgentIntegrationActPolicy.makeElementReference(),
+                part: 10,
+                dispatch: .dispatched,
+                dispatchedAt: Date(timeIntervalSince1970: 0))))
+        let menu = try encoder.encode(
+            AgentIntegrationMenuActResult.completed(.init(
+                menu: 128, item: 1, titleLeft: 8,
+                dispatch: .dispatched,
+                dispatchedAt: Date(timeIntervalSince1970: 0))))
+        for payload in [window, text, control, menu] {
             let json = String(decoding: payload, as: UTF8.self)
             for claim in ["performed", "succeeded", "applied", "moved",
                           "changed"] {
@@ -592,35 +766,26 @@ final class MirrorActProjectionTests: XCTestCase {
             }
             XCTAssertTrue(json.contains("dispatched"), json)
         }
-        for row in [WindowActProjection.self as any HostProjection.Type,
-                    TextSetProjection.self] {
+        /* Every row that publishes a `dispatch` says what it does NOT mean,
+           which is the read `now_text_get` alone is exempt from — it
+           publishes a reading rather than a dispatch. */
+        for row in rows where row.capability != TextGetProjection.capability {
             let rendered = "\(row.mcpDescriptor)"
+            let name = row.capability.rawValue
             XCTAssertTrue(
                 rendered.contains("NOT a claim"),
-                "\(row.capability) publishes a dispatch without saying what "
-                    + "it does not mean.")
+                "\(name) publishes a dispatch without saying what it does "
+                    + "not mean.")
         }
     }
 
     /// A well-formed act against a host with no act lane is typed
     /// unavailable — not an empty success, and not a crash.
     func testAWellFormedActAgainstNoActLaneIsTypedUnavailable() async throws {
-        let calls: [(any HostProjection.Type, [String: Any])] = [
-            (WindowActProjection.self, [
-                "window": AgentIntegrationActPolicy.makeWindowReference(),
-                "action": "zoom",
-            ]),
-            (TextGetProjection.self, [
-                "element": AgentIntegrationActPolicy.makeElementReference(),
-            ]),
-            (TextSetProjection.self, [
-                "element": AgentIntegrationActPolicy.makeElementReference(),
-                "text": "",
-            ]),
-        ]
-        for (row, arguments) in calls {
+        for row in rows {
             let outcome = await row.invoke(
-                .init(raw: arguments), through: NoHostActClient())
+                .init(raw: wellFormedArguments(forCapability: row.capability.rawValue)),
+                through: NoHostActClient())
             guard case .value(let value) = outcome else {
                 XCTFail(
                     "\(row.capability) refused a well-formed call: "
@@ -652,25 +817,12 @@ final class MirrorActProjectionTests: XCTestCase {
     /// The outcome is unchanged and must stay so: typed `unavailable`, never
     /// a refusal, never an empty success. Only the reason moved.
     func testAnActAgainstALiveHostSaysWhatIsMissing() async throws {
-        let calls: [(any HostProjection.Type, [String: Any])] = [
-            (WindowActProjection.self, [
-                "window": AgentIntegrationActPolicy.makeWindowReference(),
-                "action": "zoom",
-            ]),
-            (TextGetProjection.self, [
-                "element": AgentIntegrationActPolicy.makeElementReference(),
-            ]),
-            (TextSetProjection.self, [
-                "element": AgentIntegrationActPolicy.makeElementReference(),
-                "text": "hello",
-            ]),
-        ]
-        for (row, arguments) in calls {
+        for row in rows {
             let outcome = await HostProjectionDispatch(
                 face: .mcp, registry: try registry(), audit: ActAuditSpy()
             ).invoke(
                 row.capability.rawValue,
-                arguments: .init(raw: arguments),
+                arguments: .init(raw: wellFormedArguments(forCapability: row.capability.rawValue)),
                 guest: "pb1400c",
                 through: ConsentActClient(access: .fullAccess))
             guard case .value(let value) = outcome else {

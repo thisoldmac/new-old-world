@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "axprocess.h"
+#include "axtext.h"
 #include "json.h"
 #include "obsref.h"
 
@@ -190,6 +191,12 @@ static void resolve_kind(NowObsKind kind, const char *reference, long len,
     out->detail = resolution.resolved;
     out->window = (WindowPtr)resolution.resolved.window_address;
     out->control = (ControlHandle)resolution.resolved.control_handle;
+    /* What the mint knew, handed back whole. The act plane needs the
+       text route (which of a dialog's items this reference names, and
+       how to reach it) and it must not re-derive that from the machine:
+       re-deriving is a second thing deciding what an element is, which
+       is the defect this layer was unified to remove. */
+    out->identity = entry->identity;
 }
 
 void now_observe_resolve_window(const char *reference, long len,
@@ -288,6 +295,59 @@ static int emit_process_head(char *out, long cap, long *used,
                   (unsigned long)target->context.stamp_ticks);
 }
 
+/* A window's own editable text, and the element reference that names it.
+
+   THE ONE ELEMENT THAT IS NOT A CONTROL. A dialog's live TextEdit record
+   is the discoverable route to a real text field: the walk reads it out
+   of the window, so the reference can be minted for it like any other.
+   A document window's TEHandle is NOT discoverable from a foreign walk,
+   and that gap is stated rather than papered over - such a window gets
+   no text reference and no `text` object, which is the honest shape.
+
+   It mints from a COPY of the window's identity: the caller reuses that
+   struct for the controls that follow, and a text route left set on it
+   would make every control in the window claim to be a text field.
+
+   Absent text is not a failure. It writes nothing and returns 1, because
+   a window with no TextEdit record is an answer about the window. */
+static int emit_window_text(char *out, long cap, long *used,
+                            NowObsTarget *target, const NowAxWindow *window,
+                            const NowObsIdentity *base)
+{
+    /* A kilobyte of text off the stack, for the reason the title tables
+       next door are static: one cooperative thread, one walk at a time. */
+    static NowAxText text;
+    NowObsIdentity    id;
+    char              token[kNowObsTokenMax];
+
+    if (now_ax_read_dialog_text(&target->context.memory, window->address,
+                                &text) != kNowAxOk) {
+        return 1;
+    }
+    id = *base;
+    id.control_handle = 0;
+    id.text_kind = kNowObsTextDialogTe;
+    id.te_handle = 0;
+    id.dialog_item = 0;
+    id.minted_ticks = (unsigned long)TickCount();
+    /* The same fingerprint the window reference carries - a zero control
+       handle - because this element IS reached through the window, and
+       resolution walks it the same way. */
+    id.node_fingerprint = now_ax_ref_fingerprint(id.psn_hi, id.psn_lo,
+                                                 window->address, 0UL);
+    id.ref.node_fingerprint = id.node_fingerprint;
+    id.ref.control_title[0] = 0;
+    id.ref.control_title_len = 0;
+    id.ref.control_occurrence = 0;
+    token[0] = '\0';
+    if (!now_obs_mint(&g_registry, kNowObsKindElement, &id, token,
+                      sizeof(token))) {
+        return 1;
+    }
+    return append(out, cap, used, ",\"text\":{\"ref\":\"%s\",\"length\":%u}",
+                  token, text.length);
+}
+
 /* One process's windows and controls, with a reference minted for each.
 
    MINTING IS THE SIDE EFFECT THIS FUNCTION EXISTS FOR. Every row it
@@ -382,11 +442,19 @@ static int emit_tree(char *out, long cap, long *used, NowObsTarget *target,
                     "%s{\"ref\":\"%s\",\"title\":\"%s\",\"occurrence\":%u,"
                     "\"z\":%d,\"visible\":%s,\"kind\":%d,"
                     "\"bounds\":{\"left\":%d,\"top\":%d,\"right\":%d,"
-                    "\"bottom\":%d},\"controls\":[",
+                    "\"bottom\":%d}",
                     first_window ? "" : ",", token, title, occurrence,
                     window_count, window.visible ? "true" : "false",
                     (int)window.kind, (int)window.left, (int)window.top,
                     (int)window.right, (int)window.bottom)) {
+            *truncated = 1;
+            break;
+        }
+        if (!emit_window_text(out, cap, used, target, &window, &id)) {
+            *truncated = 1;
+            break;
+        }
+        if (!append(out, cap, used, ",\"controls\":[")) {
             *truncated = 1;
             break;
         }
@@ -482,10 +550,22 @@ static int read_scope(const char *request_json, char *scope, long cap)
     return (strcmp(scope, "front") == 0 || strcmp(scope, "all") == 0);
 }
 
-/* --- observe ----------------------------------------------------------- */
-
-void now_observe_command(const char *request_json, long id, char *out,
-                         long cap)
+/* --- the walk, and the three doors onto it ------------------------------
+ *
+ * ONE MINTER, ONE WALK, ONE EMITTER. `observe`, `axtree` and `elements`
+ * are three names a caller may reach this by, differing only in what
+ * they SELECT (a scope, or one process) and in the key they answer
+ * under. They are not three implementations: two things minting one
+ * token shape is the defect this layer was unified to remove, and two
+ * emitters over one registry is the same defect one layer down - the two
+ * would eventually describe the same machine differently.
+ *
+ * `key` is the command's own name, because a reply names the command it
+ * answers. `want`, when it is not NULL, is the one process to walk, and
+ * `scope` is then that fact in a word rather than a second selector. */
+static void walk_reply(const char *key, const char *scope, long id,
+                       char *out, long cap,
+                       const ProcessSerialNumber *want)
 {
     ProcessSerialNumber psn = { 0, kNoProcess };
     NowObsTarget        target;
@@ -494,20 +574,18 @@ void now_observe_command(const char *request_json, long id, char *out,
     int                 count = 0;
     int                 first = 1;
     int                 truncated = 0;
-    char                scope[16];
+    int                 front_only = (want == NULL
+                                      && strcmp(scope, "front") == 0);
 
     now_observe_init();
-    if (!read_scope(request_json, scope, sizeof(scope))) {
-        fail(out, cap, id, "bad-request", "scope must be front or all");
-        return;
-    }
     if (!append(out, cap, &used,
                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
-                "\"result\":{\"scope\":\"%s\",\"processes\":[", id, scope)) {
+                "\"output\":{\"%s\":{\"scope\":\"%s\",\"processes\":[",
+                id, key, scope)) {
         fail(out, cap, id, "overflow", "observe header");
         return;
     }
-    if (strcmp(scope, "front") == 0 && GetFrontProcess(&front) != noErr) {
+    if (front_only && GetFrontProcess(&front) != noErr) {
         fail(out, cap, id, "no-front", "no front process");
         return;
     }
@@ -518,10 +596,17 @@ void now_observe_command(const char *request_json, long id, char *out,
             truncated = 1;
             break;
         }
+        if (want != NULL) {
+            Boolean same = false;
+
+            if (SameProcess(&psn, want, &same) != noErr || !same) {
+                continue;
+            }
+        }
         if (!bind_target(&psn, &target)) {
             continue;
         }
-        if (strcmp(scope, "front") == 0 && !target.is_front) {
+        if (front_only && !target.is_front) {
             continue;
         }
         if (!append(out, cap, &used, "%s", first ? "" : ",")
@@ -536,24 +621,79 @@ void now_observe_command(const char *request_json, long id, char *out,
         count++;
     }
     if (!append(out, cap, &used,
-                "],\"count\":%d,\"truncated\":%s,\"live\":%lu}}",
+                "],\"count\":%d,\"truncated\":%s,\"live\":%lu}}}",
                 count, truncated ? "true" : "false",
                 (unsigned long)(g_registry.minted - g_registry.evicted))) {
         fail(out, cap, id, "overflow", "observe tail");
     }
 }
 
+/* --- observe ----------------------------------------------------------- */
+
+void now_observe_command(const char *request_json, long id, char *out,
+                         long cap)
+{
+    char scope[16];
+
+    if (!read_scope(request_json, scope, sizeof(scope))) {
+        fail(out, cap, id, "bad-request", "scope must be front or all");
+        return;
+    }
+    walk_reply("observe", scope, id, out, cap, NULL);
+}
+
 /* --- axtree ------------------------------------------------------------ */
 
 /* The read surface over the same walk. It differs from observe in what
    it is FOR rather than in what it does: observe is the call an agent
-   makes to obtain references, axtree the one it makes to look. They
-   share an emitter so the two can never describe the same machine
-   differently - which they would, eventually, as two copies. */
+   makes to obtain references, axtree the one it makes to look.
+
+   IT IS NOT AN ALIAS ANY MORE, and the difference is one word: the reply
+   answers under its own command's name, because a caller that sent
+   axtree and got back an object called observe would have to know they
+   are the same call - which is a fact about our implementation and none
+   of its business. Everything that could describe the machine is still
+   the one emitter. */
 void now_observe_axtree_command(const char *request_json, long id, char *out,
                                 long cap)
 {
-    now_observe_command(request_json, id, out, cap);
+    char scope[16];
+
+    if (!read_scope(request_json, scope, sizeof(scope))) {
+        fail(out, cap, id, "bad-request", "scope must be front or all");
+        return;
+    }
+    walk_reply("axtree", scope, id, out, cap, NULL);
+}
+
+/* --- elements ----------------------------------------------------------
+ *
+ * The act plane's door. It differs from observe only in how it AIMS:
+ * serialHi/serialLo name one process, and omitting them means the
+ * frontmost one. That is a selector for an OBSERVATION and not for an
+ * act - it says which process to look at, never which element to act on,
+ * and there is still no spelling anywhere here for "the frontmost
+ * window". The act plane can only name what this returned. */
+void now_observe_elements_command(const char *request_json, long id,
+                                  char *out, long cap)
+{
+    ProcessSerialNumber psn;
+    long                hi = 0;
+    long                lo = 0;
+
+    if (request_json != NULL
+        && now_json_find_int(request_json, "serialHi", -2147483647L)
+           == now_json_find_int(request_json, "serialHi", 2147483646L)
+        && now_json_find_int(request_json, "serialLo", -2147483647L)
+           == now_json_find_int(request_json, "serialLo", 2147483646L)) {
+        hi = now_json_find_int(request_json, "serialHi", 0L);
+        lo = now_json_find_int(request_json, "serialLo", 0L);
+        psn.highLongOfPSN = hi;
+        psn.lowLongOfPSN = (unsigned long)lo;
+        walk_reply("elements", "process", id, out, cap, &psn);
+        return;
+    }
+    walk_reply("elements", "front", id, out, cap, NULL);
 }
 
 /* --- axsnap ------------------------------------------------------------ */
@@ -577,12 +717,12 @@ void now_observe_axsnap_command(const char *request_json, long id, char *out,
     }
     if (!append(out, cap, &used,
                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
-                "\"result\":{\"front\":", id)
+                "\"output\":{\"axsnap\":{\"front\":", id)
         || !emit_process_head(out, cap, &used, &target)
         || !append(out, cap, &used,
                    ",\"hasWindows\":%s,\"hasMenus\":%s},"
                    "\"references\":{\"live\":%lu,\"minted\":%lu,"
-                   "\"evicted\":%lu,\"capacity\":%d}}}",
+                   "\"evicted\":%lu,\"capacity\":%d}}}}",
                    target.context.window_list != 0 ? "true" : "false",
                    target.context.menu_list != 0 ? "true" : "false",
                    (unsigned long)(g_registry.minted - g_registry.evicted),
@@ -618,16 +758,25 @@ void now_observe_handle_command(const char *request_json, long id, char *out,
         fail(out, cap, id, "bad-request", "ref is required");
         return;
     }
-    if (strncmp(reference, "now-window-", 11) == 0) {
-        now_observe_resolve_window(reference, 0, &handle);
-    } else {
-        now_observe_resolve_element(reference, 0, &handle);
+    /* Which kind, asked of the module that owns the spelling. This read
+       "now-window-" and 11 as literals until 2026-07-31 - a second copy
+       of a format obsref.c defines, in the one function whose whole job
+       is to tell the two kinds apart, and the copy that would have been
+       wrong first if either prefix ever changed. */
+    {
+        const char *window_prefix = now_obs_kind_prefix(kNowObsKindWindow);
+
+        if (strncmp(reference, window_prefix, strlen(window_prefix)) == 0) {
+            now_observe_resolve_window(reference, 0, &handle);
+        } else {
+            now_observe_resolve_element(reference, 0, &handle);
+        }
     }
     now_json_escape(reference, escaped, sizeof(escaped));
 
     if (!append(out, cap, &used,
                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
-                "\"result\":{\"ref\":\"%s\",\"verdict\":\"%s\","
+                "\"output\":{\"handle\":{\"ref\":\"%s\",\"verdict\":\"%s\","
                 "\"reason\":\"%s\",\"resolved\":%s",
                 id, escaped, now_obs_verdict_name(handle.verdict),
                 now_obs_why_text(handle.why),
@@ -681,7 +830,7 @@ void now_observe_handle_command(const char *request_json, long id, char *out,
             return;
         }
     }
-    if (!append(out, cap, &used, "}}")) {
+    if (!append(out, cap, &used, "}}}")) {
         fail(out, cap, id, "overflow", "handle tail");
     }
 }
