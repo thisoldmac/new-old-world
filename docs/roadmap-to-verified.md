@@ -68,8 +68,8 @@ cross-builds. Nothing has run on a Macintosh.
 
 ### Small debts opened by Phase 1
 
-- `wire.c`'s comment still calls the scene "~11 KB of struct"; the code is right,
-  the number is stale (it is ~27 KB now).
+- ~~`wire.c`'s comment still calls the scene "~11 KB of struct"~~ — closed: the
+  comment now says ~27 KB and names the failure path as a realistic one.
 - The probe's `saved_procs` is structurally always 0, so the chaining branch is
   dead code kept for the day the probe learns to patch an already-patched port.
 
