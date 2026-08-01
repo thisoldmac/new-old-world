@@ -24,6 +24,7 @@ struct MirrorModuleView: View {
             header
             refusalNote
             liveNote
+            contentNote
             Divider()
             content
         }
@@ -84,7 +85,12 @@ struct MirrorModuleView: View {
                because something moved, this asks because they said so. */
             if model.canFetch {
                 Button {
-                    model.fetchScene()
+                    /* `withContent: true` is what makes this press different
+                       from the loop's fetch. The content plane is joined on
+                       ASK and never on a timer — one extra control message
+                       for a press somebody made, and none at all for the
+                       loop's. See MirrorContentJoin's transport note. */
+                    model.fetchScene(withContent: true)
                 } label: {
                     Label(model.state.hasScene ? "Look Again" : "Look Now",
                           systemImage: "eye")
@@ -150,6 +156,30 @@ struct MirrorModuleView: View {
             HStack(spacing: 6) {
                 Image(systemName: model.isLive ? "clock.arrow.circlepath"
                                                : "pause.circle")
+                Text(note)
+                Spacer()
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
+        }
+    }
+
+    /// What became of the last content join.
+    ///
+    /// **Shown whenever there was one, success included.** An empty window
+    /// interior has at least six causes — nothing armed, armed in count mode,
+    /// nothing drawn, two ports and no way to tell them apart, an overrun, a
+    /// plane the extension carries dark — and a blank rectangle is the same
+    /// picture for all of them. This line is where they stop being the same
+    /// picture. The commonest of them, today, is that this host cannot arm
+    /// the plane at all (`MirrorContentJoin.armGap`).
+    @ViewBuilder
+    private var contentNote: some View {
+        if let note = model.contentNote {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "scribble")
                 Text(note)
                 Spacer()
             }
