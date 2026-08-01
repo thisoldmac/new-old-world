@@ -357,6 +357,10 @@ static void build_bar(AxFixture *f)
 
     items = build_menu(f, kMenuH1, kMenu1, 130, "Edit", 0xFFFFFFFDUL);
     items = put_item(f, items, "Undo", 'Z', 0);
+    /* cmdChar 0x1B is the Menu Manager's HIERARCHICAL-MENU marker, not a
+       command key. Reporting it as one would put a control character in
+       front of a person as a keyboard shortcut. */
+    items = put_item(f, items, "Recent", 0x1B, 0x12);
     axfix_put8(f, items, 0);
 }
 
@@ -379,7 +383,7 @@ static void menubar_complete(void)
           "its id and the second's left edge");
     check(s.menus[0].items_present && s.menus[0].item_count == 3,
           "the first menu's items");
-    check(s.menus[1].items_present && s.menus[1].item_count == 1,
+    check(s.menus[1].items_present && s.menus[1].item_count == 2,
           "and the second's, in its own block");
     check(strcmp(s.menu_items[s.menus[1].first_item].title, "Undo") == 0,
           "each menu's items are indexed from its own first_item");
@@ -391,6 +395,10 @@ static void menubar_complete(void)
        enabled - the Menu Manager's own rule, arriving intact. */
     check(s.menu_items[s.menus[1].first_item].enabled == 0,
           "a per-item enable bit survives the bridge");
+    check(s.menu_items[s.menus[1].first_item + 1].cmd == '\0',
+          "a cmdChar marker byte is NOT reported as a command key");
+    check(s.menu_items[s.menus[1].first_item + 1].mark == 1,
+          "but its mark character is a mark");
     check(s.menubar_refused == 0, "nothing was dropped");
 }
 
