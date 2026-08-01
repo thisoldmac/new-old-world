@@ -23,8 +23,8 @@ import XCTest
 ///
 /// It runs those properties over `MirrorActProjections.rows` and — where it
 /// matters most — through the REAL `HostProjectionDispatch` over a registry
-/// built from those three rows, so consent, the shared argument gate and the
-/// audit line are exercised rather than asserted about.
+/// built from those rows, so consent, the shared argument gate and the audit
+/// line are exercised rather than asserted about.
 ///
 /// Two upstream MEASUREMENTS are what the interesting half of this file
 /// checks, and they are properties of the design rather than of the code:
@@ -41,7 +41,7 @@ import XCTest
 /// | Mutation | Failed |
 /// | --- | --- |
 /// | `frontmost` added to `WindowActProjection.acceptedArguments` | `…NoActRowAcceptsATargetFreeSelector`, `…AcceptedSetIsExactlyItsPublishedProperties` |
-/// | `TextGetProjection` annotations spelled `readOnlyHint: false` | `…TheReadIsReadOnlyAndTheTwoActsAreFullAccess`, `…AReadOnlyMachineRefusesTheActsAndNotTheRead` |
+/// | `TextGetProjection` annotations spelled `readOnlyHint: false` | `…TheReadsAreReadOnlyAndEveryDriveIsFullAccess` (renamed from `…TheReadIsReadOnlyAndTheTwoActsAreFullAccess` when the plane grew), `…AReadOnlyMachineRefusesTheActsAndNotTheRead` |
 /// | `TextSetProjection.invoke` checks the text before the target | `…TheTargetIsRefusedBeforeTheText` |
 /// | a `performed` case added to `AgentIntegrationActDispatch` | `…AnActCanOnlyClaimDispatch` |
 /// | `present == expected` relaxed to `isSuperset(of:)` in the window decode | `…AnActionIsRefusedGeometryItDoesNotTake` |
@@ -60,8 +60,22 @@ import XCTest
 /// | `winact` listed in BOTH command-registry exemption maps | `CommandRegistryTests.testTheUnservedDeclarationsAreStillUnserved` |
 /// | `reveal` — a verb the PowerPC guest does serve — added to `servedByNoGuestYet` | the same test, which is what keeps that list a debt rather than a drawer |
 ///
-/// The three rows are registered, so the registry-wide gates cover them too:
-/// `frontmost` added to `acceptedArguments` now fails
+/// **And once more when the plane went from three rows to five, 2026-07-31.**
+/// The first three of these were watched failing without being asked for —
+/// they went red the moment the new rows were registered, which is the
+/// stronger evidence of the two:
+///
+/// | Mutation | Failed |
+/// | --- | --- |
+/// | `ControlActProjection` and `MenuActProjection` registered before this file knew them | `…AnActWithNoTargetIsRefusedNamingTheTarget` (the menu act names `titleLeft`, not `element`) |
+/// | `now_observe_elements` registered before the ledger listed it | `HostFaceParityTests.testTheAppUIDivergenceLedgerMatchesWhatTheRowsDeclare` |
+/// | all three registered before `docs/mcp-coverage.md` had rows | `MCPCoverageTests.testTheProjectionTableMatchesTheRegistry`, `…testTheGapTableIsExactlyWhatNoProjectionReaches` |
+/// | `ControlActProjection.requires` spelled `"ctlactx"` | nine tests named it, across `MirrorActProjectionTests` (`…EveryActRequirementIsOneOfTheActCommands`, `…ARowIsRegisteredExactlyWhenItsRequirementIsAKnownName`, `…EveryActRowExposesOnlyWhatItRequires`), `HostProjectionRegistryTests` and five in `MCPCoverageTests` |
+/// | `frontmost` added to `MenuActProjection.acceptedArguments` | `…NoActRowAcceptsATargetFreeSelector`, `…EveryActRowsAcceptedSetIsExactlyItsPublishedProperties`, `HostProjectionArgumentStrictnessTests` |
+/// | `now_observe_elements`' row deleted from `docs/mcp-coverage.md` | `MCPCoverageTests.testTheProjectionTableMatchesTheRegistry`, naming it |
+///
+/// Every row is registered, so the registry-wide gates cover them too:
+/// `frontmost` added to `acceptedArguments` fails
 /// `HostProjectionArgumentStrictnessTests` as well as the two here.
 final class MirrorActProjectionTests: XCTestCase {
 
