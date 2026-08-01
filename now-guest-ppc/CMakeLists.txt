@@ -75,6 +75,15 @@ add_application(now-guest-ppc
     src/axwalk/axresolve.c
     src/axwalk/axbinding.c
     src/axwalk/axprocess.c
+    # The reference layer over that walk: minting the opaque references
+    # every act verb addresses, and resolving one back to a live element
+    # or refusing with the reason. The deciding half (obsref.c,
+    # obsresolve.c) is Toolbox-free and natively tested; observe.c only
+    # obtains. See src/observe/obsref.h on why a reference cannot be
+    # forged, and obsresolve.h on why staleness is never repaired.
+    src/observe/obsref.c
+    src/observe/obsresolve.c
+    src/observe/observe.c
     resources/app.r
     # The application icon family, generated from the artwork by
     # assets/icons/classic/rez.py and shared with any other target that
