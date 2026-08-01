@@ -294,9 +294,30 @@ public enum ActionModel {
                      count: Swift.min(abs(notches), 8))
     }
 
-    /// Select a menu item, whatever it takes: ⌘ items go by keystroke
-    /// (cheap, wire-only, metal-safe); shortcut-less items go by QMP
-    /// menu-drag (emu-only, typed). A separator is structurally inert.
+    /// Select a menu item — **both kinds, through the Portal**.
+    ///
+    /// **CHANGED 2026-08-01, and it is a retraction rather than a
+    /// preference.** This used to route a ⌘ item to a keystroke, on the
+    /// argument that a shortcut is how such an item is meant to travel and
+    /// needs no patch. That was upstream's advice on upstream's guest and it
+    /// does not hold here: a menu shortcut is a Command keystroke, `key` on
+    /// this Mac cannot carry a modifier at all — CarbonLib has no
+    /// `PPostEvent`, so the queue element's modifiers are unreachable — and
+    /// the Menu Manager matches on the virtual key code rather than the
+    /// character even when it can. The contract says so in `menuact`'s own
+    /// description; this is that sentence applied.
+    ///
+    /// The concrete consequence of the old routing, which is why it is worth
+    /// a paragraph: a person clicking File▸Page Setup… in a rendered scene
+    /// reached the machine, and the same person clicking File▸Open — the
+    /// more ordinary act — produced a `key` that `availability` reports
+    /// `unavailable`. Half a menu working is worse than a menu that does
+    /// not, because nothing tells the person which half they are in.
+    ///
+    /// `menuItem(_:)` below still spells the keystroke and is still correct
+    /// about what a keystroke IS; it is simply not the route, and is kept
+    /// because the vocabulary is the measured half of this port and does not
+    /// get edited to match what NOW can currently send.
     ///
     /// We deliberately do NOT gate on `item.enabled`. A classic app disables
     /// its menus at rest and only AdjustMenus()es them at menu-down time, so
@@ -308,13 +329,12 @@ public enum ActionModel {
     public static func menuSelect(menu: Scene.Menu,
                                   item: Scene.MenuItem) -> [MirrorAction] {
         guard !item.separator else { return [] }
-        if !item.cmd.isEmpty {
-            return menuItem(item)          // ⌘ items: a keystroke, no patch
-        }
-        // Shortcut-less items go through the Portal, which answers the app's own
-        // MenuSelect by IDENTITY. The menu-drag that used to serve this case
-        // aimed at rows computed from a uniform-16px assumption the guest has
-        // since disproved (separators are 6px), and was emulator-only besides.
+        // One route for both kinds. The Portal answers the application's own
+        // MenuSelect by IDENTITY — titleLeft is the identity check, which is
+        // what distinguishes this press from the one made by the person
+        // sitting at the machine. Nothing is drawn and no tracking loop runs,
+        // so neither the 16px row assumption the guest disproved nor the
+        // emulator the drag needed is in the path.
         return [.menuInvoke(menuID: menu.id, itemIndex: item.index,
                             titleLeft: menu.left)]
     }
@@ -325,9 +345,14 @@ public enum ActionModel {
         [.drag(x0: from.x, y0: from.y, x1: to.x, y1: to.y)]
     }
 
-    /// The keystroke path for a ⌘-shortcut menu item (both heads land here).
-    /// Shortcut-less items don't come through here — `menuSelect` routes them
-    /// to the QMP menu-drag instead.
+    /// The keystroke SPELLING of a ⌘-shortcut menu item.
+    ///
+    /// **No longer a route.** `menuSelect` sends every item through
+    /// `menuInvoke` (see the retraction there); this stays because it is a
+    /// correct statement of what the keystroke for an item is, and because
+    /// `availability(.key)` is the place NOW's missing keystroke command is
+    /// named. Deleting it would delete the only expression of a gap that is
+    /// declared and owed.
     public static func menuItem(_ item: Scene.MenuItem) -> [MirrorAction] {
         // No `item.enabled` gate — see menuSelect: the resting enable flag is
         // not authoritative for app menus. A ⌘ keystroke to a truly disabled
