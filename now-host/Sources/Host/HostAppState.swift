@@ -91,7 +91,15 @@ final class HostAppState: ObservableObject {
     /// It takes the listener now: the page can ask the connected Mac for a
     /// scene, and the ask goes down the same wire and the same one transfer
     /// lane every other page shares.
-    private(set) lazy var mirror = MirrorModuleModel(listener: listener)
+    ///
+    /// It also takes the act lane, which is what makes the drawing
+    /// clickable: `MirrorActionDriver` is the seam between a gesture on a
+    /// rendered scene and the acts NOW's contract declares. The page still
+    /// refuses everything the vocabulary calls unsendable — the driver is a
+    /// route, not a permission.
+    private(set) lazy var mirror = MirrorModuleModel(
+        listener: listener,
+        actions: MirrorActionDriver(adapter: agentIntegration))
     private(set) lazy var census = CensusModuleModel(listener: listener)
     private(set) lazy var diagnostics = DiagnosticsModel(listener: listener)
     private(set) lazy var software = SoftwareModel(listener: listener)

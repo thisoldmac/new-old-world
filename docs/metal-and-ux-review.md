@@ -662,11 +662,27 @@ nothing more.
 draws what comes back, banner-marked as that Mac rather than as a recording.
 *Open Scene…* still replays a file, and both go through the pane's one door.
 
-**A fetch happens because a person pressed something** — not on appearance and
-not on a timer. A scene is a transfer on the one bulk lane screenshots and file
-transfers share, so a poll would take that lane at intervals nobody chose. That
-is a product decision, and it is the first thing to judge here: is a page that
-shows nothing until asked worse than one that shows a stale scene by itself?
+**The page keeps itself up to date** (updated 2026-08-01, and this paragraph
+is a retraction). It used to say a fetch happens *only* because a person
+pressed something — not on appearance and not on a timer — on the argument
+that a scene is a transfer on the one bulk lane screenshots and file transfers
+share. The question it left for a person to judge was *"is a page that shows
+nothing until asked worse than one that shows a stale scene by itself?"*, and
+the answer is that both options were bad: a mirror that only updates when
+pressed is a screenshot viewer, and a blind poll is what the lane argument was
+actually against.
+
+What runs now is neither. About twice a second the page asks `axsnap` — a
+**control** message, which the contract names as the one call on that surface
+safe to poll — and spends a bulk transfer only when the front process changed
+or the drawing has aged past a five-second ceiling. *Look Now* still asks by
+hand, and **Live/Paused** is a visible switch in the header.
+
+What a person still has to judge here: whether the header makes it obvious
+which of the two states it is in, whether "Scene from N ago" reads as honest
+dating rather than as lag, and whether the back-off line ("the last ask
+collided with something else on the Mac's one transfer lane") reads as the
+system working rather than as a fault.
 
 What only a person can settle:
 
