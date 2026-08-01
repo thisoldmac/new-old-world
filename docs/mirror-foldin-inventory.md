@@ -108,6 +108,59 @@ Both cost real effort and produced nothing upstream did not have. **The rule
 going forward: check Mirror before deriving anything.** Its new home is this
 repository, and everything in it was paid for once already.
 
+## Completing the fold-in
+
+Sequenced by what blocks what, not by size. Wave 1 is in flight; waves 2 and 3
+are dispatched against this document.
+
+### Wave 1 — in flight
+
+| | |
+|---|---|
+| `portal` → the act plane | all five ops: `CONTROL_INVOKE`, `MENU_INVOKE`, `TEXT_GET`, `TEXT_SET`, `WINDOW_ACT` |
+| `qdpeek` → the content plane | P3, charter-designated, M0–M3 done upstream with the M4 emulator gate passed |
+| the `GuestListener` scene caller | the one missing piece of an otherwise complete scene path |
+
+### Wave 2 — the keystone, and the thing that makes Phase 3 cheap
+
+**2A — the reference layer: `observe`, `handle`, `axtree`, `axsnap`.**
+Every act verb addresses an **opaque, observation-minted reference**, and
+identity-not-position is upstream's hardest-won finding — 18/20 versus 0/20.
+Without `observe` to mint references and `handle` to resolve one back to a live
+`WindowPtr`/`ControlHandle`, the act plane has nothing to address and the scene
+has no way to say *this* window. **This blocks the value of Wave 1**, which is
+why it is first here rather than filed with the other verbs.
+
+**2B — the probe harnesses.** `mirror/tests/`, ~25 scripts that drive a live
+guest. This is Phase 3 of the roadmap, already written and already run. Porting
+them is cheaper than authoring an emulator pass and yields numbers directly
+comparable to upstream's. `nohijack-probe.py` alone is the 50 KB harness behind
+18/20 → 0/19.
+
+**2C — the recorded knowledge.** Ten documents and nine rendered PNGs. Cheap,
+and it is the direct fix for the failure this audit exists to stop: NOW has twice
+re-derived an answer Mirror already had. The renders are also the only thing a UX
+review can compare against.
+
+### Wave 3 — the rest of the verb surface
+
+`volumes` `activate` `close` `menugeom` `mouseloc` `apple_event` `ctlinvoke`
+`menuinvoke` `qdtrace` `portal` `portalselftest` `journalprobe` `fetch`, and
+NOW-equivalent decisions for `capture` / `list` / `stat` / `script` / `key` /
+`click` / `ping` / `hello` where NOW already has its own spelling.
+
+Deliberately last: each is bounded, none blocks another, and several may not want
+to cross at all once the act plane and the reference layer exist. **That is a
+judgement to make with the ported code in front of us, not now** — the one
+corner-cut this document forbids is deciding a verb is unnecessary before its
+dependencies are in.
+
+### The standing rule
+
+**Check Mirror before deriving anything.** Its new home is this repository. If a
+piece of work here begins with "we need to find out whether…", the first place to
+look is upstream, and the second is upstream's docs.
+
 ## Corpus impact
 
 `corpus_impact: none` — an audit of two checkouts, no new measurement. Every
