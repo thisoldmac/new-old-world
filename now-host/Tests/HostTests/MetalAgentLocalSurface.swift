@@ -264,7 +264,18 @@ final class MetalAgentLocalSurface {
                 machine capturing its own screen, and the ownership rule
                 that ends such a bracket lives in the host app's control,
                 not here. */
-             .stream:
+             .stream,
+             /* And the act lane, which belongs in this list more plainly
+                than anything already in it. These five reach INSIDE an
+                application on the person's own PowerBook and answer its
+                FindWindow, its TrackControl, its MenuSelect — a rig that
+                let one through could close a window over unsaved work
+                while its owner was typing in it. `textget` changes
+                nothing and is refused with the other four anyway: the
+                exemption would be a fourth reading of "which acts are
+                safe", and this rig is not where that question is
+                answered. */
+             .windowAct, .controlAct, .menuAct, .textGet, .textSet:
             /* Every operation that could CHANGE the machine, refused by
                this rig rather than served. A capture gate has no business
                being able to move a file on somebody's PowerBook, and the
