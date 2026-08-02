@@ -3873,6 +3873,109 @@ components:
                   minted: { type: integer }
                   evicted: { type: integer }
                   capacity: { type: integer }
+    mirror:
+      description: >
+        What this Mac can say about MIRROR — a separate application that
+        happens to run on the same machine: three resident 68K extensions
+        (AXPeek, QDPeek, the Portal) and one faceless agent. NOW installs
+        none of it, patches none of it and speaks none of its wire; this
+        verb is a READER, and the guest is the only side that can read it.
+
+        WHY THE GUEST AND NOT THE HOST. Residency is a Gestalt answer,
+        published by an extension the system loaded at boot. A host can
+        list the Extensions FOLDER over the file plane and learn only that
+        a file exists — which is what NOW's Mirror page did until this
+        verb, and it cannot tell an installed-but-not-loaded extension
+        from a resident one. That distinction is the entire question
+        somebody asks this page.
+
+        RUNNING AND SERVING ARE DIFFERENT FACTS, and this reply keeps them
+        apart. The agent learns which TCP port to bind from a `mirror.port`
+        file read once at ITS launch; this verb can only read the file NOW.
+        The two agree on a machine nobody has restaged underneath, so
+        `port.source` says where the number came from rather than implying
+        the running process bound it.
+
+        A version this build does not know is NOT absence: "other-version"
+        means the extension is loaded and published a block whose shape
+        this reader does not recognise, and telling somebody to reinstall a
+        file that is already there is the error that distinction prevents.
+      args: {}
+      x-line: >
+        Takes nothing. Every row is a fact about the machine a person is
+        sitting at, which is exactly what the console face shows.
+      output:
+        type: object
+        properties:
+          mirror:
+            type: object
+            required: [extensions, agent, port]
+            properties:
+              extensions:
+                type: array
+                description: >
+                  One row per resident, in Mirror's own dependency order:
+                  AXPeek (what a scene is built from), QDPeek (what a
+                  drawing trace comes from), the Portal (what a click goes
+                  through). Always all three, including the absent ones —
+                  a shorter array would make "not installed" and "not
+                  asked" the same answer.
+                items:
+                  type: object
+                  required: [name, state]
+                  properties:
+                    name: { type: string }
+                    selector:
+                      type: string
+                      description: >
+                        The Gestalt selector this row was read from, as
+                        four characters — 'TBax', 'TBqd', 'TBpt'. Named so
+                        a reader can tell which question was asked.
+                    state:
+                      type: string
+                      enum: [absent, resident, other-version]
+                    version:
+                      type: integer
+                      description: >
+                        The version the block declares. Present only for
+                        resident and other-version; a version rendered for
+                        an absent extension would be inventing one.
+              agent:
+                type: object
+                required: [state]
+                properties:
+                  state:
+                    type: string
+                    enum: [no-file, stopped, running]
+                  path:
+                    type: string
+                    description: Where this Mac looked, always.
+                  signature:
+                    type: string
+                    description: >
+                      The running process's creator, when one is running.
+                      Retro68 stamps '????' on every build it makes,
+                      including the lab's own workers, so this identifies
+                      the FILE weakly and is reported rather than trusted.
+              port:
+                type: object
+                required: [state]
+                properties:
+                  state:
+                    type: string
+                    enum: [unknown, absent, unusable, named]
+                  number:
+                    type: integer
+                    description: >
+                      What `mirror.port` says, and only when the state is
+                      "named". Absent otherwise — a page that printed 0
+                      here would be inventing a listener.
+                  source:
+                    type: string
+                    description: >
+                      Where the number was read, so that the one case
+                      where the file and the running agent disagree is
+                      legible rather than invisible.
 
   # The census probe registry: the CLOSED, DECLARED set of probes a side may
   # be asked about, and the outcome vocabulary every report speaks. Adding a

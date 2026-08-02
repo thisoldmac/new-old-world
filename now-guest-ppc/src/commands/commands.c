@@ -23,6 +23,8 @@
 #include "prefs.h"
 #include "fileshare.h"
 #include "wire.h"
+#include "mirror_json.h"
+#include "mirror_probe.h"
 #include "net_layout.h"
 #include "net_probe.h"
 #include "screenshot.h"
@@ -672,6 +674,24 @@ static void run_putstat(long id, char *out, long cap)
    says what it says HERE too: a caller that asked over the wire deserves
    the same honest answer as a person at the keyboard, rather than an
    empty list they would read as "none". */
+/* Mirror's residents, its agent and the port beside it. The whole verb is
+   a probe and an emitter, because the page this shares its facts with was
+   already built that way (src/mirror/) - and because a host CANNOT answer
+   this question: residency is a Gestalt answer, and a folder listing over
+   the file plane cannot tell an installed extension from a loaded one.
+
+   `note` is left alone deliberately. It is the last button-press's
+   outcome and belongs to the page a person is looking at; a caller over
+   the wire pressed nothing, so there is nothing for it to say. */
+static void run_mirror(long id, char *out, long cap)
+{
+    MirrorFacts facts;
+
+    memset(&facts, 0, sizeof facts);
+    now_mirror_probe(&facts);
+    now_mirror_json(&facts, id, out, cap);
+}
+
 static void run_net(long id, char *out, long cap)
 {
     NetFacts facts;
@@ -1344,6 +1364,10 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "net") == 0) {
         run_net(id, out, cap);
+        return;
+    }
+    if (strcmp(name, "mirror") == 0) {
+        run_mirror(id, out, cap);
         return;
     }
     if (strcmp(name, "putstat") == 0) {

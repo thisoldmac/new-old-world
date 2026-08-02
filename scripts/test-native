@@ -291,6 +291,14 @@ run_c now-guest-ppc net_layout_test.c        ""  src/network/net_layout.c \
 # not a process SERVING, and the port it was told to serve is a separate
 # reading.
 run_c now-guest-ppc mirror_layout_test.c     ""  src/mirror/mirror_layout.c
+# What a person is told, and what a CALLER is told, are two renderings of
+# one probe and they fail separately: a page can say the right sentence
+# while the wire ships `"state": 2` and makes every reader carry a copy
+# of the enum. This half also holds the two absences that a zero would
+# quietly invent - a version for an extension that published nothing, and
+# a port number for a listener that does not exist.
+run_c now-guest-ppc mirror_json_test.c       ""  src/mirror/mirror_json.c \
+      src/mirror/mirror_layout.c src/core/json.c
 # The other end of that same fact, and the end that lives off the guest.
 # A staged Mirror agent learns its port from a file beside it; a guest
 # that inherited the base image's copy ran an agent nothing could reach

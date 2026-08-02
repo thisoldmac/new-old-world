@@ -316,6 +316,20 @@ static const char *const d_axtree[] = {
     "  otherwise would be a second, quieter minter.",
     NULL
 };
+static const char *const d_mirror[] = {
+    "  What this Mac can say about Mirror: whether each of its three",
+    "  resident extensions is loaded, whether its agent is running, and",
+    "  which port the file beside the agent names.",
+    "",
+    "  Residency is a Gestalt answer and only this Mac can give it. A",
+    "  host reading the Extensions folder learns that a FILE is there,",
+    "  which cannot tell an installed extension from a loaded one.",
+    "",
+    "  Running and serving are different facts. The agent binds the port",
+    "  named when IT launched; this reads the file now, so the row says",
+    "  where its number came from.",
+    NULL
+};
 static const char *const d_axsnap[] = {
     "  Who is front, whether the reference layer can see it, and how",
     "  many references are live. No walk, so no minting - the one call",
@@ -476,6 +490,8 @@ const NowCommandDoc kNowCommandDocs[] = {
       "axtree [scope]", d_axtree },
     { "axsnap", 1, "who is front, and how many references are live",
       "axsnap", d_axsnap },
+    { "mirror", 1, "Mirror's extensions, its agent, and the port it serves",
+      "mirror", d_mirror },
     { "help", 1, "list commands (\"help <cmd>\" for one)",
       "help [command]", d_help },
     { "clear", 0, "clear the console scrollback",

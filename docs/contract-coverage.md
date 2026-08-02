@@ -193,6 +193,7 @@ plane's reader.
 | `script` | run one AppleScript | ✅ | ❌ |
 | `aesend` | send one of four core Apple Events | ✅ | ❌ |
 | `qdtrace` | what is drawing, from the content plane's ring | ✅ | ❌ |
+| `mirror` | Mirror's three residents, its agent, and the port beside it | ✅ | ❌ |
 
 Ten of those sixteen — the act plane and the reference layer — are one
 mechanism and are served together or not at all. They are PowerPC-only
@@ -284,6 +285,24 @@ under `identity` and `overview` — but the `gestalt` VERB still does not
 exist here, and a host that asks for it by name gets
 `unknown-command`. A `gestalt` on NOW-68K is closer to a rendering job
 than a measurement one, which makes it the cheapest large gap left.
+
+### `mirror` — and why NOW-68K's ❌ is an answer, not a gap
+
+The PowerPC guest serves it; NOW-68K does not, and **should not**. This
+is a declared asymmetry rather than a debt, and the reason is not
+capability: the 68K guest could call Gestalt as easily as the Carbon one.
+
+Mirror does not run on that machine. Its agent is a PowerPC/CFM
+application whose build **refuses** the 68K toolchain outright, because
+Open Transport cannot link under Retro68/68K
+(`mirror/guest/app/CMakeLists.txt`). Its three residents exist to serve
+that agent. So a `mirror` verb on NOW-68K would answer "absent, absent,
+absent, no agent" about a machine where absence is the only possible
+state — a row that reads as a finding and is a tautology.
+
+A host asking NOW-68K for it gets `unknown-command`, which is the honest
+answer: this Mac has nothing to say about Mirror. If Mirror is ever
+ported to 68K, the verb crosses with it and this paragraph goes.
 
 ### `census` — the hardware census, probe by probe
 

@@ -279,6 +279,23 @@ public enum AgentIntegrationCapabilityNames {
     /// own in-memory ring, and a family would be a second mechanism for one
     /// capability.
     public static let tailCommand = "tail"
+    /// What this Mac can say about MIRROR — three resident extensions, an
+    /// agent, and the port the file beside it names. A COMMAND, resolved
+    /// against the guest's `help` like `gestalt` and `tail`, which is what
+    /// makes it PowerPC-only by derivation rather than by a fork here.
+    ///
+    /// It exists because THIS SIDE CANNOT ANSWER IT. The host's Mirror page
+    /// reads the Extensions FOLDER over the file plane and learns that a
+    /// file exists; residency is a Gestalt answer, published at boot by the
+    /// extension itself, and only the guest can ask. The two are not the
+    /// same fact, and the difference — installed but not loaded — is the
+    /// whole question somebody opens that page to settle.
+    ///
+    /// Note what it is NOT. There is no `mirror.*` message family and this
+    /// name must not grow one: NOW installs none of Mirror, patches none of
+    /// it, and speaks none of its wire. A family here would imply a
+    /// relationship the product does not have.
+    public static let mirrorCommand = "mirror"
 
     /* The three diagnostics, and they are named SEPARATELY on purpose —
        this is the whole crux of the capability that projects them.
@@ -389,7 +406,7 @@ public enum AgentIntegrationCapabilityNames {
         streamRefresh, launchCommand, revealCommand, catsearchCommand,
         gestaltCommand, tailCommand, vprobeCommand, shotdiagCommand,
         putstatCommand, windowActCommand, textGetCommand, textSetCommand,
-        controlActCommand, menuActCommand, elementsCommand,
+        controlActCommand, menuActCommand, elementsCommand, mirrorCommand,
     ]
 
     /// Refusal codes that mean "this guest does not implement that", as
