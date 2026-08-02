@@ -279,8 +279,18 @@ run_c now-guest-ppc net_layout_test.c        ""  src/network/net_layout.c \
 # walk cannot run here, which is the point: what goes wrong on a page like
 # this is a button offering what cannot be done, a resident of an unknown
 # version reported as absent, and a failure message clipped before its
-# last clause - all three reachable without a Macintosh.
+# last clause - all three reachable without a Macintosh. Since 2026-08-02
+# it also covers the fact the page used to swallow: a process EXISTING is
+# not a process SERVING, and the port it was told to serve is a separate
+# reading.
 run_c now-guest-ppc mirror_layout_test.c     ""  src/mirror/mirror_layout.c
+# The other end of that same fact, and the end that lives off the guest.
+# A staged Mirror agent learns its port from a file beside it; a guest
+# that inherited the base image's copy ran an agent nothing could reach
+# while the page said "Running". tools/stage-ext.py cannot run here - it
+# opens a socket to a live anchor the moment it is imported - so the
+# write, its overwrite and its verify are gated as source text.
+run_py now-guest-ppc mirror_port_staging_source_test.py
 run_c now-guest-ppc share_path_test.c        ""
 # The Files pane's pull presentation: when Stop is armed, and the line a
 # person reads while a file comes down. The percentage overflows a 32-bit

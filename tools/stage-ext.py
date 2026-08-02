@@ -53,6 +53,35 @@ tools/stage-agent.py already paid for and this inherits:
     carries a previous NOW build dies on `exists: file exists` after
     every earlier push succeeded, which reads exactly like a deploy
     failure and is not one.
+
+THE OPTIONAL MIRROR BUNDLE.
+
+    NOW_STAGE_MIRROR=1 NOW_ANCHOR_PORT=1702 tools/stage-ext.py
+
+    AXPeek/QDPeek/Portal -> Macintosh HD:System Folder:Extensions
+    mirror-agent         -> Macintosh HD:TimBotTu:mirror-dev:mirror-agent
+    mirror.port          -> beside it, naming 1420
+
+Off unless asked for, because Mirror is a SEPARATE application that
+happens to run on the same Macintosh and most NOW guests do not want it:
+three resident 68K INITs is not a thing to install on a machine by
+default. What it enables is NOW's own Mirror page having anything to
+report - it reads the three Gestalt selectors and walks for that agent -
+and a host Mirror instance having a guest to dial through the 1420
+forward `scripts/spin-up-ppc` already opens.
+
+`mirror.port` IS PART OF THE BUNDLE AND NOT A DETAIL. Mirror's agent
+reads it once at launch to learn which port to bind; on 2026-08-02 a
+guest whose file carried a stale port from the base image ran an agent
+that answered nobody, while NOW's page said "Running" about it. So the
+file is WRITTEN, with `overwrite`, rather than left to whatever the base
+image had - Mirror's own tools/stage-agent.py records that a missing
+overwrite made every fresh clone fail on that one line AFTER all pushes
+had succeeded, which reads like a deploy failure and is not one.
+
+`scripts/spin-up-ppc` needs no flag: it invokes this script with an
+environment prefix, so NOW_STAGE_MIRROR and NOW_MIRROR_DIR pass straight
+through, and its cold reboot is the same reboot the Mirror INITs need.
 """
 
 import os
@@ -82,6 +111,20 @@ APP_NAME = os.environ.get("NOW_APP_NAME", "New Old World")
 ANCHOR_PORT = int(os.environ.get("NOW_ANCHOR_PORT", "1700"))
 EXT_BIN = os.environ.get("NOW_EXT_BIN")          # required
 APP_BIN = os.environ.get("NOW_APP_BIN")          # optional
+
+# The Mirror bundle. Off unless asked for - see the header. NOW_MIRROR_DIR
+# defaults to the vendored checkout because that is where Mirror lives in
+# this tree, but it is overridable: a Mirror built somewhere else is still
+# a Mirror, and guessing a path is how a stage goes to the wrong build.
+STAGE_MIRROR = os.environ.get("NOW_STAGE_MIRROR", "") == "1"
+MIRROR_DIR = os.environ.get("NOW_MIRROR_DIR", os.path.join(NOW, "mirror"))
+MIRROR_DEV = os.environ.get("NOW_MIRROR_GUEST_DIR",
+                            "Macintosh HD:TimBotTu:mirror-dev")
+# 1420 in three places already - mirror/guest/app/src/main.c's kDefaultPort,
+# mirror/tools/stage-agent.py's GUEST_PORT, and the hostfwd in
+# scripts/spin-up-ppc. This is the fourth, and it is the one that writes
+# the number onto the guest, so it is the one the others must agree with.
+MIRROR_PORT = int(os.environ.get("NOW_MIRROR_PORT", "1420"))
 
 if not EXT_BIN or not os.path.isfile(EXT_BIN):
     raise SystemExit(
@@ -146,6 +189,24 @@ def push_verified(path, blob, **want):
     return verify(path, **want)
 
 
+def write_verified(path, text, **want):
+    """Write a small text file onto the guest and read it back.
+
+    Not push_stream: this is a config line, not a MacBinary blob, and the
+    anchor's `write` verb is what stamps it TEXT. `overwrite` is not
+    optional for the same reason it is not optional above, and the
+    measurement is Mirror's own (tools/stage-agent.py, 2026-07-31): the
+    base image already carries a mirror.port, so without it every fresh
+    clone dies on this one line AFTER every push has succeeded.
+
+    `truncate` matters as much: a shorter number written over a longer
+    one would otherwise leave the tail of the old port behind it, and
+    "14200" is a port a person would read straight past."""
+    h.request("write", {"path": path, "data": text, "offset": 0,
+                        "truncate": True, "overwrite": True})
+    return verify(path, **want)
+
+
 # 1. The extension. Type INIT / creator 'NOWx' is the IDENTITY the guest's
 #    own peek.c scans the Extensions folder for (it matches on type and
 #    creator, never on filename), so both are asserted here.
@@ -166,6 +227,63 @@ if APP_BIN:
     ensure_dir(DEV)
     push_verified(f"{DEV}:{APP_NAME}", open(APP_BIN, "rb").read(),
                   want_type="APPL", min_data=1024)
+
+# 3. Mirror, if it was asked for. A SEPARATE application that happens to
+#    run on the same Macintosh: NOW's Mirror page reads it and installs
+#    nothing (now-guest-ppc/src/mirror/), so this is the only place in
+#    this repository that puts it on a guest.
+if STAGE_MIRROR:
+    if not os.path.isdir(MIRROR_DIR):
+        raise SystemExit(
+            f"NOW_STAGE_MIRROR=1 but there is no Mirror checkout at "
+            f"{MIRROR_DIR} — set NOW_MIRROR_DIR")
+
+    inits = (("AXPeek", "guest/extensions/axpeek/build/AXPeek.bin"),
+             ("QDPeek", "guest/extensions/qdpeek/build/QDPeek.bin"),
+             ("Portal", "guest/extensions/portal/build/Portal.bin"))
+    agent_bin = os.path.join(MIRROR_DIR, "guest/app/build/mirror-agent.bin")
+
+    # Named all at once rather than one failure at a time: a bundle that
+    # stages two INITs and then stops has left the guest in a state that
+    # is neither before nor after, and the page reporting on it would
+    # then be reporting a half-install nobody meant to make.
+    wanted = [os.path.join(MIRROR_DIR, rel) for _, rel in inits] + [agent_bin]
+    absent = [p for p in wanted if not os.path.isfile(p)]
+    if absent:
+        raise SystemExit(
+            "NOW_STAGE_MIRROR=1 but these are not built:\n  "
+            + "\n  ".join(absent)
+            + f"\nbuild them in {MIRROR_DIR} first")
+
+    # The three residents. Their code is in the RESOURCE fork, so data=0
+    # is correct and `min_rsrc` is the assertion that means anything —
+    # exactly as for the NOW Extension above. They load at BOOT ONLY, and
+    # NOW's page reads them through Gestalt, so a machine staged without
+    # the reboot below shows three "Not loaded" rows and is telling the
+    # truth about a stage that has not finished.
+    print("== stage Mirror's resident extensions ==")
+    for name, rel in inits:
+        push_verified(f"{EXTENSIONS}:{name}",
+                      open(os.path.join(MIRROR_DIR, rel), "rb").read(),
+                      want_type="INIT", min_rsrc=1024)
+
+    # The agent, and the file that decides whether it can serve anybody.
+    print("== stage Mirror's agent ==")
+    ensure_dir(MIRROR_DEV)
+    push_verified(f"{MIRROR_DEV}:mirror-agent", open(agent_bin, "rb").read(),
+                  want_type="APPL", min_data=1024)
+
+    # WRITTEN, never inherited. Mirror's agent reads this file once at
+    # launch (mirror/guest/app/src/main.c :: read_port) and binds what it
+    # names; a guest that kept the base image's copy on 2026-08-02 ran an
+    # agent bound to a stale port, answered nothing, and reported
+    # "Running" on NOW's own Mirror page the whole time. A few bytes of
+    # data fork is the entire file, so min_data is what proves it landed.
+    line = f"{MIRROR_PORT}\n"
+    write_verified(f"{MIRROR_DEV}:mirror.port", line,
+                   want_type="TEXT", min_data=len(line))
+    print(f"  mirror.port names {MIRROR_PORT} — the host forward must "
+          f"reach THAT port, or the agent answers nobody")
 
 print("staged. COLD reboot required: an INIT loads at boot only, and this "
       "script has not rebooted anything.")

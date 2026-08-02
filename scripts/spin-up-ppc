@@ -4,6 +4,16 @@
 #
 #     scripts/spin-up-ppc                  # headless: stage, reboot, verify
 #     NOW_SPIN_DISPLAY=1 scripts/spin-up-ppc   # with a cocoa window
+#     NOW_STAGE_MIRROR=1 scripts/spin-up-ppc   # Mirror on the guest too
+#
+# The last one needs no flag here. The stage step below runs
+# tools/stage-ext.py with an environment PREFIX, so NOW_STAGE_MIRROR and
+# NOW_MIRROR_DIR pass straight through, and the cold reboot this script
+# already performs is the reboot Mirror's three INITs need. It is off by
+# default because Mirror is a separate application and most guests do not
+# want three more residents on them; see that script's header. When it is
+# on, the guest-side 1420 the forward below opens is the port the staged
+# mirror.port names, and NOW's own Mirror page has something to report.
 #
 # This is the missing half of scripts/build-guests. That script builds
 # ext/; until tools/stage-ext.py and this file, nothing installed it, so
