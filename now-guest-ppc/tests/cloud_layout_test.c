@@ -54,9 +54,13 @@ static void check_body(short left, short top, short right, short bottom)
     assert(r.list.right - r.list.left >= 200);
     assert(r.detail.right - r.detail.left >= 150);
 
-    /* Up belongs to drive mode only; outside it, it is the anti-rect,
-       not a button parked somewhere unreachable. */
+    /* The navigation cluster belongs to drive mode only; outside it,
+       every piece is the anti-rect, not a button parked somewhere
+       unreachable — and the breadcrumb row with them. */
     assert(is_empty(r.up_btn));
+    assert(is_empty(r.back_btn));
+    assert(is_empty(r.fwd_btn));
+    assert(is_empty(r.path_row));
 
     /* The search field: real in both modes, in the toolbar row,
        between the popup and whatever sits right of it, wide enough to
@@ -105,18 +109,44 @@ static void check_drive_body(short left, short top, short right,
     assert(is_empty(drive_r.detail_text));
     assert(is_empty(drive_r.save_btn));
 
-    /* Up is real in drive mode: nonzero area, sits in the toolbar row
-       (at or above the list's top, same rule the popup/refresh
-       buttons already follow), and does not overlap Refresh. */
+    /* The navigation cluster is real in drive mode: nonzero areas,
+       in the toolbar row (at or above the list's top, same rule the
+       popup/refresh buttons already follow), reading Back, Forward,
+       Up, Refresh left to right without overlap. */
     assert(!is_empty(drive_r.up_btn));
+    assert(!is_empty(drive_r.back_btn));
+    assert(!is_empty(drive_r.fwd_btn));
     assert(drive_r.up_btn.bottom <= drive_r.list.top);
+    assert(drive_r.back_btn.bottom <= drive_r.list.top);
+    assert(drive_r.fwd_btn.bottom <= drive_r.list.top);
+    assert(drive_r.back_btn.right <= drive_r.fwd_btn.left);
+    assert(drive_r.fwd_btn.right <= drive_r.up_btn.left);
     assert(drive_r.up_btn.right <= drive_r.refresh_btn.left);
-    assert(drive_r.up_btn.left >= body.left);
+    assert(drive_r.back_btn.left >= body.left);
 
-    /* The search field yields to Up in drive mode instead of
-       overlapping it. */
+    /* Wide enough for a person to hit: the Back/Forward pair are
+       small but real buttons, Up still fits its word. */
+    assert(drive_r.back_btn.right - drive_r.back_btn.left >= 20);
+    assert(drive_r.fwd_btn.right - drive_r.fwd_btn.left >= 20);
+    assert(drive_r.up_btn.right - drive_r.up_btn.left >= 32);
+
+    /* The search field yields to the cluster's left edge in drive
+       mode instead of overlapping it, and stays typable. */
     assert(!is_empty(drive_r.toolbar_search));
-    assert(drive_r.toolbar_search.right <= drive_r.up_btn.left);
+    assert(drive_r.toolbar_search.right <= drive_r.back_btn.left);
+    assert(drive_r.toolbar_search.right - drive_r.toolbar_search.left
+           >= 48);
+
+    /* Breadcrumbs: a real row between the toolbar and the list, full
+       width like the list it describes. */
+    assert(!is_empty(drive_r.path_row));
+    assert(drive_r.path_row.top >= drive_r.popup.bottom);
+    assert(drive_r.path_row.top >= drive_r.toolbar_search.bottom);
+    assert(drive_r.path_row.bottom <= drive_r.list.top);
+    assert(drive_r.path_row.left >= body.left);
+    assert(drive_r.path_row.right <= body.right);
+    assert(drive_r.path_row.right - drive_r.path_row.left
+           >= drive_r.list.right - drive_r.list.left);
 }
 
 int main(void)

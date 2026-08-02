@@ -38,28 +38,40 @@ void cloud_layout_compute(const Rect *body, Boolean drive_mode,
     set_rect(&r->refresh_btn, (short)(right - 70), (short)(top + 1),
              right, (short)(top + 19));
 
-    /* Up rides the same toolbar row, just left of Refresh, ONLY in
-       drive mode - the list/card views have no equivalent action up
-       here (Save lives in the card pane instead). Outside drive mode
-       it collapses to the anti-rect at the same corner Refresh starts
-       from, so a stray draw call there paints nothing rather than a
-       stale button-shaped rectangle. */
+    /* The navigation cluster rides the same toolbar row, left of
+       Refresh, ONLY in drive mode - the list/card views have no
+       equivalent actions up here (Save lives in the card pane
+       instead). Left to right: Back, Forward (a tight pair, titled
+       "<" and ">"), then Up, then Refresh. Outside drive mode all
+       three collapse to the anti-rect at the same corner Refresh
+       starts from, so a stray draw call there paints nothing rather
+       than a stale button-shaped rectangle. */
     if (drive_mode) {
-        set_rect(&r->up_btn, (short)(r->refresh_btn.left - 56),
+        set_rect(&r->up_btn, (short)(r->refresh_btn.left - 46),
                  (short)(top + 1), (short)(r->refresh_btn.left - 6),
+                 (short)(top + 19));
+        set_rect(&r->fwd_btn, (short)(r->up_btn.left - 32),
+                 (short)(top + 1), (short)(r->up_btn.left - 6),
+                 (short)(top + 19));
+        set_rect(&r->back_btn, (short)(r->fwd_btn.left - 28),
+                 (short)(top + 1), (short)(r->fwd_btn.left - 2),
                  (short)(top + 19));
     } else {
         set_empty(&r->up_btn, r->refresh_btn.left, (short)(top + 1));
+        set_empty(&r->fwd_btn, r->refresh_btn.left, (short)(top + 1));
+        set_empty(&r->back_btn, r->refresh_btn.left, (short)(top + 1));
     }
 
     /* The search field fills the toolbar row between the popup and
-       whatever real button sits right of it - up_btn in drive mode,
-       refresh_btn otherwise (up_btn is the anti-rect there, so using it
+       whatever real button sits right of it - back_btn (the left edge
+       of the drive navigation cluster) in drive mode, refresh_btn
+       otherwise (the cluster is the anti-rect there, so using it
        unconditionally would pin the field's right edge to the popup's
        own left corner). Present in both modes: Drive's rows are
        filterable by name exactly like the other views' by title. */
     {
-        short right_of = drive_mode ? r->up_btn.left : r->refresh_btn.left;
+        short right_of = drive_mode ? r->back_btn.left
+                                    : r->refresh_btn.left;
 
         set_rect(&r->toolbar_search, (short)(r->popup.right + 8),
                  top, (short)(right_of - 8), (short)(top + 20));
@@ -70,17 +82,23 @@ void cloud_layout_compute(const Rect *body, Boolean drive_mode,
     list_bottom = (short)(r->status.top - 8);
 
     if (drive_mode) {
+        /* Breadcrumbs between the toolbar and the list, the Files
+           page's path row shape: where you are, from the share root
+           down. */
+        set_rect(&r->path_row, left, (short)(top + 26), right,
+                 (short)(top + 42));
         /* No card in drive mode: the browser IS the page, full body
            width, and detail/save collapse to anti-rects at its right
            edge rather than being placed off to one side - "empty",
            not "elsewhere". Pull progress that used to draw into the
            card moves to the status placard (cloud_drive_view.c). */
-        set_rect(&r->list, left, (short)(top + 28), right, list_bottom);
-        set_empty(&r->detail, right, (short)(top + 28));
-        set_empty(&r->detail_text, right, (short)(top + 28));
+        set_rect(&r->list, left, (short)(top + 46), right, list_bottom);
+        set_empty(&r->detail, right, (short)(top + 46));
+        set_empty(&r->detail_text, right, (short)(top + 46));
         set_empty(&r->save_btn, right, list_bottom);
         return;
     }
+    set_empty(&r->path_row, left, (short)(top + 26));
 
     /* List left, card right. The list carries titles up to 31-plus
        characters; give it the wider share of a 640-wide body but keep

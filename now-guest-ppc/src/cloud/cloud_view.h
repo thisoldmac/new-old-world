@@ -6,9 +6,11 @@
 #include "cloud_layout.h"
 #include "cloud_model.h"
 
-/* The Data Browser's two columns, shared by both of today's views (the
-   list one draws them from CloudRow, the drive one from FileEntry) and
-   by the shell, which owns the control and its item_data callback. */
+/* The SHELL's Data Browser's two columns, drawn from CloudRow by its
+   item_data callback for the list and contacts views. Drive mode does
+   not use them: cloud_drive_view.c owns a browser of its own with the
+   Files page's Name/Kind/Size/Modified set (its header says why one
+   control cannot wear both). */
 enum {
     kCloudColTitle = 'titl',
     kCloudColSubtitle = 'subt'
@@ -21,15 +23,15 @@ enum {
    lets the Workshop render whichever page is selected.
 
    Same NULL-op tolerance: every entry may be NULL, and the shell must
-   check before calling. Today's two views each leave several ops NULL
-   rather than supply a no-op body — list's click/key/idle/reset are
-   NULL because ask_save/HandleControlKey/nothing/nothing is already
-   what the shell does by default; drive's create/show/layout are NULL
-   because it owns no controls of its own, and drive's draw is NULL
-   because drive mode's layout (cloud_layout.c) gives it no card pane
-   to draw into — full body width for the list instead, per-row detail
-   already in the browser's own Detail column, and a pull's progress on
-   the status placard (cloud_drive_view.c's set_status host hook)
+   check before calling. Today's views leave ops NULL rather than
+   supply a no-op body — list's click/key/idle/reset are NULL because
+   ask_save/HandleControlKey/nothing/nothing is already what the shell
+   does by default. Drive supplies create/layout/draw for what it owns
+   (its four-column browser and the breadcrumb row) but leaves show
+   NULL: which browser is on stage is MODE chrome, and the shell owns
+   the mode. Drive has no card pane to draw into — full body width for
+   the list, per-row detail in its own columns, and a pull's progress
+   on the status placard (cloud_drive_view.c's set_status host hook)
    rather than a pane that does not exist. A fourth view is free to use
    as many or as few as it needs. */
 

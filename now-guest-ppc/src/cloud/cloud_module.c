@@ -57,7 +57,13 @@ static Boolean g_visible;
 static ControlRef g_popup;
 static ControlRef g_refresh;
 static ControlRef g_save;
-static ControlRef g_browser;
+static ControlRef g_back;             /* drive mode only: the history
+                                         pair, dimmed when its stack is
+                                         empty rather than hidden */
+static ControlRef g_fwd;
+static ControlRef g_browser;          /* the SHELL's two-column list
+                                         (Item/Detail); drive mode shows
+                                         cloud_drive_view's own instead */
 static MenuRef g_menu;
 
 static CloudStore g_store;
@@ -92,6 +98,22 @@ static const CloudViewOps *g_view;
 
 static char g_shown_status[128];
 static Boolean g_shown_save_on;
+static Boolean g_shown_back_on = true;   /* NewControl starts enabled;
+                                            true here makes the first
+                                            idle pass dim an empty
+                                            history exactly once */
+static Boolean g_shown_fwd_on = true;
+
+/* The list the current mode is actually showing: drive mode swapped in
+   cloud_drive_view's own four-column browser (the shell's two-column
+   one cannot change wardrobe — RemoveDataBrowserTableViewColumn is not
+   in the PB1400c's proven exports; cloud_drive_view.c says why in
+   full). Everything the shell does to "the list" — clearing, the
+   search's diff, click routing, focus — goes through this. */
+static ControlRef active_browser(void)
+{
+    return g_drive_mode ? cloud_drive_view_browser() : g_browser;
+}
 
 static void invalidate_detail(void)
 {
@@ -214,12 +236,14 @@ static void ask_save(void)
 
 static void clear_list(void)
 {
+    ControlRef list = active_browser();
+
     g_selected = -1;
     g_shown_rows = 0;
     memset(g_in_view, 0, sizeof g_in_view);
-    if (g_browser != NULL) {
+    if (list != NULL) {
         g_in_rebuild = true;
-        RemoveDataBrowserItems(g_browser, kDataBrowserNoItem, 0, NULL,
+        RemoveDataBrowserItems(list, kDataBrowserNoItem, 0, NULL,
                                kDataBrowserItemNoProperty);
         g_in_rebuild = false;
     }
@@ -259,6 +283,7 @@ static Boolean row_matches(int index, const char *needle)
    silently revealed them. */
 static void filter_and_add(int first, int n)
 {
+    ControlRef list = active_browser();
     DataBrowserItemID ids[16];
     char needle[48];
     UInt32 got = 0;
@@ -275,8 +300,8 @@ static void filter_and_add(int first, int n)
             g_in_view[idx] = 1;
             ids[got++] = (DataBrowserItemID)(idx + 1);
             ++g_shown_rows;
-            if (got == 16 && g_browser != NULL) {
-                AddDataBrowserItems(g_browser, kDataBrowserNoItem, got,
+            if (got == 16 && list != NULL) {
+                AddDataBrowserItems(list, kDataBrowserNoItem, got,
                                     ids, kDataBrowserItemNoProperty);
                 got = 0;
             }
@@ -284,8 +309,8 @@ static void filter_and_add(int first, int n)
             g_in_view[idx] = 0;
         }
     }
-    if (got > 0 && g_browser != NULL) {
-        AddDataBrowserItems(g_browser, kDataBrowserNoItem, got, ids,
+    if (got > 0 && list != NULL) {
+        AddDataBrowserItems(list, kDataBrowserNoItem, got, ids,
                             kDataBrowserItemNoProperty);
     }
 }
@@ -300,11 +325,12 @@ static void filter_and_add(int first, int n)
    it explicitly instead. */
 static void refilter_browser(void)
 {
+    ControlRef list = active_browser();
     char needle[48];
     int count = active_row_count();
     int i;
 
-    if (g_browser == NULL) {
+    if (list == NULL) {
         return;
     }
     cloud_filter_lower(g_search, needle, sizeof needle);
@@ -314,12 +340,12 @@ static void refilter_browser(void)
         Boolean want = row_matches(i, needle);
 
         if (want && !g_in_view[i]) {
-            AddDataBrowserItems(g_browser, kDataBrowserNoItem, 1, &id,
+            AddDataBrowserItems(list, kDataBrowserNoItem, 1, &id,
                                 kDataBrowserItemNoProperty);
             g_in_view[i] = 1;
             g_shown_rows += 1;
         } else if (!want && g_in_view[i]) {
-            RemoveDataBrowserItems(g_browser, kDataBrowserNoItem, 1, &id,
+            RemoveDataBrowserItems(list, kDataBrowserNoItem, 1, &id,
                                    kDataBrowserItemNoProperty);
             g_in_view[i] = 0;
             g_shown_rows -= 1;
@@ -394,8 +420,9 @@ static void rebuild_popup(void)
 }
 
 /* Defined with the rest of layout, below; declared here because
-   choose_service() needs it and appears first in the file. */
+   choose_service() needs them and appears first in the file. */
 static void apply_layout(void);
+static void show_control(ControlRef control, Boolean on);
 
 static void retitle_button(void)
 {
@@ -452,6 +479,16 @@ static void choose_service(int index)
     apply_layout();
     retitle_button();
     clear_list();
+    /* Two lists, one shown: the mode owns which browser is the page's,
+       and the history pair exists only where a history does. Hidden is
+       for the control the mode does not use; empty-history dimming is
+       cloud_idle's HiliteControl diff, never a hide. */
+    if (g_owner != NULL && g_visible) {
+        show_control(g_browser, !g_drive_mode);
+        show_control(cloud_drive_view_browser(), g_drive_mode);
+        show_control(g_back, g_drive_mode);
+        show_control(g_fwd, g_drive_mode);
+    }
     invalidate_detail();
     /* The list control's own resize repaints itself, but the area a
        shrinking control vacates is not the Toolbox's job to erase, and
@@ -567,26 +604,12 @@ static OSStatus item_data(ControlRef browser, DataBrowserItemID item,
 {
     const CloudRow *row;
     CFStringRef text = NULL;
-    char buf[64];               /* matches the pre-split buffer size */
 
+    /* This callback serves the SHELL's browser only: drive mode's rows
+       draw through cloud_drive_view.c's own control and item_data. */
     (void)browser;
-    if (changeValue || item < 1) {
-        return errDataBrowserPropertyNotSupported;
-    }
-    if (g_drive_mode) {
-        if (!cloud_drive_view_row_text(item, property, buf, sizeof buf)) {
-            return errDataBrowserPropertyNotSupported;
-        }
-        text = CFStringCreateWithCString(NULL, buf,
-                                         kCFStringEncodingMacRoman);
-        if (text == NULL) {
-            return memFullErr;
-        }
-        SetDataBrowserItemDataText(data, text);
-        CFRelease(text);
-        return noErr;
-    }
-    if (item > (DataBrowserItemID)g_store.row_count) {
+    if (changeValue || item < 1
+        || item > (DataBrowserItemID)g_store.row_count) {
         return errDataBrowserPropertyNotSupported;
     }
     row = &g_store.rows[item - 1];
@@ -614,32 +637,20 @@ static void item_notify(ControlRef browser, DataBrowserItemID item,
                         DataBrowserItemNotification message)
 {
     (void)browser;
-    /* Notifications fired by our own rebuild are not user intent. */
+    /* Notifications fired by our own rebuild are not user intent.
+       Drive mode's selections never arrive here at all: that browser
+       has its own notification callback (cloud_drive_view.c). */
     if (g_in_rebuild) {
-        return;
-    }
-    if (message == kDataBrowserItemDoubleClicked && g_drive_mode) {
-        cloud_drive_view_row_opened((int)item - 1);
         return;
     }
     if (message == kDataBrowserItemSelected) {
         g_selected = (int)item - 1;
-        if (g_drive_mode) {
-            /* No card pane in drive mode, so the placard carries the
-               affordance the card used to state. */
-            cloud_drive_view_row_selected(g_selected);
-        } else {
-            ask_card();
-        }
+        ask_card();
     } else if (message == kDataBrowserItemDeselected
                && g_selected == (int)item - 1) {
         g_selected = -1;
-        if (g_drive_mode) {
-            cloud_drive_view_row_selected(-1);
-        } else {
-            cloud_store_reset_card(&g_store);
-            invalidate_detail();
-        }
+        cloud_store_reset_card(&g_store);
+        invalidate_detail();
     }
 }
 
@@ -708,6 +719,9 @@ static OSErr cloud_create(WindowRef owner, const Rect *body)
     g_status[0] = '\0';
     g_shown_status[0] = '\0';
     g_shown_save_on = false;
+    g_shown_back_on = true;           /* fresh controls start enabled;
+                                         the first idle dims them once */
+    g_shown_fwd_on = true;
     g_search[0] = '\0';
     g_search_focus = false;
     memset(g_in_view, 0, sizeof g_in_view);
@@ -727,7 +741,19 @@ static OSErr cloud_create(WindowRef owner, const Rect *body)
     CopyCStringToPascal("Save to this Mac", text);
     g_save = NewControl(owner, &g_r.save_btn, text, false, 0, 0, 1,
                         pushButProc, 0);
-    if (g_popup == NULL || g_refresh == NULL || g_save == NULL) {
+    /* The history pair, drive mode's chrome: created against the
+       list-mode anti-rects (apply_layout places them when the mode
+       turns on) and shown only there. "<" and ">" over "Back"/"Fwd"
+       because the toolbar row shares 470 points with four other
+       controls on the smallest honest screen. */
+    CopyCStringToPascal("<", text);
+    g_back = NewControl(owner, &g_r.back_btn, text, false, 0, 0, 1,
+                        pushButProc, 0);
+    CopyCStringToPascal(">", text);
+    g_fwd = NewControl(owner, &g_r.fwd_btn, text, false, 0, 0, 1,
+                       pushButProc, 0);
+    if (g_popup == NULL || g_refresh == NULL || g_save == NULL
+        || g_back == NULL || g_fwd == NULL) {
         return memFullErr;
     }
 
@@ -764,7 +790,7 @@ static OSErr cloud_create(WindowRef owner, const Rect *body)
     host.set_status = set_status;
     host.set_loading = set_loading;
     host.add_rows = filter_and_add;
-    cloud_drive_view_bind(g_browser, &host);
+    cloud_drive_view_bind(&host);
     cloud_drive_view_activate(false);
 
     conn_set_cloud_note(cloud_answers);
@@ -786,6 +812,8 @@ static void cloud_dispose(void)
     g_popup = NULL;
     g_refresh = NULL;
     g_save = NULL;
+    g_back = NULL;
+    g_fwd = NULL;
     g_menu = NULL;
     g_owner = NULL;
     g_view = NULL;
@@ -833,7 +861,11 @@ static void cloud_show(Boolean visible)
     show_control(g_popup, visible);
     show_control(g_refresh, visible);
     show_control(g_save, visible && action_applies());
-    show_control(g_browser, visible);
+    /* One list on stage per mode; the history pair is drive chrome. */
+    show_control(g_browser, visible && !g_drive_mode);
+    show_control(cloud_drive_view_browser(), visible && g_drive_mode);
+    show_control(g_back, visible && g_drive_mode);
+    show_control(g_fwd, visible && g_drive_mode);
     if (g_view != NULL && g_view->show != NULL) {
         g_view->show(visible);
     }
@@ -876,7 +908,23 @@ static void apply_layout(void)
         SizeControl(g_save, (SInt16)(action.right - action.left),
                     (SInt16)(action.bottom - action.top));
     }
-    if (g_browser != NULL) {
+    if (g_back != NULL) {
+        MoveControl(g_back, g_r.back_btn.left, g_r.back_btn.top);
+        SizeControl(g_back,
+                    (SInt16)(g_r.back_btn.right - g_r.back_btn.left),
+                    (SInt16)(g_r.back_btn.bottom - g_r.back_btn.top));
+    }
+    if (g_fwd != NULL) {
+        MoveControl(g_fwd, g_r.fwd_btn.left, g_r.fwd_btn.top);
+        SizeControl(g_fwd,
+                    (SInt16)(g_r.fwd_btn.right - g_r.fwd_btn.left),
+                    (SInt16)(g_r.fwd_btn.bottom - g_r.fwd_btn.top));
+    }
+    /* g_r fits exactly one mode, so only the browser that mode shows
+       is sized from it; the other keeps its stale geometry, hidden,
+       until its own mode's apply_layout runs. Drive's browser is
+       placed by its view's layout op, below. */
+    if (!g_drive_mode && g_browser != NULL) {
         MoveControl(g_browser, g_r.list.left, g_r.list.top);
         SizeControl(g_browser, (SInt16)(g_r.list.right - g_r.list.left),
                     (SInt16)(g_r.list.bottom - g_r.list.top));
@@ -1031,9 +1079,13 @@ static Boolean cloud_click(const EventRecord *event, Point local)
         g_search_focus = false;
         InvalWindowRect(g_owner, &g_r.toolbar_search);
     }
-    if (g_browser != NULL && PtInRect(local, &g_r.list)) {
-        HandleControlClick(g_browser, local, event->modifiers, NULL);
-        return true;
+    if (PtInRect(local, &g_r.list)) {
+        ControlRef list = active_browser();
+
+        if (list != NULL) {
+            HandleControlClick(list, local, event->modifiers, NULL);
+            return true;
+        }
     }
     if (FindControl(local, g_owner, &control) == 0 || control == NULL) {
         return false;
@@ -1056,10 +1108,19 @@ static Boolean cloud_click(const EventRecord *event, Point local)
         return true;
     }
     if (TrackControl(control, local, now_pump_action()) == 0) {
-        return control == g_refresh || control == g_save;
+        return control == g_refresh || control == g_save
+            || control == g_back || control == g_fwd;
     }
     if (control == g_refresh) {
         ask_services();
+        return true;
+    }
+    if (control == g_back) {
+        cloud_drive_view_go_back();
+        return true;
+    }
+    if (control == g_fwd) {
+        cloud_drive_view_go_forward();
         return true;
     }
     if (control == g_save) {
@@ -1104,32 +1165,45 @@ static Boolean cloud_key(const EventRecord *event)
         echo_search_delta(old_text);
         return true;
     }
-    if (g_browser == NULL) {
-        return false;
+    {
+        ControlRef list = active_browser();
+
+        if (list == NULL) {
+            return false;
+        }
+        if (GetKeyboardFocus(g_owner, &focus) != noErr || focus != list) {
+            return false;
+        }
+        if (g_view != NULL && g_view->key != NULL
+            && g_view->key(event, g_selected)) {
+            return true;
+        }
+        HandleControlKey(list,
+                         (SInt16)((event->message & keyCodeMask) >> 8),
+                         (char)(event->message & charCodeMask),
+                         event->modifiers);
     }
-    if (GetKeyboardFocus(g_owner, &focus) != noErr || focus != g_browser) {
-        return false;
-    }
-    if (g_view != NULL && g_view->key != NULL
-        && g_view->key(event, g_selected)) {
-        return true;
-    }
-    HandleControlKey(g_browser,
-                     (SInt16)((event->message & keyCodeMask) >> 8),
-                     (char)(event->message & charCodeMask),
-                     event->modifiers);
     return true;
 }
 
 static void cloud_activate(Boolean active)
 {
-    if (g_browser == NULL) {
-        return;
-    }
-    if (active) {
-        ActivateControl(g_browser);
-    } else {
-        DeactivateControl(g_browser);
+    /* Both browsers follow the window: the hidden one must not wake in
+       yesterday's activation state when its mode returns. */
+    ControlRef lists[2];
+    int i;
+
+    lists[0] = g_browser;
+    lists[1] = cloud_drive_view_browser();
+    for (i = 0; i < 2; ++i) {
+        if (lists[i] == NULL) {
+            continue;
+        }
+        if (active) {
+            ActivateControl(lists[i]);
+        } else {
+            DeactivateControl(lists[i]);
+        }
     }
 }
 
@@ -1162,6 +1236,23 @@ static void cloud_idle(void)
         g_shown_save_on = save_on;
         show_control(g_save, g_visible && save_on);
         InvalWindowRect(g_owner, &action);
+    }
+    /* The history pair dims, never hides, when its stack is empty —
+       and HiliteControl repaints whatever it is handed, so it runs
+       only on a change of answer (the g_shown_* discipline every
+       module keeps for exactly this). */
+    if (g_drive_mode) {
+        Boolean on = cloud_drive_view_can_back();
+
+        if (g_back != NULL && on != g_shown_back_on) {
+            g_shown_back_on = on;
+            HiliteControl(g_back, (ControlPartCode)(on ? 0 : 255));
+        }
+        on = cloud_drive_view_can_forward();
+        if (g_fwd != NULL && on != g_shown_fwd_on) {
+            g_shown_fwd_on = on;
+            HiliteControl(g_fwd, (ControlPartCode)(on ? 0 : 255));
+        }
     }
     if (strcmp(g_status, g_shown_status) != 0) {
         strcpy(g_shown_status, g_status);

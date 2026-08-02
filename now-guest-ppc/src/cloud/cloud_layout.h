@@ -20,9 +20,17 @@ typedef struct {
                                           control; software_module.c's
                                           reason, unchanged here) */
     Rect refresh_btn;
+    Rect back_btn;                    /* drive mode only: the history
+                                          pair, left of Up; empty (zero
+                                          area) outside drive mode */
+    Rect fwd_btn;
     Rect up_btn;                      /* drive mode only: in the toolbar
                                           row, beside refresh; empty
                                           (zero area) outside drive mode */
+    Rect path_row;                    /* drive mode only: breadcrumbs
+                                          between the toolbar and the
+                                          list ("iCloud Drive:Attic");
+                                          empty outside drive mode */
     Rect list;                        /* the Data Browser: full body
                                           width in drive mode, left half
                                           otherwise */
