@@ -56,7 +56,7 @@ static void healthy(MirrorFacts *facts)
     facts->ext_version[kMirrorExtQD] = 1;
     facts->ext_version[kMirrorExtPortal] = 4;
     facts->agent = kMirrorAgentRunning;
-    strcpy(facts->agent_path, "Macintosh HD:TimBotTu:mirror-dev:mirror-agent");
+    strcpy(facts->agent_path, "Macintosh HD:Applications:mirror-agent");
     strcpy(facts->agent_sig, "????");
     facts->port_state = kMirrorPortNamed;
     facts->port = kMirrorAgentPort;
@@ -152,7 +152,7 @@ int main(void)
        this could meet. */
     memset(&facts, 0, sizeof facts);
     facts.agent = kMirrorAgentStopped;
-    strcpy(facts.agent_path, "Macintosh \"HD\":mirror-dev:mirror-agent");
+    strcpy(facts.agent_path, "Macintosh \"HD\":Applications:mirror-agent");
     n = render(&facts, buf, sizeof buf);
     check(strstr(buf, "\\\"HD\\\"") != NULL,
           "a quote in the path is escaped, not shipped raw into the JSON");

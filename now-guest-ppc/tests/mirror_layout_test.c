@@ -62,7 +62,7 @@ static void healthy(MirrorFacts *facts)
     facts->ext_version[kMirrorExtQD] = 1;
     facts->ext_version[kMirrorExtPortal] = 4;
     facts->agent = kMirrorAgentRunning;
-    strcpy(facts->agent_path, "Macintosh HD:TimBotTu:mirror-dev:mirror-agent");
+    strcpy(facts->agent_path, "Macintosh HD:Applications:mirror-agent");
     strcpy(facts->agent_sig, "????");
     facts->port_state = kMirrorPortNamed;
     facts->port = kMirrorAgentPort;
@@ -213,7 +213,13 @@ static void test_agent_rows(void)
     now_mirror_agent_row(&facts, 2, label, (long)sizeof label, value,
                          (long)sizeof value);
     check(strcmp(label, "Program") == 0, "row 2 is the program row");
-    check(strstr(value, "mirror-dev") != NULL,
+    /* THAT it is shown, not WHERE. This asserted "mirror-dev" until
+       2026-08-02, which pinned a lab folder - the parent project's
+       scratch directory - into a test, so the placement rule could not
+       be changed without a test telling you that you had broken it. The
+       rule is now "beside the application"; the row's job is to name
+       wherever it looked, whatever that is. */
+    check(value[0] != '\0',
           "the location is shown for a missing agent");
 
     facts.agent = kMirrorAgentRunning;

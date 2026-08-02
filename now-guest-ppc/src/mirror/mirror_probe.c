@@ -227,45 +227,106 @@ static void read_port_file(short vref, long agentdir, MirrorFacts *facts)
    found nothing" is the useful half of a missing agent, and a page that
    omits the location leaves the person guessing which of several
    checkouts it meant. */
+/* Is `agentdir` on `vref` the folder holding the agent? If so, take it:
+   g_spec, g_path and the port file all come from there. */
+static Boolean take_agent_dir(short vref, long agentdir, MirrorFacts *facts)
+{
+    Str255 leaf;
+    char   vol[64];
+
+    CopyCStringToPascal(k_agent_file, leaf);
+    if (FSMakeFSSpec(vref, agentdir, leaf, &g_spec) != noErr) {
+        return false;
+    }
+    volume_name(vref, vol, (long)sizeof vol);
+    /* The folder's own name rather than the full chain: a path assembled
+       from ids we did not walk would be a guess, and this string is read
+       by a person deciding whether the right copy was found. */
+    snprintf(g_path, sizeof g_path, "%.31s:...:%s", vol, k_agent_file);
+    read_port_file(vref, agentdir, facts);
+    g_have_spec = true;
+    return true;
+}
+
+/* Where THIS application lives. The agent is looked for beside it first,
+   because "put the two files together" is the only placement rule a
+   person should have to know. */
+static Boolean app_folder(short *vref, long *dir)
+{
+    ProcessSerialNumber self;
+    ProcessInfoRec      info;
+    FSSpec              spec;
+    Str31               name;
+
+    memset(&info, 0, sizeof info);
+    info.processInfoLength = sizeof info;
+    info.processName = name;
+    info.processAppSpec = &spec;
+    if (GetCurrentProcess(&self) != noErr
+        || GetProcessInformation(&self, &info) != noErr) {
+        return false;
+    }
+    *vref = spec.vRefNum;
+    *dir = spec.parID;
+    return true;
+}
+
+/* Resolves g_spec and g_path, and reads the port file beside them. The
+   PATH is written whether or not the file is there: "we looked here and
+   found nothing" is the useful half of a missing agent, and a page that
+   omits the location leaves the person guessing which of several
+   checkouts it meant.
+ *
+ * THE PLACEMENT RULE IS "BESIDE THIS APPLICATION", and that is the whole
+ * rule. This used to walk one hardcoded chain -
+ * <boot>:TimBotTu:mirror-dev:mirror-agent - which is a lab convention
+ * named after the parent project's scratch folder, written into product
+ * code as law. An agent anywhere else was reported as absent while
+ * sitting on the disk, and the only way to learn the rule was to read
+ * this file. Nobody who installs two files next to each other should
+ * have to.
+ *
+ * The old chain is still CHECKED, second, so a machine already staged by
+ * mirror/tools/stage-agent.py keeps working - but it is a fallback, not
+ * the definition, and nothing is required to live there.
+ */
 static void resolve_agent(MirrorFacts *facts)
 {
     short vref;
-    long sysdir;
-    long devdir;
-    long agentdir;
-    char vol[64];
+    long  sysdir;
+    long  devdir;
+    long  agentdir;
+    char  vol[64];
 
     g_have_spec = false;
     g_path[0] = '\0';
     facts->port_state = kMirrorPortUnknown;
     facts->port = 0;
 
+    /* 1. Beside this application. */
+    if (app_folder(&vref, &agentdir)
+        && take_agent_dir(vref, agentdir, facts)) {
+        return;
+    }
+
+    /* 2. The staging tool's folder, kept so an already-staged machine is
+          not broken by this change. */
     if (FindFolder(kOnSystemDisk, kSystemFolderType, kDontCreateFolder,
-                   &vref, &sysdir) != noErr) {
-        return;
-    }
-    volume_name(vref, vol, (long)sizeof vol);
-    snprintf(g_path, sizeof g_path, "%.31s:%s:%s:%s", vol, k_dev_folder,
-             k_agent_folder, k_agent_file);
-
-    if (!dir_child(vref, fsRtDirID, k_dev_folder, &devdir)
-        || !dir_child(vref, devdir, k_agent_folder, &agentdir)) {
-        return;
-    }
-    /* The folder exists, so the port file is a question with an answer -
-       asked BEFORE the agent is resolved, because a staging that put the
-       port file down and not the agent is a state worth telling apart
-       from one that put down neither. */
-    read_port_file(vref, agentdir, facts);
-    {
-        Str255 leaf;
-
-        CopyCStringToPascal(k_agent_file, leaf);
-        if (FSMakeFSSpec(vref, agentdir, leaf, &g_spec) != noErr) {
+                   &vref, &sysdir) == noErr) {
+        volume_name(vref, vol, (long)sizeof vol);
+        if (dir_child(vref, fsRtDirID, k_dev_folder, &devdir)
+            && dir_child(vref, devdir, k_agent_folder, &agentdir)
+            && take_agent_dir(vref, agentdir, facts)) {
+            snprintf(g_path, sizeof g_path, "%.31s:%s:%s:%s", vol,
+                     k_dev_folder, k_agent_folder, k_agent_file);
             return;
         }
     }
-    g_have_spec = true;
+
+    /* Neither. Say where we looked FIRST, because that is where it
+       should go - not where the old tooling used to put it. */
+    snprintf(g_path, sizeof g_path, "beside this application (%s)",
+             k_agent_file);
 }
 
 /* --- is it running --------------------------------------------------- */
