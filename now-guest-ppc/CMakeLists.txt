@@ -17,6 +17,7 @@ add_application(now-guest-ppc
     src/screenshots/capture.c
     src/files/fileshare.c
     src/core/pump.c
+    src/core/db_hilite.c
     src/core/build_stamp.c
     src/core/agent_access.c
     src/screenshots/screenshot.c

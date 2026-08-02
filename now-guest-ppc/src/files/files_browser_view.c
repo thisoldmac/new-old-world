@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "db_hilite.h"
 #include "files_path_label.h"
 #include "wire.h"
 
@@ -305,6 +306,7 @@ Boolean files_browser_create(WindowRef owner, const Rect *area)
     SetDataBrowserListViewHeaderBtnHeight(g_browser, 16);
     SetDataBrowserHasScrollBars(g_browser, false, true);
     SetDataBrowserSortProperty(g_browser, kColName);
+    now_browser_fill_hilite(g_browser);
     HideControl(g_browser);
     g_path[0] = '\0';
     g_row_count = 0;

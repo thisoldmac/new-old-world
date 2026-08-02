@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "cloud_filter.h"
+#include "db_hilite.h"
 #include "cloud_nav.h"
 #include "files_path_label.h"
 #include "wire.h"
@@ -616,6 +617,7 @@ static OSErr view_create(WindowRef owner)
     add_column(kColModified, "Modified", 90, false, 3);
     SetDataBrowserListViewHeaderBtnHeight(g_browser, 16);
     SetDataBrowserHasScrollBars(g_browser, false, true);
+            now_browser_fill_hilite(g_browser);
     SetDataBrowserSortProperty(g_browser, kColName);
     HideControl(g_browser);
     return noErr;

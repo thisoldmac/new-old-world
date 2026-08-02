@@ -7,6 +7,7 @@
 #include "cloud_drive_view.h"
 #include "cloud_filter.h"
 #include "cloud_layout.h"
+#include "db_hilite.h"
 #include "cloud_list_view.h"
 #include "cloud_model.h"
 #include "cloud_view.h"
@@ -778,6 +779,7 @@ static OSErr cloud_create(WindowRef owner, const Rect *body)
             add_column(kCloudColSubtitle, "Detail", 130, 1);
             SetDataBrowserListViewHeaderBtnHeight(g_browser, 16);
             SetDataBrowserHasScrollBars(g_browser, false, true);
+            now_browser_fill_hilite(g_browser);
             HideControl(g_browser);
         }
     }
