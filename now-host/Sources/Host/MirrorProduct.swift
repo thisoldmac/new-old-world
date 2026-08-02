@@ -436,16 +436,28 @@ struct MirrorInvocation: Equatable, Sendable {
     /// every other app's windows are missing from the scene, which reads
     /// as a rendering fault and was once mistaken for one
     /// (mirror/docs/TEST-DRIVE.md).
+    /// `qmp` is what makes the window CLICKABLE, and leaving it out is not
+    /// a smaller launch: Mirror's own availability rule refuses `.drag`,
+    /// `.qmpClick`, `.menuDrag` and `.thumbDrag` without it — "needs the
+    /// emulator QMP input plane; this target has none" — so a window
+    /// launched without it draws perfectly and answers almost no input.
+    /// Measured 2026-08-02, on a pane that omitted it. Nil on a machine
+    /// with no QMP at all (metal), where those actions are honestly
+    /// unavailable rather than misconfigured.
     static func liveWindow(_ product: MirrorProduct,
                            host: String, port: Int,
-                           machine: String) -> MirrorInvocation {
-        MirrorInvocation(
-            executable: product.executable,
-            arguments: ["--host", host, "--port", String(port),
-                        "--machine", machine, "--scope", "all",
-                        "--window", "--display", "--islands",
-                        "--interval", "0.7"],
-            workingDirectory: nil)
+                           machine: String,
+                           qmpSocket: URL? = nil) -> MirrorInvocation {
+        var arguments = ["--host", host, "--port", String(port),
+                         "--machine", machine, "--scope", "all"]
+        if let qmpSocket {
+            arguments += ["--qmp", qmpSocket.path]
+        }
+        arguments += ["--window", "--display", "--islands",
+                      "--interval", "0.7"]
+        return MirrorInvocation(executable: product.executable,
+                                arguments: arguments,
+                                workingDirectory: nil)
     }
 
     /// The dev toggle's first half. Release, because the default path

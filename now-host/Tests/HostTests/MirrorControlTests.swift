@@ -654,4 +654,25 @@ final class MirrorControlTests: XCTestCase {
                      "a remembered path that moved degrades to nil, not to a bad launch")
         defaults.removePersistentDomain(forName: "MirrorControlTests.remembered")
     }
+
+    /// Without `--qmp` Mirror's own availability rule refuses every drag,
+    /// widget-track and positional click — "needs the emulator QMP input
+    /// plane" — so the window draws and answers almost nothing. A pane that
+    /// omits it ships a mirror you cannot use, which is what happened.
+    func testTheLiveWindowCarriesTheQMPSocketWhenThereIsOne() {
+        let product = MirrorProduct(executable: URL(fileURLWithPath: "/bin/m"),
+                                    origin: .named)
+        let withQMP = MirrorInvocation.liveWindow(
+            product, host: "127.0.0.1", port: 1730, machine: "guest-2",
+            qmpSocket: URL(fileURLWithPath: "/tmp/qmp.sock"))
+        XCTAssertTrue(withQMP.arguments.contains("--qmp"),
+                      "an emulated target must get its input plane")
+        XCTAssertTrue(withQMP.arguments.contains("/tmp/qmp.sock"))
+
+        let metal = MirrorInvocation.liveWindow(
+            product, host: "10.0.1.7", port: 1420, machine: "pb1400c")
+        XCTAssertFalse(metal.arguments.contains("--qmp"),
+                       "a real Mac has no QMP; the flag would name nothing")
+        XCTAssertTrue(metal.arguments.contains("--window"))
+    }
 }

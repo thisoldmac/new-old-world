@@ -312,6 +312,22 @@ struct MirrorControlView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 4) {
+                Text("Emulator input socket").font(.callout.weight(.medium))
+                TextField("The emulator's QMP socket, or leave empty",
+                          text: $model.qmpSocketPath)
+                Text("Mirror needs this to click, drag and track widgets on "
+                     + "an emulated Mac — without it the window draws but "
+                     + "answers almost no input. A real Mac has no QMP, and "
+                     + "those actions are unavailable there rather than "
+                     + "misconfigured.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 4) {
                 Text("Mirror app").font(.callout.weight(.medium))
                 TextField("A built MirrorApp, or leave empty",
                           text: $model.namedAppPath)

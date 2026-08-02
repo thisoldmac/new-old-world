@@ -66,6 +66,18 @@ final class MirrorControlModel: ObservableObject, GuestScopedModel {
         }
     }
 
+    /// The emulator's QMP socket. Mirror needs it for the input plane —
+    /// without it the window draws and barely answers a click — and it is
+    /// a fact about the rig, like the forwarded port beside it, so it is a
+    /// setting rather than a guess. Empty on metal, where there is no QMP
+    /// and those actions are honestly unavailable.
+    @Published var qmpSocketPath: String {
+        didSet {
+            guard qmpSocketPath != oldValue else { return }
+            defaults.set(qmpSocketPath, forKey: Keys.qmpSocket)
+        }
+    }
+
     @Published var buildFromSource: Bool {
         didSet {
             guard buildFromSource != oldValue else { return }
@@ -76,6 +88,7 @@ final class MirrorControlModel: ObservableObject, GuestScopedModel {
     private enum Keys {
         static let forwardedPort = "mirror.forwardedAgentPort"
         static let appPath = "mirror.appPath"
+        static let qmpSocket = "mirror.qmpSocket"
         static let buildFromSource = "mirror.buildFromSource"
     }
 
@@ -110,6 +123,7 @@ final class MirrorControlModel: ObservableObject, GuestScopedModel {
         forwardedAgentPort = (1...65535).contains(stored)
             ? stored : MirrorEndpoint.defaultForwardedPort
         namedAppPath = defaults.string(forKey: Keys.appPath) ?? ""
+        qmpSocketPath = defaults.string(forKey: Keys.qmpSocket) ?? ""
         buildFromSource = defaults.bool(forKey: Keys.buildFromSource)
         resolveProduct()
         recomputeEndpoint()
@@ -321,9 +335,12 @@ final class MirrorControlModel: ObservableObject, GuestScopedModel {
     private func start(_ product: MirrorProduct,
                        at target: (host: String, port: Int)) {
         run = .launching
+        let trimmed = qmpSocketPath.trimmingCharacters(in: .whitespaces)
         let invocation = MirrorInvocation.liveWindow(
             product, host: target.host, port: target.port,
-            machine: machineLabel)
+            machine: machineLabel,
+            qmpSocket: trimmed.isEmpty ? nil
+                                       : URL(fileURLWithPath: trimmed))
         let outcome = spawner.spawn(
             invocation,
             onOutput: { [weak self] line in self?.record(line) },
