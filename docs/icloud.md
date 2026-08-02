@@ -106,10 +106,12 @@ directly, so a token added there needs no second edit to appear here.
 ## The guest page
 
 One Workshop module (`now-guest-ppc/src/cloud/`), the eleventh page:
-a service dropdown rebuilt from each `cloud.report`, a two-column Data
-Browser for the chosen service's rows (paged straight through, the
-Files browser's rule), a card pane for the selected row, and "Save to
-this Mac", which sends `cloud.get` and lets the ordinary file.offer
+a service dropdown rebuilt from each `cloud.report`, a Data Browser
+for the chosen service's rows (paged straight through, the Files
+browser's rule) — the shell's shared two-column one (Item/Detail) for
+any service with no tailored view, Drive's and Photos' own wider ones
+for those two — a card pane for the selected row, and "Save to this
+Mac", which sends `cloud.get` and lets the ordinary file.offer
 machinery land the bytes in this machine's share. Drive is a real
 file browser IN the page: it calls the same `now_wire_list_host` the
 Files page calls (the listing hook follows whoever asked last, which
@@ -147,7 +149,7 @@ last, the listing hook's existing rule — each page reclaims it
 (`conn_set_get_note`) the instant it calls `now_wire_get_host`.
 
 The drive columns live on the drive view's OWN Data Browser, a second
-mostly-hidden control beside the shell's shared two-column one, and
+control beside the shell's shared two-column one, and
 that is a deliberate trade: the only way off a column is
 `RemoveDataBrowserTableViewColumn`, which is not among the 22 symbols
 `spikes/databrowser` proved CarbonLib 1.6.0 exports on the PB1400c,
@@ -174,6 +176,36 @@ in `cloud_preview_test.c`, mutation-watched. Between the ask and the
 pixels the pane says "Loading preview..." — drawn state, invalidated
 once at each transition, cleared by the arrival or by the refusal
 reason drawing in its place.
+
+**Photos also has its own Data Browser** (2026-08-02, the same
+one-control-per-column-set trade as Drive's): Name, Size — the
+entry's `bytes` when the host stated them, "--" otherwise, since
+photos rows never state one (below) — and Modified
+(`LongDateString`), occupying the exact rect the shell's shared
+two-column browser used to draw into. Selection routes through the
+SHELL's own notification handler unchanged (this view's rows are the
+shell's shared listing, indexed exactly as the two-column browser
+indexed them — only the columns are this view's own); only the
+item-data callback and the control itself are new, wired up in
+`cloud_photos_view_bind` before `create` runs so the control's own
+Data Browser callbacks can be set in one call, the drive view's
+pattern throughout.
+
+**The Size popup's items show the SELECTED photo's exact post-fit
+resolution.** Original reads the entry's own width/height
+("2016 x 1512"); each fitN item reads what that box will actually
+produce for THIS photo, computed on the guest from the entry's
+width/height and the box (`cloud_photo_fit` in the Toolbox-free
+`cloud_photo_size.c`, host-cc tested in `cloud_photo_size_test.c`,
+mutation-watched) — aspect-preserving and NEVER upscaling, the same
+rule the host's own fit obeys, so the two agree without a wire round
+trip (the wire's own fitN token stays coarse by contract; see the
+`CloudGet.size` doc in `contract/asyncapi.yaml`). Rebuilt via
+`SetMenuItemText` on every selection change (the services-popup
+recipe already used for the dropdown), falling back to MENU 136's own
+literal wording ("Fit 1024x768", "Fit 640x480") on no selection or
+when an entry never stated its dimensions — never a guessed number.
+Host default (item 4) never changes.
 
 The download UX (2026-08-02) lives in the same view, below the pane:
 

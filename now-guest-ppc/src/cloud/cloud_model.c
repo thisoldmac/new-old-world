@@ -106,6 +106,8 @@ int cloud_parse_listing(const char *reply, CloudStore *store)
         row->bytes = now_json_find_int(object, "bytes", 0);
         row->modified =
             (unsigned long)now_json_find_int(object, "modified", 0);
+        row->width = now_json_find_int(object, "width", 0);
+        row->height = now_json_find_int(object, "height", 0);
         ++store->row_count;
         ++appended;
     }

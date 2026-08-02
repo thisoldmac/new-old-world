@@ -54,7 +54,8 @@ static void test_listing_accumulates_and_drops_stale_answers(void)
     n = cloud_parse_listing(
         "{\"type\":\"cloud.listing\",\"id\":5,\"service\":\"photos\","
         "\"entries\":[{\"item\":\"a-1\",\"title\":\"IMG_1234.jpg\","
-        "\"subtitle\":\"Jul 4, 2026\",\"bytes\":2048000},"
+        "\"subtitle\":\"Jul 4, 2026\",\"bytes\":2048000,"
+        "\"width\":2016,\"height\":1512},"
         "{\"item\":\"a-2\",\"title\":\"IMG_1233.jpg\"}],"
         "\"more\":true,\"cursor\":3}",
         &store);
@@ -63,6 +64,11 @@ static void test_listing_accumulates_and_drops_stale_answers(void)
     assert(store.more);
     assert(store.cursor == 3);
     assert(store.rows[0].bytes == 2048000);
+    assert(store.rows[0].width == 2016 && store.rows[0].height == 1512);
+    /* A row whose entry omits width/height reads as 0x0, not a
+       guessed size — omission is not zero pixels, but it is zero as
+       the "unstated" sentinel this store's callers already check. */
+    assert(store.rows[1].width == 0 && store.rows[1].height == 0);
 
     /* The next page APPENDS. */
     n = cloud_parse_listing(
