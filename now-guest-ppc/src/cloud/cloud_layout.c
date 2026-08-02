@@ -113,14 +113,12 @@ void cloud_layout_compute(const Rect *body, Boolean drive_mode,
     set_rect(&r->list, left, (short)(top + 28), split, list_bottom);
     set_rect(&r->detail, (short)(split + 8), (short)(top + 28),
              right, list_bottom);
-    set_rect(&r->save_btn, (short)(right - 110),
-             (short)(r->detail.bottom - 24), right,
-             (short)(r->detail.bottom - 4));
     r->detail_text = r->detail;
     r->detail_text.left = (short)(r->detail_text.left + 6);
     r->detail_text.right = (short)(r->detail_text.right - 4);
     r->detail_text.top = (short)(r->detail_text.top + 4);
-    r->detail_text.bottom = (short)(r->save_btn.top - 6);
+    /* save_btn and detail_text.bottom are placed in the furniture
+       block below, where the whole right-aligned column lives. */
 
     /* The photos view's furniture, stacked bottom-up over Save. Only
        rectangles — the views that do not use them never read them —
@@ -133,22 +131,38 @@ void cloud_layout_compute(const Rect *body, Boolean drive_mode,
        is under 200 points, and "Save to this Mac" plus a popup that
        can say "Fit 1024x768" do not both fit on one of them. A fixed
        150 fits the widest item everywhere the pane exists at all. */
-    set_rect(&r->size_popup, r->detail_text.left,
-             (short)(r->detail.bottom - 48),
-             (short)(r->detail_text.left + 150),
-             (short)(r->detail.bottom - 28));
-    set_rect(&r->dest_btn, (short)(right - 74),
-             (short)(r->detail.bottom - 70), right,
-             (short)(r->detail.bottom - 52));
-    set_rect(&r->dest_row, r->detail_text.left,
-             (short)(r->detail.bottom - 70), (short)(r->dest_btn.left - 6),
-             (short)(r->detail.bottom - 52));
-    set_rect(&r->dl_bar, r->detail_text.left,
-             (short)(r->detail.bottom - 86), r->detail_text.right,
-             (short)(r->detail.bottom - 74));
-    set_rect(&r->dl_text, r->detail_text.left,
-             (short)(r->detail.bottom - 102), r->detail_text.right,
-             (short)(r->detail.bottom - 88));
-    r->photos_text = r->detail_text;
-    r->photos_text.bottom = (short)(r->dl_text.top - 6);
+    /* Tidied to one rule (metal feedback, 2026-08-02: "clean up the
+       buttons"): every CONTROL — Choose..., the Size popup, Save — is
+       flush to one shared right edge, every row is 20 points tall,
+       every gap between rows is 6, and the labels centre on their
+       row. A column of right-aligned actions is the Platinum shape;
+       the earlier layout left-aligned the popup and let the rows
+       drift, which read as clutter on the real screen. */
+    {
+        short col_right = (short)(right - 6);
+        short row_h = 20;
+        short gap = 6;
+        short save_top = (short)(r->detail.bottom - 8 - row_h);
+        short size_top = (short)(save_top - gap - row_h);
+        short dest_top = (short)(size_top - gap - row_h);
+
+        set_rect(&r->save_btn, (short)(col_right - 110), save_top,
+                 col_right, (short)(save_top + row_h));
+        set_rect(&r->size_popup, (short)(col_right - 150), size_top,
+                 col_right, (short)(size_top + row_h));
+        set_rect(&r->dest_btn, (short)(col_right - 74), dest_top,
+                 col_right, (short)(dest_top + row_h));
+        set_rect(&r->dest_row, r->detail_text.left, dest_top,
+                 (short)(r->dest_btn.left - 6),
+                 (short)(dest_top + row_h));
+        set_rect(&r->dl_bar, r->detail_text.left,
+                 (short)(dest_top - gap - 12), r->detail_text.right,
+                 (short)(dest_top - gap));
+        set_rect(&r->dl_text, r->detail_text.left,
+                 (short)(r->dl_bar.top - 4 - 14), r->detail_text.right,
+                 (short)(r->dl_bar.top - 4));
+        r->detail_text.bottom = (short)(r->save_btn.top - 6);
+        r->photos_text = r->detail_text;
+        r->photos_text.bottom = (short)(r->dl_text.top - 6);
+    }
 }

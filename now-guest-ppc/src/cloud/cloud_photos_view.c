@@ -366,7 +366,7 @@ static void draw_small_line(const Rect *row, const char *prefix,
     snprintf(line, sizeof line, "%s%s", prefix, rest);
     CopyCStringToPascal(line, text);
     TruncString(width, text, middle_trunc ? truncMiddle : truncEnd);
-    MoveTo(row->left, (short)(row->bottom - 4));
+    MoveTo(row->left, (short)(row->bottom - 6));
     DrawString(text);
 }
 

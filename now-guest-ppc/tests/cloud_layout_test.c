@@ -88,6 +88,20 @@ static void check_body(short left, short top, short right, short bottom)
     assert(r.dest_btn.bottom <= r.size_popup.top);
     assert(r.dest_row.right <= r.dest_btn.left);
     assert(r.dest_btn.right <= r.detail.right);
+
+    /* The cleanup's whole rule, asserted as relationships: one shared
+       right edge for the control column, uniform row heights, uniform
+       gaps, and the label row exactly as tall as its button. */
+    assert(r.save_btn.right == r.size_popup.right);
+    assert(r.size_popup.right == r.dest_btn.right);
+    assert(r.save_btn.bottom - r.save_btn.top
+           == r.size_popup.bottom - r.size_popup.top);
+    assert(r.size_popup.bottom - r.size_popup.top
+           == r.dest_btn.bottom - r.dest_btn.top);
+    assert(r.save_btn.top - r.size_popup.bottom
+           == r.size_popup.top - r.dest_btn.bottom);
+    assert(r.dest_row.top == r.dest_btn.top);
+    assert(r.dest_row.bottom == r.dest_btn.bottom);
     assert(r.dl_bar.bottom <= r.dest_row.top);
     assert(r.dl_text.bottom <= r.dl_bar.top);
     assert(r.photos_text.bottom <= r.dl_text.top);
