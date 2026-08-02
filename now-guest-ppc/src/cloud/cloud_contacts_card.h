@@ -85,13 +85,20 @@ enum {
     kCloudContactsBoxInset = 8,         /* box's left edge to the label */
     kCloudContactsValueDx = 70,         /* label column to value column */
     kCloudContactsRowHeight = 14,
-    kCloudContactsBoxFirstRow = 26,     /* box top to the FIRST row's
+    /* The three below are not free numbers: four boxes cost four sets
+       of them, and the pane has no scroller. The ceiling the wire can
+       deliver is kCloudMaxCardRows (16) rows across all four sections,
+       which comes to 4*(25+8) + 12*14 + 3*5 = 315 points -- inside the
+       320 a 380-point pane leaves under the well. Loosen any of them
+       and a full card starts being TRUNCATED on a 640x480 screen; the
+       card test's worst-case fixture is what says so out loud. */
+    kCloudContactsBoxFirstRow = 25,     /* box top to the FIRST row's
                                             baseline: clears the group
                                             box's own titled top edge */
-    kCloudContactsBoxTail = 9,          /* last baseline to box bottom:
+    kCloudContactsBoxTail = 8,          /* last baseline to box bottom:
                                             a small-font descender plus
                                             the frame's own breathing */
-    kCloudContactsBoxGap = 6            /* between one box and the next */
+    kCloudContactsBoxGap = 5            /* between one box and the next */
 };
 
 typedef struct {
