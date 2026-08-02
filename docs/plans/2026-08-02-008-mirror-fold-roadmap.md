@@ -218,6 +218,20 @@ residency verb lands (the host page gains true residency — a visible
 improvement), the arm-lease and throttle are in, `gestalt` refuses
 unknown args. Agents keep everything they have today.
 
+> **AMENDED 2026-08-02, after WP0 measured it.** T2 as written below
+> assumes a clickable mirror is reachable once the host side is built.
+> **It is not, today.** The act plane arms correctly inside a foreign
+> application and the press it posts for itself is never consumed — the
+> guest's own words are `act-not-taken: armed, and the application never
+> called MenuSelect` (open-issues, "the act plane arms in a foreign app
+> and its click is never taken"). Every click-driven verb rides that one
+> step. So T2 cannot be entered as specified: either the press-delivery
+> problem is solved first, as its own piece of work with its own number,
+> or T2 is re-cut to deliver the perceive half as a tier of its own —
+> which would be a mirror that renders and cannot click, and therefore
+> needs Michelle's explicit say-so, because the milestone rule forbids
+> exactly that shape by default.
+
 **T2 — The mirror is NOW's window** (work packages WP2 + WP3 + WP4,
 delivered together). The host launches a NOW-owned mirror window
 (MirrorKit as dependency) fed by NOW's wire and the NOW Extension:

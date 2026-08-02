@@ -86,11 +86,38 @@ same day's evidence points at the second reading:
 
 Upstream's number does not have this ambiguity: Portal measured **18/20
 hijacks before its guard was fixed**, which proves the plane could act in
-that process. **NOW has never seen its act plane fire inside the Finder.**
-Until it has, the honest claim is "no stray actuation observed in 20
-trials", not "the guard was proven to hold". The measurement that settles
-it is a POSITIVE control — an armed request that actuates on its own
-correct click in the Finder — and it has not been taken.
+that process.
+
+**The positive control was run, and it settles this the unwelcome way.**
+Against the Finder, addressed by PSN and armed with a correct
+`titleLeft`, `menuact` answers in the guest's own words:
+
+> `act-not-taken: armed, and the application never called MenuSelect`
+
+So the request **armed** — the resident's filter runs in the Finder's
+context, the guard matched the target, and the plane posted its own
+press — and the Finder never called `MenuSelect`. No `untitled folder`
+appeared. `actselftest` against the same process refuses in the same
+pass (`act-refused`), while abi-agreeing against NOW's own app minutes
+earlier on the same build.
+
+**Therefore 0/20 hijacks is not evidence that the guard held.** The
+plane has never been observed completing an act inside the Finder, so
+"the armed request did not fire on someone else's click" and "the armed
+request cannot fire at all here" are not distinguished by that number,
+and the second is now the better-supported reading. The honest statement
+of the menu case is: *no stray actuation was observed in 20 trials of a
+plane that has not been shown able to actuate in that process.*
+
+**What this costs the roadmap.** Every click-driven act verb
+(`menuact`, `ctlact`, `winact`) depends on the target application
+dequeuing a press this plane posts with `PPostEvent` from inside the
+target's context. That is the step failing. It matches the 2026-08-01
+overnight arc's 0/10 on the same family — a finding that lives only on
+`claude/mirror-parity-overnight` and in no document until now. Until it
+is solved, **T2's clickable mirror is not reachable by this route**, and
+the tier's shape should be decided with that known rather than
+discovered halfway in.
 
 ### P3's first arm, ever (2026-08-02)
 

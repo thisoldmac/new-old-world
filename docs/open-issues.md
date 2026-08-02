@@ -67,6 +67,54 @@ it passes its environment through. Host-cc tested
 (`mirror_layout_test.c`, `mirror_port_staging_source_test.py`, both
 mutation-watched); **nothing in this entry has run on a machine.**
 
+## BROKEN: the act plane arms in a foreign app and its click is never taken (2026-08-02)
+
+**Measured, emulated Power Mac G4, guest build `3c6be9ffa460`, both
+resident families staged.** Against the Finder, addressed by PSN, with a
+`titleLeft` the scene supplied, `menuact` answers:
+
+> `act-not-taken: armed, and the application never called MenuSelect`
+
+Read that carefully, because it is good news and bad news in one
+sentence. **Armed** means the extension's filter runs inside the
+Finder's context, the guard matched the target, and the plane posted its
+own press. **Never called MenuSelect** means the Finder did not consume
+that press. `actselftest` refuses against the same process in the same
+pass, while abi-agreeing against NOW's own application minutes earlier
+on the same build.
+
+**Every click-driven act verb depends on this one step.** `menuact`,
+`ctlact` and `winact` all work by queueing a `mouseDown`/`mouseUp` with
+`PPostEvent` from inside the target's context and letting the
+application's own event loop dequeue it, call `FindWindow`, and call the
+trap the patch answers (`ext/src/now_ext_act.c :: act_post_click`, and
+the comment above it explains why the press is queued there rather than
+by the application). If the press is never dequeued, the whole family is
+inert in foreign applications no matter how correct the patches are.
+
+**It matches a finding that was never written down.** The overnight arc
+of 2026-08-01 (`claude/mirror-parity-overnight`) measured the same
+family at 0/10 and recorded that a `PPostEvent`'d `mouseDown` is never
+delivered to any app on this guest while a `keyDown` from the same
+resident context IS. That branch's note lives in no document; this entry
+is where it now lives.
+
+**What it invalidates.** The menu no-hijack case's **0/20** cannot be
+read as "the guard held" — a guard that held and a plane that cannot act
+in that process produce the same zero, and this measurement says the
+second is happening. Upstream's number has no such ambiguity because
+Portal measured 18/20 hijacks *before* its guard was fixed, proving it
+could act there. See the parity ledger.
+
+**What is NOT known yet**, and should be established before anything is
+built on top: whether the press is refused at the queue, dequeued by the
+wrong process, or dequeued and discarded; whether the same failure
+applies to every foreign application or is specific to the Finder;
+whether the `keyDown`-works/`mouseDown`-does-not asymmetry points at the
+event mask, the queue element's `where`, or the Process Manager's idea
+of who should receive it. The instrument for all of these already
+exists — `scripts/probes/` — and none of them needs new product code.
+
 ## The Mirror page is a lifecycle now, and NOW cannot see residency (2026-08-02)
 
 **Landed, and the thing it cannot do is worth writing down.** The Mirror
