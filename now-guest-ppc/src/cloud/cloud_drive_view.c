@@ -7,6 +7,7 @@
 #include "db_hilite.h"
 #include "cloud_nav.h"
 #include "files_path_label.h"
+#include "pump.h"
 #include "wire.h"
 
 /* Everything the shell used to keep as g_drive_*, moved here whole —
@@ -55,6 +56,24 @@ static Rect g_path_row;               /* cached from layout(); where the
                                          changes invalidate */
 
 static CloudNav g_nav;
+
+/* --- the pull destination -------------------------------------------------
+   Photos' own "Save into:" furniture (cloud_photos_view.c), one lane
+   over: a row plus a Choose... button, built invisible at create and
+   shown only while this view is on stage. Unset means the downloads
+   folder — the pull path's existing default, byte-identical to every
+   drive pull before this existed — because that is what a PULL already
+   means here, unlike photos' cloud.get whose unset default is the
+   share root. The label is recomputed only on create/show/choose,
+   never idle (now_files_downloads_name/now_files_dir_path read
+   preferences or the catalog). */
+static ControlRef g_dest_btn;
+static Boolean g_dest_set;
+static short g_dest_vref;
+static long g_dest_dir;
+static char g_dest_path[160];
+static Rect g_dest_row;               /* cached from layout(); the
+                                         label's own repaint target */
 
 /* The placard's last non-pull line (a folder's "N items", "Empty", or
    an error) - kept so a finished pull can hand the placard back to
@@ -185,6 +204,82 @@ static void invalidate_path_row(void)
     }
 }
 
+/* --- the pull destination -------------------------------------------------
+   Recomputes g_dest_path from wherever a pull would actually land,
+   photos' refresh_dest_path verbatim with the opposite default (the
+   downloads folder here, the share root there). */
+static void refresh_dest_path(void)
+{
+    if (g_dest_set) {
+        if (now_files_dir_path(g_dest_vref, g_dest_dir, g_dest_path,
+                               sizeof g_dest_path)) {
+            return;
+        }
+        /* The folder stopped being nameable (volume gone?): fall back
+           to downloads, which is also where a pull would land now. */
+        g_dest_set = false;
+        now_wire_get_destination(false, 0, 0);
+    }
+    now_files_downloads_name(g_dest_path, sizeof g_dest_path);
+}
+
+static void invalidate_dest_row(void)
+{
+    if (g_owner != NULL && g_active && g_dest_row.right > g_dest_row.left) {
+        InvalWindowRect(g_owner, &g_dest_row);
+    }
+}
+
+static void choose_dest(void)
+{
+    char why[128];
+    short vref;
+    long dir;
+    short dl_vref;
+    long dl_dir;
+    int rc;
+
+    rc = now_files_choose_folder("Choose where files you get land",
+                                 &vref, &dir, why, sizeof why);
+    if (rc == 0) {
+        return;                       /* cancelled: nothing changes */
+    }
+    if (rc < 0) {
+        snprintf(g_dest_path, sizeof g_dest_path, "%.120s", why);
+        invalidate_dest_row();
+        return;
+    }
+    /* Choosing the downloads folder itself clears the override rather
+       than setting an equal one: unset is the wire's "land in
+       downloads" and keeps that path byte-identical to before the
+       chooser existed. */
+    if (now_files_downloads(&dl_vref, &dl_dir) == kFilesOK
+        && dl_vref == vref && dl_dir == dir) {
+        g_dest_set = false;
+        now_wire_get_destination(false, 0, 0);
+    } else {
+        g_dest_set = true;
+        g_dest_vref = vref;
+        g_dest_dir = dir;
+        now_wire_get_destination(true, vref, dir);
+    }
+    refresh_dest_path();
+    invalidate_dest_row();
+}
+
+/* The wire's outcome for a pull THIS view asked for — reclaimed the
+   instant drive_open_row asks, the listing hook's own rule
+   (cloud_drive_listing follows drive_request the same way). Durable
+   news (begin/end/refusal), so it goes through folder_status: it
+   replaces the last folder listing the way a completed pull's outcome
+   ought to outlive the click that started it, and view_idle's
+   transient byte count still overlays it live and hands it back
+   unharmed when the transfer ends. */
+static void drive_get_note(const char *line)
+{
+    folder_status(line);
+}
+
 /* --- asking -------------------------------------------------------------- */
 
 static void drive_request(const char *path, long cursor)
@@ -303,12 +398,17 @@ static void drive_open_row(int index)
         drive_navigate(next);
         return;
     }
+    /* The get-note hook follows the asker, the listing hook's own rule
+       (drive_request, above): the Files page can steal it back for its
+       own pull, so every ask from here claims it. */
+    conn_set_get_note(drive_get_note);
     if (now_wire_get_host(next, row->name, err, sizeof err) < 0) {
         folder_status(err);
     } else {
         char line[96];
 
-        snprintf(line, sizeof line, "Fetching %.40s...", row->name);
+        snprintf(line, sizeof line, "Receiving %.40s into %.40s...",
+                 row->name, g_dest_path);
         folder_status(line);
     }
 }
@@ -580,6 +680,12 @@ void cloud_drive_view_dispose(void)
     g_active = false;
     g_sel = -1;
     memset(&g_host, 0, sizeof g_host);
+    /* The window owns g_dest_btn's disposal (docs/adding-a-workshop-
+       module.md, what you own and what you do not); only the ref and
+       the wire's own override die here. */
+    g_dest_btn = NULL;
+    g_dest_set = false;
+    now_wire_get_destination(false, 0, 0);
 }
 
 /* --- ops ------------------------------------------------------------- */
@@ -589,9 +695,19 @@ static OSErr view_create(WindowRef owner)
     DataBrowserCallbacks callbacks;
     Rect start = { 0, 0, 0, 0 };      /* layout() places it before it
                                          is ever shown */
+    Str255 text;
 
     g_owner = owner;
     cloud_nav_reset(&g_nav);
+    g_dest_set = false;
+    now_wire_get_destination(false, 0, 0);
+    refresh_dest_path();
+    CopyCStringToPascal("Choose...", text);
+    g_dest_btn = NewControl(owner, &start, text, false, 0, 0, 1,
+                            pushButProc, 0);
+    /* A missing button degrades that button, not the page: a pull
+       still lands in downloads exactly as before, the row still names
+       it. */
     if (CreateDataBrowserControl(owner, &start, kDataBrowserListView,
                                  &g_browser) != noErr) {
         g_browser = NULL;             /* the shell says so; no hard fail */
@@ -623,9 +739,35 @@ static OSErr view_create(WindowRef owner)
     return noErr;
 }
 
+/* Shown only while drive mode is the page on stage — the shell already
+   knows to call this (g_view->show, generic in cloud_module.c) the
+   moment its own show/hide of g_browser and the history pair runs. */
+static void view_show(Boolean visible)
+{
+    if (g_dest_btn == NULL) {
+        return;
+    }
+    if (visible) {
+        /* The downloads folder may have moved while another page had
+           the stage; one preferences read on a show is not idle
+           work. */
+        refresh_dest_path();
+        ShowControl(g_dest_btn);
+    } else {
+        HideControl(g_dest_btn);
+    }
+}
+
 static void view_layout(const CloudLayout *r)
 {
     g_path_row = r->path_row;
+    g_dest_row = r->dest_row;
+    if (g_dest_btn != NULL) {
+        MoveControl(g_dest_btn, r->dest_btn.left, r->dest_btn.top);
+        SizeControl(g_dest_btn,
+                    (SInt16)(r->dest_btn.right - r->dest_btn.left),
+                    (SInt16)(r->dest_btn.bottom - r->dest_btn.top));
+    }
     if (g_browser == NULL) {
         return;
     }
@@ -634,10 +776,29 @@ static void view_layout(const CloudLayout *r)
                 (SInt16)(r->list.bottom - r->list.top));
 }
 
+static void draw_small_line(const Rect *row, const char *prefix,
+                            const char *rest, Boolean middle_trunc)
+{
+    Str255 text;
+    char line[224];
+    short width = (short)(row->right - row->left);
+
+    if (width <= 0) {
+        return;
+    }
+    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    snprintf(line, sizeof line, "%s%s", prefix, rest);
+    CopyCStringToPascal(line, text);
+    TruncString(width, text, middle_trunc ? truncMiddle : truncEnd);
+    MoveTo(row->left, (short)(row->bottom - 6));
+    DrawString(text);
+}
+
 /* The breadcrumbs: share-root name plus colon path, the Files page's
    path row verbatim (files_module.c's draw, now_files_path_label's
    words). Truncated in the middle — the ends are the halves a person
-   reads. */
+   reads. The destination row beneath it is this view's own furniture,
+   the photos card's "Save into:" recipe one lane over. */
 static void view_draw(const CloudLayout *r, const CloudStore *store,
                       const CloudService *service, int selected)
 {
@@ -658,6 +819,7 @@ static void view_draw(const CloudLayout *r, const CloudStore *store,
     MoveTo((short)(r->path_row.left + 2),
            (short)(r->path_row.top + 12));
     DrawString(text);
+    draw_small_line(&r->dest_row, "Save into: ", g_dest_path, true);
 }
 
 static Boolean view_click(const EventRecord *event, Point local)
@@ -665,6 +827,22 @@ static Boolean view_click(const EventRecord *event, Point local)
     (void)event;
     (void)local;
     drive_go_up();
+    return true;
+}
+
+/* The Choose... button: not shell-owned, offered here before the
+   generic track (cloud_module.c's own rule — photos' Size popup and
+   destination chooser are the precedent). */
+static Boolean view_control_click(ControlRef control,
+                                  const EventRecord *event, Point local)
+{
+    (void)event;
+    if (control == NULL || control != g_dest_btn) {
+        return false;
+    }
+    if (TrackControl(control, local, now_pump_action()) != 0) {
+        choose_dest();
+    }
     return true;
 }
 
@@ -740,17 +918,18 @@ static Boolean view_row_matches(int index, const CloudStore *store,
 
 static const CloudViewOps k_ops = {
     view_create,
-    NULL,                              /* show: the shell owns both
-                                          browsers' visibility */
+    view_show,                         /* the destination button only —
+                                          the shell still owns both
+                                          browsers' own visibility */
     view_layout,
-    view_draw,                         /* the breadcrumb row */
+    view_draw,                         /* the breadcrumb and dest rows */
     view_click,
     view_key,
     view_idle,
     view_reset_for_service,
     view_row_matches,
     NULL,                              /* select: no per-selection state */
-    NULL,                              /* control_click: no own controls */
+    view_control_click,                /* the destination Choose... */
     NULL                               /* save_size: host default */
 };
 

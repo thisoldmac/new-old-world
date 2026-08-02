@@ -27,13 +27,18 @@ enum {
    supply a no-op body — list's click/key/idle/reset are NULL because
    ask_save/HandleControlKey/nothing/nothing is already what the shell
    does by default. Drive supplies create/layout/draw for what it owns
-   (its four-column browser and the breadcrumb row) but leaves show
-   NULL: which browser is on stage is MODE chrome, and the shell owns
-   the mode. Drive has no card pane to draw into — full body width for
-   the list, per-row detail in its own columns, and a pull's progress
-   on the status placard (cloud_drive_view.c's set_status host hook)
-   rather than a pane that does not exist. A fourth view is free to use
-   as many or as few as it needs. */
+   (its four-column browser and the breadcrumb row) and, since the pull
+   destination chooser (2026-08-02), show and control_click for its own
+   "Save into:" row and Choose... button too — the photos card's
+   destination furniture, one lane over. Which BROWSER is on stage
+   stays MODE chrome the shell owns; the destination button is this
+   view's own, the same split photos already draws between the shell's
+   Save button and its own Size popup. Drive has no card pane to draw
+   into — full body width for the list, per-row detail in its own
+   columns, and a pull's progress on the status placard
+   (cloud_drive_view.c's set_status host hook) rather than a pane that
+   does not exist. A fourth view is free to use as many or as few as it
+   needs. */
 
 typedef struct CloudViewOps {
     /* Called once, when the page is created (mirrors module create):
@@ -119,8 +124,8 @@ typedef struct CloudViewOps {
        — a popup CDEF wants (ControlActionUPP)-1L, a button wants
        now_pump_action() — and returns true when the control was this
        view's. NULL for views that own no controls of their own
-       (today: everything but photos, whose Size popup and destination
-       chooser live here). */
+       (today: list and contacts; photos' Size popup and destination
+       chooser and drive's own destination chooser live here). */
     Boolean (*control_click)(ControlRef control,
                              const EventRecord *event, Point local);
 
