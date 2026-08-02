@@ -42,12 +42,25 @@ typedef struct CloudPhotosHost {
                                           correct unchanged. Built and
                                           disposed by cloud_module.c —
                                           this view only attaches it. */
+    void (*relayout)(void);            /* the disclosure triangle
+                                          changes which rows exist, so
+                                          the shell recomputes the
+                                          layout and re-places every
+                                          control - this view owns the
+                                          state, the shell owns the
+                                          geometry. */
 } CloudPhotosHost;
 
 /* One-time wiring, called from cloud_create() BEFORE this view's own
    create op (which needs notify_upp already built to attach it to its
    Data Browser). */
 void cloud_photos_view_bind(const CloudPhotosHost *host);
+
+/* Whether the pane's destination and size rows are disclosed. The
+   shell asks on every layout: those rows exist only when this says so,
+   and only for photos. False before the view is created, and forced
+   false while a download runs. */
+Boolean cloud_photos_view_disclosed(void);
 
 /* This view's own Data Browser (NULL when creation failed, or before
    create() runs): the control the shell shows, sizes and routes

@@ -211,6 +211,35 @@ int cloud_first_listable(const CloudStore *store)
 
 /* --- the download-size popup and the download read-out ------------------ */
 
+void cloud_dest_leaf(const char *path, char *out, long cap)
+{
+    long end;
+    long start;
+
+    if (out == NULL || cap < 1) {
+        return;
+    }
+    out[0] = '\0';
+    if (path == NULL) {
+        return;
+    }
+    end = (long)strlen(path);
+    /* A volume names itself with a trailing colon; that colon is
+       punctuation, not an empty segment. */
+    while (end > 0 && path[end - 1] == ':') {
+        --end;
+    }
+    start = end;
+    while (start > 0 && path[start - 1] != ':') {
+        --start;
+    }
+    if (end - start >= cap) {
+        end = start + cap - 1;
+    }
+    memcpy(out, path + start, (size_t)(end - start));
+    out[end - start] = '\0';
+}
+
 const char *cloud_size_token(int menu_item)
 {
     /* MENU 136's order is load-bearing the way MENU 134's is for

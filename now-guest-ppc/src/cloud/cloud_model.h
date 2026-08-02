@@ -107,6 +107,15 @@ Boolean cloud_service_listable(const char *service);
    not a drawing detail. */
 void cloud_listing_status(const CloudStore *store, char *out, long cap);
 
+/* The last colon-separated segment of a classic path ("Macintosh
+   HD:Photos:Trips" -> "Trips"; "Macintosh HD:" -> "Macintosh HD"),
+   which is what the photos summary line shows. The FULL path belongs
+   in the disclosed row where there is room; the always-visible line
+   gets the one word that answers "where", so both facts still fit a
+   200pt pane. An empty path writes an empty string - the caller has a
+   share-root name to fall back on and this file does not know it. */
+void cloud_dest_leaf(const char *path, char *out, long cap);
+
 /* --- the download-size popup and the download's own read-out --------
    Pure decisions the photos view draws from, host-cc tested in
    cloud_model_test.c: the popup-item-to-wire mapping and the two

@@ -27,7 +27,7 @@ static void check_body(short left, short top, short right, short bottom)
     body.top = top;
     body.right = right;
     body.bottom = bottom;
-    cloud_layout_compute(&body, 0, &r);
+    cloud_layout_compute(&body, 0, 0, &r);
 
     /* Everything inside the body. */
     assert(r.popup.left >= body.left && r.refresh_btn.right <= body.right);
@@ -75,44 +75,26 @@ static void check_body(short left, short top, short right, short bottom)
        bottom-up (Save row, destination row, bar, byte line) without
        overlap, and photos_text stops above the whole stack so the
        preview never draws under a live control. */
-    assert(!is_empty(r.size_popup));
-    assert(!is_empty(r.dest_row));
-    assert(!is_empty(r.dest_btn));
+    /* Closed (the resting state): the disclosed rows are the
+       anti-rect and the summary carries both facts instead. */
+    assert(is_empty(r.size_popup));
+    assert(is_empty(r.dest_row));
+    assert(is_empty(r.dest_btn));
+    assert(!is_empty(r.summary_row));
+    assert(!is_empty(r.tri));
     assert(!is_empty(r.dl_bar));
     assert(!is_empty(r.dl_text));
     assert(!is_empty(r.photos_text));
-    assert(r.size_popup.left >= r.detail.left);
-    assert(r.size_popup.right <= r.detail.right);
-    assert(r.size_popup.bottom <= r.save_btn.top);
-    assert(r.dest_row.bottom <= r.size_popup.top);
-    assert(r.dest_btn.bottom <= r.size_popup.top);
-    assert(r.dest_row.right <= r.dest_btn.left);
-    assert(r.dest_btn.right <= r.detail.right);
 
     /* The cleanup's whole rule, asserted as relationships: one shared
        right edge for the control column, uniform row heights, uniform
        gaps, and the label row exactly as tall as its button. */
-    assert(r.save_btn.right == r.size_popup.right);
-    assert(r.size_popup.right == r.dest_btn.right);
-    assert(r.save_btn.bottom - r.save_btn.top
-           == r.size_popup.bottom - r.size_popup.top);
-    assert(r.size_popup.bottom - r.size_popup.top
-           == r.dest_btn.bottom - r.dest_btn.top);
-    assert(r.save_btn.top - r.size_popup.bottom
-           == r.size_popup.top - r.dest_btn.bottom);
-    assert(r.dest_row.top == r.dest_btn.top);
-    assert(r.dest_row.bottom == r.dest_btn.bottom);
-    assert(r.dl_bar.bottom <= r.dest_row.top);
-    assert(r.dl_text.bottom <= r.dl_bar.top);
-    assert(r.photos_text.bottom <= r.dl_text.top);
     assert(r.photos_text.top == r.detail_text.top);
     assert(r.photos_text.left == r.detail_text.left);
     /* Still enough pane to show a photo on the smallest screen. */
     assert(r.photos_text.bottom - r.photos_text.top >= 150);
     /* Wide enough for their words: the popup wears "Fit 1024x768",
        the button wears "Choose...". */
-    assert(r.size_popup.right - r.size_popup.left >= 110);
-    assert(r.dest_btn.right - r.dest_btn.left >= 60);
 }
 
 /* Drive mode against the same body a list-mode call would take: the
@@ -133,8 +115,8 @@ static void check_drive_body(short left, short top, short right,
     body.top = top;
     body.right = right;
     body.bottom = bottom;
-    cloud_layout_compute(&body, 0, &list_r);
-    cloud_layout_compute(&body, 1, &drive_r);
+    cloud_layout_compute(&body, 0, 0, &list_r);
+    cloud_layout_compute(&body, 1, 0, &drive_r);
 
     /* Everything still inside the body. */
     assert(drive_r.list.left >= body.left);
@@ -258,11 +240,62 @@ static void check_drive_body(short left, short top, short right,
            >= (drive_r.detail.right - drive_r.list.left));
 }
 
+/* The judged design's whole claim: closing the disclosure gives the
+   photo the height the two setting rows were holding, and BOTH facts
+   (where, what size) still have a line of their own. Asserted by
+   comparing the two layouts rather than by copying coordinates. */
+static void check_disclosure(short left, short top, short right,
+                             short bottom)
+{
+    Rect body;
+    CloudLayout shut, open_r;
+
+    body.left = left; body.top = top;
+    body.right = right; body.bottom = bottom;
+    cloud_layout_compute(&body, 0, 0, &shut);
+    cloud_layout_compute(&body, 0, 1, &open_r);
+
+    /* Open, the rows are real, right-aligned with Save, uniform. */
+    assert(!is_empty(open_r.size_popup));
+    assert(!is_empty(open_r.dest_btn));
+    assert(!is_empty(open_r.dest_row));
+    assert(open_r.save_btn.right == open_r.size_popup.right);
+    assert(open_r.size_popup.right == open_r.dest_btn.right);
+    assert(open_r.dest_row.top == open_r.dest_btn.top);
+    assert(open_r.dest_btn.bottom <= open_r.size_popup.top);
+    assert(open_r.size_popup.bottom <= open_r.summary_row.top);
+
+    /* The summary and Save do not move when the rows appear - only
+       the photo's pane gives way. */
+    assert(open_r.summary_row.top == shut.summary_row.top);
+    assert(open_r.save_btn.top == shut.save_btn.top);
+    assert(open_r.photos_text.bottom < shut.photos_text.bottom);
+
+    /* The triangle sits inside the summary row, at its left, and the
+       summary's text still has most of the row after it. */
+    assert(shut.tri.left == shut.summary_row.left);
+    assert(shut.tri.bottom <= shut.summary_row.bottom);
+    assert(shut.summary_row.right - shut.tri.right
+           > (shut.summary_row.right - shut.summary_row.left) / 2);
+
+    /* The download read-out lives in that same row: bar at the right
+       end, byte count beside it, neither claiming its own height. */
+    assert(shut.dl_bar.top >= shut.summary_row.top);
+    assert(shut.dl_bar.bottom <= shut.summary_row.bottom);
+    assert(shut.dl_bar.right == shut.summary_row.right);
+    assert(shut.dl_text.right <= shut.dl_bar.left);
+    assert(shut.dl_text.left == shut.summary_row.left);
+    /* and the byte count keeps a usable width even on a small pane. */
+    assert(shut.dl_text.right - shut.dl_text.left >= 50);
+}
+
 int main(void)
 {
     /* The Workshop body on a 640x480 screen, and a roomier one. */
     check_body(160, 60, 630, 450);
     check_body(160, 60, 1000, 700);
+    check_disclosure(160, 60, 630, 450);
+    check_disclosure(160, 60, 1000, 700);
     check_drive_body(160, 60, 630, 450);
     check_drive_body(160, 60, 1000, 700);
     printf("cloud_layout_test: all assertions passed\n");

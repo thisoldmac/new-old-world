@@ -58,6 +58,7 @@
 
 static WindowRef g_owner;
 static Rect g_pane;                   /* photos_text: where pixels go */
+static Rect g_summary_row;            /* the always-visible line */
 static Boolean g_have_pane;
 static Boolean g_shown;               /* page visible AND photos active */
 
@@ -67,6 +68,14 @@ static Boolean g_shown;               /* page visible AND photos active */
 static ControlRef g_size_popup;
 static ControlRef g_dest_btn;
 static ControlRef g_dl_bar;
+/* The disclosure triangle. Closed (the default) the pane shows one
+   summary line and gives its height to the photo; open, the
+   destination and size controls appear beneath it. A NULL ref - the
+   CDEF absent - pins the pane OPEN, because the rows are the only way
+   to reach those settings and a missing triangle must not strand
+   them. */
+static ControlRef g_tri;
+static Boolean g_disclosed;
 
 /* This view's own Data Browser: Name/Size/Modified, occupying the
    list rect the shell's shared two-column browser otherwise would
@@ -212,6 +221,13 @@ static OSStatus add_column(DataBrowserPropertyID id, const char *title,
 ControlRef cloud_photos_view_browser(void)
 {
     return g_pbrowser;
+}
+
+Boolean cloud_photos_view_disclosed(void)
+{
+    /* Only while this view is on stage: the shell asks unconditionally
+       and every other mode's furniture must stay as it was. */
+    return (Boolean)(g_shown && g_disclosed);
 }
 
 void cloud_photos_view_bind(const CloudPhotosHost *host)
@@ -398,6 +414,10 @@ static OSErr view_create(WindowRef owner)
     CopyCStringToPascal("Choose...", text);
     g_dest_btn = NewControl(owner, &seed, text, false, 0, 0, 1,
                             pushButProc, 0);
+    text[0] = 0;
+    g_tri = NewControl(owner, &seed, text, false, 0, 0, 1,
+                       kControlTriangleAutoToggleProc, 0);
+    g_disclosed = (Boolean)(g_tri == NULL);
     /* Native determinate bar, the share panel's recipe verbatim
        (metal-verified there): scaled 0..1000 by cloud_dl_bar_value. */
     text[0] = 0;
@@ -459,8 +479,16 @@ static void show_control(ControlRef control, Boolean on)
 static void view_show(Boolean visible)
 {
     g_shown = visible;
-    show_control(g_size_popup, visible);
-    show_control(g_dest_btn, visible);
+    if (!visible && g_tri != NULL) {
+        /* A page that comes back should come back closed: the summary
+           is the resting state, and a triangle left open across a
+           service switch is chrome nobody asked for. */
+        g_disclosed = false;
+        SetControlValue(g_tri, 0);
+    }
+    show_control(g_tri, visible);
+    show_control(g_size_popup, visible && g_disclosed);
+    show_control(g_dest_btn, visible && g_disclosed);
     show_control(g_dl_bar, visible && g_bar_shown);
     if (visible) {
         /* The share root may have moved while another page had the
@@ -474,6 +502,12 @@ static void view_layout(const CloudLayout *r)
     g_pane = r->photos_text;
     g_have_pane = true;
     g_dl_text_rect = r->dl_text;
+    g_summary_row = r->summary_row;
+    if (g_tri != NULL) {
+        MoveControl(g_tri, r->tri.left, r->tri.top);
+        SizeControl(g_tri, (SInt16)(r->tri.right - r->tri.left),
+                    (SInt16)(r->tri.bottom - r->tri.top));
+    }
     if (g_size_popup != NULL) {
         MoveControl(g_size_popup, r->size_popup.left, r->size_popup.top);
         SizeControl(g_size_popup,
@@ -520,6 +554,65 @@ static void draw_small_line(const Rect *row, const char *prefix,
     DrawString(text);
 }
 
+/* "<folder>, <size>" on one line. The SIZE is the popup's own current
+   item, read back rather than recomposed, so the line and the control
+   can never disagree; the host-default item says so in words instead
+   of naming a size this machine does not know. Only the FOLDER is
+   truncated - the size is short and is the half a person cannot
+   re-derive by looking at the pane. */
+static void draw_summary(const CloudLayout *r)
+{
+    char leaf[64];
+    char size[48];
+    Str255 item;
+    Str255 out;
+    short width;
+    short size_w;
+
+    if (r->summary_row.right <= r->summary_row.left) {
+        return;
+    }
+    cloud_dest_leaf(g_dest_path, leaf, sizeof leaf);
+    if (leaf[0] == '\0') {
+        strcpy(leaf, "the shared folder");
+    }
+    size[0] = '\0';
+    if (g_size_popup != NULL) {
+        short value = GetControlValue(g_size_popup);
+        MenuHandle menu = GetMenuHandle(kCloudSizeMenuID);
+
+        if (value == kCloudSizeHostDefaultItem) {
+            strcpy(size, "size set at the host");
+        } else if (menu != NULL) {
+            GetMenuItemText(menu, value, item);
+            CopyPascalStringToC(item, size);
+        }
+    }
+    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    width = (short)(r->summary_row.right - r->tri.right - 5);
+    size_w = 0;
+    if (size[0] != '\0') {
+        CopyCStringToPascal(size, out);
+        {
+            Str255 sep;
+
+            CopyCStringToPascal(", ", sep);
+            size_w = (short)(StringWidth(out) + StringWidth(sep));
+        }
+    }
+    CopyCStringToPascal(leaf, out);
+    TruncString((short)(width - size_w), out, truncEnd);
+    MoveTo((short)(r->tri.right + 5), (short)(r->summary_row.bottom - 4));
+    DrawString(out);
+    if (size[0] != '\0') {
+        char rest[64];
+
+        snprintf(rest, sizeof rest, ", %.48s", size);
+        CopyCStringToPascal(rest, out);
+        DrawString(out);
+    }
+}
+
 static void view_draw(const CloudLayout *r, const CloudStore *store,
                       const CloudService *service, int selected)
 {
@@ -532,11 +625,20 @@ static void view_draw(const CloudLayout *r, const CloudStore *store,
     g_have_pane = true;
     g_dl_text_rect = r->dl_text;
 
-    /* The view's own furniture rows: where a save lands, and — while
-       bytes move — how far they have got. The bar draws itself. */
-    draw_small_line(&r->dest_row, "Save into: ", g_dest_path, true);
+    /* The summary line, always visible: WHERE the next save lands and
+       AT WHAT SIZE, so neither fact costs a click. The folder's leaf
+       goes here and the full path in the disclosed row below - the
+       whole point of the split (a truncated "Macintosh HD:..." told a
+       person nothing on metal). While bytes move, this same strip is
+       the download read-out instead; nothing holds permanent height
+       for a state that is usually not happening. */
     if (g_dl_line[0] != '\0') {
         draw_small_line(&r->dl_text, "", g_dl_line, false);
+    } else {
+        draw_summary(r);
+    }
+    if (g_disclosed) {
+        draw_small_line(&r->dest_row, "Save into: ", g_dest_path, true);
     }
 
     if (selected >= 0 && item[0] != '\0'
@@ -588,11 +690,30 @@ static Boolean view_control_click(ControlRef control,
                                   const EventRecord *event, Point local)
 {
     (void)event;
+    if (control != NULL && control == g_tri) {
+        if (TrackControl(control, local, now_pump_action()) != 0) {
+            g_disclosed = (Boolean)(GetControlValue(g_tri) != 0);
+            show_control(g_size_popup, g_shown && g_disclosed);
+            show_control(g_dest_btn, g_shown && g_disclosed);
+            /* The pane's rects change with the rows, so the shell
+               recomputes and re-places everything; one invalidation
+               of the pane covers the whole change. */
+            if (g_host.relayout != NULL) {
+                g_host.relayout();
+            }
+        }
+        return true;
+    }
     if (control != NULL && control == g_size_popup) {
         /* Popup CDEFs run their own action; -1L is the documented
            value (nested-loops.md carries the menu-loop caveat). The
            value is read at Save time; nothing to do on the pick. */
         TrackControl(control, local, (ControlActionUPP)-1L);
+        /* The summary quotes this control; a pick it did not repaint
+           would leave the line contradicting the popup beside it. */
+        if (g_owner != NULL) {
+            InvalWindowRect(g_owner, &g_summary_row);
+        }
         return true;
     }
     if (control != NULL && control == g_dest_btn) {
@@ -642,8 +763,28 @@ static void view_idle(const CloudLayout *r)
     if (moving != g_bar_shown) {
         g_bar_shown = moving;
         show_control(g_dl_bar, g_shown && moving);
+        /* The summary row becomes the download's read-out while bytes
+           land, so the triangle and its rows step aside: settings a
+           person cannot usefully change mid-transfer, and a row the
+           bar is about to draw over. They come back when it ends. */
+        show_control(g_tri, g_shown && !moving);
+        if (moving && g_disclosed) {
+            g_disclosed = false;
+            if (g_tri != NULL) {
+                SetControlValue(g_tri, 0);
+            }
+            show_control(g_size_popup, false);
+            show_control(g_dest_btn, false);
+            if (g_host.relayout != NULL) {
+                g_host.relayout();
+            }
+        }
         if (!moving) {
             g_bar_value = -1;
+            /* The line the bar was covering is the summary again. */
+            if (g_owner != NULL && g_shown) {
+                InvalWindowRect(g_owner, &g_summary_row);
+            }
         }
     }
     if (moving && g_dl_bar != NULL && (short)value != g_bar_value) {

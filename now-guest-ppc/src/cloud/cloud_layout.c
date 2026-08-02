@@ -23,7 +23,7 @@ static void set_empty(Rect *r, short at_left, short at_top)
 }
 
 void cloud_layout_compute(const Rect *body, Boolean drive_mode,
-                          CloudLayout *r)
+                          Boolean photo_detail, CloudLayout *r)
 {
     short left = (short)(body->left + 10);
     short right = (short)(body->right - 10);
@@ -155,6 +155,8 @@ void cloud_layout_compute(const Rect *body, Boolean drive_mode,
            keeps. */
         r->detail_text.bottom = (short)(r->dl_text.top - 6);
         set_empty(&r->photos_text, r->detail.right, r->detail.top);
+        set_empty(&r->summary_row, r->detail.right, r->detail.top);
+        set_empty(&r->tri, r->detail.right, r->detail.top);
         return;
     }
 
@@ -171,26 +173,52 @@ void cloud_layout_compute(const Rect *body, Boolean drive_mode,
        row. A column of right-aligned actions is the Platinum shape. */
     {
         short save_top = (short)(r->detail.bottom - 8 - row_h);
-        short size_top = (short)(save_top - gap - row_h);
-        short dest_top = (short)(size_top - gap - row_h);
+        short bar_left;
 
         set_rect(&r->save_btn, (short)(col_right - 110), save_top,
                  col_right, (short)(save_top + row_h));
-        set_rect(&r->size_popup, (short)(col_right - 150), size_top,
-                 col_right, (short)(size_top + row_h));
-        set_rect(&r->dest_btn, (short)(col_right - 74), dest_top,
-                 col_right, (short)(dest_top + row_h));
-        set_rect(&r->dest_row, r->detail_text.left, dest_top,
-                 (short)(r->dest_btn.left - 6),
-                 (short)(dest_top + row_h));
-        set_rect(&r->dl_bar, r->detail_text.left,
-                 (short)(dest_top - gap - 12), r->detail_text.right,
-                 (short)(dest_top - gap));
-        set_rect(&r->dl_text, r->detail_text.left,
-                 (short)(r->dl_bar.top - 4 - 14), r->detail_text.right,
-                 (short)(r->dl_bar.top - 4));
+
+        /* The summary line sits directly above Save and never moves.
+           Idle it reads "<folder>, <size>"; during a download the same
+           strip carries the byte count and the bar, so nothing is given
+           permanent height for a state that is usually not happening. */
+        set_rect(&r->summary_row, r->detail_text.left,
+                 (short)(save_top - 22), r->detail_text.right,
+                 (short)(save_top - 6));
+        set_rect(&r->tri, r->summary_row.left,
+                 (short)(r->summary_row.top + 2),
+                 (short)(r->summary_row.left + 12),
+                 (short)(r->summary_row.top + 14));
+        /* The bar takes the row's right end, but never so much that the
+           byte count beside it has no room on a narrow pane. */
+        bar_left = (short)(r->summary_row.right - 90);
+        if (bar_left < (short)(r->summary_row.left + 60)) {
+            bar_left = (short)(r->summary_row.left + 60);
+        }
+        set_rect(&r->dl_bar, bar_left, (short)(r->summary_row.top + 2),
+                 r->summary_row.right, (short)(r->summary_row.top + 14));
+        set_rect(&r->dl_text, r->summary_row.left, r->summary_row.top,
+                 (short)(r->dl_bar.left - 6), r->summary_row.bottom);
+
         r->detail_text.bottom = (short)(r->save_btn.top - 6);
         r->photos_text = r->detail_text;
-        r->photos_text.bottom = (short)(r->dl_text.top - 6);
+        if (photo_detail) {
+            short size_top = (short)(r->summary_row.top - 26);
+            short dest_top = (short)(size_top - 26);
+
+            set_rect(&r->size_popup, (short)(col_right - 150), size_top,
+                     col_right, (short)(size_top + row_h));
+            set_rect(&r->dest_btn, (short)(col_right - 74), dest_top,
+                     col_right, (short)(dest_top + row_h));
+            set_rect(&r->dest_row, r->detail_text.left, dest_top,
+                     (short)(r->dest_btn.left - 6),
+                     (short)(dest_top + row_h));
+            r->photos_text.bottom = (short)(dest_top - 6);
+        } else {
+            set_empty(&r->size_popup, col_right, r->summary_row.top);
+            set_empty(&r->dest_btn, col_right, r->summary_row.top);
+            set_empty(&r->dest_row, col_right, r->summary_row.top);
+            r->photos_text.bottom = (short)(r->summary_row.top - 6);
+        }
     }
 }

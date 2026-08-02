@@ -304,6 +304,40 @@ static void test_malformed_frames_read_as_zero(void)
     assert(cloud_parse_card("{\"rows\":[[", &store) == 0);
 }
 
+static void test_dest_leaf_is_the_last_segment(void)
+{
+    char out[64];
+
+    /* The summary line's whole job: one word that answers "where". */
+    cloud_dest_leaf("Macintosh HD:Photos:Trips", out, sizeof out);
+    assert(strcmp(out, "Trips") == 0);
+
+    /* A volume names itself; its trailing colon is punctuation. */
+    cloud_dest_leaf("Macintosh HD:", out, sizeof out);
+    assert(strcmp(out, "Macintosh HD") == 0);
+
+    /* No colon at all is already a leaf. */
+    cloud_dest_leaf("Desktop Folder", out, sizeof out);
+    assert(strcmp(out, "Desktop Folder") == 0);
+
+    /* Nothing chosen: empty, and the caller supplies its own default
+       rather than this file inventing one. */
+    cloud_dest_leaf("", out, sizeof out);
+    assert(out[0] == '\0');
+    cloud_dest_leaf(NULL, out, sizeof out);
+    assert(out[0] == '\0');
+
+    /* A leaf longer than the buffer truncates and stays terminated -
+       31-character HFS names into a smaller field is the real case. */
+    {
+        char small[8];
+
+        cloud_dest_leaf("HD:A Very Long Folder Name", small, sizeof small);
+        assert(strlen(small) == 7);
+        assert(strncmp(small, "A Very ", 7) == 0);
+    }
+}
+
 int main(void)
 {
     test_report_fills_services_whatever_their_state();
@@ -315,6 +349,7 @@ int main(void)
     test_size_popup_maps_items_to_contract_tokens();
     test_dl_bar_value_scales_and_clamps();
     test_dl_bytes_line_reads_kilobytes();
+    test_dest_leaf_is_the_last_segment();
     test_malformed_frames_read_as_zero();
     printf("cloud_model_test: all assertions passed\n");
     return 0;
