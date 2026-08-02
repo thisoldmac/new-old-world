@@ -69,6 +69,53 @@ The same wrong unwrap is still in `apple-event-probe.py`, `ctlinvoke-probe.py`,
 for them to use. **Any number those four have ever produced about windows
 should be re-taken.**
 
+### The caveat that decides what 0/20 means
+
+**A guard that held and a plane that cannot fire in that process at all
+produce the same 0/20.** This has to be said beside the number, because the
+same day's evidence points at the second reading:
+
+- `actselftest` **abi-agreed** against NOW's own app and **refused**
+  (`act-refused: the target refused the request`) with the **Finder**
+  frontmost, on the same build, minutes apart. That reproduces the
+  2026-08-01 overnight arc's split, whose suspected cause was PPC-native
+  trap dispatch bypassing the 68K patches.
+- The menu case drove the Finder. So its 0/20 says the armed request never
+  fired during someone else's click — it does **not** establish that the
+  request could have fired.
+
+Upstream's number does not have this ambiguity: Portal measured **18/20
+hijacks before its guard was fixed**, which proves the plane could act in
+that process. **NOW has never seen its act plane fire inside the Finder.**
+Until it has, the honest claim is "no stray actuation observed in 20
+trials", not "the guard was proven to hold". The measurement that settles
+it is a POSITIVE control — an armed request that actuates on its own
+correct click in the Finder — and it has not been taken.
+
+### P3's first arm, ever (2026-08-02)
+
+The content plane had never been armed on any machine. It has now, twice:
+
+| | result |
+|---|---|
+| arm against NOW's own app (Carbon) | `arms: 1`, `installs: 1`, `hookedPorts: 1`, `active.a5` = requested. **`ops.total: 0`** |
+| arm against the **Finder** (classic) | same: armed, committed, one port hooked. **`ops.total: 0`**, ring `ticks` never stamped |
+| arm against an A5 that is no process | **refused correctly**: `active` went to off, `uninstalls: 1`, and `refused.wrongContext` reached **360** in ~5 s |
+
+So the plane's *machinery* works — it arms, commits in the right order,
+installs a hook, retires cleanly, and its context guard refuses hundreds of
+times a second rather than silently accepting. **What it has never done is
+capture one drawing operation.** The ring's `ticks` field never moved, which
+means no hook body ran at all, not that it ran and found nothing.
+
+Unknown, and now the content plane's first real question: whether Color
+QuickDraw on a PPC Mac routes through the 68K `CQDProcs` this plane hooks,
+or past them. `hookedPorts: 1` while the Finder owns more than one window is
+worth checking in the same pass. The stimulus was mouse movement, which the
+Cursor Manager may draw outside `grafProcs` entirely — so a stronger
+stimulus (a menu pull, a window open) should be tried before concluding
+anything about the mechanism.
+
 **What did NOT get a number, and why** — so the table above is not read as a
 sweep:
 
@@ -80,13 +127,9 @@ sweep:
   without inbound traffic and the case's gaps are ~16 s, so idle timeout does
   not explain it. Re-run needed with nothing else touching the machine.
 - **`control`, `window`, `text`, `collide`: not run.**
-- **P3 never armed.** Discoverable is not armed; the first arm is still owed.
-- **The Finder-vs-own-app split is unresolved.** `actselftest` abi-agreed
-  against NOW's own app here. The 2026-08-01 overnight arc saw it *refuse*
-  against the Finder on the same build, suspected PPC-native trap dispatch
-  bypassing the 68K patches — and the menu case above drove the **Finder**
-  successfully, which sits oddly beside that report and is worth settling
-  rather than assuming either way.
+- **A positive control for the act plane in the Finder.** See the caveat
+  above: it is the measurement that decides what 0/20 means, and it is the
+  most important thing owed here.
 
 ## How rows were classified
 
