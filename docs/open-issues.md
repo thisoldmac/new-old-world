@@ -106,7 +106,49 @@ second is happening. Upstream's number has no such ambiguity because
 Portal measured 18/20 hijacks *before* its guard was fixed, proving it
 could act there. See the parity ledger.
 
-**Narrowed the same day, and the narrowing moves the suspect.** The test
+**ANSWERED, 2026-08-02, once the verb was made to report the plane's own
+error instead of the status.** Four `actselftest` calls on one boot,
+guest build `b77ba1c82e50`:
+
+| | target | answer |
+|---|---|---|
+| A | NOW's own app | `abi-agreed` |
+| B | the Finder, by PSN | **`act-no-patch`** |
+| C | SimpleText, by PSN | **`act-no-patch`** |
+| D | NOW's own app again | `abi-agreed` |
+
+D is the discriminator and it rules out the "only the first request since
+boot works" reading: A and D both agree, B and C both refuse. So this is
+about **whose context the patch is asked to fire in**.
+
+And `act-no-patch` locates it exactly. `cell->patches` is one field in
+one shared table — the same value whichever process reads it — so if the
+GUARD's `patches_present` check were failing it would fail for NOW's app
+too, and it does not. The refusal therefore comes from the other place
+that returns `kNowPeekActErrNoPatch`: `act_serve_selftest`'s
+`if (!cell->fired)`. The resident called `MenuSelect(0,0)` **from its own
+68K code, inside the Finder's and SimpleText's contexts, and its own
+patch did not fire** — while the identical call inside NOW's application
+fires and returns exactly what it wrote.
+
+**The measured fact, stated without a mechanism:** the act plane's trap
+patch intercepts `MenuSelect` in the process whose context installed it,
+and not in others. The `why` is not established. The prime suspect is
+`act_install`'s one-shot `static int installed` in
+`ext/src/now_ext_act.c`: it installs the six patches on the FIRST armed
+pass in whatever process happens to pump first — which is NOW's own
+application in every run so far — and never again. If Mac OS 9's trap
+dispatch is not as system-wide as a classic 68K machine's for this case,
+a one-shot install is exactly the shape of bug that produces this table.
+
+**The experiment that would confirm it**, and it is cheap: from a fresh
+boot, arm the plane while a FOREIGN application is frontmost so the first
+armed pass happens in ITS context, then run the same four calls. If the
+answers invert — the foreign app agreeing and NOW's refusing — the
+one-shot is the bug and the repair is to install per context rather than
+once.
+
+**Narrowed earlier the same day.** The test
 was repeated against **SimpleText** — a plain classic application,
 launched, frontmost, and bound by the anchor plane (`bind=ok`, fresh
 `a5`) — and the result is identical: `menuact` answers `act-not-taken`,

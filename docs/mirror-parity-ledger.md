@@ -119,6 +119,20 @@ about the posted press**, and since the anchor pass in the same filter
 demonstrably runs in those processes, the question is why the ACT pass
 does not serve there. See open-issues for the reading order.
 
+**And then the plane was asked why, and answered.** With `actselftest`
+reporting the plane's own error instead of the status, four calls on one
+boot: NOW's own app `abi-agreed`, the Finder `act-no-patch`, SimpleText
+`act-no-patch`, NOW's own app again `abi-agreed`. The repeat rules out
+"only the first request works". `act-no-patch` here can only be
+`act_serve_selftest`'s `!cell->fired`, because `cell->patches` is one
+shared field that reads the same in every process — so **the resident
+called `MenuSelect` from its own 68K code inside a foreign application
+and its own patch did not fire**, while the same call inside NOW's
+application fires and reads back exactly what it wrote. Prime suspect:
+`act_install`'s one-shot `static int installed`, which installs on the
+first armed pass in whatever process pumps first (always NOW's own so
+far). See open-issues for the confirming experiment.
+
 **What this costs the roadmap.** Every click-driven act verb
 (`menuact`, `ctlact`, `winact`) depends on the target application
 dequeuing a press this plane posts with `PPostEvent` from inside the
