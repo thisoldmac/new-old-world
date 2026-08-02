@@ -38,13 +38,26 @@
 const CloudViewOps *cloud_contacts_view_ops(void);
 
 typedef struct CloudContactsHost {
-    /* A row on THIS view's own browser was selected/deselected (-1).
-       The shell's existing g_selected/ask_card()/CloudViewOps.select
-       plumbing runs off this -- the same three steps its own shared
-       browser's notification already performs for every other
-       service, because this view owns a second CONTROL, not a second
-       selection model. */
+    /* A row on THIS view's own browser was selected. The shell's
+       existing g_selected/ask_card()/CloudViewOps.select plumbing
+       runs off this -- the same three steps its own shared browser's
+       notification already performs for every other service, because
+       this view owns a second CONTROL, not a second selection
+       model. */
     void (*row_selected)(int index);
+
+    /* A row on THIS view's own browser was deselected. The Data
+       Browser fires Deselected(old) around Selected(new) -- a click
+       on a second name delivers a deselect of the first alongside
+       the select of the second -- so this view hands the shell the
+       INDEX rather than clearing unconditionally, and the shell
+       decides whether that index is still the current selection
+       (cloud_module.c's note_row_deselected, the same comparison its
+       own browser's notification already makes). Clearing here on
+       every deselect was exactly the bug: it threw away the new
+       click's selection when the two notifications arrived in the
+       old-then-new order. */
+    void (*row_deselected)(int index);
 
     /* True while the shell is mutating a browser's items on its own
        behalf (a rebuild, a listing settling, a search's diff) --

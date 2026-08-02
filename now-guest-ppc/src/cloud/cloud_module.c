@@ -773,6 +773,25 @@ static Boolean shell_in_rebuild(void)
     return g_in_rebuild;
 }
 
+/* The Data Browser fires Deselected(old) around Selected(new): a
+   click on row 2 delivers Deselected(1) then Selected(2) (or the
+   other order), and an unconditional clear-on-deselect throws away
+   the selection the new click just made. This is the ONE place that
+   comparison happens -- the shell's own browser routes through it
+   below, and CloudContactsHost.row_deselected hands it Contacts'
+   own browser's deselect index too, so the guard exists once for
+   both controls rather than once correctly here and once missing
+   there. (cloud_drive_view.c's own browser needs no entry here: its
+   selection is a private index into its own listing, not this
+   file's g_selected, so its own local guard is a different fact,
+   not a duplicate of this one.) */
+static void note_row_deselected(int index)
+{
+    if (g_selected == index) {
+        note_row_selected(-1);
+    }
+}
+
 static void item_notify(ControlRef browser, DataBrowserItemID item,
                         DataBrowserItemNotification message)
 {
@@ -785,9 +804,8 @@ static void item_notify(ControlRef browser, DataBrowserItemID item,
     }
     if (message == kDataBrowserItemSelected) {
         note_row_selected((int)item - 1);
-    } else if (message == kDataBrowserItemDeselected
-               && g_selected == (int)item - 1) {
-        note_row_selected(-1);
+    } else if (message == kDataBrowserItemDeselected) {
+        note_row_deselected((int)item - 1);
     }
 }
 
@@ -957,6 +975,7 @@ static OSErr cloud_create(WindowRef owner, const Rect *body)
             contacts_ops->create(owner);
         }
         contacts_host.row_selected = note_row_selected;
+        contacts_host.row_deselected = note_row_deselected;
         contacts_host.in_rebuild = shell_in_rebuild;
         cloud_contacts_view_bind(&contacts_host, &g_store);
     }
