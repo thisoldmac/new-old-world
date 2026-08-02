@@ -103,6 +103,29 @@ static void reply_status(char *out, long cap, long id, NowActStatus st)
                 now_act_status_message(st));
 }
 
+/* Did the request reach the machine at all?
+ *
+ * NOT simply `armed == ArmReady`, and the difference is a race this side
+ * lost 8 times in 8. The resident arms in the target's context and
+ * queues the press in the same pass; the application can dequeue it,
+ * call the trap, and have the patch answer - which sets `fired` and
+ * clears `armed` back to None - all before this side gets to look at the
+ * snapshot. Reading `armed` alone then says "the target served the
+ * request and did not arm" about a request that has ALREADY COMPLETED.
+ *
+ * Measured 2026-08-02 against the Finder, once the patches were being
+ * installed per context: `menuact` created an `untitled folder` on the
+ * Desktop 8 times out of 8 and reported `act-not-armed` 8 times out of
+ * 8. A false negative in the worst direction - a caller that believes it
+ * gets a second folder for every retry.
+ *
+ * So: armed OR already fired. Both mean the plane took it.
+ */
+static int act_reached_the_machine(const NowPeekActCell *snap)
+{
+    return snap->armed == (NowPeekU32)kNowPeekActArmReady || snap->fired;
+}
+
 /* The plane's own refusal, which names a condition the status vocabulary
    cannot: "that window is not in the target's list" is a different fact
    from "the target never served it". */
@@ -363,7 +386,7 @@ void now_act_run_winact(const char *request_json, long id, char *out, long cap)
        returns void and there is no question for a patch to answer. The
        other three need a click to make the application call FindWindow. */
     if (args.action != kNowActWinMove) {
-        if (g_snap.armed != kNowPeekActArmReady) {
+        if (!act_reached_the_machine(&g_snap)) {
             now_act_withdraw();
             reply_status(out, cap, id, kNowActNotArmed);
             return;
@@ -622,7 +645,7 @@ void now_act_run_ctlact(const char *request_json, long id, char *out, long cap)
         reply_status(out, cap, id, st);
         return;
     }
-    if (g_snap.armed != kNowPeekActArmReady) {
+    if (!act_reached_the_machine(&g_snap)) {
         now_act_withdraw();
         reply_status(out, cap, id, kNowActNotArmed);
         return;
@@ -746,7 +769,7 @@ void now_act_run_menuact(const char *request_json, long id, char *out, long cap)
         reply_status(out, cap, id, st);
         return;
     }
-    if (g_snap.armed != kNowPeekActArmReady) {
+    if (!act_reached_the_machine(&g_snap)) {
         now_act_withdraw();
         reply_status(out, cap, id, kNowActNotArmed);
         return;
