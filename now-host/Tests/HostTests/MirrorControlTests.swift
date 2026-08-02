@@ -423,14 +423,14 @@ final class MirrorControlTests: XCTestCase {
 
         let deep = root.appendingPathComponent(
             "now/now-host/.build/release/Host")
-        XCTAssertEqual(MirrorCheckout.locate(startingAt: deep)?.root.path,
+        XCTAssertEqual(MirrorCheckout.locate(startingAt: deep, defaults: nil)?.root.path,
                        mirror.standardizedFileURL.path)
 
         let decoy = try folder("decoy")
         try FileManager.default.createDirectory(
             at: decoy.appendingPathComponent("mirror"),
             withIntermediateDirectories: true)
-        XCTAssertNil(MirrorCheckout.locate(startingAt: decoy),
+        XCTAssertNil(MirrorCheckout.locate(startingAt: decoy, defaults: nil),
                      "a directory named mirror is not Mirror")
     }
 
@@ -626,5 +626,32 @@ final class MirrorControlTests: XCTestCase {
         try FileManager.default.setAttributes(
             [.posixPermissions: 0o755], ofItemAtPath: product.path)
         return checkout
+    }
+
+    /// A shipped app never sits inside the checkout, so the walk finds
+    /// nothing and the remembered path is the only thing that can answer.
+    /// This is what a person hits the moment the app is on a Desktop.
+    func testARememberedCheckoutAnswersForACopiedApp() throws {
+        let root = try folder("remembered-repo")
+        let mirror = root.appendingPathComponent("mirror")
+        try FileManager.default.createDirectory(
+            at: mirror.appendingPathComponent("host/MirrorKit"),
+            withIntermediateDirectories: true)
+        try Data().write(to: mirror
+            .appendingPathComponent("host/MirrorKit/Package.swift"))
+        let defaults = UserDefaults(suiteName: "MirrorControlTests.remembered")!
+        defaults.removePersistentDomain(forName: "MirrorControlTests.remembered")
+        defaults.set(mirror.path, forKey: MirrorCheckout.rememberedRepoKey)
+        let desktop = URL(fileURLWithPath: "/Users/someone/Desktop")
+        XCTAssertEqual(
+            MirrorCheckout.locate(startingAt: desktop, defaults: defaults)?
+                .root.path,
+            mirror.standardizedFileURL.path,
+            "a copied app must still find the checkout it was built from")
+
+        defaults.set("/nowhere/at/all", forKey: MirrorCheckout.rememberedRepoKey)
+        XCTAssertNil(MirrorCheckout.locate(startingAt: desktop, defaults: defaults),
+                     "a remembered path that moved degrades to nil, not to a bad launch")
+        defaults.removePersistentDomain(forName: "MirrorControlTests.remembered")
     }
 }

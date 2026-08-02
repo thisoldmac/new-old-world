@@ -277,23 +277,43 @@ struct MirrorCheckout: Equatable, Sendable {
         package.appendingPathComponent(".build/release/MirrorApp")
     }
 
+    /// Where a build records the checkout it came from. The walk below
+    /// only holds while the binary sits inside the repository, and a
+    /// shipped app never does — so without this, a copied app reports
+    /// "nowhere to look" even on the machine that built it. Written by
+    /// whoever stages the app; an explicit setting still outranks it.
+    static let rememberedRepoKey = "NOWMirrorRepoRoot"
+
     /// Walks up from the running binary looking for a repository with a
-    /// `mirror/` in it. Bounded generously rather than by a counted depth
-    /// anyone would have to keep correct: `swift run` puts the executable
-    /// at `now-host/.build/<config>/Host` and the Xcode app is deeper.
-    /// Nil once the app is dragged out of the checkout, which is normal.
+    /// `mirror/` in it, and falls back to the remembered checkout. Bounded
+    /// generously rather than by a counted depth anyone would have to keep
+    /// correct: `swift run` puts the executable at
+    /// `now-host/.build/<config>/Host` and the Xcode app is deeper.
     static func locate(startingAt start: URL,
+                       defaults: UserDefaults? = .standard,
                        fileManager: FileManager = .default) -> MirrorCheckout? {
+        func isMirror(_ url: URL) -> Bool {
+            fileManager.fileExists(
+                atPath: url.appendingPathComponent(marker).path)
+        }
         var dir = start.standardizedFileURL
         for _ in 0..<12 {
             let candidate = dir.appendingPathComponent("mirror")
-            if fileManager.fileExists(atPath: candidate
-                .appendingPathComponent(marker).path) {
+            if isMirror(candidate) {
                 return MirrorCheckout(root: candidate.standardizedFileURL)
             }
             let parent = dir.deletingLastPathComponent().standardizedFileURL
             if parent == dir { break }
             dir = parent
+        }
+        /* A remembered path that no longer holds Mirror is not an error:
+           it falls through to nil the same way an absent one does, so a
+           moved checkout degrades to "name a binary" rather than to a
+           launch that fails somewhere less obvious. */
+        if let remembered = defaults?.string(forKey: rememberedRepoKey),
+           !remembered.isEmpty {
+            let url = URL(fileURLWithPath: remembered).standardizedFileURL
+            if isMirror(url) { return MirrorCheckout(root: url) }
         }
         return nil
     }
