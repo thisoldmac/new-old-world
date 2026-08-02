@@ -310,6 +310,12 @@ run_c now-guest-ppc cloud_photo_size_test.c "" \
 # only ever being exercised by eye on the PowerBook.
 run_c now-guest-ppc cloud_contacts_card_test.c "" \
       src/cloud/cloud_contacts_card.c
+# The Contacts card cache's pure half: insert/lookup/evict/bounds, the
+# decidable core behind "a selection with a cached card draws instantly
+# and asks nothing" (docs/icloud.md). No wire, no prefetch scheduling --
+# those stay in cloud_module.c, unreachable from a host cc.
+run_c now-guest-ppc cloud_card_cache_test.c "" \
+      src/cloud/cloud_card_cache.c
 # The path row's label: the share named by the listing's own root, with
 # "Shared folder" only left for hosts predating the field, and one colon
 # at the root/path join whichever spelling of root arrived.

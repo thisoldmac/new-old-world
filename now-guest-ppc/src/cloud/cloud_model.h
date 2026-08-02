@@ -79,6 +79,16 @@ int cloud_parse_report(const char *reply, CloudStore *store);
 int cloud_parse_listing(const char *reply, CloudStore *store);
 int cloud_parse_card(const char *reply, CloudStore *store);
 
+/* cloud_parse_card's own core, taking caller-supplied buffers instead
+   of a whole CloudStore: the card cache (cloud_card_cache.h) fills one
+   entry from a cloud.card reply that may answer a PREFETCH rather than
+   the row currently on screen, and a second kCloudMaxRows-sized
+   CloudStore just to reach its card[]/card_item fields would cost
+   ~25KB of scratch for a ~2.5KB card. cloud_parse_card is this
+   function pointed at one store's own fields. */
+int cloud_parse_card_rows(const char *reply, char *item_out, long item_cap,
+                          CloudCardRow *rows_out, int rows_cap);
+
 /* The first service whose state is "serving" and that has rows to ask
    for (not drive, whose browsing lives in Files); -1 when none. The
    dropdown's initial selection. */

@@ -242,6 +242,16 @@ int now_wire_cloud_list(const char *service, long cursor,
                         char *err, long cap);
 int now_wire_cloud_detail(const char *service, const char *item,
                           char *err, long cap);
+
+/* True while a cloud.services/cloud.list/cloud.detail ask is awaiting
+   its answer — the single slot the three share (a second ask replaces
+   the first, above). The Contacts card prefetch (cloud_module.c)
+   reads this before ever asking a cloud.detail of its own: prefetch
+   traffic must be the only thing waiting on an idle wire, never
+   layered under a page still loading or a person's own selection
+   already in flight, and this is the one place that answer lives. */
+Boolean now_wire_cloud_pending(void);
+
 /* `size` is the contract's per-ask delivery size ("original",
    "fit1024", "fit640"), or NULL/"" to omit the field and take the
    host's configured default — the ask every guest before the field

@@ -95,8 +95,12 @@ static void item_notify(ControlRef browser, DataBrowserItemID item,
             g_host.row_selected((int)item - 1);
         }
     } else if (message == kDataBrowserItemDeselected) {
-        if (g_host.row_selected != NULL) {
-            g_host.row_selected(-1);
+        /* Hand the shell the INDEX rather than clearing here: the
+           Data Browser fires Deselected(old) around Selected(new),
+           and only the shell knows whether `item` is still the
+           current selection (its own g_selected) -- see the header. */
+        if (g_host.row_deselected != NULL) {
+            g_host.row_deselected((int)item - 1);
         }
     }
 }

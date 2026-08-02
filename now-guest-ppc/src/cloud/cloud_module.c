@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "cloud_card_cache.h"
 #include "cloud_contacts_view.h"
 #include "cloud_drive_view.h"
 #include "cloud_filter.h"
@@ -78,6 +79,21 @@ static Boolean g_loading;
 static Boolean g_asked_once;
 static Boolean g_in_rebuild;
 static char g_status[128];
+
+/* Contacts' card cache and the background walk that fills it -- see
+   docs/icloud.md's contacts paragraph. The cache holds every card the
+   prefetch (or an ordinary selection) has already asked for, keyed by
+   item id; g_prefetch_next is this view's own cursor into g_store.rows,
+   never rewound except by a fresh listing (reset_card_prefetch, below).
+   g_prefetch_pending is true for exactly as long as the ONE
+   outstanding cloud.detail ask (if any) is this walk's own, rather
+   than a selection's — cloud_module.c owns both kinds of card ask, and
+   this is the one flag that tells note_card() which kind just
+   answered. Scoped to contacts only (g_contacts_mode gates every use
+   below): Photos' own card asks are unaffected. */
+static CloudCardCache g_card_cache;
+static int g_prefetch_next;
+static Boolean g_prefetch_pending;
 
 /* The live search: a hand-drawn field driven from key(), the same
    reason software_module.c's is (this WaitNextEvent app cannot host an
@@ -221,6 +237,19 @@ static void ask_services(void)
     set_status("Asking what is on offer...");
 }
 
+/* A fresh listing invalidates every cached card and the walk's own
+   place in it -- the rows an old cursor names may not even be the same
+   contacts. Reached from ask_rows's cursor<=1 branch (a first page,
+   a Refresh, or a service switch) rather than choose_service directly,
+   because that is already the one place "the listing just restarted"
+   is decided for every service, contacts included. */
+static void reset_card_prefetch(void)
+{
+    cloud_card_cache_reset(&g_card_cache);
+    g_prefetch_next = 0;
+    g_prefetch_pending = false;
+}
+
 static void ask_rows(long cursor)
 {
     const CloudService *service = current_service();
@@ -231,6 +260,7 @@ static void ask_rows(long cursor)
     }
     if (cursor <= 1) {
         cloud_store_reset_rows(&g_store, service->service);
+        reset_card_prefetch();
         g_selected = -1;
         if (g_browser != NULL) {
             g_in_rebuild = true;
@@ -269,7 +299,20 @@ static void ask_card(void)
                               g_store.rows[g_selected].item,
                               err, sizeof err) != 0) {
         set_status(err);
+        return;
     }
+    /* This ask, not any prefetch that happened to be outstanding, now
+       owns the wire's one cloud.detail slot -- a live selection always
+       outranks the background walk (docs/icloud.md: "pausing for any
+       user-initiated ask"). Superseded or not, the prefetch's own
+       reply (if it was mid-flight) can no longer arrive: a second ask
+       replaces the first at the wire level (wire.c's g_cloud), so its
+       reply's id will never again match and wire.c drops it before
+       note_card ever sees it. Clearing the flag here, rather than only
+       where a prefetch reply itself would have cleared it, is what
+       keeps note_card's branch honest about which kind of ask this
+       reply is actually answering. */
+    g_prefetch_pending = false;
 }
 
 static void ask_save(void)
@@ -641,9 +684,43 @@ static void note_listing(const char *reply)
     }
 }
 
+/* The ONE outstanding cloud.detail ask has settled -- either the card
+   the person is looking at (g_prefetch_pending false: an ordinary
+   selection, or the prefetch's own reply for whatever row is CURRENTLY
+   selected, which reads identically either way) or a prefetch reply
+   for some other, unselected row. Either way the answer is worth
+   keeping: a selection's own card is cached too, so revisiting it
+   later costs nothing. */
 static void note_card(const char *reply)
 {
+    if (g_prefetch_pending) {
+        char item[64];
+        CloudCardRow rows[kCloudMaxCardRows];
+        int count;
+
+        g_prefetch_pending = false;
+        count = cloud_parse_card_rows(reply, item, sizeof item,
+                                      rows, kCloudMaxCardRows);
+        if (item[0] != '\0') {
+            cloud_card_cache_put(&g_card_cache, item, rows, count);
+        }
+        /* Move the walk on regardless of outcome: a malformed or
+           empty reply for this row is still a row this pass has
+           tried, and re-asking it forever would be the burst the
+           prefetch is not allowed to make. */
+        ++g_prefetch_next;
+        return;                    /* never touches the shown card --
+                                       the person is not looking at
+                                       this contact right now, and
+                                       cloud_module.c's own selected
+                                       row asks through the branch
+                                       below, never this one. */
+    }
     cloud_parse_card(reply, &g_store);
+    if (g_contacts_mode && g_store.card_item[0] != '\0') {
+        cloud_card_cache_put(&g_card_cache, g_store.card_item,
+                             g_store.card, g_store.card_count);
+    }
     invalidate_detail();
 }
 
@@ -759,7 +836,21 @@ static void note_row_selected(int index)
         return;
     }
     g_selected = index;
-    ask_card();
+    /* Contacts only: a cached card (the prefetch's own, or an earlier
+       selection's) draws instantly and asks the wire nothing; a miss
+       still asks, exactly as before, and that ask's own reply gets
+       cached too (note_card). Every other service keeps asking on
+       every selection, unchanged. */
+    if (g_contacts_mode && index < g_store.row_count
+        && cloud_card_cache_get(&g_card_cache, g_store.rows[index].item,
+                                g_store.card, &g_store.card_count)) {
+        strncpy(g_store.card_item, g_store.rows[index].item,
+               sizeof g_store.card_item - 1);
+        g_store.card_item[sizeof g_store.card_item - 1] = '\0';
+        invalidate_detail();
+    } else {
+        ask_card();
+    }
     if (g_view != NULL && g_view->select != NULL) {
         g_view->select(&g_r, &g_store, g_selected);
     }
@@ -771,6 +862,25 @@ static void note_row_selected(int index)
 static Boolean shell_in_rebuild(void)
 {
     return g_in_rebuild;
+}
+
+/* The Data Browser fires Deselected(old) around Selected(new): a
+   click on row 2 delivers Deselected(1) then Selected(2) (or the
+   other order), and an unconditional clear-on-deselect throws away
+   the selection the new click just made. This is the ONE place that
+   comparison happens -- the shell's own browser routes through it
+   below, and CloudContactsHost.row_deselected hands it Contacts'
+   own browser's deselect index too, so the guard exists once for
+   both controls rather than once correctly here and once missing
+   there. (cloud_drive_view.c's own browser needs no entry here: its
+   selection is a private index into its own listing, not this
+   file's g_selected, so its own local guard is a different fact,
+   not a duplicate of this one.) */
+static void note_row_deselected(int index)
+{
+    if (g_selected == index) {
+        note_row_selected(-1);
+    }
 }
 
 static void item_notify(ControlRef browser, DataBrowserItemID item,
@@ -785,9 +895,8 @@ static void item_notify(ControlRef browser, DataBrowserItemID item,
     }
     if (message == kDataBrowserItemSelected) {
         note_row_selected((int)item - 1);
-    } else if (message == kDataBrowserItemDeselected
-               && g_selected == (int)item - 1) {
-        note_row_selected(-1);
+    } else if (message == kDataBrowserItemDeselected) {
+        note_row_deselected((int)item - 1);
     }
 }
 
@@ -853,6 +962,7 @@ static OSErr cloud_create(WindowRef owner, const Rect *body)
     cloud_store_reset(&g_store);
     g_service = -1;
     g_selected = -1;
+    reset_card_prefetch();
     g_view = cloud_list_view_ops();
     g_status[0] = '\0';
     g_shown_status[0] = '\0';
@@ -957,6 +1067,7 @@ static OSErr cloud_create(WindowRef owner, const Rect *body)
             contacts_ops->create(owner);
         }
         contacts_host.row_selected = note_row_selected;
+        contacts_host.row_deselected = note_row_deselected;
         contacts_host.in_rebuild = shell_in_rebuild;
         cloud_contacts_view_bind(&contacts_host, &g_store);
     }
@@ -997,6 +1108,7 @@ static void cloud_dispose(void)
     g_owner = NULL;
     g_view = NULL;
     g_watch_get = false;
+    reset_card_prefetch();
 }
 
 static void show_control(ControlRef control, Boolean on)
@@ -1399,6 +1511,49 @@ static void cloud_activate(Boolean active)
     }
 }
 
+/* One step of the Contacts card prefetch: ask cloud.detail for the
+   next un-cached listed row, but only while the wire's single
+   cloud-ask slot is genuinely free -- no page still loading, no
+   selection's own ask in flight, and (g_prefetch_pending) no earlier
+   prefetch ask still awaiting an answer. That last check is what
+   keeps this to "one ask in flight, ever": drive_card_prefetch runs
+   once per idle pass, and every pass but the one that just got an
+   answer finds g_prefetch_pending still true and does nothing. A
+   refusal or a dropped connection is silent here on purpose -- the
+   same row is tried again next pass once the wire recovers, and a
+   status line for a background courtesy fetch would drown out
+   whatever the page is actually telling the person right now. */
+static void drive_card_prefetch(void)
+{
+    const CloudService *service;
+    char err[96];
+
+    if (!g_contacts_mode || g_owner == NULL || !g_visible) {
+        return;
+    }
+    if (g_prefetch_pending || now_wire_cloud_pending()) {
+        return;
+    }
+    while (g_prefetch_next < g_store.row_count
+           && cloud_card_cache_get(&g_card_cache,
+                                   g_store.rows[g_prefetch_next].item,
+                                   NULL, NULL)) {
+        ++g_prefetch_next;
+    }
+    if (g_prefetch_next >= g_store.row_count) {
+        return;                    /* every listed row is cached (or
+                                       the list is still empty) */
+    }
+    service = current_service();
+    if (service == NULL
+        || now_wire_cloud_detail(service->service,
+                                 g_store.rows[g_prefetch_next].item,
+                                 err, sizeof err) != 0) {
+        return;                    /* try again next idle pass */
+    }
+    g_prefetch_pending = true;
+}
+
 static void cloud_idle(void)
 {
     Boolean save_on;
@@ -1413,6 +1568,7 @@ static void cloud_idle(void)
         g_asked_once = true;
         ask_services();
     }
+    drive_card_prefetch();
     if (g_view != NULL && g_view->idle != NULL) {
         g_view->idle(&g_r);
     }
