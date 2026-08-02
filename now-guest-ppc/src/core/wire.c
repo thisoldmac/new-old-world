@@ -2473,10 +2473,18 @@ static Boolean cloud_refused(const char *reply)
     } else if (g_cloudget.pending && id == g_cloudget.id) {
         g_cloudget.pending = false;
     } else if (g_prev.pending && id == g_prev.id) {
-        /* The preview's refusal goes to its own hook — a busy lane
-           ("preview after the download") belongs in the pane, not in
-           the shared status line's error slot. */
-        if (!now_json_find_text(reply, "reason", reason, sizeof reason)) {
+        /* The preview's refusal goes to its own hook, and the one code
+           a person can act on gets its honest wording HERE, where the
+           code is still visible: busy means the lane is carrying a
+           download, and the preview will work once it is done. */
+        char code[24];
+
+        code[0] = '\0';
+        now_json_find_string(reply, "code", code, sizeof code);
+        if (strcmp(code, "busy") == 0) {
+            strcpy(reason, "Preview after the download");
+        } else if (!now_json_find_text(reply, "reason", reason,
+                                       sizeof reason)) {
             strcpy(reason, "the other Mac refused the preview");
         }
         preview_fail(reason);
