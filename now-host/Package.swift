@@ -21,7 +21,8 @@ let package = Package(
         // better port: Mirror is vendored WHOLE at `now/mirror/`, keeping its
         // own wire, its own INITs and its own agent surface. Nothing in this
         // package builds it — it is a separate SwiftPM package, and the
-        // Mirror module here launches it (`MirrorLauncherModel`).
+        // Mirror module here starts and stops one instance of it
+        // (`MirrorControlModel`).
     ],
     targets: [
         .target(name: "NOWAgentIntegration",

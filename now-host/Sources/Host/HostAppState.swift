@@ -84,16 +84,19 @@ final class HostAppState: ObservableObject {
         addressing: agentIntegration,
         select: { [weak self] key in self?.selectGuest(key) ?? false })
     private(set) lazy var console = ConsoleModel(listener: listener)
-    /// The Mirror page — a launcher for Mirror, the separate application in
-    /// `mirror/`, and the one module here that is NOT guest-scoped.
+    /// The Mirror page — the lifecycle of one Mirror instance, pointed at
+    /// the machine this window is driving.
     ///
-    /// It takes no listener and appears in no guest-scoped list, because it
-    /// makes no claim about the connected Mac: Mirror drives its own guest
-    /// over its own wire, and the machine NOW happens to be talking to is
-    /// not the one Mirror's window is drawing. Wiring this page to the
-    /// picker would say the opposite, and that confusion is exactly what the
-    /// port it replaced encouraged.
-    private(set) lazy var mirror = MirrorLauncherModel()
+    /// Guest-scoped, and that is a reversal worth stating. The page it
+    /// replaced deliberately took no listener, because it launched Mirror
+    /// against Mirror's OWN throwaway emulator session; the machine NOW was
+    /// talking to had nothing to do with it, and a person with a Mac
+    /// connected had no way to mirror THAT Mac. The connection is the
+    /// target now — the address Mirror dials, the extensions it needs and
+    /// the agent it talks to are all facts about the machine on this wire —
+    /// so the page moves with the picker like every other one.
+    private(set) lazy var mirror = MirrorControlModel(
+        guestProbe: MirrorGuestWireProbe(listener: listener))
     private(set) lazy var census = CensusModuleModel(listener: listener)
     private(set) lazy var diagnostics = DiagnosticsModel(listener: listener)
     private(set) lazy var networking = NetworkingModel(listener: listener)
@@ -125,7 +128,7 @@ final class HostAppState: ObservableObject {
     /// to one and not the other is precisely the defect this list closes.
     private var guestScopedModels: [any GuestScopedModel] {
         [screenshots, files, census, diagnostics, processes, software,
-         networking]
+         networking, mirror]
     }
 
     /// Points the whole window at another connected Mac.

@@ -91,16 +91,17 @@ struct ModuleRegistry: Sendable {
             symbol: "cpu",
             summary: "What is running on the connected Mac"
         ),
-        /* Kept where the Mirror page has always been, though it no longer
-           shows this Mac anything: it launches Mirror, the separate
-           application in `mirror/`, which drives a machine of its own over a
-           wire that is not NOW's. Moving the row would only lose it for the
-           people who know where it was. */
+        /* Kept where the Mirror page has always been, and now beside
+           Processes for a reason rather than by inheritance: it is about
+           the connected Mac, the way every other row in this half is.
+           Mirror is a separate application with its own wire — this page
+           owns whether that Mac is ready for it and one instance's
+           lifecycle, not the drawing. */
         ModuleDescriptor(
             id: "mirror",
             title: "Mirror",
             symbol: "macwindow.on.rectangle",
-            summary: "Launch Mirror, the separate app that draws a Mac's live interface"
+            summary: "Run Mirror against the connected Mac, and see if it is ready"
         ),
         ModuleDescriptor(
             id: "console",
