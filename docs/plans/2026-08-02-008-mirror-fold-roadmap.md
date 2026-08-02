@@ -111,18 +111,18 @@ The mapping, method by method:
 - `mirror.attach` / `mirror.detach` — dissolve; NOW's session model owns
   the connection, and single-client attach semantics have no equivalent
   worth porting. Written disposition, not silence.
-- `mirror.status` — M1's `mirror` verb, projected.
-- `mirror.scene` / `mirror.find` / `mirror.wait` — M2's scene broker,
+- `mirror.status` — WP1's `mirror` verb, projected.
+- `mirror.scene` / `mirror.find` / `mirror.wait` — WP2's scene broker,
   as projection rows beside the pane (find/wait are host-side joins over
   the same scene the pane renders; they answer from the same decode, or
   they are two implementations).
 - `mirror.act.control/menu/window/type/key/open` and `mirror.app` — the
-  act projections M3 flips out of `.notReached`, plus the existing
+  act projections WP3 flips out of `.notReached`, plus the existing
   key/script/launch/activate reach. `mirror.act.scroll` follows the
   control path or gets a written refusal.
-- `mirror.shot` — M4's `capture.request` region change serves the pane's
+- `mirror.shot` — WP4's `capture.request` region change serves the pane's
   islands and this tool with one contract change.
-- M5 retires `--serve` and ManagedServe with MirrorApp, gated on every
+- WP5 retires `--serve` and ManagedServe with MirrorApp, gated on every
   `mirror.*` method having a projection row or a written disposition in
   [mcp-coverage.md](../mcp-coverage.md).
 
@@ -142,34 +142,102 @@ survive the fold. The rule and its consequences, per layer:
   consumers never hold independent claims on the lane — contention is
   scheduled in the broker, where it can be fair and attributable, not
   on the guest, where it reads as a hang.
-- **Scene is shared, not duplicated** (M2). One poll cadence feeds one
+- **Scene is shared, not duplicated** (WP2). One poll cadence feeds one
   decoded scene; the pane renders it and `mirror.scene`/`find`/`wait`
   answer from it. Two pollers would double the walk load and halve the
   cadence — the broker's cache is the deliverable, and both consumers
   carry the same staleness stamp.
-- **Acts are one queue with attribution** (M3). The act cell is one
+- **Acts are one queue with attribution** (WP3). The act cell is one
   mailbox; the broker serializes pane clicks and agent acts, and a
   refusal or timeout names whose request it answers. An agent act must
   never surface in the pane as a phantom click, and a pane click must
   never be blamed on the agent — attribution is part of the projection
   row and the pane's state, not a log line.
-- **Content targeting has an owner policy** (M4). One traced A5 at a
+- **Content targeting has an owner policy** (WP4). One traced A5 at a
   time is a plane fact; if the pane mirrors app X while an agent asks
   to trace app Y, the second requester gets an honest refusal naming
   the holder (the `MetalMachineGuard` shape, applied to a plane), not
   a silent steal. Same-target requests share the drain.
-- **Arm leases are counted, not flagged** (M1). The P1 owner tracking
+- **Arm leases are counted, not flagged** (WP1). The P1 owner tracking
   in `peek.c` counts lessees — pane session, agent session, Processes
   page — and disarms on the last lapse, so one consumer's exit cannot
   disarm the plane under the other.
-- **The gate:** M2–M4 watched verifications each add a parallel case —
+- **The gate:** WP2–WP4 watched verifications each add a parallel case —
   the pane visibly live while an agent drives the same guest through
   the MCP (and vice versa), with the collision behaviours above
   observed, not asserted.
 
-## Milestones — one arc and one branch each
+## Milestones are tiers of integration, and every one of them works
 
-### M0 — the proving gate (emulator)
+Defined by Michelle, 2026-08-02, after past agents stopped mid-arc and
+handed over broken builds. A milestone is **not** "this little piece is
+done, but it doesn't work yet." A milestone is "**everything works**,
+but we are not yet fully integrated." The tiers below differ in *how
+much of the stack is NOW's*; they never differ in *whether the product
+works*.
+
+**Definition of done for every tier — all five, no exceptions:**
+
+1. A **running VM** with NOW and Mirror running, connected to a host
+   build.
+2. The mirror **launches from the host** and all user-facing
+   functionality works: clicks, window draw, menus — whichever stack
+   currently serves them.
+3. The **agentic surface is not crippled** — whatever agents could do
+   at the previous tier, they can do at this one, in parallel with the
+   human per the collision rules above.
+4. **Deployable artifacts handed over** for manual metal testing: the
+   host `.app` (Release), the guest `New Old World.bin` (an honest dev
+   name if the tier is unlanded), the `NowExt.bin`, and the TB* INIT
+   bins for as long as they are part of the staged image.
+5. A **semantic, digestible report**: what was done, what is
+   outstanding, in plain language — not a diff summary.
+
+**No stopping between tiers.** The work packages inside a tier (the
+WP-numbered sections below) are internal units — commit checkpoints
+land continuously per the repository's checkpoint discipline, but a
+work-package boundary is never a place to stop and report. If a session
+dies mid-tier, the last *delivered* state is the previous tier, and the
+next session finishes the tier before anything else. A broken build is
+never a stopping point.
+
+**The strangler-fig consequence.** Because every tier must carry full
+user-facing functionality, the delivered mirror surface stays on
+Mirror's own stack (MirrorApp, its wire, the TB* INITs) until NOW's
+replacement surface reaches **full** parity — clicks, menus, draw,
+interiors — and only then swaps in. There is no tier where the human
+gets a mirror that renders but cannot click.
+
+### The tiers
+
+**T1 — Proven residents, same product** (work packages WP0 + WP1).
+The product is exactly today's: MirrorApp spawned from the host page,
+Mirror's wire, TB* INITs staged beside the NOW Extension. What changes
+underneath: the NWpt planes carry proven numbers, the `mirror`
+residency verb lands (the host page gains true residency — a visible
+improvement), the arm-lease and throttle are in, `gestalt` refuses
+unknown args. Agents keep everything they have today.
+
+**T2 — The mirror is NOW's window** (work packages WP2 + WP3 + WP4,
+delivered together). The host launches a NOW-owned mirror window
+(MirrorKit as dependency) fed by NOW's wire and the NOW Extension:
+scene render, clicks, menus, window ops, text, interiors — all of it —
+with the `mirror.*` projection rows landing beside their brokers so the
+agent surface reaches everything the pane does. MirrorApp remains
+available as the fallback surface during the tier's development and at
+its delivery; the TB* INITs remain staged (differential evidence and
+fallback). The tier is reached when the watched gates for scene, act,
+content, and the parallel human+agent cases all pass on the NOW window.
+
+**T3 — One extension, one wire, first-class module** (work package
+WP5). Identical user-facing product to T2, now on the single stack:
+TB* INITs out of the staged image under the strict-parity checklist,
+MirrorApp / `--serve` / port 1420 retired with per-method dispositions,
+the lifecycle page becomes the module page, docs closed out.
+
+## Work packages (internal units — never stopping points)
+
+### WP0 — the proving gate (emulator)
 
 Turn "present and discoverable" into per-plane NOW numbers on a
 session-private mac99 clone (`scripts/build-guests` →
@@ -188,7 +256,7 @@ session-private mac99 clone (`scripts/build-guests` →
   against NOW's app while *refusing against the Finder* on the same
   build — suspected PPC-native trap dispatch bypassing the 68K patches
   — and its click-driven act family measured 0/10. If that split
-  reproduces here it is an M3-blocking platform fact and must be
+  reproduces here it is an WP3-blocking platform fact and must be
   understood before any pane click is promised.
 - **P3:** first arm ever — count then record against a scripted
   SimpleText stimulus; prove the refusal counters by a deliberately
@@ -208,7 +276,7 @@ session-private mac99 clone (`scripts/build-guests` →
   "crossed" host rows cite archived paths; stale-mark them in the same
   pass.
 
-### M1 — residency verb, arm-lease, throttle
+### WP1 — residency verb, arm-lease, throttle
 
 - Contract-first `mirror` verb serving `MirrorFacts` (the guest console
   face already computes it in `now-guest-ppc/src/mirror/mirror_probe.c`);
@@ -229,7 +297,7 @@ session-private mac99 clone (`scripts/build-guests` →
   will demand it by design); new native tests into `scripts/test-native`'s
   manifest; mutation-verify the lease by removing the disarm.
 
-### M2 — perceive: MirrorKit renders NOW's scene in a NOW window
+### WP2 — perceive: MirrorKit renders NOW's scene in a NOW window
 
 - `now-host/Package.swift` gains a local path dependency on
   `mirror/host/MirrorKit` — products MirrorKit and MirrorKitUI, never
@@ -240,7 +308,7 @@ session-private mac99 clone (`scripts/build-guests` →
   `WireClient` (MacRoman line-JSON dialing 1730) are bypassed, replaced
   per-capability. Any MirrorKit edit is a recorded divergence from the
   standalone repo.
-- `Window.ref` is decoded here; M3 depends on it.
+- `Window.ref` is decoded here; WP3 depends on it.
 - Measure before choosing cadence: `serve_scene` already reports
   `walk_ms`; record walk + wire per poll and what a concurrent transfer
   does (`serve_scene` refuses while a stream owns the lane — that is
@@ -248,9 +316,9 @@ session-private mac99 clone (`scripts/build-guests` →
   0.7 s figure in circulation could not be located and is treated as
   stale. Staleness renders honestly.
 - **Gate:** a human watches the NOW window track the emulator — launch,
-  menu pull, window drag. This slice is read-only; clicks are M3.
+  menu pull, window drag. This slice is read-only; clicks are WP3.
 
-### M3 — act: a person clicks the NOW mirror
+### WP3 — act: a person clicks the NOW mirror
 
 - Gestures on the scene view → HitTester (alive, callerless today) → an
   action driver routing `MirrorAction` → NOW act verbs by **ref, never
@@ -269,7 +337,7 @@ session-private mac99 clone (`scripts/build-guests` →
   re-held over the wire; a stale ref fed to the driver gets its refusal
   named.
 
-### M4 — content: window interiors
+### WP4 — content: window interiors
 
 - Host drives `qdtrace` over the wire: arm RECORD by A5 from `observe`,
   drain on cadence, re-arm on expiry (aging is the design working, not
@@ -286,12 +354,12 @@ session-private mac99 clone (`scripts/build-guests` →
   screenshot; count-mode differential against QDPeek on the same
   stimulus; loss and refusal counters accounted for over 60 s.
 
-### M5 — strict-parity retirement
+### WP5 — strict-parity retirement
 
 - Per-INIT checklist derived from the shared headers, not memory:
-  AXPeek (oracle fields M0/M1, always-on-vs-lease equivalence argued in
-  writing, throttle M1); QDPeek (M0 + M4 differentials); Portal (M0 +
-  M3 numbers, `menugeom` disposition).
+  AXPeek (oracle fields WP0/WP1, always-on-vs-lease equivalence argued in
+  writing, throttle WP1); QDPeek (WP0 + WP4 differentials); Portal (WP0 +
+  WP3 numbers, `menugeom` disposition).
 - Retirement inventory: the mirror bundle in `tools/stage-ext.py`; the
   1420→1730 forward in `scripts/spin-up-ppc`; the host lifecycle page
   (`MirrorProduct` / `MirrorControlModel` / `MirrorControlView`),
@@ -299,7 +367,7 @@ session-private mac99 clone (`scripts/build-guests` →
   reads (`src/mirror/`); docs — coverage rows in the same commits,
   ledger stale-marks, open-issues closures, README's what-works pair.
 - **Gate:** one full spin-up **without** the mirror bundle, and every
-  M2–M4 watched gate re-run green on the NWpt-only image. That run is
+  WP2–WP4 watched gate re-run green on the NWpt-only image. That run is
   the retirement evidence.
 
 ## Out of scope for this whole arc
