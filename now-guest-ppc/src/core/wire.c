@@ -106,6 +106,7 @@ static void stream_drop(void);
 static void shot_drop(void);
 static void note_shot(const char *line);
 static void get_cleanup(Boolean keep_file);
+static void chat_drop(void);
 
 /* Only the connect operation runs asynchronously: on the physical
    PowerBook a synchronous OTConnect to an unreachable address blocks
@@ -271,6 +272,7 @@ static void link_drop_transfers(void)
     shot_drop();                      /* no deferred capture across a drop */
     put_drop();                       /* no half-written file left behind */
     get_cleanup(false);               /* nor half a file coming the other way */
+    chat_drop();                      /* a streaming turn dies with the link */
     ctlq_clear();
 }
 
@@ -2359,6 +2361,244 @@ static void service_cloud(void)
     }
 }
 
+/* --- talking to the other machine's model --------------------------------
+   Two pendings with two lifetimes. g_chatask is the cloud shape — one
+   bounded question (catalog, or a reset's result), answered or timed
+   out in 15 seconds. g_chat is the STREAMING turn: pending survives
+   every delta and is cleared only by its chat.result, a rolling quiet
+   deadline, or the link going away. The quiet deadline re-arms on
+   every delta AND every status — status is what a host sends while its
+   model runs a 30-second tool, so silence here means gone, not slow. */
+
+enum {
+    kChatAskTimeoutTicks = 60 * 15,   /* catalog / reset: the cloud bound */
+    kChatQuietTimeoutTicks = 60 * 60  /* a turn: 60 s of total SILENCE */
+};
+
+static struct {
+    Boolean pending;
+    long id;
+    int kind;                         /* the ChatAnswerKind expected */
+    unsigned long deadline;
+} g_chatask;
+
+static struct {
+    Boolean pending;
+    long id;
+    long next_seq;
+    unsigned long quiet_deadline;
+} g_chat;
+
+static ConnChatNote g_chat_hook;
+
+ConnChatNote conn_set_chat_note(ConnChatNote fn)
+{
+    ConnChatNote previous = g_chat_hook;
+
+    g_chat_hook = fn;
+    return previous;
+}
+
+static void chat_note(int kind, const char *reply)
+{
+    if (g_chat_hook != NULL) {
+        g_chat_hook(kind, reply);
+    }
+}
+
+Boolean now_wire_chat_turn_active(void)
+{
+    return g_chat.pending;
+}
+
+int now_wire_chat_models(char *err, long cap)
+{
+    char json[96];
+
+    ++g.offer_seq;
+    snprintf(json, sizeof json,
+             "{\"type\":\"chat.models\",\"id\":%ld}", g.offer_seq);
+    if (cloud_send(json, err, cap) != 0) {
+        return -1;
+    }
+    g_chatask.pending = true;
+    g_chatask.id = g.offer_seq;
+    g_chatask.kind = kChatAnswerCatalog;
+    g_chatask.deadline = TickCount() + kChatAskTimeoutTicks;
+    return 0;
+}
+
+int now_wire_chat_send(const char *model, const char *prompt,
+                       char *err, long cap)
+{
+    /* 512 raw escapes to at most 3072 plus envelope — the exec chunk
+       arithmetic — so the frame buffer is the control cap itself. The
+       cap's one statement is the contract's (ChatSend.prompt); refusing
+       locally here costs nothing and saves the round trip. */
+    char json[kNowMaxControl];
+    char esc_model[96];
+    char esc_prompt[512 * 6 + 1];
+
+    if (g_chat.pending) {
+        snprintf(err, (size_t)cap,
+                 "an answer is still arriving - chat --stop first");
+        return -1;
+    }
+    if (strlen(prompt) > 512) {
+        snprintf(err, (size_t)cap, "prompt is over 512 bytes");
+        return -1;
+    }
+    now_json_escape(model, esc_model, sizeof esc_model);
+    now_json_escape(prompt, esc_prompt, sizeof esc_prompt);
+    ++g.offer_seq;
+    snprintf(json, sizeof json,
+             "{\"type\":\"chat.send\",\"id\":%ld,\"model\":\"%s\","
+             "\"prompt\":\"%s\"}",
+             g.offer_seq, esc_model, esc_prompt);
+    if (cloud_send(json, err, cap) != 0) {
+        return -1;
+    }
+    g_chat.pending = true;
+    g_chat.id = g.offer_seq;
+    g_chat.next_seq = 0;
+    g_chat.quiet_deadline = TickCount() + kChatQuietTimeoutTicks;
+    return 0;
+}
+
+int now_wire_chat_cancel(char *err, long cap)
+{
+    char json[96];
+
+    if (!g_chat.pending) {
+        snprintf(err, (size_t)cap, "nothing is streaming");
+        return -1;
+    }
+    /* The turn's own id — cancel has no identity of its own, and the
+       promised chat.result is the turn's terminal one. Pending stays
+       set until it arrives; the quiet deadline covers a host that
+       never answers. */
+    snprintf(json, sizeof json,
+             "{\"type\":\"chat.cancel\",\"id\":%ld}", g_chat.id);
+    return cloud_send(json, err, cap);
+}
+
+int now_wire_chat_reset(char *err, long cap)
+{
+    char json[96];
+
+    if (g_chat.pending) {
+        snprintf(err, (size_t)cap,
+                 "an answer is still arriving - chat --stop first");
+        return -1;
+    }
+    ++g.offer_seq;
+    snprintf(json, sizeof json,
+             "{\"type\":\"chat.reset\",\"id\":%ld}", g.offer_seq);
+    if (cloud_send(json, err, cap) != 0) {
+        return -1;
+    }
+    g_chatask.pending = true;
+    g_chatask.id = g.offer_seq;
+    g_chatask.kind = kChatAnswerResult;
+    g_chatask.deadline = TickCount() + kChatAskTimeoutTicks;
+    return 0;
+}
+
+static void chat_catalog_answer(const char *reply)
+{
+    if (!g_chatask.pending || g_chatask.kind != kChatAnswerCatalog
+        || now_json_find_int(reply, "id", -1) != g_chatask.id) {
+        return;
+    }
+    g_chatask.pending = false;
+    chat_note(kChatAnswerCatalog, reply);
+}
+
+static void chat_delta_answer(const char *reply)
+{
+    long seq;
+
+    if (!g_chat.pending
+        || now_json_find_int(reply, "id", -1) != g_chat.id) {
+        return;                       /* stale by definition */
+    }
+    g_chat.quiet_deadline = TickCount() + kChatQuietTimeoutTicks;
+    seq = now_json_find_int(reply, "seq", -1);
+    if (seq != g_chat.next_seq) {
+        /* A gap is surfaced, never papered over — but it does not end
+           the turn: the text that follows is still worth reading. */
+        now_log(kLogWarn, "chat", "delta seq %ld, expected %ld",
+                seq, g_chat.next_seq);
+        chat_note(kChatAnswerGap, "part of the answer went missing");
+        g_chat.next_seq = seq;
+    }
+    ++g_chat.next_seq;
+    chat_note(kChatAnswerDelta, reply);
+}
+
+static void chat_status_answer(const char *reply)
+{
+    if (!g_chat.pending
+        || now_json_find_int(reply, "id", -1) != g_chat.id) {
+        return;
+    }
+    g_chat.quiet_deadline = TickCount() + kChatQuietTimeoutTicks;
+    chat_note(kChatAnswerStatus, reply);
+}
+
+static void chat_result_answer(const char *reply)
+{
+    long id = now_json_find_int(reply, "id", -1);
+
+    if (g_chat.pending && id == g_chat.id) {
+        g_chat.pending = false;
+        chat_note(kChatAnswerResult, reply);
+        return;
+    }
+    if (g_chatask.pending && g_chatask.kind == kChatAnswerResult
+        && id == g_chatask.id) {
+        g_chatask.pending = false;
+        chat_note(kChatAnswerResult, reply);
+    }
+    /* Unmatched: stale by definition, like a cloud answer whose ask
+       has been replaced. */
+}
+
+static void service_chat(void)
+{
+    if (g_chatask.pending && TickCount() > g_chatask.deadline) {
+        g_chatask.pending = false;
+        chat_note(kChatAnswerError, "no answer");
+    }
+    if (g_chat.pending && TickCount() > g_chat.quiet_deadline) {
+        char json[96];
+
+        /* Declared dead for THIS turn after a minute of total silence.
+           Best-effort cancel so a host that is merely wedged does not
+           keep streaming into a turn nobody is reading. */
+        snprintf(json, sizeof json,
+                 "{\"type\":\"chat.cancel\",\"id\":%ld}", g_chat.id);
+        send_control(json);
+        g_chat.pending = false;
+        chat_note(kChatAnswerError, "no answer for a minute - gave up");
+    }
+}
+
+/* A leaving link ends the turn the way it ends a transfer: promptly
+   and with the reason, not by letting a 60-second deadline pretend the
+   host is thinking. Idle-safe, touches no wire. */
+static void chat_drop(void)
+{
+    if (g_chat.pending) {
+        g_chat.pending = false;
+        chat_note(kChatAnswerError, "connection lost");
+    }
+    if (g_chatask.pending) {
+        g_chatask.pending = false;
+        chat_note(kChatAnswerError, "connection lost");
+    }
+}
+
 /* --- pulling a file FROM the other machine -------------------------------
    The same bytes as an inbound push, asked for rather than offered, so
    the receiving machinery is the same and only the destination differs:
@@ -3608,6 +3848,11 @@ static void serve_exec_input(const char *request)
     }
     g_exec.have_input = true;
     g_exec.waiting = false;
+}
+
+Boolean now_wire_exec_cancelled(void)
+{
+    return g_exec.active && g_exec.cancelled;
 }
 
 int now_exec_read_input(char *out, long cap, const char *prompt)
@@ -4989,6 +5234,22 @@ static int handle_frame(const char *reply)
         cloud_refused(reply);
         return 1;
     }
+    if (now_json_type_is(reply, "chat.catalog")) {
+        chat_catalog_answer(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "chat.delta")) {
+        chat_delta_answer(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "chat.status")) {
+        chat_status_answer(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "chat.result")) {
+        chat_result_answer(reply);
+        return 1;
+    }
     if (now_json_type_is(reply, "file.refuse")) {
         if (g_get.pending && now_json_find_int(reply, "id", -1) == g_get.id) {
             char reason[96];
@@ -5292,6 +5553,7 @@ void conn_service(void)
     service_browse();
     service_get();
     service_cloud();
+    service_chat();
         }
         if (g.phase == kConnConnected) {
             service_stream();

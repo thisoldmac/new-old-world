@@ -225,6 +225,11 @@ final class CommandParityTests: XCTestCase {
         // The PowerPC guest's file verbs act through the file.* message
         // families rather than x-commands, so the host reaches the same
         // capability by a different route and needs no console verb.
+        // Chat asks the OTHER Mac's model through the chat.* family;
+        // the host reaches chat by SERVING it, so there is nothing for
+        // it to type at this Mac - and it reaches this verb anyway
+        // through the exec plane, which is the command-first proof.
+        "chat": "chat.* family served BY the host; nothing to serve it to",
         "put": "file.* family from the host side, not an x-command",
         "mv": "file.* family from the host side, not an x-command",
         "trash": "file.* family from the host side, not an x-command",
