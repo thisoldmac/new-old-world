@@ -108,21 +108,32 @@ times a second rather than silently accepting. **What it has never done is
 capture one drawing operation.** The ring's `ticks` field never moved, which
 means no hook body ran at all, not that it ran and found nothing.
 
-**And a second finding, which matters more than the first.** After the
-plane had been armed against NOW's own guest app and then stopped, that
-app **quit**, and relaunching it produced a process that was frontmost
-with its menu bar and **no window at all**. The machine needed a cold
-reboot. Correlation, not proven cause — but the shape is specific and
-the mechanism is available: the plane installs a `CQDProcs` on an armed
-app's window PORTS and keeps their pointers in its own table, and those
-pointers belong to a process that can die while the resident block
-outlives it. Upstream's QDPeek guards exactly this (`qd_uninstall_owned`
-proves the port is still in the CURRENT app's WindowList before the
-first dereference), and NOW's repair sweep was climbing throughout
-(`repairs: 26`). **Before P3 is armed again, the death-of-the-armed-
-process path wants reading**, because "arm the content plane and the
-application stops being able to draw" is the worst possible shape for a
-plane whose whole job is to watch drawing.
+**A second observation, and the hypothesis it suggested is REFUTED by
+reading the code.** After the plane had been armed against NOW's own
+guest app and then stopped, that app **quit**, and relaunching it
+produced a process frontmost with its menu bar and no window visible;
+the machine was cold-rebooted to clear it.
+
+The obvious suspicion was a stale-port dereference: the plane keeps
+`CQDProcs` pointers to an armed app's window ports in a resident table
+that outlives the process. **`ext/src/now_content.c` does not have that
+bug.** `content_port_is_live` walks the CURRENT WindowList comparing
+POINTER VALUES and never dereferences the stored port;
+`content_forget_slot` drops a row by value with the same discipline
+stated in its comment ("a row can outlive the heap its port lived in");
+and `content_uninstall_context` requires live AND colour AND
+`grafProcs == &gHooks` before it restores anything. That is upstream's
+`qd_uninstall_owned` rule, already applied.
+
+So **the cause of the app's death is NOT established**, and the ledger
+should not imply it. What the file DOES state, as a known asymmetry
+rather than a defect, is that disarming reaches a target only when that
+target next pumps: "a target that is suspended, wedged, or gone keeps
+its patch until it runs again — or forever." Whether a process dying
+mid-arm is a leak that matters, and what actually killed the app, both
+remain open. Worth re-running deliberately before P3 is armed in anger,
+and worth noting the relaunch was observed ~25 s after launch, which is
+not obviously long enough to call a missing window a hang.
 
 Unknown, and now the content plane's other question: whether Color
 QuickDraw on a PPC Mac routes through the 68K `CQDProcs` this plane hooks,
