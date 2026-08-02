@@ -14,6 +14,59 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## "Agent: Running" was true and useless (2026-08-02)
+
+**Fixed on the guest, unverified on a machine.** Measured on a live
+guest: NOW's Mirror page (`now-guest-ppc/src/mirror/`) reported the agent
+Running — correctly, the process was there — while that agent was bound
+to a stale port out of the base image's own `mirror.port`, so every
+connection from a host Mirror instance hit a QEMU forward with nothing
+behind it and was reset. **RUNNING and SERVING are different facts and
+the page reported one of them.**
+
+Mirror's agent learns its TCP port from a text file called `mirror.port`
+sitting beside it, read once at launch
+(`mirror/guest/app/src/main.c :: read_port`, reached through
+`set_dir_to_app` — the file is beside the application and nowhere else).
+So the port file is now a fact of its own: `mirror_probe.c` reads it out
+of the same folder its catalog walk already resolves for the agent
+binary, and `MirrorFacts` carries three separable things — the process
+state, whether the file is there, and the port it names. The page has a
+Port row; the State row distinguishes running-and-named from
+running-with-nothing-naming-a-port; the placard carries the number.
+Enable REFUSES rather than launching an agent whose port nothing here can
+name, before `LaunchApplication`, because the alternative is this page
+manufacturing the state it was corrected for.
+
+**What it deliberately does NOT say is "serving nothing".** `read_port()`
+falls back to a compiled-in 1420 when the file is absent, so an agent
+launched without one does bind something. The honest complaint is that
+the number is then a property of a binary nobody on this side can
+inspect — which is also why Mirror's own stager writes the file rather
+than leaning on that default. A page that replaced one confident wrong
+sentence with another would have learned nothing.
+
+**Three things it still cannot see, and two of them need a socket.** It
+cannot report the port the RUNNING process actually bound: that was read
+at *its* launch and only re-reading the file now is available here, so a
+restage underneath a live agent shows the new number beside the old
+process. It cannot say anything answers on that port — nothing in this
+application opens a socket to Mirror. And the port fields are refreshed
+by the probe, not by the idle poll, because a file opened every second on
+the idle path is the starvation rule in
+[guest-ui-start-here.md](guest-ui-start-here.md); a `mirror.port` staged
+while the page is open is stale there until the next action.
+
+**And NOW's staging now writes it.** `tools/stage-ext.py` grew an
+optional Mirror bundle (`NOW_STAGE_MIRROR=1`, `NOW_MIRROR_DIR`): the
+three INITs, the agent, and `mirror.port` written with `overwrite` and
+`truncate` rather than inherited from the base image. Off by default —
+Mirror is a separate application and three more residents is not a thing
+to put on a guest nobody asked to. `scripts/spin-up-ppc` needs no flag;
+it passes its environment through. Host-cc tested
+(`mirror_layout_test.c`, `mirror_port_staging_source_test.py`, both
+mutation-watched); **nothing in this entry has run on a machine.**
+
 ## The Mirror page is a lifecycle now, and NOW cannot see residency (2026-08-02)
 
 **Landed, and the thing it cannot do is worth writing down.** The Mirror
