@@ -10,24 +10,33 @@
 
 /* The Contacts card, drawn in the classic Address Book's own shape:
    a photo well top-left (cloud_contacts_card_layout), the name beside
-   it in the large system font, then a right-aligned label column,
-   values starting at a fixed left margin, phone rows grouped together
-   and email rows grouped after them (cloud_contacts_card.h decides
-   which is which and in what order -- this file only draws). No Save
-   button: cloud.get on contacts is refused not-listable by the
-   contract (x-cloud, contacts), and cloud_module.c's action_applies()
-   already knows to keep the button hidden for this service, so there
-   is nothing here to click.
+   it in the large system font with the organization under it in the
+   small one, then one TITLED GROUP BOX per section -- Phone, Email,
+   Address, Other -- each holding its own label/value rows.
+   cloud_contacts_card.h decides which row belongs in which box and
+   where every box goes; this file only places the controls and draws.
+   No Save button: cloud.get on contacts is refused not-listable by
+   the contract (x-cloud, contacts), and cloud_module.c's
+   action_applies() already knows to keep the button hidden for this
+   service, so there is nothing here to click.
+
+   The boxes are a FIXED POOL of four (kCloudContactsMaxSections, the
+   whole kind set), created once at view_create and thereafter only
+   retitled, moved and shown or hidden. Nothing is created or disposed
+   per selection: a contact's section set changes on every click, and
+   NewControl/DisposeControl on that seam is a heap churn the PB1400c
+   pays for in exactly the redraw storm docs/guest-ui-start-here.md
+   warns about. A NULL pool member (NewControl failed) costs that one
+   box's FRAME and nothing else -- the rows inside it still draw.
+
+   The rows themselves stay hand-drawn text: they are content, not
+   controls, and a static text control per value would be sixteen more
+   manager-owned things to damage.
 
    The LIST is this view's own Data Browser -- see the header for why
    -- built and disposed the way cloud_drive_view.c's own is. */
 
 enum {
-    kLabelColWidth = 72,       /* label column width, right edge to text */
-    kColGap = 10,              /* between the label column and values */
-    kRowHeight = 14,
-    kGroupGap = 8,             /* extra space where the row kind changes */
-
     kColName = 'cnnm',
     kColCompany = 'ccmp'
 };
@@ -36,6 +45,23 @@ static WindowRef g_owner;
 static ControlRef g_browser;
 static const CloudStore *g_store_ref;
 static CloudContactsHost g_host;
+
+/* The group-box pool and what each member currently SHOWS -- the
+   change gate. Mutating a manager-owned control repaints it, so a box
+   is retitled/moved/shown only when the thing it displays differs
+   from what it already displays. */
+static ControlRef g_box[kCloudContactsMaxSections];
+static const char *g_box_title[kCloudContactsMaxSections];
+static Rect g_box_rect[kCloudContactsMaxSections];
+static Boolean g_box_on[kCloudContactsMaxSections];
+
+/* The card pane, cached on every layout/select/draw the same
+   redundant way g_well_rect is, and the last answer the pool was
+   synced against (see sync_boxes). */
+static Rect g_pane;
+static Boolean g_have_pane;
+static Boolean g_shown;
+static int g_sel = -1;
 
 /* Where the well last drew -- cached on every layout/select/draw the
    same redundant way cloud_photos_view.c caches its pane, so whichever
@@ -168,6 +194,8 @@ ControlRef cloud_contacts_view_browser(void)
 
 void cloud_contacts_view_dispose(void)
 {
+    int i;
+
     /* The Data Browser goes BEFORE its UPPs: disposal fires item
        notifications through them (files_browser_view.c and the
        finding carbon-upp-is-not-a-cast-on-cfm carry the full story). */
@@ -176,10 +204,22 @@ void cloud_contacts_view_dispose(void)
         g_browser = NULL;
     }
     dispose_callbacks();
+    for (i = 0; i < kCloudContactsMaxSections; ++i) {
+        if (g_box[i] != NULL) {
+            DisposeControl(g_box[i]);
+            g_box[i] = NULL;
+        }
+        g_box_title[i] = NULL;
+        g_box_on[i] = false;
+        memset(&g_box_rect[i], 0, sizeof g_box_rect[i]);
+    }
     cloud_preview_well_select("contacts", NULL, 0, 0, NULL);
     g_owner = NULL;
     g_store_ref = NULL;
     g_have_well = false;
+    g_have_pane = false;
+    g_shown = false;
+    g_sel = -1;
     memset(&g_host, 0, sizeof g_host);
 }
 
@@ -194,16 +234,20 @@ static void draw_left(short x, short y, const char *s)
     DrawString(t);
 }
 
-/* Right-aligned so the label column reads the way the classic Address
-   Book's card does: "   home:" ending flush above "   work:". */
-static void draw_label(short right_edge, short y, const char *label)
+/* Left-aligned, clipped to a column width: inside a group box a value
+   that runs past the frame reads as a drawing bug, not as a long
+   address. truncEnd rather than truncMiddle -- the front of a street
+   address or an email local part is the half worth keeping. */
+static void draw_fitted(short x, short y, short width, const char *s)
 {
     Str255 t;
-    short w;
 
-    CopyCStringToPascal(label, t);
-    w = StringWidth(t);
-    MoveTo((short)(right_edge - w), y);
+    if (width <= 0) {
+        return;
+    }
+    CopyCStringToPascal(s, t);
+    TruncString(width, t, truncEnd);
+    MoveTo(x, y);
     DrawString(t);
 }
 
@@ -212,7 +256,8 @@ static void draw_label(short right_edge, short y, const char *label)
    the whole reason cloud_contacts_card.h hands back components rather
    than this file trying to reformat English text itself. False (line
    left undrawn by the caller) if it is not a date this can read. */
-static Boolean draw_date_value(short x, short y, const char *value)
+static Boolean draw_date_value(short x, short y, short width,
+                               const char *value)
 {
     int year, month, day;
     LongDateRec rec;
@@ -233,6 +278,10 @@ static Boolean draw_date_value(short x, short y, const char *value)
     rec.ld.dayOfWeek = 1;      /* LongDateToSeconds derives the real one */
     LongDateToSeconds(&rec, &ldt);
     LongDateString(&ldt, longDate, when, NULL);
+    if (width <= 0) {
+        return true;                   /* recognised, no room to draw */
+    }
+    TruncString(width, when, truncEnd);
     MoveTo(x, y);
     DrawString(when);
     return true;
@@ -308,12 +357,112 @@ static void draw_well(const Rect *well, const char *item)
     draw_person_silhouette(well);
 }
 
+/* --- the group-box pool ------------------------------------------------
+
+   One sync per SETTLED answer, not one per event-loop pass: the key
+   below is everything a box shows (which contact's card, how many
+   rows it has, where the pane is, whether the page is on stage), and
+   an unchanged key returns before any geometry is computed at all. On
+   a real change each pool member is compared field by field, so a
+   card that gains a row does not re-title three boxes that did not
+   move. This is the idle-work rule and the manager-owned-control rule
+   in one place (docs/guest-ui-start-here.md). */
+
+typedef struct {
+    Rect pane;
+    char item[64];
+    int count;
+    int sel;
+    Boolean shown;
+} BoxKey;
+
+static BoxKey g_key;
+static Boolean g_key_valid;
+
+static void sync_boxes(void)
+{
+    BoxKey key;
+    CloudContactsCardLayout cl;
+    Boolean changed = false;
+    int i;
+
+    if (!g_have_pane) {
+        return;
+    }
+    memset(&key, 0, sizeof key);
+    key.pane = g_pane;
+    key.shown = g_shown;
+    key.sel = g_sel;
+    if (g_store_ref != NULL) {
+        key.count = g_store_ref->card_count;
+        strncpy(key.item, g_store_ref->card_item, sizeof key.item - 1);
+    }
+    if (g_key_valid && memcmp(&key, &g_key, sizeof key) == 0) {
+        return;
+    }
+    g_key = key;
+    g_key_valid = true;
+
+    memset(&cl, 0, sizeof cl);
+    if (g_shown && g_sel >= 0 && g_store_ref != NULL) {
+        cloud_contacts_card_layout(&g_pane, g_store_ref->card,
+                                   g_store_ref->card_count, &cl);
+    }
+    for (i = 0; i < kCloudContactsMaxSections; ++i) {
+        Boolean want = (Boolean)(i < cl.section_count);
+
+        if (g_box[i] == NULL) {
+            continue;                  /* this frame is missing; the
+                                          rows inside it still draw */
+        }
+        if (!want) {
+            if (g_box_on[i]) {
+                HideControl(g_box[i]);
+                g_box_on[i] = false;
+                changed = true;
+            }
+            continue;
+        }
+        if (g_box_title[i] != cl.sections[i].title) {
+            Str255 t;
+
+            CopyCStringToPascal(cl.sections[i].title, t);
+            SetControlTitle(g_box[i], t);
+            g_box_title[i] = cl.sections[i].title;
+            changed = true;
+        }
+        if (!EqualRect(&g_box_rect[i], &cl.sections[i].box)) {
+            const Rect *b = &cl.sections[i].box;
+
+            MoveControl(g_box[i], b->left, b->top);
+            SizeControl(g_box[i], (SInt16)(b->right - b->left),
+                        (SInt16)(b->bottom - b->top));
+            g_box_rect[i] = *b;
+            changed = true;
+        }
+        if (!g_box_on[i]) {
+            ShowControl(g_box[i]);
+            g_box_on[i] = true;
+            changed = true;
+        }
+    }
+    /* A box that moved, appeared or vanished disturbed the hand-drawn
+       rows around it -- one invalidation of the pane, once, for the
+       whole settled change. */
+    if (changed && g_owner != NULL) {
+        InvalWindowRect(g_owner, &g_pane);
+    }
+}
+
 static void view_draw(const CloudLayout *r, const CloudStore *store,
                       const CloudService *service, int selected)
 {
     CloudContactsCardLayout cl;
 
-    cloud_contacts_card_layout(&r->detail_text, &cl);
+    g_pane = r->detail_text;
+    g_have_pane = true;
+    cloud_contacts_card_layout(&r->detail_text, store->card,
+                               store->card_count, &cl);
     g_well_rect = cl.well;
     g_have_well = true;
 
@@ -341,40 +490,49 @@ static void view_draw(const CloudLayout *r, const CloudStore *store,
        shell's ask_card and this view's own select op, below), so the
        photo need not wait for the card rows to arrive or vice versa. */
     draw_well(&cl.well, store->rows[selected].item);
-    UseThemeFont(kThemeSystemFont, smSystemScript);
-    draw_left(cl.name_left, cl.name_baseline, store->rows[selected].title);
+    {
+        short name_width = (short)(r->detail_text.right - cl.name_left);
 
-    if (store->card_count > 0) {
-        short label_right = (short)(r->detail_text.left + kLabelColWidth);
-        short value_left = (short)(label_right + kColGap);
-        short y = cl.rows_top;
-        int order[kCloudMaxCardRows];
-        int n, i;
-        CloudContactsRowKind last_kind = kCloudContactsRowOther;
-        Boolean first = true;
+        UseThemeFont(kThemeSystemFont, smSystemScript);
+        draw_fitted(cl.name_left, cl.name_baseline, name_width,
+                    store->rows[selected].title);
+        if (store->rows[selected].subtitle[0] != '\0') {
+            /* The organization, one small row under the name -- the
+               same field the list's Company column shows, because the
+               card and the list must not disagree about it. */
+            UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+            draw_fitted(cl.name_left, cl.org_baseline, name_width,
+                        store->rows[selected].subtitle);
+        }
+    }
+
+    /* The rows, inside whichever boxes sync_boxes has placed. Nothing
+       is drawn for a card that has not arrived: the well and the name
+       stand alone rather than under four empty frames. */
+    if (cl.section_count > 0) {
+        int s, i;
 
         UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-        n = cloud_contacts_order_card(store->card, store->card_count, order);
-        for (i = 0; i < n && y < r->detail_text.bottom; ++i) {
-            const CloudCardRow *row = &store->card[order[i]];
-            CloudContactsRowKind kind = cloud_contacts_classify_row(row);
-            char value[136];
+        for (s = 0; s < cl.section_count; ++s) {
+            const CloudContactsSection *sec = &cl.sections[s];
+            short label_x = cloud_contacts_section_label_x(sec);
+            short value_x = cloud_contacts_section_value_x(sec);
+            short label_w = (short)(value_x - label_x - 4);
+            short value_w = (short)(sec->box.right
+                                    - kCloudContactsBoxInset - value_x);
 
-            if (!first && kind != last_kind) {
-                y = (short)(y + kGroupGap);
-                if (y >= r->detail_text.bottom) {
-                    break;
+            for (i = 0; i < sec->count; ++i) {
+                const CloudCardRow *row =
+                    &store->card[cl.order[sec->first + i]];
+                short y = cloud_contacts_section_baseline(sec, i);
+                char value[136];
+
+                draw_fitted(label_x, y, label_w, row->label);
+                if (!draw_date_value(value_x, y, value_w, row->value)) {
+                    snprintf(value, sizeof value, "%.128s", row->value);
+                    draw_fitted(value_x, y, value_w, value);
                 }
             }
-            first = false;
-            last_kind = kind;
-
-            draw_label(label_right, y, row->label);
-            if (!draw_date_value(value_left, y, row->value)) {
-                snprintf(value, sizeof value, "%.128s", row->value);
-                draw_left(value_left, y, value);
-            }
-            y = (short)(y + kRowHeight);
         }
     }
 }
@@ -388,7 +546,14 @@ static void view_select(const CloudLayout *r, const CloudStore *store,
     CloudContactsCardLayout cl;
     long ww, wh;
 
-    cloud_contacts_card_layout(&r->detail_text, &cl);
+    /* The well and the name are all this seam needs, and the card for
+       the NEW selection has not arrived yet either way -- so no rows
+       are passed and no sections are computed here. sync_boxes does
+       that off g_sel on the next idle pass. */
+    cloud_contacts_card_layout(&r->detail_text, NULL, 0, &cl);
+    g_pane = r->detail_text;
+    g_have_pane = true;
+    g_sel = selected;
     g_well_rect = cl.well;
     g_have_well = true;
     ww = cl.well.right - cl.well.left;
@@ -430,8 +595,24 @@ static OSErr view_create(WindowRef owner)
     DataBrowserCallbacks callbacks;
     Rect start = { 0, 0, 0, 0 };      /* layout() places it before it
                                          is ever shown */
+    Rect box_start = { 0, 0, 16, 16 };
+    int i;
 
     g_owner = owner;
+    /* The whole pool, once, invisible: the section set changes on
+       every selection and creating controls on that seam is what this
+       pool exists to avoid. A NULL member here costs one frame; the
+       page still renders (the software_module degrade). */
+    for (i = 0; i < kCloudContactsMaxSections; ++i) {
+        Str255 empty;
+
+        empty[0] = 0;
+        g_box[i] = NewControl(owner, &box_start, empty, false, 0, 0, 1,
+                              kControlGroupBoxTextTitleProc, 0);
+        g_box_title[i] = NULL;
+        g_box_on[i] = false;
+        memset(&g_box_rect[i], 0, sizeof g_box_rect[i]);
+    }
     if (CreateDataBrowserControl(owner, &start, kDataBrowserListView,
                                  &g_browser) != noErr) {
         g_browser = NULL;             /* the shell says so; no hard fail */
@@ -460,13 +641,52 @@ static OSErr view_create(WindowRef owner)
     return noErr;
 }
 
+/* The page went on or off stage. The pool follows it off immediately
+   -- a group box left visible over another service's page is chrome
+   that page never asked for -- and back on through sync_boxes, which
+   is the only thing that knows which of the four belong to the
+   contact currently shown. */
+static void view_show(Boolean visible)
+{
+    int i;
+
+    g_shown = visible;
+    if (!visible) {
+        for (i = 0; i < kCloudContactsMaxSections; ++i) {
+            if (g_box[i] != NULL && g_box_on[i]) {
+                HideControl(g_box[i]);
+                g_box_on[i] = false;
+            }
+        }
+        /* The key still describes the state the pool is now NOT in;
+           forget it so the next show re-places every box. */
+        g_key_valid = false;
+        return;
+    }
+    sync_boxes();
+}
+
+static void view_idle(const CloudLayout *r)
+{
+    (void)r;                           /* the pane comes from
+                                          layout/draw/select, all of
+                                          which run before any idle
+                                          pass that could matter */
+    sync_boxes();
+}
+
 static void view_layout(const CloudLayout *r)
 {
     CloudContactsCardLayout cl;
 
-    cloud_contacts_card_layout(&r->detail_text, &cl);
+    cloud_contacts_card_layout(&r->detail_text, NULL, 0, &cl);
+    g_pane = r->detail_text;
+    g_have_pane = true;
     g_well_rect = cl.well;
     g_have_well = true;
+    sync_boxes();                      /* a grow moves every box; the
+                                          key's pane field is what
+                                          says so */
     if (g_browser == NULL) {
         return;
     }
@@ -477,13 +697,14 @@ static void view_layout(const CloudLayout *r)
 
 static const CloudViewOps k_ops = {
     view_create,
-    NULL,                              /* show: the shell owns which
-                                          browser is on stage */
+    view_show,                         /* the shell owns which BROWSER
+                                          is on stage; the section
+                                          boxes are this view's own */
     view_layout,
     view_draw,
     NULL,                              /* click: no button is ever shown */
     NULL,                              /* key: generic HandleControlKey */
-    NULL,                              /* idle: nothing to watch */
+    view_idle,                         /* the section boxes, change-gated */
     NULL,                              /* reset_for_service: ask_rows(1) */
     view_row_matches,
     view_select,

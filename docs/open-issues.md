@@ -241,6 +241,22 @@ run against a live host wire, on the emulator, or on the PowerBook:
   wire path is loopback-proven (polish2-foundations, above) with a
   synthetic JPEG; nothing here has asked a real granted `CNContactStore`
   for a real photo and watched it dither and land in the well.
+- **The card became titled GROUP BOXES (2026-08-02, later still) and
+  no box has ever been drawn.** The judged design replaced the flat
+  label/value column with one `kControlGroupBoxTextTitleProc` control
+  per section (Phone, Email, Address, Other), held as a fixed pool of
+  four that a selection only retitles, moves and shows or hides. The
+  pure half is host-cc tested and mutation-watched, and the guest
+  cross-compiles — but the constructor is proven in this codebase only
+  by `software_module.c`'s ONE static box, never by four that move and
+  retitle under a live selection. Three specific things nobody has
+  watched: whether `SetControlTitle` + `MoveControl` on a visible
+  group box repaints cleanly on CarbonLib 1.6 rather than leaving
+  frame debris; whether the hand-drawn rows survive the box's own
+  redraw ordering inside an update event (the pane is invalidated once
+  per settled sync, which SHOULD make that moot, and "should" is the
+  word doing the work); and whether the `truncEnd` values read as
+  intended in the 70-point column at the smallest pane.
 
 ## Photos download UX shipped tested; every visible behavior awaits metal (2026-08-02, later)
 
