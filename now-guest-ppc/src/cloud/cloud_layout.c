@@ -31,6 +31,11 @@ void cloud_layout_compute(const Rect *body, Boolean drive_mode,
     short bottom = (short)(body->bottom - 8);
     short split;
     short list_bottom;
+    short list_top;
+    short col_right;
+    short gap = 6;                     /* the 5d948ed rule: every gap
+                                           between rows 6 */
+    short row_h = 20;                  /* and every control row 20pt */
 
     /* The toolbar: dropdown left, Refresh right. The popup is wide
        because it wears the service label inside it. */
@@ -81,83 +86,90 @@ void cloud_layout_compute(const Rect *body, Boolean drive_mode,
     set_rect(&r->status, left, (short)(bottom - 14), right, bottom);
     list_bottom = (short)(r->status.top - 8);
 
+    /* Breadcrumbs, and where the split content area starts under the
+       toolbar: drive mode gets a real path row between the toolbar and
+       the list/detail split ("iCloud Drive:Attic"); every other mode
+       has no path row and the content starts at the same fixed offset
+       it always has. */
     if (drive_mode) {
-        short dest_top;
-        short row_h = 20;              /* the 5d948ed rule: every
-                                           control row 20 points tall */
-        short gap = 6;                 /* and every gap between rows 6 */
-
-        /* Breadcrumbs between the toolbar and the list, the Files
-           page's path row shape: where you are, from the share root
-           down. */
         set_rect(&r->path_row, left, (short)(top + 26), right,
                  (short)(top + 42));
-        /* The destination row, beneath the breadcrumbs: Choose... on
-           the shared right edge Refresh's own column already set
-           (refresh_btn.right == right, the toolbar's own rule), the
-           label filling everything left of it — the same shape the
-           photos card's row uses, one lane over. */
-        dest_top = (short)(r->path_row.bottom + gap);
-        set_rect(&r->dest_btn, (short)(right - 74), dest_top, right,
-                 (short)(dest_top + row_h));
-        set_rect(&r->dest_row, left, dest_top,
-                 (short)(r->dest_btn.left - gap),
-                 (short)(dest_top + row_h));
-        /* No card in drive mode: the browser IS the page, full body
-           width below the destination row, and detail/save collapse
-           to anti-rects at its right edge rather than being placed
-           off to one side - "empty", not "elsewhere". Pull progress
-           that used to draw into the card moves to the status placard
-           (cloud_drive_view.c). */
-        set_rect(&r->list, left, (short)(r->dest_row.bottom + gap), right,
-                 list_bottom);
-        set_empty(&r->detail, right, r->list.top);
-        set_empty(&r->detail_text, right, r->list.top);
-        set_empty(&r->save_btn, right, list_bottom);
-        set_empty(&r->size_popup, right, list_bottom);
-        set_empty(&r->dl_bar, right, list_bottom);
-        set_empty(&r->dl_text, right, list_bottom);
-        set_empty(&r->photos_text, right, r->list.top);
-        return;
+        list_top = (short)(r->path_row.bottom + gap);
+    } else {
+        set_empty(&r->path_row, left, (short)(top + 26));
+        list_top = (short)(top + 28);
     }
-    set_empty(&r->path_row, left, (short)(top + 26));
 
-    /* List left, card right. The list carries titles up to 31-plus
-       characters; give it the wider share of a 640-wide body but keep
-       the card readable at 640x480 (the smallest honest screen). */
+    /* List left, detail/card right - the SAME split every mode uses.
+       Drive used to be a second, full-width layout with no pane at
+       all; now it is this one, differing only in list_top (the
+       breadcrumbs above it) and in what its own furniture below fills
+       the pane with (no Save, no Size popup - see below). The list
+       carries titles up to 31-plus characters; give it the wider share
+       of a 640-wide body but keep the pane readable at 640x480 (the
+       smallest honest screen). */
     split = (short)(body->left + ((body->right - body->left) * 11) / 20);
-    set_rect(&r->list, left, (short)(top + 28), split, list_bottom);
-    set_rect(&r->detail, (short)(split + 8), (short)(top + 28),
-             right, list_bottom);
+    set_rect(&r->list, left, list_top, split, list_bottom);
+    set_rect(&r->detail, (short)(split + 8), list_top, right, list_bottom);
     r->detail_text = r->detail;
     r->detail_text.left = (short)(r->detail_text.left + 6);
     r->detail_text.right = (short)(r->detail_text.right - 4);
     r->detail_text.top = (short)(r->detail_text.top + 4);
-    /* save_btn and detail_text.bottom are placed in the furniture
-       block below, where the whole right-aligned column lives. */
+    /* save_btn/size_popup/dest_row/dl_bar/dl_text and detail_text.bottom
+       are placed in the furniture block below, where the whole
+       right-aligned column lives - one for drive, one for everything
+       else, both sharing col_right (the 5d948ed rule: one shared right
+       edge for the control column). */
+    col_right = (short)(right - 6);
 
-    /* The photos view's furniture, stacked bottom-up over Save. Only
-       rectangles — the views that do not use them never read them —
-       and photos_text is what keeps the preview and the card clear of
-       the rows: pixels drawn under a live control is the one overlap
-       nothing would ever repaint correctly.
+    if (drive_mode) {
+        short dest_top;
 
-       The Size popup takes its own row rather than sitting beside
-       Save: on the smallest honest screen the card pane's inner width
-       is under 200 points, and "Save to this Mac" plus a popup that
-       can say "Fit 1024x768" do not both fit on one of them. A fixed
-       150 fits the widest item everywhere the pane exists at all. */
-    /* Tidied to one rule (metal feedback, 2026-08-02: "clean up the
-       buttons"): every CONTROL — Choose..., the Size popup, Save — is
+        /* Drive's own pane furniture: just the destination row (2026-
+           08-02's "Save into:" plus Choose..., moved off the toolbar
+           strip and into the pane under the 5d948ed rule the other
+           views' furniture already follows) and, while a pull is
+           landing, the same moving-bar-plus-byte-line shape Photos'
+           download furniture uses below. No Save button here (Up
+           lives in the toolbar, up_btn above) and no Size popup (a
+           drive pull always keeps the file's exact bytes - nothing to
+           pick a size of), so the stack is two rows shorter than
+           list/photos mode's. */
+        set_empty(&r->save_btn, col_right, list_bottom);
+        set_empty(&r->size_popup, col_right, list_bottom);
+
+        dest_top = (short)(r->detail.bottom - 8 - row_h);
+        set_rect(&r->dest_btn, (short)(col_right - 74), dest_top,
+                 col_right, (short)(dest_top + row_h));
+        set_rect(&r->dest_row, r->detail_text.left, dest_top,
+                 (short)(r->dest_btn.left - gap), (short)(dest_top + row_h));
+        set_rect(&r->dl_bar, r->detail_text.left,
+                 (short)(dest_top - gap - 12), r->detail_text.right,
+                 (short)(dest_top - gap));
+        set_rect(&r->dl_text, r->detail_text.left,
+                 (short)(r->dl_bar.top - 4 - 14), r->detail_text.right,
+                 (short)(r->dl_bar.top - 4));
+        /* The selected item's name/kind/size/date and the double-click
+           affordance line draw above the whole stack - never under a
+           live control, the rule every pane's furniture already
+           keeps. */
+        r->detail_text.bottom = (short)(r->dl_text.top - 6);
+        set_empty(&r->photos_text, r->detail.right, r->detail.top);
+        return;
+    }
+
+    /* The photos view's extra card-pane furniture, stacked bottom-up
+       over Save. Only rectangles - the views that do not use them
+       never read them - and photos_text is what keeps the preview and
+       the card clear of the rows: pixels drawn under a live control is
+       the one overlap nothing would ever repaint correctly.
+
+       Tidied to one rule (metal feedback, 2026-08-02: "clean up the
+       buttons"): every CONTROL - Choose..., the Size popup, Save - is
        flush to one shared right edge, every row is 20 points tall,
        every gap between rows is 6, and the labels centre on their
-       row. A column of right-aligned actions is the Platinum shape;
-       the earlier layout left-aligned the popup and let the rows
-       drift, which read as clutter on the real screen. */
+       row. A column of right-aligned actions is the Platinum shape. */
     {
-        short col_right = (short)(right - 6);
-        short row_h = 20;
-        short gap = 6;
         short save_top = (short)(r->detail.bottom - 8 - row_h);
         short size_top = (short)(save_top - gap - row_h);
         short dest_top = (short)(size_top - gap - row_h);
