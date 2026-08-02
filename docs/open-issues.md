@@ -106,14 +106,33 @@ second is happening. Upstream's number has no such ambiguity because
 Portal measured 18/20 hijacks *before* its guard was fixed, proving it
 could act there. See the parity ledger.
 
-**What is NOT known yet**, and should be established before anything is
-built on top: whether the press is refused at the queue, dequeued by the
-wrong process, or dequeued and discarded; whether the same failure
-applies to every foreign application or is specific to the Finder;
-whether the `keyDown`-works/`mouseDown`-does-not asymmetry points at the
-event mask, the queue element's `where`, or the Process Manager's idea
-of who should receive it. The instrument for all of these already
-exists — `scripts/probes/` — and none of them needs new product code.
+**Narrowed the same day, and the narrowing moves the suspect.** The test
+was repeated against **SimpleText** — a plain classic application,
+launched, frontmost, and bound by the anchor plane (`bind=ok`, fresh
+`a5`) — and the result is identical: `menuact` answers `act-not-taken`,
+and `actselftest` answers `act-refused`. So:
+
+- **It is not Finder-specific.** It is general to foreign applications.
+- **It is not only about the posted click.** `actselftest` requires NO
+  event to be dequeued by anybody: the resident calls `MenuSelect`
+  itself, in the target's own context, and checks whether its own patch
+  answered (`act_serve_selftest`). That refuses in SimpleText and in the
+  Finder, while abi-agreeing in NOW's own application on the same build.
+
+Since the anchor plane demonstrably runs in those same foreign contexts
+on the same event-loop pass (it captures their A5s), the sharper question
+is no longer "why is the press not delivered" but **"why does the act
+pass not SERVE in a foreign process when the anchor pass in the same
+filter plainly runs there?"** Candidates worth reading in order:
+`now_ext_act_apply`'s verdict path and the A5 comparison it makes;
+whether the act arm bit is still set in `arm_request` at the moment the
+foreign process pumps, or has been withdrawn by the requesting
+application first; and whether `act_install`'s one-shot `static int
+installed` interacts with which process armed first.
+
+The event-delivery question is still real for `menuact` and remains
+open — but it is now downstream of this one, and fixing it first would
+prove nothing.
 
 ## The Mirror page is a lifecycle now, and NOW cannot see residency (2026-08-02)
 

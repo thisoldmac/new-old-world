@@ -109,6 +109,16 @@ and the second is now the better-supported reading. The honest statement
 of the menu case is: *no stray actuation was observed in 20 trials of a
 plane that has not been shown able to actuate in that process.*
 
+**Repeated against SimpleText, with the same answer**, which moves the
+suspect: a plain classic application, frontmost and anchor-bound, gives
+`act-not-taken` for `menuact` and `act-refused` for `actselftest`. The
+second matters most — `actselftest` needs no event dequeued by anyone,
+because the resident calls `MenuSelect` itself in the target's context.
+So the failure is **general to foreign applications and is not only
+about the posted press**, and since the anchor pass in the same filter
+demonstrably runs in those processes, the question is why the ACT pass
+does not serve there. See open-issues for the reading order.
+
 **What this costs the roadmap.** Every click-driven act verb
 (`menuact`, `ctlact`, `winact`) depends on the target application
 dequeuing a press this plane posts with `PPostEvent` from inside the
