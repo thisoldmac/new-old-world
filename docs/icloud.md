@@ -554,6 +554,11 @@ instead of re-deriving them. Not implemented.
 
 ### Messages (iMessage/SMS): the first live-event push
 
+**Planned in full 2026-08-02**:
+[plans/2026-08-02-008-feat-now-messages-and-contacts-plan.md](plans/2026-08-02-008-feat-now-messages-and-contacts-plan.md)
+— seven slices, a probe first, and the stop conditions. The sketch
+below is what that plan was built from.
+
 The plumbing realities decide v0 almost completely:
 
 - **Send** has exactly one sanctioned path: Apple Events into
