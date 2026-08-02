@@ -94,6 +94,7 @@ Kept in the test as data, not prose, so they cannot rot:
 | `put`, `mv`, `trash`, `untrash`, `mkdir` | console only (PPC) | the host reaches the same capability through the `file.*` message families, not through x-commands |
 | `put` | **both faces (NOW-68K)** | the same capability, the opposite decision — see below |
 | `cancel` | **both faces (NOW-68K)**, no verb on PPC | ending a transfer, split the same way `put` is and for a sharper reason — see below |
+| `chat` | console only (PPC) | asks the OTHER Mac's model through the `chat.*` family. The host reaches chat by SERVING it — there is nothing for it to type at the guest — and it can still type this verb through the exec plane, where the streamed answer comes back as `exec.output`. That exec-plane reach is the command-first proof: `chat hi` was typeable from an unchanged host console before the Chat page existed. NOW-68K never asks the family at all; the deliberate never-asks is recorded in [contract-coverage.md](contract-coverage.md), not here, because parity compares FACES per guest and a guest with neither face has no asymmetry |
 
 Adding a row here should feel like a small act of documentation. It is a
 decision with a justification, not a to-do — anything not listed fails

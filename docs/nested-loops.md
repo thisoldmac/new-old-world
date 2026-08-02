@@ -67,6 +67,7 @@ everywhere.
 | `files_browser_view.c`, `cloud_module.c` — the lists | `HandleControlClick` | No | Selection/sort-drag duration |
 | `main.c` | `MenuSelect`, `DragWindow`, `TrackGoAway`, `GrowWindow`, `TrackBox` | No | Mouse-down / drag duration |
 | `proc_actions.c` — `quit`'s confirmation wait | own `WaitNextEvent(0, …)` yield loop | **Yes** — `now_wire_pump()` every pass | ≤ `--wait N` (6 s default, 20 s ceiling) |
+| `console_model.c` — the `chat` verb's streamed turn | own pump loop (`chat_verb_wait`) | **Yes** — `now_wire_pump()` every pass; `exec.cancel` ends it via `now_wire_exec_cancelled()` | until the terminal `chat.result`, the wire's 60 s quiet deadline, or a 5-minute hard cap. The longest pump loop in the guest, deliberately: the Chat page is the interactive face, and this verb's help says the console waits |
 
 The `quit` row is the one deliberate stall we *added*, so it is worth
 stating why it cannot be avoided and what it does and does not cost. A

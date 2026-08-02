@@ -34,6 +34,26 @@ final class GuestWireFixtureTests: XCTestCase {
         }
     }
 
+    /// now_wire_chat_send() in now-guest-ppc/src/core/wire.c, its prompt
+    /// carrying the one guest-emitted chat string with arbitrary human
+    /// text. Pinned for exec.output's reason: escaping is the one place
+    /// a person's own typing can corrupt the wire. Quotes, a backslash,
+    /// and a MacRoman high byte (0xA5, the bullet) as now_json_escape
+    /// writes them.
+    func testChatSendEscapingAsTheGuestWritesIt() throws {
+        let json = """
+        {"type":"chat.send","id":41,"model":"anthropic/claude-opus-5",\
+        "prompt":"say \\"hi\\" \\\\ twice \\u00A5 done"}
+        """
+        let message = try decode(json)
+        guard case .chatSend(let send) = message else {
+            return XCTFail("decoded as \(message)")
+        }
+        XCTAssertEqual(send.id, 41)
+        XCTAssertEqual(send.model, "anthropic/claude-opus-5")
+        XCTAssertEqual(send.prompt, "say \"hi\" \\ twice \u{00A5} done")
+    }
+
     /// run_help() in now-guest-ppc/src/commands/commands.c, listing what that Mac serves.
     ///
     /// This reply is discovery: the host console keeps no command list, so

@@ -14,6 +14,41 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## The chat.* family: tested end to end over loopback, live nowhere yet (2026-08-02)
+
+**Unverified, deliberately labelled.** The whole arc landed in one
+thread — contract family, host harness (providers, OAuth, agent loop
+on the projection dispatch under the new `chat` face), the host Chat
+page, wire serving, the guest wire/parsers/`chat` console verb, and
+the guest Chat page (module 13). Every gate this repo has is green:
+1371 host tests, 78 native tests, conformance/parity/coverage, and
+all three cross-compiles. What none of that proves:
+
+- **No provider has been reached live.** The Anthropic client, the
+  OpenAI-dialect client, and all four local-runtime probes (Ollama
+  11434, LM Studio 1234, oMLX 8000) are scripted-transport tested
+  only. First run: open the host's Chat page, watch the probes, pick
+  a model, send a turn.
+- **The Anthropic subscription sign-in has never run.** The whole
+  flow is undocumented surface quarantined in `AnthropicOAuth.swift`
+  (client id, endpoints, the paste-back, the oauth beta header) and
+  may be gated or change without notice; the API-key path shares none
+  of it. A human must run the browser flow once.
+- **`chat hi` from the host console** (the command-first proof: exec
+  plane → guest `chat` verb → chat.send → deltas back as exec.output)
+  is wired and unit-covered at every seam but has not been run against
+  a booted guest. Needs a VM with this branch's guest build, the host
+  app, and one serving provider.
+- **The guest page has never drawn on a screen.** Layout is
+  native-tested and the module compiles, but transcript drawing, the
+  popup, the prompt well and the Send/Stop swap are emulator-run
+  claims, not yet even that. The sidebar row height compacted 32 -> 30
+  for the eleventh nav row; every page's rows moved 2 px and nobody
+  has looked at any of them since.
+- **Tool use against a real guest** (the model observing/acting on
+  the asking Mac, consent tiers, the transfer-lane busy interplay
+  during a capture tool call) is loopback-and-stub tested only.
+
 ## The cloud.* family: real providers are untested, and the guest half does not exist (2026-08-01)
 
 **Unverified / unfinished, deliberately.** The host serves
