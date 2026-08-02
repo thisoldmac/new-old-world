@@ -186,22 +186,28 @@ final class PhotosCloudProvider: NSObject, CloudProvider,
     /// declining every time.
     enum DownloadSize: String, CaseIterable {
         case original
-        case fit1024
         case fit640
+        case fit1024
+        case fit1440
+        case fit2048
 
         var box: (width: Int, height: Int)? {
             switch self {
             case .original: return nil
-            case .fit1024: return (1024, 768)
             case .fit640: return (640, 480)
+            case .fit1024: return (1024, 768)
+            case .fit1440: return (1440, 1080)
+            case .fit2048: return (2048, 1536)
             }
         }
 
         var label: String {
             switch self {
             case .original: return "Original"
-            case .fit1024: return "Fit 1024 x 768"
             case .fit640: return "Fit 640 x 480"
+            case .fit1024: return "Fit 1024 x 768"
+            case .fit1440: return "Fit 1440 x 1080"
+            case .fit2048: return "Fit 2048 x 1536"
             }
         }
     }
@@ -314,7 +320,13 @@ final class PhotosCloudProvider: NSObject, CloudProvider,
                    or faked from a private KVC key. */
                 bytes: nil,
                 modified: asset.creationDate
-                    .flatMap(ClassicDate.guestWireSeconds(from:))))
+                    .flatMap(ClassicDate.guestWireSeconds(from:)),
+                /* Unlike bytes, PHAsset states its pixel dimensions
+                   without touching the network or downloading
+                   anything — pixelWidth/pixelHeight are metadata the
+                   asset already carries, so filling these costs
+                   nothing a listing must avoid. */
+                width: asset.pixelWidth, height: asset.pixelHeight))
         }
         return (entries, end < assets.count, end + 1)
     }
@@ -770,6 +782,37 @@ final class ContactsCloudProvider: CloudProvider {
             reason: "a contact is a card, not a file, for now")
     }
 
+    /// The contact's own thumbnail as pixels: decode, fit, dither — the
+    /// exact photos preview pipeline (PhotosCloudProvider.rgbPixels +
+    /// ClassicDither.dither), reused rather than duplicated, because a
+    /// thumbnail is the same kind of pixels a photo is. Unlike get(),
+    /// this IS servable: a thumbnail is pixels the host already
+    /// renders for photos, where a vCard is a document format the
+    /// classic side cannot open at all. A contact with no thumbnail
+    /// refuses not-found "no photo" — expected for most contacts, not
+    /// an error, and the guest's card pane draws its own placeholder
+    /// for that reason string.
+    func preview(item: String, maxWidth: Int, maxHeight: Int,
+                depth: Int) throws -> ClassicDither.Indexed {
+        try requireAccess()
+        let keys = [CNContactThumbnailImageDataKey as CNKeyDescriptor]
+        let contact: CNContact
+        do {
+            contact = try store.unifiedContact(withIdentifier: item,
+                                               keysToFetch: keys)
+        } catch {
+            throw CloudFault.refuse(code: "not-found",
+                                    reason: "no such contact any more")
+        }
+        guard let data = contact.thumbnailImageData else {
+            throw CloudFault.refuse(code: "not-found", reason: "no photo")
+        }
+        let (rgb, width, height) = try PhotosCloudProvider.rgbPixels(
+            data, fitting: maxWidth, maxHeight)
+        return ClassicDither.dither(rgb: rgb, width: width,
+                                    height: height, depth: depth)
+    }
+
     private static func label(_ raw: String?, fallback: String) -> String {
         guard let raw, !raw.isEmpty else { return fallback }
         return CloudText.displayable(
@@ -907,8 +950,8 @@ extension GuestListener {
         if let size = request.size,
            PhotosCloudProvider.DownloadSize(rawValue: size) == nil {
             refuseCloud(id: request.id, code: "io-error",
-                        reason: "size must be original, fit1024 or "
-                            + "fit640", on: asker)
+                        reason: "size must be original, fit640, "
+                            + "fit1024, fit1440 or fit2048", on: asker)
             return
         }
         if let obstruction = transferLaneObstruction(for: asker) {

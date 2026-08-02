@@ -1,5 +1,8 @@
+import CoreGraphics
 import Foundation
+import ImageIO
 import Network
+import UniformTypeIdentifiers
 import XCTest
 @testable import Host
 
@@ -173,6 +176,46 @@ final class CloudServingTests: XCTestCase {
         XCTAssertEqual(listing.entries.first?.title, "Photo 1")
     }
 
+    /// Entry dimensions ride the wire when a provider states them, and
+    /// stay absent — not zero — when it does not: the omission-is-not-
+    /// zero rule the contract states for width/height.
+    func testEntryDimensionsRideTheListingWhenTheProviderStatesThem()
+        async throws {
+        let photos = FakeProvider("photos")
+        photos.rows = [
+            CloudEntry(item: "asset-1", title: "Photo 1", subtitle: nil,
+                       bytes: nil, modified: nil, width: 4032, height: 3024),
+        ]
+        let contacts = FakeProvider("contacts")
+        contacts.rows = [
+            CloudEntry(item: "c-1", title: "Ada Lovelace", subtitle: nil,
+                       bytes: nil, modified: nil),
+        ]
+        listener.cloud.register(photos)
+        listener.cloud.register(contacts)
+        let guest = try await connectedGuest()
+
+        try guest.send(.cloudList(CloudList(id: 80, service: "photos",
+                                            cursor: nil)))
+        let photoListing = try await lastReceived(on: guest) {
+            if case .cloudListing(let l) = $0, l.id == 80 { return l }
+            else { return nil }
+        }
+        XCTAssertEqual(photoListing.entries.first?.width, 4032)
+        XCTAssertEqual(photoListing.entries.first?.height, 3024)
+
+        try guest.send(.cloudList(CloudList(id: 81, service: "contacts",
+                                            cursor: nil)))
+        let contactListing = try await lastReceived(on: guest) {
+            if case .cloudListing(let l) = $0, l.id == 81 { return l }
+            else { return nil }
+        }
+        XCTAssertNil(contactListing.entries.first?.width,
+                     "a service with no pixel size states none — "
+                         + "omission, never an invented zero")
+        XCTAssertNil(contactListing.entries.first?.height)
+    }
+
     func testAnUnknownServiceIsRefusedAndTheWireSurvives() async throws {
         let guest = try await connectedGuest()
         try guest.send(.cloudList(CloudList(id: 3, service: "frobnicator",
@@ -309,8 +352,11 @@ final class CloudServingTests: XCTestCase {
         }
         XCTAssertEqual(refuse.id, 73)
         XCTAssertEqual(refuse.code, "io-error")
-        XCTAssertTrue(refuse.reason?.contains("fit640") == true,
-                      "the reason names the tokens that would work")
+        XCTAssertEqual(refuse.reason,
+                       "size must be original, fit640, fit1024, "
+                           + "fit1440 or fit2048",
+                       "the reason names every token that would work, "
+                           + "the two new ones included")
         XCTAssertNil(photos.sizeAsked,
                      "a refused size must not reach the provider")
         XCTAssertFalse(guest.received.contains {
@@ -318,8 +364,64 @@ final class CloudServingTests: XCTestCase {
         }, "no offer may exist for a refused get")
     }
 
+    /// The two tokens the polish arc added reach the provider exactly
+    /// like the three original ones — no second code path for them.
+    /// One connection, both tokens asked in turn: proves neither is a
+    /// one-shot fluke of connection setup.
+    func testAGetPassesEitherNewSizeTokenToTheProvider() async throws {
+        let photos = FakeProvider("photos")
+        photos.plan = OutboundFile.Plan(
+            name: "IMG_1234.jpg", container: "data",
+            bytes: Data("jpeg bytes".utf8),
+            fileType: "JPEG", creator: "ogle", modified: nil, note: nil)
+        listener.cloud.register(photos)
+        let guest = try await connectedGuest()
+
+        // Each get takes the one-transfer-wide lane the moment its
+        // offer starts, so the first must be accepted and drained
+        // before the second can begin — the same discipline the
+        // multi-megabyte transfer test follows.
+        func offers() -> [FileOffer] {
+            guest.received.compactMap {
+                if case .fileOffer(let o) = $0 { return o } else { return nil }
+            }
+        }
+
+        func fetchOne(id: Int, size: String, expect token: String)
+            async throws {
+            let before = offers().count
+            try guest.send(.cloudGet(CloudGet(id: id, service: "photos",
+                                              item: "asset-1",
+                                              size: size)))
+            try await waitUntil("a NEW file.offer for \(token)") {
+                offers().count > before
+            }
+            let offer = offers().last!
+            XCTAssertEqual(photos.sizeAsked, .some(token))
+            try guest.send(.fileAccept(FileAccept(id: offer.id)))
+            try await waitUntil("file.end for \(token)") {
+                guest.received.contains {
+                    if case .fileEnd(let end) = $0 {
+                        return end.id == offer.id && end.ok
+                    }
+                    return false
+                }
+            }
+            // The lane stays held until the GUEST confirms with
+            // file.done (the contract's own rule); FakeGuest never
+            // sends one on its own, so the test sends it explicitly to
+            // free the lane for the second fetch, the same as a real
+            // guest would once the File Manager stamps the file.
+            try guest.send(.fileDone(FileDone(id: offer.id, ok: true)))
+        }
+
+        try await fetchOne(id: 74, size: "fit1440", expect: "fit1440")
+        try await fetchOne(id: 75, size: "fit2048", expect: "fit2048")
+    }
+
     /// The precedence itself, with no library in the room: the ask's
-    /// token outranks the configured default, absence keeps it.
+    /// token outranks the configured default, absence keeps it — every
+    /// token including the two the polish arc added.
     func testTheAsksSizeOutranksTheConfiguredDefault() {
         XCTAssertEqual(
             PhotosCloudProvider.chosenSize(token: "original",
@@ -329,6 +431,28 @@ final class CloudServingTests: XCTestCase {
             PhotosCloudProvider.chosenSize(token: nil,
                                            configured: .fit1024),
             .fit1024)
+        XCTAssertEqual(
+            PhotosCloudProvider.chosenSize(token: "fit1440",
+                                           configured: .fit640),
+            .fit1440)
+        XCTAssertEqual(
+            PhotosCloudProvider.chosenSize(token: "fit2048",
+                                           configured: .fit640),
+            .fit2048)
+    }
+
+    /// The box each new token names, matched against the task's own
+    /// numbers — a wrong box here would silently mis-fit every photo
+    /// asked at that size.
+    func testTheNewSizeTokensNameTheRightBoxes() {
+        XCTAssertEqual(PhotosCloudProvider.DownloadSize.fit1440.box?.width,
+                       1440)
+        XCTAssertEqual(PhotosCloudProvider.DownloadSize.fit1440.box?.height,
+                       1080)
+        XCTAssertEqual(PhotosCloudProvider.DownloadSize.fit2048.box?.width,
+                       2048)
+        XCTAssertEqual(PhotosCloudProvider.DownloadSize.fit2048.box?.height,
+                       1536)
     }
 
     func testAGetFaultRefusesInsteadOfOffering() async throws {
@@ -459,6 +583,88 @@ final class CloudServingTests: XCTestCase {
             else { return nil }
         }
         XCTAssertEqual(refuse.code, "not-listable")
+    }
+
+    // MARK: - Contacts preview (loopback; the real CNContactStore path
+    // needs this Mac's TCC grant and is untested here — see
+    // docs/icloud.md and docs/open-issues.md)
+
+    /// cloud.preview answers for contacts too, not just photos: a tiny
+    /// synthetic thumbnail run through the SAME pipeline
+    /// ContactsCloudProvider.preview calls
+    /// (PhotosCloudProvider.rgbPixels + ClassicDither.dither) rides the
+    /// wire as an ordinary begin/bulk/end transfer. This proves the
+    /// wire plumbing and the reused pipeline's output; it does not
+    /// touch CNContactStore.
+    func testAContactsThumbnailAnswersACloudPreviewLikeAPhotoDoes()
+        async throws {
+        let tiny = try syntheticThumbnail(width: 40, height: 40)
+        let (rgb, width, height) = try PhotosCloudProvider.rgbPixels(
+            tiny, fitting: 100, 100)
+        let indexed = ClassicDither.dither(rgb: rgb, width: width,
+                                           height: height, depth: 8)
+        let contacts = FakeProvider("contacts")
+        contacts.previewPixels = indexed
+        listener.cloud.register(contacts)
+        let guest = try await connectedGuest()
+        try guest.send(.cloudPreview(CloudPreview(
+            id: 61, service: "contacts", item: "c-1",
+            maxWidth: 100, maxHeight: 100, depth: 8)))
+        let begin = try await lastReceived(on: guest) {
+            if case .previewBegin(let b) = $0 { return b }
+            else { return nil }
+        }
+        XCTAssertEqual(begin.id, 61)
+        XCTAssertEqual(begin.width, indexed.width)
+        XCTAssertEqual(begin.height, indexed.height)
+        try await waitUntil("bulk + end") {
+            guest.bulkReceived == indexed.pixels
+                && guest.received.contains {
+                    if case .previewEnd(let end) = $0 {
+                        return end.id == 61 && end.ok
+                    }
+                    return false
+                }
+        }
+    }
+
+    /// A contact with no thumbnail refuses not-found "no photo" — a
+    /// well-formed, expected outcome (the contract's own wording), not
+    /// an error the guest should treat as a failure.
+    func testAContactWithNoThumbnailRefusesNotFoundNoPhoto() async throws {
+        let contacts = FakeProvider("contacts")
+        contacts.fault = CloudFault.refuse(code: "not-found",
+                                           reason: "no photo")
+        listener.cloud.register(contacts)
+        let guest = try await connectedGuest()
+        try guest.send(.cloudPreview(CloudPreview(
+            id: 62, service: "contacts", item: "c-2",
+            maxWidth: 100, maxHeight: 100, depth: 8)))
+        let refuse = try await lastReceived(on: guest) {
+            if case .cloudRefuse(let r) = $0, r.id == 62 { return r }
+            else { return nil }
+        }
+        XCTAssertEqual(refuse.code, "not-found")
+        XCTAssertEqual(refuse.reason, "no photo",
+                       "the exact reason string the guest's placeholder "
+                           + "path matches on")
+    }
+
+    private func syntheticThumbnail(width: Int, height: Int) throws -> Data {
+        let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8,
+            bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+        context.setFillColor(CGColor(red: 0.2, green: 0.6, blue: 0.9,
+                                     alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        let cg = context.makeImage()!
+        let out = NSMutableData()
+        let destination = CGImageDestinationCreateWithData(
+            out, UTType.jpeg.identifier as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, cg, nil)
+        XCTAssertTrue(CGImageDestinationFinalize(destination))
+        return out as Data
     }
 
     // MARK: - Hardened for an enormous library

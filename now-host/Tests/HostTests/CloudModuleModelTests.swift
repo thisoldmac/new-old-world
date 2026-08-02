@@ -76,6 +76,31 @@ final class CloudModuleModelTests: XCTestCase {
                        "only the service whose originals dwarf the guest")
     }
 
+    /// The two boxes the polish arc added persist through the model the
+    /// same way the original three do — the picker (bound to
+    /// DownloadSize.allCases) follows automatically, so this proves the
+    /// storage half only.
+    func testTheTwoNewDownloadBoxesPersistLikeTheOriginalThree() {
+        let model = model()
+        model.setDownloadSize("photos", .fit1440)
+        XCTAssertEqual(model.downloadSize("photos"), .fit1440)
+        model.setDownloadSize("photos", .fit2048)
+        XCTAssertEqual(model.downloadSize("photos"), .fit2048)
+        XCTAssertEqual(
+            defaults.string(forKey: PhotosCloudProvider.downloadSizeKey),
+            "fit2048")
+    }
+
+    func testEveryDownloadSizeHasADistinctLabel() {
+        let labels = PhotosCloudProvider.DownloadSize.allCases.map(\.label)
+        XCTAssertEqual(Set(labels).count, labels.count,
+                       "a picker with two identical rows is a bug " +
+                           "a person can't tell apart on screen")
+        XCTAssertEqual(labels, ["Original", "Fit 640 x 480",
+                                "Fit 1024 x 768", "Fit 1440 x 1080",
+                                "Fit 2048 x 1536"])
+    }
+
     func testAVanishedPreviousFolderFallsBackToDownloads() throws {
         listener.share.root = elsewhere
         let model = model()

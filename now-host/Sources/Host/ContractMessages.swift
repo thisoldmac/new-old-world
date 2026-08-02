@@ -128,6 +128,14 @@ struct CloudEntry: Codable, Equatable, Sendable, Identifiable {
     var bytes: Int?
     /// Classic Mac epoch: seconds since 1904-01-01.
     var modified: Int?
+    /// Pixel width/height of the entry's ORIGINAL, when the service
+    /// knows one (photos fills both; a service whose rows are not
+    /// images omits both — omission is not zero). Paired so a guest
+    /// can compute the exact post-fit resolution a CloudGet.size box
+    /// will produce from numbers it already has, without a wire round
+    /// trip: the fit arithmetic is the asker's, not the host's to send.
+    var width: Int?
+    var height: Int?
 
     var id: String { item }
 }
@@ -160,9 +168,11 @@ struct CloudGet: Codable, Equatable, Sendable {
     var id: Int
     var service: String
     var item: String
-    /// The per-ask delivery size (original / fit1024 / fit640).
-    /// Absent means the host's configured Downloads default —
-    /// additive by contract, so every older guest keeps its meaning.
+    /// The per-ask delivery size (original / fit640 / fit1024 /
+    /// fit1440 / fit2048), each a FIT box the host scales the
+    /// original into, aspect preserved. Absent means the host's
+    /// configured Downloads default — additive by contract, so every
+    /// older guest keeps its meaning.
     var size: String?
 
     init(id: Int, service: String, item: String, size: String? = nil) {
