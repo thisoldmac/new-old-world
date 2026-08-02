@@ -180,6 +180,16 @@ resource 'ics#' (140) {
     }
 };
 
+/* Chat: a speech balloon, tail toward the sidebar text. */
+resource 'ics#' (141) {
+    {
+        $"0000 0000 0FF8 1004 2002 2492 2002 1004"
+        $"0FF8 00E0 00C0 0080 0000 0000 0000 0000",
+        $"0000 0000 0FF8 1FFC 3FFE 3FFE 3FFE 1FFC"
+        $"0FF8 00E0 00C0 0080 0000 0000 0000 0000"
+    }
+};
+
 resource 'SIZE' (-1) {
     reserved,
     acceptSuspendResumeEvents,
@@ -304,6 +314,14 @@ resource 'MENU' (135) {
     135, textMenuProc, allEnabled, enabled, "iCloud",
     {
         "(none)", noIcon, noKey, noMark, plain
+    }
+};
+
+/* The Chat page's model pop-up: a placeholder the catalog rewrites. */
+resource 'MENU' (136) {
+    136, textMenuProc, allEnabled, enabled, "Models",
+    {
+        "(ask the other Mac)", noIcon, noKey, noMark, plain
     }
 };
 

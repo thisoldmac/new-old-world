@@ -86,9 +86,12 @@ static const unsigned char k_view_networking_item[] = {
 static const unsigned char k_view_icloud_item[] = {
     8, 'i', 'C', 'l', 'o', 'u', 'd', '/', '0'
 };
-/* Unkeyed: eleventh and twelfth, and the digits are spent. The item
-   number must still BE the module ID — Networking landed without a menu
-   item and every entry below it selected its neighbour. */
+/* Unkeyed: eleventh onward, and the digits are spent. The item number
+   must still BE the module ID — Networking landed without a menu item
+   and every entry below it selected its neighbour. */
+static const unsigned char k_view_chat_item[] = {
+    4, 'C', 'h', 'a', 't'
+};
 static const unsigned char k_view_logs_item[] = {
     4, 'L', 'o', 'g', 's'
 };
@@ -124,6 +127,7 @@ static void create_menu_bar(void)
     AppendMenu(view_menu, k_view_diagnostics_item);
     AppendMenu(view_menu, k_view_networking_item);
     AppendMenu(view_menu, k_view_icloud_item);
+    AppendMenu(view_menu, k_view_chat_item);
     AppendMenu(view_menu, k_view_logs_item);
     AppendMenu(view_menu, k_view_connection_item);
     InsertMenu(view_menu, 0);

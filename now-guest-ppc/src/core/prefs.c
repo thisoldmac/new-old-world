@@ -322,12 +322,21 @@ void now_prefs_load(NowPrefs *prefs)
                 module = 11;          /* Logs */
             }
         }
-        /* 12 rather than kWorkshopModuleCount: prefs is core and the
+        if (record.format <= 17) {
+            /* Chat went in as nav id 11 (format 18), pushing the
+               pinned pair down one more. */
+            if (module == 12) {
+                module = 13;          /* Connection */
+            } else if (module == 11) {
+                module = 12;          /* Logs */
+            }
+        }
+        /* 13 rather than kWorkshopModuleCount: prefs is core and the
            module id list is UI, so this file does not include the
            Workshop's header. The number is a literal here for the same
            reason it always was, and the remaps above are what keep it
            meaningful. */
-        if (module >= 1 && module <= 12) {
+        if (module >= 1 && module <= 13) {
             prefs->workshop_module = module;
         }
         prefs->workshop_rect = v9.workshop_rect;
@@ -365,9 +374,9 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 
     memset(&record, 0, sizeof record);
     record.magic = kPrefsMagic;
-    record.format = 17;               /* iCloud inserted as nav id 10,
-                                         shifting Logs and Connection down;
-                                         layout unchanged since 15 */
+    record.format = 18;               /* Chat inserted as nav id 11,
+                                         shifting Logs and Connection down
+                                         again; layout unchanged since 15 */
     record.port = prefs->port;
     strncpy(record.host, prefs->host, sizeof record.host - 1);
     record.shot_depth = prefs->shot_depth;

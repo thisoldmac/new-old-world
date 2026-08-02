@@ -20,14 +20,16 @@ typedef enum {
     kWorkshopMCP,
     kWorkshopDiagnostics,
     kWorkshopNetworking,
-    kWorkshopCloud,          /* the last nav row, above the pinned pair */
+    kWorkshopCloud,
+    kWorkshopChat,           /* the last nav row, above the pinned pair */
     kWorkshopLogs,
     kWorkshopConnection      /* pinned; every nav insertion pushes this
                                 and Logs down — iCloud moved the prefs
-                                format to 17; see now_prefs_load */
+                                format to 17, Chat to 18; see
+                                now_prefs_load */
 } WorkshopModuleID;
 
-enum { kWorkshopModuleCount = 12 };
+enum { kWorkshopModuleCount = 13 };
 
 typedef struct WorkshopModuleOps {
     OSErr (*create)(WindowRef owner, const Rect *body);

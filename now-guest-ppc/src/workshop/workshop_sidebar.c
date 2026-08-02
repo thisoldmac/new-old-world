@@ -32,7 +32,8 @@ enum {
     kMcpIconID = 137,
     kDiagnosticsIconID = 138,
     kNetworkingIconID = 139,
-    kCloudIconID = 140
+    kCloudIconID = 140,
+    kChatIconID = 141
 };
 
 /* The nav rows plus the two pinned ones ARE the module list, and
@@ -75,6 +76,7 @@ static const struct {
     { "Diagnostics", "Measure this Mac", kDiagnosticsIconID },
     { "Networking", "Link, address and ports", kNetworkingIconID },
     { "iCloud", "The other Mac's cloud", kCloudIconID },
+    { "Chat", "Ask the other Mac's model", kChatIconID },
     { "Logs", "This launch's events", kLogsIconID },
     { "Connection", NULL, kConnectionIconID }
 };

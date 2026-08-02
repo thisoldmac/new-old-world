@@ -33,8 +33,12 @@ enum {
 
     kWorkshopHeaderHeight = 38,
     kWorkshopStatusHeight = 23,
-    /* Two text lines per row: bold title over a quiet subtitle. */
-    kWorkshopSidebarRowHeight = 32,
+    /* Two text lines per row: bold title over a quiet subtitle. 30
+       rather than 32 since Chat made eleven nav rows: at the 430-high
+       minimum (a 640x480 screen leaves no room to grow the window),
+       11x32 plus the pinned pair overran the divider. The baselines
+       (13/25) still fit. */
+    kWorkshopSidebarRowHeight = 30,
     kWorkshopGrowBoxSize = 15,
 
     /* Non-pinned modules; Logs and Connection are pinned below the
@@ -46,7 +50,7 @@ enum {
        follows it in the struct. That is exactly what happened when
        Networking went in on 2026-08-01, and the assert below is why it
        cannot happen quietly again. */
-    kWorkshopNavRows = 10
+    kWorkshopNavRows = 11
 };
 
 typedef struct WorkshopLayout {
