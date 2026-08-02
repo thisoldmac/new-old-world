@@ -31,6 +31,11 @@ typedef struct {
                                           between the toolbar and the
                                           list ("iCloud Drive:Attic");
                                           empty outside drive mode */
+    /* Drive mode's own destination row, beneath path_row: reuses the
+       same two fields the photos furniture below defines (dest_row,
+       dest_btn) rather than adding a second pair with the same shape —
+       the two modes never draw at once, so one set of rects serves
+       both. Empty outside drive mode, like path_row. */
     Rect list;                        /* the Data Browser: full body
                                           width in drive mode, left half
                                           otherwise */
@@ -47,11 +52,20 @@ typedef struct {
     /* The photos view's extra card-pane furniture. Computed whenever
        the card pane exists (they are only rectangles; the other views
        ignore them) and empty in drive mode like everything else the
-       card owns. Stacked bottom-up above save_btn: the destination
+       card owns EXCEPT dest_row/dest_btn, which drive mode fills with
+       its OWN destination row instead (see path_row above) — the two
+       modes never draw at once, so reusing the pair costs nothing and
+       avoids a second rect pair with the identical shape. Stacked
+       bottom-up above save_btn in list/photos mode: the destination
        row, then the download bar, then its byte-count line. */
-    Rect size_popup;                  /* Size dropdown, left of Save */
-    Rect dest_row;                    /* "Save into:" path label */
-    Rect dest_btn;                    /* Choose... beside it */
+    Rect size_popup;                  /* Size dropdown, left of Save;
+                                          empty in drive mode */
+    Rect dest_row;                    /* "Save into:" path label — the
+                                          card pane's row in list/photos
+                                          mode, the row under path_row
+                                          in drive mode */
+    Rect dest_btn;                    /* Choose... beside it, same
+                                          dual role */
     Rect dl_bar;                      /* the moving bar (shown only
                                           while a download lands) */
     Rect dl_text;                     /* its byte count, above it */

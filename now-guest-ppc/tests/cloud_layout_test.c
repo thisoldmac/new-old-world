@@ -147,16 +147,40 @@ static void check_drive_body(short left, short top, short right,
     assert(drive_r.list.right >= list_r.detail.right);
 
     /* No card: detail, its text and Save all collapse to the
-       anti-rect — and the photos furniture with them. */
+       anti-rect — and the photos furniture with them, EXCEPT
+       dest_row/dest_btn, which drive mode fills with its own
+       destination row instead of leaving empty. */
     assert(is_empty(drive_r.detail));
     assert(is_empty(drive_r.detail_text));
     assert(is_empty(drive_r.save_btn));
     assert(is_empty(drive_r.size_popup));
-    assert(is_empty(drive_r.dest_row));
-    assert(is_empty(drive_r.dest_btn));
     assert(is_empty(drive_r.dl_bar));
     assert(is_empty(drive_r.dl_text));
     assert(is_empty(drive_r.photos_text));
+
+    /* Drive's own destination row: real, beneath the breadcrumbs and
+       above the list, Choose... on the SAME right edge Refresh's
+       column already uses (the 5d948ed shared-right-edge rule, one
+       lane over from the photos card's version of it), the label
+       filling what is left of the row, uniform height with the
+       breadcrumb row above it. */
+    assert(!is_empty(drive_r.dest_row));
+    assert(!is_empty(drive_r.dest_btn));
+    assert(drive_r.dest_btn.right == drive_r.refresh_btn.right);
+    assert(drive_r.dest_row.top == drive_r.dest_btn.top);
+    assert(drive_r.dest_row.bottom == drive_r.dest_btn.bottom);
+    assert(drive_r.dest_row.right <= drive_r.dest_btn.left);
+    assert(drive_r.dest_row.left >= body.left);
+    assert(drive_r.dest_btn.right <= body.right);
+    assert(drive_r.dest_row.top >= drive_r.path_row.bottom);
+    assert(drive_r.dest_row.bottom <= drive_r.list.top);
+    /* Uniform row height within the destination row itself (the
+       5d948ed rule applied to its own two pieces — it does not bind
+       path_row, which is plain breadcrumb text with no button beside
+       it and a different height already, by design). */
+    assert(drive_r.dest_row.bottom - drive_r.dest_row.top
+           == drive_r.dest_btn.bottom - drive_r.dest_btn.top);
+    assert(drive_r.dest_btn.right - drive_r.dest_btn.left >= 60);
 
     /* The navigation cluster is real in drive mode: nonzero areas,
        in the toolbar row (at or above the list's top, same rule the

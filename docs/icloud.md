@@ -127,6 +127,25 @@ opens a folder or fetches a file through `now_wire_get_host`, with
 the pull's progress on the status placard — one browse
 implementation, genuinely two renderers.
 
+Drive gets photos' download-target furniture, too (2026-08-02): a
+destination row beneath the breadcrumbs, "Save into:" plus the
+folder's path, with a Choose... button on the shared right edge
+Refresh's own column already uses. Unset means the downloads folder —
+byte-identical to every pull before this existed, since that is what
+a pull already meant here — through a NEW wire-level override,
+`now_wire_get_destination`, consumed at `get_begin` beside
+`now_wire_get_host`: the pull path's own twin of
+`now_wire_cloud_get_destination` above, same reasoning (guest-side
+only, no contract change, the receiver sovereign over its own disk),
+different delivery. The status placard's "Receiving X into Y" /
+"Received X - it is in Y" name whichever folder the pull actually
+landed in, resolved once at `get_begin` so the outcome can never
+disagree with where the bytes went even if the chooser is used again
+mid-transfer. Files and Drive both pull through the same
+`now_wire_get_host`, so the get-note hook now follows whoever asked
+last, the listing hook's existing rule — each page reclaims it
+(`conn_set_get_note`) the instant it calls `now_wire_get_host`.
+
 The drive columns live on the drive view's OWN Data Browser, a second
 mostly-hidden control beside the shell's shared two-column one, and
 that is a deliberate trade: the only way off a column is

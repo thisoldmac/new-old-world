@@ -2599,9 +2599,44 @@ static struct {
     long id;
     long expected;
     char name[32];
+    char dest_name[64];               /* the folder this pull actually
+                                          landed in, resolved once at
+                                          get_begin so get_end's outcome
+                                          names the same place */
     FileReceive rx;
     unsigned long deadline;
 } g_get;
+
+/* Where a pull should land, when the person chose somewhere other than
+   the downloads folder. Guest-side only, mirroring g_cget_dest below
+   for the OTHER delivery path (a cloud.get's answering offer): unset
+   means downloads, byte-identical to every pull before this existed. */
+static struct {
+    Boolean set;
+    short vref;
+    long dir;
+} g_get_dest;
+
+void now_wire_get_destination(Boolean use, short vref, long dir)
+{
+    g_get_dest.set = use;
+    g_get_dest.vref = vref;
+    g_get_dest.dir = dir;
+}
+
+Boolean now_wire_get_destination_get(short *vref, long *dir)
+{
+    if (!g_get_dest.set) {
+        return false;
+    }
+    if (vref != NULL) {
+        *vref = g_get_dest.vref;
+    }
+    if (dir != NULL) {
+        *dir = g_get_dest.dir;
+    }
+    return true;
+}
 
 static ConnGetNote g_get_note;
 
@@ -2751,10 +2786,37 @@ static void get_begin(const char *reply)
         memcpy(&creator_code, creator, 4);
     }
 
-    if (now_files_downloads(&vref, &dir) != kFilesOK) {
+    if (g_get_dest.set) {
+        vref = g_get_dest.vref;
+        dir = g_get_dest.dir;
+    } else if (now_files_downloads(&vref, &dir) != kFilesOK) {
         get_cleanup(false);
         get_note("Cannot find the downloads folder");
         return;
+    }
+    /* Resolved once, here, so a later "it landed in Y" cannot disagree
+       with where the bytes actually went even if the chooser is used
+       again mid-transfer. */
+    if (g_get_dest.set) {
+        if (!now_files_dir_path(vref, dir, g_get.dest_name,
+                                sizeof g_get.dest_name)) {
+            strcpy(g_get.dest_name, "the chosen folder");
+        } else {
+            /* The last named segment, downloads_name's own shape: a
+               status line is not the place for a full path. */
+            long n = (long)strlen(g_get.dest_name);
+            char *last;
+
+            while (n > 0 && g_get.dest_name[n - 1] == ':') {
+                g_get.dest_name[--n] = '\0';
+            }
+            last = strrchr(g_get.dest_name, ':');
+            if (last != NULL && last[1] != '\0') {
+                memmove(g_get.dest_name, last + 1, strlen(last + 1) + 1);
+            }
+        }
+    } else {
+        now_files_downloads_name(g_get.dest_name, sizeof g_get.dest_name);
     }
     /* No resume token on a pull yet: resuming is the sender's protocol
        and this side has never been the sender. A pull starts at zero. */
@@ -2767,8 +2829,8 @@ static void get_begin(const char *reply)
         /* Not an error and not a silent overwrite: the file is already
            there, and this machine keeps what it has. */
         get_cleanup(false);
-        snprintf(line, sizeof line, "%.31s is already in the downloads folder",
-                 g_get.name);
+        snprintf(line, sizeof line, "%.31s is already in %.48s",
+                 g_get.name, g_get.dest_name);
         get_note(line);
         return;
     }
@@ -2780,9 +2842,10 @@ static void get_begin(const char *reply)
     }
     g_get.receiving = true;
     g_get.deadline = TickCount() + kGetTimeoutTicks;
-    now_log(kLogInfo, "get", "#%ld %.31s, %ld bytes", g_get.id, g_get.name,
-            g_get.expected);
-    snprintf(line, sizeof line, "Getting %.31s...", g_get.name);
+    now_log(kLogInfo, "get", "#%ld %.31s, %ld bytes, into %s", g_get.id,
+            g_get.name, g_get.expected, g_get.dest_name);
+    snprintf(line, sizeof line, "Receiving %.31s into %.48s...", g_get.name,
+             g_get.dest_name);
     get_note(line);
 }
 
@@ -2806,16 +2869,15 @@ static void get_end(const char *reply)
         get_note("Could not finish writing the file");
         return;
     }
-    now_log(kLogInfo, "get", "#%ld %.31s complete, %ld bytes", g_get.id,
-            g_get.name, g_get.rx.received);
+    now_log(kLogInfo, "get", "#%ld %.31s complete, %ld bytes, into %s",
+            g_get.id, g_get.name, g_get.rx.received, g_get.dest_name);
+    /* dest_name was resolved once at get_begin against whatever the
+       destination was at the time; get_cleanup below only touches
+       pending/receiving, so it is still the folder these bytes landed
+       in. */
+    snprintf(line, sizeof line, "Received %.31s - it is in %.48s",
+             g_get.name, g_get.dest_name);
     get_cleanup(true);
-    {
-        char where[64];
-
-        now_files_downloads_name(where, sizeof where);
-        snprintf(line, sizeof line, "Got %.31s - it is in %.31s",
-                 g_get.name, where);
-    }
     get_note(line);
 }
 
