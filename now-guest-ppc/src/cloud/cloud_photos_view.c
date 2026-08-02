@@ -5,7 +5,9 @@
 
 #include "cloud_filter.h"
 #include "cloud_list_view.h"
+#include "cloud_photo_size.h"
 #include "cloud_preview.h"
+#include "db_hilite.h"
 #include "fileshare.h"
 #include "pump.h"
 #include "wire.h"
@@ -31,7 +33,22 @@
    carries the sovereignty reasoning); and the download's moving bar
    and byte count, read every idle pass from the wire's own receive
    counters and repainted only when the shown value changes — the
-   share panel's bar discipline, one lane over. */
+   share panel's bar discipline, one lane over.
+
+   The columns (2026-08-02) are this view's own Data Browser -- Name,
+   Size (the entry's bytes when the host stated them, "--" when it did
+   not; docs/icloud.md says why photos rows carry no size), Modified
+   (LongDateString) -- occupying the same g_r.list rect the shell's
+   shared two-column browser used to draw into, for the same reason
+   Drive's does: RemoveDataBrowserTableViewColumn is not among the 22
+   symbols spikes/databrowser proved exported on the PB1400c, so one
+   control cannot wear two column sets. Unlike Drive this view keeps
+   no row storage of its own -- its item_data reads the shell's shared
+   CloudStore through the pointer CloudPhotosHost hands over once, and
+   its selection notification is the SHELL's own UPP, reused verbatim,
+   because these rows are (and must stay) the same store Save and the
+   live search already index by the same 0-based-index/DataBrowserItemID
+   convention. */
 
 static WindowRef g_owner;
 static Rect g_pane;                   /* photos_text: where pixels go */
@@ -54,9 +71,30 @@ static ControlRef g_size_popup;
 static ControlRef g_dest_btn;
 static ControlRef g_dl_bar;
 
+/* This view's own Data Browser: Name/Size/Modified, occupying the
+   list rect the shell's shared two-column browser otherwise would
+   (see the file header). g_pbrowser_data_upp is owned here; the
+   notification UPP is the shell's own, handed over at bind time and
+   NOT disposed here. */
+static ControlRef g_pbrowser;
+static DataBrowserItemDataUPP g_pbrowser_data_upp;
+static CloudPhotosHost g_host;
+
+enum {
+    kColName = 'name',
+    kColSize = 'size',
+    kColModified = 'modf'
+};
+
 enum {
     kCloudSizeMenuID = 136,
-    kCloudSizeHostDefaultItem = 4
+    kCloudSizeHostDefaultItem = 4,
+
+    /* fitN box sizes (contract's CloudGet.size, docs/icloud.md): the
+       ones MENU 136 offers today. Load-bearing alongside the menu's
+       item order — item 2 is fit1024, item 3 is fit640. */
+    kFit1024W = 1024, kFit1024H = 768,
+    kFit640W = 640, kFit640H = 480
 };
 
 /* The chosen destination. Unset means the share root — the wire is
@@ -75,6 +113,181 @@ static Boolean g_bar_shown;
 static short g_bar_value = -1;
 static char g_dl_line[48];
 static Rect g_dl_text_rect;           /* where the byte line last drew */
+
+/* --- this view's own Data Browser: Name/Size/Modified ------------------- */
+
+static OSStatus item_data(ControlRef browser, DataBrowserItemID item,
+                          DataBrowserPropertyID property,
+                          DataBrowserItemDataRef data, Boolean changeValue)
+{
+    const CloudRow *row;
+    CFStringRef text = NULL;
+    char buf[64];
+
+    (void)browser;
+    if (changeValue || g_host.store == NULL || item < 1
+        || item > (DataBrowserItemID)g_host.store->row_count) {
+        return errDataBrowserPropertyNotSupported;
+    }
+    row = &g_host.store->rows[item - 1];
+    switch (property) {
+    case kColName:
+        text = CFStringCreateWithCString(NULL, row->title,
+                                         kCFStringEncodingMacRoman);
+        break;
+    case kColSize:
+        /* Photos rows never state bytes (docs/icloud.md: PHAssetResource
+           has no public size property short of downloading the asset,
+           which a listing must not do) — "--" is the honest answer,
+           never an invented one. */
+        if (row->bytes <= 0) {
+            strcpy(buf, "--");
+        } else if (row->bytes < 1024) {
+            snprintf(buf, sizeof buf, "%ld bytes", row->bytes);
+        } else if (row->bytes < 1024L * 1024L) {
+            snprintf(buf, sizeof buf, "%ld K", row->bytes / 1024);
+        } else {
+            snprintf(buf, sizeof buf, "%ld.%ld MB",
+                     row->bytes / (1024L * 1024L),
+                     (row->bytes % (1024L * 1024L)) / (105L * 1024L));
+        }
+        text = CFStringCreateWithCString(NULL, buf,
+                                         kCFStringEncodingMacRoman);
+        break;
+    case kColModified:
+        if (row->modified == 0) {
+            text = CFStringCreateWithCString(NULL, "--",
+                                             kCFStringEncodingMacRoman);
+        } else {
+            Str255 when;
+            LongDateTime ldt = (LongDateTime)row->modified;
+
+            /* LongDateString, not DateString: 1904-epoch seconds pass
+               2^31 in 1972 through the signed API
+               (classic-datestring-clamps-past-1972). */
+            LongDateString(&ldt, shortDate, when, NULL);
+            text = CFStringCreateWithPascalString(
+                NULL, when, kCFStringEncodingMacRoman);
+        }
+        break;
+    default:
+        return errDataBrowserPropertyNotSupported;
+    }
+    if (text == NULL) {
+        return memFullErr;
+    }
+    SetDataBrowserItemDataText(data, text);
+    CFRelease(text);
+    return noErr;
+}
+
+static OSStatus add_column(DataBrowserPropertyID id, const char *title,
+                           UInt16 width,
+                           DataBrowserTableViewColumnIndex at)
+{
+    DataBrowserListViewColumnDesc col;
+    OSStatus err;
+
+    memset(&col, 0, sizeof col);
+    col.propertyDesc.propertyID = id;
+    col.propertyDesc.propertyType = kDataBrowserTextType;
+    col.propertyDesc.propertyFlags = kDataBrowserListViewSortableColumn
+        | (id == kColName ? kDataBrowserListViewSelectionColumn : 0);
+    col.headerBtnDesc.version = kDataBrowserListViewLatestHeaderDesc;
+    col.headerBtnDesc.minimumWidth = 40;
+    col.headerBtnDesc.maximumWidth = 400;
+    col.headerBtnDesc.titleOffset = 0;
+    col.headerBtnDesc.initialOrder = kDataBrowserOrderIncreasing;
+    col.headerBtnDesc.btnFontStyle.flags = 0;
+    col.headerBtnDesc.btnContentInfo.contentType = kControlContentTextOnly;
+    col.headerBtnDesc.titleString =
+        CFStringCreateWithCString(NULL, title, kCFStringEncodingMacRoman);
+    err = AddDataBrowserListViewColumn(g_pbrowser, &col, at);
+    if (col.headerBtnDesc.titleString != NULL) {
+        CFRelease(col.headerBtnDesc.titleString);
+    }
+    if (err == noErr) {
+        SetDataBrowserTableViewNamedColumnWidth(g_pbrowser, id, width);
+    }
+    return err;
+}
+
+ControlRef cloud_photos_view_browser(void)
+{
+    return g_pbrowser;
+}
+
+void cloud_photos_view_bind(const CloudPhotosHost *host)
+{
+    if (host != NULL) {
+        g_host = *host;
+    } else {
+        memset(&g_host, 0, sizeof g_host);
+    }
+}
+
+/* --- the Size popup's per-selection labels ------------------------------ */
+
+static MenuRef size_menu(void)
+{
+    MenuRef menu = NULL;
+    Size got = 0;
+
+    /* Same GetControlData-then-GetMenuHandle fallback as the shell's
+       services popup (cloud_module.c's popup_menu): the classic
+       popupMenuProc CDEF puts the menu in the hierarchical list, which
+       is where GetControlData finds it under CarbonLib; GetMenuHandle
+       is the fallback for older paths. */
+    if (g_size_popup != NULL
+        && GetControlData(g_size_popup, kControlEntireControl,
+                          kControlPopupButtonMenuHandleTag,
+                          sizeof menu, (Ptr)&menu, &got) == noErr
+        && got == (Size)sizeof menu && menu != NULL) {
+        return menu;
+    }
+    return GetMenuHandle(kCloudSizeMenuID);
+}
+
+static void set_item(MenuRef menu, short item, const char *text)
+{
+    Str255 s;
+
+    CopyCStringToPascal(text, s);
+    SetMenuItemText(menu, item, s);
+}
+
+/* Rebuilds items 1-3 for the given entry's stated width/height (both 0
+   = unstated): the real resolution for Original, and each fitN box's
+   computed result (cloud_photo_fit — aspect-preserving, never
+   upscaling: a photo already smaller than a box shows its own size).
+   Falls back to the literal fit-box wording — MENU 136's own resource
+   text — when there is nothing to compute, which covers both "no
+   selection" and "this entry never stated its dimensions". Item 4
+   (Host default) never changes. */
+static void rebuild_size_menu(long width, long height)
+{
+    MenuRef menu = size_menu();
+    char buf[32];
+    long fw, fh;
+
+    if (menu == NULL) {
+        return;
+    }
+    if (width <= 0 || height <= 0) {
+        set_item(menu, 1, "Original");
+        set_item(menu, 2, "Fit 1024x768");
+        set_item(menu, 3, "Fit 640x480");
+        return;
+    }
+    snprintf(buf, sizeof buf, "%ld x %ld", width, height);
+    set_item(menu, 1, buf);
+    cloud_photo_fit(width, height, kFit1024W, kFit1024H, &fw, &fh);
+    snprintf(buf, sizeof buf, "%ld x %ld", fw, fh);
+    set_item(menu, 2, buf);
+    cloud_photo_fit(width, height, kFit640W, kFit640H, &fw, &fh);
+    snprintf(buf, sizeof buf, "%ld x %ld", fw, fh);
+    set_item(menu, 3, buf);
+}
 
 static void evict(void)
 {
@@ -264,6 +477,7 @@ static OSErr view_create(WindowRef owner)
 {
     Rect seed;
     Str255 text;
+    DataBrowserCallbacks callbacks;
 
     g_owner = owner;
     conn_set_cloud_preview_note(note_preview);
@@ -299,6 +513,41 @@ static OSErr view_create(WindowRef owner)
     /* A missing control degrades that control, not the page: the ask
        still works at the host default, a save still lands in the
        share, the byte line still draws. */
+
+    /* This view's own Data Browser (see the file header): built the
+       same defensive way Drive's is — a failure here degrades this
+       control alone, never the page. Needs g_host.notify_upp already
+       bound (cloud_photos_view_bind, called by cloud_create before
+       this op). */
+    if (CreateDataBrowserControl(owner, &seed, kDataBrowserListView,
+                                 &g_pbrowser) != noErr) {
+        g_pbrowser = NULL;
+    } else {
+        g_pbrowser_data_upp = NewDataBrowserItemDataUPP(item_data);
+        if (g_pbrowser_data_upp == NULL || g_host.notify_upp == NULL) {
+            if (g_pbrowser_data_upp != NULL) {
+                DisposeDataBrowserItemDataUPP(g_pbrowser_data_upp);
+                g_pbrowser_data_upp = NULL;
+            }
+            DisposeControl(g_pbrowser);
+            g_pbrowser = NULL;
+        } else {
+            memset(&callbacks, 0, sizeof callbacks);
+            callbacks.version = kDataBrowserLatestCallbacks;
+            InitDataBrowserCallbacks(&callbacks);
+            callbacks.u.v1.itemDataCallback = g_pbrowser_data_upp;
+            callbacks.u.v1.itemNotificationCallback = g_host.notify_upp;
+            SetDataBrowserCallbacks(g_pbrowser, &callbacks);
+            add_column(kColName, "Name", 160, 0);
+            add_column(kColSize, "Size", 64, 1);
+            add_column(kColModified, "Modified", 90, 2);
+            SetDataBrowserListViewHeaderBtnHeight(g_pbrowser, 16);
+            SetDataBrowserHasScrollBars(g_pbrowser, false, true);
+            now_browser_fill_hilite(g_pbrowser);
+            SetDataBrowserSortProperty(g_pbrowser, kColName);
+            HideControl(g_pbrowser);
+        }
+    }
     return noErr;
 }
 
@@ -349,6 +598,14 @@ static void view_layout(const CloudLayout *r)
         SizeControl(g_dl_bar,
                     (SInt16)(r->dl_bar.right - r->dl_bar.left),
                     (SInt16)(r->dl_bar.bottom - r->dl_bar.top));
+    }
+    /* r->list is exactly the rect the shell's shared browser used to
+       occupy in list mode (this view never turns on drive_mode's
+       full-width layout) — same geometry, different control. */
+    if (g_pbrowser != NULL) {
+        MoveControl(g_pbrowser, r->list.left, r->list.top);
+        SizeControl(g_pbrowser, (SInt16)(r->list.right - r->list.left),
+                    (SInt16)(r->list.bottom - r->list.top));
     }
 }
 
@@ -555,9 +812,12 @@ static void view_select(const CloudLayout *r, const CloudStore *store,
                 sizeof g_want_item - 1);
         g_want_item[sizeof g_want_item - 1] = '\0';
         try_ask();
+        rebuild_size_menu(store->rows[selected].width,
+                          store->rows[selected].height);
     } else {
         g_want_item[0] = '\0';
         g_reask = false;
+        rebuild_size_menu(0, 0);
     }
     invalidate_pane();
 }
@@ -594,9 +854,25 @@ void cloud_photos_view_dispose(void)
     g_have_pane = false;
     g_shown = false;
     g_dest_set = false;
-    /* The window owns the controls' disposal; only the refs die here
-       (docs/adding-a-workshop-module.md, what you own and what you do
-       not). */
+    /* The window owns g_size_popup/g_dest_btn/g_dl_bar's disposal; only
+       their refs die here (docs/adding-a-workshop-module.md, what you
+       own and what you do not). g_pbrowser is different, the same way
+       Drive's browser is: it owns an item-data UPP of its own, so it
+       must go BEFORE that UPP rather than wait for DisposeWindow — the
+       control's own disposal fires item notifications through it
+       (files_browser_view.c's dispose order,
+       carbon-upp-is-not-a-cast-on-cfm). The shared notify_upp
+       (g_host.notify_upp) still fires safely here too: cloud_module.c
+       disposes it only after this call returns. */
+    if (g_pbrowser != NULL) {
+        DisposeControl(g_pbrowser);
+        g_pbrowser = NULL;
+    }
+    if (g_pbrowser_data_upp != NULL) {
+        DisposeDataBrowserItemDataUPP(g_pbrowser_data_upp);
+        g_pbrowser_data_upp = NULL;
+    }
+    memset(&g_host, 0, sizeof g_host);
     g_size_popup = NULL;
     g_dest_btn = NULL;
     g_dl_bar = NULL;

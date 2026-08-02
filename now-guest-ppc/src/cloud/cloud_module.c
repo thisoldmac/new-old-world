@@ -107,15 +107,54 @@ static Boolean g_shown_back_on = true;   /* NewControl starts enabled;
                                             history exactly once */
 static Boolean g_shown_fwd_on = true;
 
-/* The list the current mode is actually showing: drive mode swapped in
-   cloud_drive_view's own four-column browser (the shell's two-column
-   one cannot change wardrobe — RemoveDataBrowserTableViewColumn is not
-   in the PB1400c's proven exports; cloud_drive_view.c says why in
-   full). Everything the shell does to "the list" — clearing, the
-   search's diff, click routing, focus — goes through this. */
+/* The list the current mode is actually showing: drive mode swaps in
+   cloud_drive_view's own browser and photos mode swaps in
+   cloud_photos_view's own (the shell's two-column one cannot change
+   wardrobe for either — RemoveDataBrowserTableViewColumn is not in
+   the PB1400c's proven exports; cloud_drive_view.c says why in full).
+   Everything the shell does to "the list" — clearing, the search's
+   diff, click routing, focus — goes through active_browser(); every
+   place that used to show/hide "g_browser or cloud_drive_view_browser()"
+   by the g_drive_mode flag alone now goes through view_own_browser()
+   so a THIRD view-owned control did not need a third flag threaded
+   through every one of those sites. */
+static ControlRef view_own_browser(void)
+{
+    if (g_drive_mode) {
+        return cloud_drive_view_browser();
+    }
+    if (g_view == cloud_photos_view_ops()) {
+        return cloud_photos_view_browser();
+    }
+    return NULL;
+}
+
 static ControlRef active_browser(void)
 {
-    return g_drive_mode ? cloud_drive_view_browser() : g_browser;
+    ControlRef own = view_own_browser();
+
+    return own != NULL ? own : g_browser;
+}
+
+/* Declared with the rest of layout, below; forward-declared here
+   because show_own_browser (right below) needs it and appears first
+   in the file. */
+static void show_control(ControlRef control, Boolean on);
+
+/* Shows exactly one of the shell's shared browser / Drive's own /
+   Photos' own, per view_own_browser() — the shell owns visibility for
+   all three the same way it already owned it for the first two. */
+static void show_own_browser(Boolean visible)
+{
+    ControlRef own = view_own_browser();
+
+    show_control(g_browser, visible && own == NULL);
+    show_control(cloud_drive_view_browser(),
+                 visible && own == cloud_drive_view_browser()
+                     && own != NULL);
+    show_control(cloud_photos_view_browser(),
+                 visible && own == cloud_photos_view_browser()
+                     && own != NULL);
 }
 
 static void invalidate_detail(void)
@@ -428,9 +467,10 @@ static void rebuild_popup(void)
 }
 
 /* Defined with the rest of layout, below; declared here because
-   choose_service() needs them and appears first in the file. */
+   choose_service() needs it and appears first in the file.
+   show_control itself was already forward-declared above, for
+   show_own_browser. */
 static void apply_layout(void);
-static void show_control(ControlRef control, Boolean on);
 
 static void retitle_button(void)
 {
@@ -500,13 +540,12 @@ static void choose_service(int index)
     apply_layout();
     retitle_button();
     clear_list();
-    /* Two lists, one shown: the mode owns which browser is the page's,
-       and the history pair exists only where a history does. Hidden is
-       for the control the mode does not use; empty-history dimming is
-       cloud_idle's HiliteControl diff, never a hide. */
+    /* Three browsers, one shown: view_own_browser() owns which is the
+       page's, and the history pair exists only where a history does.
+       Hidden is for the browsers the mode does not use; empty-history
+       dimming is cloud_idle's HiliteControl diff, never a hide. */
     if (g_owner != NULL && g_visible) {
-        show_control(g_browser, !g_drive_mode);
-        show_control(cloud_drive_view_browser(), g_drive_mode);
+        show_own_browser(true);
         show_control(g_back, g_drive_mode);
         show_control(g_fwd, g_drive_mode);
         if (g_view != NULL && g_view->show != NULL) {
@@ -840,11 +879,21 @@ static OSErr cloud_create(WindowRef owner, const Rect *body)
     if (drive_ops->create != NULL) {
         drive_ops->create(owner);
     }
-    /* Photos' create only records the window and registers the wire's
-       preview hook; the GWorld waits for pixels. */
+    /* Photos' create records the window, registers the wire's preview
+       hook, and (2026-08-02) builds its own Name/Size/Modified Data
+       Browser — which needs the store pointer and the shell's own
+       notify UPP bound BEFORE create runs, the way this view's own
+       controls need g_r placed before they are shown. A NULL
+       notify_upp here (g_browser's own creation failed above) is
+       handled the same defensive way a NULL g_data_upp already is:
+       the view degrades its own control, not the page. */
     {
         const CloudViewOps *photos_ops = cloud_photos_view_ops();
+        CloudPhotosHost photos_host;
 
+        photos_host.store = &g_store;
+        photos_host.notify_upp = g_notify_upp;
+        cloud_photos_view_bind(&photos_host);
         if (photos_ops->create != NULL) {
             photos_ops->create(owner);
         }
@@ -927,9 +976,8 @@ static void cloud_show(Boolean visible)
     show_control(g_popup, visible);
     show_control(g_refresh, visible);
     show_control(g_save, visible && action_applies());
-    /* One list on stage per mode; the history pair is drive chrome. */
-    show_control(g_browser, visible && !g_drive_mode);
-    show_control(cloud_drive_view_browser(), visible && g_drive_mode);
+    /* One browser on stage per mode; the history pair is drive chrome. */
+    show_own_browser(visible);
     show_control(g_back, visible && g_drive_mode);
     show_control(g_fwd, visible && g_drive_mode);
     if (g_view != NULL && g_view->show != NULL) {
@@ -987,10 +1035,10 @@ static void apply_layout(void)
                     (SInt16)(g_r.fwd_btn.bottom - g_r.fwd_btn.top));
     }
     /* g_r fits exactly one mode, so only the browser that mode shows
-       is sized from it; the other keeps its stale geometry, hidden,
-       until its own mode's apply_layout runs. Drive's browser is
-       placed by its view's layout op, below. */
-    if (!g_drive_mode && g_browser != NULL) {
+       is sized from it; the others keep their stale geometry, hidden,
+       until their own mode's apply_layout runs. Drive's and Photos'
+       own browsers are placed by their view's layout op, below. */
+    if (view_own_browser() == NULL && g_browser != NULL) {
         MoveControl(g_browser, g_r.list.left, g_r.list.top);
         SizeControl(g_browser, (SInt16)(g_r.list.right - g_r.list.left),
                     (SInt16)(g_r.list.bottom - g_r.list.top));
@@ -1264,14 +1312,15 @@ static Boolean cloud_key(const EventRecord *event)
 
 static void cloud_activate(Boolean active)
 {
-    /* Both browsers follow the window: the hidden one must not wake in
-       yesterday's activation state when its mode returns. */
-    ControlRef lists[2];
+    /* All three browsers follow the window: a hidden one must not wake
+       in yesterday's activation state when its mode returns. */
+    ControlRef lists[3];
     int i;
 
     lists[0] = g_browser;
     lists[1] = cloud_drive_view_browser();
-    for (i = 0; i < 2; ++i) {
+    lists[2] = cloud_photos_view_browser();
+    for (i = 0; i < 3; ++i) {
         if (lists[i] == NULL) {
             continue;
         }

@@ -7,10 +7,12 @@
 #include "cloud_model.h"
 
 /* The SHELL's Data Browser's two columns, drawn from CloudRow by its
-   item_data callback for the list and contacts views. Drive mode does
-   not use them: cloud_drive_view.c owns a browser of its own with the
-   Files page's Name/Kind/Size/Modified set (its header says why one
-   control cannot wear both). */
+   item_data callback for the list and contacts views. Drive and
+   Photos do not use them: each owns a browser of its own (Drive's
+   Files-page Name/Kind/Size/Modified set, Photos' Name/Size/Modified)
+   for the same reason — one control cannot change its column set
+   under CarbonLib 1.6 on the PB1400c, so a different set means a
+   different control (cloud_drive_view.c's header says why in full). */
 enum {
     kCloudColTitle = 'titl',
     kCloudColSubtitle = 'subt'

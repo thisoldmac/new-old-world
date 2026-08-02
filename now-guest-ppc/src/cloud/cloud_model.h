@@ -32,6 +32,17 @@ typedef struct {
     char subtitle[48];                /* MacRoman */
     long bytes;                       /* 0 = unstated */
     unsigned long modified;           /* classic seconds; 0 = unstated */
+    long width;                       /* the ORIGINAL's pixel size; 0 =
+                                          unstated (a non-image service,
+                                          or one that cannot learn it).
+                                          Paired with height so the
+                                          Photos view can compute a
+                                          fitN token's exact post-fit
+                                          resolution itself (the wire
+                                          token stays coarse by
+                                          contract) — see docs/icloud.md
+                                          and cloud_photo_size.h. */
+    long height;                      /* see width */
 } CloudRow;
 
 typedef struct {

@@ -310,7 +310,12 @@ resource 'MENU' (135) {
 /* The Photos view's download-size pop-up. Item order is load-bearing:
    cloud_model.c's cloud_size_token maps items 1-3 to the contract's
    size tokens and item 4 (the default) to "omit the field", which asks
-   for the host's own configured Downloads setting. */
+   for the host's own configured Downloads setting. The text below is
+   the FALLBACK wording only — cloud_photos_view.c's rebuild_size_menu
+   rewrites items 1-3 via SetMenuItemText to the selected photo's exact
+   post-fit resolution ("2016 x 1512") whenever the entry states its
+   width/height, and restores this literal wording (or on no
+   selection) when it does not. Item 4 never changes. */
 resource 'MENU' (136) {
     136, textMenuProc, allEnabled, enabled, "Size",
     {
