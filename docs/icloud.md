@@ -354,13 +354,45 @@ cache-miss answers both feed the same table — so nothing asked once is
 ever asked twice.
 
 The CARD is the classic Address Book's shape: a photo well top-left,
-the name beside it in the large system font, then the grouped [label,
-value] rows below both — `cloud_contacts_card_layout` (pure, host-cc
-tested in `cloud_contacts_card_test.c`, mutation-watched) places the
-well at 48x48 (not 64: the smallest honest pane's ~184pt width leaves
-a 64pt well too little room for a name before truncation) and
-degrades it to fit a pane too small to hold the configured size rather
-than overflow. The well's pixels are the shared preview well above,
+the name beside it in the large system font with the organization
+under it in the small one, then — below both — **one titled group box
+per section**, in the order Phone, Email, Address, Other, each holding
+its own label/value rows (the label at the box's left inset, the value
+a second column 70 points right of it). A section with no rows is
+absent, not an empty box; a contact whose card has not arrived yet
+draws the well and the name alone rather than four empty frames.
+
+`cloud_contacts_card_layout` (pure, host-cc tested in
+`cloud_contacts_card_test.c`, mutation-watched) decides all of it: it
+places the well at 48x48 (not 64: the smallest honest pane's ~184pt
+width leaves a 64pt well too little room for a name before
+truncation), degrades it to fit a pane too small to hold the
+configured size rather than overflow, and answers the section list —
+title, rect, and the index range of rows inside each. Which section a
+row belongs to is read from its VALUE, never its label, because the
+contract says the labels are the person's own ("home" appears on a
+phone and an email alike); an address is recognised as
+`CNPostalAddressFormatter`'s comma-joined shape, with a company name
+containing a comma and a Birthday's long date both excluded by
+construction. A stack too tall for the pane is truncated rather than
+spilled — there is no scroller — but the box paddings are chosen so
+that the worst card the wire can deliver (`kCloudMaxCardRows` = 16
+rows across all four sections) still fits a 640x480 screen's pane
+without losing a row, and the test says so.
+
+The boxes are real Appearance group boxes
+(`kControlGroupBoxTextTitleProc`, the constructor `software_module.c`
+already proves here), held as a **fixed pool of four** created once at
+view create: a selection only retitles, moves and shows or hides them,
+because a contact's section set changes on every click and
+NewControl/DisposeControl on that seam is exactly the redraw churn
+`docs/guest-ui-start-here.md` warns about. The pool is synced from one
+change-gated seam keyed on everything a box shows, so an unchanged
+answer costs a `memcmp` per idle pass; a pool member that failed to
+create costs its own frame and nothing else — the rows inside it still
+draw. The ROWS stay hand-drawn text: they are content, not controls.
+
+The well's pixels are the shared preview well above,
 asked with `service="contacts"` on every selection change exactly the
 way Photos asks with `service="photos"`; while the ask is in flight,
 refused (most contacts have none — a contact with no photo answers
