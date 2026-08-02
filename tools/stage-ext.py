@@ -228,6 +228,61 @@ if APP_BIN:
     push_verified(f"{DEV}:{APP_NAME}", open(APP_BIN, "rb").read(),
                   want_type="APPL", min_data=1024)
 
+# 2b. The guest's dialling book, when the caller runs its OWN listener.
+#
+#    The compiled default is 10.0.2.2:5250 (prefs.c set_defaults), and the
+#    base image's saved prefs say the same - which is correct for the
+#    product and wrong for an instrumented clone on a desk where the
+#    human's own host app already holds 5250. Measured 2026-08-02: that
+#    app was live, serving a metal PowerBook, and a probe clone's guest
+#    would have dialled INTO it and taken a registry slot the way the
+#    prefs-suite spike (042f41f) records two instances already have.
+#    So when NOW_WIRE_PORT names a port, the clone's book is WRITTEN to
+#    dial it - same overwrite-not-inherit rule as mirror.port below. A
+#    delivery run stages without NOW_WIRE_PORT and the book is whatever
+#    the image saved, which dials the product's own 5250.
+#
+#    A minimal V1 record is deliberate: the loader takes host/port from
+#    any format and leaves every other preference at its default
+#    (prefs.c now_prefs_load, the "v1/v2: connection only" leg).
+WIRE_PORT = os.environ.get("NOW_WIRE_PORT")
+if WIRE_PORT and APP_BIN:
+    import struct
+
+    def macbinary(name, ftype, creator, data):
+        """A MacBinary II wrapper: header, data fork, no resource fork.
+
+        The anchor's put channel decodes MacBinary, so the type and
+        creator here are what the staged file wears - the same reason
+        the INIT pushes above are .bin files."""
+        def crc16(raw):
+            crc = 0
+            for byte in raw:
+                crc ^= byte << 8
+                for _ in range(8):
+                    crc = ((crc << 1) ^ 0x1021 if crc & 0x8000
+                           else crc << 1) & 0xFFFF
+            return crc
+        hdr = bytearray(128)
+        pname = name.encode("mac_roman")[:31]
+        hdr[1] = len(pname)
+        hdr[2:2 + len(pname)] = pname
+        hdr[65:69] = ftype
+        hdr[69:73] = creator
+        struct.pack_into(">I", hdr, 83, len(data))
+        hdr[122] = hdr[123] = 129
+        struct.pack_into(">H", hdr, 124, crc16(bytes(hdr[:124])))
+        pad = (-len(data)) % 128
+        return bytes(hdr) + data + b"\0" * pad
+
+    record = struct.pack(">4shH64s", b"NOWp", 1, int(WIRE_PORT),
+                         b"10.0.2.2")
+    prefs_name = f"{APP_NAME} Prefs"
+    print(f"== stage {prefs_name} (guest dials 10.0.2.2:{WIRE_PORT}) ==")
+    push_verified(f"Macintosh HD:System Folder:Preferences:{prefs_name}",
+                  macbinary(prefs_name, b"pref", b"NOWo", record),
+                  want_type="pref", min_data=len(record))
+
 # 3. Mirror, if it was asked for. A SEPARATE application that happens to
 #    run on the same Macintosh: NOW's Mirror page reads it and installs
 #    nothing (now-guest-ppc/src/mirror/), so this is the only place in
