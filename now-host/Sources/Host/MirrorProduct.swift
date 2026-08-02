@@ -444,6 +444,23 @@ struct MirrorInvocation: Equatable, Sendable {
     /// Measured 2026-08-02, on a pane that omitted it. Nil on a machine
     /// with no QMP at all (metal), where those actions are honestly
     /// unavailable rather than misconfigured.
+    /// The rig runs TWO QMP monitors, because a QMP session belongs to one
+    /// client (tools/lib.sh, citing QEMU docs/29): `qmp.sock` serves the
+    /// one-shot tools — `tools/qmp`, `snap`, `stop` — and `qmp-ui.sock`
+    /// beside it serves a persistent UI client. Mirror is the second kind,
+    /// so naming the tools' socket puts it in contention with every
+    /// screenshot and keystroke a session takes, and its clicks stall into
+    /// wire timeouts (measured 2026-08-02, selecting a desktop item).
+    /// A path that already names the UI socket, or has no sibling, is left
+    /// exactly as typed — this corrects a known layout, it does not guess.
+    static func persistentQMP(_ socket: URL,
+                              fileManager: FileManager = .default) -> URL {
+        guard socket.lastPathComponent == "qmp.sock" else { return socket }
+        let ui = socket.deletingLastPathComponent()
+            .appendingPathComponent("qmp-ui.sock")
+        return fileManager.fileExists(atPath: ui.path) ? ui : socket
+    }
+
     static func liveWindow(_ product: MirrorProduct,
                            host: String, port: Int,
                            machine: String,
@@ -451,7 +468,7 @@ struct MirrorInvocation: Equatable, Sendable {
         var arguments = ["--host", host, "--port", String(port),
                          "--machine", machine, "--scope", "all"]
         if let qmpSocket {
-            arguments += ["--qmp", qmpSocket.path]
+            arguments += ["--qmp", persistentQMP(qmpSocket).path]
         }
         arguments += ["--window", "--display", "--islands",
                       "--interval", "0.7"]

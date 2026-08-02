@@ -675,4 +675,29 @@ final class MirrorControlTests: XCTestCase {
                        "a real Mac has no QMP; the flag would name nothing")
         XCTAssertTrue(metal.arguments.contains("--window"))
     }
+
+    /// The rig runs two QMP monitors and a session belongs to ONE client:
+    /// `qmp.sock` is the one-shot tools', `qmp-ui.sock` is a persistent UI
+    /// client's. Mirror is the second kind, and naming the tools' socket
+    /// put its clicks in contention with every screenshot and keystroke a
+    /// session takes — measured as wire timeouts when selecting an item.
+    func testTheLaunchPrefersThePersistentQMPSocket() throws {
+        let run = try folder("run")
+        let tools = run.appendingPathComponent("qmp.sock")
+        let ui = run.appendingPathComponent("qmp-ui.sock")
+        try Data().write(to: tools)
+        try Data().write(to: ui)
+        XCTAssertEqual(MirrorInvocation.persistentQMP(tools).lastPathComponent,
+                       "qmp-ui.sock",
+                       "a persistent client must not take the tools' monitor")
+
+        /* No sibling: left exactly as typed. This corrects a layout it
+           recognises; it does not invent a path. */
+        let lone = try folder("lone").appendingPathComponent("qmp.sock")
+        try Data().write(to: lone)
+        XCTAssertEqual(MirrorInvocation.persistentQMP(lone).lastPathComponent,
+                       "qmp.sock")
+        XCTAssertEqual(MirrorInvocation.persistentQMP(ui).lastPathComponent,
+                       "qmp-ui.sock", "already the ui socket: unchanged")
+    }
 }
