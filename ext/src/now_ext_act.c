@@ -133,19 +133,49 @@ static void install_patch(unsigned short trap, void *shim, void **saved,
     if (old == NULL) {
         return;
     }
+    /* ALREADY OURS IN THIS DISPATCH TABLE, and this check is what makes
+       installing more than once safe rather than fatal. Saving `old`
+       here would point the chain at our own shim, and the first call
+       through it would loop until the machine stopped. With the check,
+       a second install is a no-op under a system-wide table and a real
+       install under a per-context one - correct either way, which is
+       the point, because which one this machine has is exactly what is
+       not yet known (docs/open-issues.md, the act plane's contexts). */
+    if (old == shim) {
+        *patches |= (NowPeekU32)bit;
+        return;
+    }
     *saved = old;
     NSetTrapAddress((UniversalProcPtr)shim, trap, ToolTrap);
     *patches |= (NowPeekU32)bit;
 }
 
+/*
+ * WHY THIS IS NO LONGER ONE-SHOT, 2026-08-02.
+ *
+ * It was `static int installed`, run once per boot. Measured on an
+ * emulated Power Mac G4: `actselftest` abi-agrees inside NOW's own
+ * application and answers `act-no-patch` inside the Finder and inside
+ * SimpleText, on the same boot, twice each. For the selftest the arm
+ * point is negative - unguarded - and the A5 matches, so if the
+ * trampoline had run it would have set `fired`. It did not: the
+ * resident called MenuSelect from its own 68K code, inside a foreign
+ * application, and its own patch was not in the dispatch path.
+ *
+ * The install always landed in NOW's context, because NOW's application
+ * is the one pumping the wire the request arrived on - fronting another
+ * application cannot move it. So "installed once, in a Carbon
+ * application's context" is the one condition every failing measurement
+ * shares.
+ *
+ * Running it on every armed pass costs six NGetTrapAddress calls while
+ * the plane is armed, and nothing at all while it is not: the arm bit
+ * still gates the whole plane, so a machine that never opens the mirror
+ * still has an unpatched trap table, which is the charter property this
+ * change had to keep.
+ */
 static void act_install(NowPeekActCell *cell)
 {
-    static int installed = 0;
-
-    if (installed) {
-        return;
-    }
-    installed = 1;
     cell->patches = 0;
     install_patch(kNowActMenuSelectTrap, (void *)now_act_menuselect_patch,
                   &gNowActOldMenuSelect, &cell->patches,

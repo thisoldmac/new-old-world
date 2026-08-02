@@ -153,6 +153,13 @@ run_py now-guest-shared content_stamp_order_source_test.py
 # actselftest was reporting an unexplained act-refused against every
 # foreign application.
 run_py now-guest-shared act_error_vocabulary_source_test.py
+# Installing the six trap patches more than once must be survivable. The
+# one-shot that used to make it unreachable was removed 2026-08-02 (it
+# confined the patches to whichever process pumped first), so the safety
+# now rests on install_patch recognising its own shim before it saves an
+# incumbent. Without that, the chain points at itself and the first
+# MenuSelect after boot loops forever, in every process, with no way in.
+run_py now-guest-shared act_install_reentrant_source_test.py
 
 echo "== now-guest-ppc (PowerPC Carbon) =="
 run_c now-guest-ppc census_decode_test.c     ""  src/census/census_decode.c
