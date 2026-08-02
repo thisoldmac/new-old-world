@@ -108,6 +108,10 @@ final class HostAppState: ObservableObject {
         actions: MirrorActionDriver(
             adapter: agentIntegration,
             windows: MirrorWindowResolver(listener: listener)))
+    private(set) lazy var chat = ChatModuleModel(
+        agentIntegration: agentIntegration,
+        guestFiles: guestFiles,
+        agentActivity: agentActivity)
     private(set) lazy var census = CensusModuleModel(listener: listener)
     private(set) lazy var diagnostics = DiagnosticsModel(listener: listener)
     private(set) lazy var networking = NetworkingModel(listener: listener)

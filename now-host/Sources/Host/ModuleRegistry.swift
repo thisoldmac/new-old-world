@@ -108,6 +108,16 @@ struct ModuleRegistry: Sendable {
             symbol: "terminal",
             summary: "A shell into the connected Mac"
         ),
+        /* Beside Console because it is the same posture — a page that DOES
+           things to the machine, through a model instead of a verb table.
+           The provider configuration lives on this page too, per the
+           no-preferences-window rule. */
+        ModuleDescriptor(
+            id: "chat",
+            title: "Chat",
+            symbol: "bubble.left.and.bubble.right",
+            summary: "Talk to a model that can see and drive the connected Mac"
+        ),
         /* Above the machine-describing pages on purpose: this one is about
            the OTHER Macs - which are connected and which is being driven -
            where Census and Software describe the one already chosen. The

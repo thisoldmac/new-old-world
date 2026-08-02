@@ -102,6 +102,8 @@ struct HostRootView: View {
             MirrorModuleView(model: state.mirror)
         case "console":
             ConsoleModuleView(model: state.console, listener: state.listener)
+        case "chat":
+            ChatModuleView(model: state.chat)
         case "connections":
             ConnectionsModuleView(model: state.connections)
         case "census":
