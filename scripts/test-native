@@ -145,6 +145,14 @@ run_py now-guest-shared act_patch_abi_source_test.py
 # while looking ordered. Draw-time resident code; no gate here can run
 # it, so the order is pinned as text.
 run_py now-guest-shared content_stamp_order_source_test.py
+# The act plane's error vocabulary, both halves of it. A missing case
+# does not fail - it falls through to "act-refused - the target refused
+# the request", which is indistinguishable from a real refusal, so the
+# plane's account of what went wrong is replaced by a shrug. Measured
+# 2026-08-02: kNowPeekActErrPostFailed had no case in either switch while
+# actselftest was reporting an unexplained act-refused against every
+# foreign application.
+run_py now-guest-shared act_error_vocabulary_source_test.py
 
 echo "== now-guest-ppc (PowerPC Carbon) =="
 run_c now-guest-ppc census_decode_test.c     ""  src/census/census_decode.c

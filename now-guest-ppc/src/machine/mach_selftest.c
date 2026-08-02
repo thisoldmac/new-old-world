@@ -102,7 +102,28 @@ void now_mach_run_actselftest(const char *request_json, long id,
         /* The act client's own vocabulary names these better than this
            verb can - no extension, stale, dark, no target, no anchor,
            never pumped - so it answers with that rather than flattening
-           six conditions into one word of its own. */
+           six conditions into one word of its own.
+
+           EXCEPT when the plane SERVED and refused. `kNowActRefused`
+           means the resident took the request, ran it in the target's
+           context, and set a status other than Done - and the cell it
+           filled says WHY in `error`, which the status cannot. Reporting
+           the status alone turns "the patch was never installed in that
+           process" and "the patch answered and the caller read junk"
+           into one word, `act-refused`, and that is exactly the sentence
+           that made this verb useless as an instrument on 2026-08-02: it
+           refused against SimpleText and the Finder while abi-agreeing
+           against this application, and the answer to why was sitting in
+           the cell, discarded. now_act_submit snapshots BEFORE it judges
+           the status, so `g_snap` is populated on this path. */
+        if (st == kNowActRefused && g_snap.error != kNowPeekActErrNone) {
+            now_log(kLogWarn, "mach", "#%ld actselftest refused [%s]", id,
+                    now_act_error_code(g_snap.error));
+            now_mach_reply_error(out, cap, id,
+                                 now_act_error_code(g_snap.error),
+                                 now_act_error_message(g_snap.error));
+            return;
+        }
         now_log(kLogWarn, "mach", "#%ld actselftest unreached [%s]", id,
                 now_act_status_code(st));
         now_mach_reply_error(out, cap, id, now_act_status_code(st),

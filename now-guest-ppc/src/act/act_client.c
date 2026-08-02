@@ -224,6 +224,7 @@ const char *now_act_error_code(unsigned long plane_error)
     case kNowPeekActErrBadTe:       return "bad-handle";
     case kNowPeekActErrTextKind:    return "bad-request";
     case kNowPeekActErrNotText:     return "not-text";
+    case kNowPeekActErrPostFailed:  return "act-post-failed";
     default:                        return "act-refused";
     }
 }
@@ -258,6 +259,9 @@ const char *now_act_error_message(unsigned long plane_error)
         return "unknown text kind";
     case kNowPeekActErrNotText:
         return "that dialog item is not an editable or static text item";
+    case kNowPeekActErrPostFailed:
+        return "the Event Manager refused to queue the press, so nothing "
+               "was asked of the application at all";
     default:
         return "the target refused the request";
     }
