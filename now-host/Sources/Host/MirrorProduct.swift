@@ -375,10 +375,22 @@ extension MirrorProduct {
                 : (names.count == 1 ? names[0] : nil)
             guard let preferred else { return nil }
             let candidate = macOS.appendingPathComponent(preferred)
-            return fileManager.isExecutableFile(atPath: candidate.path)
-                ? candidate : nil
+            return runnable(candidate, fileManager) ? candidate : nil
         }
-        return fileManager.isExecutableFile(atPath: url.path) ? url : nil
+        return runnable(url, fileManager) ? url : nil
+    }
+
+    /// `isExecutableFile` says yes to a DIRECTORY — the execute bit on one
+    /// means searchable — so a person who names a folder would otherwise
+    /// get a resolved product and a launch that fails with `EACCES` from
+    /// somewhere that never mentions the path they typed.
+    private static func runnable(_ url: URL,
+                                 _ fileManager: FileManager) -> Bool {
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: url.path,
+                                     isDirectory: &isDirectory),
+              !isDirectory.boolValue else { return false }
+        return fileManager.isExecutableFile(atPath: url.path)
     }
 }
 
