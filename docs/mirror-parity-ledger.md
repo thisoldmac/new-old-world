@@ -108,7 +108,23 @@ times a second rather than silently accepting. **What it has never done is
 capture one drawing operation.** The ring's `ticks` field never moved, which
 means no hook body ran at all, not that it ran and found nothing.
 
-Unknown, and now the content plane's first real question: whether Color
+**And a second finding, which matters more than the first.** After the
+plane had been armed against NOW's own guest app and then stopped, that
+app **quit**, and relaunching it produced a process that was frontmost
+with its menu bar and **no window at all**. The machine needed a cold
+reboot. Correlation, not proven cause — but the shape is specific and
+the mechanism is available: the plane installs a `CQDProcs` on an armed
+app's window PORTS and keeps their pointers in its own table, and those
+pointers belong to a process that can die while the resident block
+outlives it. Upstream's QDPeek guards exactly this (`qd_uninstall_owned`
+proves the port is still in the CURRENT app's WindowList before the
+first dereference), and NOW's repair sweep was climbing throughout
+(`repairs: 26`). **Before P3 is armed again, the death-of-the-armed-
+process path wants reading**, because "arm the content plane and the
+application stops being able to draw" is the worst possible shape for a
+plane whose whole job is to watch drawing.
+
+Unknown, and now the content plane's other question: whether Color
 QuickDraw on a PPC Mac routes through the 68K `CQDProcs` this plane hooks,
 or past them. `hookedPorts: 1` while the Finder owns more than one window is
 worth checking in the same pass. The stimulus was mouse movement, which the

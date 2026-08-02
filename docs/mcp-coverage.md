@@ -599,9 +599,17 @@ to exist:
 
 ### The unnoticed rows, named together
 
-**`axsnap`, `handle`, `actselftest`, `aesend`, `net` and `script`** — all
-served by the PowerPC guest, none decided either way. Their rows above say
-what a decision would have to settle.
+**`axsnap`, `handle`, `actselftest`, `aesend`, `net`, `script` and
+`mirror`** — all served by the PowerPC guest, none decided either way.
+Their rows above say what a decision would have to settle.
+
+`mirror` joined on 2026-08-02, the day its verb landed, and it is the only
+one here whose undecidedness is about WHOSE MACHINE rather than about risk
+or shape: it reports on a separate application that happens to run on the
+same Macintosh, so the question a row must answer first is whether NOW
+should describe a neighbour to a caller at all. Its pane face is owed the
+same decision and has not had it either — the host's Mirror page still
+reads a folder listing — so this is currently a verb both faces ignore.
 
 `net` joined on 2026-08-01 with the networking spike, and it is the only
 one here whose undecidedness is about SHAPE rather than about risk: almost
