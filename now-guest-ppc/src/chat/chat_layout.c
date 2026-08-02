@@ -17,9 +17,15 @@ void chat_layout_compute(const Rect *body, ChatLayoutRects *out)
     short bottom = (short)(body->bottom - kChatMargin);
     short y;
 
-    /* Top row: the model popup left, New Chat right. */
-    set_rect(&out->popup, left, top,
-             (short)(left + kChatPopupWidth),
+    /* Top row: provider then model, the model list following the
+       provider choice; New Chat at the right. */
+    set_rect(&out->provider_popup, left, top,
+             (short)(left + kChatProviderPopupWidth),
+             (short)(top + kChatTopRowHeight));
+    set_rect(&out->model_popup,
+             (short)(out->provider_popup.right + kChatRowGap), top,
+             (short)(out->provider_popup.right + kChatRowGap
+                     + kChatModelPopupWidth),
              (short)(top + kChatTopRowHeight));
     set_rect(&out->new_button,
              (short)(right - kChatNewButtonWidth), top,
@@ -41,7 +47,7 @@ void chat_layout_compute(const Rect *body, ChatLayoutRects *out)
 
     /* The transcript takes what remains, scrollbar flush right. The
        classic inset: the bar overlaps the pane frame by one pixel. */
-    y = (short)(out->popup.bottom + kChatRowGap);
+    y = (short)(out->provider_popup.bottom + kChatRowGap);
     set_rect(&out->transcript, left, y,
              (short)(right - kChatScrollBarWidth + 1),
              (short)(out->status.top - kChatRowGap));

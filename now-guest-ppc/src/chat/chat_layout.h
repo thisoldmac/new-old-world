@@ -19,8 +19,9 @@ typedef unsigned char Boolean;
 
 enum {
     kChatMargin = 8,
-    kChatTopRowHeight = 20,           /* popup + New Chat */
-    kChatPopupWidth = 240,
+    kChatTopRowHeight = 20,           /* the two popups + New Chat */
+    kChatProviderPopupWidth = 120,
+    kChatModelPopupWidth = 200,
     kChatNewButtonWidth = 76,
     kChatStatusHeight = 14,           /* the transient status line */
     kChatInputHeight = 22,            /* hand-drawn prompt well */
@@ -31,7 +32,8 @@ enum {
 };
 
 typedef struct ChatLayoutRects {
-    Rect popup;                       /* model choice, top left */
+    Rect provider_popup;              /* who serves, top left */
+    Rect model_popup;                 /* which model, beside it */
     Rect new_button;                  /* New Chat, top right */
     Rect transcript;                  /* the text pane, scrollbar excluded */
     Rect scrollbar;                   /* flush against the pane's right */

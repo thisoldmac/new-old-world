@@ -192,6 +192,75 @@ final class AnthropicProviderTests: XCTestCase {
             AnthropicOAuth.betaHeader)
     }
 
+    func testSubscriptionIsPreferredOverAStoredKey() async throws {
+        // Both credentials present: the sign-in wins - a person who
+        // signed in did so to use their plan (metal, 2026-08-02).
+        let store = InMemoryChatCredentialStore()
+        try store.writeString(.anthropicAPIKey, "sk-test")
+        try store.write(
+            .anthropicOAuth,
+            JSONEncoder().encode(ChatOAuthTokens(
+                accessToken: "at-sub", refreshToken: "rt",
+                expiresAt: Date().addingTimeInterval(3600))))
+        let transport = FakeChatTransport([
+            .init(data: try JSONSerialization.data(withJSONObject: ["data": []]))
+        ])
+        let provider = AnthropicChatProvider(store: store, transport: transport)
+        _ = try await provider.listModels()
+        let request = try XCTUnwrap(transport.requests.first)
+        XCTAssertEqual(
+            request.value(forHTTPHeaderField: "Authorization"), "Bearer at-sub")
+        XCTAssertNil(request.value(forHTTPHeaderField: "x-api-key"))
+        let entry = await provider.entry()
+        XCTAssertTrue(entry.detail.contains("subscription"))
+    }
+
+    func testOAuthRequestsCarryTheIdentityPrefixFirst() throws {
+        let body = AnthropicChatProvider.body(
+            for: ChatCompletionRequest(
+                model: "claude-opus-5", system: "our situation prompt",
+                turns: [.user("hi")], tools: [], maxTokens: 64),
+            oauth: true)
+        let system = try XCTUnwrap(body["system"] as? [[String: Any]])
+        XCTAssertEqual(system.count, 2)
+        XCTAssertEqual(
+            system[0]["text"] as? String,
+            AnthropicChatProvider.oauthSystemPrefix)
+        XCTAssertEqual(system[1]["text"] as? String, "our situation prompt")
+
+        // The key path keeps the plain string shape.
+        let keyBody = AnthropicChatProvider.body(
+            for: ChatCompletionRequest(
+                model: "m", system: "s", turns: [.user("x")],
+                tools: [], maxTokens: 64),
+            oauth: false)
+        XCTAssertEqual(keyBody["system"] as? String, "s")
+    }
+
+    func testErrorBodiesSurfaceTheProvidersOwnSentence() async throws {
+        let errorJSON = """
+            {"type":"error","error":{"type":"invalid_request_error",\
+            "message":"This credential is only authorized for use with X"}}
+            """
+        let transport = FakeChatTransport([
+            .init(status: 400, lines: [errorJSON])
+        ])
+        let store = InMemoryChatCredentialStore()
+        try store.writeString(.anthropicAPIKey, "sk-test")
+        let provider = AnthropicChatProvider(store: store, transport: transport)
+        do {
+            _ = try await collect(provider.stream(ChatCompletionRequest(
+                model: "m", system: "", turns: [.user("t")],
+                tools: [], maxTokens: 64)))
+            XCTFail("expected a refusal")
+        } catch {
+            let (code, reason) = ChatFault.from(error)
+            XCTAssertEqual(code, "provider-error")
+            XCTAssertTrue(reason.contains("only authorized"),
+                          "got: \(reason)")
+        }
+    }
+
     func testStatusMapping() {
         func code(_ status: Int) -> String? {
             do {
@@ -315,6 +384,43 @@ final class OpenAICompatibleProviderTests: XCTestCase {
         let down = await dead.entry()
         XCTAssertEqual(down.state, "unavailable")
         XCTAssertTrue(down.detail.contains("1234"))
+    }
+
+    func testNonSSEWholeBodyAnswerStillArrives() async throws {
+        // A runtime that ignores stream:true and answers one JSON body
+        // (metal, 2026-08-02: oMLX spun the GPU and nothing arrived).
+        let whole = """
+            {"choices":[{"message":{"content":"Hello from a whole body"},\
+            "finish_reason":"stop"}]}
+            """
+        let transport = FakeChatTransport([.init(lines: [whole])])
+        let provider = OpenAICompatibleChatProvider.oMLX(
+            store: InMemoryChatCredentialStore(), transport: transport)
+        let out = try await collect(provider.stream(ChatCompletionRequest(
+            model: "qwen", system: "", turns: [.user("hi")],
+            tools: [], maxTokens: 64)))
+        XCTAssertEqual(out.text, "Hello from a whole body")
+        guard case .endTurn = out.finish else {
+            return XCTFail("expected endTurn")
+        }
+    }
+
+    func testAnAnswerWithNothingReadableIsAnError() async throws {
+        let transport = FakeChatTransport([
+            .init(lines: ["this is not json and not sse"])
+        ])
+        let provider = OpenAICompatibleChatProvider.ollama(
+            store: InMemoryChatCredentialStore(), transport: transport)
+        do {
+            _ = try await collect(provider.stream(ChatCompletionRequest(
+                model: "m", system: "", turns: [.user("x")],
+                tools: [], maxTokens: 64)))
+            XCTFail("expected provider-error")
+        } catch {
+            let (code, reason) = ChatFault.from(error)
+            XCTAssertEqual(code, "provider-error")
+            XCTAssertTrue(reason.contains("nothing readable"))
+        }
     }
 
     func testOMLXSendsItsStockBearer() async throws {

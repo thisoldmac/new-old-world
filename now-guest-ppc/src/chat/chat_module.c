@@ -22,12 +22,14 @@
    update event, from state alone. */
 
 enum {
-    kChatModelsMenuID = 136
+    kChatModelsMenuID = 136,
+    kChatProvidersMenuID = 137
 };
 
 static WindowRef g_owner;
 static ChatLayoutRects g_r;
-static ControlRef g_popup;
+static ControlRef g_provider_popup;
+static ControlRef g_model_popup;
 static ControlRef g_new_btn;
 static ControlRef g_send_btn;
 static ControlRef g_scroll;
@@ -37,7 +39,15 @@ static short g_font;
 static ChatTranscript g_transcript;
 static ChatModelRow g_models[kChatMaxModels];
 static int g_model_count;
-static int g_model_sel = -1;          /* index into g_models, -1 = none */
+/* The two popups' view of the rows: distinct providers, and the rows
+   of the chosen one. g_row_sel is the CATALOG index the Send uses. */
+static char g_providers[kChatMaxModels][24];
+static int g_provider_count;
+static int g_provider_sel;
+static int g_filtered[kChatMaxModels];
+static int g_filtered_count;
+static int g_filtered_sel = -1;
+static int g_row_sel = -1;            /* index into g_models, -1 = none */
 static Boolean g_asked_catalog;
 
 static char g_input[kChatPromptMax + 1];
@@ -122,84 +132,122 @@ static void scroll_to(int top, Boolean from_person)
     inval(&g_r.transcript);
 }
 
-/* --- the popup ---------------------------------------------------------- */
+/* --- the two popups ------------------------------------------------------ */
 
-static MenuRef popup_menu(void)
+static MenuRef popup_menu(ControlRef popup, short fallback_id)
 {
     MenuRef menu = NULL;
     Size got = 0;
 
-    if (g_popup != NULL
-        && GetControlData(g_popup, kControlEntireControl,
+    if (popup != NULL
+        && GetControlData(popup, kControlEntireControl,
                           kControlPopupButtonMenuHandleTag,
                           sizeof menu, (Ptr)&menu, &got) == noErr
         && got == (Size)sizeof menu && menu != NULL) {
         return menu;
     }
-    return GetMenuHandle(kChatModelsMenuID);
+    return GetMenuHandle(fallback_id);
 }
 
-static void rebuild_popup(void)
+static void fill_menu_item(MenuRef menu, short item, const char *text,
+                           Boolean enabled)
 {
-    MenuRef menu = popup_menu();
+    Str255 label;
+
+    /* Appended as a placeholder then renamed: AppendMenu interprets
+       metacharacters, and a label is data, not a menu program. */
+    CopyCStringToPascal("x", label);
+    AppendMenu(menu, label);
+    CopyCStringToPascal(text, label);
+    SetMenuItemText(menu, item, label);
+    if (!enabled) {
+        DisableMenuItem(menu, item);
+    }
+}
+
+/* Both popups from the catalog: distinct providers, then the chosen
+   provider's rows. The model the Send uses is g_row_sel, a CATALOG
+   index; the filtered list maps popup items back to it. */
+static void rebuild_popups(void)
+{
+    MenuRef provider_menu = popup_menu(g_provider_popup,
+                                       kChatProvidersMenuID);
+    MenuRef model_menu = popup_menu(g_model_popup, kChatModelsMenuID);
     int i;
 
-    if (menu == NULL) {
-        strcpy(g_status, "The models menu is missing (resource 136)");
+    if (provider_menu == NULL || model_menu == NULL) {
+        strcpy(g_status, "A popup menu resource is missing (136/137)");
         return;
     }
-    while (CountMenuItems(menu) > 0) {
-        DeleteMenuItem(menu, 1);
+    g_provider_count = chat_catalog_providers(
+        g_models, g_model_count, g_providers, kChatMaxModels);
+    if (g_provider_sel >= g_provider_count) {
+        g_provider_sel = 0;
     }
+
+    while (CountMenuItems(provider_menu) > 0) {
+        DeleteMenuItem(provider_menu, 1);
+    }
+    for (i = 0; i < g_provider_count; ++i) {
+        fill_menu_item(provider_menu, (short)(i + 1), g_providers[i],
+                       true);
+    }
+    if (g_provider_count == 0) {
+        fill_menu_item(provider_menu, 1, "(none)", true);
+    }
+
+    /* The chosen provider's rows, serving first choice. */
+    g_filtered_count = 0;
+    g_filtered_sel = -1;
     for (i = 0; i < g_model_count; ++i) {
-        Str255 label;
+        if (g_provider_count == 0
+            || strcmp(g_models[i].provider,
+                      g_providers[g_provider_sel]) == 0) {
+            g_filtered[g_filtered_count] = i;
+            if (g_filtered_sel < 0
+                && strcmp(g_models[i].state, "serving") == 0) {
+                g_filtered_sel = g_filtered_count;
+            }
+            ++g_filtered_count;
+        }
+    }
+    g_row_sel = g_filtered_sel >= 0 ? g_filtered[g_filtered_sel] : -1;
+
+    while (CountMenuItems(model_menu) > 0) {
+        DeleteMenuItem(model_menu, 1);
+    }
+    for (i = 0; i < g_filtered_count; ++i) {
+        const ChatModelRow *row = &g_models[g_filtered[i]];
         char text[64];
 
-        if (strcmp(g_models[i].state, "serving") == 0) {
-            snprintf(text, sizeof text, "%.40s", g_models[i].label);
+        if (strcmp(row->state, "serving") == 0) {
+            snprintf(text, sizeof text, "%.40s", row->label);
         } else {
             snprintf(text, sizeof text, "%.30s (%.14s)",
-                     g_models[i].label, g_models[i].state);
+                     row->label, row->state);
         }
-        /* Appended as a placeholder then renamed: AppendMenu interprets
-           metacharacters, and a label is data, not a menu program. */
-        CopyCStringToPascal("x", label);
-        AppendMenu(menu, label);
-        CopyCStringToPascal(text, label);
-        SetMenuItemText(menu, (short)(i + 1), label);
-        if (strcmp(g_models[i].state, "serving") != 0) {
-            DisableMenuItem(menu, (short)(i + 1));
-        }
+        fill_menu_item(model_menu, (short)(i + 1), text,
+                       strcmp(row->state, "serving") == 0);
     }
-    if (g_model_count == 0) {
-        Str255 none;
+    if (g_filtered_count == 0) {
+        fill_menu_item(model_menu, 1, "(ask the other Mac)", true);
+    }
 
-        CopyCStringToPascal("(ask the other Mac)", none);
-        AppendMenu(menu, none);
-    }
-    if (g_popup != NULL) {
-        SetControlMaximum(g_popup, CountMenuItems(menu));
-        SetControlValue(g_popup,
-                        (short)(g_model_sel >= 0 ? g_model_sel + 1 : 1));
+    if (g_provider_popup != NULL) {
+        SetControlMaximum(g_provider_popup,
+                          CountMenuItems(provider_menu));
+        SetControlValue(g_provider_popup, (short)(g_provider_sel + 1));
         if (g_visible) {
-            Draw1Control(g_popup);
+            Draw1Control(g_provider_popup);
         }
     }
-}
-
-static void choose_first_serving(void)
-{
-    int i;
-
-    if (g_model_sel >= 0 && g_model_sel < g_model_count
-        && strcmp(g_models[g_model_sel].state, "serving") == 0) {
-        return;
-    }
-    g_model_sel = -1;
-    for (i = 0; i < g_model_count; ++i) {
-        if (strcmp(g_models[i].state, "serving") == 0) {
-            g_model_sel = i;
-            break;
+    if (g_model_popup != NULL) {
+        SetControlMaximum(g_model_popup, CountMenuItems(model_menu));
+        SetControlValue(g_model_popup,
+                        (short)(g_filtered_sel >= 0
+                                    ? g_filtered_sel + 1 : 1));
+        if (g_visible) {
+            Draw1Control(g_model_popup);
         }
     }
 }
@@ -225,8 +273,7 @@ static void chat_note(int kind, const char *reply)
         if (g_model_count < 0) {
             g_model_count = 0;
         }
-        choose_first_serving();
-        rebuild_popup();
+        rebuild_popups();
         g_status[0] = '\0';
         break;
     case kChatAnswerDelta: {
@@ -322,12 +369,13 @@ static void send_or_stop(void)
     if (g_input_len == 0) {
         return;
     }
-    if (g_model_sel < 0 || g_model_sel >= g_model_count) {
-        strcpy(g_status, "Pick a model first");
+    if (g_row_sel < 0 || g_row_sel >= g_model_count
+        || strcmp(g_models[g_row_sel].state, "serving") != 0) {
+        strcpy(g_status, "Pick a serving model first");
         inval(&g_r.status);
         return;
     }
-    if (now_wire_chat_send(g_models[g_model_sel].model, g_input,
+    if (now_wire_chat_send(g_models[g_row_sel].model, g_input,
                            err, sizeof err) != 0) {
         snprintf(g_status, sizeof g_status, "%.120s", err);
         inval(&g_r.status);
@@ -365,6 +413,12 @@ static void new_chat(void)
     g_pinned = true;
     sync_scrollbar();
     inval(&g_r.transcript);
+    /* A fresh page deserves a fresh catalog: the host's providers may
+       have changed since the last ask (metal, 2026-08-02: a runtime
+       started after the first ask stayed invisible until relaunch). */
+    if (conn_phase() == kConnConnected) {
+        ask_catalog();
+    }
 }
 
 /* --- scrolling ---------------------------------------------------------- */
@@ -412,9 +466,12 @@ static OSErr chat_create(WindowRef owner, const Rect *body)
     chat_transcript_reset(&g_transcript);
 
     text[0] = 0;
-    g_popup = NewControl(owner, &g_r.popup, text, false,
-                         popupTitleLeftJust, kChatModelsMenuID, 0,
-                         popupMenuProc, 0);
+    g_provider_popup = NewControl(owner, &g_r.provider_popup, text, false,
+                                  popupTitleLeftJust, kChatProvidersMenuID,
+                                  0, popupMenuProc, 0);
+    g_model_popup = NewControl(owner, &g_r.model_popup, text, false,
+                               popupTitleLeftJust, kChatModelsMenuID, 0,
+                               popupMenuProc, 0);
     CopyCStringToPascal("New Chat", text);
     g_new_btn = NewControl(owner, &g_r.new_button, text, false, 0, 0, 1,
                            pushButProc, 0);
@@ -424,11 +481,12 @@ static OSErr chat_create(WindowRef owner, const Rect *body)
     g_scroll_action_upp = NewControlActionUPP(scroll_action);
     g_scroll = NewControl(owner, &g_r.scrollbar, text, false, 0, 0, 0,
                           scrollBarProc, 0);
-    if (g_popup == NULL || g_new_btn == NULL || g_send_btn == NULL
+    if (g_provider_popup == NULL || g_model_popup == NULL
+        || g_new_btn == NULL || g_send_btn == NULL
         || g_scroll == NULL || g_scroll_action_upp == NULL) {
         return memFullErr;
     }
-    rebuild_popup();
+    rebuild_popups();
     conn_set_chat_note(chat_note);
     return noErr;
 }
@@ -442,7 +500,8 @@ static void chat_dispose(void)
         DisposeControlActionUPP(g_scroll_action_upp);
         g_scroll_action_upp = NULL;
     }
-    g_popup = NULL;
+    g_provider_popup = NULL;
+    g_model_popup = NULL;
     g_new_btn = NULL;
     g_send_btn = NULL;
     g_scroll = NULL;
@@ -453,12 +512,15 @@ static void chat_show(Boolean visible)
 {
     g_visible = visible;
     if (visible) {
-        ShowControl(g_popup);
+        ShowControl(g_provider_popup);
+        ShowControl(g_model_popup);
         ShowControl(g_new_btn);
         ShowControl(g_send_btn);
         ShowControl(g_scroll);
         g_input_focus = true;
-        if (!g_asked_catalog && conn_phase() == kConnConnected) {
+        /* Every show, not once per connection: the host's providers
+           change while this page is elsewhere (metal, 2026-08-02). */
+        if (conn_phase() == kConnConnected) {
             ask_catalog();
         }
         /* Force the caches stale so the first draw is whole. */
@@ -466,7 +528,8 @@ static void chat_show(Boolean visible)
         g_shown_input_len = -1;
         g_shown_status[0] = '\0';
     } else {
-        HideControl(g_popup);
+        HideControl(g_provider_popup);
+        HideControl(g_model_popup);
         HideControl(g_new_btn);
         HideControl(g_send_btn);
         HideControl(g_scroll);
@@ -477,9 +540,15 @@ static void chat_show(Boolean visible)
 static void chat_layout_op(const Rect *body)
 {
     chat_layout_compute(body, &g_r);
-    MoveControl(g_popup, g_r.popup.left, g_r.popup.top);
-    SizeControl(g_popup, (short)(g_r.popup.right - g_r.popup.left),
-                (short)(g_r.popup.bottom - g_r.popup.top));
+    MoveControl(g_provider_popup, g_r.provider_popup.left,
+                g_r.provider_popup.top);
+    SizeControl(g_provider_popup,
+                (short)(g_r.provider_popup.right - g_r.provider_popup.left),
+                (short)(g_r.provider_popup.bottom - g_r.provider_popup.top));
+    MoveControl(g_model_popup, g_r.model_popup.left, g_r.model_popup.top);
+    SizeControl(g_model_popup,
+                (short)(g_r.model_popup.right - g_r.model_popup.left),
+                (short)(g_r.model_popup.bottom - g_r.model_popup.top));
     MoveControl(g_new_btn, g_r.new_button.left, g_r.new_button.top);
     SizeControl(g_new_btn,
                 (short)(g_r.new_button.right - g_r.new_button.left),
@@ -599,13 +668,28 @@ static Boolean chat_click(const EventRecord *event, Point local)
     ControlPartCode part;
 
     part = FindControl(local, g_owner, &control);
-    if (control == g_popup && part != 0) {
+    if (control == g_provider_popup && part != 0) {
         /* Popup CDEFs run their own action; never hand them the pump. */
-        if (TrackControl(g_popup, local, (ControlActionUPP)-1L) != 0) {
-            int picked = GetControlValue(g_popup) - 1;
+        if (TrackControl(g_provider_popup, local,
+                         (ControlActionUPP)-1L) != 0) {
+            int picked = GetControlValue(g_provider_popup) - 1;
 
-            if (picked >= 0 && picked < g_model_count) {
-                g_model_sel = picked;
+            if (picked >= 0 && picked < g_provider_count
+                && picked != g_provider_sel) {
+                g_provider_sel = picked;
+                rebuild_popups();     /* the model list follows */
+            }
+        }
+        return true;
+    }
+    if (control == g_model_popup && part != 0) {
+        if (TrackControl(g_model_popup, local,
+                         (ControlActionUPP)-1L) != 0) {
+            int picked = GetControlValue(g_model_popup) - 1;
+
+            if (picked >= 0 && picked < g_filtered_count) {
+                g_filtered_sel = picked;
+                g_row_sel = g_filtered[picked];
             }
         }
         return true;
@@ -683,16 +767,18 @@ static Boolean chat_key(const EventRecord *event)
 
 static void chat_activate(Boolean active)
 {
-    if (g_popup == NULL) {
+    if (g_provider_popup == NULL) {
         return;
     }
     if (active) {
-        ActivateControl(g_popup);
+        ActivateControl(g_provider_popup);
+        ActivateControl(g_model_popup);
         ActivateControl(g_new_btn);
         ActivateControl(g_send_btn);
         ActivateControl(g_scroll);
     } else {
-        DeactivateControl(g_popup);
+        DeactivateControl(g_provider_popup);
+        DeactivateControl(g_model_popup);
         DeactivateControl(g_new_btn);
         DeactivateControl(g_send_btn);
         DeactivateControl(g_scroll);

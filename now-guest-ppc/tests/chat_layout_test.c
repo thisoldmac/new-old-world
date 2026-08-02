@@ -28,7 +28,8 @@ static void check(const Rect *body)
     ChatLayoutRects r;
 
     chat_layout_compute(body, &r);
-    inside(&r.popup, body);
+    inside(&r.provider_popup, body);
+    inside(&r.model_popup, body);
     inside(&r.new_button, body);
     inside(&r.transcript, body);
     inside(&r.scrollbar, body);
@@ -36,7 +37,8 @@ static void check(const Rect *body)
     inside(&r.input, body);
     inside(&r.send_button, body);
 
-    no_overlap(&r.popup, &r.new_button);
+    no_overlap(&r.provider_popup, &r.model_popup);
+    no_overlap(&r.model_popup, &r.new_button);
     no_overlap(&r.transcript, &r.status);
     no_overlap(&r.status, &r.input);
     no_overlap(&r.input, &r.send_button);

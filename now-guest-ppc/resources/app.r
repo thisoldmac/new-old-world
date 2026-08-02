@@ -325,6 +325,14 @@ resource 'MENU' (136) {
     }
 };
 
+/* The Chat page's provider pop-up, rewritten the same way. */
+resource 'MENU' (137) {
+    137, textMenuProc, allEnabled, enabled, "Providers",
+    {
+        "(none)", noIcon, noKey, noMark, plain
+    }
+};
+
 /* The Connection page's Retry pop-up. Item order is load-bearing:
    conn_fields.c maps items 1-4 to 0/2/5/10 seconds. */
 resource 'MENU' (133) {

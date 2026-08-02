@@ -21,17 +21,35 @@ static void test_catalog_fills_rows_whatever_their_state(void)
 
     n = chat_parse_catalog(
         "{\"type\":\"chat.catalog\",\"id\":4,\"models\":["
-        "{\"model\":\"anthropic/claude-opus-5\",\"label\":\"Claude Opus 5\","
-        "\"state\":\"serving\",\"detail\":\"Anthropic\"},"
+        "{\"model\":\"anthropic/claude-opus-5\",\"provider\":\"anthropic\","
+        "\"label\":\"Claude Opus 5\",\"state\":\"serving\","
+        "\"detail\":\"Anthropic\"},"
         "{\"model\":\"ollama\",\"label\":\"Ollama\","
         "\"state\":\"unavailable\",\"detail\":\"Nothing at 11434\"},"
-        "{\"model\":\"omlx/qwen\",\"label\":\"qwen\",\"state\":\"serving\"}]}",
+        "{\"model\":\"omlx/qwen\",\"label\":\"qwen\",\"state\":\"serving\"},"
+        "{\"model\":\"omlx/llama\",\"provider\":\"omlx\","
+        "\"label\":\"llama\",\"state\":\"serving\"}]}",
         rows, kChatMaxModels);
-    assert(n == 3);
+    assert(n == 4);
     assert(strcmp(rows[0].model, "anthropic/claude-opus-5") == 0);
+    assert(strcmp(rows[0].provider, "anthropic") == 0);
     assert(strcmp(rows[0].label, "Claude Opus 5") == 0);
     assert(strcmp(rows[1].state, "unavailable") == 0);
+    /* No provider field: grouped by the key's own prefix. */
+    assert(strcmp(rows[1].provider, "ollama") == 0);
+    assert(strcmp(rows[2].provider, "omlx") == 0);
     assert(strcmp(rows[2].detail, "") == 0);
+
+    {
+        char providers[kChatMaxModels][24];
+        int pn = chat_catalog_providers(rows, n, providers,
+                                        kChatMaxModels);
+
+        assert(pn == 3);
+        assert(strcmp(providers[0], "anthropic") == 0);
+        assert(strcmp(providers[1], "ollama") == 0);
+        assert(strcmp(providers[2], "omlx") == 0);
+    }
 
     /* Malformed: no models array. */
     assert(chat_parse_catalog("{\"type\":\"chat.catalog\",\"id\":1}",

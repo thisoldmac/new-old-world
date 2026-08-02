@@ -1313,6 +1313,14 @@ components:
                   Opaque key chat.send takes back. Not promised stable
                   beyond the connection — a guest re-asks after a
                   reconnect rather than persisting one.
+              provider:
+                type: string
+                maxLength: 24
+                description: >
+                  Display grouping — which of the host's providers
+                  serves this model, so a guest can offer a provider
+                  popup beside the model popup. Optional and additive;
+                  a guest that predates it renders a flat list.
               label:
                 type: string
                 description: >

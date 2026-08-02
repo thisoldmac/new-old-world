@@ -30,6 +30,20 @@ int chat_parse_catalog(const char *reply, ChatModelRow *rows, int max)
                                   sizeof row->model)) {
             continue;                 /* a row without its key is no row */
         }
+        if (!now_json_find_string(object, "provider", row->provider,
+                                  sizeof row->provider)) {
+            /* An older host: group by the key's own prefix. */
+            const char *slash = strchr(row->model, '/');
+            size_t n = slash != NULL
+                ? (size_t)(slash - row->model)
+                : strlen(row->model);
+
+            if (n >= sizeof row->provider) {
+                n = sizeof row->provider - 1;
+            }
+            memcpy(row->provider, row->model, n);
+            row->provider[n] = '\0';
+        }
         if (!now_json_find_text(object, "label", row->label,
                                 sizeof row->label)) {
             strncpy(row->label, row->model, sizeof row->label - 1);
@@ -89,6 +103,31 @@ int chat_parse_result(const char *reply, int *ok,
         now_json_find_text(reply, "message", message, message_cap);
     }
     return 1;
+}
+
+int chat_catalog_providers(const ChatModelRow *rows, int count,
+                           char out[][24], int max)
+{
+    int found = 0;
+    int i;
+    int j;
+
+    for (i = 0; i < count && found < max; ++i) {
+        int seen = 0;
+
+        for (j = 0; j < found; ++j) {
+            if (strcmp(out[j], rows[i].provider) == 0) {
+                seen = 1;
+                break;
+            }
+        }
+        if (!seen) {
+            strncpy(out[found], rows[i].provider, 23);
+            out[found][23] = '\0';
+            ++found;
+        }
+    }
+    return found;
 }
 
 /* --- the line feed ------------------------------------------------------ */

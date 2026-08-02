@@ -188,6 +188,9 @@ struct ChatCatalogEntry: Codable, Equatable, Sendable, Identifiable {
     /// Opaque key chat.send takes back — not promised stable beyond
     /// the connection.
     var model: String
+    /// Display grouping: which provider serves it, for the guest's
+    /// provider popup. Optional and additive.
+    var provider: String?
     /// Converted; what the popup shows (<= 31 bytes).
     var label: String
     /// serving | off | no-access | unavailable — cloud.report's

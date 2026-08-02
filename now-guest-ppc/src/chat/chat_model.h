@@ -30,14 +30,21 @@ enum {
 
 typedef struct {
     char model[48];                   /* opaque key, sent back verbatim */
+    char provider[24];                /* display grouping for the popup */
     char label[32];                   /* MacRoman, drawn in the popup */
     char state[16];                   /* serving | off | no-access | ... */
     char detail[96];                  /* MacRoman, display only */
 } ChatModelRow;
 
 /* Parsers. A malformed frame reads as failure (-1 / 0), never a crash;
-   the wire has already matched type and id. */
+   the wire has already matched type and id. A row without a provider
+   field (an older host) gets the model key's prefix, so the provider
+   popup degrades to whatever grouping the keys carry. */
 int chat_parse_catalog(const char *reply, ChatModelRow *rows, int max);
+
+/* Distinct providers, first-appearance order. Returns the count. */
+int chat_catalog_providers(const ChatModelRow *rows, int count,
+                           char out[][24], int max);
 int chat_parse_delta(const char *reply, char *out, long cap, long *seq);
 int chat_parse_status(const char *reply, char *out, long cap);
 int chat_parse_result(const char *reply, int *ok,

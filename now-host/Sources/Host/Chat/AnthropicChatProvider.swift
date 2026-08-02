@@ -31,12 +31,21 @@ final class AnthropicChatProvider: ChatProvider, @unchecked Sendable {
         case oauth(String)
     }
 
+    /* Subscription FIRST: a person who signed in did so to use their
+       plan, and reaching for a stored key instead would bill them
+       twice over. The key is the fallback for a Mac that never signed
+       in. Metal finding 2026-08-02: the first build preferred the key,
+       and the person rightly asked why a sign-in wanted a key at all. */
     private func auth() async throws -> Auth {
+        if store.read(.anthropicOAuth) != nil {
+            let tokens = try await refresher.liveTokens(transport: transport)
+            return .oauth(tokens.accessToken)
+        }
         if let key = store.readString(.anthropicAPIKey), !key.isEmpty {
             return .apiKey(key)
         }
-        let tokens = try await refresher.liveTokens(transport: transport)
-        return .oauth(tokens.accessToken)
+        throw ChatFault.refuse(
+            code: "no-credentials", reason: "Not signed in and no API key")
     }
 
     private func request(path: String, auth: Auth) -> URLRequest {
@@ -55,25 +64,25 @@ final class AnthropicChatProvider: ChatProvider, @unchecked Sendable {
     }
 
     func entry() async -> ChatProviderEntry {
+        if store.read(.anthropicOAuth) != nil {
+            return ChatProviderEntry(
+                id: id, label: label, state: "serving",
+                detail: "Using your Claude subscription")
+        }
         if let key = store.readString(.anthropicAPIKey), !key.isEmpty {
             return ChatProviderEntry(
                 id: id, label: label, state: "serving", detail: "Using an API key")
         }
-        if store.read(.anthropicOAuth) != nil {
-            return ChatProviderEntry(
-                id: id, label: label, state: "serving",
-                detail: "Signed in with a Claude subscription")
-        }
         return ChatProviderEntry(
             id: id, label: label, state: "unavailable",
-            detail: "No API key and not signed in")
+            detail: "Sign in, or save an API key")
     }
 
     func listModels() async throws -> [ChatModel] {
         let auth = try await auth()
         let (data, response) = try await transport.send(
             request(path: "models", auth: auth))
-        try Self.checkStatus(response)
+        try Self.checkStatus(response, body: data)
         guard
             let object = try? JSONSerialization.jsonObject(with: data)
                 as? [String: Any],
@@ -113,11 +122,24 @@ final class AnthropicChatProvider: ChatProvider, @unchecked Sendable {
         var request = request(path: "messages", auth: auth)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var oauthShaped = false
+        if case .oauth = auth { oauthShaped = true }
         request.httpBody = try JSONSerialization.data(
-            withJSONObject: Self.body(for: completion))
+            withJSONObject: Self.body(for: completion, oauth: oauthShaped))
 
         let (lines, response) = try await transport.streamLines(request)
-        try Self.checkStatus(response)
+        guard response.statusCode == 200 else {
+            /* The body is the useful half of a refusal — "Anthropic
+               answered 400" told a person nothing on metal. Bounded
+               drain, then the provider's own sentence. */
+            var body = ""
+            for try await line in lines {
+                body += line
+                if body.count > 4096 { break }
+            }
+            try Self.checkStatus(response, body: Data(body.utf8))
+            return
+        }
 
         var parser = ServerSentEventParser()
         var accumulator = ToolCallAccumulator()
@@ -189,33 +211,72 @@ final class AnthropicChatProvider: ChatProvider, @unchecked Sendable {
         }
     }
 
-    static func checkStatus(_ response: HTTPURLResponse) throws {
+    /// The provider's own sentence out of an error body, when it wrote
+    /// one — {"error":{"message":...}} in both dialects.
+    static func errorMessage(in body: Data?) -> String? {
+        guard let body,
+            let object = try? JSONSerialization.jsonObject(with: body)
+                as? [String: Any]
+        else { return nil }
+        if let error = object["error"] as? [String: Any],
+            let message = error["message"] as? String, !message.isEmpty {
+            return message
+        }
+        if let message = object["message"] as? String, !message.isEmpty {
+            return message
+        }
+        return nil
+    }
+
+    static func checkStatus(_ response: HTTPURLResponse, body: Data? = nil)
+        throws {
+        guard response.statusCode != 200 else { return }
+        let said = errorMessage(in: body)
         switch response.statusCode {
-        case 200: return
         case 401, 403:
             throw ChatFault.refuse(
                 code: "auth-expired",
-                reason: "Anthropic rejected the credentials - sign in again")
+                reason: said ?? "Anthropic rejected the credentials - sign in again")
         case 429:
             throw ChatFault.refuse(
-                code: "rate-limited", reason: "Anthropic is rate limiting - try later")
+                code: "rate-limited",
+                reason: said ?? "Anthropic is rate limiting - try later")
         default:
             throw ChatFault.refuse(
                 code: "provider-error",
-                reason: "Anthropic answered \(response.statusCode)")
+                reason: said.map { "Anthropic: \($0)" }
+                    ?? "Anthropic answered \(response.statusCode)")
         }
     }
 
     // MARK: - Dialect translation
 
-    static func body(for completion: ChatCompletionRequest) -> [String: Any] {
+    /// The identity block subscription-token inference is gated to.
+    /// Undocumented like the rest of the OAuth surface (metal, 2026-08-02:
+    /// without it a signed-in send answers 400): the server accepts a
+    /// plan token only for requests shaped like the client the plan
+    /// ships with, and this sentence — as the FIRST system block — is
+    /// that shape. Our own system prompt rides after it, unchanged.
+    static let oauthSystemPrefix =
+        "You are Claude Code, Anthropic's official CLI for Claude."
+
+    static func body(for completion: ChatCompletionRequest,
+                     oauth: Bool = false) -> [String: Any] {
         var body: [String: Any] = [
             "model": completion.model,
             "max_tokens": completion.maxTokens,
             "stream": true,
             "messages": completion.turns.map(message(for:)),
         ]
-        if !completion.system.isEmpty {
+        if oauth {
+            var blocks: [[String: Any]] = [
+                ["type": "text", "text": oauthSystemPrefix]
+            ]
+            if !completion.system.isEmpty {
+                blocks.append(["type": "text", "text": completion.system])
+            }
+            body["system"] = blocks
+        } else if !completion.system.isEmpty {
             body["system"] = completion.system
         }
         if !completion.tools.isEmpty {

@@ -175,18 +175,36 @@ final class OpenAICompatibleChatProvider: ChatProvider, @unchecked Sendable {
 
         let (lines, response) = try await transport.streamLines(request)
         guard response.statusCode == 200 else {
+            var body = ""
+            for try await line in lines {
+                body += line
+                if body.count > 4096 { break }
+            }
+            let said = AnthropicChatProvider.errorMessage(in: Data(body.utf8))
             throw ChatFault.refuse(
                 code: response.statusCode == 401 || response.statusCode == 403
                     ? "auth-expired"
                     : response.statusCode == 429 ? "rate-limited" : "provider-error",
-                reason: "\(label) answered \(response.statusCode)")
+                reason: said.map { "\(label): \($0)" }
+                    ?? "\(label) answered \(response.statusCode)")
         }
 
         var parser = ServerSentEventParser()
         var accumulator = OpenAIToolCallAccumulator()
         var finishReason: String?
+        var yieldedText = false
+        /* Some runtimes ignore stream:true and answer one JSON body.
+           Everything is kept (bounded) so a stream that produced no SSE
+           events can be re-read as that body — metal, 2026-08-02: oMLX
+           accepted a turn, spun the GPU, and nothing arrived, because
+           the whole answer was one line no SSE parser would touch. */
+        var raw = ""
 
         for try await line in lines {
+            if raw.count < 1_048_576 {
+                raw += line
+                raw += "\n"
+            }
             guard let event = parser.feed(line) else { continue }
             if event.data == "[DONE]" { break }
             guard
@@ -200,6 +218,7 @@ final class OpenAICompatibleChatProvider: ChatProvider, @unchecked Sendable {
             }
             guard let delta = choice["delta"] as? [String: Any] else { continue }
             if let text = delta["content"] as? String, !text.isEmpty {
+                yieldedText = true
                 continuation.yield(.textDelta(text))
             }
             if let fragments = delta["tool_calls"] as? [[String: Any]] {
@@ -209,7 +228,25 @@ final class OpenAICompatibleChatProvider: ChatProvider, @unchecked Sendable {
             }
         }
 
-        let calls = accumulator.calls()
+        var calls = accumulator.calls()
+        if !yieldedText && calls.isEmpty && finishReason == nil {
+            let (text, wholeCalls, reason) = Self.wholeBodyCompletion(raw)
+            if let text, !text.isEmpty {
+                yieldedText = true
+                continuation.yield(.textDelta(text))
+            }
+            calls = wholeCalls
+            finishReason = reason
+            if !yieldedText && calls.isEmpty {
+                throw ChatFault.refuse(
+                    code: "provider-error",
+                    reason: AnthropicChatProvider.errorMessage(
+                        in: Data(raw.utf8))
+                        .map { "\(label): \($0)" }
+                        ?? "\(label) answered, but nothing readable arrived")
+            }
+        }
+
         switch finishReason {
         case "tool_calls":
             continuation.yield(.finished(.toolUse(calls)))
@@ -220,6 +257,33 @@ final class OpenAICompatibleChatProvider: ChatProvider, @unchecked Sendable {
             continuation.yield(.finished(
                 calls.isEmpty ? .endTurn : .toolUse(calls)))
         }
+    }
+
+    /// One non-streamed chat.completions body, read the whole-message
+    /// way: choices[0].message {content, tool_calls}.
+    static func wholeBodyCompletion(_ raw: String)
+        -> (text: String?, calls: [ChatToolCall], finishReason: String?) {
+        guard
+            let object = try? JSONSerialization.jsonObject(
+                with: Data(raw.utf8)) as? [String: Any],
+            let choices = object["choices"] as? [[String: Any]],
+            let choice = choices.first
+        else { return (nil, [], nil) }
+        let message = choice["message"] as? [String: Any] ?? [:]
+        let calls = (message["tool_calls"] as? [[String: Any]] ?? [])
+            .enumerated().map { index, call -> ChatToolCall in
+                let function = call["function"] as? [String: Any] ?? [:]
+                return ChatToolCall(
+                    id: call["id"] as? String ?? "call_\(index)",
+                    name: function["name"] as? String ?? "",
+                    argumentsJSON: function["arguments"] as? String ?? "{}")
+            }
+        return (
+            message["content"] as? String,
+            calls,
+            choice["finish_reason"] as? String
+                ?? (calls.isEmpty ? "stop" : "tool_calls")
+        )
     }
 
     // MARK: - Dialect translation

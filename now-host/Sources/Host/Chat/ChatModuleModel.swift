@@ -37,6 +37,29 @@ final class ChatModuleModel: ObservableObject {
             defaults.set(selectedWireModelID, forKey: Self.modelKey)
         }
     }
+    /// The provider half of the two pickers. Changing it snaps the
+    /// model picker to that provider's first model.
+    @Published var selectedProviderID: String = "" {
+        didSet {
+            guard oldValue != selectedProviderID else { return }
+            let scoped = models(of: selectedProviderID)
+            if !scoped.contains(where: { $0.wireID == selectedWireModelID }),
+                let first = scoped.first {
+                selectedWireModelID = first.wireID
+            }
+        }
+    }
+
+    /// Providers that listed at least one model, in registry order.
+    var providersWithModels: [ChatProviderEntry] {
+        entries.filter { entry in
+            models.contains { $0.providerID == entry.id }
+        }
+    }
+
+    func models(of provider: String) -> [ChatModel] {
+        models.filter { $0.providerID == provider }
+    }
     @Published private(set) var transcript: [ChatDisplayRow] = []
     @Published private(set) var isStreaming = false
     @Published private(set) var signIn: SignInState = .idle
@@ -92,33 +115,62 @@ final class ChatModuleModel: ObservableObject {
             },
             audit: ChatAuditSink(
                 adapter: agentIntegration, activity: agentActivity))
-        refreshCredentialFlags()
+        /* NO Keychain read here, deliberately. This init runs on the
+           main actor inside HostAppState — including in every test that
+           builds one — and a Keychain item created by a differently-
+           signed build can stall the read behind an authorization
+           prompt. A blocked main actor is a blocked GuestListener, and
+           that took down half the socket-timing suite (2026-08-02).
+           refresh() reads everything off-main. */
     }
 
     // MARK: - Providers and models
 
     func refresh() {
-        Task { [weak self] in
-            guard let self else { return }
+        let registry = registry
+        let store = store
+        /* Detached: Keychain reads and local-runtime probes must never
+           run on the main actor (see init). */
+        Task.detached { [weak self] in
+            let hasAnthropicKey =
+                !(store.readString(.anthropicAPIKey) ?? "").isEmpty
+            let hasAnthropicOAuth = store.read(.anthropicOAuth) != nil
+            let hasOpenAIKey =
+                !(store.readString(.openAIAPIKey) ?? "").isEmpty
             var entries: [ChatProviderEntry] = []
-            for provider in self.registry.all() {
+            for provider in registry.all() {
                 entries.append(await provider.entry())
             }
-            self.entries = entries
-
             var models: [ChatModel] = []
-            for provider in self.registry.all() {
+            for provider in registry.all() {
                 if let served = try? await provider.listModels() {
                     models.append(contentsOf: served)
                 }
             }
-            self.models = models
-            if self.selectedWireModelID.isEmpty
-                || !models.contains(where: {
+            let found = (entries: entries, models: models)
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                let models = found.models
+                self.hasAnthropicKey = hasAnthropicKey
+                self.hasAnthropicOAuth = hasAnthropicOAuth
+                self.hasOpenAIKey = hasOpenAIKey
+                self.entries = found.entries
+                self.models = models
+                if self.selectedWireModelID.isEmpty
+                    || !models.contains(where: {
+                        $0.wireID == self.selectedWireModelID
+                    }) {
+                    self.selectedWireModelID = models.first?.wireID
+                        ?? self.selectedWireModelID
+                }
+                // The provider picker follows the model's owner.
+                if let owner = models.first(where: {
                     $0.wireID == self.selectedWireModelID
-                }) {
-                self.selectedWireModelID = models.first?.wireID
-                    ?? self.selectedWireModelID
+                })?.providerID {
+                    self.selectedProviderID = owner
+                } else if let first = models.first?.providerID {
+                    self.selectedProviderID = first
+                }
             }
         }
     }
@@ -155,6 +207,7 @@ final class ChatModuleModel: ObservableObject {
             guard entry.state == "serving" else {
                 entries.append(ChatCatalogEntry(
                     model: provider.id,
+                    provider: provider.id,
                     label: Self.wireLabel(entry.label),
                     state: entry.state,
                     detail: CloudText.displayable(entry.detail)))
@@ -164,6 +217,7 @@ final class ChatModuleModel: ObservableObject {
                 !models.isEmpty else {
                 entries.append(ChatCatalogEntry(
                     model: provider.id,
+                    provider: provider.id,
                     label: Self.wireLabel(entry.label),
                     state: "unavailable",
                     detail: "No models to list"))
@@ -172,6 +226,7 @@ final class ChatModuleModel: ObservableObject {
             entries.append(contentsOf: models.map { model in
                 ChatCatalogEntry(
                     model: model.wireID,
+                    provider: provider.id,
                     label: Self.wireLabel(model.displayName),
                     state: "serving",
                     detail: CloudText.displayable(entry.label))
