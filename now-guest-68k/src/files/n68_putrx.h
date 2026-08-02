@@ -138,7 +138,8 @@ typedef struct {
     int  container_known;
     char file_type[8];             /* four chars, or "" */
     char creator[8];
-    long modified;
+    unsigned long modified;        /* classic seconds since 1904, unsigned:
+                                       see now68k_json_find_u32 (json_scan.h) */
     int  overwrite;
     int  create_parents;           /* absent or true per the schema */
 } N68PutOffer;

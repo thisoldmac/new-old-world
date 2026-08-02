@@ -92,6 +92,50 @@ static void test_listing_accumulates_and_drops_stale_answers(void)
     assert(store.row_count == 0);
 }
 
+/* The regression that shipped: a 2026 modified date read through
+   now_json_find_int (strtol into a signed 32-bit long) saturates at
+   2^31-1 - January 1972 - so every later date drew as that same wrong
+   value instead of the real one. cloud_parse_listing must read it
+   through the unsigned parser to get the real 2026 second count back. */
+static void test_a_2026_modified_date_survives_parsing(void)
+{
+    CloudStore store;
+    char msg[256];
+    /* 2026-07-13ish in classic (1904-epoch) seconds - the value
+       ClassicDate.guestWireSeconds now actually sends, and well past
+       the old 2^31-1 ceiling (2147483647). */
+    unsigned long modern_classic_seconds = 3866844800UL;
+
+    cloud_store_reset(&store);
+    cloud_store_reset_rows(&store, "photos");
+    snprintf(msg, sizeof msg,
+             "{\"type\":\"cloud.listing\",\"id\":9,\"service\":\"photos\","
+             "\"entries\":[{\"item\":\"a-1\",\"title\":\"IMG_2026.jpg\","
+             "\"modified\":%lu}],\"more\":false,\"cursor\":2}",
+             modern_classic_seconds);
+    assert(cloud_parse_listing(msg, &store) == 1);
+    assert(store.rows[0].modified == modern_classic_seconds);
+    /* Pins the mutation: reading it back through the signed parser
+       gives the saturated, wrong value instead. */
+    assert(store.rows[0].modified != 2147483647UL);
+
+    /* A second, host-width-independent pin: swapping find_u32 back for
+       find_int at this call site is invisible to the assertion above on
+       a 64-bit host (its own `long` easily holds 3866844800, so
+       find_int does not actually saturate HERE - only on the 32-bit
+       `long` the guest is built for). A value past 2^32 is not one the
+       host ever legitimately sends, but find_u32 masks it to 32 bits
+       and find_int's raw cast does not, on any host - so this line
+       fails if the call site regresses, independent of `long` width. */
+    cloud_store_reset_rows(&store, "photos");
+    snprintf(msg, sizeof msg,
+             "{\"type\":\"cloud.listing\",\"id\":10,\"service\":\"photos\","
+             "\"entries\":[{\"item\":\"a-2\",\"title\":\"Overflow.jpg\","
+             "\"modified\":4294967397}],\"more\":false,\"cursor\":2}");
+    assert(cloud_parse_listing(msg, &store) == 1);
+    assert(store.rows[0].modified == 101UL);
+}
+
 static void test_rows_without_identity_or_title_are_skipped(void)
 {
     CloudStore store;
@@ -264,6 +308,7 @@ int main(void)
 {
     test_report_fills_services_whatever_their_state();
     test_listing_accumulates_and_drops_stale_answers();
+    test_a_2026_modified_date_survives_parsing();
     test_rows_without_identity_or_title_are_skipped();
     test_card_rows_decode_the_pair_shape();
     test_status_reads_a_capped_photo_library_as_a_prefix();

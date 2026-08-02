@@ -331,14 +331,21 @@ enum ClassicDate {
         return Int(seconds)
     }
 
-    /// The deployed classic guest reads optional file dates through
-    /// `strtol` into a signed 32-bit `long`. Omit newer values rather
-    /// than letting them saturate to January 1972 on receipt.
+    /// Classic file dates are UNSIGNED 32-bit seconds since 1904 — good
+    /// to early 2040, not to 1972. `macSeconds` already stops there
+    /// (`< 4_294_967_295`), so this only needs to hand that value on;
+    /// a date genuinely past 2040 is unrepresentable on the wire and
+    /// omitting it is correct, not a workaround.
+    ///
+    /// It used to stop at `Int32.max` instead — the guest's own parser
+    /// read the field with `strtol` into a signed 32-bit `long`, which
+    /// saturates there, so this function trimmed every date the guest
+    /// would have gotten wrong. That made every date after January 1972
+    /// unrepresentable on the wire, which is not what the guest's own
+    /// limit was. The guest now parses this field unsigned
+    /// (`now_json_find_u32`, now-guest-ppc/src/core/json.c); this
+    /// function's floor moved out to match the wire's actual range.
     static func guestWireSeconds(from date: Date) -> Int? {
-        guard let seconds = macSeconds(from: date),
-              seconds <= Int(Int32.max) else {
-            return nil
-        }
-        return seconds
+        macSeconds(from: date)
     }
 }

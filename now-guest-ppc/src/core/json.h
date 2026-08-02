@@ -21,6 +21,22 @@ int now_json_find_string(const char *json, const char *key,
    A present but non-numeric value parses as 0 (strtol semantics). */
 long now_json_find_int(const char *json, const char *key, long fallback);
 
+/* Returns the UNSIGNED 32-bit value of "key", or fallback if the key is
+   absent or does not open with a digit. Use this for a classic file
+   date: a classic Mac modification date is unsigned seconds since
+   1904, good past this century, and find_int cannot carry one - it is
+   strtol into a signed 32-bit long, which saturates at 2^31-1, and a
+   date past that (every date after January 1972) comes back as that
+   saturated value instead of a parse failure. That is not a type this
+   scanner can catch; it looks like a valid, wrong date.
+   Digits are accumulated and masked to 32 bits by hand rather than
+   handed to strtoul, so the result does not depend on this host's own
+   `unsigned long` width - 32 bits on the Mac this file is built for,
+   64 on the host cc that runs its native test. No sign handling: the
+   fields this is for are never negative on the wire. */
+unsigned long now_json_find_u32(const char *json, const char *key,
+                                unsigned long fallback);
+
 /* Returns the boolean value of "key", or fallback if the key is absent.
    Only a literal true reads as true; anything else is false. */
 int now_json_find_bool(const char *json, const char *key, int fallback);

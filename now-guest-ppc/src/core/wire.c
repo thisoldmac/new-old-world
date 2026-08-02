@@ -2121,8 +2121,10 @@ static void browse_listing(const char *reply)
         entries[n].folder = (strcmp(kind, "folder") == 0);
         entries[n].data_bytes = now_json_find_int(object, "dataBytes", 0);
         entries[n].rsrc_bytes = now_json_find_int(object, "rsrcBytes", 0);
-        entries[n].modified =
-            (unsigned long)now_json_find_int(object, "modified", 0);
+        /* Unsigned: see now_json_find_u32's header comment. A classic
+           date past January 1972 saturates through find_int's signed
+           strtol and draws as "--" in the browser. */
+        entries[n].modified = now_json_find_u32(object, "modified", 0);
         type[0] = '\0';
         creator[0] = '\0';
         now_json_find_string(object, "fileType", type, sizeof type);
@@ -2820,9 +2822,10 @@ static void get_begin(const char *reply)
     }
     /* No resume token on a pull yet: resuming is the sender's protocol
        and this side has never been the sender. A pull starts at zero. */
+    /* Unsigned: see now_json_find_u32's header comment. */
     rc = now_files_receive_begin_at(vref, dir, g_get.name, container,
                                     g_get.expected, file_type, creator_code,
-                                    (unsigned long)now_json_find_int(
+                                    now_json_find_u32(
                                         reply, "modified", 0),
                                     false, NULL, 0, &g_get.rx);
     if (rc == kFilesExists) {
@@ -3484,7 +3487,10 @@ static void serve_file_offer(const char *request)
     char note[128];
     long id = now_json_find_int(request, "id", 0);
     long bytes = now_json_find_int(request, "bytes", 0);
-    long modified = now_json_find_int(request, "modified", 0);
+    /* Unsigned: see now_json_find_u32's header comment. A push offer
+       carrying a modern date used to saturate here through find_int's
+       signed strtol. */
+    unsigned long modified = now_json_find_u32(request, "modified", 0);
     char type_arg[8], creator_arg[8];
     OSType file_type = 0, creator = 0;
     FileContainer container = kContainerData;
@@ -3546,7 +3552,7 @@ static void serve_file_offer(const char *request)
     g_put.bytes = bytes;
     g_put.file_type = file_type;
     g_put.creator = creator;
-    g_put.modified = (unsigned long)modified;
+    g_put.modified = modified;
     g_put.create_parents = create_parents;
     g_put.overwrite = overwrite;
 

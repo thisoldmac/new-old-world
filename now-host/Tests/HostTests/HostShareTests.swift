@@ -80,6 +80,25 @@ final class HostShareTests: XCTestCase {
         XCTAssertFalse(page.more)
     }
 
+    /// The regression that shipped: a 2026 modification date used to
+    /// come back nil from ClassicDate.guestWireSeconds (it stopped at
+    /// Int32.max, which is January 1972), so the "modified" field was
+    /// omitted from the wire entirely and the guest drew "--". This
+    /// proves a modern date survives all the way to the FileEntry the
+    /// drive/files browser reads.
+    func testListingCarriesA2026ModifiedDate() throws {
+        try write("Photo.jpg")
+        let modern = Date(timeIntervalSince1970: 1_784_000_000)   // 2026
+        try FileManager.default.setAttributes(
+            [.modificationDate: modern],
+            ofItemAtPath: root.appendingPathComponent("Photo.jpg").path)
+        let page = try share.list(path: "", cursor: 1, limit: 16)
+        let entry = try XCTUnwrap(
+            page.entries.first(where: { $0.name == "Photo.jpg" }))
+        XCTAssertEqual(entry.modified, ClassicDate.guestWireSeconds(from: modern))
+        XCTAssertNotNil(entry.modified)
+    }
+
     func testListingPagesAndResumes() throws {
         for i in 0..<5 { try write("f\(i).txt") }
         let first = try share.list(path: "", cursor: 1, limit: 2)

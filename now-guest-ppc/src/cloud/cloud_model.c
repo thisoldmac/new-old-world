@@ -104,8 +104,11 @@ int cloud_parse_listing(const char *reply, CloudStore *store)
         now_json_find_text(object, "subtitle", row->subtitle,
                            sizeof row->subtitle);
         row->bytes = now_json_find_int(object, "bytes", 0);
-        row->modified =
-            (unsigned long)now_json_find_int(object, "modified", 0);
+        /* Unsigned: a classic file date is unsigned seconds since 1904
+           and the host may send up to 2^32-1, which now_json_find_int
+           (strtol into a signed 32-bit long) saturates at 2^31-1 -
+           every date after January 1972 - and draws it as "--". */
+        row->modified = now_json_find_u32(object, "modified", 0);
         row->width = now_json_find_int(object, "width", 0);
         row->height = now_json_find_int(object, "height", 0);
         ++store->row_count;
