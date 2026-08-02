@@ -23,7 +23,7 @@ static void set_empty(Rect *r, short at_left, short at_top)
 }
 
 void cloud_layout_compute(const Rect *body, Boolean drive_mode,
-                          Boolean photo_detail, CloudLayout *r)
+                          CloudLayout *r)
 {
     short left = (short)(body->left + 10);
     short right = (short)(body->right - 10);
@@ -51,50 +51,51 @@ void cloud_layout_compute(const Rect *body, Boolean drive_mode,
        three collapse to the anti-rect at the same corner Refresh
        starts from, so a stray draw call there paints nothing rather
        than a stale button-shaped rectangle. */
+    /* Drive's navigation lives on its own row IMMEDIATELY above the
+       listing, not up in the service toolbar: Back/Forward/Up, the
+       breadcrumb beside them, and the search field at that row's right
+       end (metal, 2026-08-02 - the cluster and the crumbs were two
+       rows apart from the list they act on, and the search sat beside
+       a popup it has nothing to do with). Every other mode keeps the
+       search in the toolbar row, where it is the only thing there
+       besides the popup and Refresh. */
     if (drive_mode) {
-        set_rect(&r->up_btn, (short)(r->refresh_btn.left - 46),
-                 (short)(top + 1), (short)(r->refresh_btn.left - 6),
-                 (short)(top + 19));
-        set_rect(&r->fwd_btn, (short)(r->up_btn.left - 32),
-                 (short)(top + 1), (short)(r->up_btn.left - 6),
-                 (short)(top + 19));
-        set_rect(&r->back_btn, (short)(r->fwd_btn.left - 28),
-                 (short)(top + 1), (short)(r->fwd_btn.left - 2),
-                 (short)(top + 19));
+        short nav_top = (short)(top + 26);
+
+        set_rect(&r->back_btn, left, nav_top, (short)(left + 30),
+                 (short)(nav_top + 20));
+        set_rect(&r->fwd_btn, (short)(r->back_btn.right + 2), nav_top,
+                 (short)(r->back_btn.right + 32),
+                 (short)(nav_top + 20));
+        set_rect(&r->up_btn, (short)(r->fwd_btn.right + 4), nav_top,
+                 (short)(r->fwd_btn.right + 48),
+                 (short)(nav_top + 20));
+        /* The search takes the row's right end; the breadcrumb fills
+           whatever is left between Up and it, so a deep path shortens
+           rather than colliding. */
+        set_rect(&r->toolbar_search, (short)(right - 236), nav_top,
+                 right, (short)(nav_top + 20));
+        set_rect(&r->path_row, (short)(r->up_btn.right + 10),
+                 (short)(nav_top + 2),
+                 (short)(r->toolbar_search.left - 10),
+                 (short)(nav_top + 18));
     } else {
         set_empty(&r->up_btn, r->refresh_btn.left, (short)(top + 1));
         set_empty(&r->fwd_btn, r->refresh_btn.left, (short)(top + 1));
         set_empty(&r->back_btn, r->refresh_btn.left, (short)(top + 1));
-    }
-
-    /* The search field fills the toolbar row between the popup and
-       whatever real button sits right of it - back_btn (the left edge
-       of the drive navigation cluster) in drive mode, refresh_btn
-       otherwise (the cluster is the anti-rect there, so using it
-       unconditionally would pin the field's right edge to the popup's
-       own left corner). Present in both modes: Drive's rows are
-       filterable by name exactly like the other views' by title. */
-    {
-        short right_of = drive_mode ? r->back_btn.left
-                                    : r->refresh_btn.left;
-
-        set_rect(&r->toolbar_search, (short)(r->popup.right + 8),
-                 top, (short)(right_of - 8), (short)(top + 20));
+        set_rect(&r->toolbar_search, (short)(r->popup.right + 8), top,
+                 (short)(r->refresh_btn.left - 8), (short)(top + 20));
     }
 
     /* Status is ABOVE the bottom edge, under both panes. */
     set_rect(&r->status, left, (short)(bottom - 14), right, bottom);
     list_bottom = (short)(r->status.top - 8);
 
-    /* Breadcrumbs, and where the split content area starts under the
-       toolbar: drive mode gets a real path row between the toolbar and
-       the list/detail split ("iCloud Drive:Attic"); every other mode
-       has no path row and the content starts at the same fixed offset
-       it always has. */
+    /* Where the split content area starts: directly under drive's
+       navigation row (placed above, breadcrumb and search included),
+       or at the usual offset under the toolbar in every other mode. */
     if (drive_mode) {
-        set_rect(&r->path_row, left, (short)(top + 26), right,
-                 (short)(top + 42));
-        list_top = (short)(r->path_row.bottom + gap);
+        list_top = (short)(r->back_btn.bottom + gap);
     } else {
         set_empty(&r->path_row, left, (short)(top + 26));
         list_top = (short)(top + 28);
@@ -155,8 +156,7 @@ void cloud_layout_compute(const Rect *body, Boolean drive_mode,
            keeps. */
         r->detail_text.bottom = (short)(r->dl_text.top - 6);
         set_empty(&r->photos_text, r->detail.right, r->detail.top);
-        set_empty(&r->summary_row, r->detail.right, r->detail.top);
-        set_empty(&r->tri, r->detail.right, r->detail.top);
+        set_empty(&r->save_group, r->detail.right, r->detail.top);
         return;
     }
 
@@ -172,53 +172,41 @@ void cloud_layout_compute(const Rect *body, Boolean drive_mode,
        every gap between rows is 6, and the labels centre on their
        row. A column of right-aligned actions is the Platinum shape. */
     {
-        short save_top = (short)(r->detail.bottom - 8 - row_h);
-        short bar_left;
+        /* The photos pane's save cluster: ONE titled group box holding
+           the size, the destination and the button, always visible.
+           It replaced a disclosure triangle whose closed state looked
+           exactly like the stack it was meant to replace and whose
+           open state broke on metal (2026-08-02) - a static cluster
+           has no state to get wrong, and a person reads where and at
+           what size without touching anything.
 
-        set_rect(&r->save_btn, (short)(col_right - 110), save_top,
-                 col_right, (short)(save_top + row_h));
+           The middle row does double duty: it carries the destination
+           at rest and the download's bar and byte count while bytes
+           land, so a transfer costs the photo no height. */
+        short g_top = (short)(r->detail.bottom - 8 - 130);
+        short inner_l = (short)(r->detail_text.left + 12);
+        short inner_r = (short)(r->detail_text.right - 10);
+        short row2 = (short)(g_top + 54);
 
-        /* The summary line sits directly above Save and never moves.
-           Idle it reads "<folder>, <size>"; during a download the same
-           strip carries the byte count and the bar, so nothing is given
-           permanent height for a state that is usually not happening. */
-        set_rect(&r->summary_row, r->detail_text.left,
-                 (short)(save_top - 22), r->detail_text.right,
-                 (short)(save_top - 6));
-        set_rect(&r->tri, r->summary_row.left,
-                 (short)(r->summary_row.top + 2),
-                 (short)(r->summary_row.left + 12),
-                 (short)(r->summary_row.top + 14));
-        /* The bar takes the row's right end, but never so much that the
-           byte count beside it has no room on a narrow pane. */
-        bar_left = (short)(r->summary_row.right - 90);
-        if (bar_left < (short)(r->summary_row.left + 60)) {
-            bar_left = (short)(r->summary_row.left + 60);
-        }
-        set_rect(&r->dl_bar, bar_left, (short)(r->summary_row.top + 2),
-                 r->summary_row.right, (short)(r->summary_row.top + 14));
-        set_rect(&r->dl_text, r->summary_row.left, r->summary_row.top,
-                 (short)(r->dl_bar.left - 6), r->summary_row.bottom);
+        set_rect(&r->save_group, r->detail_text.left, g_top,
+                 r->detail_text.right, (short)(r->detail.bottom - 8));
+        set_rect(&r->size_popup, (short)(inner_r - 176),
+                 (short)(g_top + 22), inner_r, (short)(g_top + 42));
+        set_rect(&r->dest_btn, (short)(inner_r - 88), row2, inner_r,
+                 (short)(row2 + row_h));
+        set_rect(&r->dest_row, inner_l, row2,
+                 (short)(r->dest_btn.left - 6), (short)(row2 + row_h));
+        /* Same row as the destination, shown in its place: the count
+           at the left, the bar filling what is left of the row. */
+        set_rect(&r->dl_text, inner_l, row2, (short)(inner_l + 108),
+                 (short)(row2 + 16));
+        set_rect(&r->dl_bar, (short)(r->dl_text.right + 8),
+                 (short)(row2 + 4), inner_r, (short)(row2 + 16));
+        set_rect(&r->save_btn, (short)(inner_r - 116),
+                 (short)(r->save_group.bottom - 30), inner_r,
+                 (short)(r->save_group.bottom - 8));
 
-        r->detail_text.bottom = (short)(r->save_btn.top - 6);
+        r->detail_text.bottom = (short)(r->save_group.top - 6);
         r->photos_text = r->detail_text;
-        if (photo_detail) {
-            short size_top = (short)(r->summary_row.top - 26);
-            short dest_top = (short)(size_top - 26);
-
-            set_rect(&r->size_popup, (short)(col_right - 150), size_top,
-                     col_right, (short)(size_top + row_h));
-            set_rect(&r->dest_btn, (short)(col_right - 74), dest_top,
-                     col_right, (short)(dest_top + row_h));
-            set_rect(&r->dest_row, r->detail_text.left, dest_top,
-                     (short)(r->dest_btn.left - 6),
-                     (short)(dest_top + row_h));
-            r->photos_text.bottom = (short)(dest_top - 6);
-        } else {
-            set_empty(&r->size_popup, col_right, r->summary_row.top);
-            set_empty(&r->dest_btn, col_right, r->summary_row.top);
-            set_empty(&r->dest_row, col_right, r->summary_row.top);
-            r->photos_text.bottom = (short)(r->summary_row.top - 6);
-        }
     }
 }

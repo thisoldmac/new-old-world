@@ -959,8 +959,7 @@ static OSErr cloud_create(WindowRef owner, const Rect *body)
     g_body = *body;
     g_drive_mode = false;
     g_contacts_mode = false;
-    cloud_layout_compute(&g_body, g_drive_mode,
-                         cloud_photos_view_disclosed(), &g_r);
+    cloud_layout_compute(&g_body, g_drive_mode, &g_r);
     cloud_store_reset(&g_store);
     g_service = -1;
     g_selected = -1;
@@ -1053,7 +1052,6 @@ static OSErr cloud_create(WindowRef owner, const Rect *body)
 
         photos_host.store = &g_store;
         photos_host.notify_upp = g_notify_upp;
-        photos_host.relayout = apply_layout;
         cloud_photos_view_bind(&photos_host);
         if (photos_ops->create != NULL) {
             photos_ops->create(owner);
@@ -1179,8 +1177,7 @@ static void apply_layout(void)
 {
     Rect action;
 
-    cloud_layout_compute(&g_body, g_drive_mode,
-                         cloud_photos_view_disclosed(), &g_r);
+    cloud_layout_compute(&g_body, g_drive_mode, &g_r);
     if (g_popup != NULL) {
         MoveControl(g_popup, g_r.popup.left, g_r.popup.top);
         SizeControl(g_popup, (SInt16)(g_r.popup.right - g_r.popup.left),
