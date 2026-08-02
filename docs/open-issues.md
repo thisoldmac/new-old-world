@@ -56,6 +56,50 @@ metal can prove, additional to the items already ledgered below for
   photo" placeholder. This arc is contract + host seams for those
   pages to consume, not the pages themselves.
 
+  **No longer true for the contacts half (2026-08-02, later still):**
+  the contacts card now asks `cloud.preview` on selection and draws
+  the "no photo" placeholder — see the Contacts guest UI entry below.
+  The Size-popup entries and exact-resolution arithmetic remain
+  unbuilt; those are Photos-only and this arc did not touch them.
+
+## Contacts guest UI shipped tested; nothing has run past cross-compilation (2026-08-02, later still)
+
+**Unverified, deliberately labelled — narrower than "tested" usually
+reads here.** Built atop polish2-foundations: Contacts gets its own
+Data Browser (Name/Company columns, `cloud_contacts_view.c`, the drive
+browser's view-owned recipe), a real address-book card (photo well,
+name, grouped rows — `cloud_contacts_card_layout` in
+`cloud_contacts_card.c`), and a photo well shared with Photos
+(`cloud_preview_well.c`, extracted from `cloud_photos_view.c`). What is
+actually verified: the pure card layout is host-cc tested and
+mutation-watched (`cloud_contacts_card_test.c`), and the PPC guest
+cross-compiles clean with zero warnings. That is ALL — nothing here has
+run against a live host wire, on the emulator, or on the PowerBook:
+
+- **The Data Browser itself is unwatched.** Two real columns, its own
+  UPPs, the fill-hilite call — all follow the drive browser's proven
+  recipe, but "follows a proven recipe" is not the same claim as
+  "watched drawing rows on the PB1400c."
+- **The photo well's CopyBits landing is unwatched.** Reused verbatim
+  from Photos' own preview (metal status there is itself only
+  loopback-proven, see the entries below), but landing into a SMALLER
+  well (48x48) rather than the photos pane is new geometry nobody has
+  seen render.
+- **The hand-drawn silhouette placeholder has never been seen.** A
+  gray head-and-shoulders in two `PaintOval` calls, clipped to the
+  well — geometry read by eye in the source, not by eye on a screen.
+- **The preview-well extraction is a real behavior change for Photos,
+  not just a file move.** `cloud_preview_well.c`'s `_select` rebinds
+  the settle callback on every call, which changes exactly which
+  view's pane gets invalidated when a late preview answer lands after
+  the selection has moved on. Photos' preview path carried a metal
+  pass before this refactor (2026-08-01); that pass does not cover the
+  code as it exists now.
+- **A contact WITH a real thumbnail has never been asked for.** The
+  wire path is loopback-proven (polish2-foundations, above) with a
+  synthetic JPEG; nothing here has asked a real granted `CNContactStore`
+  for a real photo and watched it dither and land in the well.
+
 ## Photos download UX shipped tested; every visible behavior awaits metal (2026-08-02, later)
 
 **Unverified, deliberately labelled.** The four-item download arc

@@ -149,3 +149,40 @@ Boolean cloud_contacts_parse_long_date(const char *value, int *year,
     *day = d;
     return 1;
 }
+
+void cloud_contacts_card_layout(const Rect *pane,
+                                CloudContactsCardLayout *out)
+{
+    short pw, ph, well;
+
+    if (out == NULL) {
+        return;
+    }
+    memset(out, 0, sizeof *out);
+    if (pane == NULL) {
+        return;
+    }
+    pw = (short)(pane->right - pane->left);
+    ph = (short)(pane->bottom - pane->top);
+    well = kCloudContactsWellSize;
+    if (pw > 0 && well > pw) {
+        well = pw;
+    }
+    if (ph > 0 && well > ph) {
+        well = ph;
+    }
+    if (pw <= 0 || ph <= 0) {
+        well = 0;
+    }
+    out->well.left = pane->left;
+    out->well.top = pane->top;
+    out->well.right = (short)(pane->left + well);
+    out->well.bottom = (short)(pane->top + well);
+    out->name_left = (short)(out->well.right + kCloudContactsWellGap);
+    /* Vertically centred against the well; +5 lands a large system
+       font's baseline a little below its own midline the way a name
+       set beside a photo well reads (the same offset the classic
+       Address Book's own card uses). */
+    out->name_baseline = (short)(pane->top + well / 2 + 5);
+    out->rows_top = (short)(out->well.bottom + kCloudContactsRowsGap);
+}

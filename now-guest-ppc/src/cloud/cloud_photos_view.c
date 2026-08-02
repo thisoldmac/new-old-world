@@ -6,7 +6,7 @@
 #include "cloud_filter.h"
 #include "cloud_list_view.h"
 #include "cloud_photo_size.h"
-#include "cloud_preview.h"
+#include "cloud_preview_well.h"
 #include "db_hilite.h"
 #include "fileshare.h"
 #include "pump.h"
@@ -17,7 +17,13 @@
    the settled one-shot delivery) lives in wire.c behind
    conn_set_cloud_preview_note; the pure decisions (ask depth, begin
    validation, pane fit) in cloud_preview.c where the host cc tests
-   them. This file owns exactly one GWorld and the pixels' rectangle.
+   them. The GWorld, the fetch bookkeeping and the CopyBits landing
+   live in cloud_preview_well.c, shared with the Contacts card's photo
+   well — extracted from here (2026-08-02) so two views asking for a
+   cloud.preview do not each keep their own bitmap on a 6MB partition,
+   and do not each reinvent "only one ask in flight" on top of the
+   wire's own rule that a second one is refused outright. This file
+   owns the pane rectangle and asks the well on every selection change.
 
    Batching rule, kept on both edges: the preview arrives as ONE
    delivery (wire.c calls the hook once, on preview.end) and lands as
@@ -54,15 +60,6 @@ static WindowRef g_owner;
 static Rect g_pane;                   /* photos_text: where pixels go */
 static Boolean g_have_pane;
 static Boolean g_shown;               /* page visible AND photos active */
-
-static GWorldPtr g_world;             /* the ONE preview in memory */
-static long g_world_w, g_world_h;
-static char g_for_item[64];           /* whose pixels g_world holds */
-
-static char g_want_item[64];          /* what the selection wants shown */
-static Boolean g_fetching;            /* an ask is on the wire */
-static Boolean g_reask;               /* want changed while fetching */
-static char g_fail[96];               /* one line of why there is none */
 
 /* The view's own controls: built invisible at page create, shown only
    while this view is the active one, moved by view_layout. The window
@@ -289,16 +286,6 @@ static void rebuild_size_menu(long width, long height)
     set_item(menu, 3, buf);
 }
 
-static void evict(void)
-{
-    if (g_world != NULL) {
-        DisposeGWorld(g_world);
-        g_world = NULL;
-    }
-    g_for_item[0] = '\0';
-    g_fail[0] = '\0';
-}
-
 static void invalidate_pane(void)
 {
     if (g_owner != NULL && g_have_pane
@@ -307,108 +294,12 @@ static void invalidate_pane(void)
     }
 }
 
-/* The screen's actual depth, the way the screenshots module reads it;
-   1 when there is somehow no screen, because a 1-bit ask is always
-   drawable. */
-static long screen_depth(void)
+/* The well's settle callback: rebound on every selection change, so
+   this fires only for an ask THIS view still cares about (an outgoing
+   selection's late answer notifies whichever view asked next, not
+   this one — cloud_preview_well.c's whole reason for rebinding). */
+static void note_changed(void)
 {
-    GDHandle device = GetMainDevice();
-
-    if (device == NULL || (**device).gdPMap == NULL) {
-        return 1;
-    }
-    return (**(**device).gdPMap).pixelSize;
-}
-
-static void try_ask(void)
-{
-    char err[96];
-    long w, h;
-
-    if (g_want_item[0] == '\0' || !g_have_pane) {
-        return;
-    }
-    w = g_pane.right - g_pane.left;
-    h = g_pane.bottom - g_pane.top;
-    if (w < 16 || h < 16) {
-        return;                       /* no honest pane to fill */
-    }
-    if (now_wire_cloud_preview("photos", g_want_item, w, h,
-                               cloud_preview_ask_depth(screen_depth()),
-                               err, sizeof err) != 0) {
-        if (g_fetching) {
-            /* One in flight already: remember, re-ask when it lands. */
-            g_reask = true;
-        } else {
-            snprintf(g_fail, sizeof g_fail, "%.90s", err);
-            invalidate_pane();
-        }
-        return;
-    }
-    g_fetching = true;
-}
-
-/* Builds the one GWorld from the delivered rows. NULL colour table on
-   purpose: at depth 8 that is the classic system table, which is the
-   contract's whole reason no palette travels; at 1 it is black and
-   white. Returns false (leaving no world) on any failure. */
-static Boolean world_from(const NowCloudPreviewPixels *pixels)
-{
-    Rect bounds;
-    PixMapHandle pix;
-    long dst_row, copy, row;
-    Ptr base;
-
-    SetRect(&bounds, 0, 0, (short)pixels->width, (short)pixels->height);
-    if (NewGWorld(&g_world, (short)pixels->depth, &bounds, NULL, NULL,
-                  useTempMem) != noErr || g_world == NULL) {
-        g_world = NULL;
-        return false;
-    }
-    pix = GetGWorldPixMap(g_world);
-    if (pix == NULL || !LockPixels(pix)) {
-        DisposeGWorld(g_world);
-        g_world = NULL;
-        return false;
-    }
-    dst_row = (**pix).rowBytes & 0x3FFF;
-    base = GetPixBaseAddr(pix);
-    copy = pixels->row_bytes < dst_row ? pixels->row_bytes : dst_row;
-    for (row = 0; row < pixels->height; ++row) {
-        memcpy(base + row * dst_row,
-               pixels->pixels + row * pixels->row_bytes, (size_t)copy);
-    }
-    UnlockPixels(pix);
-    g_world_w = pixels->width;
-    g_world_h = pixels->height;
-    return true;
-}
-
-/* The wire's one settled answer. Success or failure, the pane changes
-   once, here. */
-static void note_preview(const NowCloudPreviewPixels *pixels,
-                         const char *fail_reason)
-{
-    g_fetching = false;
-    if (g_reask || g_want_item[0] == '\0') {
-        /* The selection moved on while this one was arriving: what
-           landed is already evicted by contract, and the ask that
-           matters is the new one. (Re-asking from a wire hook is the
-           listing's own auto-page pattern.) */
-        g_reask = false;
-        try_ask();
-        return;
-    }
-    evict();
-    if (pixels == NULL) {
-        snprintf(g_fail, sizeof g_fail, "%.90s",
-                 fail_reason != NULL ? fail_reason : "No preview");
-    } else if (world_from(pixels)) {
-        strncpy(g_for_item, g_want_item, sizeof g_for_item - 1);
-        g_for_item[sizeof g_for_item - 1] = '\0';
-    } else {
-        strcpy(g_fail, "Not enough memory for the preview");
-    }
     invalidate_pane();
 }
 
@@ -480,7 +371,9 @@ static OSErr view_create(WindowRef owner)
     DataBrowserCallbacks callbacks;
 
     g_owner = owner;
-    conn_set_cloud_preview_note(note_preview);
+    /* The wire's ONE cloud.preview hook is registered once, for the
+       shared well, from cloud_create() (cloud_preview_well_init) — not
+       per view, since only one hook can ever be live. */
     g_dest_set = false;
     now_wire_cloud_get_destination(false, 0, 0);
     refresh_dest_path();
@@ -630,8 +523,8 @@ static void draw_small_line(const Rect *row, const char *prefix,
 static void view_draw(const CloudLayout *r, const CloudStore *store,
                       const CloudService *service, int selected)
 {
-    RGBColor black = { 0, 0, 0 };
-    RGBColor white = { 0xFFFF, 0xFFFF, 0xFFFF };
+    const char *item = (selected >= 0 && selected < store->row_count)
+        ? store->rows[selected].item : "";
 
     /* draw() may run before layout() on a fresh page; the layout the
        shell passes is current either way. */
@@ -646,36 +539,13 @@ static void view_draw(const CloudLayout *r, const CloudStore *store,
         draw_small_line(&r->dl_text, "", g_dl_line, false);
     }
 
-    if (g_world != NULL && selected >= 0 && selected < store->row_count
-        && strcmp(store->rows[selected].item, g_for_item) == 0) {
-        PixMapHandle pix = GetGWorldPixMap(g_world);
-        long ww = g_pane.right - g_pane.left;
-        long wh = g_pane.bottom - g_pane.top;
-        long dw, dh;
-        Rect dst;
-
-        if (pix != NULL && LockPixels(pix)) {
-            Rect src;
-
-            SetRect(&src, 0, 0, (short)g_world_w, (short)g_world_h);
-            cloud_preview_fit(g_world_w, g_world_h, ww, wh, &dw, &dh);
-            SetRect(&dst, 0, 0, (short)dw, (short)dh);
-            OffsetRect(&dst, (short)(g_pane.left + (ww - dw) / 2),
-                       (short)(g_pane.top + (wh - dh) / 2));
-            EraseRect(&g_pane);
-            /* Fore black / back white before CopyBits, or QuickDraw
-               colorizes the blit with whatever the port wore last. */
-            RGBForeColor(&black);
-            RGBBackColor(&white);
-            CopyBits((BitMap *)*pix,
-                     GetPortBitMapForCopyBits(GetWindowPort(g_owner)),
-                     &src, &dst, srcCopy, NULL);
-            FrameRect(&dst);
-            UnlockPixels(pix);
-            return;                   /* the preview replaces the card */
-        }
+    if (selected >= 0 && item[0] != '\0'
+        && cloud_preview_well_ready("photos", item)) {
+        cloud_preview_well_draw(g_owner, &g_pane);
+        return;                       /* the preview replaces the card */
     }
-    if (g_fetching && selected >= 0) {
+    if (selected >= 0 && item[0] != '\0'
+        && cloud_preview_well_fetching("photos", item)) {
         /* Between the ask and the pixels the pane says so — drawn
            state, not a repaint loop: the transition into fetching and
            the settled answer each invalidate exactly once. */
@@ -687,17 +557,21 @@ static void view_draw(const CloudLayout *r, const CloudStore *store,
         DrawString(text);
         return;
     }
-    if (g_fail[0] != '\0' && selected >= 0) {
-        Str255 text;
+    if (selected >= 0 && item[0] != '\0') {
+        const char *fail = cloud_preview_well_fail("photos", item);
 
-        /* The why REPLACES the card: both start at the pane's first
-           line, and two texts on one baseline is mush. The card comes
-           back with the next selection or preview. */
-        UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-        MoveTo((short)(g_pane.left), (short)(g_pane.top + 12));
-        CopyCStringToPascal(g_fail, text);
-        DrawString(text);
-        return;
+        if (fail[0] != '\0') {
+            Str255 text;
+
+            /* The why REPLACES the card: both start at the pane's
+               first line, and two texts on one baseline is mush. The
+               card comes back with the next selection or preview. */
+            UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+            MoveTo((short)(g_pane.left), (short)(g_pane.top + 12));
+            CopyCStringToPascal(fail, text);
+            DrawString(text);
+            return;
+        }
     }
     {
         /* The generic card draws into the photos pane, not the full
@@ -801,22 +675,23 @@ static Boolean view_row_matches(int index, const CloudStore *store,
 static void view_select(const CloudLayout *r, const CloudStore *store,
                         int selected)
 {
-    /* Every selection change evicts: one preview in memory, and never
-       yesterday's photo behind today's card. */
-    evict();
+    long ww, wh;
+
     g_pane = r->photos_text;
     g_have_pane = true;
+    ww = g_pane.right - g_pane.left;
+    wh = g_pane.bottom - g_pane.top;
+    /* Every selection change asks the well to evict whatever it held:
+       one preview in memory, never yesterday's photo behind today's
+       card — the well's own rule now, kept for both views. */
     if (selected >= 0 && selected < store->row_count
         && store->rows[selected].item[0] != '\0') {
-        strncpy(g_want_item, store->rows[selected].item,
-                sizeof g_want_item - 1);
-        g_want_item[sizeof g_want_item - 1] = '\0';
-        try_ask();
+        cloud_preview_well_select("photos", store->rows[selected].item,
+                                  ww, wh, note_changed);
         rebuild_size_menu(store->rows[selected].width,
                           store->rows[selected].height);
     } else {
-        g_want_item[0] = '\0';
-        g_reask = false;
+        cloud_preview_well_select("photos", NULL, 0, 0, NULL);
         rebuild_size_menu(0, 0);
     }
     invalidate_pane();
@@ -844,12 +719,11 @@ const CloudViewOps *cloud_photos_view_ops(void)
 
 void cloud_photos_view_dispose(void)
 {
-    conn_set_cloud_preview_note(NULL);
+    /* The well itself is a separate object with its own dispose
+       (cloud_preview_well_dispose, called from cloud_dispose): this
+       view only stops asking it, which _select(NULL) already does. */
+    cloud_preview_well_select("photos", NULL, 0, 0, NULL);
     now_wire_cloud_get_destination(false, 0, 0);
-    evict();
-    g_want_item[0] = '\0';
-    g_fetching = false;
-    g_reask = false;
     g_owner = NULL;
     g_have_pane = false;
     g_shown = false;
