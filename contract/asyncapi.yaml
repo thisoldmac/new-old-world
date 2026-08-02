@@ -1144,6 +1144,23 @@ components:
               modified:
                 type: integer
                 description: Classic Mac seconds since 1904.
+              width:
+                type: integer
+                description: >
+                  Pixel width of the entry's ORIGINAL, when the
+                  service knows one (photos fills this; a service
+                  whose rows are not images, or that cannot learn
+                  their pixel size, omits both width and height —
+                  omission is not zero). Paired with height so the
+                  guest can compute the exact resolution a given
+                  CloudGet.size box will actually produce (fit-box
+                  arithmetic on the asker's own numbers, never sent
+                  over the wire) without a role reversal: this is
+                  still the host stating a fact about its own data,
+                  not rendering on the guest's behalf.
+              height:
+                type: integer
+                description: Pixel height of the entry's ORIGINAL; see width.
         more: { type: boolean }
         cursor: { type: integer }
     CloudDetail:
@@ -1195,16 +1212,28 @@ components:
             is); this id correlates only the refusal path. Once the
             offer exists, the file family owns the outcome.
         size:
-          enum: [original, fit1024, fit640]
+          enum: [original, fit640, fit1024, fit1440, fit2048]
           description: >
             The delivery size for THIS ask, for services that size
-            their deliveries (photos today: the same three renders
-            the host's own Downloads picker offers). Absent means
-            the host's configured default — the reading every guest
-            that predates the field already sends, which is what
-            makes this additive. A token outside the enum is refused
-            with a reason, never guessed at; a service that does not
-            size its deliveries ignores the field.
+            their deliveries (photos today: the same renders the
+            host's own Downloads picker offers). Each fitN token is a
+            FIT BOX — fit640 is 640x480, fit1024 is 1024x768, fit1440
+            is 1440x1080, fit2048 is 2048x1536 — the host scales the
+            original to fit inside that box preserving aspect, same as
+            cloud.preview's maxWidth/maxHeight. The tokens stay
+            coarse on purpose: the host does not compute or send an
+            exact post-fit resolution for a delivered file. A guest
+            that wants to SHOW the exact resolution a photo will
+            render at computes it itself from the entry's own
+            width/height (CloudListing) and the chosen box — the
+            asker already has both numbers, and a fifth wire round
+            trip to learn their ratio would be the wire doing the
+            asker's arithmetic for it.
+            Absent means the host's configured default — the reading
+            every guest that predates the field already sends, which
+            is what makes this additive. A token outside the enum is
+            refused with a reason, never guessed at; a service that
+            does not size its deliveries ignores the field.
     CloudPreview:
       type: object
       required: [type, id, service, item, maxWidth, maxHeight, depth]
@@ -4142,27 +4171,44 @@ components:
           The photo library, newest first. title is the photo's name or
           its date when cameras named it IMG_4021; subtitle is the
           taken date, LongDateString-renderable; bytes is what the
-          original would cost to fetch. cloud.detail answers a card of
-          what the library knows (taken, camera, dimensions, place when
-          there is one). cloud.get delivers ONE photo as an ordinary
-          file.offer — JPEG, converted by the host from whatever
-          modern container the library holds (HEIC included), typed
-          JPEG/ogle so it opens by double-click on arrival, and
-          downsized per the ask's own size field when it carries one
-          (original / fit1024 / fit640), else per the host's own
-          Downloads setting — the asker's choice outranks the
-          configured default, and absence means the default.
-          cloud.preview answers with the selected photo as raw indexed
-          pixels, host-dithered to the asked depth and sized to the
-          asked pane — the guest's list-and-preview render, one photo
-          in memory at a time.
+          original would cost to fetch; width/height are the original's
+          pixel dimensions, always filled — the one service whose rows
+          the host can always size before an offer exists. cloud.detail
+          answers a card of what the library knows (taken, camera,
+          dimensions, place when there is one). cloud.get delivers ONE
+          photo as an ordinary file.offer — JPEG, converted by the host
+          from whatever modern container the library holds (HEIC
+          included), typed JPEG/ogle so it opens by double-click on
+          arrival, and downsized per the ask's own size field when it
+          carries one (original / fit640 / fit1024 / fit1440 /
+          fit2048), else per the host's own Downloads setting — the
+          asker's choice outranks the configured default, and absence
+          means the default. cloud.preview answers with the selected
+          photo as raw indexed pixels, host-dithered to the asked depth
+          and sized to the asked pane — the guest's list-and-preview
+          render, one photo in memory at a time.
       contacts:
         description: >
           The address book, alphabetical. title is the full name;
-          subtitle the organization when there is one. cloud.detail is
-          the card — phones, emails, addresses as [label, value] rows
-          in the person's own labels ("home", "work"), converted.
-          cloud.get is refused not-listable for now: a contact AS A
-          FILE would be a vCard the classic side cannot open natively,
-          and a card on screen is the honest deliverable until
-          something over there can read one.
+          subtitle the organization when there is one; width/height are
+          always absent — a contact row is not sized in pixels.
+          cloud.detail is the card — phones, emails, addresses as
+          [label, value] rows in the person's own labels ("home",
+          "work"), converted. cloud.get is refused not-listable for
+          now: a contact AS A FILE would be a vCard the classic side
+          cannot open natively, and a card on screen is the honest
+          deliverable until something over there can read one.
+          cloud.preview IS served, unlike cloud.get: the contact's own
+          thumbnail image, host-dithered to the asked depth and sized
+          to the asked pane, the exact photos pipeline reused rather
+          than a second one built for one field. A contact with no
+          thumbnail refuses cloud.refuse not-found, reason "no photo" —
+          a well-formed, expected outcome (most contacts have none),
+          not an error; the guest's card pane renders its own
+          placeholder for it rather than treating the refusal as
+          failure. The distinction from cloud.get's blanket
+          not-listable is deliberate: a thumbnail is pixels the host
+          already renders for photos, where a vCard is a document
+          format the classic side cannot open at all — the same
+          not-built-yet-vs-not-buildable line the rest of this family
+          draws elsewhere.
