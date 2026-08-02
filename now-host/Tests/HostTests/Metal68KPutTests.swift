@@ -428,7 +428,7 @@ final class Metal68KPutTests: XCTestCase {
         during = await commandLatency()
         let outcome = await transfer
 
-        print("  gestalt idle \(idle.map { String(format: "%.2fs", $0) } ?? "—")"
+        print("  help idle \(idle.map { String(format: "%.2fs", $0) } ?? "—")"
               + ", during \(during.map { String(format: "%.2fs", $0) } ?? "no answer")"
               + "; transfer \(outcome.text)")
         // One question, so `asked` is 1 and `unanswered` is 0 or 1 — the
