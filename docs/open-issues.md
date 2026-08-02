@@ -67,7 +67,49 @@ it passes its environment through. Host-cc tested
 (`mirror_layout_test.c`, `mirror_port_staging_source_test.py`, both
 mutation-watched); **nothing in this entry has run on a machine.**
 
-## BROKEN: the act plane arms in a foreign app and its click is never taken (2026-08-02)
+## FIXED: the act plane now acts inside foreign applications (2026-08-02)
+
+**The diagnosis below was right and the repair is in.** `act_install`
+installed the six trap patches once, on the first armed pass, in
+whichever process pumped first — always NOW's own application, because
+it is the one serving the wire. The patches were then not in the
+dispatch path anywhere else. `act_install` now runs on each armed pass,
+and `install_patch` returns early when the incumbent is already its own
+shim — which makes a repeat install a no-op under a system-wide trap
+table and a real install under a per-context one, correct either way,
+and forecloses the fatal version where the chain points at itself.
+
+**Measured after the change**, emulated Power Mac G4, dev INIT staged as
+"NOW Ext PerCtx" per the resident charter:
+
+| | before | after |
+|---|---|---|
+| `actselftest` vs NOW's own app | abi-agreed | abi-agreed |
+| `actselftest` vs the **Finder** | `act-no-patch` | **abi-agreed** |
+| `actselftest` vs **SimpleText** | `act-no-patch` | **abi-agreed** |
+| `menuact` File/New Folder in the Finder | `act-not-taken`, 0 folders | **8/8 folders on the Desktop** |
+
+The folder is the oracle — a fact on disk the Finder created, not
+anything a verb said about itself. **This is the first time NOW's act
+plane has acted inside an application that is not its own.**
+
+**A second defect the fix exposed, also repaired.** With the plane
+working, `menuact` actuated 8/8 and *reported* `act-not-armed` 8/8: the
+resident arms and queues the press in one pass, so the application can
+dequeue, call the trap, and have the patch answer — setting `fired`,
+clearing `armed` — before this side looks at its snapshot. Reading
+`armed` alone called a completed request one that never armed. A false
+negative in the worst direction, since a caller that retries gets a
+second folder. All three sites (`winact`, `ctlact`, `menuact`) now ask
+whether the request reached the machine at all: armed OR already fired.
+Re-measured: **8/8 actuated, 8/8 replied ok.**
+
+**What this obliges.** The menu no-hijack number was taken against a
+plane that could not act; the guard was therefore never really under
+test. It has to be re-earned now that the plane works — see the parity
+ledger for the re-run.
+
+## The diagnosis, kept: the act plane arms in a foreign app and its click is never taken (2026-08-02)
 
 **Measured, emulated Power Mac G4, guest build `3c6be9ffa460`, both
 resident families staged.** Against the Finder, addressed by PSN, with a

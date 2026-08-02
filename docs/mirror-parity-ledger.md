@@ -119,6 +119,35 @@ about the posted press**, and since the anchor pass in the same filter
 demonstrably runs in those processes, the question is why the ACT pass
 does not serve there. See open-issues for the reading order.
 
+**REPAIRED, and the act plane now works in foreign applications.** The
+one-shot `act_install` was the bug: the six trap patches went in on the
+first armed pass, in whichever process pumped first — always NOW's own
+application, since it serves the wire — and were in no other process's
+dispatch path. Installing per armed pass, with `install_patch` returning
+early when the incumbent is already its own shim, fixes it and is safe
+whether the trap table turns out to be system-wide or per-context.
+
+| after the change (dev INIT "NOW Ext PerCtx", mac99) | |
+|---|---|
+| `actselftest` vs the Finder | **abi-agreed** (was `act-no-patch`) |
+| `actselftest` vs SimpleText | **abi-agreed** (was `act-no-patch`) |
+| `menuact` File/New Folder in the Finder | **8/8 folders on the Desktop**, 8/8 replied ok |
+
+The folder on disk is the oracle. **This is the first time NOW's act
+plane has acted inside an application that is not its own** — the thing
+the whole port exists to do.
+
+A reporting race surfaced with it and is fixed: the plane arms and
+queues its press in one pass, so a request can complete before this side
+reads its snapshot, and reading `armed` alone reported `act-not-armed`
+about a request that had already succeeded — 8/8 actuated, 8/8 wrongly
+refused. All three act verbs now accept armed OR already-fired.
+
+**The consequence for the number above.** The 0/20 was taken against a
+plane that could not act in the Finder at all, so the guard was never
+under test. It is being re-run now that the plane works; until that
+lands, treat the 0/20 as void rather than as evidence.
+
 **And then the plane was asked why, and answered.** With `actselftest`
 reporting the plane's own error instead of the status, four calls on one
 boot: NOW's own app `abi-agreed`, the Finder `act-no-patch`, SimpleText
