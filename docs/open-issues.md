@@ -14,6 +14,32 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## The host suite fails when a NOW app is already running (2026-08-02)
+
+**Environmental, not a defect in the code under test — but it reads
+exactly like one.** `scripts/test-all` went red on the loopback
+suites (`GuestListenerTests`, `GuestIdentityTests`,
+`ConnectionsModelTests`, `MultiGuestListenerTests`,
+`AgentIntegration*`) while two `New Old World.app` instances were
+running on this Mac, one of them holding port 5250. Evidence that it
+is contention and not the change under test:
+
+- the same failures reproduce on the parent commit, with the change
+  absent;
+- a different subset fails on each run;
+- `GuestListenerTests` passes 23/23 twice when run ALONE, and fails
+  only inside the full run;
+- every cloud suite (50 tests) passes in both.
+
+The suites bind port 0, so this is not a simple port collision —
+it is load and listener contention on a machine that is also running
+the product. The metal rule (`MetalMachineGuard`: "a gate must check
+the MACHINE is free", docs/68k-metal-runbook.md) has a host-side twin
+that does not exist: nothing checks for a live `New Old World` before
+the host gate binds. Until it does, a red host gate with a NOW app
+running should be re-run with the app quit before it is believed —
+in either direction.
+
 ## Photo sizes became long-edge stops; three metal defects fixed, none re-verified on metal (2026-08-02, latest)
 
 **Unverified, deliberately labelled.** Metal feedback named three
