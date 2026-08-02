@@ -75,12 +75,29 @@ Browser for the chosen service's rows (paged straight through, the
 Files browser's rule), a card pane for the selected row, and "Save to
 this Mac", which sends `cloud.get` and lets the ordinary file.offer
 machinery land the bytes in this machine's share. Drive is a real
-browser IN the page: it calls the same `now_wire_list_host` the Files
-page calls (the listing hook follows whoever asked last, which is
-already the wire's replacement rule for the answer), renders
-name/kind rows, descends on double-click, fetches a double-clicked
-file through `now_wire_get_host` with the pull's progress polled into
-the card pane — one browse implementation, genuinely two renderers.
+file browser IN the page: it calls the same `now_wire_list_host` the
+Files page calls (the listing hook follows whoever asked last, which
+is already the wire's replacement rule for the answer) and renders
+the Files page's exact columns — Name with the row's native icon
+(`GetIconRef` by type/creator, cached per distinct pair; folders wear
+the folder icon), Kind, Size, Modified (`LongDateString`) — under a
+breadcrumb row built by the shared `now_files_path_label` from the
+listing's own root field ("iCloud Drive:Attic:Old Sites"). The
+toolbar carries Back, Forward and Up: Up and every descend are plain
+navigations that push onto a bounded 16-step history (`cloud_nav.c`,
+pure and host-cc tested), Back and Forward retrace it, and the pair
+dims — never hides — when its stack is empty. Double-click still
+opens a folder or fetches a file through `now_wire_get_host`, with
+the pull's progress on the status placard — one browse
+implementation, genuinely two renderers.
+
+The drive columns live on the drive view's OWN Data Browser, a second
+mostly-hidden control beside the shell's shared two-column one, and
+that is a deliberate trade: the only way off a column is
+`RemoveDataBrowserTableViewColumn`, which is not among the 22 symbols
+`spikes/databrowser` proved CarbonLib 1.6.0 exports on the PB1400c,
+and a lazily-bound CFM call to an absent export is a crash at click
+time. One control per column set, every call in the proven 22.
 
 The split follows the house pattern: `cloud_model.c` (the store and
 parsers, host-cc tested in `cloud_model_test.c`, mutation-watched) and
@@ -137,10 +154,13 @@ through the ordinary file family, and that stays the only bulk path.
 sessions. First: the module end to end for Drive — cloud.services across a real wire, the dropdown,
 and the in-page drive browser (list, descend, Up, double-click fetch)
 against the host's iCloud Drive share, fingerprinted names included.
-That pass predates the full-width drive layout below (**tested, not
-re-verified on metal**): the browsing logic it exercised is unchanged,
-but the geometry and the Up control's position are not the ones the
-PowerBook watched.
+That pass predates the full-width drive layout and the real-browser
+work above (**tested, not re-verified on metal**): the browsing logic
+it exercised is unchanged, but the four-column control, its icons,
+the breadcrumb row, Back/Forward and the toolbar geometry are not the
+ones the PowerBook watched. The column recipe and the icon calls are
+the metal-verified Files/Processes recipes reused verbatim, which is
+evidence about the ingredients, not the dish.
 
 Second, the same evening: with the entitlements fix in, the grant
 prompts fire, and Michelle reports the granted services — Photos and
@@ -170,9 +190,13 @@ on the PB1400c — that probe only ever asked about the flat list. A
 clean compile is Level 1 (Builds); it proves nothing about whether the
 real machine's CarbonLib answers those calls. Until someone reruns the
 runtime probe with the container symbols added, the drive view keeps
-its proven shape: full-width flat list, replace-on-navigate, Up button
-— the same browsing model `files_browser_view.c` already carries
-metal-verified. See `spikes/databrowser-container-probe/README.md` and
+its proven shape: full-width flat list, replace-on-navigate, with
+Back/Forward/Up walking a history rather than a disclosure walking a
+tree — the same browsing model `files_browser_view.c` already carries
+metal-verified. The same evidence rule is why the drive columns live
+on their own control (above): `RemoveDataBrowserTableViewColumn` is
+declared but was never probed either. See
+`spikes/databrowser-container-probe/README.md` and
 docs/guest-ui-start-here.md's proven/disproven list.
 
 ### Live search, and the review that followed
