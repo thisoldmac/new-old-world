@@ -141,12 +141,23 @@ application in every run so far — and never again. If Mac OS 9's trap
 dispatch is not as system-wide as a classic 68K machine's for this case,
 a one-shot install is exactly the shape of bug that produces this table.
 
-**The experiment that would confirm it**, and it is cheap: from a fresh
-boot, arm the plane while a FOREIGN application is frontmost so the first
-armed pass happens in ITS context, then run the same four calls. If the
-answers invert — the foreign app agreeing and NOW's refusing — the
-one-shot is the bug and the repair is to install per context rather than
-once.
+**The obvious experiment does not work, and why it does not is itself
+evidence.** The plan was: from a fresh boot, arm while a FOREIGN
+application is frontmost so the first armed pass happens in its context,
+and see whether the answers invert. But `act_install` runs on the first
+pass *of whatever process pumps*, and **NOW's own application is always
+pumping** — it is the one serving the wire the request arrived on. So the
+install lands in NOW's context by construction, on every boot, no matter
+which application is in front. Fronting cannot move it.
+
+That is not a dead end; it explains why the table always comes out this
+way round, and it makes the one-shot a stronger suspect rather than a
+weaker one. It also means **the repair and the confirmation are the same
+change**: make the install per-context (or prove the patch genuinely
+system-wide some other way) and the foreign-application answers should
+change. Per the resident-components charter that is developed as a
+throwaway dev INIT under its own name before it is folded in, because it
+edits the one file whose failure mode is a machine that will not boot.
 
 **Narrowed earlier the same day.** The test
 was repeated against **SimpleText** — a plain classic application,
