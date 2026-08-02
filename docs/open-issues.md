@@ -14,6 +14,48 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## polish2-foundations: contract + host only, tested with fakes; the two real-data paths and the whole guest half are unbuilt (2026-08-02, later still)
+
+**Unverified, deliberately labelled — and narrower than the other
+2026-08-02 entries: no guest UI exists for any of this yet.** The
+foundations arc (contract: `CloudGet.size` grows fit1440/fit2048,
+`CloudListing` entries grow optional width/height, x-cloud contacts
+gains `cloud.preview`; host: `PhotosCloudProvider.DownloadSize` grows
+the same two boxes, `.list` fills width/height from
+`PHAsset.pixelWidth`/`pixelHeight`, `ContactsCloudProvider.preview`
+reuses the photos decode/fit/dither pipeline against
+`CNContactThumbnailImageDataKey`) is TESTED — loopback-proven with
+FAKE providers (`CloudServingTests`, `CloudModuleModelTests`) — and
+none of it has touched a real PHAsset or CNContact. What only a
+granted library/address book (this Mac's existing TCC grants) and
+metal can prove, additional to the items already ledgered below for
+`PhotosCloudProvider`:
+
+- **`PHAsset.pixelWidth`/`pixelHeight` actually land in a real
+  listing.** The fill is one line reading documented public
+  properties, but "documented and public" is a code-reading claim
+  until a real library's rows carry real numbers a person can compare
+  against Photos.app.
+- **`ContactsCloudProvider.preview` has never run granted.** The
+  `CNContactThumbnailImageDataKey` fetch, a REAL contact that has a
+  thumbnail, a real one that does not (proving the not-found "no
+  photo" path fires from the actual store rather than only from a
+  fake's scripted fault), and the reused pipeline against a real
+  Contacts-app thumbnail's actual bytes (not the flat synthetic JPEG
+  the loopback test generates) are all unexercised.
+- **fit1440/fit2048 against a real multi-thousand-photo library.**
+  `processedJPEG`'s box arithmetic is shared code already proven for
+  the other three tokens (`PhotosProcessingTests`), so this is lower
+  risk than a new pipeline — but "lower risk" is still a claim, not a
+  measurement, until someone asks a real original at 2048x1536 and
+  looks at the JPEG that comes back.
+- **The guest half is entirely unbuilt.** Nothing here has a
+  `now-guest-ppc` counterpart: no Size popup entries for the two new
+  boxes, no exact-resolution-from-dimensions arithmetic on the guest
+  side, no contacts card wired to ask `cloud.preview` or draw the "no
+  photo" placeholder. This arc is contract + host seams for those
+  pages to consume, not the pages themselves.
+
 ## Photos download UX shipped tested; every visible behavior awaits metal (2026-08-02, later)
 
 **Unverified, deliberately labelled.** The four-item download arc

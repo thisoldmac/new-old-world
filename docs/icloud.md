@@ -30,25 +30,42 @@ the host" instead of not mentioning Photos.
   the share IS iCloud Drive, and `cloud.list` for it answers
   `not-listable` naming the Files page. One implementation, two
   renderers, the rule this repo keeps paying to relearn.
-- **Photos**: newest first, pages of title/date rows; `cloud.detail`
-  is a card of what the library knows; `cloud.preview` shows the
-  selected photo IN the page (below); `cloud.get` delivers ONE photo
-  as an ordinary `file.offer` into the guest's share — JPEG whatever
-  modern container the library holds (HEIC included), typed
-  `JPEG`/`ogle` so it opens by double-click, and **downsized
-  automatically** per the host's per-service Downloads setting
-  (Original / Fit 1024x768 / Fit 640x480, default Fit 640x480,
+- **Photos**: newest first, pages of title/date rows, each row also
+  carrying the original's own width/height when the guest wants to
+  compute an exact post-fit resolution (below); `cloud.detail` is a
+  card of what the library knows; `cloud.preview` shows the selected
+  photo IN the page (below); `cloud.get` delivers ONE photo as an
+  ordinary `file.offer` into the guest's share — JPEG whatever modern
+  container the library holds (HEIC included), typed `JPEG`/`ogle` so
+  it opens by double-click, and **downsized automatically** per the
+  host's per-service Downloads setting (Original / Fit 640x480 / Fit
+  1024x768 / Fit 1440x1080 / Fit 2048x1536, default Fit 640x480,
   `cloud.photos.downloadSize`), applied in the get pipeline before the
   JPEG is encoded — unless the ask itself carries the additive `size`
-  token (same three renders), in which case the asker's choice
+  token (same five renders), in which case the asker's choice
   outranks the setting; an unrecognized token refuses with a reason.
-  An original iCloud has not materialized
+  Every `fitN` token is a FIT BOX (aspect preserved, never upscaled);
+  the wire never states the exact resolution a fit produces for a
+  given photo — a guest that wants to SHOW that number computes it
+  itself from the entry's own width/height and the chosen box, the
+  same fit arithmetic `cloud.preview` already does host-side, just run
+  on numbers the guest already has rather than sent a sixth way. An
+  original iCloud has not materialized
   starts its download and refuses `busy`, the same bargain the share
   strikes for Drive placeholders.
 - **Contacts**: alphabetical, the card is the deliverable —
   phones/emails/addresses as [label, value] rows in the person's own
   labels. `cloud.get` is refused until the classic side can read a
-  vCard.
+  vCard. `cloud.preview` IS served, unlike `cloud.get`: the contact's
+  own thumbnail (`CNContactThumbnailImageDataKey`), run through the
+  exact same decode/fit/dither pipeline Photos previews use — a
+  thumbnail is pixels the host already knows how to render, where a
+  vCard is a document format the classic side cannot open at all, and
+  that is the whole reason the two verbs answer differently for the
+  same service. A contact with no thumbnail (most of them) refuses
+  `cloud.refuse` `not-found` reason "no photo" — an expected, well-
+  formed outcome, and the guest's card pane draws its own placeholder
+  for exactly that reason string rather than treating it as a failure.
 
 Every human-readable string is converted before sending (composed,
 MacRoman-expressible): the host is the only side that can spell both
@@ -76,13 +93,15 @@ Serving is ungated past the handshake, like the share (decided
 2026-08-01): the switches are the consent, per service.
 
 The Photos row also carries the **Downloads picker** (Original / Fit
-1024x768 / Fit 640x480): what a `cloud.get` delivers when the ask
-names no size of its own, applied host-side before the JPEG leaves.
-The guest's Size popup (below) can override it per ask — "Original"
-from the classic side is the asker saying so, which is the same
-consent — and the default still fits the screens the fetch is for: a
-48-megapixel original into a 6 MB partition is a mistake a default
-should not require declining every time.
+640x480 / Fit 1024x768 / Fit 1440x1080 / Fit 2048x1536): what a
+`cloud.get` delivers when the ask names no size of its own, applied
+host-side before the JPEG leaves. The guest's Size popup (below) can
+override it per ask — "Original" from the classic side is the asker
+saying so, which is the same consent — and the default still fits the
+screens the fetch is for: a 48-megapixel original into a 6 MB
+partition is a mistake a default should not require declining every
+time. `PhotosCloudProvider.DownloadSize.allCases` drives the picker
+directly, so a token added there needs no second edit to appear here.
 
 ## The guest page
 
@@ -203,7 +222,14 @@ that honest without spending memory this machine does not have:
   `PHAssetResource` exposes no public byte-size property short of
   downloading the resource, so a listing's `bytes` field stays unstated
   for photos rather than reaching for the private `fileSize` KVC key
-  some apps use undocumented.
+  some apps use undocumented — and stays that way: nothing about the
+  polish arc's entry-dimensions field changes this, because
+  `bytes` and `width`/`height` are answered from two different APIs
+  with two different costs. `pixelWidth`/`pixelHeight` ARE public
+  `PHAsset` properties, answered from metadata already in hand with no
+  network and no resource download, which is why `width`/`height` get
+  filled for every photo row while a Size column (bytes) stays blank —
+  the same library, two properties, only one of them free to read.
 - **`kCloudMaxRows` (128) does not rise for a large library.** 128
   `CloudRow` entries cost under 24KB — trivial next to the 6MB
   partition — but raising the cap only postpones the same problem at a
@@ -283,6 +309,32 @@ has run nowhere; and the whole path against a REAL granted library
 (a preview of an actual HEIC on an actual screen, the busy bargain
 against a real un-materialized original) is exactly what only metal
 and a signed-in Mac can prove.
+
+The polish2-foundations arc (2026-08-02, contract + host only, no
+guest UI) is **tested, nothing more**, and narrower still — no guest
+half exists yet for any of it. The two new Downloads/`size` boxes
+(fit1440, 1440x1080; fit2048, 2048x1536) ride the exact code path the
+original three already used
+(`chosenSize`, `processedJPEG`'s box arithmetic), loopback-proven the
+same way (`CloudServingTests`) and against `PhotosProcessingTests`'
+in-test fixtures for the resize itself. `CloudEntry.width`/`height`
+are loopback-proven to ride the wire and to stay ABSENT (never a
+guessed zero) for a service that does not state them; `PhotosCloudProvider
+.list` filling them from `PHAsset.pixelWidth`/`pixelHeight` reads
+against a real library and is therefore in the same untested-real-
+library bucket as the rest of `PhotosCloudProvider`, ledgered in
+[open-issues.md](open-issues.md). Contacts `cloud.preview` is
+loopback-proven end to end for the WIRE and for the REUSED pipeline
+(a synthetic thumbnail run through `PhotosCloudProvider.rgbPixels` +
+`ClassicDither.dither`, exactly the code `ContactsCloudProvider
+.preview` calls, answers a `cloud.preview` for the "contacts" service
+indistinguishably from photos) and for the not-found "no photo"
+refusal's exact wording; the real
+`CNContactStore.unifiedContact(withIdentifier:keysToFetch:
+[CNContactThumbnailImageDataKey])` call against an actual card is
+untested here — it needs this Mac's Contacts TCC grant, the same
+bucket Photos' real-library path already sits in, and what only that
+grant can prove is ledgered alongside it.
 
 **Drive stays a flat list, not a tree — Data Browser containers are
 declared but unproven.** `spikes/databrowser-container-probe` compiles
