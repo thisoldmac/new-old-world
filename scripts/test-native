@@ -288,6 +288,11 @@ run_c now-guest-ppc cloud_layout_test.c     ""  src/cloud/cloud_layout.c
 # (CloudRow's title+subtitle, Drive's FileEntry name) every view's
 # row_matches wraps around it.
 run_c now-guest-ppc cloud_filter_test.c     ""  src/cloud/cloud_filter.c
+# The drive browser's Back/Forward history: browser semantics (visit
+# pushes, Back/Forward retrace, a new navigation forfeits Forward) and
+# the 16-deep bound that drops the OLDEST step, proven by walking the
+# landing places, never by reading the stacks.
+run_c now-guest-ppc cloud_nav_test.c        ""  src/cloud/cloud_nav.c
 # The Contacts card's grouping/date-parsing decisions -- kept out of
 # cloud_contacts_view.c so they run here, off a fixture, rather than
 # only ever being exercised by eye on the PowerBook.
