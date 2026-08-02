@@ -11,6 +11,7 @@
 #include "cloud_list_view.h"
 #include "cloud_model.h"
 #include "cloud_photos_view.h"
+#include "cloud_preview_well.h"
 #include "cloud_view.h"
 #include "fileshare.h"
 #include "json.h"
@@ -97,6 +98,11 @@ static int g_shown_rows;
    Save/Up enable rule) — cloud_drive_view.c owns everything else about
    browsing it. */
 static Boolean g_drive_mode;
+/* Contacts mode: the chosen service is contacts. Chrome bookkeeping
+   only, the same shape as g_drive_mode — cloud_contacts_view.c owns
+   everything about its own browser and card; this just says which of
+   the three browsers active_browser() hands out. */
+static Boolean g_contacts_mode;
 static const CloudViewOps *g_view;
 
 static char g_shown_status[128];
@@ -107,15 +113,23 @@ static Boolean g_shown_back_on = true;   /* NewControl starts enabled;
                                             history exactly once */
 static Boolean g_shown_fwd_on = true;
 
-/* The list the current mode is actually showing: drive mode swapped in
-   cloud_drive_view's own four-column browser (the shell's two-column
-   one cannot change wardrobe — RemoveDataBrowserTableViewColumn is not
-   in the PB1400c's proven exports; cloud_drive_view.c says why in
-   full). Everything the shell does to "the list" — clearing, the
+/* The list the current mode is actually showing: drive mode swaps in
+   cloud_drive_view's own four-column browser, contacts mode swaps in
+   cloud_contacts_view's own two-column one — the shell's own control
+   cannot change wardrobe per mode (RemoveDataBrowserTableViewColumn is
+   not in the PB1400c's proven exports; cloud_drive_view.c says why in
+   full, and the same evidence gap applies to any column set a service
+   might want). Everything the shell does to "the list" — clearing, the
    search's diff, click routing, focus — goes through this. */
 static ControlRef active_browser(void)
 {
-    return g_drive_mode ? cloud_drive_view_browser() : g_browser;
+    if (g_drive_mode) {
+        return cloud_drive_view_browser();
+    }
+    if (g_contacts_mode) {
+        return cloud_contacts_view_browser();
+    }
+    return g_browser;
 }
 
 static void invalidate_detail(void)
@@ -492,6 +506,8 @@ static void choose_service(int index)
     memset(g_in_view, 0, sizeof g_in_view);
     g_drive_mode = strcmp(service->service, "drive") == 0
         && strcmp(service->state, "serving") == 0;
+    g_contacts_mode = !g_drive_mode
+        && strcmp(service->service, "contacts") == 0;
     cloud_drive_view_activate(g_drive_mode);
     g_view = view_for(service, g_drive_mode);
     /* Drive and list mode use different rectangles (cloud_layout.c's
@@ -500,13 +516,14 @@ static void choose_service(int index)
     apply_layout();
     retitle_button();
     clear_list();
-    /* Two lists, one shown: the mode owns which browser is the page's,
-       and the history pair exists only where a history does. Hidden is
-       for the control the mode does not use; empty-history dimming is
-       cloud_idle's HiliteControl diff, never a hide. */
+    /* Three lists, one shown: the mode owns which browser is the
+       page's, and the history pair exists only where a history does.
+       Hidden is for the control the mode does not use; empty-history
+       dimming is cloud_idle's HiliteControl diff, never a hide. */
     if (g_owner != NULL && g_visible) {
-        show_control(g_browser, !g_drive_mode);
+        show_control(g_browser, !g_drive_mode && !g_contacts_mode);
         show_control(cloud_drive_view_browser(), g_drive_mode);
+        show_control(cloud_contacts_view_browser(), g_contacts_mode);
         show_control(g_back, g_drive_mode);
         show_control(g_fwd, g_drive_mode);
         if (g_view != NULL && g_view->show != NULL) {
@@ -680,30 +697,57 @@ static OSStatus item_data(ControlRef browser, DataBrowserItemID item,
     return noErr;
 }
 
-static void item_notify(ControlRef browser, DataBrowserItemID item,
-                        DataBrowserItemNotification message)
+/* A row was picked (index >= 0) or the selection cleared (-1): the
+   three steps every service's selection takes -- g_selected, the
+   card ask, and telling whichever view is active. Shared by the
+   shell's own browser's notification (below) and, through
+   CloudContactsHost.row_selected, Contacts' own browser -- one
+   implementation of "what a selection means" regardless of which
+   control the click landed on. */
+static void note_row_selected(int index)
 {
-    (void)browser;
-    /* Notifications fired by our own rebuild are not user intent.
-       Drive mode's selections never arrive here at all: that browser
-       has its own notification callback (cloud_drive_view.c). */
-    if (g_in_rebuild) {
-        return;
-    }
-    if (message == kDataBrowserItemSelected) {
-        g_selected = (int)item - 1;
-        ask_card();
-        if (g_view != NULL && g_view->select != NULL) {
-            g_view->select(&g_r, &g_store, g_selected);
+    if (index < 0) {
+        if (g_selected < 0) {
+            return;                   /* already cleared: idempotent */
         }
-    } else if (message == kDataBrowserItemDeselected
-               && g_selected == (int)item - 1) {
         g_selected = -1;
         cloud_store_reset_card(&g_store);
         if (g_view != NULL && g_view->select != NULL) {
             g_view->select(&g_r, &g_store, -1);
         }
         invalidate_detail();
+        return;
+    }
+    g_selected = index;
+    ask_card();
+    if (g_view != NULL && g_view->select != NULL) {
+        g_view->select(&g_r, &g_store, g_selected);
+    }
+}
+
+/* Contacts' own browser needs to know when the shell is mutating
+   items on its own behalf, the same way this file's g_in_rebuild
+   already guards its own browser's notifications, below. */
+static Boolean shell_in_rebuild(void)
+{
+    return g_in_rebuild;
+}
+
+static void item_notify(ControlRef browser, DataBrowserItemID item,
+                        DataBrowserItemNotification message)
+{
+    (void)browser;
+    /* Notifications fired by our own rebuild are not user intent.
+       Drive and Contacts modes' selections never arrive here at all:
+       those browsers have their own notification callbacks. */
+    if (g_in_rebuild) {
+        return;
+    }
+    if (message == kDataBrowserItemSelected) {
+        note_row_selected((int)item - 1);
+    } else if (message == kDataBrowserItemDeselected
+               && g_selected == (int)item - 1) {
+        note_row_selected(-1);
     }
 }
 
@@ -764,6 +808,7 @@ static OSErr cloud_create(WindowRef owner, const Rect *body)
     g_owner = owner;
     g_body = *body;
     g_drive_mode = false;
+    g_contacts_mode = false;
     cloud_layout_compute(&g_body, g_drive_mode, &g_r);
     cloud_store_reset(&g_store);
     g_service = -1;
@@ -840,8 +885,9 @@ static OSErr cloud_create(WindowRef owner, const Rect *body)
     if (drive_ops->create != NULL) {
         drive_ops->create(owner);
     }
-    /* Photos' create only records the window and registers the wire's
-       preview hook; the GWorld waits for pixels. */
+    /* Photos' create only records the window; the GWorld waits for
+       pixels. The wire's ONE cloud.preview hook is registered once,
+       below, for the shared well — not per view. */
     {
         const CloudViewOps *photos_ops = cloud_photos_view_ops();
 
@@ -849,6 +895,21 @@ static OSErr cloud_create(WindowRef owner, const Rect *body)
             photos_ops->create(owner);
         }
     }
+    /* Contacts' create builds its own browser; bound after, the same
+       order drive's own create/bind already keeps (creation does not
+       need the host, only later requests do). */
+    {
+        const CloudViewOps *contacts_ops = cloud_contacts_view_ops();
+        CloudContactsHost contacts_host;
+
+        if (contacts_ops->create != NULL) {
+            contacts_ops->create(owner);
+        }
+        contacts_host.row_selected = note_row_selected;
+        contacts_host.in_rebuild = shell_in_rebuild;
+        cloud_contacts_view_bind(&contacts_host, &g_store);
+    }
+    cloud_preview_well_init();
     host.clear_list = clear_list;
     host.invalidate_detail = invalidate_detail;
     host.set_status = set_status;
@@ -866,6 +927,8 @@ static void cloud_dispose(void)
     conn_set_cloud_note(NULL);
     cloud_photos_view_dispose();
     cloud_drive_view_dispose();
+    cloud_contacts_view_dispose();
+    cloud_preview_well_dispose();
     /* The Data Browser goes BEFORE its UPPs: disposal fires item
        notifications through them (files_browser_view.c and the finding
        carbon-upp-is-not-a-cast-on-cfm carry the full story). */
@@ -928,8 +991,9 @@ static void cloud_show(Boolean visible)
     show_control(g_refresh, visible);
     show_control(g_save, visible && action_applies());
     /* One list on stage per mode; the history pair is drive chrome. */
-    show_control(g_browser, visible && !g_drive_mode);
+    show_control(g_browser, visible && !g_drive_mode && !g_contacts_mode);
     show_control(cloud_drive_view_browser(), visible && g_drive_mode);
+    show_control(cloud_contacts_view_browser(), visible && g_contacts_mode);
     show_control(g_back, visible && g_drive_mode);
     show_control(g_fwd, visible && g_drive_mode);
     if (g_view != NULL && g_view->show != NULL) {
@@ -987,10 +1051,10 @@ static void apply_layout(void)
                     (SInt16)(g_r.fwd_btn.bottom - g_r.fwd_btn.top));
     }
     /* g_r fits exactly one mode, so only the browser that mode shows
-       is sized from it; the other keeps its stale geometry, hidden,
-       until its own mode's apply_layout runs. Drive's browser is
-       placed by its view's layout op, below. */
-    if (!g_drive_mode && g_browser != NULL) {
+       is sized from it; the others keep their stale geometry, hidden,
+       until their own mode's apply_layout runs. Drive's and Contacts'
+       browsers are placed by their own view's layout op, below. */
+    if (!g_drive_mode && !g_contacts_mode && g_browser != NULL) {
         MoveControl(g_browser, g_r.list.left, g_r.list.top);
         SizeControl(g_browser, (SInt16)(g_r.list.right - g_r.list.left),
                     (SInt16)(g_r.list.bottom - g_r.list.top));
@@ -1264,14 +1328,15 @@ static Boolean cloud_key(const EventRecord *event)
 
 static void cloud_activate(Boolean active)
 {
-    /* Both browsers follow the window: the hidden one must not wake in
-       yesterday's activation state when its mode returns. */
-    ControlRef lists[2];
+    /* All three browsers follow the window: a hidden one must not
+       wake in yesterday's activation state when its mode returns. */
+    ControlRef lists[3];
     int i;
 
     lists[0] = g_browser;
     lists[1] = cloud_drive_view_browser();
-    for (i = 0; i < 2; ++i) {
+    lists[2] = cloud_contacts_view_browser();
+    for (i = 0; i < 3; ++i) {
         if (lists[i] == NULL) {
             continue;
         }
