@@ -164,10 +164,13 @@ enum MirrorEndpoint: Equatable, Sendable {
     /// What `mirror-agent` binds in the guest. Fixed on that side.
     static let agentPortInGuest = 1420
 
-    /// The forward the rigs here use today (`spin-up.sh` maps a free host
-    /// port to 1420; 1724 is what the standing session uses). A default,
-    /// not a constant — hence the setting beside it on the page.
-    static let defaultForwardedPort = 1724
+    /// The forward NOW's own rig opens to the guest's agent
+    /// (`scripts/spin-up-ppc`, `NOW_MIRROR_AGENT_PORT`). Deliberately NOT
+    /// 1724: that is Mirror's own spin-up's habitual pick, and on a desk
+    /// running both rigs a 1724 default would reach the OTHER VM's agent —
+    /// the wrong-machine trap AGENTS.md's metal rules exist for, one layer
+    /// up. A default, not a constant — hence the setting on the page.
+    static let defaultForwardedPort = 1730
 
     /// A machine with an address of its own: dial it directly.
     case direct(host: String, port: Int)

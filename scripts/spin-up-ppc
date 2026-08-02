@@ -95,7 +95,11 @@ fi
 WIRE="${NOW_WIRE_PORT:-5250}"
 port_free "$WIRE" || { echo "port $WIRE is already listening — another NOW host \
 is up, and the guest's compiled-in default would dial IT, not us"; exit 1; }
-HOSTFWD="hostfwd=tcp:127.0.0.1:${ANCHOR}-:1400"
+# Two forwards: the anchor, and Mirror's in-guest agent (1420) so a host
+# Mirror instance can reach THIS guest rather than whichever other VM
+# happens to hold the habitual port. 1730 matches the host app's default.
+MIRROR_AGENT="${NOW_MIRROR_AGENT_PORT:-1730}"
+HOSTFWD="hostfwd=tcp:127.0.0.1:${ANCHOR}-:1400,hostfwd=tcp:127.0.0.1:${MIRROR_AGENT}-:1420"
 printf '%s %s\n' "$ANCHOR" "$WIRE" > "$RUN/ports"
 echo "ports: anchor=$ANCHOR wire=$WIRE"
 

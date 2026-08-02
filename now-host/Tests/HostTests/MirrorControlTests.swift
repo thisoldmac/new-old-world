@@ -211,7 +211,7 @@ final class MirrorControlTests: XCTestCase {
     func testAMachineOnTheNetworkIsDialledDirectlyAtTheAgentsOwnPort() {
         XCTAssertEqual(
             MirrorEndpoint.derive(peer: GuestAddress(text: "10.0.1.7"),
-                                  forwardedPort: 1724),
+                                  forwardedPort: 1730),
             .direct(host: "10.0.1.7", port: 1420))
     }
 
@@ -226,8 +226,8 @@ final class MirrorControlTests: XCTestCase {
     func testALoopbackPeerIsEmulatedAndGoesThroughTheHostSideForward() {
         XCTAssertEqual(
             MirrorEndpoint.derive(peer: GuestAddress(text: "127.0.0.1"),
-                                  forwardedPort: 1724),
-            .forwarded(host: "127.0.0.1", port: 1724, guestPort: 1420),
+                                  forwardedPort: 1730),
+            .forwarded(host: "127.0.0.1", port: 1730, guestPort: 1420),
             "user-mode NAT means nothing can dial into the guest; the "
                 + "only way in is the forward the emulator was started with")
     }
@@ -239,7 +239,7 @@ final class MirrorControlTests: XCTestCase {
     }
 
     func testNoMachineMeansNoAddressRatherThanAGuess() {
-        let endpoint = MirrorEndpoint.derive(peer: nil, forwardedPort: 1724)
+        let endpoint = MirrorEndpoint.derive(peer: nil, forwardedPort: 1730)
         XCTAssertNil(endpoint.target)
         XCTAssertTrue(endpoint.route.contains("No Mac is connected"),
                       endpoint.route)
