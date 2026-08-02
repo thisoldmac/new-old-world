@@ -349,6 +349,24 @@ final class ChatHarnessTests: XCTestCase {
             provider.requests[0].system.contains("sitting AT the classic"))
     }
 
+    func testToolSchemasCarryNoTopLevelCombinators() throws {
+        // The Anthropic API rejects a top-level oneOf/anyOf/allOf/not
+        // in input_schema (metal, 2026-08-02: now_launch_software
+        // 400ed every turn). Asked of the real registry so row
+        // twenty-seven is covered the day it lands.
+        for descriptor in ChatToolRendering.descriptors() {
+            let schema = try XCTUnwrap(
+                try JSONSerialization.jsonObject(
+                    with: descriptor.inputSchemaJSON) as? [String: Any])
+            for combinator in ["oneOf", "anyOf", "allOf", "not"] {
+                XCTAssertNil(
+                    schema[combinator],
+                    "\(descriptor.name) exposes a top-level \(combinator)")
+            }
+            XCTAssertNotNil(schema["type"])
+        }
+    }
+
     func testToolDescriptorsCarryNoGuestParameter() throws {
         let descriptors = ChatToolRendering.descriptors()
         XCTAssertFalse(descriptors.isEmpty)

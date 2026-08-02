@@ -1233,7 +1233,14 @@ enum ControlMessageCodec {
                 with: encoder.encode(value)) as? [String: Any] ?? [:]
             object["type"] = type
             return try JSONSerialization.data(
-                withJSONObject: object, options: [.sortedKeys])
+                /* withoutEscapingSlashes: Foundation writes "/" as "\/"
+                   by default, and a guest that reads a KEY with its
+                   non-decoding string reader then sends the backslash
+                   back verbatim — a chat.catalog model key came back as
+                   "anthropic\\/claude-opus-5" on metal (2026-08-02).
+                   Nothing in this contract wants escaped slashes. */
+                withJSONObject: object,
+                options: [.sortedKeys, .withoutEscapingSlashes])
         }
         switch message {
         case .hello(let hello): return try tagged("hello", hello)

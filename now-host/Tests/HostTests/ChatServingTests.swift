@@ -251,6 +251,22 @@ final class ChatDeltaChunkingTests: XCTestCase {
                        Array(5..<(5 + frames.count)))
     }
 
+    func testTheCodecDoesNotEscapeSlashes() throws {
+        // Foundation writes "/" as "\/" by default; a guest reading a
+        // KEY with its non-decoding reader then sends the backslash
+        // back (metal, 2026-08-02: "anthropic\\/claude-opus-5").
+        let encoded = try ControlMessageCodec.encode(.chatCatalog(
+            ChatCatalog(id: 1, models: [
+                ChatCatalogEntry(
+                    model: "anthropic/claude-opus-5",
+                    provider: "anthropic",
+                    label: "Claude Opus 5", state: "serving", detail: nil)
+            ])))
+        let text = String(decoding: encoded, as: UTF8.self)
+        XCTAssertTrue(text.contains("anthropic/claude-opus-5"))
+        XCTAssertFalse(text.contains("\\/"))
+    }
+
     func testSmallTextIsOneFrame() {
         let frames = ChatDeltaChunking.frames(id: 1, firstSeq: 0, text: "hi")
         XCTAssertEqual(frames.count, 1)

@@ -26,12 +26,15 @@ int chat_parse_catalog(const char *reply, ChatModelRow *rows, int max)
         ChatModelRow *row = &rows[count];
 
         memset(row, 0, sizeof *row);
-        if (!now_json_find_string(object, "model", row->model,
-                                  sizeof row->model)) {
+        /* find_text, not find_string: a host may escape "/" in a key
+           ("anthropic\\/claude-opus-5" on metal), and the key goes BACK
+           over the wire verbatim - it must be stored decoded. */
+        if (!now_json_find_text(object, "model", row->model,
+                                sizeof row->model)) {
             continue;                 /* a row without its key is no row */
         }
-        if (!now_json_find_string(object, "provider", row->provider,
-                                  sizeof row->provider)) {
+        if (!now_json_find_text(object, "provider", row->provider,
+                                sizeof row->provider)) {
             /* An older host: group by the key's own prefix. */
             const char *slash = strchr(row->model, '/');
             size_t n = slash != NULL

@@ -161,7 +161,62 @@ final class OpenAICompatibleChatProvider: ChatProvider, @unchecked Sendable {
         }
     }
 
+    /// An answer that produced no text, no calls and no finish. Kept
+    /// internal: run() turns it into a retry or a spoken refusal.
+    private struct NothingReadable: Error {
+        let raw: String
+    }
+
     private func run(
+        _ completion: ChatCompletionRequest,
+        into continuation: AsyncThrowingStream<ChatStreamEvent, Error>.Continuation
+    ) async throws {
+        do {
+            try await attempt(completion, into: continuation)
+        } catch let empty as NothingReadable {
+            /* Some local models answer NOTHING when handed thirty tool
+               schemas their template cannot hold (metal, 2026-08-02:
+               oMLX spun the GPU and returned an empty message). One
+               retry with the tools stripped rescues the conversation;
+               the turn just cannot use tools. */
+            guard !completion.tools.isEmpty else {
+                throw ChatFault.refuse(
+                    code: "provider-error",
+                    reason: Self.unreadableReason(label: label, raw: empty.raw))
+            }
+            let bare = ChatCompletionRequest(
+                model: completion.model, system: completion.system,
+                turns: completion.turns, tools: [],
+                maxTokens: completion.maxTokens)
+            do {
+                try await attempt(bare, into: continuation)
+            } catch let stillEmpty as NothingReadable {
+                throw ChatFault.refuse(
+                    code: "provider-error",
+                    reason: Self.unreadableReason(
+                        label: label, raw: stillEmpty.raw))
+            }
+        }
+    }
+
+    /// The refusal a person can act on: the provider's own sentence
+    /// when the body carries one, else the first stretch of whatever
+    /// it DID answer — "nothing readable" alone taught nobody anything.
+    static func unreadableReason(label: String, raw: String) -> String {
+        if let said = AnthropicChatProvider.errorMessage(in: Data(raw.utf8)) {
+            return "\(label): \(said)"
+        }
+        let collapsed = raw.replacingOccurrences(
+            of: "[\\s]+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !collapsed.isEmpty else {
+            return "\(label) answered an empty body"
+        }
+        return "\(label) answered something unreadable: "
+            + String(collapsed.prefix(160))
+    }
+
+    private func attempt(
         _ completion: ChatCompletionRequest,
         into continuation: AsyncThrowingStream<ChatStreamEvent, Error>.Continuation
     ) async throws {
@@ -229,21 +284,23 @@ final class OpenAICompatibleChatProvider: ChatProvider, @unchecked Sendable {
         }
 
         var calls = accumulator.calls()
-        if !yieldedText && calls.isEmpty && finishReason == nil {
+        if !yieldedText && calls.isEmpty {
             let (text, wholeCalls, reason) = Self.wholeBodyCompletion(raw)
             if let text, !text.isEmpty {
                 yieldedText = true
                 continuation.yield(.textDelta(text))
             }
-            calls = wholeCalls
-            finishReason = reason
+            if !wholeCalls.isEmpty {
+                calls = wholeCalls
+            }
+            if reason != nil {
+                finishReason = reason
+            }
             if !yieldedText && calls.isEmpty {
-                throw ChatFault.refuse(
-                    code: "provider-error",
-                    reason: AnthropicChatProvider.errorMessage(
-                        in: Data(raw.utf8))
-                        .map { "\(label): \($0)" }
-                        ?? "\(label) answered, but nothing readable arrived")
+                /* An empty message with a finish_reason counts too: a
+                   model that "finished" saying nothing has answered
+                   nothing a person can read. */
+                throw NothingReadable(raw: raw)
             }
         }
 

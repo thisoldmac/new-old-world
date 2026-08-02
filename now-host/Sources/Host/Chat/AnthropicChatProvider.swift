@@ -212,7 +212,8 @@ final class AnthropicChatProvider: ChatProvider, @unchecked Sendable {
     }
 
     /// The provider's own sentence out of an error body, when it wrote
-    /// one — {"error":{"message":...}} in both dialects.
+    /// one — {"error":{"message":...}} in both dialects, plus the
+    /// FastAPI shapes local runtimes speak ({"detail": ...}).
     static func errorMessage(in body: Data?) -> String? {
         guard let body,
             let object = try? JSONSerialization.jsonObject(with: body)
@@ -222,8 +223,20 @@ final class AnthropicChatProvider: ChatProvider, @unchecked Sendable {
             let message = error["message"] as? String, !message.isEmpty {
             return message
         }
+        if let error = object["error"] as? String, !error.isEmpty {
+            return error
+        }
         if let message = object["message"] as? String, !message.isEmpty {
             return message
+        }
+        if let detail = object["detail"] as? String, !detail.isEmpty {
+            return detail
+        }
+        if let details = object["detail"] as? [[String: Any]] {
+            let sentences = details.compactMap { $0["msg"] as? String }
+            if !sentences.isEmpty {
+                return sentences.joined(separator: "; ")
+            }
         }
         return nil
     }

@@ -419,8 +419,74 @@ final class OpenAICompatibleProviderTests: XCTestCase {
         } catch {
             let (code, reason) = ChatFault.from(error)
             XCTAssertEqual(code, "provider-error")
-            XCTAssertTrue(reason.contains("nothing readable"))
+            // The refusal quotes what actually arrived.
+            XCTAssertTrue(reason.contains("not json and not sse"),
+                          "got: \(reason)")
         }
+    }
+
+    func testAnEmptyAnswerWithToolsRetriesOnceWithoutThem() async throws {
+        // A local model that returns an empty message when handed tool
+        // schemas gets one retry with the tools stripped (metal,
+        // 2026-08-02: oMLX's whole answer was "").
+        let empty = """
+            {"choices":[{"message":{"content":""},"finish_reason":"stop"}]}
+            """
+        let transport = FakeChatTransport([
+            .init(lines: [empty]),
+            .init(lines: [
+                "data: {\"choices\":[{\"delta\":{\"content\":\"Second try.\"}}]}",
+                "",
+                "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}",
+                "",
+                "data: [DONE]",
+                "",
+            ]),
+        ])
+        let provider = OpenAICompatibleChatProvider.oMLX(
+            store: InMemoryChatCredentialStore(), transport: transport)
+        let schema = try JSONSerialization.data(
+            withJSONObject: ["type": "object"])
+        let out = try await collect(provider.stream(ChatCompletionRequest(
+            model: "qwen", system: "", turns: [.user("hi")],
+            tools: [ChatToolDescriptor(
+                name: "f", description: "d", inputSchemaJSON: schema)],
+            maxTokens: 64)))
+        XCTAssertEqual(out.text, "Second try.")
+        XCTAssertEqual(transport.requests.count, 2)
+        let retryBody = try XCTUnwrap(
+            try JSONSerialization.jsonObject(
+                with: XCTUnwrap(transport.requests[1].httpBody))
+                as? [String: Any])
+        XCTAssertNil(retryBody["tools"], "the retry strips the tools")
+    }
+
+    func testUnreadableAnswersQuoteThemselvesAndFastAPIDetails() async throws {
+        // Without tools there is nothing to retry: the refusal quotes
+        // what actually arrived.
+        let transport = FakeChatTransport([
+            .init(lines: ["<html>proxy said what</html>"])
+        ])
+        let provider = OpenAICompatibleChatProvider.ollama(
+            store: InMemoryChatCredentialStore(), transport: transport)
+        do {
+            _ = try await collect(provider.stream(ChatCompletionRequest(
+                model: "m", system: "", turns: [.user("x")],
+                tools: [], maxTokens: 64)))
+            XCTFail("expected provider-error")
+        } catch {
+            XCTAssertTrue(ChatFault.from(error).reason.contains("proxy said what"))
+        }
+        // FastAPI's {"detail":[{"msg":...}]} is a sentence, not noise.
+        XCTAssertEqual(
+            AnthropicChatProvider.errorMessage(in: Data("""
+                {"detail":[{"msg":"max_tokens too large","loc":["body"]}]}
+                """.utf8)),
+            "max_tokens too large")
+        XCTAssertEqual(
+            AnthropicChatProvider.errorMessage(
+                in: Data("{\"detail\":\"model not loaded\"}".utf8)),
+            "model not loaded")
     }
 
     func testOMLXSendsItsStockBearer() async throws {

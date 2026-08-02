@@ -51,6 +51,18 @@ static void test_catalog_fills_rows_whatever_their_state(void)
         assert(strcmp(providers[2], "omlx") == 0);
     }
 
+    /* A host that escapes "/" (Foundation's default) must not leave
+       the backslash in the key - it goes back over the wire verbatim.
+       Seen on metal 2026-08-02 as "anthropic\/claude-opus-5". */
+    n = chat_parse_catalog(
+        "{\"type\":\"chat.catalog\",\"id\":5,\"models\":["
+        "{\"model\":\"anthropic\\/claude-opus-5\","
+        "\"label\":\"Opus\",\"state\":\"serving\"}]}",
+        rows, kChatMaxModels);
+    assert(n == 1);
+    assert(strcmp(rows[0].model, "anthropic/claude-opus-5") == 0);
+    assert(strcmp(rows[0].provider, "anthropic") == 0);
+
     /* Malformed: no models array. */
     assert(chat_parse_catalog("{\"type\":\"chat.catalog\",\"id\":1}",
                               rows, kChatMaxModels) == -1);

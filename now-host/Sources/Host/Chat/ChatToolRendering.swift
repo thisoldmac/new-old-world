@@ -16,8 +16,9 @@ enum ChatToolRendering {
     ) -> [ChatToolDescriptor] {
         registry.projections.compactMap { projection in
             let descriptor = projection.mcpDescriptor
-            let schema = (descriptor["inputSchema"] as? [String: Any])
-                ?? ["type": "object"]
+            let schema = apiSafeSchema(
+                (descriptor["inputSchema"] as? [String: Any])
+                    ?? ["type": "object"])
             guard let schemaJSON = try? JSONSerialization.data(
                 withJSONObject: schema) else { return nil }
             return ChatToolDescriptor(
@@ -25,6 +26,35 @@ enum ChatToolRendering {
                 description: descriptor["description"] as? String ?? "",
                 inputSchemaJSON: schemaJSON)
         }
+    }
+
+    /// What a provider's tool validator accepts. MCP tolerates a
+    /// top-level oneOf/anyOf/allOf/not; the Anthropic API rejects them
+    /// (metal, 2026-08-02: now_launch_software's exactly-one-of rule
+    /// 400ed every turn). The combinators are dropped from the SCHEMA
+    /// only - the projection's own validation still enforces the rule,
+    /// and a model that sends a wrong combination reads the refusal.
+    static func apiSafeSchema(_ schema: [String: Any]) -> [String: Any] {
+        var out = schema
+        var dropped = false
+        for combinator in ["oneOf", "anyOf", "allOf", "not"] {
+            if out.removeValue(forKey: combinator) != nil {
+                dropped = true
+            }
+        }
+        if dropped {
+            let note = "Argument combinations are checked by the tool "
+                + "itself; a refusal names what was wrong."
+            if let existing = out["description"] as? String, !existing.isEmpty {
+                out["description"] = existing + " " + note
+            } else {
+                out["description"] = note
+            }
+        }
+        if out["type"] == nil {
+            out["type"] = "object"
+        }
+        return out
     }
 
     /// One tool result, in harness vocabulary. A refusal or a consent
