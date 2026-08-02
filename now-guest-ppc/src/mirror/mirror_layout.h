@@ -75,6 +75,14 @@ int now_mirror_agent_row(const MirrorFacts *facts, int index,
 Boolean now_mirror_can_enable(const MirrorFacts *facts);
 Boolean now_mirror_can_disable(const MirrorFacts *facts);
 
+/* Whether Enable must refuse, and why, in the words the note will carry.
+   True means mirror_probe.c returns without calling LaunchApplication:
+   an agent whose port nothing here can name would come up "Running" and
+   answer nobody, which is the state this page was corrected for. Writes
+   the empty string and returns false when Enable may proceed. */
+Boolean now_mirror_enable_refusal(const MirrorFacts *facts, char *out,
+                                  long cap);
+
 /* The last action's outcome, wrapped over kMirrorNoteLines lines.
    Returns the length written, 0 for a line with nothing on it. */
 long now_mirror_note_line(const MirrorFacts *facts, int line, char *out,

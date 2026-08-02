@@ -134,6 +134,34 @@ const char *now_mirror_ext_note(int line)
 
 /* --- the agent half -------------------------------------------------- */
 
+/* The State row when a process IS there. Running is only half the answer:
+   the other half is which port that process was told to serve, and the
+   two were one sentence on this page until a live agent bound a stale
+   port and the row said "Running" about a machine nothing could reach. */
+static void running_text(const MirrorFacts *facts, char *out, long cap)
+{
+    switch (facts->port_state) {
+    case kMirrorPortNamed:
+        snprintf(out, (size_t)cap, "Running, and mirror.port says port %ld",
+                 facts->port);
+        break;
+    case kMirrorPortAbsent:
+        snprintf(out, (size_t)cap,
+                 "Running, but no mirror.port beside it - which port it "
+                 "took is unknown");
+        break;
+    case kMirrorPortUnusable:
+        snprintf(out, (size_t)cap,
+                 "Running, but mirror.port beside it names no usable port");
+        break;
+    default:
+        /* No folder was resolved, so nothing was read - and a process
+           whose file we never looked for gets no claim about its port. */
+        snprintf(out, (size_t)cap, "Running");
+        break;
+    }
+}
+
 int now_mirror_agent_row(const MirrorFacts *facts, int index,
                          char *label, long label_cap,
                          char *value, long value_cap)
@@ -145,7 +173,7 @@ int now_mirror_agent_row(const MirrorFacts *facts, int index,
         snprintf(label, (size_t)label_cap, "State");
         switch (facts->agent) {
         case kMirrorAgentRunning:
-            snprintf(value, (size_t)value_cap, "Running");
+            running_text(facts, value, value_cap);
             break;
         case kMirrorAgentStopped:
             snprintf(value, (size_t)value_cap, "Not running");
@@ -159,12 +187,46 @@ int now_mirror_agent_row(const MirrorFacts *facts, int index,
         }
         return 1;
     case 1:
+        snprintf(label, (size_t)label_cap, "Port");
+        switch (facts->port_state) {
+        case kMirrorPortNamed:
+            /* The number, and where it came from. Flagging a port that is
+               not Mirror's own is the one comparison neither machine
+               makes for itself: every forward in this tree is wired to
+               1420, so a file naming anything else is the signature of
+               the defect that cost 2026-08-02. */
+            if (facts->port == (long)kMirrorAgentPort) {
+                snprintf(value, (size_t)value_cap,
+                         "%ld, from mirror.port beside the agent",
+                         facts->port);
+            } else {
+                snprintf(value, (size_t)value_cap,
+                         "%ld, from mirror.port - not Mirror's usual %d",
+                         facts->port, (int)kMirrorAgentPort);
+            }
+            break;
+        case kMirrorPortAbsent:
+            snprintf(value, (size_t)value_cap,
+                     "No mirror.port beside the agent. Mirror's tools "
+                     "write that file.");
+            break;
+        case kMirrorPortUnusable:
+            snprintf(value, (size_t)value_cap,
+                     "mirror.port names no port between %d and %d",
+                     (int)kMirrorPortLow, (int)kMirrorPortHigh);
+            break;
+        default:
+            snprintf(value, (size_t)value_cap, "-");
+            break;
+        }
+        return 1;
+    case 2:
         snprintf(label, (size_t)label_cap, "Program");
         snprintf(value, (size_t)value_cap, "%.110s",
                  facts->agent_path[0] != '\0' ? facts->agent_path
                                               : "unknown");
         return 1;
-    case 2:
+    case 3:
         snprintf(label, (size_t)label_cap, "Signature");
         if (facts->agent == kMirrorAgentRunning
             && facts->agent_sig[0] != '\0') {
@@ -187,6 +249,47 @@ int now_mirror_agent_row(const MirrorFacts *facts, int index,
 Boolean now_mirror_can_enable(const MirrorFacts *facts)
 {
     return (Boolean)(facts->agent == kMirrorAgentStopped);
+}
+
+/* Why pressing Enable would produce a process nobody can reach, or NULL
+   when it would not. mirror_probe.c asks this BEFORE LaunchApplication,
+   so the refusal is the launch not happening rather than a caveat under
+   one that did.
+
+   The button stays live and refuses out loud rather than going dim,
+   which is the opposite of the choice the extension rows made and for
+   the opposite reason: a dim extension row has a sentence beneath it
+   saying why, and there is nowhere to put a sentence for a state a
+   person can fix in a minute by staging one file. A dimmed Enable here
+   would be a page that knows the cure and will not say it. */
+Boolean now_mirror_enable_refusal(const MirrorFacts *facts, char *out,
+                                  long cap)
+{
+    out[0] = '\0';
+    switch (facts->port_state) {
+    case kMirrorPortAbsent:
+        /* Mirror's agent does have a compiled-in port, so this is not
+           "it would bind nothing" - it is that the number is a property
+           of a binary nobody here can read, and Mirror's own stager
+           writes the file precisely so that it never has to be guessed.
+           Starting a process whose port is unknowable is how this page
+           came to say "Running" about a machine nothing could reach. */
+        snprintf(out, (size_t)cap,
+                 "There is no mirror.port beside the agent, so nothing "
+                 "here can say which port it would serve. Mirror's own "
+                 "tools write that file; NOW installs nothing. Stage it, "
+                 "then press Enable.");
+        return (Boolean)1;
+    case kMirrorPortUnusable:
+        snprintf(out, (size_t)cap,
+                 "The mirror.port beside the agent names no port between "
+                 "%d and %d, so the agent would ignore it and serve one "
+                 "nobody here can name. Correct that file, then press "
+                 "Enable.", (int)kMirrorPortLow, (int)kMirrorPortHigh);
+        return (Boolean)1;
+    default:
+        return (Boolean)0;
+    }
 }
 
 Boolean now_mirror_can_disable(const MirrorFacts *facts)
@@ -263,10 +366,26 @@ void now_mirror_status_text(const MirrorFacts *facts, char *out, long cap)
     }
     /* Both halves, because either one alone reads as a working Mirror
        when it is not: the agent answers Mirror's wire, the extensions are
-       what it has to answer with. */
+       what it has to answer with.
+
+       A running agent carries its port here too. The placard is the line
+       a person reads without opening the page, and "running" alone is
+       the exact sentence that was true and useless. */
+    if (facts->agent == kMirrorAgentRunning) {
+        char where[48];
+
+        if (facts->port_state == kMirrorPortNamed) {
+            snprintf(where, sizeof where, "running on port %ld",
+                     facts->port);
+        } else {
+            snprintf(where, sizeof where, "running, port unknown");
+        }
+        snprintf(out, (size_t)cap, "Agent %s; %d of %d extensions loaded.",
+                 where, resident, (int)kMirrorExtCount);
+        return;
+    }
     snprintf(out, (size_t)cap, "Agent %s; %d of %d extensions loaded.",
-             facts->agent == kMirrorAgentRunning ? "running"
-                 : (facts->agent == kMirrorAgentNoFile ? "not installed"
-                                                       : "not running"),
+             facts->agent == kMirrorAgentNoFile ? "not installed"
+                                                : "not running",
              resident, (int)kMirrorExtCount);
 }

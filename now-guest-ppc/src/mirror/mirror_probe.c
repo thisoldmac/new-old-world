@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "mirror_layout.h"
 #include "proc_actions.h"
 
 /* Each resident publishes ONE thing: the address of a block in the system
@@ -52,6 +53,16 @@ static const MirrorExtSpec k_ext[kMirrorExtCount] = {
 static const char *k_dev_folder = "TimBotTu";
 static const char *k_agent_folder = "mirror-dev";
 static const char *k_agent_file = "mirror-agent";
+
+/* The other file in that folder, and the one this page was corrected for.
+   Mirror's agent reads it ONCE, at launch, from its own folder - it calls
+   HSetVol to that folder first and then a bare fopen("mirror.port"), so
+   the file is beside the application and nowhere else
+   (mirror/guest/app/src/main.c :: set_dir_to_app, read_port). Reading it
+   here answers what a launch WOULD serve, and what a running agent took
+   unless somebody restaged underneath it. NOW never writes it: this page
+   reads the machine, and Mirror's own tools install Mirror. */
+static const char *k_port_file = "mirror.port";
 
 /* Resolved once per probe and reused by the poll, which may not do file
    I/O. Empty until a probe has run. */
@@ -146,11 +157,77 @@ static void volume_name(short vref, char *out, long cap)
     p2c(name, out, cap);
 }
 
-/* Resolves g_spec and g_path. The PATH is written whether or not the file
-   is there: "we looked here and found nothing" is the useful half of a
-   missing agent, and a page that omits the location leaves the person
-   guessing which of several checkouts it meant. */
-static void resolve_agent(void)
+/* mirror.port, out of the agent's own folder. Its three answers are the
+   three the page draws: no file, a file naming nothing the agent would
+   take, or a port.
+
+   The range is Mirror's, not ours: read_port() ignores anything outside
+   1024..65535 and falls back to its compiled-in default, so a file naming
+   80 is a file that names no port AS FAR AS THE AGENT IS CONCERNED, and
+   reporting it as a port would be reporting a listener nobody will
+   open. */
+static void read_port_file(short vref, long agentdir, MirrorFacts *facts)
+{
+    FSSpec spec;
+    Str255 leaf;
+    short ref = 0;
+    char buf[32];
+    long count = (long)sizeof buf - 1;
+    long value = 0;
+    long i = 0;
+    Boolean digits = false;
+    OSErr err;
+
+    facts->port_state = kMirrorPortAbsent;
+    facts->port = 0;
+
+    CopyCStringToPascal(k_port_file, leaf);
+    if (FSMakeFSSpec(vref, agentdir, leaf, &spec) != noErr) {
+        return;                       /* fnfErr, and absence IS the answer */
+    }
+    if (FSpOpenDF(&spec, fsRdPerm, &ref) != noErr) {
+        /* The file is there and will not open - busy, or a permission the
+           agent will hit too. Not absent, and not a port. */
+        facts->port_state = kMirrorPortUnusable;
+        return;
+    }
+    err = FSRead(ref, &count, buf);
+    FSClose(ref);
+    /* eofErr with bytes in hand is the ordinary answer for a file shorter
+       than the buffer, which this file always is. It is not a failure and
+       must not be read as one. */
+    if ((err != noErr && err != eofErr) || count <= 0) {
+        facts->port_state = kMirrorPortUnusable;
+        return;
+    }
+    buf[count] = '\0';
+    while (buf[i] == ' ' || buf[i] == '\t') {
+        ++i;
+    }
+    while (buf[i] >= '0' && buf[i] <= '9') {
+        digits = true;
+        value = value * 10 + (buf[i] - '0');
+        if (value > (long)kMirrorPortHigh) {
+            value = (long)kMirrorPortHigh + 1;   /* saturate, don't wrap */
+            break;
+        }
+        ++i;
+    }
+    if (!digits || value < (long)kMirrorPortLow
+        || value > (long)kMirrorPortHigh) {
+        facts->port_state = kMirrorPortUnusable;
+        return;
+    }
+    facts->port_state = kMirrorPortNamed;
+    facts->port = value;
+}
+
+/* Resolves g_spec and g_path, and reads the port file beside them. The
+   PATH is written whether or not the file is there: "we looked here and
+   found nothing" is the useful half of a missing agent, and a page that
+   omits the location leaves the person guessing which of several
+   checkouts it meant. */
+static void resolve_agent(MirrorFacts *facts)
 {
     short vref;
     long sysdir;
@@ -160,6 +237,8 @@ static void resolve_agent(void)
 
     g_have_spec = false;
     g_path[0] = '\0';
+    facts->port_state = kMirrorPortUnknown;
+    facts->port = 0;
 
     if (FindFolder(kOnSystemDisk, kSystemFolderType, kDontCreateFolder,
                    &vref, &sysdir) != noErr) {
@@ -173,6 +252,11 @@ static void resolve_agent(void)
         || !dir_child(vref, devdir, k_agent_folder, &agentdir)) {
         return;
     }
+    /* The folder exists, so the port file is a question with an answer -
+       asked BEFORE the agent is resolved, because a staging that put the
+       port file down and not the agent is a state worth telling apart
+       from one that put down neither. */
+    read_port_file(vref, agentdir, facts);
     {
         Str255 leaf;
 
@@ -281,7 +365,7 @@ void now_mirror_probe(MirrorFacts *facts)
     for (i = 0; i < kMirrorExtCount; ++i) {
         probe_extension(i, facts);
     }
-    resolve_agent();
+    resolve_agent(facts);
     strncpy(facts->agent_path, g_path, sizeof facts->agent_path - 1);
     facts->agent_path[sizeof facts->agent_path - 1] = '\0';
     now_mirror_poll_agent(facts);
@@ -305,6 +389,17 @@ void now_mirror_agent_start(MirrorFacts *facts)
         snprintf(facts->note, sizeof facts->note,
                  "There is no agent at %.100s. Mirror's own tools put it "
                  "there; NOW does not install it.", g_path);
+        return;
+    }
+    /* Asked BEFORE LaunchApplication, and the answer is the launch not
+       happening. Starting an agent whose port nothing here can name puts
+       a process on the machine, turns this page's State row to "Running",
+       and leaves the host's connections being reset by a forward with
+       nothing behind it - which is the exact 2026-08-02 defect, only now
+       caused by the page that reports it. The words are
+       mirror_layout.c's, where the test can read them. */
+    if (now_mirror_enable_refusal(facts, facts->note,
+                                  (long)sizeof facts->note)) {
         return;
     }
 

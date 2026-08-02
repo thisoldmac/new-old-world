@@ -7,12 +7,22 @@
  *     cc -Wall -Wextra -Werror -I ../src mirror_layout_test.c \
  *        ../src/mirror/mirror_layout.c -o /tmp/t && /tmp/t
  *
+ * Since 2026-08-02 it also covers the second fact this page used to
+ * conflate with the first: a process EXISTING is not a process SERVING.
+ * Mirror's agent learns its TCP port from a `mirror.port` file beside it,
+ * and a guest whose file named a stale port had a live agent, a State row
+ * saying "Running", and a host whose every connection was reset. The
+ * sentences that make the port visible - and the refusal that stops
+ * Enable manufacturing that state on purpose - are asserted here.
+ *
  * What is NOT covered, and needs a Macintosh: that Gestalt answers for a
  * loaded extension at all, that the Process Manager reports the agent's
- * FSSpec the way mirror_probe.c matches on it, and that
+ * FSSpec the way mirror_probe.c matches on it, that FSpOpenDF/FSRead read
+ * mirror.port out of the folder the catalog walk resolved, and that
  * LaunchApplication and the quit Apple Event reach a faceless background
  * application. Every one of those is a fact about a machine, and this
- * file has none.
+ * file has none. Nor can it see the port the RUNNING process actually
+ * bound - that was read at its launch, and only a socket could answer it.
  */
 
 #include <stdio.h>
@@ -54,6 +64,8 @@ static void healthy(MirrorFacts *facts)
     facts->agent = kMirrorAgentRunning;
     strcpy(facts->agent_path, "Macintosh HD:TimBotTu:mirror-dev:mirror-agent");
     strcpy(facts->agent_sig, "????");
+    facts->port_state = kMirrorPortNamed;
+    facts->port = kMirrorAgentPort;
 }
 
 static void test_layout_order(void)
@@ -182,7 +194,7 @@ static void test_agent_rows(void)
     check(now_mirror_agent_row(&facts, 0, label, (long)sizeof label, value,
                                (long)sizeof value),
           "there is a state row");
-    check(strcmp(value, "Running") == 0, "running says running");
+    check(strstr(value, "Running") != NULL, "running says running");
 
     facts.agent = kMirrorAgentStopped;
     now_mirror_agent_row(&facts, 0, label, (long)sizeof label, value,
@@ -198,17 +210,19 @@ static void test_agent_rows(void)
           "a missing agent says not installed");
 
     /* Where we looked is shown even when nothing was there. */
-    now_mirror_agent_row(&facts, 1, label, (long)sizeof label, value,
+    now_mirror_agent_row(&facts, 2, label, (long)sizeof label, value,
                          (long)sizeof value);
+    check(strcmp(label, "Program") == 0, "row 2 is the program row");
     check(strstr(value, "mirror-dev") != NULL,
           "the location is shown for a missing agent");
 
     facts.agent = kMirrorAgentRunning;
-    now_mirror_agent_row(&facts, 2, label, (long)sizeof label, value,
+    now_mirror_agent_row(&facts, 3, label, (long)sizeof label, value,
                          (long)sizeof value);
+    check(strcmp(label, "Signature") == 0, "row 3 is the signature row");
     check(strstr(value, "????") != NULL, "the signature is reported");
     facts.agent = kMirrorAgentStopped;
-    now_mirror_agent_row(&facts, 2, label, (long)sizeof label, value,
+    now_mirror_agent_row(&facts, 3, label, (long)sizeof label, value,
                          (long)sizeof value);
     check(strcmp(value, "-") == 0,
           "no signature is claimed for a process that is not there");
@@ -217,6 +231,150 @@ static void test_agent_rows(void)
                                (long)sizeof label, value,
                                (long)sizeof value) == 0,
           "there is no row past the last one");
+}
+
+/* RUNNING AND SERVING. Measured on a live guest 2026-08-02: the agent was
+   there, this row said "Running", and it was bound to a stale port from
+   the base image's own mirror.port - so every connection from a host
+   Mirror was reset by a forward with nothing behind it. The row was true
+   and useless. These are the sentences that make the second fact
+   visible. */
+static void test_state_carries_the_port(void)
+{
+    MirrorFacts facts;
+    char label[32];
+    char value[200];
+
+    healthy(&facts);
+    now_mirror_agent_row(&facts, 0, label, (long)sizeof label, value,
+                         (long)sizeof value);
+    check(strstr(value, "Running") != NULL, "a served agent still runs");
+    check(strstr(value, "1420") != NULL,
+          "a running agent's State row names the port it was told to "
+          "serve - the whole point of this row");
+
+    /* THE MUTATION-WATCHED ONE. Running with nothing beside it naming a
+       port must not read as a plain "Running": the number is a property
+       of a binary nobody here can inspect, so the row has to say the
+       port is unknown rather than imply the usual one. */
+    facts.port_state = kMirrorPortAbsent;
+    facts.port = 0;
+    now_mirror_agent_row(&facts, 0, label, (long)sizeof label, value,
+                         (long)sizeof value);
+    check(strcmp(value, "Running") != 0,
+          "running with no mirror.port must not read as a bare Running");
+    check(strstr(value, "mirror.port") != NULL,
+          "running with no port file names the file that is missing");
+    check(strstr(value, "unknown") != NULL,
+          "running with no port file says the port is unknown");
+    check(strstr(value, "1420") == NULL,
+          "running with no port file claims no port number");
+
+    facts.port_state = kMirrorPortUnusable;
+    now_mirror_agent_row(&facts, 0, label, (long)sizeof label, value,
+                         (long)sizeof value);
+    check(strstr(value, "Running") != NULL,
+          "a bad port file does not stop the process existing");
+    check(strstr(value, "no usable port") != NULL,
+          "a bad port file is reported as one, not as an absent file");
+}
+
+/* The Port row. It exists so the number can be compared against the port
+   the host is dialling, which is the one comparison neither machine makes
+   for itself. */
+static void test_port_row(void)
+{
+    MirrorFacts facts;
+    char label[32];
+    char value[200];
+
+    healthy(&facts);
+    now_mirror_agent_row(&facts, 1, label, (long)sizeof label, value,
+                         (long)sizeof value);
+    check(strcmp(label, "Port") == 0, "row 1 is the port row");
+    check(strstr(value, "1420") != NULL, "the port row names the port");
+    check(strstr(value, "mirror.port") != NULL,
+          "the port row says where its number came from");
+
+    /* A port that is not Mirror's own is the SIGNATURE of the live
+       defect: every forward in this tree is wired to 1420, so a file
+       naming anything else is the thing to notice. */
+    facts.port = 1913;
+    now_mirror_agent_row(&facts, 1, label, (long)sizeof label, value,
+                         (long)sizeof value);
+    check(strstr(value, "1913") != NULL, "an unusual port is still named");
+    check(strstr(value, "not") != NULL && strstr(value, "1420") != NULL,
+          "a port that is not Mirror's own is flagged against 1420");
+
+    facts.port_state = kMirrorPortAbsent;
+    facts.port = 0;
+    now_mirror_agent_row(&facts, 1, label, (long)sizeof label, value,
+                         (long)sizeof value);
+    check(strstr(value, "No mirror.port") != NULL,
+          "an absent port file is reported as absent");
+    check(strstr(value, "0") == NULL,
+          "an absent port file invents no port number");
+
+    facts.port_state = kMirrorPortUnusable;
+    now_mirror_agent_row(&facts, 1, label, (long)sizeof label, value,
+                         (long)sizeof value);
+    check(strstr(value, "1024") != NULL && strstr(value, "65535") != NULL,
+          "an unusable port file names the range the agent will take");
+
+    /* Nothing was looked at, so nothing is claimed. */
+    facts.port_state = kMirrorPortUnknown;
+    now_mirror_agent_row(&facts, 1, label, (long)sizeof label, value,
+                         (long)sizeof value);
+    check(strcmp(value, "-") == 0,
+          "a port nobody looked for is a dash, not a guess");
+}
+
+/* THE OTHER MUTATION-WATCHED ONE. Enable must not start a process this
+   page will then describe as "Running" while nothing can reach it. */
+static void test_enable_refusal(void)
+{
+    MirrorFacts facts;
+    char why[kMirrorNoteMax];
+
+    healthy(&facts);
+    facts.agent = kMirrorAgentStopped;
+    check(!now_mirror_enable_refusal(&facts, why, (long)sizeof why),
+          "Enable does not refuse when the port file names a port");
+    check(why[0] == '\0', "a refusal that did not happen says nothing");
+
+    facts.port_state = kMirrorPortAbsent;
+    facts.port = 0;
+    check(now_mirror_enable_refusal(&facts, why, (long)sizeof why),
+          "Enable refuses to launch an agent with no mirror.port beside "
+          "it - the launch would produce a process nobody can reach");
+    check(strstr(why, "mirror.port") != NULL,
+          "the refusal names the file that is missing");
+    check(strstr(why, "Enable") != NULL,
+          "the refusal says what to do and that Enable is what to press "
+          "afterwards");
+    /* NOW reads this machine; it does not install Mirror. A refusal that
+       offered to write the file would be this page installing Mirror. */
+    check(strstr(why, "NOW installs nothing") != NULL,
+          "the refusal says who writes that file, and that it is not us");
+
+    facts.port_state = kMirrorPortUnusable;
+    check(now_mirror_enable_refusal(&facts, why, (long)sizeof why),
+          "Enable refuses a port file that names no usable port");
+    check(strstr(why, "1024") != NULL && strstr(why, "65535") != NULL,
+          "the refusal names the range, so the file can be corrected");
+
+    /* The refusal must fit the note the page draws it in, or the last
+       clause - the one saying what to do - is what falls off. */
+    facts.port_state = kMirrorPortAbsent;
+    now_mirror_enable_refusal(&facts, why, (long)sizeof why);
+    check(strlen(why) < (size_t)kMirrorNoteMax - 1,
+          "the refusal fits a note without being truncated");
+
+    /* Nothing was looked at: no claim either way, and the launch path's
+       own "there is no agent there" answer is the one that speaks. */
+    facts.port_state = kMirrorPortUnknown;
+    check(!now_mirror_enable_refusal(&facts, why, (long)sizeof why),
+          "an unresolved folder is not a port refusal");
 }
 
 /* The heart of it. A button that offers to do what cannot be done, or
@@ -243,6 +401,16 @@ static void test_buttons_match_reality(void)
           "Enable is dead when there is no agent to launch");
     check(!now_mirror_can_disable(&facts),
           "Disable is dead when there is no agent at all");
+
+    /* A missing port file does NOT dim Enable. The refusal is a sentence,
+       and a dimmed button cannot be pressed to hear one - the page would
+       know the cure and have nowhere to say it. */
+    facts.agent = kMirrorAgentStopped;
+    facts.port_state = kMirrorPortAbsent;
+    facts.port = 0;
+    check(now_mirror_can_enable(&facts),
+          "Enable stays live with no port file, so its refusal can be "
+          "heard");
 }
 
 static void test_note_wrapping(void)
@@ -320,6 +488,19 @@ static void test_status_text(void)
     now_mirror_status_text(&facts, line, (long)sizeof line);
     check(strstr(line, "running") != NULL, "the placard reports the agent");
     check(strstr(line, "3 of 3") != NULL, "the placard counts extensions");
+    /* The placard is what a person reads without opening the page, so
+       "running" alone here is the same true-and-useless sentence the
+       State row was corrected for. */
+    check(strstr(line, "1420") != NULL,
+          "the placard carries the port a running agent was told to "
+          "serve");
+
+    facts.port_state = kMirrorPortAbsent;
+    facts.port = 0;
+    now_mirror_status_text(&facts, line, (long)sizeof line);
+    check(strstr(line, "port unknown") != NULL,
+          "the placard says so when the port is unknown");
+    healthy(&facts);
 
     /* Both halves, always: the agent answers Mirror's wire, the
        extensions are what it has to answer with, and either alone reads
@@ -353,6 +534,9 @@ int main(void)
     test_extension_states();
     test_extension_note();
     test_agent_rows();
+    test_state_carries_the_port();
+    test_port_row();
+    test_enable_refusal();
     test_buttons_match_reality();
     test_note_wrapping();
     test_status_text();

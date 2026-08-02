@@ -35,9 +35,28 @@ typedef struct Rect {
 typedef unsigned char Boolean;
 #endif
 
+/* Mirror's own port, named once here and read from Mirror's sources rather
+   than remembered:
+
+     mirror/guest/app/src/main.c   kDefaultPort 1420, and the range
+                                   read_port() will accept from the file,
+                                   1024 through 65535. A number outside it
+                                   is ignored and the default taken.
+     mirror/tools/stage-agent.py   GUEST_PORT 1420, the number its stager
+                                   writes into mirror.port.
+
+   NOW does not bind any of this. The page shows the number so that a
+   person can compare it against the port their host is dialling, which is
+   the one comparison nothing else on either machine makes. */
+enum {
+    kMirrorAgentPort = 1420,
+    kMirrorPortLow = 1024,
+    kMirrorPortHigh = 65535
+};
+
 enum {
     kMirrorExtCount = 3,       /* AXPeek, QDPeek, Portal */
-    kMirrorAgentRows = 3,      /* state, program, signature */
+    kMirrorAgentRows = 4,      /* state, port, program, signature */
     kMirrorNoteLines = 3,      /* the last action's outcome, in words */
     /* Characters a note line will hold. A budget in CHARACTERS because
        this file has no port to measure a string in; the module still
@@ -81,6 +100,27 @@ typedef enum {
     kMirrorAgentRunning
 } MirrorAgentState;
 
+/* RUNNING AND SERVING ARE DIFFERENT FACTS, and this page conflated them
+   until 2026-08-02. Mirror's agent learns which TCP port to bind from a
+   text file called `mirror.port` sitting beside it, read once at launch.
+   A guest whose file named a stale port had a live agent, a page saying
+   "Running", and a host whose every connection was reset by a forward
+   with nothing behind it. The process existed; the status was true; the
+   status was useless.
+
+   So the port file is a fact of its own, separate from the process, and
+   the page reports both. What it CANNOT report is the port the running
+   process actually bound: that was read at ITS launch, and this file can
+   only be read now. The two agree on a machine nobody has restaged
+   underneath, and the row says where its number came from so that the one
+   case where they differ is legible rather than invisible. */
+typedef enum {
+    kMirrorPortUnknown = 0,    /* never looked - no folder to look in */
+    kMirrorPortAbsent,         /* looked, and there is no mirror.port */
+    kMirrorPortUnusable,       /* a file, naming no port the agent takes */
+    kMirrorPortNamed           /* a file, and it names a usable port */
+} MirrorPortState;
+
 typedef struct MirrorFacts {
     MirrorExtState ext_state[kMirrorExtCount];
     /* The version the block declares. Only meaningful when the state is
@@ -91,6 +131,12 @@ typedef struct MirrorFacts {
     MirrorAgentState agent;
     char agent_path[kMirrorPathMax];   /* where we looked, always */
     char agent_sig[kMirrorSigMax];     /* the running process's creator */
+
+    MirrorPortState port_state;
+    /* What mirror.port says, and only then. Zero for every other state,
+       and never rendered as a port in one - a page that printed 0 here
+       would be inventing a listener. */
+    long port;
 
     /* What happened the last time somebody pressed a button, or the empty
        string. Set by the module, rendered here. A failure that is not in
