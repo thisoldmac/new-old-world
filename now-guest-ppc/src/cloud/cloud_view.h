@@ -112,6 +112,23 @@ typedef struct CloudViewOps {
        there is. */
     void (*select)(const CloudLayout *r, const CloudStore *store,
                    int selected);
+
+    /* A control the shell does not own was clicked (FindControl has
+       already succeeded on `control`; nothing has tracked it yet).
+       The view tracks it with whatever action proc ITS control needs
+       — a popup CDEF wants (ControlActionUPP)-1L, a button wants
+       now_pump_action() — and returns true when the control was this
+       view's. NULL for views that own no controls of their own
+       (today: everything but photos, whose Size popup and destination
+       chooser live here). */
+    Boolean (*control_click)(ControlRef control,
+                             const EventRecord *event, Point local);
+
+    /* The size token a Save/cloud.get should carry — the contract's
+       "original"/"fit1024"/"fit640", or NULL to omit the field and
+       take the host's configured default. NULL op means NULL token:
+       a view with no size choice always asks for the default. */
+    const char *(*save_size)(void);
 } CloudViewOps;
 
 #endif /* NOW_CLOUD_VIEW_H */

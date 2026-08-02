@@ -2205,6 +2205,64 @@ static struct {
     unsigned long deadline;
 } g_cloudget;
 
+/* Where a cloud.get's answering offer should LAND, when the person
+   chose somewhere other than the share. Guest-side only, and the
+   contract is deliberately untouched: the contract's share bound
+   governs what the SENDER may reach unbidden, and this delivery is one
+   the guest ASKED for — the receiver is sovereign over its own disk,
+   exactly as the pull path already is when it lands in Downloads,
+   outside the share. Unset means the share root, byte-identical to
+   the behavior before this existed. */
+static struct {
+    Boolean set;
+    short vref;
+    long dir;
+} g_cget_dest;
+
+void now_wire_cloud_get_destination(Boolean use, short vref, long dir)
+{
+    g_cget_dest.set = use;
+    g_cget_dest.vref = vref;
+    g_cget_dest.dir = dir;
+}
+
+Boolean now_wire_cloud_get_destination_get(short *vref, long *dir)
+{
+    if (!g_cget_dest.set) {
+        return false;
+    }
+    if (vref != NULL) {
+        *vref = g_cget_dest.vref;
+    }
+    if (dir != NULL) {
+        *dir = g_cget_dest.dir;
+    }
+    return true;
+}
+
+/* The last inbound receive's one-line outcome ("Received IMG_1234.jpg",
+   or why not), and a sequence number that says a NEW outcome exists —
+   the seam that lets the iCloud page replace its "Receiving..." status
+   when the transfer ends instead of wearing it forever. One
+   implementation serves the placard and the pane: whoever cares reads
+   it, nobody is called. */
+static char g_rx_outcome[96];
+static long g_rx_outcome_seq;
+
+static void rx_outcome(const char *line)
+{
+    snprintf(g_rx_outcome, sizeof g_rx_outcome, "%.90s", line);
+    ++g_rx_outcome_seq;
+}
+
+long now_wire_receive_outcome(char *out, long cap)
+{
+    if (out != NULL && cap > 0) {
+        snprintf(out, (size_t)cap, "%s", g_rx_outcome);
+    }
+    return g_rx_outcome_seq;
+}
+
 /* A preview is the third pending beside the ask and the get, and the
    only one whose answer is a bulk transfer (preview.begin / bulk /
    preview.end). It cannot replace itself the way the ask kinds do — a
@@ -2337,19 +2395,30 @@ int now_wire_cloud_detail(const char *service, const char *item,
 }
 
 int now_wire_cloud_get(const char *service, const char *item,
-                       char *err, long cap)
+                       const char *size, char *err, long cap)
 {
-    char json[288];
+    char json[320];
     char esc_service[48];
     char esc_item[144];
 
     now_json_escape(service, esc_service, sizeof esc_service);
     now_json_escape(item, esc_item, sizeof esc_item);
     ++g.offer_seq;
-    snprintf(json, sizeof json,
-             "{\"type\":\"cloud.get\",\"id\":%ld,\"service\":\"%s\","
-             "\"item\":\"%s\"}",
-             g.offer_seq, esc_service, esc_item);
+    /* Two whole templates, not one spliced one: size is a contract
+       enum token (never escaped user text), and an ask with none must
+       stay byte-identical to what every guest before the field sent —
+       which also keeps both shapes readable by the conformance scan. */
+    if (size != NULL && size[0] != '\0') {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"cloud.get\",\"id\":%ld,\"service\":\"%s\","
+                 "\"item\":\"%s\",\"size\":\"%s\"}",
+                 g.offer_seq, esc_service, esc_item, size);
+    } else {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"cloud.get\",\"id\":%ld,\"service\":\"%s\","
+                 "\"item\":\"%s\"}",
+                 g.offer_seq, esc_service, esc_item);
+    }
     if (cloud_send(json, err, cap) != 0) {
         return -1;
     }
@@ -3106,6 +3175,11 @@ static struct {
     unsigned long modified;
     Boolean create_parents;
     Boolean overwrite;
+    Boolean from_cloud_get;           /* the offer answered our cloud.get */
+    Boolean at_dest;                  /* landing at the chosen folder,
+                                         not through the share path */
+    short dest_vref;
+    long dest_dir;
 } g_put;
 
 static Boolean wire_busy(void)
@@ -3114,6 +3188,35 @@ static Boolean wire_busy(void)
        a preview mid-arrival holds it exactly as a file would. */
     return g_stream.active || g_xfer.active || g_offer.active
         || g_send.active || g_put.active || g_prev.receiving;
+}
+
+/* The inbound receive, read-only, for whoever wants to draw it moving
+   — now_wire_get_active's shape, one lane over: that one watches a
+   pull (file.get), this one watches an offered receive (file.offer),
+   which is the lane a cloud.get's answer rides. Every out-parameter is
+   optional. `cloud_get` says whether this receive answers our own
+   cloud.get (correlated by arrival in serve_file_offer), so a page can
+   show ITS download and ignore an unrelated push. */
+Boolean now_wire_receive_active(long *received, long *expected,
+                                Boolean *cloud_get,
+                                char *name, long name_cap)
+{
+    if (!g_put.active) {
+        return false;
+    }
+    if (received != NULL) {
+        *received = g_put.rx.received;
+    }
+    if (expected != NULL) {
+        *expected = g_put.bytes;
+    }
+    if (cloud_get != NULL) {
+        *cloud_get = g_put.from_cloud_get;
+    }
+    if (name != NULL && name_cap > 0) {
+        snprintf(name, (size_t)name_cap, "%s", g_put.name);
+    }
+    return true;
 }
 
 /* A CRC-32 is a 32-bit unsigned value and routinely has its top bit
@@ -3202,6 +3305,7 @@ static void put_drop(void)
     if (g_put.active) {
         now_files_receive_abort(&g_put.rx);
         g_put.active = false;
+        rx_outcome("Connection lost during the transfer");
     }
 }
 
@@ -3210,6 +3314,22 @@ static void put_done(Boolean ok, const char *code, const char *reason,
 {
     char json[320];
 
+    /* The one-line outcome, recorded at the seam every ending passes
+       through — success, cancel, corrupt, io — so the status that said
+       "Receiving..." has one place to learn how it went. */
+    {
+        char outcome[128];
+
+        if (ok) {
+            snprintf(outcome, sizeof outcome, "Received %.31s",
+                     g_put.name);
+        } else {
+            snprintf(outcome, sizeof outcome,
+                     "Could not receive %.31s: %.60s", g_put.name,
+                     reason != NULL ? reason : "failed");
+        }
+        rx_outcome(outcome);
+    }
     if (ok) {
         snprintf(json, sizeof json,
                  "{\"type\":\"file.done\",\"id\":%ld,\"ok\":true,"
@@ -3308,6 +3428,7 @@ static void serve_file_offer(const char *request)
     FileContainer container = kContainerData;
     Boolean overwrite;
     Boolean create_parents;
+    Boolean cloud_born;
     long have;
     int rc;
 
@@ -3315,12 +3436,14 @@ static void serve_file_offer(const char *request)
        by arrival (see the cloud block's header comment). Noted before
        anything can refuse it, so the page's status and the outcome
        cannot disagree about whether the host answered. */
+    cloud_born = g_cloudget.pending;
     if (g_cloudget.pending) {
         g_cloudget.pending = false;
         cloud_note(kCloudAnswerGetUnderWay, request);
     }
     if (wire_busy()) {
         file_refuse(id, "busy", "a transfer is already in flight");
+        rx_outcome("Not received: a transfer is already in flight");
         return;
     }
     name[0] = '\0';
@@ -3351,12 +3474,9 @@ static void serve_file_offer(const char *request)
 
     memset(&g_put, 0, sizeof g_put);
     g_put.id = id;
+    g_put.from_cloud_get = cloud_born;
     now_json_find_string(request, "resumeToken", g_put.token,
                          sizeof g_put.token);
-    /* What we already hold under this token, and therefore where the
-       sender should start. Zero for an offer with no token, which is
-       every offer an older host makes. */
-    have = now_files_partial_bytes(path, g_put.token, bytes);
 
     strncpy(g_put.path, path, sizeof g_put.path - 1);
     strncpy(g_put.name, name, sizeof g_put.name - 1);
@@ -3368,41 +3488,84 @@ static void serve_file_offer(const char *request)
     g_put.create_parents = create_parents;
     g_put.overwrite = overwrite;
 
-    rc = now_files_receive_begin(path, name, container, bytes, file_type,
-                                 creator, (unsigned long)modified,
-                                 create_parents, overwrite,
-                                 g_put.token, have, &g_put.rx);
-    if (rc != kFilesOK && have > 0) {
-        /* The partial was there a moment ago and is not usable now.
-           Losing it costs time, not correctness — start over rather
-           than refuse the file. */
+    if (cloud_born && g_cget_dest.set) {
+        /* The person chose where THIS delivery lands. Guest-side only,
+           no contract change, and deliberately so: the contract's
+           share bound governs what the sender may reach unbidden,
+           while this delivery is one the guest ASKED for — the
+           receiver is sovereign over its own disk, the same bargain
+           that already lands a pull in Downloads, outside the share.
+           now_files_receive_begin_at is the pull path's entry point,
+           so same-folder temp staging comes with it; resume is skipped
+           (token cleared, have 0) because partial lookup is
+           share-relative and a redirected partial is not findable
+           there — a fresh start costs time, never correctness. When
+           the chosen folder IS the share root the view never sets the
+           override, so behavior there is byte-identical to today. */
+        g_put.at_dest = true;
+        g_put.dest_vref = g_cget_dest.vref;
+        g_put.dest_dir = g_cget_dest.dir;
+        g_put.token[0] = '\0';
         have = 0;
+        rc = now_files_receive_begin_at(g_put.dest_vref, g_put.dest_dir,
+                                        name, container, bytes,
+                                        file_type, creator,
+                                        (unsigned long)modified,
+                                        overwrite, NULL, 0, &g_put.rx);
+    } else {
+        /* What we already hold under this token, and therefore where
+           the sender should start. Zero for an offer with no token,
+           which is every offer an older host makes. */
+        have = now_files_partial_bytes(path, g_put.token, bytes);
         rc = now_files_receive_begin(path, name, container, bytes,
                                      file_type, creator,
                                      (unsigned long)modified,
                                      create_parents, overwrite,
-                                     g_put.token, 0, &g_put.rx);
+                                     g_put.token, have, &g_put.rx);
+        if (rc != kFilesOK && have > 0) {
+            /* The partial was there a moment ago and is not usable now.
+               Losing it costs time, not correctness — start over rather
+               than refuse the file. */
+            have = 0;
+            rc = now_files_receive_begin(path, name, container, bytes,
+                                         file_type, creator,
+                                         (unsigned long)modified,
+                                         create_parents, overwrite,
+                                         g_put.token, 0, &g_put.rx);
+        }
     }
     if (rc != kFilesOK) {
+        const char *why;
+
         switch (rc) {
         case kFilesExists:
-            file_refuse(id, "exists", "a file of that name is already there");
+            why = "a file of that name is already there";
+            file_refuse(id, "exists", why);
             break;
         case kFilesBadPath:
-            file_refuse(id, "bad-path", "that name or folder is not usable");
+            why = "that name or folder is not usable";
+            file_refuse(id, "bad-path", why);
             break;
         case kFilesTooBig:
-            file_refuse(id, "too-big", "not enough room on that disk");
+            why = "not enough room on that disk";
+            file_refuse(id, "too-big", why);
             break;
         default:
-            file_refuse(id, "io-error", "could not create the file");
+            why = "could not create the file";
+            file_refuse(id, "io-error", why);
             break;
+        }
+        {
+            char outcome[128];
+
+            snprintf(outcome, sizeof outcome, "Not received: %s", why);
+            rx_outcome(outcome);
         }
         return;
     }
     g_put.active = true;
-    now_log(kLogInfo, "put", "#%ld %.31s, %ld bytes, into the share", id,
-            name, bytes);
+    now_log(kLogInfo, "put", "#%ld %.31s, %ld bytes, into %s", id,
+            name, bytes, g_put.at_dest ? "the chosen folder" : "the share");
     /* `have` is omitted rather than sent as 0, so an accept to an old
        host looks exactly as it always did. */
     if (have > 0 && g_put.rx.free_before >= 0) {
@@ -3433,6 +3596,7 @@ static void serve_file_offer(const char *request)
     if (!send_control(json)) {
         now_files_receive_abort(&g_put.rx);
         g_put.active = false;
+        rx_outcome("Connection lost during the transfer");
         return;
     }
     if (have > 0) {
@@ -3468,12 +3632,27 @@ static void put_begin(const char *request)
     }
     retained = g_put.rx.keep_partial && g_put.rx.received > 0;
     now_files_receive_abort(&g_put.rx);   /* may keep a resumable partial */
-    rc = now_files_receive_begin(g_put.path, g_put.name, g_put.container,
-                                 g_put.bytes, g_put.file_type,
-                                 g_put.creator, g_put.modified,
-                                 g_put.create_parents, g_put.overwrite,
-                                 g_put.token, offset,
-                                 &g_put.rx);
+    if (g_put.at_dest) {
+        /* A redirected receive reported have 0, so a conforming sender
+           starts at 0 and never reaches here; one that insists on a
+           nonzero offset fails below (begin_at requires a token to
+           resume) and the transfer ends honestly rather than landing
+           bytes at the wrong offset. */
+        rc = now_files_receive_begin_at(g_put.dest_vref, g_put.dest_dir,
+                                        g_put.name, g_put.container,
+                                        g_put.bytes, g_put.file_type,
+                                        g_put.creator, g_put.modified,
+                                        g_put.overwrite, NULL, offset,
+                                        &g_put.rx);
+    } else {
+        rc = now_files_receive_begin(g_put.path, g_put.name,
+                                     g_put.container,
+                                     g_put.bytes, g_put.file_type,
+                                     g_put.creator, g_put.modified,
+                                     g_put.create_parents, g_put.overwrite,
+                                     g_put.token, offset,
+                                     &g_put.rx);
+    }
     if (rc != kFilesOK) {
         put_done(false, "io-error", "could not start at that offset",
                  retained ? "partial-retained" : "temp-discarded");

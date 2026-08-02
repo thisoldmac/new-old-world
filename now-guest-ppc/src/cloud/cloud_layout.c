@@ -96,6 +96,12 @@ void cloud_layout_compute(const Rect *body, Boolean drive_mode,
         set_empty(&r->detail, right, (short)(top + 46));
         set_empty(&r->detail_text, right, (short)(top + 46));
         set_empty(&r->save_btn, right, list_bottom);
+        set_empty(&r->size_popup, right, list_bottom);
+        set_empty(&r->dest_row, right, list_bottom);
+        set_empty(&r->dest_btn, right, list_bottom);
+        set_empty(&r->dl_bar, right, list_bottom);
+        set_empty(&r->dl_text, right, list_bottom);
+        set_empty(&r->photos_text, right, (short)(top + 46));
         return;
     }
     set_empty(&r->path_row, left, (short)(top + 26));
@@ -115,4 +121,34 @@ void cloud_layout_compute(const Rect *body, Boolean drive_mode,
     r->detail_text.right = (short)(r->detail_text.right - 4);
     r->detail_text.top = (short)(r->detail_text.top + 4);
     r->detail_text.bottom = (short)(r->save_btn.top - 6);
+
+    /* The photos view's furniture, stacked bottom-up over Save. Only
+       rectangles — the views that do not use them never read them —
+       and photos_text is what keeps the preview and the card clear of
+       the rows: pixels drawn under a live control is the one overlap
+       nothing would ever repaint correctly.
+
+       The Size popup takes its own row rather than sitting beside
+       Save: on the smallest honest screen the card pane's inner width
+       is under 200 points, and "Save to this Mac" plus a popup that
+       can say "Fit 1024x768" do not both fit on one of them. A fixed
+       150 fits the widest item everywhere the pane exists at all. */
+    set_rect(&r->size_popup, r->detail_text.left,
+             (short)(r->detail.bottom - 48),
+             (short)(r->detail_text.left + 150),
+             (short)(r->detail.bottom - 28));
+    set_rect(&r->dest_btn, (short)(right - 74),
+             (short)(r->detail.bottom - 70), right,
+             (short)(r->detail.bottom - 52));
+    set_rect(&r->dest_row, r->detail_text.left,
+             (short)(r->detail.bottom - 70), (short)(r->dest_btn.left - 6),
+             (short)(r->detail.bottom - 52));
+    set_rect(&r->dl_bar, r->detail_text.left,
+             (short)(r->detail.bottom - 86), r->detail_text.right,
+             (short)(r->detail.bottom - 74));
+    set_rect(&r->dl_text, r->detail_text.left,
+             (short)(r->detail.bottom - 102), r->detail_text.right,
+             (short)(r->detail.bottom - 88));
+    r->photos_text = r->detail_text;
+    r->photos_text.bottom = (short)(r->dl_text.top - 6);
 }

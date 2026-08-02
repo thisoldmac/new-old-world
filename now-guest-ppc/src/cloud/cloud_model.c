@@ -192,3 +192,60 @@ int cloud_first_listable(const CloudStore *store)
     }
     return -1;
 }
+
+/* --- the download-size popup and the download read-out ------------------ */
+
+const char *cloud_size_token(int menu_item)
+{
+    /* MENU 136's order is load-bearing the way MENU 134's is for
+       software_module: items 1-3 are the contract's three tokens,
+       item 4 is Host default — NULL, which omits the field, which IS
+       the host-default ask by contract. Out of range reads as Host
+       default too: the popup cannot produce it, and a guess would be
+       a size nobody chose. */
+    switch (menu_item) {
+    case 1:  return "original";
+    case 2:  return "fit1024";
+    case 3:  return "fit640";
+    default: return 0;
+    }
+}
+
+int cloud_dl_bar_value(long received, long expected)
+{
+    if (expected <= 0) {
+        return -1;                    /* nothing honest to show */
+    }
+    if (received <= 0) {
+        return 0;
+    }
+    if (received >= expected) {
+        return 1000;
+    }
+    /* long is 32 bits on the guest toolchain, so received * 1000 is
+       exact only below ~2MB; past that the division moves to the
+       other operand, which costs at most one part in two thousand of
+       accuracy on a multi-megabyte photo — invisible at 12 pixels a
+       percent-tenth wide. */
+    if (received <= 0x1FFFFFL) {
+        return (int)((received * 1000L) / expected);
+    }
+    {
+        int v = (int)(received / (expected / 1000L));
+
+        return v > 1000 ? 1000 : v;
+    }
+}
+
+void cloud_dl_bytes_line(long received, long expected,
+                         char *out, long cap)
+{
+    long rk = received >= 0 ? (received + 1023) / 1024 : 0;
+    long ek = expected > 0 ? (expected + 1023) / 1024 : 0;
+
+    if (expected > 0) {
+        snprintf(out, (size_t)cap, "%ldK of %ldK", rk, ek);
+    } else {
+        snprintf(out, (size_t)cap, "%ldK", rk);
+    }
+}

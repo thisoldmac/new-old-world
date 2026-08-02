@@ -86,4 +86,28 @@ Boolean cloud_service_listable(const char *service);
    not a drawing detail. */
 void cloud_listing_status(const CloudStore *store, char *out, long cap);
 
+/* --- the download-size popup and the download's own read-out --------
+   Pure decisions the photos view draws from, host-cc tested in
+   cloud_model_test.c: the popup-item-to-wire mapping and the two
+   change-gate values (bar position, byte-count line) whose "did the
+   shown value change" comparisons are the whole idle discipline. */
+
+/* Menu item (1-based, the MENU 136 order: Original / Fit 1024x768 /
+   Fit 640x480 / Host default) to the contract's size token. NULL for
+   Host default and for anything out of range — NULL means "omit the
+   field", which is the ask that keeps the host's own setting. */
+const char *cloud_size_token(int menu_item);
+
+/* The bar's control value, 0..1000 (the share panel's scale), clamped;
+   -1 when expected is unknown or nothing is moving — the value at
+   which a bar should not be shown at all rather than sit at zero. */
+int cloud_dl_bar_value(long received, long expected);
+
+/* One line of byte progress ("312K of 3,204K" without the comma:
+   "312K of 3204K"), or the received count alone when the total is
+   unstated. Change-gated by the caller via strcmp: the string IS the
+   gate, so it must be a pure function of its inputs. */
+void cloud_dl_bytes_line(long received, long expected,
+                         char *out, long cap);
+
 #endif /* NOW_CLOUD_MODEL_H */

@@ -231,8 +231,37 @@ int now_wire_cloud_list(const char *service, long cursor,
                         char *err, long cap);
 int now_wire_cloud_detail(const char *service, const char *item,
                           char *err, long cap);
+/* `size` is the contract's per-ask delivery size ("original",
+   "fit1024", "fit640"), or NULL/"" to omit the field and take the
+   host's configured default — the ask every guest before the field
+   sent, byte for byte. */
 int now_wire_cloud_get(const char *service, const char *item,
-                       char *err, long cap);
+                       const char *size, char *err, long cap);
+
+/* Where a cloud.get's answering offer lands. use=false (the default)
+   means the share root — byte-identical to the pre-existing behavior;
+   use=true redirects THAT offer's landing to the folder named by
+   vref/dir through the pull path's entry point. Guest-side only, no
+   contract change: the share bound governs what the sender may reach
+   unbidden, and this delivery is one the guest asked for — the
+   receiver is sovereign over its own disk. */
+void now_wire_cloud_get_destination(Boolean use, short vref, long dir);
+Boolean now_wire_cloud_get_destination_get(short *vref, long *dir);
+
+/* The inbound receive (the file.offer lane a cloud.get's answer
+   rides), read-only, now_wire_get_active's shape: false when nothing
+   is landing; otherwise fills what has arrived, what is expected, and
+   whether the receive answers our own cloud.get. Every out-parameter
+   is optional. */
+Boolean now_wire_receive_active(long *received, long *expected,
+                                Boolean *cloud_get,
+                                char *name, long name_cap);
+
+/* The last inbound receive's one-line outcome ("Received IMG_1234.jpg"
+   or why not) and its sequence number, which changes exactly when a
+   receive ends — poll the number, read the line when it moved. This is
+   the seam that lets a page replace "Receiving..." with how it went. */
+long now_wire_receive_outcome(char *out, long cap);
 
 /* --- one item as pixels (cloud.preview) ---------------------------------
    The photo preview: the host decodes, resizes and dithers; this side

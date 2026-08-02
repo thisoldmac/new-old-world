@@ -227,6 +227,8 @@ static void ask_save(void)
     }
     if (now_wire_cloud_get(service->service,
                            g_store.rows[g_selected].item,
+                           g_view != NULL && g_view->save_size != NULL
+                               ? g_view->save_size() : NULL,
                            err, sizeof err) != 0) {
         set_status(err);
         return;

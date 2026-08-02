@@ -70,6 +70,35 @@ static void check_body(short left, short top, short right, short bottom)
     assert(r.toolbar_search.right <= r.refresh_btn.left);
     assert(r.toolbar_search.bottom <= r.list.top);
     assert(r.toolbar_search.right - r.toolbar_search.left >= 80);
+
+    /* The photos furniture: real rects inside the card pane, stacked
+       bottom-up (Save row, destination row, bar, byte line) without
+       overlap, and photos_text stops above the whole stack so the
+       preview never draws under a live control. */
+    assert(!is_empty(r.size_popup));
+    assert(!is_empty(r.dest_row));
+    assert(!is_empty(r.dest_btn));
+    assert(!is_empty(r.dl_bar));
+    assert(!is_empty(r.dl_text));
+    assert(!is_empty(r.photos_text));
+    assert(r.size_popup.left >= r.detail.left);
+    assert(r.size_popup.right <= r.detail.right);
+    assert(r.size_popup.bottom <= r.save_btn.top);
+    assert(r.dest_row.bottom <= r.size_popup.top);
+    assert(r.dest_btn.bottom <= r.size_popup.top);
+    assert(r.dest_row.right <= r.dest_btn.left);
+    assert(r.dest_btn.right <= r.detail.right);
+    assert(r.dl_bar.bottom <= r.dest_row.top);
+    assert(r.dl_text.bottom <= r.dl_bar.top);
+    assert(r.photos_text.bottom <= r.dl_text.top);
+    assert(r.photos_text.top == r.detail_text.top);
+    assert(r.photos_text.left == r.detail_text.left);
+    /* Still enough pane to show a photo on the smallest screen. */
+    assert(r.photos_text.bottom - r.photos_text.top >= 150);
+    /* Wide enough for their words: the popup wears "Fit 1024x768",
+       the button wears "Choose...". */
+    assert(r.size_popup.right - r.size_popup.left >= 110);
+    assert(r.dest_btn.right - r.dest_btn.left >= 60);
 }
 
 /* Drive mode against the same body a list-mode call would take:
@@ -104,10 +133,16 @@ static void check_drive_body(short left, short top, short right,
     assert(drive_r.list.right >= list_r.detail.right);
 
     /* No card: detail, its text and Save all collapse to the
-       anti-rect. */
+       anti-rect — and the photos furniture with them. */
     assert(is_empty(drive_r.detail));
     assert(is_empty(drive_r.detail_text));
     assert(is_empty(drive_r.save_btn));
+    assert(is_empty(drive_r.size_popup));
+    assert(is_empty(drive_r.dest_row));
+    assert(is_empty(drive_r.dest_btn));
+    assert(is_empty(drive_r.dl_bar));
+    assert(is_empty(drive_r.dl_text));
+    assert(is_empty(drive_r.photos_text));
 
     /* The navigation cluster is real in drive mode: nonzero areas,
        in the toolbar row (at or above the list's top, same rule the

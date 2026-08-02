@@ -181,6 +181,66 @@ static void test_status_reads_a_capped_photo_library_as_a_prefix(void)
     assert(strcmp(line, "64 rows") == 0);
 }
 
+static void test_size_popup_maps_items_to_contract_tokens(void)
+{
+    /* MENU 136's order is load-bearing: 1-3 are the contract's three
+       tokens, 4 (Host default) and anything the popup cannot produce
+       are NULL — the omitted field, which asks for the host's own
+       setting rather than inventing one. */
+    assert(strcmp(cloud_size_token(1), "original") == 0);
+    assert(strcmp(cloud_size_token(2), "fit1024") == 0);
+    assert(strcmp(cloud_size_token(3), "fit640") == 0);
+    assert(cloud_size_token(4) == 0);
+    assert(cloud_size_token(0) == 0);
+    assert(cloud_size_token(5) == 0);
+    assert(cloud_size_token(-1) == 0);
+}
+
+static void test_dl_bar_value_scales_and_clamps(void)
+{
+    /* No honest total = no honest bar: -1 says "do not show one". */
+    assert(cloud_dl_bar_value(0, 0) == -1);
+    assert(cloud_dl_bar_value(500, -3) == -1);
+
+    /* The 0..1000 scale, exact in the small range... */
+    assert(cloud_dl_bar_value(0, 400) == 0);
+    assert(cloud_dl_bar_value(200, 400) == 500);
+    assert(cloud_dl_bar_value(1, 1000) == 1);
+    assert(cloud_dl_bar_value(400, 400) == 1000);
+    assert(cloud_dl_bar_value(500, 400) == 1000);
+
+    /* ...and within one part in fifty past the exact-arithmetic range
+       (a 3MB photo mid-transfer), never past the end of the scale.
+       long is 32 bits on the guest toolchain, which is why the exact
+       form cannot simply be used everywhere. */
+    {
+        int v = cloud_dl_bar_value(3000000, 6000000);
+
+        assert(v >= 490 && v <= 510);
+    }
+    assert(cloud_dl_bar_value(5999999, 6000000) <= 1000);
+    assert(cloud_dl_bar_value(5999999, 6000000) >= 990);
+}
+
+static void test_dl_bytes_line_reads_kilobytes(void)
+{
+    char line[48];
+
+    cloud_dl_bytes_line(319488, 3276800, line, sizeof line);
+    assert(strcmp(line, "312K of 3200K") == 0);
+
+    /* Rounded UP so a transfer never claims 0K of something real. */
+    cloud_dl_bytes_line(1, 1025, line, sizeof line);
+    assert(strcmp(line, "1K of 2K") == 0);
+
+    /* An unstated total states only what has landed. */
+    cloud_dl_bytes_line(2048, 0, line, sizeof line);
+    assert(strcmp(line, "2K") == 0);
+
+    cloud_dl_bytes_line(0, 4096, line, sizeof line);
+    assert(strcmp(line, "0K of 4K") == 0);
+}
+
 static void test_malformed_frames_read_as_zero(void)
 {
     CloudStore store;
@@ -201,6 +261,9 @@ int main(void)
     test_rows_without_identity_or_title_are_skipped();
     test_card_rows_decode_the_pair_shape();
     test_status_reads_a_capped_photo_library_as_a_prefix();
+    test_size_popup_maps_items_to_contract_tokens();
+    test_dl_bar_value_scales_and_clamps();
+    test_dl_bytes_line_reads_kilobytes();
     test_malformed_frames_read_as_zero();
     printf("cloud_model_test: all assertions passed\n");
     return 0;

@@ -43,6 +43,23 @@ typedef struct {
                                           empty in drive mode (Up moves
                                           to up_btn, in the toolbar) */
     Rect status;                      /* one line under both panes */
+
+    /* The photos view's extra card-pane furniture. Computed whenever
+       the card pane exists (they are only rectangles; the other views
+       ignore them) and empty in drive mode like everything else the
+       card owns. Stacked bottom-up above save_btn: the destination
+       row, then the download bar, then its byte-count line. */
+    Rect size_popup;                  /* Size dropdown, left of Save */
+    Rect dest_row;                    /* "Save into:" path label */
+    Rect dest_btn;                    /* Choose... beside it */
+    Rect dl_bar;                      /* the moving bar (shown only
+                                          while a download lands) */
+    Rect dl_text;                     /* its byte count, above it */
+    Rect photos_text;                 /* detail_text minus the rows
+                                          above — where photos' card,
+                                          preview and loading line draw
+                                          so pixels never sit under
+                                          controls */
 } CloudLayout;
 
 /* drive_mode picks which of the two layouts above cloud_draw's and

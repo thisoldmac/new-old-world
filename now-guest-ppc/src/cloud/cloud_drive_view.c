@@ -749,7 +749,9 @@ static const CloudViewOps k_ops = {
     view_idle,
     view_reset_for_service,
     view_row_matches,
-    NULL                               /* select: no per-selection state */
+    NULL,                              /* select: no per-selection state */
+    NULL,                              /* control_click: no own controls */
+    NULL                               /* save_size: host default */
 };
 
 const CloudViewOps *cloud_drive_view_ops(void)

@@ -154,7 +154,9 @@ static const CloudViewOps k_ops = {
     NULL,                              /* idle: nothing to watch */
     NULL,                              /* reset_for_service: ask_rows(1) */
     view_row_matches,
-    NULL                               /* select: the card is the state */
+    NULL,                              /* select: the card is the state */
+    NULL,                              /* control_click: no own controls */
+    NULL                               /* save_size: host default */
 };
 
 const CloudViewOps *cloud_contacts_view_ops(void)
