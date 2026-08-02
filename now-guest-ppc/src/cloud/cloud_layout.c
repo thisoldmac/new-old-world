@@ -82,26 +82,42 @@ void cloud_layout_compute(const Rect *body, Boolean drive_mode,
     list_bottom = (short)(r->status.top - 8);
 
     if (drive_mode) {
+        short dest_top;
+        short row_h = 20;              /* the 5d948ed rule: every
+                                           control row 20 points tall */
+        short gap = 6;                 /* and every gap between rows 6 */
+
         /* Breadcrumbs between the toolbar and the list, the Files
            page's path row shape: where you are, from the share root
            down. */
         set_rect(&r->path_row, left, (short)(top + 26), right,
                  (short)(top + 42));
+        /* The destination row, beneath the breadcrumbs: Choose... on
+           the shared right edge Refresh's own column already set
+           (refresh_btn.right == right, the toolbar's own rule), the
+           label filling everything left of it — the same shape the
+           photos card's row uses, one lane over. */
+        dest_top = (short)(r->path_row.bottom + gap);
+        set_rect(&r->dest_btn, (short)(right - 74), dest_top, right,
+                 (short)(dest_top + row_h));
+        set_rect(&r->dest_row, left, dest_top,
+                 (short)(r->dest_btn.left - gap),
+                 (short)(dest_top + row_h));
         /* No card in drive mode: the browser IS the page, full body
-           width, and detail/save collapse to anti-rects at its right
-           edge rather than being placed off to one side - "empty",
-           not "elsewhere". Pull progress that used to draw into the
-           card moves to the status placard (cloud_drive_view.c). */
-        set_rect(&r->list, left, (short)(top + 46), right, list_bottom);
-        set_empty(&r->detail, right, (short)(top + 46));
-        set_empty(&r->detail_text, right, (short)(top + 46));
+           width below the destination row, and detail/save collapse
+           to anti-rects at its right edge rather than being placed
+           off to one side - "empty", not "elsewhere". Pull progress
+           that used to draw into the card moves to the status placard
+           (cloud_drive_view.c). */
+        set_rect(&r->list, left, (short)(r->dest_row.bottom + gap), right,
+                 list_bottom);
+        set_empty(&r->detail, right, r->list.top);
+        set_empty(&r->detail_text, right, r->list.top);
         set_empty(&r->save_btn, right, list_bottom);
         set_empty(&r->size_popup, right, list_bottom);
-        set_empty(&r->dest_row, right, list_bottom);
-        set_empty(&r->dest_btn, right, list_bottom);
         set_empty(&r->dl_bar, right, list_bottom);
         set_empty(&r->dl_text, right, list_bottom);
-        set_empty(&r->photos_text, right, (short)(top + 46));
+        set_empty(&r->photos_text, right, r->list.top);
         return;
     }
     set_empty(&r->path_row, left, (short)(top + 26));

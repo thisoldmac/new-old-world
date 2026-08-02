@@ -166,6 +166,17 @@ void conn_set_get_note(ConnGetNote fn);
 int now_wire_get_host(const char *path, const char *name,
                       char *err, long cap);
 
+/* Where a PULL (file.get, the entry point above) actually lands.
+   use=false (the default) means the downloads folder — byte-identical
+   to every pull before this existed; use=true redirects it to the
+   folder named by vref/dir, consumed at get_begin when the answer's
+   file.begin arrives. Guest-side only; no contract change, the same
+   reasoning now_wire_cloud_get_destination below already carries: this
+   is a delivery the guest itself asked for, and the receiver is
+   sovereign over where its own disk keeps it. */
+void now_wire_get_destination(Boolean use, short vref, long dir);
+Boolean now_wire_get_destination_get(short *vref, long *dir);
+
 /* Which half of a pull is in flight. Asked and receiving-nothing-yet are
    different facts about the same machine, and one boolean could not tell
    them apart: a sender that has neither given a size nor delivered a
