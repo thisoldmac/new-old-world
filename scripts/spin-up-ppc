@@ -171,13 +171,22 @@ sleep 3
 boot cold; wait_anchor
 
 echo "== did the staged files survive the reboot? =="
-python3 - "$ANCHOR" "$LAB" <<'PY'
+# NOW_EXT_NAME is honoured HERE too, not just at the stage step. It was
+# not, and the omission broke the one workflow the charter actually
+# prescribes for resident work: a dev build goes up as its OWN throwaway
+# INIT under its own name (docs/resident-components.md), and this check
+# then looked for "NOW Extension", did not find it, and reported the
+# staged file GONE AFTER THE REBOOT - which reads as a flush that never
+# landed, on a run where every byte arrived under the name it was asked
+# for. The scariest sentence this script can print, for the safest thing
+# a person can do.
+python3 - "$ANCHOR" "$LAB" "${NOW_EXT_NAME:-NOW Extension}" <<'PY'
 import sys
-anchor, lab = int(sys.argv[1]), sys.argv[2]
+anchor, lab, ext_name = int(sys.argv[1]), sys.argv[2], sys.argv[3]
 sys.path.insert(0, f"{lab}/mcp-classic")
 from timbottu_mcp_classic.harness import Harness
 h = Harness(host="127.0.0.1", port=anchor, expect_backing={"worker"})
-for path in ("Macintosh HD:System Folder:Extensions:NOW Extension",
+for path in (f"Macintosh HD:System Folder:Extensions:{ext_name}",
              "Macintosh HD:TimBotTu:now-dev:New Old World"):
     st = h.request("stat", {"path": path})
     if not st.get("exists"):
