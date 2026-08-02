@@ -29,18 +29,23 @@ enum {
    supply a no-op body — list's click/key/idle/reset are NULL because
    ask_save/HandleControlKey/nothing/nothing is already what the shell
    does by default. Drive supplies create/layout/draw for what it owns
-   (its four-column browser and the breadcrumb row) and, since the pull
-   destination chooser (2026-08-02), show and control_click for its own
-   "Save into:" row and Choose... button too — the photos card's
-   destination furniture, one lane over. Which BROWSER is on stage
-   stays MODE chrome the shell owns; the destination button is this
-   view's own, the same split photos already draws between the shell's
-   Save button and its own Size popup. Drive has no card pane to draw
-   into — full body width for the list, per-row detail in its own
-   columns, and a pull's progress on the status placard
-   (cloud_drive_view.c's set_status host hook) rather than a pane that
-   does not exist. A fourth view is free to use as many or as few as it
-   needs. */
+   (its four-column browser, the breadcrumb row above the split, and
+   its own pane content) and, since the pull destination chooser
+   (2026-08-02), show and control_click for its own "Save into:" row
+   and Choose... button, and download-bar/byte-line furniture, too —
+   the photos card's destination and progress furniture, one lane
+   over, now genuinely shared geometry (cloud_layout.c reuses the same
+   list/detail split for both). Which BROWSER is on stage stays MODE
+   chrome the shell owns; the destination button is this view's own,
+   the same split photos already draws between the shell's Save button
+   and its own Size popup. Drive DOES have a pane now (2026-08-02): the
+   selected item's own name/kind/size/date and the double-click
+   affordance line, drawn by this view's own draw() into r->detail_text
+   — the shell's g_selected stays -1 in drive mode either way (this
+   view keeps its own g_sel, the shell never sees its browser's
+   notifications), so draw()'s `selected` argument is ignored here and
+   the pane content comes from the view's own state instead. A fourth
+   view is free to use as many or as few of these as it needs. */
 
 typedef struct CloudViewOps {
     /* Called once, when the page is created (mirrors module create):

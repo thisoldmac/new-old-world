@@ -125,18 +125,39 @@ toolbar carries Back, Forward and Up: Up and every descend are plain
 navigations that push onto a bounded 16-step history (`cloud_nav.c`,
 pure and host-cc tested), Back and Forward retrace it, and the pair
 dims — never hides — when its stack is empty. Double-click still
-opens a folder or fetches a file through `now_wire_get_host`, with
-the pull's progress on the status placard — one browse
-implementation, genuinely two renderers.
+opens a folder or fetches a file through `now_wire_get_host` — one
+browse implementation, genuinely two renderers.
+
+**Drive stopped being a full-width list with a global destination row
+(2026-08-02).** It now uses the exact list/detail split every other
+view uses (`cloud_layout.c` computes one split and reuses it; drive
+mode differs only in `list_top`, pushed down by the breadcrumb row
+above it, and in what its own furniture fills the pane with below).
+The pane shows the SELECTED item, textually: for a folder, its name
+and kind; for a file, name/kind/size/date and the double-click
+affordance line ("Double-click fetches X to this Mac.") — text that
+had moved to the placard in the 2026-08-01 review below and comes
+back into the pane here, so the placard stops carrying it and
+selection touches only the pane. Deliberately no image preview for an
+IMAGE-typed row (PICT/JPEG/GIFf/PNGf): a drive row carries no cloud
+item id — `cloud.preview` is a `cloud.*` verb, and Drive's transport
+is the file family, not `cloud.*` — so showing one pixel of a drive
+file would need a real fetch-and-decode path this arc does not build.
+`cloud_drive_view.c`'s `draw_item_card` names the seam for whichever
+later arc wants to close it.
 
 Drive gets photos' download-target furniture, too (2026-08-02): a
-destination row beneath the breadcrumbs, "Save into:" plus the
-folder's path, with a Choose... button on the shared right edge
-Refresh's own column already uses. Unset means the downloads folder —
-byte-identical to every pull before this existed, since that is what
-a pull already meant here — through a NEW wire-level override,
-`now_wire_get_destination`, consumed at `get_begin` beside
-`now_wire_get_host`: the pull path's own twin of
+destination row IN THE PANE (moved off the old breadcrumb-adjacent
+toolbar strip once the pane existed to hold it), "Save into:" plus
+the folder's path, with a Choose... button on the shared right edge
+Refresh's own column already uses — the 5d948ed rule applied to the
+pane's own furniture column, one row shorter than list/photos mode's
+own (no Save button, no Size popup: Up stays in the toolbar and a
+drive pull always keeps the file's exact bytes). Unset means the
+downloads folder — byte-identical to every pull before this existed,
+since that is what a pull already meant here — through a NEW
+wire-level override, `now_wire_get_destination`, consumed at
+`get_begin` beside `now_wire_get_host`: the pull path's own twin of
 `now_wire_cloud_get_destination` above, same reasoning (guest-side
 only, no contract change, the receiver sovereign over its own disk),
 different delivery. The status placard's "Receiving X into Y" /
@@ -147,6 +168,21 @@ mid-transfer. Files and Drive both pull through the same
 `now_wire_get_host`, so the get-note hook now follows whoever asked
 last, the listing hook's existing rule — each page reclaims it
 (`conn_set_get_note`) the instant it calls `now_wire_get_host`.
+
+**The pull's moving progress lives in the pane too (2026-08-02),
+reusing Photos' own bar-plus-byte-line recipe rather than
+reinventing it**: the same pure `cloud_dl_bar_value`/
+`cloud_dl_bytes_line` (`cloud_model.c`) feed a `kControlProgressBar-
+Proc` control and a byte-count line, both idle-gated on a
+shown-value diff exactly as Photos' furniture is. The one honest
+difference is which wire entry point feeds them — Drive's own bar
+watches `now_wire_get_active` (the ordinary pull the Files page's
+own pane already narrates), not Photos' `now_wire_receive_active`/
+`from_get`, because Drive pulls through `now_wire_get_host`, the same
+entry point Files uses, not through `cloud.get`. The placard no
+longer gets a per-idle byte-count overlay while a drive pull runs; it
+shows only durable news (folder listings, errors, the wire's own
+get-note outcomes) now that the pane carries the moving number.
 
 The drive columns live on the drive view's OWN Data Browser, one of
 three view-owned controls beside the shell's shared two-column one
@@ -404,7 +440,10 @@ it exercised is unchanged, but the four-column control, its icons,
 the breadcrumb row, Back/Forward and the toolbar geometry are not the
 ones the PowerBook watched. The column recipe and the icon calls are
 the metal-verified Files/Processes recipes reused verbatim, which is
-evidence about the ingredients, not the dish.
+evidence about the ingredients, not the dish. It also predates the
+split-view pane (2026-08-02, above) — the browsing logic is again
+unchanged, but the pane's own card text, its destination furniture
+and its download bar are new pixels nobody has watched draw.
 
 Second, the same evening: with the entitlements fix in, the grant
 prompts fire, and Michelle reports the granted services — Photos and

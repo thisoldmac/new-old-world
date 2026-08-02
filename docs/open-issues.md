@@ -61,6 +61,49 @@ the PowerBook since the fix — confirming a 2026 photo's Modified column
 now draws a real date, rather than merely that the wire carries one, is
 the next metal session's job.
 
+## Drive's split-view pane has never run anywhere (2026-08-02, later still still)
+
+**Unverified.** Drive stopped being the full-width flat list the
+2026-08-01 entry below documents and went back to a list/detail split
+— the SAME split every other iCloud view uses, not a second one
+(`cloud_layout.c` computes one list/detail geometry and reuses it for
+drive mode too, differing only in `list_top`, pushed down by the
+breadcrumb row above it, and in the pane's own furniture below). The
+destination row and Choose... moved off the old toolbar strip and
+into the pane; the pull's moving bar and byte line moved there too,
+reusing Photos' own `cloud_dl_bar_value`/`cloud_dl_bytes_line` idle
+discipline against a different wire entry point
+(`now_wire_get_active`, since Drive pulls through `now_wire_get_host`
+rather than `cloud.get`); and the selected item's own name/kind/
+size/date plus the double-click affordance line — which the
+2026-08-01 review below moved onto the placard — moved back into the
+pane, so the placard no longer changes on selection or on a pull's
+byte count, only on durable folder/error/outcome news. No image
+preview for drive files: a drive row carries no cloud item id, so a
+later arc that wants one needs a real fetch-and-decode path, not this
+pane's text — the seam is named in `cloud_drive_view.c`'s
+`draw_item_card`.
+
+`scripts/test-all` is green with each exit code read directly (79
+native tests including `cloud_layout_test.c`'s rewritten, relational
+drive-mode assertions — the old ones asserted full width and had to
+change outright — both guest cross-builds, `swift test` at 1355
+tests with 0 failures, `xcodebuild` Debug and Release), the new
+layout assertions were watched failing via a deliberate mutation
+before being trusted, and `audit_source.py` over both touched files
+raised only already-reviewed lexical categories (the new
+`SetControlValue` on the download bar is change-guarded, read back to
+confirm). **None of this has run on the emulator or the PowerBook.**
+The 2026-08-01 metal pass for Drive (below) predates every layout
+Drive has worn since, including this one — what it proves is the
+browsing logic (list, descend, Up, double-click fetch), not any pane
+pixels. Before this can move past "tested": watch the split render at
+640x480 and at a roomier size, select a folder and a file and confirm
+the pane's text matches what the columns already say, start a pull
+and watch the bar/byte line move in the pane while the placard stays
+on the folder's own listing, and confirm Choose... still redirects a
+pull's landing folder from its new position.
+
 ## The polish2 integration merged three UI arcs; the seam between them has never run (2026-08-02, later still)
 
 **Unverified, and the specific claim is narrower than "the union is

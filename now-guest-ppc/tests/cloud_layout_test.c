@@ -115,10 +115,14 @@ static void check_body(short left, short top, short right, short bottom)
     assert(r.dest_btn.right - r.dest_btn.left >= 60);
 }
 
-/* Drive mode against the same body a list-mode call would take:
-   the assertions compare the two layouts to each other rather than
+/* Drive mode against the same body a list-mode call would take: the
+   assertions compare the two layouts to each other rather than
    asserting a coordinate this test would otherwise have to copy out
-   of cloud_layout.c to know. */
+   of cloud_layout.c to know. Drive mode uses the SAME split list mode
+   does now — list left, a real pane right, its own shorter furniture
+   stack inside that pane — so most of these read like check_body's,
+   just against drive's own path-row-shifted list_top and its Save/
+   Size-less furniture. */
 static void check_drive_body(short left, short top, short right,
                              short bottom)
 {
@@ -134,53 +138,83 @@ static void check_drive_body(short left, short top, short right,
 
     /* Everything still inside the body. */
     assert(drive_r.list.left >= body.left);
-    assert(drive_r.list.right <= body.right);
+    assert(drive_r.detail.right <= body.right);
     assert(drive_r.list.top >= body.top);
-    assert(drive_r.list.bottom <= body.bottom);
+    assert(drive_r.status.bottom <= body.bottom);
 
-    /* The browser IS the page: wider than the list-mode list at the
-       same body, and it reaches at least as far right as list mode's
-       card pane used to (nothing held back on its right for a card
-       that no longer draws). */
-    assert(drive_r.list.right - drive_r.list.left
-           > list_r.list.right - list_r.list.left);
-    assert(drive_r.list.right >= list_r.detail.right);
+    /* The SAME split every mode uses: list and detail land at the same
+       x-coordinates in drive mode as they do in list mode (the split
+       cloud_layout.c computes once and reuses, not a second layout
+       drive invented for itself). Only the y-coordinates differ, by
+       the breadcrumb row drive mode alone draws above them. */
+    assert(drive_r.list.left == list_r.list.left);
+    assert(drive_r.list.right == list_r.list.right);
+    assert(drive_r.detail.left == list_r.detail.left);
+    assert(drive_r.detail.right == list_r.detail.right);
+    assert(drive_r.list.top > list_r.list.top);
+    assert(drive_r.list.bottom == list_r.list.bottom);
+    assert(drive_r.detail.top == drive_r.list.top);
+    assert(drive_r.detail.bottom == list_r.detail.bottom);
 
-    /* No card: detail, its text and Save all collapse to the
-       anti-rect — and the photos furniture with them, EXCEPT
-       dest_row/dest_btn, which drive mode fills with its own
-       destination row instead of leaving empty. */
-    assert(is_empty(drive_r.detail));
-    assert(is_empty(drive_r.detail_text));
+    /* List and pane side by side, never overlapping — the same
+       assertion check_body makes for every other mode. */
+    assert(drive_r.list.right <= drive_r.detail.left);
+
+    /* The pane is real in drive mode now: there IS a card (the
+       selected item's name/kind/size/date and the double-click
+       affordance line), not the full-width list of the old layout. */
+    assert(!is_empty(drive_r.detail));
+    assert(!is_empty(drive_r.detail_text));
+    assert(drive_r.detail_text.left >= drive_r.detail.left);
+    assert(drive_r.detail_text.right <= drive_r.detail.right);
+
+    /* No Save, no Size popup in drive mode: Up lives in the toolbar
+       (up_btn, checked below), and a pull always keeps the file's
+       exact bytes, nothing to pick a size of. */
     assert(is_empty(drive_r.save_btn));
     assert(is_empty(drive_r.size_popup));
-    assert(is_empty(drive_r.dl_bar));
-    assert(is_empty(drive_r.dl_text));
+    /* photos_text is photos' own further trim of detail_text; drive
+       reads detail_text directly; photos_text stays the anti-rect. */
     assert(is_empty(drive_r.photos_text));
 
-    /* Drive's own destination row: real, beneath the breadcrumbs and
-       above the list, Choose... on the SAME right edge Refresh's
-       column already uses (the 5d948ed shared-right-edge rule, one
-       lane over from the photos card's version of it), the label
-       filling what is left of the row, uniform height with the
-       breadcrumb row above it. */
+    /* Drive's OWN pane furniture: the destination row and, while a
+       pull is landing, the same bar-plus-byte-line shape photos' own
+       download furniture uses — real, inside the pane, on the shared
+       right edge (5d948ed) the toolbar's Refresh button and the pane
+       itself both already use. */
     assert(!is_empty(drive_r.dest_row));
     assert(!is_empty(drive_r.dest_btn));
-    assert(drive_r.dest_btn.right == drive_r.refresh_btn.right);
+    assert(!is_empty(drive_r.dl_bar));
+    assert(!is_empty(drive_r.dl_text));
+    assert(drive_r.dest_btn.right <= drive_r.detail.right);
+    assert(drive_r.dest_btn.right <= drive_r.refresh_btn.right);
     assert(drive_r.dest_row.top == drive_r.dest_btn.top);
     assert(drive_r.dest_row.bottom == drive_r.dest_btn.bottom);
     assert(drive_r.dest_row.right <= drive_r.dest_btn.left);
-    assert(drive_r.dest_row.left >= body.left);
+    assert(drive_r.dest_row.left >= drive_r.detail.left);
     assert(drive_r.dest_btn.right <= body.right);
-    assert(drive_r.dest_row.top >= drive_r.path_row.bottom);
-    assert(drive_r.dest_row.bottom <= drive_r.list.top);
-    /* Uniform row height within the destination row itself (the
-       5d948ed rule applied to its own two pieces — it does not bind
-       path_row, which is plain breadcrumb text with no button beside
-       it and a different height already, by design). */
+    assert(drive_r.dest_row.bottom <= drive_r.detail.bottom);
+    assert(drive_r.dest_row.top >= drive_r.detail.top);
+    /* Uniform row height (the 5d948ed rule applied to its own two
+       pieces), and the bar/byte-line stacked above it without
+       overlap. */
     assert(drive_r.dest_row.bottom - drive_r.dest_row.top
            == drive_r.dest_btn.bottom - drive_r.dest_btn.top);
     assert(drive_r.dest_btn.right - drive_r.dest_btn.left >= 60);
+    assert(drive_r.dl_bar.bottom <= drive_r.dest_row.top);
+    assert(drive_r.dl_text.bottom <= drive_r.dl_bar.top);
+    /* The pane's text stops above the whole furniture stack — never
+       drawn under a live control, same rule photos_text keeps for
+       photos. */
+    assert(drive_r.detail_text.bottom <= drive_r.dl_text.top);
+
+    /* Drive's stack is SHORTER than list/photos mode's own furniture
+       stack by exactly the two rows (Save, Size popup) it does not
+       have: its destination row sits lower in the pane (closer to
+       detail.bottom) than list mode's does, relative to each one's
+       own detail.bottom. */
+    assert((drive_r.detail.bottom - drive_r.dest_row.bottom)
+           < (list_r.detail.bottom - list_r.dest_row.bottom));
 
     /* The navigation cluster is real in drive mode: nonzero areas,
        in the toolbar row (at or above the list's top, same rule the
@@ -210,16 +244,18 @@ static void check_drive_body(short left, short top, short right,
     assert(drive_r.toolbar_search.right - drive_r.toolbar_search.left
            >= 48);
 
-    /* Breadcrumbs: a real row between the toolbar and the list, full
-       width like the list it describes. */
+    /* Breadcrumbs: a real row between the toolbar and the split, full
+       width — over both the list AND the pane below it, the same way
+       the toolbar itself already spans both. */
     assert(!is_empty(drive_r.path_row));
     assert(drive_r.path_row.top >= drive_r.popup.bottom);
     assert(drive_r.path_row.top >= drive_r.toolbar_search.bottom);
     assert(drive_r.path_row.bottom <= drive_r.list.top);
+    assert(drive_r.path_row.bottom <= drive_r.detail.top);
     assert(drive_r.path_row.left >= body.left);
     assert(drive_r.path_row.right <= body.right);
     assert(drive_r.path_row.right - drive_r.path_row.left
-           >= drive_r.list.right - drive_r.list.left);
+           >= (drive_r.detail.right - drive_r.list.left));
 }
 
 int main(void)
