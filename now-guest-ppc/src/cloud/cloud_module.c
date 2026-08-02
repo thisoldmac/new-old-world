@@ -552,9 +552,10 @@ static void choose_service(int index)
         && strcmp(service->service, "contacts") == 0;
     cloud_drive_view_activate(g_drive_mode);
     g_view = view_for(service, g_drive_mode);
-    /* Drive and list mode use different rectangles (cloud_layout.c's
-       drive variant: full-width list, no card) - recompute and move
-       every control before anything below draws into them. */
+    /* Drive and list mode share the same split (cloud_layout.c reuses
+       one list/detail layout for every mode) but differ in list_top
+       and in the pane's own furniture - recompute and move every
+       control before anything below draws into them. */
     apply_layout();
     retitle_button();
     clear_list();

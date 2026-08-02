@@ -50,14 +50,13 @@ static int g_drive_count;
 static int g_sel = -1;                /* this view's own selection: the
                                          shell no longer sees this
                                          browser's notifications */
-static char g_shown_pull[96];
 static Rect g_path_row;               /* cached from layout(); where the
                                          breadcrumbs draw and what path
                                          changes invalidate */
 
 static CloudNav g_nav;
 
-/* --- the pull destination -------------------------------------------------
+/* --- the pull destination and its progress --------------------------------
    Photos' own "Save into:" furniture (cloud_photos_view.c), one lane
    over: a row plus a Choose... button, built invisible at create and
    shown only while this view is on stage. Unset means the downloads
@@ -66,7 +65,19 @@ static CloudNav g_nav;
    means here, unlike photos' cloud.get whose unset default is the
    share root. The label is recomputed only on create/show/choose,
    never idle (now_files_downloads_name/now_files_dir_path read
-   preferences or the catalog). */
+   preferences or the catalog).
+
+   The moving bar and byte-count line are photos' own recipe too,
+   reused verbatim: a native kControlProgressBarProc scaled 0..1000 by
+   the shared, pure cloud_dl_bar_value/cloud_dl_bytes_line
+   (cloud_model.c) — genuinely shared code, not a lookalike, because
+   both views watch the SAME pull machinery (Drive pulls through
+   now_wire_get_host exactly as the Files page does; Photos' own bar
+   watches the separate cloud.get/file.offer lane through
+   now_wire_receive_active, which is why its idle reads a different
+   wire entry point even though the bar/line math underneath is
+   identical). Shown only while a pull the guest itself asked for is
+   landing; idle-cheap, mutated only on a shown-value change. */
 static ControlRef g_dest_btn;
 static Boolean g_dest_set;
 static short g_dest_vref;
@@ -74,13 +85,12 @@ static long g_dest_dir;
 static char g_dest_path[160];
 static Rect g_dest_row;               /* cached from layout(); the
                                          label's own repaint target */
-
-/* The placard's last non-pull line (a folder's "N items", "Empty", or
-   an error) - kept so a finished pull can hand the placard back to
-   whatever it was saying before, the same priority rule
-   files_browser_view.c's note/pull-note pair already keeps, just with
-   one shared slot instead of two rendered ones. */
-static char g_folder_status[96];
+static ControlRef g_dl_bar;
+static Boolean g_bar_shown;
+static short g_bar_value = -1;
+static char g_dl_line[48];
+static Rect g_dl_text_rect;           /* cached from layout(); the byte
+                                         line's own repaint target */
 
 /* --- the icon cache ------------------------------------------------------
 
@@ -171,20 +181,16 @@ static void drop_icons(void)
 
 /* --- the placard --------------------------------------------------------- */
 
-static void host_status(const char *line)
+/* Folder/error/pull-outcome news — durable, one line, the whole
+   placard. A pull's transient byte count no longer lands here (it
+   moves with the pull's own moving bar); the placard is not overlaid
+   and restored around a selection or a download the way it used to be
+   — whatever this last said is what it still says. */
+static void folder_status(const char *line)
 {
     if (g_host.set_status != NULL) {
         g_host.set_status(line);
     }
-}
-
-/* Folder/error news, as opposed to a pull's transient byte count:
-   remembered so view_idle can hand the placard back when the pull
-   that was overlaying it ends. */
-static void folder_status(const char *line)
-{
-    snprintf(g_folder_status, sizeof g_folder_status, "%.90s", line);
-    host_status(line);
 }
 
 static void host_loading(Boolean loading)
@@ -469,26 +475,32 @@ void cloud_drive_view_go_forward(void)
 
 /* --- the control --------------------------------------------------------- */
 
-/* Selection changed (-1 = deselected). The placard carries the card
-   pane's old affordance line — there is no card in drive mode. */
+/* Selection changed (-1 = deselected). The pane (view_draw's
+   draw_item_card) reads g_sel directly and draws the selected item's
+   own name/kind/size/date plus the double-click affordance line — that
+   text moved off the placard and into the pane in this arc, so
+   selection touches only the pane, never the placard. */
 static void row_selected(int index)
 {
-    g_sel = index;
-    if (index < 0 || index >= g_drive_count) {
-        /* Deselected: back to the folder's own news. */
-        g_sel = -1;
-        host_status(g_folder_status);
-        return;
+    g_sel = (index >= 0 && index < g_drive_count) ? index : -1;
+    if (g_host.invalidate_detail != NULL) {
+        g_host.invalidate_detail();
     }
-    if (g_drive_rows[index].folder) {
-        host_status("Double-click opens it.");
-    } else {
-        char line[96];
+}
 
-        snprintf(line, sizeof line,
-                 "Double-click fetches \"%.40s\" to this Mac.",
-                 g_drive_rows[index].name);
-        host_status(line);
+/* Shared by the Data Browser's own Size column and the pane's card:
+   one wardrobe for the same number. */
+static void format_size(const FileEntry *row, char *buf, size_t cap)
+{
+    long total = row->data_bytes + row->rsrc_bytes;
+
+    if (total < 1024) {
+        snprintf(buf, cap, "%ld bytes", total);
+    } else if (total < 1024L * 1024L) {
+        snprintf(buf, cap, "%ld K", total / 1024);
+    } else {
+        snprintf(buf, cap, "%ld.%ld MB", total / (1024L * 1024L),
+                 (total % (1024L * 1024L)) / (105L * 1024L));
     }
 }
 
@@ -526,17 +538,7 @@ static OSStatus item_data(ControlRef browser, DataBrowserItemID item,
         if (row->folder) {
             strcpy(buf, "--");
         } else {
-            long total = row->data_bytes + row->rsrc_bytes;
-
-            if (total < 1024) {
-                snprintf(buf, sizeof buf, "%ld bytes", total);
-            } else if (total < 1024L * 1024L) {
-                snprintf(buf, sizeof buf, "%ld K", total / 1024);
-            } else {
-                snprintf(buf, sizeof buf, "%ld.%ld MB",
-                         total / (1024L * 1024L),
-                         (total % (1024L * 1024L)) / (105L * 1024L));
-            }
+            format_size(row, buf, sizeof buf);
         }
         text = CFStringCreateWithCString(NULL, buf,
                                          kCFStringEncodingMacRoman);
@@ -680,12 +682,16 @@ void cloud_drive_view_dispose(void)
     g_active = false;
     g_sel = -1;
     memset(&g_host, 0, sizeof g_host);
-    /* The window owns g_dest_btn's disposal (docs/adding-a-workshop-
-       module.md, what you own and what you do not); only the ref and
-       the wire's own override die here. */
+    /* The window owns g_dest_btn's/g_dl_bar's disposal (docs/adding-a-
+       workshop-module.md, what you own and what you do not); only the
+       refs and the wire's own override die here. */
     g_dest_btn = NULL;
     g_dest_set = false;
     now_wire_get_destination(false, 0, 0);
+    g_dl_bar = NULL;
+    g_bar_shown = false;
+    g_bar_value = -1;
+    g_dl_line[0] = '\0';
 }
 
 /* --- ops ------------------------------------------------------------- */
@@ -702,12 +708,21 @@ static OSErr view_create(WindowRef owner)
     g_dest_set = false;
     now_wire_get_destination(false, 0, 0);
     refresh_dest_path();
+    g_bar_shown = false;
+    g_bar_value = -1;
+    g_dl_line[0] = '\0';
+    SetRect(&g_dl_text_rect, 0, 0, 0, 0);
     CopyCStringToPascal("Choose...", text);
     g_dest_btn = NewControl(owner, &start, text, false, 0, 0, 1,
                             pushButProc, 0);
-    /* A missing button degrades that button, not the page: a pull
+    /* Native determinate bar, Photos' download furniture verbatim
+       (metal-verified there): scaled 0..1000 by cloud_dl_bar_value. */
+    text[0] = 0;
+    g_dl_bar = NewControl(owner, &start, text, false, 0, 0, 1000,
+                          kControlProgressBarProc, 0);
+    /* A missing control degrades that control, not the page: a pull
        still lands in downloads exactly as before, the row still names
-       it. */
+       it, and the byte line still draws without the bar beside it. */
     if (CreateDataBrowserControl(owner, &start, kDataBrowserListView,
                                  &g_browser) != noErr) {
         g_browser = NULL;             /* the shell says so; no hard fail */
@@ -744,17 +759,23 @@ static OSErr view_create(WindowRef owner)
    moment its own show/hide of g_browser and the history pair runs. */
 static void view_show(Boolean visible)
 {
-    if (g_dest_btn == NULL) {
-        return;
+    if (g_dest_btn != NULL) {
+        if (visible) {
+            /* The downloads folder may have moved while another page
+               had the stage; one preferences read on a show is not
+               idle work. */
+            refresh_dest_path();
+            ShowControl(g_dest_btn);
+        } else {
+            HideControl(g_dest_btn);
+        }
     }
-    if (visible) {
-        /* The downloads folder may have moved while another page had
-           the stage; one preferences read on a show is not idle
-           work. */
-        refresh_dest_path();
-        ShowControl(g_dest_btn);
-    } else {
-        HideControl(g_dest_btn);
+    if (g_dl_bar != NULL) {
+        if (visible && g_bar_shown) {
+            ShowControl(g_dl_bar);
+        } else {
+            HideControl(g_dl_bar);
+        }
     }
 }
 
@@ -762,11 +783,18 @@ static void view_layout(const CloudLayout *r)
 {
     g_path_row = r->path_row;
     g_dest_row = r->dest_row;
+    g_dl_text_rect = r->dl_text;
     if (g_dest_btn != NULL) {
         MoveControl(g_dest_btn, r->dest_btn.left, r->dest_btn.top);
         SizeControl(g_dest_btn,
                     (SInt16)(r->dest_btn.right - r->dest_btn.left),
                     (SInt16)(r->dest_btn.bottom - r->dest_btn.top));
+    }
+    if (g_dl_bar != NULL) {
+        MoveControl(g_dl_bar, r->dl_bar.left, r->dl_bar.top);
+        SizeControl(g_dl_bar,
+                    (SInt16)(r->dl_bar.right - r->dl_bar.left),
+                    (SInt16)(r->dl_bar.bottom - r->dl_bar.top));
     }
     if (g_browser == NULL) {
         return;
@@ -794,11 +822,100 @@ static void draw_small_line(const Rect *row, const char *prefix,
     DrawString(text);
 }
 
+/* One left-aligned, end-truncated line at an explicit y — the pane's
+   own card text, as opposed to draw_small_line's fixed single-row
+   furniture (which bottom-aligns inside its own rect). */
+static void draw_pane_line(const Rect *text, short y, const char *s)
+{
+    Str255 t;
+    short width = (short)(text->right - text->left);
+
+    if (width <= 0 || y > text->bottom) {
+        return;
+    }
+    CopyCStringToPascal(s, t);
+    TruncString(width, t, truncEnd);
+    MoveTo(text->left, y);
+    DrawString(t);
+}
+
+/* The selected drive item's own detail, in the pane: for a folder,
+   its name and kind; for a file, name/kind/size/date and the
+   double-click affordance line — which used to live on the placard
+   and comes back into the pane now, the same seam every other view's
+   per-selection detail already draws into (docs/icloud.md, this arc).
+
+   Deliberately textual only, no image preview: an IMAGE type here
+   (PICT/JPEG/GIFf/PNGf) is still just a drive row with no cloud item
+   id — cloud.preview is a cloud.* verb and Drive's transport is the
+   file family, not cloud.* — so previewing one would need a REAL
+   fetch-and-decode path this arc does not build. The seam is this
+   function: a later arc that wants a preview replaces its body for
+   the image-type case, honestly, rather than faking one from text. */
+static void draw_item_card(const Rect *text)
+{
+    short y;
+    char buf[64];
+    char line[160];
+    const FileEntry *row;
+
+    if (text->right <= text->left || text->bottom <= text->top) {
+        return;
+    }
+    y = (short)(text->top + 12);
+    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    if (g_sel < 0 || g_sel >= g_drive_count) {
+        draw_pane_line(text, y, "Select an item to see its detail.");
+        return;
+    }
+    row = &g_drive_rows[g_sel];
+    UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
+    draw_pane_line(text, y, row->name);
+    y = (short)(y + 16);
+    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    now_files_describe(row, buf, sizeof buf);
+    snprintf(line, sizeof line, "Kind: %s", buf);
+    draw_pane_line(text, y, line);
+    y = (short)(y + 14);
+    if (row->folder) {
+        y = (short)(y + 6);
+        draw_pane_line(text, y, "Double-click opens it.");
+        return;
+    }
+    format_size(row, buf, sizeof buf);
+    snprintf(line, sizeof line, "Size: %s", buf);
+    draw_pane_line(text, y, line);
+    y = (short)(y + 14);
+    if (row->modified != 0 && y <= text->bottom) {
+        Str255 prefix, when;
+        LongDateTime ldt = (LongDateTime)row->modified;
+
+        /* LongDateString, not DateString: 1904-epoch seconds pass
+           2^31 in 1972, so every modern date through the signed API
+           clamps to 1/19/72 - watched happening on the PowerBook.
+           Drawn as two DrawStrings on one baseline rather than built
+           into a C buffer: the pen advances on its own. */
+        LongDateString(&ldt, shortDate, when, NULL);
+        CopyCStringToPascal("Modified: ", prefix);
+        MoveTo(text->left, y);
+        DrawString(prefix);
+        DrawString(when);
+        y = (short)(y + 14);
+    }
+    y = (short)(y + 6);
+    snprintf(line, sizeof line,
+             "Double-click fetches \"%.40s\" to this Mac.", row->name);
+    draw_pane_line(text, y, line);
+}
+
 /* The breadcrumbs: share-root name plus colon path, the Files page's
    path row verbatim (files_module.c's draw, now_files_path_label's
    words). Truncated in the middle — the ends are the halves a person
-   reads. The destination row beneath it is this view's own furniture,
-   the photos card's "Save into:" recipe one lane over. */
+   reads. Full width, above the list/detail split. The destination row
+   and the pull's byte line are this view's own furniture, in the
+   pane now (moved off the old toolbar strip, 2026-08-02); the pane's
+   card text is drawn last so its own trimmed detail_text never
+   competes with a live control below it. */
 static void view_draw(const CloudLayout *r, const CloudStore *store,
                       const CloudService *service, int selected)
 {
@@ -807,19 +924,24 @@ static void view_draw(const CloudLayout *r, const CloudStore *store,
 
     (void)store;
     (void)service;
-    (void)selected;
-    if (r->path_row.right <= r->path_row.left) {
-        return;
+    (void)selected;               /* the shell's own selection; this
+                                      view keeps its own (g_sel) */
+    if (r->path_row.right > r->path_row.left) {
+        now_files_path_label(g_drive_root, g_drive_path, line,
+                             sizeof line);
+        UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
+        CopyCStringToPascal(line, text);
+        TruncString((short)(r->path_row.right - r->path_row.left - 4),
+                    text, truncMiddle);
+        MoveTo((short)(r->path_row.left + 2),
+               (short)(r->path_row.top + 12));
+        DrawString(text);
     }
-    now_files_path_label(g_drive_root, g_drive_path, line, sizeof line);
-    UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
-    CopyCStringToPascal(line, text);
-    TruncString((short)(r->path_row.right - r->path_row.left - 4), text,
-                truncMiddle);
-    MoveTo((short)(r->path_row.left + 2),
-           (short)(r->path_row.top + 12));
-    DrawString(text);
     draw_small_line(&r->dest_row, "Save into: ", g_dest_path, true);
+    if (g_dl_line[0] != '\0') {
+        draw_small_line(&r->dl_text, "", g_dl_line, false);
+    }
+    draw_item_card(&r->detail_text);
 }
 
 static Boolean view_click(const EventRecord *event, Point local)
@@ -862,33 +984,51 @@ static Boolean view_key(const EventRecord *event, int selected)
     return true;
 }
 
+/* Every pass while drive mode is on stage: two in-memory reads, the
+   bar and its byte line repainted only when a shown value actually
+   changed — Photos' download furniture idle discipline, reused
+   verbatim (cloud_dl_bar_value/cloud_dl_bytes_line are pure functions
+   in cloud_model.c; the two views just feed them from different wire
+   entry points, see the furniture comment above g_dl_bar). The
+   placard is untouched here — durable news only, from folder_status
+   and the wire's own get-note outcomes, never a per-idle byte
+   count. */
 static void view_idle(const CloudLayout *r)
 {
     long received = 0, expected = 0;
-    char line[96];
+    char line[48];
+    int value = -1;
+    Boolean moving;
 
-    (void)r;                          /* nothing left to invalidate here */
     if (now_wire_get_active(&received, &expected, NULL)) {
-        snprintf(line, sizeof line, "Receiving - %ld of %ld K",
-                 received / 1024,
-                 expected > 0 ? (expected + 1023) / 1024 : 0);
+        value = cloud_dl_bar_value(received, expected);
+        moving = (Boolean)(value >= 0);
+        cloud_dl_bytes_line(received, expected, line, sizeof line);
     } else {
+        moving = false;
         line[0] = '\0';
     }
-    if (strcmp(line, g_shown_pull) != 0) {
-        Boolean was_active = g_shown_pull[0] != '\0';
-
-        strcpy(g_shown_pull, line);
-        if (line[0] != '\0') {
-            /* A pull's byte count overlays the placard - it outranks
-               whatever the last folder news was, the same priority
-               files_browser_view.c's note/pull-note pair keeps. */
-            host_status(line);
-        } else if (was_active) {
-            /* The pull ended; hand the placard back to the folder's
-               own news rather than leaving the last byte count
-               standing forever. */
-            host_status(g_folder_status);
+    if (moving != g_bar_shown) {
+        g_bar_shown = moving;
+        if (g_dl_bar != NULL) {
+            if (moving) {
+                ShowControl(g_dl_bar);
+            } else {
+                HideControl(g_dl_bar);
+            }
+        }
+        if (!moving) {
+            g_bar_value = -1;
+        }
+    }
+    if (moving && g_dl_bar != NULL && (short)value != g_bar_value) {
+        g_bar_value = (short)value;
+        SetControlValue(g_dl_bar, g_bar_value);
+    }
+    if (strcmp(line, g_dl_line) != 0) {
+        strcpy(g_dl_line, line);
+        if (g_owner != NULL && g_active) {
+            InvalWindowRect(g_owner, &r->dl_text);
         }
     }
 }
