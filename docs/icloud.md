@@ -31,12 +31,18 @@ the host" instead of not mentioning Photos.
   `not-listable` naming the Files page. One implementation, two
   renderers, the rule this repo keeps paying to relearn.
 - **Photos**: newest first, pages of title/date rows; `cloud.detail`
-  is a card of what the library knows; `cloud.get` delivers ONE photo
+  is a card of what the library knows; `cloud.preview` shows the
+  selected photo IN the page (below); `cloud.get` delivers ONE photo
   as an ordinary `file.offer` into the guest's share — JPEG whatever
-  modern container the library holds, typed `JPEG`/`ogle` so it opens
-  by double-click. An original iCloud has not materialized starts its
-  download and refuses `busy`, the same bargain the share strikes for
-  Drive placeholders.
+  modern container the library holds (HEIC included), typed
+  `JPEG`/`ogle` so it opens by double-click, and **downsized
+  automatically** per the host's per-service Downloads setting
+  (Original / Fit 1024x768 / Fit 640x480, default Fit 640x480,
+  `cloud.photos.downloadSize`), applied in the get pipeline before the
+  JPEG is encoded. Configurable, not per-request yet — the per-photo
+  dropdown is a later arc. An original iCloud has not materialized
+  starts its download and refuses `busy`, the same bargain the share
+  strikes for Drive placeholders.
 - **Contacts**: alphabetical, the card is the deliverable —
   phones/emails/addresses as [label, value] rows in the person's own
   labels. `cloud.get` is refused until the classic side can read a
@@ -66,6 +72,13 @@ folder remembered and restored.
 
 Serving is ungated past the handshake, like the share (decided
 2026-08-01): the switches are the consent, per service.
+
+The Photos row also carries the **Downloads picker** (Original / Fit
+1024x768 / Fit 640x480): what a `cloud.get` delivers, applied
+host-side before the JPEG leaves, so the classic Mac never receives an
+original unless the host person said so. The default fits the screens
+the fetch is for — a 48-megapixel original into a 6 MB partition is a
+mistake a default should not require declining every time.
 
 ## The guest page
 
@@ -98,6 +111,24 @@ that is a deliberate trade: the only way off a column is
 `spikes/databrowser` proved CarbonLib 1.6.0 exports on the PB1400c,
 and a lazily-bound CFM call to an absent export is a crash at click
 time. One control per column set, every call in the proven 22.
+
+**Photos is list + preview-on-select** (`cloud_photos_view.c`, behind
+the same `CloudViewOps` seam — a `select` op the shell calls on every
+selection change): selecting a row asks `cloud.preview` with the card
+pane's dimensions and the screen's ACTUAL depth (8 for any screen that
+can index, 1 below that), and the host's answer — raw indexed rows it
+has already decoded, resized and dithered — lands in one offscreen
+GWorld and replaces the text card by one centered CopyBits, the
+Screenshots well's blit shape. Exactly ONE preview lives in memory at
+a time, evicted on every selection change, service change, or filtered
+deselect: the 6 MB partition holds a photo, not a library. The
+transfer arrives as one bulk bracket and lands as one invalidation of
+the pane — never a repaint per wire frame — and while a download holds
+the one-transfer-wide lane the ask refuses `busy`, which the pane
+words honestly as "Preview after the download". The decidable half
+(`preview.begin` validation before any allocation, the depth mapping,
+the pane-fit arithmetic) is pure in `cloud_preview.c`, host-cc tested
+in `cloud_preview_test.c`, mutation-watched.
 
 The split follows the house pattern: `cloud_model.c` (the store and
 parsers, host-cc tested in `cloud_model_test.c`, mutation-watched) and
@@ -142,11 +173,14 @@ that honest without spending memory this machine does not have:
   is the decision, host-cc tested in `cloud_model_test.c` and
   mutation-watched.
 
-**Explicitly out of scope**, and not planned for this arc: thumbnails,
-previews, resizing, and dithering. Nothing may pull a whole library at
-photo-library scale (potentially 100GB+) onto a machine with a 6MB
-partition — `cloud.get` moves exactly one photo at a time, on request,
-through the ordinary file family, and that stays the only bulk path.
+**Still out of scope**: anything that walks the library as pixels. A
+preview is ONE photo, on selection, evicted on the next; a thumbnail
+grid would be all of them, and it is deferred indefinitely (below).
+Nothing may pull a whole library at photo-library scale (potentially
+100GB+) onto a machine with a 6MB partition — `cloud.get` moves
+exactly one photo at a time, on request, through the ordinary file
+family, and `cloud.preview` moves at most one pane's worth of indexed
+pixels, host-clamped to 640x480.
 
 ## What is and is not proven
 
@@ -177,6 +211,22 @@ The real providers remain deliberately unexercised: they need this
 Mac's TCC grants, and what only a signed-in, access-granted machine can
 prove is ledgered in [open-issues.md](open-issues.md). The rest of the
 family is not metal-verified yet.
+
+The preview arc (2026-08-02) is **tested, nothing more**: the
+ditherers are pure units with watched mutations (`ClassicDitherTests`
+— zeroed Floyd-Steinberg weights and an ignored Atkinson carry both
+named by the mean/mix properties), the serve is loopback-proven
+(bytes intact through begin/bulk/end, lane exclusivity
+mutation-watched, the no-preview default refusal), the resize/JPEG
+pipeline runs against in-test JPEG and HEIC fixtures
+(`PhotosProcessingTests`), and the guest's begin-validation and fit
+arithmetic are host-cc tested (`cloud_preview_test.c`,
+mutation-watched). The guest half past those pure units — the GWorld,
+the CopyBits, the pane's honesty under a held lane — **builds** and
+has run nowhere; and the whole path against a REAL granted library
+(a preview of an actual HEIC on an actual screen, the busy bargain
+against a real un-materialized original) is exactly what only metal
+and a signed-in Mac can prove.
 
 **Drive stays a flat list, not a tree — Data Browser containers are
 declared but unproven.** `spikes/databrowser-container-probe` compiles
@@ -217,50 +267,39 @@ smalls, ledgered not hidden: the Photos provider's fetch cache is
 untested against a real library, contacts Birthday parsing is
 English-month-only, long card values draw unclipped.
 
-## Designed, not built: Photos browsing and Messages
+## Photos as shipped, and what was deliberately not built
 
-Two arcs discussed and settled 2026-08-01, recorded here so the next
-session starts from decisions instead of re-deriving them. Neither is
-implemented; the fan-out in flight (view seam, drive tree, contacts,
-search, photos list/download) is their substrate.
+The 2026-08-01 design here sketched a thumbnail-grid browser plus
+per-request download processing. **Michelle revised it 2026-08-02**,
+and what shipped is the revision, not the sketch:
 
-### Photos: thumbnails and downloads are two different questions
+- **No thumbnail grid, no hand-drawn canvas — deferred INDEFINITELY.**
+  The Photos view stays LIST + PREVIEW-ON-SELECT: the rows are the
+  ordinary Data Browser listing, and selecting one shows that one
+  photo, dithered to the guest's depth, zoomed to fit the card pane,
+  replacing the text card. One preview in memory at a time, evicted
+  on every selection change. Everything the grid design existed to
+  ration — sliding windows, atlas transfers, manifest frames — went
+  away with the grid; if a grid ever returns it starts from a new
+  decision, not from this paragraph.
+- **What survived from the sketch**, because it was the sound half:
+  the host renders EVERYTHING (decode, resize, dither — pixels are
+  text conversion's sibling, the modern side's job); the wire carries
+  raw indexed rows the guest can only CopyBits; the lane rule is
+  surfaced honestly ("Preview after the download"); the preview is
+  contract-additive (`cloud.preview`, `preview.begin`/`preview.end`,
+  the fourth bulk payload kind).
+- **Downloads are processed per the host's configurable setting, not
+  per request.** `cloud.get` always converts to JPEG (HEIC included)
+  and downsizes per the iCloud page's Downloads picker (Original /
+  Fit 1024x768 / Fit 640x480, default Fit 640x480). The per-photo
+  dropdown at ask time — and its estimated-size arithmetic — is a
+  later arc, deliberately.
 
-The two obvious approaches — a thumbnail browser, or the host
-resizing everything on a configurable basis — are the two halves of
-one design, split by WHEN processing happens:
+## Designed, not built: Messages
 
-- **Thumbnails are always host-rendered, tiny, and lazy.** The host
-  dithers/resizes to the guest's actual depth (the census already
-  says; 1-bit for a 68K someday, which will look charming) and the
-  guest CopyBits raw indexed pixels — "conversion is the host's job"
-  applied to pixels, and host-side it is exactly what
-  PHCachingImageManager exists for: per-asset small-target requests,
-  never a walk of the library. The arithmetic that makes it work: a
-  64x64 8-bit thumb is 4 KB; a listing page of 16 as ONE bulk
-  transfer — a thumbnail atlas with a control-frame manifest mapping
-  item to offset — is ~64 KB, ~0.2 s at the measured 300 KiB/s.
-  Guest-side, infinite scroll is a sliding window with eviction: the
-  6 MB partition holds a few screens of thumbs, not a library, and
-  re-fetching a 64 KB page is invisible.
-- **Downloads are processed per request, with a configurable
-  default.** The per-photo dropdown's options (original / fit
-  640x480 / fit to screen / dithered PICT) are host-side processing
-  selections; the host's iCloud page sets the default so a casual
-  double-click does the sane thing. Estimated size is exact for
-  uncompressed targets (dimensions x depth) and a labelled "~"
-  heuristic for JPEG — show both, pretend precision for neither.
-- **The preview pane** fetches one medium preview (~200x200 at guest
-  depth, ~40 KB) on selection rather than scaling the tiny thumb,
-  and evicts on every selection change so exactly one lives in
-  memory.
-- **The lane rule bites here**: bulk is one transfer wide, so thumb
-  and preview fetches queue behind an in-flight download. Fine if
-  the UI says so ("thumbnails resume after the download"); deadly to
-  the feel if it does not.
-- Contract: additive — a cloud.thumbs ask answered by a bulk
-  transfer plus manifest. The current no-previews version stays the
-  honest floor.
+Settled 2026-08-01, recorded so the next session starts from decisions
+instead of re-deriving them. Not implemented.
 
 ### Messages (iMessage/SMS): the first live-event push
 

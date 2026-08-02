@@ -14,6 +14,41 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## Photos preview + processing shipped tested; a granted library and metal own the rest (2026-08-02)
+
+**Unverified, deliberately labelled.** The list+preview arc
+(`cloud.preview` / `preview.begin` / `preview.end`, contract-additive;
+`ClassicDither`; `cloud_photos_view.c`; the Downloads picker feeding
+`cloud.photos.downloadSize` into the get pipeline) is TESTED — pure
+ditherers with watched mutations, loopback serving with bytes-intact
+and lane-exclusivity proofs, in-test JPEG/HEIC fixtures for the
+resize pipeline, host-cc guest units — and none of it has met a
+machine. What only a granted library and metal can prove:
+
+- **The palette is the real one only by construction.** ClassicDither
+  generates the standard 'clut' 8 layout (cube minus black slot, four
+  ramps, black at 255) and dithers against it; the guest's GWorld
+  wears whatever a NULL colour table gives an 8-bit depth. That the
+  two tables are THE SAME TABLE on a real CarbonLib screen — the
+  whole reason no palette travels — is a code-reading claim until a
+  preview is looked at on the PowerBook. If colours arrive scrambled,
+  suspect this first.
+- **PhotosCloudProvider.preview has never run granted**: the
+  local-bytes-only fetch, the busy bargain for an un-materialized
+  original, and a real HEIC through decode->fit->dither all need this
+  Mac's TCC grant.
+- **The pane under a held lane** ("Preview after the download", the
+  re-ask when selection moves mid-transfer) is guest logic past the
+  pure units: builds only, exercised on no machine, and 1-bit asks
+  (screens under 8-bit) have no fixture anywhere.
+- **Downsized downloads against a real library**: processedJPEG is
+  fixture-tested; a 48 MP original through fit640 on the wire to a
+  real guest is not.
+- **Preview pacing on real hardware**: a 300x200 8-bit preview is
+  ~60 KB, ~0.2 s at the measured 300 KiB/s — arithmetic, not a
+  measurement; nobody has felt the selection-to-pixels latency at
+  the PowerBook.
+
 ## The cloud.* family: real providers are untested, and the guest half does not exist (2026-08-01)
 
 **Unverified / unfinished, deliberately.** The host serves
