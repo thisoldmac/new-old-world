@@ -335,16 +335,17 @@ def observe(link, scope: str = "front") -> dict:
     as input.
 
     NOT the menu bar. `observe` reports none and deliberately will not; a
-    caller that wants one asks for a scene. This function is the only place
-    the observation's shape is assumed, so it is the only place that changes
-    if that shape moves.
+    caller that wants one asks for a scene. The shape is assumed in exactly
+    one place for every probe — oracles.observe_tree — because assuming it
+    here five times is what made every window oracle in this directory
+    structurally blind (see that function; measured 2026-08-02).
     """
-    return link.command("observe", {"scope": scope})
+    return oracles.observe_tree(link, scope)
 
 
 def front_window_controls(link) -> list:
     out = []
-    for w in observe(link).get("windows", []):
+    for w in oracles.observed_windows(link):
         out.extend(w.get("controls", []))
     return out
 
@@ -357,7 +358,7 @@ def control_by_ref(link, ref: str):
 
 
 def window_titles(link) -> list:
-    return [w.get("title") for w in observe(link).get("windows", [])]
+    return oracles.observed_window_titles(link)
 
 
 def live_scroll_bar(link):
@@ -1122,7 +1123,7 @@ def case_text(link, n: int) -> dict:
     trials = []
     for i in range(n):
         element = None
-        for w in observe(link).get("windows", []):
+        for w in oracles.observed_windows(link):
             for e in w.get("elements", []):
                 if e.get("kind") in ("editText", "textEdit"):
                     element = e
@@ -1158,7 +1159,7 @@ def case_text(link, n: int) -> dict:
 
         # The second, independent path: the observation's own walk.
         walked = None
-        for w in observe(link).get("windows", []):
+        for w in oracles.observed_windows(link):
             for e in w.get("elements", []):
                 if e.get("ref") == element["ref"]:
                     walked = e.get("text")

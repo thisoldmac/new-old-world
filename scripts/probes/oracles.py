@@ -41,7 +41,41 @@ from nowwire import GuestError, GuestLink
 # each name is a wire round trip, which at 59 names made a trial take minutes.
 DESKTOP_FOLDER_SCAN = 6
 
-DESKTOP = "Macintosh HD:Desktop Folder"
+# The Desktop, addressed the way NOW addresses anything: RELATIVE TO THE
+# SHARE ROOT. Upstream's constant was "Macintosh HD:Desktop Folder", an
+# absolute HFS path, because Mirror's probes read the disk through a lab
+# instrument that took one. NOW's `ls` resolves under the share and cannot
+# express an ascent (contract/share_path.h), so that string asked for
+# <share>/Macintosh HD/Desktop Folder and the File Manager refused —
+# measured 2026-08-02, first time this harness was ever run, and it failed
+# in the oracle rather than in the case, which reads like a broken guest.
+#
+# `desktop_path` derives it instead of assuming it: the share root is a
+# preference, and a guest sharing something other than the boot volume
+# has no Desktop under it. Deriving costs one round trip per run and
+# turns "the File Manager refused" into a sentence naming the share.
+DESKTOP_NAME = "Desktop Folder"
+
+
+def desktop_path(link: GuestLink) -> str:
+    """Where the Desktop is, relative to this guest's share, or refuse.
+
+    `ls` with no path answers rows whose first two are ["Share", <root>]
+    and ["Folder", "(root)"]; every row after is an entry in it. So the
+    Desktop is visible exactly when the share root contains it, which is
+    the same question as "can this oracle read the machine at all".
+    """
+    rows = link.rows(link.command("ls"), "ls")
+    share = next((r[1] for r in rows if r and r[0] == "Share"), "?")
+    names = {r[0] for r in rows if r}
+    if DESKTOP_NAME not in names:
+        raise GuestError(
+            "oracle-unreachable",
+            f"the guest shares {share!r}, which has no {DESKTOP_NAME!r} in "
+            f"it — the Desktop oracle needs a share that contains the "
+            f"Desktop (the boot volume's root), so this run would measure "
+            f"nothing rather than measure zero")
+    return DESKTOP_NAME
 
 
 def _folder_names(link: GuestLink, path: str) -> set:
@@ -63,7 +97,7 @@ def desktop_untitled_folders(link: GuestLink) -> set:
     Returned as the same suffix set upstream returned ("1", "2", ...) so a
     ported trial record compares field-for-field with `p2-nohijack.json`.
     """
-    names = _folder_names(link, DESKTOP)
+    names = _folder_names(link, desktop_path(link))
     found = set()
     for suffix in [""] + [f" {i}" for i in range(2, DESKTOP_FOLDER_SCAN + 1)]:
         if f"untitled folder{suffix}" in names:
@@ -80,9 +114,10 @@ def clear_desktop_untitled_folders(link: GuestLink) -> int:
     trial's state behind measures a different machine each time.
     """
     removed = 0
+    desktop = desktop_path(link)
     for name in desktop_untitled_folders(link):
         suffix = "" if name == "1" else f" {name}"
-        path = f"{DESKTOP}:untitled folder{suffix}"
+        path = f"{desktop}:untitled folder{suffix}"
         try:
             link.message({"type": "file.trash", "path": path})
             # file.trash answers on its own plane. Draining it here keeps the
@@ -98,6 +133,55 @@ def clear_desktop_untitled_folders(link: GuestLink) -> int:
             # unusable, which the caller can see.
             pass
     return removed
+
+
+def observe_tree(link: GuestLink, scope: str = "front") -> dict:
+    """The ax tree ITSELF — `{scope, processes, count, truncated, live}`.
+
+    THE UNWRAP EVERY PROBE GOT WRONG. `link.command` answers the reply's
+    `output` object, which for this verb is `{"observe": {...the tree...}}`
+    (contract/asyncapi.yaml, x-axTree). Five ported probes each wrote
+
+        for w in observe(link).get("windows", []):
+
+    which reads `windows` off the ENVELOPE. There is no such key at that
+    level and never was — the contract nests windows under each process —
+    so the loop body could not execute, on any machine, ever. Measured
+    2026-08-02: the About This Computer window was open on screen, `observe`
+    reported it with a minted ref, and the harness's own oracle called it
+    absent 5 times in 5. That is the shape of defect this project fears
+    most — a probe reporting 0 hijacks while its oracle is structurally
+    blind, which reads exactly like a guard holding.
+
+    So the unwrap lives here once, and `bind` is preserved rather than
+    flattened away: a process that contributed no tree says WHY, and an
+    empty window list must never be read as "no windows on the machine".
+    """
+    return link.command("observe", {"scope": scope}).get("observe", {})
+
+
+def observed_windows(link: GuestLink, scope: str = "front") -> list:
+    """Every window in the tree, each tagged with the process that owns it.
+
+    Flattened because most callers ask a question about the machine ("is
+    About This Computer open?") rather than about one process, but the
+    owner travels with the row so a caller that does care is not forced
+    back to the tree. `process` and `bind` are added keys; every other key
+    is the guest's own.
+    """
+    out = []
+    for proc in observe_tree(link, scope).get("processes", []) or []:
+        for win in proc.get("windows", []) or []:
+            row = dict(win)
+            row["process"] = proc.get("name")
+            row["bind"] = proc.get("bind")
+            out.append(row)
+    return out
+
+
+def observed_window_titles(link: GuestLink, scope: str = "front") -> list:
+    """Just the titles — the commonest question, asked in one place."""
+    return [w.get("title") for w in observed_windows(link, scope)]
 
 
 def running_processes(link: GuestLink) -> list:
