@@ -90,15 +90,31 @@ enum {
 };
 
 enum {
-    kCloudSizeMenuID = 136,
-    kCloudSizeHostDefaultItem = 4,
-
-    /* fitN box sizes (contract's CloudGet.size, docs/icloud.md): the
-       ones MENU 136 offers today. Load-bearing alongside the menu's
-       item order — item 2 is fit1024, item 3 is fit640. */
-    kFit1024W = 1024, kFit1024H = 768,
-    kFit640W = 640, kFit640H = 480
+    kCloudSizeMenuID = 136
 };
+
+/* MENU 136's items, in order, as the longest edge each one asks for —
+   0 for Original, which is the absence of a stop rather than a large
+   one. Load-bearing alongside cloud_model.c's cloud_size_token, which
+   maps the SAME item numbers to the contract's wire tokens; the count
+   and the largest-stop item are stated once in cloud_model.h so the
+   resource, the table and the map cannot drift apart.
+   There is no "host default" item: an item that cannot say on screen
+   what it will deliver is not an answer to "at what size?", so the
+   host's setting arrives as data (cloud.report defaultSize) and is
+   preselected below instead. */
+static const long k_size_stops[kCloudSizeItemCount] = {
+    0, 1600, 1024, 640
+};
+
+/* Which item the popup opens on: the host's own configured size when
+   the report named one this guest offers, the largest bounded stop
+   otherwise (cloud_size_default_item). A person's own pick outranks a
+   later report — g_size_chosen — because a Refresh that silently
+   moved the size out from under them would be the same class of lie
+   the "Host default" item was. */
+static int g_size_item = kCloudSizeLargestStopItem;
+static Boolean g_size_chosen;
 
 /* The chosen destination. Unset means the share root — the wire is
    told nothing and behavior is byte-identical to before the chooser
@@ -259,37 +275,45 @@ static void set_item(MenuRef menu, short item, const char *text)
     SetMenuItemText(menu, item, s);
 }
 
-/* Rebuilds items 1-3 for the given entry's stated width/height (both 0
-   = unstated): the real resolution for Original, and each fitN box's
-   computed result (cloud_photo_fit — aspect-preserving, never
-   upscaling: a photo already smaller than a box shows its own size).
-   Falls back to the literal fit-box wording — MENU 136's own resource
-   text — when there is nothing to compute, which covers both "no
-   selection" and "this entry never stated its dimensions". Item 4
-   (Host default) never changes. */
+/* Rebuilds every item for the given entry's stated width/height (both
+   0 = unstated): the real resolution for Original, and each stop's
+   computed result (cloud_photo_long_edge — the LONGER dimension lands
+   on the number, aspect preserved, never upscaling, so a portrait
+   3024x4032 at the 640 stop reads "480 x 640"). Falls back to the
+   literal wording — MENU 136's own resource text — when there is
+   nothing to compute, which covers both "no selection" and "this
+   entry never stated its dimensions". Never a guessed number. */
 static void rebuild_size_menu(long width, long height)
 {
     MenuRef menu = size_menu();
     char buf[32];
+    int item;
     long fw, fh;
 
     if (menu == NULL) {
         return;
     }
-    if (width <= 0 || height <= 0) {
-        set_item(menu, 1, "Original");
-        set_item(menu, 2, "Fit 1024x768");
-        set_item(menu, 3, "Fit 640x480");
-        return;
+    for (item = 1; item <= kCloudSizeItemCount; ++item) {
+        long stop = k_size_stops[item - 1];
+
+        if (width <= 0 || height <= 0) {
+            if (stop == 0) {
+                set_item(menu, (short)item, "Original");
+            } else {
+                snprintf(buf, sizeof buf, "Long side %ld", stop);
+                set_item(menu, (short)item, buf);
+            }
+            continue;
+        }
+        if (stop == 0) {
+            fw = width;
+            fh = height;
+        } else {
+            cloud_photo_long_edge(width, height, stop, &fw, &fh);
+        }
+        snprintf(buf, sizeof buf, "%ld x %ld", fw, fh);
+        set_item(menu, (short)item, buf);
     }
-    snprintf(buf, sizeof buf, "%ld x %ld", width, height);
-    set_item(menu, 1, buf);
-    cloud_photo_fit(width, height, kFit1024W, kFit1024H, &fw, &fh);
-    snprintf(buf, sizeof buf, "%ld x %ld", fw, fh);
-    set_item(menu, 2, buf);
-    cloud_photo_fit(width, height, kFit640W, kFit640H, &fw, &fh);
-    snprintf(buf, sizeof buf, "%ld x %ld", fw, fh);
-    set_item(menu, 3, buf);
 }
 
 static void invalidate_pane(void)
@@ -398,8 +422,11 @@ static OSErr view_create(WindowRef owner)
                               popupTitleLeftJust, kCloudSizeMenuID, 0,
                               popupMenuProc, 0);
     if (g_size_popup != NULL) {
-        SetControlMaximum(g_size_popup, kCloudSizeHostDefaultItem);
-        SetControlValue(g_size_popup, kCloudSizeHostDefaultItem);
+        SetControlMaximum(g_size_popup, kCloudSizeItemCount);
+        /* Opens on whatever the last report named (the host's own
+           setting), or on the largest bounded stop before any report
+           has landed. */
+        SetControlValue(g_size_popup, g_size_item);
     }
     CopyCStringToPascal("Choose...", text);
     g_dest_btn = NewControl(owner, &seed, text, false, 0, 0, 1,
@@ -560,7 +587,13 @@ static void view_draw(const CloudLayout *r, const CloudStore *store,
        the value), then the destination row - which the download's
        count and bar take over while bytes land, so a transfer costs
        the photo no height. */
-    draw_small_line(&r->size_popup, "Size", "", false);
+    /* Into its OWN rect, never the popup's: a popup draws its current
+       value across the whole control, so a caption written into
+       size_popup lands on top of that value — "Host default" with a
+       glyph through it, watched on metal 2026-08-02. cloud_layout.c
+       gives the caption size_label for exactly this reason, and
+       cloud_layout_test.c asserts the two do not touch. */
+    draw_small_line(&r->size_label, "Size", "", false);
     if (g_dl_line[0] != '\0') {
         draw_small_line(&r->dl_text, "", g_dl_line, false);
     } else {
@@ -621,8 +654,11 @@ static Boolean view_control_click(ControlRef control,
            value (nested-loops.md carries the menu-loop caveat). The
            value is read at Save time; nothing to do on the pick. */
         TrackControl(control, local, (ControlActionUPP)-1L);
-        /* The summary quotes this control; a pick it did not repaint
-           would leave the line contradicting the popup beside it. */
+        /* From here the pick is the person's, not the host's: a later
+           report updates what the host WOULD have chosen but no
+           longer moves the control (note_default_size). */
+        g_size_chosen = true;
+        g_size_item = GetControlValue(control);
         return true;
     }
     if (control != NULL && control == g_dest_btn) {
@@ -639,14 +675,20 @@ static Boolean view_control_click(ControlRef control,
 }
 
 /* The token the shell's cloud.get carries: the popup's current pick
-   through cloud_model's item map, NULL (omit the field, host default)
-   when the popup never got built. */
+   through cloud_model's item map. ALWAYS an explicit token now — a
+   save says the size it is showing, rather than omitting the field and
+   letting the host's setting answer a question the popup already
+   appeared to have answered. A popup that never got built falls back
+   to the item it would have opened on, which is that same host
+   setting, said out loud. */
 static const char *view_save_size(void)
 {
-    if (g_size_popup == NULL) {
-        return NULL;
+    const char *token = NULL;
+
+    if (g_size_popup != NULL) {
+        token = cloud_size_token(GetControlValue(g_size_popup));
     }
-    return cloud_size_token(GetControlValue(g_size_popup));
+    return token != NULL ? token : cloud_size_token(g_size_item);
 }
 
 /* Every pass while photos is on stage: two in-memory reads, control
@@ -755,6 +797,22 @@ const CloudViewOps *cloud_photos_view_ops(void)
     return &k_ops;
 }
 
+void cloud_photos_view_note_default_size(const char *token)
+{
+    int item = cloud_size_default_item(token);
+
+    if (g_size_chosen) {
+        return;                       /* the person's pick stands */
+    }
+    g_size_item = item;
+    /* One control mutation per settled answer, and only when the shown
+       value actually changed: SetControlValue redraws a popup, and a
+       report arrives on every page show and every Refresh. */
+    if (g_size_popup != NULL && GetControlValue(g_size_popup) != item) {
+        SetControlValue(g_size_popup, item);
+    }
+}
+
 void cloud_photos_view_dispose(void)
 {
     /* The well itself is a separate object with its own dispose
@@ -786,6 +844,8 @@ void cloud_photos_view_dispose(void)
     }
     memset(&g_host, 0, sizeof g_host);
     g_size_popup = NULL;
+    g_size_item = kCloudSizeLargestStopItem;
+    g_size_chosen = false;
     g_dest_btn = NULL;
     g_dl_bar = NULL;
     g_bar_shown = false;

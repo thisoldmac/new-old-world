@@ -66,6 +66,12 @@ int cloud_parse_report(const char *reply, CloudStore *store)
                              sizeof service->state);
         now_json_find_text(object, "detail", service->detail,
                            sizeof service->detail);
+        /* find_string, not find_text: this is a protocol token that
+           goes back on the wire verbatim, not something a person
+           reads. Absent leaves it empty, which the popup reads as
+           "the host named no size" rather than as a size. */
+        now_json_find_string(object, "defaultSize", service->default_size,
+                             sizeof service->default_size);
         ++store->service_count;
     }
     return store->service_count;
@@ -243,17 +249,46 @@ void cloud_dest_leaf(const char *path, char *out, long cap)
 const char *cloud_size_token(int menu_item)
 {
     /* MENU 136's order is load-bearing the way MENU 134's is for
-       software_module: items 1-3 are the contract's three tokens,
-       item 4 is Host default — NULL, which omits the field, which IS
-       the host-default ask by contract. Out of range reads as Host
-       default too: the popup cannot produce it, and a guess would be
-       a size nobody chose. */
+       software_module: items 1-4 are the contract's four tokens,
+       largest first. There is no "host default" item — the host's
+       setting arrives in the report and is preselected below, so
+       every item on screen names a size it can also SHOW. Out of
+       range returns NULL: the popup cannot produce it, and a guess
+       would be a size nobody chose. */
     switch (menu_item) {
     case 1:  return "original";
-    case 2:  return "fit1024";
-    case 3:  return "fit640";
+    case 2:  return "long1600";
+    case 3:  return "long1024";
+    case 4:  return "long640";
     default: return 0;
     }
+}
+
+int cloud_size_item(const char *token)
+{
+    int item;
+
+    if (token == 0 || token[0] == '\0') {
+        return 0;
+    }
+    for (item = 1; item <= kCloudSizeItemCount; ++item) {
+        const char *known = cloud_size_token(item);
+
+        if (known != 0 && strcmp(known, token) == 0) {
+            return item;
+        }
+    }
+    /* A retired fitN box, or a token from a host newer than this
+       guest: not offered here, and deliberately not translated into
+       the nearest thing (contract: refused by name, never aliased). */
+    return 0;
+}
+
+int cloud_size_default_item(const char *token)
+{
+    int item = cloud_size_item(token);
+
+    return item > 0 ? item : kCloudSizeLargestStopItem;
 }
 
 int cloud_dl_bar_value(long received, long expected)

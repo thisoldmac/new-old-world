@@ -25,7 +25,8 @@ static void test_report_fills_services_whatever_their_state(void)
         "{\"service\":\"drive\",\"label\":\"iCloud Drive\","
         "\"state\":\"serving\",\"detail\":\"Shared - browse it in Files\"},"
         "{\"service\":\"photos\",\"label\":\"Photos\","
-        "\"state\":\"no-access\",\"detail\":\"Grant access on the host\"},"
+        "\"state\":\"no-access\",\"detail\":\"Grant access on the host\","
+        "\"defaultSize\":\"long1024\"},"
         "{\"service\":\"contacts\",\"label\":\"Contacts\","
         "\"state\":\"off\"}]}",
         &store);
@@ -34,6 +35,12 @@ static void test_report_fills_services_whatever_their_state(void)
     assert(strcmp(store.services[1].state, "no-access") == 0);
     assert(strcmp(store.services[2].label, "Contacts") == 0);
     assert(store.services[2].detail[0] == '\0');
+    /* The host's own download-size setting rides the report as data
+       (contract: CloudReport defaultSize), for the service that has
+       one; every other service leaves it empty rather than 0-sized. */
+    assert(strcmp(store.services[1].default_size, "long1024") == 0);
+    assert(store.services[0].default_size[0] == '\0');
+    assert(store.services[2].default_size[0] == '\0');
 
     /* Drive serves but is not listable; photos is listable but not
        serving. Nothing qualifies. */
@@ -233,17 +240,62 @@ static void test_status_reads_a_capped_photo_library_as_a_prefix(void)
 
 static void test_size_popup_maps_items_to_contract_tokens(void)
 {
-    /* MENU 136's order is load-bearing: 1-3 are the contract's three
-       tokens, 4 (Host default) and anything the popup cannot produce
-       are NULL — the omitted field, which asks for the host's own
-       setting rather than inventing one. */
+    /* MENU 136's order is load-bearing: items 1-4 are the contract's
+       four tokens, largest first. There is no "host default" item -
+       every item names a size the popup can also show - so only an
+       item the popup cannot produce reads as NULL. */
     assert(strcmp(cloud_size_token(1), "original") == 0);
-    assert(strcmp(cloud_size_token(2), "fit1024") == 0);
-    assert(strcmp(cloud_size_token(3), "fit640") == 0);
-    assert(cloud_size_token(4) == 0);
+    assert(strcmp(cloud_size_token(2), "long1600") == 0);
+    assert(strcmp(cloud_size_token(3), "long1024") == 0);
+    assert(strcmp(cloud_size_token(4), "long640") == 0);
     assert(cloud_size_token(0) == 0);
     assert(cloud_size_token(5) == 0);
     assert(cloud_size_token(-1) == 0);
+}
+
+static void test_size_token_maps_back_to_its_item(void)
+{
+    int item;
+
+    /* The reverse map is what preselects the host's setting, so it
+       must round-trip every item exactly. */
+    for (item = 1; item <= kCloudSizeItemCount; ++item) {
+        assert(cloud_size_item(cloud_size_token(item)) == item);
+    }
+    assert(cloud_size_item("original") == 1);
+    assert(cloud_size_item("long640") == kCloudSizeItemCount);
+
+    /* Not offered here, and NOT translated into the nearest thing:
+       the retired fitN boxes named fit BOXES, and answering one with
+       a long-edge stop is exactly the silent substitution the
+       contract refuses to make. */
+    assert(cloud_size_item("fit640") == 0);
+    assert(cloud_size_item("fit2048") == 0);
+    assert(cloud_size_item("long999") == 0);
+    assert(cloud_size_item("") == 0);
+    assert(cloud_size_item(0) == 0);
+}
+
+static void test_the_popup_opens_on_the_hosts_own_setting(void)
+{
+    /* The host names its configured size; the popup opens there, so
+       what a person sees selected is what a save would deliver. */
+    assert(cloud_size_default_item("original") == 1);
+    assert(cloud_size_default_item("long1600") == 2);
+    assert(cloud_size_default_item("long1024") == 3);
+    assert(cloud_size_default_item("long640") == 4);
+
+    /* No token, or one this guest does not offer: open on the largest
+       BOUNDED stop. Never Original, which is the absence of a size -
+       a 48-megapixel original arriving unasked on a 6MB partition is
+       the one fallback that could hurt. */
+    assert(cloud_size_default_item("") == kCloudSizeLargestStopItem);
+    assert(cloud_size_default_item(0) == kCloudSizeLargestStopItem);
+    assert(cloud_size_default_item("fit2048") == kCloudSizeLargestStopItem);
+    assert(cloud_size_default_item("long4000") == kCloudSizeLargestStopItem);
+    assert(strcmp(cloud_size_token(kCloudSizeLargestStopItem),
+                  "long1600") == 0);
+    assert(cloud_size_default_item("original") != kCloudSizeLargestStopItem);
 }
 
 static void test_dl_bar_value_scales_and_clamps(void)
@@ -347,6 +399,8 @@ int main(void)
     test_card_rows_decode_the_pair_shape();
     test_status_reads_a_capped_photo_library_as_a_prefix();
     test_size_popup_maps_items_to_contract_tokens();
+    test_size_token_maps_back_to_its_item();
+    test_the_popup_opens_on_the_hosts_own_setting();
     test_dl_bar_value_scales_and_clamps();
     test_dl_bytes_line_reads_kilobytes();
     test_dest_leaf_is_the_last_segment();

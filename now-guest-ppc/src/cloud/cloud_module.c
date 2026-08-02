@@ -647,9 +647,22 @@ static void choose_service(int index)
 static void note_report(const char *reply)
 {
     int first;
+    int i;
 
     g_loading = false;
     cloud_parse_report(reply, &g_store);
+    /* The host's own download-size setting rides the report as data
+       (contract: CloudReport defaultSize), so the Photos popup can
+       PRESELECT it instead of carrying a "host default" item it could
+       not name on screen. An absent field reads as "the host named
+       none", which the view has its own answer for. */
+    for (i = 0; i < g_store.service_count; ++i) {
+        if (strcmp(g_store.services[i].service, "photos") == 0) {
+            cloud_photos_view_note_default_size(
+                g_store.services[i].default_size);
+            break;
+        }
+    }
     first = cloud_first_listable(&g_store);
     if (first < 0 && g_store.service_count > 0) {
         first = 0;

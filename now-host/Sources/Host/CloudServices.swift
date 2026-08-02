@@ -465,7 +465,7 @@ final class PhotosCloudProvider: NSObject, CloudProvider,
     /// The longest-edge scale itself, as arithmetic: aspect preserved,
     /// never enlarged, the longer dimension landing exactly on `edge`.
     /// Truncating integer division on purpose — the guest's
-    /// cloud_photo_fit_long_edge does the same on the same numbers, and
+    /// cloud_photo_long_edge does the same on the same numbers, and
     /// the popup's label would otherwise disagree with the file by a
     /// pixel. Data-in/data-out so a test proves it without an image.
     static func scaled(width: Int, height: Int,

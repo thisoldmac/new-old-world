@@ -67,6 +67,17 @@ typedef struct {
        shorter: just the destination row, then the bar and byte line
        while a pull is landing - the same shape, reused, not reinvented
        (cloud_drive_view.c). */
+    Rect size_label;                  /* the "Size" caption's OWN rect,
+                                          at the group box's left inset
+                                          on the popup's row. It exists
+                                          because the caption used to be
+                                          drawn into size_popup itself,
+                                          which overprinted the popup's
+                                          own title into garbage on
+                                          metal (2026-08-02); the "Into"
+                                          row below (dest_row + dest_btn)
+                                          is the shape this copies.
+                                          Empty wherever size_popup is */
     Rect size_popup;                  /* Size dropdown, left of Save;
                                           empty in drive mode (nothing to
                                           pick a size of) */

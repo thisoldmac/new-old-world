@@ -79,12 +79,27 @@ static void check_body(short left, short top, short right, short bottom)
        needs, always present - no disclosed state to get wrong. */
     assert(!is_empty(r.save_group));
     assert(!is_empty(r.size_popup));
+    assert(!is_empty(r.size_label));
     assert(!is_empty(r.dest_row));
     assert(!is_empty(r.dest_btn));
     /* Everything the box owns is INSIDE it: a control drawn outside
        its own frame is the overlap nothing repaints correctly. */
     assert(r.size_popup.top >= r.save_group.top);
     assert(r.size_popup.right <= r.save_group.right);
+    /* The Size caption has its OWN rect and does not touch the popup.
+       Drawn INTO the popup's rect (as it was until 2026-08-02) the
+       caption and the popup's own title overprint into garbage on
+       metal, and no assertion about either alone would have caught
+       it - so the property is stated as a RELATIONSHIP: the caption
+       ends before the popup begins, on the same row, at the box's
+       left inset like the "Into" caption one row below. */
+    assert(r.size_label.right <= r.size_popup.left);
+    assert(r.size_label.top == r.size_popup.top);
+    assert(r.size_label.bottom == r.size_popup.bottom);
+    assert(r.size_label.left >= r.save_group.left);
+    assert(r.size_label.left == r.dest_row.left);
+    /* Wide enough to be a word rather than a letter. */
+    assert(r.size_label.right - r.size_label.left >= 30);
     assert(r.dest_row.left >= r.save_group.left);
     assert(r.dest_btn.right <= r.save_group.right);
     assert(r.save_btn.bottom <= r.save_group.bottom);
@@ -174,6 +189,7 @@ static void check_drive_body(short left, short top, short right,
        exact bytes, nothing to pick a size of. */
     assert(is_empty(drive_r.save_btn));
     assert(is_empty(drive_r.size_popup));
+    assert(is_empty(drive_r.size_label));
     /* photos_text is photos' own further trim of detail_text; drive
        reads detail_text directly; photos_text stays the anti-rect. */
     assert(is_empty(drive_r.photos_text));

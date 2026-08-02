@@ -308,21 +308,28 @@ resource 'MENU' (135) {
 };
 
 /* The Photos view's download-size pop-up. Item order is load-bearing:
-   cloud_model.c's cloud_size_token maps items 1-3 to the contract's
-   size tokens and item 4 (the default) to "omit the field", which asks
-   for the host's own configured Downloads setting. The text below is
-   the FALLBACK wording only — cloud_photos_view.c's rebuild_size_menu
-   rewrites items 1-3 via SetMenuItemText to the selected photo's exact
-   post-fit resolution ("2016 x 1512") whenever the entry states its
-   width/height, and restores this literal wording (or on no
-   selection) when it does not. Item 4 never changes. */
+   cloud_model.c's cloud_size_token maps items 1-4 to the contract's
+   four size tokens (original / long1600 / long1024 / long640), largest
+   first, and cloud_photos_view.c's k_size_stops maps the same items to
+   the longest edge each one asks for.
+   There is NO "host default" item any more: an item that cannot say on
+   screen what it will deliver is not an answer to "at what size?", so
+   the host's own setting arrives as data (cloud.report defaultSize)
+   and is preselected instead.
+   Each longN stop names the LONGEST edge, which is why the wording
+   below says "long side" rather than a box: a 640x480 BOX gave a
+   portrait photo the short edge's number. The text is the FALLBACK
+   wording only — rebuild_size_menu rewrites every item via
+   SetMenuItemText to the selected photo's exact result ("480 x 640")
+   whenever the entry states its width/height, and restores this
+   literal wording on no selection or when it does not. */
 resource 'MENU' (136) {
     136, textMenuProc, allEnabled, enabled, "Size",
     {
         "Original", noIcon, noKey, noMark, plain;
-        "Fit 1024x768", noIcon, noKey, noMark, plain;
-        "Fit 640x480", noIcon, noKey, noMark, plain;
-        "Host default", noIcon, noKey, noMark, plain
+        "Long side 1600", noIcon, noKey, noMark, plain;
+        "Long side 1024", noIcon, noKey, noMark, plain;
+        "Long side 640", noIcon, noKey, noMark, plain
     }
 };
 

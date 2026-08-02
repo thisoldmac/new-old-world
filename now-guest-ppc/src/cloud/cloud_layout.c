@@ -138,6 +138,7 @@ void cloud_layout_compute(const Rect *body, Boolean drive_mode,
            list/photos mode's. */
         set_empty(&r->save_btn, col_right, list_bottom);
         set_empty(&r->size_popup, col_right, list_bottom);
+        set_empty(&r->size_label, col_right, list_bottom);
 
         dest_top = (short)(r->detail.bottom - 8 - row_h);
         set_rect(&r->dest_btn, (short)(col_right - 74), dest_top,
@@ -190,8 +191,25 @@ void cloud_layout_compute(const Rect *body, Boolean drive_mode,
 
         set_rect(&r->save_group, r->detail_text.left, g_top,
                  r->detail_text.right, (short)(r->detail.bottom - 8));
-        set_rect(&r->size_popup, (short)(inner_r - 176),
-                 (short)(g_top + 22), inner_r, (short)(g_top + 42));
+        /* The size row is the destination row's shape, one row up: a
+           caption at the left inset, the control flush right. The
+           caption gets its OWN rect because drawing it into the
+           popup's rect overprinted the popup's own title on metal
+           (2026-08-02) - a popup draws its value across the whole
+           control, so anything else written there lands on top of it.
+           The clamp keeps a legible caption on the narrowest honest
+           pane rather than letting the popup eat the row. */
+        {
+            short popup_l = (short)(inner_r - 176);
+
+            if (popup_l < (short)(inner_l + 40)) {
+                popup_l = (short)(inner_l + 40);
+            }
+            set_rect(&r->size_popup, popup_l, (short)(g_top + 22),
+                     inner_r, (short)(g_top + 42));
+            set_rect(&r->size_label, inner_l, (short)(g_top + 22),
+                     (short)(popup_l - gap), (short)(g_top + 42));
+        }
         set_rect(&r->dest_btn, (short)(inner_r - 88), row2, inner_r,
                  (short)(row2 + row_h));
         set_rect(&r->dest_row, inner_l, row2,

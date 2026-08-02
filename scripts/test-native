@@ -299,10 +299,13 @@ run_c now-guest-ppc cloud_nav_test.c        ""  src/cloud/cloud_nav.c
 # CopyBits destination reads.
 run_c now-guest-ppc cloud_preview_test.c    "" \
       src/cloud/cloud_preview.c src/core/json.c
-# The Size popup's fit-box arithmetic: what a fitN token will actually
-# deliver for a GIVEN photo, computed from the entry's own width/height
-# (docs/icloud.md) rather than sent over the wire. "Never upscale" is
-# the one rule worth watching fail under mutation.
+# The Size popup's longest-edge arithmetic: what a longN token will
+# actually deliver for a GIVEN photo, computed from the entry's own
+# width/height (docs/icloud.md) rather than sent over the wire. The
+# PORTRAIT case is the one to watch fail under mutation - it is the
+# whole reason these stops stopped being fit boxes, since a 640x480 box
+# gave a portrait photo the short edge's number. "Never upscale" is the
+# second rule pinned here.
 run_c now-guest-ppc cloud_photo_size_test.c "" \
       src/cloud/cloud_photo_size.c
 # The Contacts card's grouping/date-parsing decisions -- kept out of

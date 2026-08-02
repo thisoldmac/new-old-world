@@ -16,7 +16,15 @@ typedef unsigned char Boolean;
 enum {
     kCloudMaxServices = 8,
     kCloudMaxRows = 128,              /* the Files browser's bound */
-    kCloudMaxCardRows = 16
+    kCloudMaxCardRows = 16,
+
+    /* The download-size popup, stated ONCE here because MENU 136's
+       resource, the view's stop table and the token map all have to
+       agree: four items, largest first (Original, 1600, 1024, 640),
+       and item 2 is the largest BOUNDED stop — where the popup opens
+       when the host named no size this guest knows. */
+    kCloudSizeItemCount = 4,
+    kCloudSizeLargestStopItem = 2
 };
 
 typedef struct {
@@ -24,6 +32,17 @@ typedef struct {
     char label[32];                   /* MacRoman, drawn in the popup */
     char state[16];                   /* serving | off | no-access | ... */
     char detail[96];                  /* MacRoman, drawn under the list */
+    char default_size[16];            /* the host's own CloudGet.size
+                                          setting, for a service that
+                                          sizes its deliveries; empty
+                                          when the host stated none.
+                                          Protocol token, not display
+                                          text: the popup PRESELECTS
+                                          the item it names rather than
+                                          carrying a "host default"
+                                          item that could not say what
+                                          it meant (cloud_size_
+                                          default_item, below). */
 } CloudService;
 
 typedef struct {
@@ -122,11 +141,28 @@ void cloud_dest_leaf(const char *path, char *out, long cap);
    change-gate values (bar position, byte-count line) whose "did the
    shown value change" comparisons are the whole idle discipline. */
 
-/* Menu item (1-based, the MENU 136 order: Original / Fit 1024x768 /
-   Fit 640x480 / Host default) to the contract's size token. NULL for
-   Host default and for anything out of range — NULL means "omit the
-   field", which is the ask that keeps the host's own setting. */
+/* Menu item (1-based, the MENU 136 order: Original / 1600 / 1024 /
+   640) to the contract's size token. Every item names a REAL size:
+   there is no "host default" item any more, because an item that
+   cannot say on screen what it will deliver is not an answer to
+   "at what size?" — the host's setting arrives as data instead
+   (CloudService.default_size) and is preselected. NULL only for an
+   item the popup cannot produce; a caller that gets NULL has no size
+   to send, not a size to guess. */
 const char *cloud_size_token(int menu_item);
+
+/* The reverse map: the popup item that means this token, 0 for NULL,
+   empty, or a token this guest does not offer (a newer host's, or one
+   of the RETIRED fitN boxes). */
+int cloud_size_item(const char *token);
+
+/* The item to OPEN the popup on, given the host's reported
+   defaultSize. An unknown or absent token falls back to the largest
+   BOUNDED stop rather than to Original: Original is the absence of a
+   size, and a 48-megapixel original landing unasked on a 6MB partition
+   is exactly the mistake a fallback must not make. Never 0 — this
+   answer is always an item a person can see selected. */
+int cloud_size_default_item(const char *token);
 
 /* The bar's control value, 0..1000 (the share panel's scale), clamped;
    -1 when expected is unknown or nothing is moving — the value at

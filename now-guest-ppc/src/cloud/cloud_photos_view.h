@@ -49,6 +49,15 @@ typedef struct CloudPhotosHost {
    Data Browser). */
 void cloud_photos_view_bind(const CloudPhotosHost *host);
 
+/* The host's own configured download size, straight off cloud.report
+   (CloudService.default_size; empty or NULL when the host named
+   none). The Size popup PRESELECTS the item it names — there is no
+   "host default" item, because an item that cannot say on screen what
+   it will deliver is not an answer to "at what size?". Called by the
+   shell on every report; a pick the person has already made outranks
+   it, so a Refresh never moves the size out from under them. */
+void cloud_photos_view_note_default_size(const char *token);
+
 
 /* This view's own Data Browser (NULL when creation failed, or before
    create() runs): the control the shell shows, sizes and routes
