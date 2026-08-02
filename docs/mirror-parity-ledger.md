@@ -11,6 +11,83 @@ the content plane, and the reference layer are all still open (see
 `docs/emu-readiness.md`). "Crossed" means *the code exists and something
 calls it*, not that it has been run against a guest, emulated or real.
 
+> **That sentence stopped being true on 2026-08-02 for the act plane.** The
+> section [NOW's own numbers](#nows-own-numbers-2026-08-02) below records the
+> first measurements this project has taken itself, on an emulated Power Mac
+> G4. Every number above it is still upstream's, as the rest of this file
+> says. **Two stale-path warnings** while you are here: several §7 rows cite
+> `now-host/Sources/MirrorKit*` paths that now exist only under
+> `archive/mirror-port-2026-08-01/`, because this file predates the port being
+> thrown away by hours; and §5's `TEHandle` row is **closed** — the bound is
+> in `ext/src/now_ext_act.c :: act_resolve_te`, which bounds the
+> caller-supplied handle before any dereference and bounds `hText` again in
+> `act_te_read`.
+
+## NOW's own numbers (2026-08-02)
+
+The rig, stated once so every number below inherits it: a **session-private
+mac99 clone** (`scripts/spin-up-ppc`), Mac OS 9.1, guest build
+`48cc16cc61da`, NOW Extension staged as type `INIT` creator `NOWx`, wire on
+127.0.0.1:5251, Mirror's three INITs staged beside NOW's own so both resident
+families were present. **Emulator-verified. No metal.** A mac99 number stays
+a mac99 number, per this file's own provenance rule.
+
+| Question | NOW | upstream, for comparison |
+|---|---|---|
+| **P4 no-hijack, menu case, N=20** | **0/20 hijacks, 20/20 clean chain-through** | Portal 0/19 after the guard was fixed; 18/20 before it |
+| P4 stimulus calibration (baseline, nothing armed) | 0/3 hijacks, 3/3 chain-through | — |
+| P4 trap ABI (`actselftest`, NOW's own app) | `abi-agreed` — answered `0x03E70007`, read back `0x03E70007` | — |
+| P4 anchor settle window | first `actselftest` after a launch answers `no-such-process`; the identical call ~6 s later answers `abi-agreed` | — |
+| P3 content plane | present and discoverable: format 1, length 65676, ring cap 65536, mode off | QDPeek v1 |
+
+**What the menu number means, precisely.** An armed `menuact` request was live
+against a decoy while a REAL mouse press — QMP, the emulated machine's own
+hardware input — pulled the Apple menu and released on About This Computer.
+The hijack oracle is a folder on disk (`untitled folder` on the Desktop, the
+armed request's own effect); the chain-through oracle is the About window
+opening. Twenty trials, the armed request fired on none of them, and the
+user's own click did its own thing every time. This is the number NOW's
+contract has been citing upstream for.
+
+**Two harness defects were found and fixed before any of it counted**, both
+in the oracle rather than the case, and both would have produced a *confident
+zero*:
+
+1. The Desktop oracle used upstream's absolute HFS path. NOW's `ls` resolves
+   under the share and cannot express an ascent, so it asked for
+   `<share>/Macintosh HD/Desktop Folder` and got "the File Manager refused" —
+   which reads like a broken guest.
+2. The window oracle read `windows` off the reply ENVELOPE; the contract nests
+   windows under each PROCESS. That loop body could never execute on any
+   machine. Measured before the fix: About This Computer open on screen,
+   `observe` reporting it with a minted ref, and the harness calling it absent
+   **5 times in 5**. A probe whose oracle is structurally blind reports zero
+   hijacks and reads exactly like a guard holding.
+
+The same wrong unwrap is still in `apple-event-probe.py`, `ctlinvoke-probe.py`,
+`textops-probe.py` and `drive-sequence.py`; `oracles.observe_tree` now exists
+for them to use. **Any number those four have ever produced about windows
+should be re-taken.**
+
+**What did NOT get a number, and why** — so the table above is not read as a
+sweep:
+
+- **`stale` case: attempted, no number.** The run died with the guest closing
+  the NOW wire mid-case. Not attributed: two variables were introduced during
+  it (Mirror's agent was launched on the same machine, and a MirrorApp
+  instance was killed rather than quit, which the lifecycle code says leaves
+  the agent's single client slot held). The guest's own dead-link rule is 65 s
+  without inbound traffic and the case's gaps are ~16 s, so idle timeout does
+  not explain it. Re-run needed with nothing else touching the machine.
+- **`control`, `window`, `text`, `collide`: not run.**
+- **P3 never armed.** Discoverable is not armed; the first arm is still owed.
+- **The Finder-vs-own-app split is unresolved.** `actselftest` abi-agreed
+  against NOW's own app here. The 2026-08-01 overnight arc saw it *refuse*
+  against the Finder on the same build, suspected PPC-native trap dispatch
+  bypassing the 68K patches — and the menu case above drove the **Finder**
+  successfully, which sits oddly beside that report and is worth settling
+  rather than assuming either way.
+
 ## How rows were classified
 
 - **crossed** — the code is present in NOW's tree *and* reachable: I found a
