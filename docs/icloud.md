@@ -109,11 +109,11 @@ One Workshop module (`now-guest-ppc/src/cloud/`), the eleventh page:
 a service dropdown rebuilt from each `cloud.report`, a Data Browser
 for the chosen service's rows (paged straight through, the Files
 browser's rule) — the shell's shared two-column one (Item/Detail) for
-any service with no tailored view, Drive's and Photos' own wider ones
-for those two — a card pane for the selected row, and "Save to this
-Mac", which sends `cloud.get` and lets the ordinary file.offer
-machinery land the bytes in this machine's share. Drive is a real
-file browser IN the page: it calls the same `now_wire_list_host` the
+any service with no tailored view, Drive's, Photos' and Contacts' own
+wider ones for those three — a card pane for the selected row, and
+"Save to this Mac", which sends `cloud.get` and lets the ordinary
+file.offer machinery land the bytes in this machine's share. Drive is
+a real file browser IN the page: it calls the same `now_wire_list_host` the
 Files page calls (the listing hook follows whoever asked last, which
 is already the wire's replacement rule for the answer) and renders
 the Files page's exact columns — Name with the row's native icon
@@ -148,8 +148,9 @@ mid-transfer. Files and Drive both pull through the same
 last, the listing hook's existing rule — each page reclaims it
 (`conn_set_get_note`) the instant it calls `now_wire_get_host`.
 
-The drive columns live on the drive view's OWN Data Browser, a second
-control beside the shell's shared two-column one, and
+The drive columns live on the drive view's OWN Data Browser, one of
+three view-owned controls beside the shell's shared two-column one
+(Photos and Contacts each keep their own too, below), and
 that is a deliberate trade: the only way off a column is
 `RemoveDataBrowserTableViewColumn`, which is not among the 22 symbols
 `spikes/databrowser` proved CarbonLib 1.6.0 exports on the PB1400c,
@@ -483,6 +484,40 @@ clears the needle on every route, not just the popup click. Known
 smalls, ledgered not hidden: the Photos provider's fetch cache is
 untested against a real library, contacts Birthday parsing is
 English-month-only, long card values draw unclipped.
+
+### The polish2 integration (2026-08-02), and what only landed here
+
+`claude/polish2-drive-dest`, `claude/polish2-photos-cols` and
+`claude/polish2-contacts` merged onto `claude/polish2-foundations` are
+**tested, nothing more**: `scripts/test-all` is green (all 79 native
+tests including the seven `cloud_*` ones, both guest cross-builds, the
+host suites and the Xcode app target) on the merged tree, and
+`audit_source.py` over every touched `now-guest-ppc/src/cloud/*.c` file
+found no new hazard — the 22 lexical findings it raises are all
+pre-existing, already change-guarded or already-exempted patterns
+(popup `TrackControl` calls using `(ControlActionUPP)-1L`, push-button
+ones using `now_pump_action()`, `HiliteControl`/`SetControlValue` calls
+gated on a `g_shown_*`/`g_bar_value` diff, `RGBForeColor`/`RGBBackColor`
+before every `CopyBits`). None of this ran on the emulator or the
+PowerBook.
+
+The merge itself had to reconcile two branches that grew the same shape
+independently: `view_own_browser()`/`active_browser()`/
+`show_own_browser()` in `cloud_module.c` generalized from two
+view-owned browsers (Drive, Photos) to three (Drive, Photos, Contacts)
+rather than picking either side's two-way check, and `cloud_photos_view
+.c` kept photos-cols' own Data Browser (Name/Size/Modified, the Size
+popup's exact-resolution labels) while adopting polish2-contacts'
+extraction of the GWorld/fetch state into the shared
+`cloud_preview_well.c` — so Photos' preview now goes through the same
+rebound-`note`-callback path Contacts does, a real interaction between
+the two arcs that neither branch's own tests could see alone (each
+tested against the shell's OTHER pieces, not each other's). This is
+the specific claim that needs a metal session before it is more than
+"builds and passes tests written in each branch's own isolation": pick
+a photo, watch the preview arrive on the new Data Browser, switch to
+Contacts, pick a card, and confirm the well's eviction/rebind still
+hands the right pane its pixels and not the other view's.
 
 ## Photos as shipped, and what was deliberately not built
 

@@ -14,6 +14,58 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## The polish2 integration merged three UI arcs; the seam between them has never run (2026-08-02, later still)
+
+**Unverified, and the specific claim is narrower than "the union is
+untested."** `claude/polish2-drive-dest`, `claude/polish2-photos-cols`
+and `claude/polish2-contacts` — each individually tested against the
+shell as it existed on `claude/polish2-foundations` — merged onto
+`claude/polish2-integration` with real conflicts in `cloud_module.c`
+and `cloud_photos_view.c`, not just adjacent additions:
+
+- **`cloud_module.c`**: `view_own_browser()`/`active_browser()`/
+  `show_own_browser()` had to generalize from two view-owned browsers
+  (Drive, Photos, from the drive-dest+photos-cols merge) to three
+  (adding Contacts) rather than picking either side's flag check
+  wholesale — a real design decision made at merge time, not a
+  mechanical union.
+- **`cloud_photos_view.c`**: photos-cols' own Data Browser (Name/Size/
+  Modified columns, the Size popup's exact-resolution labels) had to be
+  kept while adopting polish2-contacts' extraction of the preview
+  GWorld/fetch state out of this file into the new shared
+  `cloud_preview_well.c` — meaning Photos' preview path now goes
+  through the well's rebind-on-select `note` callback for the first
+  time. Photos' OWN branch never tested against that extraction
+  (contacts' branch predates photos-cols' columns); contacts' OWN
+  branch never tested against Photos having a Data Browser of its own.
+  Neither branch's tests can have exercised this interaction, only the
+  merged tree's tests can, and `scripts/test-all` at the pure-logic
+  level cannot see a Toolbox-level selection/rebind race.
+
+`scripts/test-all` is green on the merged tree (79 native tests
+including all seven `cloud_*` ones, both guest cross-builds, the host
+suites and the Xcode app target) and `audit_source.py` over every
+touched `now-guest-ppc/src/cloud/*.c` file raised nothing new past
+already-reviewed, already-guarded lexical patterns. **None of this ran
+on the emulator or the PowerBook.** What only metal can prove, most
+load-bearing first:
+
+- **The preview well correctly rebinds across a Photos-to-Contacts
+  switch on a REAL machine.** Select a photo, let its preview arrive
+  on the new Data Browser, switch to Contacts mid-flight or right
+  after, pick a card, and confirm the well's eviction/rebind hands the
+  right pane its pixels — not a stale Photos preview drawn into the
+  Contacts well, not a Contacts ask silently landing in the Photos
+  pane.
+- **Four browsers (shell, Drive, Photos, Contacts) sharing one window's
+  activate/show lifecycle** — `cloud_activate`'s `lists[4]` and
+  `show_own_browser`'s four-way dispatch are new arithmetic this merge
+  wrote, unexercised past compiling and the pure geometry tests.
+- Every per-branch metal gap already ledgered below (Contacts guest UI,
+  Photos download UX, Photos preview) still applies undiminished — this
+  entry is additionally about the THREE arcs running together, not a
+  replacement for any of them.
+
 ## polish2-foundations: contract + host only, tested with fakes; the two real-data paths and the whole guest half are unbuilt (2026-08-02, later still)
 
 **Unverified, deliberately labelled — and narrower than the other
