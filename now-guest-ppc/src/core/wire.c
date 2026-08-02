@@ -18,6 +18,7 @@
 #include "pixels.h"
 #include "contract.h"
 #include "ot_carbon.h"
+#include "peek.h"
 #include "peek_read.h"
 #include "prefs.h"
 #include "proc_actions.h"
@@ -1548,6 +1549,31 @@ static void serve_scene(const char *request)
         stale_ticks = 1;              /* a window shorter than a tick is
                                          still a window, not "disabled" */
     }
+    /* ARM THE ANCHOR PLANE BEFORE WALKING, and this line is the whole
+       difference between a scene of this machine and a scene of this
+       application.
+     *
+     * The anchor plane captures only while armed. Nothing on the scene
+     * path ever armed it - the only arm sites were the Processes page
+     * (console face, while shown), the content plane, and act_client,
+     * which withdraws again as soon as its op completes. So every scene
+     * this guest has ever served walked with the plane dark, the oracle
+     * found no anchor for any foreign process, and the answer contained
+     * NOW's own window and nothing else. Measured 2026-08-02 against
+     * Mirror's agent on one machine: the agent's walk found the front
+     * application's window with ten controls, this one found none of it.
+     *
+     * That read as "NOW's scene is structurally poorer than Mirror's",
+     * and it was not - it was unarmed. This side owns only the arm
+     * cells, which is exactly what is written here.
+     *
+     * A capture takes at least one event-loop pass in the target to
+     * appear, so the FIRST scene after a cold arm is still thin and the
+     * next is not. That is the plane's settle window, not a defect, and
+     * it is why this arms rather than arming-and-waiting: a walk that
+     * blocked for a foreign process to pump would hold the wire. */
+    now_peek_arm((unsigned long)kNowPeekCapAnchors);
+
     now_scene_collect(scene, ++g_scene_seq, stale_ticks);
 
     /* Size, then allocate, then encode. One walk, two answers: the
