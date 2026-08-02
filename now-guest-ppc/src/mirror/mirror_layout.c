@@ -147,12 +147,13 @@ static void running_text(const MirrorFacts *facts, char *out, long cap)
         break;
     case kMirrorPortAbsent:
         snprintf(out, (size_t)cap,
-                 "Running, but no mirror.port beside it - which port it "
-                 "took is unknown");
+                 "Running on %d, the agent's default - no mirror.port "
+                 "beside it", (int)kMirrorAgentPort);
         break;
     case kMirrorPortUnusable:
         snprintf(out, (size_t)cap,
-                 "Running, but mirror.port beside it names no usable port");
+                 "Running on %d, the agent's default - mirror.port names "
+                 "no usable port", (int)kMirrorAgentPort);
         break;
     default:
         /* No folder was resolved, so nothing was read - and a process
@@ -206,14 +207,23 @@ int now_mirror_agent_row(const MirrorFacts *facts, int index,
             }
             break;
         case kMirrorPortAbsent:
+            /* The agent's own read_port returns its compiled-in default
+               when the file is missing, so this is a KNOWN port, not an
+               unknown one. Saying so is the difference between a page
+               that sends somebody to stage a file they do not need and
+               one that tells them what will happen. */
             snprintf(value, (size_t)value_cap,
-                     "No mirror.port beside the agent. Mirror's tools "
-                     "write that file.");
+                     "%d, the agent's default - no mirror.port beside it",
+                     (int)kMirrorAgentPort);
             break;
         case kMirrorPortUnusable:
+            /* Same answer, for the same reason: read_port ignores a
+               number outside its range and falls back to the default. */
             snprintf(value, (size_t)value_cap,
-                     "mirror.port names no port between %d and %d",
-                     (int)kMirrorPortLow, (int)kMirrorPortHigh);
+                     "%d, the agent's default - mirror.port names no port "
+                     "between %d and %d, so the agent ignores it",
+                     (int)kMirrorAgentPort, (int)kMirrorPortLow,
+                     (int)kMirrorPortHigh);
             break;
         default:
             snprintf(value, (size_t)value_cap, "-");
@@ -266,30 +276,34 @@ Boolean now_mirror_enable_refusal(const MirrorFacts *facts, char *out,
                                   long cap)
 {
     out[0] = '\0';
-    switch (facts->port_state) {
-    case kMirrorPortAbsent:
-        /* Mirror's agent does have a compiled-in port, so this is not
-           "it would bind nothing" - it is that the number is a property
-           of a binary nobody here can read, and Mirror's own stager
-           writes the file precisely so that it never has to be guessed.
-           Starting a process whose port is unknowable is how this page
-           came to say "Running" about a machine nothing could reach. */
-        snprintf(out, (size_t)cap,
-                 "There is no mirror.port beside the agent, so nothing "
-                 "here can say which port it would serve. Mirror's own "
-                 "tools write that file; NOW installs nothing. Stage it, "
-                 "then press Enable.");
-        return (Boolean)1;
-    case kMirrorPortUnusable:
-        snprintf(out, (size_t)cap,
-                 "The mirror.port beside the agent names no port between "
-                 "%d and %d, so the agent would ignore it and serve one "
-                 "nobody here can name. Correct that file, then press "
-                 "Enable.", (int)kMirrorPortLow, (int)kMirrorPortHigh);
-        return (Boolean)1;
-    default:
-        return (Boolean)0;
-    }
+    (void)facts;
+    (void)cap;
+    /* NO PORT-BASED REFUSAL, and the two that used to be here were both
+     * wrong about the machine.
+     *
+     * They rested on "the number is a property of a binary nobody here
+     * can read". Read Mirror's own read_port (guest/app/src/main.c): a
+     * MISSING file returns kDefaultPort, and a file naming anything
+     * outside 1024..65535 ALSO returns kDefaultPort. There is no input
+     * for which the agent binds something unknowable - it binds the
+     * file's number when the file names a usable one, and 1420
+     * otherwise. This side already knows that constant; it is
+     * kMirrorAgentPort in mirror_facts.h, read from those same sources.
+     *
+     * So refusing to launch over a missing mirror.port stopped a launch
+     * that would have worked, in front of somebody who had just copied
+     * the agent next to the application and had every reason to expect
+     * Enable to enable something. The honest fix is not a better refusal
+     * sentence: it is to report the port the agent WILL serve - which
+     * the port row now does, marking whether the number came from the
+     * file or from the agent's own default - and to let the launch
+     * happen.
+     *
+     * What the original caution was right about is kept elsewhere:
+     * running and serving are still different facts, the page still
+     * cannot see the port a RUNNING process actually bound, and the row
+     * still says where its number came from. */
+    return (Boolean)0;
 }
 
 Boolean now_mirror_can_disable(const MirrorFacts *facts)

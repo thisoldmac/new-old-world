@@ -271,10 +271,14 @@ static void test_state_carries_the_port(void)
           "running with no mirror.port must not read as a bare Running");
     check(strstr(value, "mirror.port") != NULL,
           "running with no port file names the file that is missing");
-    check(strstr(value, "unknown") != NULL,
-          "running with no port file says the port is unknown");
-    check(strstr(value, "1420") == NULL,
-          "running with no port file claims no port number");
+    /* Was: "says the port is unknown" and "claims no port number". It is
+       not unknown - read_port falls back to the compiled-in default, so
+       naming that number is the accurate answer and withholding it was
+       the page being vague about something it knew. */
+    check(strstr(value, "1420") != NULL,
+          "running with no port file names the default the agent takes");
+    check(strstr(value, "default") != NULL,
+          "and says the number came from the default, not from a file");
 
     facts.port_state = kMirrorPortUnusable;
     now_mirror_agent_row(&facts, 0, label, (long)sizeof label, value,
@@ -316,10 +320,13 @@ static void test_port_row(void)
     facts.port = 0;
     now_mirror_agent_row(&facts, 1, label, (long)sizeof label, value,
                          (long)sizeof value);
-    check(strstr(value, "No mirror.port") != NULL,
-          "an absent port file is reported as absent");
-    check(strstr(value, "0") == NULL,
-          "an absent port file invents no port number");
+    /* The absence is still stated - but beside the port that absence
+       PRODUCES, which is the fact somebody needs to point a mirror at
+       this machine. */
+    check(strstr(value, "mirror.port") != NULL,
+          "an absent port file is still named as absent");
+    check(strstr(value, "1420") != NULL,
+          "and the port the agent will actually serve is given");
 
     facts.port_state = kMirrorPortUnusable;
     now_mirror_agent_row(&facts, 1, label, (long)sizeof label, value,
@@ -348,36 +355,31 @@ static void test_enable_refusal(void)
           "Enable does not refuse when the port file names a port");
     check(why[0] == '\0', "a refusal that did not happen says nothing");
 
+    /* NO PORT-BASED REFUSAL, and this block used to assert the opposite.
+       It required Enable to refuse when mirror.port was missing, on the
+       theory that the port would then be unknowable. Mirror's own
+       read_port says otherwise: a MISSING file returns the compiled-in
+       default, and a file naming anything outside 1024..65535 returns it
+       too. There is no input for which the agent binds something this
+       side cannot name - and kMirrorAgentPort is that number, read from
+       Mirror's sources.
+
+       So the old refusal stopped a launch that would have worked, in
+       front of somebody who had just put the agent beside the
+       application. The port row carries the honesty instead: it reports
+       the port the agent WILL serve and whether that came from the file
+       or from the default. */
     facts.port_state = kMirrorPortAbsent;
     facts.port = 0;
-    check(now_mirror_enable_refusal(&facts, why, (long)sizeof why),
-          "Enable refuses to launch an agent with no mirror.port beside "
-          "it - the launch would produce a process nobody can reach");
-    check(strstr(why, "mirror.port") != NULL,
-          "the refusal names the file that is missing");
-    check(strstr(why, "Enable") != NULL,
-          "the refusal says what to do and that Enable is what to press "
-          "afterwards");
-    /* NOW reads this machine; it does not install Mirror. A refusal that
-       offered to write the file would be this page installing Mirror. */
-    check(strstr(why, "NOW installs nothing") != NULL,
-          "the refusal says who writes that file, and that it is not us");
+    check(!now_mirror_enable_refusal(&facts, why, (long)sizeof why),
+          "a missing mirror.port does NOT refuse the launch - the agent "
+          "takes its own default and this side knows what that is");
 
     facts.port_state = kMirrorPortUnusable;
-    check(now_mirror_enable_refusal(&facts, why, (long)sizeof why),
-          "Enable refuses a port file that names no usable port");
-    check(strstr(why, "1024") != NULL && strstr(why, "65535") != NULL,
-          "the refusal names the range, so the file can be corrected");
+    check(!now_mirror_enable_refusal(&facts, why, (long)sizeof why),
+          "an unusable mirror.port does not refuse either - read_port "
+          "ignores it and falls back to the same default");
 
-    /* The refusal must fit the note the page draws it in, or the last
-       clause - the one saying what to do - is what falls off. */
-    facts.port_state = kMirrorPortAbsent;
-    now_mirror_enable_refusal(&facts, why, (long)sizeof why);
-    check(strlen(why) < (size_t)kMirrorNoteMax - 1,
-          "the refusal fits a note without being truncated");
-
-    /* Nothing was looked at: no claim either way, and the launch path's
-       own "there is no agent there" answer is the one that speaks. */
     facts.port_state = kMirrorPortUnknown;
     check(!now_mirror_enable_refusal(&facts, why, (long)sizeof why),
           "an unresolved folder is not a port refusal");
