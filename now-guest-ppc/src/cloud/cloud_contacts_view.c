@@ -153,7 +153,8 @@ static const CloudViewOps k_ops = {
     NULL,                              /* key: generic HandleControlKey */
     NULL,                              /* idle: nothing to watch */
     NULL,                              /* reset_for_service: ask_rows(1) */
-    view_row_matches
+    view_row_matches,
+    NULL                               /* select: the card is the state */
 };
 
 const CloudViewOps *cloud_contacts_view_ops(void)

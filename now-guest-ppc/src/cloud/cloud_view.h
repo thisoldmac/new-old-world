@@ -102,6 +102,16 @@ typedef struct CloudViewOps {
        otherwise show. */
     Boolean (*row_matches)(int index, const CloudStore *store,
                            const char *needle);
+
+    /* Selection changed: `selected` is the new row index (-1 = none).
+       The shell calls this on every real selection change AND with -1
+       on every service change, after its own ask_card bookkeeping, so
+       a view that keeps per-selection state (the photos preview: one
+       image in memory, evicted on every change) has exactly one seam
+       to keep it at. NULL for the views whose card is all the state
+       there is. */
+    void (*select)(const CloudLayout *r, const CloudStore *store,
+                   int selected);
 } CloudViewOps;
 
 #endif /* NOW_CLOUD_VIEW_H */

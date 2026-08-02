@@ -9,6 +9,7 @@
 #include "agent_access.h"
 #include "build_stamp.h"
 #include "capture.h"
+#include "cloud_preview.h"
 #include "fileshare.h"
 #include "commands.h"
 #include "census.h"
@@ -106,6 +107,7 @@ static void stream_drop(void);
 static void shot_drop(void);
 static void note_shot(const char *line);
 static void get_cleanup(Boolean keep_file);
+static void preview_fail(const char *reason);
 
 /* Only the connect operation runs asynchronously: on the physical
    PowerBook a synchronous OTConnect to an unreachable address blocks
@@ -271,6 +273,7 @@ static void link_drop_transfers(void)
     shot_drop();                      /* no deferred capture across a drop */
     put_drop();                       /* no half-written file left behind */
     get_cleanup(false);               /* nor half a file coming the other way */
+    preview_fail("Connection lost");  /* local hook only; no wire touched */
     ctlq_clear();
 }
 
@@ -2202,11 +2205,52 @@ static struct {
     unsigned long deadline;
 } g_cloudget;
 
+/* A preview is the third pending beside the ask and the get, and the
+   only one whose answer is a bulk transfer (preview.begin / bulk /
+   preview.end). It cannot replace itself the way the ask kinds do — a
+   replaced ask costs a dropped frame, a replaced transfer would leave
+   bulk bytes with no owner — so a second ask while one is in flight is
+   refused locally and the view re-asks when the hook settles. */
+static struct {
+    Boolean pending;                  /* asked; begin not yet seen */
+    Boolean receiving;                /* begin seen; bulk landing */
+    long id;
+    CloudPreviewBegin begin;
+    Ptr buf;                          /* NewPtr(begin.bytes) while receiving */
+    long received;
+    unsigned long deadline;
+} g_prev;
+
 static ConnCloudNote g_cloud_hook;
+static ConnCloudPreviewNote g_preview_hook;
 
 void conn_set_cloud_note(ConnCloudNote fn)
 {
     g_cloud_hook = fn;
+}
+
+void conn_set_cloud_preview_note(ConnCloudPreviewNote fn)
+{
+    g_preview_hook = fn;
+}
+
+/* Ends the preview in failure: frees the buffer, clears the state,
+   tells the view once. Local only — nothing here touches the wire, so
+   it is safe from link_drop_transfers too. */
+static void preview_fail(const char *reason)
+{
+    if (!g_prev.pending && !g_prev.receiving) {
+        return;
+    }
+    if (g_prev.buf != NULL) {
+        DisposePtr(g_prev.buf);
+        g_prev.buf = NULL;
+    }
+    g_prev.pending = false;
+    g_prev.receiving = false;
+    if (g_preview_hook != NULL) {
+        g_preview_hook(NULL, reason);
+    }
 }
 
 static void cloud_note(int kind, const char *reply)
@@ -2315,6 +2359,97 @@ int now_wire_cloud_get(const char *service, const char *item,
     return 0;
 }
 
+int now_wire_cloud_preview(const char *service, const char *item,
+                           long max_w, long max_h, long depth,
+                           char *err, long cap)
+{
+    char json[320];
+    char esc_service[48];
+    char esc_item[144];
+
+    if (g_prev.pending || g_prev.receiving) {
+        snprintf(err, (size_t)cap, "A preview is already on its way");
+        return -1;
+    }
+    now_json_escape(service, esc_service, sizeof esc_service);
+    now_json_escape(item, esc_item, sizeof esc_item);
+    ++g.offer_seq;
+    snprintf(json, sizeof json,
+             "{\"type\":\"cloud.preview\",\"id\":%ld,\"service\":\"%s\","
+             "\"item\":\"%s\",\"maxWidth\":%ld,\"maxHeight\":%ld,"
+             "\"depth\":%ld}",
+             g.offer_seq, esc_service, esc_item, max_w, max_h, depth);
+    if (cloud_send(json, err, cap) != 0) {
+        return -1;
+    }
+    g_prev.pending = true;
+    g_prev.id = g.offer_seq;
+    g_prev.deadline = TickCount() + kCloudTimeoutTicks;
+    return 0;
+}
+
+/* preview.begin: allocate exactly what a COHERENT begin announces.
+   A begin that fails validation for our id fails the preview; anyone
+   else's begin is ignored, and its bulk falls through take_bulk_in's
+   "nothing is expecting these" arm. */
+static void preview_begin(const char *reply)
+{
+    CloudPreviewBegin begin;
+
+    if (!g_prev.pending) {
+        return;
+    }
+    if (!cloud_preview_parse_begin(reply, &begin)) {
+        if (now_json_find_int(reply, "id", -1) == g_prev.id) {
+            preview_fail("The preview arrived malformed");
+        }
+        return;
+    }
+    if (begin.id != g_prev.id) {
+        return;
+    }
+    g_prev.buf = NewPtr(begin.bytes);
+    if (g_prev.buf == NULL) {
+        preview_fail("Not enough memory for the preview");
+        return;
+    }
+    g_prev.pending = false;
+    g_prev.receiving = true;
+    g_prev.begin = begin;
+    g_prev.received = 0;
+    g_prev.deadline = TickCount() + kCloudTimeoutTicks;
+}
+
+/* preview.end: deliver ONCE, whole or not at all. The buffer stays
+   wire-owned across the hook call and is gone when it returns — the
+   view's job is one CopyBits into its own GWorld. */
+static void preview_end(const char *reply)
+{
+    if (!g_prev.receiving
+        || now_json_find_int(reply, "id", -1) != g_prev.id) {
+        return;
+    }
+    if (!now_json_find_bool(reply, "ok", 0)
+        || g_prev.received < g_prev.begin.bytes) {
+        preview_fail("The preview did not arrive whole");
+        return;
+    }
+    if (g_preview_hook != NULL) {
+        NowCloudPreviewPixels pixels;
+
+        pixels.width = g_prev.begin.width;
+        pixels.height = g_prev.begin.height;
+        pixels.depth = g_prev.begin.depth;
+        pixels.row_bytes = g_prev.begin.row_bytes;
+        pixels.bytes = g_prev.begin.bytes;
+        pixels.pixels = (const unsigned char *)g_prev.buf;
+        g_preview_hook(&pixels, NULL);
+    }
+    DisposePtr(g_prev.buf);
+    g_prev.buf = NULL;
+    g_prev.receiving = false;
+}
+
 /* The three typed answers share one gate: ours, and the kind we asked
    for. A listing that arrives while a card is pending is stale by
    definition — the ask that wanted it has been replaced. */
@@ -2337,6 +2472,15 @@ static Boolean cloud_refused(const char *reply)
         g_cloud.pending = false;
     } else if (g_cloudget.pending && id == g_cloudget.id) {
         g_cloudget.pending = false;
+    } else if (g_prev.pending && id == g_prev.id) {
+        /* The preview's refusal goes to its own hook — a busy lane
+           ("preview after the download") belongs in the pane, not in
+           the shared status line's error slot. */
+        if (!now_json_find_text(reply, "reason", reason, sizeof reason)) {
+            strcpy(reason, "the other Mac refused the preview");
+        }
+        preview_fail(reason);
+        return true;
     } else {
         return false;
     }
@@ -2356,6 +2500,10 @@ static void service_cloud(void)
     if (g_cloudget.pending && TickCount() > g_cloudget.deadline) {
         g_cloudget.pending = false;
         cloud_note(kCloudAnswerError, "no answer to the fetch");
+    }
+    if ((g_prev.pending || g_prev.receiving)
+        && TickCount() > g_prev.deadline) {
+        preview_fail("No answer to the preview");
     }
 }
 
@@ -2954,8 +3102,10 @@ static struct {
 
 static Boolean wire_busy(void)
 {
+    /* g_prev.receiving counts: the bulk lane is one transfer wide, and
+       a preview mid-arrival holds it exactly as a file would. */
     return g_stream.active || g_xfer.active || g_offer.active
-        || g_send.active || g_put.active;
+        || g_send.active || g_put.active || g_prev.receiving;
 }
 
 /* A CRC-32 is a 32-bit unsigned value and routinely has its top bit
@@ -3099,6 +3249,23 @@ static void take_bulk_in(const unsigned char *bytes, long len)
             get_note("Could not write the file");
         }
         g_get.deadline = TickCount() + kGetTimeoutTicks;
+        return;
+    }
+    /* A preview we asked for: raw indexed rows into the buffer the
+       begin sized. Overrun clamps rather than writes — a sender that
+       exceeds its own begin has already broken the contract, and the
+       end's whole-or-not check will name it. */
+    if (g_prev.receiving) {
+        long take = len;
+
+        if (take > g_prev.begin.bytes - g_prev.received) {
+            take = g_prev.begin.bytes - g_prev.received;
+        }
+        if (take > 0) {
+            memcpy(g_prev.buf + g_prev.received, bytes, (size_t)take);
+            g_prev.received += take;
+        }
+        g_prev.deadline = TickCount() + kCloudTimeoutTicks;
         return;
     }
     if (!g_put.active) {
@@ -4987,6 +5154,14 @@ static int handle_frame(const char *reply)
     }
     if (now_json_type_is(reply, "cloud.refuse")) {
         cloud_refused(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "preview.begin")) {
+        preview_begin(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "preview.end")) {
+        preview_end(reply);
         return 1;
     }
     if (now_json_type_is(reply, "file.refuse")) {

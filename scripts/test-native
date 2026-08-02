@@ -293,6 +293,12 @@ run_c now-guest-ppc cloud_filter_test.c     ""  src/cloud/cloud_filter.c
 # the 16-deep bound that drops the OLDEST step, proven by walking the
 # landing places, never by reading the stacks.
 run_c now-guest-ppc cloud_nav_test.c        ""  src/cloud/cloud_nav.c
+# The photo preview's decidable half: preview.begin validation (a
+# malformed begin must read as refusable, never as an allocation), the
+# screen-depth -> ask-depth mapping, and the pane-fit arithmetic the
+# CopyBits destination reads.
+run_c now-guest-ppc cloud_preview_test.c    "" \
+      src/cloud/cloud_preview.c src/core/json.c
 # The Contacts card's grouping/date-parsing decisions -- kept out of
 # cloud_contacts_view.c so they run here, off a fixture, rather than
 # only ever being exercised by eye on the PowerBook.

@@ -234,6 +234,38 @@ int now_wire_cloud_detail(const char *service, const char *item,
 int now_wire_cloud_get(const char *service, const char *item,
                        char *err, long cap);
 
+/* --- one item as pixels (cloud.preview) ---------------------------------
+   The photo preview: the host decodes, resizes and dithers; this side
+   receives raw indexed rows over the bulk lane (preview.begin / bulk /
+   preview.end, contract) and hands them to ONE hook as ONE settled
+   answer — the batching rule: a preview lands as one delivery and one
+   invalidation, never per bulk frame. On success `pixels` is filled
+   and `fail_reason` NULL; on any failure (refusal, timeout, malformed
+   begin, short transfer, lost link) `pixels` is NULL and the reason is
+   plain MacRoman. The pixel buffer is WIRE-OWNED and valid only for
+   the call: CopyBits it into your own GWorld before returning. */
+typedef struct {
+    long width;
+    long height;
+    long depth;                       /* 1 or 8, contract's enum */
+    long row_bytes;
+    long bytes;
+    const unsigned char *pixels;      /* rows top-to-bottom */
+} NowCloudPreviewPixels;
+typedef void (*ConnCloudPreviewNote)(const NowCloudPreviewPixels *pixels,
+                                     const char *fail_reason);
+void conn_set_cloud_preview_note(ConnCloudPreviewNote fn);
+
+/* Asks for one item as pixels fitting max_w x max_h at depth (1 or 8,
+   cloud_preview_ask_depth's answer). One preview question at a time —
+   unlike the ask kinds above this one cannot replace itself, because
+   the answer is a bulk transfer already in flight; while one is
+   pending or arriving this returns -1 and the view re-asks when the
+   hook settles. */
+int now_wire_cloud_preview(const char *service, const char *item,
+                           long max_w, long max_h, long depth,
+                           char *err, long cap);
+
 /* Where a file the guest is sending has got to, so the panel can show a
    moving bar rather than a line that sits still for a minute. Returns
    false when nothing is being sent. */

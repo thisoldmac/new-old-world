@@ -10,6 +10,7 @@
 #include "db_hilite.h"
 #include "cloud_list_view.h"
 #include "cloud_model.h"
+#include "cloud_photos_view.h"
 #include "cloud_view.h"
 #include "json.h"
 #include "pump.h"
@@ -356,6 +357,9 @@ static void refilter_browser(void)
     if (g_selected >= 0 && !(g_selected < count && g_in_view[g_selected])) {
         g_selected = -1;
         cloud_store_reset_card(&g_store);
+        if (g_view != NULL && g_view->select != NULL) {
+            g_view->select(&g_r, &g_store, -1);
+        }
         invalidate_detail();
     }
 }
@@ -449,6 +453,9 @@ static const CloudViewOps *view_for(const CloudService *service,
     if (strcmp(service->service, "contacts") == 0) {
         return cloud_contacts_view_ops();
     }
+    if (strcmp(service->service, "photos") == 0) {
+        return cloud_photos_view_ops();
+    }
     return cloud_list_view_ops();
 }
 
@@ -458,6 +465,11 @@ static void choose_service(int index)
 
     if (index < 0 || index >= g_store.service_count) {
         return;
+    }
+    /* The outgoing view's per-selection state goes first: the photos
+       preview must not sit in memory behind a Contacts card. */
+    if (g_view != NULL && g_view->select != NULL) {
+        g_view->select(&g_r, &g_store, -1);
     }
     g_service = index;
     service = &g_store.services[g_service];
@@ -647,10 +659,16 @@ static void item_notify(ControlRef browser, DataBrowserItemID item,
     if (message == kDataBrowserItemSelected) {
         g_selected = (int)item - 1;
         ask_card();
+        if (g_view != NULL && g_view->select != NULL) {
+            g_view->select(&g_r, &g_store, g_selected);
+        }
     } else if (message == kDataBrowserItemDeselected
                && g_selected == (int)item - 1) {
         g_selected = -1;
         cloud_store_reset_card(&g_store);
+        if (g_view != NULL && g_view->select != NULL) {
+            g_view->select(&g_r, &g_store, -1);
+        }
         invalidate_detail();
     }
 }
@@ -787,6 +805,15 @@ static OSErr cloud_create(WindowRef owner, const Rect *body)
     if (drive_ops->create != NULL) {
         drive_ops->create(owner);
     }
+    /* Photos' create only records the window and registers the wire's
+       preview hook; the GWorld waits for pixels. */
+    {
+        const CloudViewOps *photos_ops = cloud_photos_view_ops();
+
+        if (photos_ops->create != NULL) {
+            photos_ops->create(owner);
+        }
+    }
     host.clear_list = clear_list;
     host.invalidate_detail = invalidate_detail;
     host.set_status = set_status;
@@ -802,6 +829,7 @@ static OSErr cloud_create(WindowRef owner, const Rect *body)
 static void cloud_dispose(void)
 {
     conn_set_cloud_note(NULL);
+    cloud_photos_view_dispose();
     cloud_drive_view_dispose();
     /* The Data Browser goes BEFORE its UPPs: disposal fires item
        notifications through them (files_browser_view.c and the finding
