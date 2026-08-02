@@ -38,18 +38,27 @@ the host" instead of not mentioning Photos.
   ordinary `file.offer` into the guest's share — JPEG whatever modern
   container the library holds (HEIC included), typed `JPEG`/`ogle` so
   it opens by double-click, and **downsized automatically** per the
-  host's per-service Downloads setting (Original / Fit 640x480 / Fit
-  1024x768 / Fit 1440x1080 / Fit 2048x1536, default Fit 640x480,
+  host's per-service Downloads setting (Original / Long side 1600 /
+  Long side 1024 / Long side 640, default Long side 640,
   `cloud.photos.downloadSize`), applied in the get pipeline before the
   JPEG is encoded — unless the ask itself carries the additive `size`
-  token (same five renders), in which case the asker's choice
+  token (same four renders), in which case the asker's choice
   outranks the setting; an unrecognized token refuses with a reason.
-  Every `fitN` token is a FIT BOX (aspect preserved, never upscaled);
-  the wire never states the exact resolution a fit produces for a
-  given photo — a guest that wants to SHOW that number computes it
-  itself from the entry's own width/height and the chosen box, the
-  same fit arithmetic `cloud.preview` already does host-side, just run
-  on numbers the guest already has rather than sent a sixth way. An
+  Every `longN` token names the **LONGEST EDGE** (aspect preserved,
+  never upscaled): a portrait 3024x4032 at `long640` is 480x640, and
+  the same photo landscape is 640x480. The `fitN` fit boxes this
+  replaced (2026-08-02) are **retired, not aliased** — they gave a
+  portrait photo the SHORT edge's number, delivering 360x480 for that
+  same photo, which is the defect a person met on metal. A peer still
+  sending one meets the unknown-token refusal naming the valid set,
+  which is why a deliberate semantic break on a days-old field needed
+  no contract-revision bump. The wire never states the exact
+  resolution a stop produces for a given photo — a guest that wants
+  to SHOW that number computes it itself from the entry's own
+  width/height and the chosen long edge, on numbers it already has
+  rather than sent a fifth way. The report's `defaultSize` carries the
+  host's own configured token, so a guest can PRESELECT it instead of
+  offering a "host default" item it cannot name. An
   original iCloud has not materialized
   starts its download and refuses `busy`, the same bargain the share
   strikes for Drive placeholders.
@@ -92,8 +101,8 @@ folder remembered and restored.
 Serving is ungated past the handshake, like the share (decided
 2026-08-01): the switches are the consent, per service.
 
-The Photos row also carries the **Downloads picker** (Original / Fit
-640x480 / Fit 1024x768 / Fit 1440x1080 / Fit 2048x1536): what a
+The Photos row also carries the **Downloads picker** (Original / Long
+side 1600 / Long side 1024 / Long side 640): what a
 `cloud.get` delivers when the ask names no size of its own, applied
 host-side before the JPEG leaves. The guest's Size popup (below) can
 override it per ask — "Original" from the classic side is the asker
@@ -235,31 +244,50 @@ item-data callback and the control itself are new, wired up in
 Data Browser callbacks can be set in one call, the drive view's
 pattern throughout.
 
-**The Size popup's items show the SELECTED photo's exact post-fit
+**The Size popup's items show the SELECTED photo's exact delivered
 resolution.** Original reads the entry's own width/height
-("2016 x 1512"); each fitN item reads what that box will actually
+("3024 x 4032"); each `longN` item reads what that stop will actually
 produce for THIS photo, computed on the guest from the entry's
-width/height and the box (`cloud_photo_fit` in the Toolbox-free
-`cloud_photo_size.c`, host-cc tested in `cloud_photo_size_test.c`,
-mutation-watched) — aspect-preserving and NEVER upscaling, the same
-rule the host's own fit obeys, so the two agree without a wire round
-trip (the wire's own fitN token stays coarse by contract; see the
-`CloudGet.size` doc in `contract/asyncapi.yaml`). Rebuilt via
-`SetMenuItemText` on every selection change (the services-popup
-recipe already used for the dropdown), falling back to MENU 136's own
-literal wording ("Fit 1024x768", "Fit 640x480") on no selection or
-when an entry never stated its dimensions — never a guessed number.
-Host default (item 4) never changes.
+width/height and the long edge (`cloud_photo_long_edge` in the
+Toolbox-free `cloud_photo_size.c`, host-cc tested in
+`cloud_photo_size_test.c`, mutation-watched with a portrait case that
+fails under the box-fit math it replaced) — aspect-preserving and
+NEVER upscaling, the same truncating arithmetic the host's own
+`PhotosCloudProvider.scaled` runs, so the label and the file cannot
+differ by a pixel without a wire round trip (the wire's own token
+stays coarse by contract; see the `CloudGet.size` doc in
+`contract/asyncapi.yaml`). Rebuilt via `SetMenuItemText` on every
+selection change (the services-popup recipe already used for the
+dropdown), falling back to MENU 136's own literal wording ("Long side
+1024") on no selection or when an entry never stated its dimensions —
+never a guessed number.
+
+**The caption has its own rectangle** (`CloudLayout.size_label`,
+2026-08-02). It used to be drawn into `size_popup` itself, which is
+the popup's whole control rect — so the caption and the popup's own
+title overprinted into garbage on metal. The "Into" row one line below
+(`dest_row` + `dest_btn`) was already the right shape and is what this
+copies: caption at the group box's left inset, control flush to the
+shared right edge. `cloud_layout_test.c` asserts the non-overlap as a
+RELATIONSHIP (`size_label.right <= size_popup.left`, same row), which
+is the only form of that assertion a mutation can fail.
 
 The download UX (2026-08-02) lives in the same view, below the pane:
 
-- **A Size popup** (Original / Fit 1024x768 / Fit 640x480 / Host
-  default, MENU 136 — the services-popup recipe) puts the additive
-  `size` token on Save's `cloud.get`; "Host default" omits the field,
-  which is the ask every older guest already sends. The choice is
-  session-state, deliberately not persisted — a prefs field was
-  weighed and skipped, since the host default is the remembered
-  preference and the popup is the per-ask exception.
+- **A Size popup** (Original / Long side 1600 / Long side 1024 / Long
+  side 640, MENU 136 — the services-popup recipe) puts the `size`
+  token on Save's `cloud.get`, and ALWAYS an explicit one. There is no
+  "host default" item: an item that cannot say on screen what it will
+  deliver is not an answer to "at what size?". The host's setting
+  arrives as data instead (`cloud.report`'s `defaultSize`) and is
+  PRESELECTED — the popup opens on it, and a report that names a token
+  this guest does not offer opens on the largest bounded stop, never
+  on Original (a 48-megapixel original landing unasked on a 6 MB
+  partition is the one fallback that could hurt). A pick the person
+  has made outranks a later report, so Refresh never moves the size
+  out from under them. The choice is session-state, deliberately not
+  persisted — the host default is the remembered preference and the
+  popup is the per-ask exception.
 - **A destination row** shows where a saved photo lands ("Save into:"
   plus the folder's path, truncated middle) with a Choose... button —
   the shared `NavChooseFolder` door (`now_files_choose_folder`, the
@@ -523,12 +551,15 @@ and a signed-in Mac can prove.
 
 The polish2-foundations arc (2026-08-02, contract + host only, no
 guest UI) is **tested, nothing more**, and narrower still — no guest
-half exists yet for any of it. The two new Downloads/`size` boxes
-(fit1440, 1440x1080; fit2048, 2048x1536) ride the exact code path the
-original three already used
-(`chosenSize`, `processedJPEG`'s box arithmetic), loopback-proven the
-same way (`CloudServingTests`) and against `PhotosProcessingTests`'
-in-test fixtures for the resize itself. `CloudEntry.width`/`height`
+half exists yet for any of it. Its two extra fit boxes have since been
+retired along with the other three (the long-edge arc, same day): the
+Downloads/`size` stops are now `original` / `long1600` / `long1024` /
+`long640`, riding the same code path (`chosenSize`, `processedJPEG`,
+now `scaled`'s longest-edge arithmetic), loopback-proven the same way
+(`CloudServingTests`, including the refusal a retired `fitN` token
+earns) and against `PhotosProcessingTests`' in-test fixtures for the
+resize itself — portrait and landscape at a stop, and the
+never-upscale case. `CloudEntry.width`/`height`
 are loopback-proven to ride the wire and to stay ABSENT (never a
 guessed zero) for a service that does not state them; `PhotosCloudProvider
 .list` filling them from `PHAsset.pixelWidth`/`pixelHeight` reads
@@ -748,9 +779,11 @@ and what shipped is the revision, not the sketch:
 - **Downloads are processed per the host's configurable setting, with
   a per-ask override since 2026-08-02.** `cloud.get` always converts
   to JPEG (HEIC included) and downsizes per the iCloud page's
-  Downloads picker (Original / Fit 1024x768 / Fit 640x480, default
-  Fit 640x480) unless the ask carries the additive `size` token from
-  the guest's own Size popup. The estimated-size arithmetic the
+  Downloads picker (Original / Long side 1600 / Long side 1024 / Long
+  side 640, default Long side 640, each naming the LONGEST edge)
+  unless the ask carries the `size` token from the guest's own Size
+  popup — which it now always does, preselected from the report's
+  `defaultSize`. The estimated-size arithmetic the
   original sketch paired with the dropdown remains unbuilt,
   deliberately — the popup states renders, not byte guesses.
 

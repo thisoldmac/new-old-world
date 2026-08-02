@@ -14,6 +14,51 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## Photo sizes became long-edge stops; three metal defects fixed, none re-verified on metal (2026-08-02, latest)
+
+**Unverified, deliberately labelled.** Metal feedback named three
+things about the Photos save controls, and all three are fixed and
+TESTED — nothing here has been looked at on the PowerBook since.
+
+- **The Size caption overprinted the popup.** `view_draw` drew "Size"
+  into `size_popup`'s own rect — a popup paints its value across the
+  whole control, so the caption landed on top of it and read as
+  garbage. The caption now has `CloudLayout.size_label` of its own, on
+  the same row at the group box's left inset, the shape `dest_row` +
+  `dest_btn` already used one line below. `cloud_layout_test.c`
+  asserts `size_label.right <= size_popup.left` relationally, watched
+  failing under a mutation that puts the caption back on the popup.
+- **"Host default" is gone.** Every popup item now names a real size,
+  and the host's configured setting arrives as data instead
+  (`CloudReport.defaultSize`, additive) and is PRESELECTED. `cloud.get`
+  from this guest always carries an explicit token.
+- **The stops changed meaning.** `original` / `long640` / `long1024` /
+  `long1600`, each naming the LONGEST edge (aspect preserved, never
+  upscaling). The `fitN` fit boxes are **retired, not aliased** — see
+  the contract's own `CloudGet.size` prose for why the graceful
+  refusal is what let a deliberate semantic break skip a revision bump.
+
+What only metal can settle:
+
+- **The caption and popup side by side at 640x480.** The layout test
+  proves they do not overlap in arithmetic; whether "Size" is legible
+  beside a popup wearing "3024 x 4032" on a real 640-wide screen is a
+  looking question, and the pane's inset clamp has never been seen.
+- **A portrait photo actually arriving at 480x640.** The scale is
+  proven twice off-machine (`PhotosProcessingTests` through the real
+  CoreGraphics pipeline, `cloud_photo_size_test.c` for the guest's
+  label arithmetic, both mutation-watched) but never against a real
+  PHAsset with real EXIF orientation, which is the one input a
+  fixture cannot fake honestly.
+- **The preselect on a real report.** `defaultSize` riding the wire
+  and moving the popup has run in no loopback test of the GUEST half
+  — the guest's parser is unit-tested, the control mutation is not
+  reachable from a host cc.
+- **Whether anything still sends a retired token.** Nothing in this
+  tree does; a stale build on the PowerBook would, and would get the
+  named refusal rather than a wrong picture. Nobody has watched that
+  refusal land in the guest's status line.
+
 ## RESOLVED: every modern classic-date field was silently dropped (2026-08-02)
 
 ### Fixed, tested — not yet re-verified on metal
@@ -191,6 +236,10 @@ metal can prove, additional to the items already ledgered below for
   risk than a new pipeline — but "lower risk" is still a claim, not a
   measurement, until someone asks a real original at 2048x1536 and
   looks at the JPEG that comes back.
+  *(2026-08-02, later: moot as written — all five `fitN` boxes were
+  retired the same day for the four `longN` long-edge stops, and the
+  unmeasured claim now belongs to those. See the long-edge entry at
+  the top.)*
 - **The guest half is entirely unbuilt.** Nothing here has a
   `now-guest-ppc` counterpart: no Size popup entries for the two new
   boxes, no exact-resolution-from-dimensions arithmetic on the guest
@@ -315,8 +364,9 @@ machine. What only a granted library and metal can prove:
   pure units: builds only, exercised on no machine, and 1-bit asks
   (screens under 8-bit) have no fixture anywhere.
 - **Downsized downloads against a real library**: processedJPEG is
-  fixture-tested; a 48 MP original through fit640 on the wire to a
-  real guest is not.
+  fixture-tested; a 48 MP original through `long640` (was `fit640`
+  until the long-edge arc, same day) on the wire to a real guest is
+  not.
 - **Preview pacing on real hardware**: a 300x200 8-bit preview is
   ~60 KB, ~0.2 s at the measured 300 KiB/s — arithmetic, not a
   measurement; nobody has felt the selection-to-pixels latency at
