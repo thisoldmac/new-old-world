@@ -490,269 +490,29 @@ pixels, host-clamped to 640x480.
 
 ## What is and is not proven
 
-**Metal-verified 2026-08-01** on the PowerBook 1400c, in two
-sessions. First: the module end to end for Drive — cloud.services across a real wire, the dropdown,
-and the in-page drive browser (list, descend, Up, double-click fetch)
-against the host's iCloud Drive share, fingerprinted names included.
-That pass predates the full-width drive layout and the real-browser
-work above (**tested, not re-verified on metal**): the browsing logic
-it exercised is unchanged, but the four-column control, its icons,
-the breadcrumb row, Back/Forward and the toolbar geometry are not the
-ones the PowerBook watched. The column recipe and the icon calls are
-the metal-verified Files/Processes recipes reused verbatim, which is
-evidence about the ingredients, not the dish. It also predates the
-split-view pane (2026-08-02, above) — the browsing logic is again
-unchanged, but the pane's own card text, its destination furniture
-and its download bar are new pixels nobody has watched draw.
+**Metal-verified 2026-08-01** on the PowerBook 1400c: the module end
+to end for Drive — cloud.services across a real wire, the dropdown,
+the in-page drive browser (list, descend, Up, double-click fetch)
+against the host's iCloud Drive share, fingerprinted names included —
+and, once the hardened-runtime entitlements landed, the granted
+services answering for real.
 
-Second, the same evening: with the entitlements fix in, the grant
-prompts fire, and Michelle reports the granted services — Photos and
-Contacts over the fan-out's views — working as intended against the
-real machine. Detailed notes pending; itemized claims below stay at
-their tested level until they arrive.
+**Everything from 2026-08-02 is TESTED, not metal-verified**, and it
+is most of what a person now sees: the drive browser's columns,
+icons, history and breadcrumb row; the contacts group-box card and
+its lazy photo; the photos preview, its save cluster, and the
+longest-edge size stops. Each was gated (native tests, both guest
+cross-builds, host suites) and several claims were mutation-watched,
+but no part of that pass has been drawn on the real screen.
 
-Photos and Contacts serving is **tested** (`CloudServingTests`, fake
-providers over a loopback wire; refusal-code mutation watched
-failing), now including a 10,000-row paging walk, the 4KB page bound
-under wide rows, and a 3MB photo riding the ordinary offer/accept/
-begin/bulk/end transfer lane — all against fakes, all mutation-watched.
-The real providers remain deliberately unexercised: they need this
-Mac's TCC grants, and what only a signed-in, access-granted machine can
-prove is ledgered in [open-issues.md](open-issues.md). The rest of the
-family is not metal-verified yet.
-
-The download-UX arc (2026-08-02, same day, later) is **tested,
-nothing more**: the size override is loopback-proven end to end
-(token reaching the provider, absent-size default, unknown-token
-refusal — all mutation-watched), the guest's pure halves (the popup
-item map, the bar's 0..1000 scaling and clamps, the byte line's
-round-up, the furniture geometry and its pane-never-under-a-control
-rule) are host-cc tested with watched mutations, and the PPC guest
-cross-compiles. Everything a person would SEE — the loading line,
-the bar moving, the destination redirect landing bytes in a chosen
-folder, the outcome replacing "Receiving..." — has run nowhere, and
-is exactly what the next metal session should watch for.
-
-The preview arc (2026-08-02) is **tested, nothing more**: the
-ditherers are pure units with watched mutations (`ClassicDitherTests`
-— zeroed Floyd-Steinberg weights and an ignored Atkinson carry both
-named by the mean/mix properties), the serve is loopback-proven
-(bytes intact through begin/bulk/end, lane exclusivity
-mutation-watched, the no-preview default refusal), the resize/JPEG
-pipeline runs against in-test JPEG and HEIC fixtures
-(`PhotosProcessingTests`), and the guest's begin-validation and fit
-arithmetic are host-cc tested (`cloud_preview_test.c`,
-mutation-watched). The guest half past those pure units — the GWorld,
-the CopyBits, the pane's honesty under a held lane — **builds** and
-has run nowhere; and the whole path against a REAL granted library
-(a preview of an actual HEIC on an actual screen, the busy bargain
-against a real un-materialized original) is exactly what only metal
-and a signed-in Mac can prove.
-
-The polish2-foundations arc (2026-08-02, contract + host only, no
-guest UI) is **tested, nothing more**, and narrower still — no guest
-half exists yet for any of it. Its two extra fit boxes have since been
-retired along with the other three (the long-edge arc, same day): the
-Downloads/`size` stops are now `original` / `long1600` / `long1024` /
-`long640`, riding the same code path (`chosenSize`, `processedJPEG`,
-now `scaled`'s longest-edge arithmetic), loopback-proven the same way
-(`CloudServingTests`, including the refusal a retired `fitN` token
-earns) and against `PhotosProcessingTests`' in-test fixtures for the
-resize itself — portrait and landscape at a stop, and the
-never-upscale case. `CloudEntry.width`/`height`
-are loopback-proven to ride the wire and to stay ABSENT (never a
-guessed zero) for a service that does not state them; `PhotosCloudProvider
-.list` filling them from `PHAsset.pixelWidth`/`pixelHeight` reads
-against a real library and is therefore in the same untested-real-
-library bucket as the rest of `PhotosCloudProvider`, ledgered in
-[open-issues.md](open-issues.md). Contacts `cloud.preview` is
-loopback-proven end to end for the WIRE and for the REUSED pipeline
-(a synthetic thumbnail run through `PhotosCloudProvider.rgbPixels` +
-`ClassicDither.dither`, exactly the code `ContactsCloudProvider
-.preview` calls, answers a `cloud.preview` for the "contacts" service
-indistinguishably from photos) and for the not-found "no photo"
-refusal's exact wording; the real
-`CNContactStore.unifiedContact(withIdentifier:keysToFetch:
-[CNContactThumbnailImageDataKey])` call against an actual card is
-untested here — it needs this Mac's Contacts TCC grant, the same
-bucket Photos' real-library path already sits in, and what only that
-grant can prove is ledgered alongside it.
-
-The Contacts guest UI arc (2026-08-02, atop polish2-foundations) is
-**tested, nothing more** — narrower even than that: the pure card
-layout (`cloud_contacts_card_layout`'s well/name/rows placement) is
-host-cc tested in `cloud_contacts_card_test.c`, mutation-watched, and
-the PPC guest cross-compiles clean with zero warnings, but nothing
-past cross-compilation has run anywhere — not against a live host
-wire, not on the emulator, not on the PowerBook. Contacts' own Data
-Browser (Name/Company columns), the photo well's CopyBits landing, the
-hand-drawn silhouette placeholder, and the preview well's extraction
-out of `cloud_photos_view.c` (shared state Photos now also depends on)
-are all unverified past "builds" — the same level `docs/guest-ui-
-start-here.md` warns is worth the least trust, because the surprises
-in this project have consistently come from code that looked obviously
-correct and had never run on the real machine. In particular: the
-well-extraction refactor changed WHICH view's `note` callback fires
-when a preview settles (rebound per `_select` call, cloud_preview_
-well.c) — a real behavior change for Photos, not just a file move, and
-Photos' preview path has not been re-verified on metal since.
-
-The contacts selection fix and the card prefetch/cache (2026-08-02,
-p3-contacts-fix) are **tested, nothing more**: the deselect-guard bug
-— selecting a second contact left the card pane on "Select a name..."
-because `cloud_contacts_view.c`'s own Deselected handler cleared the
-selection unconditionally, racing the Data Browser's own
-Deselected(old)/Selected(new) pair — is fixed and the fix's shape
-(centralizing the comparison in `cloud_module.c`'s
-`note_row_deselected` rather than duplicating it) is exercised only by
-the native gates and a clean cross-compile; the actual click sequence
-on a live Data Browser has not been watched, on the emulator or the
-PowerBook, since before this fix existed. The card cache's own logic
-(`cloud_card_cache_test.c`: insert/lookup/evict/bounds) is host-cc
-tested and mutation-watched — real coverage of real logic — but the
-prefetch driver that calls it (`drive_card_prefetch`, the wire-idle
-gating, the one-ask-in-flight discipline, the live-ask-supersedes-
-prefetch handoff in `ask_card`/`note_card`) is Toolbox-adjacent
-sequencing that no host cc can exercise, and has run nowhere but a
-cross-compile. What only a live wire and a real contacts list can
-prove: that the prefetch actually walks ahead of a person's clicking
-rather than behind it, that "one ask in flight, ever" holds against a
-real host's actual reply timing (not just the wire's own
-correlation rule, which is what this file has reasoned from), and that
-a cache hit's card reads identically to a freshly-asked one on the
-real machine's own MacRoman rendering.
-
-**Drive stays a flat list, not a tree — Data Browser containers are
-declared but unproven.** `spikes/databrowser-container-probe` compiles
-a real call to the hierarchical surface (`AddDataBrowserItems` with a
-container parent, `OpenDataBrowserContainer`/`CloseDataBrowserContainer`,
-`SetDataBrowserListViewDisclosureColumn`, the container item-data
-properties and notification messages) clean against this toolchain,
-but none of those four symbols were in the 22 the original
-`spikes/databrowser` probe confirmed CarbonLib 1.6.0 actually EXPORTS
-on the PB1400c — that probe only ever asked about the flat list. A
-clean compile is Level 1 (Builds); it proves nothing about whether the
-real machine's CarbonLib answers those calls. Until someone reruns the
-runtime probe with the container symbols added, the drive view keeps
-its proven shape: full-width flat list, replace-on-navigate, with
-Back/Forward/Up walking a history rather than a disclosure walking a
-tree — the same browsing model `files_browser_view.c` already carries
-metal-verified. The same evidence rule is why the drive columns live
-on their own control (above): `RemoveDataBrowserTableViewColumn` is
-declared but was never probed either. See
-`spikes/databrowser-container-probe/README.md` and
-docs/guest-ui-start-here.md's proven/disproven list.
-
-### Live search, and the review that followed
-
-Every view filters as you type — the software module's field and
-refilter shape copied deliberately (a second search idiom is drift
-waiting to happen), the pure predicate in cloud_filter.c with its own
-native test. An adversarial review of the whole fan-out (2026-08-01)
-confirmed the gates, the guest discipline and the container-probe's
-evidence, and found four real faults, all fixed the same day: the
-placard now says "N of M shown" while a filter hides rows (the rule
-software_module already kept); the filter test's mutation-provenance
-claim was false and is rewritten from mutations actually watched
-failing; drive mode's double-click affordance — lost with the card
-pane — moved to the placard on selection; and a service change now
-clears the needle on every route, not just the popup click. Known
-smalls, ledgered not hidden: the Photos provider's fetch cache is
-untested against a real library, contacts Birthday parsing is
-English-month-only, long card values draw unclipped.
-
-### The polish2 integration (2026-08-02), and what only landed here
-
-`claude/polish2-drive-dest`, `claude/polish2-photos-cols` and
-`claude/polish2-contacts` merged onto `claude/polish2-foundations` are
-**tested, nothing more**: `scripts/test-all` is green (all 79 native
-tests including the seven `cloud_*` ones, both guest cross-builds, the
-host suites and the Xcode app target) on the merged tree, and
-`audit_source.py` over every touched `now-guest-ppc/src/cloud/*.c` file
-found no new hazard — the 22 lexical findings it raises are all
-pre-existing, already change-guarded or already-exempted patterns
-(popup `TrackControl` calls using `(ControlActionUPP)-1L`, push-button
-ones using `now_pump_action()`, `HiliteControl`/`SetControlValue` calls
-gated on a `g_shown_*`/`g_bar_value` diff, `RGBForeColor`/`RGBBackColor`
-before every `CopyBits`). None of this ran on the emulator or the
-PowerBook.
-
-The merge itself had to reconcile two branches that grew the same shape
-independently: `view_own_browser()`/`active_browser()`/
-`show_own_browser()` in `cloud_module.c` generalized from two
-view-owned browsers (Drive, Photos) to three (Drive, Photos, Contacts)
-rather than picking either side's two-way check, and `cloud_photos_view
-.c` kept photos-cols' own Data Browser (Name/Size/Modified, the Size
-popup's exact-resolution labels) while adopting polish2-contacts'
-extraction of the GWorld/fetch state into the shared
-`cloud_preview_well.c` — so Photos' preview now goes through the same
-rebound-`note`-callback path Contacts does, a real interaction between
-the two arcs that neither branch's own tests could see alone (each
-tested against the shell's OTHER pieces, not each other's). This is
-the specific claim that needs a metal session before it is more than
-"builds and passes tests written in each branch's own isolation": pick
-a photo, watch the preview arrive on the new Data Browser, switch to
-Contacts, pick a card, and confirm the well's eviction/rebind still
-hands the right pane its pixels and not the other view's.
-
-### Every modern Modified date silently dropped, fixed (2026-08-02)
-
-Watched on metal the same day: the Photos list drew "--" in Modified
-for every 2026 photo. Traced to `ClassicDate.guestWireSeconds`
-(`now-host/Sources/Host/FileConverter.swift`), which stopped at
-`Int32.max` — January 1972 in classic (1904-epoch) seconds — because
-the deployed guest read the field with `strtol` into a signed 32-bit
-`long`. Every date after that came back `nil`, `modified` was omitted
-from the wire entirely, and the guest drew the "unstated" dash. This
-was not Photos-specific: `CloudServices.swift`, `HostShare.swift` and
-`FilesModel.swift` all route through the same function, so the drive/
-files browser and every cloud listing carried the same silent gap.
-
-A classic file date is actually **unsigned** seconds since 1904, good
-to early 2040 — the host's ceiling was simply wrong, not conservative.
-The fix moves the ceiling out to match (`ClassicDate.macSeconds`'s own
-`< 4_294_967_295`) and gives the guest an unsigned reader to match it:
-`now_json_find_u32` (`now-guest-ppc/src/core/json.c`, and
-`now68k_json_find_u32` on the 68K side, which already existed for
-CRC32 and only needed pointing at this field) — a `strtoul`-shaped
-digit loop masked to 32 bits by hand, so it behaves the same on the
-32-bit `long` the guest is built for and the 64-bit one this host's
-own `cc` runs its native tests under. Every classic-seconds field
-either guest reads off the wire now goes through it: the PPC guest's
-cloud listing rows, its browse/pull replies (drive/files browser and
-`file.pull`), and both guests' `file.offer` push.
-
-A second, independent site carried the identical bug and is not
-reached by `ClassicDate` at all: `GuestFileUploadCommands.begin`
-(`now-host/Sources/Host/Automation/GuestFileUploadCommands.swift`),
-the MCP agent-upload path's own inline `modified <= Int32.max`
-clamp, guarding a raw already-classic-seconds `Int` the caller
-supplies directly rather than a `Date`. Same fix, same reasoning
-(the ceiling is `UInt32.max`, not `Int32.max`) — found by grepping
-`now-host/Sources` for `Int32.max` once the first site was fixed,
-not by the original diagnosis, so treat this class of bug as "any
-inline reimplementation of the ceiling," not "one function."
-
-**Tested, nothing more.** Host XCTest covers the boundary
-(1904/1972/2026/2040/past-2040) and a `HostShare.list()` integration
-test proving a 2026 date now survives to the wire; guest
-`json_native_test` covers the unsigned parser itself at 2^31-1/2^31/
-2^32-1/overflow; `cloud_model_test` and the 68K `test_putrx` each add
-a call-site regression case, mutation-watched by reverting to the old
-signed call and confirming the specific assertion names it. Two
-PRE-EXISTING tests turned out to encode the bug as correct behavior
-and had to be corrected alongside the fix, not just the new tests
-added for it: `AgentIntegrationArtifactTests
-.testApprovedTransferSettlesOnlyOnFileDoneAndCannotReplay` asserted
-`offer.modified == nil` for a freshly-written (2026-dated) artifact,
-and `GuestFileUploadCommandTests
-.testStagedUploadUsesRootPolicyAndReturnsGuestEvidence` asserted the
-same for an explicit `UInt32.max` input — both passed before this fix
-only because the bug made the assertion trivially true, and both were
-caught by running the full host suite after the fix, not by writing
-new tests. None of this has run on the emulator or the PowerBook
-since the fix — the next metal session should confirm a 2026 photo's
-Modified column actually draws a date rather than "--".
+Specifically unproven, and cheap to settle in one session at the
+machine: whether the group boxes read as well at 640x480 as at
+800x600; whether a deep path keeps its crumbs legible next to the
+search field; whether the dither palette matches a real CarbonLib
+CLUT (wrong colours would be a palette bug, not a wire bug); whether
+`SetDataBrowserTableViewHiliteStyle` is exported at all on that
+machine (the row hilite degrades silently if not); and the
+TCC-granted Photos and Contacts providers under a real library.
 
 ## Photos as shipped, and what was deliberately not built
 
