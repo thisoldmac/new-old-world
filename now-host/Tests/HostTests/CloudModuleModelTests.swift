@@ -61,9 +61,9 @@ final class CloudModuleModelTests: XCTestCase {
                            + "as the folder to go back to")
     }
 
-    func testTheDownloadsSettingDefaultsToFit640AndPersists() {
+    func testTheDownloadsSettingDefaultsToLong640AndPersists() {
         let model = model()
-        XCTAssertEqual(model.downloadSize("photos"), .fit640,
+        XCTAssertEqual(model.downloadSize("photos"), .long640,
                        "the default fits the screens the fetch is for")
         model.setDownloadSize("photos", .original)
         XCTAssertEqual(model.downloadSize("photos"), .original)
@@ -76,19 +76,27 @@ final class CloudModuleModelTests: XCTestCase {
                        "only the service whose originals dwarf the guest")
     }
 
-    /// The two boxes the polish arc added persist through the model the
-    /// same way the original three do — the picker (bound to
-    /// DownloadSize.allCases) follows automatically, so this proves the
-    /// storage half only.
-    func testTheTwoNewDownloadBoxesPersistLikeTheOriginalThree() {
+    /// Every stop persists through the model the same way — the picker
+    /// (bound to DownloadSize.allCases) follows automatically, so this
+    /// proves the storage half only.
+    func testEveryDownloadStopPersistsThroughTheModel() {
         let model = model()
-        model.setDownloadSize("photos", .fit1440)
-        XCTAssertEqual(model.downloadSize("photos"), .fit1440)
-        model.setDownloadSize("photos", .fit2048)
-        XCTAssertEqual(model.downloadSize("photos"), .fit2048)
+        model.setDownloadSize("photos", .long1024)
+        XCTAssertEqual(model.downloadSize("photos"), .long1024)
+        model.setDownloadSize("photos", .long1600)
+        XCTAssertEqual(model.downloadSize("photos"), .long1600)
         XCTAssertEqual(
             defaults.string(forKey: PhotosCloudProvider.downloadSizeKey),
-            "fit2048")
+            "long1600")
+    }
+
+    /// A setting written by the version before this one names a token
+    /// that no longer exists. It must read as the default, not crash and
+    /// not silently mean something else — the same graceful reading the
+    /// wire gives a retired token, one storage layer down.
+    func testARetiredFitTokenInDefaultsReadsAsTheDefault() {
+        defaults.set("fit2048", forKey: PhotosCloudProvider.downloadSizeKey)
+        XCTAssertEqual(model().downloadSize("photos"), .long640)
     }
 
     func testEveryDownloadSizeHasADistinctLabel() {
@@ -96,9 +104,8 @@ final class CloudModuleModelTests: XCTestCase {
         XCTAssertEqual(Set(labels).count, labels.count,
                        "a picker with two identical rows is a bug " +
                            "a person can't tell apart on screen")
-        XCTAssertEqual(labels, ["Original", "Fit 640 x 480",
-                                "Fit 1024 x 768", "Fit 1440 x 1080",
-                                "Fit 2048 x 1536"])
+        XCTAssertEqual(labels, ["Original", "Long side 1600",
+                                "Long side 1024", "Long side 640"])
     }
 
     func testAVanishedPreviousFolderFallsBackToDownloads() throws {

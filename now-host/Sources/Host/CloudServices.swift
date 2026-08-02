@@ -184,30 +184,36 @@ final class PhotosCloudProvider: NSObject, CloudProvider,
     /// classic screens the fetch is for: a 48-megapixel original into a
     /// 6 MB partition is a mistake a default should not require
     /// declining every time.
+    /// Each longN case names the LONGEST EDGE, not a box: the photo is
+    /// scaled so its longer dimension is exactly N, whichever way up it
+    /// is. The fitN boxes this replaced gave a portrait photo the SHORT
+    /// edge's number — 3024x4032 asked at "640" came back 360x480 —
+    /// which is the defect a person met on metal, and no amount of
+    /// relabelling a box fixes it. The old tokens are retired, not
+    /// aliased; the serve refuses them by name (contract: CloudGet.size).
     enum DownloadSize: String, CaseIterable {
         case original
-        case fit640
-        case fit1024
-        case fit1440
-        case fit2048
+        case long1600
+        case long1024
+        case long640
 
-        var box: (width: Int, height: Int)? {
+        /// The longest edge in pixels; nil for original, which is the
+        /// absence of a size rather than a large one.
+        var longestEdge: Int? {
             switch self {
             case .original: return nil
-            case .fit640: return (640, 480)
-            case .fit1024: return (1024, 768)
-            case .fit1440: return (1440, 1080)
-            case .fit2048: return (2048, 1536)
+            case .long1600: return 1600
+            case .long1024: return 1024
+            case .long640: return 640
             }
         }
 
         var label: String {
             switch self {
             case .original: return "Original"
-            case .fit640: return "Fit 640 x 480"
-            case .fit1024: return "Fit 1024 x 768"
-            case .fit1440: return "Fit 1440 x 1080"
-            case .fit2048: return "Fit 2048 x 1536"
+            case .long1600: return "Long side 1600"
+            case .long1024: return "Long side 1024"
+            case .long640: return "Long side 640"
             }
         }
     }
@@ -215,7 +221,7 @@ final class PhotosCloudProvider: NSObject, CloudProvider,
     var downloadSize: DownloadSize {
         get {
             defaults.string(forKey: Self.downloadSizeKey)
-                .flatMap(DownloadSize.init(rawValue:)) ?? .fit640
+                .flatMap(DownloadSize.init(rawValue:)) ?? .long640
         }
         set { defaults.set(newValue.rawValue, forKey: Self.downloadSizeKey) }
     }
@@ -233,26 +239,35 @@ final class PhotosCloudProvider: NSObject, CloudProvider,
 
     private var enabled: Bool { defaults.bool(forKey: Self.enabledKey) }
 
+    /* defaultSize rides EVERY state, not just serving: it is a fact
+       about this host's setting, not about the library, and a guest
+       that sees the service off and then on again should not have to
+       ask twice to learn what a save would deliver. */
     func entry() -> CloudServiceEntry {
+        let configured = downloadSize.rawValue
         guard enabled else {
             return CloudServiceEntry(
                 service: service, label: "Photos", state: "off",
-                detail: "Turn on in the host's iCloud page")
+                detail: "Turn on in the host's iCloud page",
+                defaultSize: configured)
         }
         switch PHPhotoLibrary.authorizationStatus(for: .readWrite) {
         case .authorized, .limited:
             let count = assets().count
             return CloudServiceEntry(
                 service: service, label: "Photos", state: "serving",
-                detail: "\(count) photo\(count == 1 ? "" : "s")")
+                detail: "\(count) photo\(count == 1 ? "" : "s")",
+                defaultSize: configured)
         case .notDetermined:
             return CloudServiceEntry(
                 service: service, label: "Photos", state: "no-access",
-                detail: "Grant access in the host's iCloud page")
+                detail: "Grant access in the host's iCloud page",
+                defaultSize: configured)
         default:
             return CloudServiceEntry(
                 service: service, label: "Photos", state: "no-access",
-                detail: "Photos access is denied on the host")
+                detail: "Photos access is denied on the host",
+                defaultSize: configured)
         }
     }
 
@@ -447,14 +462,33 @@ final class PhotosCloudProvider: NSObject, CloudProvider,
             ?? "Photo"
     }
 
+    /// The longest-edge scale itself, as arithmetic: aspect preserved,
+    /// never enlarged, the longer dimension landing exactly on `edge`.
+    /// Truncating integer division on purpose — the guest's
+    /// cloud_photo_fit_long_edge does the same on the same numbers, and
+    /// the popup's label would otherwise disagree with the file by a
+    /// pixel. Data-in/data-out so a test proves it without an image.
+    static func scaled(width: Int, height: Int,
+                       longestEdge edge: Int) -> (width: Int, height: Int) {
+        guard width > 0, height > 0, edge > 0 else {
+            return (max(width, 0), max(height, 0))
+        }
+        guard max(width, height) > edge else { return (width, height) }
+        if width >= height {
+            return (edge, max(1, height * edge / width))
+        }
+        return (max(1, width * edge / height), edge)
+    }
+
     /// The get pipeline's second half: resize per the Downloads setting,
     /// then encode. `original` keeps every pixel (transcoding only when
-    /// the container is modern); a fit size decodes, scales to the box
-    /// aspect-preserved — never up — and re-encodes. Static and
-    /// data-in/data-out so a test needs no Photos library to prove it.
+    /// the container is modern); a longN size decodes, scales so the
+    /// LONGER dimension lands on that number — aspect preserved, never
+    /// up — and re-encodes. Static and data-in/data-out so a test needs
+    /// no Photos library to prove it.
     static func processedJPEG(_ data: Data,
                               size: DownloadSize) throws -> Data {
-        guard let box = size.box else { return try asJPEG(data) }
+        guard let edge = size.longestEdge else { return try asJPEG(data) }
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(
                   source, 0, nil) as? [CFString: Any],
@@ -468,14 +502,18 @@ final class PhotosCloudProvider: NSObject, CloudProvider,
            so the box check compares post-rotation dimensions. */
         let oriented = Self.orientationSwapsAxes(properties)
             ? (width: height, height: width) : (width: width, height: height)
-        if oriented.width <= box.width && oriented.height <= box.height {
+        if max(oriented.width, oriented.height) <= edge {
             return try asJPEG(data)   /* already small enough */
         }
-        let image = try decodedImage(
-            source, boundedTo: max(box.width, box.height))
-        let fit = ClassicDither.fit(
-            width: image.width, height: image.height,
-            maxWidth: box.width, maxHeight: box.height)
+        /* Computed off the ORIGINAL's stated dimensions, not off the
+           decoded thumbnail: the bounded decode may land a pixel either
+           side of the ideal, and the guest's popup labels this file from
+           the listing's own width/height. Those two numbers must be the
+           same number, so the target comes from the same place the label
+           does and the decode only supplies pixels. */
+        let fit = Self.scaled(width: oriented.width, height: oriented.height,
+                              longestEdge: edge)
+        let image = try decodedImage(source, boundedTo: edge)
         let scaled = try drawn(image, width: fit.width, height: fit.height)
         return try jpegEncoded(scaled)
     }
@@ -950,8 +988,8 @@ extension GuestListener {
         if let size = request.size,
            PhotosCloudProvider.DownloadSize(rawValue: size) == nil {
             refuseCloud(id: request.id, code: "io-error",
-                        reason: "size must be original, fit640, "
-                            + "fit1024, fit1440 or fit2048", on: asker)
+                        reason: "size must be original, long640, "
+                            + "long1024 or long1600", on: asker)
             return
         }
         if let obstruction = transferLaneObstruction(for: asker) {

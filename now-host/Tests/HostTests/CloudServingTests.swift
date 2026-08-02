@@ -306,11 +306,11 @@ final class CloudServingTests: XCTestCase {
         let guest = try await connectedGuest()
         try guest.send(.cloudGet(CloudGet(id: 71, service: "photos",
                                           item: "asset-1",
-                                          size: "fit1024")))
+                                          size: "long1024")))
         _ = try await lastReceived(on: guest) {
             if case .fileOffer(let o) = $0 { return o } else { return nil }
         }
-        XCTAssertEqual(photos.sizeAsked, .some("fit1024"))
+        XCTAssertEqual(photos.sizeAsked, .some("long1024"))
     }
 
     /// A get with no size still reaches the provider as nil — the
@@ -353,10 +353,11 @@ final class CloudServingTests: XCTestCase {
         XCTAssertEqual(refuse.id, 73)
         XCTAssertEqual(refuse.code, "io-error")
         XCTAssertEqual(refuse.reason,
-                       "size must be original, fit640, fit1024, "
-                           + "fit1440 or fit2048",
-                       "the reason names every token that would work, "
-                           + "the two new ones included")
+                       "size must be original, long640, long1024 "
+                           + "or long1600",
+                       "the reason names every token that would work "
+                           + "— which is what makes retiring the fitN "
+                           + "boxes safe without a revision bump")
         XCTAssertNil(photos.sizeAsked,
                      "a refused size must not reach the provider")
         XCTAssertFalse(guest.received.contains {
@@ -368,7 +369,7 @@ final class CloudServingTests: XCTestCase {
     /// like the three original ones — no second code path for them.
     /// One connection, both tokens asked in turn: proves neither is a
     /// one-shot fluke of connection setup.
-    func testAGetPassesEitherNewSizeTokenToTheProvider() async throws {
+    func testAGetPassesEveryLongEdgeTokenToTheProvider() async throws {
         let photos = FakeProvider("photos")
         photos.plan = OutboundFile.Plan(
             name: "IMG_1234.jpg", container: "data",
@@ -415,44 +416,110 @@ final class CloudServingTests: XCTestCase {
             try guest.send(.fileDone(FileDone(id: offer.id, ok: true)))
         }
 
-        try await fetchOne(id: 74, size: "fit1440", expect: "fit1440")
-        try await fetchOne(id: 75, size: "fit2048", expect: "fit2048")
+        try await fetchOne(id: 74, size: "long1600", expect: "long1600")
+        try await fetchOne(id: 75, size: "long640", expect: "long640")
+    }
+
+    /// The retirement itself, as behaviour: a peer still sending a
+    /// fitN box meets a NAMED refusal, not a silently different
+    /// render. This is the whole reason the semantic break needed no
+    /// contract-revision bump, so it is worth its own test.
+    func testARetiredFitTokenIsRefusedByNameAndNeverAliased()
+        async throws {
+        let photos = FakeProvider("photos")
+        photos.plan = OutboundFile.Plan(
+            name: "IMG_1234.jpg", container: "data",
+            bytes: Data("jpeg bytes".utf8),
+            fileType: "JPEG", creator: "ogle", modified: nil, note: nil)
+        listener.cloud.register(photos)
+        let guest = try await connectedGuest()
+        try guest.send(.cloudGet(CloudGet(id: 76, service: "photos",
+                                          item: "asset-1",
+                                          size: "fit640")))
+        let refuse = try await lastReceived(on: guest) {
+            if case .cloudRefuse(let r) = $0 { return r }
+            else { return nil }
+        }
+        XCTAssertEqual(refuse.id, 76)
+        XCTAssertEqual(refuse.code, "io-error")
+        XCTAssertTrue(refuse.reason.contains("long640"),
+                      "the refusal names the set that replaced it")
+        XCTAssertNil(photos.sizeAsked,
+                     "an aliased fit640 would have delivered a "
+                         + "portrait photo at a size nobody asked for")
     }
 
     /// The precedence itself, with no library in the room: the ask's
-    /// token outranks the configured default, absence keeps it — every
-    /// token including the two the polish arc added.
+    /// token outranks the configured default, absence keeps it.
     func testTheAsksSizeOutranksTheConfiguredDefault() {
         XCTAssertEqual(
             PhotosCloudProvider.chosenSize(token: "original",
-                                           configured: .fit640),
+                                           configured: .long640),
             .original)
         XCTAssertEqual(
             PhotosCloudProvider.chosenSize(token: nil,
-                                           configured: .fit1024),
-            .fit1024)
+                                           configured: .long1024),
+            .long1024)
         XCTAssertEqual(
-            PhotosCloudProvider.chosenSize(token: "fit1440",
-                                           configured: .fit640),
-            .fit1440)
+            PhotosCloudProvider.chosenSize(token: "long1600",
+                                           configured: .long640),
+            .long1600)
         XCTAssertEqual(
             PhotosCloudProvider.chosenSize(token: "fit2048",
-                                           configured: .fit640),
-            .fit2048)
+                                           configured: .long640),
+            .long640,
+            "a retired token never reaches here (the serve refuses it "
+                + "first), and if it did it is not a size to guess at")
     }
 
-    /// The box each new token names, matched against the task's own
-    /// numbers — a wrong box here would silently mis-fit every photo
+    /// The number each token names, matched against the task's own
+    /// stops — a wrong edge here would silently mis-scale every photo
     /// asked at that size.
-    func testTheNewSizeTokensNameTheRightBoxes() {
-        XCTAssertEqual(PhotosCloudProvider.DownloadSize.fit1440.box?.width,
-                       1440)
-        XCTAssertEqual(PhotosCloudProvider.DownloadSize.fit1440.box?.height,
-                       1080)
-        XCTAssertEqual(PhotosCloudProvider.DownloadSize.fit2048.box?.width,
-                       2048)
-        XCTAssertEqual(PhotosCloudProvider.DownloadSize.fit2048.box?.height,
-                       1536)
+    func testEverySizeTokenNamesItsLongEdge() {
+        XCTAssertEqual(
+            PhotosCloudProvider.DownloadSize.allCases.map(\.rawValue),
+            ["original", "long1600", "long1024", "long640"])
+        XCTAssertNil(PhotosCloudProvider.DownloadSize.original.longestEdge,
+                     "original is the absence of a size, not a large one")
+        XCTAssertEqual(
+            PhotosCloudProvider.DownloadSize.long1600.longestEdge, 1600)
+        XCTAssertEqual(
+            PhotosCloudProvider.DownloadSize.long1024.longestEdge, 1024)
+        XCTAssertEqual(
+            PhotosCloudProvider.DownloadSize.long640.longestEdge, 640)
+    }
+
+    /// The scale, as arithmetic and independent of any image: the
+    /// LONGER dimension lands on the number, whichever way up the photo
+    /// is. Written from the task's own worked example rather than from
+    /// what the code does — a portrait 3024x4032 at 640 is 480x640, and
+    /// the fit-box math this replaced answered 360x480.
+    func testTheLongEdgeScaleHonoursPortraitAndLandscapeAlike() {
+        let portrait = PhotosCloudProvider.scaled(
+            width: 3024, height: 4032, longestEdge: 640)
+        XCTAssertEqual(portrait.width, 480)
+        XCTAssertEqual(portrait.height, 640)
+        let landscape = PhotosCloudProvider.scaled(
+            width: 4032, height: 3024, longestEdge: 640)
+        XCTAssertEqual(landscape.width, 640)
+        XCTAssertEqual(landscape.height, 480)
+        let square = PhotosCloudProvider.scaled(
+            width: 3000, height: 3000, longestEdge: 1024)
+        XCTAssertEqual(square.width, 1024)
+        XCTAssertEqual(square.height, 1024)
+    }
+
+    /// Never upscale, at the arithmetic level: a small original asked
+    /// at a large stop keeps its own numbers.
+    func testTheLongEdgeScaleNeverEnlarges() {
+        let small = PhotosCloudProvider.scaled(
+            width: 400, height: 300, longestEdge: 1600)
+        XCTAssertEqual(small.width, 400)
+        XCTAssertEqual(small.height, 300)
+        let exact = PhotosCloudProvider.scaled(
+            width: 640, height: 480, longestEdge: 640)
+        XCTAssertEqual(exact.width, 640)
+        XCTAssertEqual(exact.height, 480)
     }
 
     func testAGetFaultRefusesInsteadOfOffering() async throws {

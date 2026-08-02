@@ -63,11 +63,11 @@ final class CloudModuleModel: ObservableObject {
 
     func downloadSize(_ service: String)
         -> PhotosCloudProvider.DownloadSize {
-        guard hasDownloadSize(service) else { return .fit640 }
+        guard hasDownloadSize(service) else { return .long640 }
         return defaults.string(
             forKey: PhotosCloudProvider.downloadSizeKey)
             .flatMap(PhotosCloudProvider.DownloadSize.init(rawValue:))
-            ?? .fit640
+            ?? .long640
     }
 
     func setDownloadSize(_ service: String,

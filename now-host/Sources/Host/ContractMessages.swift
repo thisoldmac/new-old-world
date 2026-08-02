@@ -102,6 +102,11 @@ struct CloudServiceEntry: Codable, Equatable, Sendable, Identifiable {
     /// serving, so the guest's dropdown can say WHY a thing is missing.
     var state: String
     var detail: String?
+    /// For a service that sizes its deliveries: this host's own
+    /// configured CloudGet.size token, so a guest that offers the
+    /// choice preselects the setting instead of carrying a "host
+    /// default" item it cannot name on screen. nil everywhere else.
+    var defaultSize: String?
 
     var id: String { service }
 }
@@ -168,11 +173,13 @@ struct CloudGet: Codable, Equatable, Sendable {
     var id: Int
     var service: String
     var item: String
-    /// The per-ask delivery size (original / fit640 / fit1024 /
-    /// fit1440 / fit2048), each a FIT box the host scales the
-    /// original into, aspect preserved. Absent means the host's
-    /// configured Downloads default — additive by contract, so every
-    /// older guest keeps its meaning.
+    /// The per-ask delivery size (original / long640 / long1024 /
+    /// long1600), each naming the LONGEST edge the host scales the
+    /// original's longer dimension onto, aspect preserved, never up.
+    /// Absent means the host's configured Downloads default — which a
+    /// guest with a size picker no longer uses, since cloud.report's
+    /// defaultSize tells it what that setting is. The retired fitN
+    /// boxes are refused by name, never aliased (contract).
     var size: String?
 
     init(id: Int, service: String, item: String, size: String? = nil) {

@@ -1087,6 +1087,21 @@ components:
                   One converted sentence of state ("Sharing iCloud
                   Drive", "342 photos", "Open Privacy & Security on the
                   host"). Display only.
+              defaultSize:
+                type: string
+                description: >
+                  For a service that sizes its deliveries (photos
+                  today): the host's OWN configured CloudGet.size
+                  token. It exists so a guest that offers the choice
+                  can PRESELECT the host's setting instead of carrying
+                  a "host default" item whose meaning it cannot name
+                  on screen — the setting arrives as data and the
+                  guest's ask is always an explicit token.
+                  Additive and optional: a host that omits it, or that
+                  names a token this guest has never heard of, leaves
+                  the guest to open on a size of its own choosing.
+                  Data, not a command — the guest may still send any
+                  token the CloudGet.size enum allows.
     CloudList:
       type: object
       required: [type, id, service]
@@ -1212,28 +1227,52 @@ components:
             is); this id correlates only the refusal path. Once the
             offer exists, the file family owns the outcome.
         size:
-          enum: [original, fit640, fit1024, fit1440, fit2048]
+          enum: [original, long640, long1024, long1600]
           description: >
             The delivery size for THIS ask, for services that size
             their deliveries (photos today: the same renders the
-            host's own Downloads picker offers). Each fitN token is a
-            FIT BOX — fit640 is 640x480, fit1024 is 1024x768, fit1440
-            is 1440x1080, fit2048 is 2048x1536 — the host scales the
-            original to fit inside that box preserving aspect, same as
-            cloud.preview's maxWidth/maxHeight. The tokens stay
-            coarse on purpose: the host does not compute or send an
-            exact post-fit resolution for a delivered file. A guest
-            that wants to SHOW the exact resolution a photo will
-            render at computes it itself from the entry's own
-            width/height (CloudListing) and the chosen box — the
-            asker already has both numbers, and a fifth wire round
-            trip to learn their ratio would be the wire doing the
-            asker's arithmetic for it.
-            Absent means the host's configured default — the reading
-            every guest that predates the field already sends, which
-            is what makes this additive. A token outside the enum is
-            refused with a reason, never guessed at; a service that
-            does not size its deliveries ignores the field.
+            host's own Downloads picker offers). Each longN token
+            names the LONGEST EDGE in pixels: the host scales the
+            original so that its longer dimension is exactly N,
+            preserving aspect and never enlarging, whichever way up
+            the photo is. A portrait 3024x4032 asked at long640
+            arrives 480x640; the same photo landscape (4032x3024)
+            arrives 640x480. original delivers every pixel, resized
+            not at all (still transcoded to JPEG when the container is
+            modern).
+            The long edge, rather than a box, IS the fix: a 640x480
+            fit box gave a portrait photo the SHORT edge's number and
+            delivered 360x480, a size nobody asked for and no picker
+            could name.
+            RETIRED, NOT ALIASED: fit640, fit1024, fit1440 and fit2048
+            named fit boxes and are gone. This is a deliberate
+            semantic break on a field days old, and it deliberately
+            does NOT bump x-contract-revision, because the break is
+            graceful by construction — a peer still sending a retired
+            token meets the same unknown-token check that has always
+            guarded this field and gets a refusal NAMING the valid
+            set. A named refusal is a worse outcome than success and a
+            far better one than an alias: fit640 quietly answering as
+            long640 would hand a portrait guest a render it never
+            asked for and could not have described.
+            The tokens stay coarse on purpose: the host does not
+            compute or send an exact post-scale resolution for a
+            delivered file. A guest that wants to SHOW the exact
+            resolution a photo will render at computes it itself from
+            the entry's own width/height (CloudListing) and the chosen
+            long edge — the asker already has both numbers, and a
+            fifth wire round trip to learn their ratio would be the
+            wire doing the asker's arithmetic for it.
+            The field stays optional. Absent means the host's
+            configured default, which is what a guest with no size UI
+            of its own sends. A guest that OFFERS the choice does not
+            use absence for it: it learns the host's configured token
+            from cloud.report's defaultSize, preselects that, and
+            always sends an explicit token — so what a person sees
+            selected and what actually arrives cannot disagree. A
+            token outside the enum is refused with a reason, never
+            guessed at; a service that does not size its deliveries
+            ignores the field.
     CloudPreview:
       type: object
       required: [type, id, service, item, maxWidth, maxHeight, depth]
@@ -4180,10 +4219,15 @@ components:
           from whatever modern container the library holds (HEIC
           included), typed JPEG/ogle so it opens by double-click on
           arrival, and downsized per the ask's own size field when it
-          carries one (original / fit640 / fit1024 / fit1440 /
-          fit2048), else per the host's own Downloads setting — the
-          asker's choice outranks the configured default, and absence
-          means the default. cloud.preview answers with the selected
+          carries one (original / long640 / long1024 / long1600, each
+          naming the LONGEST edge — see CloudGet.size, including why
+          the retired fitN boxes are refused rather than aliased),
+          else per the host's own Downloads setting — the asker's
+          choice outranks the configured default, and absence means
+          the default. The report's defaultSize carries that
+          configured token, so a guest can preselect it instead of
+          offering a "host default" it cannot name. cloud.preview
+          answers with the selected
           photo as raw indexed pixels, host-dithered to the asked depth
           and sized to the asked pane — the guest's list-and-preview
           render, one photo in memory at a time.

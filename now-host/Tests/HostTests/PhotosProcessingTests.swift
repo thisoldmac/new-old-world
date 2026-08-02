@@ -52,20 +52,47 @@ final class PhotosProcessingTests: XCTestCase {
 
     // MARK: - The get pipeline's Downloads setting
 
-    func testFit640ShrinksALargePhotoIntoTheBox() throws {
+    func testLong640ShrinksALandscapePhotoByItsWidth() throws {
         let big = try image(width: 2000, height: 1000, as: .jpeg)
-        let out = try PhotosCloudProvider.processedJPEG(big, size: .fit640)
+        let out = try PhotosCloudProvider.processedJPEG(big, size: .long640)
         let info = properties(of: out)
         XCTAssertEqual(info.type, UTType.jpeg.identifier)
         XCTAssertEqual(info.width, 640)
-        XCTAssertEqual(info.height, 320, "aspect preserved, fit by width")
+        XCTAssertEqual(info.height, 320, "aspect preserved, long edge is "
+                       + "the width here")
     }
 
-    func testAPhotoAlreadyInsideTheBoxIsNotResized() throws {
+    /// THE defect this arc exists for, end to end through the real
+    /// pipeline: a portrait photo's LONG edge is its height, so 640
+    /// means 480x640. The fit-box math this replaced answered 360x480
+    /// — a smaller picture than the person asked for, on the axis they
+    /// were looking at.
+    func testLong640ShrinksAPortraitPhotoByItsHeight() throws {
+        let tall = try image(width: 3024, height: 4032, as: .jpeg)
+        let out = try PhotosCloudProvider.processedJPEG(tall, size: .long640)
+        let info = properties(of: out)
+        XCTAssertEqual(info.height, 640, "the long edge lands on the "
+                       + "number the token names")
+        XCTAssertEqual(info.width, 480, "and the short edge follows the "
+                       + "aspect — 360x480 is the box-fit answer")
+    }
+
+    /// Never upscale, through the pipeline rather than the arithmetic:
+    /// a 400x300 original asked at the largest stop is still 400x300.
+    func testASmallOriginalIsNeverEnlargedToAStop() throws {
+        let small = try image(width: 400, height: 300, as: .jpeg)
+        let out = try PhotosCloudProvider.processedJPEG(small,
+                                                       size: .long1600)
+        let info = properties(of: out)
+        XCTAssertEqual(info.width, 400)
+        XCTAssertEqual(info.height, 300)
+    }
+
+    func testAPhotoAlreadyShorterThanTheStopIsNotResized() throws {
         let small = try image(width: 320, height: 240, as: .jpeg)
         let out = try PhotosCloudProvider.processedJPEG(small,
-                                                       size: .fit640)
-        XCTAssertEqual(out, small, "a JPEG already inside the box "
+                                                       size: .long640)
+        XCTAssertEqual(out, small, "a JPEG already inside the stop "
                        + "passes through byte-identical — no recompress")
     }
 
@@ -80,10 +107,10 @@ final class PhotosProcessingTests: XCTestCase {
         XCTAssertEqual(info.height, 600)
     }
 
-    func testFit1024AppliesToHEICToo() throws {
+    func testLong1024AppliesToHEICToo() throws {
         let heic = try image(width: 4000, height: 3000, as: .heic)
         let out = try PhotosCloudProvider.processedJPEG(heic,
-                                                       size: .fit1024)
+                                                       size: .long1024)
         let info = properties(of: out)
         XCTAssertEqual(info.type, UTType.jpeg.identifier)
         XCTAssertEqual(info.width, 1024)
@@ -113,7 +140,7 @@ final class PhotosProcessingTests: XCTestCase {
 
     func testUnreadableBytesRefuseInTheContractsVocabulary() {
         XCTAssertThrowsError(try PhotosCloudProvider.processedJPEG(
-            Data("not an image".utf8), size: .fit640)) {
+            Data("not an image".utf8), size: .long640)) {
             XCTAssertEqual(CloudFault.from($0).code, "io-error")
         }
         XCTAssertThrowsError(try PhotosCloudProvider.rgbPixels(
