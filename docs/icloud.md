@@ -154,7 +154,14 @@ the pane-fit arithmetic) is pure in `cloud_preview.c`, host-cc tested
 in `cloud_preview_test.c`, mutation-watched. Between the ask and the
 pixels the pane says "Loading preview..." — drawn state, invalidated
 once at each transition, cleared by the arrival or by the refusal
-reason drawing in its place.
+reason drawing in its place. The GWorld, the fetch bookkeeping and the
+CopyBits landing moved out of this file into `cloud_preview_well.c`
+(2026-08-02): ONE preview well shared by any view that can show one,
+not one per view, because the wire itself refuses a second
+`cloud.preview` while one is in flight (`now_wire_cloud_preview`) —
+Photos and Contacts asking through their own copies of that state
+would either race each other or reinvent the same "one at a time" rule
+the wire already enforces.
 
 The download UX (2026-08-02) lives in the same view, below the pane:
 
@@ -192,6 +199,38 @@ The download UX (2026-08-02) lives in the same view, below the pane:
   success, refusal, cancel, corrupt, lost link — and the shell's idle
   swaps the status for it once, on the sequence moving. One
   implementation serves the placard and the pane.
+
+**Contacts is a real address-book view** (`cloud_contacts_view.c`),
+the twelfth page's third tailored view alongside Drive and Photos
+(2026-08-02). The LIST is this view's own Data Browser — Name and
+Company columns, not the shell's generic Item/Detail — built with the
+drive browser's own recipe (own control, own UPPs, disposed before
+them, the fill-hilite call) but reading the shell's shared `CloudStore`
+directly rather than owning row storage of its own: Contacts has no
+fetch the way Drive does, so the shell's existing `cloud.listing`
+paging, the live search's diff and the Data Browser add/remove
+batching all keep working unchanged — `active_browser()` just has a
+third mode to hand out. Picking a row still runs through the shell's
+own `g_selected`/`ask_card()`/`CloudViewOps.select` sequence, reached
+via one function pointer (`CloudContactsHost.row_selected`) so a
+rebuild's own spurious deselect (the same hazard the shell's own
+browser already guards against) cannot double-fire a card ask.
+
+The CARD is the classic Address Book's shape: a photo well top-left,
+the name beside it in the large system font, then the grouped [label,
+value] rows below both — `cloud_contacts_card_layout` (pure, host-cc
+tested in `cloud_contacts_card_test.c`, mutation-watched) places the
+well at 48x48 (not 64: the smallest honest pane's ~184pt width leaves
+a 64pt well too little room for a name before truncation) and
+degrades it to fit a pane too small to hold the configured size rather
+than overflow. The well's pixels are the shared preview well above,
+asked with `service="contacts"` on every selection change exactly the
+way Photos asks with `service="photos"`; while the ask is in flight,
+refused (most contacts have none — a contact with no photo answers
+`cloud.refuse` `not-found` "no photo" as an EXPECTED outcome, not an
+error), or nothing has been asked for yet, the well draws a hand-drawn
+person-silhouette placeholder — a head and shoulders in gray QuickDraw
+ovals, clipped to the well — rather than showing nothing.
 
 The split follows the house pattern: `cloud_model.c` (the store and
 parsers, host-cc tested in `cloud_model_test.c`, mutation-watched) and
@@ -335,6 +374,25 @@ refusal's exact wording; the real
 untested here — it needs this Mac's Contacts TCC grant, the same
 bucket Photos' real-library path already sits in, and what only that
 grant can prove is ledgered alongside it.
+
+The Contacts guest UI arc (2026-08-02, atop polish2-foundations) is
+**tested, nothing more** — narrower even than that: the pure card
+layout (`cloud_contacts_card_layout`'s well/name/rows placement) is
+host-cc tested in `cloud_contacts_card_test.c`, mutation-watched, and
+the PPC guest cross-compiles clean with zero warnings, but nothing
+past cross-compilation has run anywhere — not against a live host
+wire, not on the emulator, not on the PowerBook. Contacts' own Data
+Browser (Name/Company columns), the photo well's CopyBits landing, the
+hand-drawn silhouette placeholder, and the preview well's extraction
+out of `cloud_photos_view.c` (shared state Photos now also depends on)
+are all unverified past "builds" — the same level `docs/guest-ui-
+start-here.md` warns is worth the least trust, because the surprises
+in this project have consistently come from code that looked obviously
+correct and had never run on the real machine. In particular: the
+well-extraction refactor changed WHICH view's `note` callback fires
+when a preview settles (rebound per `_select` call, cloud_preview_
+well.c) — a real behavior change for Photos, not just a file move, and
+Photos' preview path has not been re-verified on metal since.
 
 **Drive stays a flat list, not a tree — Data Browser containers are
 declared but unproven.** `spikes/databrowser-container-probe` compiles
