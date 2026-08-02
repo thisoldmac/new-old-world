@@ -12,6 +12,7 @@
 #include "cloud_model.h"
 #include "cloud_photos_view.h"
 #include "cloud_view.h"
+#include "fileshare.h"
 #include "json.h"
 #include "pump.h"
 #include "wire.h"
@@ -469,9 +470,14 @@ static void choose_service(int index)
         return;
     }
     /* The outgoing view's per-selection state goes first: the photos
-       preview must not sit in memory behind a Contacts card. */
+       preview must not sit in memory behind a Contacts card. Its own
+       controls leave the stage with it — the shell shows/hides only
+       what the shell owns. */
     if (g_view != NULL && g_view->select != NULL) {
         g_view->select(&g_r, &g_store, -1);
+    }
+    if (g_view != NULL && g_view->show != NULL) {
+        g_view->show(false);
     }
     g_service = index;
     service = &g_store.services[g_service];
@@ -503,6 +509,11 @@ static void choose_service(int index)
         show_control(cloud_drive_view_browser(), g_drive_mode);
         show_control(g_back, g_drive_mode);
         show_control(g_fwd, g_drive_mode);
+        if (g_view != NULL && g_view->show != NULL) {
+            g_view->show(true);       /* the incoming view's own
+                                         controls, placed by the
+                                         apply_layout above */
+        }
     }
     invalidate_detail();
     /* The list control's own resize repaints itself, but the area a
@@ -579,20 +590,41 @@ static void note_card(const char *reply)
     invalidate_detail();
 }
 
+/* The get's outcome watch: armed when the offer is noted, disarmed by
+   the wire's receive-outcome seam. One long compare per idle pass
+   while armed, nothing at all otherwise. */
+static Boolean g_watch_get;
+static long g_watch_seq;
+
 static void note_get_under_way(const char *offer)
 {
     char name[64];
-    char line[96];
+    char where[96];
+    char line[160];
+    short vref;
+    long dir;
 
     name[0] = '\0';
     now_json_find_text(offer, "name", name, sizeof name);
-    if (name[0] != '\0') {
+    /* Where it is actually landing: the chosen folder when the photos
+       view registered one, the shared folder otherwise. One catalog
+       climb per offer, never per pass. */
+    if (now_wire_cloud_get_destination_get(&vref, &dir)
+        && now_files_dir_path(vref, dir, where, sizeof where)) {
+        snprintf(line, sizeof line, "Receiving %.40s into %.60s",
+                 name[0] != '\0' ? name : "the file", where);
+    } else if (name[0] != '\0') {
         snprintf(line, sizeof line,
                  "Receiving %.40s into the shared folder", name);
     } else {
         strcpy(line, "Receiving into the shared folder");
     }
     set_status(line);
+    /* Watch it to the end: the status above must be REPLACED by the
+       outcome when the receive settles, not worn forever — the bug
+       this seam exists to fix. */
+    g_watch_get = true;
+    g_watch_seq = now_wire_receive_outcome(NULL, 0);
 }
 
 static void cloud_answers(int kind, const char *reply)
@@ -747,6 +779,7 @@ static OSErr cloud_create(WindowRef owner, const Rect *body)
     g_search_focus = false;
     memset(g_in_view, 0, sizeof g_in_view);
     g_shown_rows = 0;
+    g_watch_get = false;
 
     /* The dropdown's menu: a placeholder resource the report rewrites.
        The popup CDEF inserts it into the hierarchical list, which is
@@ -849,6 +882,7 @@ static void cloud_dispose(void)
     g_menu = NULL;
     g_owner = NULL;
     g_view = NULL;
+    g_watch_get = false;
 }
 
 static void show_control(ControlRef control, Boolean on)
@@ -1122,6 +1156,16 @@ static Boolean cloud_click(const EventRecord *event, Point local)
     if (FindControl(local, g_owner, &control) == 0 || control == NULL) {
         return false;
     }
+    /* A control the shell does not own gets offered to the active view
+       BEFORE the generic track below: the view knows which action proc
+       its control needs (photos' Size popup wants the popup CDEF's
+       own, not now_pump_action). */
+    if (control != g_popup && control != g_refresh && control != g_save
+        && control != g_back && control != g_fwd
+        && g_view != NULL && g_view->control_click != NULL
+        && g_view->control_click(control, event, local)) {
+        return true;
+    }
     if (control == g_popup) {
         short before = GetControlValue(g_popup);
 
@@ -1255,6 +1299,18 @@ static void cloud_idle(void)
     }
     if (g_view != NULL && g_view->idle != NULL) {
         g_view->idle(&g_r);
+    }
+    /* The receive the page said "Receiving..." about has ended when
+       the wire's outcome sequence moves: replace the status with how
+       it went, once, and stand down. The listing status returns with
+       the next natural update. */
+    if (g_watch_get) {
+        char line[96];
+
+        if (now_wire_receive_outcome(line, sizeof line) != g_watch_seq) {
+            g_watch_get = false;
+            set_status(line[0] != '\0' ? line : "Done");
+        }
     }
     /* Show/hide is the cheap operation that is safe every pass; the
        rectangle repaints only when the answer changed. Invalidate

@@ -307,6 +307,20 @@ resource 'MENU' (135) {
     }
 };
 
+/* The Photos view's download-size pop-up. Item order is load-bearing:
+   cloud_model.c's cloud_size_token maps items 1-3 to the contract's
+   size tokens and item 4 (the default) to "omit the field", which asks
+   for the host's own configured Downloads setting. */
+resource 'MENU' (136) {
+    136, textMenuProc, allEnabled, enabled, "Size",
+    {
+        "Original", noIcon, noKey, noMark, plain;
+        "Fit 1024x768", noIcon, noKey, noMark, plain;
+        "Fit 640x480", noIcon, noKey, noMark, plain;
+        "Host default", noIcon, noKey, noMark, plain
+    }
+};
+
 /* The Connection page's Retry pop-up. Item order is load-bearing:
    conn_fields.c maps items 1-4 to 0/2/5/10 seconds. */
 resource 'MENU' (133) {
