@@ -1,4 +1,5 @@
 import Contacts
+import CoreGraphics
 import Foundation
 import ImageIO
 import Photos
@@ -49,6 +50,20 @@ protocol CloudProvider: AnyObject {
         -> (entries: [CloudEntry], more: Bool, next: Int)
     func card(item: String) throws -> [[String]]
     func get(item: String) throws -> OutboundFile.Plan
+    /// One item as pixels for the guest's pane: decoded, resized to fit
+    /// the box, dithered to `depth` (1 or 8). The default refuses, so a
+    /// service is card-and-file only until it deliberately grows eyes.
+    func preview(item: String, maxWidth: Int, maxHeight: Int,
+                 depth: Int) throws -> ClassicDither.Indexed
+}
+
+extension CloudProvider {
+    func preview(item: String, maxWidth: Int, maxHeight: Int,
+                 depth: Int) throws -> ClassicDither.Indexed {
+        throw CloudFault.refuse(
+            code: "not-listable",
+            reason: "\(service) has nothing to show as pixels")
+    }
 }
 
 @MainActor
@@ -153,9 +168,46 @@ final class PhotosCloudProvider: NSObject, CloudProvider,
     PHPhotoLibraryChangeObserver {
     let service = "photos"
     static let enabledKey = "cloud.photos.enabled"
+    static let downloadSizeKey = "cloud.photos.downloadSize"
     private let defaults: UserDefaults
     private var cachedAssets: PHFetchResult<PHAsset>?
     private var observing = false
+
+    /// What a cloud.get delivers, chosen on the host's iCloud page and
+    /// applied to EVERY download — configurable, not per-request yet
+    /// (the per-ask override is a later arc). The default fits the
+    /// classic screens the fetch is for: a 48-megapixel original into a
+    /// 6 MB partition is a mistake a default should not require
+    /// declining every time.
+    enum DownloadSize: String, CaseIterable {
+        case original
+        case fit1024
+        case fit640
+
+        var box: (width: Int, height: Int)? {
+            switch self {
+            case .original: return nil
+            case .fit1024: return (1024, 768)
+            case .fit640: return (640, 480)
+            }
+        }
+
+        var label: String {
+            switch self {
+            case .original: return "Original"
+            case .fit1024: return "Fit 1024 x 768"
+            case .fit640: return "Fit 640 x 480"
+            }
+        }
+    }
+
+    var downloadSize: DownloadSize {
+        get {
+            defaults.string(forKey: Self.downloadSizeKey)
+                .flatMap(DownloadSize.init(rawValue:)) ?? .fit640
+        }
+        set { defaults.set(newValue.rawValue, forKey: Self.downloadSizeKey) }
+    }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -301,13 +353,47 @@ final class PhotosCloudProvider: NSObject, CloudProvider,
                 code: "busy",
                 reason: "iCloud is fetching that photo; ask again shortly")
         }
-        let jpeg = try Self.asJPEG(original)
+        /* The whole pipeline in one line: decode -> resize per the
+           host's Downloads setting -> JPEG. Original skips the resize
+           but still transcodes anything modern (HEIC, mostly). */
+        let jpeg = try Self.processedJPEG(original, size: downloadSize)
         let stem = (Self.title(of: asset) as NSString).deletingPathExtension
         var plan = OutboundFile.plan(name: stem + ".jpg", data: jpeg,
                                      convertText: false)
         plan.modified = asset.creationDate
             .flatMap(ClassicDate.guestWireSeconds(from:))
         return plan
+    }
+
+    /// The preview: the selected photo as raw indexed pixels for the
+    /// guest's pane, decoded and dithered HERE because the classic side
+    /// can do neither. Local bytes only, the same busy bargain as get:
+    /// a preview must never block the wire on the weather either.
+    func preview(item: String, maxWidth: Int, maxHeight: Int,
+                 depth: Int) throws -> ClassicDither.Indexed {
+        let asset = try self.asset(item)
+        let local = PHImageRequestOptions()
+        local.isSynchronous = true
+        local.isNetworkAccessAllowed = false
+        local.deliveryMode = .highQualityFormat
+        var fetched: Data?
+        PHImageManager.default().requestImageDataAndOrientation(
+            for: asset, options: local) { data, _, _, _ in
+            fetched = data
+        }
+        guard let data = fetched else {
+            let warm = PHImageRequestOptions()
+            warm.isNetworkAccessAllowed = true
+            PHImageManager.default().requestImageDataAndOrientation(
+                for: asset, options: warm) { _, _, _, _ in }
+            throw CloudFault.refuse(
+                code: "busy",
+                reason: "iCloud is fetching that photo; ask again shortly")
+        }
+        let (rgb, width, height) = try Self.rgbPixels(
+            data, fitting: maxWidth, maxHeight)
+        return ClassicDither.dither(rgb: rgb, width: width,
+                                    height: height, depth: depth)
     }
 
     private func asset(_ item: String) throws -> PHAsset {
@@ -328,6 +414,146 @@ final class PhotosCloudProvider: NSObject, CloudProvider,
         }
         return asset.creationDate.map { "Photo " + shortDate($0) }
             ?? "Photo"
+    }
+
+    /// The get pipeline's second half: resize per the Downloads setting,
+    /// then encode. `original` keeps every pixel (transcoding only when
+    /// the container is modern); a fit size decodes, scales to the box
+    /// aspect-preserved — never up — and re-encodes. Static and
+    /// data-in/data-out so a test needs no Photos library to prove it.
+    static func processedJPEG(_ data: Data,
+                              size: DownloadSize) throws -> Data {
+        guard let box = size.box else { return try asJPEG(data) }
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(
+                  source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int
+        else {
+            throw CloudFault.refuse(code: "io-error",
+                                    reason: "unreadable image data")
+        }
+        /* Orientation: the thumbnail path below applies EXIF rotation,
+           so the box check compares post-rotation dimensions. */
+        let oriented = Self.orientationSwapsAxes(properties)
+            ? (width: height, height: width) : (width: width, height: height)
+        if oriented.width <= box.width && oriented.height <= box.height {
+            return try asJPEG(data)   /* already small enough */
+        }
+        let image = try decodedImage(
+            source, boundedTo: max(box.width, box.height))
+        let fit = ClassicDither.fit(
+            width: image.width, height: image.height,
+            maxWidth: box.width, maxHeight: box.height)
+        let scaled = try drawn(image, width: fit.width, height: fit.height)
+        return try jpegEncoded(scaled)
+    }
+
+    /// Decode + fit + strip to packed RGB for the ditherer: the front
+    /// half of the preview pipeline.
+    static func rgbPixels(_ data: Data, fitting maxWidth: Int,
+                          _ maxHeight: Int)
+        throws -> (rgb: [UInt8], width: Int, height: Int) {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil)
+        else {
+            throw CloudFault.refuse(code: "io-error",
+                                    reason: "unreadable image data")
+        }
+        let image = try decodedImage(
+            source, boundedTo: max(maxWidth, maxHeight))
+        let fit = ClassicDither.fit(
+            width: image.width, height: image.height,
+            maxWidth: maxWidth, maxHeight: maxHeight)
+        let scaled = try drawn(image, width: fit.width, height: fit.height)
+        guard let raw = scaled.dataProvider?.data as Data?,
+              scaled.bitsPerPixel == 32 else {
+            throw CloudFault.refuse(code: "io-error",
+                                    reason: "could not read pixels back")
+        }
+        var rgb = [UInt8](repeating: 0, count: fit.width * fit.height * 3)
+        let rowBytes = scaled.bytesPerRow
+        raw.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
+            for y in 0..<fit.height {
+                for x in 0..<fit.width {
+                    let src = y * rowBytes + x * 4
+                    let dst = (y * fit.width + x) * 3
+                    rgb[dst] = bytes[src]
+                    rgb[dst + 1] = bytes[src + 1]
+                    rgb[dst + 2] = bytes[src + 2]
+                }
+            }
+        }
+        return (rgb, fit.width, fit.height)
+    }
+
+    private static func orientationSwapsAxes(
+        _ properties: [CFString: Any]) -> Bool {
+        guard let raw = properties[kCGImagePropertyOrientation] as? UInt32,
+              let orientation = CGImagePropertyOrientation(rawValue: raw)
+        else { return false }
+        switch orientation {
+        case .left, .leftMirrored, .right, .rightMirrored: return true
+        default: return false
+        }
+    }
+
+    /// The downsampling decode: a thumbnail bounded by the box's long
+    /// side, orientation applied, never the full-resolution bitmap in
+    /// memory. `CreateThumbnailFromImageAlways` because the embedded
+    /// EXIF thumbnail is 160 pixels of mush.
+    private static func decodedImage(_ source: CGImageSource,
+                                     boundedTo maxPixel: Int)
+        throws -> CGImage {
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+        ]
+        guard let image = CGImageSourceCreateThumbnailAtIndex(
+            source, 0, options as CFDictionary) else {
+            throw CloudFault.refuse(code: "io-error",
+                                    reason: "could not decode the image")
+        }
+        return image
+    }
+
+    /// Redraw at exactly width x height into RGBA8888 — one context
+    /// shape for both pipelines, so "resize" means one thing here.
+    private static func drawn(_ image: CGImage, width: Int,
+                              height: Int) throws -> CGImage {
+        guard let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8,
+            bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else {
+            throw CloudFault.refuse(code: "io-error",
+                                    reason: "could not draw the image")
+        }
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width,
+                                       height: height))
+        guard let scaled = context.makeImage() else {
+            throw CloudFault.refuse(code: "io-error",
+                                    reason: "could not draw the image")
+        }
+        return scaled
+    }
+
+    private static func jpegEncoded(_ image: CGImage) throws -> Data {
+        let out = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            out, UTType.jpeg.identifier as CFString, 1, nil) else {
+            throw CloudFault.refuse(code: "io-error",
+                                    reason: "could not make a JPEG")
+        }
+        CGImageDestinationAddImage(
+            destination, image,
+            [kCGImageDestinationLossyCompressionQuality: 0.85]
+                as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else {
+            throw CloudFault.refuse(code: "io-error",
+                                    reason: "could not make a JPEG")
+        }
+        return out as Data
     }
 
     /// Already JPEG passes through; anything else (HEIC, mostly) is
@@ -540,6 +766,7 @@ extension GuestListener {
         case list(CloudList)
         case detail(CloudDetail)
         case get(CloudGet)
+        case preview(CloudPreview)
     }
 
     /// Like the file serves: answered for any connected guest, down the
@@ -602,6 +829,48 @@ extension GuestListener {
             }
         case .get(let request):
             serveCloudGet(request, on: asker)
+        case .preview(let request):
+            serveCloudPreview(request, on: asker)
+        }
+    }
+
+    private func serveCloudPreview(_ request: CloudPreview,
+                                   on asker: Session) {
+        guard let provider = cloud.provider(for: request.service) else {
+            refuseCloud(id: request.id, code: "unknown-service",
+                        reason: "no service called " + request.service,
+                        on: asker)
+            return
+        }
+        guard request.depth == 1 || request.depth == 8 else {
+            refuseCloud(id: request.id, code: "io-error",
+                        reason: "depth must be 1 or 8", on: asker)
+            return
+        }
+        /* The preview rides the one-transfer-wide lane like everything
+           else on the bulk channel, so a held lane refuses busy — the
+           guest's pane says "after the download", the honest wording. */
+        if let obstruction = transferLaneObstruction(for: asker) {
+            refuseCloud(id: request.id, code: "busy",
+                        reason: obstruction, on: asker)
+            return
+        }
+        /* Clamped, not trusted: the box bounds the render AND the lane
+           time, and no honest pane on a classic screen exceeds it. */
+        let maxWidth = min(max(request.maxWidth, 16), 640)
+        let maxHeight = min(max(request.maxHeight, 16), 480)
+        do {
+            let pixels = try provider.preview(
+                item: request.item, maxWidth: maxWidth,
+                maxHeight: maxHeight, depth: request.depth)
+            note("#\(request.id) \(request.service) preview -> "
+                 + "\(pixels.width)x\(pixels.height)@\(pixels.depth), "
+                 + "\(pixels.pixels.count) bytes", area: "cloud")
+            asker.servePreview(id: request.id, pixels: pixels)
+        } catch {
+            let fault = CloudFault.from(error)
+            refuseCloud(id: request.id, code: fault.code,
+                        reason: fault.reason, on: asker)
         }
     }
 

@@ -74,6 +74,8 @@ final class CloudServingTests: XCTestCase {
         var card: [[String]] = []
         var fault: CloudFault?
         var plan: OutboundFile.Plan?
+        /// nil leaves the protocol's own default (refuse not-listable).
+        var previewPixels: ClassicDither.Indexed?
 
         init(_ service: String) { self.service = service }
 
@@ -106,6 +108,17 @@ final class CloudServingTests: XCTestCase {
                                         reason: "nothing scripted")
             }
             return plan
+        }
+
+        func preview(item: String, maxWidth: Int, maxHeight: Int,
+                     depth: Int) throws -> ClassicDither.Indexed {
+            if let fault { throw fault }
+            guard let previewPixels else {
+                throw CloudFault.refuse(
+                    code: "not-listable",
+                    reason: "\(service) has nothing to show as pixels")
+            }
+            return previewPixels
         }
     }
 
@@ -248,6 +261,116 @@ final class CloudServingTests: XCTestCase {
         XCTAssertFalse(guest.received.contains {
             if case .fileOffer = $0 { return true } else { return false }
         }, "no offer may exist for a refused get")
+    }
+
+    // MARK: - The preview transfer
+
+    /// The whole answer, over the real wire: preview.begin describing
+    /// the rows, the raw bytes on the bulk channel, preview.end closing
+    /// the transfer — and every byte intact, because the guest's only
+    /// job is to CopyBits exactly these.
+    func testAPreviewArrivesAsBeginBulkEndWithTheBytesIntact()
+        async throws {
+        let photos = FakeProvider("photos")
+        let pixels = Data((0..<(24 * 10)).map { UInt8($0 % 251) })
+        photos.previewPixels = ClassicDither.Indexed(
+            width: 24, height: 10, depth: 8, rowBytes: 24, pixels: pixels)
+        listener.cloud.register(photos)
+        let guest = try await connectedGuest()
+        try guest.send(.cloudPreview(CloudPreview(
+            id: 40, service: "photos", item: "asset-1",
+            maxWidth: 300, maxHeight: 200, depth: 8)))
+        let begin = try await lastReceived(on: guest) {
+            if case .previewBegin(let b) = $0 { return b }
+            else { return nil }
+        }
+        XCTAssertEqual(begin.id, 40)
+        XCTAssertEqual(begin.width, 24)
+        XCTAssertEqual(begin.height, 10)
+        XCTAssertEqual(begin.depth, 8)
+        XCTAssertEqual(begin.rowBytes, 24)
+        XCTAssertEqual(begin.bytes, pixels.count)
+        try await waitUntil("bulk + end") {
+            guest.bulkReceived == pixels
+                && guest.received.contains {
+                    if case .previewEnd(let end) = $0 {
+                        return end.id == 40 && end.ok
+                    }
+                    return false
+                }
+        }
+    }
+
+    /// The lane rule: while a download holds the one-transfer-wide
+    /// lane, the ask refuses busy — never queues. (This is the
+    /// mutation-watched serving property: removing the obstruction
+    /// check from serveCloudPreview fails this with a preview.begin
+    /// arriving instead of the refusal.)
+    func testAPreviewIsRefusedBusyWhileADownloadHoldsTheLane()
+        async throws {
+        let photos = FakeProvider("photos")
+        photos.plan = OutboundFile.Plan(
+            name: "IMG_1.jpg", container: "data",
+            bytes: Data(count: 512 * 1024),
+            fileType: "JPEG", creator: "ogle", modified: nil, note: nil)
+        photos.previewPixels = ClassicDither.Indexed(
+            width: 8, height: 8, depth: 8, rowBytes: 8,
+            pixels: Data(count: 64))
+        listener.cloud.register(photos)
+        let guest = try await connectedGuest()
+        // The get takes the lane the moment the offer machinery starts;
+        // the guest has not even accepted yet.
+        try guest.send(.cloudGet(CloudGet(id: 50, service: "photos",
+                                          item: "asset-1")))
+        _ = try await lastReceived(on: guest) {
+            if case .fileOffer(let o) = $0 { return o } else { return nil }
+        }
+        try guest.send(.cloudPreview(CloudPreview(
+            id: 51, service: "photos", item: "asset-1",
+            maxWidth: 300, maxHeight: 200, depth: 8)))
+        let refuse = try await lastReceived(on: guest) {
+            if case .cloudRefuse(let r) = $0, r.id == 51 { return r }
+            else { return nil }
+        }
+        XCTAssertEqual(refuse.code, "busy")
+        XCTAssertFalse(guest.received.contains {
+            if case .previewBegin = $0 { return true } else { return false }
+        }, "a refused preview must not also begin")
+    }
+
+    /// A provider that never grew eyes: implements only the four
+    /// original requirements, so cloud.preview reaches the protocol
+    /// extension's default.
+    private final class NoEyesProvider: CloudProvider {
+        let service = "contacts"
+        func entry() -> CloudServiceEntry {
+            CloudServiceEntry(service: service, label: "Contacts",
+                              state: "serving", detail: "fake")
+        }
+        func list(cursor: Int, limit: Int) throws
+            -> (entries: [CloudEntry], more: Bool, next: Int) {
+            ([], false, 1)
+        }
+        func card(item: String) throws -> [[String]] { [] }
+        func get(item: String) throws -> OutboundFile.Plan {
+            throw CloudFault.refuse(code: "not-found", reason: "fake")
+        }
+    }
+
+    /// A service that never grew eyes answers with the protocol's own
+    /// refusal, not silence — the protocol-extension default.
+    func testAProviderWithoutPreviewRefusesNotListable() async throws {
+        let contacts = NoEyesProvider()
+        listener.cloud.register(contacts)
+        let guest = try await connectedGuest()
+        try guest.send(.cloudPreview(CloudPreview(
+            id: 60, service: "contacts", item: "c-1",
+            maxWidth: 300, maxHeight: 200, depth: 8)))
+        let refuse = try await lastReceived(on: guest) {
+            if case .cloudRefuse(let r) = $0, r.id == 60 { return r }
+            else { return nil }
+        }
+        XCTAssertEqual(refuse.code, "not-listable")
     }
 
     // MARK: - Hardened for an enormous library

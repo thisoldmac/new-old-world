@@ -1973,6 +1973,9 @@ final class GuestListener: ObservableObject {
     private var transferLaneHolder: String? {
         if activeStreamId != nil { return "a live stream is running" }
         if isCapturePending { return "a screenshot is on its way" }
+        if session?.previewInFlight == true {
+            return "a preview is on its way"
+        }
         switch fileTransferInFlight {
         case .outgoing: return "a file is going to the Mac"
         case .incoming: return "a file is coming from the Mac"

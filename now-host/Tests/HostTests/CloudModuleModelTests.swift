@@ -61,6 +61,21 @@ final class CloudModuleModelTests: XCTestCase {
                            + "as the folder to go back to")
     }
 
+    func testTheDownloadsSettingDefaultsToFit640AndPersists() {
+        let model = model()
+        XCTAssertEqual(model.downloadSize("photos"), .fit640,
+                       "the default fits the screens the fetch is for")
+        model.setDownloadSize("photos", .original)
+        XCTAssertEqual(model.downloadSize("photos"), .original)
+        XCTAssertEqual(
+            defaults.string(forKey: PhotosCloudProvider.downloadSizeKey),
+            "original",
+            "written where the provider's get pipeline reads it")
+        XCTAssertTrue(model.hasDownloadSize("photos"))
+        XCTAssertFalse(model.hasDownloadSize("contacts"),
+                       "only the service whose originals dwarf the guest")
+    }
+
     func testAVanishedPreviousFolderFallsBackToDownloads() throws {
         listener.share.root = elsewhere
         let model = model()
