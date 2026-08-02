@@ -81,6 +81,12 @@ public final class WireClient {
             ?? String(decoding: replyLine, as: UTF8.self)
         guard let reply = try? JSONSerialization
             .jsonObject(with: Data(text.utf8)) as? [String: Any] else {
+            /* Drop, exactly as the I/O path does. A reply this side cannot
+               parse means the stream's framing is no longer trusted, and
+               keeping the socket meant every later request inherited the
+               same confusion — the difference between one lost poll and a
+               session that never recovers. */
+            dropConnection()
             throw WireError.badReply(String(text.prefix(200)))
         }
         guard (reply["ok"] as? NSNumber)?.boolValue == true else {
@@ -131,16 +137,42 @@ public final class WireClient {
     /// Read one newline-terminated reply whose `id` matches; a stale reply
     /// from a prior timed-out call is discarded. Leftover bytes past the
     /// newline stay buffered for the next read.
+    /// How many unusable lines one request will step over before giving up.
+    /// A desync is recoverable — the real reply is usually the next line —
+    /// but a peer emitting nothing but garbage must fail, not spin.
+    private static let maxSkippedLines = 8
+
     private func readLine(wantID: Int) throws -> Data {
+        var skipped = 0
         while true {
             if let nl = rbuf.firstIndex(of: 0x0A) {
                 let line = Data(rbuf[rbuf.startIndex..<nl])
                 rbuf.removeSubrange(rbuf.startIndex...nl)
                 if line.isEmpty { continue }
-                // Match the id; skip a stale reply and read on.
-                if let obj = try? JSONSerialization.jsonObject(with: line)
-                    as? [String: Any],
-                   let rid = (obj["id"] as? NSNumber)?.intValue, rid != wantID {
+                /* Match the id; skip a stale reply and read on.
+                   A line that does not PARSE is skipped too, and that is
+                   the load-bearing half: returning it made it the answer,
+                   the caller threw `badReply`, and — because that path did
+                   not drop the connection — every later read took the next
+                   fragment of the same desync. One split line poisoned the
+                   session permanently (measured 2026-08-02, a stream of bad
+                   replies after a window close that never recovered).
+                   Bounded, so a peer emitting only garbage fails instead of
+                   spinning. */
+                guard let obj = try? JSONSerialization.jsonObject(with: line)
+                    as? [String: Any] else {
+                    skipped += 1
+                    if skipped > Self.maxSkippedLines {
+                        throw WireError.badReply(
+                            String(decoding: line.prefix(200), as: UTF8.self))
+                    }
+                    continue
+                }
+                if let rid = (obj["id"] as? NSNumber)?.intValue, rid != wantID {
+                    skipped += 1
+                    if skipped > Self.maxSkippedLines {
+                        throw WireError.badReply("only stale replies")
+                    }
                     continue
                 }
                 return line
