@@ -33,6 +33,11 @@ import Foundation
 public enum HostInvokingFace: String, Codable, Sendable {
     case mcp
     case appIntent = "intent"
+    /// The host's own chat harness: a language model a person is talking to
+    /// (from the host page or over the chat.* wire family) using projections
+    /// as tools. An agent face by the rule above — the model's tool calls are
+    /// exactly the "caller a person at the machine cannot see happening".
+    case chat
 }
 
 /// One invocation of one capability by one face, in the words a person
