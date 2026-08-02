@@ -179,8 +179,12 @@ static void ask_card(void)
         || g_selected >= g_store.row_count) {
         return;
     }
+    /* The old card stays visible until its replacement arrives:
+       invalidating here AND on the reply flashed the half-body pane
+       white twice per click, which read as the whole page redrawing
+       per selection. One inval, in note_card, when there is something
+       new to draw. */
     cloud_store_reset_card(&g_store);
-    invalidate_detail();
     if (now_wire_cloud_detail(service->service,
                               g_store.rows[g_selected].item,
                               err, sizeof err) != 0) {
@@ -497,16 +501,18 @@ static void note_report(const char *reply)
 
 static void note_listing(const char *reply)
 {
-    int before = g_store.row_count;
-    int added;
-
     g_loading = false;
-    added = cloud_parse_listing(reply, &g_store);
-    filter_and_add(before, added);
+    cloud_parse_listing(reply, &g_store);
     if (g_store.more && g_store.row_count < kCloudMaxRows) {
+        /* Mid-listing: rows land in the STORE only. Touching the Data
+           Browser here repainted the whole control once per 16-row
+           wire page — eight full-pane flashes for a photo library,
+           watched on the PowerBook 2026-08-02. The browser is mutated
+           once, below, when the listing settles. */
         ask_rows(g_store.cursor);
         return;
     }
+    filter_and_add(0, g_store.row_count);
     {
         char line[64];
 

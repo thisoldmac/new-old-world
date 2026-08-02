@@ -112,16 +112,21 @@ void cloud_drive_listing(const char *path, const FileEntry *entries,
         g_drive_rows[g_drive_count] = entries[i];
         ++g_drive_count;
     }
-    /* The shell decides which of these the live search currently
-       admits — the same filter its own note_listing applies to its
-       own rows, so a page arriving mid-search never shows a row the
-       field says it is hiding. */
-    if (i > 0 && g_host.add_rows != NULL) {
-        g_host.add_rows(first, i);
-    }
+    (void)first;
     if (more && g_drive_count < kCloudMaxRows) {
+        /* Mid-listing: rows accumulate here only. The Data Browser is
+           mutated ONCE when the listing settles — a mutation per wire
+           page repainted the whole full-width control per page,
+           watched on the PowerBook 2026-08-02. */
         drive_request(g_drive_path, cursor);
         return;
+    }
+    /* The shell decides which rows the live search currently admits —
+       the same filter its note_listing applies to its own rows, so a
+       listing settling mid-search never shows a row the field says it
+       is hiding. */
+    if (g_drive_count > 0 && g_host.add_rows != NULL) {
+        g_host.add_rows(0, g_drive_count);
     }
     if (g_drive_count == 0) {
         folder_status("Empty");
