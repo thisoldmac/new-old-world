@@ -2370,6 +2370,11 @@ int now_wire_cloud_list(const char *service, long cursor,
     return 0;
 }
 
+Boolean now_wire_cloud_pending(void)
+{
+    return g_cloud.pending;
+}
+
 int now_wire_cloud_detail(const char *service, const char *item,
                           char *err, long cap)
 {

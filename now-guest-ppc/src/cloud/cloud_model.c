@@ -117,18 +117,20 @@ int cloud_parse_listing(const char *reply, CloudStore *store)
     return appended;
 }
 
-int cloud_parse_card(const char *reply, CloudStore *store)
+int cloud_parse_card_rows(const char *reply, char *item_out, long item_cap,
+                          CloudCardRow *rows_out, int rows_cap)
 {
     char pair[224];
     const char *p;
+    int count = 0;
 
-    store->card_count = 0;
-    store->card_item[0] = '\0';
-    now_json_find_string(reply, "item", store->card_item,
-                         sizeof store->card_item);
+    if (item_out != NULL && item_cap > 0) {
+        item_out[0] = '\0';
+        now_json_find_string(reply, "item", item_out, item_cap);
+    }
     p = now_json_array(reply, "rows");
-    while (p != NULL && store->card_count < kCloudMaxCardRows) {
-        CloudCardRow *row = &store->card[store->card_count];
+    while (p != NULL && count < rows_cap) {
+        CloudCardRow *row = &rows_out[count];
 
         p = now_json_next_array(p, pair, sizeof pair);
         if (p == NULL) {
@@ -140,8 +142,17 @@ int cloud_parse_card(const char *reply, CloudStore *store)
             continue;
         }
         now_json_array_string(pair, 1, row->value, sizeof row->value);
-        ++store->card_count;
+        ++count;
     }
+    return count;
+}
+
+int cloud_parse_card(const char *reply, CloudStore *store)
+{
+    store->card_count = cloud_parse_card_rows(reply, store->card_item,
+                                              sizeof store->card_item,
+                                              store->card,
+                                              kCloudMaxCardRows);
     return store->card_count;
 }
 

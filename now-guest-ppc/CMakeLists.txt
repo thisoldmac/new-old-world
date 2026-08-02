@@ -41,6 +41,7 @@ add_application(now-guest-ppc
     src/network/net_layout.c
     src/network/net_probe.c
     src/network/network_module.c
+    src/cloud/cloud_card_cache.c
     src/cloud/cloud_filter.c
     src/cloud/cloud_layout.c
     src/cloud/cloud_model.c

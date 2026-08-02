@@ -264,9 +264,58 @@ paging, the live search's diff and the Data Browser add/remove
 batching all keep working unchanged — `active_browser()` just has a
 third mode to hand out. Picking a row still runs through the shell's
 own `g_selected`/`ask_card()`/`CloudViewOps.select` sequence, reached
-via one function pointer (`CloudContactsHost.row_selected`) so a
-rebuild's own spurious deselect (the same hazard the shell's own
-browser already guards against) cannot double-fire a card ask.
+via two function pointers — `CloudContactsHost.row_selected` and
+`row_deselected` — so a rebuild's own spurious deselect (the same
+hazard the shell's own browser already guards against, `in_rebuild`)
+cannot double-fire a card ask, and so an ordinary click's own
+Deselected(old)/Selected(new) pair (the Data Browser fires both
+around every selection change) cannot clear the NEW selection the
+same click just made: `row_deselected` hands the shell the raw index
+rather than clearing unconditionally, and `cloud_module.c`'s
+`note_row_deselected` is the ONE place that decides whether that
+index is still the current selection — the same comparison the
+shell's own browser's notification already made, now made once for
+both controls instead of once correctly and once (until this fix)
+missing.
+
+**Contact details load with the LIST, not per selection — only the
+photo stays lazy.** A selection with a cached card draws instantly and
+asks the wire nothing; only a cache miss still asks (`ask_card`,
+unchanged). The cache (`cloud_card_cache.h/.c`, Toolbox-free, host-cc
+tested in `cloud_card_cache_test.c`, mutation-watched) is a bounded
+table keyed by item id, sized to `kCloudMaxRows` (128) — one entry per
+row a contacts listing can ever hold at once, so the background walk
+below never has to evict a card still on the same page to make room for
+another one from it. One entry costs roughly 2.5KB
+(`kCloudMaxCardRows` × `sizeof(CloudCardRow)` plus the item id), so 128
+of them is about 320KB — around 5% of the 6MB partition, alongside a
+128-row listing and a Data Browser. Eviction (oldest-stamp-first) still
+exists and is tested even though the production cap never triggers it
+in ordinary use: a cache correct only when never over-asked is a
+narrower claim than one correct when it is, and future callers should
+not have to discover the difference the hard way.
+
+The cache is filled by a background PREFETCH (`drive_card_prefetch`,
+`cloud_module.c`) that walks the listed rows in order, one
+`cloud.detail` ask at a time, and only while `now_wire_cloud_pending()`
+reports the wire's single cloud-ask slot free — no page still loading,
+no earlier prefetch ask still awaiting its answer, and (implicitly,
+since the same slot serves both) no selection's own ask in flight
+either. It fires from `cloud_idle`, contacts-only and page-visible-only,
+skips whatever the cache already holds, and never bursts: exactly one
+`cloud.detail` in flight at a time, full stop. A live selection always
+outranks it — `ask_card` clears the prefetch's own in-flight flag the
+moment it sends its own ask, so a click that lands mid-walk is answered
+as a selection (displayed AND cached), never mistaken for the
+prefetch's own reply, and the interrupted prefetch ask's reply (if the
+host still sends one) is silently dropped by the wire's own
+second-ask-replaces-the-first rule rather than corrupting either path.
+A fresh listing (a first page, Refresh, or a service switch) resets
+the cache and the walk's cursor together, since an old cursor may not
+even name the same contacts. Whichever ask actually lands a card also
+caches it — the prefetch's own answers and an ordinary selection's
+cache-miss answers both feed the same table — so nothing asked once is
+ever asked twice.
 
 The CARD is the classic Address Book's shape: a photo well top-left,
 the name beside it in the large system font, then the grouped [label,
@@ -445,6 +494,31 @@ well-extraction refactor changed WHICH view's `note` callback fires
 when a preview settles (rebound per `_select` call, cloud_preview_
 well.c) — a real behavior change for Photos, not just a file move, and
 Photos' preview path has not been re-verified on metal since.
+
+The contacts selection fix and the card prefetch/cache (2026-08-02,
+p3-contacts-fix) are **tested, nothing more**: the deselect-guard bug
+— selecting a second contact left the card pane on "Select a name..."
+because `cloud_contacts_view.c`'s own Deselected handler cleared the
+selection unconditionally, racing the Data Browser's own
+Deselected(old)/Selected(new) pair — is fixed and the fix's shape
+(centralizing the comparison in `cloud_module.c`'s
+`note_row_deselected` rather than duplicating it) is exercised only by
+the native gates and a clean cross-compile; the actual click sequence
+on a live Data Browser has not been watched, on the emulator or the
+PowerBook, since before this fix existed. The card cache's own logic
+(`cloud_card_cache_test.c`: insert/lookup/evict/bounds) is host-cc
+tested and mutation-watched — real coverage of real logic — but the
+prefetch driver that calls it (`drive_card_prefetch`, the wire-idle
+gating, the one-ask-in-flight discipline, the live-ask-supersedes-
+prefetch handoff in `ask_card`/`note_card`) is Toolbox-adjacent
+sequencing that no host cc can exercise, and has run nowhere but a
+cross-compile. What only a live wire and a real contacts list can
+prove: that the prefetch actually walks ahead of a person's clicking
+rather than behind it, that "one ask in flight, ever" holds against a
+real host's actual reply timing (not just the wire's own
+correlation rule, which is what this file has reasoned from), and that
+a cache hit's card reads identically to a freshly-asked one on the
+real machine's own MacRoman rendering.
 
 **Drive stays a flat list, not a tree — Data Browser containers are
 declared but unproven.** `spikes/databrowser-container-probe` compiles
