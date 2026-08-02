@@ -160,6 +160,17 @@ struct CloudGet: Codable, Equatable, Sendable {
     var id: Int
     var service: String
     var item: String
+    /// The per-ask delivery size (original / fit1024 / fit640).
+    /// Absent means the host's configured Downloads default —
+    /// additive by contract, so every older guest keeps its meaning.
+    var size: String?
+
+    init(id: Int, service: String, item: String, size: String? = nil) {
+        self.id = id
+        self.service = service
+        self.item = item
+        self.size = size
+    }
 }
 
 struct CloudRefuse: Codable, Equatable, Sendable {

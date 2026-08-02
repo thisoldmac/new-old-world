@@ -49,7 +49,12 @@ protocol CloudProvider: AnyObject {
     func list(cursor: Int, limit: Int) throws
         -> (entries: [CloudEntry], more: Bool, next: Int)
     func card(item: String) throws -> [[String]]
-    func get(item: String) throws -> OutboundFile.Plan
+    /// One item as a file. `size` is the ask's own delivery-size token
+    /// (contract enum, already validated by the serve), nil for the
+    /// host's configured default; a service that does not size its
+    /// deliveries ignores it — which is what the contract says absence
+    /// and irrelevance both mean.
+    func get(item: String, size: String?) throws -> OutboundFile.Plan
     /// One item as pixels for the guest's pane: decoded, resized to fit
     /// the box, dithered to `depth` (1 or 8). The default refuses, so a
     /// service is card-and-file only until it deliberately grows eyes.
@@ -143,7 +148,7 @@ final class DriveCloudProvider: CloudProvider {
             reason: "Drive is the file share - browse it in Files")
     }
 
-    func get(item: String) throws -> OutboundFile.Plan {
+    func get(item: String, size: String?) throws -> OutboundFile.Plan {
         throw CloudFault.refuse(
             code: "not-listable",
             reason: "Drive is the file share - fetch from Files")
@@ -330,7 +335,18 @@ final class PhotosCloudProvider: NSObject, CloudProvider,
         return rows
     }
 
-    func get(item: String) throws -> OutboundFile.Plan {
+    /// The ask's size token against the configured default: the
+    /// asker's choice outranks the setting, absence means the setting.
+    /// Data-in/data-out so a test needs no Photos library to prove the
+    /// precedence. The serve has already validated the token, so an
+    /// unrecognized one here (impossible via the wire) falls back to
+    /// the default rather than inventing a fourth behavior.
+    static func chosenSize(token: String?,
+                           configured: DownloadSize) -> DownloadSize {
+        token.flatMap(DownloadSize.init(rawValue:)) ?? configured
+    }
+
+    func get(item: String, size: String?) throws -> OutboundFile.Plan {
         let asset = try self.asset(item)
         /* Local bytes only, synchronously; a photo living in iCloud
            starts its download and refuses busy. Blocking the wire on
@@ -354,9 +370,12 @@ final class PhotosCloudProvider: NSObject, CloudProvider,
                 reason: "iCloud is fetching that photo; ask again shortly")
         }
         /* The whole pipeline in one line: decode -> resize per the
-           host's Downloads setting -> JPEG. Original skips the resize
-           but still transcodes anything modern (HEIC, mostly). */
-        let jpeg = try Self.processedJPEG(original, size: downloadSize)
+           ask's own size (or the host's Downloads setting when the ask
+           carried none) -> JPEG. Original skips the resize but still
+           transcodes anything modern (HEIC, mostly). */
+        let jpeg = try Self.processedJPEG(
+            original, size: Self.chosenSize(token: size,
+                                            configured: downloadSize))
         let stem = (Self.title(of: asset) as NSString).deletingPathExtension
         var plan = OutboundFile.plan(name: stem + ".jpg", data: jpeg,
                                      convertText: false)
@@ -745,7 +764,7 @@ final class ContactsCloudProvider: CloudProvider {
         return rows
     }
 
-    func get(item: String) throws -> OutboundFile.Plan {
+    func get(item: String, size: String?) throws -> OutboundFile.Plan {
         throw CloudFault.refuse(
             code: "not-listable",
             reason: "a contact is a card, not a file, for now")
@@ -881,13 +900,25 @@ extension GuestListener {
                         on: asker)
             return
         }
+        /* The contract's enum, checked where the wire meets the
+           registry — the same seam that checks preview's depth. An
+           unrecognized token refuses with a reason rather than
+           silently delivering some other size than the one asked. */
+        if let size = request.size,
+           PhotosCloudProvider.DownloadSize(rawValue: size) == nil {
+            refuseCloud(id: request.id, code: "io-error",
+                        reason: "size must be original, fit1024 or "
+                            + "fit640", on: asker)
+            return
+        }
         if let obstruction = transferLaneObstruction(for: asker) {
             refuseCloud(id: request.id, code: "busy",
                         reason: obstruction, on: asker)
             return
         }
         do {
-            let plan = try provider.get(item: request.item)
+            let plan = try provider.get(item: request.item,
+                                        size: request.size)
             note("#\(request.id) \(request.service) get -> "
                  + "\(plan.name), \(plan.bytes.count) bytes",
                  area: "cloud")

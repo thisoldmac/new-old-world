@@ -1194,6 +1194,17 @@ components:
             the host invents (sanitized the way every host-sent name
             is); this id correlates only the refusal path. Once the
             offer exists, the file family owns the outcome.
+        size:
+          enum: [original, fit1024, fit640]
+          description: >
+            The delivery size for THIS ask, for services that size
+            their deliveries (photos today: the same three renders
+            the host's own Downloads picker offers). Absent means
+            the host's configured default — the reading every guest
+            that predates the field already sends, which is what
+            makes this additive. A token outside the enum is refused
+            with a reason, never guessed at; a service that does not
+            size its deliveries ignores the field.
     CloudPreview:
       type: object
       required: [type, id, service, item, maxWidth, maxHeight, depth]
@@ -4137,9 +4148,10 @@ components:
           file.offer — JPEG, converted by the host from whatever
           modern container the library holds (HEIC included), typed
           JPEG/ogle so it opens by double-click on arrival, and
-          downsized per the host's own Downloads setting (original /
-          fit 1024x768 / fit 640x480, the host person's choice — a
-          per-ask override is a later addition, not this one).
+          downsized per the ask's own size field when it carries one
+          (original / fit1024 / fit640), else per the host's own
+          Downloads setting — the asker's choice outranks the
+          configured default, and absence means the default.
           cloud.preview answers with the selected photo as raw indexed
           pixels, host-dithered to the asked depth and sized to the
           asked pane — the guest's list-and-preview render, one photo

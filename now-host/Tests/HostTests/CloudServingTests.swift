@@ -74,6 +74,11 @@ final class CloudServingTests: XCTestCase {
         var card: [[String]] = []
         var fault: CloudFault?
         var plan: OutboundFile.Plan?
+        /// What the last get was asked to deliver at: .some(nil) when a
+        /// get arrived carrying no size, nil while none arrived at all —
+        /// the double optional is what lets a test tell "asked with the
+        /// host-default reading" from "never asked".
+        var sizeAsked: String??
         /// nil leaves the protocol's own default (refuse not-listable).
         var previewPixels: ClassicDither.Indexed?
 
@@ -101,7 +106,9 @@ final class CloudServingTests: XCTestCase {
             return card
         }
 
-        func get(item: String) throws -> OutboundFile.Plan {
+        func get(item: String, size: String?) throws
+            -> OutboundFile.Plan {
+            sizeAsked = .some(size)
             if let fault { throw fault }
             guard let plan else {
                 throw CloudFault.refuse(code: "not-found",
@@ -244,6 +251,86 @@ final class CloudServingTests: XCTestCase {
                        "lands at the guest's share root")
     }
 
+    /// The ask's own size reaches the provider verbatim — the per-ask
+    /// override the contract added over the host's configured default.
+    func testAGetPassesTheAsksSizeToTheProvider() async throws {
+        let photos = FakeProvider("photos")
+        photos.plan = OutboundFile.Plan(
+            name: "IMG_1234.jpg", container: "data",
+            bytes: Data("jpeg bytes".utf8),
+            fileType: "JPEG", creator: "ogle", modified: nil, note: nil)
+        listener.cloud.register(photos)
+        let guest = try await connectedGuest()
+        try guest.send(.cloudGet(CloudGet(id: 71, service: "photos",
+                                          item: "asset-1",
+                                          size: "fit1024")))
+        _ = try await lastReceived(on: guest) {
+            if case .fileOffer(let o) = $0 { return o } else { return nil }
+        }
+        XCTAssertEqual(photos.sizeAsked, .some("fit1024"))
+    }
+
+    /// A get with no size still reaches the provider as nil — the
+    /// host-default path, byte-identical to what every older guest asks.
+    func testAGetWithoutASizeLeavesTheHostsDefault() async throws {
+        let photos = FakeProvider("photos")
+        photos.plan = OutboundFile.Plan(
+            name: "IMG_1234.jpg", container: "data",
+            bytes: Data("jpeg bytes".utf8),
+            fileType: "JPEG", creator: "ogle", modified: nil, note: nil)
+        listener.cloud.register(photos)
+        let guest = try await connectedGuest()
+        try guest.send(.cloudGet(CloudGet(id: 72, service: "photos",
+                                          item: "asset-1")))
+        _ = try await lastReceived(on: guest) {
+            if case .fileOffer(let o) = $0 { return o } else { return nil }
+        }
+        XCTAssertEqual(photos.sizeAsked, .some(nil),
+                       "no size on the wire must arrive as nil, not "
+                           + "be invented")
+    }
+
+    /// A token outside the contract's enum refuses with a reason and
+    /// never reaches the provider — the contract's own wording.
+    func testAGetWithAnUnknownSizeIsRefused() async throws {
+        let photos = FakeProvider("photos")
+        photos.plan = OutboundFile.Plan(
+            name: "IMG_1234.jpg", container: "data",
+            bytes: Data("jpeg bytes".utf8),
+            fileType: "JPEG", creator: "ogle", modified: nil, note: nil)
+        listener.cloud.register(photos)
+        let guest = try await connectedGuest()
+        try guest.send(.cloudGet(CloudGet(id: 73, service: "photos",
+                                          item: "asset-1",
+                                          size: "enormous")))
+        let refuse = try await lastReceived(on: guest) {
+            if case .cloudRefuse(let r) = $0 { return r }
+            else { return nil }
+        }
+        XCTAssertEqual(refuse.id, 73)
+        XCTAssertEqual(refuse.code, "io-error")
+        XCTAssertTrue(refuse.reason?.contains("fit640") == true,
+                      "the reason names the tokens that would work")
+        XCTAssertNil(photos.sizeAsked,
+                     "a refused size must not reach the provider")
+        XCTAssertFalse(guest.received.contains {
+            if case .fileOffer = $0 { return true } else { return false }
+        }, "no offer may exist for a refused get")
+    }
+
+    /// The precedence itself, with no library in the room: the ask's
+    /// token outranks the configured default, absence keeps it.
+    func testTheAsksSizeOutranksTheConfiguredDefault() {
+        XCTAssertEqual(
+            PhotosCloudProvider.chosenSize(token: "original",
+                                           configured: .fit640),
+            .original)
+        XCTAssertEqual(
+            PhotosCloudProvider.chosenSize(token: nil,
+                                           configured: .fit1024),
+            .fit1024)
+    }
+
     func testAGetFaultRefusesInsteadOfOffering() async throws {
         let photos = FakeProvider("photos")
         photos.fault = CloudFault.refuse(code: "no-access",
@@ -352,7 +439,8 @@ final class CloudServingTests: XCTestCase {
             ([], false, 1)
         }
         func card(item: String) throws -> [[String]] { [] }
-        func get(item: String) throws -> OutboundFile.Plan {
+        func get(item: String, size: String?) throws
+            -> OutboundFile.Plan {
             throw CloudFault.refuse(code: "not-found", reason: "fake")
         }
     }
