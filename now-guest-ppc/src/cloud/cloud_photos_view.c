@@ -214,10 +214,13 @@ static void view_draw(const CloudLayout *r, const CloudStore *store,
     if (g_fail[0] != '\0' && selected >= 0) {
         Str255 text;
 
+        /* The why REPLACES the card: both start at the pane's first
+           line, and two texts on one baseline is mush. The card comes
+           back with the next selection or preview. */
         MoveTo((short)(g_pane.left), (short)(g_pane.top + 12));
         CopyCStringToPascal(g_fail, text);
         DrawString(text);
-        /* The card still says what the library knows, under the why. */
+        return;
     }
     cloud_list_view_draw_card(r, store, service, selected);
 }
