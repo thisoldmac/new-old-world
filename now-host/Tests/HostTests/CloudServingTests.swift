@@ -442,8 +442,10 @@ final class CloudServingTests: XCTestCase {
         }
         XCTAssertEqual(refuse.id, 76)
         XCTAssertEqual(refuse.code, "io-error")
-        XCTAssertTrue(refuse.reason.contains("long640"),
-                      "the refusal names the set that replaced it")
+        XCTAssertEqual(refuse.reason,
+                       "size must be original, long640, long1024 "
+                           + "or long1600",
+                       "the refusal names the set that replaced it")
         XCTAssertNil(photos.sizeAsked,
                      "an aliased fit640 would have delivered a "
                          + "portrait photo at a size nobody asked for")
