@@ -14,6 +14,56 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## The Mirror page is a lifecycle now, and NOW cannot see residency (2026-08-02)
+
+**Landed, and the thing it cannot do is worth writing down.** The Mirror
+module used to print the shell commands it was about to run and spawn
+`swift run` / `spin-up.sh` against Mirror's OWN throwaway emulator
+session — so a person with a Mac connected had no way to mirror THAT Mac,
+and a failed launch said nothing about why. It is now a module page that
+owns one Mirror instance pointed at the connected guest
+(`MirrorControlModel`, `MirrorProduct`, `MirrorControlView`): a status
+card, a lifecycle card, and settings. `MirrorLauncherModel`,
+`MirrorLauncherView` and their suite are gone, along with
+`NOW_MIRROR_PATH` and the remembered-checkout default.
+
+**The gap: NOW cannot tell whether Mirror's INITs are RESIDENT.** The
+obvious probe is `Gestalt('TBax')` — the selector each INIT publishes at
+startup. NOW's `gestalt` verb takes no selector: `run_gestalt` gathers a
+fixed set and slices it by group, and the census `selectors` probe walks
+a closed documented list. Worse, an unknown argument on that verb is
+IGNORED rather than refused, so a host that sent one would get `ok:true`
+carrying every group and no evidence of the selector at all — which reads
+as a yes, which is the worst answer available. The page therefore asks
+`software.list` over the `extensions` domain, which sees the Extensions
+Manager disabled folder too, and reports **installed / disabled /
+missing**, saying plainly that an INIT loads at boot and that this side
+cannot see what is resident.
+
+**The guest already knows the answer and does not say it.** The PowerPC
+guest's own Mirror page (`now-guest-ppc/src/mirror/`) calls Gestalt for
+all three selectors and distinguishes absent / resident / other-version —
+on its own screen only. That is the wire-only-versus-console-only split
+this repository has been bitten by before, in the other direction, and it
+is why the host has to infer from a folder listing what the machine
+already measured. Closing it is a contract change: either a `mirror` verb
+serving `MirrorFacts` (which the console face already has, so it is the
+cheaper half of command parity) or an optional `selector` argument on
+`gestalt`. Either way the contract moves first, then both guests' faces,
+the host projection, contract-coverage.md and the exact-set projection
+suites — and whether NOW-68K serves it is the parity question that
+arrives with it.
+
+**Never run against a real Mirror.** The suite uses fakes throughout —
+nothing in this arc spawned MirrorApp, opened a socket to port 1420, or
+saw the page on screen. Specifically unproven: whether the launch
+invocation brings up a live window against a NOW guest; whether the
+emulator forward default (1724) matches the rig a person is actually
+running; whether `mirror-agent` is the name the agent's process wears in
+the guest's own `process.list` (it is the name Mirror's source and
+`spin-up.sh` use, read rather than observed); and whether SIGTERM
+releases the agent's single client slot as cleanly as the code assumes.
+
 ## The cloud.* family: real providers are untested, and the guest half does not exist (2026-08-01)
 
 **Unverified / unfinished, deliberately.** The host serves
@@ -263,6 +313,11 @@ INITs, its own agent surface, its own SwiftPM package, built by nothing in
 (`MirrorLauncherModel`). The removed code is archived unchanged at
 `archive/mirror-port-2026-08-01/`, whose README says what is worth reading
 in it.
+
+Update 2026-08-02: `MirrorLauncherModel` is itself gone. The launcher it
+describes pointed at Mirror's own emulator session and showed the shell
+lines it ran; the module now controls one Mirror instance aimed at the
+CONNECTED guest. See the 2026-08-02 entry at the top of this page.
 
 **So: every entry below that names `MirrorKit`, `MirrorKitUI`,
 `MirrorModuleView`, `MirrorModuleModel`, `MirrorActionDriver`,

@@ -77,10 +77,18 @@ struct MirrorControlView: View {
                     detail: detail(for: initRow))
             }
 
-            Text("An extension loads at boot and at no other time, so an "
-                 + "installed one is only doing something if that Mac has "
-                 + "restarted since it arrived. This app reads the "
-                 + "Extensions folder; it cannot see what is resident.")
+            /* The same sentence the Mac's own Mirror page carries
+               (now_mirror_ext_note), because the two pages describe the
+               same three extensions and a person reading both must not
+               have to reconcile them. What differs is the last line, and
+               it differs honestly: that page reads Gestalt on the machine
+               itself and can say RESIDENT; this one reads the Extensions
+               folder across the wire and cannot. */
+            Text("An extension is loaded only at startup, and nothing can "
+                 + "switch one on or off while the Mac is running. This "
+                 + "app reads that Mac's Extensions folder, so it can say "
+                 + "what is installed and not what is loaded — the Mirror "
+                 + "page on the Mac itself says which.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
