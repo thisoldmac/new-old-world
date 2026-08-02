@@ -135,6 +135,55 @@ final class ChatModuleModel: ObservableObject {
         return models
     }
 
+    /// The chat.* family's server, sharing this page's harness so what
+    /// a guest reaches is exactly what the test pane proved.
+    private(set) lazy var wireService = ChatWireService(
+        harness: harness,
+        catalog: { [weak self] in
+            await self?.wireCatalog() ?? []
+        })
+
+    /// The catalog as the contract describes it: a serving provider
+    /// contributes its models; one that cannot serve still contributes
+    /// one row carrying its state and reason, so the guest's popup can
+    /// say WHY a thing is missing instead of not showing it. Labels
+    /// leave converted and bounded (<= 31 bytes, the cloud rule).
+    private func wireCatalog() async -> [ChatCatalogEntry] {
+        var entries: [ChatCatalogEntry] = []
+        for provider in registry.all() {
+            let entry = await provider.entry()
+            guard entry.state == "serving" else {
+                entries.append(ChatCatalogEntry(
+                    model: provider.id,
+                    label: Self.wireLabel(entry.label),
+                    state: entry.state,
+                    detail: CloudText.displayable(entry.detail)))
+                continue
+            }
+            guard let models = try? await provider.listModels(),
+                !models.isEmpty else {
+                entries.append(ChatCatalogEntry(
+                    model: provider.id,
+                    label: Self.wireLabel(entry.label),
+                    state: "unavailable",
+                    detail: "No models to list"))
+                continue
+            }
+            entries.append(contentsOf: models.map { model in
+                ChatCatalogEntry(
+                    model: model.wireID,
+                    label: Self.wireLabel(model.displayName),
+                    state: "serving",
+                    detail: CloudText.displayable(entry.label))
+            })
+        }
+        return entries
+    }
+
+    private static func wireLabel(_ text: String) -> String {
+        String(CloudText.displayable(text).prefix(31))
+    }
+
     func providerEntries() async -> [ChatProviderEntry] {
         var entries: [ChatProviderEntry] = []
         for provider in registry.all() {

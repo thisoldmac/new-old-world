@@ -77,6 +77,14 @@ enum ControlMessage: Equatable, Sendable {
     case cloudCard(CloudCard)
     case cloudGet(CloudGet)
     case cloudRefuse(CloudRefuse)
+    case chatModels(ChatModels)
+    case chatCatalog(ChatCatalog)
+    case chatSend(ChatSend)
+    case chatDelta(ChatDelta)
+    case chatStatus(ChatStatus)
+    case chatResult(ChatResult)
+    case chatCancel(ChatCancel)
+    case chatReset(ChatReset)
 }
 
 // MARK: - The cloud family
@@ -163,6 +171,76 @@ struct CloudRefuse: Codable, Equatable, Sendable {
     var id: Int
     var code: String
     var reason: String?
+}
+
+/* The chat family: the guest asking to talk to THIS Mac's model
+   harness. One direction by definition, the cloud rule — the host
+   never sends the requests, and the conversation lives on this side,
+   per connection, so chat.send carries one turn and never history.
+   The reply is streamed (chat.delta, exec.output's discipline) and
+   the terminal chat.result never carries text. */
+
+struct ChatModels: Codable, Equatable, Sendable {
+    var id: Int
+}
+
+struct ChatCatalogEntry: Codable, Equatable, Sendable, Identifiable {
+    /// Opaque key chat.send takes back — not promised stable beyond
+    /// the connection.
+    var model: String
+    /// Converted; what the popup shows (<= 31 bytes).
+    var label: String
+    /// serving | off | no-access | unavailable — cloud.report's
+    /// vocabulary, reported even when not serving so the popup can say
+    /// WHY a thing is missing.
+    var state: String
+    var detail: String?
+
+    var id: String { model }
+}
+
+struct ChatCatalog: Codable, Equatable, Sendable {
+    var id: Int
+    var models: [ChatCatalogEntry]
+}
+
+struct ChatSend: Codable, Equatable, Sendable {
+    var id: Int
+    var model: String
+    /// One turn, as typed; the contract's 512-byte cap is the SENDER's
+    /// to honour and this side answers too-long rather than truncating.
+    var prompt: String
+}
+
+struct ChatDelta: Codable, Equatable, Sendable {
+    var id: Int
+    /// 0-based, contiguous per turn — a gap is a bug worth surfacing.
+    var seq: Int
+    /// A chunk, not a line; converted before sending, and bounded by
+    /// MEASURED encoded bytes under the 4 KB control cap.
+    var text: String
+}
+
+struct ChatStatus: Codable, Equatable, Sendable {
+    var id: Int
+    /// One transient line of what the model is doing; also the
+    /// family's keep-alive. Empty clears.
+    var text: String
+}
+
+struct ChatResult: Codable, Equatable, Sendable {
+    var id: Int
+    var ok: Bool
+    var code: String?
+    var message: String?
+}
+
+struct ChatCancel: Codable, Equatable, Sendable {
+    var id: Int
+}
+
+struct ChatReset: Codable, Equatable, Sendable {
+    var id: Int
 }
 
 struct Hello: Codable, Equatable, Sendable {
@@ -1053,6 +1131,27 @@ enum ControlMessageCodec {
         case "cloud.refuse":
             return .cloudRefuse(
                 try decoder.decode(CloudRefuse.self, from: data))
+        case "chat.models":
+            return .chatModels(
+                try decoder.decode(ChatModels.self, from: data))
+        case "chat.catalog":
+            return .chatCatalog(
+                try decoder.decode(ChatCatalog.self, from: data))
+        case "chat.send":
+            return .chatSend(try decoder.decode(ChatSend.self, from: data))
+        case "chat.delta":
+            return .chatDelta(try decoder.decode(ChatDelta.self, from: data))
+        case "chat.status":
+            return .chatStatus(
+                try decoder.decode(ChatStatus.self, from: data))
+        case "chat.result":
+            return .chatResult(
+                try decoder.decode(ChatResult.self, from: data))
+        case "chat.cancel":
+            return .chatCancel(
+                try decoder.decode(ChatCancel.self, from: data))
+        case "chat.reset":
+            return .chatReset(try decoder.decode(ChatReset.self, from: data))
         case "stream.request":
             return .streamRequest(
                 try decoder.decode(StreamRequest.self, from: data))
@@ -1174,6 +1273,14 @@ enum ControlMessageCodec {
         case .cloudCard(let m): return try tagged("cloud.card", m)
         case .cloudGet(let m): return try tagged("cloud.get", m)
         case .cloudRefuse(let m): return try tagged("cloud.refuse", m)
+        case .chatModels(let m): return try tagged("chat.models", m)
+        case .chatCatalog(let m): return try tagged("chat.catalog", m)
+        case .chatSend(let m): return try tagged("chat.send", m)
+        case .chatDelta(let m): return try tagged("chat.delta", m)
+        case .chatStatus(let m): return try tagged("chat.status", m)
+        case .chatResult(let m): return try tagged("chat.result", m)
+        case .chatCancel(let m): return try tagged("chat.cancel", m)
+        case .chatReset(let m): return try tagged("chat.reset", m)
         case .streamRequest(let m): return try tagged("stream.request", m)
         case .streamStart(let m): return try tagged("stream.start", m)
         case .streamStop(let m): return try tagged("stream.stop", m)

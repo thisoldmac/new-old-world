@@ -68,6 +68,7 @@ final class Session {
     private let onAcceptOffer: (FileOffer) -> Void
     private let onServeChange: (GuestListener.ChangeRequest) -> Void
     private let onServeCloud: (GuestListener.CloudAsk) -> Void
+    private let onServeChat: (GuestListener.ChatAsk) -> Void
     private let onProcessListing: (ProcessListing) -> Void
     private let onSoftwareListing: (SoftwareListing) -> Void
     private let onProcessResult: (ProcessResult) -> Void
@@ -168,6 +169,8 @@ final class Session {
          onServeChange: @escaping (GuestListener.ChangeRequest) -> Void,
          onServeCloud: @escaping (GuestListener.CloudAsk) -> Void
              = { _ in },
+         onServeChat: @escaping (GuestListener.ChatAsk) -> Void
+             = { _ in },
          onProcessListing: @escaping (ProcessListing) -> Void,
          onSoftwareListing: @escaping (SoftwareListing) -> Void,
          onProcessResult: @escaping (ProcessResult) -> Void,
@@ -209,6 +212,7 @@ final class Session {
         self.onAcceptOffer = onAcceptOffer
         self.onServeChange = onServeChange
         self.onServeCloud = onServeCloud
+        self.onServeChat = onServeChat
         self.onProcessListing = onProcessListing
         self.onSoftwareListing = onSoftwareListing
         self.onProcessResult = onProcessResult
@@ -470,6 +474,19 @@ final class Session {
             onServeCloud(.detail(request))
         case .cloudGet(let request):
             onServeCloud(.get(request))
+        /* The chat family: the guest asking to talk to THIS Mac's
+           model harness. One direction by definition like cloud — the
+           host never sends the requests, so the answers (.chatCatalog,
+           .chatDelta, .chatStatus, .chatResult) stay in the default
+           arm with every other unserved inbound. */
+        case .chatModels(let request):
+            onServeChat(.models(request))
+        case .chatSend(let request):
+            onServeChat(.send(request))
+        case .chatCancel(let request):
+            onServeChat(.cancel(request))
+        case .chatReset(let request):
+            onServeChat(.reset(request))
         case .fileAccept(let accept):
             onFileAccept(accept)
             sendAcceptedFile(accept)
