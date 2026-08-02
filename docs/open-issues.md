@@ -93,10 +93,31 @@ Manager disabled folder too, and reports **installed / disabled /
 missing**, saying plainly that an INIT loads at boot and that this side
 cannot see what is resident.
 
-**The guest already knows the answer and does not say it.** The PowerPC
-guest's own Mirror page (`now-guest-ppc/src/mirror/`) calls Gestalt for
-all three selectors and distinguishes absent / resident / other-version —
-on its own screen only. That is the wire-only-versus-console-only split
+**CLOSED on the guest side, 2026-08-02 — and the host still does not
+read it.** The `mirror` verb landed: contract first, then the guest's
+wire face (`commands.c` → `mirror_json.c`) and its console face
+(`console_model.c`), both rendering the same `MirrorFacts` the page
+draws. Measured on an emulated Power Mac G4 with all three staged:
+`AXPeek resident v4, QDPeek resident v1, Portal resident v4`, agent
+stopped, port named 1420 — the residency answer this entry says the host
+cannot get. NOW-68K answers `unknown-command`, and that is the ANSWER
+rather than a gap: Mirror's agent is PowerPC/CFM and its build refuses
+the 68K toolchain outright, so the residents have nothing to serve there
+(declared in contract-coverage.md).
+
+**What is still open is the two READERS.** `MirrorControlModel` still
+calls `software.list` over the `extensions` domain and reports
+installed/disabled/missing, so the page a person looks at is still one
+step short of the truth the machine now tells; and there is no projection
+row, so no agent can ask either (declared `unnoticed` with its
+disposition in mcp-coverage.md). The verb is served and nothing reads it
+— which is the mirror image of the split this entry was written about,
+and worth not leaving long.
+
+**The original diagnosis, kept because it is still why the verb exists.**
+The PowerPC guest's own Mirror page (`now-guest-ppc/src/mirror/`) calls
+Gestalt for all three selectors and distinguishes absent / resident /
+other-version — on its own screen only. That is the wire-only-versus-console-only split
 this repository has been bitten by before, in the other direction, and it
 is why the host has to infer from a folder listing what the machine
 already measured. Closing it is a contract change: either a `mirror` verb
