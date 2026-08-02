@@ -14,6 +14,53 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## RESOLVED: every modern classic-date field was silently dropped (2026-08-02)
+
+### Fixed, tested — not yet re-verified on metal
+
+Watched on metal 2026-08-02: the iCloud Photos list showed "--" in
+Modified for every 2026 photo. Traced to `ClassicDate.guestWireSeconds`
+(`now-host/Sources/Host/FileConverter.swift`), which stopped at
+`Int32.max` — January 1972 in classic (1904-epoch) seconds — because
+the deployed guest read the field with `strtol` into a signed 32-bit
+`long`. Every date after that came back `nil` from the host function,
+`modified` was omitted from the wire entirely, and the guest drew the
+"unstated" dash instead. Not Photos-specific: `CloudServices.swift`,
+`HostShare.swift` and `FilesModel.swift` all route through the same
+function, so cloud listings and the drive/files browser carried the
+same silent gap — every date after early 1972, on every listing
+either guest reads.
+
+A classic file date is actually **unsigned** seconds since 1904, good
+to early 2040; the host's ceiling was simply wrong, not conservative.
+Fix: the host stops clamping early (`guestWireSeconds` now just
+forwards `macSeconds`'s own, correct, unsigned ceiling), and the guest
+gained an unsigned reader to match — `now_json_find_u32`
+(`now-guest-ppc/src/core/json.c`) and `now68k_json_find_u32`
+(already existed on the 68K side for CRC32, just needed pointing at
+this field) — used at every classic-seconds field either guest parses
+off the wire: the PPC guest's cloud listing rows, browse/pull replies
+(drive/files browser, `file.pull`), and both guests' `file.offer`
+push.
+
+A second, independent site carried the identical bug and is not
+reached by `ClassicDate` at all: `GuestFileUploadCommands.begin`'s
+own inline `modified <= Int32.max` clamp on the MCP agent-upload
+path (a raw already-classic-seconds `Int`, not a `Date`). Found by
+grepping `now-host/Sources` for `Int32.max` once the first site was
+fixed. Two PRE-EXISTING host tests turned out to encode the bug as
+correct behavior (asserting `.modified == nil` for a modern date) and
+needed correcting alongside the fix — caught by running the full
+host suite, not by writing new tests.
+
+**Tested, nothing more; full account in
+[icloud.md](icloud.md#every-modern-modified-date-silently-dropped-fixed-2026-08-02).**
+Host XCTest and guest `json_native_test`/`cloud_model_test`/`test_putrx`
+all pass, mutation-watched by hand. Nothing has run on the emulator or
+the PowerBook since the fix — confirming a 2026 photo's Modified column
+now draws a real date, rather than merely that the wire carries one, is
+the next metal session's job.
+
 ## The polish2 integration merged three UI arcs; the seam between them has never run (2026-08-02, later still)
 
 **Unverified, and the specific claim is narrower than "the union is

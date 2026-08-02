@@ -519,6 +519,65 @@ a photo, watch the preview arrive on the new Data Browser, switch to
 Contacts, pick a card, and confirm the well's eviction/rebind still
 hands the right pane its pixels and not the other view's.
 
+### Every modern Modified date silently dropped, fixed (2026-08-02)
+
+Watched on metal the same day: the Photos list drew "--" in Modified
+for every 2026 photo. Traced to `ClassicDate.guestWireSeconds`
+(`now-host/Sources/Host/FileConverter.swift`), which stopped at
+`Int32.max` — January 1972 in classic (1904-epoch) seconds — because
+the deployed guest read the field with `strtol` into a signed 32-bit
+`long`. Every date after that came back `nil`, `modified` was omitted
+from the wire entirely, and the guest drew the "unstated" dash. This
+was not Photos-specific: `CloudServices.swift`, `HostShare.swift` and
+`FilesModel.swift` all route through the same function, so the drive/
+files browser and every cloud listing carried the same silent gap.
+
+A classic file date is actually **unsigned** seconds since 1904, good
+to early 2040 — the host's ceiling was simply wrong, not conservative.
+The fix moves the ceiling out to match (`ClassicDate.macSeconds`'s own
+`< 4_294_967_295`) and gives the guest an unsigned reader to match it:
+`now_json_find_u32` (`now-guest-ppc/src/core/json.c`, and
+`now68k_json_find_u32` on the 68K side, which already existed for
+CRC32 and only needed pointing at this field) — a `strtoul`-shaped
+digit loop masked to 32 bits by hand, so it behaves the same on the
+32-bit `long` the guest is built for and the 64-bit one this host's
+own `cc` runs its native tests under. Every classic-seconds field
+either guest reads off the wire now goes through it: the PPC guest's
+cloud listing rows, its browse/pull replies (drive/files browser and
+`file.pull`), and both guests' `file.offer` push.
+
+A second, independent site carried the identical bug and is not
+reached by `ClassicDate` at all: `GuestFileUploadCommands.begin`
+(`now-host/Sources/Host/Automation/GuestFileUploadCommands.swift`),
+the MCP agent-upload path's own inline `modified <= Int32.max`
+clamp, guarding a raw already-classic-seconds `Int` the caller
+supplies directly rather than a `Date`. Same fix, same reasoning
+(the ceiling is `UInt32.max`, not `Int32.max`) — found by grepping
+`now-host/Sources` for `Int32.max` once the first site was fixed,
+not by the original diagnosis, so treat this class of bug as "any
+inline reimplementation of the ceiling," not "one function."
+
+**Tested, nothing more.** Host XCTest covers the boundary
+(1904/1972/2026/2040/past-2040) and a `HostShare.list()` integration
+test proving a 2026 date now survives to the wire; guest
+`json_native_test` covers the unsigned parser itself at 2^31-1/2^31/
+2^32-1/overflow; `cloud_model_test` and the 68K `test_putrx` each add
+a call-site regression case, mutation-watched by reverting to the old
+signed call and confirming the specific assertion names it. Two
+PRE-EXISTING tests turned out to encode the bug as correct behavior
+and had to be corrected alongside the fix, not just the new tests
+added for it: `AgentIntegrationArtifactTests
+.testApprovedTransferSettlesOnlyOnFileDoneAndCannotReplay` asserted
+`offer.modified == nil` for a freshly-written (2026-dated) artifact,
+and `GuestFileUploadCommandTests
+.testStagedUploadUsesRootPolicyAndReturnsGuestEvidence` asserted the
+same for an explicit `UInt32.max` input — both passed before this fix
+only because the bug made the assertion trivially true, and both were
+caught by running the full host suite after the fix, not by writing
+new tests. None of this has run on the emulator or the PowerBook
+since the fix — the next metal session should confirm a 2026 photo's
+Modified column actually draws a date rather than "--".
+
 ## Photos as shipped, and what was deliberately not built
 
 The 2026-08-01 design here sketched a thumbnail-grid browser plus
