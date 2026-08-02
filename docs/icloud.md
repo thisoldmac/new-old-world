@@ -39,8 +39,10 @@ the host" instead of not mentioning Photos.
   automatically** per the host's per-service Downloads setting
   (Original / Fit 1024x768 / Fit 640x480, default Fit 640x480,
   `cloud.photos.downloadSize`), applied in the get pipeline before the
-  JPEG is encoded. Configurable, not per-request yet — the per-photo
-  dropdown is a later arc. An original iCloud has not materialized
+  JPEG is encoded — unless the ask itself carries the additive `size`
+  token (same three renders), in which case the asker's choice
+  outranks the setting; an unrecognized token refuses with a reason.
+  An original iCloud has not materialized
   starts its download and refuses `busy`, the same bargain the share
   strikes for Drive placeholders.
 - **Contacts**: alphabetical, the card is the deliverable —
@@ -74,11 +76,13 @@ Serving is ungated past the handshake, like the share (decided
 2026-08-01): the switches are the consent, per service.
 
 The Photos row also carries the **Downloads picker** (Original / Fit
-1024x768 / Fit 640x480): what a `cloud.get` delivers, applied
-host-side before the JPEG leaves, so the classic Mac never receives an
-original unless the host person said so. The default fits the screens
-the fetch is for — a 48-megapixel original into a 6 MB partition is a
-mistake a default should not require declining every time.
+1024x768 / Fit 640x480): what a `cloud.get` delivers when the ask
+names no size of its own, applied host-side before the JPEG leaves.
+The guest's Size popup (below) can override it per ask — "Original"
+from the classic side is the asker saying so, which is the same
+consent — and the default still fits the screens the fetch is for: a
+48-megapixel original into a 6 MB partition is a mistake a default
+should not require declining every time.
 
 ## The guest page
 
@@ -128,7 +132,47 @@ the one-transfer-wide lane the ask refuses `busy`, which the pane
 words honestly as "Preview after the download". The decidable half
 (`preview.begin` validation before any allocation, the depth mapping,
 the pane-fit arithmetic) is pure in `cloud_preview.c`, host-cc tested
-in `cloud_preview_test.c`, mutation-watched.
+in `cloud_preview_test.c`, mutation-watched. Between the ask and the
+pixels the pane says "Loading preview..." — drawn state, invalidated
+once at each transition, cleared by the arrival or by the refusal
+reason drawing in its place.
+
+The download UX (2026-08-02) lives in the same view, below the pane:
+
+- **A Size popup** (Original / Fit 1024x768 / Fit 640x480 / Host
+  default, MENU 136 — the services-popup recipe) puts the additive
+  `size` token on Save's `cloud.get`; "Host default" omits the field,
+  which is the ask every older guest already sends. The choice is
+  session-state, deliberately not persisted — a prefs field was
+  weighed and skipped, since the host default is the remembered
+  preference and the popup is the per-ask exception.
+- **A destination row** shows where a saved photo lands ("Save into:"
+  plus the folder's path, truncated middle) with a Choose... button —
+  the shared `NavChooseFolder` door (`now_files_choose_folder`, the
+  downloads chooser refactored onto the same body). Guest-side ONLY,
+  no contract change, and the reasoning is in `wire.c` where the
+  redirect happens: the contract's share bound governs what the SENDER
+  may reach unbidden; this delivery is one the guest ASKED for, and
+  the receiver is sovereign over its own disk — the pull path already
+  lands in Downloads, outside the share, on the same argument. The
+  wire's by-arrival correlation redirects exactly THAT offer through
+  `now_files_receive_begin_at` (same-folder temp staging included);
+  choosing the share root clears the override, so that path stays
+  byte-identical to before the chooser existed.
+- **A real moving bar plus a byte count** while the get's offer is
+  received: the share panel's `kControlProgressBarProc` recipe and its
+  idle discipline verbatim (value 0..1000, mutated only on change),
+  fed by the read-only `now_wire_receive_active` — the inbound twin of
+  `now_wire_get_active` — with the byte line ("312K of 3200K") from
+  pure `cloud_dl_bytes_line`, repainted only when the string changes,
+  in its own small rect.
+- **The outcome replaces the status.** "Receiving X into Y" (worded
+  from the actual destination) used to persist after the transfer
+  ended; now `wire.c` records a one-line outcome plus a sequence
+  number at every receive ending (`now_wire_receive_outcome`) —
+  success, refusal, cancel, corrupt, lost link — and the shell's idle
+  swaps the status for it once, on the sequence moving. One
+  implementation serves the placard and the pane.
 
 The split follows the house pattern: `cloud_model.c` (the store and
 parsers, host-cc tested in `cloud_model_test.c`, mutation-watched) and
@@ -212,6 +256,18 @@ Mac's TCC grants, and what only a signed-in, access-granted machine can
 prove is ledgered in [open-issues.md](open-issues.md). The rest of the
 family is not metal-verified yet.
 
+The download-UX arc (2026-08-02, same day, later) is **tested,
+nothing more**: the size override is loopback-proven end to end
+(token reaching the provider, absent-size default, unknown-token
+refusal — all mutation-watched), the guest's pure halves (the popup
+item map, the bar's 0..1000 scaling and clamps, the byte line's
+round-up, the furniture geometry and its pane-never-under-a-control
+rule) are host-cc tested with watched mutations, and the PPC guest
+cross-compiles. Everything a person would SEE — the loading line,
+the bar moving, the destination redirect landing bytes in a chosen
+folder, the outcome replacing "Receiving..." — has run nowhere, and
+is exactly what the next metal session should watch for.
+
 The preview arc (2026-08-02) is **tested, nothing more**: the
 ditherers are pure units with watched mutations (`ClassicDitherTests`
 — zeroed Floyd-Steinberg weights and an ignored Atkinson carry both
@@ -289,12 +345,14 @@ and what shipped is the revision, not the sketch:
   surfaced honestly ("Preview after the download"); the preview is
   contract-additive (`cloud.preview`, `preview.begin`/`preview.end`,
   the fourth bulk payload kind).
-- **Downloads are processed per the host's configurable setting, not
-  per request.** `cloud.get` always converts to JPEG (HEIC included)
-  and downsizes per the iCloud page's Downloads picker (Original /
-  Fit 1024x768 / Fit 640x480, default Fit 640x480). The per-photo
-  dropdown at ask time — and its estimated-size arithmetic — is a
-  later arc, deliberately.
+- **Downloads are processed per the host's configurable setting, with
+  a per-ask override since 2026-08-02.** `cloud.get` always converts
+  to JPEG (HEIC included) and downsizes per the iCloud page's
+  Downloads picker (Original / Fit 1024x768 / Fit 640x480, default
+  Fit 640x480) unless the ask carries the additive `size` token from
+  the guest's own Size popup. The estimated-size arithmetic the
+  original sketch paired with the dropdown remains unbuilt,
+  deliberately — the popup states renders, not byte guesses.
 
 ## Designed, not built: Messages
 

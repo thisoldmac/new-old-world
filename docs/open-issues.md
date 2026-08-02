@@ -14,6 +14,35 @@ stopped being true gets a dated line saying so, under the entry that made
 it. The history is the point: several entries here are worth more for the
 shape of the mistake than for the fix.
 
+## Photos download UX shipped tested; every visible behavior awaits metal (2026-08-02, later)
+
+**Unverified, deliberately labelled.** The four-item download arc
+(the pane's "Loading preview..." state; the download bar + byte count
+off the new read-only `now_wire_receive_active`; the per-ask `size`
+on `cloud.get` — contract-additive, host loopback-proven with watched
+mutations, guest Size popup MENU 136; the guest-side destination
+chooser redirecting a cloud-born offer through
+`now_files_receive_begin_at`; and the receive-outcome seam replacing
+the stuck "Receiving..." status) is TESTED at its decidable seams and
+cross-compiles, and none of it has been watched on a machine. The
+specific things only metal can prove:
+
+- **The furniture rows draw where the geometry says** (size popup row,
+  destination row, bar, byte line stacked over Save at 640x480), and
+  the card/preview genuinely never draws under a live control.
+- **The bar moves and the byte line ticks without flicker** during a
+  real multi-hundred-KB receive — the change-gates are unit-tested,
+  the pixels are not.
+- **A redirected offer lands whole in the chosen folder** with type/
+  creator/date stamped, and choosing the share root really is
+  byte-identical (it never sets the override; only a code-reading
+  claim so far).
+- **The outcome line replaces the status at completion** on a real
+  wire, including the refusal endings (exists / too-big / busy).
+- **The popup CDEF under CarbonLib 1.6** accepts the fixed MENU 136
+  the way the services popup accepts its rebuilt one — same recipe,
+  never this menu.
+
 ## Photos preview + processing shipped tested; a granted library and metal own the rest (2026-08-02)
 
 **Unverified, deliberately labelled.** The list+preview arc
